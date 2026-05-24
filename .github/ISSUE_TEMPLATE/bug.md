@@ -35,7 +35,7 @@ assignees: []
 - [ ] medium — broken feature with workaround
 - [ ] low — cosmetic / minor annoyance
 
-> **Security vulnerability?** Do NOT file here. Report privately via [GitHub Security Advisories](https://github.com/TheurgicDuke771/DataQ/security/advisories/new). See [SECURITY.md](../../SECURITY.md).
+> **Security vulnerability?** Do NOT file here. Report privately via [GitHub Security Advisories](https://github.com/TheurgicDuke771/DataQ/security/advisories/new). See [SECURITY.md](../SECURITY.md).
 
 ## Logs / screenshots / error messages
 
