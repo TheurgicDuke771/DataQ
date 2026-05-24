@@ -25,7 +25,7 @@ Timeline: **8 weeks** to v1. Scope: single tenant, suite-level access sharing, A
 
 ## 2. Architecture at a glance
 
-See [docs/architecture.svg](docs/architecture.svg) for the full diagram (moved here from `context/` in PR 0).
+See [docs/architecture.md](docs/architecture.md) for the full diagram (Mermaid — renders on GitHub).
 
 ```
 Browser ──HTTPS──► React (Static Web App) ──► FastAPI (Container Apps) ──► PostgreSQL
@@ -64,7 +64,7 @@ DataQ/
 │   ├── src/
 │   └── tests/
 ├── docs/
-│   ├── architecture.svg
+│   ├── architecture.md          # Mermaid architecture diagram
 │   └── adr/                     # Architecture Decision Records
 ├── scripts/
 │   └── setup.sh                 # one-command dev env bootstrap
@@ -242,7 +242,7 @@ curl -X POST http://localhost:8000/api/v1/_probe/snowflake-suite
 | Artifact | Location |
 |---|---|
 | Product roadmap (100 tasks, 8 weeks) | [context/DataQ_platform_roadmap.md](context/DataQ_platform_roadmap.md) |
-| System architecture diagram | [docs/architecture.svg](docs/architecture.svg) |
+| System architecture diagram | [docs/architecture.md](docs/architecture.md) |
 | Architecture Decision Records | [docs/adr/](docs/adr/) |
 | Working agreements (full 30-rule list) | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | Execution plan (sequencing, gates, risks) | Reference plan: `~/.claude/plans/hey-create-the-project-inherited-flute.md` (will be committed to `docs/execution-plan.md` in PR 0) |
