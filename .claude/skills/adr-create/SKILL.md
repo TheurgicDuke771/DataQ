@@ -25,7 +25,7 @@ User invokes this skill with a short topic for the ADR. Optional args:
    - "Severity tier weights" → `severity-tier-weights`
    - "Use Pydantic Settings for config" → `use-pydantic-settings-for-config`
 
-3. **Create the file** at `docs/adr/NNNN-<slug>.md` using the template below. Today's date in ISO format (`YYYY-MM-DD`). Deciders defaults to the git user (`git config user.name` mapped to GitHub handle if known, else literal name).
+3. **Create the file** at `docs/adr/NNNN-<slug>.md` using the template below. Today's date in ISO format (`YYYY-MM-DD`). Deciders defaults to the current GitHub handle, resolved via `gh api /user --jq .login` (prepend `@`). Do NOT use `git config user.name` — that returns a display name (e.g. "Arijit Roy") which produces an invalid `@mention`. If `gh api` fails (no auth, offline), fall back to asking the user for their GitHub handle.
 
 4. **Update the index** at `docs/adr/README.md`:
    - Add a row to the "Index" table at the end (above any "Pending" section).

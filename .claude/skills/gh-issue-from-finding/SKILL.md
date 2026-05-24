@@ -41,7 +41,13 @@ User invokes with a short description of the finding. Required context the skill
 
 4. **Build the issue body** using the template below.
 
-5. **Call** `gh issue create --title "<title>" --label "<label>" --body "<body>"`. Capture the returned URL.
+5. **Call `gh issue create`.** The body template contains backticks, code blocks, and `$`-signs that break shell-interpolated `--body "..."` quoting. Use `--body-file` with a temp file instead:
+   ```bash
+   tmp=$(mktemp); printf '%s' "$BODY" > "$tmp"
+   gh issue create --title "$TITLE" --label "$LABEL" --body-file "$tmp"
+   rm "$tmp"
+   ```
+   Capture the returned URL.
 
 6. **Print to the user:**
    ```
