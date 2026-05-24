@@ -86,7 +86,10 @@ docker-compose.override.yml
 *.pid
 
 # ---- IDE / Editor ----
-.vscode/
+# Ignore everything in .vscode/ EXCEPT the shared team files.
+# (Negating a parent directory's ignore is impossible in gitignore;
+# must ignore-children-then-negate-specific-files instead.)
+.vscode/*
 !.vscode/extensions.json
 !.vscode/settings.shared.json
 .idea/
