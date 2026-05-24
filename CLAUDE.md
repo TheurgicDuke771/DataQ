@@ -209,7 +209,7 @@ curl -X POST http://localhost:8000/api/v1/_probe/snowflake-suite
 | ADF webhook auth (shared secret) + Key Vault rotation | `0006` (TBD W2) | Pending W2 |
 | Airflow callback model (HMAC-signed) + polling fallback | `0007` (TBD W2) | Pending W2 |
 | MCP mounted at `/mcp` with Azure AD auth | `0008` (TBD W7) | Pending W7 |
-| Repo layout: flat monorepo (`backend/` + `frontend/`) | `0009` (TBD W1) | Pending W1 |
+| Repo layout: flat monorepo (`backend/` + `frontend/`) | [0009](docs/adr/0009-flat-monorepo-layout.md) | Locked W1 |
 
 ---
 
@@ -255,10 +255,16 @@ curl -X POST http://localhost:8000/api/v1/_probe/snowflake-suite
 
 ## 13. Status & current milestone
 
-**Current week:** Pre-week-1 (setup phase)
-**Current milestone target:** PR 1 — Coding structure & tooling lock (`CONTRIBUTING.md`, `environment.yml`, `pyproject.toml`, `.pre-commit-config.yaml`, frontend tooling, CI workflow, Dependabot, `scripts/setup.sh`)
-**Completed:** PR 0 governance bundle — landed across GitHub PRs #1–#21 (`.gitignore`, `CLAUDE.md`, CODEOWNERS, PR/issue templates, initial ADRs, architecture diagram, Claude Code agents/skills/hooks/MCP)
-**Next milestone:** PR 2 — Docker Compose + DB scaffold (`docker-compose.yml`, SQLAlchemy models, Alembic baseline, structlog, Pydantic Settings, App Insights middleware)
+**Current week:** Week 1 (scaffolding)
+**Current milestone target:** PR 3 — Azure AD SSO end-to-end (MSAL token validation in FastAPI, React login flow, Key Vault wiring for credential reads)
+**Completed:**
+- PR 0 governance bundle — landed across GitHub PRs #1–#21 (`.gitignore`, `CLAUDE.md`, CODEOWNERS, PR/issue templates, initial ADRs, architecture diagram, Claude Code agents/skills/hooks/MCP)
+- PR 1 — Coding structure & tooling lock (`CONTRIBUTING.md`, `environment.yml`, `pyproject.toml`, `.pre-commit-config.yaml`, frontend tooling, CI workflow, Dependabot, `scripts/setup.sh`)
+- PR 2 — Docker Compose + DB scaffold, landed as 3 sub-PRs:
+  - **PR 2a** (`docker-compose.yml`, Pydantic Settings config, `.env.example`)
+  - **PR 2b** (structlog + PII redaction, error envelope, FastAPI skeleton with `request_id` middleware + `/healthz`, App Insights lazy handler)
+  - **PR 2c** (SQLAlchemy 2.0 models for 9 tables, Alembic baseline migration with naming conventions + CHECK constraints, `pipeline_runs` + `trigger_bindings` schema)
+**Next milestone:** PR 3 — Azure AD SSO end-to-end
 
 Update this section at the end of each week with: current week, the week's exit gate, and any open blocker issues by number.
 
