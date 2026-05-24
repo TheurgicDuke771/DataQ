@@ -5,30 +5,30 @@
 ```mermaid
 flowchart TB
     subgraph clients["Clients"]
-        Browser["Browser\nweb UI"]
-        AI["AI clients\nClaude · Copilot · Cursor"]
+        Browser["Browser<br/>web UI"]
+        AI["AI clients<br/>Claude · Copilot · Cursor"]
     end
 
     subgraph platform["DataQ platform — Azure Container Apps · Static Web App"]
-        React["React + Vite\nStatic Web App"]
-        FastAPI["FastAPI\nREST · /mcp endpoint"]
-        Celery["Celery worker\nGX execution"]
-        PG[("PostgreSQL\nresults · state")]
-        Redis[("Redis\ntask queue")]
-        KV["Key Vault\nsecrets"]
-        AppIns["App Insights\nobservability"]
+        React["React + Vite<br/>Static Web App"]
+        FastAPI["FastAPI<br/>REST · /mcp endpoint"]
+        Celery["Celery worker<br/>GX execution"]
+        PG[("PostgreSQL<br/>results · state")]
+        Redis[("Redis<br/>task queue")]
+        KV["Key Vault<br/>secrets"]
+        AppIns["App Insights<br/>observability"]
     end
 
     subgraph datasources["Datasources"]
-        SF["Snowflake\nDEV · QA · UAT"]
-        ADLS["ADLS Gen2 · S3\nflat files"]
-        UC["Unity Catalog\nDatabricks"]
+        SF["Snowflake<br/>DEV · QA · UAT"]
+        ADLS["ADLS Gen2 · S3<br/>flat files"]
+        UC["Unity Catalog<br/>Databricks"]
     end
 
     subgraph integrations["Integrations"]
-        Orch["ADF · Airflow\npipeline · DAG events"]
-        Monitor["Azure Monitor\nalert rule · webhook"]
-        Teams["MS Teams\nnotifications"]
+        Orch["ADF · Airflow<br/>pipeline · DAG events"]
+        Monitor["Azure Monitor<br/>alert rule · webhook"]
+        Teams["MS Teams<br/>notifications"]
     end
 
     Browser      -->|HTTPS|                              React
