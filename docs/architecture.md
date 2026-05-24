@@ -31,22 +31,22 @@ flowchart TB
         Teams["MS Teams<br/>notifications"]
     end
 
-    Browser      -->|HTTPS|                              React
-    AI           -->|MCP · HTTP|                         FastAPI
-    React        -->                                     FastAPI
-    FastAPI      <-->                                    PG
-    FastAPI      <-->                                    Redis
-    FastAPI      -->                                     KV
-    FastAPI      -->                                     AppIns
-    FastAPI      -->                                     Celery
-    Celery       <-->                                    PG
-    Celery       <-->                                    Redis
-    Celery       -->|GX checks|                          SF
-    Celery       -->|GX checks|                          ADLS
-    Celery       -->|GX checks|                          UC
-    Orch         -->                                     Monitor
-    Monitor      -->|POST /orchestration/events/{provider}| FastAPI
-    FastAPI      -->|alerts|                             Teams
+    Browser -->|HTTPS| React
+    AI -->|MCP · HTTP| FastAPI
+    React --> FastAPI
+    FastAPI <--> PG
+    FastAPI <--> Redis
+    FastAPI --> KV
+    FastAPI --> AppIns
+    FastAPI --> Celery
+    Celery <--> PG
+    Celery <--> Redis
+    Celery -->|GX checks| SF
+    Celery -->|GX checks| ADLS
+    Celery -->|GX checks| UC
+    Orch --> Monitor
+    Monitor -->|"POST /orchestration/events/{provider}"| FastAPI
+    FastAPI -->|alerts| Teams
 
     classDef platform  fill:#E6F1FB,stroke:#185FA5,color:#0C449C
     classDef infra     fill:#EEEDF8,stroke:#534AB7,color:#3C3489
