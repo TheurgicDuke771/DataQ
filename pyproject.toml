@@ -1,0 +1,79 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.backends.legacy:build"
+
+# ── Black ────────────────────────────────────────────────────────────────────
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+include = '\.pyi?$'
+
+# ── Ruff ─────────────────────────────────────────────────────────────────────
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["backend"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+    "N",   # pep8-naming
+    "S",   # flake8-bandit (security — basic subset; full scan via Bandit)
+    "RUF", # ruff-specific rules
+]
+ignore = [
+    "S101",  # assert statements are fine in tests
+    "S104",  # binding to 0.0.0.0 is intentional in Docker
+    "B008",  # FastAPI Depends() in function args is idiomatic
+]
+
+[tool.ruff.lint.per-file-ignores]
+"backend/tests/**" = ["S", "N802"]  # relax security + naming in tests
+"backend/alembic/**" = ["N999"]     # migration files use non-PEP8 names
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+# ── mypy ─────────────────────────────────────────────────────────────────────
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = false
+plugins = ["sqlalchemy.ext.mypy.plugin", "pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = [
+    "great_expectations.*",
+    "celery.*",
+    "opencensus.*",
+    "snowflake.*",
+    "databricks.*",
+    "azure.storage.*",
+]
+ignore_missing_imports = true
+
+# ── pytest ───────────────────────────────────────────────────────────────────
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["backend/tests"]
+addopts = "--cov=backend/app --cov-report=term-missing --cov-fail-under=0"
+# cov-fail-under raised to 80 in Week 8
+
+# ── Bandit ───────────────────────────────────────────────────────────────────
+
+[tool.bandit]
+targets = ["backend/app"]
+exclude_dirs = ["backend/tests", "backend/alembic"]
+skips = ["B101"]  # assert is fine in non-production code
