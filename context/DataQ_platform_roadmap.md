@@ -1,5 +1,14 @@
 # DataQ — v1 Development Roadmap
 
+> **⚠️ Read this first — this is a historical input document.**
+>
+> This roadmap captured the original product framing that informed the v1 plan. Some categorisations and scope choices have been **refined by subsequent ADRs**. Where this document and the ADRs disagree, **the ADRs win.**
+>
+> Notable refinements:
+> - **ADF (and Apache Airflow) are orchestration providers, not datasources.** See [ADR 0004](../docs/adr/0004-orchestration-abstraction.md). Treat the "5 datasource types" framing in this document as 4 datasources + 2 orchestration providers behind a unified `OrchestrationProvider` abstraction.
+> - **Apache Airflow** was added as a second orchestration provider after this roadmap was written and is in scope for v1.
+> - **DQX for Databricks DLT / streaming** is deferred to v1.1. See [ADR 0003](../docs/adr/0003-gx-only-for-v1.md). v1 uses GX-only across all four datasources.
+
 > **DataQ** — Data quality monitoring platform. The evolution of SnowQ, extended to Snowflake · ADLS Gen2 · S3 · Unity Catalog · ADF.
 
 **Stack:** GX Core · FastAPI · React + Vite + Ant Design · Celery + Redis · PostgreSQL · Azure Container Apps  
