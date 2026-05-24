@@ -21,7 +21,7 @@ Treating orchestrators as datasources pollutes the suite/check editor, mixes unr
 
 1. **Monitor** pipeline/DAG runs → stored in `pipeline_runs` table with a `provider` column (`adf` | `airflow`) and `provider_run_id`.
 2. **Detect failure** in near-real-time via provider-specific webhook channels (see table below).
-3. **Trigger suite execution on successful completion** via `trigger_bindings` (composite key: `provider`, `pipeline_or_dag_id`, `env`). Failure events alert the user but do NOT trigger suite runs (no point running checks on data that wasn't loaded).
+3. **Trigger suite execution on successful completion** via `trigger_bindings`. The table has a surrogate primary key (`id`) and a non-unique composite **lookup index** on (`provider`, `pipeline_or_dag_id`, `env`) — one pipeline/DAG can map to many suites (one row per binding). Failure events alert the user but do NOT trigger suite runs (no point running checks on data that wasn't loaded).
 
 ### Interface
 
