@@ -17,6 +17,7 @@ Each ADR captures a single significant architecture decision: the context, the d
 | [0002](0002-conventional-commits.md) | Conventional commits for PR titles and commit messages | Accepted |
 | [0003](0003-gx-only-for-v1.md) | GX-only for v1; DQX deferred to v1.1 for DLT/streaming | Accepted |
 | [0004](0004-orchestration-abstraction.md) | Unified `OrchestrationProvider` abstraction for ADF and Airflow | Accepted |
+| [0009](0009-flat-monorepo-layout.md) | Repo layout — flat monorepo (`backend/` + `frontend/`) | Accepted |
 
 ## Pending (to be written in their respective weeks)
 
@@ -26,4 +27,3 @@ Each ADR captures a single significant architecture decision: the context, the d
 | 0006 | ADF webhook authentication (shared secret + Key Vault rotation) | Week 2 |
 | 0007 | Airflow callback model (HMAC signing + polling fallback) | Week 2 |
 | 0008 | MCP mounted at `/mcp` with Azure AD auth | Week 7 |
-| 0009 | Repo layout — flat monorepo (`backend/` + `frontend/`) | Week 1 |
