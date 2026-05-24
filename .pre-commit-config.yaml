@@ -1,18 +1,17 @@
 repos:
-  # ── Formatting ──────────────────────────────────────────────────────────────
-  - repo: https://github.com/psf/black
-    rev: 26.5.1
-    hooks:
-      - id: black
-        language_version: python3.11
-
-  # ── Linting + import sorting ────────────────────────────────────────────────
+  # ── Linting + import sorting (runs first so Black formats the fixed code) ──
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.14
     hooks:
       - id: ruff
         args: [--fix]
-      - id: ruff-format   # ruff's formatter — runs after black for consistency check
+
+  # ── Formatting (canonical formatter — runs last to own final layout) ───────
+  - repo: https://github.com/psf/black
+    rev: 26.5.1
+    hooks:
+      - id: black
+        language_version: python3.11
 
   # ── Type checking ───────────────────────────────────────────────────────────
   - repo: https://github.com/pre-commit/mirrors-mypy
