@@ -21,18 +21,21 @@ Audit the changed code (use `gh pr diff <N>` if a PR number is provided, otherwi
 
 ### 🔴 Hard violations (must block merge)
 
-1. **String literal comparisons against provider names** outside the orchestration package:
+1. **Any switch on provider identity** outside the orchestration package. Includes ALL of the following forms — be exhaustive, not just `==`:
    ```python
-   if provider == "adf": ...   # FORBIDDEN outside orchestration/
-   if provider == "airflow": ...
+   if provider == "adf": ...           # FORBIDDEN
+   if provider != "airflow": ...        # FORBIDDEN
+   if provider in ("adf", "airflow"):   # FORBIDDEN
+   match provider:                       # FORBIDDEN
+       case "adf": ...
    ```
    These belong inside `backend/app/orchestration/<provider>.py` modules only. Service-layer code should call methods on a resolved `OrchestrationProvider` instance, not switch on its identity.
 
-2. **Importing provider implementations directly into service code:**
+2. **Importing provider implementations directly into service or API code:**
    ```python
-   from backend.app.orchestration.adf import AdfProvider   # FORBIDDEN in services/
+   from backend.app.orchestration.adf import AdfProvider   # FORBIDDEN in services/, api/
    ```
-   Service code resolves providers through a registry / factory, not by importing concrete classes.
+   Service code resolves providers through a registry / factory, not by importing concrete classes. **Test code is exempt** — see Acceptable patterns.
 
 3. **Hardcoded webhook routes per provider** (e.g., a route `/api/v1/adf/events` instead of the agreed `/api/v1/orchestration/events/{provider}` from ADR 0004).
 
@@ -55,6 +58,7 @@ Audit the changed code (use `gh pr diff <N>` if a PR number is provided, otherwi
 - Provider-specific code **inside** `backend/app/orchestration/adf/` or `backend/app/orchestration/airflow/` — that's where it belongs.
 - Routing by enum at the orchestration boundary: `providers[request.provider].parse_event(payload, headers)`.
 - Provider-specific tests under `tests/orchestration/adf/` and `tests/orchestration/airflow/`.
+- **Test code may import concrete provider implementations** (`AdfProvider`, `AirflowProvider`) for isolation testing — the abstraction rule binds production code (`backend/app/services/`, `backend/app/api/`), not tests.
 
 ## How to report
 

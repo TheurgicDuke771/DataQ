@@ -28,6 +28,7 @@ Each of these is unsafe under concurrent rolling deploy and must be split into a
 7. **`op.drop_constraint(...)` for FK or unique** where the constraint enforces data invariants the application depends on. Acceptable only if explicitly noted as part of a planned rollout.
 8. **Missing `downgrade()` body** (only `pass`) for any non-trivial migration. Rollback path must exist per the migration PR checklist in `.github/pull_request_template.md`.
 9. **DDL inside a single transaction with DML on the same table** — risks deadlocks on production-sized tables. Heuristic: presence of `op.execute("UPDATE ...")` followed by structural changes in the same migration.
+10. **`op.execute("...")` containing destructive SQL keywords** — raw SQL bypasses the `op.*` pattern matchers above. Scan the string argument for `DROP`, `RENAME`, `ALTER ... TYPE`, `ALTER ... SET NOT NULL` (without `DEFAULT`), `TRUNCATE`. Same backward-compatibility rules apply as for the equivalent `op.*` calls.
 
 ### 🟡 Yellow flags (call out, don't necessarily block)
 
