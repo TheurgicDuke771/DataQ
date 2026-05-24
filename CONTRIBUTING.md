@@ -66,7 +66,7 @@ These are locked on Day 1 of Week 1. Do not drift.
 21. **Python type checker:** mypy (strict mode). Config in `pyproject.toml`.
 22. **Frontend package manager:** pnpm. Not npm, not yarn.
 23. **Frontend formatter:** Prettier. Config in `frontend/.prettierrc`.
-24. **Frontend linter:** ESLint with TypeScript rules. Config in `frontend/.eslintrc.cjs`.
+24. **Frontend linter:** ESLint with TypeScript rules. Config in `frontend/eslint.config.cjs`.
 25. **Config / 12-factor:** All environment-specific config via env vars. Backend uses Pydantic Settings (`backend/app/core/config.py`). Frontend uses Vite env vars (`VITE_*`). No env-specific code branches.
 
 ---
