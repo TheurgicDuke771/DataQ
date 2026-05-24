@@ -63,7 +63,7 @@ These are locked on Day 1 of Week 1. Do not drift.
 18. **Python runtime:** `conda` only (`conda create -n dataq python=3.11`). Not venv, not poetry, not pyenv.
 19. **Python formatter:** Black. Config in `pyproject.toml`. CI rejects unformatted code.
 20. **Python linter:** Ruff. Replaces flake8 + isort + pyupgrade. Config in `pyproject.toml`.
-21. **Python type checker:** mypy (strict mode). Config in `pyproject.toml`.
+21. **Python type checker:** mypy (strict mode). Config in `pyproject.toml`. When adding a new runtime import to `backend/app/`, also pin the package in `.pre-commit-config.yaml`'s `mypy.additional_dependencies` list — keep it in sync with `environment.yml`. CI mypy runs inside the conda env and sees everything; pre-commit mypy runs in an isolated venv and only sees what's pinned. A missing entry produces local-only false-positive `untyped-decorator` / `import-not-found` errors.
 22. **Frontend package manager:** pnpm. Not npm, not yarn.
 23. **Frontend formatter:** Prettier. Config in `frontend/.prettierrc`.
 24. **Frontend linter:** ESLint with TypeScript rules. Config in `frontend/eslint.config.cjs`.

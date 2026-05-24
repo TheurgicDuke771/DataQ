@@ -19,10 +19,15 @@ repos:
     hooks:
       - id: mypy
         files: ^backend/app/
+        # Keep in sync with environment.yml so pre-commit mypy sees the same
+        # imports CI mypy sees. When you add a new runtime import, add the
+        # package (pinned) here too — see CONTRIBUTING.md.
         additional_dependencies:
+          - fastapi==0.136.3
           - pydantic==2.11.5
           - pydantic-settings==2.14.1
           - sqlalchemy[mypy]==2.0.49
+          - structlog==25.5.0
           - types-redis==4.6.0.20241004
 
   # ── Secret scanning ─────────────────────────────────────────────────────────
