@@ -21,6 +21,8 @@ class Settings(BaseSettings):
 
     applicationinsights_connection_string: str | None = None
 
+    sample_failures_retention_days: int = 30
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
