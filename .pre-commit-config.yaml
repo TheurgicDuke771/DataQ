@@ -41,6 +41,8 @@ repos:
     rev: v5.0.0
     hooks:
       - id: trailing-whitespace
+        # Preserve markdown's trailing-double-space line-break syntax in .md files
+        args: [--markdown-linebreak-ext=md]
       - id: end-of-file-fixer
       - id: check-yaml
       - id: check-json
