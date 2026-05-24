@@ -1,0 +1,194 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Backend ──────────────────────────────────────────────────────────────────
+  backend-lint:
+    name: Backend — lint & format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install lint tools
+        run: pip install black==26.5.1 ruff==0.15.14
+
+      - name: Black (format check)
+        run: black --check backend/
+
+      - name: Ruff (lint)
+        run: ruff check backend/
+
+  backend-types:
+    name: Backend — type check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install type-check deps
+        run: |
+          pip install mypy==2.1.0 \
+            pydantic==2.11.5 pydantic-settings==2.14.1 \
+            sqlalchemy[mypy]==2.0.49 types-redis==4.6.0.20241004 \
+            fastapi==0.136.3 celery==5.6.3 structlog==25.5.0
+
+      - name: mypy
+        run: mypy backend/app/
+
+  backend-sast:
+    name: Backend — SAST (Bandit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install Bandit
+        run: pip install bandit[toml]==1.9.4
+
+      - name: Bandit
+        run: bandit -c pyproject.toml -r backend/app/
+
+  backend-test:
+    name: Backend — tests
+    runs-on: ubuntu-latest
+    # Only runs from Week 8; no test files exist yet so this is a no-op gate
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install test deps
+        run: |
+          pip install pytest==9.0.3 pytest-asyncio==0.26.0 \
+            pytest-cov==6.1.0 httpx==0.28.1
+
+      - name: pytest
+        run: |
+          if [ -d backend/tests ] && [ "$(find backend/tests -name '*.py' | wc -l)" -gt 0 ]; then
+            pytest backend/tests/
+          else
+            echo "No test files yet — skipping (Week 8 gate)"
+          fi
+
+  # ── Secret scanning ──────────────────────────────────────────────────────────
+  secrets:
+    name: Secret scanning (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # full history for accurate scanning
+
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ── Frontend ─────────────────────────────────────────────────────────────────
+  frontend-lint:
+    name: Frontend — lint & format
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Prettier (format check)
+        run: pnpm format:check
+
+      - name: ESLint
+        run: pnpm lint
+
+      - name: TypeScript
+        run: pnpm typecheck
+
+  frontend-test:
+    name: Frontend — tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Vitest
+        run: |
+          if [ "$(find tests src -name '*.test.*' -o -name '*.spec.*' 2>/dev/null | wc -l)" -gt 0 ]; then
+            pnpm test
+          else
+            echo "No test files yet — skipping (Week 8 gate)"
+          fi
+
+  # ── CodeQL SAST ──────────────────────────────────────────────────────────────
+  codeql:
+    name: CodeQL analysis
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    strategy:
+      matrix:
+        language: [python, javascript-typescript]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          queries: security-and-quality
+
+      - uses: github/codeql-action/autobuild@v3
+
+      - uses: github/codeql-action/analyze@v3
