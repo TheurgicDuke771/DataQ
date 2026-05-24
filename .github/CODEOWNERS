@@ -1,0 +1,35 @@
+# DataQ CODEOWNERS
+# Auto-routes review requests when PRs touch matching paths.
+# Per working-agreement #12 — keep entries scoped per area.
+#
+# Format: <pattern> <@owner1> <@owner2 ...>
+# Later patterns take precedence over earlier ones.
+
+# Default — everything not matched by a later rule
+*                                @TheurgicDuke771
+
+# Backend
+/backend/                        @TheurgicDuke771
+/backend/app/orchestration/      @TheurgicDuke771
+/backend/app/datasources/        @TheurgicDuke771
+/backend/app/mcp/                @TheurgicDuke771
+/backend/alembic/                @TheurgicDuke771
+
+# Frontend
+/frontend/                       @TheurgicDuke771
+
+# Infra / CI / repo governance
+/.github/                        @TheurgicDuke771
+/docker-compose.yml              @TheurgicDuke771
+/environment.yml                 @TheurgicDuke771
+/conda-lock.yml                  @TheurgicDuke771
+/pyproject.toml                  @TheurgicDuke771
+/.pre-commit-config.yaml         @TheurgicDuke771
+/scripts/                        @TheurgicDuke771
+
+# Docs & decisions
+/docs/                           @TheurgicDuke771
+/docs/adr/                       @TheurgicDuke771
+/CLAUDE.md                       @TheurgicDuke771
+/CONTRIBUTING.md                 @TheurgicDuke771
+/README.md                       @TheurgicDuke771
