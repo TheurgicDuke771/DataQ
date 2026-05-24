@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "input=$(cat); file_path=$(printf '%s' \"$input\" | jq -r '.tool_input.file_path // empty'); if [ -z \"$file_path\" ]; then exit 0; fi; if printf '%s' \"$file_path\" | grep -qE '(^|/)\\.env($|\\.)' && ! printf '%s' \"$file_path\" | grep -qE '\\.env\\.example$'; then echo 'Blocked: .env files must not be created or edited (public repo). Use .env.example as the template.' >&2; exit 2; fi"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "input=$(cat); file_path=$(printf '%s' \"$input\" | jq -r '.tool_input.file_path // empty'); if [ -z \"$file_path\" ]; then exit 0; fi; case \"$file_path\" in *.py) if command -v black >/dev/null 2>&1; then black --quiet \"$file_path\"; fi; if command -v ruff >/dev/null 2>&1; then ruff check --fix --quiet \"$file_path\" || true; fi ;; esac"
+          }
+        ]
+      }
+    ]
+  }
+}
