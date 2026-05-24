@@ -60,7 +60,7 @@ DataQ/
 │   │   └── mcp/                 # FastMCP tools (Week 7)
 │   ├── alembic/
 │   └── tests/
-├── frontend/                    # React + Vite + Ant Design (Node, pnpm or npm)
+├── frontend/                    # React + Vite + Ant Design (Node, pnpm)
 │   ├── src/
 │   └── tests/
 ├── docs/
@@ -73,6 +73,7 @@ DataQ/
 ├── .github/
 │   ├── workflows/
 │   ├── pull_request_template.md
+│   ├── CODEOWNERS
 │   └── ISSUE_TEMPLATE/
 ├── docker-compose.yml
 ├── environment.yml              # conda env definition
@@ -135,7 +136,7 @@ Full list (30 rules across 8 categories) lives in [CONTRIBUTING.md](CONTRIBUTING
 ### Git workflow
 - **Trunk-based** with short-lived feature branches off `main`. No long-lived `develop`.
 - Branch names: `feature/<desc>`, `fix/issue-<N>-<desc>`, `chore/<desc>`, `docs/<desc>`.
-- `main` is protected: PR + ≥1 review + passing CI + no force-push.
+- `main` is protected: PR + passing CI + no force-push. (≥1 approving review is disabled during solo-dev phase; re-enable before onboarding a second contributor.)
 - **Squash-merge only into `main`.**
 - **Conventional commits** (`feat:`, `fix:`, `chore:`, `docs:`, `test:`, `refactor:`).
 
@@ -181,6 +182,8 @@ Full list (30 rules across 8 categories) lives in [CONTRIBUTING.md](CONTRIBUTING
 
 ## 8. Local dev quickstart
 
+> **Note:** These commands assume Week 1 scaffolding (PR 1) is in place. They will not work on a fresh clone until `scripts/setup.sh`, `environment.yml`, and `docker-compose.yml` are committed.
+
 ```bash
 git clone <repo>
 cd DataQ
@@ -206,7 +209,7 @@ curl -X POST http://localhost:8000/api/v1/_probe/snowflake-suite
 | ADF webhook auth (shared secret) + Key Vault rotation | `0006` (TBD W2) | Pending W2 |
 | Airflow callback model (HMAC-signed) + polling fallback | `0007` (TBD W2) | Pending W2 |
 | MCP mounted at `/mcp` with Azure AD auth | `0008` (TBD W7) | Pending W7 |
-| Repo layout: flat monorepo (`backend/` + `frontend/`) | `0009` (TBD W1) | Locked W1 |
+| Repo layout: flat monorepo (`backend/` + `frontend/`) | `0009` (TBD W1) | Pending W1 |
 
 ---
 
@@ -245,7 +248,7 @@ curl -X POST http://localhost:8000/api/v1/_probe/snowflake-suite
 | System architecture diagram | [docs/architecture.svg](docs/architecture.svg) |
 | Architecture Decision Records | [docs/adr/](docs/adr/) |
 | Working agreements (full 30-rule list) | [CONTRIBUTING.md](CONTRIBUTING.md) |
-| Execution plan (sequencing, gates, risks) | Reference plan: `~/.claude/plans/hey-create-the-project-inherited-flute.md` (will be committed to `docs/execution-plan.md` in PR 0) |
+| Execution plan (sequencing, gates, risks) | Reference plan: `~/.claude/plans/hey-create-the-project-inherited-flute.md` (will be committed to `docs/execution-plan.md` in a follow-up PR) |
 | Memory (cross-session AI context) | `~/.claude/projects/-Users-arijit-Coding-Python-DataQ/memory/` |
 
 ---
@@ -253,8 +256,9 @@ curl -X POST http://localhost:8000/api/v1/_probe/snowflake-suite
 ## 13. Status & current milestone
 
 **Current week:** Pre-week-1 (setup phase)
-**Current milestone target:** PR 0 — Repo governance (`.gitignore`, `CLAUDE.md`, branch protection, CODEOWNERS, PR/issue templates, initial ADRs, architecture diagram moved into `docs/`)
-**Next milestone:** PR 1 — Coding structure & tooling lock (`CONTRIBUTING.md`, `environment.yml`, `pyproject.toml`, `.pre-commit-config.yaml`, frontend tooling, CI workflow, Dependabot, `scripts/setup.sh`)
+**Current milestone target:** PR 1 — Coding structure & tooling lock (`CONTRIBUTING.md`, `environment.yml`, `pyproject.toml`, `.pre-commit-config.yaml`, frontend tooling, CI workflow, Dependabot, `scripts/setup.sh`)
+**Completed:** PR 0 governance bundle — landed across GitHub PRs #1–#21 (`.gitignore`, `CLAUDE.md`, CODEOWNERS, PR/issue templates, initial ADRs, architecture diagram, Claude Code agents/skills/hooks/MCP)
+**Next milestone:** PR 2 — Docker Compose + DB scaffold (`docker-compose.yml`, SQLAlchemy models, Alembic baseline, structlog, Pydantic Settings, App Insights middleware)
 
 Update this section at the end of each week with: current week, the week's exit gate, and any open blocker issues by number.
 
