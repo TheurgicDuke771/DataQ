@@ -1,0 +1,133 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual envs (we use conda, but contributors may stray)
+.venv/
+venv/
+env/
+ENV/
+
+# Conda
+.conda/
+*.conda
+*.conda-lock.cache/
+
+# Test / type / lint caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+.hypothesis/
+
+# Alembic
+alembic/versions/__pycache__/
+
+# ---- Node / Frontend ----
+node_modules/
+.pnp/
+.pnp.js
+dist/
+dist-ssr/
+build/
+.vite/
+.next/
+.nuxt/
+.cache/
+.parcel-cache/
+*.tsbuildinfo
+.eslintcache
+.stylelintcache
+
+# Vitest / Jest
+coverage/
+
+# ---- Environment / secrets ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+secrets/
+.secrets/
+credentials.json
+
+# ---- Docker ----
+.docker/
+docker-compose.override.yml
+*.pid
+
+# ---- IDE / Editor ----
+# Ignore everything in .vscode/ EXCEPT the shared team files.
+# (Negating a parent directory's ignore is impossible in gitignore;
+# must ignore-children-then-negate-specific-files instead.)
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.shared.json
+.idea/
+*.iml
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# ---- OS ----
+.DS_Store
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+.AppleDouble
+.LSOverride
+
+# ---- Logs ----
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ---- Local data / scratch ----
+*.sqlite
+*.sqlite3
+*.db
+local-data/
+scratch/
+tmp/
+.tmp/
+
+# ---- Azure / cloud creds ----
+.azure/
+azure.json
+
+# ---- Claude / agent scratch (project-local) ----
+.claude/cache/
