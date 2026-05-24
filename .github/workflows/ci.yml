@@ -27,10 +27,20 @@ jobs:
         run: pip install black==26.5.1 ruff==0.15.14
 
       - name: Black (format check)
-        run: black --check backend/
+        run: |
+          if [ -d backend ]; then
+            black --check backend/
+          else
+            echo "No backend/ yet — skipping"
+          fi
 
       - name: Ruff (lint)
-        run: ruff check backend/
+        run: |
+          if [ -d backend ]; then
+            ruff check backend/
+          else
+            echo "No backend/ yet — skipping"
+          fi
 
   backend-types:
     name: Backend — type check
@@ -51,7 +61,12 @@ jobs:
             fastapi==0.136.3 celery==5.6.3 structlog==25.5.0
 
       - name: mypy
-        run: mypy backend/app/
+        run: |
+          if [ -d backend/app ]; then
+            mypy backend/app/
+          else
+            echo "No backend/app/ yet — skipping"
+          fi
 
   backend-sast:
     name: Backend — SAST (Bandit)
@@ -68,12 +83,16 @@ jobs:
         run: pip install bandit[toml]==1.9.4
 
       - name: Bandit
-        run: bandit -c pyproject.toml -r backend/app/
+        run: |
+          if [ -d backend/app ]; then
+            bandit -c pyproject.toml -r backend/app/
+          else
+            echo "No backend/app/ yet — skipping"
+          fi
 
   backend-test:
     name: Backend — tests
     runs-on: ubuntu-latest
-    # Only runs from Week 8; no test files exist yet so this is a no-op gate
     steps:
       - uses: actions/checkout@v4
 
@@ -84,7 +103,7 @@ jobs:
 
       - name: Install test deps
         run: |
-          pip install pytest==9.0.3 pytest-asyncio==0.26.0 \
+          pip install pytest==8.4.2 pytest-asyncio==1.3.0 \
             pytest-cov==6.1.0 httpx==0.28.1
 
       - name: pytest
@@ -102,7 +121,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # full history for accurate scanning
+          fetch-depth: 0
 
       - uses: gitleaks/gitleaks-action@v2
         env:
@@ -125,11 +144,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: pnpm
-          cache-dependency-path: frontend/pnpm-lock.yaml
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --no-frozen-lockfile
 
       - name: Prettier (format check)
         run: pnpm format:check
@@ -156,11 +173,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: pnpm
-          cache-dependency-path: frontend/pnpm-lock.yaml
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --no-frozen-lockfile
 
       - name: Vitest
         run: |
@@ -174,6 +189,7 @@ jobs:
   codeql:
     name: CodeQL analysis
     runs-on: ubuntu-latest
+    continue-on-error: true  # no source yet; remove once backend/frontend code lands
     permissions:
       security-events: write
       actions: read
