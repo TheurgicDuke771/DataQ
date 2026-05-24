@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if printf '%s\\n' \"$CLAUDE_FILE_PATHS\" | tr ' ' '\\n' | grep -E '(^|/)\\.env($|\\.)' | grep -vE '\\.env\\.example$' >/dev/null; then echo 'Blocked: .env files must not be created or edited (public repo). Use .env.example as the template.' >&2; exit 2; fi"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "FILES=$(printf '%s\\n' \"$CLAUDE_FILE_PATHS\" | tr ' ' '\\n' | grep -E '\\.py$' || true); if [ -n \"$FILES\" ] && command -v black >/dev/null 2>&1; then echo \"$FILES\" | xargs black --quiet 2>&1 || true; fi; if [ -n \"$FILES\" ] && command -v ruff >/dev/null 2>&1; then echo \"$FILES\" | xargs ruff check --fix --quiet 2>&1 || true; fi"
+          }
+        ]
+      }
+    ]
+  }
+}
