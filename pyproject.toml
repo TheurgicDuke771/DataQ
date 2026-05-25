@@ -60,6 +60,8 @@ module = [
     "snowflake.*",
     "databricks.*",
     "azure.storage.*",
+    "azure.identity",
+    "azure.keyvault.*",
 ]
 ignore_missing_imports = true
 

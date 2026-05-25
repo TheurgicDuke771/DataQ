@@ -32,6 +32,7 @@ if TYPE_CHECKING:
 log = get_logger(__name__)
 
 ENV_PREFIX: Final = "KV_SECRET_"
+_AKV_MODE: Final = "azure_key_vault"
 
 
 class SecretNotFoundError(Exception):
@@ -87,9 +88,10 @@ class AzureKeyVaultStore:
             raise SecretNotFoundError(
                 f"Key Vault secret {name!r} at {self._vault_url}: {exc}"
             ) from exc
-        if secret.value is None:
+        value = secret.value
+        if value is None:
             raise SecretNotFoundError(f"Key Vault secret {name!r} has no value")
-        return secret.value
+        return str(value)
 
 
 _store_singleton: SecretStore | None = None
@@ -97,9 +99,9 @@ _store_lock = threading.Lock()
 
 
 def _build_store(settings: Settings) -> SecretStore:
-    if settings.secret_store == "azure_key_vault":
+    if settings.secret_store == _AKV_MODE:
         if not settings.azure_key_vault_url:
-            raise RuntimeError("secret_store='azure_key_vault' requires AZURE_KEY_VAULT_URL")
+            raise RuntimeError(f"secret_store={_AKV_MODE!r} requires AZURE_KEY_VAULT_URL")
         return AzureKeyVaultStore(settings.azure_key_vault_url)
     return EnvSecretStore()
 
