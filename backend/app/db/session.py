@@ -1,3 +1,5 @@
+from collections.abc import Iterator
+
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -16,3 +18,11 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, futu
 
 def get_session() -> Session:
     return SessionLocal()
+
+
+def get_db() -> Iterator[Session]:
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
