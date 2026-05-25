@@ -54,11 +54,13 @@ jobs:
           cache: pip
 
       - name: Install type-check deps
+        # Keep in sync with environment.yml and .pre-commit-config.yaml mypy deps.
         run: |
           pip install mypy==2.1.0 \
             pydantic==2.11.5 pydantic-settings==2.14.1 \
             sqlalchemy[mypy]==2.0.49 types-redis==4.6.0.20241004 \
-            fastapi==0.136.3 celery==5.6.3 structlog==25.5.0
+            fastapi==0.136.3 fastapi-azure-auth==5.2.0 \
+            celery==5.6.3 structlog==25.5.0
 
       - name: mypy
         run: |
