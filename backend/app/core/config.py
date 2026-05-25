@@ -30,6 +30,11 @@ class Settings(BaseSettings):
 
     auth_dev_bypass: bool = False
 
+    secret_store: Literal["env", "azure_key_vault"] = (
+        "env"  # noqa: S105 — mode selector, not a password
+    )
+    azure_key_vault_url: str | None = None
+
     @property
     def azure_auth_configured(self) -> bool:
         return bool(self.azure_tenant_id and self.azure_api_client_id)
