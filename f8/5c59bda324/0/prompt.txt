@@ -1,0 +1,5 @@
+Hey I just installed Entire CLI (entire.io), can you add it to this current session
+
+---
+
+Commit .claude/settings.json
