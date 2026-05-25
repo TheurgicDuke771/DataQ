@@ -23,6 +23,23 @@ class Settings(BaseSettings):
 
     sample_failures_retention_days: int = 30
 
+    azure_tenant_id: str | None = None
+    azure_api_client_id: str | None = None
+    azure_spa_client_id: str | None = None
+    azure_api_scope: str = "user_impersonation"
+
+    auth_dev_bypass: bool = False
+
+    @property
+    def azure_auth_configured(self) -> bool:
+        return bool(self.azure_tenant_id and self.azure_api_client_id)
+
+    @property
+    def azure_api_scope_uri(self) -> str | None:
+        if not self.azure_api_client_id:
+            return None
+        return f"api://{self.azure_api_client_id}/{self.azure_api_scope}"
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

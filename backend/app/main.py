@@ -4,6 +4,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response
 
+from backend.app.api.v1 import me as me_router
+from backend.app.core.auth import init_auth
 from backend.app.core.config import get_settings
 from backend.app.core.errors import register_exception_handlers
 from backend.app.core.logging import configure_logging, get_logger, request_id_var
@@ -22,6 +24,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         log_level=settings.log_level,
         app_insights_enabled=bool(settings.applicationinsights_connection_string),
     )
+    await init_auth()
     yield
     logger.info("app_shutdown")
 
@@ -44,6 +47,9 @@ async def request_id_middleware(
 
 
 register_exception_handlers(app)
+
+
+app.include_router(me_router.router, prefix="/api/v1")
 
 
 @app.get("/healthz")
