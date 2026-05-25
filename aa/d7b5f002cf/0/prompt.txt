@@ -1,0 +1,17 @@
+Hey I just installed Entire CLI (entire.io), can you add it to this current session
+
+---
+
+Commit .claude/settings.json
+
+---
+
+CI completed, you can proceed
+
+---
+
+Yeah, lets start with PR 3b
+
+---
+
+CI failed
