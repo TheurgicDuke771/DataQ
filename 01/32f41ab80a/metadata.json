@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.6.2",
+  "checkpoint_id": "0132f41ab80a",
+  "strategy": "manual-commit",
+  "branch": "docs/pr-review-followups",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/01/32f41ab80a/0/metadata.json",
+      "transcript": "/01/32f41ab80a/0/full.jsonl",
+      "content_hash": "/01/32f41ab80a/0/content_hash.txt",
+      "prompt": "/01/32f41ab80a/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1782,
+    "cache_creation_tokens": 5497394,
+    "cache_read_tokens": 239907331,
+    "output_tokens": 735523,
+    "api_call_count": 1071
+  }
+}
