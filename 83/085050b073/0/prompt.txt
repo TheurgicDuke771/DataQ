@@ -35,3 +35,20 @@ document the risk and lets start with 3c.1
 ---
 
 continue
+
+---
+
+CI is green. 
+But before we merge lets run a E2E test with full backend and frontend code we added till now
+
+---
+
+yeah, lets  /review + merge PR
+
+---
+
+Hey, how are we tracking the progress
+
+---
+
+Lets maintain a progress tracker to kepp track of task level details
