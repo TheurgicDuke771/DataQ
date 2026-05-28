@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.6.2",
+  "checkpoint_id": "439d5a51b1c0",
+  "strategy": "manual-commit",
+  "branch": "feature/pr3c-frontend-msal-flow",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/package.json",
+    "frontend/tsconfig.json",
+    "frontend/tsconfig.node.json",
+    "frontend/vite.config.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/43/9d5a51b1c0/0/metadata.json",
+      "transcript": "/43/9d5a51b1c0/0/full.jsonl",
+      "content_hash": "/43/9d5a51b1c0/0/content_hash.txt",
+      "prompt": "/43/9d5a51b1c0/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1346,
+    "cache_creation_tokens": 3051357,
+    "cache_read_tokens": 128885607,
+    "output_tokens": 526297,
+    "api_call_count": 815
+  }
+}
