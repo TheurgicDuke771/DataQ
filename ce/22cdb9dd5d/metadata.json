@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.6.2",
+  "checkpoint_id": "ce22cdb9dd5d",
+  "strategy": "manual-commit",
+  "branch": "feature/pr3c-frontend-msal-flow",
+  "checkpoints_count": 2,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/ce/22cdb9dd5d/0/metadata.json",
+      "transcript": "/ce/22cdb9dd5d/0/full.jsonl",
+      "content_hash": "/ce/22cdb9dd5d/0/content_hash.txt",
+      "prompt": "/ce/22cdb9dd5d/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1375,
+    "cache_creation_tokens": 3085182,
+    "cache_read_tokens": 136963643,
+    "output_tokens": 550038,
+    "api_call_count": 839
+  }
+}
