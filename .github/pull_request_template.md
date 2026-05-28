@@ -37,6 +37,8 @@ Fixes #
 - [ ] **Prettier + ESLint pass locally** (for frontend changes)
 - [ ] **Tests added/updated** (required from Week 8 onward)
 - [ ] **Docs / ADRs updated** if user-facing or architectural change
+- [ ] **`docs/progress.md` updated** — flip the implemented roadmap task(s) from ⬜ to ✅ / 🟡, append PR link, update week + snapshot subtotals. Tick the N/A box below if this PR doesn't map to a roadmap task (pure tooling / docs).
+- [ ] **`docs/progress.md` — N/A** for this PR
 - [ ] **Security implications considered** (auth, input validation, secret handling, PII in logs)
 
 ## Schema migration?
