@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.6.2",
+  "checkpoint_id": "f134bc02671a",
+  "strategy": "manual-commit",
+  "branch": "fix/43-codeql-false-positive-config",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/f1/34bc02671a/0/metadata.json",
+      "transcript": "/f1/34bc02671a/0/full.jsonl",
+      "content_hash": "/f1/34bc02671a/0/content_hash.txt",
+      "prompt": "/f1/34bc02671a/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1615,
+    "cache_creation_tokens": 4671477,
+    "cache_read_tokens": 197935764,
+    "output_tokens": 665361,
+    "api_call_count": 979
+  }
+}
