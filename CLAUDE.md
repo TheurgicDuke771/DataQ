@@ -248,7 +248,7 @@ curl -X POST http://localhost:8000/api/v1/_probe/snowflake-suite
 | System architecture diagram | [docs/architecture.md](docs/architecture.md) |
 | Architecture Decision Records | [docs/adr/](docs/adr/) |
 | Working agreements (full 30-rule list) | [CONTRIBUTING.md](CONTRIBUTING.md) |
-| Execution plan (sequencing, gates, risks) | Reference plan: `~/.claude/plans/hey-create-the-project-inherited-flute.md` (will be committed to `docs/execution-plan.md` in a follow-up PR) |
+| Live task tracker (per-PR roadmap status) | [docs/progress.md](docs/progress.md) |
 | Memory (cross-session AI context) | `~/.claude/projects/-Users-arijit-Coding-Python-DataQ/memory/` |
 
 ---

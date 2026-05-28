@@ -77,4 +77,4 @@ flowchart TB
 
 - **Orchestration providers (ADF · Airflow) are not datasources.** They live in `pipeline_runs`, not `runs`. Trigger bindings map `(provider, pipeline_id, env) → suite_id`.
 - **GX execution is Celery-only.** FastAPI never calls GX directly; it enqueues tasks.
-- **All secrets via Key Vault.** No credentials in env vars or code.
+- **All connection secrets via Key Vault in production / staging.** Local dev may resolve secrets via `KV_SECRET_*` env vars through the `EnvSecretStore` backend (see [ADR 0009](adr/0009-flat-monorepo-layout.md) layout note and `backend/app/core/secrets.py`). No credentials are ever hardcoded.
