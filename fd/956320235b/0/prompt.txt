@@ -1,0 +1,21 @@
+Tell me the current state of this project
+
+---
+
+What is the plan for PR 4
+
+---
+
+Sync vs. Celery execution - wire Celery now.
+
+---
+
+Sync vs. Celery execution - wire Celery now.
+
+---
+
+Sync vs. Celery execution - wire Celery now. || How the probe gets its connection - seed a single dev Snowflake connection || Live Snowflake vs. mockabl - structure the adapter so the GX call is injectable, and verify against a local fixture — flagging the real-Snowflake smoke as a deferred follow-up
+
+---
+
+add worker in compose. lets start with first commit
