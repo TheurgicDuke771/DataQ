@@ -1,0 +1,70 @@
+Hey I just installed Entire CLI (entire.io), can you add it to this current session
+
+---
+
+Commit .claude/settings.json
+
+---
+
+CI completed, you can proceed
+
+---
+
+Yeah, lets start with PR 3b
+
+---
+
+CI failed
+
+---
+
+CI clears
+
+---
+
+extend the #43
+
+---
+
+lets go over the plan for PR 3c
+
+---
+
+document the risk and lets start with 3c.1
+
+---
+
+continue
+
+---
+
+CI is green. 
+But before we merge lets run a E2E test with full backend and frontend code we added till now
+
+---
+
+yeah, lets  /review + merge PR
+
+---
+
+Hey, how are we tracking the progress
+
+---
+
+Lets maintain a progress tracker to kepp track of task level details
+
+---
+
+CI comopleted
+
+---
+
+Lets triage all the open PRs from dependabot
+
+---
+
+I ran the auth refresh
+
+---
+
+lets track the vite 8.x upgrade to week 4

@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.6.2",
+  "checkpoint_id": "abe75dfe1f53",
+  "strategy": "manual-commit",
+  "branch": "chore/track-vite8-week4",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/ab/e75dfe1f53/0/metadata.json",
+      "transcript": "/ab/e75dfe1f53/0/full.jsonl",
+      "content_hash": "/ab/e75dfe1f53/0/content_hash.txt",
+      "prompt": "/ab/e75dfe1f53/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1516,
+    "cache_creation_tokens": 3592619,
+    "cache_read_tokens": 174172470,
+    "output_tokens": 615781,
+    "api_call_count": 930
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "cli_version": "0.6.2",
+  "checkpoint_id": "abe75dfe1f53",
+  "session_id": "20430269-c3d6-46f0-a275-830e2c7009f4",
+  "strategy": "manual-commit",
+  "created_at": "2026-05-28T08:24:11.22215Z",
+  "branch": "chore/track-vite8-week4",
+  "checkpoints_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "558a81eaa6e0",
+  "token_usage": {
+    "input_tokens": 1516,
+    "cache_creation_tokens": 3592619,
+    "cache_read_tokens": 174172470,
+    "output_tokens": 615781,
+    "api_call_count": 930
+  },
+  "session_metrics": {
+    "turn_count": 17
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}
