@@ -26,6 +26,8 @@ from backend.app.core.logging import configure_logging, request_id_var
 
 # Message-header key carrying the originating request_id across the broker.
 REQUEST_ID_HEADER = "request_id"
+# Where we stash the ContextVar reset token between prerun and postrun.
+_REQUEST_ID_TOKEN_ATTR = "_dataq_request_id_token"  # noqa: S105 — attr name, not a secret
 
 
 def create_celery_app() -> Celery:
@@ -77,14 +79,25 @@ def _restore_request_id(task: Any = None, **_kwargs: Any) -> None:
     """Worker side: restore request_id from the message into the ContextVar.
 
     Custom headers added in ``before_task_publish`` are exposed as attributes on
-    ``task.request`` under the protocol-v2 message format.
+    ``task.request`` under the protocol-v2 message format. We stash the reset
+    token on ``task.request`` so ``task_postrun`` can restore the *prior* value
+    rather than blindly clearing — under ``task_always_eager`` these signals run
+    in the caller's context, so a blanket reset would drop the request_id for
+    the rest of the request handler.
     """
     rid = getattr(task.request, REQUEST_ID_HEADER, None) if task is not None else None
-    if rid:
-        request_id_var.set(rid)
+    if rid and task is not None:
+        token = request_id_var.set(rid)
+        setattr(task.request, _REQUEST_ID_TOKEN_ATTR, token)
 
 
 @task_postrun.connect  # type: ignore[untyped-decorator]  # celery signal .connect is unannotated
-def _clear_request_id(**_kwargs: Any) -> None:
-    """Worker side: clear the ContextVar so the next task starts uncorrelated."""
-    request_id_var.set(None)
+def _clear_request_id(task: Any = None, **_kwargs: Any) -> None:
+    """Worker side: restore the ContextVar to its pre-task value.
+
+    Only resets when ``task_prerun`` actually set it (token present), mirroring
+    the ``reset(token)`` pattern used by ``request_id_middleware`` in main.py.
+    """
+    token = getattr(task.request, _REQUEST_ID_TOKEN_ATTR, None) if task is not None else None
+    if token is not None:
+        request_id_var.reset(token)
