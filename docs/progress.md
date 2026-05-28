@@ -22,13 +22,13 @@
 | **Active since** | 2026-05-24 |
 | **Today** | 2026-05-28 |
 | **Calendar burn** | day 5 of 56 (~9%) |
-| **Roadmap tasks done** | 7 / 100 (7%) |
-| **Out-of-roadmap PRs landed** | 3 bundles (governance, tooling lock, Entire CLI) |
+| **Roadmap tasks done** | 6 ✅ + 2 🟡 / 145 (4%) |
+| **Out-of-roadmap PRs landed** | 4 bundles (governance, tooling lock, Entire CLI, Dependabot triage round 1) |
 | **Current week** | Week 1 — Foundation |
 | **Week-1 exit gate** | A logged-in user can hit a FastAPI endpoint that triggers GX against Snowflake DEV and persists a result row. — **80% (PR 4 outstanding)** |
 | **Next milestone** | PR 4 — GX + Snowflake probe endpoint (closes Week 1) |
-| **Open issues** | 12 (5 active, 7 deferred polish) |
-| **Open PRs** | 9 Dependabot (4 frontend, 5 GitHub Actions — token-blocked) |
+| **Open issues** | 13 (6 active, 7 deferred polish) |
+| **Open PRs** | none (Dependabot batch cleared 2026-05-28) |
 
 ---
 
@@ -142,6 +142,9 @@ These were preconditions for executing the roadmap. Listed for completeness.
 
 **Exit gate:** Users can configure any connection type and author checks end-to-end in the UI.
 
+### Frontend tooling coordinated bumps (added — not in original roadmap) (1 task — 0/1)
+- [ ] ⬜ Vite 8 coordinated bump — `vite` + `@vitejs/plugin-react` + `vitest` in lockstep ([#65](https://github.com/TheurgicDuke771/DataQ/issues/65); supersedes closed [#57](https://github.com/TheurgicDuke771/DataQ/pull/57))
+
 ### Connection manager UI (6 tasks — 0/6)
 - [ ] ⬜ Connection cards — Snowflake (3 envs), ADF, ADLS/S3, Databricks sections with status badges
 - [ ] ⬜ Add connection drawer — type-specific form fields per connection type
@@ -166,7 +169,7 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [ ] ⬜ Admin page — list all suites, all users, access overview
 - [ ] ⬜ Suite export / import UI (download JSON, upload JSON)
 
-**Week 4 total: 0 / 18**
+**Week 4 total: 0 / 19**
 
 ---
 
@@ -321,12 +324,12 @@ These were preconditions for executing the roadmap. Listed for completeness.
 | Week 1 | 5 | 1 | 4 | 10 |
 | Week 2 | 0 | 0 | 18 | 18 |
 | Week 3 | 0 | 0 | 15 | 15 |
-| Week 4 | 0 | 0 | 18 | 18 |
+| Week 4 | 0 | 0 | 19 | 19 |
 | Week 5 | 0 | 0 | 14 | 14 |
 | Week 6 | 0 | 0 | 15 | 15 |
 | Week 7 | 0 | 0 | 28 | 28 |
 | Week 8 | 1 | 1 | 24 | 26 |
-| **TOTAL** | **6** | **2** | **136** | **144** |
+| **TOTAL** | **6** | **2** | **137** | **145** |
 
 > 144 > 100 because ADR 0004 added Airflow tasks not in the original roadmap. Tracked here for honesty.
 
@@ -344,6 +347,7 @@ Issues that aren't roadmap tasks but block / risk the work.
 | [#51](https://github.com/TheurgicDuke771/DataQ/issues/51) | Emit per-request structured log from request_id middleware | Open | Week 6/7 dashboards |
 | [#54](https://github.com/TheurgicDuke771/DataQ/issues/54) | Consolidate mypy / type-check dep lists (3-file drift) | Open | Every PR adding a runtime import |
 | [#62](https://github.com/TheurgicDuke771/DataQ/issues/62) | MSAL redirect lifecycle (real-AAD smoke test deferred) | Open | Week 7 deployment |
+| [#65](https://github.com/TheurgicDuke771/DataQ/issues/65) | Vite 8 coordinated bump (vite + plugin-react + vitest) | Open | Week 4 (also tracked as a roadmap task above) |
 
 **Deferred polish** (Week-1 governance era; do during slack): #8, #10, #12, #17, #18, #19, #20.
 
