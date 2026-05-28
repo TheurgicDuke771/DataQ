@@ -255,18 +255,19 @@ curl -X POST http://localhost:8000/api/v1/_probe/snowflake-suite
 
 ## 13. Status & current milestone
 
-**Current week:** Week 1 (scaffolding)
-**Current milestone target:** PR 3 — Azure AD SSO end-to-end (MSAL token validation in FastAPI, React login flow, Key Vault wiring for credential reads)
-**Completed:**
-- PR 0 governance bundle — landed across GitHub PRs #1–#21 (`.gitignore`, `CLAUDE.md`, CODEOWNERS, PR/issue templates, initial ADRs, architecture diagram, Claude Code agents/skills/hooks/MCP)
-- PR 1 — Coding structure & tooling lock (`CONTRIBUTING.md`, `environment.yml`, `pyproject.toml`, `.pre-commit-config.yaml`, frontend tooling, CI workflow, Dependabot, `scripts/setup.sh`)
-- PR 2 — Docker Compose + DB scaffold, landed as 3 sub-PRs:
-  - **PR 2a** (`docker-compose.yml`, Pydantic Settings config, `.env.example`)
-  - **PR 2b** (structlog + PII redaction, error envelope, FastAPI skeleton with `request_id` middleware + `/healthz`, App Insights lazy handler)
-  - **PR 2c** (SQLAlchemy 2.0 models for 9 tables, Alembic baseline migration with naming conventions + CHECK constraints, `pipeline_runs` + `trigger_bindings` schema)
-**Next milestone:** PR 3 — Azure AD SSO end-to-end
+> **Detailed task-level status** lives in [docs/progress.md](docs/progress.md) — mirrors the 100-task roadmap, updated per PR. This section carries only the headline.
 
-Update this section at the end of each week with: current week, the week's exit gate, and any open blocker issues by number.
+**Current week:** Week 1 — Foundation (~80% — PR 4 remaining)
+**Week-1 exit gate:** A logged-in user can hit a FastAPI endpoint that triggers GX against Snowflake DEV and persists a result row.
+**Completed since project start (2026-05-24):**
+- PR 0 governance bundle (#1–#24, #44, #55) — onboarding docs, ADRs, CODEOWNERS, templates, Entire CLI hooks
+- PR 1 (#37) — coding structure & tooling lock
+- PR 2 a/b/c (#39, #40, #41) — Docker Compose, structlog + error envelope + FastAPI skeleton, SQLAlchemy models + Alembic baseline
+- PR 3 a/b/c (#53, #56, #63) — Azure AD SSO end-to-end (backend MSAL + SecretStore abstraction + frontend MSAL + `/me`)
+**Next milestone:** PR 4 — GX + Snowflake probe endpoint (closes Week 1 exit gate)
+**Active blockers:** none. See [docs/progress.md](docs/progress.md) for the active-issues list.
+
+Update this section at the end of each week with: current week, the week's exit gate, and any open blocker issues by number. Per-PR task ticks go in `docs/progress.md` (PR-template checkbox).
 
 ---
 
