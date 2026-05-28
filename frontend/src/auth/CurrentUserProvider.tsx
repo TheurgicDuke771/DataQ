@@ -13,9 +13,7 @@ import { CurrentUserContext, type CurrentUser } from './currentUserContext';
  */
 export function CurrentUserProvider({ children }: { children: ReactNode }) {
   if (authMode === 'dev_bypass') {
-    return (
-      <CurrentUserContext.Provider value={DEV_USER}>{children}</CurrentUserContext.Provider>
-    );
+    return <CurrentUserContext.Provider value={DEV_USER}>{children}</CurrentUserContext.Provider>;
   }
   if (authMode === 'real') {
     return <RealCurrentUserProvider>{children}</RealCurrentUserProvider>;

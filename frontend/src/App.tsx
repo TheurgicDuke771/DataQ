@@ -4,6 +4,7 @@ import { AuthGate } from './auth/AuthGate';
 import { authMode } from './auth/config';
 import { useCurrentUser } from './auth/useCurrentUser';
 import { getMsalInstance } from './auth/msalInstance';
+import { Home } from './pages/Home';
 
 const { Header, Content } = Layout;
 
@@ -45,13 +46,5 @@ function UserChip() {
         </Button>
       )}
     </Flex>
-  );
-}
-
-function Home() {
-  return (
-    <Typography.Paragraph>
-      Welcome to DataQ. Backend <code>/api/v1/me</code> wiring lands in PR 3c.3.
-    </Typography.Paragraph>
   );
 }
