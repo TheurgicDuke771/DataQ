@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "68569a137cd0",
+  "strategy": "manual-commit",
+  "branch": "feature/pr4b-snowflake-adapter",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/datasources/__init__.py",
+    "backend/app/datasources/base.py",
+    "backend/app/datasources/snowflake.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/68/569a137cd0/0/metadata.json",
+      "transcript": "/68/569a137cd0/0/full.jsonl",
+      "content_hash": "/68/569a137cd0/0/content_hash.txt",
+      "prompt": "/68/569a137cd0/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 10046,
+    "cache_creation_tokens": 171163,
+    "cache_read_tokens": 10075892,
+    "output_tokens": 95053,
+    "api_call_count": 98
+  }
+}
