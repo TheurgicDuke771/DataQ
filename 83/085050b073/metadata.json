@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.6.2",
+  "checkpoint_id": "83085050b073",
+  "strategy": "manual-commit",
+  "branch": "docs/progress-tracker",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".github/pull_request_template.md",
+    "CLAUDE.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/83/085050b073/0/metadata.json",
+      "transcript": "/83/085050b073/0/full.jsonl",
+      "content_hash": "/83/085050b073/0/content_hash.txt",
+      "prompt": "/83/085050b073/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 58,
+    "cache_creation_tokens": 450178,
+    "cache_read_tokens": 12526016,
+    "output_tokens": 34057,
+    "api_call_count": 33
+  }
+}
