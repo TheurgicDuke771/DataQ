@@ -19,9 +19,8 @@ repos:
     hooks:
       - id: mypy
         files: ^backend/app/
-        # Keep in sync with environment.yml so pre-commit mypy sees the same
-        # imports CI mypy sees. When you add a new runtime import, add the
-        # package (pinned) here too — see CONTRIBUTING.md.
+        # Must match backend/requirements-typecheck.txt exactly.
+        # Drift is caught by the typecheck-deps-sync hook below.
         additional_dependencies:
           - fastapi==0.136.3
           - fastapi-azure-auth==5.2.0
@@ -30,6 +29,16 @@ repos:
           - sqlalchemy[mypy]==2.0.49
           - structlog==25.5.0
           - types-redis==4.6.0.20241004
+
+  # ── Single-source-of-truth enforcement for type-check deps (#54) ────────────
+  - repo: local
+    hooks:
+      - id: typecheck-deps-sync
+        name: typecheck-deps-sync
+        entry: python scripts/check-typecheck-deps.py
+        language: system
+        pass_filenames: false
+        files: ^(backend/requirements-typecheck\.txt|\.pre-commit-config\.yaml)$
 
   # ── Secret scanning ─────────────────────────────────────────────────────────
   - repo: https://github.com/gitleaks/gitleaks

@@ -1,0 +1,21 @@
+# Type-checking + test-import requirements for backend/.
+#
+# Single source of truth for the runtime packages mypy and pytest need to
+# import when checking backend/app/ and running backend/tests/. Update this
+# file whenever a new backend runtime import lands.
+#
+# Consumers (kept in sync automatically):
+#   - .github/workflows/ci.yml — backend-types + backend-test jobs install from here.
+#   - .pre-commit-config.yaml — mypy hook's additional_dependencies must match;
+#                                enforced by scripts/check-typecheck-deps.py via
+#                                the typecheck-deps-sync local hook.
+#
+# Pins must match environment.yml exactly.
+
+fastapi==0.136.3
+fastapi-azure-auth==5.2.0
+pydantic==2.11.5
+pydantic-settings==2.14.1
+sqlalchemy[mypy]==2.0.49
+structlog==25.5.0
+types-redis==4.6.0.20241004

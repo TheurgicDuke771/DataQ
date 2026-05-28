@@ -345,7 +345,7 @@ Issues that aren't roadmap tasks but block / risk the work.
 | [#43](https://github.com/TheurgicDuke771/DataQ/issues/43) | Silence CodeQL false positives (Alembic + Protocol stubs) | Open | Every migration / new Protocol |
 | [#50](https://github.com/TheurgicDuke771/DataQ/issues/50) | Bridge uvicorn access logs through structlog | Open | Week 7 App Insights |
 | [#51](https://github.com/TheurgicDuke771/DataQ/issues/51) | Emit per-request structured log from request_id middleware | Open | Week 6/7 dashboards |
-| [#54](https://github.com/TheurgicDuke771/DataQ/issues/54) | Consolidate mypy / type-check dep lists (3-file drift) | Open | Every PR adding a runtime import |
+| ~~[#54](https://github.com/TheurgicDuke771/DataQ/issues/54)~~ | ~~Consolidate mypy / type-check dep lists (3-file drift)~~ | **Closed** ([PR #68](https://github.com/TheurgicDuke771/DataQ/pull/68)) | n/a |
 | [#62](https://github.com/TheurgicDuke771/DataQ/issues/62) | MSAL redirect lifecycle (real-AAD smoke test deferred) | Open | Week 7 deployment |
 | [#65](https://github.com/TheurgicDuke771/DataQ/issues/65) | Vite 8 coordinated bump (vite + plugin-react + vitest) | Open | Week 4 (also tracked as a roadmap task above) |
 
