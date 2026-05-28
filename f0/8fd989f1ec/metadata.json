@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.6.2",
+  "checkpoint_id": "f08fd989f1ec",
+  "strategy": "manual-commit",
+  "branch": "fix/54-typecheck-dep-consolidation",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".pre-commit-config.yaml",
+    "CONTRIBUTING.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f0/8fd989f1ec/0/metadata.json",
+      "transcript": "/f0/8fd989f1ec/0/full.jsonl",
+      "content_hash": "/f0/8fd989f1ec/0/content_hash.txt",
+      "prompt": "/f0/8fd989f1ec/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1594,
+    "cache_creation_tokens": 4140298,
+    "cache_read_tokens": 192555768,
+    "output_tokens": 653977,
+    "api_call_count": 968
+  }
+}

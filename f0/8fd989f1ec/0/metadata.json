@@ -1,0 +1,50 @@
+{
+  "cli_version": "0.6.2",
+  "checkpoint_id": "f08fd989f1ec",
+  "session_id": "20430269-c3d6-46f0-a275-830e2c7009f4",
+  "strategy": "manual-commit",
+  "created_at": "2026-05-28T14:27:33.011585Z",
+  "branch": "fix/54-typecheck-dep-consolidation",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".pre-commit-config.yaml",
+    "CONTRIBUTING.md"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "e1862639fea3",
+  "token_usage": {
+    "input_tokens": 1594,
+    "cache_creation_tokens": 4140298,
+    "cache_read_tokens": 192555768,
+    "output_tokens": 653977,
+    "api_call_count": 968
+  },
+  "session_metrics": {
+    "turn_count": 21
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-05-28T14:27:32.889367Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 128,
+    "human_modified": 4,
+    "human_removed": 0,
+    "total_committed": 128,
+    "total_lines_changed": 146,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}
