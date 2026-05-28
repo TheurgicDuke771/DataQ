@@ -1,6 +1,9 @@
+import re
+import time
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from typing import Final
 
 from fastapi import FastAPI, Request, Response
 
@@ -10,7 +13,13 @@ from backend.app.core.config import get_settings
 from backend.app.core.errors import register_exception_handlers
 from backend.app.core.logging import configure_logging, get_logger, request_id_var
 
-REQUEST_ID_HEADER = "X-Request-ID"
+REQUEST_ID_HEADER: Final = "X-Request-ID"
+# Validate caller-supplied X-Request-ID before echoing it (security audit
+# 2026-05-28): cap length, restrict charset so log lines and response
+# headers can't be polluted with arbitrary content.
+_REQUEST_ID_RE: Final = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+
+_log = get_logger(__name__)
 
 
 @asynccontextmanager
@@ -36,12 +45,31 @@ app = FastAPI(title="DataQ API", lifespan=lifespan)
 async def request_id_middleware(
     request: Request, call_next: Callable[[Request], Awaitable[Response]]
 ) -> Response:
-    rid = request.headers.get(REQUEST_ID_HEADER) or uuid.uuid4().hex
+    incoming = request.headers.get(REQUEST_ID_HEADER)
+    rid = incoming if incoming and _REQUEST_ID_RE.match(incoming) else uuid.uuid4().hex
     token = request_id_var.set(rid)
+    start = time.perf_counter()
     try:
         response = await call_next(request)
-    finally:
+    except Exception:
+        elapsed_ms = round((time.perf_counter() - start) * 1000, 2)
+        _log.exception(
+            "request_failed",
+            method=request.method,
+            path=request.url.path,
+            duration_ms=elapsed_ms,
+        )
         request_id_var.reset(token)
+        raise
+    elapsed_ms = round((time.perf_counter() - start) * 1000, 2)
+    _log.info(
+        "request",
+        method=request.method,
+        path=request.url.path,
+        status=response.status_code,
+        duration_ms=elapsed_ms,
+    )
+    request_id_var.reset(token)
     response.headers[REQUEST_ID_HEADER] = rid
     return response
 
