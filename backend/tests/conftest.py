@@ -1,6 +1,13 @@
 """Shared pytest fixtures."""
 
+import os
 from collections.abc import Iterator
+
+# Set test-mode env vars BEFORE any backend.app.* import resolves. The auth
+# module computes its mode at import time from settings; without these the
+# TestClient lifespan would raise 'Auth not configured'.
+os.environ.setdefault("ENVIRONMENT", "dev")
+os.environ.setdefault("AUTH_DEV_BYPASS", "true")
 
 import pytest
 
