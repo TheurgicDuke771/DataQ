@@ -22,12 +22,12 @@
 | **Active since** | 2026-05-24 |
 | **Today** | 2026-05-28 |
 | **Calendar burn** | day 5 of 56 (~9%) |
-| **Roadmap tasks done** | 6 ✅ + 2 🟡 / 145 (4%) |
+| **Roadmap tasks done** | 6 ✅ + 2 🟡 / 150 (4%) |
 | **Out-of-roadmap PRs landed** | 5 bundles (governance, tooling lock, Entire CLI, Dependabot triage round 1, PR-3 cleanup) |
 | **Current week** | Week 1 — Foundation |
 | **Week-1 exit gate** | A logged-in user can hit a FastAPI endpoint that triggers GX against Snowflake DEV and persists a result row. — **80% (PR 4 outstanding)** |
 | **Next milestone** | PR 4 — GX + Snowflake probe endpoint (closes Week 1) |
-| **Open issues** | 13 (6 active, 7 deferred polish) |
+| **Open issues** | 14 (7 active, 7 deferred polish) |
 | **Open PRs** | none (Dependabot batch cleared 2026-05-28) |
 
 ---
@@ -74,8 +74,9 @@ These were preconditions for executing the roadmap. Listed for completeness.
 
 ### Snowflake & ADF (3 tasks — 0/3)
 - [ ] ⬜ API: CRUD for Snowflake connections (DEV / QA / UAT), connection test endpoint
-- [ ] ⬜ API: CRUD for ADF connections (subscription ID + service principal)
+- [ ] ⬜ API: CRUD for ADF connections (subscription ID + service principal) — must enforce `(type, env)` uniqueness for orchestrator-typed rows per [#72](https://github.com/TheurgicDuke771/DataQ/issues/72)
 - [ ] ⬜ Connection re-auth endpoint — refresh expired Key Vault token
+- [ ] ⬜ Review `connections.secret_ref` nullability — decide based on Airflow basic-poll / unauthenticated S3 cases ([PR #41 nit](https://github.com/TheurgicDuke771/DataQ/pull/41))
 
 ### ADF webhook receiver (Azure Monitor → DQ platform) (5 tasks — 0/5)
 - [ ] ⬜ `POST /api/v1/orchestration/events/adf` — receive Azure Monitor payload, validate shared secret, return 200 _(path differs from roadmap per ADR 0004 — uses unified `OrchestrationProvider` endpoint)_
@@ -100,7 +101,7 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [ ] ⬜ GX Spark / JDBC datasource wiring for Unity Catalog — connect, list catalogs / schemas / tables
 - [ ] ⬜ UC auth test endpoint — validate PAT + SQL Warehouse reachability
 
-**Week 2 total: 0 / 18**
+**Week 2 total: 0 / 19**
 
 ---
 
@@ -145,6 +146,11 @@ These were preconditions for executing the roadmap. Listed for completeness.
 ### Frontend tooling coordinated bumps (added — not in original roadmap) (1 task — 0/1)
 - [ ] ⬜ Vite 8 coordinated bump — `vite` + `@vitejs/plugin-react` + `vitest` in lockstep ([#65](https://github.com/TheurgicDuke771/DataQ/issues/65); supersedes closed [#57](https://github.com/TheurgicDuke771/DataQ/pull/57))
 
+### Frontend polish from PR-3c review (added — not in original roadmap) (3 tasks — 0/3)
+- [ ] ⬜ Wrap `MsalProvider` subtree in an antd `AntApp` / React error boundary so MSAL render-time failures don't fall back to plain text ([PR #63 worth-noting](https://github.com/TheurgicDuke771/DataQ/pull/63))
+- [ ] ⬜ Bundle code-splitting — `React.lazy` per route + `manualChunks` for antd (689 KB pre-gzip warning, defer until more routes exist) ([PR #63 perf](https://github.com/TheurgicDuke771/DataQ/pull/63))
+- [ ] ⬜ Tighten `Settings.model_config` `extra="ignore"` → `"forbid"` once compose-only vs app-only `.env` are split ([PR #39 nit](https://github.com/TheurgicDuke771/DataQ/pull/39))
+
 ### Connection manager UI (6 tasks — 0/6)
 - [ ] ⬜ Connection cards — Snowflake (3 envs), ADF, ADLS/S3, Databricks sections with status badges
 - [ ] ⬜ Add connection drawer — type-specific form fields per connection type
@@ -169,7 +175,7 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [ ] ⬜ Admin page — list all suites, all users, access overview
 - [ ] ⬜ Suite export / import UI (download JSON, upload JSON)
 
-**Week 4 total: 0 / 19**
+**Week 4 total: 0 / 22**
 
 ---
 
@@ -235,9 +241,10 @@ These were preconditions for executing the roadmap. Listed for completeness.
 ### DevOps & deployment (5 tasks — 0/5)
 - [ ] ⬜ Containerise FastAPI + React + Celery + Redis
 - [ ] ⬜ Push images to Azure Container Registry
-- [ ] ⬜ Deploy to Azure Container Apps (API + Celery worker) + Azure Static Web App (React UI)
+- [ ] ⬜ Deploy to Azure Container Apps (API + Celery worker) + Azure Static Web App (React UI) — wire CORS middleware for Static-Web-App → Container-Apps cross-origin ([PR #40 nit](https://github.com/TheurgicDuke771/DataQ/pull/40)); override hardcoded `dataq:dataq` Postgres creds + all secrets via Container Apps secret refs ([PR #39 nit](https://github.com/TheurgicDuke771/DataQ/pull/39))
 - [ ] ⬜ CI/CD pipeline — lint, test, build, deploy on merge to `main`
 - [ ] ⬜ Application Insights integration — traces, errors, slow queries, Celery task metrics
+- [ ] ⬜ Real-vault integration test for `AzureKeyVaultStore` lazy-import branch (currently 0% coverage) ([PR #56 nit](https://github.com/TheurgicDuke771/DataQ/pull/56))
 
 ### Azure Monitor webhook setup (post-deployment) (5 tasks — 0/5)
 - [ ] ⬜ Action Group (nonprod) — webhook to nonprod API URL, shared secret from Key Vault
@@ -268,7 +275,7 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [ ] ⬜ Team onboarding session + feedback collection
 - [ ] ⬜ Document MCP connection config (Claude Desktop / Claude.ai / Copilot / Cursor) in README
 
-**Week 7 total: 0 / 28**
+**Week 7 total: 0 / 29**
 
 ---
 
@@ -322,16 +329,16 @@ These were preconditions for executing the roadmap. Listed for completeness.
 | Week | Done | In progress | Pending | Total |
 |---|---|---|---|---|
 | Week 1 | 5 | 1 | 4 | 10 |
-| Week 2 | 0 | 0 | 18 | 18 |
+| Week 2 | 0 | 0 | 19 | 19 |
 | Week 3 | 0 | 0 | 15 | 15 |
-| Week 4 | 0 | 0 | 19 | 19 |
+| Week 4 | 0 | 0 | 22 | 22 |
 | Week 5 | 0 | 0 | 14 | 14 |
 | Week 6 | 0 | 0 | 15 | 15 |
-| Week 7 | 0 | 0 | 28 | 28 |
+| Week 7 | 0 | 0 | 29 | 29 |
 | Week 8 | 1 | 1 | 24 | 26 |
-| **TOTAL** | **6** | **2** | **137** | **145** |
+| **TOTAL** | **6** | **2** | **142** | **150** |
 
-> 144 > 100 because ADR 0004 added Airflow tasks not in the original roadmap. Tracked here for honesty.
+> 150 > 100 because ADR 0004 added Airflow tasks + PR-review follow-ups not in the original roadmap. Tracked here for honesty.
 
 ---
 
@@ -348,6 +355,7 @@ Issues that aren't roadmap tasks but block / risk the work.
 | ~~[#54](https://github.com/TheurgicDuke771/DataQ/issues/54)~~ | ~~Consolidate mypy / type-check dep lists (3-file drift)~~ | **Closed** ([PR #68](https://github.com/TheurgicDuke771/DataQ/pull/68)) | n/a |
 | [#62](https://github.com/TheurgicDuke771/DataQ/issues/62) | MSAL redirect lifecycle (real-AAD smoke test deferred) | Open | Week 7 deployment |
 | [#65](https://github.com/TheurgicDuke771/DataQ/issues/65) | Vite 8 coordinated bump (vite + plugin-react + vitest) | Open | Week 4 (also tracked as a roadmap task above) |
+| [#72](https://github.com/TheurgicDuke771/DataQ/issues/72) | ADR 0004 follow-up: document `trigger_bindings` one-orchestrator-per-(provider, env) assumption | Open | Week 2 connection CRUD (blocking) |
 
 **Deferred polish** (Week-1 governance era; do during slack): #8, #10, #12, #17, #18, #19, #20.
 
