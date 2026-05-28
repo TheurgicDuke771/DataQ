@@ -1,0 +1,31 @@
+# Build context is the repo root; keep it small and deterministic.
+.git
+.github
+.entire
+.claude
+
+# Frontend has its own (future) image — never ship its deps into the backend.
+frontend
+
+# Python / tooling caches
+__pycache__
+**/__pycache__
+*.pyc
+.mypy_cache
+.pytest_cache
+.ruff_cache
+.coverage
+htmlcov
+
+# Local env / secrets — never bake into an image
+.env
+*.env
+!.env.example
+
+# Docs / context not needed at runtime
+docs
+context
+*.md
+
+# OS cruft
+.DS_Store
