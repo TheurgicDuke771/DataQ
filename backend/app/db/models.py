@@ -72,6 +72,7 @@ class Connection(Base):
         _in_check("type", CONNECTION_TYPES, "type_valid"),
         _in_check("env", ENVS, "env_valid"),
         UniqueConstraint("name", "env", name="uq_connections_name_env"),
+        Index("ix_connections_created_by", "created_by"),
     )
 
     id: Mapped[uuid.UUID] = _uuid_pk()
@@ -91,6 +92,10 @@ class Connection(Base):
 
 class Suite(Base):
     __tablename__ = "suites"
+    __table_args__ = (
+        Index("ix_suites_connection_id", "connection_id"),
+        Index("ix_suites_created_by", "created_by"),
+    )
 
     id: Mapped[uuid.UUID] = _uuid_pk()
     name: Mapped[str] = mapped_column(String(128), nullable=False)
@@ -111,6 +116,7 @@ class Suite(Base):
 
 class Check(Base):
     __tablename__ = "checks"
+    __table_args__ = (Index("ix_checks_suite_id", "suite_id"),)
 
     id: Mapped[uuid.UUID] = _uuid_pk()
     suite_id: Mapped[uuid.UUID] = mapped_column(
@@ -151,6 +157,7 @@ class Result(Base):
     __table_args__ = (
         _in_check("status", RESULT_STATUSES, "status_valid"),
         Index("ix_results_run_id", "run_id"),
+        Index("ix_results_check_id", "check_id"),
     )
 
     id: Mapped[uuid.UUID] = _uuid_pk()
@@ -173,6 +180,7 @@ class Share(Base):
     __table_args__ = (
         _in_check("permission", PERMISSIONS, "permission_valid"),
         UniqueConstraint("suite_id", "user_id", name="uq_shares_suite_user"),
+        Index("ix_shares_user_id", "user_id"),
     )
 
     id: Mapped[uuid.UUID] = _uuid_pk()
@@ -193,6 +201,7 @@ class PipelineRun(Base):
         _in_check("status", PIPELINE_RUN_STATUSES, "status_valid"),
         UniqueConstraint("provider", "provider_run_id", name="uq_pipeline_runs_provider_run"),
         Index("ix_pipeline_runs_provider_pipeline", "provider", "pipeline_or_dag_id"),
+        Index("ix_pipeline_runs_connection_id", "connection_id"),
     )
 
     id: Mapped[uuid.UUID] = _uuid_pk()
@@ -229,6 +238,7 @@ class TriggerBinding(Base):
             "pipeline_or_dag_id",
             "env",
         ),
+        Index("ix_trigger_bindings_suite_id", "suite_id"),
     )
 
     id: Mapped[uuid.UUID] = _uuid_pk()
