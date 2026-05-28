@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "71f8605771ba",
+  "strategy": "manual-commit",
+  "branch": "feature/pr4a-celery-app",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "backend/app/worker/celery_app.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/71/f8605771ba/0/metadata.json",
+      "transcript": "/71/f8605771ba/0/full.jsonl",
+      "content_hash": "/71/f8605771ba/0/content_hash.txt",
+      "prompt": "/71/f8605771ba/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1192,
+    "cache_creation_tokens": 34887,
+    "cache_read_tokens": 2160453,
+    "output_tokens": 24685,
+    "api_call_count": 18
+  }
+}
