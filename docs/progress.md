@@ -23,7 +23,7 @@
 | **Today** | 2026-05-28 |
 | **Calendar burn** | day 5 of 56 (~9%) |
 | **Roadmap tasks done** | 6 ✅ + 2 🟡 / 145 (4%) |
-| **Out-of-roadmap PRs landed** | 4 bundles (governance, tooling lock, Entire CLI, Dependabot triage round 1) |
+| **Out-of-roadmap PRs landed** | 5 bundles (governance, tooling lock, Entire CLI, Dependabot triage round 1, PR-3 cleanup) |
 | **Current week** | Week 1 — Foundation |
 | **Week-1 exit gate** | A logged-in user can hit a FastAPI endpoint that triggers GX against Snowflake DEV and persists a result row. — **80% (PR 4 outstanding)** |
 | **Next milestone** | PR 4 — GX + Snowflake probe endpoint (closes Week 1) |

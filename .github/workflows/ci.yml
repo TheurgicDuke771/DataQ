@@ -27,20 +27,10 @@ jobs:
         run: pip install black==26.5.1 ruff==0.15.14
 
       - name: Black (format check)
-        run: |
-          if [ -d backend ]; then
-            black --check backend/
-          else
-            echo "No backend/ yet — skipping"
-          fi
+        run: black --check backend/
 
       - name: Ruff (lint)
-        run: |
-          if [ -d backend ]; then
-            ruff check backend/
-          else
-            echo "No backend/ yet — skipping"
-          fi
+        run: ruff check backend/
 
   backend-types:
     name: Backend — type check
@@ -63,12 +53,7 @@ jobs:
             celery==5.6.3 structlog==25.5.0
 
       - name: mypy
-        run: |
-          if [ -d backend/app ]; then
-            mypy backend/app/
-          else
-            echo "No backend/app/ yet — skipping"
-          fi
+        run: mypy backend/app/
 
   backend-sast:
     name: Backend — SAST (Bandit)
@@ -85,12 +70,7 @@ jobs:
         run: pip install bandit[toml]==1.9.4
 
       - name: Bandit
-        run: |
-          if [ -d backend/app ]; then
-            bandit -c pyproject.toml -r backend/app/
-          else
-            echo "No backend/app/ yet — skipping"
-          fi
+        run: bandit -c pyproject.toml -r backend/app/
 
   backend-test:
     name: Backend — tests
@@ -115,12 +95,7 @@ jobs:
             structlog==25.5.0
 
       - name: pytest
-        run: |
-          if [ -d backend/tests ] && [ "$(find backend/tests -name '*.py' | wc -l)" -gt 0 ]; then
-            pytest backend/tests/
-          else
-            echo "No test files yet — skipping (Week 8 gate)"
-          fi
+        run: pytest backend/tests/
 
   # ── Secret scanning ──────────────────────────────────────────────────────────
   secrets:
@@ -186,18 +161,12 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Vitest
-        run: |
-          if [ "$(find tests src -name '*.test.*' -o -name '*.spec.*' 2>/dev/null | wc -l)" -gt 0 ]; then
-            pnpm test
-          else
-            echo "No test files yet — skipping (Week 8 gate)"
-          fi
+        run: pnpm test
 
   # ── CodeQL SAST ──────────────────────────────────────────────────────────────
   codeql:
     name: CodeQL analysis
     runs-on: ubuntu-latest
-    continue-on-error: true  # no source yet; remove once backend/frontend code lands
     permissions:
       security-events: write
       actions: read
