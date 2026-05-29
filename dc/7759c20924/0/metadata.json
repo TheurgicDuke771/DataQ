@@ -1,0 +1,39 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "dc7759c20924",
+  "session_id": "15fa9ccf-6e30-4c4f-9650-e42b87962bce",
+  "strategy": "manual-commit",
+  "created_at": "2026-05-29T06:02:01.546511Z",
+  "branch": "feature/pr4cii-probe-endpoint",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "backend/tests/worker/test_request_id_propagation.py"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-4-8",
+  "turn_id": "3a5c02a4a465",
+  "checkpoint_transcript_start": 1241,
+  "transcript_lines_at_start": 1241,
+  "token_usage": {
+    "input_tokens": 237,
+    "cache_creation_tokens": 8964,
+    "cache_read_tokens": 1813707,
+    "output_tokens": 8717,
+    "api_call_count": 5
+  },
+  "session_metrics": {
+    "turn_count": 14
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-05-29T06:02:01.515827Z",
+    "agent_lines": 74,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 74,
+    "total_lines_changed": 74,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
