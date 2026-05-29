@@ -1,0 +1,5 @@
+yeah, merge 4b.1
+
+---
+
+lets breakdown the commits also include the #75 and NaN -> null and unit tests

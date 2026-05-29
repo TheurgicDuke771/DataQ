@@ -1,0 +1,52 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "e4aa245dc19c",
+  "session_id": "15fa9ccf-6e30-4c4f-9650-e42b87962bce",
+  "strategy": "manual-commit",
+  "created_at": "2026-05-29T04:19:21.595572Z",
+  "branch": "feature/pr4ci-run-service",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "backend/app/core/jsonsafe.py",
+    "backend/tests/core/test_jsonsafe.py"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-4-8",
+  "turn_id": "b73af07f5fc7",
+  "checkpoint_transcript_start": 827,
+  "transcript_lines_at_start": 827,
+  "token_usage": {
+    "input_tokens": 249,
+    "cache_creation_tokens": 16127,
+    "cache_read_tokens": 2810029,
+    "output_tokens": 15765,
+    "api_call_count": 11
+  },
+  "session_metrics": {
+    "turn_count": 13
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-05-29T04:19:21.578705Z",
+    "agent_lines": 97,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 97,
+    "total_lines_changed": 97,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}
