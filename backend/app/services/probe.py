@@ -1,7 +1,7 @@
 """Idempotent seed for the Week 1 exit-gate probe.
 
 The probe endpoint runs a canned suite against a single seeded dev Snowflake
-connection. Connection CRUD and suite/check authoring arrive in Weeks 2–3; until
+connection. Connection CRUD and suite/check authoring arrive in Weeks 2-3; until
 then this get-or-creates the fixtures so the endpoint is safe to hit repeatedly.
 
 The canned check is column-agnostic (a row-count bound) so it works against any

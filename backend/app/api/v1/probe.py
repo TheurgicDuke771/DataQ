@@ -3,7 +3,7 @@
 POST seeds the probe fixtures, creates a queued Run, and dispatches the
 ``run_suite`` Celery task (GX → Snowflake DEV). GET reads a run back with its
 results. This is a thin demonstrator of the full async path — not the general
-run API, which arrives with suite/check CRUD in Weeks 3–5.
+run API, which arrives with suite/check CRUD in Weeks 3-5.
 """
 
 from __future__ import annotations
