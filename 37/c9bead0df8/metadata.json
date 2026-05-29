@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "37c9bead0df8",
+  "strategy": "manual-commit",
+  "branch": "test/negative-edge-hardening",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "frontend/tests/auth/config.test.ts",
+    "frontend/tests/pages/Home.test.tsx",
+    "frontend/tests/setup.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/37/c9bead0df8/0/metadata.json",
+      "transcript": "/37/c9bead0df8/0/full.jsonl",
+      "content_hash": "/37/c9bead0df8/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 327,
+    "cache_creation_tokens": 14408,
+    "cache_read_tokens": 6014956,
+    "output_tokens": 10302,
+    "api_call_count": 13
+  }
+}
