@@ -137,6 +137,19 @@ def test_run_suite_runner_build_failure_marks_failed(monkeypatch: pytest.MonkeyP
     assert run.status == "failed"
 
 
+def test_run_suite_invalid_connection_config_marks_failed() -> None:
+    """Real adapter path: a connection.config that fails SnowflakeConfig
+    validation (missing required fields) drives the run to failed, not a crash."""
+    run, suite, connection, checks = _graph(1)
+    connection.config = {}  # missing account/user/database/schema/warehouse
+    session = FakeSession(run=run, suite=suite, connection=connection, checks=checks)
+    # build_snowflake_runner is NOT monkeypatched here — real SnowflakeConfig
+    # validation runs and raises, exercising the task's setup-failure handling.
+    status = tasks._run_suite(session, run_id=run.id, table="T", schema=None)
+    assert status == "failed"
+    assert run.status == "failed"
+
+
 # ───────────────────────── task wrapper ────────────────────────────
 
 

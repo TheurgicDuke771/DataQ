@@ -6,7 +6,11 @@ from sqlalchemy import select
 
 from backend.app.core.config import get_settings
 from backend.app.db.models import Check, Connection, Suite, User
-from backend.app.services.probe import ensure_probe_fixtures
+from backend.app.services.probe import (
+    PROBE_CONNECTION_NAME,
+    PROBE_ENV,
+    ensure_probe_fixtures,
+)
 
 
 def _user(db: Any) -> User:
@@ -38,3 +42,27 @@ def test_seed_is_idempotent(db_session: Any) -> None:
     assert len(db_session.scalars(select(Connection)).all()) == 1
     assert len(db_session.scalars(select(Suite)).all()) == 1
     assert len(db_session.scalars(select(Check)).all()) == 1  # check not duplicated
+
+
+def test_seed_reuses_existing_connection_and_creates_missing_suite(db_session: Any) -> None:
+    """Partial state: the connection already exists but the suite/check don't."""
+    user = _user(db_session)
+    existing = Connection(
+        name=PROBE_CONNECTION_NAME,
+        type="snowflake",
+        env=PROBE_ENV,
+        config={},
+        secret_ref="snowflake-dev",
+        created_by=user.id,
+    )
+    db_session.add(existing)
+    db_session.commit()
+
+    connection, suite, checks = ensure_probe_fixtures(
+        db_session, user=user, settings=get_settings()
+    )
+
+    assert connection.id == existing.id  # reused, not recreated
+    assert len(db_session.scalars(select(Connection)).all()) == 1
+    assert suite.connection_id == existing.id  # suite created against it
+    assert len(checks) == 1  # check created
