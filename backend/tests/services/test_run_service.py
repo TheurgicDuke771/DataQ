@@ -14,17 +14,25 @@ from backend.app.services import run_service
 
 
 class FakeSession:
-    """Records add_all'd rows and counts commits; everything else is a no-op."""
+    """Records add_all'd rows; counts commits/rollbacks. `add_all_raises` simulates
+    a persistence failure (e.g. DB error) after the adapter has already run."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, add_all_raises: Exception | None = None) -> None:
         self.added: list[Result] = []
         self.commits = 0
+        self.rollbacks = 0
+        self._add_all_raises = add_all_raises
 
     def add_all(self, rows: list[Result]) -> None:
+        if self._add_all_raises is not None:
+            raise self._add_all_raises
         self.added.extend(rows)
 
     def commit(self) -> None:
         self.commits += 1
+
+    def rollback(self) -> None:
+        self.rollbacks += 1
 
 
 class FakeRunner:
@@ -146,6 +154,20 @@ def test_runner_exception_marks_failed_and_persists_no_results() -> None:
     assert result.status == "failed"
     assert run.finished_at is not None
     assert session.added == []  # no half-written results
+
+
+def test_persistence_failure_marks_failed_not_stuck_running() -> None:
+    """If add_all/commit fails after a successful run, the run must reach a
+    terminal 'failed' state (not stay 'running') and roll back partial inserts."""
+    session = FakeSession(add_all_raises=RuntimeError("db connection lost"))
+    run = _run()
+    runner = FakeRunner(SuiteOutcome(success=True, checks=[CheckOutcome("x", success=True)]))
+
+    result = run_service.execute_run(session, run=run, checks=_checks(1), runner=runner, table="T")
+
+    assert result.status == "failed"
+    assert run.finished_at is not None
+    assert session.rollbacks == 1
 
 
 def test_outcome_count_mismatch_marks_failed() -> None:

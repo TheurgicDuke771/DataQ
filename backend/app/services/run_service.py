@@ -56,8 +56,11 @@ def execute_run(
 
     specs = [CheckSpec(expectation_type=c.expectation_type, kwargs=dict(c.config)) for c in checks]
 
-    # Fallible work first; only persist results if it all succeeds, so a failure
-    # can never leave a half-written set of Result rows.
+    # Everything from here — running the adapter, building rows, and persisting
+    # them — is guarded so any failure drives the run to a terminal 'failed'
+    # state. Without this, a DB error during add_all/commit would leave the run
+    # stuck in 'running' forever. rollback() discards any partial result inserts
+    # before we record the failure.
     try:
         outcome = runner.run_checks(table=table, schema=schema, checks=specs)
         rows = [
@@ -71,17 +74,18 @@ def execute_run(
             )
             for check, check_outcome in zip(checks, outcome.checks, strict=True)
         ]
+        session.add_all(rows)
+        run.status = "succeeded"
+        run.finished_at = _now()
+        session.commit()
     except Exception:
+        session.rollback()
         run.status = "failed"
         run.finished_at = _now()
         session.commit()
         log.exception("run_failed", run_id=str(run.id), table=table)
         return run
 
-    session.add_all(rows)
-    run.status = "succeeded"
-    run.finished_at = _now()
-    session.commit()
     log.info(
         "run_completed",
         run_id=str(run.id),
