@@ -1,0 +1,42 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "8162e9d93512",
+  "session_id": "15fa9ccf-6e30-4c4f-9650-e42b87962bce",
+  "strategy": "manual-commit",
+  "created_at": "2026-05-29T05:15:36.073439Z",
+  "branch": "feature/pr4cii-probe-endpoint",
+  "checkpoints_count": 0,
+  "files_touched": [
+    ".github/workflows/ci.yml",
+    "backend/tests/conftest.py",
+    "backend/tests/db/__init__.py",
+    "backend/tests/db/test_db_fixture.py"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-4-8",
+  "turn_id": "3a5c02a4a465",
+  "checkpoint_transcript_start": 1099,
+  "transcript_lines_at_start": 1099,
+  "token_usage": {
+    "input_tokens": 646,
+    "cache_creation_tokens": 21992,
+    "cache_read_tokens": 3660254,
+    "output_tokens": 19864,
+    "api_call_count": 11
+  },
+  "session_metrics": {
+    "turn_count": 14
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-05-29T05:15:36.051772Z",
+    "agent_lines": 107,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 107,
+    "total_lines_changed": 107,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
