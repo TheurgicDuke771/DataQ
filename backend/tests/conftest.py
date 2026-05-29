@@ -33,3 +33,57 @@ def clean_kv_env(monkeypatch: pytest.MonkeyPatch) -> None:
     for key in list(os.environ):
         if key.startswith("KV_SECRET_"):
             monkeypatch.delenv(key, raising=False)
+
+
+# ── DB-backed test support ────────────────────────────────────────────────────
+# DB integration tests require a real Postgres (the models use JSONB / UUID /
+# gen_random_uuid(), which SQLite can't host). Set TEST_DATABASE_URL to enable
+# them; without it the db_session fixture skips, so `pytest` still runs the
+# pure-unit suite anywhere. CI provides an ephemeral Postgres service.
+
+TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL")
+
+
+@pytest.fixture(scope="session")
+def _db_engine() -> "Iterator[object]":
+    from sqlalchemy import create_engine, text
+
+    import backend.app.db.models  # noqa: F401 — registers tables on Base.metadata
+    from backend.app.db.base import Base
+
+    if not TEST_DATABASE_URL:
+        pytest.skip("TEST_DATABASE_URL not set; skipping DB-backed tests")
+
+    engine = create_engine(TEST_DATABASE_URL, future=True)
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+    except Exception:  # pragma: no cover - environment-dependent
+        engine.dispose()
+        pytest.skip(f"TEST_DATABASE_URL not reachable: {TEST_DATABASE_URL}")
+
+    Base.metadata.create_all(engine)
+    yield engine
+    Base.metadata.drop_all(engine)
+    engine.dispose()
+
+
+@pytest.fixture
+def db_session(_db_engine: object) -> "Iterator[object]":
+    """A transactional Session rolled back after each test for isolation.
+
+    join_transaction_mode="create_savepoint" lets code under test call
+    commit() freely — those commits land on a savepoint inside the outer
+    transaction, which is rolled back here, so tests never persist.
+    """
+    from sqlalchemy.orm import Session as SASession
+
+    connection = _db_engine.connect()  # type: ignore[attr-defined]
+    trans = connection.begin()
+    session = SASession(bind=connection, join_transaction_mode="create_savepoint")
+    try:
+        yield session
+    finally:
+        session.close()
+        trans.rollback()
+        connection.close()

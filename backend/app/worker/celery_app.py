@@ -49,6 +49,8 @@ def create_celery_app() -> Celery:
         # queued from running without waiting for completion.
         task_track_started=True,
     )
+    # Register task modules on worker boot (looks for backend.app.worker.tasks).
+    app.autodiscover_tasks(["backend.app.worker"])
     return app
 
 

@@ -8,6 +8,7 @@ from typing import Final
 from fastapi import FastAPI, Request, Response
 
 from backend.app.api.v1 import me as me_router
+from backend.app.api.v1 import probe as probe_router
 from backend.app.core.auth import init_auth
 from backend.app.core.config import get_settings
 from backend.app.core.errors import register_exception_handlers
@@ -78,6 +79,7 @@ register_exception_handlers(app)
 
 
 app.include_router(me_router.router, prefix="/api/v1")
+app.include_router(probe_router.router, prefix="/api/v1")
 
 
 @app.get("/healthz")

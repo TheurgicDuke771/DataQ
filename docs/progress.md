@@ -22,13 +22,13 @@
 | **Active since** | 2026-05-24 |
 | **Today** | 2026-05-28 |
 | **Calendar burn** | day 5 of 56 (~9%) |
-| **Roadmap tasks done** | 6 ✅ + 2 🟡 / 150 (4%) |
+| **Roadmap tasks done** | 9 ✅ + 2 🟡 / 150 (6%) |
 | **Out-of-roadmap PRs landed** | 5 bundles (governance, tooling lock, Entire CLI, Dependabot triage round 1, PR-3 cleanup) |
-| **Current week** | Week 1 — Foundation |
-| **Week-1 exit gate** | A logged-in user can hit a FastAPI endpoint that triggers GX against Snowflake DEV and persists a result row. — **80% (PR 4 outstanding)** |
-| **Next milestone** | PR 4 — GX + Snowflake probe endpoint (closes Week 1) |
-| **Open issues** | 14 (7 active, 7 deferred polish) |
-| **Open PRs** | none (Dependabot batch cleared 2026-05-28) |
+| **Current week** | Week 2 — Connection manager (backend) |
+| **Week-1 exit gate** | A logged-in user can hit a FastAPI endpoint that triggers GX against Snowflake DEV and persists a result row. — **met** (plumbing complete via PR 4a–4c; live-Snowflake run fails-soft pending DEV creds — deferred smoke) |
+| **Next milestone** | PR 5 — Snowflake connection CRUD + test endpoint (Week 2) |
+| **Open issues** | 13 (#75 closed by PR 4c-ii) |
+| **Open PRs** | PR 4c-ii (this PR) |
 
 ---
 
@@ -59,12 +59,12 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [ ] 🟡 Session timeout + silent token refresh handling — `acquireTokenSilent` wired in PR 3c interceptor; `InteractionRequiredAuthError` fallback path pending (real-AAD smoke test in Week 7)
 - [ ] 🟡 Key Vault integration for all credential storage — abstraction landed in [PR 3b](https://github.com/TheurgicDuke771/DataQ/pull/56); real Azure vault provisioning deferred to Week 7
 
-### GX baseline & API conventions (3 tasks — 0/3)
-- [ ] ⬜ GX Core wired to Snowflake datasource (DEV env) — run a basic suite — **PR 4 (next)**
-- [ ] ⬜ GX result serialisation to DB (suites, checks, run results) — pairs with PR 4
-- [ ] 🟡 Configure FastAPI with Pydantic models, route tags, and Swagger (`/docs`) + ReDoc (`/redoc`) — partial: FastAPI + Pydantic wired; `/me` has shape; route tags applied; formal "disable in prod" gate pending
+### GX baseline & API conventions (3 tasks — 2/3 ✅, 1/3 🟡)
+- [x] ✅ GX Core wired to Snowflake datasource (DEV env) — `SnowflakeCheckRunner` (GX 1.17) behind the `CheckRunner` seam — [PR 4b](https://github.com/TheurgicDuke771/DataQ/pull/76) + [PR 4c-ii](https://github.com/TheurgicDuke771/DataQ/pull/79) _(live run against DEV fails-soft pending creds — deferred smoke)_
+- [x] ✅ GX result serialisation to DB (runs, results) — `run_service.execute_run` + NaN→null sanitizer — [PR 4c-i](https://github.com/TheurgicDuke771/DataQ/pull/78) + [PR 4c-ii](https://github.com/TheurgicDuke771/DataQ/pull/79)
+- [ ] 🟡 Configure FastAPI with Pydantic models, route tags, and Swagger (`/docs`) + ReDoc (`/redoc`) — FastAPI + Pydantic wired; `/me` + `/_probe/*` have response models, tags, summaries; formal "disable in prod" gate still pending
 
-**Week 1 total: 5.5 / 10 ✅**
+**Week 1 total: 7.5 / 10 ✅** _(exit gate met; remaining: silent-token-refresh, real Key Vault, prod-docs gate — all deferred to Week 7)_
 
 ---
 
@@ -183,8 +183,8 @@ These were preconditions for executing the roadmap. Listed for completeness.
 
 **Exit gate:** Async runs with live progress across all datasource types; scheduling operational.
 
-### Async execution backend (6 tasks — 0/6)
-- [ ] ⬜ Celery + Redis background task runner for GX scan execution
+### Async execution backend (6 tasks — 1/6 ✅, early)
+- [x] ✅ Celery + Redis background task runner for GX scan execution — `run_suite` task + `run_service` — landed early via [PR 4a](https://github.com/TheurgicDuke771/DataQ/pull/74) + [PR 4c-i](https://github.com/TheurgicDuke771/DataQ/pull/78) + [PR 4c-ii](https://github.com/TheurgicDuke771/DataQ/pull/79)
 - [ ] ⬜ Run progress API — poll endpoint returning per-check live status
 - [ ] ⬜ Cancel run endpoint — gracefully terminate in-progress Celery task
 - [ ] ⬜ Run history retention policy — configurable purge of results older than N days
@@ -238,8 +238,8 @@ These were preconditions for executing the roadmap. Listed for completeness.
 
 **Exit gate:** Production-ready v1 deployed to Azure, CI/CD live, team onboarded.
 
-### DevOps & deployment (5 tasks — 0/5)
-- [ ] ⬜ Containerise FastAPI + React + Celery + Redis
+### DevOps & deployment (5 tasks — 0/5, 1 partial early)
+- [ ] 🟡 Containerise FastAPI + React + Celery + Redis — backend `Dockerfile` + `api`/`worker` compose services landed early ([PR 4a](https://github.com/TheurgicDuke771/DataQ/pull/74)); React image + ACR/ACA still pending
 - [ ] ⬜ Push images to Azure Container Registry
 - [ ] ⬜ Deploy to Azure Container Apps (API + Celery worker) + Azure Static Web App (React UI) — wire CORS middleware for Static-Web-App → Container-Apps cross-origin ([PR #40 nit](https://github.com/TheurgicDuke771/DataQ/pull/40)); override hardcoded `dataq:dataq` Postgres creds + all secrets via Container Apps secret refs ([PR #39 nit](https://github.com/TheurgicDuke771/DataQ/pull/39))
 - [ ] ⬜ CI/CD pipeline — lint, test, build, deploy on merge to `main`
@@ -289,7 +289,7 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [ ] ⬜ Suite service — CRUD, share assignment, export / import serialisation
 - [ ] ⬜ Check service — expectation builder, SQL validator, dry-run logic, threshold tier evaluation
 - [ ] ⬜ Column profiler service — null count, distinct count, min/max per datasource type
-- [ ] ⬜ Execution service — Celery task dispatch, progress polling, cancel logic, retention purge
+- [ ] 🟡 Execution service — `run_suite` dispatch + `run_service.execute_run` + GX adapter + NaN sanitizer tested early ([PR 4b.1](https://github.com/TheurgicDuke771/DataQ/pull/77) + [PR 4c-i](https://github.com/TheurgicDuke771/DataQ/pull/78) + [PR 4c-ii](https://github.com/TheurgicDuke771/DataQ/pull/79)); progress polling / cancel / retention purge pending
 - [ ] ⬜ Alerting service — Teams webhook dispatch, dedup logic, snooze / suppression
 - [ ] ⬜ ADF service — webhook payload parsing, follow-up REST call, upsert, gap recovery dedup
 - [ ] ⬜ ADF polling service — succeeded run fetch, skip-if-recently-updated, gap recovery
@@ -297,8 +297,9 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [ ] ⬜ MCP service — each of 8 tools returns correct shape; auth rejection; `trigger_suite_run` returns valid run_id
 - [x] 🟡 **Secret service** — 12 tests, 88% coverage — [PR 3b](https://github.com/TheurgicDuke771/DataQ/pull/56) _(landed early)_
 
-### API layer tests (pytest + httpx) (6 tasks — 0/6)
+### API layer tests (pytest + httpx) (6 tasks — 0/6, probe endpoint covered early)
 - [ ] ⬜ Auth endpoints — login redirect, token refresh, unauthorised → 401
+- [x] ✅ **Probe endpoints** (out-of-roadmap) — POST creates+dispatches, idempotent seed, GET results, 404 — against real Postgres — [PR 4c-ii](https://github.com/TheurgicDuke771/DataQ/pull/79)
 - [ ] ⬜ Connection endpoints — CRUD happy paths + validation errors
 - [ ] ⬜ Suite & check endpoints — CRUD, share, export / import, dry-run
 - [ ] ⬜ Execution endpoints — trigger run, poll progress, cancel, list history
@@ -315,12 +316,12 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [ ] ⬜ Execution page — run now, progress bar updates, cancel button
 - [ ] ⬜ Results dashboard — stat cards, filters, ADF panel, severity badges
 
-### Test infrastructure (3 tasks — 0/3)
-- [ ] ⬜ Pytest fixtures — mock GX context, mock connections, mock Celery, mock webhooks
-- [ ] ⬜ CI gate — PRs blocked if coverage drops below 80%
+### Test infrastructure (3 tasks — 0.5/3 🟡 early)
+- [ ] 🟡 Pytest fixtures — transactional Postgres `db_session` fixture + CI postgres service + fake `CheckRunner`/session landed ([PR 4b.1](https://github.com/TheurgicDuke771/DataQ/pull/77) + [PR 4c-ii](https://github.com/TheurgicDuke771/DataQ/pull/79)); mock GX context + mock webhooks pending
+- [ ] ⬜ CI gate — PRs blocked if coverage drops below 80% _(coverage currently ~91%; `--cov-fail-under` still 0 until W8)_
 - [ ] ⬜ Test data fixtures — sample suites, check results, run histories
 
-**Week 8 total: 1.5 / 26 (early credit from per-slice tests in W1)**
+**Week 8 total: ~4 / 26 (early credit from per-slice tests in W1 — overall coverage ~91%)**
 
 ---
 
@@ -328,15 +329,15 @@ These were preconditions for executing the roadmap. Listed for completeness.
 
 | Week | Done | In progress | Pending | Total |
 |---|---|---|---|---|
-| Week 1 | 5 | 1 | 4 | 10 |
+| Week 1 | 7 | 1 | 2 | 10 |
 | Week 2 | 0 | 0 | 19 | 19 |
 | Week 3 | 0 | 0 | 15 | 15 |
 | Week 4 | 0 | 0 | 22 | 22 |
-| Week 5 | 0 | 0 | 14 | 14 |
+| Week 5 | 1 | 0 | 13 | 14 |
 | Week 6 | 0 | 0 | 15 | 15 |
-| Week 7 | 0 | 0 | 29 | 29 |
-| Week 8 | 1 | 1 | 24 | 26 |
-| **TOTAL** | **6** | **2** | **142** | **150** |
+| Week 7 | 0 | 1 | 28 | 29 |
+| Week 8 | 2 | 3 | 21 | 26 |
+| **TOTAL** | **10** | **5** | **135** | **150** |
 
 > 150 > 100 because ADR 0004 added Airflow tasks + PR-review follow-ups not in the original roadmap. Tracked here for honesty.
 
@@ -356,8 +357,11 @@ Issues that aren't roadmap tasks but block / risk the work.
 | [#62](https://github.com/TheurgicDuke771/DataQ/issues/62) | MSAL redirect lifecycle (real-AAD smoke test deferred) | Open | Week 7 deployment |
 | [#65](https://github.com/TheurgicDuke771/DataQ/issues/65) | Vite 8 coordinated bump (vite + plugin-react + vitest) | Open | Week 4 (also tracked as a roadmap task above) |
 | [#72](https://github.com/TheurgicDuke771/DataQ/issues/72) | ADR 0004 follow-up: document `trigger_bindings` one-orchestrator-per-(provider, env) assumption | Open | Week 2 connection CRUD (blocking) |
+| ~~[#75](https://github.com/TheurgicDuke771/DataQ/issues/75)~~ | ~~Integration-assert request_id propagates FastAPI→Celery worker logs~~ | **Closed** ([PR 4c-ii](https://github.com/TheurgicDuke771/DataQ/pull/79)) | n/a |
 
 **Deferred polish** (Week-1 governance era; do during slack): #8, #10, #12, #17, #18, #19, #20.
+
+**New follow-up:** real-Snowflake DEV live-run smoke for `SnowflakeCheckRunner.run_checks` (deferred; needs DEV creds — pairs with Week 7 vault provisioning).
 
 ---
 
