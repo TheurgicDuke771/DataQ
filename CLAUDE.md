@@ -210,6 +210,8 @@ curl -X POST http://localhost:8000/api/v1/_probe/snowflake-suite
 | Airflow callback model (HMAC-signed) + polling fallback | `0007` (TBD W2) | Pending W2 |
 | MCP mounted at `/mcp` with Azure AD auth | `0008` (TBD W7) | Pending W7 |
 | Repo layout: flat monorepo (`backend/` + `frontend/`) | [0009](docs/adr/0009-flat-monorepo-layout.md) | Locked W1 |
+| Provider-agnostic infra seams (Azure = default impl, not architecture; auth boundary now, observability via OTel deferred) | [0010](docs/adr/0010-provider-agnostic-infrastructure-seams.md) | Accepted W2 |
+| Extensibility seams (generic runner dispatch, `ResultPublisher`, dbt-as-`OrchestrationProvider`; second impls deferred post-v1) | [0011](docs/adr/0011-extensibility-seams-for-deferred-integrations.md) | Accepted W2 |
 
 ---
 
