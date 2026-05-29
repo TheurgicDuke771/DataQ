@@ -257,15 +257,16 @@ curl -X POST http://localhost:8000/api/v1/_probe/snowflake-suite
 
 > **Detailed task-level status** lives in [docs/progress.md](docs/progress.md) — mirrors the 100-task roadmap, updated per PR. This section carries only the headline.
 
-**Current week:** Week 1 — Foundation (~80% — PR 4 remaining)
-**Week-1 exit gate:** A logged-in user can hit a FastAPI endpoint that triggers GX against Snowflake DEV and persists a result row.
+**Current week:** Week 2 — Connection manager (backend). Week 1 exit gate **met**.
+**Week-1 exit gate:** A logged-in user can hit a FastAPI endpoint that triggers GX against Snowflake DEV and persists a result row. — **met** via `POST /api/v1/_probe/snowflake-suite` → Celery `run_suite` → `run_service` → `results`. Live run against Snowflake DEV fails-soft pending creds (deferred smoke).
 **Completed since project start (2026-05-24):**
 - PR 0 governance bundle (#1–#24, #44, #55) — onboarding docs, ADRs, CODEOWNERS, templates, Entire CLI hooks
 - PR 1 (#37) — coding structure & tooling lock
 - PR 2 a/b/c (#39, #40, #41) — Docker Compose, structlog + error envelope + FastAPI skeleton, SQLAlchemy models + Alembic baseline
 - PR 3 a/b/c (#53, #56, #63) — Azure AD SSO end-to-end (backend MSAL + SecretStore abstraction + frontend MSAL + `/me`)
-**Next milestone:** PR 4 — GX + Snowflake probe endpoint (closes Week 1 exit gate)
-**Active blockers:** none. See [docs/progress.md](docs/progress.md) for the active-issues list.
+- PR 4 a/b/b.1/c (#74, #76, #77, #78, #79) — async backbone (Celery + containerized API/worker), Snowflake GX adapter, run/result persistence + NaN sanitizer, Postgres test fixtures, `_probe/snowflake-suite` endpoint. Coverage ~91%.
+**Next milestone:** PR 5 — Snowflake connection CRUD + test endpoint (Week 2). Note #72 (trigger_bindings uniqueness) is blocking for connection CRUD.
+**Active blockers:** none for PR 5. See [docs/progress.md](docs/progress.md) for the active-issues list.
 
 Update this section at the end of each week with: current week, the week's exit gate, and any open blocker issues by number. Per-PR task ticks go in `docs/progress.md` (PR-template checkbox).
 
