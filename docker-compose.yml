@@ -25,5 +25,49 @@ services:
       timeout: 3s
       retries: 10
 
+  # FastAPI + Celery share one image (backend/Dockerfile, conda env `dataq`).
+  # DATABASE_URL / REDIS_URL are overridden here to the in-network service
+  # hostnames (the .env defaults point at localhost for host-side dev).
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command: uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8000:8000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-dataq}:${POSTGRES_PASSWORD:-dataq}@postgres:5432/${POSTGRES_DB:-dataq}
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      # Bind-mount source for hot reload; the conda env in the image is untouched.
+      - ./backend:/workspace/backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command: celery -A backend.app.worker.celery_app worker --loglevel=INFO
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-dataq}:${POSTGRES_PASSWORD:-dataq}@postgres:5432/${POSTGRES_DB:-dataq}
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./backend:/workspace/backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
 volumes:
   postgres_data:
