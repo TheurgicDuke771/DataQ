@@ -10,10 +10,12 @@ from collections.abc import Iterator
 from typing import Any
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from backend.app.api.v1 import probe as probe_module
+from backend.app.core.auth import get_current_user
 from backend.app.db.models import Check, Connection, Result, Run, Suite
 from backend.app.db.session import get_db
 from backend.app.main import app
@@ -137,3 +139,41 @@ def test_get_unknown_run_returns_404(probe_client: tuple[TestClient, list[Any]])
     client, _ = probe_client
     resp = client.get(f"/api/v1/_probe/runs/{uuid.uuid4()}")
     assert resp.status_code == 404
+
+
+def test_get_run_without_results_returns_empty_list(
+    probe_client: tuple[TestClient, list[Any]],
+) -> None:
+    client, _ = probe_client
+    run_id = client.post("/api/v1/_probe/snowflake-suite").json()["run_id"]
+    # No worker ran (delay is spied), so the queued run has no results yet.
+    resp = client.get(f"/api/v1/_probe/runs/{run_id}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "queued"
+    assert body["results"] == []
+
+
+def test_get_malformed_run_id_returns_422(probe_client: tuple[TestClient, list[Any]]) -> None:
+    client, _ = probe_client
+    resp = client.get("/api/v1/_probe/runs/not-a-uuid")
+    assert resp.status_code == 422
+
+
+# ───────────────────────── auth gating ─────────────────────────────
+
+
+def test_post_requires_auth(db_session: Any) -> None:
+    """The handler must not run (no Run created) when auth rejects the request."""
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    def _reject() -> None:
+        raise HTTPException(status_code=401, detail="unauthorized")
+
+    app.dependency_overrides[get_current_user] = _reject
+    try:
+        resp = TestClient(app).post("/api/v1/_probe/snowflake-suite")
+        assert resp.status_code == 401
+        assert db_session.scalars(select(Run)).all() == []
+    finally:
+        app.dependency_overrides.clear()
