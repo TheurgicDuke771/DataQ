@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "2681e633b052",
+  "strategy": "manual-commit",
+  "branch": "feature/pr4cii-probe-endpoint",
+  "checkpoints_count": 0,
+  "files_touched": [
+    ".github/workflows/ci.yml",
+    "backend/tests/e2e/__init__.py",
+    "backend/tests/e2e/test_probe_e2e.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/26/81e633b052/0/metadata.json",
+      "transcript": "/26/81e633b052/0/full.jsonl",
+      "content_hash": "/26/81e633b052/0/content_hash.txt",
+      "prompt": "/26/81e633b052/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1376,
+    "cache_creation_tokens": 421773,
+    "cache_read_tokens": 6313118,
+    "output_tokens": 24186,
+    "api_call_count": 16
+  }
+}

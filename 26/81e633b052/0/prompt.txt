@@ -1,0 +1,1 @@
+How is our negative and edge case test coverage? Also we should do a full E2E (with real world mock) before merge. side question why are we not utilizing docker for local tests?
