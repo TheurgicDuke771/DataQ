@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "492bb02c71bb",
+  "strategy": "manual-commit",
+  "branch": "test/pr4b1-worker-datasources-tests",
+  "checkpoints_count": 3,
+  "files_touched": [
+    ".github/workflows/ci.yml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/49/2bb02c71bb/0/metadata.json",
+      "transcript": "/49/2bb02c71bb/0/full.jsonl",
+      "content_hash": "/49/2bb02c71bb/0/content_hash.txt",
+      "prompt": "/49/2bb02c71bb/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1290,
+    "cache_creation_tokens": 44140,
+    "cache_read_tokens": 7362971,
+    "output_tokens": 34483,
+    "api_call_count": 34
+  }
+}
