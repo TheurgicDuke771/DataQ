@@ -20,9 +20,9 @@
 | | |
 |---|---|
 | **Active since** | 2026-05-24 |
-| **Today** | 2026-05-28 |
-| **Calendar burn** | day 5 of 56 (~9%) |
-| **Roadmap tasks done** | 9 ✅ + 2 🟡 / 150 (6%) |
+| **Today** | 2026-05-29 |
+| **Calendar burn** | day 6 of 56 (~11%) |
+| **Roadmap tasks done** | 9 ✅ + 2 🟡 / 152 (6%) |
 | **Out-of-roadmap PRs landed** | 5 bundles (governance, tooling lock, Entire CLI, Dependabot triage round 1, PR-3 cleanup) |
 | **Current week** | Week 2 — Connection manager (backend) |
 | **Week-1 exit gate** | A logged-in user can hit a FastAPI endpoint that triggers GX against Snowflake DEV and persists a result row. — **met** (plumbing complete via PR 4a–4c; live-Snowflake run fails-soft pending DEV creds — deferred smoke) |
@@ -41,6 +41,7 @@ These were preconditions for executing the roadmap. Listed for completeness.
 | **PR 0 governance** | #1–#24, #44, #55 — `.gitignore`, CLAUDE.md, CODEOWNERS, ADRs 0001–0004 + 0009, PR / issue templates, architecture diagram, Claude Code agents/skills/hooks/MCP, Entire CLI hooks + allowlist | ✅ |
 | **PR 1 tooling lock** | #37 — conda env, Black, Ruff, mypy, pre-commit, CI workflow, Dependabot, `scripts/setup.sh`, frontend tooling | ✅ |
 | **PR 2 hygiene follow-ups** | #44 (mermaid + tsconfig + ADR 0009 + CLAUDE.md status), #47 (precommit reorder), #48 (mermaid fix #2), #49 (precommit mypy deps), #52 (markdown linebreak preservation) | ✅ |
+| **Architecture Q&A ADRs** | ADR 0010 (provider-agnostic infra seams — cloud portability) + ADR 0011 (extensibility seams — more datasources, `ResultPublisher`, dbt-as-orchestration-provider). Records the now-vs-post-v1 timing per seam; threads v1 action items into W2/W5/W6/W7 above | 🟡 (`claude/dreamy-fermat-mwyqm`) |
 
 ---
 
@@ -71,6 +72,8 @@ These were preconditions for executing the roadmap. Listed for completeness.
 ## Week 2 — Connection manager — all datasource types (backend)
 
 **Exit gate:** All connection types configurable and testable via API; credentials stored in Key Vault.
+
+> **Auth-boundary discipline (per [ADR 0010](adr/0010-provider-agnostic-infrastructure-seams.md)):** new connection-CRUD endpoints (and every protected route from here on) depend on a generic internal "current user" dependency that returns DataQ's own `User` — they must NOT read MSAL token claims directly in route/service code. Cheap now; expensive to retrofit once dozens of endpoints exist. No new abstraction layer required, just the boundary.
 
 ### Snowflake & ADF (3 tasks — 0/3)
 - [ ] ⬜ API: CRUD for Snowflake connections (DEV / QA / UAT), connection test endpoint
@@ -183,8 +186,9 @@ These were preconditions for executing the roadmap. Listed for completeness.
 
 **Exit gate:** Async runs with live progress across all datasource types; scheduling operational.
 
-### Async execution backend (6 tasks — 1/6 ✅, early)
+### Async execution backend (7 tasks — 1/7 ✅, early)
 - [x] ✅ Celery + Redis background task runner for GX scan execution — `run_suite` task + `run_service` — landed early via [PR 4a](https://github.com/TheurgicDuke771/DataQ/pull/74) + [PR 4c-i](https://github.com/TheurgicDuke771/DataQ/pull/78) + [PR 4c-ii](https://github.com/TheurgicDuke771/DataQ/pull/79)
+- [ ] ⬜ Generalise `run_suite` worker dispatch — select the `CheckRunner` by `connection.type` (replaces the Snowflake-hardcoded wiring in `worker/tasks.py`); prerequisite for the flat-file / UC run paths below, and the seam that makes post-v1 RDBMS adapters (MS-SQL, BigQuery) a drop-in _(added per [ADR 0011](adr/0011-extensibility-seams-for-deferred-integrations.md))_
 - [ ] ⬜ Run progress API — poll endpoint returning per-check live status
 - [ ] ⬜ Cancel run endpoint — gracefully terminate in-progress Celery task
 - [ ] ⬜ Run history retention policy — configurable purge of results older than N days
@@ -203,7 +207,7 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [ ] ⬜ Scheduled runs table — create, pause, delete cron schedules
 - [ ] ⬜ Recent runs audit table with drill-down link to results
 
-**Week 5 total: 0 / 14**
+**Week 5 total: 0 / 15**
 
 ---
 
@@ -223,14 +227,15 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [ ] ⬜ Severity badge colours — green / amber / red / dark red
 - [ ] ⬜ Health score weighting — apply warn/fail/critical penalty weights
 
-### Alerting (5 tasks — 0/5)
+### Alerting (6 tasks — 0/6)
+- [ ] ⬜ `ResultPublisher` seam — dispatch run outcomes from the post-`execute_run` completion point through a small publisher interface (Teams is the v1 implementation, not a hardcoded call); carry a PII redaction / opt-in policy on `sample_failures` at the seam since it leaves DataQ's trust boundary. Enables post-v1 TestRail / JIRA / Xray publishers as additional subscribers with no re-plumbing _(added per [ADR 0011](adr/0011-extensibility-seams-for-deferred-integrations.md))_
 - [ ] ⬜ Notification config UI — Teams webhook per suite, alert on fail / warn / always
 - [ ] ⬜ Alert suppression / snooze — silence a specific check for N hours
 - [ ] ⬜ Alert dedup — fire on first failure only, not on every subsequent scheduled run
 - [ ] ⬜ Teams adaptive card payload — check, datasource, table / file, observed vs expected
 - [ ] ⬜ Severity-aware alert routing — warn quiet, fail standard, critical @channel
 
-**Week 6 total: 0 / 15**
+**Week 6 total: 0 / 16**
 
 ---
 
@@ -243,7 +248,7 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [ ] ⬜ Push images to Azure Container Registry
 - [ ] ⬜ Deploy to Azure Container Apps (API + Celery worker) + Azure Static Web App (React UI) — wire CORS middleware for Static-Web-App → Container-Apps cross-origin ([PR #40 nit](https://github.com/TheurgicDuke771/DataQ/pull/40)); override hardcoded `dataq:dataq` Postgres creds + all secrets via Container Apps secret refs ([PR #39 nit](https://github.com/TheurgicDuke771/DataQ/pull/39))
 - [ ] ⬜ CI/CD pipeline — lint, test, build, deploy on merge to `main`
-- [ ] ⬜ Application Insights integration — traces, errors, slow queries, Celery task metrics
+- [ ] ⬜ Application Insights integration — traces, errors, slow queries, Celery task metrics _(keep the export behind the structlog handler seam in `core/logging.py`; if a vendor-neutral path is wanted, route via OpenTelemetry/OTLP so the backend is swappable — per [ADR 0010](adr/0010-provider-agnostic-infrastructure-seams.md). App Insights stays the only v1 backend; do not abstract speculatively)_
 - [ ] ⬜ Real-vault integration test for `AzureKeyVaultStore` lazy-import branch (currently 0% coverage) ([PR #56 nit](https://github.com/TheurgicDuke771/DataQ/pull/56))
 
 ### Azure Monitor webhook setup (post-deployment) (5 tasks — 0/5)
@@ -333,13 +338,13 @@ These were preconditions for executing the roadmap. Listed for completeness.
 | Week 2 | 0 | 0 | 19 | 19 |
 | Week 3 | 0 | 0 | 15 | 15 |
 | Week 4 | 0 | 0 | 22 | 22 |
-| Week 5 | 1 | 0 | 13 | 14 |
-| Week 6 | 0 | 0 | 15 | 15 |
+| Week 5 | 1 | 0 | 14 | 15 |
+| Week 6 | 0 | 0 | 16 | 16 |
 | Week 7 | 0 | 1 | 28 | 29 |
 | Week 8 | 2 | 3 | 21 | 26 |
-| **TOTAL** | **10** | **5** | **135** | **150** |
+| **TOTAL** | **10** | **5** | **137** | **152** |
 
-> 150 > 100 because ADR 0004 added Airflow tasks + PR-review follow-ups not in the original roadmap. Tracked here for honesty.
+> 152 > 100 because ADR 0004 added Airflow tasks, ADR 0011 added two seam tasks (generic runner dispatch, `ResultPublisher`), plus PR-review follow-ups not in the original roadmap. Tracked here for honesty.
 
 ---
 
