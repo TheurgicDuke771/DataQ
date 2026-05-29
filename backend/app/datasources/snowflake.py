@@ -31,6 +31,11 @@ from backend.app.datasources.base import CheckOutcome, CheckSpec, SuiteOutcome
 # These may contain real data, so they only ever reach logs via the redactor.
 _SAMPLE_KEYS = ("partial_unexpected_list", "unexpected_count", "unexpected_percent")
 
+# GX injects internal bookkeeping keys into expectation_config.kwargs at run
+# time (e.g. batch_id); strip them so expected_value persists only the check's
+# own parameters.
+_GX_INTERNAL_KWARGS = frozenset({"batch_id"})
+
 
 class UnknownExpectationError(ValueError):
     """Raised when a check's expectation_type has no matching GX expectation."""
@@ -88,6 +93,11 @@ def _extract_sample_failures(result: dict[str, Any]) -> dict[str, Any] | None:
     return sample or None
 
 
+def _expected_value(kwargs: Any) -> dict[str, Any] | None:
+    cleaned = {key: value for key, value in dict(kwargs).items() if key not in _GX_INTERNAL_KWARGS}
+    return cleaned or None
+
+
 def to_suite_outcome(gx_result: Any) -> SuiteOutcome:
     """Map a GX ExpectationSuiteValidationResult onto our GX-agnostic DTO.
 
@@ -106,7 +116,7 @@ def to_suite_outcome(gx_result: Any) -> SuiteOutcome:
                 expectation_type=config.type,
                 success=bool(check_result.success),
                 observed_value=observed,
-                expected_value=dict(config.kwargs) if config.kwargs else None,
+                expected_value=_expected_value(config.kwargs) if config.kwargs else None,
                 sample_failures=_extract_sample_failures(detail),
             )
         )
@@ -138,14 +148,22 @@ class SnowflakeCheckRunner:
             schema_name=schema or self._config.schema_,
         )
         batch_definition = asset.add_batch_definition_whole_table(name="whole_table")
-        suite = gx.ExpectationSuite(
-            name=f"suite-{table}",
-            expectations=[_to_gx_expectation(check) for check in checks],
+        # GX 1.17 requires the suite and validation definition to be registered
+        # on the context before run(); a free-standing ValidationDefinition.run()
+        # raises ValidationDefinitionRelatedResourcesFreshnessError. The context
+        # is ephemeral (per-run), so the fixed names never collide across runs.
+        suite = context.suites.add(
+            gx.ExpectationSuite(
+                name=f"suite-{table}",
+                expectations=[_to_gx_expectation(check) for check in checks],
+            )
         )
-        validation_definition = gx.ValidationDefinition(
-            name=f"vd-{table}",
-            data=batch_definition,
-            suite=suite,
+        validation_definition = context.validation_definitions.add(
+            gx.ValidationDefinition(
+                name=f"vd-{table}",
+                data=batch_definition,
+                suite=suite,
+            )
         )
         result = validation_definition.run(result_format="COMPLETE")
         return to_suite_outcome(result)
