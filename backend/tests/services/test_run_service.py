@@ -1,0 +1,169 @@
+"""Tests for the run/result persistence service.
+
+No database or GX: a fake Session records what would be persisted, model
+instances are built in memory with explicit ids, and a fake CheckRunner returns
+canned outcomes (or raises). This keeps the service's lifecycle + mapping logic
+under test independent of Postgres and Snowflake.
+"""
+
+import uuid
+
+from backend.app.datasources.base import CheckOutcome, CheckSpec, SuiteOutcome
+from backend.app.db.models import Check, Result, Run
+from backend.app.services import run_service
+
+
+class FakeSession:
+    """Records add_all'd rows and counts commits; everything else is a no-op."""
+
+    def __init__(self) -> None:
+        self.added: list[Result] = []
+        self.commits = 0
+
+    def add_all(self, rows: list[Result]) -> None:
+        self.added.extend(rows)
+
+    def commit(self) -> None:
+        self.commits += 1
+
+
+class FakeRunner:
+    def __init__(
+        self, outcome: SuiteOutcome | None = None, raises: Exception | None = None
+    ) -> None:
+        self._outcome = outcome
+        self._raises = raises
+        self.called_with: dict[str, object] | None = None
+
+    def run_checks(
+        self, *, table: str, schema: str | None, checks: list[CheckSpec]
+    ) -> SuiteOutcome:
+        self.called_with = {"table": table, "schema": schema, "checks": checks}
+        if self._raises is not None:
+            raise self._raises
+        assert self._outcome is not None
+        return self._outcome
+
+
+def _run() -> Run:
+    return Run(id=uuid.uuid4(), suite_id=uuid.uuid4(), status="queued")
+
+
+def _checks(n: int) -> list[Check]:
+    return [
+        Check(id=uuid.uuid4(), suite_id=uuid.uuid4(), name=f"c{i}", expectation_type="x", config={})
+        for i in range(n)
+    ]
+
+
+# ───────────────────────── success path ────────────────────────────
+
+
+def test_successful_run_persists_results_and_marks_succeeded() -> None:
+    session = FakeSession()
+    run = _run()
+    checks = _checks(2)
+    outcome = SuiteOutcome(
+        success=False,  # a check failed, but the RUN still executed
+        checks=[
+            CheckOutcome("expect_a", success=True, observed_value={"observed_value": 5}),
+            CheckOutcome(
+                "expect_b",
+                success=False,
+                expected_value={"column": "id"},
+                sample_failures={"unexpected_count": 1},
+            ),
+        ],
+    )
+    runner = FakeRunner(outcome=outcome)
+
+    result = run_service.execute_run(
+        session, run=run, checks=checks, runner=runner, table="ORDERS", schema="FIN"
+    )
+
+    assert result is run
+    assert run.status == "succeeded"  # ran to completion despite a failed check
+    assert run.started_at is not None and run.finished_at is not None
+    assert len(session.added) == 2
+    statuses = {r.check_id: r.status for r in session.added}
+    assert statuses[checks[0].id] == "passed"
+    assert statuses[checks[1].id] == "failed"
+    # adapter received specs derived from the checks + the target table
+    assert runner.called_with == {
+        "table": "ORDERS",
+        "schema": "FIN",
+        "checks": [CheckSpec("x", {}), CheckSpec("x", {})],
+    }
+
+
+def test_results_link_to_run_and_check_ids() -> None:
+    session = FakeSession()
+    run = _run()
+    checks = _checks(1)
+    runner = FakeRunner(SuiteOutcome(success=True, checks=[CheckOutcome("x", success=True)]))
+
+    run_service.execute_run(session, run=run, checks=checks, runner=runner, table="T")
+
+    (row,) = session.added
+    assert row.run_id == run.id
+    assert row.check_id == checks[0].id
+
+
+# ───────────────────────── NaN sanitisation ────────────────────────
+
+
+def test_nan_in_sample_failures_is_sanitised_before_persist() -> None:
+    session = FakeSession()
+    runner = FakeRunner(
+        SuiteOutcome(
+            success=False,
+            checks=[
+                CheckOutcome(
+                    "x",
+                    success=False,
+                    sample_failures={"partial_unexpected_list": [float("nan"), 2.0]},
+                )
+            ],
+        )
+    )
+
+    run_service.execute_run(session, run=_run(), checks=_checks(1), runner=runner, table="T")
+
+    (row,) = session.added
+    assert row.sample_failures == {"partial_unexpected_list": [None, 2.0]}
+
+
+# ───────────────────────── failure path ────────────────────────────
+
+
+def test_runner_exception_marks_failed_and_persists_no_results() -> None:
+    session = FakeSession()
+    run = _run()
+    runner = FakeRunner(raises=RuntimeError("cannot reach warehouse"))
+
+    result = run_service.execute_run(session, run=run, checks=_checks(2), runner=runner, table="T")
+
+    assert result.status == "failed"
+    assert run.finished_at is not None
+    assert session.added == []  # no half-written results
+
+
+def test_outcome_count_mismatch_marks_failed() -> None:
+    """zip(strict=True): if the adapter returns the wrong number of outcomes."""
+    session = FakeSession()
+    runner = FakeRunner(SuiteOutcome(success=True, checks=[CheckOutcome("x", success=True)]))
+
+    run_service.execute_run(session, run=_run(), checks=_checks(3), runner=runner, table="T")
+
+    assert session.added == []
+
+
+def test_empty_run_still_succeeds() -> None:
+    session = FakeSession()
+    run = _run()
+    runner = FakeRunner(SuiteOutcome(success=True, checks=[]))
+
+    run_service.execute_run(session, run=run, checks=[], runner=runner, table="T")
+
+    assert run.status == "succeeded"
+    assert session.added == []
