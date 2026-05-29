@@ -35,6 +35,20 @@ class Settings(BaseSettings):
     )
     azure_key_vault_url: str | None = None
 
+    # ── Snowflake probe (Week 1 exit-gate endpoint) ──────────────────────────
+    # Config for the single seeded dev Snowflake connection the probe runs
+    # against. All optional: when unset the probe still creates + dispatches a
+    # run, which then fails-soft (no live warehouse). secret_ref names the
+    # SecretStore entry holding the password (e.g. KV_SECRET_SNOWFLAKE_DEV).
+    probe_snowflake_account: str | None = None
+    probe_snowflake_user: str | None = None
+    probe_snowflake_database: str | None = None
+    probe_snowflake_schema: str | None = None
+    probe_snowflake_warehouse: str | None = None
+    probe_snowflake_role: str | None = None
+    probe_snowflake_table: str | None = None
+    probe_snowflake_secret_ref: str | None = None
+
     @property
     def azure_auth_configured(self) -> bool:
         return bool(self.azure_tenant_id and self.azure_api_client_id)
