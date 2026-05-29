@@ -69,7 +69,15 @@ def trigger_snowflake_probe(
     db.refresh(run)
 
     table = settings.probe_snowflake_table or "UNSET"
-    run_suite.delay(str(run.id), table)
+    try:
+        run_suite.delay(str(run.id), table)
+    except Exception as exc:  # broker unreachable — don't leave the run stuck queued
+        run.status = "failed"
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="failed to dispatch run",
+        ) from exc
     return ProbeRunResponse(run_id=run.id, status=run.status)
 
 

@@ -62,6 +62,25 @@ def test_post_creates_queued_run_and_dispatches(
     assert delay_calls[0][0] == body["run_id"]
 
 
+def test_post_dispatch_failure_marks_run_failed(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Broker unreachable: the run must not be left stuck 'queued'."""
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    def _boom(*_a: Any, **_k: Any) -> None:
+        raise RuntimeError("broker down")
+
+    monkeypatch.setattr(probe_module.run_suite, "delay", _boom)
+    try:
+        resp = TestClient(app).post("/api/v1/_probe/snowflake-suite")
+        assert resp.status_code == 503
+        run = db_session.scalars(select(Run)).first()
+        assert run is not None and run.status == "failed"
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_post_is_idempotent_across_calls(
     probe_client: tuple[TestClient, list[Any]], db_session: Any
 ) -> None:
