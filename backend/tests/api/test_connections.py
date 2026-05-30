@@ -1,0 +1,207 @@
+"""Connection endpoint tests against a real Postgres (db_session) via TestClient.
+
+get_db + get_secret_store are overridden to a shared test session and an
+in-memory store; the connectivity adapter is monkeypatched so /test needs no
+live warehouse. Auth runs in dev-bypass mode (conftest), which upserts the dev
+user into the same session for the created_by FK. Skips without
+TEST_DATABASE_URL.
+"""
+
+import uuid
+from collections.abc import Iterator
+from typing import Any
+
+import pytest
+from fastapi import HTTPException
+from fastapi.testclient import TestClient
+from sqlalchemy import select
+
+from backend.app.core.auth import get_current_user
+from backend.app.core.secrets import get_secret_store
+from backend.app.db.models import Connection
+from backend.app.db.session import get_db
+from backend.app.main import app
+from backend.app.services import connection_service as svc
+
+_SF_CONFIG = {
+    "account": "ab12345.eu-west-1",
+    "user": "svc_dataq",
+    "database": "ANALYTICS",
+    "schema": "FINANCE",
+    "warehouse": "WH_DQ",
+    "role": "DQ_ROLE",
+}
+
+
+class FakeStore:
+    def __init__(self) -> None:
+        self.data: dict[str, str] = {}
+
+    def get(self, name: str) -> str:
+        return self.data[name]
+
+    def set(self, name: str, value: str) -> None:
+        self.data[name] = value
+
+
+class _PassAdapter:
+    def validate_config(self, raw: dict[str, Any]) -> Any:
+        return None
+
+    def test(self, raw: dict[str, Any], secret: str) -> None:
+        return None
+
+
+class _FailAdapter(_PassAdapter):
+    def test(self, raw: dict[str, Any], secret: str) -> None:
+        raise RuntimeError("warehouse unreachable")
+
+
+@pytest.fixture
+def client(db_session: Any) -> Iterator[tuple[TestClient, FakeStore]]:
+    store = FakeStore()
+    app.dependency_overrides[get_db] = lambda: db_session
+    app.dependency_overrides[get_secret_store] = lambda: store
+    try:
+        yield TestClient(app), store
+    finally:
+        app.dependency_overrides.clear()
+
+
+def _create_payload(**overrides: Any) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "name": "finance-dev",
+        "type": "snowflake",
+        "env": "dev",
+        "config": dict(_SF_CONFIG),
+        "secret": "p@ss",
+    }
+    payload.update(overrides)
+    return payload
+
+
+# ───────────────────────── create ──────────────────────────────────
+
+
+def test_create_returns_201_and_hides_secret(
+    client: tuple[TestClient, FakeStore], db_session: Any
+) -> None:
+    api, store = client
+    resp = api.post("/api/v1/connections", json=_create_payload())
+
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["type"] == "snowflake"
+    assert body["has_secret"] is True
+    # secret material must never appear in the response
+    assert "secret" not in body
+    assert "secret_ref" not in body
+    # persisted + written through to the store
+    conn = db_session.get(Connection, uuid.UUID(body["id"]))
+    assert conn is not None
+    assert store.data[f"conn-{conn.id}"] == "p@ss"
+
+
+def test_create_unknown_type_returns_422(client: tuple[TestClient, FakeStore]) -> None:
+    api, _ = client
+    resp = api.post("/api/v1/connections", json=_create_payload(type="mssql"))
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "connection_config_invalid"
+
+
+def test_create_invalid_config_returns_422(client: tuple[TestClient, FakeStore]) -> None:
+    api, _ = client
+    bad = {k: v for k, v in _SF_CONFIG.items() if k != "account"}
+    resp = api.post("/api/v1/connections", json=_create_payload(config=bad))
+    assert resp.status_code == 422
+
+
+# ───────────────────────── read / list ─────────────────────────────
+
+
+def test_list_returns_created(client: tuple[TestClient, FakeStore]) -> None:
+    api, _ = client
+    api.post("/api/v1/connections", json=_create_payload(name="a"))
+    api.post("/api/v1/connections", json=_create_payload(name="b", env="qa"))
+
+    all_conns = api.get("/api/v1/connections").json()
+    assert {c["name"] for c in all_conns} == {"a", "b"}
+    qa = api.get("/api/v1/connections", params={"env": "qa"}).json()
+    assert [c["name"] for c in qa] == ["b"]
+
+
+def test_get_returns_connection(client: tuple[TestClient, FakeStore]) -> None:
+    api, _ = client
+    cid = api.post("/api/v1/connections", json=_create_payload()).json()["id"]
+    resp = api.get(f"/api/v1/connections/{cid}")
+    assert resp.status_code == 200
+    assert resp.json()["id"] == cid
+
+
+def test_get_unknown_returns_404(client: tuple[TestClient, FakeStore]) -> None:
+    api, _ = client
+    resp = api.get(f"/api/v1/connections/{uuid.uuid4()}")
+    assert resp.status_code == 404
+    assert resp.json()["error"]["code"] == "connection_not_found"
+
+
+# ───────────────────────── update / delete ─────────────────────────
+
+
+def test_patch_updates_name(client: tuple[TestClient, FakeStore]) -> None:
+    api, _ = client
+    cid = api.post("/api/v1/connections", json=_create_payload()).json()["id"]
+    resp = api.patch(f"/api/v1/connections/{cid}", json={"name": "renamed"})
+    assert resp.status_code == 200
+    assert resp.json()["name"] == "renamed"
+
+
+def test_delete_returns_204_then_404(client: tuple[TestClient, FakeStore]) -> None:
+    api, _ = client
+    cid = api.post("/api/v1/connections", json=_create_payload()).json()["id"]
+    assert api.delete(f"/api/v1/connections/{cid}").status_code == 204
+    assert api.get(f"/api/v1/connections/{cid}").status_code == 404
+
+
+# ───────────────────────── test connectivity ───────────────────────
+
+
+def test_test_endpoint_ok(
+    client: tuple[TestClient, FakeStore], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    api, _ = client
+    cid = api.post("/api/v1/connections", json=_create_payload()).json()["id"]
+    monkeypatch.setattr(svc, "get_connection_adapter", lambda t: _PassAdapter())
+    resp = api.post(f"/api/v1/connections/{cid}/test")
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True}
+
+
+def test_test_endpoint_failure_returns_502(
+    client: tuple[TestClient, FakeStore], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    api, _ = client
+    cid = api.post("/api/v1/connections", json=_create_payload()).json()["id"]
+    monkeypatch.setattr(svc, "get_connection_adapter", lambda t: _FailAdapter())
+    resp = api.post(f"/api/v1/connections/{cid}/test")
+    assert resp.status_code == 502
+    assert resp.json()["error"]["code"] == "connection_test_failed"
+
+
+# ───────────────────────── auth gating ─────────────────────────────
+
+
+def test_create_requires_auth(db_session: Any) -> None:
+    app.dependency_overrides[get_db] = lambda: db_session
+    app.dependency_overrides[get_secret_store] = lambda: FakeStore()
+
+    def _reject() -> None:
+        raise HTTPException(status_code=401, detail="unauthorized")
+
+    app.dependency_overrides[get_current_user] = _reject
+    try:
+        resp = TestClient(app).post("/api/v1/connections", json=_create_payload())
+        assert resp.status_code == 401
+        assert db_session.scalars(select(Connection)).all() == []
+    finally:
+        app.dependency_overrides.clear()
