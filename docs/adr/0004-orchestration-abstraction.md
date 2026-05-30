@@ -41,6 +41,17 @@ Both `AdfProvider` and `AirflowProvider` implement this interface. Service code 
 | ADF | Azure Monitor alert rule → webhook `POST /api/v1/orchestration/events/adf` | Shared-secret header (Azure Monitor's only auth mode) | ADF REST API every 10 min |
 | Airflow | DAG `on_success_callback` / `on_failure_callback` → webhook `POST /api/v1/orchestration/events/airflow` | HMAC-signed payload (signing key in Key Vault) | Airflow REST API `dagRuns` every 10 min |
 
+### Single-orchestrator-per-`(provider, env)` assumption
+
+`trigger_bindings` is keyed by (`provider`, `pipeline_or_dag_id`, `env`) → `suite_id`. This composite key **cannot disambiguate two instances of the same provider in the same environment** — e.g. two separate `airflow` deployments both serving `env=dev`. The agreed v1 shape therefore assumes **exactly one orchestrator instance per (`provider`, `env`) pair**.
+
+**Consequence:** to keep the binding lookup unambiguous, one of two things must hold:
+
+1. Connection-level CRUD enforces **uniqueness on (`type`, `env`) for orchestrator-typed connections** (an `adf`/`airflow` connection is singular per env), OR
+2. `trigger_bindings` grows a `connection_id` column so a binding names a specific orchestrator instance.
+
+**v1 decision:** take option 1 — document the assumption (this section) and **enforce `(type, env)` uniqueness at the connection-CRUD layer in Week 2** for orchestrator-typed connections. The schema bump (option 2) is **deferred to v1.1** and only revisited if multi-instance-per-env becomes a real requirement. Without this guard, a future contributor adding a second same-env Airflow connection would hit a silent binding collision rather than a validation error.
+
 ### UI surface
 
 Orchestrators appear ONLY in:
@@ -70,4 +81,5 @@ They do NOT appear in the connection editor's "pick a datasource" list or the ch
 
 - `pipeline_runs` and `trigger_bindings` schema lands in Week 1/2.
 - `OrchestrationProvider` interface lands in Week 2 alongside both implementations.
+- The single-orchestrator-per-`(provider, env)` assumption (above) was surfaced in [PR #41](https://github.com/TheurgicDuke771/DataQ/pull/41) review and tracked in [#72](https://github.com/TheurgicDuke771/DataQ/issues/72); the `(type, env)` uniqueness guard is a Week 2 connection-CRUD requirement.
 - Future: ADR 0006 (ADF webhook auth) and ADR 0007 (Airflow callback model) will detail the provider-specific event channels.
