@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "5e74f5e9f8f9",
+  "strategy": "manual-commit",
+  "branch": "docs/adr-0006-0007-orchestration-auth",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "CLAUDE.md",
+    "docs/adr/0006-adf-webhook-authentication.md",
+    "docs/adr/0007-airflow-callback-model.md",
+    "docs/adr/README.md",
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/5e/74f5e9f8f9/0/metadata.json",
+      "transcript": "/5e/74f5e9f8f9/0/full.jsonl",
+      "content_hash": "/5e/74f5e9f8f9/0/content_hash.txt",
+      "prompt": "/5e/74f5e9f8f9/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 408,
+    "cache_creation_tokens": 27992,
+    "cache_read_tokens": 1361500,
+    "output_tokens": 21902,
+    "api_call_count": 21
+  }
+}
