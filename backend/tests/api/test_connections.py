@@ -125,7 +125,8 @@ def test_create_invalid_env_returns_422(client: tuple[TestClient, FakeStore]) ->
 
 def test_create_duplicate_returns_409(client: tuple[TestClient, FakeStore]) -> None:
     api, _ = client
-    assert api.post("/api/v1/connections", json=_create_payload(name="dup")).status_code == 201
+    first = api.post("/api/v1/connections", json=_create_payload(name="dup"))
+    assert first.status_code == 201
     resp = api.post("/api/v1/connections", json=_create_payload(name="dup"))
     assert resp.status_code == 409
     assert resp.json()["error"]["code"] == "connection_conflict"
@@ -174,8 +175,10 @@ def test_patch_updates_name(client: tuple[TestClient, FakeStore]) -> None:
 def test_delete_returns_204_then_404(client: tuple[TestClient, FakeStore]) -> None:
     api, _ = client
     cid = api.post("/api/v1/connections", json=_create_payload()).json()["id"]
-    assert api.delete(f"/api/v1/connections/{cid}").status_code == 204
-    assert api.get(f"/api/v1/connections/{cid}").status_code == 404
+    deleted = api.delete(f"/api/v1/connections/{cid}")
+    assert deleted.status_code == 204
+    gone = api.get(f"/api/v1/connections/{cid}")
+    assert gone.status_code == 404
 
 
 # ───────────────────────── test connectivity ───────────────────────
