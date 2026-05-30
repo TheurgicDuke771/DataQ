@@ -1,0 +1,46 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "aae4afc6607c",
+  "session_id": "2954fd8d-6352-4e3c-b2af-d38da7cafff9",
+  "strategy": "manual-commit",
+  "created_at": "2026-05-30T18:35:44.854819Z",
+  "branch": "docs/issue-72-trigger-bindings-uniqueness",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "docs/adr/0004-orchestration-abstraction.md"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "9e3c6aa5a15f",
+  "token_usage": {
+    "input_tokens": 4783,
+    "cache_creation_tokens": 47469,
+    "cache_read_tokens": 316594,
+    "output_tokens": 6182,
+    "api_call_count": 9
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-05-30T18:35:44.85114Z",
+    "agent_lines": 12,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 12,
+    "total_lines_changed": 12,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}
