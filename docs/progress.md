@@ -121,9 +121,15 @@ These were preconditions for executing the roadmap. Listed for completeness.
 ### Severity threshold tiers (warn / fail / critical) (4 tasks — 0/4)
 > **Day 1 design decision: severity weights — agree before schema migration. ADR 0005 pending.**
 - [ ] ⬜ Add `warn_threshold`, `fail_threshold`, `critical_threshold` fields to check model
-- [ ] ⬜ Alembic migration — threshold columns + `status` enum (`pass`, `warn`, `fail`, `critical`)
+- [ ] ⬜ Alembic migration — threshold columns + `status` enum (`pass`, `warn`, `fail`, `critical`) **+ the monitor-kind / metric columns below (one migration)**
 - [ ] ⬜ Post-processing in GX result handler — derive `warn` / `fail` / `critical` from observed value
 - [ ] ⬜ Update check CRUD + run result response schemas with threshold fields + status values
+
+### Monitor abstraction & metric storage — do-now seams (3 tasks — 0/3)
+> **Day 1 design decision: `check.kind` discriminator + numeric metric storage — decide before the threshold migration; rides the same migration. ADR 0012 pending.** Keeps v1.x auto-monitors (freshness / volume / schema-drift / anomaly — post-v1 Theme A) from forcing a check/result schema rewrite. v1 implements `expectation` only.
+- [ ] ⬜ Add `kind` discriminator to check model (`'expectation'` default; `freshness`/`volume`/`schema_drift`/`anomaly` reserved)
+- [ ] ⬜ Generalise run path to dispatch by `check.kind` (`expectation` → GX `CheckRunner`; others raise `NotImplementedError`)
+- [ ] ⬜ Add `metric_value` (NUMERIC) + `duration_ms` (INT) to results — SQL-aggregatable metric for Week-6 trends + v1.1 anomaly; per-check runtime for cost surface
 
 ### Column profiler (3 tasks — 0/3)
 - [ ] ⬜ Column profiler endpoint (Snowflake) — nulls, distinct count, min / max, top values
@@ -138,7 +144,7 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [ ] ⬜ UC table check path — `spark.read.table()` → GX DataFrame datasource → run suite
 - [ ] ⬜ Integration tests across all three datasource types
 
-**Week 3 total: 0 / 15**
+**Week 3 total: 0 / 18**
 
 ---
 
@@ -336,15 +342,15 @@ These were preconditions for executing the roadmap. Listed for completeness.
 |---|---|---|---|---|
 | Week 1 | 7 | 1 | 2 | 10 |
 | Week 2 | 1 | 0 | 18 | 19 |
-| Week 3 | 0 | 0 | 15 | 15 |
+| Week 3 | 0 | 0 | 18 | 18 |
 | Week 4 | 0 | 0 | 22 | 22 |
 | Week 5 | 1 | 0 | 14 | 15 |
 | Week 6 | 0 | 0 | 16 | 16 |
 | Week 7 | 0 | 1 | 28 | 29 |
 | Week 8 | 2 | 3 | 21 | 26 |
-| **TOTAL** | **11** | **5** | **136** | **152** |
+| **TOTAL** | **11** | **5** | **139** | **155** |
 
-> 152 > 100 because ADR 0004 added Airflow tasks, ADR 0011 added two seam tasks (generic runner dispatch, `ResultPublisher`), plus PR-review follow-ups not in the original roadmap. Tracked here for honesty.
+> 155 > 100 because ADR 0004 added Airflow tasks, ADR 0011 added two seam tasks (generic runner dispatch, `ResultPublisher`), ADR 0012 added three Week-3 monitor-kind / metric seam tasks, plus PR-review follow-ups not in the original roadmap. Tracked here for honesty.
 
 ---
 
@@ -377,6 +383,7 @@ Issues that aren't roadmap tasks but block / risk the work.
 | Decision | Affects | Deadline |
 |---|---|---|
 | Severity tier weights (warn / fail / critical → health score) | Week 3 Day 1 schema migration | Before Week 3 starts |
+| Monitor-kind seam (`check.kind` discriminator + numeric `metric_value` / `duration_ms`) — ADR 0012 | Week 3 schema migration (rides the threshold migration) | Before Week 3 starts |
 | ~~ADF webhook auth (shared secret + rotation)~~ | Week 2 webhook receiver | ✅ Resolved — [ADR 0006](adr/0006-adf-webhook-authentication.md) (secret in URL, hard cutover, no v1 replay check) |
 | ~~Airflow callback signing key (HMAC)~~ | Week 2 webhook receiver | ✅ Resolved — [ADR 0007](adr/0007-airflow-callback-model.md) (HMAC-SHA256 header + polling fallback) |
 | Azure tenant + app registration values | Week 7 deployment | Before Week 7 |
