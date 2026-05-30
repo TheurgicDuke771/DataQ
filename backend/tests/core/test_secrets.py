@@ -1,3 +1,4 @@
+import os
 from types import SimpleNamespace
 
 import pytest
@@ -37,7 +38,8 @@ def test_env_store_raises_when_missing(clean_kv_env: None) -> None:
 def test_env_store_set_then_get_roundtrips(
     clean_kv_env: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(secrets.os, "environ", dict(secrets.os.environ))
+    # Isolate writes to a throwaway copy so the new var doesn't leak across tests.
+    monkeypatch.setattr(os, "environ", dict(os.environ))
     store = EnvSecretStore()
     store.set("conn-snowflake-dev-finance", "p@ss")
     assert store.get("conn-snowflake-dev-finance") == "p@ss"
@@ -46,9 +48,9 @@ def test_env_store_set_then_get_roundtrips(
 def test_env_store_set_writes_normalised_key(
     clean_kv_env: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(secrets.os, "environ", dict(secrets.os.environ))
+    monkeypatch.setattr(os, "environ", dict(os.environ))
     EnvSecretStore().set("conn-snowflake-dev-finance", "p@ss")
-    assert secrets.os.environ["KV_SECRET_CONN_SNOWFLAKE_DEV_FINANCE"] == "p@ss"
+    assert os.environ["KV_SECRET_CONN_SNOWFLAKE_DEV_FINANCE"] == "p@ss"
 
 
 # ───────────────────────── AzureKeyVaultStore ──────────────────────
