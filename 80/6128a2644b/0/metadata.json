@@ -1,0 +1,52 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "806128a2644b",
+  "session_id": "2954fd8d-6352-4e3c-b2af-d38da7cafff9",
+  "strategy": "manual-commit",
+  "created_at": "2026-05-30T19:16:06.021355Z",
+  "branch": "feature/connection-crud-snowflake",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "backend/app/core/secrets.py",
+    "backend/tests/core/test_secrets.py"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "b418e0d29246",
+  "checkpoint_transcript_start": 162,
+  "transcript_lines_at_start": 162,
+  "token_usage": {
+    "input_tokens": 2320,
+    "cache_creation_tokens": 40164,
+    "cache_read_tokens": 2420229,
+    "output_tokens": 21503,
+    "api_call_count": 23
+  },
+  "session_metrics": {
+    "turn_count": 3
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-05-30T19:16:06.013525Z",
+    "agent_lines": 61,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 61,
+    "total_lines_changed": 61,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}
