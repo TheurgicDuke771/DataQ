@@ -16,6 +16,7 @@ from backend.app.db.models import Connection, User
 from backend.app.services import connection_service as svc
 from backend.app.services.connection_service import (
     ConnectionConfigInvalidError,
+    ConnectionConflictError,
     ConnectionNotFoundError,
     ConnectionTestFailedError,
 )
@@ -113,6 +114,27 @@ def test_create_invalid_config_raises_config_invalid(db_session: Any) -> None:
         _create(db_session, FakeStore(), config=bad)
 
 
+def test_create_invalid_env_raises_config_invalid(db_session: Any) -> None:
+    with pytest.raises(ConnectionConfigInvalidError, match="invalid env"):
+        _create(db_session, FakeStore(), env="staging")
+
+
+def test_create_duplicate_name_env_raises_conflict(db_session: Any) -> None:
+    store = FakeStore()
+    user = _user(db_session)
+    _create(db_session, store, user=user, name="dup", env="dev")
+    with pytest.raises(ConnectionConflictError):
+        _create(db_session, store, user=user, name="dup", env="dev")
+
+
+def test_create_same_name_different_env_is_allowed(db_session: Any) -> None:
+    store = FakeStore()
+    user = _user(db_session)
+    _create(db_session, store, user=user, name="shared", env="dev")
+    other = _create(db_session, store, user=user, name="shared", env="qa")
+    assert other.env == "qa"
+
+
 # ───────────────────────── read / list ─────────────────────────────
 
 
@@ -170,6 +192,15 @@ def test_update_invalid_config_raises(db_session: Any) -> None:
         )
 
 
+def test_update_name_collision_raises_conflict(db_session: Any) -> None:
+    store = FakeStore()
+    user = _user(db_session)
+    _create(db_session, store, user=user, name="taken", env="dev")
+    other = _create(db_session, store, user=user, name="free", env="dev")
+    with pytest.raises(ConnectionConflictError):
+        svc.update_connection(db_session, other.id, name="taken", secret_store=store)
+
+
 # ───────────────────────── delete ──────────────────────────────────
 
 
@@ -201,8 +232,12 @@ def test_test_connection_adapter_failure_raises(
     store = FakeStore()
     conn = _create(db_session, store)
     monkeypatch.setattr(svc, "get_connection_adapter", lambda t: _FailAdapter())
-    with pytest.raises(ConnectionTestFailedError, match="warehouse unreachable"):
+    with pytest.raises(ConnectionTestFailedError) as excinfo:
         svc.test_connection(db_session, conn.id, secret_store=store)
+    # client message must NOT echo the adapter exception (DSN/secret leak guard);
+    # the original is preserved only as __cause__ for server-side tracebacks.
+    assert "warehouse unreachable" not in str(excinfo.value)
+    assert isinstance(excinfo.value.__cause__, RuntimeError)
 
 
 def test_test_connection_without_secret_raises(db_session: Any) -> None:

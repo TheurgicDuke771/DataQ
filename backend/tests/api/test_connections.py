@@ -116,6 +116,21 @@ def test_create_invalid_config_returns_422(client: tuple[TestClient, FakeStore])
     assert resp.status_code == 422
 
 
+def test_create_invalid_env_returns_422(client: tuple[TestClient, FakeStore]) -> None:
+    api, _ = client
+    resp = api.post("/api/v1/connections", json=_create_payload(env="staging"))
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "connection_config_invalid"
+
+
+def test_create_duplicate_returns_409(client: tuple[TestClient, FakeStore]) -> None:
+    api, _ = client
+    assert api.post("/api/v1/connections", json=_create_payload(name="dup")).status_code == 201
+    resp = api.post("/api/v1/connections", json=_create_payload(name="dup"))
+    assert resp.status_code == 409
+    assert resp.json()["error"]["code"] == "connection_conflict"
+
+
 # ───────────────────────── read / list ─────────────────────────────
 
 

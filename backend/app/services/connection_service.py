@@ -18,6 +18,7 @@ from typing import Any
 
 from pydantic import ValidationError
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.app.core.errors import DataQError
@@ -27,7 +28,7 @@ from backend.app.datasources.registry import (
     UnsupportedConnectionTypeError,
     get_connection_adapter,
 )
-from backend.app.db.models import Connection
+from backend.app.db.models import ENVS, Connection
 
 log = get_logger(__name__)
 
@@ -40,6 +41,11 @@ class ConnectionNotFoundError(DataQError):
 class ConnectionConfigInvalidError(DataQError):
     status_code = 422
     code = "connection_config_invalid"
+
+
+class ConnectionConflictError(DataQError):
+    status_code = 409
+    code = "connection_conflict"
 
 
 class ConnectionTestFailedError(DataQError):
@@ -62,6 +68,12 @@ def _validated_config(conn_type: str, config: dict[str, Any]) -> None:
         ) from exc
 
 
+def _validate_env(env: str) -> None:
+    """Reject an env outside the allowed set before it hits the DB CHECK."""
+    if env not in ENVS:
+        raise ConnectionConfigInvalidError(f"invalid env {env!r}", detail={"allowed": list(ENVS)})
+
+
 def create_connection(
     session: Session,
     *,
@@ -80,6 +92,7 @@ def create_connection(
     store; only the ref is persisted on the row.
     """
     _validated_config(conn_type, config)
+    _validate_env(env)
 
     conn = Connection(
         name=name,
@@ -90,14 +103,20 @@ def create_connection(
         created_by=created_by,
     )
     session.add(conn)
-    session.flush()  # assign conn.id for the secret_ref
+    try:
+        session.flush()  # assign conn.id + surface the (name, env) unique violation
+        if secret is not None:
+            secret_ref = f"conn-{conn.id}"
+            secret_store.set(secret_ref, secret)
+            conn.secret_ref = secret_ref
+        session.commit()
+    except IntegrityError as exc:
+        session.rollback()
+        raise ConnectionConflictError(
+            "a connection with this name already exists in this env",
+            detail={"name": name, "env": env},
+        ) from exc
 
-    if secret is not None:
-        secret_ref = f"conn-{conn.id}"
-        secret_store.set(secret_ref, secret)
-        conn.secret_ref = secret_ref
-
-    session.commit()
     session.refresh(conn)
     log.info("connection_created", connection_id=str(conn.id), type=conn_type, env=env)
     return conn
@@ -148,7 +167,14 @@ def update_connection(
         secret_store.set(secret_ref, secret)
         conn.secret_ref = secret_ref
 
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError as exc:
+        session.rollback()
+        raise ConnectionConflictError(
+            "a connection with this name already exists in this env",
+            detail={"connection_id": str(connection_id)},
+        ) from exc
     session.refresh(conn)
     log.info("connection_updated", connection_id=str(conn.id))
     return conn
@@ -195,8 +221,11 @@ def test_connection(
             connection_id=str(connection_id),
             error_type=type(exc).__name__,
         )
+        # Don't echo the adapter exception to the client — it can carry DSN /
+        # credential fragments (it's also kept out of the logs above). The
+        # original is preserved as __cause__ for server-side traceback only.
         raise ConnectionTestFailedError(
-            f"connection test failed: {exc}", detail={"connection_id": str(connection_id)}
+            "connection test failed", detail={"connection_id": str(connection_id)}
         ) from exc
 
     log.info("connection_test_succeeded", connection_id=str(connection_id))
