@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "917a7c07b1e7",
+  "strategy": "manual-commit",
+  "branch": "feature/connection-crud-snowflake",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/91/7a7c07b1e7/0/metadata.json",
+      "transcript": "/91/7a7c07b1e7/0/full.jsonl",
+      "content_hash": "/91/7a7c07b1e7/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 136,
+    "cache_creation_tokens": 7532,
+    "cache_read_tokens": 1914668,
+    "output_tokens": 5923,
+    "api_call_count": 7
+  }
+}
