@@ -97,9 +97,15 @@
 ### Severity threshold tiers (warn / fail / critical)
 > **Design decision required upfront:** agree health score weighting before building — e.g. warn = 0.5 penalty, fail = 1.0, critical = 2.0. This affects the DB schema for run results and cannot be changed cheaply after data is written.
 - [ ] Add optional `warn_threshold`, `fail_threshold`, `critical_threshold` fields to check model — all nullable; if only one threshold set, check behaves as standard pass/fail
-- [ ] Alembic migration — add threshold columns to `checks` table and `status` enum (`pass`, `warn`, `fail`, `critical`) to `check_results` table
+- [ ] Alembic migration — add threshold columns + `status` enum (`pass`, `warn`, `fail`, `critical`) to `checks` / `check_results`, **plus the monitor-kind + metric columns below (one migration, not three — the schema can't be changed cheaply once results are written)**
 - [ ] Post-processing logic in GX result handler — after GX returns binary result, evaluate observed value against thresholds to derive `warn` / `fail` / `critical` status
 - [ ] Update check CRUD API to accept and return threshold fields; update run result response schema to include new status values and health score weighting config
+
+### Monitor abstraction & metric storage (do-now seams for the v1.x platform leap)
+> **Design decision required upfront (ADR `0012`, TBD W3):** decide the `check.kind` discriminator + numeric metric storage *before* writing the threshold migration — they ride the **same** migration, so there's no second backward-compatible two-step. v1 implements `expectation` only; the seam keeps freshness / volume / schema-drift / anomaly (v1.x, Theme A below) from forcing a check/result schema rewrite later. It is the one seam orthogonal to the datasource seams (`CheckRunner`, `ConnectionAdapter`) — it varies by *monitor kind*, not by datasource.
+- [ ] Add `kind` discriminator to the check model — `kind TEXT NOT NULL DEFAULT 'expectation'` (reserved: `freshness`, `volume`, `schema_drift`, `anomaly`); kind-specific params live in the existing `config` JSONB
+- [ ] Generalise the run path to dispatch by `check.kind` — `expectation` → the GX `CheckRunner`; other kinds raise `NotImplementedError` until their v1.x impls land
+- [ ] Add `metric_value` (NUMERIC, nullable) + `duration_ms` (INT, nullable) to results — fold into the threshold migration. `metric_value` is the scalar a monitor measured (SQL-aggregatable — JSONB `observed_value` can't be `AVG()`/`STDDEV()`'d — so Week-6 trends + v1.1 anomaly baselines both reuse it); `duration_ms` is per-check runtime for the cost/perf surface (Theme E)
 
 ### Column profiler
 - [ ] Column profiler endpoint (Snowflake) — nulls, distinct count, min / max, top values
@@ -335,20 +341,58 @@
 
 ---
 
-## Deferred to v1.1
+## Post-v1 roadmap (v1.x)
 
-- Check templates / reusable library
-- Clone suite across environments
+> v1 ships **GX-only, rule-authored, observe-and-alert**. The themes below are ordered
+> roughly by leverage. **Theme A (Auto-monitors)** and **Theme B (Enforcement)** are the
+> leap from "GX runner with a dashboard" to a standalone DQ platform — most real
+> incidents are freshness/volume, not value-level, and v1 can observe but not *gate*.
+> Nearly everything here is **additive**, because the expensive decisions are seamed in
+> v1: `check.kind` + `metric_value` (Week 3, ADR `0012`), `ResultPublisher` + generic
+> runner dispatch (ADR 0011), `engine: gx | dqx` (ADR 0003), orchestration abstraction
+> (ADR 0004). Promote an item into a numbered week only when it's scheduled.
+
+### Theme A — Auto-monitors (rule-free coverage; the platform leap)
+*Each is a new `check.kind` slotting into the Week-3 seam + `metric_value` column; no schema rewrite. Delivers coverage without a hand-authored expectation per table.*
+- Freshness monitor — `kind=freshness`: last-loaded timestamp / `max(updated_at)` vs an expected interval (warehouse + UC + flat-file)
+- Volume anomaly detection — `kind=volume`: row-count drift beyond % vs a rolling N-day baseline (dynamic baseline, not a static threshold)
+- Schema-drift monitor — `kind=schema_drift`: auto-detect column add / remove / type change across runs
+- Anomaly detection — `kind=anomaly`: learned baselines (mean / stddev / seasonality) on any numeric `metric_value`
+
+### Theme B — Enforcement / gating
+*`run_service` is already synchronous — a gate is just a `Run` the caller blocks on. No schema change.*
+- Quality gate (write-audit-publish) — synchronous `evaluate → pass/fail` endpoint a pipeline calls to hold publish on a `critical` failure
 - Trigger run via REST API (for ADF / CI pipeline integration)
-- Run on data sample (for large tables)
+- Run on data sample (for large tables) — cost-bounded gating
+
+### Theme C — Incident & ownership
+*Additive tables; constrain nothing in the v1 model.*
+- Incident lifecycle — open / ack / resolve / assign / root-cause notes / status history; alerts attach to an incident
+- Per-check owner tagging — accountable team or individual, surfaced in results + alerts
+- Audit log — who changed what, when
+
+### Theme D — Reach & channels
+*The `ResultPublisher` seam (ADR 0011) absorbs new channels.*
+- Slack / PagerDuty / generic webhook notifiers (on-call integration)
 - Email digest — daily summary of all suite results
 - Threshold-based alerting — alert only when failure % exceeds N
 - Shareable report link (read-only, for stakeholders)
 - Power BI / Teams adaptive card integration
-- Audit log — who changed what, when
+
+### Theme E — Coverage & ops
+- Monitoring coverage report — surface unmonitored tables / datasets ("N tables, M monitored")
+- Maintenance windows — mute alerts during known ETL windows
+- Check cost / runtime surfacing — per-check `duration_ms` (stored from Week 3) + Snowflake credit estimate
+- SLA definition per table / pipeline — formal `sla_deadline` on suites (e.g. "refreshed by 07:00") + SLA-breach KPI on the dashboard
+
+### Theme F — Authoring productivity
+- Check templates / reusable library
+- Clone suite across environments
+
+### Theme G — Lineage, engines & sources
+- Table / asset lineage — visual dependency graph (ADF / Airflow → tables / files → suites → checks), React Flow; uses data already in connections + suite config; ~1 week
+- Databricks Labs **DQX** for DLT / streaming — `engine: gx | dqx` toggle on UC suites (ADR 0003); separate execution model from the GX + Spark path
+- Data diff / reconciliation — source↔target row / checksum reconciliation; env-to-env data diff
+
+### Theme H — UX
 - Dark mode
-- Per-check owner tagging — assign a team or individual as accountable owner for a specific check; surface in results and alerts
-- Volume anomaly detection — flag row count change beyond % drift vs rolling N-day average; requires dynamic baseline calculation rather than static threshold
-- SLA definition per table / pipeline — formal `sla_deadline` field on suites (e.g. "table must be refreshed by 07:00"); dedicated SLA breach counter KPI on results dashboard
-- Databricks Live Tables (DLT) expectations — integrate with Delta Live Tables Expectations API for streaming pipeline DQ checks; separate execution model from the current GX + Spark path
-- Table / asset lineage — visual dependency graph mapping ADF pipelines → Snowflake tables / ADLS files → DataQ suites → checks; built with React Flow; uses data already held in connections and suite config; ~1 week of work

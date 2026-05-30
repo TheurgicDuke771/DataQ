@@ -117,9 +117,10 @@ Airflow callbacks require the user to add a snippet to their DAGs (we can't muta
 
 ## 5. Framework choice — GX-only for v1
 
-- **v1:** Great Expectations (GX Core) is the sole DQ framework across all 4 datasources. Unifies result schema, suite/check model, MCP tools, and the check editor.
+- **v1:** Great Expectations (GX Core) is the sole DQ framework across all 4 datasources. Unifies result schema, suite/check model, MCP tools, and the check editor. Every v1 check is a GX **expectation** (`check.kind = 'expectation'`).
 - **v1.1:** Databricks Labs **DQX** will be added for DLT / streaming use cases (GX is batch-only and runs poorly on streaming). DQX will implement the same `UnityCatalogCheckRunner` interface introduced in Week 3 — UI exposes `engine: gx | dqx` toggle on UC suites.
-- **Implication for Week 3:** keep the UC adapter thin behind `UnityCatalogCheckRunner` so v1.1 DQX swap-in doesn't ripple into the suite/check/result layer.
+- **Monitor-kind seam (do-now, Week 3):** not every monitor is a GX expectation. A `check.kind` discriminator (`expectation` in v1; `freshness | volume | schema_drift | anomaly` reserved) + numeric `metric_value` on results let v1.x auto-monitors slot in without a check/result schema rewrite. This seam is **orthogonal to the datasource seams** (`CheckRunner`, `ConnectionAdapter`): it varies by *monitor kind*, not datasource. See ADR `0012` and post-v1 roadmap Theme A. Most real incidents are freshness/volume, not value-level — this is the leap from "GX runner" to DQ platform.
+- **Implication for Week 3:** keep the UC adapter thin behind `UnityCatalogCheckRunner` (DQX swap-in), **and** add `check.kind` + `metric_value`/`duration_ms` in the *same* threshold migration so the monitor-kind impls don't ripple into the suite/check/result layer later.
 
 ---
 
@@ -212,6 +213,7 @@ curl -X POST http://localhost:8000/api/v1/_probe/snowflake-suite
 | Repo layout: flat monorepo (`backend/` + `frontend/`) | [0009](docs/adr/0009-flat-monorepo-layout.md) | Locked W1 |
 | Provider-agnostic infra seams (Azure = default impl, not architecture; auth boundary now, observability via OTel deferred) | [0010](docs/adr/0010-provider-agnostic-infrastructure-seams.md) | Accepted W2 |
 | Extensibility seams (generic runner dispatch, `ResultPublisher`, dbt-as-`OrchestrationProvider`; second impls deferred post-v1) | [0011](docs/adr/0011-extensibility-seams-for-deferred-integrations.md) | Accepted W2 |
+| Monitor-kind seam (`check.kind` discriminator + numeric `metric_value`/`duration_ms`; v1 = `expectation` only, auto-monitors deferred to v1.x) | `0012` (TBD W3) | Pending before W3 migration |
 
 ---
 
@@ -221,6 +223,7 @@ curl -X POST http://localhost:8000/api/v1/_probe/snowflake-suite
 - **`trigger_bindings` is provider-agnostic.** Composite key (`provider`, `pipeline_or_dag_id`, `env`) → `suite_id`. Don't add an ADF-specific bindings table.
 - **PII redaction at the logger level**, not at every call site. The redactor sits in `backend/app/core/logging.py`.
 - **Backward-compatible migrations only.** Code that depends on a new column ships in a separate PR *after* the migration is deployed.
+- **The Week-3 threshold migration is a one-shot for schema seams.** It must also add `check.kind` (default `'expectation'`) and `results.metric_value` (NUMERIC) + `duration_ms` (INT) — see ADR `0012`. `metric_value` is the SQL-aggregatable scalar a monitor measured; **don't store metrics only in JSONB `observed_value`** (you can't `AVG()`/`STDDEV()` it for trends or anomaly baselines). Adding these later means a second backward-compat two-step.
 - **Secret scanning in pre-commit AND CI.** Don't rely on one alone.
 - **Azure Monitor alert setup (Week 7) needs the deployed public API URL.** Deployment must come first; coordinate Container Apps ingress with infra/security before Week 7 to avoid a deployment-day surprise.
 - **MCP tool descriptions are LLM-facing, not REST-API-facing.** Write them for natural-language selection; test against the 4 canonical NL queries in the roadmap.
