@@ -20,15 +20,15 @@
 | | |
 |---|---|
 | **Active since** | 2026-05-24 |
-| **Today** | 2026-05-29 |
-| **Calendar burn** | day 6 of 56 (~11%) |
-| **Roadmap tasks done** | 9 ✅ + 2 🟡 / 152 (6%) |
-| **Out-of-roadmap PRs landed** | 5 bundles (governance, tooling lock, Entire CLI, Dependabot triage round 1, PR-3 cleanup) |
+| **Today** | 2026-05-30 |
+| **Calendar burn** | day 7 of 56 (~13%) |
+| **Roadmap tasks done** | 10 ✅ + 2 🟡 / 152 (7%) |
+| **Out-of-roadmap PRs landed** | 5 bundles (governance, tooling lock, Entire CLI, Dependabot triage round 1, PR-3 cleanup) + ADRs 0006/0007 (orchestration auth) |
 | **Current week** | Week 2 — Connection manager (backend) |
 | **Week-1 exit gate** | A logged-in user can hit a FastAPI endpoint that triggers GX against Snowflake DEV and persists a result row. — **met** (plumbing complete via PR 4a–4c; live-Snowflake run fails-soft pending DEV creds — deferred smoke) |
-| **Next milestone** | PR 5 — Snowflake connection CRUD + test endpoint (Week 2) |
-| **Open issues** | 13 (#75 closed by PR 4c-ii) |
-| **Open PRs** | PR 4c-ii (this PR) |
+| **Next milestone** | PR 6 — ADF connection CRUD + `(type, env)` uniqueness guard (#72) (Week 2) |
+| **Open issues** | 12 (#72 closed by ADR-0004 doc PR #83) |
+| **Open PRs** | PR 5 (#85 — Snowflake connection CRUD) |
 
 ---
 
@@ -75,8 +75,8 @@ These were preconditions for executing the roadmap. Listed for completeness.
 
 > **Auth-boundary discipline (per [ADR 0010](adr/0010-provider-agnostic-infrastructure-seams.md)):** new connection-CRUD endpoints (and every protected route from here on) depend on a generic internal "current user" dependency that returns DataQ's own `User` — they must NOT read MSAL token claims directly in route/service code. Cheap now; expensive to retrofit once dozens of endpoints exist. No new abstraction layer required, just the boundary.
 
-### Snowflake & ADF (3 tasks — 0/3)
-- [ ] ⬜ API: CRUD for Snowflake connections (DEV / QA / UAT), connection test endpoint
+### Snowflake & ADF (3 tasks — 1/3)
+- [x] ✅ API: CRUD for Snowflake connections (DEV / QA / UAT), connection test endpoint — [PR 5](https://github.com/TheurgicDuke771/DataQ/pull/85) _(also introduced the `ConnectionAdapter` seam + registry per [ADR 0011](adr/0011-extensibility-seams-for-deferred-integrations.md), and `SecretStore.set` write-through — so PRs 6-8 are pure adapter additions)_
 - [ ] ⬜ API: CRUD for ADF connections (subscription ID + service principal) — must enforce `(type, env)` uniqueness for orchestrator-typed rows per [#72](https://github.com/TheurgicDuke771/DataQ/issues/72)
 - [ ] ⬜ Connection re-auth endpoint — refresh expired Key Vault token
 - [ ] ⬜ Review `connections.secret_ref` nullability — decide based on Airflow basic-poll / unauthenticated S3 cases ([PR #41 nit](https://github.com/TheurgicDuke771/DataQ/pull/41))
@@ -104,7 +104,7 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [ ] ⬜ GX Spark / JDBC datasource wiring for Unity Catalog — connect, list catalogs / schemas / tables
 - [ ] ⬜ UC auth test endpoint — validate PAT + SQL Warehouse reachability
 
-**Week 2 total: 0 / 19**
+**Week 2 total: 1 / 19**
 
 ---
 
@@ -290,7 +290,7 @@ These were preconditions for executing the roadmap. Listed for completeness.
 
 ### Backend unit tests (pytest) (11 tasks — 0.5/11)
 - [ ] ⬜ Auth service — token validation, session expiry, Key Vault credential retrieval
-- [ ] ⬜ Connection service — CRUD operations, test endpoint logic per datasource type
+- [ ] 🟡 Connection service — CRUD operations, test endpoint logic per datasource type — Snowflake path covered (16 DB-backed tests, `connection_service.py` 100%) — [PR 5](https://github.com/TheurgicDuke771/DataQ/pull/85); ADF/ADLS/S3/UC paths pending their CRUD PRs
 - [ ] ⬜ Suite service — CRUD, share assignment, export / import serialisation
 - [ ] ⬜ Check service — expectation builder, SQL validator, dry-run logic, threshold tier evaluation
 - [ ] ⬜ Column profiler service — null count, distinct count, min/max per datasource type
@@ -305,7 +305,7 @@ These were preconditions for executing the roadmap. Listed for completeness.
 ### API layer tests (pytest + httpx) (6 tasks — 0/6, probe endpoint covered early)
 - [ ] ⬜ Auth endpoints — login redirect, token refresh, unauthorised → 401
 - [x] ✅ **Probe endpoints** (out-of-roadmap) — POST creates+dispatches, idempotent seed, GET results, 404 — against real Postgres — [PR 4c-ii](https://github.com/TheurgicDuke771/DataQ/pull/79)
-- [ ] ⬜ Connection endpoints — CRUD happy paths + validation errors
+- [x] 🟡 Connection endpoints — CRUD happy paths + validation errors — Snowflake covered (13 TestClient tests: CRUD, 422/404/502, secret-never-leaks, auth gate) — [PR 5](https://github.com/TheurgicDuke771/DataQ/pull/85); other types follow their CRUD PRs
 - [ ] ⬜ Suite & check endpoints — CRUD, share, export / import, dry-run
 - [ ] ⬜ Execution endpoints — trigger run, poll progress, cancel, list history
 - [ ] ⬜ Results endpoints — dashboard data, drill-down, filters, download
@@ -335,14 +335,14 @@ These were preconditions for executing the roadmap. Listed for completeness.
 | Week | Done | In progress | Pending | Total |
 |---|---|---|---|---|
 | Week 1 | 7 | 1 | 2 | 10 |
-| Week 2 | 0 | 0 | 19 | 19 |
+| Week 2 | 1 | 0 | 18 | 19 |
 | Week 3 | 0 | 0 | 15 | 15 |
 | Week 4 | 0 | 0 | 22 | 22 |
 | Week 5 | 1 | 0 | 14 | 15 |
 | Week 6 | 0 | 0 | 16 | 16 |
 | Week 7 | 0 | 1 | 28 | 29 |
 | Week 8 | 2 | 3 | 21 | 26 |
-| **TOTAL** | **10** | **5** | **137** | **152** |
+| **TOTAL** | **11** | **5** | **136** | **152** |
 
 > 152 > 100 because ADR 0004 added Airflow tasks, ADR 0011 added two seam tasks (generic runner dispatch, `ResultPublisher`), plus PR-review follow-ups not in the original roadmap. Tracked here for honesty.
 
@@ -361,8 +361,10 @@ Issues that aren't roadmap tasks but block / risk the work.
 | ~~[#54](https://github.com/TheurgicDuke771/DataQ/issues/54)~~ | ~~Consolidate mypy / type-check dep lists (3-file drift)~~ | **Closed** ([PR #68](https://github.com/TheurgicDuke771/DataQ/pull/68)) | n/a |
 | [#62](https://github.com/TheurgicDuke771/DataQ/issues/62) | MSAL redirect lifecycle (real-AAD smoke test deferred) | Open | Week 7 deployment |
 | [#65](https://github.com/TheurgicDuke771/DataQ/issues/65) | Vite 8 coordinated bump (vite + plugin-react + vitest) | Open | Week 4 (also tracked as a roadmap task above) |
-| [#72](https://github.com/TheurgicDuke771/DataQ/issues/72) | ADR 0004 follow-up: document `trigger_bindings` one-orchestrator-per-(provider, env) assumption | Open | Week 2 connection CRUD (blocking) |
+| ~~[#72](https://github.com/TheurgicDuke771/DataQ/issues/72)~~ | ~~ADR 0004 follow-up: document `trigger_bindings` one-orchestrator-per-(provider, env) assumption~~ | **Closed** ([PR #83](https://github.com/TheurgicDuke771/DataQ/pull/83)) | n/a — guard enforced in PR 6 ADF CRUD |
 | ~~[#75](https://github.com/TheurgicDuke771/DataQ/issues/75)~~ | ~~Integration-assert request_id propagates FastAPI→Celery worker logs~~ | **Closed** ([PR 4c-ii](https://github.com/TheurgicDuke771/DataQ/pull/79)) | n/a |
+| [#86](https://github.com/TheurgicDuke771/DataQ/issues/86) | `EnvSecretStore.set` is per-process — Celery worker can't resolve API-written secrets (dev only) | Open | Week 5 connection-driven runs (PR 5 follow-on) |
+| [#87](https://github.com/TheurgicDuke771/DataQ/issues/87) | Map `SecretWriteError` → 502 in connection create/update (currently 500) | Open | hardening (low priority) |
 
 **Deferred polish** (Week-1 governance era; do during slack): #8, #10, #12, #17, #18, #19, #20.
 

@@ -185,3 +185,37 @@ def build_snowflake_runner(
     sf_config = SnowflakeConfig.model_validate(config)
     password = secret_store.get(secret_ref)
     return SnowflakeCheckRunner(sf_config, password)
+
+
+# Snowflake connector timeouts (seconds) for the connectivity test — fail fast
+# rather than hanging the request thread on an unreachable account.
+_TEST_LOGIN_TIMEOUT = 10
+_TEST_NETWORK_TIMEOUT = 10
+
+
+class SnowflakeConnectionAdapter:
+    """`ConnectionAdapter` for Snowflake — config validation + a SELECT 1 test."""
+
+    def validate_config(self, raw: dict[str, Any]) -> SnowflakeConfig:
+        return SnowflakeConfig.model_validate(raw)
+
+    def test(self, raw: dict[str, Any], secret: str) -> None:
+        """Open a connection and run ``SELECT 1``; raise on any failure.
+
+        Deliberately GX-free — a lightweight connectivity probe, not a suite run.
+        """
+        from sqlalchemy import create_engine, text
+
+        config = self.validate_config(raw)
+        engine = create_engine(
+            build_connection_string(config, secret),
+            connect_args={
+                "login_timeout": _TEST_LOGIN_TIMEOUT,
+                "network_timeout": _TEST_NETWORK_TIMEOUT,
+            },
+        )
+        try:
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+        finally:
+            engine.dispose()

@@ -1,3 +1,4 @@
+import os
 from types import SimpleNamespace
 
 import pytest
@@ -7,6 +8,7 @@ from backend.app.core.secrets import (
     AzureKeyVaultStore,
     EnvSecretStore,
     SecretNotFoundError,
+    SecretWriteError,
     _build_store,
     _env_key,
     get_secret_store,
@@ -31,6 +33,24 @@ def test_env_store_returns_value_when_set(
 def test_env_store_raises_when_missing(clean_kv_env: None) -> None:
     with pytest.raises(SecretNotFoundError, match="KV_SECRET_MISSING"):
         EnvSecretStore().get("missing")
+
+
+def test_env_store_set_then_get_roundtrips(
+    clean_kv_env: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Isolate writes to a throwaway copy so the new var doesn't leak across tests.
+    monkeypatch.setattr(os, "environ", dict(os.environ))
+    store = EnvSecretStore()
+    store.set("conn-snowflake-dev-finance", "p@ss")
+    assert store.get("conn-snowflake-dev-finance") == "p@ss"
+
+
+def test_env_store_set_writes_normalised_key(
+    clean_kv_env: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(os, "environ", dict(os.environ))
+    EnvSecretStore().set("conn-snowflake-dev-finance", "p@ss")
+    assert os.environ["KV_SECRET_CONN_SNOWFLAKE_DEV_FINANCE"] == "p@ss"
 
 
 # ───────────────────────── AzureKeyVaultStore ──────────────────────
@@ -71,6 +91,27 @@ def test_akv_store_get_raises_when_secret_value_none(
     monkeypatch.setattr(store, "_client_lazy", lambda: fake_client)
     with pytest.raises(SecretNotFoundError, match="has no value"):
         store.get("snowflake-uat-finance")
+
+
+def test_akv_store_set_calls_set_secret(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = AzureKeyVaultStore("https://example.vault.azure.net/")
+    calls: list[tuple[str, str]] = []
+    fake_client = SimpleNamespace(set_secret=lambda name, value: calls.append((name, value)))
+    monkeypatch.setattr(store, "_client_lazy", lambda: fake_client)
+    store.set("conn-snowflake-dev-finance", "p@ss")
+    assert calls == [("conn-snowflake-dev-finance", "p@ss")]
+
+
+def test_akv_store_set_wraps_sdk_exception(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = AzureKeyVaultStore("https://example.vault.azure.net/")
+
+    def _boom(name: str, value: str) -> None:
+        raise RuntimeError("network down")
+
+    fake_client = SimpleNamespace(set_secret=_boom)
+    monkeypatch.setattr(store, "_client_lazy", lambda: fake_client)
+    with pytest.raises(SecretWriteError, match="network down"):
+        store.set("conn-snowflake-dev-finance", "p@ss")
 
 
 # ───────────────────────── Factory + cache ─────────────────────────

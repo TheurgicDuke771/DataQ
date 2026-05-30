@@ -39,9 +39,15 @@ class SecretNotFoundError(Exception):
     """Raised when the requested secret is missing or unreadable."""
 
 
+class SecretWriteError(Exception):
+    """Raised when a secret cannot be written to the backing store."""
+
+
 @runtime_checkable
 class SecretStore(Protocol):
     def get(self, name: str) -> str: ...
+
+    def set(self, name: str, value: str) -> None: ...
 
 
 def _env_key(name: str) -> str:
@@ -57,6 +63,14 @@ class EnvSecretStore:
         if value is None:
             raise SecretNotFoundError(f"Env secret {key!r} not set (mapped from name={name!r})")
         return value
+
+    def set(self, name: str, value: str) -> None:
+        """Write into the process env. Dev only — NOT persisted across restarts.
+
+        Lets connection-CRUD exercise the write-through path locally without an
+        Azure tenant. Production uses AzureKeyVaultStore, which persists.
+        """
+        os.environ[_env_key(name)] = value
 
 
 class AzureKeyVaultStore:
@@ -92,6 +106,14 @@ class AzureKeyVaultStore:
         if value is None:
             raise SecretNotFoundError(f"Key Vault secret {name!r} has no value")
         return str(value)
+
+    def set(self, name: str, value: str) -> None:
+        try:
+            self._client_lazy().set_secret(name, value)
+        except Exception as exc:
+            raise SecretWriteError(
+                f"Key Vault secret {name!r} at {self._vault_url}: {exc}"
+            ) from exc
 
 
 _store_singleton: SecretStore | None = None

@@ -13,10 +13,15 @@ from types import SimpleNamespace
 import pytest
 from pydantic import ValidationError
 
-from backend.app.datasources.base import CheckRunner, CheckSpec
+from backend.app.datasources.base import CheckRunner, CheckSpec, ConnectionAdapter
+from backend.app.datasources.registry import (
+    UnsupportedConnectionTypeError,
+    get_connection_adapter,
+)
 from backend.app.datasources.snowflake import (
     SnowflakeCheckRunner,
     SnowflakeConfig,
+    SnowflakeConnectionAdapter,
     UnknownExpectationError,
     _expectation_class_name,
     _to_gx_expectation,
@@ -44,6 +49,9 @@ class _FakeStore:
     def get(self, name: str) -> str:
         self.asked = name
         return "s3cr3t-pw"
+
+    def set(self, name: str, value: str) -> None:  # satisfies SecretStore Protocol
+        self.asked = name
 
 
 # ───────────────────────── SnowflakeConfig ─────────────────────────
@@ -212,3 +220,94 @@ def test_build_runner_resolves_secret_and_returns_check_runner() -> None:
 def test_build_runner_requires_secret_ref() -> None:
     with pytest.raises(ValueError, match="secret_ref"):
         build_snowflake_runner(config=_CONFIG, secret_ref=None, secret_store=_FakeStore())
+
+
+# ───────────────────────── ConnectionAdapter ───────────────────────
+
+
+class _FakeConn:
+    def __init__(self, executed: list[str]) -> None:
+        self._executed = executed
+
+    def execute(self, statement: object) -> None:
+        self._executed.append(str(statement))
+
+    def __enter__(self) -> "_FakeConn":
+        return self
+
+    def __exit__(self, *exc: object) -> bool:
+        return False
+
+
+class _FakeEngine:
+    def __init__(self, executed: list[str]) -> None:
+        self._executed = executed
+        self.disposed = False
+
+    def connect(self) -> _FakeConn:
+        return _FakeConn(self._executed)
+
+    def dispose(self) -> None:
+        self.disposed = True
+
+
+def test_adapter_validate_config_returns_model() -> None:
+    cfg = SnowflakeConnectionAdapter().validate_config(_CONFIG)
+    assert isinstance(cfg, SnowflakeConfig)
+    assert cfg.schema_ == "FINANCE"
+
+
+def test_adapter_validate_config_rejects_unknown_keys() -> None:
+    with pytest.raises(ValidationError):
+        SnowflakeConnectionAdapter().validate_config({**_CONFIG, "bogus": "x"})
+
+
+def test_adapter_satisfies_protocol() -> None:
+    assert isinstance(SnowflakeConnectionAdapter(), ConnectionAdapter)
+
+
+def test_adapter_test_runs_select_1_and_disposes(monkeypatch: pytest.MonkeyPatch) -> None:
+    executed: list[str] = []
+    engine = _FakeEngine(executed)
+    captured: dict[str, object] = {}
+
+    def fake_create_engine(url: str, **kwargs: object) -> _FakeEngine:
+        captured["url"] = url
+        captured["connect_args"] = kwargs.get("connect_args")
+        return engine
+
+    monkeypatch.setattr("sqlalchemy.create_engine", fake_create_engine)
+    SnowflakeConnectionAdapter().test(_CONFIG, "p@ss")
+
+    assert executed == ["SELECT 1"]
+    assert engine.disposed is True
+    assert captured["connect_args"] == {"login_timeout": 10, "network_timeout": 10}
+    assert "p%40ss" in str(captured["url"])  # password URL-encoded into the DSN
+
+
+def test_adapter_test_disposes_engine_on_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    engine = _FakeEngine([])
+
+    def boom_connect() -> _FakeConn:
+        raise RuntimeError("warehouse unreachable")
+
+    engine.connect = boom_connect  # type: ignore[method-assign]
+    monkeypatch.setattr("sqlalchemy.create_engine", lambda url, **kw: engine)
+
+    with pytest.raises(RuntimeError, match="warehouse unreachable"):
+        SnowflakeConnectionAdapter().test(_CONFIG, "p@ss")
+    assert engine.disposed is True
+
+
+# ───────────────────────── registry ────────────────────────────────
+
+
+def test_registry_returns_snowflake_adapter() -> None:
+    adapter = get_connection_adapter("snowflake")
+    assert isinstance(adapter, SnowflakeConnectionAdapter)
+    assert isinstance(adapter, ConnectionAdapter)
+
+
+def test_registry_unknown_type_raises() -> None:
+    with pytest.raises(UnsupportedConnectionTypeError, match="adf"):
+        get_connection_adapter("adf")

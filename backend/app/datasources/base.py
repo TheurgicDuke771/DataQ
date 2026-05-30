@@ -18,6 +18,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
+from pydantic import BaseModel
+
 
 @dataclass(frozen=True)
 class CheckSpec:
@@ -69,3 +71,25 @@ class CheckRunner(Protocol):
         schema: str | None,
         checks: list[CheckSpec],
     ) -> SuiteOutcome: ...
+
+
+@runtime_checkable
+class ConnectionAdapter(Protocol):
+    """Per-datasource-type connection behaviour: config validation + live test.
+
+    The two things that vary across connection types (Snowflake now; ADF, ADLS,
+    S3, Unity Catalog next) behind one interface, so connection-CRUD service code
+    dispatches by ``connection.type`` and never branches on it. Each adapter owns
+    its own pydantic config model; both methods take the raw config dict so the
+    adapter is the single source of truth for that type's shape.
+
+    `validate_config` parses + validates a stored/incoming config (raising
+    pydantic ``ValidationError`` on bad input) and returns the normalised model.
+    `test` resolves connectivity against the live datasource using the config +
+    its secret, raising on failure. Adapters never touch the DB or SecretStore —
+    the caller resolves the secret and hands it in.
+    """
+
+    def validate_config(self, raw: dict[str, Any]) -> BaseModel: ...
+
+    def test(self, raw: dict[str, Any], secret: str) -> None: ...
