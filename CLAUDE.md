@@ -206,8 +206,8 @@ curl -X POST http://localhost:8000/api/v1/_probe/snowflake-suite
 | GX-only for v1; DQX deferred to v1.1 | [0003](docs/adr/0003-gx-only-for-v1.md) | Locked W1 |
 | Orchestration abstraction (ADF + Airflow share `OrchestrationProvider`) | [0004](docs/adr/0004-orchestration-abstraction.md) | Locked W1 |
 | Severity tier weights (warn/fail/critical → health score) | `0005` (TBD W3) | Pending stakeholder agreement before W3 starts |
-| ADF webhook auth (shared secret) + Key Vault rotation | `0006` (TBD W2) | Pending W2 |
-| Airflow callback model (HMAC-signed) + polling fallback | `0007` (TBD W2) | Pending W2 |
+| ADF webhook auth (shared secret in URL, hard-cutover rotation, no v1 replay check) | [0006](docs/adr/0006-adf-webhook-authentication.md) | Accepted W2 |
+| Airflow callback model (HMAC-signed header + polling fallback) | [0007](docs/adr/0007-airflow-callback-model.md) | Accepted W2 |
 | MCP mounted at `/mcp` with Azure AD auth | `0008` (TBD W7) | Pending W7 |
 | Repo layout: flat monorepo (`backend/` + `frontend/`) | [0009](docs/adr/0009-flat-monorepo-layout.md) | Locked W1 |
 | Provider-agnostic infra seams (Azure = default impl, not architecture; auth boundary now, observability via OTel deferred) | [0010](docs/adr/0010-provider-agnostic-infrastructure-seams.md) | Accepted W2 |
