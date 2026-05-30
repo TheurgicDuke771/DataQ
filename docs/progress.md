@@ -363,6 +363,8 @@ Issues that aren't roadmap tasks but block / risk the work.
 | [#65](https://github.com/TheurgicDuke771/DataQ/issues/65) | Vite 8 coordinated bump (vite + plugin-react + vitest) | Open | Week 4 (also tracked as a roadmap task above) |
 | ~~[#72](https://github.com/TheurgicDuke771/DataQ/issues/72)~~ | ~~ADR 0004 follow-up: document `trigger_bindings` one-orchestrator-per-(provider, env) assumption~~ | **Closed** ([PR #83](https://github.com/TheurgicDuke771/DataQ/pull/83)) | n/a — guard enforced in PR 6 ADF CRUD |
 | ~~[#75](https://github.com/TheurgicDuke771/DataQ/issues/75)~~ | ~~Integration-assert request_id propagates FastAPI→Celery worker logs~~ | **Closed** ([PR 4c-ii](https://github.com/TheurgicDuke771/DataQ/pull/79)) | n/a |
+| [#86](https://github.com/TheurgicDuke771/DataQ/issues/86) | `EnvSecretStore.set` is per-process — Celery worker can't resolve API-written secrets (dev only) | Open | Week 5 connection-driven runs (PR 5 follow-on) |
+| [#87](https://github.com/TheurgicDuke771/DataQ/issues/87) | Map `SecretWriteError` → 502 in connection create/update (currently 500) | Open | hardening (low priority) |
 
 **Deferred polish** (Week-1 governance era; do during slack): #8, #10, #12, #17, #18, #19, #20.
 
