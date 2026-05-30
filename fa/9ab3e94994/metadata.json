@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "fa9ab3e94994",
+  "strategy": "manual-commit",
+  "branch": "docs/monitor-kind-seam-and-v1x-roadmap",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "CLAUDE.md",
+    "context/DataQ_platform_roadmap.md",
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/fa/9ab3e94994/0/metadata.json",
+      "transcript": "/fa/9ab3e94994/0/full.jsonl",
+      "content_hash": "/fa/9ab3e94994/0/content_hash.txt",
+      "prompt": "/fa/9ab3e94994/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 29605,
+    "cache_creation_tokens": 2712000,
+    "cache_read_tokens": 99593542,
+    "output_tokens": 364505,
+    "api_call_count": 361
+  }
+}
