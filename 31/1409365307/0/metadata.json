@@ -1,0 +1,41 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "311409365307",
+  "session_id": "2954fd8d-6352-4e3c-b2af-d38da7cafff9",
+  "strategy": "manual-commit",
+  "created_at": "2026-05-30T19:41:28.872174Z",
+  "branch": "feature/connection-crud-snowflake",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "backend/app/api/v1/connections.py",
+    "backend/app/main.py",
+    "backend/tests/api/test_connections.py"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "b418e0d29246",
+  "checkpoint_transcript_start": 476,
+  "transcript_lines_at_start": 476,
+  "token_usage": {
+    "input_tokens": 1399,
+    "cache_creation_tokens": 18398,
+    "cache_read_tokens": 3147750,
+    "output_tokens": 14532,
+    "api_call_count": 17
+  },
+  "session_metrics": {
+    "turn_count": 3
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-05-30T19:41:28.85761Z",
+    "agent_lines": 383,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 383,
+    "total_lines_changed": 383,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
