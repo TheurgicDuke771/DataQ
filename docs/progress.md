@@ -375,8 +375,8 @@ Issues that aren't roadmap tasks but block / risk the work.
 | Decision | Affects | Deadline |
 |---|---|---|
 | Severity tier weights (warn / fail / critical → health score) | Week 3 Day 1 schema migration | Before Week 3 starts |
-| ADF webhook auth (shared secret + rotation) | Week 2 webhook receiver | Before Week 2 starts |
-| Airflow callback signing key (HMAC) | Week 2 webhook receiver | Before Week 2 starts |
+| ~~ADF webhook auth (shared secret + rotation)~~ | Week 2 webhook receiver | ✅ Resolved — [ADR 0006](adr/0006-adf-webhook-authentication.md) (secret in URL, hard cutover, no v1 replay check) |
+| ~~Airflow callback signing key (HMAC)~~ | Week 2 webhook receiver | ✅ Resolved — [ADR 0007](adr/0007-airflow-callback-model.md) (HMAC-SHA256 header + polling fallback) |
 | Azure tenant + app registration values | Week 7 deployment | Before Week 7 |
 
 ---
