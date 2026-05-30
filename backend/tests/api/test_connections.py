@@ -207,8 +207,9 @@ def test_test_endpoint_failure_returns_502(
 
 
 def test_create_requires_auth(db_session: Any) -> None:
+    store = FakeStore()
     app.dependency_overrides[get_db] = lambda: db_session
-    app.dependency_overrides[get_secret_store] = lambda: FakeStore()
+    app.dependency_overrides[get_secret_store] = lambda: store
 
     def _reject() -> None:
         raise HTTPException(status_code=401, detail="unauthorized")
@@ -217,6 +218,7 @@ def test_create_requires_auth(db_session: Any) -> None:
     try:
         resp = TestClient(app).post("/api/v1/connections", json=_create_payload())
         assert resp.status_code == 401
-        assert db_session.scalars(select(Connection)).all() == []
+        rows = db_session.scalars(select(Connection)).all()
+        assert rows == []  # handler must not have created a row
     finally:
         app.dependency_overrides.clear()
