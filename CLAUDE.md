@@ -267,8 +267,10 @@ curl -X POST http://localhost:8000/api/v1/_probe/snowflake-suite
 - PR 2 a/b/c (#39, #40, #41) — Docker Compose, structlog + error envelope + FastAPI skeleton, SQLAlchemy models + Alembic baseline
 - PR 3 a/b/c (#53, #56, #63) — Azure AD SSO end-to-end (backend MSAL + SecretStore abstraction + frontend MSAL + `/me`)
 - PR 4 a/b/b.1/c (#74, #76, #77, #78, #79) — async backbone (Celery + containerized API/worker), Snowflake GX adapter, run/result persistence + NaN sanitizer, Postgres test fixtures, `_probe/snowflake-suite` endpoint. Coverage ~91%.
-**Next milestone:** PR 5 — Snowflake connection CRUD + test endpoint (Week 2). Note #72 (trigger_bindings uniqueness) is blocking for connection CRUD.
-**Active blockers:** none for PR 5. See [docs/progress.md](docs/progress.md) for the active-issues list.
+- ADRs 0006/0007 (#84) — orchestration-auth decisions (ADF secret-in-URL + hard-cutover; Airflow HMAC + polling fallback); #72 closed (#83) — `trigger_bindings` single-orchestrator assumption documented in ADR 0004.
+- PR 5 (#85, in review) — Snowflake connection CRUD + `/test` endpoint; introduced the `ConnectionAdapter` seam + registry and `SecretStore.set` write-through. Coverage ~94%.
+**Next milestone:** PR 6 — ADF connection CRUD + `(type, env)` uniqueness guard (per #72) (Week 2).
+**Active blockers:** none. See [docs/progress.md](docs/progress.md) for the active-issues list.
 
 Update this section at the end of each week with: current week, the week's exit gate, and any open blocker issues by number. Per-PR task ticks go in `docs/progress.md` (PR-template checkbox).
 
