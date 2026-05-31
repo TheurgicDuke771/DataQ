@@ -30,7 +30,7 @@ class _FakeResponse:
 
 
 _EVENT: dict[str, Any] = {
-    "factoryName": "lll-adf-nonprod",
+    "factoryName": "example-adf-preprod",
     "pipelineName": "load_finance",
     "runId": "run-abc-123",
     "status": "Failed",
@@ -42,7 +42,7 @@ _EVENT: dict[str, Any] = {
 _ADF_CONFIG: dict[str, Any] = {
     "subscription_id": "00000000-0000-0000-0000-000000000001",
     "resource_group": "rg-data",
-    "factory_name": "lll-adf-nonprod",
+    "factory_name": "example-adf-preprod",
     "tenant_id": "00000000-0000-0000-0000-0000000000aa",
     "client_id": "00000000-0000-0000-0000-0000000000bb",
 }
@@ -56,7 +56,7 @@ def test_parse_extracts_all_fields() -> None:
     update = _parse(_EVENT)
     assert update.provider_run_id == "run-abc-123"
     assert update.pipeline_or_dag_id == "load_finance"
-    assert update.resource_name == "lll-adf-nonprod"
+    assert update.resource_name == "example-adf-preprod"
     assert update.status == "failed"
     assert update.failure_reason == "Activity Copy1 failed"
     assert update.started_at is not None and update.started_at.year == 2026

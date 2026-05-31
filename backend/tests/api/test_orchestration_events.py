@@ -25,13 +25,13 @@ _SECRET = "s3cr3t-webhook-token"
 _ADF_CONFIG = {
     "subscription_id": "00000000-0000-0000-0000-000000000001",
     "resource_group": "rg-data",
-    "factory_name": "lll-adf-nonprod",
+    "factory_name": "example-adf-preprod",
     "tenant_id": "00000000-0000-0000-0000-0000000000aa",
     "client_id": "00000000-0000-0000-0000-0000000000bb",
 }
 
 _EVENT = {
-    "factoryName": "lll-adf-nonprod",
+    "factoryName": "example-adf-preprod",
     "pipelineName": "load_finance",
     "runId": "run-abc-123",
     "status": "Failed",

@@ -1,0 +1,13 @@
+# Treat binary file types as binary so git doesn't attempt text diffs / merges.
+*.pptx binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.pdf binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+
+# These are text even if tooling guesses otherwise.
+*.svg text

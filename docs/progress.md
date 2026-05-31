@@ -259,10 +259,10 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [ ] ⬜ Real-vault integration test for `AzureKeyVaultStore` lazy-import branch (currently 0% coverage) ([PR #56 nit](https://github.com/TheurgicDuke771/DataQ/pull/56))
 
 ### Azure Monitor webhook setup (post-deployment) (5 tasks — 0/5)
-- [ ] ⬜ Action Group (nonprod) — webhook to nonprod API URL, shared secret from Key Vault
-- [ ] ⬜ Alert Rule (nonprod) — `lll-adf-nonprod` factory, Failed pipeline runs signal
+- [ ] ⬜ Action Group (pre-prod) — webhook to pre-prod API URL, shared secret from Key Vault
+- [ ] ⬜ Alert Rule (pre-prod) — `example-adf-preprod` factory, Failed pipeline runs signal
 - [ ] ⬜ Action Group (prod) — same config pointing to prod API URL
-- [ ] ⬜ Alert Rule (prod) — `lll-adf-prod` factory, same signal + dimension config
+- [ ] ⬜ Alert Rule (prod) — `example-adf-prod` factory, same signal + dimension config
 - [ ] ⬜ Smoke test — deliberate DEV pipeline failure → webhook → DB update → UI within 5 min
 
 ### FastMCP — MCP server (12 tasks — 0/12)

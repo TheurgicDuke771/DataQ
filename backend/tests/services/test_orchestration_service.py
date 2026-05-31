@@ -18,7 +18,7 @@ from backend.app.services.orchestration_service import ingest_event, record_pipe
 _ADF_CONFIG = {
     "subscription_id": "00000000-0000-0000-0000-000000000001",
     "resource_group": "rg-data",
-    "factory_name": "lll-adf-nonprod",
+    "factory_name": "example-adf-preprod",
     "tenant_id": "00000000-0000-0000-0000-0000000000aa",
     "client_id": "00000000-0000-0000-0000-0000000000bb",
 }
@@ -32,7 +32,7 @@ def _user(db_session: Any) -> User:
 
 
 def _adf_connection(
-    db_session: Any, *, env: str = "dev", factory: str = "lll-adf-nonprod"
+    db_session: Any, *, env: str = "dev", factory: str = "example-adf-preprod"
 ) -> Connection:
     conn = Connection(
         name=f"adf-{env}",
@@ -50,7 +50,7 @@ def _update(**overrides: Any) -> RunUpdate:
     base: dict[str, Any] = {
         "provider_run_id": "run-1",
         "pipeline_or_dag_id": "load_finance",
-        "resource_name": "lll-adf-nonprod",
+        "resource_name": "example-adf-preprod",
         "status": "failed",
         "failure_reason": "boom",
     }
@@ -158,7 +158,9 @@ class _FakeProvider:
         raise NotImplementedError
 
 
-def _adf_connection_with_secret(db_session: Any, *, factory: str = "lll-adf-nonprod") -> Connection:
+def _adf_connection_with_secret(
+    db_session: Any, *, factory: str = "example-adf-preprod"
+) -> Connection:
     conn = _adf_connection(db_session, factory=factory)
     conn.secret_ref = f"conn-{conn.id}"
     db_session.commit()
