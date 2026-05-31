@@ -61,7 +61,9 @@ def _authenticate(token: str | None, secret_store: SecretStore) -> None:
         log.error("adf_webhook_secret_missing", secret_name=settings.adf_webhook_secret_name)
         raise WebhookNotConfiguredError("ADF webhook receiver is not configured") from exc
 
-    if not token or not hmac.compare_digest(token, secret):
+    # Compare on UTF-8 bytes: hmac.compare_digest rejects non-ASCII str inputs
+    # with a TypeError, so a caller-supplied non-ASCII token must not reach it.
+    if not token or not hmac.compare_digest(token.encode("utf-8"), secret.encode("utf-8")):
         log.warning("adf_webhook_auth_failed", token_present=bool(token))
         raise WebhookAuthError("invalid or missing webhook token")
 

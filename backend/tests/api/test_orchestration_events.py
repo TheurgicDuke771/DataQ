@@ -115,6 +115,15 @@ def test_wrong_token_returns_401(client: tuple[TestClient, FakeStore]) -> None:
     assert resp.json()["error"]["code"] == "webhook_unauthorized"
 
 
+def test_non_ascii_token_returns_401_not_500(client: tuple[TestClient, FakeStore]) -> None:
+    # hmac.compare_digest rejects non-ASCII str; the byte-compare must keep this
+    # a clean 401 rather than a TypeError → 500.
+    api, _ = client
+    resp = api.post(_URL, params={"token": "tökèn-ñ"}, json=_EVENT)
+    assert resp.status_code == 401
+    assert resp.json()["error"]["code"] == "webhook_unauthorized"
+
+
 def test_malformed_event_returns_422(client: tuple[TestClient, FakeStore]) -> None:
     api, _ = client
     bad = {k: v for k, v in _EVENT.items() if k != "runId"}
