@@ -10,14 +10,20 @@ from __future__ import annotations
 
 from backend.app.datasources.base import ConnectionAdapter
 from backend.app.datasources.snowflake import SnowflakeConnectionAdapter
+from backend.app.orchestration.adf import ADFConnectionAdapter
 
 
 class UnsupportedConnectionTypeError(ValueError):
     """Raised when no adapter is registered for a connection type."""
 
 
+# Datasource and orchestration-provider connection types share this one registry
+# (both implement the `ConnectionAdapter` seam); the run path keeps them apart —
+# only datasources get a `CheckRunner`. ADF is an orchestration provider, so its
+# adapter lives under `orchestration/`, not `datasources/` (CLAUDE.md §4).
 _ADAPTERS: dict[str, ConnectionAdapter] = {
     "snowflake": SnowflakeConnectionAdapter(),
+    "adf": ADFConnectionAdapter(),
 }
 
 
