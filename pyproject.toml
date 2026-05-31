@@ -67,6 +67,8 @@ module = [
     "azure.storage.*",
     "azure.identity",
     "azure.keyvault.*",
+    "boto3.*",
+    "botocore.*",
 ]
 ignore_missing_imports = true
 

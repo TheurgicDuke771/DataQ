@@ -44,6 +44,8 @@ _AIRFLOW_CONFIG = {"base_url": "https://airflow.example.com", "auth_type": "toke
 
 _ADLS_CONFIG = {"account_url": "https://acct.blob.core.windows.net", "container": "data"}
 
+_S3_CONFIG = {"bucket": "dataq-lake", "region": "eu-west-1", "access_key_id": "AKIAEXAMPLE"}
+
 
 class FakeStore:
     """In-memory SecretStore for write-through assertions."""
@@ -370,6 +372,23 @@ def test_create_adls_connection_validates_and_persists(db_session: Any) -> None:
         secret="sv=sas-token",
     )
     assert second.type == "adls_gen2"
+
+
+def test_create_s3_connection_validates_and_persists(db_session: Any) -> None:
+    # Exercises the s3 registry entry + S3Config validation through the generic
+    # create path.
+    store = FakeStore()
+    conn = _create(
+        db_session,
+        store,
+        name="bucket-dev",
+        conn_type="s3",
+        env="dev",
+        config=dict(_S3_CONFIG),
+        secret="sekret-access-key",
+    )
+    assert conn.type == "s3"
+    assert conn.config["bucket"] == "dataq-lake"
 
 
 def test_two_snowflakes_same_env_not_blocked_by_orchestrator_index(db_session: Any) -> None:

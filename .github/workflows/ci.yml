@@ -117,9 +117,9 @@ jobs:
           # Pins must match environment.yml. GX pulls pandas transitively.
           pip install celery[redis]==5.6.3 great-expectations==1.17.2
           # Datasource-adapter SDKs the connection tests import at module load
-          # (monkeypatched in the tests, but must be importable). S3 (boto3) and
-          # Unity Catalog (databricks-sql-connector) add theirs with those PRs.
-          pip install azure-storage-blob==12.25.0
+          # (monkeypatched in the tests, but must be importable). Unity Catalog
+          # (databricks-sql-connector) adds its own with that PR.
+          pip install azure-storage-blob==12.25.0 boto3==1.38.29
 
       - name: pytest
         # TEST_DATABASE_URL enables the db_session fixture; DATABASE_URL + REDIS_URL

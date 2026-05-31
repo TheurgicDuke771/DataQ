@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from backend.app.datasources.adls import AdlsConnectionAdapter
 from backend.app.datasources.base import ConnectionAdapter
+from backend.app.datasources.s3 import S3ConnectionAdapter
 from backend.app.datasources.snowflake import SnowflakeConnectionAdapter
 from backend.app.orchestration.adf import ADFConnectionAdapter
 from backend.app.orchestration.airflow import AirflowConnectionAdapter
@@ -27,6 +28,7 @@ class UnsupportedConnectionTypeError(ValueError):
 _ADAPTERS: dict[str, ConnectionAdapter] = {
     "snowflake": SnowflakeConnectionAdapter(),
     "adls_gen2": AdlsConnectionAdapter(),
+    "s3": S3ConnectionAdapter(),
     "adf": ADFConnectionAdapter(),
     "airflow": AirflowConnectionAdapter(),
 }
