@@ -35,7 +35,7 @@ _SF_CONFIG = {
 _ADF_CONFIG = {
     "subscription_id": "00000000-0000-0000-0000-000000000001",
     "resource_group": "rg-data",
-    "factory_name": "lll-adf-nonprod",
+    "factory_name": "example-adf-preprod",
     "tenant_id": "00000000-0000-0000-0000-0000000000aa",
     "client_id": "00000000-0000-0000-0000-0000000000bb",
 }
@@ -43,7 +43,7 @@ _ADF_CONFIG = {
 
 def _adf_payload(**overrides: Any) -> dict[str, Any]:
     payload: dict[str, Any] = {
-        "name": "adf-nonprod",
+        "name": "adf-pre-prod",
         "type": "adf",
         "env": "dev",
         "config": dict(_ADF_CONFIG),
@@ -184,7 +184,7 @@ def test_create_adf_returns_201(client: tuple[TestClient, FakeStore]) -> None:
     assert resp.status_code == 201
     body = resp.json()
     assert body["type"] == "adf"
-    assert body["config"]["factory_name"] == "lll-adf-nonprod"
+    assert body["config"]["factory_name"] == "example-adf-preprod"
     assert body["has_secret"] is True
 
 

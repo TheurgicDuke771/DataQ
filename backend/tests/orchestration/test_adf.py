@@ -17,7 +17,7 @@ from backend.app.orchestration.adf import ADFConfig, ADFConnectionAdapter
 _ADF_CONFIG = {
     "subscription_id": "00000000-0000-0000-0000-000000000001",
     "resource_group": "rg-data",
-    "factory_name": "lll-adf-nonprod",
+    "factory_name": "example-adf-preprod",
     "tenant_id": "00000000-0000-0000-0000-0000000000aa",
     "client_id": "00000000-0000-0000-0000-0000000000bb",
 }
@@ -44,7 +44,7 @@ class _FakeResponse:
 def test_validate_config_accepts_full_config() -> None:
     cfg = ADFConnectionAdapter().validate_config(dict(_ADF_CONFIG))
     assert isinstance(cfg, ADFConfig)
-    assert cfg.factory_name == "lll-adf-nonprod"
+    assert cfg.factory_name == "example-adf-preprod"
 
 
 def test_validate_config_rejects_missing_field() -> None:

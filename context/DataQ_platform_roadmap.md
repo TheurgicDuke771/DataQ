@@ -217,10 +217,10 @@
 
 ### Azure Monitor webhook setup (one-time infra, post-deployment)
 > Requires Azure Container Apps deployment to be live first so the public FastAPI URL is known. Requires `Microsoft.Insights/actionGroups/write` + `Microsoft.Insights/metricAlerts/write` permissions on the subscription.
-- [ ] Create Action Group (nonprod) — type: Webhook, URL: `https://<nonprod-api>.azurecontainerapps.io/api/v1/adf/events`, shared secret: value from Key Vault
-- [ ] Create Alert Rule (nonprod) — scope: `lll-adf-nonprod` factory, signal: `Failed pipeline runs`, dimension: all pipelines (tick "include all future values"), action: Action Group above
+- [ ] Create Action Group (pre-prod) — type: Webhook, URL: `https://<pre-prod-api>.azurecontainerapps.io/api/v1/adf/events`, shared secret: value from Key Vault
+- [ ] Create Alert Rule (pre-prod) — scope: `example-adf-preprod` factory, signal: `Failed pipeline runs`, dimension: all pipelines (tick "include all future values"), action: Action Group above
 - [ ] Create Action Group (prod) — same config pointing to prod API URL
-- [ ] Create Alert Rule (prod) — scope: `lll-adf-prod` factory, same signal + dimension config
+- [ ] Create Alert Rule (prod) — scope: `example-adf-prod` factory, same signal + dimension config
 - [ ] Smoke test — trigger a deliberate pipeline failure in DEV, confirm webhook fires, DB updates, and ADF panel reflects failure within 5 min
 
 ### FastMCP — MCP server
