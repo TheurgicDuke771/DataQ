@@ -11,6 +11,7 @@ from __future__ import annotations
 from backend.app.datasources.base import ConnectionAdapter
 from backend.app.datasources.snowflake import SnowflakeConnectionAdapter
 from backend.app.orchestration.adf import ADFConnectionAdapter
+from backend.app.orchestration.airflow import AirflowConnectionAdapter
 
 
 class UnsupportedConnectionTypeError(ValueError):
@@ -19,11 +20,13 @@ class UnsupportedConnectionTypeError(ValueError):
 
 # Datasource and orchestration-provider connection types share this one registry
 # (both implement the `ConnectionAdapter` seam); the run path keeps them apart —
-# only datasources get a `CheckRunner`. ADF is an orchestration provider, so its
-# adapter lives under `orchestration/`, not `datasources/` (CLAUDE.md §4).
+# only datasources get a `CheckRunner`. ADF and Airflow are orchestration
+# providers, so their adapters live under `orchestration/`, not `datasources/`
+# (CLAUDE.md §4).
 _ADAPTERS: dict[str, ConnectionAdapter] = {
     "snowflake": SnowflakeConnectionAdapter(),
     "adf": ADFConnectionAdapter(),
+    "airflow": AirflowConnectionAdapter(),
 }
 
 

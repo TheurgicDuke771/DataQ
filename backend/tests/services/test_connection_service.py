@@ -40,6 +40,8 @@ _ADF_CONFIG = {
     "client_id": "00000000-0000-0000-0000-0000000000bb",
 }
 
+_AIRFLOW_CONFIG = {"base_url": "https://airflow.example.com", "auth_type": "token"}
+
 
 class FakeStore:
     """In-memory SecretStore for write-through assertions."""
@@ -296,6 +298,42 @@ def test_adf_in_different_env_is_allowed(db_session: Any) -> None:
     _create_adf(db_session, store, user=user, name="adf-dev", env="dev")
     other = _create_adf(db_session, store, user=user, name="adf-qa", env="qa")
     assert other.env == "qa"
+
+
+def test_second_airflow_same_env_raises_conflict(db_session: Any) -> None:
+    # The orchestrator singleton guard covers airflow too (partial index predicate
+    # is `type IN ('adf','airflow')`), so the second provider type is guarded
+    # without any new code.
+    store = FakeStore()
+    user = _user(db_session)
+    kwargs = {
+        "conn_type": "airflow",
+        "env": "dev",
+        "config": dict(_AIRFLOW_CONFIG),
+        "secret": "tok",
+    }
+    _create(db_session, store, user=user, name="airflow-a", **kwargs)
+    with pytest.raises(ConnectionConflictError, match="orchestration connection of type 'airflow'"):
+        _create(db_session, store, user=user, name="airflow-b", **kwargs)
+
+
+def test_adf_and_airflow_coexist_in_same_env(db_session: Any) -> None:
+    # The guard is per-(type, env): one ADF *and* one Airflow in the same env is
+    # fine — they're distinct provider types.
+    store = FakeStore()
+    user = _user(db_session)
+    _create_adf(db_session, store, user=user, name="adf", env="dev")
+    airflow = _create(
+        db_session,
+        store,
+        user=user,
+        name="airflow",
+        conn_type="airflow",
+        env="dev",
+        config=dict(_AIRFLOW_CONFIG),
+        secret="tok",
+    )
+    assert airflow.type == "airflow"
 
 
 def test_two_snowflakes_same_env_not_blocked_by_orchestrator_index(db_session: Any) -> None:
