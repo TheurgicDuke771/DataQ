@@ -37,27 +37,28 @@ Audit the changed code (use `gh pr diff <N>` if a PR number is provided, otherwi
    ```
    Service code resolves providers through a registry / factory, not by importing concrete classes. **Test code is exempt** — see Acceptable patterns.
 
-3. **Hardcoded webhook routes per provider** (e.g., a route `/api/v1/adf/events` instead of the agreed `/api/v1/orchestration/events/{provider}` from ADR 0004).
+3. **Webhook routes that bypass the agreed shape.** ADR 0004 defines explicit sibling routes `POST /api/v1/orchestration/events/adf` and `.../airflow` (the trailing path segment names the provider; it is not a `{provider}` capture). A route like `/api/v1/adf/events` — provider name outside the `/orchestration/events/` namespace — is the violation. The implemented `/api/v1/orchestration/events/adf` that resolves the provider via `get_orchestration_provider("adf")` is correct.
 
-4. **`pipeline_runs` queries filtered by literal provider** without using the provider enum:
+4. **`pipeline_runs` queries with a hardcoded provider literal baked into shared logic:**
    ```python
-   session.query(PipelineRun).filter(PipelineRun.provider == "adf")  # FORBIDDEN
-   # Acceptable form:
-   session.query(PipelineRun).filter(PipelineRun.provider == OrchestrationProviderEnum.ADF)
+   session.query(PipelineRun).filter(PipelineRun.provider == "adf")  # FORBIDDEN in provider-agnostic code
+   # Acceptable: filter by a provider value passed in / resolved at the boundary:
+   session.query(PipelineRun).filter(PipelineRun.provider == provider)
    ```
+   Provider values are plain strings validated against `ORCHESTRATION_PROVIDERS` (`backend/app/db/models.py` — TEXT + CHECK, deliberately **not** a Python/PG enum). The smell is a literal `"adf"`/`"airflow"` hardcoded into provider-agnostic code, not the use of `str` itself.
 
 ### 🟡 Yellow flags (call out, don't necessarily block)
 
-1. **Type hints using `str` for provider** instead of the `OrchestrationProviderEnum`. Suggests the enum hasn't been created or isn't being used.
+1. **A literal provider string** (`"adf"`, `"airflow"`) appearing in `backend/app/services/` or `backend/app/api/` outside the registry-resolution boundary, rather than the value flowing from `ORCHESTRATION_PROVIDERS` / a resolved provider. (Provider is a `str` by design — flag the hardcoded literal, not the type.)
 2. **`TODO` / `FIXME` / `XXX` comments mentioning ADF or Airflow** — may indicate deferred work that should be tracked as an issue per working-agreement #3.
 3. **Test data fixtures that only cover ADF**. Both providers should be exercised; ADF-only coverage suggests the abstraction has rotted.
 4. **`trigger_bindings` rows hardcoded to a single provider** in seed data or fixtures — should at least demonstrate both providers.
 
 ### 🟢 Acceptable patterns
 
-- Provider-specific code **inside** `backend/app/orchestration/adf/` or `backend/app/orchestration/airflow/` — that's where it belongs.
-- Routing by enum at the orchestration boundary: `providers[request.provider].parse_event(payload, headers)`.
-- Provider-specific tests under `tests/orchestration/adf/` and `tests/orchestration/airflow/`.
+- Provider-specific code **inside** the orchestration package — `backend/app/orchestration/adf.py`, `airflow.py`, `base.py`, `registry.py` (file-per-provider; that's where it belongs).
+- Routing by provider value through the registry at the boundary: `get_orchestration_provider(provider).parse_event(payload, headers)`.
+- Provider-specific tests under `backend/tests/orchestration/` (e.g. `test_adf.py`, `test_adf_provider.py`).
 - **Test code may import concrete provider implementations** (`AdfProvider`, `AirflowProvider`) for isolation testing — the abstraction rule binds production code (`backend/app/services/`, `backend/app/api/`), not tests.
 
 ## How to report

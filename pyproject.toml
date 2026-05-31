@@ -34,6 +34,11 @@ ignore = [
     "S104",  # binding to 0.0.0.0 is intentional in Docker
     "B008",  # FastAPI Depends() in function args is idiomatic
 ]
+# The format-on-save hook runs `ruff check --fix`. Auto-deleting unused imports
+# (F401) mid-edit — when an import is briefly unused between adding it and adding
+# its first use — corrupts multi-step edits. Keep F401 *reported* (so genuinely
+# unused imports still fail CI) but never auto-removed. Same for unused locals.
+unfixable = ["F401", "F841"]
 
 [tool.ruff.lint.per-file-ignores]
 "backend/tests/**" = ["S", "N802"]  # relax security + naming in tests

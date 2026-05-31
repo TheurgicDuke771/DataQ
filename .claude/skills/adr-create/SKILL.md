@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 ## Purpose
 
-Create a new ADR in `docs/adr/` that follows the conventions documented in `docs/adr/README.md` and is consistent with ADRs 0001–0004 already in the repo.
+Create a new ADR in `docs/adr/` that follows the conventions documented in `docs/adr/README.md` and is consistent with the ADRs already in the repo.
 
 ## Usage
 

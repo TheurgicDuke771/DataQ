@@ -1,6 +1,6 @@
 ---
 name: docs-consistency-guard
-description: Documentation agent that audits docs for staleness and inconsistency AND generates/updates documentation on request. Use proactively when reviewing any PR that touches CLAUDE.md, docs/adr/, CONTRIBUTING.md, or docs/architecture.svg. Also invoke when the user asks "is the documentation up to date?", "update the milestone", "scaffold the ADR for X", "add this to the ADR index", "add a TODO item", "scaffold a README for X", or "create a doc stub for Y."
+description: Documentation agent that audits docs for staleness and inconsistency AND generates/updates documentation on request. Use proactively when reviewing any PR that touches CLAUDE.md, docs/adr/, CONTRIBUTING.md, or docs/architecture.md. Also invoke when the user asks "is the documentation up to date?", "update the milestone", "scaffold the ADR for X", "add this to the ADR index", "add a TODO item", "scaffold a README for X", or "create a doc stub for Y."
 tools: Read, Grep, Glob, Bash, Write, Edit
 model: sonnet
 ---
@@ -35,7 +35,7 @@ Use `gh pr diff <N>` if a PR number is provided. Otherwise read the files direct
    - ADR file exists but not in index → missing index entry.
    - Index entry references a file that doesn't exist → dangling reference.
 
-3. **CLAUDE.md forward references resolve.** Every relative link in CLAUDE.md (e.g., `[CONTRIBUTING.md](CONTRIBUTING.md)`, `[docs/adr/](docs/adr/)`, `[docs/architecture.svg](docs/architecture.svg)`) must point to a file or directory that exists. Use `Glob` or `Bash ls` to verify.
+3. **CLAUDE.md forward references resolve.** Every relative link in CLAUDE.md (e.g., `[CONTRIBUTING.md](CONTRIBUTING.md)`, `[docs/adr/](docs/adr/)`, `[docs/architecture.md](docs/architecture.md)`) must point to a file or directory that exists. Use `Glob` or `Bash ls` to verify.
 
 4. **ADR `Superseded by` / `Supersedes` cross-links are bidirectional.** If ADR 0007 says `Supersedes: ADR-0003`, then ADR 0003 must say `Superseded by: ADR-0007`. One-sided links are broken.
 
