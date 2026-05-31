@@ -64,6 +64,15 @@ class FakeStore:
         self.data[name] = value
 
 
+class _WriteFailStore(FakeStore):
+    """SecretStore whose set() fails — simulates Key Vault unreachable (#87)."""
+
+    def set(self, name: str, value: str) -> None:
+        from backend.app.core.secrets import SecretWriteError
+
+        raise SecretWriteError("key vault unreachable")
+
+
 class _PassAdapter:
     def validate_config(self, raw: dict[str, Any]) -> Any:
         return None
@@ -127,6 +136,20 @@ def test_create_unknown_type_returns_422(client: tuple[TestClient, FakeStore]) -
     resp = api.post("/api/v1/connections", json=_create_payload(type="mssql"))
     assert resp.status_code == 422
     assert resp.json()["error"]["code"] == "connection_config_invalid"
+
+
+def test_create_secret_write_failure_returns_502(db_session: Any) -> None:
+    # Key Vault write failure must surface as a 502 envelope, not a generic 500 (#87).
+    app.dependency_overrides[get_db] = lambda: db_session
+    app.dependency_overrides[get_secret_store] = _WriteFailStore
+    try:
+        resp = TestClient(app).post("/api/v1/connections", json=_create_payload())
+        assert resp.status_code == 502
+        assert resp.json()["error"]["code"] == "connection_secret_write_failed"
+        # the half-inserted row must not survive
+        assert db_session.scalars(select(Connection)).all() == []
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_create_invalid_config_returns_422(client: tuple[TestClient, FakeStore]) -> None:
