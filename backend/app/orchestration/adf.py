@@ -37,6 +37,8 @@ _ARM_FACTORY_URL = (
     "/resourceGroups/{resource_group}"
     "/providers/Microsoft.DataFactory/factories/{factory_name}"
 )
+# Single pipeline-run detail (GET): authoritative status + runStart/runEnd + message.
+_ARM_PIPELINE_RUN_URL = _ARM_FACTORY_URL + "/pipelineruns/{run_id}"
 _ARM_API_VERSION = "2018-06-01"
 
 # Fail fast rather than hang the request thread on an unreachable endpoint.
@@ -194,8 +196,46 @@ class AdfProvider:
             failure_reason=body.get("message"),
         )
 
-    def fetch_run_detail(self, resource_name: str, provider_run_id: str) -> RunUpdate:
-        raise NotImplementedError("ADF REST run-detail enrichment lands in the polling PR")
+    def fetch_run_detail(
+        self, config: Mapping[str, Any], secret: str, provider_run_id: str
+    ) -> RunUpdate:
+        """Authoritative ARM REST lookup of one pipeline run → `RunUpdate`.
+
+        Used to enrich a thin webhook alert with the real status / timing /
+        message. Reuses the service-principal token flow; raises (httpx errors,
+        validation) on failure — the caller (`orchestration_service`) decides
+        whether to fail soft back to the parsed event.
+        """
+        cfg = ADFConfig.model_validate(dict(config))
+        token = _acquire_token(cfg, secret)
+        response = httpx.get(
+            _ARM_PIPELINE_RUN_URL.format(
+                subscription_id=cfg.subscription_id,
+                resource_group=cfg.resource_group,
+                factory_name=cfg.factory_name,
+                run_id=provider_run_id,
+            ),
+            params={"api-version": _ARM_API_VERSION},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=_TEST_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+        data = response.json()
+
+        raw_status = data.get("status")
+        status = _ADF_STATUS_MAP.get(str(raw_status).lower()) if raw_status else None
+        if status is None:
+            raise ValueError(f"ADF run detail has unrecognised status {raw_status!r}")
+
+        return RunUpdate(
+            provider_run_id=str(data.get("runId") or provider_run_id),
+            pipeline_or_dag_id=str(data["pipelineName"]),
+            resource_name=cfg.factory_name,
+            status=status,
+            started_at=_parse_dt(data.get("runStart")),
+            finished_at=_parse_dt(data.get("runEnd")),
+            failure_reason=data.get("message"),
+        )
 
     def list_recent_runs(self, since: datetime) -> list[RunUpdate]:
         raise NotImplementedError("ADF REST polling fallback lands in Week 5")

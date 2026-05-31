@@ -19,6 +19,7 @@ FastAPI-free by design (like `connection_service` / `run_service`): takes a
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from sqlalchemy import select
@@ -26,8 +27,9 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from backend.app.core.logging import get_logger
-from backend.app.db.models import Connection, PipelineRun
-from backend.app.orchestration.base import RunUpdate
+from backend.app.core.secrets import SecretStore
+from backend.app.db.models import Connection, PipelineRun, Run, TriggerBinding
+from backend.app.orchestration.base import OrchestrationProvider, RunUpdate
 
 log = get_logger(__name__)
 
@@ -58,24 +60,14 @@ def _resolve_connection(
     return matches[0]
 
 
-def record_pipeline_event(
-    session: Session, *, provider: str, update: RunUpdate
-) -> PipelineRun | None:
-    """Idempotently upsert a `pipeline_runs` row from a `RunUpdate`.
+def _upsert_pipeline_run(
+    session: Session, *, provider: str, connection: Connection, update: RunUpdate
+) -> PipelineRun:
+    """Idempotent `pipeline_runs` upsert keyed on (provider, provider_run_id).
 
-    Returns the row, or ``None`` if the event could not be attributed to a known
-    orchestrator connection (the caller still acknowledges it).
+    A replayed / re-delivered event lands on the same row and refreshes the
+    mutable status + timing fields (ADR 0006 replay-neutraliser).
     """
-    connection = _resolve_connection(session, provider=provider, resource_name=update.resource_name)
-    if connection is None:
-        log.info(
-            "orchestration_event_unattributed",
-            provider=provider,
-            resource_name=update.resource_name,
-            provider_run_id=update.provider_run_id,
-        )
-        return None
-
     now = datetime.now(UTC)
     values = {
         "provider": provider,
@@ -94,8 +86,6 @@ def record_pipeline_event(
         .values(**values)
         .on_conflict_do_update(
             constraint="uq_pipeline_runs_provider_run",
-            # connection_id / pipeline_or_dag_id / env are stable for a run id;
-            # refresh the mutable status + timing fields a later delivery carries.
             set_={
                 "status": update.status,
                 "started_at": update.started_at,
@@ -108,8 +98,9 @@ def record_pipeline_event(
     )
     pipeline_run_id = session.execute(stmt).scalar_one()
     session.commit()
-
     pipeline_run = session.get(PipelineRun, pipeline_run_id)
+    if pipeline_run is None:  # pragma: no cover - the row was just upserted
+        raise RuntimeError(f"pipeline_run {pipeline_run_id} missing immediately after upsert")
     log.info(
         "pipeline_run_recorded",
         provider=provider,
@@ -119,3 +110,157 @@ def record_pipeline_event(
         status=update.status,
     )
     return pipeline_run
+
+
+def record_pipeline_event(
+    session: Session, *, provider: str, update: RunUpdate
+) -> PipelineRun | None:
+    """Resolve + upsert only (the monitor primitive — no enrichment, no trigger).
+
+    Returns the row, or ``None`` if the event could not be attributed to a known
+    orchestrator connection. Used directly where triggering isn't wanted.
+    """
+    connection = _resolve_connection(session, provider=provider, resource_name=update.resource_name)
+    if connection is None:
+        log.info(
+            "orchestration_event_unattributed",
+            provider=provider,
+            resource_name=update.resource_name,
+            provider_run_id=update.provider_run_id,
+        )
+        return None
+    return _upsert_pipeline_run(session, provider=provider, connection=connection, update=update)
+
+
+def _maybe_enrich(
+    provider_impl: OrchestrationProvider,
+    connection: Connection,
+    update: RunUpdate,
+    secret_store: SecretStore,
+) -> RunUpdate:
+    """Best-effort authoritative enrichment via the provider's REST API.
+
+    Returns the enriched `RunUpdate` on success; on any failure (no stored
+    credential, transport/auth error) falls back to the parsed ``update`` so a
+    thin-but-valid webhook is never dropped just because the follow-up call
+    failed (ADR 0006: ack well-formed events).
+    """
+    if not connection.secret_ref:
+        return update
+    try:
+        secret = secret_store.get(connection.secret_ref)
+        detailed = provider_impl.fetch_run_detail(
+            dict(connection.config), secret, update.provider_run_id
+        )
+    except Exception as exc:
+        log.warning(
+            "orchestration_enrich_failed",
+            provider=provider_impl.provider,
+            provider_run_id=update.provider_run_id,
+            error_type=type(exc).__name__,
+        )
+        return update
+    log.info(
+        "orchestration_event_enriched",
+        provider=provider_impl.provider,
+        provider_run_id=update.provider_run_id,
+        status=detailed.status,
+    )
+    return detailed
+
+
+def _trigger_suites(
+    session: Session, *, provider: str, connection: Connection, update: RunUpdate
+) -> list[Run]:
+    """Create one queued `Run` per enabled `trigger_binding` for a succeeded run.
+
+    Idempotent on the ``triggered_by`` marker ``<provider>:<pipeline>:<run_id>``:
+    a replayed event (or a webhook + poll double-delivery) does not spawn a
+    second run for the same (suite, pipeline-run).
+
+    NOTE — dispatch is intentionally **gated**: ``run_suite`` needs a target table
+    the suite/check model doesn't carry until Week 3. The queued runs are created
+    (so the binding→run wiring is exercised) but not yet handed to Celery; the
+    dispatch lands once the target-table work does.
+    """
+    marker = f"{provider}:{update.pipeline_or_dag_id}:{update.provider_run_id}"
+    bindings = list(
+        session.scalars(
+            select(TriggerBinding).where(
+                TriggerBinding.provider == provider,
+                TriggerBinding.pipeline_or_dag_id == update.pipeline_or_dag_id,
+                TriggerBinding.env == connection.env,
+                TriggerBinding.enabled.is_(True),
+            )
+        )
+    )
+    created: list[Run] = []
+    for binding in bindings:
+        already = session.scalar(
+            select(Run.id).where(Run.suite_id == binding.suite_id, Run.triggered_by == marker)
+        )
+        if already is not None:
+            continue
+        run = Run(suite_id=binding.suite_id, status="queued", triggered_by=marker)
+        session.add(run)
+        created.append(run)
+
+    if created:
+        session.commit()
+        for run in created:
+            session.refresh(run)
+        log.info(
+            "suite_runs_triggered",
+            provider=provider,
+            pipeline=update.pipeline_or_dag_id,
+            run_marker=marker,
+            count=len(created),
+        )
+        log.info(
+            "suite_dispatch_deferred",
+            reason="target_table_unavailable_until_week3",
+            count=len(created),
+        )
+    return created
+
+
+@dataclass(frozen=True)
+class IngestResult:
+    pipeline_run: PipelineRun | None
+    triggered_runs: list[Run] = field(default_factory=list)
+
+
+def ingest_event(
+    session: Session,
+    *,
+    provider_impl: OrchestrationProvider,
+    update: RunUpdate,
+    secret_store: SecretStore,
+) -> IngestResult:
+    """Full webhook ingestion: resolve → enrich (best-effort) → upsert → trigger.
+
+    Triggering fires only for a ``succeeded`` run (failures alert but never
+    trigger, ADR 0004). Unattributable events are ignored — the caller still
+    acknowledges them (ADR 0006).
+    """
+    provider = provider_impl.provider
+    connection = _resolve_connection(session, provider=provider, resource_name=update.resource_name)
+    if connection is None:
+        log.info(
+            "orchestration_event_unattributed",
+            provider=provider,
+            resource_name=update.resource_name,
+            provider_run_id=update.provider_run_id,
+        )
+        return IngestResult(pipeline_run=None)
+
+    update = _maybe_enrich(provider_impl, connection, update, secret_store)
+    pipeline_run = _upsert_pipeline_run(
+        session, provider=provider, connection=connection, update=update
+    )
+    triggered = (
+        _trigger_suites(session, provider=provider, connection=connection, update=update)
+        if update.status == "succeeded"
+        else []
+    )
+    return IngestResult(pipeline_run=pipeline_run, triggered_runs=triggered)

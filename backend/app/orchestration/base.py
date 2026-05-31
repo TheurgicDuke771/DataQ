@@ -21,7 +21,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from backend.app.core.errors import DataQError
 
@@ -67,8 +67,14 @@ class OrchestrationProvider(Protocol):
         """
         ...
 
-    def fetch_run_detail(self, resource_name: str, provider_run_id: str) -> RunUpdate:
-        """REST follow-up to enrich a single run. (Polling PR.)"""
+    def fetch_run_detail(
+        self, config: Mapping[str, Any], secret: str, provider_run_id: str
+    ) -> RunUpdate:
+        """Authoritative REST lookup of a single run, used to enrich a webhook
+        event before persistence. ``config`` is the orchestrator connection's
+        config (factory / subscription / SP identity); ``secret`` is its
+        credential. Raises on transport / auth failure — the caller decides
+        whether to fail soft."""
         ...
 
     def list_recent_runs(self, since: datetime) -> list[RunUpdate]:

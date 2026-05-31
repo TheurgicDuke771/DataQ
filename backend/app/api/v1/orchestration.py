@@ -30,7 +30,7 @@ from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretNotFoundError, SecretStore, get_secret_store
 from backend.app.db.session import get_db
 from backend.app.orchestration.registry import get_orchestration_provider
-from backend.app.services.orchestration_service import record_pipeline_event
+from backend.app.services.orchestration_service import ingest_event
 
 log = get_logger(__name__)
 
@@ -49,6 +49,7 @@ class WebhookNotConfiguredError(DataQError):
 
 class EventAck(BaseModel):
     status: str  # "recorded" | "ignored"
+    triggered: int = 0  # suite runs triggered (succeeded run matching a binding)
 
 
 def _authenticate(token: str | None, secret_store: SecretStore) -> None:
@@ -86,5 +87,10 @@ async def receive_adf_event(
     body = await request.body()
     update = provider.parse_event(body, request.headers)  # raises MalformedEventError → 422
 
-    recorded = await run_in_threadpool(record_pipeline_event, db, provider="adf", update=update)
-    return EventAck(status="recorded" if recorded else "ignored")
+    result = await run_in_threadpool(
+        ingest_event, db, provider_impl=provider, update=update, secret_store=secret_store
+    )
+    return EventAck(
+        status="recorded" if result.pipeline_run is not None else "ignored",
+        triggered=len(result.triggered_runs),
+    )
