@@ -1,0 +1,35 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "a0c165dda60b",
+  "strategy": "manual-commit",
+  "branch": "feature/adf-webhook-receiver",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "backend/app/api/v1/orchestration.py",
+    "backend/app/core/config.py",
+    "backend/app/main.py",
+    "backend/app/orchestration/adf.py",
+    "backend/app/orchestration/base.py",
+    "backend/app/orchestration/registry.py",
+    "backend/app/services/orchestration_service.py",
+    "backend/tests/api/test_orchestration_events.py",
+    "backend/tests/orchestration/test_adf_provider.py",
+    "backend/tests/services/test_orchestration_service.py",
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/a0/c165dda60b/0/metadata.json",
+      "transcript": "/a0/c165dda60b/0/full.jsonl",
+      "content_hash": "/a0/c165dda60b/0/content_hash.txt",
+      "prompt": "/a0/c165dda60b/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 10691,
+    "cache_creation_tokens": 446091,
+    "cache_read_tokens": 14827807,
+    "output_tokens": 57813,
+    "api_call_count": 67
+  }
+}
