@@ -7,6 +7,7 @@ from backend.app.core import secrets
 from backend.app.core.secrets import (
     AzureKeyVaultStore,
     EnvSecretStore,
+    RedisSecretStore,
     SecretNotFoundError,
     SecretWriteError,
     _build_store,
@@ -118,9 +119,10 @@ def test_akv_store_set_wraps_sdk_exception(monkeypatch: pytest.MonkeyPatch) -> N
 
 
 def _settings(**overrides: object) -> object:
-    base = {
+    base: dict[str, object] = {
         "secret_store": "env",
         "azure_key_vault_url": None,
+        "redis_url": "redis://localhost:6379/0",
     }
     base.update(overrides)
     return SimpleNamespace(**base)
@@ -144,6 +146,99 @@ def test_build_store_returns_akv_store_when_configured() -> None:
 def test_build_store_raises_when_akv_url_missing() -> None:
     with pytest.raises(RuntimeError, match="requires AZURE_KEY_VAULT_URL"):
         _build_store(_settings(secret_store="azure_key_vault"))  # type: ignore[arg-type]
+
+
+def test_build_store_returns_redis_store_when_configured() -> None:
+    store = _build_store(_settings(secret_store="redis"))  # type: ignore[arg-type]
+    assert isinstance(store, RedisSecretStore)
+
+
+# ───────────────────────── RedisSecretStore ────────────────────────
+
+
+def test_redis_store_lazy_client_not_built_on_init() -> None:
+    """Constructing the store must not connect to Redis."""
+    store = RedisSecretStore("redis://localhost:6379/0")
+    assert store._client is None
+
+
+def test_redis_store_get_returns_value(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = RedisSecretStore("redis://localhost:6379/0")
+    fake_client = SimpleNamespace(get=lambda key: "redis-value")
+    monkeypatch.setattr(store, "_client_lazy", lambda: fake_client)
+    assert store.get("snowflake-uat-finance") == "redis-value"
+
+
+def test_redis_store_get_namespaces_the_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = RedisSecretStore("redis://localhost:6379/0")
+    seen: list[str] = []
+
+    def _get(key: str) -> str:
+        seen.append(key)
+        return "v"
+
+    monkeypatch.setattr(store, "_client_lazy", lambda: SimpleNamespace(get=_get))
+    store.get("conn-1")
+    assert seen == ["dataq:secret:conn-1"]
+
+
+def test_redis_store_get_raises_when_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = RedisSecretStore("redis://localhost:6379/0")
+    monkeypatch.setattr(store, "_client_lazy", lambda: SimpleNamespace(get=lambda key: None))
+    with pytest.raises(SecretNotFoundError, match="not set"):
+        store.get("missing")
+
+
+def test_redis_store_get_wraps_client_exception(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = RedisSecretStore("redis://localhost:6379/0")
+
+    def _boom(key: str) -> None:
+        raise RuntimeError("connection refused")
+
+    monkeypatch.setattr(store, "_client_lazy", lambda: SimpleNamespace(get=_boom))
+    with pytest.raises(SecretNotFoundError, match="connection refused"):
+        store.get("x")
+
+
+def test_redis_store_set_calls_set_with_namespaced_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = RedisSecretStore("redis://localhost:6379/0")
+    calls: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        store, "_client_lazy", lambda: SimpleNamespace(set=lambda k, v: calls.append((k, v)))
+    )
+    store.set("conn-1", "p@ss")
+    assert calls == [("dataq:secret:conn-1", "p@ss")]
+
+
+def test_redis_store_set_wraps_client_exception(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = RedisSecretStore("redis://localhost:6379/0")
+
+    def _boom(key: str, value: str) -> None:
+        raise RuntimeError("write failed")
+
+    monkeypatch.setattr(store, "_client_lazy", lambda: SimpleNamespace(set=_boom))
+    with pytest.raises(SecretWriteError, match="write failed"):
+        store.set("conn-1", "p@ss")
+
+
+def test_redis_store_set_in_one_instance_is_visible_to_another() -> None:
+    """The cross-process property #86 needs: a write through one store instance
+    (≈ the API) is readable through a separate instance (≈ the Celery worker).
+    Uses a real Redis; skipped when unreachable (CI provides one)."""
+    url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+    writer = RedisSecretStore(url, key_prefix="dataq:test-secret:")
+    reader = RedisSecretStore(url, key_prefix="dataq:test-secret:")
+    try:
+        writer._client_lazy().ping()
+    except Exception:  # pragma: no cover - environment-dependent
+        pytest.skip(f"Redis not reachable at {url}")
+
+    name = f"conn-{os.getpid()}-xprocess"
+    try:
+        writer.set(name, "shared-secret")
+        assert reader.get(name) == "shared-secret"  # separate instance sees it
+    finally:
+        writer._client_lazy().delete(f"dataq:test-secret:{name}")
 
 
 def test_get_secret_store_caches_singleton(monkeypatch: pytest.MonkeyPatch) -> None:
