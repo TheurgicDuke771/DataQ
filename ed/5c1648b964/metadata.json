@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "ed5c1648b964",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-80-home-alert-message",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "frontend/tests/pages/Home.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ed/5c1648b964/0/metadata.json",
+      "transcript": "/ed/5c1648b964/0/full.jsonl",
+      "content_hash": "/ed/5c1648b964/0/content_hash.txt",
+      "prompt": "/ed/5c1648b964/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 662,
+    "cache_creation_tokens": 311951,
+    "cache_read_tokens": 8332993,
+    "output_tokens": 19450,
+    "api_call_count": 29
+  }
+}
