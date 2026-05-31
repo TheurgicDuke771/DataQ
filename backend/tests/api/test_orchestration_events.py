@@ -86,7 +86,7 @@ def test_valid_event_records_pipeline_run(
     _seed_adf_connection(db_session)
     resp = api.post(_URL, params={"token": _SECRET}, json=_EVENT)
     assert resp.status_code == 200
-    assert resp.json() == {"status": "recorded"}
+    assert resp.json() == {"status": "recorded", "triggered": 0}
 
     row = db_session.scalars(select(PipelineRun)).first()
     assert row is not None
@@ -98,7 +98,32 @@ def test_unattributable_event_acknowledged_as_ignored(client: tuple[TestClient, 
     api, _ = client  # no connection seeded → cannot attribute
     resp = api.post(_URL, params={"token": _SECRET}, json=_EVENT)
     assert resp.status_code == 200
-    assert resp.json() == {"status": "ignored"}
+    assert resp.json() == {"status": "ignored", "triggered": 0}
+
+
+def test_succeeded_event_triggers_bound_suite(
+    client: tuple[TestClient, FakeStore], db_session: Any
+) -> None:
+    from backend.app.db.models import Run, Suite, TriggerBinding
+
+    api, _ = client
+    conn = _seed_adf_connection(db_session)  # env=dev, no secret_ref → no enrichment
+    suite = Suite(name="s1", connection_id=conn.id, created_by=conn.created_by)
+    db_session.add(suite)
+    db_session.commit()
+    db_session.add(
+        TriggerBinding(
+            provider="adf", pipeline_or_dag_id="load_finance", env="dev", suite_id=suite.id
+        )
+    )
+    db_session.commit()
+
+    resp = api.post(_URL, params={"token": _SECRET}, json={**_EVENT, "status": "Succeeded"})
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "recorded", "triggered": 1}
+    run = db_session.scalars(select(Run)).one()
+    assert run.status == "queued"
+    assert run.triggered_by == "adf:load_finance:run-abc-123"
 
 
 def test_missing_token_returns_401(client: tuple[TestClient, FakeStore]) -> None:

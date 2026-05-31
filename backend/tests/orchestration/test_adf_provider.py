@@ -1,15 +1,33 @@
-"""AdfProvider.parse_event tests — Azure Monitor payload → RunUpdate.
+"""AdfProvider tests — parse_event (payload → RunUpdate) + fetch_run_detail (ARM REST).
 
-Pure unit tests (no DB): the provider only transforms bytes → DTO.
+Pure unit tests (no DB): parse_event transforms bytes → DTO; fetch_run_detail's
+HTTP calls are monkeypatched.
 """
 
 import json
 from typing import Any
 
+import httpx
 import pytest
 
 from backend.app.orchestration.adf import AdfProvider
 from backend.app.orchestration.base import MalformedEventError, RunUpdate
+
+
+class _FakeResponse:
+    def __init__(
+        self, *, json_body: dict[str, Any] | None = None, raise_exc: Exception | None = None
+    ) -> None:
+        self._json = json_body or {}
+        self._raise = raise_exc
+
+    def raise_for_status(self) -> None:
+        if self._raise is not None:
+            raise self._raise
+
+    def json(self) -> dict[str, Any]:
+        return self._json
+
 
 _EVENT: dict[str, Any] = {
     "factoryName": "lll-adf-nonprod",
@@ -19,6 +37,14 @@ _EVENT: dict[str, Any] = {
     "start": "2026-05-31T00:00:00Z",
     "end": "2026-05-31T00:05:00Z",
     "message": "Activity Copy1 failed",
+}
+
+_ADF_CONFIG: dict[str, Any] = {
+    "subscription_id": "00000000-0000-0000-0000-000000000001",
+    "resource_group": "rg-data",
+    "factory_name": "lll-adf-nonprod",
+    "tenant_id": "00000000-0000-0000-0000-0000000000aa",
+    "client_id": "00000000-0000-0000-0000-0000000000bb",
 }
 
 
@@ -104,11 +130,68 @@ def test_registry_unknown_provider_raises() -> None:
         get_orchestration_provider("airflow")
 
 
-def test_fetch_and_list_are_deferred() -> None:
-    provider = AdfProvider()
-    with pytest.raises(NotImplementedError):
-        provider.fetch_run_detail("factory", "run-1")
-    with pytest.raises(NotImplementedError):
-        import datetime as _dt
+def test_list_recent_runs_is_deferred() -> None:
+    # Polling fallback lands in Week 5; fetch_run_detail is implemented (below).
+    import datetime as _dt
 
-        provider.list_recent_runs(_dt.datetime(2026, 5, 31))
+    with pytest.raises(NotImplementedError):
+        AdfProvider().list_recent_runs(_dt.datetime(2026, 5, 31))
+
+
+# ───────────────────────── fetch_run_detail (ARM REST) ─────────────
+
+_RUN_DETAIL = {
+    "runId": "run-abc-123",
+    "pipelineName": "load_finance",
+    "status": "Succeeded",
+    "runStart": "2026-05-31T00:00:00Z",
+    "runEnd": "2026-05-31T00:05:00Z",
+    "message": None,
+}
+
+
+def _detail_client(
+    monkeypatch: pytest.MonkeyPatch, *, run_detail: dict[str, Any]
+) -> dict[str, Any]:
+    seen: dict[str, Any] = {}
+
+    def fake_post(url: str, **kwargs: Any) -> _FakeResponse:
+        return _FakeResponse(json_body={"access_token": "tok"})
+
+    def fake_get(url: str, **kwargs: Any) -> _FakeResponse:
+        seen["url"] = url
+        seen["auth"] = kwargs["headers"]["Authorization"]
+        return _FakeResponse(json_body=run_detail)
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    monkeypatch.setattr(httpx, "get", fake_get)
+    return seen
+
+
+def test_fetch_run_detail_maps_arm_response(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen = _detail_client(monkeypatch, run_detail=_RUN_DETAIL)
+    update = AdfProvider().fetch_run_detail(_ADF_CONFIG, "sp-secret", "run-abc-123")
+
+    assert update.provider_run_id == "run-abc-123"
+    assert update.pipeline_or_dag_id == "load_finance"
+    assert update.resource_name == _ADF_CONFIG["factory_name"]
+    assert update.status == "succeeded"
+    assert update.started_at is not None and update.finished_at is not None
+    # called the per-run ARM URL with the bearer token
+    assert "run-abc-123" in seen["url"] and seen["auth"] == "Bearer tok"
+
+
+def test_fetch_run_detail_rejects_unknown_status(monkeypatch: pytest.MonkeyPatch) -> None:
+    _detail_client(monkeypatch, run_detail={**_RUN_DETAIL, "status": "Frobnicated"})
+    with pytest.raises(ValueError, match="unrecognised status"):
+        AdfProvider().fetch_run_detail(_ADF_CONFIG, "sp-secret", "run-abc-123")
+
+
+def test_fetch_run_detail_propagates_http_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        httpx, "post", lambda url, **kw: _FakeResponse(json_body={"access_token": "t"})
+    )
+    http_error = httpx.HTTPStatusError("404", request=None, response=None)  # type: ignore[arg-type]
+    monkeypatch.setattr(httpx, "get", lambda url, **kw: _FakeResponse(raise_exc=http_error))
+    with pytest.raises(httpx.HTTPStatusError):
+        AdfProvider().fetch_run_detail(_ADF_CONFIG, "sp-secret", "run-abc-123")
