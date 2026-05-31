@@ -10,14 +10,16 @@ from typing import Any
 
 import pytest
 from pydantic import BaseModel
+from sqlalchemy import select
 
-from backend.app.core.secrets import SecretNotFoundError
+from backend.app.core.secrets import SecretNotFoundError, SecretWriteError
 from backend.app.db.models import Connection, User
 from backend.app.services import connection_service as svc
 from backend.app.services.connection_service import (
     ConnectionConfigInvalidError,
     ConnectionConflictError,
     ConnectionNotFoundError,
+    ConnectionSecretWriteError,
     ConnectionTestFailedError,
 )
 
@@ -304,3 +306,30 @@ def test_two_snowflakes_same_env_not_blocked_by_orchestrator_index(db_session: A
     _create(db_session, store, user=user, name="sf-one", env="dev")
     second = _create(db_session, store, user=user, name="sf-two", env="dev")
     assert second.type == "snowflake"
+
+
+# ──────────── secret-store write failure → 502 (not 500) (#87) ───────────────
+
+
+class _WriteFailStore(FakeStore):
+    """SecretStore whose set() fails — simulates Key Vault unreachable."""
+
+    def set(self, name: str, value: str) -> None:
+        raise SecretWriteError("key vault unreachable")
+
+
+def test_create_secret_write_failure_raises_502_and_rolls_back(db_session: Any) -> None:
+    with pytest.raises(ConnectionSecretWriteError) as excinfo:
+        _create(db_session, _WriteFailStore())
+    assert excinfo.value.status_code == 502
+    assert isinstance(excinfo.value.__cause__, SecretWriteError)
+    # the half-inserted row must be rolled back, not left dangling
+    assert db_session.scalars(select(Connection)).all() == []
+
+
+def test_update_secret_write_failure_raises_502(db_session: Any) -> None:
+    conn = _create(db_session, FakeStore())  # created fine with a working store
+    with pytest.raises(ConnectionSecretWriteError) as excinfo:
+        svc.update_connection(db_session, conn.id, secret="rotated", secret_store=_WriteFailStore())
+    assert excinfo.value.status_code == 502
+    assert isinstance(excinfo.value.__cause__, SecretWriteError)

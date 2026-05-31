@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
-from backend.app.core.secrets import SecretNotFoundError, SecretStore
+from backend.app.core.secrets import SecretNotFoundError, SecretStore, SecretWriteError
 from backend.app.datasources.registry import (
     UnsupportedConnectionTypeError,
     get_connection_adapter,
@@ -51,6 +51,11 @@ class ConnectionConflictError(DataQError):
 class ConnectionTestFailedError(DataQError):
     status_code = 502
     code = "connection_test_failed"
+
+
+class ConnectionSecretWriteError(DataQError):
+    status_code = 502
+    code = "connection_secret_write_failed"
 
 
 def _validated_config(conn_type: str, config: dict[str, Any]) -> None:
@@ -141,6 +146,15 @@ def create_connection(
     except IntegrityError as exc:
         session.rollback()
         raise _conflict_from_integrity_error(exc, conn_type=conn_type, env=env) from exc
+    except SecretWriteError as exc:
+        # Credential store (e.g. Key Vault) unreachable — an upstream-dependency
+        # failure, not a client error. Roll the half-inserted row back and map to
+        # 502 (like ConnectionTestFailedError), not a generic 500.
+        session.rollback()
+        log.warning("connection_secret_write_failed", type=conn_type, env=env)
+        raise ConnectionSecretWriteError(
+            "failed to store connection credential", detail={"type": conn_type, "env": env}
+        ) from exc
 
     session.refresh(conn)
     log.info("connection_created", connection_id=str(conn.id), type=conn_type, env=env)
@@ -192,7 +206,15 @@ def update_connection(
         conn.name = name
     if secret is not None:
         secret_ref = conn.secret_ref or f"conn-{conn.id}"
-        secret_store.set(secret_ref, secret)
+        try:
+            secret_store.set(secret_ref, secret)
+        except SecretWriteError as exc:
+            session.rollback()
+            log.warning("connection_secret_write_failed", connection_id=str(connection_id))
+            raise ConnectionSecretWriteError(
+                "failed to store connection credential",
+                detail={"connection_id": str(connection_id)},
+            ) from exc
         conn.secret_ref = secret_ref
 
     try:
