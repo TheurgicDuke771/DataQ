@@ -206,14 +206,14 @@ curl -X POST http://localhost:8000/api/v1/_probe/snowflake-suite
 | Conventional commits | [0002](docs/adr/0002-conventional-commits.md) | Locked W1 |
 | GX-only for v1; DQX deferred to v1.1 | [0003](docs/adr/0003-gx-only-for-v1.md) | Locked W1 |
 | Orchestration abstraction (ADF + Airflow share `OrchestrationProvider`) | [0004](docs/adr/0004-orchestration-abstraction.md) | Locked W1 |
-| Severity tier weights (warn/fail/critical → health score) | `0005` (TBD W3) | Pending stakeholder agreement before W3 starts |
+| Severity tier weights (warn/fail/critical → health score) | [0005](docs/adr/0005-severity-tier-weights.md) | Accepted W2 (weights 0.5/1.0/2.0; SQL-normalised health score) |
 | ADF webhook auth (shared secret in URL, hard-cutover rotation, no v1 replay check) | [0006](docs/adr/0006-adf-webhook-authentication.md) | Accepted W2 |
 | Airflow callback model (HMAC-signed header + polling fallback) | [0007](docs/adr/0007-airflow-callback-model.md) | Accepted W2 |
 | MCP mounted at `/mcp` with Azure AD auth | `0008` (TBD W7) | Pending W7 |
 | Repo layout: flat monorepo (`backend/` + `frontend/`) | [0009](docs/adr/0009-flat-monorepo-layout.md) | Locked W1 |
 | Provider-agnostic infra seams (Azure = default impl, not architecture; auth boundary now, observability via OTel deferred) | [0010](docs/adr/0010-provider-agnostic-infrastructure-seams.md) | Accepted W2 |
 | Extensibility seams (generic runner dispatch, `ResultPublisher`, dbt-as-`OrchestrationProvider`; second impls deferred post-v1) | [0011](docs/adr/0011-extensibility-seams-for-deferred-integrations.md) | Accepted W2 |
-| Monitor-kind seam (`check.kind` discriminator + numeric `metric_value`/`duration_ms`; v1 = `expectation` only, auto-monitors deferred to v1.x) | `0012` (TBD W3) | Pending before W3 migration |
+| Monitor-kind seam (`check.kind` discriminator + numeric `metric_value`/`duration_ms`; v1 = `expectation` only, auto-monitors deferred to v1.x) | [0012](docs/adr/0012-monitor-kind-seam.md) | Accepted W2 (rides the W3 threshold migration) |
 
 ---
 
@@ -271,7 +271,8 @@ curl -X POST http://localhost:8000/api/v1/_probe/snowflake-suite
 - PR 3 a/b/c (#53, #56, #63) — Azure AD SSO end-to-end (backend MSAL + SecretStore abstraction + frontend MSAL + `/me`)
 - PR 4 a/b/b.1/c (#74, #76, #77, #78, #79) — async backbone (Celery + containerized API/worker), Snowflake GX adapter, run/result persistence + NaN sanitizer, Postgres test fixtures, `_probe/snowflake-suite` endpoint. Coverage ~91%.
 - ADRs 0006/0007 (#84) — orchestration-auth decisions (ADF secret-in-URL + hard-cutover; Airflow HMAC + polling fallback); #72 closed (#83) — `trigger_bindings` single-orchestrator assumption documented in ADR 0004.
-- PR 5 (#85, in review) — Snowflake connection CRUD + `/test` endpoint; introduced the `ConnectionAdapter` seam + registry and `SecretStore.set` write-through. Coverage ~94%.
+- PR 5 (#85, merged) — Snowflake connection CRUD + `/test` endpoint; introduced the `ConnectionAdapter` seam + registry and `SecretStore.set` write-through. Coverage ~94%.
+- ADRs 0005/0012 (accepted W2) — severity tier weights (0.5/1.0/2.0 + SQL-normalised health score) and the monitor-kind seam (`check.kind` + `metric_value`/`duration_ms`); both ride the one-shot Week-3 threshold migration. Closes the last Week-3 design gates.
 **Next milestone:** PR 6 — ADF connection CRUD + `(type, env)` uniqueness guard (per #72) (Week 2).
 **Active blockers:** none. See [docs/progress.md](docs/progress.md) for the active-issues list.
 
