@@ -89,10 +89,10 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [ ] 🟡 Upsert pipeline run status into `pipeline_runs`; correlate with suite run — idempotent upsert (PR 7) + **trigger-on-success skeleton** (PR 8): a `succeeded` run matching enabled `trigger_bindings` creates queued `Run` rows (`triggered_by="<provider>:<pipeline>:<run_id>"`, idempotent on replay); failures never trigger (ADR 0004). **`run_suite` dispatch is gated** until checks carry a target table (Week 3); `trigger_bindings` CRUD is Week 4/5 (bindings seeded in tests). `list_recent_runs` + 10-min polling beat → Week 5.
 - [x] ✅ Shared secret config in Key Vault → `ADF_WEBHOOK_SECRET` env var — `settings.adf_webhook_secret_name` resolved via `SecretStore` (→ `KV_SECRET_ADF_WEBHOOK_SECRET` in dev) — PR 7
 
-### Airflow orchestration (added per ADR 0004; not in original roadmap) (3 tasks — 0/3)
+### Airflow orchestration (added per ADR 0004; not in original roadmap) (3 tasks — 1/3)
 - [ ] ⬜ `POST /api/v1/orchestration/events/airflow` — receive HMAC-signed callback payload
 - [ ] ⬜ Airflow `on_success_callback` / `on_failure_callback` helper snippet for users' DAGs
-- [ ] ⬜ Airflow connection type — webserver URL + auth (token-based, v1 default)
+- [x] ✅ Airflow connection type — webserver URL + token/basic auth (token v1 default) — `AirflowConnectionAdapter` (REST `dagRuns`-probe `test`), one-line registry add; orchestrator `(type,env)` guard already covers it ([ADR 0007](adr/0007-airflow-callback-model.md))
 
 ### Flat file — ADLS Gen2 & S3 (4 tasks — 0/4)
 - [ ] ⬜ API: CRUD for ADLS Gen2 connections (account URL + managed identity / SAS)
@@ -105,7 +105,7 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [ ] ⬜ GX Spark / JDBC datasource wiring for Unity Catalog — connect, list catalogs / schemas / tables
 - [ ] ⬜ UC auth test endpoint — validate PAT + SQL Warehouse reachability
 
-**Week 2 total: 6 / 19** _(ADF webhook receiver: endpoint+auth, payload parse, secret config, REST `fetch_run_detail` enrichment; upsert+correlate 🟡 — trigger-on-success skeleton landed, run_suite dispatch gated to Week 3; polling → Week 5)_
+**Week 2 total: 7 / 19** _(ADF webhook receiver: endpoint+auth, payload parse, secret config, REST `fetch_run_detail` enrichment; upsert+correlate 🟡 — trigger-on-success skeleton landed, run_suite dispatch gated to Week 3; polling → Week 5. Airflow connection type landed)_
 
 ---
 
