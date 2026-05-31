@@ -100,12 +100,12 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [ ] ⬜ GX `pandas_abs` / `pandas_s3` datasource wiring — connect, list containers, list files
 - [ ] ⬜ File asset config model: container, batching regex, file format (CSV / Parquet / JSON)
 
-### Unity Catalog / Databricks (3 tasks — 0/3)
-- [ ] ⬜ API: CRUD for Databricks connection (workspace URL + PAT token + SQL Warehouse ID)
+### Unity Catalog / Databricks (3 tasks — 2/3)
+- [x] ✅ API: CRUD for Databricks connection — `UnityCatalogConnectionAdapter` (workspace URL + warehouse id + PAT; `SELECT 1` `test` via `databricks-sql-connector`), one-line registry add. PAT-only (secret-bearing, no `secret_ref`-nullability deferral). The `UnityCatalogCheckRunner` (DQX swap-in, CLAUDE.md §5) is the Week-3 run path, not built here
 - [ ] ⬜ GX Spark / JDBC datasource wiring for Unity Catalog — connect, list catalogs / schemas / tables
-- [ ] ⬜ UC auth test endpoint — validate PAT + SQL Warehouse reachability
+- [x] ✅ UC auth test endpoint — validate PAT + SQL Warehouse reachability — the `SELECT 1` probe in `UnityCatalogConnectionAdapter.test`, surfaced through the generic `POST /connections/{id}/test`
 
-**Week 2 total: 9 / 19** _(ADF webhook receiver: endpoint+auth, payload parse, secret config, REST `fetch_run_detail` enrichment; upsert+correlate 🟡 — trigger-on-success skeleton landed, run_suite dispatch gated to Week 3; polling → Week 5. Airflow + ADLS Gen2 + S3 connection types landed)_
+**Week 2 total: 11 / 19** _(ADF webhook receiver: endpoint+auth, payload parse, secret config, REST `fetch_run_detail` enrichment; upsert+correlate 🟡 — trigger-on-success skeleton landed, run_suite dispatch gated to Week 3; polling → Week 5. All six connection types now have adapters: Snowflake + ADF + Airflow + ADLS Gen2 + S3 + Unity Catalog)_
 
 ---
 

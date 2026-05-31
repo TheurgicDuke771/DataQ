@@ -309,7 +309,7 @@ def test_registry_returns_snowflake_adapter() -> None:
 
 
 def test_registry_unknown_type_raises() -> None:
-    # unity_catalog is a valid CONNECTION_TYPE but has no adapter registered yet
-    # (its CRUD lands in a later Week-2 PR); adf is now registered.
-    with pytest.raises(UnsupportedConnectionTypeError, match="unity_catalog"):
-        get_connection_adapter("unity_catalog")
+    # All six CONNECTION_TYPES now have adapters, so probe a type that isn't a
+    # valid connection type at all (a post-v1 RDBMS candidate, ADR 0011).
+    with pytest.raises(UnsupportedConnectionTypeError, match="mssql"):
+        get_connection_adapter("mssql")
