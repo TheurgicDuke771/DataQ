@@ -12,6 +12,7 @@ from backend.app.datasources.adls import AdlsConnectionAdapter
 from backend.app.datasources.base import ConnectionAdapter
 from backend.app.datasources.s3 import S3ConnectionAdapter
 from backend.app.datasources.snowflake import SnowflakeConnectionAdapter
+from backend.app.datasources.unity_catalog import UnityCatalogConnectionAdapter
 from backend.app.orchestration.adf import ADFConnectionAdapter
 from backend.app.orchestration.airflow import AirflowConnectionAdapter
 
@@ -29,6 +30,7 @@ _ADAPTERS: dict[str, ConnectionAdapter] = {
     "snowflake": SnowflakeConnectionAdapter(),
     "adls_gen2": AdlsConnectionAdapter(),
     "s3": S3ConnectionAdapter(),
+    "unity_catalog": UnityCatalogConnectionAdapter(),
     "adf": ADFConnectionAdapter(),
     "airflow": AirflowConnectionAdapter(),
 }

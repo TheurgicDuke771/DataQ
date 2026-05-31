@@ -46,6 +46,11 @@ _ADLS_CONFIG = {"account_url": "https://acct.blob.core.windows.net", "container"
 
 _S3_CONFIG = {"bucket": "dataq-lake", "region": "eu-west-1", "access_key_id": "AKIAEXAMPLE"}
 
+_UC_CONFIG = {
+    "workspace_url": "https://adb-1234.5.azuredatabricks.net",
+    "warehouse_id": "abc123def456",
+}
+
 
 class FakeStore:
     """In-memory SecretStore for write-through assertions."""
@@ -389,6 +394,23 @@ def test_create_s3_connection_validates_and_persists(db_session: Any) -> None:
     )
     assert conn.type == "s3"
     assert conn.config["bucket"] == "dataq-lake"
+
+
+def test_create_unity_catalog_connection_validates_and_persists(db_session: Any) -> None:
+    # Exercises the unity_catalog registry entry + UnityCatalogConfig validation
+    # through the generic create path.
+    store = FakeStore()
+    conn = _create(
+        db_session,
+        store,
+        name="uc-dev",
+        conn_type="unity_catalog",
+        env="dev",
+        config=dict(_UC_CONFIG),
+        secret="dapi-pat-token",
+    )
+    assert conn.type == "unity_catalog"
+    assert conn.config["warehouse_id"] == "abc123def456"
 
 
 def test_two_snowflakes_same_env_not_blocked_by_orchestrator_index(db_session: Any) -> None:
