@@ -34,7 +34,11 @@ describe('Home', () => {
 
     render(<Home />);
 
-    // The error detail is rendered via the Alert description.
-    expect(await screen.findByText('network down')).toBeInTheDocument();
+    // Regression guard for #80: the Alert heading must render as visible text.
+    // antd v6 renamed the heading prop message→title, so `title` is correct here
+    // (under antd v5 `title` fell through to a DOM attribute and never rendered).
+    expect(await screen.findByText('Failed to load /api/v1/me')).toBeInTheDocument();
+    // …alongside the error detail in the Alert description.
+    expect(screen.getByText('network down')).toBeInTheDocument();
   });
 });
