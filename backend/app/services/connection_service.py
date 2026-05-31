@@ -74,6 +74,34 @@ def _validate_env(env: str) -> None:
         raise ConnectionConfigInvalidError(f"invalid env {env!r}", detail={"allowed": list(ENVS)})
 
 
+# DB index that enforces one orchestration-provider connection per (type, env)
+# — see the connections migration (#72 / ADR 0004). Distinguished from the
+# (name, env) unique constraint so each violation gets an accurate 409 message.
+_ORCHESTRATOR_UNIQUE_INDEX = "uq_connections_orchestrator_type_env"
+
+
+def _conflict_from_integrity_error(
+    exc: IntegrityError, *, conn_type: str, env: str
+) -> ConnectionConflictError:
+    """Map a unique-violation to the right 409, by which constraint fired.
+
+    Postgres surfaces the violated constraint/index name on the driver
+    exception's ``diag``; use it to tell the orchestrator (type, env) singleton
+    breach apart from a duplicate (name, env).
+    """
+    diag = getattr(getattr(exc, "orig", None), "diag", None)
+    constraint_name = getattr(diag, "constraint_name", None)
+    if constraint_name == _ORCHESTRATOR_UNIQUE_INDEX:
+        return ConnectionConflictError(
+            f"an orchestration connection of type {conn_type!r} already exists in env {env!r}",
+            detail={"type": conn_type, "env": env},
+        )
+    return ConnectionConflictError(
+        "a connection with this name already exists in this env",
+        detail={"type": conn_type, "env": env},
+    )
+
+
 def create_connection(
     session: Session,
     *,
@@ -112,10 +140,7 @@ def create_connection(
         session.commit()
     except IntegrityError as exc:
         session.rollback()
-        raise ConnectionConflictError(
-            "a connection with this name already exists in this env",
-            detail={"name": name, "env": env},
-        ) from exc
+        raise _conflict_from_integrity_error(exc, conn_type=conn_type, env=env) from exc
 
     session.refresh(conn)
     log.info("connection_created", connection_id=str(conn.id), type=conn_type, env=env)
@@ -156,6 +181,9 @@ def update_connection(
 ) -> Connection:
     """Partial update of name / config / secret. Type and env are immutable."""
     conn = get_connection(session, connection_id)
+    # Capture before commit: a unique violation rolls back and expires the
+    # instance, so read the (immutable) type/env now for the conflict message.
+    conn_type, conn_env = conn.type, conn.env
 
     if config is not None:
         _validated_config(conn.type, config)
@@ -171,10 +199,7 @@ def update_connection(
         session.commit()
     except IntegrityError as exc:
         session.rollback()
-        raise ConnectionConflictError(
-            "a connection with this name already exists in this env",
-            detail={"connection_id": str(connection_id)},
-        ) from exc
+        raise _conflict_from_integrity_error(exc, conn_type=conn_type, env=conn_env) from exc
     session.refresh(conn)
     log.info("connection_updated", connection_id=str(conn.id))
     return conn

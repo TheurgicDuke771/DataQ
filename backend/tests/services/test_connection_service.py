@@ -30,6 +30,14 @@ _SF_CONFIG = {
     "role": "DQ_ROLE",
 }
 
+_ADF_CONFIG = {
+    "subscription_id": "00000000-0000-0000-0000-000000000001",
+    "resource_group": "rg-data",
+    "factory_name": "lll-adf-nonprod",
+    "tenant_id": "00000000-0000-0000-0000-0000000000aa",
+    "client_id": "00000000-0000-0000-0000-0000000000bb",
+}
+
 
 class FakeStore:
     """In-memory SecretStore for write-through assertions."""
@@ -253,3 +261,46 @@ def test_test_connection_missing_secret_in_store_raises(
     monkeypatch.setattr(svc, "get_connection_adapter", lambda t: _PassAdapter())
     with pytest.raises(ConnectionTestFailedError, match="could not be resolved"):
         svc.test_connection(db_session, conn.id, secret_store=FakeStore())
+
+
+# ──────────────── orchestrator (type, env) singleton guard (#72) ────────────
+
+
+def _create_adf(db_session: Any, store: FakeStore, **overrides: Any) -> Connection:
+    kwargs: dict[str, Any] = {
+        "name": "adf-conn",
+        "conn_type": "adf",
+        "env": "dev",
+        "config": dict(_ADF_CONFIG),
+        "secret": "sp-secret",
+    }
+    kwargs.update(overrides)
+    return _create(db_session, store, **kwargs)
+
+
+def test_second_adf_same_env_raises_conflict(db_session: Any) -> None:
+    store = FakeStore()
+    user = _user(db_session)
+    _create_adf(db_session, store, user=user, name="adf-a", env="dev")
+    # different name, same (type, env) → the partial unique index must fire,
+    # not the (name, env) constraint.
+    with pytest.raises(ConnectionConflictError, match="orchestration connection of type 'adf'"):
+        _create_adf(db_session, store, user=user, name="adf-b", env="dev")
+
+
+def test_adf_in_different_env_is_allowed(db_session: Any) -> None:
+    store = FakeStore()
+    user = _user(db_session)
+    _create_adf(db_session, store, user=user, name="adf-dev", env="dev")
+    other = _create_adf(db_session, store, user=user, name="adf-qa", env="qa")
+    assert other.env == "qa"
+
+
+def test_two_snowflakes_same_env_not_blocked_by_orchestrator_index(db_session: Any) -> None:
+    # Datasources are excluded from the partial index: many Snowflake
+    # connections per env are legitimate (distinct databases).
+    store = FakeStore()
+    user = _user(db_session)
+    _create(db_session, store, user=user, name="sf-one", env="dev")
+    second = _create(db_session, store, user=user, name="sf-two", env="dev")
+    assert second.type == "snowflake"

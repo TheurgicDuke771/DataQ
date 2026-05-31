@@ -72,6 +72,20 @@ class Connection(Base):
         _in_check("type", CONNECTION_TYPES, "type_valid"),
         _in_check("env", ENVS, "env_valid"),
         UniqueConstraint("name", "env", name="uq_connections_name_env"),
+        # Orchestration providers (ADF, Airflow) are singletons per env: at most
+        # one connection per (provider, env), the binding `trigger_bindings`
+        # assumes (ADR 0004, #72). Datasources are deliberately excluded — e.g.
+        # Snowflake DEV can have many connections (different databases) — so this
+        # is a *partial* unique index over the orchestration types only.
+        Index(
+            "uq_connections_orchestrator_type_env",
+            "type",
+            "env",
+            unique=True,
+            postgresql_where=text(
+                "type IN (" + ", ".join(f"'{p}'" for p in ORCHESTRATION_PROVIDERS) + ")"
+            ),
+        ),
         Index("ix_connections_created_by", "created_by"),
     )
 

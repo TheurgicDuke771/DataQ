@@ -32,6 +32,26 @@ _SF_CONFIG = {
     "role": "DQ_ROLE",
 }
 
+_ADF_CONFIG = {
+    "subscription_id": "00000000-0000-0000-0000-000000000001",
+    "resource_group": "rg-data",
+    "factory_name": "lll-adf-nonprod",
+    "tenant_id": "00000000-0000-0000-0000-0000000000aa",
+    "client_id": "00000000-0000-0000-0000-0000000000bb",
+}
+
+
+def _adf_payload(**overrides: Any) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "name": "adf-nonprod",
+        "type": "adf",
+        "env": "dev",
+        "config": dict(_ADF_CONFIG),
+        "secret": "sp-secret",
+    }
+    payload.update(overrides)
+    return payload
+
 
 class FakeStore:
     def __init__(self) -> None:
@@ -130,6 +150,46 @@ def test_create_duplicate_returns_409(client: tuple[TestClient, FakeStore]) -> N
     resp = api.post("/api/v1/connections", json=_create_payload(name="dup"))
     assert resp.status_code == 409
     assert resp.json()["error"]["code"] == "connection_conflict"
+
+
+# ───────────────────────── ADF connection (#72) ────────────────────
+
+
+def test_create_adf_returns_201(client: tuple[TestClient, FakeStore]) -> None:
+    api, _ = client
+    resp = api.post("/api/v1/connections", json=_adf_payload())
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["type"] == "adf"
+    assert body["config"]["factory_name"] == "lll-adf-nonprod"
+    assert body["has_secret"] is True
+
+
+def test_second_adf_same_env_returns_409(client: tuple[TestClient, FakeStore]) -> None:
+    api, _ = client
+    first = api.post("/api/v1/connections", json=_adf_payload(name="adf-a"))
+    assert first.status_code == 201
+    # different name, same (type, env): the orchestrator singleton guard fires.
+    resp = api.post("/api/v1/connections", json=_adf_payload(name="adf-b"))
+    assert resp.status_code == 409
+    assert resp.json()["error"]["code"] == "connection_conflict"
+    assert "adf" in resp.json()["error"]["message"]
+
+
+def test_adf_second_env_returns_201(client: tuple[TestClient, FakeStore]) -> None:
+    api, _ = client
+    api.post("/api/v1/connections", json=_adf_payload(name="adf-dev", env="dev"))
+    resp = api.post("/api/v1/connections", json=_adf_payload(name="adf-qa", env="qa"))
+    assert resp.status_code == 201
+
+
+def test_list_filters_by_adf_type(client: tuple[TestClient, FakeStore]) -> None:
+    api, _ = client
+    api.post("/api/v1/connections", json=_create_payload(name="sf"))
+    api.post("/api/v1/connections", json=_adf_payload(name="adf"))
+    adf_only = api.get("/api/v1/connections", params={"type": "adf"}).json()
+    assert [c["name"] for c in adf_only] == ["adf"]
+    assert all(c["type"] == "adf" for c in adf_only)
 
 
 # ───────────────────────── read / list ─────────────────────────────

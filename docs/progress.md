@@ -76,9 +76,9 @@ These were preconditions for executing the roadmap. Listed for completeness.
 
 > **Auth-boundary discipline (per [ADR 0010](adr/0010-provider-agnostic-infrastructure-seams.md)):** new connection-CRUD endpoints (and every protected route from here on) depend on a generic internal "current user" dependency that returns DataQ's own `User` — they must NOT read MSAL token claims directly in route/service code. Cheap now; expensive to retrofit once dozens of endpoints exist. No new abstraction layer required, just the boundary.
 
-### Snowflake & ADF (3 tasks — 1/3)
+### Snowflake & ADF (3 tasks — 2/3)
 - [x] ✅ API: CRUD for Snowflake connections (DEV / QA / UAT), connection test endpoint — [PR 5](https://github.com/TheurgicDuke771/DataQ/pull/85) _(also introduced the `ConnectionAdapter` seam + registry per [ADR 0011](adr/0011-extensibility-seams-for-deferred-integrations.md), and `SecretStore.set` write-through — so PRs 6-8 are pure adapter additions)_
-- [ ] ⬜ API: CRUD for ADF connections (subscription ID + service principal) — must enforce `(type, env)` uniqueness for orchestrator-typed rows per [#72](https://github.com/TheurgicDuke771/DataQ/issues/72)
+- [x] ✅ API: CRUD for ADF connections (subscription ID + service principal) — PR 6 _(`ADFConnectionAdapter` in the new `orchestration/` package — NOT `datasources/`, per CLAUDE.md §4; `test()` does SP token + factory GET via httpx. Enforces `(type, env)` uniqueness for orchestrator rows via a **partial unique index** `WHERE type IN ('adf','airflow')` per [#72](https://github.com/TheurgicDuke771/DataQ/issues/72) / ADR 0004 — datasources excluded, so Snowflake stays many-per-env. CRUD/API reused unchanged: pure adapter + registry + migration addition.)_
 - [ ] ⬜ Connection re-auth endpoint — refresh expired Key Vault token
 - [ ] ⬜ Review `connections.secret_ref` nullability — decide based on Airflow basic-poll / unauthenticated S3 cases ([PR #41 nit](https://github.com/TheurgicDuke771/DataQ/pull/41))
 
@@ -105,7 +105,7 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [ ] ⬜ GX Spark / JDBC datasource wiring for Unity Catalog — connect, list catalogs / schemas / tables
 - [ ] ⬜ UC auth test endpoint — validate PAT + SQL Warehouse reachability
 
-**Week 2 total: 1 / 19**
+**Week 2 total: 2 / 19**
 
 ---
 
@@ -297,7 +297,7 @@ These were preconditions for executing the roadmap. Listed for completeness.
 
 ### Backend unit tests (pytest) (11 tasks — 0.5/11)
 - [ ] ⬜ Auth service — token validation, session expiry, Key Vault credential retrieval
-- [ ] 🟡 Connection service — CRUD operations, test endpoint logic per datasource type — Snowflake path covered (16 DB-backed tests, `connection_service.py` 100%) — [PR 5](https://github.com/TheurgicDuke771/DataQ/pull/85); ADF/ADLS/S3/UC paths pending their CRUD PRs
+- [ ] 🟡 Connection service — CRUD operations, test endpoint logic per datasource type — Snowflake path covered (16 DB-backed tests, `connection_service.py` 100%) — [PR 5](https://github.com/TheurgicDuke771/DataQ/pull/85); ADF path + `(type, env)` orchestrator-guard covered (3 service tests, `adf.py` 100%) — PR 6; ADLS/S3/UC paths pending their CRUD PRs
 - [ ] ⬜ Suite service — CRUD, share assignment, export / import serialisation
 - [ ] ⬜ Check service — expectation builder, SQL validator, dry-run logic, threshold tier evaluation
 - [ ] ⬜ Column profiler service — null count, distinct count, min/max per datasource type
@@ -312,7 +312,7 @@ These were preconditions for executing the roadmap. Listed for completeness.
 ### API layer tests (pytest + httpx) (6 tasks — 0/6, probe endpoint covered early)
 - [ ] ⬜ Auth endpoints — login redirect, token refresh, unauthorised → 401
 - [x] ✅ **Probe endpoints** (out-of-roadmap) — POST creates+dispatches, idempotent seed, GET results, 404 — against real Postgres — [PR 4c-ii](https://github.com/TheurgicDuke771/DataQ/pull/79)
-- [x] 🟡 Connection endpoints — CRUD happy paths + validation errors — Snowflake covered (13 TestClient tests: CRUD, 422/404/502, secret-never-leaks, auth gate) — [PR 5](https://github.com/TheurgicDuke771/DataQ/pull/85); other types follow their CRUD PRs
+- [x] 🟡 Connection endpoints — CRUD happy paths + validation errors — Snowflake covered (13 TestClient tests: CRUD, 422/404/502, secret-never-leaks, auth gate) — [PR 5](https://github.com/TheurgicDuke771/DataQ/pull/85); ADF covered (4 TestClient tests: create, orchestrator 409, second-env 201, type filter) — PR 6; ADLS/S3/UC types follow their CRUD PRs
 - [ ] ⬜ Suite & check endpoints — CRUD, share, export / import, dry-run
 - [ ] ⬜ Execution endpoints — trigger run, poll progress, cancel, list history
 - [ ] ⬜ Results endpoints — dashboard data, drill-down, filters, download
