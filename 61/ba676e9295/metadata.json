@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "61ba676e9295",
+  "strategy": "manual-commit",
+  "branch": "feature/s3-connection-crud",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/61/ba676e9295/0/metadata.json",
+      "transcript": "/61/ba676e9295/0/full.jsonl",
+      "content_hash": "/61/ba676e9295/0/content_hash.txt",
+      "prompt": "/61/ba676e9295/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 68469,
+    "cache_creation_tokens": 3443407,
+    "cache_read_tokens": 134451979,
+    "output_tokens": 366867,
+    "api_call_count": 456
+  }
+}

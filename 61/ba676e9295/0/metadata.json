@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "61ba676e9295",
+  "session_id": "f81a27c1-9606-4cc2-bccc-2e2fee08a0cb",
+  "strategy": "manual-commit",
+  "created_at": "2026-05-31T19:35:08.23213Z",
+  "branch": "feature/s3-connection-crud",
+  "checkpoints_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "fb2fa693f8c8",
+  "token_usage": {
+    "input_tokens": 68469,
+    "cache_creation_tokens": 3443407,
+    "cache_read_tokens": 134451979,
+    "output_tokens": 366867,
+    "api_call_count": 456
+  },
+  "session_metrics": {
+    "turn_count": 18
+  }
+}
