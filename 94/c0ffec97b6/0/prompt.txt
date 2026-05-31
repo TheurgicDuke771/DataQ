@@ -1,0 +1,6 @@
+Hey, can you assess the current state of the project and plan out the next action items
+
+---
+
+lets go in this order - 
+draft ADRs then Doc sync after that start PR 6 (lets paln once before we start)
