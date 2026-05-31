@@ -1,0 +1,35 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "47a803d10994",
+  "session_id": "f81a27c1-9606-4cc2-bccc-2e2fee08a0cb",
+  "strategy": "manual-commit",
+  "created_at": "2026-05-31T20:12:43.034948Z",
+  "branch": "feature/unity-catalog-connection-crud",
+  "checkpoints_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "58903bf5a53e",
+  "token_usage": {
+    "input_tokens": 71115,
+    "cache_creation_tokens": 3465375,
+    "cache_read_tokens": 144371388,
+    "output_tokens": 384493,
+    "api_call_count": 481
+  },
+  "session_metrics": {
+    "turn_count": 19
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}
