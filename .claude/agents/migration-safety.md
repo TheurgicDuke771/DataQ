@@ -32,7 +32,7 @@ Each of these is unsafe under concurrent rolling deploy and must be split into a
 
 ### 🟡 Yellow flags (call out, don't necessarily block)
 
-1. **Index creation without `CONCURRENTLY`** on Postgres for a table that will be large (`runs`, `results`, `pipeline_runs`, `check_results`). Use `op.create_index(..., postgresql_concurrently=True)` and a separate transaction.
+1. **Index creation without `CONCURRENTLY`** on Postgres for a table that will be large (`runs`, `results`, `pipeline_runs`). Use `op.create_index(..., postgresql_concurrently=True)` and a separate transaction.
 2. **No data backfill plan** for a new NOT NULL column with no `server_default`.
 3. **Migration touches tables in two unrelated domains** in one revision (e.g., `connections` and `pipeline_runs` together). Suggests two migrations bundled.
 4. **No docstring at the top of the migration file** describing intent and the rollout sequence.
