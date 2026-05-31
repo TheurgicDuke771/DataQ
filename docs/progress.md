@@ -22,13 +22,13 @@
 | **Active since** | 2026-05-24 |
 | **Today** | 2026-05-30 |
 | **Calendar burn** | day 7 of 56 (~13%) |
-| **Roadmap tasks done** | 10 ✅ + 2 🟡 / 152 (7%) |
-| **Out-of-roadmap PRs landed** | 5 bundles (governance, tooling lock, Entire CLI, Dependabot triage round 1, PR-3 cleanup) + ADRs 0006/0007 (orchestration auth) |
+| **Roadmap tasks done** | 14 ✅ + 3 🟡 / 152 (9%) |
+| **Out-of-roadmap PRs landed** | 5 bundles (governance, tooling lock, Entire CLI, Dependabot triage round 1, PR-3 cleanup) + ADRs 0005/0006/0007/0012 |
 | **Current week** | Week 2 — Connection manager (backend) |
 | **Week-1 exit gate** | A logged-in user can hit a FastAPI endpoint that triggers GX against Snowflake DEV and persists a result row. — **met** (plumbing complete via PR 4a–4c; live-Snowflake run fails-soft pending DEV creds — deferred smoke) |
-| **Next milestone** | PR 6 — ADF connection CRUD + `(type, env)` uniqueness guard (#72) (Week 2) |
+| **Next milestone** | PR 8 — ADF REST follow-up (`fetch_run_detail`) + 10-min polling fallback → succeeded-run detection → suite trigger (Week 2/5) |
 | **Open issues** | 11 (#86, #87, #80, #65, #62 + governance polish) |
-| **Open PRs** | none (PR 5 / #85 merged) |
+| **Open PRs** | PR 7 (ADF webhook receiver) — in review |
 | **Design gates** | ADR 0005 (severity weights) + ADR 0012 (monitor-kind seam) **both accepted** — Week-3 migration unblocked |
 
 ---
@@ -82,12 +82,12 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [ ] ⬜ Connection re-auth endpoint — refresh expired Key Vault token
 - [ ] ⬜ Review `connections.secret_ref` nullability — decide based on Airflow basic-poll / unauthenticated S3 cases ([PR #41 nit](https://github.com/TheurgicDuke771/DataQ/pull/41))
 
-### ADF webhook receiver (Azure Monitor → DQ platform) (5 tasks — 0/5)
-- [ ] ⬜ `POST /api/v1/orchestration/events/adf` — receive Azure Monitor payload, validate shared secret, return 200 _(path differs from roadmap per ADR 0004 — uses unified `OrchestrationProvider` endpoint)_
-- [ ] ⬜ Parse webhook payload — extract `pipelineName`, `factoryName`, `runId`, `firedDateTime`
-- [ ] ⬜ Follow-up ADF REST API call on webhook receipt — fetch run details
-- [ ] ⬜ Upsert pipeline run status into `pipeline_runs`; correlate with suite run
-- [ ] ⬜ Shared secret config in Key Vault → `ADF_WEBHOOK_SECRET` env var
+### ADF webhook receiver (Azure Monitor → DQ platform) (5 tasks — 3 ✅ / 1 🟡 / 1 ⬜)
+- [x] ✅ `POST /api/v1/orchestration/events/adf` — receive Azure Monitor payload, validate shared secret (constant-time, ADR 0006), return 200 — PR 7 _(unified `OrchestrationProvider` seam landed: `orchestration/base.py` Protocol + `RunUpdate` DTO + provider registry; ADF reference impl per ADR 0004 — service code dispatches by provider, never branches on ADF)_
+- [x] ✅ Parse webhook payload — `AdfProvider.parse_event` extracts `factoryName`/`pipelineName`/`runId`/`status`/`firedDateTime` → `RunUpdate`, ADF→`PIPELINE_RUN_STATUSES` normalisation — PR 7 _(exact Common-Alert-Schema field mapping validated at Week-7 deploy smoke)_
+- [ ] ⬜ Follow-up ADF REST API call on webhook receipt — fetch run details _(deferred to PR 8 — `OrchestrationProvider.fetch_run_detail` declared, raises `NotImplementedError`; pairs with the polling fallback)_
+- [ ] 🟡 Upsert pipeline run status into `pipeline_runs`; correlate with suite run — `orchestration_service.record_pipeline_event` does the idempotent `INSERT … ON CONFLICT (provider, provider_run_id)` upsert + factory→connection resolution — PR 7; **suite-trigger-on-success rides the Week-5 polling PR** (ADF webhook is the failure channel — failures don't trigger, ADR 0004)
+- [x] ✅ Shared secret config in Key Vault → `ADF_WEBHOOK_SECRET` env var — `settings.adf_webhook_secret_name` resolved via `SecretStore` (→ `KV_SECRET_ADF_WEBHOOK_SECRET` in dev) — PR 7
 
 ### Airflow orchestration (added per ADR 0004; not in original roadmap) (3 tasks — 0/3)
 - [ ] ⬜ `POST /api/v1/orchestration/events/airflow` — receive HMAC-signed callback payload
@@ -105,7 +105,7 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [ ] ⬜ GX Spark / JDBC datasource wiring for Unity Catalog — connect, list catalogs / schemas / tables
 - [ ] ⬜ UC auth test endpoint — validate PAT + SQL Warehouse reachability
 
-**Week 2 total: 2 / 19**
+**Week 2 total: 5 / 19** _(+3 ADF webhook receiver: endpoint+auth, payload parse, secret config; upsert 🟡 pending suite-trigger, REST follow-up ⬜ → PR 8)_
 
 ---
 
@@ -303,7 +303,7 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [ ] ⬜ Column profiler service — null count, distinct count, min/max per datasource type
 - [ ] 🟡 Execution service — `run_suite` dispatch + `run_service.execute_run` + GX adapter + NaN sanitizer tested early ([PR 4b.1](https://github.com/TheurgicDuke771/DataQ/pull/77) + [PR 4c-i](https://github.com/TheurgicDuke771/DataQ/pull/78) + [PR 4c-ii](https://github.com/TheurgicDuke771/DataQ/pull/79)); progress polling / cancel / retention purge pending
 - [ ] ⬜ Alerting service — Teams webhook dispatch, dedup logic, snooze / suppression
-- [ ] ⬜ ADF service — webhook payload parsing, follow-up REST call, upsert, gap recovery dedup
+- [ ] 🟡 ADF service — webhook payload parsing + idempotent upsert covered (`AdfProvider.parse_event` 13 unit tests incl. status-normalisation/malformed; `orchestration_service` 6 DB tests incl. replay idempotency + factory resolution) — PR 7; follow-up REST call + gap-recovery dedup pending PR 8
 - [ ] ⬜ ADF polling service — succeeded run fetch, skip-if-recently-updated, gap recovery
 - [ ] ⬜ Result service — health score calc, historical trend aggregation, export generation
 - [ ] ⬜ MCP service — each of 8 tools returns correct shape; auth rejection; `trigger_suite_run` returns valid run_id
@@ -316,7 +316,7 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [ ] ⬜ Suite & check endpoints — CRUD, share, export / import, dry-run
 - [ ] ⬜ Execution endpoints — trigger run, poll progress, cancel, list history
 - [ ] ⬜ Results endpoints — dashboard data, drill-down, filters, download
-- [ ] ⬜ ADF webhook endpoint — valid payload → 200, invalid secret → 401, malformed → 422, duplicate runId idempotent
+- [x] 🟡 ADF webhook endpoint — valid payload → 200 (recorded/ignored), missing+wrong token → 401, malformed/non-JSON → 422, secret-unconfigured → 503 (9 TestClient tests) — PR 7; duplicate-runId idempotency asserted at the service layer
 
 ### Frontend unit tests (Vitest + RTL) (6 tasks — 1/6)
 - [x] ✅ **AuthGate** — 4 tests (dev_bypass renders children, unconfigured banner, real+unauth sign-in button, real+auth renders children) — [PR 3c](https://github.com/TheurgicDuke771/DataQ/pull/63)

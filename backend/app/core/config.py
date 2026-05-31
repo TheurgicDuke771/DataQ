@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     )
     azure_key_vault_url: str | None = None
 
+    # SecretStore key holding the ADF webhook shared secret (ADR 0006). Resolved
+    # via SecretStore.get → EnvSecretStore maps it to KV_SECRET_ADF_WEBHOOK_SECRET
+    # in dev, Key Vault secret `adf-webhook-secret` in prod. Not the secret value.
+    adf_webhook_secret_name: str = "adf-webhook-secret"  # noqa: S105 — KV key name, not a secret
+
     # ── Snowflake probe (Week 1 exit-gate endpoint) ──────────────────────────
     # Config for the single seeded dev Snowflake connection the probe runs
     # against. All optional: when unset the probe still creates + dispatches a
