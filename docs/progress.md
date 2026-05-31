@@ -94,9 +94,9 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [ ] ⬜ Airflow `on_success_callback` / `on_failure_callback` helper snippet for users' DAGs
 - [x] ✅ Airflow connection type — webserver URL + token/basic auth (token v1 default) — `AirflowConnectionAdapter` (REST `dagRuns`-probe `test`), one-line registry add; orchestrator `(type,env)` guard already covers it ([ADR 0007](adr/0007-airflow-callback-model.md))
 
-### Flat file — ADLS Gen2 & S3 (4 tasks — 0/4)
-- [ ] ⬜ API: CRUD for ADLS Gen2 connections (account URL + managed identity / SAS)
-- [ ] ⬜ API: CRUD for S3 connections (bucket + IAM role / access key)
+### Flat file — ADLS Gen2 & S3 (4 tasks — 1/4)
+- [x] ✅ API: CRUD for ADLS Gen2 connections — `AdlsConnectionAdapter` (account URL + container; SAS auth, container-properties `test` via `azure-storage-blob`), one-line registry add. **SAS only in v1**; `managed_identity` config rejected with a "deferred to Week 7" message (needs an ambient Azure identity + the `secret_ref`-nullability change) — [PR](#)
+- [ ] ⬜ API: CRUD for S3 connections (bucket + IAM role / access key) — _access-key in v1; IAM-role deferred to Week 7 (per the same secret_ref-nullability decision)_
 - [ ] ⬜ GX `pandas_abs` / `pandas_s3` datasource wiring — connect, list containers, list files
 - [ ] ⬜ File asset config model: container, batching regex, file format (CSV / Parquet / JSON)
 
@@ -105,7 +105,7 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [ ] ⬜ GX Spark / JDBC datasource wiring for Unity Catalog — connect, list catalogs / schemas / tables
 - [ ] ⬜ UC auth test endpoint — validate PAT + SQL Warehouse reachability
 
-**Week 2 total: 7 / 19** _(ADF webhook receiver: endpoint+auth, payload parse, secret config, REST `fetch_run_detail` enrichment; upsert+correlate 🟡 — trigger-on-success skeleton landed, run_suite dispatch gated to Week 3; polling → Week 5. Airflow connection type landed)_
+**Week 2 total: 8 / 19** _(ADF webhook receiver: endpoint+auth, payload parse, secret config, REST `fetch_run_detail` enrichment; upsert+correlate 🟡 — trigger-on-success skeleton landed, run_suite dispatch gated to Week 3; polling → Week 5. Airflow + ADLS Gen2 connection types landed)_
 
 ---
 

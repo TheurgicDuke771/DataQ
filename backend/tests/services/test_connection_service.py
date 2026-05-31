@@ -42,6 +42,8 @@ _ADF_CONFIG = {
 
 _AIRFLOW_CONFIG = {"base_url": "https://airflow.example.com", "auth_type": "token"}
 
+_ADLS_CONFIG = {"account_url": "https://acct.blob.core.windows.net", "container": "data"}
+
 
 class FakeStore:
     """In-memory SecretStore for write-through assertions."""
@@ -334,6 +336,40 @@ def test_adf_and_airflow_coexist_in_same_env(db_session: Any) -> None:
         secret="tok",
     )
     assert airflow.type == "airflow"
+
+
+# ──────────────── other datasource types (registry wiring) ──────────
+
+
+def test_create_adls_connection_validates_and_persists(db_session: Any) -> None:
+    # Exercises the adls_gen2 registry entry + AdlsConfig validation through the
+    # generic create path (no datasource-type branching in the service).
+    store = FakeStore()
+    user = _user(db_session)
+    conn = _create(
+        db_session,
+        store,
+        user=user,
+        name="lake-dev",
+        conn_type="adls_gen2",
+        env="dev",
+        config=dict(_ADLS_CONFIG),
+        secret="sv=sas-token",
+    )
+    assert conn.type == "adls_gen2"
+    assert conn.config["container"] == "data"
+    # datasources are NOT orchestrators: many per env is fine (no singleton guard)
+    second = _create(
+        db_session,
+        store,
+        user=user,
+        name="lake-dev-2",
+        conn_type="adls_gen2",
+        env="dev",
+        config=dict(_ADLS_CONFIG),
+        secret="sv=sas-token",
+    )
+    assert second.type == "adls_gen2"
 
 
 def test_two_snowflakes_same_env_not_blocked_by_orchestrator_index(db_session: Any) -> None:
