@@ -30,7 +30,7 @@ class Settings(BaseSettings):
 
     auth_dev_bypass: bool = False
 
-    secret_store: Literal["env", "azure_key_vault"] = (
+    secret_store: Literal["env", "redis", "azure_key_vault"] = (
         "env"  # noqa: S105 — mode selector, not a password
     )
     azure_key_vault_url: str | None = None

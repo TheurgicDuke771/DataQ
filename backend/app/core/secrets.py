@@ -1,11 +1,18 @@
 """Secret resolution abstraction.
 
-Two backends are supported, picked from `settings.secret_store`:
+Three backends are supported, picked from `settings.secret_store`:
 
 - **EnvSecretStore** — reads secrets from env vars prefixed `KV_SECRET_`.
   Local dev only — convenient when running against `docker-compose` without
   an Azure tenant. Name normalisation: `snowflake-uat-finance` →
-  env var `KV_SECRET_SNOWFLAKE_UAT_FINANCE`.
+  env var `KV_SECRET_SNOWFLAKE_UAT_FINANCE`. **Per-process**: a secret written
+  via `set` is only visible to the writing process (#86).
+
+- **RedisSecretStore** — reads/writes secrets in Redis (already in the dev
+  stack). **Dev/test only** and **plaintext** — but, unlike EnvSecretStore, a
+  secret `set` by the API process is visible to the Celery worker, so
+  connection-driven worker runs can resolve a credential the API just wrote
+  (#86). Not for production (no encryption) — production uses Key Vault.
 
 - **AzureKeyVaultStore** — reads from Azure Key Vault via
   `azure-identity` (DefaultAzureCredential) + `azure-keyvault-secrets`.
@@ -13,8 +20,8 @@ Two backends are supported, picked from `settings.secret_store`:
   Week 7 (deployment hardening); the code path is wired now so callers
   can take a dependency on `SecretStore` without waiting.
 
-The Azure SDK is **lazy-imported** so EnvSecretStore-only deployments
-don't pay the import cost.
+The Azure SDK and the redis client are **lazy-imported** so deployments that
+don't use them don't pay the import cost.
 """
 
 from __future__ import annotations
@@ -22,6 +29,8 @@ from __future__ import annotations
 import os
 import threading
 from typing import TYPE_CHECKING, Final, Protocol, runtime_checkable
+
+import redis
 
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.logging import get_logger
@@ -33,6 +42,10 @@ log = get_logger(__name__)
 
 ENV_PREFIX: Final = "KV_SECRET_"
 _AKV_MODE: Final = "azure_key_vault"
+_REDIS_MODE: Final = "redis"
+# Namespace for secret keys in the shared dev Redis (keeps them clear of Celery's
+# own keys on the same instance).
+_REDIS_KEY_PREFIX: Final = "dataq:secret:"
 
 
 class SecretNotFoundError(Exception):
@@ -116,6 +129,48 @@ class AzureKeyVaultStore:
             ) from exc
 
 
+class RedisSecretStore:
+    """Resolves secrets from Redis — dev/test only, plaintext, shared across processes.
+
+    The point (vs `EnvSecretStore`): Redis is shared, so a secret `set` by the API
+    process is visible to the Celery worker, which is what connection-driven worker
+    runs need (#86). Values are stored in **plaintext** — never use in production;
+    production uses `AzureKeyVaultStore`. The redis client is lazy-built.
+    """
+
+    def __init__(self, redis_url: str, *, key_prefix: str = _REDIS_KEY_PREFIX) -> None:
+        self._url = redis_url
+        self._key_prefix = key_prefix
+        self._client: redis.Redis[str] | None = None
+        self._lock = threading.Lock()
+
+    def _key(self, name: str) -> str:
+        return f"{self._key_prefix}{name}"
+
+    def _client_lazy(self) -> redis.Redis[str]:
+        if self._client is not None:
+            return self._client
+        with self._lock:
+            if self._client is None:
+                self._client = redis.Redis.from_url(self._url, decode_responses=True)
+            return self._client
+
+    def get(self, name: str) -> str:
+        try:
+            value = self._client_lazy().get(self._key(name))
+        except Exception as exc:
+            raise SecretNotFoundError(f"Redis secret {name!r}: {exc}") from exc
+        if value is None:
+            raise SecretNotFoundError(f"Redis secret {name!r} not set")
+        return str(value)
+
+    def set(self, name: str, value: str) -> None:
+        try:
+            self._client_lazy().set(self._key(name), value)
+        except Exception as exc:
+            raise SecretWriteError(f"Redis secret {name!r}: {exc}") from exc
+
+
 _store_singleton: SecretStore | None = None
 _store_lock = threading.Lock()
 
@@ -125,6 +180,8 @@ def _build_store(settings: Settings) -> SecretStore:
         if not settings.azure_key_vault_url:
             raise RuntimeError(f"secret_store={_AKV_MODE!r} requires AZURE_KEY_VAULT_URL")
         return AzureKeyVaultStore(settings.azure_key_vault_url)
+    if settings.secret_store == _REDIS_MODE:
+        return RedisSecretStore(settings.redis_url)
     return EnvSecretStore()
 
 
