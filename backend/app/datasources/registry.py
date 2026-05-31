@@ -8,6 +8,7 @@ untouched, dispatching through `get_connection_adapter`.
 
 from __future__ import annotations
 
+from backend.app.datasources.adls import AdlsConnectionAdapter
 from backend.app.datasources.base import ConnectionAdapter
 from backend.app.datasources.snowflake import SnowflakeConnectionAdapter
 from backend.app.orchestration.adf import ADFConnectionAdapter
@@ -25,6 +26,7 @@ class UnsupportedConnectionTypeError(ValueError):
 # (CLAUDE.md §4).
 _ADAPTERS: dict[str, ConnectionAdapter] = {
     "snowflake": SnowflakeConnectionAdapter(),
+    "adls_gen2": AdlsConnectionAdapter(),
     "adf": ADFConnectionAdapter(),
     "airflow": AirflowConnectionAdapter(),
 }
