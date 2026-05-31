@@ -5,7 +5,18 @@
   "branch": "feature/adf-connection-crud",
   "checkpoints_count": 1,
   "files_touched": [
-    "backend/tests/datasources/test_snowflake.py"
+    "backend/alembic/versions/aa33d80c2158_orchestrator_type_env_unique_index.py",
+    "backend/app/datasources/registry.py",
+    "backend/app/db/models.py",
+    "backend/app/orchestration/__init__.py",
+    "backend/app/orchestration/adf.py",
+    "backend/app/services/connection_service.py",
+    "backend/tests/api/test_connections.py",
+    "backend/tests/datasources/test_snowflake.py",
+    "backend/tests/orchestration/__init__.py",
+    "backend/tests/orchestration/test_adf.py",
+    "backend/tests/services/test_connection_service.py",
+    "docs/progress.md"
   ],
   "sessions": [
     {
@@ -13,13 +24,19 @@
       "transcript": "/31/1f1f1d01a1/0/full.jsonl",
       "content_hash": "/31/1f1f1d01a1/0/content_hash.txt",
       "prompt": "/31/1f1f1d01a1/0/prompt.txt"
+    },
+    {
+      "metadata": "/31/1f1f1d01a1/1/metadata.json",
+      "transcript": "/31/1f1f1d01a1/1/full.jsonl",
+      "content_hash": "/31/1f1f1d01a1/1/content_hash.txt",
+      "prompt": ""
     }
   ],
   "token_usage": {
-    "input_tokens": 29737,
-    "cache_creation_tokens": 2715890,
-    "cache_read_tokens": 102183115,
-    "output_tokens": 367539,
-    "api_call_count": 366
+    "input_tokens": 43715,
+    "cache_creation_tokens": 2875902,
+    "cache_read_tokens": 110096630,
+    "output_tokens": 405168,
+    "api_call_count": 430
   }
 }

@@ -1,0 +1,50 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "311f1f1d01a1",
+  "session_id": "f81a27c1-9606-4cc2-bccc-2e2fee08a0cb",
+  "strategy": "manual-commit",
+  "created_at": "2026-05-31T00:32:48.563563Z",
+  "branch": "feature/adf-connection-crud",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "backend/app/orchestration/__init__.py",
+    "backend/app/orchestration/adf.py",
+    "backend/app/datasources/registry.py",
+    "backend/app/db/models.py",
+    "backend/alembic/versions/aa33d80c2158_orchestrator_type_env_unique_index.py",
+    "backend/app/services/connection_service.py",
+    "backend/tests/orchestration/__init__.py",
+    "backend/tests/orchestration/test_adf.py",
+    "backend/tests/services/test_connection_service.py",
+    "backend/tests/api/test_connections.py",
+    "backend/tests/datasources/test_snowflake.py",
+    "docs/progress.md"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "8ee99c6ba416",
+  "checkpoint_transcript_start": 132,
+  "transcript_lines_at_start": 132,
+  "token_usage": {
+    "input_tokens": 13978,
+    "cache_creation_tokens": 160012,
+    "cache_read_tokens": 7913515,
+    "output_tokens": 37629,
+    "api_call_count": 64
+  },
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-05-31T00:32:48.552256Z",
+    "agent_lines": 451,
+    "agent_removed": 22,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 451,
+    "total_lines_changed": 473,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
