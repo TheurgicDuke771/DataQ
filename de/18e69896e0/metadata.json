@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "de18e69896e0",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-86-redis-dev-secret-store",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/de/18e69896e0/0/metadata.json",
+      "transcript": "/de/18e69896e0/0/full.jsonl",
+      "content_hash": "/de/18e69896e0/0/content_hash.txt",
+      "prompt": "/de/18e69896e0/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 45909,
+    "cache_creation_tokens": 1347057,
+    "cache_read_tokens": 58090719,
+    "output_tokens": 194036,
+    "api_call_count": 271
+  }
+}
