@@ -1,0 +1,18 @@
+file the webhook-URL-helper issue first
+
+---
+
+Also why we need to pass the secret in the webhook URL?
+
+---
+
+Okay, lets scan the open issues and check if anything can be taken up now
+
+---
+
+#80 + #87, and #86b.
+
+---
+
+first fix the hook. 
+Also check if the / commands and sub-agents are up-to-date

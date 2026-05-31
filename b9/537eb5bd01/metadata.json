@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "b9537eb5bd01",
+  "strategy": "manual-commit",
+  "branch": "chore/devtooling-and-agent-accuracy",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/b9/537eb5bd01/0/metadata.json",
+      "transcript": "/b9/537eb5bd01/0/full.jsonl",
+      "content_hash": "/b9/537eb5bd01/0/content_hash.txt",
+      "prompt": "/b9/537eb5bd01/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 52834,
+    "cache_creation_tokens": 1765323,
+    "cache_read_tokens": 67813187,
+    "output_tokens": 218572,
+    "api_call_count": 296
+  }
+}
