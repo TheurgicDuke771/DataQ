@@ -1,0 +1,19 @@
+Merge #81
+
+---
+
+Hey, what do you think we are missing in terms of a standalone qa tool?
+
+---
+
+In order to go to this direction what should we change / add now and what can be differed to v1.x
+
+---
+
+okay lets update the documents (roadmap, progress, claude) to reflect this plan. 
+The duration_ms is a good suggestion keep it. 
+Also lets organize the roadmap after v1 release
+
+---
+
+yes, merge #88
