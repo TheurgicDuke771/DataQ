@@ -30,22 +30,25 @@ from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
 from backend.app.db.models import Connection, PipelineRun, Run, TriggerBinding
 from backend.app.orchestration.base import OrchestrationProvider, RunUpdate
+from backend.app.orchestration.registry import get_orchestration_provider
 
 log = get_logger(__name__)
 
 
 def _resolve_connection(
-    session: Session, *, provider: str, resource_name: str
+    session: Session, *, provider_impl: OrchestrationProvider, resource_name: str
 ) -> Connection | None:
-    """The orchestrator connection whose factory matches the event's resource.
+    """The orchestrator connection whose resource matches the event.
 
-    Matches on the JSONB `factory_name`. The PR-6 `(type, env)` guard makes an
-    orchestrator singular per env, but factory names are globally unique in
-    Azure, so this resolves the right connection across envs too.
+    Matches on the provider's own resource key (`factory_name` for ADF,
+    `base_url` for Airflow) — the provider owns that knowledge, so this stays
+    provider-agnostic. The PR-6 `(type, env)` guard makes an orchestrator
+    singular per env; resource names are unique across envs too, so this resolves
+    the right connection regardless.
     """
     stmt = select(Connection).where(
-        Connection.type == provider,
-        Connection.config["factory_name"].astext == resource_name,
+        Connection.type == provider_impl.provider,
+        Connection.config[provider_impl.resource_config_key].astext == resource_name,
     )
     matches = list(session.scalars(stmt))
     if not matches:
@@ -53,7 +56,7 @@ def _resolve_connection(
     if len(matches) > 1:
         log.warning(
             "orchestration_resource_ambiguous",
-            provider=provider,
+            provider=provider_impl.provider,
             resource_name=resource_name,
             match_count=len(matches),
         )
@@ -120,7 +123,10 @@ def record_pipeline_event(
     Returns the row, or ``None`` if the event could not be attributed to a known
     orchestrator connection. Used directly where triggering isn't wanted.
     """
-    connection = _resolve_connection(session, provider=provider, resource_name=update.resource_name)
+    provider_impl = get_orchestration_provider(provider)
+    connection = _resolve_connection(
+        session, provider_impl=provider_impl, resource_name=update.resource_name
+    )
     if connection is None:
         log.info(
             "orchestration_event_unattributed",
@@ -152,6 +158,10 @@ def _maybe_enrich(
         detailed = provider_impl.fetch_run_detail(
             dict(connection.config), secret, update.provider_run_id
         )
+    except NotImplementedError:
+        # Provider has no REST enrichment (e.g. Airflow — its signed callback is
+        # already authoritative). Not an error; use the parsed update as-is.
+        return update
     except Exception as exc:
         log.warning(
             "orchestration_enrich_failed",
@@ -244,7 +254,9 @@ def ingest_event(
     acknowledges them (ADR 0006).
     """
     provider = provider_impl.provider
-    connection = _resolve_connection(session, provider=provider, resource_name=update.resource_name)
+    connection = _resolve_connection(
+        session, provider_impl=provider_impl, resource_name=update.resource_name
+    )
     if connection is None:
         log.info(
             "orchestration_event_unattributed",

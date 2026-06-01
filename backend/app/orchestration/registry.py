@@ -9,6 +9,7 @@ provider class; the webhook endpoint and persistence service dispatch through
 from __future__ import annotations
 
 from backend.app.orchestration.adf import AdfProvider
+from backend.app.orchestration.airflow import AirflowProvider
 from backend.app.orchestration.base import OrchestrationProvider
 
 
@@ -18,6 +19,7 @@ class UnsupportedProviderError(ValueError):
 
 _PROVIDERS: dict[str, OrchestrationProvider] = {
     "adf": AdfProvider(),
+    "airflow": AirflowProvider(),
 }
 
 

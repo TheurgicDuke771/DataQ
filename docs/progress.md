@@ -89,8 +89,8 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [ ] 🟡 Upsert pipeline run status into `pipeline_runs`; correlate with suite run — idempotent upsert (PR 7) + **trigger-on-success skeleton** (PR 8): a `succeeded` run matching enabled `trigger_bindings` creates queued `Run` rows (`triggered_by="<provider>:<pipeline>:<run_id>"`, idempotent on replay); failures never trigger (ADR 0004). **`run_suite` dispatch is gated** until checks carry a target table (Week 3); `trigger_bindings` CRUD is Week 4/5 (bindings seeded in tests). `list_recent_runs` + 10-min polling beat → Week 5.
 - [x] ✅ Shared secret config in Key Vault → `ADF_WEBHOOK_SECRET` env var — `settings.adf_webhook_secret_name` resolved via `SecretStore` (→ `KV_SECRET_ADF_WEBHOOK_SECRET` in dev) — PR 7
 
-### Airflow orchestration (added per ADR 0004; not in original roadmap) (3 tasks — 1/3)
-- [ ] ⬜ `POST /api/v1/orchestration/events/airflow` — receive HMAC-signed callback payload
+### Airflow orchestration (added per ADR 0004; not in original roadmap) (3 tasks — 2/3)
+- [x] ✅ `POST /api/v1/orchestration/events/airflow` — `AirflowProvider.parse_event` (signed-callback JSON → `RunUpdate`, state→`PIPELINE_RUN_STATUSES`) + **HMAC-SHA256** auth over the raw body (`X-DataQ-Signature`, [ADR 0007](adr/0007-airflow-callback-model.md)); reuses `ingest_event`. Generalised `_resolve_connection` to match on a provider-declared `resource_config_key` (`base_url` for Airflow, `factory_name` for ADF — no provider branching); enrichment is skipped for Airflow (callback is authoritative). `airflow-webhook-secret` config added
 - [ ] ⬜ Airflow `on_success_callback` / `on_failure_callback` helper snippet for users' DAGs
 - [x] ✅ Airflow connection type — webserver URL + token/basic auth (token v1 default) — `AirflowConnectionAdapter` (REST `dagRuns`-probe `test`), one-line registry add; orchestrator `(type,env)` guard already covers it ([ADR 0007](adr/0007-airflow-callback-model.md))
 
@@ -105,7 +105,7 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [ ] ⬜ GX Spark / JDBC datasource wiring for Unity Catalog — connect, list catalogs / schemas / tables
 - [x] ✅ UC auth test endpoint — validate PAT + SQL Warehouse reachability — the `SELECT 1` probe in `UnityCatalogConnectionAdapter.test`, surfaced through the generic `POST /connections/{id}/test`
 
-**Week 2 total: 11 / 19** _(ADF webhook receiver: endpoint+auth, payload parse, secret config, REST `fetch_run_detail` enrichment; upsert+correlate 🟡 — trigger-on-success skeleton landed, run_suite dispatch gated to Week 3; polling → Week 5. All six connection types now have adapters: Snowflake + ADF + Airflow + ADLS Gen2 + S3 + Unity Catalog)_
+**Week 2 total: 12 / 19** _(ADF webhook receiver: endpoint+auth, payload parse, secret config, REST `fetch_run_detail` enrichment; upsert+correlate 🟡 — trigger-on-success skeleton landed, run_suite dispatch gated to Week 3; polling → Week 5. **Airflow webhook receiver (HMAC) landed** — orchestration event-receiver pair complete. All six connection types now have adapters: Snowflake + ADF + Airflow + ADLS Gen2 + S3 + Unity Catalog)_
 
 ---
 

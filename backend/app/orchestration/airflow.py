@@ -22,10 +22,15 @@ the adapter exception, so tokens can't leak to the client.
 
 from __future__ import annotations
 
+import json
+from collections.abc import Mapping
+from datetime import datetime
 from typing import Any, Literal
 
 import httpx
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+
+from backend.app.orchestration.base import MalformedEventError, RunUpdate
 
 # Lightest authenticated stable-REST call — proves reachability + auth + that the
 # REST API is enabled, without listing or mutating anything.
@@ -93,3 +98,96 @@ class AirflowConnectionAdapter:
             timeout=_TEST_TIMEOUT_SECONDS,
         )
         response.raise_for_status()
+
+
+# Airflow DagRun state → DataQ `PIPELINE_RUN_STATUSES`.
+_AIRFLOW_STATE_MAP = {
+    "success": "succeeded",
+    "failed": "failed",
+    "running": "running",
+    "queued": "queued",
+}
+
+
+def _parse_dt(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+class AirflowProvider:
+    """`OrchestrationProvider` for Apache Airflow — signed-callback parse (v1).
+
+    `parse_event` consumes the JSON our `on_*_callback` snippet POSTs (we author
+    it, so we own the shape): ``dag_id``, ``run_id``, ``state``, ``base_url``
+    (+ optional ``start_date`` / ``end_date`` / ``error``). The callback is
+    already authenticated (HMAC over the raw body, ADR 0007) and authoritative,
+    so there is **no REST enrichment** — `fetch_run_detail` is intentionally
+    unimplemented and the persistence layer skips enrichment for this provider.
+    ``run_id`` is the idempotency key for the `pipeline_runs` upsert, so it (with
+    ``dag_id`` / ``state`` / ``base_url``) is required; absence is a
+    `MalformedEventError` (422).
+
+    Unlike ADF, both success and failure arrive on this channel (the snippet sets
+    both `on_success_callback` and `on_failure_callback`); a ``success`` run is
+    what fires `trigger_bindings`. The `dagRuns` REST polling fallback
+    (`list_recent_runs`) for DAGs that don't adopt the snippet lands in Week 5.
+    """
+
+    provider = "airflow"
+    resource_config_key = "base_url"
+
+    def parse_event(self, payload: bytes, headers: Mapping[str, str]) -> RunUpdate:
+        try:
+            body = json.loads(payload)
+        except (ValueError, TypeError) as exc:
+            raise MalformedEventError("event body is not valid JSON") from exc
+        if not isinstance(body, dict):
+            raise MalformedEventError("event body must be a JSON object")
+
+        dag_id = body.get("dag_id")
+        run_id = body.get("run_id")
+        base_url = body.get("base_url")
+        raw_state = body.get("state")
+        missing = [
+            name
+            for name, value in (
+                ("dag_id", dag_id),
+                ("run_id", run_id),
+                ("state", raw_state),
+                ("base_url", base_url),
+            )
+            if not value
+        ]
+        if missing:
+            raise MalformedEventError(
+                "event missing required field(s)", detail={"missing": missing}
+            )
+
+        status = _AIRFLOW_STATE_MAP.get(str(raw_state).lower())
+        if status is None:
+            raise MalformedEventError("unrecognised Airflow run state", detail={"state": raw_state})
+
+        return RunUpdate(
+            provider_run_id=str(run_id),
+            pipeline_or_dag_id=str(dag_id),
+            # match the connection's normalised base_url (AirflowConfig rstrips it)
+            resource_name=str(base_url).rstrip("/"),
+            status=status,
+            started_at=_parse_dt(body.get("start_date")),
+            finished_at=_parse_dt(body.get("end_date")),
+            failure_reason=str(body["error"]) if status == "failed" and body.get("error") else None,
+        )
+
+    def fetch_run_detail(
+        self, config: Mapping[str, Any], secret: str, provider_run_id: str
+    ) -> RunUpdate:
+        # The signed callback is authoritative; there is nothing to enrich. The
+        # persistence layer treats NotImplementedError as "skip enrichment".
+        raise NotImplementedError("Airflow callbacks are authoritative; no REST enrichment")
+
+    def list_recent_runs(self, since: datetime) -> list[RunUpdate]:
+        raise NotImplementedError("Airflow dagRuns polling fallback lands in Week 5")

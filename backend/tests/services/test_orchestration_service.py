@@ -138,6 +138,7 @@ class _FakeProvider:
     is driven by the test (returns a canned RunUpdate or raises)."""
 
     provider = "adf"
+    resource_config_key = "factory_name"
 
     def __init__(self, detail: RunUpdate | None = None, raises: Exception | None = None) -> None:
         self._detail = detail
@@ -319,3 +320,43 @@ def test_binding_for_other_pipeline_does_not_trigger(db_session: Any) -> None:
         secret_store=_FakeStore(),
     )
     assert result.triggered_runs == []
+
+
+# ── cross-provider: Airflow resolves by base_url; enrichment is skipped ──
+
+
+def test_ingest_airflow_resolves_by_base_url_and_skips_enrichment(db_session: Any) -> None:
+    # AirflowProvider.fetch_run_detail raises NotImplementedError (its callback is
+    # authoritative), so _maybe_enrich must skip silently even though the
+    # connection has a stored credential — and resolution matches on base_url.
+    from backend.app.orchestration.airflow import AirflowProvider
+
+    user = _user(db_session)
+    conn = Connection(
+        name="airflow-dev",
+        type="airflow",
+        env="dev",
+        config={"base_url": "https://airflow.example.com", "auth_type": "token"},
+        created_by=user.id,
+    )
+    db_session.add(conn)
+    db_session.commit()
+    conn.secret_ref = f"conn-{conn.id}"
+    db_session.commit()
+
+    update = RunUpdate(
+        provider_run_id="dag-run-1",
+        pipeline_or_dag_id="load_finance",
+        resource_name="https://airflow.example.com",
+        status="succeeded",
+    )
+    result = ingest_event(
+        db_session,
+        provider_impl=AirflowProvider(),
+        update=update,
+        secret_store=_FakeStore(**{f"conn-{conn.id}": "token"}),
+    )
+    assert result.pipeline_run is not None
+    assert result.pipeline_run.provider == "airflow"
+    assert result.pipeline_run.env == "dev"  # resolved via base_url
+    assert result.pipeline_run.status == "succeeded"
