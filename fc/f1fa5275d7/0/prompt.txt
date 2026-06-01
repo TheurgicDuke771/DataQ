@@ -1,0 +1,63 @@
+file the webhook-URL-helper issue first
+
+---
+
+Also why we need to pass the secret in the webhook URL?
+
+---
+
+Okay, lets scan the open issues and check if anything can be taken up now
+
+---
+
+#80 + #87, and #86b.
+
+---
+
+first fix the hook. 
+Also check if the / commands and sub-agents are up-to-date
+
+---
+
+/review + merge the batch (#93–#96)
+
+---
+
+Okay, get started with PR 8. What is the plan?
+
+---
+
+do a review + merge for #97. 
+After that can you search once if the codebase have any reference of lll_?
+
+---
+
+scrub the name from everywhere (roadmap, #12) also change nonprod to something like pre-prod or dev.
+
+---
+
+do a review + merge for #98.
+
+---
+
+Lets start with the remaining Week-2 connection CRUD
+
+---
+
+yeah, first complete airflow then start the next
+
+---
+
+yeah, finish adls then start s3
+
+---
+
+Yes, complete S3, then start with UC
+
+---
+
+yeah, close-out the UC
+
+---
+
+Lets pickup the remaining of week 2

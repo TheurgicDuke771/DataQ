@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "fcf1fa5275d7",
+  "strategy": "manual-commit",
+  "branch": "feature/airflow-webhook-receiver",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/fc/f1fa5275d7/0/metadata.json",
+      "transcript": "/fc/f1fa5275d7/0/full.jsonl",
+      "content_hash": "/fc/f1fa5275d7/0/content_hash.txt",
+      "prompt": "/fc/f1fa5275d7/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 75798,
+    "cache_creation_tokens": 3954597,
+    "cache_read_tokens": 174937668,
+    "output_tokens": 436178,
+    "api_call_count": 550
+  }
+}
