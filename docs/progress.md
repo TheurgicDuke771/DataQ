@@ -20,15 +20,13 @@
 | | |
 |---|---|
 | **Active since** | 2026-05-24 |
-| **Today** | 2026-05-30 |
-| **Calendar burn** | day 7 of 56 (~13%) |
-| **Roadmap tasks done** | 14 ✅ + 3 🟡 / 152 (9%) |
+| **Current week** | Week 2 of 8 — Connection manager (backend) |
+| **Roadmap tasks done** | 22 ✅ + 6 🟡 / 155 (~14%) |
 | **Out-of-roadmap PRs landed** | 5 bundles (governance, tooling lock, Entire CLI, Dependabot triage round 1, PR-3 cleanup) + ADRs 0005/0006/0007/0012 |
-| **Current week** | Week 2 — Connection manager (backend) |
 | **Week-1 exit gate** | A logged-in user can hit a FastAPI endpoint that triggers GX against Snowflake DEV and persists a result row. — **met** (plumbing complete via PR 4a–4c; live-Snowflake run fails-soft pending DEV creds — deferred smoke) |
 | **Next milestone** | ADF/Airflow polling fallback (`list_recent_runs` + 10-min Celery beat → succeeded-run detection → trigger) + run_suite dispatch wiring once Week-3 target-table lands (Week 5) |
-| **Open issues** | 11 (#86, #87, #80, #65, #62 + governance polish) |
-| **Open PRs** | PR 8 (ADF run-detail enrichment + trigger-on-success skeleton) — in review |
+| **Open issues** | 8 (#92, #65 + governance polish #20/#19/#18/#17/#10/#8) |
+| **Open PRs** | none |
 | **Design gates** | ADR 0005 (severity weights) + ADR 0012 (monitor-kind seam) **both accepted** — Week-3 migration unblocked |
 
 ---
@@ -342,14 +340,14 @@ These were preconditions for executing the roadmap. Listed for completeness.
 | Week | Done | In progress | Pending | Total |
 |---|---|---|---|---|
 | Week 1 | 7 | 1 | 2 | 10 |
-| Week 2 | 1 | 0 | 18 | 19 |
+| Week 2 | 12 | 1 | 6 | 19 |
 | Week 3 | 0 | 0 | 18 | 18 |
 | Week 4 | 0 | 0 | 22 | 22 |
 | Week 5 | 1 | 0 | 14 | 15 |
 | Week 6 | 0 | 0 | 16 | 16 |
 | Week 7 | 0 | 1 | 28 | 29 |
 | Week 8 | 2 | 3 | 21 | 26 |
-| **TOTAL** | **11** | **5** | **139** | **155** |
+| **TOTAL** | **22** | **6** | **127** | **155** |
 
 > 155 > 100 because ADR 0004 added Airflow tasks, ADR 0011 added two seam tasks (generic runner dispatch, `ResultPublisher`), ADR 0012 added three Week-3 monitor-kind / metric seam tasks, plus PR-review follow-ups not in the original roadmap. Tracked here for honesty.
 
@@ -366,12 +364,13 @@ Issues that aren't roadmap tasks but block / risk the work.
 | ~~[#50](https://github.com/TheurgicDuke771/DataQ/issues/50)~~ | ~~Bridge uvicorn access logs through structlog~~ | **Closed** ([PR #71](https://github.com/TheurgicDuke771/DataQ/pull/71)) | n/a |
 | ~~[#51](https://github.com/TheurgicDuke771/DataQ/issues/51)~~ | ~~Emit per-request structured log from request_id middleware~~ | **Closed** ([PR #71](https://github.com/TheurgicDuke771/DataQ/pull/71)) | n/a |
 | ~~[#54](https://github.com/TheurgicDuke771/DataQ/issues/54)~~ | ~~Consolidate mypy / type-check dep lists (3-file drift)~~ | **Closed** ([PR #68](https://github.com/TheurgicDuke771/DataQ/pull/68)) | n/a |
-| [#62](https://github.com/TheurgicDuke771/DataQ/issues/62) | MSAL redirect lifecycle (real-AAD smoke test deferred) | Open | Week 7 deployment |
+| ~~[#62](https://github.com/TheurgicDuke771/DataQ/issues/62)~~ | ~~MSAL redirect lifecycle (real-AAD smoke test deferred)~~ | **Closed** (completed 2026-05-28) | n/a |
 | [#65](https://github.com/TheurgicDuke771/DataQ/issues/65) | Vite 8 coordinated bump (vite + plugin-react + vitest) | Open | Week 4 (also tracked as a roadmap task above) |
+| [#92](https://github.com/TheurgicDuke771/DataQ/issues/92) | Surface the ADF webhook URL instead of hand-assembling a secret-bearing URL | Open | Week 4 connection UI / ADF onboarding |
 | ~~[#72](https://github.com/TheurgicDuke771/DataQ/issues/72)~~ | ~~ADR 0004 follow-up: document `trigger_bindings` one-orchestrator-per-(provider, env) assumption~~ | **Closed** ([PR #83](https://github.com/TheurgicDuke771/DataQ/pull/83)) | n/a — guard enforced in PR 6 ADF CRUD |
 | ~~[#75](https://github.com/TheurgicDuke771/DataQ/issues/75)~~ | ~~Integration-assert request_id propagates FastAPI→Celery worker logs~~ | **Closed** ([PR 4c-ii](https://github.com/TheurgicDuke771/DataQ/pull/79)) | n/a |
-| [#86](https://github.com/TheurgicDuke771/DataQ/issues/86) | `EnvSecretStore.set` is per-process — Celery worker can't resolve API-written secrets (dev only) | Open | Week 5 connection-driven runs (PR 5 follow-on) |
-| [#87](https://github.com/TheurgicDuke771/DataQ/issues/87) | Map `SecretWriteError` → 502 in connection create/update (currently 500) | Open | hardening (low priority) |
+| ~~[#86](https://github.com/TheurgicDuke771/DataQ/issues/86)~~ | ~~`EnvSecretStore.set` is per-process — Celery worker can't resolve API-written secrets (dev only)~~ | **Closed** ([PR #95](https://github.com/TheurgicDuke771/DataQ/pull/95)) | n/a — Redis-backed dev secret store |
+| ~~[#87](https://github.com/TheurgicDuke771/DataQ/issues/87)~~ | ~~Map `SecretWriteError` → 502 in connection create/update (currently 500)~~ | **Closed** ([PR #94](https://github.com/TheurgicDuke771/DataQ/pull/94)) | n/a |
 
 **Deferred polish** (Week-1 governance era; do during slack): #8, #10, #12, #17, #18, #19, #20.
 
@@ -399,7 +398,7 @@ When merging a PR:
 2. Flip `⬜` → `✅` (or `⬜` → `🟡` if partial).
 3. Append the PR link: `— [PR #N](https://github.com/.../pull/N)`.
 4. Update the per-week subtotal at the bottom of the week.
-5. Update the **Snapshot** table at the top (calendar burn, task count).
+5. Update the **Snapshot** table at the top (task count, open PRs/issues) and the **Aggregate** table.
 6. If the PR added an out-of-roadmap task (e.g. ADR-driven scope change), add a row with the note.
 
 PR-template checkbox enforces this. If the change is purely tooling / docs that doesn't map to a roadmap task, tick the "N/A" checkbox.
