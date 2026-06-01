@@ -75,3 +75,7 @@ Do we need to maintain `Today` and `Calendar burn`?
 
 Is the auth in @README.md covers all? do we need to maintain the auth?
 Also mention the license is under MIT
+
+---
+
+yeah, bundle them together and commit
