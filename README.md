@@ -3,7 +3,7 @@
 > Data quality monitoring platform built around Great Expectations.
 > v1 evolution of SnowQ — Snowflake (DEV/QA/UAT), ADLS Gen2, S3, Unity Catalog (Databricks), with ADF + Airflow orchestration integrations.
 
-**Status:** pre-v1 — Week 1 in progress. Live task-level progress at [docs/progress.md](docs/progress.md).
+**Status:** pre-v1 — Week 2 in progress (connection manager). Live task-level progress at [docs/progress.md](docs/progress.md).
 
 ## Stack
 
@@ -41,4 +41,4 @@ Backend at `http://localhost:8000` (Swagger at `/docs`), frontend at `http://loc
 
 ## License
 
-See [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).
