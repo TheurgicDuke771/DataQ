@@ -214,6 +214,7 @@ curl -X POST http://localhost:8000/api/v1/_probe/snowflake-suite
 | Provider-agnostic infra seams (Azure = default impl, not architecture; auth boundary now, observability via OTel deferred) | [0010](docs/adr/0010-provider-agnostic-infrastructure-seams.md) | Accepted W2 |
 | Extensibility seams (generic runner dispatch, `ResultPublisher`, dbt-as-`OrchestrationProvider`; second impls deferred post-v1) | [0011](docs/adr/0011-extensibility-seams-for-deferred-integrations.md) | Accepted W2 |
 | Monitor-kind seam (`check.kind` discriminator + numeric `metric_value`/`duration_ms`; v1 = `expectation` only, auto-monitors deferred to v1.x) | [0012](docs/adr/0012-monitor-kind-seam.md) | Accepted W2 (rides the W3 threshold migration) |
+| Marketplace distribution = customer-deployed **BYOL** (not multi-tenant hosted SaaS); post-v1; standing anti-lock-in guardrails keep Azure as one impl behind each seam | [0013](docs/adr/0013-marketplace-distribution-and-anti-lock-in.md) | Accepted (2026-06-01) |
 
 ---
 
@@ -234,6 +235,7 @@ curl -X POST http://localhost:8000/api/v1/_probe/snowflake-suite
 
 - ❌ Don't add ADF or Airflow as a queryable datasource in the connection editor / check editor / suite model.
 - ❌ Don't bypass the `OrchestrationProvider` abstraction with provider-specific branching in service code.
+- ❌ Don't deepen Azure lock-in: no reading MSAL/Entra claims in route/service code (depend on the generic `get_current_user`), no hardcoded Azure resource names/endpoints in business logic, no Azure-only assumptions baked into container images. Azure is one impl behind each seam — see ADR [0010](docs/adr/0010-provider-agnostic-infrastructure-seams.md) / [0013](docs/adr/0013-marketplace-distribution-and-anti-lock-in.md).
 - ❌ Don't `git commit --no-verify` past hooks. If a hook fails, fix the underlying issue.
 - ❌ Don't commit `.env` files. Use `.env.example` as the template.
 - ❌ Don't drop columns in the same PR as the code change that stops using them. Two-step it.
