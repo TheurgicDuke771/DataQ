@@ -25,9 +25,11 @@ Each ADR captures a single significant architecture decision: the context, the d
 | [0011](0011-extensibility-seams-for-deferred-integrations.md) | Extensibility seams for deferred connectors and integrations | Accepted |
 | [0012](0012-monitor-kind-seam.md) | Monitor-kind seam (`check.kind` discriminator + numeric metric storage) | Accepted |
 | [0013](0013-marketplace-distribution-and-anti-lock-in.md) | Marketplace distribution (customer-deployed BYOL) and anti-vendor-lock-in guardrails | Accepted |
+| [0014](0014-reconciliation-comparison-check-kind.md) | Cross-dataset reconciliation as a `comparison` check kind (reuse FastAPI_DataComparison engine) | Accepted |
 
 ## Pending (to be written in their respective weeks)
 
 | # | Topic | Target week |
 |---|---|---|
 | 0008 | MCP mounted at `/mcp` with Azure AD auth | Week 7 |
+| 0015 | Two-connection check model (source + target refs for `comparison` checks) | When reconciliation build starts (post-v1) |
