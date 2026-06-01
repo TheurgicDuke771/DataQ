@@ -1,21 +1,26 @@
-"""Orchestration event webhook receivers (ADF now; Airflow next).
+"""Orchestration event webhook receivers (ADF + Airflow).
 
-`POST /api/v1/orchestration/events/adf` is the Azure Monitor → DataQ channel.
-It is a machine-to-machine endpoint (no Azure AD user), authenticated by a
-shared secret carried as the ``token`` query parameter and compared
-constant-time against the Key Vault secret (ADR 0006). Per ADR 0006 the endpoint
-returns **200 for every well-formed, authenticated event** — including ignored /
-unattributable ones — so Azure Monitor does not enter a retry storm; only a bad
-token (401) or a malformed body (422) is an error.
+Two machine-to-machine channels (no Azure AD user), each authenticated per its
+provider's constraints, then funnelled through the same provider-agnostic
+ingestion (`ingest_event`): resolve provider → parse to `RunUpdate` → persist.
 
-The receiver itself is provider-agnostic: it resolves the `OrchestrationProvider`
-from the path, parses the payload to a `RunUpdate`, and persists via
-`orchestration_service.record_pipeline_event`. Adding Airflow is a sibling route
-plus its provider — no new persistence code.
+- `POST /orchestration/events/adf` — Azure Monitor. Auth = shared secret in the
+  ``token`` query parameter, constant-time vs the Key Vault secret (ADR 0006:
+  Azure Monitor webhooks can't set custom headers).
+- `POST /orchestration/events/airflow` — our DAG callback snippet. Auth =
+  HMAC-SHA256 over the **raw body** in the ``X-DataQ-Signature`` header,
+  constant-time vs the Key Vault signing key (ADR 0007: we author the snippet,
+  so it can sign a header).
+
+Per ADR 0006/0007 each returns **200 for every well-formed, authenticated
+event** — including ignored / unattributable ones — so the sender does not
+retry-storm; only bad auth (401) or a malformed body (422) is an error. Adding a
+provider is a sibling route + its provider class — no new persistence code.
 """
 
 from __future__ import annotations
 
+import hashlib
 import hmac
 from typing import Annotated
 
@@ -85,6 +90,56 @@ async def receive_adf_event(
 
     provider = get_orchestration_provider("adf")
     body = await request.body()
+    update = provider.parse_event(body, request.headers)  # raises MalformedEventError → 422
+
+    result = await run_in_threadpool(
+        ingest_event, db, provider_impl=provider, update=update, secret_store=secret_store
+    )
+    return EventAck(
+        status="recorded" if result.pipeline_run is not None else "ignored",
+        triggered=len(result.triggered_runs),
+    )
+
+
+_SIGNATURE_HEADER = "X-DataQ-Signature"
+
+
+def _authenticate_airflow(body: bytes, signature: str | None, secret_store: SecretStore) -> None:
+    """Verify the HMAC-SHA256 over the raw body against the header (ADR 0007).
+
+    The signing key resolves from the SecretStore; the expected digest is hex.
+    The signature is never logged.
+    """
+    settings = get_settings()
+    try:
+        key = secret_store.get(settings.airflow_webhook_secret_name)
+    except SecretNotFoundError as exc:
+        log.error(
+            "airflow_webhook_secret_missing", secret_name=settings.airflow_webhook_secret_name
+        )
+        raise WebhookNotConfiguredError("Airflow webhook receiver is not configured") from exc
+
+    expected = hmac.new(key.encode("utf-8"), body, hashlib.sha256).hexdigest()
+    if not signature or not hmac.compare_digest(signature, expected):
+        log.warning("airflow_webhook_auth_failed", signature_present=bool(signature))
+        raise WebhookAuthError("invalid or missing webhook signature")
+
+
+@router.post(
+    "/orchestration/events/airflow",
+    response_model=EventAck,
+    status_code=status.HTTP_200_OK,
+    summary="Receive an Apache Airflow DAG-run callback event",
+)
+async def receive_airflow_event(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    secret_store: Annotated[SecretStore, Depends(get_secret_store)],
+) -> EventAck:
+    body = await request.body()
+    _authenticate_airflow(body, request.headers.get(_SIGNATURE_HEADER), secret_store)
+
+    provider = get_orchestration_provider("airflow")
     update = provider.parse_event(body, request.headers)  # raises MalformedEventError → 422
 
     result = await run_in_threadpool(

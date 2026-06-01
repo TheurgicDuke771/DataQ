@@ -39,6 +39,10 @@ class Settings(BaseSettings):
     # via SecretStore.get → EnvSecretStore maps it to KV_SECRET_ADF_WEBHOOK_SECRET
     # in dev, Key Vault secret `adf-webhook-secret` in prod. Not the secret value.
     adf_webhook_secret_name: str = "adf-webhook-secret"  # noqa: S105 — KV key name, not a secret
+    # SecretStore key holding the Airflow callback HMAC signing key (ADR 0007).
+    # → KV_SECRET_AIRFLOW_WEBHOOK_SECRET in dev, KV secret `airflow-webhook-secret`
+    # in prod. The signing key, not a webhook value.
+    airflow_webhook_secret_name: str = "airflow-webhook-secret"  # noqa: S105 — KV key name
 
     # ── Snowflake probe (Week 1 exit-gate endpoint) ──────────────────────────
     # Config for the single seeded dev Snowflake connection the probe runs

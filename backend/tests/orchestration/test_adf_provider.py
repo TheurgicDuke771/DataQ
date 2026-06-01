@@ -125,9 +125,10 @@ def test_registry_unknown_provider_raises() -> None:
         get_orchestration_provider,
     )
 
-    # airflow is a valid provider value but has no impl registered yet.
-    with pytest.raises(UnsupportedProviderError, match="airflow"):
-        get_orchestration_provider("airflow")
+    # adf + airflow are both registered now; probe a provider with no impl
+    # (dbt is the post-v1 third-provider candidate, ADR 0011).
+    with pytest.raises(UnsupportedProviderError, match="dbt"):
+        get_orchestration_provider("dbt")
 
 
 def test_list_recent_runs_is_deferred() -> None:

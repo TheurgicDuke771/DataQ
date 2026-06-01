@@ -155,6 +155,7 @@ class AdfProvider:
     """
 
     provider = "adf"
+    resource_config_key = "factory_name"
 
     def parse_event(self, payload: bytes, headers: Mapping[str, str]) -> RunUpdate:
         try:
