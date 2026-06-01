@@ -3,7 +3,7 @@
   "checkpoint_id": "8807c83e3055",
   "session_id": "f81a27c1-9606-4cc2-bccc-2e2fee08a0cb",
   "strategy": "manual-commit",
-  "created_at": "2026-06-01T07:32:29.813372Z",
+  "created_at": "2026-06-01T07:33:52.430089Z",
   "branch": "docs/adr-0014-reconciliation-check-kind",
   "checkpoints_count": 1,
   "files_touched": [],
@@ -11,25 +11,13 @@
   "model": "claude-opus-4-8",
   "turn_id": "e95571243407",
   "token_usage": {
-    "input_tokens": 97105,
-    "cache_creation_tokens": 4600141,
-    "cache_read_tokens": 189269410,
-    "output_tokens": 505749,
-    "api_call_count": 633
+    "input_tokens": 97234,
+    "cache_creation_tokens": 4611774,
+    "cache_read_tokens": 189933703,
+    "output_tokens": 509028,
+    "api_call_count": 637
   },
   "session_metrics": {
     "turn_count": 31
-  },
-  "prompt_attributions": [
-    {
-      "checkpoint_number": 2,
-      "user_lines_added": 6,
-      "user_lines_removed": 0,
-      "agent_lines_added": 0,
-      "agent_lines_removed": 0,
-      "user_added_per_file": {
-        ".claude/settings.local.json": 6
-      }
-    }
-  ]
+  }
 }
