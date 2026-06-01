@@ -142,6 +142,19 @@ def test_missing_signature_returns_401(client: tuple[TestClient, FakeStore]) -> 
     assert resp.status_code == 401
 
 
+def test_non_ascii_signature_is_clean_auth_error_not_typeerror() -> None:
+    # ASGI decodes header bytes 0x80-0xFF as latin-1 -> a non-ASCII str, which
+    # hmac.compare_digest rejects with TypeError. (httpx won't even send such a
+    # header, so this asserts the auth fn directly.) The byte-compare must yield
+    # a clean WebhookAuthError, not a TypeError → 500.
+    from backend.app.api.v1.orchestration import WebhookAuthError, _authenticate_airflow
+
+    store = FakeStore()
+    store.set(get_settings().airflow_webhook_secret_name, _SIGNING_KEY)
+    with pytest.raises(WebhookAuthError):
+        _authenticate_airflow(b"{}", "sïgnatüre-ñ", store)
+
+
 def test_tampered_body_fails_signature(client: tuple[TestClient, FakeStore]) -> None:
     api, _ = client
     body = json.dumps(_CALLBACK).encode()

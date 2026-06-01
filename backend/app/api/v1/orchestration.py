@@ -120,7 +120,12 @@ def _authenticate_airflow(body: bytes, signature: str | None, secret_store: Secr
         raise WebhookNotConfiguredError("Airflow webhook receiver is not configured") from exc
 
     expected = hmac.new(key.encode("utf-8"), body, hashlib.sha256).hexdigest()
-    if not signature or not hmac.compare_digest(signature, expected):
+    # Compare on UTF-8 bytes: hmac.compare_digest raises TypeError on non-ASCII
+    # str, so a caller-supplied non-ASCII signature must not reach it as str
+    # (else 500 instead of 401).
+    if not signature or not hmac.compare_digest(
+        signature.encode("utf-8"), expected.encode("utf-8")
+    ):
         log.warning("airflow_webhook_auth_failed", signature_present=bool(signature))
         raise WebhookAuthError("invalid or missing webhook signature")
 
