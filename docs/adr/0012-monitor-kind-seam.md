@@ -53,8 +53,8 @@ monitor on Unity Catalog are the same `kind`, different `CheckRunner`.
 
 - Add `kind TEXT NOT NULL DEFAULT 'expectation'` to `checks`, with a CHECK
   constraint over `('expectation', 'freshness', 'volume', 'schema_drift',
-  'anomaly')`.
-- v1 only ever writes `'expectation'`. The other four are **reserved**:
+  'anomaly', 'comparison')`. *(`'comparison'` added by [ADR 0014](0014-reconciliation-comparison-check-kind.md) — cross-dataset reconciliation.)*
+- v1 only ever writes `'expectation'`. The others are **reserved**:
   constraint-valid so a v1.x monitor is a pure additive row, but no code produces
   or consumes them yet.
 - Kind-specific parameters reuse the existing `checks.config` JSONB (a freshness
