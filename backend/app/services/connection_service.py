@@ -227,6 +227,46 @@ def update_connection(
     return conn
 
 
+def reauth_connection(
+    session: Session,
+    connection_id: uuid.UUID,
+    *,
+    secret: str,
+    secret_store: SecretStore,
+) -> None:
+    """Rotate an existing connection's credential and verify it, in one step.
+
+    The "fix an expired token" path. Unlike `update_connection` (which stores a
+    secret but never checks it) and `test_connection` (which checks but can't
+    rotate), re-auth writes the new credential **and** probes connectivity with
+    it through the same adapter path as ``/test``.
+
+    The credential is rotated *before* the probe, so a failed probe
+    (`ConnectionTestFailedError`, 502) means the freshly supplied credential is
+    itself bad — the old, expired one is already replaced. A store-write failure
+    (`ConnectionSecretWriteError`, 502) happens before any row change, so the
+    existing credential is left untouched.
+    """
+    conn = get_connection(session, connection_id)
+    secret_ref = conn.secret_ref or f"conn-{conn.id}"
+    try:
+        secret_store.set(secret_ref, secret)
+    except SecretWriteError as exc:
+        session.rollback()
+        log.warning("connection_reauth_secret_write_failed", connection_id=str(connection_id))
+        raise ConnectionSecretWriteError(
+            "failed to store connection credential",
+            detail={"connection_id": str(connection_id)},
+        ) from exc
+    conn.secret_ref = secret_ref
+    session.commit()
+
+    # Verify the freshly-rotated credential through the same probe as /test;
+    # raises ConnectionTestFailedError (502) if the new credential doesn't work.
+    test_connection(session, connection_id, secret_store=secret_store)
+    log.info("connection_reauthed", connection_id=str(connection_id))
+
+
 def delete_connection(session: Session, connection_id: uuid.UUID) -> None:
     conn = get_connection(session, connection_id)
     session.delete(conn)

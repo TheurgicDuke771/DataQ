@@ -21,7 +21,7 @@
 |---|---|
 | **Active since** | 2026-05-24 |
 | **Current week** | Week 2 of 8 — Connection manager (backend) |
-| **Roadmap tasks done** | 23 ✅ + 6 🟡 / 155 (~15%) |
+| **Roadmap tasks done** | 24 ✅ + 6 🟡 / 155 (~15%) |
 | **Out-of-roadmap PRs landed** | 5 bundles (governance, tooling lock, Entire CLI, Dependabot triage round 1, PR-3 cleanup) + ADRs 0005/0006/0007/0012 |
 | **Week-1 exit gate** | A logged-in user can hit a FastAPI endpoint that triggers GX against Snowflake DEV and persists a result row. — **met** (plumbing complete via PR 4a–4c; live-Snowflake run fails-soft pending DEV creds — deferred smoke) |
 | **Next milestone** | ADF/Airflow polling fallback (`list_recent_runs` + 10-min Celery beat → succeeded-run detection → trigger) + run_suite dispatch wiring once Week-3 target-table lands (Week 5) |
@@ -74,10 +74,10 @@ These were preconditions for executing the roadmap. Listed for completeness.
 
 > **Auth-boundary discipline (per [ADR 0010](adr/0010-provider-agnostic-infrastructure-seams.md)):** new connection-CRUD endpoints (and every protected route from here on) depend on a generic internal "current user" dependency that returns DataQ's own `User` — they must NOT read MSAL token claims directly in route/service code. Cheap now; expensive to retrofit once dozens of endpoints exist. No new abstraction layer required, just the boundary.
 
-### Snowflake & ADF (3 tasks — 2/3)
+### Snowflake & ADF (3 tasks — 3/3)
 - [x] ✅ API: CRUD for Snowflake connections (DEV / QA / UAT), connection test endpoint — [PR 5](https://github.com/TheurgicDuke771/DataQ/pull/85) _(also introduced the `ConnectionAdapter` seam + registry per [ADR 0011](adr/0011-extensibility-seams-for-deferred-integrations.md), and `SecretStore.set` write-through — so PRs 6-8 are pure adapter additions)_
 - [x] ✅ API: CRUD for ADF connections (subscription ID + service principal) — PR 6 _(`ADFConnectionAdapter` in the new `orchestration/` package — NOT `datasources/`, per CLAUDE.md §4; `test()` does SP token + factory GET via httpx. Enforces `(type, env)` uniqueness for orchestrator rows via a **partial unique index** `WHERE type IN ('adf','airflow')` per [#72](https://github.com/TheurgicDuke771/DataQ/issues/72) / ADR 0004 — datasources excluded, so Snowflake stays many-per-env. CRUD/API reused unchanged: pure adapter + registry + migration addition.)_
-- [ ] ⬜ Connection re-auth endpoint — refresh expired Key Vault token
+- [x] ✅ Connection re-auth endpoint — refresh expired Key Vault token — `POST /connections/{id}/reauth` (`svc.reauth_connection`): rotates the credential through `SecretStore.set` **and** verifies it via the same adapter probe as `/test`, in one step (the gap PATCH+`/test` leave open). Rotation persists before the probe, so a bad new credential surfaces as 502 `connection_test_failed`; a store-write failure is 502 `connection_secret_write_failed` with the old credential untouched. 6 TestClient tests (rotate+verify ok, failed-verify-but-rotation-persists, write-fail 502, 404, secret-required 422). Type-agnostic — applies to all six connection types
 - [ ] ⬜ Review `connections.secret_ref` nullability — decide based on Airflow basic-poll / unauthenticated S3 cases ([PR #41 nit](https://github.com/TheurgicDuke771/DataQ/pull/41))
 
 ### ADF webhook receiver (Azure Monitor → DQ platform) (5 tasks — 3 ✅ / 1 🟡 / 1 ⬜)
@@ -103,7 +103,7 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [ ] ⬜ GX Spark / JDBC datasource wiring for Unity Catalog — connect, list catalogs / schemas / tables
 - [x] ✅ UC auth test endpoint — validate PAT + SQL Warehouse reachability — the `SELECT 1` probe in `UnityCatalogConnectionAdapter.test`, surfaced through the generic `POST /connections/{id}/test`
 
-**Week 2 total: 13 / 19** _(ADF webhook receiver: endpoint+auth, payload parse, secret config, REST `fetch_run_detail` enrichment; upsert+correlate 🟡 — trigger-on-success skeleton landed, run_suite dispatch gated to Week 3; polling → Week 5. **Airflow group complete (3/3)** — HMAC receiver + connection adapter + DAG callback snippet, so the producer↔receiver loop is closed end-to-end. All six connection types now have adapters: Snowflake + ADF + Airflow + ADLS Gen2 + S3 + Unity Catalog. Remaining W2 tail: connection re-auth endpoint + `secret_ref` nullability note; the rest are Week-3/5 GX run-path tasks)_
+**Week 2 total: 14 / 19** _(ADF webhook receiver: endpoint+auth, payload parse, secret config, REST `fetch_run_detail` enrichment; upsert+correlate 🟡 — trigger-on-success skeleton landed, run_suite dispatch gated to Week 3; polling → Week 5. **Airflow group complete (3/3)** — HMAC receiver + connection adapter + DAG callback snippet, so the producer↔receiver loop is closed end-to-end. All six connection types now have adapters: Snowflake + ADF + Airflow + ADLS Gen2 + S3 + Unity Catalog. Remaining W2 tail: connection re-auth endpoint + `secret_ref` nullability note; the rest are Week-3/5 GX run-path tasks)_
 
 ---
 
@@ -340,14 +340,14 @@ These were preconditions for executing the roadmap. Listed for completeness.
 | Week | Done | In progress | Pending | Total |
 |---|---|---|---|---|
 | Week 1 | 7 | 1 | 2 | 10 |
-| Week 2 | 13 | 1 | 5 | 19 |
+| Week 2 | 14 | 1 | 4 | 19 |
 | Week 3 | 0 | 0 | 18 | 18 |
 | Week 4 | 0 | 0 | 22 | 22 |
 | Week 5 | 1 | 0 | 14 | 15 |
 | Week 6 | 0 | 0 | 16 | 16 |
 | Week 7 | 0 | 1 | 28 | 29 |
 | Week 8 | 2 | 3 | 21 | 26 |
-| **TOTAL** | **23** | **6** | **126** | **155** |
+| **TOTAL** | **24** | **6** | **125** | **155** |
 
 > 155 > 100 because ADR 0004 added Airflow tasks, ADR 0011 added two seam tasks (generic runner dispatch, `ResultPublisher`), ADR 0012 added three Week-3 monitor-kind / metric seam tasks, plus PR-review follow-ups not in the original roadmap. Tracked here for honesty.
 

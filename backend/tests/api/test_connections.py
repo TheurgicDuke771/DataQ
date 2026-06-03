@@ -289,6 +289,64 @@ def test_test_endpoint_failure_returns_502(
     assert resp.json()["error"]["code"] == "connection_test_failed"
 
 
+# ───────────────────────── re-auth (rotate + verify) ───────────────
+
+
+def test_reauth_rotates_credential_and_verifies(
+    client: tuple[TestClient, FakeStore], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    api, store = client
+    cid = api.post("/api/v1/connections", json=_create_payload()).json()["id"]
+    assert store.data[f"conn-{cid}"] == "p@ss"  # original credential
+
+    monkeypatch.setattr(svc, "get_connection_adapter", lambda t: _PassAdapter())
+    resp = api.post(f"/api/v1/connections/{cid}/reauth", json={"secret": "rotated"})
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True}
+    assert store.data[f"conn-{cid}"] == "rotated"  # credential rotated in the store
+
+
+def test_reauth_failed_verify_returns_502_but_rotation_persists(
+    client: tuple[TestClient, FakeStore], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    api, store = client
+    cid = api.post("/api/v1/connections", json=_create_payload()).json()["id"]
+
+    # The new credential is stored, then the probe rejects it → 502. The rotation
+    # is intentionally kept (the old credential was already expired).
+    monkeypatch.setattr(svc, "get_connection_adapter", lambda t: _FailAdapter())
+    resp = api.post(f"/api/v1/connections/{cid}/reauth", json={"secret": "still-bad"})
+    assert resp.status_code == 502
+    assert resp.json()["error"]["code"] == "connection_test_failed"
+    assert store.data[f"conn-{cid}"] == "still-bad"
+
+
+def test_reauth_secret_write_failure_returns_502(
+    client: tuple[TestClient, FakeStore],
+) -> None:
+    api, _ = client
+    cid = api.post("/api/v1/connections", json=_create_payload()).json()["id"]
+    # Swap in a store whose set() fails only for the re-auth call (Key Vault down).
+    app.dependency_overrides[get_secret_store] = _WriteFailStore
+    resp = api.post(f"/api/v1/connections/{cid}/reauth", json={"secret": "rotated"})
+    assert resp.status_code == 502
+    assert resp.json()["error"]["code"] == "connection_secret_write_failed"
+
+
+def test_reauth_unknown_connection_returns_404(client: tuple[TestClient, FakeStore]) -> None:
+    api, _ = client
+    resp = api.post(f"/api/v1/connections/{uuid.uuid4()}/reauth", json={"secret": "x"})
+    assert resp.status_code == 404
+    assert resp.json()["error"]["code"] == "connection_not_found"
+
+
+def test_reauth_requires_a_secret(client: tuple[TestClient, FakeStore]) -> None:
+    api, _ = client
+    cid = api.post("/api/v1/connections", json=_create_payload()).json()["id"]
+    assert api.post(f"/api/v1/connections/{cid}/reauth", json={}).status_code == 422
+    assert api.post(f"/api/v1/connections/{cid}/reauth", json={"secret": ""}).status_code == 422
+
+
 # ───────────────────────── auth gating ─────────────────────────────
 
 
