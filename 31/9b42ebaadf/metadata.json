@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "319b42ebaadf",
+  "strategy": "manual-commit",
+  "branch": "feature/airflow-callback-snippet",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/31/9b42ebaadf/0/metadata.json",
+      "transcript": "/31/9b42ebaadf/0/full.jsonl",
+      "content_hash": "/31/9b42ebaadf/0/content_hash.txt",
+      "prompt": "/31/9b42ebaadf/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 97947,
+    "cache_creation_tokens": 4839318,
+    "cache_read_tokens": 195201194,
+    "output_tokens": 544287,
+    "api_call_count": 664
+  }
+}
