@@ -96,6 +96,14 @@ class Connection(Base):
     config: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, server_default=text("'{}'::jsonb")
     )
+    # Nullable by design (PR #41 review): holds the SecretStore key (`conn-<id>`)
+    # once a credential is written, but is NULL for (a) the transient window
+    # between row flush and secret write in create_connection, and (b)
+    # credential-less auth — managed identity (ADLS) / IAM role (S3), deferred to
+    # Week 7 (ADR 0010/0011) — plus any unauthenticated source. v1 connection types
+    # are all secret-bearing and enforce presence in the service layer
+    # (test_connection → 502 without a stored credential), so the column stays
+    # NULL-able for the W7 credential-less modes without a later migration.
     secret_ref: Mapped[str | None] = mapped_column(String(256))
     created_by: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
