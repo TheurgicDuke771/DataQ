@@ -65,6 +65,10 @@ class ConnectionRead(BaseModel):
         )
 
 
+class ConnectionReauth(BaseModel):
+    secret: str = Field(min_length=1, description="New credential; write-only, never returned")
+
+
 class ConnectionTestResult(BaseModel):
     ok: bool
 
@@ -171,4 +175,22 @@ def test_connection(
 ) -> ConnectionTestResult:
     # sync def → runs in a threadpool; the datasource connect is blocking.
     svc.test_connection(db, connection_id, secret_store=secret_store)
+    return ConnectionTestResult(ok=True)
+
+
+@router.post(
+    "/connections/{connection_id}/reauth",
+    response_model=ConnectionTestResult,
+    summary="Rotate a connection's credential and verify it",
+)
+def reauth_connection(
+    connection_id: uuid.UUID,
+    payload: ConnectionReauth,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    secret_store: Annotated[SecretStore, Depends(get_secret_store)],
+) -> ConnectionTestResult:
+    # sync def → threadpool; the verify probe is blocking, like /test. Rotates
+    # the credential then probes it; a bad new credential surfaces as 502.
+    svc.reauth_connection(db, connection_id, secret=payload.secret, secret_store=secret_store)
     return ConnectionTestResult(ok=True)
