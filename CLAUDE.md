@@ -66,6 +66,8 @@ DataQ/
 ├── docs/
 │   ├── architecture.md          # Mermaid architecture diagram
 │   └── adr/                     # Architecture Decision Records
+├── integrations/                # user-deployed snippets (NOT app code; e.g. Airflow DAG callback)
+│   └── airflow/                 # dataq_airflow_callback.py + setup README
 ├── scripts/
 │   └── setup.sh                 # one-command dev env bootstrap
 ├── context/                     # original product/roadmap context (read-only reference)
