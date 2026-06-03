@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "d765d1bedefc",
+  "session_id": "f81a27c1-9606-4cc2-bccc-2e2fee08a0cb",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-03T04:43:20.367761Z",
+  "branch": "feature/airflow-callback-snippet",
+  "checkpoints_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-opus-4-8",
+  "turn_id": "9a7c3f857d87",
+  "token_usage": {
+    "input_tokens": 98563,
+    "cache_creation_tokens": 4859554,
+    "cache_read_tokens": 199257052,
+    "output_tokens": 558598,
+    "api_call_count": 681
+  },
+  "session_metrics": {
+    "turn_count": 33
+  }
+}
