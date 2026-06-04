@@ -21,11 +21,11 @@
 |---|---|
 | **Active since** | 2026-05-24 |
 | **Current week** | Week 2 of 8 — Connection manager (backend) |
-| **Roadmap tasks done** | 25 ✅ + 6 🟡 / 155 (~16%) |
+| **Roadmap tasks done** | 26 ✅ + 6 🟡 / 155 (~17%) |
 | **Out-of-roadmap PRs landed** | 5 bundles (governance, tooling lock, Entire CLI, Dependabot triage round 1, PR-3 cleanup) + ADRs 0005/0006/0007/0012 |
 | **Week-1 exit gate** | A logged-in user can hit a FastAPI endpoint that triggers GX against Snowflake DEV and persists a result row. — **met** (plumbing complete via PR 4a–4c; live-Snowflake run fails-soft pending DEV creds — deferred smoke) |
 | **Next milestone** | ADF/Airflow polling fallback (`list_recent_runs` + 10-min Celery beat → succeeded-run detection → trigger) + run_suite dispatch wiring once Week-3 target-table lands (Week 5) |
-| **Open issues** | 8 (#92, #65 + governance polish #20/#19/#18/#17/#10/#8) |
+| **Open issues** | 7 (#92 + governance polish #20/#19/#18/#17/#10/#8) |
 | **Open PRs** | none |
 | **Design gates** | ADR 0005 (severity weights) + ADR 0012 (monitor-kind seam) **both accepted** — Week-3 migration unblocked |
 
@@ -151,8 +151,8 @@ These were preconditions for executing the roadmap. Listed for completeness.
 
 **Exit gate:** Users can configure any connection type and author checks end-to-end in the UI.
 
-### Frontend tooling coordinated bumps (added — not in original roadmap) (1 task — 0/1)
-- [ ] ⬜ Vite 8 coordinated bump — `vite` + `@vitejs/plugin-react` + `vitest` in lockstep ([#65](https://github.com/TheurgicDuke771/DataQ/issues/65); supersedes closed [#57](https://github.com/TheurgicDuke771/DataQ/pull/57))
+### Frontend tooling coordinated bumps (added — not in original roadmap) (1 task — 1/1)
+- [x] ✅ Vite 8 coordinated bump — `vite` ^6→^8.0.16 + `@vitejs/plugin-react` ^5→^6.0.2 + `vitest` ^3→^4.1.8 + `@vitest/coverage-v8` ^4.1.8 in lockstep — [PR #119](https://github.com/TheurgicDuke771/DataQ/pull/119) (Fixes [#65](https://github.com/TheurgicDuke771/DataQ/issues/65); supersedes Dependabot #111 + closed [#57](https://github.com/TheurgicDuke771/DataQ/pull/57)). plugin-react v6 peers `vite ^8`, vitest v4 peers `vite ^6||^7||^8` — done early to drain the frontend dep backlog; format/lint/typecheck/test/build all green
 
 ### Frontend polish from PR-3c review (added — not in original roadmap) (3 tasks — 0/3)
 - [ ] ⬜ Wrap `MsalProvider` subtree in an antd `AntApp` / React error boundary so MSAL render-time failures don't fall back to plain text ([PR #63 worth-noting](https://github.com/TheurgicDuke771/DataQ/pull/63))
@@ -183,7 +183,7 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [ ] ⬜ Admin page — list all suites, all users, access overview
 - [ ] ⬜ Suite export / import UI (download JSON, upload JSON)
 
-**Week 4 total: 0 / 22**
+**Week 4 total: 1 / 22**
 
 ---
 
@@ -342,12 +342,12 @@ These were preconditions for executing the roadmap. Listed for completeness.
 | Week 1 | 7 | 1 | 2 | 10 |
 | Week 2 | 15 | 1 | 3 | 19 |
 | Week 3 | 0 | 0 | 18 | 18 |
-| Week 4 | 0 | 0 | 22 | 22 |
+| Week 4 | 1 | 0 | 21 | 22 |
 | Week 5 | 1 | 0 | 14 | 15 |
 | Week 6 | 0 | 0 | 16 | 16 |
 | Week 7 | 0 | 1 | 28 | 29 |
 | Week 8 | 2 | 3 | 21 | 26 |
-| **TOTAL** | **25** | **6** | **124** | **155** |
+| **TOTAL** | **26** | **6** | **123** | **155** |
 
 > 155 > 100 because ADR 0004 added Airflow tasks, ADR 0011 added two seam tasks (generic runner dispatch, `ResultPublisher`), ADR 0012 added three Week-3 monitor-kind / metric seam tasks, plus PR-review follow-ups not in the original roadmap. Tracked here for honesty.
 
@@ -365,7 +365,7 @@ Issues that aren't roadmap tasks but block / risk the work.
 | ~~[#51](https://github.com/TheurgicDuke771/DataQ/issues/51)~~ | ~~Emit per-request structured log from request_id middleware~~ | **Closed** ([PR #71](https://github.com/TheurgicDuke771/DataQ/pull/71)) | n/a |
 | ~~[#54](https://github.com/TheurgicDuke771/DataQ/issues/54)~~ | ~~Consolidate mypy / type-check dep lists (3-file drift)~~ | **Closed** ([PR #68](https://github.com/TheurgicDuke771/DataQ/pull/68)) | n/a |
 | ~~[#62](https://github.com/TheurgicDuke771/DataQ/issues/62)~~ | ~~MSAL redirect lifecycle (real-AAD smoke test deferred)~~ | **Closed** (completed 2026-05-28) | n/a |
-| [#65](https://github.com/TheurgicDuke771/DataQ/issues/65) | Vite 8 coordinated bump (vite + plugin-react + vitest) | Open | Week 4 (also tracked as a roadmap task above) |
+| ~~[#65](https://github.com/TheurgicDuke771/DataQ/issues/65)~~ | ~~Vite 8 coordinated bump (vite + plugin-react + vitest)~~ | **Closed** ([PR #119](https://github.com/TheurgicDuke771/DataQ/pull/119)) | n/a — superseded Dependabot #111 |
 | [#92](https://github.com/TheurgicDuke771/DataQ/issues/92) | Surface the ADF webhook URL instead of hand-assembling a secret-bearing URL | Open | Week 4 connection UI / ADF onboarding |
 | ~~[#72](https://github.com/TheurgicDuke771/DataQ/issues/72)~~ | ~~ADR 0004 follow-up: document `trigger_bindings` one-orchestrator-per-(provider, env) assumption~~ | **Closed** ([PR #83](https://github.com/TheurgicDuke771/DataQ/pull/83)) | n/a — guard enforced in PR 6 ADF CRUD |
 | ~~[#75](https://github.com/TheurgicDuke771/DataQ/issues/75)~~ | ~~Integration-assert request_id propagates FastAPI→Celery worker logs~~ | **Closed** ([PR 4c-ii](https://github.com/TheurgicDuke771/DataQ/pull/79)) | n/a |
