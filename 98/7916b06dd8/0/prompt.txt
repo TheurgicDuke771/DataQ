@@ -1,0 +1,131 @@
+file the webhook-URL-helper issue first
+
+---
+
+Also why we need to pass the secret in the webhook URL?
+
+---
+
+Okay, lets scan the open issues and check if anything can be taken up now
+
+---
+
+#80 + #87, and #86b.
+
+---
+
+first fix the hook. 
+Also check if the / commands and sub-agents are up-to-date
+
+---
+
+/review + merge the batch (#93–#96)
+
+---
+
+Okay, get started with PR 8. What is the plan?
+
+---
+
+do a review + merge for #97. 
+After that can you search once if the codebase have any reference of lll_?
+
+---
+
+scrub the name from everywhere (roadmap, #12) also change nonprod to something like pre-prod or dev.
+
+---
+
+do a review + merge for #98.
+
+---
+
+Lets start with the remaining Week-2 connection CRUD
+
+---
+
+yeah, first complete airflow then start the next
+
+---
+
+yeah, finish adls then start s3
+
+---
+
+Yes, complete S3, then start with UC
+
+---
+
+yeah, close-out the UC
+
+---
+
+Lets pickup the remaining of week 2
+
+---
+
+yeah, lets review + merge #103
+
+---
+
+Hey, @README.md  and @docs/progress.md is not up-to-date, can you check once. 
+Do we need to maintain `Today` and `Calendar burn`?
+
+---
+
+Is the auth in @README.md covers all? do we need to maintain the auth?
+Also mention the license is under MIT
+
+---
+
+yeah, bundle them together and commit
+
+---
+
+yeah, open PR. No review needed, just open and merge it (just for this time only)
+
+---
+
+I'm thinking to list this app in azure, aws and gcp marketplace. Will that be viable?
+if yes, what are the things I need to add / change?
+
+---
+
+Yeah, lets document this, and any other change that keeps it from a vendor specific lock down
+
+---
+
+yeah, review - merge this
+
+---
+
+Also, can you check if we can provide this functionality - https://github.com/TheurgicDuke771/FastAPI_DataComparison 
+as a plugin to DataQ?
+
+---
+
+Yeah, write the ADR. Also for the Two-connection model - keep a future ADR.
+
+---
+
+What is pending for Week 2?
+
+---
+
+Yeah, start with the three items in the first table
+
+---
+
+yes
+
+---
+
+triage the Dependabot batch (except vite 6 -> 8)
+
+---
+
+Okay, update the vite version
+
+---
+
+yeah, close #112
