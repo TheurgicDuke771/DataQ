@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "a4167cf6f4b3",
+  "strategy": "manual-commit",
+  "branch": "chore/vite-8-coordinated-bump",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/a4/167cf6f4b3/0/metadata.json",
+      "transcript": "/a4/167cf6f4b3/0/full.jsonl",
+      "content_hash": "/a4/167cf6f4b3/0/content_hash.txt",
+      "prompt": "/a4/167cf6f4b3/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 108782,
+    "cache_creation_tokens": 5513538,
+    "cache_read_tokens": 219067761,
+    "output_tokens": 634584,
+    "api_call_count": 750
+  }
+}
