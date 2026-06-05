@@ -21,7 +21,7 @@
 |---|---|
 | **Active since** | 2026-05-24 |
 | **Current week** | Week 3 of 8 — Suite & check API (backend) |
-| **Roadmap tasks done** | 34 ✅ + 6 🟡 / 155 (~22%) |
+| **Roadmap tasks done** | 34 ✅ + 7 🟡 / 155 (~22%) |
 | **Out-of-roadmap PRs landed** | 5 bundles (governance, tooling lock, Entire CLI, Dependabot triage round 1, PR-3 cleanup) + ADRs 0005/0006/0007/0012 |
 | **Week-1 exit gate** | A logged-in user can hit a FastAPI endpoint that triggers GX against Snowflake DEV and persists a result row. — **met** (plumbing complete via PR 4a–4c; live-Snowflake run fails-soft pending DEV creds — deferred smoke) |
 | **Next milestone** | ADF/Airflow polling fallback (`list_recent_runs` + 10-min Celery beat → succeeded-run detection → trigger) + run_suite dispatch wiring once Week-3 target-table lands (Week 5) |
@@ -113,7 +113,7 @@ These were preconditions for executing the roadmap. Listed for completeness.
 
 ### Suite & check backend (4 tasks — 1/4 ✅)
 - [x] ✅ API: CRUD for suites and GX expectations (Snowflake path) — **suites** (PR-B1): `suite_service` + `/suites` CRUD (`connection_id` validated then immutable; delete cascades to checks). **checks** (PR-B2): `check_service` + nested `/suites/{id}/checks` CRUD surfacing `kind` + `warn/fail/critical_threshold` + GX `expectation_type`/`config`. v1 monitor-kind guard (only `expectation`; reserved kinds → 422, ADR 0012); checks scoped to their suite (cross-suite access → 404); thresholds are `Decimal` in (exact `Numeric` storage) / `float` out (clean JSON). 24 TestClient tests; all four modules 100%. Share-based access filtering deferred to the suite-sharing task; **DQ-dimension classification** deferred + tracked ([#124](https://github.com/TheurgicDuke771/DataQ/issues/124))
-- [ ] ⬜ API: suite sharing — assign users with owner / editor / viewer roles
+- [ ] 🟡 API: suite sharing — assign users with owner / editor / viewer roles — **sharing API + authz core done** (PR-E1): `suite_authz.require_permission` (the gate every suite-scoped endpoint will use; 404-hides a suite with no access, 403s an insufficient level) + `share_service` + `/suites/{id}/shares` CRUD (grant/list/update/revoke). Schema vocab `view`/`edit`/`admin` + implicit owner=`created_by`; **admin can delete + manage shares** (per decision); granting to the owner / unknown user → 422; managing shares needs `admin`, listing needs `view`. 13 TestClient tests across the matrix (acting as different users); all 3 modules 100%. **Enforcement** across the suite/check endpoints + `list_suites` filtering is the follow-up **PR-E2** (lands the access control deferred in B1/B2)
 - [ ] ⬜ API: suite export to JSON + import from JSON
 - [ ] ⬜ API: check dry-run endpoint — validate against live data, return preview result
 
@@ -341,13 +341,13 @@ These were preconditions for executing the roadmap. Listed for completeness.
 |---|---|---|---|---|
 | Week 1 | 7 | 1 | 2 | 10 |
 | Week 2 | 15 | 1 | 3 | 19 |
-| Week 3 | 8 | 0 | 10 | 18 |
+| Week 3 | 8 | 1 | 9 | 18 |
 | Week 4 | 1 | 0 | 21 | 22 |
 | Week 5 | 1 | 0 | 14 | 15 |
 | Week 6 | 0 | 0 | 16 | 16 |
 | Week 7 | 0 | 1 | 28 | 29 |
 | Week 8 | 2 | 3 | 21 | 26 |
-| **TOTAL** | **34** | **6** | **115** | **155** |
+| **TOTAL** | **34** | **7** | **114** | **155** |
 
 > 155 > 100 because ADR 0004 added Airflow tasks, ADR 0011 added two seam tasks (generic runner dispatch, `ResultPublisher`), ADR 0012 added three Week-3 monitor-kind / metric seam tasks, plus PR-review follow-ups not in the original roadmap. Tracked here for honesty.
 
