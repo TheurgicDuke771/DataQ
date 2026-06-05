@@ -20,9 +20,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from backend.app.core.auth import get_current_user
-from backend.app.db.models import User
+from backend.app.core.secrets import SecretStore, get_secret_store
+from backend.app.db.models import Connection, User
 from backend.app.db.session import get_db
 from backend.app.services import check_service as svc
+from backend.app.services import dryrun_service as dryrun
 from backend.app.services.suite_authz import require_permission
 
 router = APIRouter(tags=["checks"])
@@ -158,3 +160,62 @@ def delete_check(
 ) -> None:
     require_permission(db, suite_id, current_user.id, minimum="edit")
     svc.delete_check(db, suite_id, check_id)
+
+
+# ───────────────────────── dry-run (preview, no persistence) ────────
+
+
+class CheckDryRunRequest(BaseModel):
+    kind: str = "expectation"
+    expectation_type: str = Field(min_length=1, max_length=128)
+    config: dict[str, Any] = Field(default_factory=dict)
+    warn_threshold: Decimal | None = None
+    fail_threshold: Decimal | None = None
+    critical_threshold: Decimal | None = None
+    table: str = Field(min_length=1, description="Target table the check runs against")
+    schema_: str | None = Field(default=None, alias="schema")
+
+
+class CheckDryRunResult(BaseModel):
+    status: str  # pass | warn | fail | critical (ADR 0005)
+    metric_value: float | None
+    observed_value: dict[str, Any] | None
+    expected_value: dict[str, Any] | None
+
+
+@router.post(
+    "/suites/{suite_id}/checks/dryrun",
+    response_model=CheckDryRunResult,
+    summary="Dry-run a check against live data (no persistence)",
+)
+def dry_run_check(
+    suite_id: uuid.UUID,
+    payload: CheckDryRunRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    secret_store: Annotated[SecretStore, Depends(get_secret_store)],
+) -> CheckDryRunResult:
+    # sync def → threadpool; the datasource connect + GX run are blocking.
+    # Authoring action → 'edit'. The suite's connection FK is RESTRICT, so it
+    # always resolves.
+    suite = require_permission(db, suite_id, current_user.id, minimum="edit")
+    connection = db.get(Connection, suite.connection_id)
+    assert connection is not None
+    outcome = dryrun.dry_run_check(
+        connection,
+        kind=payload.kind,
+        expectation_type=payload.expectation_type,
+        config=payload.config,
+        warn_threshold=payload.warn_threshold,
+        fail_threshold=payload.fail_threshold,
+        critical_threshold=payload.critical_threshold,
+        table=payload.table,
+        schema=payload.schema_,
+        secret_store=secret_store,
+    )
+    return CheckDryRunResult(
+        status=outcome.status,
+        metric_value=outcome.metric_value,
+        observed_value=outcome.observed_value,
+        expected_value=outcome.expected_value,
+    )
