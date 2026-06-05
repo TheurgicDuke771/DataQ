@@ -16,12 +16,12 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
-from backend.app.db.models import Connection, Suite
+from backend.app.db.models import Connection, Share, Suite
 
 log = get_logger(__name__)
 
@@ -67,8 +67,16 @@ def create_suite(
     return suite
 
 
-def list_suites(session: Session, *, connection_id: uuid.UUID | None = None) -> list[Suite]:
-    stmt = select(Suite).order_by(Suite.created_at.desc())
+def list_suites(
+    session: Session, *, user_id: uuid.UUID, connection_id: uuid.UUID | None = None
+) -> list[Suite]:
+    """Suites the user can access: owned (`created_by`) or shared with them."""
+    shared = select(Share.suite_id).where(Share.user_id == user_id)
+    stmt = (
+        select(Suite)
+        .where(or_(Suite.created_by == user_id, Suite.id.in_(shared)))
+        .order_by(Suite.created_at.desc())
+    )
     if connection_id is not None:
         stmt = stmt.where(Suite.connection_id == connection_id)
     return list(session.scalars(stmt))
