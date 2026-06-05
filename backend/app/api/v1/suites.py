@@ -19,6 +19,7 @@ from backend.app.core.auth import get_current_user
 from backend.app.db.models import User
 from backend.app.db.session import get_db
 from backend.app.services import suite_service as svc
+from backend.app.services.suite_authz import require_permission
 
 router = APIRouter(tags=["suites"])
 
@@ -71,7 +72,8 @@ def list_suites(
     db: Annotated[Session, Depends(get_db)],
     connection_id: uuid.UUID | None = None,
 ) -> list[SuiteRead]:
-    suites = svc.list_suites(db, connection_id=connection_id)
+    # Scoped to suites the user owns or has a share on.
+    suites = svc.list_suites(db, user_id=current_user.id, connection_id=connection_id)
     return [SuiteRead.model_validate(s) for s in suites]
 
 
@@ -81,7 +83,8 @@ def get_suite(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> SuiteRead:
-    return SuiteRead.model_validate(svc.get_suite(db, suite_id))
+    suite = require_permission(db, suite_id, current_user.id, minimum="view")
+    return SuiteRead.model_validate(suite)
 
 
 @router.patch("/suites/{suite_id}", response_model=SuiteRead, summary="Update a suite")
@@ -91,6 +94,7 @@ def update_suite(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> SuiteRead:
+    require_permission(db, suite_id, current_user.id, minimum="edit")
     suite = svc.update_suite(db, suite_id, name=payload.name, description=payload.description)
     return SuiteRead.model_validate(suite)
 
@@ -105,4 +109,5 @@ def delete_suite(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> None:
+    require_permission(db, suite_id, current_user.id, minimum="admin")
     svc.delete_suite(db, suite_id)

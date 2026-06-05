@@ -14,6 +14,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
+from backend.app.core.auth import get_current_user
 from backend.app.db.models import Check, Connection, Suite, User
 from backend.app.db.session import get_db
 from backend.app.main import app
@@ -156,3 +157,94 @@ def test_delete_cascades_to_checks(client: TestClient, db_session: Any) -> None:
     assert deleted.status_code == 204
     remaining = db_session.scalars(select(Check).where(Check.suite_id == uuid.UUID(sid))).all()
     assert remaining == []  # cascade removed the child check
+
+
+# ───────────────────────── access enforcement (PR-E2) ──────────────
+
+
+def _owner_b_e_suite(db_session: Any) -> tuple[User, User, User, str]:
+    owner = User(aad_object_id=uuid.uuid4().hex, email="owner@ex")
+    b = User(aad_object_id=uuid.uuid4().hex, email="b@ex")
+    e = User(aad_object_id=uuid.uuid4().hex, email="e@ex")  # no access
+    db_session.add_all([owner, b, e])
+    db_session.flush()
+    conn = Connection(
+        name=f"sf-{uuid.uuid4().hex[:8]}",
+        type="snowflake",
+        env="dev",
+        config={"account": "x"},
+        created_by=owner.id,
+    )
+    db_session.add(conn)
+    db_session.flush()
+    suite = Suite(name="s", connection_id=conn.id, created_by=owner.id)
+    db_session.add(suite)
+    db_session.commit()
+    return owner, b, e, str(suite.id)
+
+
+def _as(user: User) -> None:
+    app.dependency_overrides[get_current_user] = lambda: user
+
+
+def _share(client: TestClient, owner: User, sid: str, target: User, perm: str) -> None:
+    _as(owner)
+    granted = client.post(
+        f"/api/v1/suites/{sid}/shares", json={"user_id": str(target.id), "permission": perm}
+    )
+    assert granted.status_code == 201
+
+
+def test_viewer_reads_but_cannot_write(client: TestClient, db_session: Any) -> None:
+    owner, b, _e, sid = _owner_b_e_suite(db_session)
+    _share(client, owner, sid, b, "view")
+    _as(b)
+    assert client.get(f"/api/v1/suites/{sid}").status_code == 200
+    patched = client.patch(f"/api/v1/suites/{sid}", json={"name": "x"})
+    assert patched.status_code == 403
+    deleted = client.delete(f"/api/v1/suites/{sid}")
+    assert deleted.status_code == 403
+
+
+def test_editor_updates_but_cannot_delete(client: TestClient, db_session: Any) -> None:
+    owner, b, _e, sid = _owner_b_e_suite(db_session)
+    _share(client, owner, sid, b, "edit")
+    _as(b)
+    edited = client.patch(f"/api/v1/suites/{sid}", json={"name": "x"})
+    assert edited.status_code == 200
+    deleted = client.delete(f"/api/v1/suites/{sid}")
+    assert deleted.status_code == 403
+
+
+def test_admin_can_delete(client: TestClient, db_session: Any) -> None:
+    owner, b, _e, sid = _owner_b_e_suite(db_session)
+    _share(client, owner, sid, b, "admin")
+    _as(b)
+    deleted = client.delete(f"/api/v1/suites/{sid}")
+    assert deleted.status_code == 204
+
+
+def test_outsider_sees_404_everywhere(client: TestClient, db_session: Any) -> None:
+    _owner, _b, e, sid = _owner_b_e_suite(db_session)
+    _as(e)
+    assert client.get(f"/api/v1/suites/{sid}").status_code == 404
+    patched = client.patch(f"/api/v1/suites/{sid}", json={"name": "x"})
+    assert patched.status_code == 404
+    deleted = client.delete(f"/api/v1/suites/{sid}")
+    assert deleted.status_code == 404
+
+
+def test_list_is_scoped_to_accessible_suites(client: TestClient, db_session: Any) -> None:
+    owner, b, _e, owner_sid = _owner_b_e_suite(db_session)
+    # B owns their own suite on the same connection (connections aren't access-gated)
+    conn_id = db_session.get(Suite, uuid.UUID(owner_sid)).connection_id
+    _as(b)
+    b_sid = client.post(
+        "/api/v1/suites", json={"name": "b-suite", "connection_id": str(conn_id)}
+    ).json()["id"]
+    # B sees only their own suite, not the owner's
+    assert {s["id"] for s in client.get("/api/v1/suites").json()} == {b_sid}
+    # once shared, the owner's suite appears for B too
+    _share(client, owner, owner_sid, b, "view")
+    _as(b)
+    assert {s["id"] for s in client.get("/api/v1/suites").json()} == {b_sid, owner_sid}

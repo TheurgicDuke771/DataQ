@@ -23,6 +23,7 @@ from backend.app.core.auth import get_current_user
 from backend.app.db.models import User
 from backend.app.db.session import get_db
 from backend.app.services import check_service as svc
+from backend.app.services.suite_authz import require_permission
 
 router = APIRouter(tags=["checks"])
 
@@ -73,6 +74,7 @@ def create_check(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> CheckRead:
+    require_permission(db, suite_id, current_user.id, minimum="edit")
     check = svc.create_check(
         db,
         suite_id=suite_id,
@@ -97,6 +99,7 @@ def list_checks(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> list[CheckRead]:
+    require_permission(db, suite_id, current_user.id, minimum="view")
     return [CheckRead.model_validate(c) for c in svc.list_checks(db, suite_id)]
 
 
@@ -111,6 +114,7 @@ def get_check(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> CheckRead:
+    require_permission(db, suite_id, current_user.id, minimum="view")
     return CheckRead.model_validate(svc.get_check(db, suite_id, check_id))
 
 
@@ -126,6 +130,7 @@ def update_check(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> CheckRead:
+    require_permission(db, suite_id, current_user.id, minimum="edit")
     check = svc.update_check(
         db,
         suite_id,
@@ -151,4 +156,5 @@ def delete_check(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> None:
+    require_permission(db, suite_id, current_user.id, minimum="edit")
     svc.delete_check(db, suite_id, check_id)

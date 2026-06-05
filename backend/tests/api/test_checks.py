@@ -12,7 +12,8 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from backend.app.db.models import Connection, User
+from backend.app.core.auth import get_current_user
+from backend.app.db.models import Connection, Suite, User
 from backend.app.db.session import get_db
 from backend.app.main import app
 
@@ -189,3 +190,70 @@ def test_delete_returns_204_then_404(client: TestClient, db_session: Any) -> Non
     deleted = client.delete(f"/api/v1/suites/{sid}/checks/{cid}")
     assert deleted.status_code == 204
     assert client.get(f"/api/v1/suites/{sid}/checks/{cid}").status_code == 404
+
+
+# ───────────────────────── access enforcement (PR-E2) ──────────────
+
+
+def _as(user: User) -> None:
+    app.dependency_overrides[get_current_user] = lambda: user
+
+
+def _owner_b_e_suite(db_session: Any) -> tuple[User, User, User, str]:
+    """owner + B + E and a suite owned by `owner` (checks are added per-test)."""
+    owner = User(aad_object_id=uuid.uuid4().hex, email="owner@ex")
+    b = User(aad_object_id=uuid.uuid4().hex, email="b@ex")
+    e = User(aad_object_id=uuid.uuid4().hex, email="e@ex")
+    db_session.add_all([owner, b, e])
+    db_session.flush()
+    conn = Connection(
+        name=f"sf-{uuid.uuid4().hex[:8]}",
+        type="snowflake",
+        env="dev",
+        config={"account": "x"},
+        created_by=owner.id,
+    )
+    db_session.add(conn)
+    db_session.flush()
+    suite = Suite(name="s", connection_id=conn.id, created_by=owner.id)
+    db_session.add(suite)
+    db_session.commit()
+    return owner, b, e, str(suite.id)
+
+
+def _grant(client: TestClient, owner: User, sid: str, target: User, perm: str) -> None:
+    _as(owner)
+    granted = client.post(
+        f"/api/v1/suites/{sid}/shares", json={"user_id": str(target.id), "permission": perm}
+    )
+    assert granted.status_code == 201
+
+
+def test_viewer_reads_checks_but_cannot_write(client: TestClient, db_session: Any) -> None:
+    owner, b, _e, sid = _owner_b_e_suite(db_session)
+    _as(owner)  # author the check as the owner first
+    cid = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()["id"]
+    _grant(client, owner, sid, b, "view")
+    _as(b)
+    assert client.get(f"/api/v1/suites/{sid}/checks").status_code == 200
+    assert client.get(f"/api/v1/suites/{sid}/checks/{cid}").status_code == 200
+    created = client.post(f"/api/v1/suites/{sid}/checks", json=_payload(name="c2"))
+    assert created.status_code == 403
+    patched = client.patch(f"/api/v1/suites/{sid}/checks/{cid}", json={"name": "x"})
+    assert patched.status_code == 403
+    deleted = client.delete(f"/api/v1/suites/{sid}/checks/{cid}")
+    assert deleted.status_code == 403
+
+
+def test_editor_can_write_checks(client: TestClient, db_session: Any) -> None:
+    owner, b, _e, sid = _owner_b_e_suite(db_session)
+    _grant(client, owner, sid, b, "edit")
+    _as(b)
+    created = client.post(f"/api/v1/suites/{sid}/checks", json=_payload())
+    assert created.status_code == 201
+
+
+def test_outsider_cannot_see_checks(client: TestClient, db_session: Any) -> None:
+    _owner, _b, e, sid = _owner_b_e_suite(db_session)
+    _as(e)
+    assert client.get(f"/api/v1/suites/{sid}/checks").status_code == 404
