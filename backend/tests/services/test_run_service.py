@@ -60,7 +60,14 @@ def _run() -> Run:
 
 def _checks(n: int) -> list[Check]:
     return [
-        Check(id=uuid.uuid4(), suite_id=uuid.uuid4(), name=f"c{i}", expectation_type="x", config={})
+        Check(
+            id=uuid.uuid4(),
+            suite_id=uuid.uuid4(),
+            name=f"c{i}",
+            kind="expectation",
+            expectation_type="x",
+            config={},
+        )
         for i in range(n)
     ]
 
@@ -201,6 +208,7 @@ def test_thresholds_derive_tier_and_persist_metric() -> None:
         id=uuid.uuid4(),
         suite_id=uuid.uuid4(),
         name="c",
+        kind="expectation",
         expectation_type="x",
         config={},
         warn_threshold=Decimal("1"),
@@ -218,3 +226,27 @@ def test_thresholds_derive_tier_and_persist_metric() -> None:
     persisted = session.added[0]
     assert persisted.status == "fail"  # 7.5 ≥ fail(5), < critical(20)
     assert persisted.metric_value == Decimal("7.5")
+
+
+def test_non_expectation_kind_fails_run_without_invoking_runner() -> None:
+    """A reserved (non-expectation) check kind has no runner in v1 (ADR 0012):
+    the run fails loudly rather than silently feeding it to GX, and the adapter
+    is never called."""
+    session = FakeSession()
+    run = _run()
+    freshness = Check(
+        id=uuid.uuid4(),
+        suite_id=uuid.uuid4(),
+        name="stale_load",
+        kind="freshness",  # constraint-valid, but no runner in v1
+        expectation_type="",
+        config={"interval_hours": 24},
+    )
+    runner = FakeRunner(SuiteOutcome(success=True, checks=[]))
+
+    result = run_service.execute_run(session, run=run, checks=[freshness], runner=runner, table="T")
+
+    assert result.status == "failed"  # NotImplementedError → terminal 'failed'
+    assert runner.called_with is None  # dispatch short-circuited before the adapter
+    assert session.added == []  # nothing persisted
+    assert session.rollbacks == 1

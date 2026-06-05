@@ -58,6 +58,29 @@ def _build_result(run_id: uuid.UUID, check: Check, outcome: CheckOutcome) -> Res
     )
 
 
+_EXPECTATION_KIND = "expectation"
+
+
+def _specs_for_checks(checks: list[Check]) -> list[CheckSpec]:
+    """Dispatch checks by `check.kind` to their runner input (ADR 0012).
+
+    v1 implements only the `expectation` kind (the GX `CheckRunner`). The other
+    reserved kinds (`freshness`/`volume`/`schema_drift`/`anomaly`/`comparison`)
+    are constraint-valid but have no runner yet, so a run containing one raises
+    `NotImplementedError` rather than silently feeding it to GX as an
+    expectation. This dispatch composes with the connection-type `CheckRunner`
+    selection (Week 5, ADR 0011): `kind` chooses the *monitor*, `connection.type`
+    chooses the *adapter*.
+    """
+    unsupported = sorted({c.kind for c in checks if c.kind != _EXPECTATION_KIND})
+    if unsupported:
+        raise NotImplementedError(
+            f"no run path for check kind(s) {', '.join(unsupported)}; "
+            f"only {_EXPECTATION_KIND!r} is implemented in v1"
+        )
+    return [CheckSpec(expectation_type=c.expectation_type, kwargs=dict(c.config)) for c in checks]
+
+
 def execute_run(
     session: Session,
     *,
@@ -83,14 +106,13 @@ def execute_run(
         table=table,
     )
 
-    specs = [CheckSpec(expectation_type=c.expectation_type, kwargs=dict(c.config)) for c in checks]
-
-    # Everything from here — running the adapter, building rows, and persisting
-    # them — is guarded so any failure drives the run to a terminal 'failed'
-    # state. Without this, a DB error during add_all/commit would leave the run
-    # stuck in 'running' forever. rollback() discards any partial result inserts
-    # before we record the failure.
+    # Everything from here — dispatching by kind, running the adapter, building
+    # rows, and persisting them — is guarded so any failure drives the run to a
+    # terminal 'failed' state. Without this, a DB error during add_all/commit (or
+    # an unrunnable check kind) would leave the run stuck in 'running' forever.
+    # rollback() discards any partial result inserts before we record the failure.
     try:
+        specs = _specs_for_checks(checks)
         outcome = runner.run_checks(table=table, schema=schema, checks=specs)
         rows = [
             _build_result(run.id, check, check_outcome)
