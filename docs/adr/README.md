@@ -26,6 +26,7 @@ Each ADR captures a single significant architecture decision: the context, the d
 | [0012](0012-monitor-kind-seam.md) | Monitor-kind seam (`check.kind` discriminator + numeric metric storage) | Accepted |
 | [0013](0013-marketplace-distribution-and-anti-lock-in.md) | Marketplace distribution (customer-deployed BYOL) and anti-vendor-lock-in guardrails | Accepted |
 | [0014](0014-reconciliation-comparison-check-kind.md) | Cross-dataset reconciliation as a `comparison` check kind (reuse FastAPI_DataComparison engine) | Accepted |
+| [0016](0016-severity-derivation-semantics.md) | Severity derivation semantics (band the unexpected-%, thresholds override GX success) | Accepted |
 
 ## Pending (to be written in their respective weeks)
 

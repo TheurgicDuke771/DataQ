@@ -13,20 +13,49 @@ adapter raised (e.g. could not reach the warehouse).
 
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
 from backend.app.core.jsonsafe import sanitize_json
 from backend.app.core.logging import get_logger
-from backend.app.datasources.base import CheckRunner, CheckSpec
+from backend.app.datasources.base import CheckOutcome, CheckRunner, CheckSpec
 from backend.app.db.models import Check, Result, Run
+from backend.app.services.severity import derive_status, extract_metric
 
 log = get_logger(__name__)
 
 
 def _now() -> datetime:
     return datetime.now(UTC)
+
+
+def _build_result(run_id: uuid.UUID, check: Check, outcome: CheckOutcome) -> Result:
+    """Map a check + its GX outcome to a `Result`, deriving the severity tier.
+
+    The unexpected-percent badness scalar is extracted once and used both to band
+    the tier (ADR 0005 / 0016) and to persist as the durable, SQL-aggregatable
+    `metric_value` (ADR 0012). `duration_ms` stays NULL in v1 — per-check timing
+    isn't separable from GX's single suite-level `validate()` (reserved seam).
+    """
+    metric = extract_metric(outcome)
+    status = derive_status(
+        success=outcome.success,
+        metric_value=metric,
+        warn_threshold=check.warn_threshold,
+        fail_threshold=check.fail_threshold,
+        critical_threshold=check.critical_threshold,
+    )
+    return Result(
+        run_id=run_id,
+        check_id=check.id,
+        status=status,
+        metric_value=metric,
+        observed_value=sanitize_json(outcome.observed_value),
+        expected_value=sanitize_json(outcome.expected_value),
+        sample_failures=sanitize_json(outcome.sample_failures),
+    )
 
 
 def execute_run(
@@ -64,17 +93,7 @@ def execute_run(
     try:
         outcome = runner.run_checks(table=table, schema=schema, checks=specs)
         rows = [
-            Result(
-                run_id=run.id,
-                check_id=check.id,
-                # Binary fallback (ADR 0005): no thresholds yet → pass/fail only.
-                # Severity post-processing (warn/critical from thresholds) lands in
-                # a follow-up; metric_value/duration_ms likewise populate later.
-                status="pass" if check_outcome.success else "fail",
-                observed_value=sanitize_json(check_outcome.observed_value),
-                expected_value=sanitize_json(check_outcome.expected_value),
-                sample_failures=sanitize_json(check_outcome.sample_failures),
-            )
+            _build_result(run.id, check, check_outcome)
             for check, check_outcome in zip(checks, outcome.checks, strict=True)
         ]
         session.add_all(rows)

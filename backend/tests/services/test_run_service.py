@@ -7,6 +7,7 @@ under test independent of Postgres and Snowflake.
 """
 
 import uuid
+from decimal import Decimal
 
 from backend.app.datasources.base import CheckOutcome, CheckSpec, SuiteOutcome
 from backend.app.db.models import Check, Result, Run
@@ -189,3 +190,31 @@ def test_empty_run_still_succeeds() -> None:
 
     assert run.status == "succeeded"
     assert session.added == []
+
+
+def test_thresholds_derive_tier_and_persist_metric() -> None:
+    """execute_run wires severity post-processing (ADR 0016): the unexpected-%
+    is banded against the check's thresholds and persisted as metric_value."""
+    session = FakeSession()
+    run = _run()
+    check = Check(
+        id=uuid.uuid4(),
+        suite_id=uuid.uuid4(),
+        name="c",
+        expectation_type="x",
+        config={},
+        warn_threshold=Decimal("1"),
+        fail_threshold=Decimal("5"),
+        critical_threshold=Decimal("20"),
+    )
+    outcome = SuiteOutcome(
+        success=False,
+        checks=[CheckOutcome("x", success=False, sample_failures={"unexpected_percent": 7.5})],
+    )
+    run_service.execute_run(
+        session, run=run, checks=[check], runner=FakeRunner(outcome=outcome), table="T"
+    )
+
+    persisted = session.added[0]
+    assert persisted.status == "fail"  # 7.5 ≥ fail(5), < critical(20)
+    assert persisted.metric_value == Decimal("7.5")

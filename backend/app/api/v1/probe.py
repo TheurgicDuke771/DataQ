@@ -35,7 +35,8 @@ class CheckResultResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     check_id: uuid.UUID
-    status: str
+    status: str  # pass | warn | fail | critical (ADR 0005)
+    metric_value: float | None  # the unexpected-% badness scalar (ADR 0012)
     observed_value: dict[str, Any] | None
     expected_value: dict[str, Any] | None
 
