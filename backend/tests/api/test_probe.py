@@ -119,7 +119,7 @@ def test_get_returns_run_with_results(
         Result(
             run_id=uuid.UUID(run_id),
             check_id=check.id,
-            status="passed",
+            status="pass",
             observed_value={"observed_value": 5},
             expected_value={"min_value": 1},
         )
@@ -131,7 +131,7 @@ def test_get_returns_run_with_results(
     body = resp.json()
     assert body["status"] == "queued"
     assert len(body["results"]) == 1
-    assert body["results"][0]["status"] == "passed"
+    assert body["results"][0]["status"] == "pass"
     assert body["results"][0]["observed_value"] == {"observed_value": 5}
 
 

@@ -67,7 +67,10 @@ def execute_run(
             Result(
                 run_id=run.id,
                 check_id=check.id,
-                status="passed" if check_outcome.success else "failed",
+                # Binary fallback (ADR 0005): no thresholds yet → pass/fail only.
+                # Severity post-processing (warn/critical from thresholds) lands in
+                # a follow-up; metric_value/duration_ms likewise populate later.
+                status="pass" if check_outcome.success else "fail",
                 observed_value=sanitize_json(check_outcome.observed_value),
                 expected_value=sanitize_json(check_outcome.expected_value),
                 sample_failures=sanitize_json(check_outcome.sample_failures),

@@ -96,7 +96,7 @@ def test_probe_round_trip_over_real_broker(monkeypatch: pytest.MonkeyPatch) -> N
         assert final == "succeeded", f"run did not succeed over the broker (got {final})"
         results = session.scalars(select(Result).where(Result.run_id == run_id)).all()
         assert len(results) == 1
-        assert results[0].status == "passed"
+        assert results[0].status == "pass"
         assert results[0].observed_value == {"observed_value": 42}
     finally:
         session.execute(text("TRUNCATE results, runs, checks, suites, connections, users CASCADE"))

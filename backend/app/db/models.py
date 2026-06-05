@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import (
@@ -8,6 +9,8 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
+    Numeric,
     String,
     UniqueConstraint,
     func,
@@ -21,7 +24,11 @@ from backend.app.db.base import Base
 # ── Status / type value sets (TEXT + CHECK; not native PG enums for migration ergonomics) ──
 CONNECTION_TYPES = ("snowflake", "adls_gen2", "s3", "unity_catalog", "adf", "airflow")
 RUN_STATUSES = ("queued", "running", "succeeded", "failed", "cancelled")
-RESULT_STATUSES = ("passed", "failed", "skipped")
+# Result severity tiers (ADR 0005): pass/warn/fail/critical, health-score-bearing.
+RESULT_STATUSES = ("pass", "warn", "fail", "critical")
+# Monitor-kind discriminator (ADR 0012; `comparison` reserved by ADR 0014). v1
+# only ever writes 'expectation'; the rest are constraint-valid but unused.
+CHECK_KINDS = ("expectation", "freshness", "volume", "schema_drift", "anomaly", "comparison")
 PIPELINE_RUN_STATUSES = ("queued", "running", "succeeded", "failed", "cancelled")
 ORCHESTRATION_PROVIDERS = ("adf", "airflow")
 PERMISSIONS = ("view", "edit", "admin")
@@ -138,14 +145,26 @@ class Suite(Base):
 
 class Check(Base):
     __tablename__ = "checks"
-    __table_args__ = (Index("ix_checks_suite_id", "suite_id"),)
+    __table_args__ = (
+        _in_check("kind", CHECK_KINDS, "kind_valid"),
+        Index("ix_checks_suite_id", "suite_id"),
+    )
 
     id: Mapped[uuid.UUID] = _uuid_pk()
     suite_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("suites.id", ondelete="CASCADE"), nullable=False
     )
     name: Mapped[str] = mapped_column(String(256), nullable=False)
+    # Monitor-kind discriminator (ADR 0012). v1 = 'expectation' only; the run path
+    # dispatches on this, and v1.x auto-monitors slot in as new kinds.
+    kind: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'expectation'")
+    )
     expectation_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    # Optional severity thresholds (ADR 0005). NULL → the check is plain pass/fail.
+    warn_threshold: Mapped[Decimal | None] = mapped_column(Numeric)
+    fail_threshold: Mapped[Decimal | None] = mapped_column(Numeric)
+    critical_threshold: Mapped[Decimal | None] = mapped_column(Numeric)
     config: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, server_default=text("'{}'::jsonb")
     )
@@ -190,6 +209,11 @@ class Result(Base):
         UUID(as_uuid=True), ForeignKey("checks.id"), nullable=False
     )
     status: Mapped[str] = mapped_column(String(16), nullable=False)
+    # SQL-aggregatable scalar the check measured + per-check runtime (ADR 0012).
+    # metric_value is the trend/anomaly-friendly mirror of the JSONB observed_value;
+    # NULL where a check yields no meaningful scalar.
+    metric_value: Mapped[Decimal | None] = mapped_column(Numeric)
+    duration_ms: Mapped[int | None] = mapped_column(Integer)
     observed_value: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     expected_value: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     sample_failures: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
