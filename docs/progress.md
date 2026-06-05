@@ -21,7 +21,7 @@
 |---|---|
 | **Active since** | 2026-05-24 |
 | **Current week** | Week 3 of 8 — Suite & check API (backend) |
-| **Roadmap tasks done** | 31 ✅ + 6 🟡 / 155 (~20%) |
+| **Roadmap tasks done** | 33 ✅ + 6 🟡 / 155 (~21%) |
 | **Out-of-roadmap PRs landed** | 5 bundles (governance, tooling lock, Entire CLI, Dependabot triage round 1, PR-3 cleanup) + ADRs 0005/0006/0007/0012 |
 | **Week-1 exit gate** | A logged-in user can hit a FastAPI endpoint that triggers GX against Snowflake DEV and persists a result row. — **met** (plumbing complete via PR 4a–4c; live-Snowflake run fails-soft pending DEV creds — deferred smoke) |
 | **Next milestone** | ADF/Airflow polling fallback (`list_recent_runs` + 10-min Celery beat → succeeded-run detection → trigger) + run_suite dispatch wiring once Week-3 target-table lands (Week 5) |
@@ -117,12 +117,12 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [ ] ⬜ API: suite export to JSON + import from JSON
 - [ ] ⬜ API: check dry-run endpoint — validate against live data, return preview result
 
-### Severity threshold tiers (warn / fail / critical) (4 tasks — 2/4)
+### Severity threshold tiers (warn / fail / critical) (4 tasks — 4/4)
 > **Day 1 design decision: severity weights — ✅ settled in [ADR 0005](adr/0005-severity-tier-weights.md) (warn 0.5 / fail 1.0 / critical 2.0; health = 100×(1−Σpenalty/(N×2.0))).**
 - [x] ✅ Add `warn_threshold`, `fail_threshold`, `critical_threshold` fields to check model — nullable `Numeric` columns on `Check` (NULL → plain pass/fail) — migration `9c59b6a44f33`
 - [x] ✅ Alembic migration — threshold columns + `status` enum (`pass`, `warn`, `fail`, `critical`) **+ the monitor-kind / metric columns below (one migration)** — the one-shot Week-3 schema seam `9c59b6a44f33` (tested up→down→up; `results.status` retargeted from `passed/failed/skipped` with a data-update-before-CHECK-swap; `run_service` now writes `pass`/`fail` binary-fallback per ADR 0005). `alembic check` clean (no model drift)
-- [ ] ⬜ Post-processing in GX result handler — derive `warn` / `fail` / `critical` from observed value
-- [ ] ⬜ Update check CRUD + run result response schemas with threshold fields + status values
+- [x] ✅ Post-processing in GX result handler — derive `warn` / `fail` / `critical` from observed value (PR-C) — `services/severity.py` (`extract_metric` + `derive_status`), wired into `run_service._build_result`. Thresholds band the GX **unexpected-%** as `metric_value` (higher=worse, ordered, unset-tier skipped); thresholds-as-policy override GX `success`; binary fallback when no thresholds / no metric. **Settled in [ADR 0016](adr/0016-severity-derivation-semantics.md)** (incl. A→B reversibility: raw `observed_value` retained → switch is additive `direction` column + backfill, never destructive). `duration_ms` stays NULL (per-check timing not separable from GX's suite-level `validate()`). 16 unit + 1 integration test; both modules 100%
+- [x] ✅ Update check CRUD + run result response schemas with threshold fields + status values — check-CRUD thresholds (PR-B2) + result response now carries `status` (`pass`/`warn`/`fail`/`critical`) + `metric_value` (probe `CheckResultResponse`, PR-C)
 
 ### Monitor abstraction & metric storage — do-now seams (3 tasks — 2/3)
 > **Day 1 design decision: `check.kind` discriminator + numeric metric storage — ✅ settled in [ADR 0012](adr/0012-monitor-kind-seam.md); rides the same migration.** Keeps v1.x auto-monitors (freshness / volume / schema-drift / anomaly — post-v1 Theme A) from forcing a check/result schema rewrite. v1 implements `expectation` only.
@@ -143,7 +143,7 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [ ] ⬜ UC table check path — `spark.read.table()` → GX DataFrame datasource → run suite
 - [ ] ⬜ Integration tests across all three datasource types
 
-**Week 3 total: 4 / 18**
+**Week 3 total: 7 / 18**
 
 ---
 
@@ -341,13 +341,13 @@ These were preconditions for executing the roadmap. Listed for completeness.
 |---|---|---|---|---|
 | Week 1 | 7 | 1 | 2 | 10 |
 | Week 2 | 15 | 1 | 3 | 19 |
-| Week 3 | 5 | 0 | 13 | 18 |
+| Week 3 | 7 | 0 | 11 | 18 |
 | Week 4 | 1 | 0 | 21 | 22 |
 | Week 5 | 1 | 0 | 14 | 15 |
 | Week 6 | 0 | 0 | 16 | 16 |
 | Week 7 | 0 | 1 | 28 | 29 |
 | Week 8 | 2 | 3 | 21 | 26 |
-| **TOTAL** | **31** | **6** | **118** | **155** |
+| **TOTAL** | **33** | **6** | **116** | **155** |
 
 > 155 > 100 because ADR 0004 added Airflow tasks, ADR 0011 added two seam tasks (generic runner dispatch, `ResultPublisher`), ADR 0012 added three Week-3 monitor-kind / metric seam tasks, plus PR-review follow-ups not in the original roadmap. Tracked here for honesty.
 

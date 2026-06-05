@@ -218,6 +218,7 @@ curl -X POST http://localhost:8000/api/v1/_probe/snowflake-suite
 | Monitor-kind seam (`check.kind` discriminator + numeric `metric_value`/`duration_ms`; v1 = `expectation` only, auto-monitors deferred to v1.x) | [0012](docs/adr/0012-monitor-kind-seam.md) | Accepted W2 (rides the W3 threshold migration) |
 | Marketplace distribution = customer-deployed **BYOL** (not multi-tenant hosted SaaS); post-v1; standing anti-lock-in guardrails keep Azure as one impl behind each seam | [0013](docs/adr/0013-marketplace-distribution-and-anti-lock-in.md) | Accepted (2026-06-01) |
 | Cross-dataset reconciliation as a reserved `comparison` check kind (reuse FastAPI_DataComparison engine; build post-v1; two-connection model → ADR 0015 pending) | [0014](docs/adr/0014-reconciliation-comparison-check-kind.md) | Accepted (2026-06-01) |
+| Severity derivation (thresholds band the GX unexpected-% as `metric_value`, higher=worse; thresholds-as-policy override GX `success`; binary fallback; A→B reversible since raw `observed_value` retained) | [0016](docs/adr/0016-severity-derivation-semantics.md) | Accepted (2026-06-04) |
 
 ---
 

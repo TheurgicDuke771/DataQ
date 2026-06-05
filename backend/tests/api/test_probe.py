@@ -7,6 +7,7 @@ dev-bypass mode (conftest), which upserts the dev user into the same session.
 
 import uuid
 from collections.abc import Iterator
+from decimal import Decimal
 from typing import Any
 
 import pytest
@@ -119,7 +120,8 @@ def test_get_returns_run_with_results(
         Result(
             run_id=uuid.UUID(run_id),
             check_id=check.id,
-            status="pass",
+            status="warn",
+            metric_value=Decimal("2.5"),
             observed_value={"observed_value": 5},
             expected_value={"min_value": 1},
         )
@@ -131,7 +133,8 @@ def test_get_returns_run_with_results(
     body = resp.json()
     assert body["status"] == "queued"
     assert len(body["results"]) == 1
-    assert body["results"][0]["status"] == "pass"
+    assert body["results"][0]["status"] == "warn"
+    assert body["results"][0]["metric_value"] == 2.5  # surfaced as a JSON number
     assert body["results"][0]["observed_value"] == {"observed_value": 5}
 
 
