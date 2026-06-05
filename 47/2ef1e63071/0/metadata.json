@@ -1,0 +1,36 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "472ef1e63071",
+  "session_id": "f81a27c1-9606-4cc2-bccc-2e2fee08a0cb",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-05T22:56:32.808242Z",
+  "branch": "feature/week3-column-profiler-snowflake",
+  "checkpoints_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-opus-4-8",
+  "turn_id": "4197ac1db64e",
+  "token_usage": {
+    "input_tokens": 193271,
+    "cache_creation_tokens": 10441869,
+    "cache_read_tokens": 463062737,
+    "output_tokens": 1224896,
+    "api_call_count": 1214
+  },
+  "session_metrics": {
+    "turn_count": 56
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 7,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/scheduled_tasks.lock": 1,
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}
