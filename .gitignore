@@ -131,6 +131,7 @@ azure.json
 
 # ---- Claude / agent scratch (project-local) ----
 .claude/cache/
+.claude/scheduled_tasks.lock
 
 # ---- Entire CLI (per-repo machine-local session data) ----
 .entire/
