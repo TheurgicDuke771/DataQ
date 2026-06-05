@@ -47,7 +47,8 @@ class CheckConfigInvalidError(DataQError):
     code = "check_config_invalid"
 
 
-def _validate_kind(kind: str) -> None:
+def validate_kind(kind: str) -> None:
+    """Reject a non-`expectation` kind (422). Shared by CRUD and suite import."""
     if kind not in _V1_SUPPORTED_KINDS:
         raise CheckConfigInvalidError(
             f"check kind {kind!r} is not supported in v1; only 'expectation'",
@@ -73,7 +74,7 @@ def create_check(
     `CheckConfigInvalidError` (422) for an unsupported kind.
     """
     get_suite(session, suite_id)  # 404 if the suite is missing
-    _validate_kind(kind)
+    validate_kind(kind)
 
     check = Check(
         suite_id=suite_id,
