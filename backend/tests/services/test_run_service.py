@@ -94,8 +94,8 @@ def test_successful_run_persists_results_and_marks_succeeded() -> None:
     assert run.started_at is not None and run.finished_at is not None
     assert len(session.added) == 2
     statuses = {r.check_id: r.status for r in session.added}
-    assert statuses[checks[0].id] == "passed"
-    assert statuses[checks[1].id] == "failed"
+    assert statuses[checks[0].id] == "pass"
+    assert statuses[checks[1].id] == "fail"
     # adapter received specs derived from the checks + the target table
     assert runner.called_with == {
         "table": "ORDERS",
