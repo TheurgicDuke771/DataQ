@@ -77,7 +77,14 @@ def _graph(n_checks: int = 1) -> tuple[Run, Suite, Connection, tuple[Check, ...]
         created_by=user_id,
     )
     checks = tuple(
-        Check(id=uuid.uuid4(), suite_id=suite_id, name=f"c{i}", expectation_type="x", config={})
+        Check(
+            id=uuid.uuid4(),
+            suite_id=suite_id,
+            name=f"c{i}",
+            kind="expectation",
+            expectation_type="x",
+            config={},
+        )
         for i in range(n_checks)
     )
     return run, suite, connection, checks

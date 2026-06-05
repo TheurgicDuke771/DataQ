@@ -21,7 +21,7 @@
 |---|---|
 | **Active since** | 2026-05-24 |
 | **Current week** | Week 3 of 8 — Suite & check API (backend) |
-| **Roadmap tasks done** | 33 ✅ + 6 🟡 / 155 (~21%) |
+| **Roadmap tasks done** | 34 ✅ + 6 🟡 / 155 (~22%) |
 | **Out-of-roadmap PRs landed** | 5 bundles (governance, tooling lock, Entire CLI, Dependabot triage round 1, PR-3 cleanup) + ADRs 0005/0006/0007/0012 |
 | **Week-1 exit gate** | A logged-in user can hit a FastAPI endpoint that triggers GX against Snowflake DEV and persists a result row. — **met** (plumbing complete via PR 4a–4c; live-Snowflake run fails-soft pending DEV creds — deferred smoke) |
 | **Next milestone** | ADF/Airflow polling fallback (`list_recent_runs` + 10-min Celery beat → succeeded-run detection → trigger) + run_suite dispatch wiring once Week-3 target-table lands (Week 5) |
@@ -124,10 +124,10 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [x] ✅ Post-processing in GX result handler — derive `warn` / `fail` / `critical` from observed value (PR-C) — `services/severity.py` (`extract_metric` + `derive_status`), wired into `run_service._build_result`. Thresholds band the GX **unexpected-%** as `metric_value` (higher=worse, ordered, unset-tier skipped); thresholds-as-policy override GX `success`; binary fallback when no thresholds / no metric. **Settled in [ADR 0016](adr/0016-severity-derivation-semantics.md)** (incl. A→B reversibility: raw `observed_value` retained → switch is additive `direction` column + backfill, never destructive). `duration_ms` stays NULL (per-check timing not separable from GX's suite-level `validate()`). 16 unit + 1 integration test; both modules 100%
 - [x] ✅ Update check CRUD + run result response schemas with threshold fields + status values — check-CRUD thresholds (PR-B2) + result response now carries `status` (`pass`/`warn`/`fail`/`critical`) + `metric_value` (probe `CheckResultResponse`, PR-C)
 
-### Monitor abstraction & metric storage — do-now seams (3 tasks — 2/3)
+### Monitor abstraction & metric storage — do-now seams (3 tasks — 3/3)
 > **Day 1 design decision: `check.kind` discriminator + numeric metric storage — ✅ settled in [ADR 0012](adr/0012-monitor-kind-seam.md); rides the same migration.** Keeps v1.x auto-monitors (freshness / volume / schema-drift / anomaly — post-v1 Theme A) from forcing a check/result schema rewrite. v1 implements `expectation` only.
 - [x] ✅ Add `kind` discriminator to check model (`'expectation'` default; `freshness`/`volume`/`schema_drift`/`anomaly` reserved) — `checks.kind` `NOT NULL DEFAULT 'expectation'` + CHECK over the 6 reserved kinds (incl. `comparison`, ADR 0014) — migration `9c59b6a44f33`
-- [ ] ⬜ Generalise run path to dispatch by `check.kind` (`expectation` → GX `CheckRunner`; others raise `NotImplementedError`)
+- [x] ✅ Generalise run path to dispatch by `check.kind` (`expectation` → GX `CheckRunner`; others raise `NotImplementedError`) — PR-D: `run_service._specs_for_checks` dispatches by kind; a non-`expectation` check raises `NotImplementedError` → the run goes terminal `failed` **without invoking the adapter** (never silently run as a GX expectation). Composes with the Week-5 `connection.type` runner selection (`kind` picks the monitor, type picks the adapter). `run_service` 100%; test fixtures now set `kind` to mirror DB rows
 - [x] ✅ Add `metric_value` (NUMERIC) + `duration_ms` (INT) to results — SQL-aggregatable metric for Week-6 trends + v1.1 anomaly; per-check runtime for cost surface — nullable columns on `Result` — migration `9c59b6a44f33`
 
 ### Column profiler (3 tasks — 0/3)
@@ -143,7 +143,7 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [ ] ⬜ UC table check path — `spark.read.table()` → GX DataFrame datasource → run suite
 - [ ] ⬜ Integration tests across all three datasource types
 
-**Week 3 total: 7 / 18**
+**Week 3 total: 8 / 18**
 
 ---
 
@@ -341,13 +341,13 @@ These were preconditions for executing the roadmap. Listed for completeness.
 |---|---|---|---|---|
 | Week 1 | 7 | 1 | 2 | 10 |
 | Week 2 | 15 | 1 | 3 | 19 |
-| Week 3 | 7 | 0 | 11 | 18 |
+| Week 3 | 8 | 0 | 10 | 18 |
 | Week 4 | 1 | 0 | 21 | 22 |
 | Week 5 | 1 | 0 | 14 | 15 |
 | Week 6 | 0 | 0 | 16 | 16 |
 | Week 7 | 0 | 1 | 28 | 29 |
 | Week 8 | 2 | 3 | 21 | 26 |
-| **TOTAL** | **33** | **6** | **116** | **155** |
+| **TOTAL** | **34** | **6** | **115** | **155** |
 
 > 155 > 100 because ADR 0004 added Airflow tasks, ADR 0011 added two seam tasks (generic runner dispatch, `ResultPublisher`), ADR 0012 added three Week-3 monitor-kind / metric seam tasks, plus PR-review follow-ups not in the original roadmap. Tracked here for honesty.
 
