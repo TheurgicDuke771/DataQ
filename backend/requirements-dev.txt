@@ -1,0 +1,15 @@
+# DataQ backend — dev / test dependencies.
+#
+# The full picture for a working dev + CI environment: the runtime hub, the typed
+# subset (so mypy resolves locally), and the test toolchain. `environment.yml`
+# and the CI test + audit jobs install from here.
+
+-r requirements.txt
+-r requirements-typecheck.txt
+-r requirements-tooling.txt
+
+# ── Testing ──
+pytest==9.0.3                     # CVE-2025-71176 (was 8.4.2)
+pytest-asyncio==1.4.0
+pytest-cov==7.1.0
+httpx==0.28.1                     # async test client for FastAPI

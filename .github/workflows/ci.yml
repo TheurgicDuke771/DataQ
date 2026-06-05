@@ -24,13 +24,19 @@ jobs:
           cache: pip
 
       - name: Install lint tools
-        run: pip install black==26.5.1 ruff==0.15.14
+        run: pip install -r backend/requirements-tooling.txt
 
       - name: Black (format check)
         run: black --check backend/
 
       - name: Ruff (lint)
         run: ruff check backend/
+
+      - name: Typecheck-deps in sync
+        # Guard the pre-commit mypy hook against backend/requirements-typecheck.txt
+        # (Dependabot bumps the requirements file but bypasses the local hook —
+        # this catches the drift in CI, which previously slipped through).
+        run: python scripts/check-typecheck-deps.py
 
   backend-types:
     name: Backend — type check
@@ -44,9 +50,9 @@ jobs:
           cache: pip
 
       - name: Install type-check deps
-        # Runtime deps from the single source of truth; mypy itself pinned inline.
+        # mypy from the tooling file; the typed subset it checks against.
         run: |
-          pip install mypy==2.1.0
+          pip install -r backend/requirements-tooling.txt
           pip install -r backend/requirements-typecheck.txt
 
       - name: mypy
@@ -64,7 +70,7 @@ jobs:
           cache: pip
 
       - name: Install Bandit
-        run: pip install bandit[toml]==1.9.4
+        run: pip install -r backend/requirements-tooling.txt
 
       - name: Bandit
         run: bandit -c pyproject.toml -r backend/app/
@@ -83,14 +89,22 @@ jobs:
       - name: Install pip-audit
         run: pip install pip-audit==2.10.0
 
-      - name: pip-audit (runtime deps)
-        # Synchronous CVE gate over the pinned runtime deps (the security-sensitive
-        # web / auth / DB core) + their transitive deps, against the PyPI/OSV
-        # advisory DB. Complements the now-enabled Dependabot alerts (full graph,
-        # async) with a fail-fast merge check. NB: GX / celery / cloud SDKs live in
-        # the conda env (not this file), so they're out of scope here — tracked for
-        # a shared runtime-requirements file follow-up.
-        run: pip-audit -r backend/requirements-typecheck.txt
+      - name: pip-audit (full runtime + test surface)
+        # Synchronous CVE gate over the entire runtime + test dependency tree
+        # (single source: requirements-dev.txt) + transitive deps, against the
+        # PyPI/OSV advisory DB. Complements the Dependabot alerts (full graph,
+        # async) with a fail-fast merge check.
+        #
+        # The 5 ignored advisories are cryptography + pyOpenSSL CVEs blocked by
+        # snowflake-connector-python<4 / snowflake-sqlalchemy<4 — a deliberate
+        # major datasource bump tracked in #129 (the deadline for removing these).
+        run: |
+          pip-audit -r backend/requirements-dev.txt \
+            --ignore-vuln PYSEC-2026-36 \
+            --ignore-vuln PYSEC-2026-35 \
+            --ignore-vuln CVE-2026-26007 \
+            --ignore-vuln CVE-2026-27448 \
+            --ignore-vuln CVE-2026-27459
 
   backend-test:
     name: Backend — tests
@@ -130,20 +144,11 @@ jobs:
           cache: pip
 
       - name: Install test deps
-        # Tooling pins inline; runtime deps from the single source of truth.
+        # Single source of truth: runtime + typed subset + test toolchain, all
+        # from backend/requirements-dev.txt. pip upgraded for PYSEC-2026-196.
         run: |
-          pip install pytest==8.4.2 pytest-asyncio==1.3.0 \
-            pytest-cov==6.1.0 httpx==0.28.1
-          pip install -r backend/requirements-typecheck.txt
-          # Runtime deps the worker/datasource tests import at module load
-          # (not in requirements-typecheck.txt — they're mypy-ignored, no stubs).
-          # Pins must match environment.yml. GX pulls pandas transitively.
-          pip install celery[redis]==5.6.3 great-expectations==1.17.2
-          # Datasource-adapter SDKs the connection tests import at module load
-          # (monkeypatched in the tests, but must be importable). Pins match
-          # environment.yml.
-          pip install azure-storage-blob==12.25.0 boto3==1.38.29 \
-            databricks-sql-connector==3.7.0
+          python -m pip install -U pip
+          pip install -r backend/requirements-dev.txt
 
       - name: pytest
         # TEST_DATABASE_URL enables the db_session fixture; DATABASE_URL + REDIS_URL
