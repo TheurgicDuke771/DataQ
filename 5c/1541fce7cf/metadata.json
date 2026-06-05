@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "5c1541fce7cf",
+  "strategy": "manual-commit",
+  "branch": "feature/week3-severity-postprocessing",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/5c/1541fce7cf/0/metadata.json",
+      "transcript": "/5c/1541fce7cf/0/full.jsonl",
+      "content_hash": "/5c/1541fce7cf/0/content_hash.txt",
+      "prompt": "/5c/1541fce7cf/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 139491,
+    "cache_creation_tokens": 7576813,
+    "cache_read_tokens": 291276267,
+    "output_tokens": 817641,
+    "api_call_count": 913
+  }
+}
