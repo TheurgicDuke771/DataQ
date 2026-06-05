@@ -52,7 +52,7 @@ All checks run on every PR and must pass before merge.
 14. **Frontend:** ESLint → Prettier `--check` → Vitest (from Week 8).
 15. **Secret scanning:** gitleaks in pre-commit hook AND in CI. A secret detected in CI blocks merge.
 16. **SAST:** Bandit (Python) + CodeQL (GitHub Actions) on every PR.
-17. **Dependency vulnerability scanning:** Dependabot alerts + auto-PRs for security updates. Deps are pinned in `environment.yml` and locked with `conda-lock`.
+17. **Dependency vulnerability scanning:** Dependabot alerts + auto-PRs for security updates, plus a synchronous CI gate (`pip-audit` backend, `pnpm audit` frontend). Python deps are pinned in `backend/requirements*.txt` (single source of truth; `environment.yml` and CI install from there).
 
 ---
 

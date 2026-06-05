@@ -78,8 +78,7 @@ DataQ/
 │   ├── CODEOWNERS
 │   └── ISSUE_TEMPLATE/
 ├── docker-compose.yml
-├── environment.yml              # conda env definition
-├── conda-lock.yml
+├── environment.yml              # conda env — pip section points at backend/requirements-dev.txt
 ├── pyproject.toml               # Black + Ruff + mypy config
 ├── CONTRIBUTING.md
 ├── CLAUDE.md                    # this file
