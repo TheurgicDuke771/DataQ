@@ -22,7 +22,7 @@
 /.github/                        @TheurgicDuke771
 /docker-compose.yml              @TheurgicDuke771
 /environment.yml                 @TheurgicDuke771
-/conda-lock.yml                  @TheurgicDuke771
+/backend/requirements.txt        @TheurgicDuke771
 /pyproject.toml                  @TheurgicDuke771
 /.pre-commit-config.yaml         @TheurgicDuke771
 /scripts/                        @TheurgicDuke771
