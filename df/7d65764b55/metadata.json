@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "df7d65764b55",
+  "strategy": "manual-commit",
+  "branch": "feature/week3-share-enforcement",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/df/7d65764b55/0/metadata.json",
+      "transcript": "/df/7d65764b55/0/full.jsonl",
+      "content_hash": "/df/7d65764b55/0/content_hash.txt",
+      "prompt": "/df/7d65764b55/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 166065,
+    "cache_creation_tokens": 10075813,
+    "cache_read_tokens": 424125455,
+    "output_tokens": 1098881,
+    "api_call_count": 1087
+  }
+}

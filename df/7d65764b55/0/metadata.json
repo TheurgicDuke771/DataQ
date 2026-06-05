@@ -1,0 +1,45 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "df7d65764b55",
+  "session_id": "f81a27c1-9606-4cc2-bccc-2e2fee08a0cb",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-05T21:09:29.937217Z",
+  "branch": "feature/week3-share-enforcement",
+  "checkpoints_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-opus-4-8",
+  "turn_id": "ec792faa8c09",
+  "token_usage": {
+    "input_tokens": 166065,
+    "cache_creation_tokens": 10075813,
+    "cache_read_tokens": 424125455,
+    "output_tokens": 1098881,
+    "api_call_count": 1087
+  },
+  "session_metrics": {
+    "turn_count": 50
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 125,
+      "user_lines_removed": 7,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6,
+        "backend/app/api/v1/checks.py": 6,
+        "backend/app/api/v1/suites.py": 7,
+        "backend/app/services/suite_service.py": 12,
+        "backend/tests/api/test_checks.py": 2,
+        "backend/tests/api/test_suites.py": 92
+      },
+      "user_removed_per_file": {
+        "backend/app/api/v1/suites.py": 2,
+        "backend/app/services/suite_service.py": 4,
+        "backend/tests/api/test_checks.py": 1
+      }
+    }
+  ]
+}
