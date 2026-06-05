@@ -69,6 +69,29 @@ jobs:
       - name: Bandit
         run: bandit -c pyproject.toml -r backend/app/
 
+  backend-audit:
+    name: Backend — dependency audit (pip-audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install pip-audit
+        run: pip install pip-audit==2.10.0
+
+      - name: pip-audit (runtime deps)
+        # Synchronous CVE gate over the pinned runtime deps (the security-sensitive
+        # web / auth / DB core) + their transitive deps, against the PyPI/OSV
+        # advisory DB. Complements the now-enabled Dependabot alerts (full graph,
+        # async) with a fail-fast merge check. NB: GX / celery / cloud SDKs live in
+        # the conda env (not this file), so they're out of scope here — tracked for
+        # a shared runtime-requirements file follow-up.
+        run: pip-audit -r backend/requirements-typecheck.txt
+
   backend-test:
     name: Backend — tests
     runs-on: ubuntu-latest
@@ -197,6 +220,32 @@ jobs:
 
       - name: Vitest
         run: pnpm test
+
+  frontend-audit:
+    name: Frontend — dependency audit (pnpm audit)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: pnpm audit (high+)
+        # Fails on high/critical advisories in the dependency tree; lower
+        # severities are reported but don't block (avoid noise from unfixable
+        # transitive dev-tool advisories). Pairs with Dependabot alerts (async).
+        run: pnpm audit --audit-level=high
 
   # ── CodeQL SAST ──────────────────────────────────────────────────────────────
   codeql:

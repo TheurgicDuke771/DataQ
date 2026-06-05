@@ -147,7 +147,8 @@ Full list (30 rules across 8 categories) lives in [CONTRIBUTING.md](CONTRIBUTING
 - Ruff (lint), Black `--check` (format), mypy (types), pytest (from W8), frontend lint/format/test.
 - `gitleaks` secret scanning (pre-commit + CI).
 - Bandit (Python SAST) + CodeQL.
-- Dependabot for npm + pip + github-actions.
+- **Dependency CVE audit (CI): `pip-audit` (backend runtime deps) + `pnpm audit --audit-level=high` (frontend).** Synchronous merge gate; complements the async Dependabot layer below.
+- Dependabot for npm + pip + github-actions — **version updates + security alerts/updates both enabled** (alerts scan the full pip+npm dependency graph; conda-only deps like GX are covered by `pip-audit`/manual review, not the graph).
 
 ### Tooling (locked in Week 1, do not drift)
 - **Python:** conda env (`conda create -n dataq python=3.11`) — *not* venv, *not* poetry.
@@ -169,7 +170,7 @@ Full list (30 rules across 8 categories) lives in [CONTRIBUTING.md](CONTRIBUTING
 - `scripts/setup.sh` — one command from clone to working dev env.
 
 ### Security cadence
-- End-of-week quick scan from Week 2: vuln alerts, secret scan, OWASP spot check, Key Vault audit.
+- End-of-week quick scan from Week 2: vuln alerts (Dependabot alerts + CI `pip-audit`/`pnpm audit`), secret scan, OWASP spot check, Key Vault audit.
 - Hard security review gate before Week 7 deploy.
 
 ---
