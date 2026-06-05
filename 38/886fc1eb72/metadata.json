@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "38886fc1eb72",
+  "strategy": "manual-commit",
+  "branch": "feature/week3-schema-seam-migration",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/38/886fc1eb72/0/metadata.json",
+      "transcript": "/38/886fc1eb72/0/full.jsonl",
+      "content_hash": "/38/886fc1eb72/0/content_hash.txt",
+      "prompt": "/38/886fc1eb72/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 119647,
+    "cache_creation_tokens": 5946453,
+    "cache_read_tokens": 240065381,
+    "output_tokens": 689245,
+    "api_call_count": 808
+  }
+}
