@@ -1,16 +1,17 @@
-# Type-checking + test-import requirements for backend/.
+# Typed subset for mypy — the minimal set of *typed* runtime deps mypy must
+# import to check backend/app/. Kept deliberately small (NOT the full runtime
+# set) so the type-check job stays fast and doesn't surface errors from heavy
+# untyped deps (GX, snowflake, boto3, …), which are mypy-ignored via pyproject.
 #
-# Single source of truth for the runtime packages mypy and pytest need to
-# import when checking backend/app/ and running backend/tests/. Update this
-# file whenever a new backend runtime import lands.
+# This is NOT the source of truth — backend/requirements.txt is. These packages
+# are also pinned there; both are pip files, so Dependabot updates both and they
+# stay aligned (a version here MUST match backend/requirements.txt).
 #
-# Consumers (kept in sync automatically):
-#   - .github/workflows/ci.yml — backend-types + backend-test jobs install from here.
-#   - .pre-commit-config.yaml — mypy hook's additional_dependencies must match;
-#                                enforced by scripts/check-typecheck-deps.py via
-#                                the typecheck-deps-sync local hook.
-#
-# Pins must match environment.yml exactly.
+# Consumers:
+#   - .github/workflows/ci.yml — the backend-types job installs from here.
+#   - .pre-commit-config.yaml — the mypy hook's additional_dependencies must
+#     match this file, enforced by scripts/check-typecheck-deps.py (run as the
+#     typecheck-deps-sync pre-commit hook AND in CI's backend-lint job).
 
 fastapi==0.136.3
 fastapi-azure-auth==5.2.0

@@ -1,0 +1,55 @@
+# DataQ backend — runtime dependencies (SINGLE SOURCE OF TRUTH).
+#
+# Everything else points here: `environment.yml` (via requirements-dev.txt), the
+# CI test + audit jobs, and the production Docker image. Bump a runtime version
+# HERE only.
+#
+# Two pip files reference these versions and stay aligned automatically:
+#   - requirements-dev.txt        — `-r requirements.txt` + the test toolchain.
+#   - requirements-typecheck.txt  — the minimal *typed* subset mypy needs (kept
+#                                   small so the type-check job stays fast and
+#                                   doesn't surface errors from heavy untyped
+#                                   deps). Dependabot updates both pip files, and
+#                                   the typecheck-deps-sync CI check guards the
+#                                   pre-commit mypy hook against this subset.
+
+# ── Web framework ──
+fastapi==0.136.3
+uvicorn[standard]==0.48.0
+python-multipart==0.0.32          # required for FastAPI form data; CVE-2026-24486/40347/42561 (was 0.0.20)
+
+# ── Task queue ──
+celery[redis]==5.6.3
+redis==5.2.1
+
+# ── Database ──
+sqlalchemy==2.0.50
+alembic==1.18.4
+psycopg2-binary==2.9.12           # swap for psycopg2 in the production image
+
+# ── Config / validation ──
+pydantic==2.13.4
+pydantic-settings==2.14.1
+
+# ── DQ engine (PINNED — GX v1 API drifts across point releases) ──
+great-expectations==1.17.2
+
+# ── Observability ──
+structlog==25.5.0
+opencensus-ext-azure==1.1.14      # App Insights via OpenCensus bridge
+
+# ── Auth / secrets ──
+fastapi-azure-auth==5.2.0
+msal==1.32.3
+azure-keyvault-secrets==4.9.0
+azure-identity==1.23.0
+
+# ── Datasource connectors ──
+snowflake-sqlalchemy==1.7.4
+snowflake-connector-python==3.15.0
+azure-storage-blob==12.25.0       # ADLS Gen2
+boto3==1.38.29                    # S3
+databricks-sql-connector==3.7.0   # Unity Catalog
+
+# ── MCP (Week 7) ──
+fastmcp==3.4.1                    # CVE-2025-62800/62801/64340/69196, GHSA-rcfx-77hg-w2wv, CVE-2026-27124 (was 2.8.1)

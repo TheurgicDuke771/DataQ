@@ -147,8 +147,9 @@ Full list (30 rules across 8 categories) lives in [CONTRIBUTING.md](CONTRIBUTING
 - Ruff (lint), Black `--check` (format), mypy (types), pytest (from W8), frontend lint/format/test.
 - `gitleaks` secret scanning (pre-commit + CI).
 - Bandit (Python SAST) + CodeQL.
-- **Dependency CVE audit (CI): `pip-audit` (backend runtime deps) + `pnpm audit --audit-level=high` (frontend).** Synchronous merge gate; complements the async Dependabot layer below.
-- Dependabot for npm + pip + github-actions — **version updates + security alerts/updates both enabled** (alerts scan the full pip+npm dependency graph; conda-only deps like GX are covered by `pip-audit`/manual review, not the graph).
+- **Dependency CVE audit (CI): `pip-audit -r backend/requirements-dev.txt` (full backend runtime + test surface) + `pnpm audit --audit-level=high` (frontend).** Synchronous merge gate; complements the async Dependabot layer below.
+- **Python deps have one source of truth: `backend/requirements.txt`** (runtime hub) → `requirements-dev.txt` (`-r` it + test toolchain) → `environment.yml` + CI all install from it. The only re-listed subset is `requirements-typecheck.txt` (the typed deps mypy needs); the `typecheck-deps-sync` check (pre-commit **and** CI `backend-lint`) keeps the mypy hook aligned. Bump a Python version in `requirements.txt` only.
+- Dependabot for npm + pip + github-actions — **version updates + security alerts/updates both enabled** (alerts scan the full pip+npm dependency graph).
 
 ### Tooling (locked in Week 1, do not drift)
 - **Python:** conda env (`conda create -n dataq python=3.11`) — *not* venv, *not* poetry.

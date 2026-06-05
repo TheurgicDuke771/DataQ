@@ -1,0 +1,15 @@
+# DataQ backend — dev/code-quality tooling (NOT runtime; never shipped).
+#
+# The single home for these versions: environment.yml pulls them via
+# requirements-dev.txt, and the CI lint / type-check / SAST jobs install this
+# file directly (it's lightweight, so installing all of it per job is cheap).
+#
+# Note: the pre-commit hooks pin their own versions via `rev:` tags in
+# .pre-commit-config.yaml (that's how pre-commit fetches them) — keep those in
+# step with these pins when bumping.
+
+black==26.5.1
+ruff==0.15.14
+mypy==2.1.0
+bandit[toml]==1.9.4
+pre-commit==4.2.0
