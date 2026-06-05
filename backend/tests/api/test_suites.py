@@ -8,11 +8,12 @@ TEST_DATABASE_URL.
 
 import uuid
 from collections.abc import Iterator
+from decimal import Decimal
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from backend.app.core.auth import get_current_user
 from backend.app.db.models import Check, Connection, Suite, User
@@ -248,3 +249,160 @@ def test_list_is_scoped_to_accessible_suites(client: TestClient, db_session: Any
     _share(client, owner, owner_sid, b, "view")
     _as(b)
     assert {s["id"] for s in client.get("/api/v1/suites").json()} == {b_sid, owner_sid}
+
+
+# ───────────────────────── export / import ─────────────────────────
+
+
+def _suite_with_checks(client: TestClient, db_session: Any) -> str:
+    """A dev-owned suite with two checks (one thresholded, one plain)."""
+    conn = _connection(db_session)
+    sid = client.post("/api/v1/suites", json=_payload(conn.id, name="src")).json()["id"]
+    db_session.add_all(
+        [
+            Check(
+                suite_id=uuid.UUID(sid),
+                name="rowcount",
+                expectation_type="expect_table_row_count_to_be_between",
+                kind="expectation",
+                config={"min_value": 1},
+                warn_threshold=Decimal("5"),
+                fail_threshold=Decimal("7.5"),
+            ),
+            Check(
+                suite_id=uuid.UUID(sid),
+                name="notnull",
+                expectation_type="expect_column_values_to_not_be_null",
+                config={"column": "id"},
+            ),
+        ]
+    )
+    db_session.commit()
+    return sid
+
+
+def _check_set(checks: list[dict[str, Any]]) -> set[tuple[Any, ...]]:
+    """Order-independent, representation-independent view of a document's checks."""
+    return {
+        (
+            c["name"],
+            c["kind"],
+            c["expectation_type"],
+            tuple(sorted(c["config"].items())),
+            None if c["warn_threshold"] is None else Decimal(str(c["warn_threshold"])),
+            None if c["fail_threshold"] is None else Decimal(str(c["fail_threshold"])),
+            None if c["critical_threshold"] is None else Decimal(str(c["critical_threshold"])),
+        )
+        for c in checks
+    }
+
+
+def test_export_returns_document_without_db_identity(client: TestClient, db_session: Any) -> None:
+    sid = _suite_with_checks(client, db_session)
+    doc = client.get(f"/api/v1/suites/{sid}/export")
+    assert doc.status_code == 200
+    body = doc.json()
+    assert body["version"] == 1
+    assert body["name"] == "src"
+    # no DB identity leaks into the portable document
+    assert "id" not in body and "connection_id" not in body and "created_by" not in body
+    assert len(body["checks"]) == 2
+    for c in body["checks"]:
+        assert "id" not in c and "suite_id" not in c
+    # thresholds survive the trip (exact, regardless of number/string encoding)
+    rowcount = next(c for c in body["checks"] if c["name"] == "rowcount")
+    assert Decimal(str(rowcount["fail_threshold"])) == Decimal("7.5")
+
+
+def test_export_requires_view_access(client: TestClient, db_session: Any) -> None:
+    _owner, _b, e, sid = _owner_b_e_suite(db_session)
+    _as(e)
+    assert client.get(f"/api/v1/suites/{sid}/export").status_code == 404
+
+
+def test_import_creates_owned_suite_with_checks(client: TestClient, db_session: Any) -> None:
+    src = _suite_with_checks(client, db_session)
+    document = client.get(f"/api/v1/suites/{src}/export").json()
+    target = _connection(db_session)
+
+    resp = client.post(
+        "/api/v1/suites/import",
+        json={"connection_id": str(target.id), "document": document},
+    )
+    assert resp.status_code == 201
+    new = resp.json()
+    assert new["id"] != src  # a fresh suite, not the source
+    assert new["connection_id"] == str(target.id)  # bound to the chosen connection
+    assert new["created_by"] is not None  # owned by the importer (dev user)
+    # checks were recreated
+    persisted = db_session.scalars(
+        select(Check).where(Check.suite_id == uuid.UUID(new["id"]))
+    ).all()
+    assert {c.name for c in persisted} == {"rowcount", "notnull"}
+
+
+def test_export_import_round_trips(client: TestClient, db_session: Any) -> None:
+    src = _suite_with_checks(client, db_session)
+    document = client.get(f"/api/v1/suites/{src}/export").json()
+    target = _connection(db_session)
+
+    new_id = client.post(
+        "/api/v1/suites/import",
+        json={"connection_id": str(target.id), "document": document},
+    ).json()["id"]
+    reexported = client.get(f"/api/v1/suites/{new_id}/export").json()
+
+    assert reexported["name"] == document["name"]
+    assert reexported["description"] == document["description"]
+    assert _check_set(reexported["checks"]) == _check_set(document["checks"])
+
+
+def test_import_unknown_connection_returns_422(client: TestClient, db_session: Any) -> None:
+    src = _suite_with_checks(client, db_session)
+    document = client.get(f"/api/v1/suites/{src}/export").json()
+    resp = client.post(
+        "/api/v1/suites/import",
+        json={"connection_id": str(uuid.uuid4()), "document": document},
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "suite_import_connection_invalid"
+
+
+def test_import_unknown_version_returns_422(client: TestClient, db_session: Any) -> None:
+    target = _connection(db_session)
+    resp = client.post(
+        "/api/v1/suites/import",
+        json={
+            "connection_id": str(target.id),
+            "document": {"version": 999, "name": "x", "description": None, "checks": []},
+        },
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "suite_import_invalid"
+
+
+def test_import_unsupported_kind_is_atomic(client: TestClient, db_session: Any) -> None:
+    target = _connection(db_session)
+    before = db_session.scalar(select(func.count()).select_from(Suite))
+    resp = client.post(
+        "/api/v1/suites/import",
+        json={
+            "connection_id": str(target.id),
+            "document": {
+                "name": "x",
+                "checks": [
+                    {"name": "ok", "expectation_type": "expect_table_row_count_to_be_between"},
+                    {
+                        "name": "bad",
+                        "kind": "freshness",
+                        "expectation_type": "expect_column_max_to_be_between",
+                    },
+                ],
+            },
+        },
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "check_config_invalid"
+    # the valid check + suite must NOT have been written (validated before any write)
+    after = db_session.scalar(select(func.count()).select_from(Suite))
+    assert after == before

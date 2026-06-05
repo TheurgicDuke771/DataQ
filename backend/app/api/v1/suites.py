@@ -9,7 +9,8 @@ set at create and immutable thereafter (re-pointing would orphan child checks).
 from __future__ import annotations
 
 import uuid
-from typing import Annotated
+from decimal import Decimal
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -18,6 +19,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.auth import get_current_user
 from backend.app.db.models import User
 from backend.app.db.session import get_db
+from backend.app.services import suite_io_service as suite_io
 from backend.app.services import suite_service as svc
 from backend.app.services.suite_authz import require_permission
 
@@ -111,3 +113,73 @@ def delete_suite(
 ) -> None:
     require_permission(db, suite_id, current_user.id, minimum="admin")
     svc.delete_suite(db, suite_id)
+
+
+# ───────────────────────── export / import (portable documents) ─────
+
+
+class CheckDocument(BaseModel):
+    """One check inside a portable suite document — authoring fields only."""
+
+    name: str = Field(min_length=1, max_length=256)
+    kind: str = "expectation"
+    expectation_type: str = Field(min_length=1, max_length=128)
+    config: dict[str, Any] = Field(default_factory=dict)
+    warn_threshold: Decimal | None = None
+    fail_threshold: Decimal | None = None
+    critical_threshold: Decimal | None = None
+
+
+class SuiteDocument(BaseModel):
+    """Portable suite — connection-agnostic, no DB identity. Both the export
+    response and the import payload (a round-trippable document)."""
+
+    version: int = suite_io.EXPORT_VERSION
+    name: str = Field(min_length=1, max_length=128)
+    description: str | None = Field(default=None, max_length=1024)
+    checks: list[CheckDocument] = Field(default_factory=list)
+
+
+class SuiteImportRequest(BaseModel):
+    connection_id: uuid.UUID
+    document: SuiteDocument
+
+
+@router.get(
+    "/suites/{suite_id}/export",
+    response_model=SuiteDocument,
+    summary="Export a suite as a portable document",
+)
+def export_suite(
+    suite_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> SuiteDocument:
+    suite = require_permission(db, suite_id, current_user.id, minimum="view")
+    return SuiteDocument.model_validate(suite_io.export_suite(suite))
+
+
+@router.post(
+    "/suites/import",
+    response_model=SuiteRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Import a suite document onto a connection",
+)
+def import_suite(
+    payload: SuiteImportRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> SuiteRead:
+    # Like create_suite: any authenticated user may import; the new suite is
+    # owned by them. Thresholds/config round-trip exactly (Decimal in/out).
+    doc = payload.document
+    suite = suite_io.import_suite(
+        db,
+        version=doc.version,
+        name=doc.name,
+        description=doc.description,
+        checks=[c.model_dump() for c in doc.checks],
+        connection_id=payload.connection_id,
+        created_by=current_user.id,
+    )
+    return SuiteRead.model_validate(suite)
