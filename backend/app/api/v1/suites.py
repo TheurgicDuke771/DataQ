@@ -17,8 +17,10 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from backend.app.core.auth import get_current_user
-from backend.app.db.models import User
+from backend.app.core.secrets import SecretStore, get_secret_store
+from backend.app.db.models import Connection, User
 from backend.app.db.session import get_db
+from backend.app.services import profile_service as profile
 from backend.app.services import suite_io_service as suite_io
 from backend.app.services import suite_service as svc
 from backend.app.services.suite_authz import require_permission
@@ -183,3 +185,81 @@ def import_suite(
         created_by=current_user.id,
     )
     return SuiteRead.model_validate(suite)
+
+
+# ───────────────────────── column profiler (no persistence) ─────────
+
+
+class ColumnProfileRequest(BaseModel):
+    table: str = Field(min_length=1, max_length=255, description="Table to profile")
+    schema_: str | None = Field(default=None, alias="schema")
+    columns: list[str] = Field(min_length=1, max_length=50)
+    top_n: int = Field(default=10, ge=1, le=100, description="Most-frequent values per column")
+
+
+class TopValue(BaseModel):
+    value: Any | None
+    count: int
+
+
+class ColumnProfileRead(BaseModel):
+    column: str
+    null_count: int
+    null_fraction: float
+    distinct_count: int
+    min_value: Any | None
+    max_value: Any | None
+    top_values: list[TopValue]
+
+
+class TableProfileRead(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    table: str
+    schema_: str = Field(serialization_alias="schema")
+    row_count: int
+    columns: list[ColumnProfileRead]
+
+
+@router.post(
+    "/suites/{suite_id}/profile",
+    response_model=TableProfileRead,
+    summary="Profile columns of a table on the suite's connection (no persistence)",
+)
+def profile_columns(
+    suite_id: uuid.UUID,
+    payload: ColumnProfileRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    secret_store: Annotated[SecretStore, Depends(get_secret_store)],
+) -> TableProfileRead:
+    # sync def → threadpool; the warehouse connect + scans are blocking.
+    # Authoring aid → 'edit', same as the dry-run. Connection FK is RESTRICT.
+    suite = require_permission(db, suite_id, current_user.id, minimum="edit")
+    connection = db.get(Connection, suite.connection_id)
+    assert connection is not None
+    result = profile.profile_table(
+        connection,
+        table=payload.table,
+        schema=payload.schema_,
+        columns=payload.columns,
+        top_n=payload.top_n,
+        secret_store=secret_store,
+    )
+    return TableProfileRead(
+        table=result.table,
+        schema_=result.schema,
+        row_count=result.row_count,
+        columns=[
+            ColumnProfileRead(
+                column=c.column,
+                null_count=c.null_count,
+                null_fraction=c.null_fraction,
+                distinct_count=c.distinct_count,
+                min_value=c.min_value,
+                max_value=c.max_value,
+                top_values=[TopValue(value=t["value"], count=t["count"]) for t in c.top_values],
+            )
+            for c in result.columns
+        ],
+    )
