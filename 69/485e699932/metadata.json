@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "69485e699932",
+  "strategy": "manual-commit",
+  "branch": "feature/week3-check-dryrun",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/69/485e699932/0/metadata.json",
+      "transcript": "/69/485e699932/0/full.jsonl",
+      "content_hash": "/69/485e699932/0/content_hash.txt",
+      "prompt": "/69/485e699932/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 171747,
+    "cache_creation_tokens": 10128224,
+    "cache_read_tokens": 451233202,
+    "output_tokens": 1138599,
+    "api_call_count": 1115
+  }
+}

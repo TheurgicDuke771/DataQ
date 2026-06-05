@@ -1,0 +1,35 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "69485e699932",
+  "session_id": "f81a27c1-9606-4cc2-bccc-2e2fee08a0cb",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-05T21:48:03.68995Z",
+  "branch": "feature/week3-check-dryrun",
+  "checkpoints_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-opus-4-8",
+  "turn_id": "c1576cb7c5e3",
+  "token_usage": {
+    "input_tokens": 171747,
+    "cache_creation_tokens": 10128224,
+    "cache_read_tokens": 451233202,
+    "output_tokens": 1138599,
+    "api_call_count": 1115
+  },
+  "session_metrics": {
+    "turn_count": 53
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}
