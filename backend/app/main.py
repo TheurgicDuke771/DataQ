@@ -7,6 +7,7 @@ from typing import Final
 
 from fastapi import FastAPI, Request, Response
 
+from backend.app.api.v1 import checks as checks_router
 from backend.app.api.v1 import connections as connections_router
 from backend.app.api.v1 import me as me_router
 from backend.app.api.v1 import orchestration as orchestration_router
@@ -85,6 +86,7 @@ app.include_router(me_router.router, prefix="/api/v1")
 app.include_router(probe_router.router, prefix="/api/v1")
 app.include_router(connections_router.router, prefix="/api/v1")
 app.include_router(suites_router.router, prefix="/api/v1")
+app.include_router(checks_router.router, prefix="/api/v1")
 app.include_router(orchestration_router.router, prefix="/api/v1")
 
 

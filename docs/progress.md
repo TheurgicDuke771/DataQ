@@ -21,7 +21,7 @@
 |---|---|
 | **Active since** | 2026-05-24 |
 | **Current week** | Week 3 of 8 — Suite & check API (backend) |
-| **Roadmap tasks done** | 30 ✅ + 7 🟡 / 155 (~19%) |
+| **Roadmap tasks done** | 31 ✅ + 6 🟡 / 155 (~20%) |
 | **Out-of-roadmap PRs landed** | 5 bundles (governance, tooling lock, Entire CLI, Dependabot triage round 1, PR-3 cleanup) + ADRs 0005/0006/0007/0012 |
 | **Week-1 exit gate** | A logged-in user can hit a FastAPI endpoint that triggers GX against Snowflake DEV and persists a result row. — **met** (plumbing complete via PR 4a–4c; live-Snowflake run fails-soft pending DEV creds — deferred smoke) |
 | **Next milestone** | ADF/Airflow polling fallback (`list_recent_runs` + 10-min Celery beat → succeeded-run detection → trigger) + run_suite dispatch wiring once Week-3 target-table lands (Week 5) |
@@ -111,8 +111,8 @@ These were preconditions for executing the roadmap. Listed for completeness.
 
 **Exit gate:** Full check CRUD API across Snowflake, flat files and Unity Catalog; column profiler live.
 
-### Suite & check backend (4 tasks — 0/4 ✅, 1 🟡)
-- [ ] 🟡 API: CRUD for suites and GX expectations (Snowflake path) — **suites half done** (PR-B1): `suite_service` + `POST/GET/LIST/PATCH/DELETE /suites` (`connection_id` validated on create then immutable; delete cascades to checks; authenticated CRUD, share-based access deferred to the sharing task). 11 TestClient tests, both modules 100%. **Check CRUD** (kind + thresholds in the schemas) is the follow-up PR-B2
+### Suite & check backend (4 tasks — 1/4 ✅)
+- [x] ✅ API: CRUD for suites and GX expectations (Snowflake path) — **suites** (PR-B1): `suite_service` + `/suites` CRUD (`connection_id` validated then immutable; delete cascades to checks). **checks** (PR-B2): `check_service` + nested `/suites/{id}/checks` CRUD surfacing `kind` + `warn/fail/critical_threshold` + GX `expectation_type`/`config`. v1 monitor-kind guard (only `expectation`; reserved kinds → 422, ADR 0012); checks scoped to their suite (cross-suite access → 404); thresholds are `Decimal` in (exact `Numeric` storage) / `float` out (clean JSON). 24 TestClient tests; all four modules 100%. Share-based access filtering deferred to the suite-sharing task; **DQ-dimension classification** deferred + tracked ([#124](https://github.com/TheurgicDuke771/DataQ/issues/124))
 - [ ] ⬜ API: suite sharing — assign users with owner / editor / viewer roles
 - [ ] ⬜ API: suite export to JSON + import from JSON
 - [ ] ⬜ API: check dry-run endpoint — validate against live data, return preview result
@@ -341,13 +341,13 @@ These were preconditions for executing the roadmap. Listed for completeness.
 |---|---|---|---|---|
 | Week 1 | 7 | 1 | 2 | 10 |
 | Week 2 | 15 | 1 | 3 | 19 |
-| Week 3 | 4 | 1 | 13 | 18 |
+| Week 3 | 5 | 0 | 13 | 18 |
 | Week 4 | 1 | 0 | 21 | 22 |
 | Week 5 | 1 | 0 | 14 | 15 |
 | Week 6 | 0 | 0 | 16 | 16 |
 | Week 7 | 0 | 1 | 28 | 29 |
 | Week 8 | 2 | 3 | 21 | 26 |
-| **TOTAL** | **30** | **7** | **118** | **155** |
+| **TOTAL** | **31** | **6** | **118** | **155** |
 
 > 155 > 100 because ADR 0004 added Airflow tasks, ADR 0011 added two seam tasks (generic runner dispatch, `ResultPublisher`), ADR 0012 added three Week-3 monitor-kind / metric seam tasks, plus PR-review follow-ups not in the original roadmap. Tracked here for honesty.
 
