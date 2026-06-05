@@ -3,7 +3,7 @@
   "checkpoint_id": "5c1541fce7cf",
   "session_id": "f81a27c1-9606-4cc2-bccc-2e2fee08a0cb",
   "strategy": "manual-commit",
-  "created_at": "2026-06-05T06:48:09.48387Z",
+  "created_at": "2026-06-05T06:52:17.224315Z",
   "branch": "feature/week3-severity-postprocessing",
   "checkpoints_count": 1,
   "files_touched": [],
@@ -11,25 +11,13 @@
   "model": "claude-opus-4-8",
   "turn_id": "bb3e8ed2eef2",
   "token_usage": {
-    "input_tokens": 139491,
-    "cache_creation_tokens": 7576813,
-    "cache_read_tokens": 291276267,
-    "output_tokens": 817641,
-    "api_call_count": 913
+    "input_tokens": 139718,
+    "cache_creation_tokens": 7592437,
+    "cache_read_tokens": 296038368,
+    "output_tokens": 825957,
+    "api_call_count": 921
   },
   "session_metrics": {
     "turn_count": 43
-  },
-  "prompt_attributions": [
-    {
-      "checkpoint_number": 2,
-      "user_lines_added": 6,
-      "user_lines_removed": 0,
-      "agent_lines_added": 0,
-      "agent_lines_removed": 0,
-      "user_added_per_file": {
-        ".claude/settings.local.json": 6
-      }
-    }
-  ]
+  }
 }
