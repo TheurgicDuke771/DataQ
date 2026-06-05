@@ -1,0 +1,35 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "21eafe36a2b7",
+  "session_id": "f81a27c1-9606-4cc2-bccc-2e2fee08a0cb",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-05T19:34:51.66011Z",
+  "branch": "feature/week3-suite-sharing",
+  "checkpoints_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-opus-4-8",
+  "turn_id": "5fbc5e3e9a12",
+  "token_usage": {
+    "input_tokens": 154432,
+    "cache_creation_tokens": 9098877,
+    "cache_read_tokens": 390520327,
+    "output_tokens": 1059123,
+    "api_call_count": 1049
+  },
+  "session_metrics": {
+    "turn_count": 50
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}
