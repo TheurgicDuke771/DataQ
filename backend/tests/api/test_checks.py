@@ -13,9 +13,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend.app.core.auth import get_current_user
+from backend.app.datasources.base import CheckOutcome, SuiteOutcome
 from backend.app.db.models import Connection, Suite, User
 from backend.app.db.session import get_db
 from backend.app.main import app
+from backend.app.services import dryrun_service
 
 
 @pytest.fixture
@@ -257,3 +259,148 @@ def test_outsider_cannot_see_checks(client: TestClient, db_session: Any) -> None
     _owner, _b, e, sid = _owner_b_e_suite(db_session)
     _as(e)
     assert client.get(f"/api/v1/suites/{sid}/checks").status_code == 404
+
+
+# ───────────────────────── dry-run (preview, no persistence) ────────
+
+
+class _FakeRunner:
+    def __init__(
+        self, outcome: SuiteOutcome | None = None, raises: Exception | None = None
+    ) -> None:
+        self._outcome = outcome
+        self._raises = raises
+        self.called_with: dict[str, Any] | None = None
+
+    def run_checks(self, *, table: str, schema: str | None, checks: list[Any]) -> SuiteOutcome:
+        self.called_with = {"table": table, "schema": schema, "checks": checks}
+        if self._raises is not None:
+            raise self._raises
+        assert self._outcome is not None
+        return self._outcome
+
+
+def _patch_runner(monkeypatch: pytest.MonkeyPatch, runner: _FakeRunner) -> None:
+    monkeypatch.setattr(dryrun_service, "build_snowflake_runner", lambda **_kw: runner)
+
+
+def _dryrun_body(**overrides: Any) -> dict[str, Any]:
+    body: dict[str, Any] = {
+        "expectation_type": "expect_column_values_to_not_be_null",
+        "config": {"column": "order_id"},
+        "table": "ORDERS",
+    }
+    body.update(overrides)
+    return body
+
+
+def test_dryrun_returns_pass_preview(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sid = _suite_id(client, db_session)
+    _patch_runner(
+        monkeypatch,
+        _FakeRunner(
+            SuiteOutcome(
+                success=True,
+                checks=[CheckOutcome("x", success=True, observed_value={"observed_value": 5})],
+            )
+        ),
+    )
+    resp = client.post(f"/api/v1/suites/{sid}/checks/dryrun", json=_dryrun_body())
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "pass"
+    assert body["observed_value"] == {"observed_value": 5}
+
+
+def test_dryrun_derives_tier_from_thresholds(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sid = _suite_id(client, db_session)
+    _patch_runner(
+        monkeypatch,
+        _FakeRunner(
+            SuiteOutcome(
+                success=False,
+                checks=[
+                    CheckOutcome("x", success=False, sample_failures={"unexpected_percent": 7.5})
+                ],
+            )
+        ),
+    )
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks/dryrun",
+        json=_dryrun_body(warn_threshold=1, fail_threshold=5, critical_threshold=20),
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "fail"  # 7.5 ≥ fail(5), < critical(20)
+    assert body["metric_value"] == 7.5
+
+
+def test_dryrun_sanitizes_nan_observed_value(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sid = _suite_id(client, db_session)
+    _patch_runner(
+        monkeypatch,
+        _FakeRunner(
+            SuiteOutcome(
+                success=True,
+                checks=[
+                    CheckOutcome("x", success=True, observed_value={"observed_value": float("nan")})
+                ],
+            )
+        ),
+    )
+    resp = client.post(f"/api/v1/suites/{sid}/checks/dryrun", json=_dryrun_body())
+    assert resp.status_code == 200
+    assert resp.json()["observed_value"] == {"observed_value": None}
+
+
+def test_dryrun_rejects_non_expectation_kind(client: TestClient, db_session: Any) -> None:
+    sid = _suite_id(client, db_session)
+    resp = client.post(f"/api/v1/suites/{sid}/checks/dryrun", json=_dryrun_body(kind="freshness"))
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "dry_run_unsupported"
+
+
+def test_dryrun_rejects_non_snowflake_connection(client: TestClient, db_session: Any) -> None:
+    owner = User(aad_object_id=uuid.uuid4().hex, email="o@ex")
+    db_session.add(owner)
+    db_session.flush()
+    conn = Connection(
+        name=f"s3-{uuid.uuid4().hex[:8]}",
+        type="s3",
+        env="dev",
+        config={"bucket": "b", "region": "us-east-1"},
+        created_by=owner.id,
+    )
+    db_session.add(conn)
+    db_session.flush()
+    suite = Suite(name="s", connection_id=conn.id, created_by=owner.id)
+    db_session.add(suite)
+    db_session.commit()
+    _as(owner)
+    resp = client.post(f"/api/v1/suites/{suite.id}/checks/dryrun", json=_dryrun_body())
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "dry_run_unsupported"
+
+
+def test_dryrun_runner_failure_returns_502(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sid = _suite_id(client, db_session)
+    _patch_runner(monkeypatch, _FakeRunner(raises=RuntimeError("warehouse unreachable")))
+    resp = client.post(f"/api/v1/suites/{sid}/checks/dryrun", json=_dryrun_body())
+    assert resp.status_code == 502
+    assert resp.json()["error"]["code"] == "dry_run_failed"
+
+
+def test_dryrun_requires_edit_permission(client: TestClient, db_session: Any) -> None:
+    owner, b, _e, sid = _owner_b_e_suite(db_session)
+    _grant(client, owner, sid, b, "view")  # viewer cannot author/dry-run
+    _as(b)
+    resp = client.post(f"/api/v1/suites/{sid}/checks/dryrun", json=_dryrun_body())
+    assert resp.status_code == 403
