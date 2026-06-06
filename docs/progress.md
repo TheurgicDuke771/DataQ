@@ -21,7 +21,7 @@
 |---|---|
 | **Active since** | 2026-05-24 |
 | **Current week** | Week 3 of 8 — Suite & check API (backend) |
-| **Roadmap tasks done** | 39 ✅ + 6 🟡 / 155 (~25%) |
+| **Roadmap tasks done** | 40 ✅ + 6 🟡 / 155 (~26%) |
 | **Out-of-roadmap PRs landed** | 5 bundles (governance, tooling lock, Entire CLI, Dependabot triage round 1, PR-3 cleanup) + ADRs 0005/0006/0007/0012 |
 | **Week-1 exit gate** | A logged-in user can hit a FastAPI endpoint that triggers GX against Snowflake DEV and persists a result row. — **met** (plumbing complete via PR 4a–4c; live-Snowflake run fails-soft pending DEV creds — deferred smoke) |
 | **Next milestone** | ADF/Airflow polling fallback (`list_recent_runs` + 10-min Celery beat → succeeded-run detection → trigger) + run_suite dispatch wiring once Week-3 target-table lands (Week 5) |
@@ -130,10 +130,10 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [x] ✅ Generalise run path to dispatch by `check.kind` (`expectation` → GX `CheckRunner`; others raise `NotImplementedError`) — PR-D: `run_service._specs_for_checks` dispatches by kind; a non-`expectation` check raises `NotImplementedError` → the run goes terminal `failed` **without invoking the adapter** (never silently run as a GX expectation). Composes with the Week-5 `connection.type` runner selection (`kind` picks the monitor, type picks the adapter). `run_service` 100%; test fixtures now set `kind` to mirror DB rows
 - [x] ✅ Add `metric_value` (NUMERIC) + `duration_ms` (INT) to results — SQL-aggregatable metric for Week-6 trends + v1.1 anomaly; per-check runtime for cost surface — nullable columns on `Result` — migration `9c59b6a44f33`
 
-### Column profiler (3 tasks — 2/3 ✅)
+### Column profiler (3 tasks — 3/3 ✅)
 - [x] ✅ Column profiler endpoint (Snowflake) — nulls, distinct count, min / max, top values — `profile_service` + `POST /suites/{id}/profile` (require_permission **edit**, suite-scoped so the connection is access-gated). Reads-only, persists nothing: one aggregate query (row count + null/distinct/min/max per column) + one top-N-values query per column, then `assemble_profile`. **SQL-injection-safe** — queries are built with the **SQLAlchemy Core expression language** (`select`/`table`/`column`, dialect-quoted) so there's no raw-string SQL sink (no S608/B608/CodeQL `py/sql-injection`); identifiers are additionally allowlist-validated (`validate_identifier`, strict `^[A-Za-z_][A-Za-z0-9_$]*$`) as defence-in-depth + a clean early 422, and `top_n` is `int()`-coerced. v1 → 422: non-Snowflake type (dispatch generalises Week 5), bad identifier, no schema; execution failure → 502 (adapter exception never echoed). min/max/top-values NaN-sanitised. 28 tests (22 pure: identifier allowlist incl. injection strings, compiled-SQL builders, assembly, div-by-zero, NaN; 6 endpoint via fake conn: stats, injection-422, unsupported-type-422, 502, edit-gated, no-schema-422); `suites.py` 100%, `profile_service` 90% (live `_open_connection` is the deferred warehouse seam)
 - [x] ✅ Column profiler endpoint (ADLS / S3) — same stats via Pandas on sampled file — extended `profile_service` into a type dispatcher (`profile_connection`): SQL types → in-warehouse aggregation (unchanged), flat-file types (`adls_gen2`/`s3`) → download a **sample** of the file into Pandas and compute the same stats (`profile_dataframe`). Same `POST /suites/{id}/profile` endpoint, now polymorphic: SQL targets pass `table`/`schema`, flat-file targets pass `path` (+ optional `file_format`, else inferred from extension); response carries whichever identity applies. CSV + Parquet. **pandas "load less data" levers** (per the user's scale.html prompt): column projection (CSV `usecols`, Parquet `columns=` via pyarrow schema) so profiling 3 of N columns doesn't read all N, + row sampling (`_SAMPLE_ROWS`), + **zero-copy Arrow-backed dtypes** on the Parquet read (`dtype_backend="pyarrow"` — parquet is already Arrow, kept zero-copy; the stat helpers + `_to_native` are Arrow-scalar/`pd.NA`-safe). Stats are vectorised pandas (no Python row loops — enhancingperf N/A; CoW is a no-op for a read-only profiler + a process-global flag, so not toggled; pyarrow CSV engine rejected — it's incompatible with `nrows`/callable-`usecols`). NaN/Timestamp→JSON-safe. v1 → 422: unsupported type (UC still pending), missing target, unknown format, missing column; read failure → 502 (exception never echoed). Reuses `ColumnProfile`/`ProfileResult`. 24 new tests (pure `profile_dataframe`/`infer_file_format`/`_to_native`/projection-parse + endpoint via fake `_read_dataframe`); `suites.py` 100%, `profile_service` 85% (only the live `_open_connection`/`_download_bytes` network seams uncovered — deferred smoke). _Deferred: streaming/range reads (whole object still downloaded before sampling) + out-of-core (Dask) — future work if profiling cost bites._
-- [ ] ⬜ Column profiler endpoint (Unity Catalog) — via Databricks SQL Warehouse
+- [x] ✅ Column profiler endpoint (Unity Catalog) — via Databricks SQL Warehouse — added `unity_catalog` to the profiler's **SQL** branch (reuses `profile_table` + the SQLAlchemy Core query builders + `assemble_profile` — no duplicate aggregation logic). `_open_connection` now dispatches the engine by type (`_engine_args`): Snowflake URL or a `databricks://token:…@host?http_path=…` URL via the installed `databricks` SQLAlchemy dialect. UC's **3-level namespace** (`catalog.schema.table`) is handled by building the table with a `quoted_name(f"{catalog}.{schema}", quote=False)` so the dialect emits three dotted parts rather than quoting the dotted string as one — verified by compiling the real builders against the Databricks dialect. Injection-safe: every part (catalog/schema/table/column) is allowlist-validated (no raw-string SQL, no CodeQL py/sql-injection surface). Endpoint gained `catalog` (request + response); the dispatcher requires it for UC (`422 profile_target_invalid` if absent). 12 new tests (catalog-aware builders compiled to SQL, `_engine_args` URL dispatch, UC endpoint stats via the same fake conn, missing-catalog 422, bad-catalog-identifier 422); `suites.py` 100%, `profile_service` 86% (only the live `_open_connection`/`_download_bytes` network seams uncovered — deferred smoke). **Completes the column profiler across all 4 datasources.**
 
 ### Flat file check specifics (2 tasks — 0/2)
 - [ ] ⬜ Check types for flat files: schema validation, row count, null checks, freshness by filename date
@@ -143,7 +143,7 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [ ] ⬜ UC table check path — `spark.read.table()` → GX DataFrame datasource → run suite
 - [ ] ⬜ Integration tests across all three datasource types
 
-**Week 3 total: 13 / 18**
+**Week 3 total: 14 / 18**
 
 ---
 
@@ -341,7 +341,7 @@ These were preconditions for executing the roadmap. Listed for completeness.
 |---|---|---|---|---|
 | Week 1 | 7 | 1 | 2 | 10 |
 | Week 2 | 15 | 1 | 3 | 19 |
-| Week 3 | 13 | 0 | 5 | 18 |
+| Week 3 | 14 | 0 | 4 | 18 |
 | Week 4 | 1 | 0 | 21 | 22 |
 | Week 5 | 1 | 0 | 14 | 15 |
 | Week 6 | 0 | 0 | 16 | 16 |
