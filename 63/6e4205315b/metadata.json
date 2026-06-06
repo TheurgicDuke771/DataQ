@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "636e4205315b",
+  "strategy": "manual-commit",
+  "branch": "feature/week3-column-profiler-uc",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/63/6e4205315b/0/metadata.json",
+      "transcript": "/63/6e4205315b/0/full.jsonl",
+      "content_hash": "/63/6e4205315b/0/content_hash.txt",
+      "prompt": "/63/6e4205315b/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 230203,
+    "cache_creation_tokens": 11395397,
+    "cache_read_tokens": 521140067,
+    "output_tokens": 1402998,
+    "api_call_count": 1415
+  }
+}
