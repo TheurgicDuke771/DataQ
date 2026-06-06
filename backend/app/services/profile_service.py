@@ -397,8 +397,7 @@ def _read_dataframe(
 
     import pyarrow.parquet as pq
 
-    # pyarrow ships only partial types; ParquetFile is an untyped call.
-    available = set(pq.ParquetFile(raw).schema.names)  # type: ignore[no-untyped-call]
+    available = set(pq.ParquetFile(raw).schema.names)
     raw.seek(0)
     present = [c for c in columns if c in available]
     return pd.read_parquet(raw, columns=present).head(_SAMPLE_ROWS)

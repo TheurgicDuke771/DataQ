@@ -74,6 +74,15 @@ module = [
 ]
 ignore_missing_imports = true
 
+# pyarrow ships a partial py.typed, so when it's installed (dev env) mypy flags
+# its untyped calls (e.g. ParquetFile), but it's absent from the slim CI
+# typecheck deps. follow_imports = "skip" forces it to Any in *both* envs, so the
+# code type-checks identically with or without pyarrow installed.
+[[tool.mypy.overrides]]
+module = ["pyarrow", "pyarrow.*"]
+follow_imports = "skip"
+ignore_missing_imports = true
+
 # ── pytest ───────────────────────────────────────────────────────────────────
 
 [tool.pytest.ini_options]
