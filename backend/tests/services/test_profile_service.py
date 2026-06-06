@@ -1,20 +1,25 @@
 """Column-profiler unit tests — pure, no DB / no warehouse.
 
 Covers identifier validation, the SQLAlchemy Core query builders (compiled to
-SQL for inspection), and result assembly (`assemble_profile`) from canned query
-rows. The live I/O seam (`_open_connection`) is exercised via the endpoint tests
-with a fake connection.
+SQL for inspection), SQL result assembly (`assemble_profile`), and the flat-file
+`profile_dataframe` / `infer_file_format` helpers. The live I/O seams
+(`_open_connection`, `_read_dataframe`) are exercised via the endpoint tests.
 """
 
 import math
 
+import pandas as pd
 import pytest
 
 from backend.app.services.profile_service import (
+    ProfileColumnNotFoundError,
     ProfileIdentifierInvalidError,
+    ProfileTargetInvalidError,
     assemble_profile,
     build_aggregate_query,
     build_top_values_query,
+    infer_file_format,
+    profile_dataframe,
     validate_identifier,
 )
 
@@ -130,3 +135,111 @@ def test_assemble_sanitizes_nan_min_max() -> None:
     assert not isinstance(profile.columns[0].min_value, float) or not math.isnan(
         profile.columns[0].min_value
     )
+
+
+# ── infer_file_format ──
+
+
+@pytest.mark.parametrize(
+    ("path", "explicit", "expected"),
+    [
+        ("data/orders.csv", None, "csv"),
+        ("DATA/ORDERS.CSV", None, "csv"),
+        ("x.parquet", None, "parquet"),
+        ("x.pq", None, "parquet"),
+        ("data/blob", "csv", "csv"),
+        ("data/orders.csv", "parquet", "parquet"),  # explicit overrides extension
+    ],
+)
+def test_infer_file_format(path: str, explicit: str | None, expected: str) -> None:
+    assert infer_file_format(path, explicit) == expected
+
+
+@pytest.mark.parametrize("path", ["data/orders.xml", "data/blob", "noext"])
+def test_infer_file_format_unknown_raises(path: str) -> None:
+    with pytest.raises(ProfileTargetInvalidError):
+        infer_file_format(path, None)
+
+
+# ── profile_dataframe ──
+
+
+def test_profile_dataframe_computes_stats() -> None:
+    df = pd.DataFrame({"amount": [10, 20, 20, 20], "city": ["x", "x", "y", None]})
+    result = profile_dataframe(
+        df, columns=["amount", "city"], top_n=5, path="f.csv", file_format="csv"
+    )
+    assert result.row_count == 4 and result.path == "f.csv" and result.file_format == "csv"
+    amount = result.columns[0]
+    assert amount.null_count == 0 and amount.distinct_count == 2
+    assert amount.min_value == 10 and amount.max_value == 20
+    assert amount.top_values[0] == {"value": 20, "count": 3}
+    city = result.columns[1]
+    assert city.null_count == 1 and city.null_fraction == 0.25
+    assert city.min_value == "x" and city.max_value == "y"
+
+
+def test_profile_dataframe_missing_column_raises() -> None:
+    df = pd.DataFrame({"a": [1]})
+    with pytest.raises(ProfileColumnNotFoundError):
+        profile_dataframe(df, columns=["a", "missing"], top_n=5, path="f.csv", file_format="csv")
+
+
+def test_profile_dataframe_all_null_column_has_none_min_max() -> None:
+    df = pd.DataFrame({"a": [None, None]})
+    result = profile_dataframe(df, columns=["a"], top_n=5, path="f.csv", file_format="csv")
+    col = result.columns[0]
+    assert col.null_count == 2 and col.null_fraction == 1.0
+    assert col.distinct_count == 0
+    assert col.min_value is None and col.max_value is None
+    assert col.top_values == []
+
+
+def test_profile_dataframe_coerces_timestamps_to_iso() -> None:
+    df = pd.DataFrame({"ts": pd.to_datetime(["2026-01-01", "2026-06-06"])})
+    result = profile_dataframe(df, columns=["ts"], top_n=5, path="f.parquet", file_format="parquet")
+    col = result.columns[0]
+    assert col.min_value == "2026-01-01T00:00:00"
+    assert col.max_value == "2026-06-06T00:00:00"
+    assert col.top_values[0]["value"].startswith("2026-")
+
+
+# ── _read_dataframe column projection (real parse, mocked download) ──
+
+
+def test_read_dataframe_csv_projects_only_requested_columns(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.app.services import profile_service as svc
+
+    monkeypatch.setattr(svc, "_download_bytes", lambda *a, **k: b"a,b,c\n1,2,3\n4,5,6\n")
+    df = svc._read_dataframe(
+        object(), path="x.csv", file_format="csv", columns=["a", "c"], secret_store=object()
+    )
+    assert list(df.columns) == ["a", "c"]  # 'b' is never parsed
+    assert len(df) == 2
+
+
+def test_read_dataframe_parquet_projects_only_requested_columns(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import io
+
+    from backend.app.services import profile_service as svc
+
+    buf = io.BytesIO()
+    pd.DataFrame({"a": [1, 2], "b": [3, 4], "c": [5, 6]}).to_parquet(buf)
+    monkeypatch.setattr(svc, "_download_bytes", lambda *a, **k: buf.getvalue())
+    df = svc._read_dataframe(
+        object(), path="x.parquet", file_format="parquet", columns=["a", "c"], secret_store=object()
+    )
+    assert set(df.columns) == {"a", "c"}  # 'b' is never read
+    assert len(df) == 2
+
+
+def test_to_native_handles_none_and_nan() -> None:
+    from backend.app.services.profile_service import _to_native
+
+    assert _to_native(None) is None
+    assert _to_native(float("nan")) is None
+    assert _to_native(5) == 5

@@ -12,6 +12,7 @@ from contextlib import contextmanager
 from decimal import Decimal
 from typing import Any
 
+import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
@@ -463,20 +464,29 @@ def _patch_conn(
     monkeypatch.setattr(profile_service, "_open_connection", fake_open)
 
 
-def _s3_connection(db_session: Any) -> Connection:
-    owner = User(aad_object_id=uuid.uuid4().hex, email="s3owner@ex")
+def _typed_connection(db_session: Any, ctype: str, config: dict[str, Any]) -> Connection:
+    owner = User(aad_object_id=uuid.uuid4().hex, email=f"{ctype}@ex")
     db_session.add(owner)
     db_session.flush()
     conn = Connection(
-        name=f"s3-{uuid.uuid4().hex[:8]}",
-        type="s3",
+        name=f"{ctype}-{uuid.uuid4().hex[:8]}",
+        type=ctype,
         env="dev",
-        config={"bucket": "b", "region": "us-east-1"},
+        config=config,
         created_by=owner.id,
     )
     db_session.add(conn)
     db_session.commit()
     return conn
+
+
+def _patch_dataframe(monkeypatch: pytest.MonkeyPatch, frame: pd.DataFrame) -> None:
+    def fake_read(
+        connection: Any, *, path: str, file_format: str, columns: list[str], secret_store: Any
+    ) -> pd.DataFrame:
+        return frame
+
+    monkeypatch.setattr(profile_service, "_read_dataframe", fake_read)
 
 
 def test_profile_returns_column_stats(
@@ -532,8 +542,9 @@ def test_profile_invalid_column_returns_422(client: TestClient, db_session: Any)
 def test_profile_unsupported_connection_type_returns_422(
     client: TestClient, db_session: Any
 ) -> None:
-    conn = _s3_connection(db_session)
-    sid = client.post("/api/v1/suites", json=_payload(conn.id, name="s3-suite")).json()["id"]
+    # unity_catalog has no profiler yet (its own Week-3 task) → unsupported.
+    conn = _typed_connection(db_session, "unity_catalog", {"workspace_url": "https://x"})
+    sid = client.post("/api/v1/suites", json=_payload(conn.id, name="uc-suite")).json()["id"]
     resp = client.post(
         f"/api/v1/suites/{sid}/profile",
         json={"table": "orders", "schema": "public", "columns": ["amount"]},
@@ -585,3 +596,108 @@ def test_profile_without_schema_when_connection_has_none_returns_422(
     resp = client.post(f"/api/v1/suites/{sid}/profile", json={"table": "orders", "columns": ["c"]})
     assert resp.status_code == 422
     assert resp.json()["error"]["code"] == "profile_identifier_invalid"
+
+
+# ── flat-file (ADLS Gen2 / S3) profiling ──
+
+
+def _s3_suite(client: TestClient, db_session: Any) -> str:
+    conn = _typed_connection(db_session, "s3", {"bucket": "b", "region": "us-east-1"})
+    return str(client.post("/api/v1/suites", json=_payload(conn.id, name="s3-suite")).json()["id"])
+
+
+def test_profile_flat_file_returns_column_stats(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sid = _s3_suite(client, db_session)
+    _patch_dataframe(
+        monkeypatch,
+        pd.DataFrame({"amount": [10, 20, 20, 20], "city": ["x", "x", "y", None]}),
+    )
+    resp = client.post(
+        f"/api/v1/suites/{sid}/profile",
+        json={"path": "data/orders.csv", "columns": ["amount", "city"], "top_n": 5},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    # flat-file identity in the response; SQL identity absent
+    assert body["path"] == "data/orders.csv" and body["file_format"] == "csv"
+    assert body["table"] is None and body["schema"] is None
+    assert body["row_count"] == 4
+    amount = next(c for c in body["columns"] if c["column"] == "amount")
+    assert amount["null_count"] == 0 and amount["distinct_count"] == 2
+    assert amount["min_value"] == 10 and amount["max_value"] == 20
+    assert amount["top_values"][0] == {"value": 20, "count": 3}
+    city = next(c for c in body["columns"] if c["column"] == "city")
+    assert city["null_count"] == 1 and city["null_fraction"] == 0.25
+    assert city["min_value"] == "x" and city["max_value"] == "y"
+
+
+def test_profile_flat_file_explicit_format_overrides_extension(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sid = _s3_suite(client, db_session)
+    _patch_dataframe(monkeypatch, pd.DataFrame({"a": [1, 2]}))
+    resp = client.post(
+        f"/api/v1/suites/{sid}/profile",
+        json={"path": "data/blob", "file_format": "parquet", "columns": ["a"]},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["file_format"] == "parquet"
+
+
+def test_profile_flat_file_missing_path_returns_422(client: TestClient, db_session: Any) -> None:
+    sid = _s3_suite(client, db_session)
+    resp = client.post(f"/api/v1/suites/{sid}/profile", json={"columns": ["a"]})
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "profile_target_invalid"
+
+
+def test_profile_sql_missing_table_returns_422(client: TestClient, db_session: Any) -> None:
+    # a SQL (Snowflake) connection profiled without a table → target invalid.
+    conn = _connection(db_session)
+    sid = client.post("/api/v1/suites", json=_payload(conn.id)).json()["id"]
+    resp = client.post(f"/api/v1/suites/{sid}/profile", json={"columns": ["a"]})
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "profile_target_invalid"
+
+
+def test_profile_flat_file_unknown_format_returns_422(client: TestClient, db_session: Any) -> None:
+    sid = _s3_suite(client, db_session)
+    resp = client.post(
+        f"/api/v1/suites/{sid}/profile", json={"path": "data/orders.xml", "columns": ["a"]}
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "profile_target_invalid"
+
+
+def test_profile_flat_file_missing_column_returns_422(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sid = _s3_suite(client, db_session)
+    _patch_dataframe(monkeypatch, pd.DataFrame({"amount": [1, 2]}))
+    resp = client.post(
+        f"/api/v1/suites/{sid}/profile",
+        json={"path": "data/orders.csv", "columns": ["nonexistent"]},
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "profile_column_not_found"
+
+
+def test_profile_flat_file_read_failure_returns_502(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sid = _s3_suite(client, db_session)
+
+    def boom(
+        connection: Any, *, path: str, file_format: str, columns: list[str], secret_store: Any
+    ) -> Any:
+        raise RuntimeError("bucket credentials rejected")
+
+    monkeypatch.setattr(profile_service, "_read_dataframe", boom)
+    resp = client.post(
+        f"/api/v1/suites/{sid}/profile", json={"path": "data/orders.csv", "columns": ["a"]}
+    )
+    assert resp.status_code == 502
+    assert resp.json()["error"]["code"] == "profile_failed"
+    assert "bucket credentials rejected" not in resp.text
