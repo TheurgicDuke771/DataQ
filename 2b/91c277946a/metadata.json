@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "2b91c277946a",
+  "strategy": "manual-commit",
+  "branch": "feature/profiler-arrow-parquet",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/2b/91c277946a/0/metadata.json",
+      "transcript": "/2b/91c277946a/0/full.jsonl",
+      "content_hash": "/2b/91c277946a/0/content_hash.txt",
+      "prompt": "/2b/91c277946a/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 223266,
+    "cache_creation_tokens": 11339586,
+    "cache_read_tokens": 504144754,
+    "output_tokens": 1358605,
+    "api_call_count": 1372
+  }
+}
