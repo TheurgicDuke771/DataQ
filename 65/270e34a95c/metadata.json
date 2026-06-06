@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "65270e34a95c",
+  "strategy": "manual-commit",
+  "branch": "feature/week3-flatfile-check-runner",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/65/270e34a95c/0/metadata.json",
+      "transcript": "/65/270e34a95c/0/full.jsonl",
+      "content_hash": "/65/270e34a95c/0/content_hash.txt",
+      "prompt": "/65/270e34a95c/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 238498,
+    "cache_creation_tokens": 11477568,
+    "cache_read_tokens": 541084717,
+    "output_tokens": 1459093,
+    "api_call_count": 1458
+  }
+}
