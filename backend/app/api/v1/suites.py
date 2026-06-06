@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import uuid
 from decimal import Decimal
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -191,10 +191,14 @@ def import_suite(
 
 
 class ColumnProfileRequest(BaseModel):
-    table: str = Field(min_length=1, max_length=255, description="Table to profile")
-    schema_: str | None = Field(default=None, alias="schema")
     columns: list[str] = Field(min_length=1, max_length=50)
     top_n: int = Field(default=10, ge=1, le=100, description="Most-frequent values per column")
+    # SQL datasources (Snowflake): the target is a table (+ optional schema).
+    table: str | None = Field(default=None, max_length=255, description="SQL table to profile")
+    schema_: str | None = Field(default=None, alias="schema")
+    # Flat-file datasources (ADLS Gen2 / S3): the target is a file path.
+    path: str | None = Field(default=None, max_length=1024, description="Flat-file path to profile")
+    file_format: Literal["csv", "parquet"] | None = None
 
 
 class TopValue(BaseModel):
@@ -212,19 +216,24 @@ class ColumnProfileRead(BaseModel):
     top_values: list[TopValue]
 
 
-class TableProfileRead(BaseModel):
+class ProfileRead(BaseModel):
+    """Profile result. Identity fields are type-specific: SQL datasources fill
+    `table` / `schema`, flat-file datasources fill `path` / `file_format`."""
+
     model_config = ConfigDict(populate_by_name=True)
 
-    table: str
-    schema_: str = Field(serialization_alias="schema")
     row_count: int
     columns: list[ColumnProfileRead]
+    table: str | None = None
+    schema_: str | None = Field(default=None, serialization_alias="schema")
+    path: str | None = None
+    file_format: str | None = None
 
 
 @router.post(
     "/suites/{suite_id}/profile",
-    response_model=TableProfileRead,
-    summary="Profile columns of a table on the suite's connection (no persistence)",
+    response_model=ProfileRead,
+    summary="Profile columns of a table/file on the suite's connection (no persistence)",
 )
 def profile_columns(
     suite_id: uuid.UUID,
@@ -232,24 +241,28 @@ def profile_columns(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
     secret_store: Annotated[SecretStore, Depends(get_secret_store)],
-) -> TableProfileRead:
-    # sync def → threadpool; the warehouse connect + scans are blocking.
+) -> ProfileRead:
+    # sync def → threadpool; the datasource connect + scans/downloads are blocking.
     # Authoring aid → 'edit', same as the dry-run. Connection FK is RESTRICT.
     suite = require_permission(db, suite_id, current_user.id, minimum="edit")
     connection = db.get(Connection, suite.connection_id)
     assert connection is not None
-    result = profile.profile_table(
+    result = profile.profile_connection(
         connection,
-        table=payload.table,
-        schema=payload.schema_,
         columns=payload.columns,
         top_n=payload.top_n,
+        table=payload.table,
+        schema=payload.schema_,
+        path=payload.path,
+        file_format=payload.file_format,
         secret_store=secret_store,
     )
-    return TableProfileRead(
+    return ProfileRead(
+        row_count=result.row_count,
         table=result.table,
         schema_=result.schema,
-        row_count=result.row_count,
+        path=result.path,
+        file_format=result.file_format,
         columns=[
             ColumnProfileRead(
                 column=c.column,

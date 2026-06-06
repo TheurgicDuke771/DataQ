@@ -69,6 +69,8 @@ module = [
     "azure.keyvault.*",
     "boto3.*",
     "botocore.*",
+    "pandas",
+    "pandas.*",
 ]
 ignore_missing_imports = true
 
