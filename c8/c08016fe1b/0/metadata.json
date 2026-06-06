@@ -1,0 +1,38 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "c8c08016fe1b",
+  "session_id": "f81a27c1-9606-4cc2-bccc-2e2fee08a0cb",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-06T14:20:34.587422Z",
+  "branch": "feature/week3-column-profiler-snowflake",
+  "checkpoints_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-opus-4-8",
+  "turn_id": "af44104cb448",
+  "token_usage": {
+    "input_tokens": 204813,
+    "cache_creation_tokens": 10876824,
+    "cache_read_tokens": 471624197,
+    "output_tokens": 1259183,
+    "api_call_count": 1261
+  },
+  "session_metrics": {
+    "turn_count": 57
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 579,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 556,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6,
+        "backend/app/services/profile_service.py": 262,
+        "backend/tests/api/test_suites.py": 179,
+        "backend/tests/services/test_profile_service.py": 132
+      }
+    }
+  ]
+}

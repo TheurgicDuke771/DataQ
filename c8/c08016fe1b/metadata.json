@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "c8c08016fe1b",
+  "strategy": "manual-commit",
+  "branch": "feature/week3-column-profiler-snowflake",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/c8/c08016fe1b/0/metadata.json",
+      "transcript": "/c8/c08016fe1b/0/full.jsonl",
+      "content_hash": "/c8/c08016fe1b/0/content_hash.txt",
+      "prompt": "/c8/c08016fe1b/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 204813,
+    "cache_creation_tokens": 10876824,
+    "cache_read_tokens": 471624197,
+    "output_tokens": 1259183,
+    "api_call_count": 1261
+  }
+}
