@@ -400,7 +400,11 @@ def _read_dataframe(
     available = set(pq.ParquetFile(raw).schema.names)
     raw.seek(0)
     present = [c for c in columns if c in available]
-    return pd.read_parquet(raw, columns=present).head(_SAMPLE_ROWS)
+    # Parquet is already Arrow on disk; dtype_backend="pyarrow" keeps the buffers
+    # zero-copy instead of materialising a numpy copy. The stat helpers + the
+    # _to_native coercion are Arrow-scalar-safe (min/max → Python int/str,
+    # timestamps → Timestamp.isoformat, NA dropped before reductions).
+    return pd.read_parquet(raw, columns=present, dtype_backend="pyarrow").head(_SAMPLE_ROWS)
 
 
 def _download_bytes(connection: Connection, path: str, secret_store: SecretStore) -> bytes:

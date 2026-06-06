@@ -235,6 +235,32 @@ def test_read_dataframe_parquet_projects_only_requested_columns(
     )
     assert set(df.columns) == {"a", "c"}  # 'b' is never read
     assert len(df) == 2
+    # Arrow-backed (zero-copy) dtypes, not numpy
+    assert all("pyarrow" in str(dt) for dt in df.dtypes)
+
+
+def test_profile_dataframe_handles_arrow_backed_dtypes_with_na() -> None:
+    # Parquet reads come back Arrow-backed; stats + _to_native must stay correct
+    # across int / string / timestamp columns that contain pd.NA.
+    df = pd.DataFrame(
+        {
+            "amt": pd.array([10, 20, 20, None], dtype="int64[pyarrow]"),
+            "city": pd.array(["x", "x", "y", None], dtype="string[pyarrow]"),
+            "ts": pd.array(
+                pd.to_datetime(["2026-01-01", "2026-06-06", "2026-06-06", None]),
+                dtype="timestamp[ns][pyarrow]",
+            ),
+        }
+    )
+    result = profile_dataframe(
+        df, columns=["amt", "city", "ts"], top_n=5, path="f.parquet", file_format="parquet"
+    )
+    amt, city, ts = result.columns
+    assert amt.null_count == 1 and amt.distinct_count == 2
+    assert amt.min_value == 10 and amt.max_value == 20  # clean Python ints, not NA
+    assert amt.top_values[0] == {"value": 20, "count": 2}
+    assert city.min_value == "x" and city.max_value == "y"
+    assert ts.min_value == "2026-01-01T00:00:00" and ts.max_value == "2026-06-06T00:00:00"
 
 
 def test_to_native_handles_none_and_nan() -> None:
