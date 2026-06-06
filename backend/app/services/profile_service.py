@@ -49,8 +49,7 @@ from backend.app.core.errors import DataQError
 from backend.app.core.jsonsafe import sanitize_json
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
-from backend.app.datasources.adls import AdlsConfig
-from backend.app.datasources.s3 import S3Config
+from backend.app.datasources.flatfile import download_bytes, format_from_path
 from backend.app.datasources.snowflake import SnowflakeConfig, build_connection_string
 from backend.app.datasources.unity_catalog import UnityCatalogConfig
 from backend.app.db.models import Connection
@@ -339,13 +338,10 @@ def infer_file_format(path: str, explicit: str | None) -> str:
     """Resolve the file format from an explicit value or the path extension.
 
     Raises `ProfileTargetInvalidError` (422) for an unknown/unsupported format —
-    the caller can always pass `file_format` to override extension guessing.
+    the caller can always pass `file_format` to override extension guessing. The
+    extension mapping is shared with the runner (`flatfile.format_from_path`).
     """
-    fmt = explicit or (
-        "csv"
-        if path.lower().endswith(".csv")
-        else "parquet" if path.lower().endswith((".parquet", ".pq")) else None
-    )
+    fmt = explicit or format_from_path(path)
     if fmt not in _SUPPORTED_FORMATS:
         raise ProfileTargetInvalidError(
             "cannot determine a supported file format; pass file_format",
@@ -431,8 +427,15 @@ def _read_dataframe(
     """
     import pandas as pd
 
+    if not connection.secret_ref:
+        raise ValueError("connection requires secret_ref for the credential")
+    secret = secret_store.get(connection.secret_ref)
     wanted = set(columns)
-    raw = io.BytesIO(_download_bytes(connection, path, secret_store))
+    raw = io.BytesIO(
+        download_bytes(
+            conn_type=connection.type, config=connection.config, path=path, secret=secret
+        )
+    )
     if file_format == "csv":
         return pd.read_csv(raw, nrows=_SAMPLE_ROWS, usecols=lambda name: name in wanted)
 
@@ -446,38 +449,6 @@ def _read_dataframe(
     # _to_native coercion are Arrow-scalar-safe (min/max → Python int/str,
     # timestamps → Timestamp.isoformat, NA dropped before reductions).
     return pd.read_parquet(raw, columns=present, dtype_backend="pyarrow").head(_SAMPLE_ROWS)
-
-
-def _download_bytes(connection: Connection, path: str, secret_store: SecretStore) -> bytes:
-    """Fetch the object/blob bytes from S3 or ADLS Gen2 (live seam)."""
-    if not connection.secret_ref:
-        raise ValueError("connection requires secret_ref for the credential")
-    secret = secret_store.get(connection.secret_ref)
-    if connection.type == "s3":
-        import boto3
-        from botocore.config import Config
-
-        cfg = S3Config.model_validate(connection.config)
-        client = boto3.client(
-            "s3",
-            region_name=cfg.region,
-            aws_access_key_id=cfg.access_key_id,
-            aws_secret_access_key=secret,
-            config=Config(connect_timeout=_LOGIN_TIMEOUT, read_timeout=_NETWORK_TIMEOUT),
-        )
-        body: bytes = client.get_object(Bucket=cfg.bucket, Key=path)["Body"].read()
-        return body
-
-    from azure.storage.blob import BlobServiceClient
-
-    acfg = AdlsConfig.model_validate(connection.config)
-    client_az: Any = BlobServiceClient(account_url=acfg.account_url, credential=secret)
-    try:
-        blob = client_az.get_blob_client(container=acfg.container, blob=path)
-        downloaded: bytes = blob.download_blob().readall()
-        return downloaded
-    finally:
-        client_az.close()
 
 
 def profile_file(
