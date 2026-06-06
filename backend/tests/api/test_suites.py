@@ -8,6 +8,7 @@ TEST_DATABASE_URL.
 
 import uuid
 from collections.abc import Iterator
+from contextlib import contextmanager
 from decimal import Decimal
 from typing import Any
 
@@ -19,6 +20,7 @@ from backend.app.core.auth import get_current_user
 from backend.app.db.models import Check, Connection, Suite, User
 from backend.app.db.session import get_db
 from backend.app.main import app
+from backend.app.services import profile_service
 
 
 @pytest.fixture
@@ -406,3 +408,180 @@ def test_import_unsupported_kind_is_atomic(client: TestClient, db_session: Any) 
     # the valid check + suite must NOT have been written (validated before any write)
     after = db_session.scalar(select(func.count()).select_from(Suite))
     assert after == before
+
+
+# ───────────────────────── column profiler ─────────────────────────
+
+
+class _FakeMappings:
+    def __init__(self, rows: list[dict[str, Any]]) -> None:
+        self._rows = rows
+
+    def one(self) -> dict[str, Any]:
+        return self._rows[0]
+
+    def __iter__(self) -> Iterator[dict[str, Any]]:
+        return iter(self._rows)
+
+
+class _FakeResult:
+    def __init__(self, rows: list[dict[str, Any]]) -> None:
+        self._rows = rows
+
+    def mappings(self) -> _FakeMappings:
+        return _FakeMappings(self._rows)
+
+
+class _FakeConn:
+    """Routes the aggregate query vs per-column top-values query by SQL text."""
+
+    def __init__(self, aggregate: dict[str, Any], tops: dict[str, list[dict[str, Any]]]) -> None:
+        self._aggregate = aggregate
+        self._tops = tops
+
+    def execute(self, clause: Any) -> _FakeResult:
+        # Core statements render the column unquoted in str(); route the
+        # aggregate query by its row_count label, top-values by column name.
+        sql = str(clause)
+        if "row_count" in sql:
+            return _FakeResult([self._aggregate])
+        for col, rows in self._tops.items():
+            if col in sql:
+                return _FakeResult(rows)
+        return _FakeResult([])
+
+
+def _patch_conn(
+    monkeypatch: pytest.MonkeyPatch,
+    aggregate: dict[str, Any],
+    tops: dict[str, list[dict[str, Any]]],
+) -> None:
+    @contextmanager
+    def fake_open(connection: Any, secret_store: Any) -> Iterator[_FakeConn]:
+        yield _FakeConn(aggregate, tops)
+
+    monkeypatch.setattr(profile_service, "_open_connection", fake_open)
+
+
+def _s3_connection(db_session: Any) -> Connection:
+    owner = User(aad_object_id=uuid.uuid4().hex, email="s3owner@ex")
+    db_session.add(owner)
+    db_session.flush()
+    conn = Connection(
+        name=f"s3-{uuid.uuid4().hex[:8]}",
+        type="s3",
+        env="dev",
+        config={"bucket": "b", "region": "us-east-1"},
+        created_by=owner.id,
+    )
+    db_session.add(conn)
+    db_session.commit()
+    return conn
+
+
+def test_profile_returns_column_stats(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    conn = _connection(db_session)
+    sid = client.post("/api/v1/suites", json=_payload(conn.id)).json()["id"]
+    _patch_conn(
+        monkeypatch,
+        aggregate={
+            "row_count": 100,
+            "nulls_0": 25,
+            "distinct_0": 4,
+            "min_0": 1,
+            "max_0": 9,
+            "nulls_1": 0,
+            "distinct_1": 2,
+            "min_1": "a",
+            "max_1": "z",
+        },
+        tops={
+            "amount": [{"value": 9, "freq": 40}],
+            "status": [{"value": "a", "freq": 60}, {"value": "z", "freq": 40}],
+        },
+    )
+    resp = client.post(
+        f"/api/v1/suites/{sid}/profile",
+        json={"table": "orders", "schema": "public", "columns": ["amount", "status"], "top_n": 5},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["table"] == "orders" and body["schema"] == "public"
+    assert body["row_count"] == 100
+    amount = next(c for c in body["columns"] if c["column"] == "amount")
+    assert amount["null_count"] == 25 and amount["null_fraction"] == 0.25
+    assert amount["distinct_count"] == 4 and amount["min_value"] == 1 and amount["max_value"] == 9
+    assert amount["top_values"] == [{"value": 9, "count": 40}]
+    status = next(c for c in body["columns"] if c["column"] == "status")
+    assert status["top_values"][0] == {"value": "a", "count": 60}
+
+
+def test_profile_invalid_column_returns_422(client: TestClient, db_session: Any) -> None:
+    conn = _connection(db_session)
+    sid = client.post("/api/v1/suites", json=_payload(conn.id)).json()["id"]
+    resp = client.post(
+        f"/api/v1/suites/{sid}/profile",
+        json={"table": "orders", "schema": "public", "columns": ["amount; DROP TABLE x"]},
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "profile_identifier_invalid"
+
+
+def test_profile_unsupported_connection_type_returns_422(
+    client: TestClient, db_session: Any
+) -> None:
+    conn = _s3_connection(db_session)
+    sid = client.post("/api/v1/suites", json=_payload(conn.id, name="s3-suite")).json()["id"]
+    resp = client.post(
+        f"/api/v1/suites/{sid}/profile",
+        json={"table": "orders", "schema": "public", "columns": ["amount"]},
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "profile_unsupported"
+
+
+def test_profile_execution_failure_returns_502(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    conn = _connection(db_session)
+    sid = client.post("/api/v1/suites", json=_payload(conn.id)).json()["id"]
+
+    @contextmanager
+    def boom(connection: Any, secret_store: Any) -> Iterator[Any]:
+        raise RuntimeError("warehouse unreachable")
+        yield  # pragma: no cover
+
+    monkeypatch.setattr(profile_service, "_open_connection", boom)
+    resp = client.post(
+        f"/api/v1/suites/{sid}/profile",
+        json={"table": "orders", "schema": "public", "columns": ["amount"]},
+    )
+    assert resp.status_code == 502
+    assert resp.json()["error"]["code"] == "profile_failed"
+    # the adapter exception is not echoed to the client
+    assert "warehouse unreachable" not in resp.text
+
+
+def test_profile_requires_edit_access(client: TestClient, db_session: Any) -> None:
+    owner, b, _e, sid = _owner_b_e_suite(db_session)
+    _share(client, owner, sid, b, "view")
+    _as(b)
+    resp = client.post(
+        f"/api/v1/suites/{sid}/profile",
+        json={"table": "orders", "schema": "public", "columns": ["amount"]},
+    )
+    assert resp.status_code == 403
+
+
+def test_profile_without_schema_when_connection_has_none_returns_422(
+    client: TestClient, db_session: Any
+) -> None:
+    # the _connection helper's config carries no "schema"; omitting it in the
+    # body leaves the profiler with no schema to qualify the table → 422.
+    conn = _connection(db_session)
+    sid = client.post("/api/v1/suites", json=_payload(conn.id)).json()["id"]
+    resp = client.post(f"/api/v1/suites/{sid}/profile", json={"table": "orders", "columns": ["c"]})
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "profile_identifier_invalid"

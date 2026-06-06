@@ -21,7 +21,7 @@
 |---|---|
 | **Active since** | 2026-05-24 |
 | **Current week** | Week 3 of 8 — Suite & check API (backend) |
-| **Roadmap tasks done** | 37 ✅ + 6 🟡 / 155 (~24%) |
+| **Roadmap tasks done** | 38 ✅ + 6 🟡 / 155 (~25%) |
 | **Out-of-roadmap PRs landed** | 5 bundles (governance, tooling lock, Entire CLI, Dependabot triage round 1, PR-3 cleanup) + ADRs 0005/0006/0007/0012 |
 | **Week-1 exit gate** | A logged-in user can hit a FastAPI endpoint that triggers GX against Snowflake DEV and persists a result row. — **met** (plumbing complete via PR 4a–4c; live-Snowflake run fails-soft pending DEV creds — deferred smoke) |
 | **Next milestone** | ADF/Airflow polling fallback (`list_recent_runs` + 10-min Celery beat → succeeded-run detection → trigger) + run_suite dispatch wiring once Week-3 target-table lands (Week 5) |
@@ -130,8 +130,8 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [x] ✅ Generalise run path to dispatch by `check.kind` (`expectation` → GX `CheckRunner`; others raise `NotImplementedError`) — PR-D: `run_service._specs_for_checks` dispatches by kind; a non-`expectation` check raises `NotImplementedError` → the run goes terminal `failed` **without invoking the adapter** (never silently run as a GX expectation). Composes with the Week-5 `connection.type` runner selection (`kind` picks the monitor, type picks the adapter). `run_service` 100%; test fixtures now set `kind` to mirror DB rows
 - [x] ✅ Add `metric_value` (NUMERIC) + `duration_ms` (INT) to results — SQL-aggregatable metric for Week-6 trends + v1.1 anomaly; per-check runtime for cost surface — nullable columns on `Result` — migration `9c59b6a44f33`
 
-### Column profiler (3 tasks — 0/3)
-- [ ] ⬜ Column profiler endpoint (Snowflake) — nulls, distinct count, min / max, top values
+### Column profiler (3 tasks — 1/3 ✅)
+- [x] ✅ Column profiler endpoint (Snowflake) — nulls, distinct count, min / max, top values — `profile_service` + `POST /suites/{id}/profile` (require_permission **edit**, suite-scoped so the connection is access-gated). Reads-only, persists nothing: one aggregate query (row count + null/distinct/min/max per column) + one top-N-values query per column, then `assemble_profile`. **SQL-injection-safe** — queries are built with the **SQLAlchemy Core expression language** (`select`/`table`/`column`, dialect-quoted) so there's no raw-string SQL sink (no S608/B608/CodeQL `py/sql-injection`); identifiers are additionally allowlist-validated (`validate_identifier`, strict `^[A-Za-z_][A-Za-z0-9_$]*$`) as defence-in-depth + a clean early 422, and `top_n` is `int()`-coerced. v1 → 422: non-Snowflake type (dispatch generalises Week 5), bad identifier, no schema; execution failure → 502 (adapter exception never echoed). min/max/top-values NaN-sanitised. 28 tests (22 pure: identifier allowlist incl. injection strings, compiled-SQL builders, assembly, div-by-zero, NaN; 6 endpoint via fake conn: stats, injection-422, unsupported-type-422, 502, edit-gated, no-schema-422); `suites.py` 100%, `profile_service` 90% (live `_open_connection` is the deferred warehouse seam)
 - [ ] ⬜ Column profiler endpoint (ADLS / S3) — same stats via Pandas on sampled file
 - [ ] ⬜ Column profiler endpoint (Unity Catalog) — via Databricks SQL Warehouse
 
@@ -143,7 +143,7 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [ ] ⬜ UC table check path — `spark.read.table()` → GX DataFrame datasource → run suite
 - [ ] ⬜ Integration tests across all three datasource types
 
-**Week 3 total: 11 / 18**
+**Week 3 total: 12 / 18**
 
 ---
 
@@ -341,13 +341,13 @@ These were preconditions for executing the roadmap. Listed for completeness.
 |---|---|---|---|---|
 | Week 1 | 7 | 1 | 2 | 10 |
 | Week 2 | 15 | 1 | 3 | 19 |
-| Week 3 | 11 | 0 | 7 | 18 |
+| Week 3 | 12 | 0 | 6 | 18 |
 | Week 4 | 1 | 0 | 21 | 22 |
 | Week 5 | 1 | 0 | 14 | 15 |
 | Week 6 | 0 | 0 | 16 | 16 |
 | Week 7 | 0 | 1 | 28 | 29 |
 | Week 8 | 2 | 3 | 21 | 26 |
-| **TOTAL** | **37** | **6** | **112** | **155** |
+| **TOTAL** | **38** | **6** | **111** | **155** |
 
 > 155 > 100 because ADR 0004 added Airflow tasks, ADR 0011 added two seam tasks (generic runner dispatch, `ResultPublisher`), ADR 0012 added three Week-3 monitor-kind / metric seam tasks, plus PR-review follow-ups not in the original roadmap. Tracked here for honesty.
 
