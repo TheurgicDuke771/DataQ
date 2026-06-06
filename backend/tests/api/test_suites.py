@@ -440,11 +440,13 @@ class _FakeConn:
         self._tops = tops
 
     def execute(self, clause: Any) -> _FakeResult:
+        # Core statements render the column unquoted in str(); route the
+        # aggregate query by its row_count label, top-values by column name.
         sql = str(clause)
         if "row_count" in sql:
             return _FakeResult([self._aggregate])
         for col, rows in self._tops.items():
-            if f'"{col}"' in sql:
+            if col in sql:
                 return _FakeResult(rows)
         return _FakeResult([])
 

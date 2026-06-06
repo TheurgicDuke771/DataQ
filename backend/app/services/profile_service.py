@@ -10,11 +10,13 @@ ADR 0011); other types get a clear 422. Flat-file (Pandas) and Unity Catalog
 profilers are the sibling Week-3 tasks.
 
 **SQL-injection safety.** Table / schema / column names are caller-supplied and
-go into the SQL text (they can't be bound parameters). Every identifier is
-validated against a strict allowlist pattern *and* double-quoted; a name that
-isn't a plain identifier is rejected (422) rather than quoted-and-hoped. The
-statistic columns use positional aliases (`nulls_0`, …) so the column name never
-has to round-trip through an alias.
+become SQL *identifiers* (they can't be bound parameters). Queries are built with
+the SQLAlchemy Core expression language (`select` / `table` / `column`) — never
+string formatting — so the dialect does the quoting and there is no raw-SQL sink.
+As defence-in-depth (and for a clean early 422) each identifier is additionally
+validated against a strict allowlist before it reaches a `column()` / `table()`.
+Statistic columns use positional labels (`nulls_0`, …) so the column name never
+has to round-trip through a label.
 
 Like the GX adapter, the pure pieces (identifier validation, query building,
 result assembly) are unit-testable without a warehouse; the one I/O seam
@@ -29,7 +31,8 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import text
+from sqlalchemy import column, distinct, func, select, table
+from sqlalchemy.sql import Select
 
 from backend.app.core.errors import DataQError
 from backend.app.core.jsonsafe import sanitize_json
@@ -86,53 +89,56 @@ class TableProfile:
     columns: list[ColumnProfile]
 
 
-# ───────────────────────── pure SQL builders ───────────────────────
+# ───────────────────────── pure query builders ─────────────────────
 
 
-def quote_identifier(name: str | None) -> str:
-    """Validate `name` as a plain identifier and return its double-quoted form.
+def validate_identifier(name: str | None) -> str:
+    """Validate `name` against the plain-identifier allowlist and return it.
 
     Raises `ProfileIdentifierInvalidError` (422) for anything that isn't a plain
-    identifier — the strict allowlist is what makes the double-quoting safe.
+    identifier. The SQLAlchemy Core builders quote safely on their own; this is
+    defence-in-depth and turns an odd name into a clean 422 instead of a quoted
+    column that simply doesn't exist.
     """
     if not name or not _IDENTIFIER.match(name):
         raise ProfileIdentifierInvalidError(
             "not a valid table/schema/column identifier", detail={"identifier": name}
         )
-    return f'"{name}"'
+    return name
 
 
-def _qualified(schema: str, table: str) -> str:
-    return f"{quote_identifier(schema)}.{quote_identifier(table)}"
+def _table(schema: str, table_name: str) -> Any:
+    return table(validate_identifier(table_name), schema=validate_identifier(schema))
 
 
-def build_aggregate_query(schema: str, table: str, columns: list[str]) -> str:
+def build_aggregate_query(schema: str, table_name: str, columns: list[str]) -> Select[Any]:
     """One round-trip: row count + null/distinct/min/max per column.
 
-    All interpolations are allowlist-validated identifiers (`quote_identifier`)
-    or fixed aliases — never raw caller input — so the S608/B608 SQL-injection
-    warnings on the assembled string are suppressed by construction.
+    Built with the Core expression language (no string SQL); identifiers are
+    validated then handed to `column()`/`table()`, which the dialect quotes.
     """
-    selects = ["COUNT(*) AS row_count"]
+    projection: list[Any] = [func.count().label("row_count")]
     for i, col in enumerate(columns):
-        c = quote_identifier(col)
-        selects.append(f"COUNT(*) - COUNT({c}) AS nulls_{i}")
-        selects.append(f"COUNT(DISTINCT {c}) AS distinct_{i}")
-        selects.append(f"MIN({c}) AS min_{i}")
-        selects.append(f"MAX({c}) AS max_{i}")
-    projection, source = ", ".join(selects), _qualified(schema, table)
-    return f"SELECT {projection} FROM {source}"  # noqa: S608  # nosec B608
+        c: Any = column(validate_identifier(col))
+        projection.append((func.count() - func.count(c)).label(f"nulls_{i}"))
+        projection.append(func.count(distinct(c)).label(f"distinct_{i}"))
+        projection.append(func.min(c).label(f"min_{i}"))
+        projection.append(func.max(c).label(f"max_{i}"))
+    return select(*projection).select_from(_table(schema, table_name))
 
 
-def build_top_values_query(schema: str, table: str, column: str, top_n: int) -> str:
-    """Most frequent non-null values for one column (highest count first).
-
-    Identifiers are allowlist-validated/quoted and `top_n` is `int()`-coerced, so
-    the assembled SQL carries no caller-controlled text (S608/B608 suppressed).
-    """
-    c, source = quote_identifier(column), _qualified(schema, table)
-    tail = f"WHERE {c} IS NOT NULL GROUP BY {c} ORDER BY freq DESC, value LIMIT {int(top_n)}"
-    return f"SELECT {c} AS value, COUNT(*) AS freq FROM {source} {tail}"  # noqa: S608  # nosec B608
+def build_top_values_query(schema: str, table_name: str, col: str, top_n: int) -> Select[Any]:
+    """Most frequent non-null values for one column (highest count first)."""
+    c: Any = column(validate_identifier(col))
+    freq = func.count().label("freq")
+    return (
+        select(c.label("value"), freq)
+        .select_from(_table(schema, table_name))
+        .where(c.is_not(None))
+        .group_by(c)
+        .order_by(func.count().desc(), c)
+        .limit(int(top_n))
+    )
 
 
 def assemble_profile(
@@ -218,23 +224,23 @@ def profile_table(
         raise ProfileIdentifierInvalidError(
             "no schema given and the connection has none", detail={"schema": effective_schema}
         )
-    # Validate every identifier up front (422) so nothing unsafe reaches the SQL.
-    quote_identifier(table)
-    quote_identifier(effective_schema)
+    # Validate every identifier up front (422) before any query is built/run.
+    validate_identifier(table)
+    validate_identifier(effective_schema)
     for col in columns:
-        quote_identifier(col)
+        validate_identifier(col)
 
     try:
         with _open_connection(connection, secret_store) as conn:
             aggregate = (
-                conn.execute(text(build_aggregate_query(effective_schema, table, columns)))
+                conn.execute(build_aggregate_query(effective_schema, table, columns))
                 .mappings()
                 .one()
             )
             top_values = {
                 col: list(
                     conn.execute(
-                        text(build_top_values_query(effective_schema, table, col, top_n))
+                        build_top_values_query(effective_schema, table, col, top_n)
                     ).mappings()
                 )
                 for col in columns

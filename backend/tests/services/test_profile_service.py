@@ -1,8 +1,9 @@
 """Column-profiler unit tests — pure, no DB / no warehouse.
 
-Covers the injection-safe identifier quoting, the SQL builders, and the
-result assembly (`assemble_profile`) from canned query rows. The live I/O seam
-(`_open_connection`) is exercised via the endpoint tests with a fake connection.
+Covers identifier validation, the SQLAlchemy Core query builders (compiled to
+SQL for inspection), and result assembly (`assemble_profile`) from canned query
+rows. The live I/O seam (`_open_connection`) is exercised via the endpoint tests
+with a fake connection.
 """
 
 import math
@@ -14,49 +15,57 @@ from backend.app.services.profile_service import (
     assemble_profile,
     build_aggregate_query,
     build_top_values_query,
-    quote_identifier,
+    validate_identifier,
 )
 
-# ── quote_identifier ──
+
+def _sql(stmt: object) -> str:
+    """Compile a Core statement to literal SQL, lowercased, for assertions."""
+    return str(stmt.compile(compile_kwargs={"literal_binds": True})).lower()  # type: ignore[attr-defined]
+
+
+# ── validate_identifier ──
 
 
 @pytest.mark.parametrize("name", ["id", "_x", "Col1", "amount$usd", "ORDERS"])
-def test_quote_identifier_accepts_plain_identifiers(name: str) -> None:
-    assert quote_identifier(name) == f'"{name}"'
+def test_validate_identifier_accepts_plain_identifiers(name: str) -> None:
+    assert validate_identifier(name) == name
 
 
 @pytest.mark.parametrize(
     "bad",
     ["a b", 'a"b', "a;b", "a.b", "a-b", "1col", "", "a)b", "a'b", "a b; DROP TABLE x"],
 )
-def test_quote_identifier_rejects_unsafe(bad: str) -> None:
+def test_validate_identifier_rejects_unsafe(bad: str) -> None:
     with pytest.raises(ProfileIdentifierInvalidError):
-        quote_identifier(bad)
+        validate_identifier(bad)
 
 
-def test_quote_identifier_rejects_none() -> None:
+def test_validate_identifier_rejects_none() -> None:
     with pytest.raises(ProfileIdentifierInvalidError):
-        quote_identifier(None)
+        validate_identifier(None)
 
 
-# ── query builders ──
+# ── query builders (compiled SQL inspection) ──
 
 
-def test_aggregate_query_quotes_and_aliases_per_column() -> None:
-    sql = build_aggregate_query("public", "orders", ["amount", "status"])
-    assert sql.startswith("SELECT COUNT(*) AS row_count,")
-    assert 'FROM "public"."orders"' in sql
-    # positional aliases per column, quoted identifiers
+def test_aggregate_query_aggregates_and_labels_per_column() -> None:
+    sql = _sql(build_aggregate_query("public", "orders", ["amount", "status"]))
+    assert "count(*) as row_count" in sql
+    assert "from public.orders" in sql
+    # positional labels per column
     for token in ("nulls_0", "distinct_0", "min_0", "max_0", "nulls_1", "max_1"):
         assert token in sql
-    assert 'COUNT(DISTINCT "amount")' in sql and 'MAX("status")' in sql
+    assert "count(distinct amount)" in sql and "max(status)" in sql
 
 
 def test_top_values_query_orders_and_limits() -> None:
-    sql = build_top_values_query("public", "orders", "status", 5)
-    assert 'SELECT "status" AS value, COUNT(*) AS freq FROM "public"."orders"' in sql
-    assert 'WHERE "status" IS NOT NULL GROUP BY "status"' in sql
-    assert "ORDER BY freq DESC, value LIMIT 5" in sql
+    sql = _sql(build_top_values_query("public", "orders", "status", 5))
+    assert "status as value" in sql and "count(*) as freq" in sql
+    assert "from public.orders" in sql
+    assert "where status is not null" in sql and "group by status" in sql
+    assert "order by count(*) desc" in sql
+    assert "limit 5" in sql
 
 
 def test_builders_reject_unsafe_identifiers() -> None:
