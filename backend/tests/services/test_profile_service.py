@@ -7,6 +7,7 @@ SQL for inspection), SQL result assembly (`assemble_profile`), and the flat-file
 """
 
 import math
+from typing import Any
 
 import pandas as pd
 import pytest
@@ -258,14 +259,29 @@ def test_profile_dataframe_coerces_timestamps_to_iso() -> None:
 # ── _read_dataframe column projection (real parse, mocked download) ──
 
 
+class _FakeStore:
+    def get(self, ref: str) -> str:
+        return "secret"
+
+
+def _flatfile_conn() -> Any:
+    from types import SimpleNamespace
+
+    return SimpleNamespace(type="s3", config={"bucket": "b", "region": "r"}, secret_ref="ref")
+
+
 def test_read_dataframe_csv_projects_only_requested_columns(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from backend.app.services import profile_service as svc
 
-    monkeypatch.setattr(svc, "_download_bytes", lambda *a, **k: b"a,b,c\n1,2,3\n4,5,6\n")
+    monkeypatch.setattr(svc, "download_bytes", lambda **k: b"a,b,c\n1,2,3\n4,5,6\n")
     df = svc._read_dataframe(
-        object(), path="x.csv", file_format="csv", columns=["a", "c"], secret_store=object()
+        _flatfile_conn(),
+        path="x.csv",
+        file_format="csv",
+        columns=["a", "c"],
+        secret_store=_FakeStore(),
     )
     assert list(df.columns) == ["a", "c"]  # 'b' is never parsed
     assert len(df) == 2
@@ -280,9 +296,13 @@ def test_read_dataframe_parquet_projects_only_requested_columns(
 
     buf = io.BytesIO()
     pd.DataFrame({"a": [1, 2], "b": [3, 4], "c": [5, 6]}).to_parquet(buf)
-    monkeypatch.setattr(svc, "_download_bytes", lambda *a, **k: buf.getvalue())
+    monkeypatch.setattr(svc, "download_bytes", lambda **k: buf.getvalue())
     df = svc._read_dataframe(
-        object(), path="x.parquet", file_format="parquet", columns=["a", "c"], secret_store=object()
+        _flatfile_conn(),
+        path="x.parquet",
+        file_format="parquet",
+        columns=["a", "c"],
+        secret_store=_FakeStore(),
     )
     assert set(df.columns) == {"a", "c"}  # 'b' is never read
     assert len(df) == 2

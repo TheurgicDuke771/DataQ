@@ -21,24 +21,32 @@ from typing import Any
 from urllib.parse import quote_plus
 
 import great_expectations as gx
-import great_expectations.expectations as gxe
 from pydantic import BaseModel, ConfigDict, Field
 
 from backend.app.core.secrets import SecretStore
-from backend.app.datasources.base import CheckOutcome, CheckSpec, SuiteOutcome
+from backend.app.datasources.base import CheckSpec, SuiteOutcome
 
-# GX result keys that describe failing rows — copied into CheckOutcome.sample_failures.
-# These may contain real data, so they only ever reach logs via the redactor.
-_SAMPLE_KEYS = ("partial_unexpected_list", "unexpected_count", "unexpected_percent")
+# GX-translation machinery is shared across runners (see `gx_runner`); re-exported
+# here so existing importers (and tests) keep resolving these from `snowflake`.
+from backend.app.datasources.gx_runner import (
+    UnknownExpectationError,
+    _expectation_class_name,
+    _to_gx_expectation,
+    run_expectations,
+    to_suite_outcome,
+)
 
-# GX injects internal bookkeeping keys into expectation_config.kwargs at run
-# time (e.g. batch_id); strip them so expected_value persists only the check's
-# own parameters.
-_GX_INTERNAL_KWARGS = frozenset({"batch_id"})
-
-
-class UnknownExpectationError(ValueError):
-    """Raised when a check's expectation_type has no matching GX expectation."""
+__all__ = [
+    "SnowflakeCheckRunner",
+    "SnowflakeConfig",
+    "SnowflakeConnectionAdapter",
+    "UnknownExpectationError",
+    "_expectation_class_name",
+    "_to_gx_expectation",
+    "build_connection_string",
+    "build_snowflake_runner",
+    "to_suite_outcome",
+]
 
 
 class SnowflakeConfig(BaseModel):
@@ -70,59 +78,6 @@ def build_connection_string(config: SnowflakeConfig, password: str) -> str:
     )
 
 
-def _expectation_class_name(expectation_type: str) -> str:
-    """snake_case GX type → PascalCase class name.
-
-    ``expect_column_values_to_not_be_null`` → ``ExpectColumnValuesToNotBeNull``.
-    """
-    return "".join(part.title() for part in expectation_type.split("_"))
-
-
-def _to_gx_expectation(spec: CheckSpec) -> Any:
-    class_name = _expectation_class_name(spec.expectation_type)
-    expectation_cls = getattr(gxe, class_name, None)
-    if expectation_cls is None:
-        raise UnknownExpectationError(
-            f"Unknown expectation_type {spec.expectation_type!r} (no gx class {class_name!r})"
-        )
-    return expectation_cls(**spec.kwargs)
-
-
-def _extract_sample_failures(result: dict[str, Any]) -> dict[str, Any] | None:
-    sample = {key: result[key] for key in _SAMPLE_KEYS if key in result}
-    return sample or None
-
-
-def _expected_value(kwargs: Any) -> dict[str, Any] | None:
-    cleaned = {key: value for key, value in dict(kwargs).items() if key not in _GX_INTERNAL_KWARGS}
-    return cleaned or None
-
-
-def to_suite_outcome(gx_result: Any) -> SuiteOutcome:
-    """Map a GX ExpectationSuiteValidationResult onto our GX-agnostic DTO.
-
-    Kept module-level (not a private method) so it is unit-testable with a
-    constructed GX result, no Snowflake connection required.
-    """
-    outcomes: list[CheckOutcome] = []
-    for check_result in gx_result.results:
-        config = check_result.expectation_config
-        detail: dict[str, Any] = check_result.result or {}
-        observed = (
-            {"observed_value": detail["observed_value"]} if "observed_value" in detail else None
-        )
-        outcomes.append(
-            CheckOutcome(
-                expectation_type=config.type,
-                success=bool(check_result.success),
-                observed_value=observed,
-                expected_value=_expected_value(config.kwargs) if config.kwargs else None,
-                sample_failures=_extract_sample_failures(detail),
-            )
-        )
-    return SuiteOutcome(success=bool(gx_result.success), checks=outcomes)
-
-
 class SnowflakeCheckRunner:
     """`CheckRunner` for Snowflake. Building the asset connects to the warehouse."""
 
@@ -147,26 +102,12 @@ class SnowflakeCheckRunner:
             table_name=table,
             schema_name=schema or self._config.schema_,
         )
+        # The table asset resolves its own batch, so no batch_parameters; the
+        # ephemeral context makes the fixed suite/vd names safe across runs.
         batch_definition = asset.add_batch_definition_whole_table(name="whole_table")
-        # GX 1.17 requires the suite and validation definition to be registered
-        # on the context before run(); a free-standing ValidationDefinition.run()
-        # raises ValidationDefinitionRelatedResourcesFreshnessError. The context
-        # is ephemeral (per-run), so the fixed names never collide across runs.
-        suite = context.suites.add(
-            gx.ExpectationSuite(
-                name=f"suite-{table}",
-                expectations=[_to_gx_expectation(check) for check in checks],
-            )
+        return run_expectations(
+            context, batch_definition=batch_definition, checks=checks, name=f"suite-{table}"
         )
-        validation_definition = context.validation_definitions.add(
-            gx.ValidationDefinition(
-                name=f"vd-{table}",
-                data=batch_definition,
-                suite=suite,
-            )
-        )
-        result = validation_definition.run(result_format="COMPLETE")
-        return to_suite_outcome(result)
 
 
 def build_snowflake_runner(
