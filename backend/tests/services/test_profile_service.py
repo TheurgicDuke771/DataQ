@@ -80,6 +80,57 @@ def test_builders_reject_unsafe_identifiers() -> None:
         build_top_values_query("public", "orders", "amount; --", 5)
 
 
+def test_builders_with_catalog_qualify_three_part_namespace() -> None:
+    # Unity Catalog: catalog.schema.table (unquoted dotted, allowlist-validated)
+    agg = _sql(build_aggregate_query("sales", "orders", ["amt"], "main"))
+    assert "from main.sales.orders" in agg
+    top = _sql(build_top_values_query("sales", "orders", "amt", 5, "main"))
+    assert "from main.sales.orders" in top
+
+
+def test_builder_rejects_unsafe_catalog() -> None:
+    with pytest.raises(ProfileIdentifierInvalidError):
+        build_aggregate_query("sales", "orders", ["amt"], "main; DROP")
+
+
+# ── _engine_args (SQL dialect dispatch) ──
+
+
+def test_engine_args_databricks_url() -> None:
+    from types import SimpleNamespace
+
+    from backend.app.services.profile_service import _engine_args
+
+    conn = SimpleNamespace(
+        type="unity_catalog",
+        config={"workspace_url": "https://adb-1.2.azuredatabricks.net", "warehouse_id": "w1"},
+    )
+    url, connect_args = _engine_args(conn, "tok")  # type: ignore[arg-type]
+    assert url.startswith("databricks://token:tok@adb-1.2.azuredatabricks.net")
+    assert "http_path=" in url and "warehouses" in url
+    assert connect_args == {}
+
+
+def test_engine_args_snowflake_url() -> None:
+    from types import SimpleNamespace
+
+    from backend.app.services.profile_service import _engine_args
+
+    conn = SimpleNamespace(
+        type="snowflake",
+        config={
+            "account": "ab1",
+            "user": "u",
+            "database": "d",
+            "schema": "s",
+            "warehouse": "wh",
+        },
+    )
+    url, connect_args = _engine_args(conn, "pw")  # type: ignore[arg-type]
+    assert url.startswith("snowflake://")
+    assert "login_timeout" in connect_args
+
+
 # ── assemble_profile ──
 
 

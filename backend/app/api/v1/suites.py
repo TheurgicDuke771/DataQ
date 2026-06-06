@@ -193,9 +193,10 @@ def import_suite(
 class ColumnProfileRequest(BaseModel):
     columns: list[str] = Field(min_length=1, max_length=50)
     top_n: int = Field(default=10, ge=1, le=100, description="Most-frequent values per column")
-    # SQL datasources (Snowflake): the target is a table (+ optional schema).
+    # SQL datasources: the target is a table (+ schema; Unity Catalog also catalog).
     table: str | None = Field(default=None, max_length=255, description="SQL table to profile")
     schema_: str | None = Field(default=None, alias="schema")
+    catalog: str | None = Field(default=None, max_length=255, description="Unity Catalog catalog")
     # Flat-file datasources (ADLS Gen2 / S3): the target is a file path.
     path: str | None = Field(default=None, max_length=1024, description="Flat-file path to profile")
     file_format: Literal["csv", "parquet"] | None = None
@@ -218,7 +219,8 @@ class ColumnProfileRead(BaseModel):
 
 class ProfileRead(BaseModel):
     """Profile result. Identity fields are type-specific: SQL datasources fill
-    `table` / `schema`, flat-file datasources fill `path` / `file_format`."""
+    `table` / `schema` (+ `catalog` for Unity Catalog), flat-file datasources fill
+    `path` / `file_format`."""
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -226,6 +228,7 @@ class ProfileRead(BaseModel):
     columns: list[ColumnProfileRead]
     table: str | None = None
     schema_: str | None = Field(default=None, serialization_alias="schema")
+    catalog: str | None = None
     path: str | None = None
     file_format: str | None = None
 
@@ -253,6 +256,7 @@ def profile_columns(
         top_n=payload.top_n,
         table=payload.table,
         schema=payload.schema_,
+        catalog=payload.catalog,
         path=payload.path,
         file_format=payload.file_format,
         secret_store=secret_store,
@@ -261,6 +265,7 @@ def profile_columns(
         row_count=result.row_count,
         table=result.table,
         schema_=result.schema,
+        catalog=result.catalog,
         path=result.path,
         file_format=result.file_format,
         columns=[

@@ -542,9 +542,9 @@ def test_profile_invalid_column_returns_422(client: TestClient, db_session: Any)
 def test_profile_unsupported_connection_type_returns_422(
     client: TestClient, db_session: Any
 ) -> None:
-    # unity_catalog has no profiler yet (its own Week-3 task) → unsupported.
-    conn = _typed_connection(db_session, "unity_catalog", {"workspace_url": "https://x"})
-    sid = client.post("/api/v1/suites", json=_payload(conn.id, name="uc-suite")).json()["id"]
+    # all four datasources are profilable now; an orchestration type (ADF) is not.
+    conn = _typed_connection(db_session, "adf", {"subscription_id": "s", "factory_name": "f"})
+    sid = client.post("/api/v1/suites", json=_payload(conn.id, name="adf-suite")).json()["id"]
     resp = client.post(
         f"/api/v1/suites/{sid}/profile",
         json={"table": "orders", "schema": "public", "columns": ["amount"]},
@@ -660,6 +660,67 @@ def test_profile_sql_missing_table_returns_422(client: TestClient, db_session: A
     resp = client.post(f"/api/v1/suites/{sid}/profile", json={"columns": ["a"]})
     assert resp.status_code == 422
     assert resp.json()["error"]["code"] == "profile_target_invalid"
+
+
+# ── Unity Catalog (Databricks) profiling ──
+
+
+def _uc_suite(client: TestClient, db_session: Any) -> str:
+    conn = _typed_connection(
+        db_session,
+        "unity_catalog",
+        {"workspace_url": "https://adb-1.2.azuredatabricks.net", "warehouse_id": "w1"},
+    )
+    return str(client.post("/api/v1/suites", json=_payload(conn.id, name="uc-suite")).json()["id"])
+
+
+def test_profile_unity_catalog_returns_stats(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sid = _uc_suite(client, db_session)
+    # same fake conn as the Snowflake path — profile_table runs through _open_connection
+    _patch_conn(
+        monkeypatch,
+        aggregate={"row_count": 50, "nulls_0": 5, "distinct_0": 3, "min_0": 1, "max_0": 9},
+        tops={"amt": [{"value": 9, "freq": 20}]},
+    )
+    resp = client.post(
+        f"/api/v1/suites/{sid}/profile",
+        json={"catalog": "main", "schema": "sales", "table": "orders", "columns": ["amt"]},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    # 3-level identity echoed back; flat-file identity absent
+    assert body["catalog"] == "main" and body["schema"] == "sales" and body["table"] == "orders"
+    assert body["path"] is None
+    assert body["row_count"] == 50
+    amt = body["columns"][0]
+    assert amt["null_count"] == 5 and amt["min_value"] == 1
+    assert amt["top_values"][0] == {"value": 9, "count": 20}
+
+
+def test_profile_unity_catalog_missing_catalog_returns_422(
+    client: TestClient, db_session: Any
+) -> None:
+    sid = _uc_suite(client, db_session)
+    resp = client.post(
+        f"/api/v1/suites/{sid}/profile",
+        json={"schema": "sales", "table": "orders", "columns": ["amt"]},
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "profile_target_invalid"
+
+
+def test_profile_unity_catalog_bad_catalog_identifier_returns_422(
+    client: TestClient, db_session: Any
+) -> None:
+    sid = _uc_suite(client, db_session)
+    resp = client.post(
+        f"/api/v1/suites/{sid}/profile",
+        json={"catalog": "main; DROP", "schema": "sales", "table": "orders", "columns": ["amt"]},
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "profile_identifier_invalid"
 
 
 def test_profile_flat_file_unknown_format_returns_422(client: TestClient, db_session: Any) -> None:
