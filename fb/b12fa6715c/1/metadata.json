@@ -1,0 +1,52 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "fbb12fa6715c",
+  "session_id": "f81a27c1-9606-4cc2-bccc-2e2fee08a0cb",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-07T18:43:29.983153Z",
+  "branch": "chore/switch-secret-scanning-betterleaks",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".github/workflows/ci.yml",
+    ".pre-commit-config.yaml",
+    "CONTRIBUTING.md",
+    "docs/adr/0013-marketplace-distribution-and-anti-lock-in.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-4-8",
+  "turn_id": "4a86931d1547",
+  "token_usage": {
+    "input_tokens": 277650,
+    "cache_creation_tokens": 14819433,
+    "cache_read_tokens": 684299376,
+    "output_tokens": 1711479,
+    "api_call_count": 1722
+  },
+  "session_metrics": {
+    "turn_count": 85
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-07T18:43:29.801045Z",
+    "agent_lines": 14,
+    "agent_removed": 10,
+    "human_added": 2,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 16,
+    "total_lines_changed": 28,
+    "agent_percentage": 85.71428571428571,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}
