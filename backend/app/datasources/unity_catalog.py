@@ -22,9 +22,14 @@ real credentials.
 from __future__ import annotations
 
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import quote_plus, urlparse
 
+import great_expectations as gx
 from pydantic import BaseModel, ConfigDict, field_validator
+
+from backend.app.core.secrets import SecretStore
+from backend.app.datasources.base import CheckSpec, SuiteOutcome
+from backend.app.datasources.gx_runner import run_expectations
 
 
 class UnityCatalogConfig(BaseModel):
@@ -88,3 +93,90 @@ class UnityCatalogConnectionAdapter:
                 cursor.close()
         finally:
             connection.close()
+
+
+def build_databricks_url(
+    config: UnityCatalogConfig, token: str, *, catalog: str | None = None
+) -> str:
+    """SQLAlchemy URL for the Databricks SQL Warehouse (databricks dialect).
+
+    The PAT, http_path and `catalog` are URL-encoded. Pinning `catalog` sets the
+    session default so a 2-level `schema.table` reference resolves to
+    `catalog.schema.table`; the profiler leaves it unset and qualifies the
+    namespace in the query instead.
+    """
+    url = (
+        f"databricks://token:{quote_plus(token)}@{config.server_hostname}"
+        f"?http_path={quote_plus(config.http_path)}"
+    )
+    if catalog:
+        url += f"&catalog={quote_plus(catalog)}"
+    return url
+
+
+class UnityCatalogCheckRunner:
+    """GX `CheckRunner` for Unity Catalog via the Databricks SQL Warehouse.
+
+    The UC run path reads the target table into a pandas DataFrame and validates
+    that frame with GX — the "GX DataFrame datasource" shape (CLAUDE.md §5), the
+    same shape Databricks Labs DQX consumes, so v1.1 can swap GX for DQX behind
+    this same interface without touching the suite/check/result layer.
+
+    `table` + `schema` come from `run_checks` (the suite's target); `catalog` is
+    fixed per run (held here). Reflecting + reading the table is the live seam
+    (`_read_table`), monkeypatched in tests; GX then runs in-process on the
+    returned frame, so the validation path itself is fully covered.
+    """
+
+    def __init__(self, *, config: UnityCatalogConfig, token: str, catalog: str) -> None:
+        self._config = config
+        self._token = token
+        self._catalog = catalog
+
+    def _read_table(self, *, table: str, schema: str | None) -> Any:
+        """Reflect + read the whole table into a DataFrame (live seam).
+
+        `read_sql_table` reflects through SQLAlchemy (proper dialect quoting), so
+        the table/schema identifiers are never string-formatted into SQL; the
+        pinned catalog + `schema` qualify it to `catalog.schema.table`.
+        """
+        import pandas as pd
+        from sqlalchemy import create_engine
+
+        engine = create_engine(
+            build_databricks_url(self._config, self._token, catalog=self._catalog)
+        )
+        try:
+            return pd.read_sql_table(table, engine, schema=schema)
+        finally:
+            engine.dispose()
+
+    def run_checks(
+        self, *, table: str, schema: str | None, checks: list[CheckSpec]
+    ) -> SuiteOutcome:
+        df = self._read_table(table=table, schema=schema)
+        context = gx.get_context(mode="ephemeral")
+        asset = context.data_sources.add_pandas(name="uc").add_dataframe_asset(name="table")
+        batch_definition = asset.add_batch_definition_whole_dataframe(name="whole_dataframe")
+        return run_expectations(
+            context,
+            batch_definition=batch_definition,
+            checks=checks,
+            name="suite-uc",
+            batch_parameters={"dataframe": df},
+        )
+
+
+def build_unity_catalog_runner(
+    *, config: dict[str, Any], secret_ref: str | None, secret_store: SecretStore, catalog: str
+) -> UnityCatalogCheckRunner:
+    """Build a runner from a UC `Connection`'s primitives + the target `catalog`.
+
+    Mirrors `build_snowflake_runner`: resolves the PAT eagerly and takes the raw
+    config dict (not the ORM model) to keep the adapter decoupled from `db/`.
+    """
+    if not secret_ref:
+        raise ValueError("Unity Catalog connection requires secret_ref for the PAT")
+    uc_config = UnityCatalogConfig.model_validate(config)
+    token = secret_store.get(secret_ref)
+    return UnityCatalogCheckRunner(config=uc_config, token=token, catalog=catalog)
