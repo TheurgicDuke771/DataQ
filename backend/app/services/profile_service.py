@@ -103,7 +103,7 @@ class ColumnProfile:
     column: str
     null_count: int
     null_fraction: float
-    distinct_count: int
+    distinct_count: int | None  # None when the column's values aren't hashable
     min_value: Any
     max_value: Any
     top_values: list[dict[str, Any]]  # [{"value": ..., "count": int}]
@@ -374,27 +374,50 @@ def profile_dataframe(
             detail={"missing": missing, "available": [str(c) for c in df.columns][:50]},
         )
     row_count = len(df)
-    profiles: list[ColumnProfile] = []
-    for col in columns:
-        series = df[col]
-        null_count = int(series.isna().sum())
-        non_null = series.dropna()
-        counts = non_null.value_counts().head(top_n)
-        profiles.append(
-            ColumnProfile(
-                column=col,
-                null_count=null_count,
-                null_fraction=(null_count / row_count) if row_count else 0.0,
-                distinct_count=int(non_null.nunique()),
-                min_value=sanitize_json(_to_native(non_null.min())) if len(non_null) else None,
-                max_value=sanitize_json(_to_native(non_null.max())) if len(non_null) else None,
-                top_values=[
-                    {"value": sanitize_json(_to_native(value)), "count": int(count)}
-                    for value, count in counts.items()
-                ],
-            )
-        )
+    profiles = [_profile_series(col, df[col], row_count=row_count, top_n=top_n) for col in columns]
     return ProfileResult(path=path, file_format=file_format, row_count=row_count, columns=profiles)
+
+
+def _profile_series(column: str, series: Any, *, row_count: int, top_n: int) -> ColumnProfile:
+    """Per-column stats, degrading a messy column to nulls instead of 500-ing.
+
+    `null_count` is always computable, but a real-world flat file can hold a
+    column the stats can't process: min/max raise on **uncomparable** mixed types
+    (e.g. ints and strings in one object column), and distinct/value_counts raise
+    on **unhashable** cells (nested list/dict values from Parquet). Each best-effort
+    stat is guarded independently — and broadly, since the exception type varies by
+    backend (a numpy object column raises `TypeError`, a pyarrow-backed Parquet
+    list/struct column raises `ArrowNotImplementedError`) — so one bad column yields
+    null stats for itself rather than failing the whole profile request.
+    """
+    null_count = int(series.isna().sum())
+    non_null = series.dropna()
+    try:
+        minimum = _to_native(non_null.min()) if len(non_null) else None
+        maximum = _to_native(non_null.max()) if len(non_null) else None
+    except Exception:
+        minimum = maximum = None
+    try:
+        distinct: int | None = int(non_null.nunique())
+    except Exception:
+        distinct = None
+    try:
+        counts = non_null.value_counts().head(top_n)
+        top = [
+            {"value": sanitize_json(_to_native(value)), "count": int(count)}
+            for value, count in counts.items()
+        ]
+    except Exception:
+        top = []
+    return ColumnProfile(
+        column=column,
+        null_count=null_count,
+        null_fraction=(null_count / row_count) if row_count else 0.0,
+        distinct_count=distinct,
+        min_value=sanitize_json(minimum),
+        max_value=sanitize_json(maximum),
+        top_values=top,
+    )
 
 
 def _read_dataframe(
@@ -496,8 +519,16 @@ def profile_connection(
     Raises `ProfileUnsupportedError` (422) for a type with no profiler, and
     `ProfileTargetInvalidError` (422) if the target for that type is missing
     (a SQL type needs `table`; Unity Catalog also needs `catalog`; a flat-file
-    type needs `path`).
+    type needs `path`) or the connection has no stored credential.
     """
+    # A supported connection with no credential is a config problem (422), not a
+    # transient datasource failure — catch it before the adapter raises a bare
+    # ValueError that the read/connect guard would relabel as a 502.
+    if connection.type in (_SQL_TYPES | _FILE_TYPES) and not connection.secret_ref:
+        raise ProfileTargetInvalidError(
+            "connection has no stored credential (secret_ref) to profile with",
+            detail={"type": connection.type},
+        )
     if connection.type in _SQL_TYPES:
         if not table:
             raise ProfileTargetInvalidError(
