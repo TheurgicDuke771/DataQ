@@ -112,16 +112,17 @@ services:
         condition: service_completed_successfully
 
   # React/Vite dev server. corepack pins pnpm from package.json's packageManager.
-  # The anonymous volumes keep the host's (possibly macOS-built) node_modules and
-  # pnpm's content-addressable store inside the container, off the ./frontend
-  # bind-mount — otherwise pnpm writes a ~300MB .pnpm-store into the host tree.
-  # The browser loads from localhost:3000 and the Vite proxy forwards /api + /mcp
-  # to the api service over the compose network.
+  # node_modules is an anonymous volume so the host's (possibly macOS-built) copy
+  # doesn't clobber the container's. pnpm's ~300MB content-addressable store is
+  # relocated to /pnpm-store (OUTSIDE the ./frontend bind) and held in its own
+  # volume — so nothing leaks into, or creates an empty mountpoint under, the host
+  # working tree. The browser loads from localhost:3000 and the Vite proxy forwards
+  # /api + /mcp to the api service over the compose network.
   frontend:
     image: node:20-alpine
     restart: unless-stopped
     working_dir: /app
-    command: sh -c "corepack enable && pnpm install && pnpm dev --host"
+    command: sh -c "corepack enable && pnpm config set store-dir /pnpm-store && pnpm install && pnpm dev --host"
     environment:
       VITE_API_PROXY_TARGET: http://api:8000
     ports:
@@ -129,9 +130,10 @@ services:
     volumes:
       - ./frontend:/app
       - /app/node_modules
-      - /app/.pnpm-store
+      - pnpm-store:/pnpm-store
     depends_on:
       - api
 
 volumes:
   postgres_data:
+  pnpm-store:
