@@ -384,20 +384,22 @@ def _profile_series(column: str, series: Any, *, row_count: int, top_n: int) -> 
     `null_count` is always computable, but a real-world flat file can hold a
     column the stats can't process: min/max raise on **uncomparable** mixed types
     (e.g. ints and strings in one object column), and distinct/value_counts raise
-    on **unhashable** cells (nested list/dict values from Parquet). Each of those
-    is guarded independently so one bad column yields null stats for itself rather
-    than failing the whole profile request.
+    on **unhashable** cells (nested list/dict values from Parquet). Each best-effort
+    stat is guarded independently — and broadly, since the exception type varies by
+    backend (a numpy object column raises `TypeError`, a pyarrow-backed Parquet
+    list/struct column raises `ArrowNotImplementedError`) — so one bad column yields
+    null stats for itself rather than failing the whole profile request.
     """
     null_count = int(series.isna().sum())
     non_null = series.dropna()
     try:
         minimum = _to_native(non_null.min()) if len(non_null) else None
         maximum = _to_native(non_null.max()) if len(non_null) else None
-    except (TypeError, ValueError):
+    except Exception:
         minimum = maximum = None
     try:
         distinct: int | None = int(non_null.nunique())
-    except (TypeError, ValueError):
+    except Exception:
         distinct = None
     try:
         counts = non_null.value_counts().head(top_n)
@@ -405,7 +407,7 @@ def _profile_series(column: str, series: Any, *, row_count: int, top_n: int) -> 
             {"value": sanitize_json(_to_native(value)), "count": int(count)}
             for value, count in counts.items()
         ]
-    except (TypeError, ValueError):
+    except Exception:
         top = []
     return ColumnProfile(
         column=column,

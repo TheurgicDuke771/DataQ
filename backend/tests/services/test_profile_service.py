@@ -356,10 +356,28 @@ def test_profile_dataframe_mixed_type_column_nulls_minmax_not_raise() -> None:
     assert col.null_count == 0
 
 
-def test_profile_dataframe_unhashable_column_nulls_distinct() -> None:
-    df = pd.DataFrame({"tags": [[1], [2], [1]]})  # unhashable cells
+def test_profile_dataframe_unhashable_object_column_nulls_distinct() -> None:
+    df = pd.DataFrame({"tags": [[1], [2], [1]]})  # numpy object column, unhashable cells
     col = profile_dataframe(df, columns=["tags"], top_n=5, path="x.csv", file_format="csv").columns[
         0
     ]
     assert col.distinct_count is None  # nunique can't hash → null, no crash
     assert col.null_count == 0
+
+
+def test_profile_dataframe_pyarrow_list_column_degrades_not_500() -> None:
+    # the profiler reads Parquet with dtype_backend="pyarrow"; a list/struct column
+    # raises ArrowNotImplementedError (not TypeError) from nunique/value_counts —
+    # the broadened guards must still degrade rather than propagate.
+    import io
+
+    buf = io.BytesIO()
+    pd.DataFrame({"tags": [[1, 2], [3], [1, 2]]}).to_parquet(buf)
+    buf.seek(0)
+    df = pd.read_parquet(buf, dtype_backend="pyarrow")
+    assert "pyarrow" in str(df["tags"].dtype)  # guard: actually Arrow-backed
+    col = profile_dataframe(
+        df, columns=["tags"], top_n=5, path="x.parquet", file_format="parquet"
+    ).columns[0]
+    assert col.distinct_count is None and col.top_values == []
+    assert col.min_value is None and col.null_count == 0
