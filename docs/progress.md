@@ -22,12 +22,12 @@
 | **Active since** | 2026-05-24 |
 | **Current week** | Week 3 **complete** → Week 4 of 8 (Execution backend) |
 | **Roadmap tasks done** | 44 ✅ + 6 🟡 / 155 (~28%) |
-| **Out-of-roadmap PRs landed** | 5 bundles (governance, tooling lock, Entire CLI, Dependabot triage round 1, PR-3 cleanup) + ADRs 0005/0006/0007/0012 |
+| **Out-of-roadmap PRs landed** | governance, tooling lock, Entire CLI, Dependabot triage, PR-3 cleanup + ADRs 0005/0006/0007/0010/0011/0012/0013/0014/0016 + the Week-3 testing-discipline upgrade (adversarial harness + mutation spikes, CONTRIBUTING rule 4a) |
 | **Week-1 exit gate** | A logged-in user can hit a FastAPI endpoint that triggers GX against Snowflake DEV and persists a result row. — **met** (plumbing complete via PR 4a–4c; live-Snowflake run fails-soft pending DEV creds — deferred smoke) |
-| **Next milestone** | ADF/Airflow polling fallback (`list_recent_runs` + 10-min Celery beat → succeeded-run detection → trigger) + run_suite dispatch wiring once Week-3 target-table lands (Week 5) |
-| **Open issues** | 7 (#92 + governance polish #20/#19/#18/#17/#10/#8) |
+| **Next milestone** | Week 4 — execution backend (async run UI/progress, run history). Week-5 carry-over: wire connection-type → `CheckRunner` dispatch into the worker ([#146](https://github.com/TheurgicDuke771/DataQ/issues/146) — it hardcodes `build_snowflake_runner` today) + ADF/Airflow polling fallback |
+| **Open issues** | 13 — follow-ups [#146](https://github.com/TheurgicDuke771/DataQ/issues/146) (runner dispatch) / [#147](https://github.com/TheurgicDuke771/DataQ/issues/147) (profiler cleanup) / [#129](https://github.com/TheurgicDuke771/DataQ/issues/129) (Snowflake connector CVE bump, ~W5) / [#128](https://github.com/TheurgicDuke771/DataQ/issues/128) (E2E/Playwright) / [#124](https://github.com/TheurgicDuke771/DataQ/issues/124) (DQ dimensions) / [#122](https://github.com/TheurgicDuke771/DataQ/issues/122) (skip/error statuses) + governance polish #92/#20/#19/#18/#17/#10/#8 |
 | **Open PRs** | none |
-| **Design gates** | ADR 0005 (severity weights) + ADR 0012 (monitor-kind seam) **both accepted** — Week-3 migration unblocked |
+| **Design gates** | all Week-3 design gates resolved (ADR 0005 severity weights, 0012 monitor-kind seam, 0016 severity derivation — migration shipped). Pending: two-connection model for `comparison` checks (ADR 0015, post-v1, non-blocking) |
 
 ---
 
@@ -40,7 +40,7 @@ These were preconditions for executing the roadmap. Listed for completeness.
 | **PR 0 governance** | #1–#24, #44, #55 — `.gitignore`, CLAUDE.md, CODEOWNERS, ADRs 0001–0004 + 0009, PR / issue templates, architecture diagram, Claude Code agents/skills/hooks/MCP, Entire CLI hooks + allowlist | ✅ |
 | **PR 1 tooling lock** | #37 — conda env, Black, Ruff, mypy, pre-commit, CI workflow, Dependabot, `scripts/setup.sh`, frontend tooling | ✅ |
 | **PR 2 hygiene follow-ups** | #44 (mermaid + tsconfig + ADR 0009 + CLAUDE.md status), #47 (precommit reorder), #48 (mermaid fix #2), #49 (precommit mypy deps), #52 (markdown linebreak preservation) | ✅ |
-| **Architecture Q&A ADRs** | ADR 0010 (provider-agnostic infra seams — cloud portability) + ADR 0011 (extensibility seams — more datasources, `ResultPublisher`, dbt-as-orchestration-provider). Records the now-vs-post-v1 timing per seam; threads v1 action items into W2/W5/W6/W7 above | 🟡 (`claude/dreamy-fermat-mwyqm`) |
+| **Architecture Q&A ADRs** | ADR 0010 (provider-agnostic infra seams — cloud portability) + ADR 0011 (extensibility seams — more datasources, `ResultPublisher`, dbt-as-orchestration-provider) + ADR 0013/0014 (marketplace/BYOL anti-lock-in; reconciliation `comparison` kind) + ADR 0016 (severity derivation). Record the now-vs-post-v1 timing per seam | ✅ |
 
 ---
 
@@ -212,7 +212,7 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [ ] ⬜ Scheduled runs table — create, pause, delete cron schedules
 - [ ] ⬜ Recent runs audit table with drill-down link to results
 
-**Week 5 total: 0 / 15**
+**Week 5 total: 1 / 15** _(the Celery task runner landed early in PR 4)_
 
 ---
 

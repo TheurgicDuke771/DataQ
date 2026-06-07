@@ -56,10 +56,10 @@ DataQ/
 │   │   ├── api/                 # FastAPI routers (versioned: /api/v1/...)
 │   │   ├── services/            # business logic per domain
 │   │   ├── orchestration/       # OrchestrationProvider abstraction (ADF, Airflow)
-│   │   ├── datasources/         # GX adapter per datasource type
+│   │   ├── datasources/         # ConnectionAdapter + CheckRunner per type; gx_runner.py (shared GX translation), flatfile.py (flat-file IO + runner + batch resolution)
 │   │   └── mcp/                 # FastMCP tools (Week 7)
 │   ├── alembic/
-│   └── tests/
+│   └── tests/                   # + tests/support/ (adversarial harness), tests/integration/ (end-to-end datasource runs)
 ├── frontend/                    # React + Vite + Ant Design (Node, pnpm)
 │   ├── src/
 │   └── tests/
@@ -121,13 +121,13 @@ Airflow callbacks require the user to add a snippet to their DAGs (we can't muta
 - **v1:** Great Expectations (GX Core) is the sole DQ framework across all 4 datasources. Unifies result schema, suite/check model, MCP tools, and the check editor. Every v1 check is a GX **expectation** (`check.kind = 'expectation'`).
 - **v1.1:** Databricks Labs **DQX** will be added for DLT / streaming use cases (GX is batch-only and runs poorly on streaming). DQX will implement the same `UnityCatalogCheckRunner` interface introduced in Week 3 — UI exposes `engine: gx | dqx` toggle on UC suites.
 - **Monitor-kind seam (do-now, Week 3):** not every monitor is a GX expectation. A `check.kind` discriminator (`expectation` in v1; `freshness | volume | schema_drift | anomaly | comparison` reserved) + numeric `metric_value` on results let v1.x auto-monitors slot in without a check/result schema rewrite. This seam is **orthogonal to the datasource seams** (`CheckRunner`, `ConnectionAdapter`): it varies by *monitor kind*, not datasource. See ADR `0012` (and `0014` for the reserved `comparison` / cross-dataset reconciliation kind) and post-v1 roadmap Theme A. Most real incidents are freshness/volume, not value-level — this is the leap from "GX runner" to DQ platform.
-- **Implication for Week 3:** keep the UC adapter thin behind `UnityCatalogCheckRunner` (DQX swap-in), **and** add `check.kind` + `metric_value`/`duration_ms` in the *same* threshold migration so the monitor-kind impls don't ripple into the suite/check/result layer later.
+- **Week-3 outcome (done):** the UC run path is thin behind `UnityCatalogCheckRunner` (reads the table into a GX DataFrame asset — the DQX swap-in shape), and `check.kind` + `metric_value`/`duration_ms` shipped in the one threshold migration, so the monitor-kind impls won't ripple into the suite/check/result layer later.
 
 ---
 
 ## 6. Working agreements (rules above feature work)
 
-Full list (30 rules across 8 categories) lives in [CONTRIBUTING.md](CONTRIBUTING.md). Highlights:
+Full list (37 rules across 8 categories) lives in [CONTRIBUTING.md](CONTRIBUTING.md). Highlights:
 
 ### Commit & change discipline
 - **One functionality per commit** (where possible).
@@ -147,7 +147,7 @@ Full list (30 rules across 8 categories) lives in [CONTRIBUTING.md](CONTRIBUTING
 - `gitleaks` secret scanning (pre-commit + CI).
 - Bandit (Python SAST) + CodeQL.
 - **Dependency CVE audit (CI): `pip-audit -r backend/requirements-dev.txt` (full backend runtime + test surface) + `pnpm audit --audit-level=high` (frontend).** Synchronous merge gate; complements the async Dependabot layer below.
-- **Python deps have one source of truth: `backend/requirements.txt`** (runtime hub) → `requirements-dev.txt` (`-r` it + test toolchain) → `environment.yml` + CI all install from it. The only re-listed subset is `requirements-typecheck.txt` (the typed deps mypy needs); the `typecheck-deps-sync` check (pre-commit **and** CI `backend-lint`) keeps the mypy hook aligned. Bump a Python version in `requirements.txt` only.
+- **Python deps have one source of truth: `backend/requirements.txt`** (runtime hub) → `requirements-dev.txt` (`-r` it + test toolchain) → `environment.yml` + CI all install from it. The re-listed subsets `requirements-dev.txt` pulls are `requirements-typecheck.txt` (the typed deps mypy needs) and `requirements-tooling.txt` (Black/Ruff/mypy/Bandit/pre-commit); the `typecheck-deps-sync` check (pre-commit **and** CI `backend-lint`) keeps the mypy hook aligned. `requirements-mutation.txt` (mutmut) is **standalone — not `-r`'d by anything**, so it stays off CI's install + `pip-audit` surface (manual tool, CONTRIBUTING rule 4a). Bump a Python version in `requirements.txt` only.
 - Dependabot for npm + pip + github-actions — **version updates + security alerts/updates both enabled** (alerts scan the full pip+npm dependency graph).
 
 ### Tooling (locked in Week 1, do not drift)
@@ -177,7 +177,7 @@ Full list (30 rules across 8 categories) lives in [CONTRIBUTING.md](CONTRIBUTING
 
 ## 7. Required reading before coding
 
-1. [CONTRIBUTING.md](CONTRIBUTING.md) — full 30-rule working agreements + DoD + commit/branch conventions
+1. [CONTRIBUTING.md](CONTRIBUTING.md) — full 37-rule working agreements + DoD + commit/branch conventions
 2. [docs/adr/](docs/adr/) — all ADRs (architecture decisions with rationale)
 3. [context/DataQ_platform_roadmap.md](context/DataQ_platform_roadmap.md) — the 8-week, 100-task product roadmap
 4. The current week's milestone target (see §13 below)
@@ -229,7 +229,7 @@ curl -X POST http://localhost:8000/api/v1/_probe/snowflake-suite
 - **`trigger_bindings` is provider-agnostic.** Composite key (`provider`, `pipeline_or_dag_id`, `env`) → `suite_id`. Don't add an ADF-specific bindings table.
 - **PII redaction at the logger level**, not at every call site. The redactor sits in `backend/app/core/logging.py`.
 - **Backward-compatible migrations only.** Code that depends on a new column ships in a separate PR *after* the migration is deployed.
-- **The Week-3 threshold migration is a one-shot for schema seams.** It must also add `check.kind` (default `'expectation'`) and `results.metric_value` (NUMERIC) + `duration_ms` (INT) — see ADR `0012`. `metric_value` is the SQL-aggregatable scalar a monitor measured; **don't store metrics only in JSONB `observed_value`** (you can't `AVG()`/`STDDEV()` it for trends or anomaly baselines). Adding these later means a second backward-compat two-step.
+- **The Week-3 threshold migration already added the schema seams (done).** It landed `check.kind` (default `'expectation'`), `results.metric_value` (NUMERIC) + `duration_ms` (INT), and the severity thresholds — see ADR `0012`. `metric_value` is the SQL-aggregatable scalar a monitor measured; **don't store metrics only in JSONB `observed_value`** (you can't `AVG()`/`STDDEV()` it for trends or anomaly baselines), and **don't add a second migration re-introducing these columns**.
 - **Secret scanning in pre-commit AND CI.** Don't rely on one alone.
 - **Azure Monitor alert setup (Week 7) needs the deployed public API URL.** Deployment must come first; coordinate Container Apps ingress with infra/security before Week 7 to avoid a deployment-day surprise.
 - **MCP tool descriptions are LLM-facing, not REST-API-facing.** Write them for natural-language selection; test against the 4 canonical NL queries in the roadmap.
@@ -259,7 +259,7 @@ curl -X POST http://localhost:8000/api/v1/_probe/snowflake-suite
 | Product roadmap (100 tasks, 8 weeks) | [context/DataQ_platform_roadmap.md](context/DataQ_platform_roadmap.md) |
 | System architecture diagram | [docs/architecture.md](docs/architecture.md) |
 | Architecture Decision Records | [docs/adr/](docs/adr/) |
-| Working agreements (full 30-rule list) | [CONTRIBUTING.md](CONTRIBUTING.md) |
+| Working agreements (full 37-rule list) | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | Live task tracker (per-PR roadmap status) | [docs/progress.md](docs/progress.md) |
 | Memory (cross-session AI context) | `~/.claude/projects/-Users-arijit-Coding-Python-DataQ/memory/` |
 
