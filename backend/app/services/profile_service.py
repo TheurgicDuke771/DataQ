@@ -59,6 +59,11 @@ log = get_logger(__name__)
 _SQL_TYPES = {"snowflake", "unity_catalog"}
 _FILE_TYPES = {"adls_gen2", "s3"}
 
+# Formats the profiler can actually parse. NOT redundant with
+# flatfile.format_from_path (which only recognises path extensions): this also
+# validates the caller's `explicit` file_format override (an arbitrary string),
+# and is deliberately a *subset* of recognised formats — a format can be
+# recognised by path yet unsupported here, which should still 422 (#147).
 _SUPPORTED_FORMATS = {"csv", "parquet"}
 # Flat-file profiling reads at most this many rows — stats are over the sample.
 _SAMPLE_ROWS = 100_000
