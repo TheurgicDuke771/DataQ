@@ -1,0 +1,35 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "1d1770a84924",
+  "session_id": "f81a27c1-9606-4cc2-bccc-2e2fee08a0cb",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-07T01:03:33.183056Z",
+  "branch": "feature/week3-flatfile-batch-resolution",
+  "checkpoints_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-opus-4-8",
+  "turn_id": "87f7dd5f058a",
+  "token_usage": {
+    "input_tokens": 248259,
+    "cache_creation_tokens": 13252424,
+    "cache_read_tokens": 569503759,
+    "output_tokens": 1530483,
+    "api_call_count": 1530
+  },
+  "session_metrics": {
+    "turn_count": 70
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}
