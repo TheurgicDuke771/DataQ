@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "268098c78c6b",
+  "strategy": "manual-commit",
+  "branch": "docs/week3-staleness-sweep",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "CLAUDE.md",
+    "README.md",
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/26/8098c78c6b/0/metadata.json",
+      "transcript": "/26/8098c78c6b/0/full.jsonl",
+      "content_hash": "/26/8098c78c6b/0/content_hash.txt",
+      "prompt": "/26/8098c78c6b/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 277516,
+    "cache_creation_tokens": 14815697,
+    "cache_read_tokens": 679937120,
+    "output_tokens": 1709431,
+    "api_call_count": 1716
+  }
+}

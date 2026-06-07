@@ -1,0 +1,51 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "268098c78c6b",
+  "session_id": "f81a27c1-9606-4cc2-bccc-2e2fee08a0cb",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-07T15:01:26.5277Z",
+  "branch": "docs/week3-staleness-sweep",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "CLAUDE.md",
+    "README.md",
+    "docs/progress.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-4-8",
+  "turn_id": "cd9d1f8aacdd",
+  "token_usage": {
+    "input_tokens": 277516,
+    "cache_creation_tokens": 14815697,
+    "cache_read_tokens": 679937120,
+    "output_tokens": 1709431,
+    "api_call_count": 1716
+  },
+  "session_metrics": {
+    "turn_count": 82
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-07T15:01:26.34342Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 1,
+    "human_modified": 15,
+    "human_removed": 0,
+    "total_committed": 1,
+    "total_lines_changed": 17,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}
