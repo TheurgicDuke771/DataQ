@@ -162,16 +162,20 @@ jobs:
 
   # ── Secret scanning ──────────────────────────────────────────────────────────
   secrets:
-    name: Secret scanning (gitleaks)
+    name: Secret scanning (betterleaks)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
-      - uses: gitleaks/gitleaks-action@v3
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Betterleaks has no official GitHub Action; run the pinned container image.
+      # Drop-in gitleaks replacement: nonzero exit on findings fails the job.
+      - name: Run betterleaks
+        run: |
+          docker run --rm -v "$PWD:/repo" -w /repo \
+            ghcr.io/betterleaks/betterleaks:v1.4.1 \
+            git /repo --redact --verbose
 
   # ── Frontend ─────────────────────────────────────────────────────────────────
   frontend-lint:

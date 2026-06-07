@@ -42,10 +42,10 @@ repos:
         files: ^(backend/requirements-typecheck\.txt|\.pre-commit-config\.yaml)$
 
   # ── Secret scanning ─────────────────────────────────────────────────────────
-  - repo: https://github.com/gitleaks/gitleaks
-    rev: v8.24.3
+  - repo: https://github.com/betterleaks/betterleaks
+    rev: v1.4.1
     hooks:
-      - id: gitleaks
+      - id: betterleaks
 
   # ── General hygiene ─────────────────────────────────────────────────────────
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -59,6 +59,6 @@ repos:
       - id: check-json
       - id: check-toml
       - id: check-merge-conflict
-      - id: detect-private-key         # belt-and-suspenders alongside gitleaks
+      - id: detect-private-key         # belt-and-suspenders alongside betterleaks
       - id: no-commit-to-branch
         args: [--branch, main]         # prevents direct commits to main
