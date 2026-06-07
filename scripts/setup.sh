@@ -61,13 +61,11 @@ conda run -n dataq sh -c "cd backend && alembic upgrade head"
 ok "Migrations applied"
 
 # ── Seed data ─────────────────────────────────────────────────────────────────
+# Run as a module (-m) so the repo root is on sys.path and `backend.*` imports
+# resolve; running the file directly would not put the root on the path.
 step "Seeding dev data"
-if [ -f backend/scripts/seed_dev.py ]; then
-  conda run -n dataq python backend/scripts/seed_dev.py
-  ok "Dev data seeded"
-else
-  echo "  (no seed script yet — skipping)"
-fi
+conda run -n dataq python -m backend.scripts.seed_dev
+ok "Dev data seeded"
 
 # ── Done ──────────────────────────────────────────────────────────────────────
 echo ""

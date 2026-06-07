@@ -1,6 +1,7 @@
 services:
   postgres:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-dataq}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dataq}
@@ -17,6 +18,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
     ports:
       - "6379:6379"
     healthcheck:
@@ -32,6 +34,7 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
+    restart: unless-stopped
     command: uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload
     ports:
       - "8000:8000"
@@ -41,11 +44,11 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-dataq}:${POSTGRES_PASSWORD:-dataq}@postgres:5432/${POSTGRES_DB:-dataq}
       REDIS_URL: redis://redis:6379/0
-      # SECRET_STORE defaults to `env` (per-process). For connection-driven worker
-      # runs (Week 5) that resolve a credential the API wrote at runtime, set
-      # SECRET_STORE=redis on BOTH api and worker so the write is shared across
-      # processes (#86). Dev only — plaintext in Redis. Leaves the probe's
-      # KV_SECRET_* env path unaffected when left at the default.
+      # Shared across api + worker so a credential the API writes at runtime is
+      # readable by connection-driven worker runs (#86). Dev only — plaintext in
+      # Redis. NOTE: in redis mode KV_SECRET_* env vars are NOT consulted (that's
+      # `env` mode); set SECRET_STORE=env if you rely on env-provided creds.
+      SECRET_STORE: ${SECRET_STORE:-redis}
     volumes:
       # Bind-mount source for hot reload; the conda env in the image is untouched.
       - ./backend:/workspace/backend
@@ -59,6 +62,7 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
+    restart: unless-stopped
     command: celery -A backend.app.worker.celery_app worker --loglevel=INFO
     env_file:
       - path: .env
@@ -66,8 +70,8 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-dataq}:${POSTGRES_PASSWORD:-dataq}@postgres:5432/${POSTGRES_DB:-dataq}
       REDIS_URL: redis://redis:6379/0
-      # See the api service: set SECRET_STORE=redis here too for cross-process
-      # secret sharing with the API (#86). Default `env` is per-process.
+      # Must match the api service so secrets the API writes are visible here (#86).
+      SECRET_STORE: ${SECRET_STORE:-redis}
     volumes:
       - ./backend:/workspace/backend
     depends_on:
