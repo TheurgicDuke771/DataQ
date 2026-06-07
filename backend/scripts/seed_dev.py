@@ -9,9 +9,10 @@ on first boot:
 - the **probe Connection + Suite + Check**, reusing `ensure_probe_fixtures` so
   the seed never drifts from what the Week-1 probe endpoint expects.
 
-Both steps get-or-create, so running this repeatedly is a no-op. Run via:
+Both steps get-or-create, so running this repeatedly is a no-op. Run as a module
+(so `backend.*` imports resolve from the repo root):
 
-    conda run -n dataq python backend/scripts/seed_dev.py
+    conda run -n dataq python -m backend.scripts.seed_dev
 """
 
 from __future__ import annotations

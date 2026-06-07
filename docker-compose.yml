@@ -46,7 +46,8 @@ services:
       REDIS_URL: redis://redis:6379/0
       # Shared across api + worker so a credential the API writes at runtime is
       # readable by connection-driven worker runs (#86). Dev only — plaintext in
-      # Redis. The probe's KV_SECRET_* env path still resolves through this store.
+      # Redis. NOTE: in redis mode KV_SECRET_* env vars are NOT consulted (that's
+      # `env` mode); set SECRET_STORE=env if you rely on env-provided creds.
       SECRET_STORE: ${SECRET_STORE:-redis}
     volumes:
       # Bind-mount source for hot reload; the conda env in the image is untouched.
