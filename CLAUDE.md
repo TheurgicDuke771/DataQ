@@ -269,19 +269,16 @@ curl -X POST http://localhost:8000/api/v1/_probe/snowflake-suite
 
 > **Detailed task-level status** lives in [docs/progress.md](docs/progress.md) — mirrors the 100-task roadmap, updated per PR. This section carries only the headline.
 
-**Current week:** Week 2 — Connection manager (backend). Week 1 exit gate **met**.
-**Week-1 exit gate:** A logged-in user can hit a FastAPI endpoint that triggers GX against Snowflake DEV and persists a result row. — **met** via `POST /api/v1/_probe/snowflake-suite` → Celery `run_suite` → `run_service` → `results`. Live run against Snowflake DEV fails-soft pending creds (deferred smoke).
-**Completed since project start (2026-05-24):**
-- PR 0 governance bundle (#1–#24, #44, #55) — onboarding docs, ADRs, CODEOWNERS, templates, Entire CLI hooks
-- PR 1 (#37) — coding structure & tooling lock
-- PR 2 a/b/c (#39, #40, #41) — Docker Compose, structlog + error envelope + FastAPI skeleton, SQLAlchemy models + Alembic baseline
-- PR 3 a/b/c (#53, #56, #63) — Azure AD SSO end-to-end (backend MSAL + SecretStore abstraction + frontend MSAL + `/me`)
-- PR 4 a/b/b.1/c (#74, #76, #77, #78, #79) — async backbone (Celery + containerized API/worker), Snowflake GX adapter, run/result persistence + NaN sanitizer, Postgres test fixtures, `_probe/snowflake-suite` endpoint. Coverage ~91%.
-- ADRs 0006/0007 (#84) — orchestration-auth decisions (ADF secret-in-URL + hard-cutover; Airflow HMAC + polling fallback); #72 closed (#83) — `trigger_bindings` single-orchestrator assumption documented in ADR 0004.
-- PR 5 (#85, merged) — Snowflake connection CRUD + `/test` endpoint; introduced the `ConnectionAdapter` seam + registry and `SecretStore.set` write-through. Coverage ~94%.
-- ADRs 0005/0012 (accepted W2) — severity tier weights (0.5/1.0/2.0 + SQL-normalised health score) and the monitor-kind seam (`check.kind` + `metric_value`/`duration_ms`); both ride the one-shot Week-3 threshold migration. Closes the last Week-3 design gates.
-**Next milestone:** PR 6 — ADF connection CRUD + `(type, env)` uniqueness guard (per #72) (Week 2).
-**Active blockers:** none. See [docs/progress.md](docs/progress.md) for the active-issues list.
+**Current week:** Week 4 — Execution backend. **Weeks 1–3 complete** (exit gates met).
+**Week-1 exit gate:** GX against Snowflake DEV persists a result row. — **met** via `POST /api/v1/_probe/snowflake-suite` → Celery `run_suite` → `run_service` → `results` (live Snowflake run fails-soft pending creds — deferred smoke).
+**Week-2 exit gate:** All six connection types configurable + testable via API, credentials in the SecretStore. — **met** (Snowflake / ADF / Airflow / ADLS Gen2 / S3 / Unity Catalog behind the `ConnectionAdapter` seam + registry; real Key Vault provisioning deferred to W7).
+**Week-3 exit gate:** Full check CRUD across Snowflake / flat files / Unity Catalog + column profiler live. — **met** (suite & check CRUD + sharing + export/import + dry-run; severity tiers + monitor-kind seam; column profiler on all 4 datasources; the three GX `CheckRunner`s — Snowflake / flat-file / UC — behind the shared `gx_runner`; flat-file batch resolution; end-to-end datasource-run integration tests). Live warehouse/file runs remain the deferred smoke.
+**Completed since project start (2026-05-24):** see [docs/progress.md](docs/progress.md) for the per-PR ledger. Headlines:
+- **Week 1** — governance + tooling lock (#1–#37), structlog/error-envelope/FastAPI skeleton + SQLAlchemy/Alembic baseline (PR 2), Azure AD SSO end-to-end (PR 3), async backbone + Snowflake GX adapter + run/result persistence (PR 4).
+- **Week 2** — connection manager for all six types (Snowflake/ADF/Airflow/ADLS/S3/UC) behind the `ConnectionAdapter` seam; ADF + Airflow orchestration event receivers (secret-in-URL / HMAC) + connection adapters; re-auth endpoint; ADRs 0005/0006/0007/0010/0011/0012.
+- **Week 3** — suite & check CRUD + sharing + export/import + dry-run; severity tiers (ADR 0005/0016) + monitor-kind seam (ADR 0012); column profiler (all 4 datasources); GX `CheckRunner`s (Snowflake/flat-file/UC) on the shared `gx_runner`; batch resolution; integration tests. Plus the testing-discipline upgrade (adversarial harness + mutation spikes, CONTRIBUTING rule 4a).
+**Next milestone:** Week 4 — execution backend (async run UI/progress, run history). The **Week-5 carry-over**: wire connection-type → `CheckRunner` dispatch into the worker (today it hardcodes `build_snowflake_runner` — [#146](https://github.com/TheurgicDuke771/DataQ/issues/146)) so UC/flat-file suites actually run, + ADF/Airflow polling fallback.
+**Active blockers:** none. Open follow-ups: [#146](https://github.com/TheurgicDuke771/DataQ/issues/146) (runner dispatch), [#147](https://github.com/TheurgicDuke771/DataQ/issues/147) (profiler cleanup), [#129](https://github.com/TheurgicDuke771/DataQ/issues/129) (Snowflake connector CVE bump, ~W5). See [docs/progress.md](docs/progress.md).
 
 Update this section at the end of each week with: current week, the week's exit gate, and any open blocker issues by number. Per-PR task ticks go in `docs/progress.md` (PR-template checkbox).
 
