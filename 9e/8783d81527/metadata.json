@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "9e8783d81527",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-156-compose-migrate",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docker-compose.yml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/9e/8783d81527/0/metadata.json",
+      "transcript": "/9e/8783d81527/0/full.jsonl",
+      "content_hash": "/9e/8783d81527/0/content_hash.txt",
+      "prompt": "/9e/8783d81527/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 8412,
+    "cache_creation_tokens": 307927,
+    "cache_read_tokens": 13680390,
+    "output_tokens": 82456,
+    "api_call_count": 153
+  }
+}

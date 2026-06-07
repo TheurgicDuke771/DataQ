@@ -1,0 +1,21 @@
+<task-notification>
+<task-id>be2fvu6fn</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/8603fa2a-25c9-4c76-87d4-83228bd296a6/tasks/be2fvu6fn.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for CI then show status" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Lets triage the open issues and and rank them up
+
+---
+
+Why #155 not important?
+
+---
+
+thats okay. 
+lets take the P0s and P1s along with #155. 
+Also when is the last time we did security review?
