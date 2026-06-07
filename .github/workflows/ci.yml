@@ -169,13 +169,14 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Betterleaks has no official GitHub Action; run the pinned container image.
-      # Drop-in gitleaks replacement: nonzero exit on findings fails the job.
+      # Betterleaks has no official GitHub Action; use the community action,
+      # pinned to a commit SHA (not the mutable v0.1.0 tag) since it's a
+      # third-party repo running with GITHUB_TOKEN. version input pinned too.
       - name: Run betterleaks
-        run: |
-          docker run --rm -v "$PWD:/repo" -w /repo \
-            ghcr.io/betterleaks/betterleaks:v1.4.1 \
-            git /repo --redact --verbose
+        uses: dortort/betterleaks-action@cd0b905aa4befb8f42f8b1ab98150180c9e77515 # v0.1.0
+        with:
+          version: v1.4.1
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
   # ── Frontend ─────────────────────────────────────────────────────────────────
   frontend-lint:
