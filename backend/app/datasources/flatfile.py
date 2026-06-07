@@ -53,6 +53,27 @@ def format_from_path(path: str) -> str | None:
     return None
 
 
+def _s3_client(cfg: S3Config, secret: str) -> Any:
+    """A boto3 S3 client for `cfg` with the standard fail-fast timeouts."""
+    import boto3
+    from botocore.config import Config
+
+    return boto3.client(
+        "s3",
+        region_name=cfg.region,
+        aws_access_key_id=cfg.access_key_id,
+        aws_secret_access_key=secret,
+        config=Config(connect_timeout=_CONNECT_TIMEOUT, read_timeout=_READ_TIMEOUT),
+    )
+
+
+def _blob_service(acfg: AdlsConfig, secret: str) -> Any:
+    """An ADLS `BlobServiceClient` for `acfg` (caller must `.close()` it)."""
+    from azure.storage.blob import BlobServiceClient
+
+    return BlobServiceClient(account_url=acfg.account_url, credential=secret)
+
+
 def download_bytes(*, conn_type: str, config: dict[str, Any], path: str, secret: str) -> bytes:
     """Fetch the object/blob bytes from S3 or ADLS Gen2 (live seam).
 
@@ -60,24 +81,12 @@ def download_bytes(*, conn_type: str, config: dict[str, Any], path: str, secret:
     owns the SecretStore), so this module never touches the DB.
     """
     if conn_type == "s3":
-        import boto3
-        from botocore.config import Config
-
         cfg = S3Config.model_validate(config)
-        client = boto3.client(
-            "s3",
-            region_name=cfg.region,
-            aws_access_key_id=cfg.access_key_id,
-            aws_secret_access_key=secret,
-            config=Config(connect_timeout=_CONNECT_TIMEOUT, read_timeout=_READ_TIMEOUT),
-        )
-        body: bytes = client.get_object(Bucket=cfg.bucket, Key=path)["Body"].read()
+        body: bytes = _s3_client(cfg, secret).get_object(Bucket=cfg.bucket, Key=path)["Body"].read()
         return body
 
-    from azure.storage.blob import BlobServiceClient
-
     acfg = AdlsConfig.model_validate(config)
-    client_az: Any = BlobServiceClient(account_url=acfg.account_url, credential=secret)
+    client_az = _blob_service(acfg, secret)
     try:
         blob = client_az.get_blob_client(container=acfg.container, blob=path)
         downloaded: bytes = blob.download_blob().readall()
@@ -175,6 +184,11 @@ class FileRef:
     last_modified: datetime | None = None
 
 
+def _most_recent(files: list[FileRef]) -> str:
+    """Path of the most recently modified file (ties broken by path; `files` non-empty)."""
+    return max(files, key=lambda f: (f.last_modified or _MIN_DT, f.path)).path
+
+
 def resolve_batch(
     files: list[FileRef], *, pattern: str, strategy: str = "latest", batch: str | None = None
 ) -> str:
@@ -190,7 +204,10 @@ def resolve_batch(
     Raises `BatchNotFoundError` (nothing matched / no such batch) or `ValueError`
     (bad strategy, or `specific` without `batch`).
     """
-    compiled = re.compile(pattern)
+    try:
+        compiled = re.compile(pattern)
+    except re.error as exc:
+        raise ValueError(f"invalid batch pattern {pattern!r}: {exc}") from exc
     matches = [(f, m) for f in files if (m := compiled.search(f.path))]
     if not matches:
         raise BatchNotFoundError(f"no files matched batch pattern {pattern!r}")
@@ -201,16 +218,18 @@ def resolve_batch(
         hits = [f for f, m in matches if m.groups() and m.group(1) == batch]
         if not hits:
             raise BatchNotFoundError(f"no file for batch {batch!r} under pattern {pattern!r}")
-        return max(hits, key=lambda f: (f.last_modified or _MIN_DT, f.path)).path
+        return _most_recent(hits)
 
     if strategy != "latest":
         raise ValueError(f"unknown batch strategy {strategy!r}")
 
-    keyed = [(f, m.group(1)) for f, m in matches if m.groups()]
+    # A batch key is the first capture group when it *participated* in the match;
+    # an optional group that didn't (`None`) has no key, so it falls through to the
+    # modified-time ordering rather than crashing the `max` on a None vs str compare.
+    keyed = [(f, m.group(1)) for f, m in matches if m.groups() and m.group(1) is not None]
     if keyed:
         return max(keyed, key=lambda fk: fk[1])[0].path
-    # No capture group → fall back to the storage modified time.
-    return max((f for f, _ in matches), key=lambda f: (f.last_modified or _MIN_DT, f.path)).path
+    return _most_recent([f for f, _ in matches])
 
 
 def list_files(
@@ -218,28 +237,16 @@ def list_files(
 ) -> list[FileRef]:
     """List objects/blobs under `prefix` on a flat-file datasource (live seam)."""
     if conn_type == "s3":
-        import boto3
-        from botocore.config import Config
-
         cfg = S3Config.model_validate(config)
-        client = boto3.client(
-            "s3",
-            region_name=cfg.region,
-            aws_access_key_id=cfg.access_key_id,
-            aws_secret_access_key=secret,
-            config=Config(connect_timeout=_CONNECT_TIMEOUT, read_timeout=_READ_TIMEOUT),
-        )
-        paginator = client.get_paginator("list_objects_v2")
+        paginator = _s3_client(cfg, secret).get_paginator("list_objects_v2")
         refs: list[FileRef] = []
         for page in paginator.paginate(Bucket=cfg.bucket, Prefix=prefix):
             for obj in page.get("Contents", []):
                 refs.append(FileRef(path=obj["Key"], last_modified=obj.get("LastModified")))
         return refs
 
-    from azure.storage.blob import BlobServiceClient
-
     acfg = AdlsConfig.model_validate(config)
-    client_az: Any = BlobServiceClient(account_url=acfg.account_url, credential=secret)
+    client_az = _blob_service(acfg, secret)
     try:
         container = client_az.get_container_client(acfg.container)
         return [

@@ -194,3 +194,26 @@ def test_resolve_batch_file_lists_then_resolves(monkeypatch: pytest.MonkeyPatch)
         conn_type="s3", config={}, secret="s", prefix="data/", pattern=_PATTERN
     )
     assert got == "data/orders_2026-06-03.csv"
+
+
+def test_resolve_batch_optional_group_no_crash() -> None:
+    # an optional first group that doesn't participate (key=None) must not crash
+    # the latest selection; keyed files win, unkeyed fall back to mtime.
+    files = [
+        flatfile.FileRef("orders_.csv", _dt(9)),  # group didn't match → key None
+        flatfile.FileRef("orders_2026-06-01.csv", _dt(1)),
+    ]
+    assert flatfile.resolve_batch(files, pattern=r"orders_(\d{4}-\d{2}-\d{2})?\.csv") == (
+        "orders_2026-06-01.csv"
+    )
+
+
+def test_resolve_batch_optional_group_all_none_falls_back_to_mtime() -> None:
+    files = [flatfile.FileRef("orders_.csv", _dt(1)), flatfile.FileRef("orders_x.csv", _dt(5))]
+    # neither has a numeric key → fall back to most recent; no None-vs-str compare
+    assert flatfile.resolve_batch(files, pattern=r"orders_(\d+)?[\w]*\.csv") == "orders_x.csv"
+
+
+def test_resolve_batch_invalid_pattern_raises_valueerror() -> None:
+    with pytest.raises(ValueError, match="invalid batch pattern"):
+        flatfile.resolve_batch(_BATCH_FILES, pattern=r"orders_([0-9]+")  # unbalanced (
