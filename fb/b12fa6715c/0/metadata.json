@@ -1,0 +1,73 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "fbb12fa6715c",
+  "session_id": "8603fa2a-25c9-4c76-87d4-83228bd296a6",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-07T18:43:26.272346Z",
+  "branch": "chore/switch-secret-scanning-betterleaks",
+  "checkpoints_count": 2,
+  "files_touched": [
+    ".github/workflows/ci.yml",
+    ".pre-commit-config.yaml",
+    "CLAUDE.md",
+    "CONTRIBUTING.md",
+    "docs/adr/0013-marketplace-distribution-and-anti-lock-in.md"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "9c3bdd32eb44",
+  "token_usage": {
+    "input_tokens": 5286,
+    "cache_creation_tokens": 63871,
+    "cache_read_tokens": 988391,
+    "output_tokens": 9550,
+    "api_call_count": 29
+  },
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-07T18:43:26.269088Z",
+    "agent_lines": 16,
+    "agent_removed": 12,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 16,
+    "total_lines_changed": 28,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 16,
+      "agent_lines_removed": 12,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 16,
+      "agent_lines_removed": 12,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}

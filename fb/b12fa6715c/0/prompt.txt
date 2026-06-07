@@ -1,0 +1,6 @@
+Hey, can we switch our secret scanning from gitleaks to betterleaks?
+Also can you check if GitHub Secret Scanning Push Protection is enabled for this repo?
+
+---
+
+enable the GitHub Secret Scanning Push Protection
