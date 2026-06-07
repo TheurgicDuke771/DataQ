@@ -1,0 +1,5 @@
+What is covered in docker compose so far, what is pending, and what is the plan to add those missing components?
+
+---
+
+first file the issue(s), then start with implementation, set the seed_dev, secret_store and restart policy properly.
