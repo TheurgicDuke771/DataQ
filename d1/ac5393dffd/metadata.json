@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "d1ac5393dffd",
+  "strategy": "manual-commit",
+  "branch": "feature/week3-flatfile-batch-resolution",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/d1/ac5393dffd/0/metadata.json",
+      "transcript": "/d1/ac5393dffd/0/full.jsonl",
+      "content_hash": "/d1/ac5393dffd/0/content_hash.txt",
+      "prompt": "/d1/ac5393dffd/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 246970,
+    "cache_creation_tokens": 12801287,
+    "cache_read_tokens": 561988190,
+    "output_tokens": 1512915,
+    "api_call_count": 1512
+  }
+}
