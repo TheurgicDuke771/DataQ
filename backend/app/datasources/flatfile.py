@@ -20,6 +20,9 @@ the deferred-smoke seam.
 from __future__ import annotations
 
 import io
+import re
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 import great_expectations as gx
@@ -35,6 +38,9 @@ _CONNECT_TIMEOUT = 10
 _READ_TIMEOUT = 60
 
 _FILE_TYPES = {"adls_gen2", "s3"}
+
+# Sort floor for files the store reports without a modified time.
+_MIN_DT = datetime.min.replace(tzinfo=UTC)
 
 
 def format_from_path(path: str) -> str | None:
@@ -146,3 +152,114 @@ def build_flatfile_runner(
         raise ValueError("flat-file connection requires secret_ref for the credential")
     secret = secret_store.get(secret_ref)
     return FlatFileCheckRunner(conn_type=conn_type, config=config, secret=secret)
+
+
+# ───────────────────────── batch resolution ────────────────────────
+#
+# Flat files usually arrive in batches — `orders_2026-06-01.csv`,
+# `orders_2026-06-02.csv`, … — and a check targets *one* batch. The batch
+# pattern is a regex whose **first capture group is the batch key**; `latest`
+# selects the greatest key, `specific` selects a named key. Resolution (filter +
+# select) is pure and fully tested; only the object listing is a live seam.
+
+
+class BatchNotFoundError(ValueError):
+    """No file matched the batch pattern (or the requested specific batch)."""
+
+
+@dataclass(frozen=True)
+class FileRef:
+    """A listed object: its full key/blob path and last-modified time (if any)."""
+
+    path: str
+    last_modified: datetime | None = None
+
+
+def resolve_batch(
+    files: list[FileRef], *, pattern: str, strategy: str = "latest", batch: str | None = None
+) -> str:
+    """Pick one file's path from `files` per the batch `pattern` + `strategy`.
+
+    `pattern` is a regex `re.search`-ed against each path; its first capture group
+    (if any) is the batch key. `strategy`:
+
+    * ``latest`` — the greatest batch key (lexicographic — ISO dates sort right),
+      or, when the pattern has no capture group, the most recently modified file.
+    * ``specific`` — the file whose batch key equals `batch` (required).
+
+    Raises `BatchNotFoundError` (nothing matched / no such batch) or `ValueError`
+    (bad strategy, or `specific` without `batch`).
+    """
+    compiled = re.compile(pattern)
+    matches = [(f, m) for f in files if (m := compiled.search(f.path))]
+    if not matches:
+        raise BatchNotFoundError(f"no files matched batch pattern {pattern!r}")
+
+    if strategy == "specific":
+        if batch is None:
+            raise ValueError("strategy 'specific' requires a batch key")
+        hits = [f for f, m in matches if m.groups() and m.group(1) == batch]
+        if not hits:
+            raise BatchNotFoundError(f"no file for batch {batch!r} under pattern {pattern!r}")
+        return max(hits, key=lambda f: (f.last_modified or _MIN_DT, f.path)).path
+
+    if strategy != "latest":
+        raise ValueError(f"unknown batch strategy {strategy!r}")
+
+    keyed = [(f, m.group(1)) for f, m in matches if m.groups()]
+    if keyed:
+        return max(keyed, key=lambda fk: fk[1])[0].path
+    # No capture group → fall back to the storage modified time.
+    return max((f for f, _ in matches), key=lambda f: (f.last_modified or _MIN_DT, f.path)).path
+
+
+def list_files(
+    *, conn_type: str, config: dict[str, Any], prefix: str, secret: str
+) -> list[FileRef]:
+    """List objects/blobs under `prefix` on a flat-file datasource (live seam)."""
+    if conn_type == "s3":
+        import boto3
+        from botocore.config import Config
+
+        cfg = S3Config.model_validate(config)
+        client = boto3.client(
+            "s3",
+            region_name=cfg.region,
+            aws_access_key_id=cfg.access_key_id,
+            aws_secret_access_key=secret,
+            config=Config(connect_timeout=_CONNECT_TIMEOUT, read_timeout=_READ_TIMEOUT),
+        )
+        paginator = client.get_paginator("list_objects_v2")
+        refs: list[FileRef] = []
+        for page in paginator.paginate(Bucket=cfg.bucket, Prefix=prefix):
+            for obj in page.get("Contents", []):
+                refs.append(FileRef(path=obj["Key"], last_modified=obj.get("LastModified")))
+        return refs
+
+    from azure.storage.blob import BlobServiceClient
+
+    acfg = AdlsConfig.model_validate(config)
+    client_az: Any = BlobServiceClient(account_url=acfg.account_url, credential=secret)
+    try:
+        container = client_az.get_container_client(acfg.container)
+        return [
+            FileRef(path=blob.name, last_modified=getattr(blob, "last_modified", None))
+            for blob in container.list_blobs(name_starts_with=prefix)
+        ]
+    finally:
+        client_az.close()
+
+
+def resolve_batch_file(
+    *,
+    conn_type: str,
+    config: dict[str, Any],
+    secret: str,
+    prefix: str,
+    pattern: str,
+    strategy: str = "latest",
+    batch: str | None = None,
+) -> str:
+    """List under `prefix`, then resolve the batch file path (list + `resolve_batch`)."""
+    files = list_files(conn_type=conn_type, config=config, prefix=prefix, secret=secret)
+    return resolve_batch(files, pattern=pattern, strategy=strategy, batch=batch)

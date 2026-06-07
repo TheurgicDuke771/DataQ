@@ -124,3 +124,73 @@ def test_run_checks_all_pass(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     assert outcome.success is True
     assert outcome.checks[0].success is True
+
+
+# ── batch resolution (pure resolve_batch + mocked list orchestrator) ──
+
+from datetime import UTC, datetime  # noqa: E402
+
+
+def _dt(day: int) -> datetime:
+    return datetime(2026, 6, day, tzinfo=UTC)
+
+
+_BATCH_FILES = [
+    flatfile.FileRef("data/orders_2026-06-01.csv", _dt(1)),
+    flatfile.FileRef("data/orders_2026-06-03.csv", _dt(3)),
+    flatfile.FileRef("data/orders_2026-06-02.csv", _dt(2)),
+    flatfile.FileRef("data/other.csv", _dt(9)),  # doesn't match the pattern
+]
+
+_PATTERN = r"orders_(\d{4}-\d{2}-\d{2})\.csv"
+
+
+def test_resolve_batch_latest_by_capture_group() -> None:
+    # greatest batch key wins (ISO dates sort lexicographically = chronologically)
+    assert flatfile.resolve_batch(_BATCH_FILES, pattern=_PATTERN) == "data/orders_2026-06-03.csv"
+
+
+def test_resolve_batch_specific_by_key() -> None:
+    got = flatfile.resolve_batch(
+        _BATCH_FILES, pattern=_PATTERN, strategy="specific", batch="2026-06-02"
+    )
+    assert got == "data/orders_2026-06-02.csv"
+
+
+def test_resolve_batch_latest_falls_back_to_mtime_without_group() -> None:
+    # no capture group → pick most recently modified among matches
+    files = [
+        flatfile.FileRef("a/load.csv", _dt(1)),
+        flatfile.FileRef("b/load.csv", _dt(5)),
+    ]
+    assert flatfile.resolve_batch(files, pattern=r"load\.csv") == "b/load.csv"
+
+
+def test_resolve_batch_no_match_raises() -> None:
+    with pytest.raises(flatfile.BatchNotFoundError):
+        flatfile.resolve_batch(_BATCH_FILES, pattern=r"invoices_(\d+)\.csv")
+
+
+def test_resolve_batch_specific_unknown_key_raises() -> None:
+    with pytest.raises(flatfile.BatchNotFoundError):
+        flatfile.resolve_batch(
+            _BATCH_FILES, pattern=_PATTERN, strategy="specific", batch="2099-01-01"
+        )
+
+
+def test_resolve_batch_specific_requires_batch() -> None:
+    with pytest.raises(ValueError, match="requires a batch key"):
+        flatfile.resolve_batch(_BATCH_FILES, pattern=_PATTERN, strategy="specific")
+
+
+def test_resolve_batch_unknown_strategy_raises() -> None:
+    with pytest.raises(ValueError, match="unknown batch strategy"):
+        flatfile.resolve_batch(_BATCH_FILES, pattern=_PATTERN, strategy="earliest")
+
+
+def test_resolve_batch_file_lists_then_resolves(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(flatfile, "list_files", lambda **kwargs: _BATCH_FILES)
+    got = flatfile.resolve_batch_file(
+        conn_type="s3", config={}, secret="s", prefix="data/", pattern=_PATTERN
+    )
+    assert got == "data/orders_2026-06-03.csv"

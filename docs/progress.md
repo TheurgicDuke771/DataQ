@@ -21,7 +21,7 @@
 |---|---|
 | **Active since** | 2026-05-24 |
 | **Current week** | Week 3 of 8 — Suite & check API (backend) |
-| **Roadmap tasks done** | 42 ✅ + 6 🟡 / 155 (~27%) |
+| **Roadmap tasks done** | 43 ✅ + 6 🟡 / 155 (~28%) |
 | **Out-of-roadmap PRs landed** | 5 bundles (governance, tooling lock, Entire CLI, Dependabot triage round 1, PR-3 cleanup) + ADRs 0005/0006/0007/0012 |
 | **Week-1 exit gate** | A logged-in user can hit a FastAPI endpoint that triggers GX against Snowflake DEV and persists a result row. — **met** (plumbing complete via PR 4a–4c; live-Snowflake run fails-soft pending DEV creds — deferred smoke) |
 | **Next milestone** | ADF/Airflow polling fallback (`list_recent_runs` + 10-min Celery beat → succeeded-run detection → trigger) + run_suite dispatch wiring once Week-3 target-table lands (Week 5) |
@@ -135,15 +135,15 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [x] ✅ Column profiler endpoint (ADLS / S3) — same stats via Pandas on sampled file — extended `profile_service` into a type dispatcher (`profile_connection`): SQL types → in-warehouse aggregation (unchanged), flat-file types (`adls_gen2`/`s3`) → download a **sample** of the file into Pandas and compute the same stats (`profile_dataframe`). Same `POST /suites/{id}/profile` endpoint, now polymorphic: SQL targets pass `table`/`schema`, flat-file targets pass `path` (+ optional `file_format`, else inferred from extension); response carries whichever identity applies. CSV + Parquet. **pandas "load less data" levers** (per the user's scale.html prompt): column projection (CSV `usecols`, Parquet `columns=` via pyarrow schema) so profiling 3 of N columns doesn't read all N, + row sampling (`_SAMPLE_ROWS`), + **zero-copy Arrow-backed dtypes** on the Parquet read (`dtype_backend="pyarrow"` — parquet is already Arrow, kept zero-copy; the stat helpers + `_to_native` are Arrow-scalar/`pd.NA`-safe). Stats are vectorised pandas (no Python row loops — enhancingperf N/A; CoW is a no-op for a read-only profiler + a process-global flag, so not toggled; pyarrow CSV engine rejected — it's incompatible with `nrows`/callable-`usecols`). NaN/Timestamp→JSON-safe. v1 → 422: unsupported type (UC still pending), missing target, unknown format, missing column; read failure → 502 (exception never echoed). Reuses `ColumnProfile`/`ProfileResult`. 24 new tests (pure `profile_dataframe`/`infer_file_format`/`_to_native`/projection-parse + endpoint via fake `_read_dataframe`); `suites.py` 100%, `profile_service` 85% (only the live `_open_connection`/`_download_bytes` network seams uncovered — deferred smoke). _Deferred: streaming/range reads (whole object still downloaded before sampling) + out-of-core (Dask) — future work if profiling cost bites._
 - [x] ✅ Column profiler endpoint (Unity Catalog) — via Databricks SQL Warehouse — added `unity_catalog` to the profiler's **SQL** branch (reuses `profile_table` + the SQLAlchemy Core query builders + `assemble_profile` — no duplicate aggregation logic). `_open_connection` now dispatches the engine by type (`_engine_args`): Snowflake URL or a `databricks://token:…@host?http_path=…` URL via the installed `databricks` SQLAlchemy dialect. UC's **3-level namespace** (`catalog.schema.table`) is handled by building the table with a `quoted_name(f"{catalog}.{schema}", quote=False)` so the dialect emits three dotted parts rather than quoting the dotted string as one — verified by compiling the real builders against the Databricks dialect. Injection-safe: every part (catalog/schema/table/column) is allowlist-validated (no raw-string SQL, no CodeQL py/sql-injection surface). Endpoint gained `catalog` (request + response); the dispatcher requires it for UC (`422 profile_target_invalid` if absent). 12 new tests (catalog-aware builders compiled to SQL, `_engine_args` URL dispatch, UC endpoint stats via the same fake conn, missing-catalog 422, bad-catalog-identifier 422); `suites.py` 100%, `profile_service` 86% (only the live `_open_connection`/`_download_bytes` network seams uncovered — deferred smoke). **Completes the column profiler across all 4 datasources.**
 
-### Flat file check specifics (2 tasks — 1/2 ✅)
+### Flat file check specifics (2 tasks — 2/2 ✅)
 - [x] ✅ Check types for flat files: schema validation, row count, null checks, ~~freshness by filename date~~ — `FlatFileCheckRunner` (`datasources/flatfile.py`): downloads the file (S3/ADLS) into a pandas DataFrame and runs the suite's GX expectations against GX's **pandas DataFrame asset**, so all GX expectation-kind checks (schema/row-count/null/value checks) run against flat files. Extracted the shared GX machinery — snake_case→GX-class translation, GX-result→`SuiteOutcome` mapping, and the suite/validation-definition `run_expectations` flow — into `datasources/gx_runner.py` (reused by the Snowflake runner and the future UC runner; no duplication). Flat-file IO (`download_bytes` + full-file `read_dataframe`) moved to `flatfile.py` behind primitives (raw config + resolved secret, not the ORM — matches `build_snowflake_runner`), and the column profiler now shares it. Because GX runs **in-process on the DataFrame**, the run path is fully unit-tested with a canned frame (real GX execution, not mocked) — only the network download is the deferred-smoke seam. 16 new tests; `gx_runner` 100%, `flatfile` 76% (only `download_bytes` uncovered). _Connection-type → runner dispatch (Snowflake vs flat-file) is the Week-5 `run_suite` wiring; **freshness-by-filename** is the reserved `freshness` monitor kind (deferred, ADR 0012), not a GX expectation._
-- [ ] ⬜ Batch resolution — resolve batching regex to matched files, pick latest or specific batch
+- [x] ✅ Batch resolution — resolve batching regex to matched files, pick latest or specific batch — `resolve_batch` (`datasources/flatfile.py`): a batch `pattern` is a regex whose **first capture group is the batch key**; `latest` selects the greatest key (lexicographic — ISO dates sort chronologically), falling back to the storage modified-time when the pattern has no group; `specific` selects the file whose key equals a given `batch`. `BatchNotFoundError` on no match / unknown batch. The filter+select logic is pure and fully unit-tested (8 tests); object listing (`list_files` — S3 `list_objects_v2` paginated / ADLS `list_blobs`) is the live seam, and `resolve_batch_file` composes list+resolve. _Wiring a check's target to a resolved batch path is the Week-5 `run_suite` dispatch._
 
 ### Unity Catalog check specifics (2 tasks — 1/2 ✅)
 - [x] ✅ UC table check path — UC table → GX DataFrame datasource → run suite — `UnityCatalogCheckRunner` (`datasources/unity_catalog.py`): reads the target table from the Databricks SQL Warehouse into a pandas DataFrame (`pd.read_sql_table` via the databricks SQLAlchemy dialect — reflection quotes identifiers, so no hand-built SQL) and runs the suite's GX expectations against GX's **pandas DataFrame asset** — the "GX DataFrame datasource" shape (§5), the same shape Databricks Labs DQX consumes, so v1.1 swaps GX→DQX behind this one interface. Reuses the shared `gx_runner` (`run_expectations` + result mapping) exactly like the flat-file runner; the `catalog` is pinned in the connection URL (`build_databricks_url`, now shared with the column profiler — no duplication) so the 2-level `schema.table` resolves to `catalog.schema.table`. Because GX runs **in-process on the DataFrame**, the run path is unit-tested with a canned frame (real GX execution); only the reflect+read (`_read_table`) is the deferred-smoke seam. `build_unity_catalog_runner` mirrors `build_snowflake_runner` (raw config + resolved PAT, not the ORM). 14 tests; `unity_catalog` 91% (only `_read_table` uncovered). _Connection-type → runner dispatch is the Week-5 `run_suite` wiring._
 - [ ] ⬜ Integration tests across all three datasource types
 
-**Week 3 total: 16 / 18**
+**Week 3 total: 17 / 18**
 
 ---
 
@@ -341,13 +341,13 @@ These were preconditions for executing the roadmap. Listed for completeness.
 |---|---|---|---|---|
 | Week 1 | 7 | 1 | 2 | 10 |
 | Week 2 | 15 | 1 | 3 | 19 |
-| Week 3 | 16 | 0 | 2 | 18 |
+| Week 3 | 17 | 0 | 1 | 18 |
 | Week 4 | 1 | 0 | 21 | 22 |
 | Week 5 | 1 | 0 | 14 | 15 |
 | Week 6 | 0 | 0 | 16 | 16 |
 | Week 7 | 0 | 1 | 28 | 29 |
 | Week 8 | 2 | 3 | 21 | 26 |
-| **TOTAL** | **42** | **6** | **107** | **155** |
+| **TOTAL** | **43** | **6** | **106** | **155** |
 
 > 155 > 100 because ADR 0004 added Airflow tasks, ADR 0011 added two seam tasks (generic runner dispatch, `ResultPublisher`), ADR 0012 added three Week-3 monitor-kind / metric seam tasks, plus PR-review follow-ups not in the original roadmap. Tracked here for honesty.
 
