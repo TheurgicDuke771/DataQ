@@ -16,7 +16,11 @@ class Settings(BaseSettings):
     environment: Literal["dev", "staging", "prod"] = "dev"
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
 
-    database_url: str = Field(default="postgresql+psycopg2://dataq:dataq@localhost:5432/dataq")
+    # No DB credentials embedded in code. The real URL (with password) comes from
+    # the environment: docker-compose and CI set DATABASE_URL; local host dev gets
+    # it from .env (setup.sh bootstraps + exports it). This default is only a
+    # credential-less placeholder for the no-env case.
+    database_url: str = Field(default="postgresql+psycopg2://localhost:5432/dataq")
     redis_url: str = Field(default="redis://localhost:6379/0")
 
     applicationinsights_connection_string: str | None = None

@@ -18,6 +18,24 @@ command -v pnpm   >/dev/null || die "pnpm not found — run: npm install -g pnpm
 command -v git    >/dev/null || die "git not found"
 ok "Prerequisites OK"
 
+# ── Local env file ────────────────────────────────────────────────────────────
+# App code carries no DB credentials (config.py default is credential-less), so
+# host-side tooling (alembic, seed, uvicorn) needs DATABASE_URL from .env. Create
+# it from the template on first run, then export so child processes inherit it
+# regardless of their working dir (alembic runs from backend/, so a CWD-relative
+# .env lookup wouldn't find the root file).
+step "Preparing .env"
+if [ ! -f .env ]; then
+  cp .env.example .env
+  ok ".env created from .env.example"
+else
+  ok ".env already present"
+fi
+set -a
+# shellcheck disable=SC1091
+. ./.env
+set +a
+
 # ── Conda environment ─────────────────────────────────────────────────────────
 step "Creating / updating conda environment 'dataq'"
 if conda env list | grep -q "^dataq "; then

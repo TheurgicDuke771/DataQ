@@ -1,17 +1,23 @@
+# DATABASE_URL is identical across migrate/api/worker. Postgres user/password/db
+# carry NO embedded defaults — they come from .env (setup.sh creates it from
+# .env.example) or the shell. The `:?` on the canonical postgres block below makes
+# compose fail fast if any is unset, rather than baking credentials into the file.
+x-database-url: &database-url "postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
+
 services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-dataq}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dataq}
-      POSTGRES_DB: ${POSTGRES_DB:-dataq}
+      POSTGRES_USER: "${POSTGRES_USER:?set POSTGRES_USER in .env}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}"
+      POSTGRES_DB: "${POSTGRES_DB:?set POSTGRES_DB in .env}"
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dataq}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -41,7 +47,7 @@ services:
       - path: .env
         required: false
     environment:
-      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-dataq}:${POSTGRES_PASSWORD:-dataq}@postgres:5432/${POSTGRES_DB:-dataq}
+      DATABASE_URL: *database-url
     volumes:
       - ./backend:/workspace/backend
     depends_on:
@@ -63,7 +69,7 @@ services:
       - path: .env
         required: false
     environment:
-      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-dataq}:${POSTGRES_PASSWORD:-dataq}@postgres:5432/${POSTGRES_DB:-dataq}
+      DATABASE_URL: *database-url
       REDIS_URL: redis://redis:6379/0
       # Shared across api + worker so a credential the API writes at runtime is
       # readable by connection-driven worker runs (#86). Dev only — plaintext in
@@ -91,7 +97,7 @@ services:
       - path: .env
         required: false
     environment:
-      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-dataq}:${POSTGRES_PASSWORD:-dataq}@postgres:5432/${POSTGRES_DB:-dataq}
+      DATABASE_URL: *database-url
       REDIS_URL: redis://redis:6379/0
       # Must match the api service so secrets the API writes are visible here (#86).
       SECRET_STORE: ${SECRET_STORE:-redis}
