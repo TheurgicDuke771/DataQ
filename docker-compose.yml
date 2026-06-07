@@ -111,5 +111,24 @@ services:
       migrate:
         condition: service_completed_successfully
 
+  # React/Vite dev server. corepack pins pnpm from package.json's packageManager.
+  # The anonymous volume keeps the host's (possibly macOS-built) node_modules from
+  # clobbering the container's. The browser loads from localhost:3000 and the Vite
+  # proxy forwards /api + /mcp to the api service over the compose network.
+  frontend:
+    image: node:20-alpine
+    restart: unless-stopped
+    working_dir: /app
+    command: sh -c "corepack enable && pnpm install && pnpm dev --host"
+    environment:
+      VITE_API_PROXY_TARGET: http://api:8000
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - api
+
 volumes:
   postgres_data:
