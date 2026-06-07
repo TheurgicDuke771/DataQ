@@ -24,8 +24,15 @@ from backend.app.db.base import Base
 # ── Status / type value sets (TEXT + CHECK; not native PG enums for migration ergonomics) ──
 CONNECTION_TYPES = ("snowflake", "adls_gen2", "s3", "unity_catalog", "adf", "airflow")
 RUN_STATUSES = ("queued", "running", "succeeded", "failed", "cancelled")
-# Result severity tiers (ADR 0005): pass/warn/fail/critical, health-score-bearing.
-RESULT_STATUSES = ("pass", "warn", "fail", "critical")
+# Result statuses. The four severity tiers (ADR 0005) are health-score-bearing —
+# the score aggregate sums their weights over N. The two operational statuses
+# (#122) are orthogonal: 'skip' = not evaluated, 'error' = evaluation threw
+# (distinct from 'fail', a successful evaluation that breached). Operational
+# statuses carry NO penalty weight and MUST be excluded from the health-score N
+# (i.e. aggregate WHERE status IN the four tiers only).
+_RESULT_SEVERITY_TIERS = ("pass", "warn", "fail", "critical")
+_RESULT_OPERATIONAL_STATUSES = ("skip", "error")
+RESULT_STATUSES = _RESULT_SEVERITY_TIERS + _RESULT_OPERATIONAL_STATUSES
 # Monitor-kind discriminator (ADR 0012; `comparison` reserved by ADR 0014). v1
 # only ever writes 'expectation'; the rest are constraint-valid but unused.
 CHECK_KINDS = ("expectation", "freshness", "volume", "schema_drift", "anomaly", "comparison")
