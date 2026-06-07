@@ -356,7 +356,12 @@ def _to_native(value: Any) -> Any:
         value = value.item()
     if isinstance(value, float) and math.isnan(value):
         return None
-    return value
+    if isinstance(value, bool | int | float | str):
+        return value
+    # Anything else a column can hold (bytes/binary, Decimal, UUID, …) → a display
+    # string, so a min/max/top value is always JSON-encodable, never a 500 at the
+    # response boundary. `bool` is matched above `int` since bool is an int.
+    return str(value)
 
 
 def profile_dataframe(

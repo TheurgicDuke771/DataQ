@@ -381,3 +381,40 @@ def test_profile_dataframe_pyarrow_list_column_degrades_not_500() -> None:
     ).columns[0]
     assert col.distinct_count is None and col.top_values == []
     assert col.min_value is None and col.null_count == 0
+
+
+# ── adversarial-input contract (shared hostile-data battery) ──
+
+from backend.tests.support.adversarial import (  # noqa: E402
+    ADVERSARIAL_FRAMES,
+    assert_json_safe,
+)
+
+
+@pytest.mark.parametrize(
+    ("name", "frame"), ADVERSARIAL_FRAMES, ids=[n for n, _ in ADVERSARIAL_FRAMES]
+)
+def test_profile_dataframe_survives_adversarial_input(name: str, frame: pd.DataFrame) -> None:
+    # contract for any data-ingesting function: never raise on hostile data, and
+    # emit plain JSON (no NaN/Inf, no exotic scalars) with well-formed shapes.
+    result = profile_dataframe(
+        frame, columns=list(frame.columns), top_n=5, path="x.parquet", file_format="parquet"
+    )
+    assert result.row_count == len(frame)
+    for col in result.columns:
+        assert col.distinct_count is None or isinstance(col.distinct_count, int)
+        assert isinstance(col.null_count, int) and 0.0 <= col.null_fraction <= 1.0
+        assert_json_safe(col.min_value)
+        assert_json_safe(col.max_value)
+        assert_json_safe(col.top_values)
+
+
+def test_profile_dataframe_empty_frame_null_fraction_is_zero() -> None:
+    # pandas-path parity with assemble_profile (which pins this): a 0-row frame
+    # must report null_fraction 0.0, not 1.0. Surfaced by the mutation spike
+    # (mutmut id=155 — the `else 0.0` branch was covered but unasserted here).
+    df = pd.DataFrame({"x": pd.Series([], dtype="object")})
+    result = profile_dataframe(df, columns=["x"], top_n=5, path="x.csv", file_format="csv")
+    assert result.row_count == 0
+    assert result.columns[0].null_fraction == 0.0
+    assert result.columns[0].null_count == 0

@@ -10,6 +10,12 @@
 2. **Manually test each committed change before starting the next functionality.** Required until the unit-test suite reaches 80% coverage (Week 8 gate). "Tested" means: the affected code path was exercised locally, not just that it compiled.
 3. **Defects → GitHub issue first, never silent fixes.** Use `gh issue create --title "fix: <desc>"`. The PR that fixes it must include `Fixes #N` in the title or body.
 4. **From Week 8 onward, every new functionality ships with unit tests.** Tests live next to the code they cover (`backend/tests/`, `frontend/tests/`).
+
+   **4a. Test for failure modes, not just the happy path.** Lesson from the column-profiler bugs ([#145](https://github.com/TheurgicDuke771/DataQ/issues/145)/[#147](https://github.com/TheurgicDuke771/DataQ/issues/147)): the profiler sat at ~94% line coverage and still `500`d on a mixed-type column — *line coverage measures lines, not input space*. So:
+   - **Adversarial inputs for data-ingesting code.** Any function that processes external data (a file, a DataFrame, a user query) gets swept with the shared hostile-input battery in [`backend/tests/support/adversarial.py`](backend/tests/support/adversarial.py) — mixed types, unhashable cells, NaN/Inf, bytes, empty, and **both numpy & pyarrow backends** (they raise different exception types). The contract: *never raise, emit plain JSON* (`assert_json_safe`).
+   - **Don't mock the seam you're validating.** If the behaviour under test lives inside a function you stub, the test proves nothing about it — exercise the real path (or at least assert the error mapping) for negative cases like a missing credential.
+   - **An independent lens on negative paths.** A test written alongside the code shares its blind spots; let `/code-review` (or a second pass) scrutinise the failure-mode tests, not just the happy ones.
+   - **Periodic mutation spikes** on critical pure modules to find *covered-but-unasserted* logic (e.g. an over-narrow `except`): `pip install 'mutmut==2.5.0'` then `mutmut run --paths-to-mutate <file> --tests-dir backend/tests/<area> --runner "python -m pytest -x -q <unit-test-file>"` and `mutmut results`. Manual/periodic — **not** a CI gate (too slow) and deliberately **not** in the pinned deps (keeps it off CI's install + `pip-audit` surface).
 5. **Definition of Done (DoD)** per task:
    - Code merged to `main`
    - Manually tested locally
