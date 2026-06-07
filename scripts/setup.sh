@@ -29,6 +29,8 @@ else
 fi
 
 # ── Pre-commit hooks ──────────────────────────────────────────────────────────
+# First run compiles the betterleaks secret-scanning hook (language: golang); this
+# can take a minute. pre-commit (≥3.0) bootstraps its own Go — no system Go needed.
 step "Installing pre-commit hooks"
 conda run -n dataq pre-commit install --install-hooks
 ok "Pre-commit hooks installed"

@@ -176,6 +176,11 @@ cd frontend && pnpm dev
 # Run pre-commit on all files:
 pre-commit run --all-files
 
+# After a hook change (e.g. the gitleaks → betterleaks switch), refresh installed
+# hooks on an existing clone — fresh clones get this via setup.sh:
+pre-commit install --install-hooks   # first run compiles the betterleaks Go hook
+                                     # (pre-commit ≥3.0 bootstraps Go automatically)
+
 # Run backend tests (Week 8+):
 cd backend && pytest
 
