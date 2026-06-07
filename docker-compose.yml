@@ -27,6 +27,27 @@ services:
       timeout: 3s
       retries: 10
 
+  # One-shot: applies Alembic migrations then exits 0. api/worker wait on it via
+  # service_completed_successfully so `docker compose up` never serves an
+  # un-migrated schema (#156). Mirrors setup.sh's `cd backend && alembic ...`
+  # because alembic.ini's script_location is relative to backend/.
+  migrate:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: "no"
+    command: sh -c "cd backend && alembic upgrade head"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-dataq}:${POSTGRES_PASSWORD:-dataq}@postgres:5432/${POSTGRES_DB:-dataq}
+    volumes:
+      - ./backend:/workspace/backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   # FastAPI + Celery share one image (backend/Dockerfile, conda env `dataq`).
   # DATABASE_URL / REDIS_URL are overridden here to the in-network service
   # hostnames (the .env defaults point at localhost for host-side dev).
@@ -57,6 +78,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
   worker:
     build:
@@ -79,6 +102,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
 volumes:
   postgres_data:
