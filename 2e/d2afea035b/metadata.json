@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "2ed2afea035b",
+  "strategy": "manual-commit",
+  "branch": "chore/compose-dev-stack-hardening",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "backend/scripts/seed_dev.py",
+    "docker-compose.yml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/2e/d2afea035b/0/metadata.json",
+      "transcript": "/2e/d2afea035b/0/full.jsonl",
+      "content_hash": "/2e/d2afea035b/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 141,
+    "cache_creation_tokens": 11827,
+    "cache_read_tokens": 1197795,
+    "output_tokens": 5862,
+    "api_call_count": 10
+  }
+}
