@@ -1,0 +1,39 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "50643b9dfa9d",
+  "session_id": "8603fa2a-25c9-4c76-87d4-83228bd296a6",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-07T19:00:39.754336Z",
+  "branch": "chore/switch-secret-scanning-betterleaks",
+  "checkpoints_count": 0,
+  "files_touched": [
+    ".github/workflows/ci.yml"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "9c3bdd32eb44",
+  "checkpoint_transcript_start": 110,
+  "transcript_lines_at_start": 110,
+  "token_usage": {
+    "input_tokens": 271,
+    "cache_creation_tokens": 15991,
+    "cache_read_tokens": 703105,
+    "output_tokens": 8753,
+    "api_call_count": 14
+  },
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-07T19:00:39.750227Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 7,
+    "human_modified": 3,
+    "human_removed": 0,
+    "total_committed": 7,
+    "total_lines_changed": 10,
+    "agent_percentage": 0,
+    "metric_version": 2
+  }
+}

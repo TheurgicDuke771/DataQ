@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "50643b9dfa9d",
+  "strategy": "manual-commit",
+  "branch": "chore/switch-secret-scanning-betterleaks",
+  "checkpoints_count": 0,
+  "files_touched": [
+    ".github/workflows/ci.yml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/50/643b9dfa9d/0/metadata.json",
+      "transcript": "/50/643b9dfa9d/0/full.jsonl",
+      "content_hash": "/50/643b9dfa9d/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 271,
+    "cache_creation_tokens": 15991,
+    "cache_read_tokens": 703105,
+    "output_tokens": 8753,
+    "api_call_count": 14
+  }
+}
