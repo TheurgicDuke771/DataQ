@@ -20,6 +20,9 @@ the deferred-smoke seam.
 from __future__ import annotations
 
 import io
+import re
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 import great_expectations as gx
@@ -36,6 +39,9 @@ _READ_TIMEOUT = 60
 
 _FILE_TYPES = {"adls_gen2", "s3"}
 
+# Sort floor for files the store reports without a modified time.
+_MIN_DT = datetime.min.replace(tzinfo=UTC)
+
 
 def format_from_path(path: str) -> str | None:
     """Infer the file format from the path extension (`None` if unrecognised)."""
@@ -47,6 +53,27 @@ def format_from_path(path: str) -> str | None:
     return None
 
 
+def _s3_client(cfg: S3Config, secret: str) -> Any:
+    """A boto3 S3 client for `cfg` with the standard fail-fast timeouts."""
+    import boto3
+    from botocore.config import Config
+
+    return boto3.client(
+        "s3",
+        region_name=cfg.region,
+        aws_access_key_id=cfg.access_key_id,
+        aws_secret_access_key=secret,
+        config=Config(connect_timeout=_CONNECT_TIMEOUT, read_timeout=_READ_TIMEOUT),
+    )
+
+
+def _blob_service(acfg: AdlsConfig, secret: str) -> Any:
+    """An ADLS `BlobServiceClient` for `acfg` (caller must `.close()` it)."""
+    from azure.storage.blob import BlobServiceClient
+
+    return BlobServiceClient(account_url=acfg.account_url, credential=secret)
+
+
 def download_bytes(*, conn_type: str, config: dict[str, Any], path: str, secret: str) -> bytes:
     """Fetch the object/blob bytes from S3 or ADLS Gen2 (live seam).
 
@@ -54,24 +81,12 @@ def download_bytes(*, conn_type: str, config: dict[str, Any], path: str, secret:
     owns the SecretStore), so this module never touches the DB.
     """
     if conn_type == "s3":
-        import boto3
-        from botocore.config import Config
-
         cfg = S3Config.model_validate(config)
-        client = boto3.client(
-            "s3",
-            region_name=cfg.region,
-            aws_access_key_id=cfg.access_key_id,
-            aws_secret_access_key=secret,
-            config=Config(connect_timeout=_CONNECT_TIMEOUT, read_timeout=_READ_TIMEOUT),
-        )
-        body: bytes = client.get_object(Bucket=cfg.bucket, Key=path)["Body"].read()
+        body: bytes = _s3_client(cfg, secret).get_object(Bucket=cfg.bucket, Key=path)["Body"].read()
         return body
 
-    from azure.storage.blob import BlobServiceClient
-
     acfg = AdlsConfig.model_validate(config)
-    client_az: Any = BlobServiceClient(account_url=acfg.account_url, credential=secret)
+    client_az = _blob_service(acfg, secret)
     try:
         blob = client_az.get_blob_client(container=acfg.container, blob=path)
         downloaded: bytes = blob.download_blob().readall()
@@ -146,3 +161,112 @@ def build_flatfile_runner(
         raise ValueError("flat-file connection requires secret_ref for the credential")
     secret = secret_store.get(secret_ref)
     return FlatFileCheckRunner(conn_type=conn_type, config=config, secret=secret)
+
+
+# ───────────────────────── batch resolution ────────────────────────
+#
+# Flat files usually arrive in batches — `orders_2026-06-01.csv`,
+# `orders_2026-06-02.csv`, … — and a check targets *one* batch. The batch
+# pattern is a regex whose **first capture group is the batch key**; `latest`
+# selects the greatest key, `specific` selects a named key. Resolution (filter +
+# select) is pure and fully tested; only the object listing is a live seam.
+
+
+class BatchNotFoundError(ValueError):
+    """No file matched the batch pattern (or the requested specific batch)."""
+
+
+@dataclass(frozen=True)
+class FileRef:
+    """A listed object: its full key/blob path and last-modified time (if any)."""
+
+    path: str
+    last_modified: datetime | None = None
+
+
+def _most_recent(files: list[FileRef]) -> str:
+    """Path of the most recently modified file (ties broken by path; `files` non-empty)."""
+    return max(files, key=lambda f: (f.last_modified or _MIN_DT, f.path)).path
+
+
+def resolve_batch(
+    files: list[FileRef], *, pattern: str, strategy: str = "latest", batch: str | None = None
+) -> str:
+    """Pick one file's path from `files` per the batch `pattern` + `strategy`.
+
+    `pattern` is a regex `re.search`-ed against each path; its first capture group
+    (if any) is the batch key. `strategy`:
+
+    * ``latest`` — the greatest batch key (lexicographic — ISO dates sort right),
+      or, when the pattern has no capture group, the most recently modified file.
+    * ``specific`` — the file whose batch key equals `batch` (required).
+
+    Raises `BatchNotFoundError` (nothing matched / no such batch) or `ValueError`
+    (bad strategy, or `specific` without `batch`).
+    """
+    try:
+        compiled = re.compile(pattern)
+    except re.error as exc:
+        raise ValueError(f"invalid batch pattern {pattern!r}: {exc}") from exc
+    matches = [(f, m) for f in files if (m := compiled.search(f.path))]
+    if not matches:
+        raise BatchNotFoundError(f"no files matched batch pattern {pattern!r}")
+
+    if strategy == "specific":
+        if batch is None:
+            raise ValueError("strategy 'specific' requires a batch key")
+        hits = [f for f, m in matches if m.groups() and m.group(1) == batch]
+        if not hits:
+            raise BatchNotFoundError(f"no file for batch {batch!r} under pattern {pattern!r}")
+        return _most_recent(hits)
+
+    if strategy != "latest":
+        raise ValueError(f"unknown batch strategy {strategy!r}")
+
+    # A batch key is the first capture group when it *participated* in the match;
+    # an optional group that didn't (`None`) has no key, so it falls through to the
+    # modified-time ordering rather than crashing the `max` on a None vs str compare.
+    keyed = [(f, m.group(1)) for f, m in matches if m.groups() and m.group(1) is not None]
+    if keyed:
+        return max(keyed, key=lambda fk: fk[1])[0].path
+    return _most_recent([f for f, _ in matches])
+
+
+def list_files(
+    *, conn_type: str, config: dict[str, Any], prefix: str, secret: str
+) -> list[FileRef]:
+    """List objects/blobs under `prefix` on a flat-file datasource (live seam)."""
+    if conn_type == "s3":
+        cfg = S3Config.model_validate(config)
+        paginator = _s3_client(cfg, secret).get_paginator("list_objects_v2")
+        refs: list[FileRef] = []
+        for page in paginator.paginate(Bucket=cfg.bucket, Prefix=prefix):
+            for obj in page.get("Contents", []):
+                refs.append(FileRef(path=obj["Key"], last_modified=obj.get("LastModified")))
+        return refs
+
+    acfg = AdlsConfig.model_validate(config)
+    client_az = _blob_service(acfg, secret)
+    try:
+        container = client_az.get_container_client(acfg.container)
+        return [
+            FileRef(path=blob.name, last_modified=getattr(blob, "last_modified", None))
+            for blob in container.list_blobs(name_starts_with=prefix)
+        ]
+    finally:
+        client_az.close()
+
+
+def resolve_batch_file(
+    *,
+    conn_type: str,
+    config: dict[str, Any],
+    secret: str,
+    prefix: str,
+    pattern: str,
+    strategy: str = "latest",
+    batch: str | None = None,
+) -> str:
+    """List under `prefix`, then resolve the batch file path (list + `resolve_batch`)."""
+    files = list_files(conn_type=conn_type, config=config, prefix=prefix, secret=secret)
+    return resolve_batch(files, pattern=pattern, strategy=strategy, batch=batch)
