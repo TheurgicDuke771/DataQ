@@ -1,0 +1,12 @@
+# DataQ backend — mutation-testing tool (manual / periodic, NOT CI).
+#
+# Deliberately standalone: this file is NOT `-r`'d by requirements-dev.txt, so
+# mutmut and its transitive deps (pony, parso, …) stay OFF the CI install and the
+# `pip-audit -r requirements-dev.txt` merge gate. Mutation testing is a manual,
+# periodic spike (see CONTRIBUTING.md rule 4a) — it never runs in CI — so it has
+# no place on the runtime (`requirements.txt`) or audited-dev surface. Pinned here
+# only for reproducibility.
+#
+# Install:  pip install -r backend/requirements-mutation.txt
+
+mutmut==2.5.0

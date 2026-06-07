@@ -217,3 +217,30 @@ def test_resolve_batch_optional_group_all_none_falls_back_to_mtime() -> None:
 def test_resolve_batch_invalid_pattern_raises_valueerror() -> None:
     with pytest.raises(ValueError, match="invalid batch pattern"):
         flatfile.resolve_batch(_BATCH_FILES, pattern=r"orders_([0-9]+")  # unbalanced (
+
+
+# ── adversarial-input contract for the GX runner ──
+
+import pytest as _pytest  # noqa: E402
+
+from backend.tests.support.adversarial import ADVERSARIAL_FRAMES  # noqa: E402
+
+
+@_pytest.mark.parametrize(
+    ("name", "frame"), ADVERSARIAL_FRAMES, ids=[n for n, _ in ADVERSARIAL_FRAMES]
+)
+def test_flatfile_runner_survives_adversarial_frame(
+    name: str, frame: Any, monkeypatch: _pytest.MonkeyPatch
+) -> None:
+    # the runner must map a real GX run over hostile data to a SuiteOutcome, not crash.
+    monkeypatch.setattr(flatfile, "read_dataframe", lambda **k: frame)
+    runner = flatfile.FlatFileCheckRunner(conn_type="s3", config={}, secret="x")
+    outcome = runner.run_checks(
+        table="f.parquet",
+        schema=None,
+        checks=[
+            CheckSpec("expect_table_row_count_to_be_between", {"min_value": 0, "max_value": 10**9})
+        ],
+    )
+    assert isinstance(outcome.success, bool)
+    assert outcome.checks[0].expectation_type == "expect_table_row_count_to_be_between"
