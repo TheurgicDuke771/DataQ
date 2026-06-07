@@ -211,7 +211,7 @@ class ColumnProfileRead(BaseModel):
     column: str
     null_count: int
     null_fraction: float
-    distinct_count: int
+    distinct_count: int | None
     min_value: Any | None
     max_value: Any | None
     top_values: list[TopValue]

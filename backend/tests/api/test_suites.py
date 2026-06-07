@@ -43,6 +43,7 @@ def _connection(db_session: Any) -> Connection:
         type="snowflake",
         env="dev",
         config={"account": "ab12345.eu-west-1"},
+        secret_ref="kv-sf",
         created_by=owner.id,
     )
     db_session.add(conn)
@@ -464,7 +465,9 @@ def _patch_conn(
     monkeypatch.setattr(profile_service, "_open_connection", fake_open)
 
 
-def _typed_connection(db_session: Any, ctype: str, config: dict[str, Any]) -> Connection:
+def _typed_connection(
+    db_session: Any, ctype: str, config: dict[str, Any], *, secret_ref: str | None = "kv-test"
+) -> Connection:
     owner = User(aad_object_id=uuid.uuid4().hex, email=f"{ctype}@ex")
     db_session.add(owner)
     db_session.flush()
@@ -473,6 +476,7 @@ def _typed_connection(db_session: Any, ctype: str, config: dict[str, Any]) -> Co
         type=ctype,
         env="dev",
         config=config,
+        secret_ref=secret_ref,
         created_by=owner.id,
     )
     db_session.add(conn)
@@ -762,3 +766,34 @@ def test_profile_flat_file_read_failure_returns_502(
     assert resp.status_code == 502
     assert resp.json()["error"]["code"] == "profile_failed"
     assert "bucket credentials rejected" not in resp.text
+
+
+def test_profile_secret_less_connection_returns_422(client: TestClient, db_session: Any) -> None:
+    # a supported connection with no stored credential is a config 422, not a 502
+    conn = _typed_connection(
+        db_session, "s3", {"bucket": "b", "region": "us-east-1"}, secret_ref=None
+    )
+    sid = client.post("/api/v1/suites", json=_payload(conn.id, name="nosec")).json()["id"]
+    resp = client.post(
+        f"/api/v1/suites/{sid}/profile", json={"path": "data/orders.csv", "columns": ["a"]}
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "profile_target_invalid"
+
+
+def test_profile_flat_file_messy_column_degrades_not_500(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # an object column mixing numbers and strings (common in real CSVs) must not
+    # 500 the profile — min/max degrade to null, hashable stats still computed.
+    sid = _s3_suite(client, db_session)
+    _patch_dataframe(monkeypatch, pd.DataFrame({"amount": [10, "N/A", 20, "N/A"]}))
+    resp = client.post(
+        f"/api/v1/suites/{sid}/profile",
+        json={"path": "data/orders.csv", "columns": ["amount"], "top_n": 2},
+    )
+    assert resp.status_code == 200
+    col = resp.json()["columns"][0]
+    assert col["min_value"] is None and col["max_value"] is None  # uncomparable → null
+    assert col["distinct_count"] == 3  # hashable → still computed
+    assert col["top_values"][0] == {"value": "N/A", "count": 2}
