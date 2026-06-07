@@ -20,8 +20,8 @@
 | | |
 |---|---|
 | **Active since** | 2026-05-24 |
-| **Current week** | Week 3 of 8 — Suite & check API (backend) |
-| **Roadmap tasks done** | 43 ✅ + 6 🟡 / 155 (~28%) |
+| **Current week** | Week 3 **complete** → Week 4 of 8 (Execution backend) |
+| **Roadmap tasks done** | 44 ✅ + 6 🟡 / 155 (~28%) |
 | **Out-of-roadmap PRs landed** | 5 bundles (governance, tooling lock, Entire CLI, Dependabot triage round 1, PR-3 cleanup) + ADRs 0005/0006/0007/0012 |
 | **Week-1 exit gate** | A logged-in user can hit a FastAPI endpoint that triggers GX against Snowflake DEV and persists a result row. — **met** (plumbing complete via PR 4a–4c; live-Snowflake run fails-soft pending DEV creds — deferred smoke) |
 | **Next milestone** | ADF/Airflow polling fallback (`list_recent_runs` + 10-min Celery beat → succeeded-run detection → trigger) + run_suite dispatch wiring once Week-3 target-table lands (Week 5) |
@@ -139,11 +139,11 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [x] ✅ Check types for flat files: schema validation, row count, null checks, ~~freshness by filename date~~ — `FlatFileCheckRunner` (`datasources/flatfile.py`): downloads the file (S3/ADLS) into a pandas DataFrame and runs the suite's GX expectations against GX's **pandas DataFrame asset**, so all GX expectation-kind checks (schema/row-count/null/value checks) run against flat files. Extracted the shared GX machinery — snake_case→GX-class translation, GX-result→`SuiteOutcome` mapping, and the suite/validation-definition `run_expectations` flow — into `datasources/gx_runner.py` (reused by the Snowflake runner and the future UC runner; no duplication). Flat-file IO (`download_bytes` + full-file `read_dataframe`) moved to `flatfile.py` behind primitives (raw config + resolved secret, not the ORM — matches `build_snowflake_runner`), and the column profiler now shares it. Because GX runs **in-process on the DataFrame**, the run path is fully unit-tested with a canned frame (real GX execution, not mocked) — only the network download is the deferred-smoke seam. 16 new tests; `gx_runner` 100%, `flatfile` 76% (only `download_bytes` uncovered). _Connection-type → runner dispatch (Snowflake vs flat-file) is the Week-5 `run_suite` wiring; **freshness-by-filename** is the reserved `freshness` monitor kind (deferred, ADR 0012), not a GX expectation._
 - [x] ✅ Batch resolution — resolve batching regex to matched files, pick latest or specific batch — `resolve_batch` (`datasources/flatfile.py`): a batch `pattern` is a regex whose **first capture group is the batch key**; `latest` selects the greatest key (lexicographic — ISO dates sort chronologically), falling back to the storage modified-time when the pattern has no group; `specific` selects the file whose key equals a given `batch`. `BatchNotFoundError` on no match / unknown batch. The filter+select logic is pure and fully unit-tested (8 tests); object listing (`list_files` — S3 `list_objects_v2` paginated / ADLS `list_blobs`) is the live seam, and `resolve_batch_file` composes list+resolve. _Wiring a check's target to a resolved batch path is the Week-5 `run_suite` dispatch._
 
-### Unity Catalog check specifics (2 tasks — 1/2 ✅)
+### Unity Catalog check specifics (2 tasks — 2/2 ✅)
 - [x] ✅ UC table check path — UC table → GX DataFrame datasource → run suite — `UnityCatalogCheckRunner` (`datasources/unity_catalog.py`): reads the target table from the Databricks SQL Warehouse into a pandas DataFrame (`pd.read_sql_table` via the databricks SQLAlchemy dialect — reflection quotes identifiers, so no hand-built SQL) and runs the suite's GX expectations against GX's **pandas DataFrame asset** — the "GX DataFrame datasource" shape (§5), the same shape Databricks Labs DQX consumes, so v1.1 swaps GX→DQX behind this one interface. Reuses the shared `gx_runner` (`run_expectations` + result mapping) exactly like the flat-file runner; the `catalog` is pinned in the connection URL (`build_databricks_url`, now shared with the column profiler — no duplication) so the 2-level `schema.table` resolves to `catalog.schema.table`. Because GX runs **in-process on the DataFrame**, the run path is unit-tested with a canned frame (real GX execution); only the reflect+read (`_read_table`) is the deferred-smoke seam. `build_unity_catalog_runner` mirrors `build_snowflake_runner` (raw config + resolved PAT, not the ORM). 14 tests; `unity_catalog` 91% (only `_read_table` uncovered). _Connection-type → runner dispatch is the Week-5 `run_suite` wiring._
-- [ ] ⬜ Integration tests across all three datasource types
+- [x] ✅ Integration tests across all three datasource types — `backend/tests/integration/test_datasource_runs.py`: end-to-end suite runs through the **real** `run_service.execute_run` + **real Postgres** persistence, with **real GX execution** for the flat-file (`FlatFileCheckRunner`) and Unity Catalog (`UnityCatalogCheckRunner`) paths on an in-memory DataFrame (only the file download / table read is stubbed) — exercising the whole chain: `check.kind` dispatch → runner → GX validation → severity derivation → `Result` rows. Snowflake runs through a canned outcome (live warehouse is the deferred-smoke seam; its GX mapping is covered in `datasources/test_snowflake.py`). Asserts run `succeeded`, both Results persisted, severity derived (null-check → `fail`, row-count → `pass` with observed value). Plus a parametrized **adversarial-frame** run (numpy + pyarrow hostile columns via the shared battery) proving a column-agnostic monitor still runs + persists over a file whose data column is hostile. 7 tests.
 
-**Week 3 total: 17 / 18**
+**Week 3 total: 18 / 18 ✅ — COMPLETE**
 
 ---
 
@@ -341,13 +341,13 @@ These were preconditions for executing the roadmap. Listed for completeness.
 |---|---|---|---|---|
 | Week 1 | 7 | 1 | 2 | 10 |
 | Week 2 | 15 | 1 | 3 | 19 |
-| Week 3 | 17 | 0 | 1 | 18 |
+| Week 3 | 18 | 0 | 0 | 18 |
 | Week 4 | 1 | 0 | 21 | 22 |
 | Week 5 | 1 | 0 | 14 | 15 |
 | Week 6 | 0 | 0 | 16 | 16 |
 | Week 7 | 0 | 1 | 28 | 29 |
 | Week 8 | 2 | 3 | 21 | 26 |
-| **TOTAL** | **43** | **6** | **106** | **155** |
+| **TOTAL** | **44** | **6** | **105** | **155** |
 
 > 155 > 100 because ADR 0004 added Airflow tasks, ADR 0011 added two seam tasks (generic runner dispatch, `ResultPublisher`), ADR 0012 added three Week-3 monitor-kind / metric seam tasks, plus PR-review follow-ups not in the original roadmap. Tracked here for honesty.
 
