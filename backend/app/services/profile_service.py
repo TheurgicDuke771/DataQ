@@ -40,7 +40,6 @@ from collections.abc import Generator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import quote_plus
 
 from sqlalchemy import column, distinct, func, quoted_name, select, table
 from sqlalchemy.sql import Select
@@ -51,7 +50,7 @@ from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
 from backend.app.datasources.flatfile import download_bytes, format_from_path
 from backend.app.datasources.snowflake import SnowflakeConfig, build_connection_string
-from backend.app.datasources.unity_catalog import UnityCatalogConfig
+from backend.app.datasources.unity_catalog import UnityCatalogConfig, build_databricks_url
 from backend.app.db.models import Connection
 
 log = get_logger(__name__)
@@ -233,12 +232,9 @@ def _engine_args(connection: Connection, secret: str) -> tuple[str, dict[str, An
     """Build the (SQLAlchemy URL, connect_args) for a SQL datasource connection."""
     if connection.type == "unity_catalog":
         cfg = UnityCatalogConfig.model_validate(connection.config)
-        # Catalog is not pinned on the URL — the query qualifies catalog.schema.table.
-        url = (
-            f"databricks://token:{quote_plus(secret)}@{cfg.server_hostname}"
-            f"?http_path={quote_plus(cfg.http_path)}"
-        )
-        return url, {}
+        # Catalog is not pinned on the URL — the profiler query qualifies the full
+        # catalog.schema.table namespace itself (see `_table`).
+        return build_databricks_url(cfg, secret), {}
     sf = SnowflakeConfig.model_validate(connection.config)
     return build_connection_string(sf, secret), {
         "login_timeout": _LOGIN_TIMEOUT,
