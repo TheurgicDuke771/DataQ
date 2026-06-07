@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bafqjd3jm</task-id>
+<tool-use-id>toolu_01Q3CqMEYEFFrLEzkqzYAC2X</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/8603fa2a-25c9-4c76-87d4-83228bd296a6/tasks/bafqjd3jm.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for CI on PR 163" completed (exit code 0)</summary>
+</task-notification>

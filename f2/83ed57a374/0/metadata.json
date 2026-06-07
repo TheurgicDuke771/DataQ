@@ -1,0 +1,52 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "f283ed57a374",
+  "session_id": "8603fa2a-25c9-4c76-87d4-83228bd296a6",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-07T22:13:33.865764Z",
+  "branch": "chore/issue-147-profiler-cleanup-docs",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "backend/app/datasources/flatfile.py",
+    "backend/app/services/profile_service.py"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "21845f4fab60",
+  "checkpoint_transcript_start": 1159,
+  "transcript_lines_at_start": 1159,
+  "token_usage": {
+    "input_tokens": 860,
+    "cache_creation_tokens": 359580,
+    "cache_read_tokens": 4346074,
+    "output_tokens": 12808,
+    "api_call_count": 13
+  },
+  "session_metrics": {
+    "turn_count": 11
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-07T22:13:33.839214Z",
+    "agent_lines": 9,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 9,
+    "total_lines_changed": 9,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}

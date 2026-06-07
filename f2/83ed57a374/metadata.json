@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "f283ed57a374",
+  "strategy": "manual-commit",
+  "branch": "chore/issue-147-profiler-cleanup-docs",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "backend/app/datasources/flatfile.py",
+    "backend/app/services/profile_service.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f2/83ed57a374/0/metadata.json",
+      "transcript": "/f2/83ed57a374/0/full.jsonl",
+      "content_hash": "/f2/83ed57a374/0/content_hash.txt",
+      "prompt": "/f2/83ed57a374/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 860,
+    "cache_creation_tokens": 359580,
+    "cache_read_tokens": 4346074,
+    "output_tokens": 12808,
+    "api_call_count": 13
+  }
+}
