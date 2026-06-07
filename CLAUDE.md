@@ -144,7 +144,7 @@ Full list (37 rules across 8 categories) lives in [CONTRIBUTING.md](CONTRIBUTING
 
 ### CI/CD quality gates (block merge)
 - Ruff (lint), Black `--check` (format), mypy (types), pytest (from W8), frontend lint/format/test.
-- `gitleaks` secret scanning (pre-commit + CI).
+- `betterleaks` secret scanning (pre-commit + CI).
 - Bandit (Python SAST) + CodeQL.
 - **Dependency CVE audit (CI): `pip-audit -r backend/requirements-dev.txt` (full backend runtime + test surface) + `pnpm audit --audit-level=high` (frontend).** Synchronous merge gate; complements the async Dependabot layer below.
 - **Python deps have one source of truth: `backend/requirements.txt`** (runtime hub) → `requirements-dev.txt` (`-r` it + test toolchain) → `environment.yml` + CI all install from it. The re-listed subsets `requirements-dev.txt` pulls are `requirements-typecheck.txt` (the typed deps mypy needs) and `requirements-tooling.txt` (Black/Ruff/mypy/Bandit/pre-commit); the `typecheck-deps-sync` check (pre-commit **and** CI `backend-lint`) keeps the mypy hook aligned. `requirements-mutation.txt` (mutmut) is **standalone — not `-r`'d by anything**, so it stays off CI's install + `pip-audit` surface (manual tool, CONTRIBUTING rule 4a). Bump a Python version in `requirements.txt` only.
@@ -303,5 +303,5 @@ Update this section at the end of each week with: current week, the week's exit 
 | MCP | FastMCP (PrefectHQ) — 8 curated tools at `/mcp` |
 | Python tooling | conda + Black + Ruff + mypy + pytest + Bandit |
 | Frontend tooling | Prettier + ESLint + Vitest + React Testing Library |
-| Secret scanning | gitleaks (pre-commit + CI) |
+| Secret scanning | betterleaks (pre-commit + CI) |
 | SAST | Bandit + CodeQL |

@@ -44,7 +44,7 @@ The architecture is already partly portable by intent — [ADR 0010](0010-provid
    - **Phase 2 — portability investment:** Helm chart + published images, generic OIDC auth, OTel observability, AWS/GCP `SecretStore` impls, managed-dependency mapping (RDS/Cloud SQL/Azure DB; ElastiCache/Memorystore/Azure Cache).
    - **Phase 3 — AWS, then GCP.** Mostly packaging + per-marketplace onboarding once Phase 2 lands.
 
-**5. Commercial/legal/operational scope is part of the post-v1 initiative, not architecture** — recorded here so it is not forgotten: licensing model + entitlement/license-key (we are not metering under BYOL), seller registration + tax/banking, EULA / privacy / DPA, defined support SLA, per-marketplace security review, and (for enterprise buyers) SOC 2 + pen test. The existing CI scanning (Bandit, CodeQL, gitleaks, Dependabot) is a head start on the security reviews, not a substitute.
+**5. Commercial/legal/operational scope is part of the post-v1 initiative, not architecture** — recorded here so it is not forgotten: licensing model + entitlement/license-key (we are not metering under BYOL), seller registration + tax/banking, EULA / privacy / DPA, defined support SLA, per-marketplace security review, and (for enterprise buyers) SOC 2 + pen test. The existing CI scanning (Bandit, CodeQL, betterleaks, Dependabot) is a head start on the security reviews, not a substitute.
 
 ## Consequences
 
