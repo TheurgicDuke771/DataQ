@@ -11,9 +11,13 @@ FROM continuumio/miniconda3:24.11.1-0
 
 WORKDIR /workspace
 
-# Create the conda env first and cache the layer — only re-runs when the pinned
-# environment.yml changes, not on every code edit.
+# Create the conda env first and cache the layer. environment.yml's pip section
+# does `-r backend/requirements-dev.txt` (which -r's requirements.txt /
+# -typecheck / -tooling), so those must exist before `conda env create`. Copy
+# just the requirements files (not all of backend/) so the env-create layer cache
+# busts only on a pin change, not on every code edit.
 COPY environment.yml ./
+COPY backend/requirements*.txt ./backend/
 RUN conda env create -f environment.yml && conda clean -afy
 
 ENV PATH=/opt/conda/envs/dataq/bin:$PATH \
