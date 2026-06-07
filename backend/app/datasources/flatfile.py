@@ -34,6 +34,10 @@ from backend.app.datasources.gx_runner import run_expectations
 from backend.app.datasources.s3 import S3Config
 
 # Connector timeouts (seconds): fail fast rather than hang the worker thread.
+# _READ_TIMEOUT is deliberately longer than the SQL profiler's network timeout
+# (profile_service._NETWORK_TIMEOUT = 30): it covers a full-object download (the
+# whole CSV/Parquet is pulled before parsing), not a single warehouse query, so a
+# large file legitimately needs more headroom. Not accidental drift (#147).
 _CONNECT_TIMEOUT = 10
 _READ_TIMEOUT = 60
 
