@@ -1,0 +1,40 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "72153d686858",
+  "session_id": "8603fa2a-25c9-4c76-87d4-83228bd296a6",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-07T21:26:19.863368Z",
+  "branch": "fix/issue-155-compose-frontend",
+  "checkpoints_count": 0,
+  "files_touched": [
+    ".gitignore",
+    "docker-compose.yml"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "35210aa4e4e8",
+  "checkpoint_transcript_start": 933,
+  "transcript_lines_at_start": 933,
+  "token_usage": {
+    "input_tokens": 910,
+    "cache_creation_tokens": 13824,
+    "cache_read_tokens": 3130936,
+    "output_tokens": 11414,
+    "api_call_count": 11
+  },
+  "session_metrics": {
+    "turn_count": 9
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-07T21:26:19.84149Z",
+    "agent_lines": 9,
+    "agent_removed": 3,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 9,
+    "total_lines_changed": 12,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
