@@ -50,6 +50,9 @@ alembic/versions/__pycache__/
 
 # ---- Node / Frontend ----
 node_modules/
+# pnpm content-addressable store (compose frontend keeps it in a volume; this is
+# a belt-and-suspenders guard for host/misconfigured runs)
+.pnpm-store/
 .pnp/
 .pnp.js
 dist/
