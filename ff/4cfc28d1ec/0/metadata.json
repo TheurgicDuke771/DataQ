@@ -1,0 +1,52 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "ff4cfc28d1ec",
+  "session_id": "8603fa2a-25c9-4c76-87d4-83228bd296a6",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-07T19:09:11.920928Z",
+  "branch": "docs/betterleaks-hook-refresh-note",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "CONTRIBUTING.md",
+    "scripts/setup.sh"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "a797b161d467",
+  "checkpoint_transcript_start": 184,
+  "transcript_lines_at_start": 184,
+  "token_usage": {
+    "input_tokens": 140,
+    "cache_creation_tokens": 7458,
+    "cache_read_tokens": 581719,
+    "output_tokens": 4559,
+    "api_call_count": 9
+  },
+  "session_metrics": {
+    "turn_count": 3
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-07T19:09:11.915807Z",
+    "agent_lines": 7,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 7,
+    "total_lines_changed": 7,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}

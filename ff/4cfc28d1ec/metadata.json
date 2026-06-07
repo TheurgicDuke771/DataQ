@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "ff4cfc28d1ec",
+  "strategy": "manual-commit",
+  "branch": "docs/betterleaks-hook-refresh-note",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "CONTRIBUTING.md",
+    "scripts/setup.sh"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ff/4cfc28d1ec/0/metadata.json",
+      "transcript": "/ff/4cfc28d1ec/0/full.jsonl",
+      "content_hash": "/ff/4cfc28d1ec/0/content_hash.txt",
+      "prompt": "/ff/4cfc28d1ec/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 140,
+    "cache_creation_tokens": 7458,
+    "cache_read_tokens": 581719,
+    "output_tokens": 4559,
+    "api_call_count": 9
+  }
+}
