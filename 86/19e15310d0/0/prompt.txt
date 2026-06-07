@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>b2yaqofvy</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/8603fa2a-25c9-4c76-87d4-83228bd296a6/tasks/b2yaqofvy.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for CI on PR 162" completed (exit code 0)</summary>
+</task-notification>

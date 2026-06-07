@@ -1,0 +1,52 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "8619e15310d0",
+  "session_id": "8603fa2a-25c9-4c76-87d4-83228bd296a6",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-07T21:53:25.627052Z",
+  "branch": "feat/issue-122-operational-result-statuses",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "backend/alembic/versions/784847178482_widen_results_status_check_with_.py",
+    "backend/app/db/models.py"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "56aeefb0f186",
+  "checkpoint_transcript_start": 1037,
+  "transcript_lines_at_start": 1037,
+  "token_usage": {
+    "input_tokens": 1301,
+    "cache_creation_tokens": 41456,
+    "cache_read_tokens": 7042669,
+    "output_tokens": 30549,
+    "api_call_count": 22
+  },
+  "session_metrics": {
+    "turn_count": 10
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-07T21:53:25.602846Z",
+    "agent_lines": 61,
+    "agent_removed": 2,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 61,
+    "total_lines_changed": 63,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}

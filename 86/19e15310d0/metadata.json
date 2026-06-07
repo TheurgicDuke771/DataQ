@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "8619e15310d0",
+  "strategy": "manual-commit",
+  "branch": "feat/issue-122-operational-result-statuses",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "backend/alembic/versions/784847178482_widen_results_status_check_with_.py",
+    "backend/app/db/models.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/86/19e15310d0/0/metadata.json",
+      "transcript": "/86/19e15310d0/0/full.jsonl",
+      "content_hash": "/86/19e15310d0/0/content_hash.txt",
+      "prompt": "/86/19e15310d0/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1301,
+    "cache_creation_tokens": 41456,
+    "cache_read_tokens": 7042669,
+    "output_tokens": 30549,
+    "api_call_count": 22
+  }
+}
