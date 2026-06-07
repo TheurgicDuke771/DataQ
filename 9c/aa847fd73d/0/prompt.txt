@@ -1,0 +1,320 @@
+file the webhook-URL-helper issue first
+
+---
+
+Also why we need to pass the secret in the webhook URL?
+
+---
+
+Okay, lets scan the open issues and check if anything can be taken up now
+
+---
+
+#80 + #87, and #86b.
+
+---
+
+first fix the hook. 
+Also check if the / commands and sub-agents are up-to-date
+
+---
+
+/review + merge the batch (#93–#96)
+
+---
+
+Okay, get started with PR 8. What is the plan?
+
+---
+
+do a review + merge for #97. 
+After that can you search once if the codebase have any reference of lll_?
+
+---
+
+scrub the name from everywhere (roadmap, #12) also change nonprod to something like pre-prod or dev.
+
+---
+
+do a review + merge for #98.
+
+---
+
+Lets start with the remaining Week-2 connection CRUD
+
+---
+
+yeah, first complete airflow then start the next
+
+---
+
+yeah, finish adls then start s3
+
+---
+
+Yes, complete S3, then start with UC
+
+---
+
+yeah, close-out the UC
+
+---
+
+Lets pickup the remaining of week 2
+
+---
+
+yeah, lets review + merge #103
+
+---
+
+Hey, @README.md  and @docs/progress.md is not up-to-date, can you check once. 
+Do we need to maintain `Today` and `Calendar burn`?
+
+---
+
+Is the auth in @README.md covers all? do we need to maintain the auth?
+Also mention the license is under MIT
+
+---
+
+yeah, bundle them together and commit
+
+---
+
+yeah, open PR. No review needed, just open and merge it (just for this time only)
+
+---
+
+I'm thinking to list this app in azure, aws and gcp marketplace. Will that be viable?
+if yes, what are the things I need to add / change?
+
+---
+
+Yeah, lets document this, and any other change that keeps it from a vendor specific lock down
+
+---
+
+yeah, review - merge this
+
+---
+
+Also, can you check if we can provide this functionality - https://github.com/TheurgicDuke771/FastAPI_DataComparison 
+as a plugin to DataQ?
+
+---
+
+Yeah, write the ADR. Also for the Two-connection model - keep a future ADR.
+
+---
+
+What is pending for Week 2?
+
+---
+
+Yeah, start with the three items in the first table
+
+---
+
+yes
+
+---
+
+triage the Dependabot batch (except vite 6 -> 8)
+
+---
+
+Okay, update the vite version
+
+---
+
+yeah, close #112
+
+---
+
+Okay, lets start week 3
+
+---
+
+yeah, srart PB - B (are you going to split it or single PR?)
+
+---
+
+Yes, start PR-B2. 
+One side question - do we have a classification for the checks (i.e. - Uniqueness, Completeness, Accuracy, Consistency, etc.)
+
+---
+
+did you force-pushed the feature/week3-suite-crud  branch from b9dc765 to 6c6a3a3
+
+---
+
+yes, please do a follow-up fixup commit going forward
+
+---
+
+Start with PR-C
+
+---
+
+Hey, are we doing any CVE check or npm audit in the CI?
+
+---
+
+do both
+
+---
+
+Hey, do we have any integration test between frontend, backend and plumbing?
+
+---
+
+Lets fix the Conda-only deps gap (we can add environment.yaml for audit, right?).
+Also file a issue to track he frontend↔backend contract / full-stack E2E gap with a Playwright smoke test in scope (include but not limited to compose.yaml)
+
+---
+
+Which one should we take first #129 or PR-D?
+
+---
+
+yeah start with PR-D, 
+But before we start, can we optimize the codebase (like remove dead code, unnecessary files, etc.)
+
+---
+
+lets start with suite sharing
+
+---
+
+continue..
+
+---
+
+do the review and push the code
+
+---
+
+yeah, merge it
+
+---
+
+start with the check dry run
+
+---
+
+<task-notification>
+<task-id>b8z3ctwxe</task-id>
+<tool-use-id>toolu_012yxuWwaAwibStPt8vAKJwk</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/898e0d06-fab7-4375-87ce-eea2167a0700/tasks/b8z3ctwxe.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch PR 135 CI to completion" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+first suite export/import then the column profiler
+
+---
+
+<task-notification>
+<task-id>be38j1tn1</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/898e0d06-fab7-4375-87ce-eea2167a0700/tasks/be38j1tn1.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch PR 136 CI to completion" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+yes add the .lock file to .gitignore
+
+---
+
+Hey, 
+try running the profiler unit + endpoint tests
+
+---
+
+Hey, 
+try running the profiler unit + endpoint tests
+
+---
+
+<task-notification>
+<task-id>bo48onuny</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/f81a27c1-9606-4cc2-bccc-2e2fee08a0cb/tasks/bo48onuny.output</output-file>
+<status>completed</status>
+<summary>Background command "Confirm 138 merged; watch 137 CI" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Lets start with flat file
+
+---
+
+<task-notification>
+<task-id>bdusxlw16</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/f81a27c1-9606-4cc2-bccc-2e2fee08a0cb/tasks/bdusxlw16.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch PR 139 CI to completion" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bheshheux</task-id>
+<tool-use-id>toolu_01HJtEFSGaAtjFMqLUnJ1Mbz</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/f81a27c1-9606-4cc2-bccc-2e2fee08a0cb/tasks/bheshheux.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch PR 139 CI re-run" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Also, are we utilizing the features like - Copy-on-Write, Zero-Copy PyArrow Integration, etc.
+
+---
+
+<task-notification>
+<task-id>bciqiplqt</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/f81a27c1-9606-4cc2-bccc-2e2fee08a0cb/tasks/bciqiplqt.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch PR 140 CI" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+start the Unity Catalog profiler
+
+---
+
+<task-notification>
+<task-id>b2ej3xttx</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/f81a27c1-9606-4cc2-bccc-2e2fee08a0cb/tasks/b2ej3xttx.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch PR 141 CI" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+lets start with flat-file check runner
+
+---
+
+<task-notification>
+<task-id>b1zxh5m4i</task-id>
+<tool-use-id>toolu_01THpzgq9HGfBwqKUPb1MMHT</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/f81a27c1-9606-4cc2-bccc-2e2fee08a0cb/tasks/b1zxh5m4i.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch PR 142 CI" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+lets start with UC check runner

@@ -1,0 +1,35 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "9caa847fd73d",
+  "session_id": "f81a27c1-9606-4cc2-bccc-2e2fee08a0cb",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-07T00:37:25.809494Z",
+  "branch": "feature/week3-uc-check-runner",
+  "checkpoints_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-opus-4-8",
+  "turn_id": "0dc38d52f726",
+  "token_usage": {
+    "input_tokens": 242284,
+    "cache_creation_tokens": 12382845,
+    "cache_read_tokens": 554511493,
+    "output_tokens": 1496635,
+    "api_call_count": 1493
+  },
+  "session_metrics": {
+    "turn_count": 68
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}
