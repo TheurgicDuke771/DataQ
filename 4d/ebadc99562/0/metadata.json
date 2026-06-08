@@ -1,0 +1,38 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "4debadc99562",
+  "session_id": "8603fa2a-25c9-4c76-87d4-83228bd296a6",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-08T06:17:00.986014Z",
+  "branch": "chore/issue-129-deps-refresh-py313",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".github/workflows/ci.yml",
+    ".pre-commit-config.yaml"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "5b9bfd3c35c0",
+  "token_usage": {
+    "input_tokens": 34464,
+    "cache_creation_tokens": 2726932,
+    "cache_read_tokens": 132821734,
+    "output_tokens": 424139,
+    "api_call_count": 476
+  },
+  "session_metrics": {
+    "turn_count": 11
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-08T06:17:00.941377Z",
+    "agent_lines": 6,
+    "agent_removed": 6,
+    "human_added": 6,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 12,
+    "total_lines_changed": 24,
+    "agent_percentage": 50,
+    "metric_version": 2
+  }
+}

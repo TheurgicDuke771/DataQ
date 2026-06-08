@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "4debadc99562",
+  "strategy": "manual-commit",
+  "branch": "chore/issue-129-deps-refresh-py313",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".github/workflows/ci.yml",
+    ".pre-commit-config.yaml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/4d/ebadc99562/0/metadata.json",
+      "transcript": "/4d/ebadc99562/0/full.jsonl",
+      "content_hash": "/4d/ebadc99562/0/content_hash.txt",
+      "prompt": "/4d/ebadc99562/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 34464,
+    "cache_creation_tokens": 2726932,
+    "cache_read_tokens": 132821734,
+    "output_tokens": 424139,
+    "api_call_count": 476
+  }
+}
