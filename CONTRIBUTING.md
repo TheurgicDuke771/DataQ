@@ -186,6 +186,10 @@ cd backend && pytest
 
 # Run frontend tests (Week 8+):
 cd frontend && pnpm test
+
+# Reset a drifted dev DB (e.g. alembic_version at head but tables gone after a
+# manual drop): drops the schema, re-migrates, re-seeds.
+./scripts/reset_dev_db.sh
 ```
 
 > Commands above assume Week 1 scaffolding (`environment.yml`, `docker-compose.yml`, `scripts/setup.sh`) is committed.

@@ -79,9 +79,16 @@ def test_probe_round_trip_over_real_broker(monkeypatch: pytest.MonkeyPatch) -> N
         session.commit()
         run_id = run.id
 
-        with start_worker(celery_app, perform_ping_check=False, loglevel="info"):
+        # Route this run to a unique queue that only our embedded worker consumes,
+        # so a developer's docker-compose `worker` (on the default queue, same
+        # broker) can't steal the task and fail it with the real Snowflake
+        # adapter. CI has no competing worker; this just makes local runs robust.
+        queue = f"e2e-{uuid.uuid4()}"
+        with start_worker(celery_app, perform_ping_check=False, loglevel="info", queues=[queue]):
             request_id_var.set("e2e-REQ")
-            tasks.run_suite.delay(str(run_id), "ORDERS")  # real publish over Redis
+            tasks.run_suite.apply_async(  # real publish over Redis
+                args=[str(run_id), "ORDERS"], queue=queue
+            )
 
             deadline = time.time() + 30
             final: str | None = None
