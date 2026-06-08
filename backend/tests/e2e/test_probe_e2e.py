@@ -64,7 +64,7 @@ def test_probe_round_trip_over_real_broker(monkeypatch: pytest.MonkeyPatch) -> N
         pytest.skip("DATABASE_URL not reachable")
 
     Base.metadata.create_all(engine)
-    monkeypatch.setattr(tasks, "build_snowflake_runner", _fake_runner)
+    monkeypatch.setattr(tasks, "build_check_runner", _fake_runner)
 
     session = get_session()
     try:
