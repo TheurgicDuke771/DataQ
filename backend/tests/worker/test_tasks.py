@@ -1,7 +1,7 @@
 """Tests for the run_suite Celery task orchestration.
 
 No Postgres, no GX, no broker: a fake Session serves the run graph from memory,
-``build_snowflake_runner`` is monkeypatched to a fake CheckRunner, and the task
+``build_check_runner`` is monkeypatched to a fake CheckRunner, and the task
 core (`_run_suite`) is called directly. Real-DB integration coverage is a Week 8
 item (Postgres test fixtures).
 """
@@ -102,7 +102,7 @@ def test_run_suite_executes_and_persists(monkeypatch: pytest.MonkeyPatch) -> Non
             checks=[CheckOutcome("x", success=True), CheckOutcome("x", success=True)],
         )
     )
-    monkeypatch.setattr(tasks, "build_snowflake_runner", lambda **_kw: runner)
+    monkeypatch.setattr(tasks, "build_check_runner", lambda **_kw: runner)
 
     status = tasks._run_suite(session, run_id=run.id, table="ORDERS", schema=None)
 
@@ -137,7 +137,7 @@ def test_run_suite_runner_build_failure_marks_failed(monkeypatch: pytest.MonkeyP
     def _boom(**_kw: Any) -> Any:
         raise ValueError("Snowflake connection requires secret_ref for the password")
 
-    monkeypatch.setattr(tasks, "build_snowflake_runner", _boom)
+    monkeypatch.setattr(tasks, "build_check_runner", _boom)
 
     status = tasks._run_suite(session, run_id=run.id, table="T", schema=None)
     assert status == "failed"
@@ -150,7 +150,7 @@ def test_run_suite_invalid_connection_config_marks_failed() -> None:
     run, suite, connection, checks = _graph(1)
     connection.config = {}  # missing account/user/database/schema/warehouse
     session = FakeSession(run=run, suite=suite, connection=connection, checks=checks)
-    # build_snowflake_runner is NOT monkeypatched here — real SnowflakeConfig
+    # build_check_runner is NOT monkeypatched here — real SnowflakeConfig
     # validation runs and raises, exercising the task's setup-failure handling.
     status = tasks._run_suite(session, run_id=run.id, table="T", schema=None)
     assert status == "failed"
@@ -165,7 +165,7 @@ def test_task_wrapper_opens_and_closes_session(monkeypatch: pytest.MonkeyPatch) 
     session = FakeSession(run=run, suite=suite, connection=connection, checks=checks)
     runner = FakeRunner(SuiteOutcome(success=True, checks=[CheckOutcome("x", success=True)]))
     monkeypatch.setattr(tasks, "get_session", lambda: session)
-    monkeypatch.setattr(tasks, "build_snowflake_runner", lambda **_kw: runner)
+    monkeypatch.setattr(tasks, "build_check_runner", lambda **_kw: runner)
 
     status = tasks.run_suite(str(run.id), "ORDERS")
 

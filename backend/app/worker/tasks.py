@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import get_secret_store
-from backend.app.datasources.snowflake import build_snowflake_runner
+from backend.app.datasources.registry import build_check_runner
 from backend.app.db.models import Check, Connection, Run, Suite
 from backend.app.db.session import get_session
 from backend.app.services import run_service
@@ -29,8 +29,19 @@ from backend.app.worker.celery_app import celery_app
 log = get_logger(__name__)
 
 
-def _run_suite(session: Session, *, run_id: uuid.UUID, table: str, schema: str | None) -> str:
+def _run_suite(
+    session: Session,
+    *,
+    run_id: uuid.UUID,
+    table: str,
+    schema: str | None,
+    catalog: str | None = None,
+) -> str:
     """Load the run's graph, build the runner, execute. Returns the final status.
+
+    Dispatches by ``connection.type`` through the runner registry, so a Snowflake
+    / Unity Catalog / flat-file suite each gets its correct `CheckRunner` (#146).
+    ``catalog`` is required for Unity Catalog and ignored by the other types.
 
     Failures while loading or building the runner (missing rows, bad connection
     config, unresolved secret) drive the run to ``failed`` so it never lingers in
@@ -47,10 +58,12 @@ def _run_suite(session: Session, *, run_id: uuid.UUID, table: str, schema: str |
         if suite is None or connection is None:
             raise RuntimeError("suite or connection not found for run")
         checks = list(session.scalars(select(Check).where(Check.suite_id == suite.id)))
-        runner = build_snowflake_runner(
+        runner = build_check_runner(
+            conn_type=connection.type,
             config=connection.config,
             secret_ref=connection.secret_ref,
             secret_store=get_secret_store(),
+            catalog=catalog,
         )
     except Exception:
         run.status = "failed"
@@ -67,10 +80,17 @@ def _run_suite(session: Session, *, run_id: uuid.UUID, table: str, schema: str |
 
 
 @celery_app.task(name="run_suite")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
-def run_suite(run_id: str, table: str, schema: str | None = None) -> str:
-    """Worker entry point. ``run_id`` is a string so it serialises over JSON."""
+def run_suite(
+    run_id: str, table: str, schema: str | None = None, catalog: str | None = None
+) -> str:
+    """Worker entry point. ``run_id`` is a string so it serialises over JSON.
+
+    ``catalog`` is passed through for Unity Catalog suites; other types ignore it.
+    """
     session = get_session()
     try:
-        return _run_suite(session, run_id=uuid.UUID(run_id), table=table, schema=schema)
+        return _run_suite(
+            session, run_id=uuid.UUID(run_id), table=table, schema=schema, catalog=catalog
+        )
     finally:
         session.close()
