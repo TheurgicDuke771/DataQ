@@ -36,7 +36,7 @@ from __future__ import annotations
 import io
 import math
 import re
-from collections.abc import Generator, Mapping
+from collections.abc import Callable, Generator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any
@@ -54,10 +54,6 @@ from backend.app.datasources.unity_catalog import UnityCatalogConfig, build_data
 from backend.app.db.models import Connection
 
 log = get_logger(__name__)
-
-# Connection types the profiler can read, grouped by how it reads them.
-_SQL_TYPES = {"snowflake", "unity_catalog"}
-_FILE_TYPES = {"adls_gen2", "s3"}
 
 # Formats the profiler can actually parse. NOT redundant with
 # flatfile.format_from_path (which only recognises path extensions): this also
@@ -230,21 +226,65 @@ def assemble_profile(
     )
 
 
-# ───────────────────────── I/O seam (monkeypatched in tests) ────────
+# ───────────────────────── profiler registry ───────────────────────
+#
+# One table maps connection.type to its profiling strategy, so adding a
+# datasource is a single entry here — not edits scattered across the type sets,
+# `_engine_args`, and `profile_connection` (#146). SQL types carry their engine
+# builder + whether they need a `catalog`; flat-file types are uniform (the
+# object-store backend, S3 vs ADLS, is dispatched inside `flatfile`).
 
 
-def _engine_args(connection: Connection, secret: str) -> tuple[str, dict[str, Any]]:
-    """Build the (SQLAlchemy URL, connect_args) for a SQL datasource connection."""
-    if connection.type == "unity_catalog":
-        cfg = UnityCatalogConfig.model_validate(connection.config)
-        # Catalog is not pinned on the URL — the profiler query qualifies the full
-        # catalog.schema.table namespace itself (see `_table`).
-        return build_databricks_url(cfg, secret), {}
+def _snowflake_engine_args(connection: Connection, secret: str) -> tuple[str, dict[str, Any]]:
     sf = SnowflakeConfig.model_validate(connection.config)
     return build_connection_string(sf, secret), {
         "login_timeout": _LOGIN_TIMEOUT,
         "network_timeout": _NETWORK_TIMEOUT,
     }
+
+
+def _unity_catalog_engine_args(connection: Connection, secret: str) -> tuple[str, dict[str, Any]]:
+    cfg = UnityCatalogConfig.model_validate(connection.config)
+    # Catalog is not pinned on the URL — the profiler query qualifies the full
+    # catalog.schema.table namespace itself (see `_table`).
+    return build_databricks_url(cfg, secret), {}
+
+
+@dataclass(frozen=True)
+class _SqlProfiler:
+    """SQL profiling strategy: in-warehouse aggregation over a SQLAlchemy engine."""
+
+    engine_args: Callable[[Connection, str], tuple[str, dict[str, Any]]]
+    requires_catalog: bool = False
+
+
+@dataclass(frozen=True)
+class _FileProfiler:
+    """Flat-file profiling strategy: sample into pandas (backend handled by flatfile)."""
+
+
+_Profiler = _SqlProfiler | _FileProfiler
+
+_PROFILERS: dict[str, _Profiler] = {
+    "snowflake": _SqlProfiler(_snowflake_engine_args),
+    "unity_catalog": _SqlProfiler(_unity_catalog_engine_args, requires_catalog=True),
+    "s3": _FileProfiler(),
+    "adls_gen2": _FileProfiler(),
+}
+
+
+# ───────────────────────── I/O seam (monkeypatched in tests) ────────
+
+
+def _engine_args(connection: Connection, secret: str) -> tuple[str, dict[str, Any]]:
+    """Build the (SQLAlchemy URL, connect_args) for a SQL datasource connection."""
+    profiler = _PROFILERS.get(connection.type)
+    if not isinstance(profiler, _SqlProfiler):
+        raise ProfileUnsupportedError(
+            f"{connection.type!r} is not a SQL profiling datasource",
+            detail={"type": connection.type},
+        )
+    return profiler.engine_args(connection, secret)
 
 
 @contextmanager
@@ -531,20 +571,26 @@ def profile_connection(
     (a SQL type needs `table`; Unity Catalog also needs `catalog`; a flat-file
     type needs `path`) or the connection has no stored credential.
     """
+    profiler = _PROFILERS.get(connection.type)
+    if profiler is None:
+        raise ProfileUnsupportedError(
+            f"column profiling is not supported for {connection.type!r} connections in v1",
+            detail={"type": connection.type, "supported": sorted(_PROFILERS)},
+        )
     # A supported connection with no credential is a config problem (422), not a
     # transient datasource failure — catch it before the adapter raises a bare
     # ValueError that the read/connect guard would relabel as a 502.
-    if connection.type in (_SQL_TYPES | _FILE_TYPES) and not connection.secret_ref:
+    if not connection.secret_ref:
         raise ProfileTargetInvalidError(
             "connection has no stored credential (secret_ref) to profile with",
             detail={"type": connection.type},
         )
-    if connection.type in _SQL_TYPES:
+    if isinstance(profiler, _SqlProfiler):
         if not table:
             raise ProfileTargetInvalidError(
                 "table is required to profile a SQL datasource", detail={"type": connection.type}
             )
-        if connection.type == "unity_catalog" and not catalog:
+        if profiler.requires_catalog and not catalog:
             raise ProfileTargetInvalidError(
                 "catalog is required to profile a Unity Catalog table",
                 detail={"type": connection.type},
@@ -558,21 +604,16 @@ def profile_connection(
             top_n=top_n,
             secret_store=secret_store,
         )
-    if connection.type in _FILE_TYPES:
-        if not path:
-            raise ProfileTargetInvalidError(
-                "path is required to profile a flat-file datasource",
-                detail={"type": connection.type},
-            )
-        return profile_file(
-            connection,
-            path=path,
-            file_format=file_format,
-            columns=columns,
-            top_n=top_n,
-            secret_store=secret_store,
+    if not path:
+        raise ProfileTargetInvalidError(
+            "path is required to profile a flat-file datasource",
+            detail={"type": connection.type},
         )
-    raise ProfileUnsupportedError(
-        f"column profiling is not supported for {connection.type!r} connections in v1",
-        detail={"type": connection.type, "supported": sorted(_SQL_TYPES | _FILE_TYPES)},
+    return profile_file(
+        connection,
+        path=path,
+        file_format=file_format,
+        columns=columns,
+        top_n=top_n,
+        secret_store=secret_store,
     )
