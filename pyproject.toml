@@ -6,14 +6,14 @@ build-backend = "setuptools.backends.legacy:build"
 
 [tool.black]
 line-length = 100
-target-version = ["py311"]
+target-version = ["py313"]
 include = '\.pyi?$'
 
 # ── Ruff ─────────────────────────────────────────────────────────────────────
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py313"
 src = ["backend"]
 
 [tool.ruff.lint]
@@ -50,7 +50,7 @@ known-first-party = ["app"]
 # ── mypy ─────────────────────────────────────────────────────────────────────
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.13"
 strict = true
 warn_return_any = true
 warn_unused_configs = true

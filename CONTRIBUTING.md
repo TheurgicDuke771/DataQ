@@ -66,7 +66,7 @@ All checks run on every PR and must pass before merge.
 
 These are locked on Day 1 of Week 1. Do not drift.
 
-18. **Python runtime:** `conda` only (`conda create -n dataq python=3.11`). Not venv, not poetry, not pyenv.
+18. **Python runtime:** `conda` only (`conda create -n dataq python=3.13`). Not venv, not poetry, not pyenv.
 19. **Python formatter:** Black. Config in `pyproject.toml`. CI rejects unformatted code.
 20. **Python linter:** Ruff. Replaces flake8 + isort + pyupgrade. Config in `pyproject.toml`.
 21. **Python type checker:** mypy (strict mode). Config in `pyproject.toml`. When adding a new runtime import to `backend/app/`, add the pinned package to **two** places that must agree: `backend/requirements-typecheck.txt` (the single source of truth — CI's mypy + pytest jobs install from it) and `.pre-commit-config.yaml`'s `mypy.additional_dependencies` list. The `typecheck-deps-sync` pre-commit hook (which also runs in CI) fails if they diverge, so drift is caught before push. Versions must also match `environment.yml`.
