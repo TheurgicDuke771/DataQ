@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "f984d383a4da",
+  "strategy": "manual-commit",
+  "branch": "chore/issue-129-deps-refresh-py313",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/f9/84d383a4da/0/metadata.json",
+      "transcript": "/f9/84d383a4da/0/full.jsonl",
+      "content_hash": "/f9/84d383a4da/0/content_hash.txt",
+      "prompt": "/f9/84d383a4da/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 34464,
+    "cache_creation_tokens": 2726932,
+    "cache_read_tokens": 132821734,
+    "output_tokens": 424139,
+    "api_call_count": 476
+  }
+}
