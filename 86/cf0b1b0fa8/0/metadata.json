@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "86cf0b1b0fa8",
+  "session_id": "8603fa2a-25c9-4c76-87d4-83228bd296a6",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-08T00:55:15.879131Z",
+  "branch": "chore/dev-db-reset-and-broker-isolation",
+  "checkpoints_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "b10582383411",
+  "token_usage": {
+    "input_tokens": 26363,
+    "cache_creation_tokens": 1655834,
+    "cache_read_tokens": 74968313,
+    "output_tokens": 286480,
+    "api_call_count": 354
+  },
+  "session_metrics": {
+    "turn_count": 2
+  }
+}
