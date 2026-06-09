@@ -271,6 +271,9 @@ class AdfProvider:
         )
         response.raise_for_status()
 
+        # Single page only: a `continuationToken` for >1 page of results in a
+        # 10-min window is not followed (overflow is picked up by a later poll).
+        # Fine for the v1 window sizes; revisit if a factory bursts >1 page/10min.
         updates: list[RunUpdate] = []
         for item in response.json().get("value", []):
             raw_status = item.get("status")

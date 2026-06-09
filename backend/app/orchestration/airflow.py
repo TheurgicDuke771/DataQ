@@ -222,6 +222,8 @@ class AirflowProvider:
         )
         response.raise_for_status()
 
+        # Single page only (page_limit): a window with >page_limit succeeded runs
+        # leaves the overflow for a later poll. Fine for the v1 10-min window.
         updates: list[RunUpdate] = []
         for item in response.json().get("dag_runs", []):
             status = _AIRFLOW_STATE_MAP.get(str(item.get("state")).lower())
