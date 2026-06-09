@@ -43,6 +43,7 @@ export function App() {
               <Route path="/" element={<Navigate to="/connections" replace />} />
               <Route path="/connections" element={<Connections />} />
               <Route path="/profile" element={<Home />} />
+              <Route path="*" element={<Navigate to="/connections" replace />} />
             </Routes>
           </AuthGate>
         </Content>

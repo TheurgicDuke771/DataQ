@@ -1,45 +1,40 @@
 import { Alert, App, Badge, Button, Card, Empty, Flex, Spin, Tag, Typography } from 'antd';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 import {
   CONNECTION_TYPE_LABELS,
   CONNECTION_TYPES,
   type Connection,
+  type ConnectionEnv,
   type ConnectionType,
   listConnections,
   testConnection,
 } from '../api/connections';
+import { useAsyncData } from '../hooks/useAsyncData';
 
-const ENV_COLORS: Record<string, string> = {
+const ENV_COLORS: Record<ConnectionEnv, string> = {
   dev: 'blue',
   qa: 'gold',
   uat: 'purple',
   prod: 'red',
 };
 
-type LoadState =
-  | { status: 'loading' }
-  | { status: 'ok'; connections: Connection[] }
-  | { status: 'error'; error: string };
+/** Group connections by type in one pass, preserving canonical type order. */
+function groupByType(connections: Connection[]): [ConnectionType, Connection[]][] {
+  const byType = new Map<ConnectionType, Connection[]>();
+  for (const c of connections) {
+    const group = byType.get(c.type);
+    if (group) group.push(c);
+    else byType.set(c.type, [c]);
+  }
+  return CONNECTION_TYPES.filter((type) => byType.has(type)).map((type) => [
+    type,
+    byType.get(type) as Connection[],
+  ]);
+}
 
 export function Connections() {
-  const [state, setState] = useState<LoadState>({ status: 'loading' });
-
-  useEffect(() => {
-    let cancelled = false;
-    listConnections()
-      .then((connections) => {
-        if (!cancelled) setState({ status: 'ok', connections });
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) {
-          setState({ status: 'error', error: err instanceof Error ? err.message : String(err) });
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const state = useAsyncData(listConnections);
 
   if (state.status === 'loading') {
     return <Spin tip="Loading connections…" size="large" style={{ marginTop: 80 }} />;
@@ -56,7 +51,7 @@ export function Connections() {
     );
   }
 
-  const { connections } = state;
+  const connections = state.data;
   return (
     <Flex vertical gap={24}>
       <Typography.Title level={3} style={{ margin: 0 }}>
@@ -65,13 +60,8 @@ export function Connections() {
       {connections.length === 0 ? (
         <Empty description="No connections configured yet" />
       ) : (
-        // One section per type that has connections, in canonical type order.
-        CONNECTION_TYPES.filter((type) => connections.some((c) => c.type === type)).map((type) => (
-          <ConnectionTypeSection
-            key={type}
-            type={type}
-            connections={connections.filter((c) => c.type === type)}
-          />
+        groupByType(connections).map(([type, group]) => (
+          <ConnectionTypeSection key={type} type={type} connections={group} />
         ))
       )}
     </Flex>
