@@ -37,6 +37,10 @@ from backend.app.orchestration.base import MalformedEventError, RunUpdate
 _DAGS_PROBE_PATH = "/api/v1/dags"
 _DAGS_PROBE_PARAMS = {"limit": 1}
 
+# Batch dagRuns list across all DAGs (`~`) — the polling-fallback endpoint.
+_DAGRUNS_LIST_PATH = "/api/v1/dags/~/dagRuns/list"
+_DAGRUNS_PAGE_LIMIT = 100
+
 # Fail fast rather than hang the request thread on an unreachable webserver.
 _TEST_TIMEOUT_SECONDS = 10.0
 
@@ -70,6 +74,14 @@ class AirflowConfig(BaseModel):
         return self
 
 
+def _auth(config: AirflowConfig, secret: str) -> tuple[dict[str, str], httpx.Auth | None]:
+    """(headers, httpx auth) for a request — Bearer token or HTTP basic."""
+    if config.auth_type == "token":
+        return {"Authorization": f"Bearer {secret}"}, None
+    # basic — username guaranteed present by the model validator
+    return {}, httpx.BasicAuth(str(config.username), secret)
+
+
 class AirflowConnectionAdapter:
     """`ConnectionAdapter` for Apache Airflow — config validation + a REST probe."""
 
@@ -83,13 +95,7 @@ class AirflowConnectionAdapter:
         paired with ``config.username``).
         """
         config = self.validate_config(raw)
-        headers: dict[str, str] = {}
-        auth: httpx.Auth | None = None
-        if config.auth_type == "token":
-            headers["Authorization"] = f"Bearer {secret}"
-        else:  # basic — username guaranteed present by the model validator
-            auth = httpx.BasicAuth(str(config.username), secret)
-
+        headers, auth = _auth(config, secret)
         response = httpx.get(
             f"{config.base_url}{_DAGS_PROBE_PATH}",
             params=_DAGS_PROBE_PARAMS,
@@ -189,5 +195,48 @@ class AirflowProvider:
         # persistence layer treats NotImplementedError as "skip enrichment".
         raise NotImplementedError("Airflow callbacks are authoritative; no REST enrichment")
 
-    def list_recent_runs(self, since: datetime) -> list[RunUpdate]:
-        raise NotImplementedError("Airflow dagRuns polling fallback lands in Week 5")
+    def list_recent_runs(
+        self, config: Mapping[str, Any], secret: str, since: datetime
+    ) -> list[RunUpdate]:
+        """Poll recent **succeeded** DAG runs via the batch ``dagRuns/list`` endpoint.
+
+        POSTs ``{states: ["success"], start_date_gte: since}`` across all DAGs
+        (``~``) and maps each run to a `RunUpdate`. Polling backfills DAGs that
+        don't adopt the HMAC callback snippet (ADR 0007); the success filter keeps
+        it the trigger-on-success channel. Malformed rows are skipped; transport/
+        auth errors raise (the polling task fails soft per connection).
+        """
+        cfg = AirflowConfig.model_validate(dict(config))
+        headers, auth = _auth(cfg, secret)
+        response = httpx.post(
+            f"{cfg.base_url}{_DAGRUNS_LIST_PATH}",
+            headers=headers,
+            auth=auth,
+            json={
+                "states": ["success"],
+                "start_date_gte": since.isoformat(),
+                "order_by": "-start_date",
+                "page_limit": _DAGRUNS_PAGE_LIMIT,
+            },
+            timeout=_TEST_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+
+        updates: list[RunUpdate] = []
+        for item in response.json().get("dag_runs", []):
+            status = _AIRFLOW_STATE_MAP.get(str(item.get("state")).lower())
+            dag_id = item.get("dag_id")
+            run_id = item.get("dag_run_id")
+            if status is None or not dag_id or not run_id:
+                continue
+            updates.append(
+                RunUpdate(
+                    provider_run_id=str(run_id),
+                    pipeline_or_dag_id=str(dag_id),
+                    resource_name=cfg.base_url,
+                    status=status,
+                    started_at=_parse_dt(item.get("start_date")),
+                    finished_at=_parse_dt(item.get("end_date")),
+                )
+            )
+        return updates

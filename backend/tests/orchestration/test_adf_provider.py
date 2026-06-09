@@ -131,12 +131,56 @@ def test_registry_unknown_provider_raises() -> None:
         get_orchestration_provider("dbt")
 
 
-def test_list_recent_runs_is_deferred() -> None:
-    # Polling fallback lands in Week 5; fetch_run_detail is implemented (below).
+def _query_client(monkeypatch: pytest.MonkeyPatch, *, runs: list[dict[str, Any]]) -> dict[str, Any]:
+    """Mock the token POST + the queryPipelineRuns POST (both are httpx.post)."""
+    seen: dict[str, Any] = {}
+
+    def fake_post(url: str, **kwargs: Any) -> _FakeResponse:
+        if "login.microsoftonline" in url:
+            return _FakeResponse(json_body={"access_token": "tok"})
+        seen["url"] = url
+        seen["body"] = kwargs.get("json")
+        return _FakeResponse(json_body={"value": runs})
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    return seen
+
+
+def test_list_recent_runs_maps_query_response(monkeypatch: pytest.MonkeyPatch) -> None:
     import datetime as _dt
 
-    with pytest.raises(NotImplementedError):
-        AdfProvider().list_recent_runs(_dt.datetime(2026, 5, 31))
+    seen = _query_client(monkeypatch, runs=[_RUN_DETAIL])
+    updates = AdfProvider().list_recent_runs(
+        _ADF_CONFIG, "sp-secret", _dt.datetime(2026, 5, 31, tzinfo=_dt.UTC)
+    )
+
+    assert len(updates) == 1
+    assert updates[0].provider_run_id == "run-abc-123"
+    assert updates[0].pipeline_or_dag_id == "load_finance"
+    assert updates[0].resource_name == _ADF_CONFIG["factory_name"]
+    assert updates[0].status == "succeeded"
+    # hit queryPipelineRuns with a Succeeded filter + lastUpdatedAfter window
+    assert "queryPipelineRuns" in seen["url"]
+    assert seen["body"]["filters"][0]["values"] == ["Succeeded"]
+    assert seen["body"]["lastUpdatedAfter"].startswith("2026-05-31")
+
+
+def test_list_recent_runs_skips_malformed_rows(monkeypatch: pytest.MonkeyPatch) -> None:
+    import datetime as _dt
+
+    # one good row, one missing runId, one unknown status → only the good one maps
+    _query_client(
+        monkeypatch,
+        runs=[
+            _RUN_DETAIL,
+            {**_RUN_DETAIL, "runId": None},
+            {**_RUN_DETAIL, "status": "Frobnicated"},
+        ],
+    )
+    updates = AdfProvider().list_recent_runs(
+        _ADF_CONFIG, "sp-secret", _dt.datetime(2026, 5, 31, tzinfo=_dt.UTC)
+    )
+    assert [u.provider_run_id for u in updates] == ["run-abc-123"]
 
 
 # ───────────────────────── fetch_run_detail (ARM REST) ─────────────

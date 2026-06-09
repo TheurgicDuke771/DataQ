@@ -6,6 +6,7 @@ event (no matching connection → None). Skips without TEST_DATABASE_URL.
 """
 
 import uuid
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select
@@ -13,7 +14,11 @@ from sqlalchemy import select
 from backend.app.core.secrets import SecretNotFoundError
 from backend.app.db.models import Connection, PipelineRun, Run, Suite, TriggerBinding, User
 from backend.app.orchestration.base import RunUpdate
-from backend.app.services.orchestration_service import ingest_event, record_pipeline_event
+from backend.app.services.orchestration_service import (
+    ingest_event,
+    ingest_polled_runs,
+    record_pipeline_event,
+)
 
 _ADF_CONFIG = {
     "subscription_id": "00000000-0000-0000-0000-000000000001",
@@ -140,9 +145,15 @@ class _FakeProvider:
     provider = "adf"
     resource_config_key = "factory_name"
 
-    def __init__(self, detail: RunUpdate | None = None, raises: Exception | None = None) -> None:
+    def __init__(
+        self,
+        detail: RunUpdate | None = None,
+        raises: Exception | None = None,
+        recent: list[RunUpdate] | None = None,
+    ) -> None:
         self._detail = detail
         self._raises = raises
+        self._recent = recent or []
         self.calls: list[str] = []
 
     def parse_event(self, payload: bytes, headers: Any) -> RunUpdate:  # pragma: no cover
@@ -155,8 +166,10 @@ class _FakeProvider:
         assert self._detail is not None
         return self._detail
 
-    def list_recent_runs(self, since: Any) -> list[RunUpdate]:  # pragma: no cover
-        raise NotImplementedError
+    def list_recent_runs(self, config: Any, secret: str, since: Any) -> list[RunUpdate]:
+        if self._raises is not None:
+            raise self._raises
+        return self._recent
 
 
 def _adf_connection_with_secret(
@@ -360,3 +373,68 @@ def test_ingest_airflow_resolves_by_base_url_and_skips_enrichment(db_session: An
     assert result.pipeline_run.provider == "airflow"
     assert result.pipeline_run.env == "dev"  # resolved via base_url
     assert result.pipeline_run.status == "succeeded"
+
+
+# ── polling ingestion (ingest_polled_runs) ──
+
+
+def test_polled_succeeded_run_records_and_triggers(db_session: Any) -> None:
+    conn = _adf_connection_with_secret(db_session)
+    suite = _suite(db_session, conn)
+    _binding(db_session, suite=suite, pipeline="load_finance", env=conn.env)
+    since = datetime.now(UTC) - timedelta(minutes=15)
+
+    result = ingest_polled_runs(
+        db_session,
+        provider_impl=_FakeProvider(),
+        connection=conn,
+        updates=[_update(status="succeeded", provider_run_id="run-poll-1")],
+        skip_updated_since=since,
+    )
+    assert len(result.pipeline_runs) == 1
+    assert result.pipeline_runs[0].status == "succeeded"
+    assert len(result.triggered_runs) == 1  # binding fired
+    assert result.skipped == 0
+
+
+def test_polled_non_succeeded_run_is_ignored(db_session: Any) -> None:
+    conn = _adf_connection_with_secret(db_session)
+    result = ingest_polled_runs(
+        db_session,
+        provider_impl=_FakeProvider(),
+        connection=conn,
+        updates=[_update(status="running", provider_run_id="run-poll-2")],
+        skip_updated_since=datetime.now(UTC) - timedelta(minutes=15),
+    )
+    assert result.pipeline_runs == []
+    assert db_session.scalar(select(PipelineRun.id)) is None
+
+
+def test_polled_run_skipped_when_recently_updated(db_session: Any) -> None:
+    conn = _adf_connection_with_secret(db_session)
+    suite = _suite(db_session, conn)
+    _binding(db_session, suite=suite, pipeline="load_finance", env=conn.env)
+    update = _update(status="succeeded", provider_run_id="run-poll-3")
+
+    # first poll lands the row (sets last_updated_at = now)
+    first = ingest_polled_runs(
+        db_session,
+        provider_impl=_FakeProvider(),
+        connection=conn,
+        updates=[update],
+        skip_updated_since=datetime.now(UTC) - timedelta(minutes=15),
+    )
+    assert len(first.pipeline_runs) == 1
+
+    # a later poll whose window opened *before* that write skips the run
+    second = ingest_polled_runs(
+        db_session,
+        provider_impl=_FakeProvider(),
+        connection=conn,
+        updates=[update],
+        skip_updated_since=datetime.now(UTC) - timedelta(minutes=15),
+    )
+    assert second.pipeline_runs == []
+    assert second.skipped == 1
+    # only one run was ever triggered (no double-fire)
+    assert len(list(db_session.scalars(select(Run)))) == 1

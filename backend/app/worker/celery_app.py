@@ -48,6 +48,17 @@ def create_celery_app() -> Celery:
         # Surface a 'started' state so the run-status read-back can distinguish
         # queued from running without waiting for completion.
         task_track_started=True,
+        # Celery-beat schedule. The orchestration polling fallback (#171) runs
+        # every 10 min as the success channel for runs that produced no webhook;
+        # the task looks back further than the interval so nothing slips the gap.
+        # Beat runs embedded in the dev worker (`worker -B`); prod uses a separate
+        # beat process.
+        beat_schedule={
+            "poll-orchestration-runs": {
+                "task": "poll_orchestration_runs",
+                "schedule": 600.0,  # 10 minutes
+            },
+        },
     )
     # Register task modules on worker boot (looks for backend.app.worker.tasks).
     app.autodiscover_tasks(["backend.app.worker"])

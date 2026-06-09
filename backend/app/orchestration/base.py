@@ -82,6 +82,14 @@ class OrchestrationProvider(Protocol):
         whether to fail soft."""
         ...
 
-    def list_recent_runs(self, since: datetime) -> list[RunUpdate]:
-        """REST poll for the 10-min fallback path. (Week 5.)"""
+    def list_recent_runs(
+        self, config: Mapping[str, Any], secret: str, since: datetime
+    ) -> list[RunUpdate]:
+        """REST poll for the 10-min fallback path: the provider's recent
+        **succeeded** runs updated at/after ``since``, normalised to `RunUpdate`.
+
+        ``config`` is the orchestrator connection's config and ``secret`` its
+        credential (mirrors `fetch_run_detail`). Raises on transport / auth
+        failure — the polling task fails soft per connection.
+        """
         ...
