@@ -92,7 +92,9 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     restart: unless-stopped
-    command: celery -A backend.app.worker.celery_app worker --loglevel=INFO
+    # -B runs celery-beat embedded in the worker (the #171 orchestration polling
+    # schedule). Fine for the single-worker dev stack; prod runs a separate beat.
+    command: celery -A backend.app.worker.celery_app worker -B --loglevel=INFO
     env_file:
       - path: .env
         required: false

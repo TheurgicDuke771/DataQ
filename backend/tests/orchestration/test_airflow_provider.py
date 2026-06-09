@@ -5,7 +5,7 @@ exercise parsing + state mapping + the deferred REST methods).
 """
 
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -98,6 +98,48 @@ def test_fetch_run_detail_is_not_implemented() -> None:
         AirflowProvider().fetch_run_detail({}, "secret", "run-1")
 
 
-def test_list_recent_runs_is_not_implemented() -> None:
-    with pytest.raises(NotImplementedError):
-        AirflowProvider().list_recent_runs(datetime.now())
+_DAG_RUN = {
+    "dag_id": "load_finance",
+    "dag_run_id": "scheduled__2026-05-31T00:00:00+00:00",
+    "state": "success",
+    "start_date": "2026-05-31T00:00:00+00:00",
+    "end_date": "2026-05-31T00:05:00+00:00",
+}
+_AIRFLOW_CONFIG: dict[str, Any] = {"base_url": "https://airflow.example.com", "auth_type": "token"}
+
+
+class _FakeResponse:
+    def __init__(self, *, json_body: dict[str, Any]) -> None:
+        self._json = json_body
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self) -> dict[str, Any]:
+        return self._json
+
+
+def test_list_recent_runs_maps_dagruns(monkeypatch: pytest.MonkeyPatch) -> None:
+    import httpx
+
+    seen: dict[str, Any] = {}
+
+    def fake_post(url: str, **kwargs: Any) -> _FakeResponse:
+        seen["url"] = url
+        seen["body"] = kwargs.get("json")
+        seen["auth_header"] = kwargs.get("headers", {}).get("Authorization")
+        return _FakeResponse(json_body={"dag_runs": [_DAG_RUN, {**_DAG_RUN, "dag_id": None}]})
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    updates = AirflowProvider().list_recent_runs(
+        _AIRFLOW_CONFIG, "tok", datetime(2026, 5, 31, tzinfo=UTC)
+    )
+
+    # the good row maps; the dag_id-less row is skipped
+    assert [u.provider_run_id for u in updates] == ["scheduled__2026-05-31T00:00:00+00:00"]
+    assert updates[0].pipeline_or_dag_id == "load_finance"
+    assert updates[0].resource_name == "https://airflow.example.com"
+    assert updates[0].status == "succeeded"
+    assert "/dagRuns/list" in seen["url"]
+    assert seen["body"]["states"] == ["success"]
+    assert seen["auth_header"] == "Bearer tok"

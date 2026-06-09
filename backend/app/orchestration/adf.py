@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -39,6 +39,9 @@ _ARM_FACTORY_URL = (
 )
 # Single pipeline-run detail (GET): authoritative status + runStart/runEnd + message.
 _ARM_PIPELINE_RUN_URL = _ARM_FACTORY_URL + "/pipelineruns/{run_id}"
+# Query recent runs (POST): the polling-fallback list endpoint, filtered by a
+# lastUpdatedAfter/Before window and a Status==Succeeded filter.
+_ARM_QUERY_RUNS_URL = _ARM_FACTORY_URL + "/queryPipelineRuns"
 _ARM_API_VERSION = "2018-06-01"
 
 # Fail fast rather than hang the request thread on an unreachable endpoint.
@@ -238,5 +241,56 @@ class AdfProvider:
             failure_reason=data.get("message"),
         )
 
-    def list_recent_runs(self, since: datetime) -> list[RunUpdate]:
-        raise NotImplementedError("ADF REST polling fallback lands in Week 5")
+    def list_recent_runs(
+        self, config: Mapping[str, Any], secret: str, since: datetime
+    ) -> list[RunUpdate]:
+        """Poll the factory's recent **succeeded** runs via ARM queryPipelineRuns.
+
+        POSTs a ``lastUpdatedAfter=since`` / ``lastUpdatedBefore=now`` window with
+        a ``Status==Succeeded`` filter (polling is the trigger-on-success channel,
+        ADR 0004 — failures arrive on the webhook), mapping each returned run to a
+        `RunUpdate`. Malformed rows are skipped rather than failing the whole poll;
+        transport/auth errors raise (the polling task fails soft per connection).
+        """
+        cfg = ADFConfig.model_validate(dict(config))
+        token = _acquire_token(cfg, secret)
+        response = httpx.post(
+            _ARM_QUERY_RUNS_URL.format(
+                subscription_id=cfg.subscription_id,
+                resource_group=cfg.resource_group,
+                factory_name=cfg.factory_name,
+            ),
+            params={"api-version": _ARM_API_VERSION},
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "lastUpdatedAfter": since.isoformat(),
+                "lastUpdatedBefore": datetime.now(UTC).isoformat(),
+                "filters": [{"operand": "Status", "operator": "Equals", "values": ["Succeeded"]}],
+            },
+            timeout=_TEST_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+
+        # Single page only: a `continuationToken` for >1 page of results in a
+        # 10-min window is not followed (overflow is picked up by a later poll).
+        # Fine for the v1 window sizes; revisit if a factory bursts >1 page/10min.
+        updates: list[RunUpdate] = []
+        for item in response.json().get("value", []):
+            raw_status = item.get("status")
+            status = _ADF_STATUS_MAP.get(str(raw_status).lower()) if raw_status else None
+            run_id = item.get("runId")
+            pipeline = item.get("pipelineName")
+            if status is None or not run_id or not pipeline:
+                continue
+            updates.append(
+                RunUpdate(
+                    provider_run_id=str(run_id),
+                    pipeline_or_dag_id=str(pipeline),
+                    resource_name=cfg.factory_name,
+                    status=status,
+                    started_at=_parse_dt(item.get("runStart")),
+                    finished_at=_parse_dt(item.get("runEnd")),
+                    failure_reason=item.get("message"),
+                )
+            )
+        return updates

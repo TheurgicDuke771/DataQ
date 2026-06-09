@@ -276,3 +276,53 @@ def ingest_event(
         else []
     )
     return IngestResult(pipeline_run=pipeline_run, triggered_runs=triggered)
+
+
+@dataclass(frozen=True)
+class PollIngestResult:
+    pipeline_runs: list[PipelineRun] = field(default_factory=list)
+    triggered_runs: list[Run] = field(default_factory=list)
+    skipped: int = 0
+
+
+def ingest_polled_runs(
+    session: Session,
+    *,
+    provider_impl: OrchestrationProvider,
+    connection: Connection,
+    updates: list[RunUpdate],
+    skip_updated_since: datetime,
+) -> PollIngestResult:
+    """Persist the runs a poll returned for one orchestrator connection.
+
+    Polling is the **trigger-on-success** fallback (ADR 0004): only ``succeeded``
+    runs are persisted + triggered (failures arrive on the webhook). Poll data is
+    already authoritative, so there is no REST enrichment. A run whose
+    `pipeline_runs` row was already updated at/after ``skip_updated_since`` (e.g.
+    by a webhook within this poll window) is skipped to avoid redundant churn —
+    triggering is idempotent regardless, so this is an optimisation, not a
+    correctness guard. The connection is known (we polled it), so no resolve.
+    """
+    provider = provider_impl.provider
+    pipeline_runs: list[PipelineRun] = []
+    triggered: list[Run] = []
+    skipped = 0
+    for update in updates:
+        if update.status != "succeeded":
+            continue
+        existing = session.scalar(
+            select(PipelineRun.last_updated_at).where(
+                PipelineRun.provider == provider,
+                PipelineRun.provider_run_id == update.provider_run_id,
+            )
+        )
+        if existing is not None and existing >= skip_updated_since:
+            skipped += 1
+            continue
+        pipeline_runs.append(
+            _upsert_pipeline_run(session, provider=provider, connection=connection, update=update)
+        )
+        triggered.extend(
+            _trigger_suites(session, provider=provider, connection=connection, update=update)
+        )
+    return PollIngestResult(pipeline_runs=pipeline_runs, triggered_runs=triggered, skipped=skipped)
