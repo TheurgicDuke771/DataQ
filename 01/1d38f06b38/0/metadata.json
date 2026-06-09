@@ -1,0 +1,38 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "011d38f06b38",
+  "session_id": "8603fa2a-25c9-4c76-87d4-83228bd296a6",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-09T23:58:33.201631Z",
+  "branch": "feat/week4-connections-ui",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/App.tsx",
+    "frontend/src/pages/Connections.tsx"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "60ea7f0b0f26",
+  "token_usage": {
+    "input_tokens": 50056,
+    "cache_creation_tokens": 5895489,
+    "cache_read_tokens": 224616845,
+    "output_tokens": 563239,
+    "api_call_count": 636
+  },
+  "session_metrics": {
+    "turn_count": 16
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-09T23:58:33.141183Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 35,
+    "human_modified": 31,
+    "human_removed": 0,
+    "total_committed": 35,
+    "total_lines_changed": 95,
+    "agent_percentage": 0,
+    "metric_version": 2
+  }
+}

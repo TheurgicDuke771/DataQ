@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "011d38f06b38",
+  "strategy": "manual-commit",
+  "branch": "feat/week4-connections-ui",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/App.tsx",
+    "frontend/src/pages/Connections.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/01/1d38f06b38/0/metadata.json",
+      "transcript": "/01/1d38f06b38/0/full.jsonl",
+      "content_hash": "/01/1d38f06b38/0/content_hash.txt",
+      "prompt": "/01/1d38f06b38/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 50056,
+    "cache_creation_tokens": 5895489,
+    "cache_read_tokens": 224616845,
+    "output_tokens": 563239,
+    "api_call_count": 636
+  }
+}
