@@ -14,6 +14,7 @@ from backend.app.api.v1 import orchestration as orchestration_router
 from backend.app.api.v1 import probe as probe_router
 from backend.app.api.v1 import shares as shares_router
 from backend.app.api.v1 import suites as suites_router
+from backend.app.api.v1 import trigger_bindings as trigger_bindings_router
 from backend.app.core.auth import init_auth
 from backend.app.core.config import get_settings
 from backend.app.core.errors import register_exception_handlers
@@ -90,6 +91,7 @@ app.include_router(suites_router.router, prefix="/api/v1")
 app.include_router(checks_router.router, prefix="/api/v1")
 app.include_router(shares_router.router, prefix="/api/v1")
 app.include_router(orchestration_router.router, prefix="/api/v1")
+app.include_router(trigger_bindings_router.router, prefix="/api/v1")
 
 
 @app.get("/healthz")
