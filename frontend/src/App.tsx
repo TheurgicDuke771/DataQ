@@ -1,14 +1,25 @@
-import { Button, Flex, Layout, Tag, Typography } from 'antd';
+import { Button, Flex, Layout, Menu, Tag, Typography } from 'antd';
+import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 
 import { AuthGate } from './auth/AuthGate';
 import { authMode } from './auth/config';
 import { useCurrentUser } from './auth/useCurrentUser';
 import { getMsalInstance } from './auth/msalInstance';
+import { Connections } from './pages/Connections';
 import { Home } from './pages/Home';
 
-const { Header, Content } = Layout;
+const { Header, Sider, Content } = Layout;
+
+const NAV_ITEMS = [
+  { key: '/connections', label: <Link to="/connections">Connections</Link> },
+  { key: '/profile', label: <Link to="/profile">Profile</Link> },
+];
 
 export function App() {
+  const location = useLocation();
+  // Highlight the nav item whose path prefixes the current location.
+  const selectedKeys = NAV_ITEMS.map((i) => i.key).filter((k) => location.pathname.startsWith(k));
+
   return (
     <Layout style={{ minHeight: '100vh' }}>
       <Header style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
@@ -17,11 +28,25 @@ export function App() {
         </Typography.Title>
         <UserChip />
       </Header>
-      <Content style={{ padding: 24 }}>
-        <AuthGate>
-          <Home />
-        </AuthGate>
-      </Content>
+      <Layout>
+        <Sider width={200} theme="light" breakpoint="lg" collapsedWidth={0}>
+          <Menu
+            mode="inline"
+            selectedKeys={selectedKeys}
+            items={NAV_ITEMS}
+            style={{ height: '100%', borderInlineEnd: 0 }}
+          />
+        </Sider>
+        <Content style={{ padding: 24 }}>
+          <AuthGate>
+            <Routes>
+              <Route path="/" element={<Navigate to="/connections" replace />} />
+              <Route path="/connections" element={<Connections />} />
+              <Route path="/profile" element={<Home />} />
+            </Routes>
+          </AuthGate>
+        </Content>
+      </Layout>
     </Layout>
   );
 }

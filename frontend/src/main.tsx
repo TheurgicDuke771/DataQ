@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App as AntApp, ConfigProvider } from 'antd';
+import { BrowserRouter } from 'react-router-dom';
 
 import { App } from './App';
 import { CurrentUserProvider } from './auth/CurrentUserProvider';
@@ -31,7 +32,9 @@ async function bootstrap() {
         <AntApp>
           <MsalProvider>
             <CurrentUserProvider>
-              <App />
+              <BrowserRouter>
+                <App />
+              </BrowserRouter>
             </CurrentUserProvider>
           </MsalProvider>
         </AntApp>
