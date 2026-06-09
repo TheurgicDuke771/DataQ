@@ -1,0 +1,35 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "14c6f5e33ea8",
+  "session_id": "8603fa2a-25c9-4c76-87d4-83228bd296a6",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-09T06:31:24.151681Z",
+  "branch": "feat/issue-172-trigger-bindings-crud",
+  "checkpoints_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "1c3bcae2f5f8",
+  "token_usage": {
+    "input_tokens": 44972,
+    "cache_creation_tokens": 4614590,
+    "cache_read_tokens": 198943502,
+    "output_tokens": 519086,
+    "api_call_count": 591
+  },
+  "session_metrics": {
+    "turn_count": 14
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}
