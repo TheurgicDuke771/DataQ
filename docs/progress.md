@@ -331,9 +331,11 @@ These were preconditions for executing the roadmap. Listed for completeness.
 ### Test infrastructure (3 tasks — 0.5/3 🟡 early)
 - [ ] 🟡 Pytest fixtures — transactional Postgres `db_session` fixture + CI postgres service + fake `CheckRunner`/session landed ([PR 4b.1](https://github.com/TheurgicDuke771/DataQ/pull/77) + [PR 4c-ii](https://github.com/TheurgicDuke771/DataQ/pull/79)); mock GX context + mock webhooks pending
 - [ ] ⬜ CI gate — PRs blocked if coverage drops below 80% _(coverage currently ~91%; `--cov-fail-under` still 0 until W8)_
-- [ ] ⬜ Test data fixtures — sample suites, check results, run histories
+- [ ] 🟡 Test data fixtures — sample suites, check results, run histories — `backend/scripts/demo_data.py` seeds a representative dataset (all six connection types + 3 suites with varied checks + a cross-user share) through the real service layer, wired into `seed_dev`; **run histories still pending** (need the W5 execution path). Paired with `backend/scripts/e2e_smoke.py` (full-stack API E2E — see below)
 
-**Week 8 total: ~4 / 26 (early credit from per-slice tests in W1 — overall coverage ~91%)**
+**Week 8 total: ~4 / 26 (early credit from per-slice tests in W1 — overall coverage ~91% backend; frontend ~80% lines)**
+
+> **Full-stack API E2E (advances [#128](https://github.com/TheurgicDuke771/DataQ/issues/128), partial):** `backend/scripts/e2e_smoke.py` drives the **real** running stack (docker compose + dev-bypass + the demo seed) with no mocks — asserts the six connection types list (secrets never returned), suites + checks read back, severity thresholds round-trip, the create→add-check→dry-run→delete authoring loop, and dry-run failing soft (422, not a crash). **Verified locally: 12/12 pass**, and the browser path `localhost:3000 → Vite proxy → api → Postgres` returns the seeded data. The **automated browser E2E (Playwright)** half of #128 is the next step. Live datasource `test()`/runs remain the deferred smoke (no real creds).
 
 ---
 
