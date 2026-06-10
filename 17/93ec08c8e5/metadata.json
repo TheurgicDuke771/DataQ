@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "1793ec08c8e5",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-213-frontend-dev-bypass",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docker-compose.yml",
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/17/93ec08c8e5/0/metadata.json",
+      "transcript": "/17/93ec08c8e5/0/full.jsonl",
+      "content_hash": "/17/93ec08c8e5/0/content_hash.txt",
+      "prompt": "/17/93ec08c8e5/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 146035,
+    "cache_creation_tokens": 9849097,
+    "cache_read_tokens": 402069609,
+    "output_tokens": 931448,
+    "api_call_count": 1093
+  }
+}
