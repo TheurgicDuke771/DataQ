@@ -88,7 +88,10 @@ def main() -> int:
         )
 
     # 3. Authoring round-trip: create suite → add check → read → delete.
-    conn_id = conns[0]["id"] if conns else None
+    # Bind to a *datasource* connection (Snowflake) — suites target datasources,
+    # not orchestration providers (ADF/Airflow); this also routes the dry-run
+    # below through the real Snowflake path instead of an unsupported-type 422.
+    conn_id = next((c["id"] for c in conns if c["type"] == "snowflake"), None)
     if conn_id is not None:
         name = f"e2e-smoke-{uuid.uuid4().hex[:8]}"
         r = client.post("/suites", json={"name": name, "connection_id": conn_id})
@@ -107,7 +110,9 @@ def main() -> int:
             r = client.get(f"/suites/{sid}/checks")
             check("the new check reads back", r.status_code == 200 and len(r.json()) == 1)
 
-            # 4. Dry-run attempt: structured outcome, not a 500 crash.
+            # 4. Dry-run against the real Snowflake path: with no live creds it
+            # fails soft as a structured 502, not a 500 crash. (200 if creds were
+            # somehow present; a 422 here would mean the type was wrongly rejected.)
             r = client.post(
                 f"/suites/{sid}/checks/dryrun",
                 json={
@@ -118,8 +123,8 @@ def main() -> int:
                 },
             )
             check(
-                "dry-run returns a structured result/error (fails-soft, no crash)",
-                r.status_code in (200, 422, 502),
+                "dry-run on the Snowflake path fails soft (502 structured, no crash)",
+                r.status_code in (200, 502),
                 f"status={r.status_code}",
             )
 
