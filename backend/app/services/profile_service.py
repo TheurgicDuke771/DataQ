@@ -49,7 +49,11 @@ from backend.app.core.jsonsafe import sanitize_json
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
 from backend.app.datasources.flatfile import download_bytes, format_from_path
-from backend.app.datasources.snowflake import SnowflakeConfig, build_connection_string
+from backend.app.datasources.snowflake import (
+    SnowflakeConfig,
+    build_connect_args,
+    build_connection_string,
+)
 from backend.app.datasources.unity_catalog import UnityCatalogConfig, build_databricks_url
 from backend.app.db.models import Connection
 
@@ -240,6 +244,8 @@ def _snowflake_engine_args(connection: Connection, secret: str) -> tuple[str, di
     return build_connection_string(sf, secret), {
         "login_timeout": _LOGIN_TIMEOUT,
         "network_timeout": _NETWORK_TIMEOUT,
+        # Key-pair auth threads the private key in as a connect-arg (empty for password).
+        **build_connect_args(sf, secret),
     }
 
 
