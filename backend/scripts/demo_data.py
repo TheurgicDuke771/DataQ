@@ -93,7 +93,7 @@ _CONNECTIONS: list[tuple[str, str, str, dict[str, Any], str]] = [
         "uat",
         {
             "workspace_url": "https://adb-1234567890.5.azuredatabricks.net",
-            "warehouse_id": "abc123demo warehouse".replace(" ", ""),
+            "warehouse_id": "abc123demowarehouse",
         },
         "dapidemoPATtoken0123456789",
     ),
