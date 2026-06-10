@@ -4,7 +4,14 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { type Connection, listConnections } from '../../src/api/connections';
-import { type Check, deleteSuite, listChecks, listSuites, type Suite } from '../../src/api/suites';
+import {
+  type Check,
+  deleteCheck,
+  deleteSuite,
+  listChecks,
+  listSuites,
+  type Suite,
+} from '../../src/api/suites';
 import { Suites } from '../../src/pages/Suites';
 
 vi.mock('../../src/api/connections', async (importOriginal) => {
@@ -19,6 +26,7 @@ vi.mock('../../src/api/suites', async (importOriginal) => {
     listSuites: vi.fn(),
     listChecks: vi.fn(),
     deleteSuite: vi.fn(),
+    deleteCheck: vi.fn(),
   };
 });
 
@@ -26,6 +34,7 @@ const mockListSuites = vi.mocked(listSuites);
 const mockListConnections = vi.mocked(listConnections);
 const mockListChecks = vi.mocked(listChecks);
 const mockDeleteSuite = vi.mocked(deleteSuite);
+const mockDeleteCheck = vi.mocked(deleteCheck);
 
 const connection: Connection = {
   id: 'conn1',
@@ -122,6 +131,27 @@ describe('Suites', () => {
 
     expect(await screen.findByText('Failed to load suites')).toBeInTheDocument();
     expect(screen.getByText('boom')).toBeInTheDocument();
+  });
+
+  it('deletes a check from the detail panel after confirming', async () => {
+    const user = userEvent.setup();
+    mockListConnections.mockResolvedValue([connection]);
+    mockListSuites.mockResolvedValue([suite()]);
+    mockListChecks.mockResolvedValue([check()]);
+    mockDeleteCheck.mockResolvedValue();
+
+    renderPage();
+    await user.click(await screen.findByText('orders-suite'));
+    await screen.findByText('order_id not null');
+
+    // The check row's own Delete (link button), scoped to its confirm dialog.
+    const checkRow = screen.getByText('order_id not null').closest('li') as HTMLElement;
+    await user.click(within(checkRow).getByRole('button', { name: 'Delete' }));
+
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
+
+    await waitFor(() => expect(mockDeleteCheck).toHaveBeenCalledWith('s1', 'chk1'));
   });
 
   it('deletes a suite via the detail panel after confirming', async () => {
