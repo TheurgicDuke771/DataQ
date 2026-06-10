@@ -25,6 +25,29 @@ export default defineConfig({
       '/mcp': apiProxyTarget,
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        // Split the heavy, rarely-changing vendors into their own long-cache
+        // chunks so the app chunk stays small and an app change doesn't bust the
+        // whole vendor bundle. Routes are additionally lazy-split (App.tsx).
+        manualChunks(id: string) {
+          if (!id.includes('node_modules')) return undefined;
+          if (id.includes('/antd/') || id.includes('@ant-design/')) return 'antd';
+          if (id.includes('@azure/')) return 'msal';
+          if (
+            id.includes('/react/') ||
+            id.includes('/react-dom/') ||
+            id.includes('/react-router') ||
+            id.includes('/scheduler/')
+          ) {
+            return 'react';
+          }
+          return 'vendor';
+        },
+      },
+    },
+  },
   test: {
     globals: true,
     environment: 'jsdom',

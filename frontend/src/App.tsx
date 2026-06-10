@@ -1,13 +1,19 @@
-import { Button, Flex, Layout, Menu, Tag, Typography } from 'antd';
+import { Button, Flex, Layout, Menu, Spin, Tag, Typography } from 'antd';
+import { lazy, Suspense } from 'react';
 import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 
 import { AuthGate } from './auth/AuthGate';
 import { authMode } from './auth/config';
 import { useCurrentUser } from './auth/useCurrentUser';
 import { getMsalInstance } from './auth/msalInstance';
-import { Connections } from './pages/Connections';
-import { Home } from './pages/Home';
-import { Suites } from './pages/Suites';
+
+// Route components are code-split so the initial bundle doesn't ship every page
+// (and antd-heavy pages only load on navigation). Named exports → map to default.
+const Connections = lazy(() =>
+  import('./pages/Connections').then((m) => ({ default: m.Connections })),
+);
+const Suites = lazy(() => import('./pages/Suites').then((m) => ({ default: m.Suites })));
+const Home = lazy(() => import('./pages/Home').then((m) => ({ default: m.Home })));
 
 const { Header, Sider, Content } = Layout;
 
@@ -41,13 +47,15 @@ export function App() {
         </Sider>
         <Content style={{ padding: 24 }}>
           <AuthGate>
-            <Routes>
-              <Route path="/" element={<Navigate to="/connections" replace />} />
-              <Route path="/connections" element={<Connections />} />
-              <Route path="/suites" element={<Suites />} />
-              <Route path="/profile" element={<Home />} />
-              <Route path="*" element={<Navigate to="/connections" replace />} />
-            </Routes>
+            <Suspense fallback={<Spin size="large" style={{ marginTop: 80 }} />}>
+              <Routes>
+                <Route path="/" element={<Navigate to="/connections" replace />} />
+                <Route path="/connections" element={<Connections />} />
+                <Route path="/suites" element={<Suites />} />
+                <Route path="/profile" element={<Home />} />
+                <Route path="*" element={<Navigate to="/connections" replace />} />
+              </Routes>
+            </Suspense>
           </AuthGate>
         </Content>
       </Layout>

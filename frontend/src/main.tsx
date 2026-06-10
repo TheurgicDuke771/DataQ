@@ -7,6 +7,7 @@ import { App } from './App';
 import { CurrentUserProvider } from './auth/CurrentUserProvider';
 import { MsalProvider } from './auth/MsalProvider';
 import { getMsalInstance } from './auth/msalInstance';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import './styles.css';
 
 const maybeRoot = document.getElementById('root');
@@ -30,13 +31,15 @@ async function bootstrap() {
     <StrictMode>
       <ConfigProvider>
         <AntApp>
-          <MsalProvider>
-            <CurrentUserProvider>
-              <BrowserRouter>
-                <App />
-              </BrowserRouter>
-            </CurrentUserProvider>
-          </MsalProvider>
+          <ErrorBoundary>
+            <MsalProvider>
+              <CurrentUserProvider>
+                <BrowserRouter>
+                  <App />
+                </BrowserRouter>
+              </CurrentUserProvider>
+            </MsalProvider>
+          </ErrorBoundary>
         </AntApp>
       </ConfigProvider>
     </StrictMode>,
