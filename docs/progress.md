@@ -21,7 +21,7 @@
 |---|---|
 | **Active since** | 2026-05-24 |
 | **Current week** | Week 4 of 8 (Connection manager UI + check editor UI) — **in progress** (Weeks 1–3 complete) |
-| **Roadmap tasks done** | 58 ✅ + 8 🟡 / 155 (~37%) |
+| **Roadmap tasks done** | 58 ✅ + 8 🟡 / 157 (~37%) |
 | **Out-of-roadmap PRs landed** | governance, tooling lock, Entire CLI, Dependabot triage (10 bumps + pyarrow direct-dep fix #202/#201), PR-3 cleanup + ADRs 0005/0006/0007/0010/0011/0012/0013/0014/0016/**0017** (Python 3.11→3.13 + Snowflake 3→4 CVE refresh, [#129](https://github.com/TheurgicDuke771/DataQ/issues/129)) + the Week-3 testing-discipline upgrade (adversarial harness + mutation spikes, CONTRIBUTING rule 4a) |
 | **Week-1 exit gate** | A logged-in user can hit a FastAPI endpoint that triggers GX against Snowflake DEV and persists a result row. — **met** (plumbing complete via PR 4a–4c; live-Snowflake run fails-soft pending DEV creds — deferred smoke) |
 | **Next milestone** | Week 4 (frontend) in flight: connection manager UI complete (list/add/edit/reauth/delete + bulk health) + suites list/detail + catalog-driven check editor all shipped; **remaining**: check dry-run + profiler panel, sharing/admin UI, Monaco custom-SQL. Week-5 early-credit already landed (worker runner-dispatch [#146](https://github.com/TheurgicDuke771/DataQ/issues/146), ADF/Airflow polling [#171](https://github.com/TheurgicDuke771/DataQ/issues/171), `trigger_bindings` CRUD [#172](https://github.com/TheurgicDuke771/DataQ/issues/172)) |
@@ -84,7 +84,7 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [x] ✅ `POST /api/v1/orchestration/events/adf` — receive Azure Monitor payload, validate shared secret (constant-time, ADR 0006), return 200 — PR 7 _(unified `OrchestrationProvider` seam landed: `orchestration/base.py` Protocol + `RunUpdate` DTO + provider registry; ADF reference impl per ADR 0004 — service code dispatches by provider, never branches on ADF)_
 - [x] ✅ Parse webhook payload — `AdfProvider.parse_event` extracts `factoryName`/`pipelineName`/`runId`/`status`/`firedDateTime` → `RunUpdate`, ADF→`PIPELINE_RUN_STATUSES` normalisation — PR 7 _(exact Common-Alert-Schema field mapping validated at Week-7 deploy smoke)_
 - [x] ✅ Follow-up ADF REST API call on webhook receipt — fetch run details — PR 8 _(`AdfProvider.fetch_run_detail` GETs the ARM `pipelineruns/{runId}` for authoritative status/timing/message; `orchestration_service.ingest_event` enriches **best-effort** before upsert — any failure (no creds, transport) falls back to the parsed event so a valid webhook is never dropped)_
-- [ ] 🟡 Upsert pipeline run status into `pipeline_runs`; correlate with suite run — idempotent upsert (PR 7) + **trigger-on-success skeleton** (PR 8): a `succeeded` run matching enabled `trigger_bindings` creates queued `Run` rows (`triggered_by="<provider>:<pipeline>:<run_id>"`, idempotent on replay); failures never trigger (ADR 0004). **`run_suite` dispatch is gated** until checks carry a target table (Week 3); `trigger_bindings` CRUD is Week 4/5 (bindings seeded in tests). `list_recent_runs` + 10-min polling beat → Week 5.
+- [ ] 🟡 Upsert pipeline run status into `pipeline_runs`; correlate with suite run — idempotent upsert (PR 7) + **trigger-on-success skeleton** (PR 8): a `succeeded` run matching enabled `trigger_bindings` creates queued `Run` rows (`triggered_by="<provider>:<pipeline>:<run_id>"`, idempotent on replay); failures never trigger (ADR 0004). **`run_suite` dispatch is gated** until checks carry a target table (slipped from Week 3 → now tracked Week 5, [#215](https://github.com/TheurgicDuke771/DataQ/issues/215)); `trigger_bindings` CRUD shipped ([#172](https://github.com/TheurgicDuke771/DataQ/pull/190)) — its UI is Week 5 ([#216](https://github.com/TheurgicDuke771/DataQ/issues/216)). `list_recent_runs` + 10-min polling beat shipped ([#171](https://github.com/TheurgicDuke771/DataQ/pull/189)).
 - [x] ✅ Shared secret config in Key Vault → `ADF_WEBHOOK_SECRET` env var — `settings.adf_webhook_secret_name` resolved via `SecretStore` (→ `KV_SECRET_ADF_WEBHOOK_SECRET` in dev) — PR 7
 
 ### Airflow orchestration (added per ADR 0004; not in original roadmap) (3 tasks — 3/3)
@@ -191,9 +191,10 @@ These were preconditions for executing the roadmap. Listed for completeness.
 
 **Exit gate:** Async runs with live progress across all datasource types; scheduling operational.
 
-### Async execution backend (7 tasks — 1/7 ✅, early)
+### Async execution backend (8 tasks — 2/8 ✅, early)
 - [x] ✅ Celery + Redis background task runner for GX scan execution — `run_suite` task + `run_service` — landed early via [PR 4a](https://github.com/TheurgicDuke771/DataQ/pull/74) + [PR 4c-i](https://github.com/TheurgicDuke771/DataQ/pull/78) + [PR 4c-ii](https://github.com/TheurgicDuke771/DataQ/pull/79)
 - [x] ✅ Generalise `run_suite` worker dispatch — select the `CheckRunner` by `connection.type` via the runner registry (`build_check_runner`), replacing the Snowflake-hardcoded wiring in `worker/tasks.py`; the seam that makes the flat-file / UC run paths route correctly and post-v1 RDBMS adapters a drop-in — [PR #146-fix](https://github.com/TheurgicDuke771/DataQ/issues/146) _(added per [ADR 0011](adr/0011-extensibility-seams-for-deferred-integrations.md); profiler dispatch collapsed onto a parallel registry in the same effort, [#147](https://github.com/TheurgicDuke771/DataQ/issues/147))_
+- [ ] ⬜ **Check target table/path** — checks carry no target today (dry-run takes `table` in the request body), so the trigger-on-success path is **gated** (`orchestration_service` logs `suite_dispatch_deferred`). The load-bearing prerequisite for *every* run path (manual / scheduled / pipeline-triggered): model the target (per-check vs per-suite; table vs flat-file path vs UC `catalog.schema.table`), migrate, then ungate dispatch + drop the stale "until_week3" wording. _(Re-tracked from Week 3, where it slipped, to Week 5 — [#215](https://github.com/TheurgicDuke771/DataQ/issues/215))_
 - [ ] ⬜ Run progress API — poll endpoint returning per-check live status
 - [ ] ⬜ Cancel run endpoint — gracefully terminate in-progress Celery task
 - [ ] ⬜ Run history retention policy — configurable purge of results older than N days
@@ -208,13 +209,14 @@ These were preconditions for executing the roadmap. Listed for completeness.
 
 > **`trigger_bindings` CRUD** (provider-agnostic suite-run triggers — `provider`/`pipeline_or_dag_id`/`env` → `suite_id`) landed early via [PR #172](https://github.com/TheurgicDuke771/DataQ/pull/190), unblocking the trigger-on-success path skeletoned in Week 2 PR 8.
 
-### Execution UI (4 tasks — 0/4)
+### Execution UI (5 tasks — 0/5)
 - [ ] ⬜ Run now panel — suite picker, env / datasource, notification target
 - [ ] ⬜ Live run progress UI — check-by-check status with spinner + cancel button
 - [ ] ⬜ Scheduled runs table — create, pause, delete cron schedules
 - [ ] ⬜ Recent runs audit table with drill-down link to results
+- [ ] ⬜ **Suite Triggers panel** — UI over the existing `trigger_bindings` CRUD (#172): bind/unbind a pipeline/DAG (`provider` + `pipeline_or_dag_id` + `env`) to a suite so it runs on the pipeline's success. **Suite-level**, not a check field (orchestration providers are never a datasource/check attribute, CLAUDE.md §4); lives on the suite detail. Backend done; UI pending — [#216](https://github.com/TheurgicDuke771/DataQ/issues/216)
 
-**Week 5 total: 4 / 15** _(early credit: Celery task runner in PR 4; worker runner-dispatch #146; ADF + Airflow 10-min polling #171; plus `trigger_bindings` CRUD #172 out-of-band)_
+**Week 5 total: 4 / 17** _(early credit: Celery task runner in PR 4; worker runner-dispatch #146; ADF + Airflow 10-min polling #171; plus `trigger_bindings` CRUD #172 out-of-band. +2 tasks re-tracked here: check target-table #215 (slipped from W3) + Suite Triggers UI #216)_
 
 ---
 
@@ -347,13 +349,13 @@ These were preconditions for executing the roadmap. Listed for completeness.
 | Week 2 | 15 | 1 | 3 | 19 |
 | Week 3 | 18 | 0 | 0 | 18 |
 | Week 4 | 12 | 2 | 8 | 22 |
-| Week 5 | 4 | 0 | 11 | 15 |
+| Week 5 | 4 | 0 | 13 | 17 |
 | Week 6 | 0 | 0 | 16 | 16 |
 | Week 7 | 0 | 1 | 28 | 29 |
 | Week 8 | 2 | 3 | 21 | 26 |
-| **TOTAL** | **58** | **8** | **89** | **155** |
+| **TOTAL** | **58** | **8** | **91** | **157** |
 
-> 155 > 100 because ADR 0004 added Airflow tasks, ADR 0011 added two seam tasks (generic runner dispatch, `ResultPublisher`), ADR 0012 added three Week-3 monitor-kind / metric seam tasks, plus PR-review follow-ups not in the original roadmap. Tracked here for honesty.
+> 157 > 100 because ADR 0004 added Airflow tasks, ADR 0011 added two seam tasks (generic runner dispatch, `ResultPublisher`), ADR 0012 added three Week-3 monitor-kind / metric seam tasks, the W5 run-enablement gaps surfaced in review (check target-table #215, Suite Triggers UI #216), plus PR-review follow-ups not in the original roadmap. Tracked here for honesty.
 
 ---
 
