@@ -127,6 +127,14 @@ services:
     command: sh -c "corepack enable && pnpm config set store-dir /pnpm-store && pnpm install && pnpm dev --host"
     environment:
       VITE_API_PROXY_TARGET: http://api:8000
+      # Pass the client-side auth vars into the Vite dev server. Only VITE_*
+      # vars are forwarded (DB/secret env stays out of the node container).
+      # Substituted from the project .env; dev-bypass defaults on for local dev.
+      VITE_AUTH_DEV_BYPASS: ${VITE_AUTH_DEV_BYPASS:-true}
+      VITE_AZURE_TENANT_ID: ${VITE_AZURE_TENANT_ID:-}
+      VITE_AZURE_SPA_CLIENT_ID: ${VITE_AZURE_SPA_CLIENT_ID:-}
+      VITE_AZURE_API_CLIENT_ID: ${VITE_AZURE_API_CLIENT_ID:-}
+      VITE_AZURE_API_SCOPE: ${VITE_AZURE_API_SCOPE:-user_impersonation}
     ports:
       - "3000:3000"
     volumes:
