@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "f044fc8a0c8e",
+  "strategy": "manual-commit",
+  "branch": "feature/week4-suites-list-detail",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/api/connections.ts",
+    "frontend/src/api/suites.ts",
+    "frontend/src/pages/Connections.tsx",
+    "frontend/src/pages/Suites.tsx",
+    "frontend/tests/pages/Suites.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f0/44fc8a0c8e/0/metadata.json",
+      "transcript": "/f0/44fc8a0c8e/0/full.jsonl",
+      "content_hash": "/f0/44fc8a0c8e/0/content_hash.txt",
+      "prompt": "/f0/44fc8a0c8e/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 99081,
+    "cache_creation_tokens": 8839295,
+    "cache_read_tokens": 331353504,
+    "output_tokens": 724795,
+    "api_call_count": 825
+  }
+}
