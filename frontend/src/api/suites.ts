@@ -64,3 +64,41 @@ export async function listChecks(suiteId: string): Promise<Check[]> {
   const { data } = await api.get<Check[]>(`/suites/${suiteId}/checks`);
   return data;
 }
+
+/** Mirrors `CheckCreate` — v1 only authors `kind: 'expectation'` (service-enforced). */
+export interface CheckCreate {
+  name: string;
+  expectation_type: string;
+  config: Record<string, unknown>;
+  warn_threshold?: number | null;
+  fail_threshold?: number | null;
+  critical_threshold?: number | null;
+}
+
+/** Mirrors `CheckUpdate` — all fields optional; kind is immutable. */
+export interface CheckUpdate {
+  name?: string;
+  expectation_type?: string;
+  config?: Record<string, unknown>;
+  warn_threshold?: number | null;
+  fail_threshold?: number | null;
+  critical_threshold?: number | null;
+}
+
+export async function createCheck(suiteId: string, payload: CheckCreate): Promise<Check> {
+  const { data } = await api.post<Check>(`/suites/${suiteId}/checks`, payload);
+  return data;
+}
+
+export async function updateCheck(
+  suiteId: string,
+  checkId: string,
+  payload: CheckUpdate,
+): Promise<Check> {
+  const { data } = await api.patch<Check>(`/suites/${suiteId}/checks/${checkId}`, payload);
+  return data;
+}
+
+export async function deleteCheck(suiteId: string, checkId: string): Promise<void> {
+  await api.delete(`/suites/${suiteId}/checks/${checkId}`);
+}

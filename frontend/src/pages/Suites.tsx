@@ -8,7 +8,15 @@ import {
   envLabel,
   listConnections,
 } from '../api/connections';
-import { type Check, deleteSuite, listChecks, listSuites, type Suite } from '../api/suites';
+import {
+  type Check,
+  deleteCheck,
+  deleteSuite,
+  listChecks,
+  listSuites,
+  type Suite,
+} from '../api/suites';
+import { CheckDrawer } from '../components/checks/CheckDrawer';
 import { SuiteDrawer } from '../components/suites/SuiteDrawer';
 import { type AsyncState, useAsyncData } from '../hooks/useAsyncData';
 
@@ -155,8 +163,10 @@ function SuiteDetail({
 }) {
   const { message, modal } = App.useApp();
   // Remounted (keyed by suite.id) when the selection changes → checks refetch.
-  const { state } = useAsyncData(() => listChecks(suite.id));
+  const { state, reload } = useAsyncData(() => listChecks(suite.id));
   const connection = connections.find((c) => c.id === suite.connection_id);
+  // `checkDrawer.check === undefined` while open = create; a check = edit.
+  const [checkDrawer, setCheckDrawer] = useState<{ open: boolean; check?: Check }>({ open: false });
 
   const onDelete = () => {
     modal.confirm({
@@ -203,12 +213,60 @@ function SuiteDetail({
         </Flex>
       </Flex>
       {suite.description && <Typography.Paragraph>{suite.description}</Typography.Paragraph>}
-      <ChecksList state={state} />
+      <ChecksList
+        suiteId={suite.id}
+        state={state}
+        onAdd={() => setCheckDrawer({ open: true })}
+        onEdit={(check) => setCheckDrawer({ open: true, check })}
+        onChanged={reload}
+      />
+      <CheckDrawer
+        open={checkDrawer.open}
+        suiteId={suite.id}
+        check={checkDrawer.check}
+        onClose={() => setCheckDrawer({ open: false })}
+        onSaved={() => {
+          setCheckDrawer({ open: false });
+          reload();
+        }}
+      />
     </Flex>
   );
 }
 
-function ChecksList({ state }: { state: AsyncState<Check[]> }) {
+function ChecksList({
+  suiteId,
+  state,
+  onAdd,
+  onEdit,
+  onChanged,
+}: {
+  suiteId: string;
+  state: AsyncState<Check[]>;
+  onAdd: () => void;
+  onEdit: (check: Check) => void;
+  onChanged: () => void;
+}) {
+  const { message, modal } = App.useApp();
+
+  const onDelete = (check: Check) => {
+    modal.confirm({
+      title: `Delete “${check.name}”?`,
+      okText: 'Delete',
+      okType: 'danger',
+      onOk: async () => {
+        try {
+          await deleteCheck(suiteId, check.id);
+          message.success(`${check.name} deleted`);
+          onChanged();
+        } catch (err) {
+          message.error(`Delete failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+          throw err; // keep the confirm modal open on failure
+        }
+      },
+    });
+  };
+
   if (state.status === 'loading') {
     return <Spin tip="Loading checks…" />;
   }
@@ -217,17 +275,40 @@ function ChecksList({ state }: { state: AsyncState<Check[]> }) {
   }
   const checks = state.data;
   return (
-    <Card size="small" title={`Checks (${checks.length})`}>
+    <Card
+      size="small"
+      title={`Checks (${checks.length})`}
+      extra={
+        <Button type="primary" size="small" onClick={onAdd}>
+          Add check
+        </Button>
+      }
+    >
       {checks.length === 0 ? (
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description="No checks yet — the check editor lands in the next slice."
+          description="No checks yet — add one to start."
         />
       ) : (
         <List
           dataSource={checks}
           renderItem={(check) => (
-            <List.Item>
+            <List.Item
+              actions={[
+                <Button key="edit" type="link" size="small" onClick={() => onEdit(check)}>
+                  Edit
+                </Button>,
+                <Button
+                  key="delete"
+                  type="link"
+                  size="small"
+                  danger
+                  onClick={() => onDelete(check)}
+                >
+                  Delete
+                </Button>,
+              ]}
+            >
               <Flex vertical gap={2}>
                 <Typography.Text strong>{check.name}</Typography.Text>
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
