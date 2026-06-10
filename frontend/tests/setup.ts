@@ -15,3 +15,13 @@ if (!window.matchMedia) {
       dispatchEvent: () => false,
     }) as MediaQueryList;
 }
+
+// antd's Select/virtual-list (rc-virtual-list) uses ResizeObserver, absent in
+// jsdom. A no-op stub lets dropdown options render in tests.
+if (!window.ResizeObserver) {
+  window.ResizeObserver = class {
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+  };
+}

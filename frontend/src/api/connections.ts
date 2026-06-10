@@ -19,6 +19,9 @@ export type ConnectionType = (typeof CONNECTION_TYPES)[number];
 export const CONNECTION_ENVS = ['dev', 'qa', 'uat', 'prod'] as const;
 export type ConnectionEnv = (typeof CONNECTION_ENVS)[number];
 
+/** Display label for an env (single source for the list page + the drawer). */
+export const envLabel = (env: ConnectionEnv): string => env.toUpperCase();
+
 /** Mirrors the backend `ConnectionRead` schema (secret is never returned). */
 export interface Connection {
   id: string;
@@ -51,5 +54,19 @@ export async function listConnections(params?: {
 /** Live connectivity test — a green result means the credential authenticates. */
 export async function testConnection(id: string): Promise<{ ok: boolean }> {
   const { data } = await api.post<{ ok: boolean }>(`/connections/${id}/test`);
+  return data;
+}
+
+/** Mirrors the backend `ConnectionCreate` schema (secret is write-only). */
+export interface ConnectionCreate {
+  name: string;
+  type: ConnectionType;
+  env: ConnectionEnv;
+  config: Record<string, unknown>;
+  secret?: string;
+}
+
+export async function createConnection(payload: ConnectionCreate): Promise<Connection> {
+  const { data } = await api.post<Connection>('/connections', payload);
   return data;
 }
