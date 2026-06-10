@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "4bd33bd5e8a9",
+  "strategy": "manual-commit",
+  "branch": "chore/pr3c-frontend-polish",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/progress.md",
+    "frontend/src/App.tsx",
+    "frontend/src/main.tsx",
+    "frontend/vite.config.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/4b/d33bd5e8a9/0/metadata.json",
+      "transcript": "/4b/d33bd5e8a9/0/full.jsonl",
+      "content_hash": "/4b/d33bd5e8a9/0/content_hash.txt",
+      "prompt": "/4b/d33bd5e8a9/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 142472,
+    "cache_creation_tokens": 9341900,
+    "cache_read_tokens": 373596558,
+    "output_tokens": 867862,
+    "api_call_count": 1019
+  }
+}

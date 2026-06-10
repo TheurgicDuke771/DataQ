@@ -1,0 +1,40 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "4bd33bd5e8a9",
+  "session_id": "8603fa2a-25c9-4c76-87d4-83228bd296a6",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-10T22:14:48.002885Z",
+  "branch": "chore/pr3c-frontend-polish",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/progress.md",
+    "frontend/src/App.tsx",
+    "frontend/src/main.tsx",
+    "frontend/vite.config.ts"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-4-8",
+  "turn_id": "d18508497be9",
+  "token_usage": {
+    "input_tokens": 142472,
+    "cache_creation_tokens": 9341900,
+    "cache_read_tokens": 373596558,
+    "output_tokens": 867862,
+    "api_call_count": 1019
+  },
+  "session_metrics": {
+    "turn_count": 29
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-10T22:14:47.901827Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 120,
+    "human_modified": 26,
+    "human_removed": 0,
+    "total_committed": 120,
+    "total_lines_changed": 146,
+    "agent_percentage": 0,
+    "metric_version": 2
+  }
+}
