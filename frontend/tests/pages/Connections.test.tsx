@@ -78,7 +78,7 @@ describe('Connections', () => {
     expect(await screen.findByText('No connections configured yet')).toBeInTheDocument();
   });
 
-  it('runs a connectivity test from a card', async () => {
+  it('runs a connectivity test from a card and shows a healthy badge', async () => {
     mockList.mockResolvedValue([conn({ id: 'c1', name: 'sf-dev' })]);
     mockTest.mockResolvedValue({ ok: true });
 
@@ -87,6 +87,27 @@ describe('Connections', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Test' }));
 
     expect(mockTest).toHaveBeenCalledWith('c1');
+    expect(await screen.findByText('healthy')).toBeInTheDocument();
+  });
+
+  it('bulk-tests every connection via "Test all" and flags failures with a re-auth link', async () => {
+    const user = userEvent.setup();
+    mockList.mockResolvedValue([
+      conn({ id: 'c1', name: 'sf-dev' }),
+      conn({ id: 'c2', name: 's3-prod', type: 's3' }),
+    ]);
+    // c1 reachable, c2 unreachable.
+    mockTest.mockImplementation((id: string) => Promise.resolve({ ok: id === 'c1' }));
+
+    renderPage();
+    await screen.findByText('sf-dev');
+    await user.click(screen.getByRole('button', { name: 'Test all' }));
+
+    // Both tested; one healthy, one unreachable + a re-auth affordance.
+    await waitFor(() => expect(mockTest).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText('healthy')).toBeInTheDocument();
+    expect(await screen.findByText('unreachable')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Re-authenticate' })).toBeInTheDocument();
   });
 
   it('surfaces a load error', async () => {

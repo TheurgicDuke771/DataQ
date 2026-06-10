@@ -21,10 +21,10 @@
 |---|---|
 | **Active since** | 2026-05-24 |
 | **Current week** | Week 4 of 8 (Connection manager UI + check editor UI) — **in progress** (Weeks 1–3 complete) |
-| **Roadmap tasks done** | 55 ✅ + 8 🟡 / 155 (~35%) |
+| **Roadmap tasks done** | 56 ✅ + 8 🟡 / 155 (~36%) |
 | **Out-of-roadmap PRs landed** | governance, tooling lock, Entire CLI, Dependabot triage (10 bumps + pyarrow direct-dep fix #202/#201), PR-3 cleanup + ADRs 0005/0006/0007/0010/0011/0012/0013/0014/0016/**0017** (Python 3.11→3.13 + Snowflake 3→4 CVE refresh, [#129](https://github.com/TheurgicDuke771/DataQ/issues/129)) + the Week-3 testing-discipline upgrade (adversarial harness + mutation spikes, CONTRIBUTING rule 4a) |
 | **Week-1 exit gate** | A logged-in user can hit a FastAPI endpoint that triggers GX against Snowflake DEV and persists a result row. — **met** (plumbing complete via PR 4a–4c; live-Snowflake run fails-soft pending DEV creds — deferred smoke) |
-| **Next milestone** | Week 4 (frontend) in flight: connection manager UI (list/add/edit/reauth/delete) + suites list/detail + catalog-driven check editor all shipped; **remaining**: check dry-run + profiler panel, sharing/admin UI, Monaco custom-SQL, connection health page. Week-5 early-credit already landed (worker runner-dispatch [#146](https://github.com/TheurgicDuke771/DataQ/issues/146), ADF/Airflow polling [#171](https://github.com/TheurgicDuke771/DataQ/issues/171), `trigger_bindings` CRUD [#172](https://github.com/TheurgicDuke771/DataQ/issues/172)) |
+| **Next milestone** | Week 4 (frontend) in flight: connection manager UI complete (list/add/edit/reauth/delete + bulk health) + suites list/detail + catalog-driven check editor all shipped; **remaining**: check dry-run + profiler panel, sharing/admin UI, Monaco custom-SQL. Week-5 early-credit already landed (worker runner-dispatch [#146](https://github.com/TheurgicDuke771/DataQ/issues/146), ADF/Airflow polling [#171](https://github.com/TheurgicDuke771/DataQ/issues/171), `trigger_bindings` CRUD [#172](https://github.com/TheurgicDuke771/DataQ/issues/172)) |
 | **Open issues** | **21 open** — roadmap *features* are tracked as ⬜ checkboxes per week (below), not GitHub issues, so these are follow-ups / polish only. **Week-1 carryover (→ W7):** [#168](https://github.com/TheurgicDuke771/DataQ/issues/168) (silent token refresh) / [#169](https://github.com/TheurgicDuke771/DataQ/issues/169) (real Key Vault) / [#170](https://github.com/TheurgicDuke771/DataQ/issues/170) (prod-docs gate). **Backend:** [#147](https://github.com/TheurgicDuke771/DataQ/issues/147) (profiler cleanup) / [#122](https://github.com/TheurgicDuke771/DataQ/issues/122) (skip/error statuses — seam landed) / [#124](https://github.com/TheurgicDuke771/DataQ/issues/124) (DQ dimensions) / [#194](https://github.com/TheurgicDuke771/DataQ/issues/194) + [#195](https://github.com/TheurgicDuke771/DataQ/issues/195) (Snowflake key-pair: encrypted keys / GX deprecated path) / [#92](https://github.com/TheurgicDuke771/DataQ/issues/92) (ADF webhook URL). **Frontend (W4):** [#192](https://github.com/TheurgicDuke771/DataQ/issues/192) (nav prefix-match) / [#197](https://github.com/TheurgicDuke771/DataQ/issues/197) (Select test helper) / [#199](https://github.com/TheurgicDuke771/DataQ/issues/199) (toast helper) / [#204](https://github.com/TheurgicDuke771/DataQ/issues/204) (drawer/delete dedup) / [#205](https://github.com/TheurgicDuke771/DataQ/issues/205) (catalog↔GX contract test) / [#128](https://github.com/TheurgicDuke771/DataQ/issues/128) (full-stack E2E/Playwright). **Governance polish:** #8/#10/#17/#18/#19/#20. **Closed this stretch:** #129, #146, #171, #172, #201 |
 | **Open PRs** | none |
 | **Design gates** | all Week-3 design gates resolved (ADR 0005 severity weights, 0012 monitor-kind seam, 0016 severity derivation — migration shipped). Pending: two-connection model for `comparison` checks (ADR 0015, post-v1, non-blocking) |
@@ -159,10 +159,10 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [ ] ⬜ Bundle code-splitting — `React.lazy` per route + `manualChunks` for antd (689 KB pre-gzip warning, defer until more routes exist) ([PR #63 perf](https://github.com/TheurgicDuke771/DataQ/pull/63))
 - [ ] ⬜ Tighten `Settings.model_config` `extra="ignore"` → `"forbid"` once compose-only vs app-only `.env` are split ([PR #39 nit](https://github.com/TheurgicDuke771/DataQ/pull/39))
 
-### Connection manager UI (6 tasks — 5/6 ✅, 1 ⬜)
+### Connection manager UI (6 tasks — 6/6 ✅)
 - [x] ✅ Connection cards — Snowflake (3 envs), ADF, ADLS/S3, Databricks sections with status badges — grouped-by-type cards with env tag + credential badge + Test action — [PR #191](https://github.com/TheurgicDuke771/DataQ/pull/191)
 - [x] ✅ Add connection drawer — type-specific form fields per connection type — spec-driven `ConnectionTypeFields` from `CONNECTION_FORM_SPECS` (all six types; Snowflake password/key-pair auth toggle) — [PR #196](https://github.com/TheurgicDuke771/DataQ/pull/196) (+ Snowflake key-pair backend [PR #193](https://github.com/TheurgicDuke771/DataQ/pull/193))
-- [ ] ⬜ Connection health page — bulk test, live status, re-auth surface _(per-card Test shipped; the bulk/aggregate health page is still pending)_
+- [x] ✅ Connection health page — bulk test, live status, re-auth surface — "Test all" header action tests every connection concurrently; each card shows a live health badge (testing / healthy / unreachable) and surfaces an inline **Re-authenticate** link on failure — [PR #208](https://github.com/TheurgicDuke771/DataQ/pull/208) _(folded into the connections list rather than a duplicate route)_
 - [x] ✅ Connection re-auth UI — surface expired tokens, inline refresh action — `ReauthModal` (single-secret rotate+verify) + edit drawer + delete via the card actions menu — [PR #198](https://github.com/TheurgicDuke771/DataQ/pull/198)
 - [x] ✅ ADLS/S3 connection form — account URL, SAS toggle — covered by the spec-driven drawer ([PR #196](https://github.com/TheurgicDuke771/DataQ/pull/196)) _(container browser + managed-identity/IAM-role modes deferred with the backend, ADR 0010/0011)_
 - [x] ✅ Databricks connection form — workspace URL, PAT, warehouse id — covered by the spec-driven drawer ([PR #196](https://github.com/TheurgicDuke771/DataQ/pull/196)) _(live SQL-Warehouse picker deferred; warehouse id is a text field)_
@@ -183,7 +183,7 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [ ] ⬜ Admin page — list all suites, all users, access overview
 - [ ] ⬜ Suite export / import UI (download JSON, upload JSON) _(backend export/import ready from Week 3)_
 
-**Week 4 total: 9 / 22 ✅ (+2 🟡)** _(connection manager UI essentially complete bar the bulk health page; check editor core shipped — dry-run + profiler panel + sharing/admin UI remain)_
+**Week 4 total: 10 / 22 ✅ (+2 🟡)** _(connection manager UI complete (6/6); check editor core shipped — dry-run + profiler panel + sharing/admin UI remain)_
 
 ---
 
@@ -344,12 +344,12 @@ These were preconditions for executing the roadmap. Listed for completeness.
 | Week 1 | 7 | 1 | 2 | 10 |
 | Week 2 | 15 | 1 | 3 | 19 |
 | Week 3 | 18 | 0 | 0 | 18 |
-| Week 4 | 9 | 2 | 11 | 22 |
+| Week 4 | 10 | 2 | 10 | 22 |
 | Week 5 | 4 | 0 | 11 | 15 |
 | Week 6 | 0 | 0 | 16 | 16 |
 | Week 7 | 0 | 1 | 28 | 29 |
 | Week 8 | 2 | 3 | 21 | 26 |
-| **TOTAL** | **55** | **8** | **92** | **155** |
+| **TOTAL** | **56** | **8** | **91** | **155** |
 
 > 155 > 100 because ADR 0004 added Airflow tasks, ADR 0011 added two seam tasks (generic runner dispatch, `ResultPublisher`), ADR 0012 added three Week-3 monitor-kind / metric seam tasks, plus PR-review follow-ups not in the original roadmap. Tracked here for honesty.
 
