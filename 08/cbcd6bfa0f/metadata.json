@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "08cbcd6bfa0f",
+  "strategy": "manual-commit",
+  "branch": "feature/week4-check-editor",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/components/checks/CheckDrawer.tsx",
+    "frontend/tests/components/CheckDrawer.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/08/cbcd6bfa0f/0/metadata.json",
+      "transcript": "/08/cbcd6bfa0f/0/full.jsonl",
+      "content_hash": "/08/cbcd6bfa0f/0/content_hash.txt",
+      "prompt": "/08/cbcd6bfa0f/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 110777,
+    "cache_creation_tokens": 8942353,
+    "cache_read_tokens": 344883591,
+    "output_tokens": 786960,
+    "api_call_count": 918
+  }
+}

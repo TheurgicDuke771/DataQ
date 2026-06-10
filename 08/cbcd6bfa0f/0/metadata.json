@@ -1,0 +1,38 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "08cbcd6bfa0f",
+  "session_id": "8603fa2a-25c9-4c76-87d4-83228bd296a6",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-10T19:22:07.271252Z",
+  "branch": "feature/week4-check-editor",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/components/checks/CheckDrawer.tsx",
+    "frontend/tests/components/CheckDrawer.test.tsx"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-4-8",
+  "turn_id": "d2cb200afa0a",
+  "token_usage": {
+    "input_tokens": 110777,
+    "cache_creation_tokens": 8942353,
+    "cache_read_tokens": 344883591,
+    "output_tokens": 786960,
+    "api_call_count": 918
+  },
+  "session_metrics": {
+    "turn_count": 26
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-10T19:22:07.174177Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 37,
+    "human_modified": 10,
+    "human_removed": 0,
+    "total_committed": 37,
+    "total_lines_changed": 47,
+    "agent_percentage": 0,
+    "metric_version": 2
+  }
+}
