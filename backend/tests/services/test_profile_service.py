@@ -132,6 +132,39 @@ def test_engine_args_snowflake_url() -> None:
     assert "login_timeout" in connect_args
 
 
+def test_engine_args_snowflake_key_pair_threads_private_key() -> None:
+    from types import SimpleNamespace
+
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+
+    from backend.app.services.profile_service import _engine_args
+
+    pem = (
+        rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        .private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+        .decode()
+    )
+    conn = SimpleNamespace(
+        type="snowflake",
+        config={
+            "account": "ab1",
+            "user": "u",
+            "database": "d",
+            "schema": "s",
+            "warehouse": "wh",
+            "auth_type": "key_pair",
+        },
+    )
+    url, connect_args = _engine_args(conn, pem)  # type: ignore[arg-type]
+    assert isinstance(connect_args.get("private_key"), bytes)  # DER key threaded in
+    assert "u:" not in url  # no password in the DSN
+
+
 # ── assemble_profile ──
 
 

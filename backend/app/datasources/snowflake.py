@@ -103,9 +103,7 @@ def build_connection_string(config: SnowflakeConfig, secret: str) -> str:
         if config.auth_type == "key_pair"
         else f"{quote_plus(config.user)}:{quote_plus(secret)}"
     )
-    return (
-        f"snowflake://{credentials}" f"@{config.account}/{config.database}/{config.schema_}?{query}"
-    )
+    return f"snowflake://{credentials}@{config.account}/{config.database}/{config.schema_}?{query}"
 
 
 def build_connect_args(config: SnowflakeConfig, secret: str) -> dict[str, Any]:
@@ -139,6 +137,10 @@ class SnowflakeCheckRunner:
         context = gx.get_context(mode="ephemeral")
         add_kwargs: dict[str, Any] = {}
         if self._connect_args:
+            # GX 1.17 deprecates passing private_key via kwargs['connect_args'] in
+            # favour of a direct private_key= arg; this works today but should
+            # migrate during the live-Snowflake smoke (#195). The adapter test +
+            # profiler paths use create_engine directly, so they're unaffected.
             add_kwargs["kwargs"] = {"connect_args": self._connect_args}
         datasource = context.data_sources.add_snowflake(
             name=f"sf-{table}",

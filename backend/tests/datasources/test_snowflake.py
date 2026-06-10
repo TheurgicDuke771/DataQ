@@ -347,6 +347,29 @@ def test_adapter_test_runs_select_1_and_disposes(monkeypatch: pytest.MonkeyPatch
     assert "p%40ss" in str(captured["url"])  # password URL-encoded into the DSN
 
 
+def test_adapter_test_key_pair_passes_private_key_in_connect_args(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine = _FakeEngine([])
+    captured: dict[str, object] = {}
+
+    def fake_create_engine(url: str, **kwargs: object) -> _FakeEngine:
+        captured["url"] = url
+        captured["connect_args"] = kwargs.get("connect_args")
+        return engine
+
+    monkeypatch.setattr("sqlalchemy.create_engine", fake_create_engine)
+    SnowflakeConnectionAdapter().test({**_CONFIG, "auth_type": "key_pair"}, _rsa_pem())
+
+    connect_args = captured["connect_args"]
+    assert isinstance(connect_args, dict)
+    # The DER private key is threaded into connect_args alongside the timeouts…
+    assert isinstance(connect_args.get("private_key"), bytes)
+    assert connect_args["login_timeout"] == 10
+    # …and the DSN carries no password.
+    assert "svc_dataq:" not in str(captured["url"])
+
+
 def test_adapter_test_disposes_engine_on_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     engine = _FakeEngine([])
 
