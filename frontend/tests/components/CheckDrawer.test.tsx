@@ -66,6 +66,21 @@ describe('CheckDrawer — create', () => {
     expect(onSaved).toHaveBeenCalled();
   });
 
+  it('rejects a delimiter-only value-set instead of saving an empty config', async () => {
+    const user = userEvent.setup();
+    renderDrawer();
+
+    await user.type(screen.getByLabelText('Name'), 'bad set');
+    await selectOption(user, 'Expectation', 'Column values in set');
+    await user.type(await screen.findByLabelText('Column'), 'status');
+    await user.type(screen.getByLabelText('Allowed values'), ' , ');
+
+    await user.click(screen.getByRole('button', { name: 'Create' }));
+
+    expect(await screen.findByText('Enter at least one value')).toBeInTheDocument();
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
   it('does not submit without a name and expectation', async () => {
     const user = userEvent.setup();
     renderDrawer();
