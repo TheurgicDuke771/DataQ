@@ -35,7 +35,16 @@ function SecretField({ label, multiline = false }: { label: string; multiline?: 
   );
 }
 
-export function ConnectionTypeFields({ type, form }: { type: ConnectionType; form: FormInstance }) {
+export function ConnectionTypeFields({
+  type,
+  form,
+  showSecret = true,
+}: {
+  type: ConnectionType;
+  form: FormInstance;
+  /** Edit mode omits the secret — credential rotation is the Re-auth flow. */
+  showSecret?: boolean;
+}) {
   const spec = CONNECTION_FORM_SPECS[type];
   const authType = Form.useWatch(['config', 'auth_type'], form) as string | undefined;
   const activeAuth = spec.auth?.find((a) => a.value === authType) ?? spec.auth?.[0];
@@ -54,11 +63,12 @@ export function ConnectionTypeFields({ type, form }: { type: ConnectionType; for
 
       {activeAuth?.extraField && <ConfigTextField field={activeAuth.extraField} />}
 
-      {activeAuth ? (
-        <SecretField label={activeAuth.secretLabel} multiline={activeAuth.multilineSecret} />
-      ) : (
-        spec.secretLabel && <SecretField label={spec.secretLabel} />
-      )}
+      {showSecret &&
+        (activeAuth ? (
+          <SecretField label={activeAuth.secretLabel} multiline={activeAuth.multilineSecret} />
+        ) : (
+          spec.secretLabel && <SecretField label={spec.secretLabel} />
+        ))}
     </>
   );
 }

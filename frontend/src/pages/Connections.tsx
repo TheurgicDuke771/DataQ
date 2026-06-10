@@ -1,4 +1,17 @@
-import { Alert, App, Badge, Button, Card, Empty, Flex, Spin, Tag, Typography } from 'antd';
+import { MoreOutlined } from '@ant-design/icons';
+import {
+  Alert,
+  App,
+  Badge,
+  Button,
+  Card,
+  Dropdown,
+  Empty,
+  Flex,
+  Spin,
+  Tag,
+  Typography,
+} from 'antd';
 import { useState } from 'react';
 
 import {
@@ -7,11 +20,13 @@ import {
   type Connection,
   type ConnectionEnv,
   type ConnectionType,
+  deleteConnection,
   envLabel,
   listConnections,
   testConnection,
 } from '../api/connections';
-import { AddConnectionDrawer } from '../components/connections/AddConnectionDrawer';
+import { ConnectionDrawer } from '../components/connections/ConnectionDrawer';
+import { ReauthModal } from '../components/connections/ReauthModal';
 import { type AsyncState, useAsyncData } from '../hooks/useAsyncData';
 
 const ENV_COLORS: Record<ConnectionEnv, string> = {
@@ -20,6 +35,13 @@ const ENV_COLORS: Record<ConnectionEnv, string> = {
   uat: 'purple',
   prod: 'red',
 };
+
+/** Per-card actions, threaded from the page so they can mutate shared state. */
+interface ConnectionActions {
+  onEdit: (connection: Connection) => void;
+  onReauth: (connection: Connection) => void;
+  onChanged: () => void;
+}
 
 /** Group connections by type in one pass, preserving canonical type order. */
 function groupByType(connections: Connection[]): [ConnectionType, Connection[]][] {
@@ -37,7 +59,15 @@ function groupByType(connections: Connection[]): [ConnectionType, Connection[]][
 
 export function Connections() {
   const { state, reload } = useAsyncData(listConnections);
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  // `drawer.connection === undefined` while open = create mode; a connection = edit.
+  const [drawer, setDrawer] = useState<{ open: boolean; connection?: Connection }>({ open: false });
+  const [reauthing, setReauthing] = useState<Connection | null>(null);
+
+  const actions: ConnectionActions = {
+    onEdit: (connection) => setDrawer({ open: true, connection }),
+    onReauth: setReauthing,
+    onChanged: reload,
+  };
 
   return (
     <Flex vertical gap={24}>
@@ -45,16 +75,25 @@ export function Connections() {
         <Typography.Title level={3} style={{ margin: 0 }}>
           Connections
         </Typography.Title>
-        <Button type="primary" onClick={() => setDrawerOpen(true)}>
+        <Button type="primary" onClick={() => setDrawer({ open: true })}>
           Add connection
         </Button>
       </Flex>
-      <ConnectionsBody state={state} />
-      <AddConnectionDrawer
-        open={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
-        onCreated={() => {
-          setDrawerOpen(false);
+      <ConnectionsBody state={state} actions={actions} />
+      <ConnectionDrawer
+        open={drawer.open}
+        connection={drawer.connection}
+        onClose={() => setDrawer({ open: false })}
+        onSaved={() => {
+          setDrawer({ open: false });
+          reload();
+        }}
+      />
+      <ReauthModal
+        connection={reauthing}
+        onClose={() => setReauthing(null)}
+        onDone={() => {
+          setReauthing(null);
           reload();
         }}
       />
@@ -62,7 +101,13 @@ export function Connections() {
   );
 }
 
-function ConnectionsBody({ state }: { state: AsyncState<Connection[]> }) {
+function ConnectionsBody({
+  state,
+  actions,
+}: {
+  state: AsyncState<Connection[]>;
+  actions: ConnectionActions;
+}) {
   if (state.status === 'loading') {
     return <Spin tip="Loading connections…" size="large" style={{ marginTop: 80 }} />;
   }
@@ -84,7 +129,7 @@ function ConnectionsBody({ state }: { state: AsyncState<Connection[]> }) {
   return (
     <>
       {groupByType(connections).map(([type, group]) => (
-        <ConnectionTypeSection key={type} type={type} connections={group} />
+        <ConnectionTypeSection key={type} type={type} connections={group} actions={actions} />
       ))}
     </>
   );
@@ -93,9 +138,11 @@ function ConnectionsBody({ state }: { state: AsyncState<Connection[]> }) {
 function ConnectionTypeSection({
   type,
   connections,
+  actions,
 }: {
   type: ConnectionType;
   connections: Connection[];
+  actions: ConnectionActions;
 }) {
   return (
     <Flex vertical gap={12}>
@@ -104,15 +151,21 @@ function ConnectionTypeSection({
       </Typography.Title>
       <Flex wrap gap={12}>
         {connections.map((connection) => (
-          <ConnectionCard key={connection.id} connection={connection} />
+          <ConnectionCard key={connection.id} connection={connection} actions={actions} />
         ))}
       </Flex>
     </Flex>
   );
 }
 
-function ConnectionCard({ connection }: { connection: Connection }) {
-  const { message } = App.useApp();
+function ConnectionCard({
+  connection,
+  actions,
+}: {
+  connection: Connection;
+  actions: ConnectionActions;
+}) {
+  const { message, modal } = App.useApp();
   const [testing, setTesting] = useState(false);
 
   const onTest = async () => {
@@ -128,6 +181,32 @@ function ConnectionCard({ connection }: { connection: Connection }) {
     }
   };
 
+  const onDelete = () => {
+    modal.confirm({
+      title: `Delete “${connection.name}”?`,
+      content: 'This removes the connection and its stored credential.',
+      okText: 'Delete',
+      okType: 'danger',
+      onOk: async () => {
+        try {
+          await deleteConnection(connection.id);
+          message.success(`${connection.name} deleted`);
+          actions.onChanged();
+        } catch (err) {
+          message.error(`Delete failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+          throw err; // keep the confirm modal open on failure
+        }
+      },
+    });
+  };
+
+  const menuItems = [
+    { key: 'edit', label: 'Edit', onClick: () => actions.onEdit(connection) },
+    { key: 'reauth', label: 'Re-authenticate', onClick: () => actions.onReauth(connection) },
+    { type: 'divider' as const },
+    { key: 'delete', label: 'Delete', danger: true, onClick: onDelete },
+  ];
+
   return (
     <Card size="small" style={{ minWidth: 280 }}>
       <Flex justify="space-between" align="center" gap={12}>
@@ -142,9 +221,18 @@ function ConnectionCard({ connection }: { connection: Connection }) {
             )}
           </Flex>
         </Flex>
-        <Button size="small" loading={testing} onClick={onTest}>
-          Test
-        </Button>
+        <Flex gap={8} align="center">
+          <Button size="small" loading={testing} onClick={onTest}>
+            Test
+          </Button>
+          <Dropdown menu={{ items: menuItems }} trigger={['click']}>
+            <Button
+              size="small"
+              icon={<MoreOutlined />}
+              aria-label={`${connection.name} actions`}
+            />
+          </Dropdown>
+        </Flex>
       </Flex>
     </Card>
   );

@@ -1,14 +1,16 @@
 import { App, Button, Drawer, Flex, Form, Input, Select } from 'antd';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import {
   CONNECTION_ENVS,
   CONNECTION_TYPE_LABELS,
   CONNECTION_TYPES,
+  type Connection,
   type ConnectionCreate,
   type ConnectionType,
   createConnection,
   envLabel,
+  updateConnection,
 } from '../../api/connections';
 import { ConnectionTypeFields } from './ConnectionTypeFields';
 import { initialConfigForType } from './connectionFormSpec';
@@ -21,24 +23,44 @@ interface FormValues {
   secret?: string;
 }
 
-export function AddConnectionDrawer({
+/**
+ * Create or edit a connection. In edit mode (`connection` present), type + env
+ * are immutable (the backend `ConnectionUpdate` rejects them) and the secret is
+ * omitted — credential rotation is the separate Re-auth flow.
+ */
+export function ConnectionDrawer({
   open,
   onClose,
-  onCreated,
+  onSaved,
+  connection,
 }: {
   open: boolean;
   onClose: () => void;
-  /** Called after a successful create (so the list can refresh). */
-  onCreated: () => void;
+  /** Called after a successful create or update (so the list can refresh). */
+  onSaved: () => void;
+  connection?: Connection;
 }) {
+  const isEdit = connection !== undefined;
   const { message } = App.useApp();
   const [form] = Form.useForm<FormValues>();
   const [submitting, setSubmitting] = useState(false);
-  const type = Form.useWatch('type', form) as ConnectionType | undefined;
+  const watchedType = Form.useWatch('type', form) as ConnectionType | undefined;
+  const type = isEdit ? connection.type : watchedType;
 
-  // Switching type invalidates the previous config fields — reset them and seed
-  // the new type's default auth_type so its conditional fields render correctly.
-  // (Submission only collects mounted fields, but reset keeps the live form tidy.)
+  // Prefill when opening in edit mode (the Drawer's destroyOnHidden remounts the
+  // form each open, so this re-seeds for whichever connection is being edited).
+  useEffect(() => {
+    if (open && connection) {
+      form.setFieldsValue({
+        name: connection.name,
+        type: connection.type,
+        env: connection.env,
+        config: connection.config,
+      });
+    }
+  }, [open, connection, form]);
+
+  // Switching type (create only) invalidates the previous config fields.
   const onTypeChange = (next: ConnectionType) => {
     form.setFieldsValue({ config: initialConfigForType(next), secret: undefined });
   };
@@ -46,18 +68,28 @@ export function AddConnectionDrawer({
   const onFinish = async (values: FormValues) => {
     setSubmitting(true);
     try {
-      await createConnection({
-        name: values.name,
-        type: values.type,
-        env: values.env,
-        config: values.config ?? {},
-        secret: values.secret || undefined,
-      });
-      message.success(`Connection “${values.name}” created`);
+      if (isEdit) {
+        await updateConnection(connection.id, {
+          name: values.name,
+          config: values.config ?? {},
+        });
+        message.success(`Connection “${values.name}” updated`);
+      } else {
+        await createConnection({
+          name: values.name,
+          type: values.type,
+          env: values.env,
+          config: values.config ?? {},
+          secret: values.secret || undefined,
+        });
+        message.success(`Connection “${values.name}” created`);
+      }
       form.resetFields();
-      onCreated();
+      onSaved();
     } catch (err) {
-      message.error(`Create failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+      message.error(
+        `${isEdit ? 'Update' : 'Create'} failed: ${err instanceof Error ? err.message : 'unknown error'}`,
+      );
     } finally {
       setSubmitting(false);
     }
@@ -65,7 +97,7 @@ export function AddConnectionDrawer({
 
   return (
     <Drawer
-      title="Add connection"
+      title={isEdit ? 'Edit connection' : 'Add connection'}
       open={open}
       onClose={onClose}
       width={520}
@@ -74,7 +106,7 @@ export function AddConnectionDrawer({
         <Flex justify="end" gap={8}>
           <Button onClick={onClose}>Cancel</Button>
           <Button type="primary" loading={submitting} onClick={() => form.submit()}>
-            Create
+            {isEdit ? 'Save' : 'Create'}
           </Button>
         </Flex>
       }
@@ -85,18 +117,20 @@ export function AddConnectionDrawer({
         </Form.Item>
         <Form.Item name="env" label="Environment" rules={[{ required: true }]}>
           <Select
+            disabled={isEdit}
             options={CONNECTION_ENVS.map((e) => ({ value: e, label: envLabel(e) }))}
             placeholder="Select an environment"
           />
         </Form.Item>
         <Form.Item name="type" label="Type" rules={[{ required: true }]}>
           <Select
+            disabled={isEdit}
             placeholder="Select a connection type"
             onChange={onTypeChange}
             options={CONNECTION_TYPES.map((t) => ({ value: t, label: CONNECTION_TYPE_LABELS[t] }))}
           />
         </Form.Item>
-        {type && <ConnectionTypeFields type={type} form={form} />}
+        {type && <ConnectionTypeFields type={type} form={form} showSecret={!isEdit} />}
       </Form>
     </Drawer>
   );

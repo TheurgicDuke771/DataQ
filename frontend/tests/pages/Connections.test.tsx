@@ -1,19 +1,30 @@
 import { App as AntApp } from 'antd';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { type Connection, listConnections, testConnection } from '../../src/api/connections';
+import {
+  type Connection,
+  deleteConnection,
+  listConnections,
+  testConnection,
+} from '../../src/api/connections';
 import { Connections } from '../../src/pages/Connections';
 
 // Keep the real CONNECTION_TYPES / labels; mock only the network functions.
 vi.mock('../../src/api/connections', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/api/connections')>();
-  return { ...actual, listConnections: vi.fn(), testConnection: vi.fn() };
+  return {
+    ...actual,
+    listConnections: vi.fn(),
+    testConnection: vi.fn(),
+    deleteConnection: vi.fn(),
+  };
 });
 
 const mockList = vi.mocked(listConnections);
 const mockTest = vi.mocked(testConnection);
+const mockDelete = vi.mocked(deleteConnection);
 
 function conn(overrides: Partial<Connection>): Connection {
   return {
@@ -85,5 +96,24 @@ describe('Connections', () => {
 
     expect(await screen.findByText('Failed to load connections')).toBeInTheDocument();
     expect(screen.getByText('boom')).toBeInTheDocument();
+  });
+
+  it('deletes a connection via the actions menu after confirming', async () => {
+    const user = userEvent.setup();
+    mockList.mockResolvedValue([conn({ id: 'c1', name: 'sf-dev' })]);
+    mockDelete.mockResolvedValue();
+
+    renderPage();
+    await screen.findByText('sf-dev');
+
+    // Open the card's actions menu and choose Delete.
+    await user.click(screen.getByRole('button', { name: 'sf-dev actions' }));
+    await user.click(await screen.findByText('Delete'));
+
+    // Confirm in the modal (its OK button is also labelled "Delete").
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
+
+    await waitFor(() => expect(mockDelete).toHaveBeenCalledWith('c1'));
   });
 });
