@@ -47,7 +47,7 @@ azure-identity==1.23.0
 # ── Datasource connectors ──
 snowflake-sqlalchemy==1.10.0       # ≥1.8 lifts the connector<4.0 cap (#129)
 snowflake-connector-python==4.6.0  # 3→4: drops cffi<2 / pyOpenSSL<26 caps → unblocks cryptography≥46.0.7 + pyOpenSSL≥26 CVE fixes (#129)
-azure-storage-blob==12.25.0       # ADLS Gen2
+azure-storage-blob==12.30.0       # ADLS Gen2
 boto3==1.38.29                    # S3
 databricks-sql-connector==3.7.0   # Unity Catalog
 pyarrow==24.0.0                   # Parquet flat-file IO (read_parquet/profiler) — was a databricks-sql-connector transitive until its 4.x dropped it (#201)
