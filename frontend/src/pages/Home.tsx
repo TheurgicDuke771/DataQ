@@ -4,7 +4,7 @@ import { fetchMe } from '../api/me';
 import { useAsyncData } from '../hooks/useAsyncData';
 
 export function Home() {
-  const state = useAsyncData(fetchMe);
+  const { state } = useAsyncData(fetchMe);
 
   if (state.status === 'loading') {
     return <Spin tip="Loading /api/v1/me…" size="large" style={{ marginTop: 80 }} />;

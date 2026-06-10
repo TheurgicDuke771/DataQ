@@ -53,3 +53,17 @@ export async function testConnection(id: string): Promise<{ ok: boolean }> {
   const { data } = await api.post<{ ok: boolean }>(`/connections/${id}/test`);
   return data;
 }
+
+/** Mirrors the backend `ConnectionCreate` schema (secret is write-only). */
+export interface ConnectionCreate {
+  name: string;
+  type: ConnectionType;
+  env: ConnectionEnv;
+  config: Record<string, unknown>;
+  secret?: string;
+}
+
+export async function createConnection(payload: ConnectionCreate): Promise<Connection> {
+  const { data } = await api.post<Connection>('/connections', payload);
+  return data;
+}

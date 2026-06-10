@@ -10,7 +10,8 @@ import {
   listConnections,
   testConnection,
 } from '../api/connections';
-import { useAsyncData } from '../hooks/useAsyncData';
+import { AddConnectionDrawer } from '../components/connections/AddConnectionDrawer';
+import { type AsyncState, useAsyncData } from '../hooks/useAsyncData';
 
 const ENV_COLORS: Record<ConnectionEnv, string> = {
   dev: 'blue',
@@ -34,8 +35,33 @@ function groupByType(connections: Connection[]): [ConnectionType, Connection[]][
 }
 
 export function Connections() {
-  const state = useAsyncData(listConnections);
+  const { state, reload } = useAsyncData(listConnections);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
+  return (
+    <Flex vertical gap={24}>
+      <Flex justify="space-between" align="center" gap={12}>
+        <Typography.Title level={3} style={{ margin: 0 }}>
+          Connections
+        </Typography.Title>
+        <Button type="primary" onClick={() => setDrawerOpen(true)}>
+          Add connection
+        </Button>
+      </Flex>
+      <ConnectionsBody state={state} />
+      <AddConnectionDrawer
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        onCreated={() => {
+          setDrawerOpen(false);
+          reload();
+        }}
+      />
+    </Flex>
+  );
+}
+
+function ConnectionsBody({ state }: { state: AsyncState<Connection[]> }) {
   if (state.status === 'loading') {
     return <Spin tip="Loading connections…" size="large" style={{ marginTop: 80 }} />;
   }
@@ -50,21 +76,16 @@ export function Connections() {
       />
     );
   }
-
   const connections = state.data;
+  if (connections.length === 0) {
+    return <Empty description="No connections configured yet" />;
+  }
   return (
-    <Flex vertical gap={24}>
-      <Typography.Title level={3} style={{ margin: 0 }}>
-        Connections
-      </Typography.Title>
-      {connections.length === 0 ? (
-        <Empty description="No connections configured yet" />
-      ) : (
-        groupByType(connections).map(([type, group]) => (
-          <ConnectionTypeSection key={type} type={type} connections={group} />
-        ))
-      )}
-    </Flex>
+    <>
+      {groupByType(connections).map(([type, group]) => (
+        <ConnectionTypeSection key={type} type={type} connections={group} />
+      ))}
+    </>
   );
 }
 
