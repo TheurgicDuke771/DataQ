@@ -24,7 +24,15 @@ export function ReauthModal({
 
   const onOk = async () => {
     if (!connection) return;
-    const { secret } = await form.validateFields();
+    // antd's Modal `onOk` doesn't catch a rejected handler, so guard the
+    // validation rejection here (errors render inline) rather than letting it
+    // escape as an unhandled promise rejection.
+    let secret: string;
+    try {
+      ({ secret } = await form.validateFields());
+    } catch {
+      return;
+    }
     setSubmitting(true);
     try {
       await reauthConnection(connection.id, secret);
