@@ -1,0 +1,41 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "4dbafbad1057",
+  "session_id": "8603fa2a-25c9-4c76-87d4-83228bd296a6",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-10T08:29:00.170548Z",
+  "branch": "feat/week4-add-connection-drawer",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/api/connections.ts",
+    "frontend/src/components/connections/AddConnectionDrawer.tsx",
+    "frontend/src/components/connections/ConnectionTypeFields.tsx",
+    "frontend/src/pages/Connections.tsx",
+    "frontend/tests/components/AddConnectionDrawer.test.tsx"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "68b3617ffb1f",
+  "token_usage": {
+    "input_tokens": 68396,
+    "cache_creation_tokens": 8005458,
+    "cache_read_tokens": 299832319,
+    "output_tokens": 660581,
+    "api_call_count": 751
+  },
+  "session_metrics": {
+    "turn_count": 20
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-10T08:29:00.097021Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 174,
+    "human_removed": 3,
+    "total_committed": 0,
+    "total_lines_changed": 178,
+    "agent_percentage": 0,
+    "metric_version": 2
+  }
+}
