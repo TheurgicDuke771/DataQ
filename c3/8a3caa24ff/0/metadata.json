@@ -1,0 +1,38 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "c38a3caa24ff",
+  "session_id": "8603fa2a-25c9-4c76-87d4-83228bd296a6",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-10T00:47:09.865319Z",
+  "branch": "feat/snowflake-keypair-auth",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/datasources/snowflake.py",
+    "backend/tests/datasources/test_snowflake.py"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "1b65d35f6363",
+  "token_usage": {
+    "input_tokens": 58043,
+    "cache_creation_tokens": 6594032,
+    "cache_read_tokens": 260870607,
+    "output_tokens": 606045,
+    "api_call_count": 693
+  },
+  "session_metrics": {
+    "turn_count": 18
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-10T00:47:09.797336Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 58,
+    "human_modified": 3,
+    "human_removed": 0,
+    "total_committed": 58,
+    "total_lines_changed": 61,
+    "agent_percentage": 0,
+    "metric_version": 2
+  }
+}
