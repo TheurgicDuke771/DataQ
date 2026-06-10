@@ -22,6 +22,14 @@ export type ConnectionEnv = (typeof CONNECTION_ENVS)[number];
 /** Display label for an env (single source for the list page + the drawer). */
 export const envLabel = (env: ConnectionEnv): string => env.toUpperCase();
 
+/** Tag color per env — shared by every page that renders an env badge. */
+export const ENV_COLORS: Record<ConnectionEnv, string> = {
+  dev: 'blue',
+  qa: 'gold',
+  uat: 'purple',
+  prod: 'red',
+};
+
 /** Mirrors the backend `ConnectionRead` schema (secret is never returned). */
 export interface Connection {
   id: string;

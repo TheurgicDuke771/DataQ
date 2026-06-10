@@ -7,11 +7,13 @@ import { useCurrentUser } from './auth/useCurrentUser';
 import { getMsalInstance } from './auth/msalInstance';
 import { Connections } from './pages/Connections';
 import { Home } from './pages/Home';
+import { Suites } from './pages/Suites';
 
 const { Header, Sider, Content } = Layout;
 
 const NAV_ITEMS = [
   { key: '/connections', label: <Link to="/connections">Connections</Link> },
+  { key: '/suites', label: <Link to="/suites">Suites</Link> },
   { key: '/profile', label: <Link to="/profile">Profile</Link> },
 ];
 
@@ -42,6 +44,7 @@ export function App() {
             <Routes>
               <Route path="/" element={<Navigate to="/connections" replace />} />
               <Route path="/connections" element={<Connections />} />
+              <Route path="/suites" element={<Suites />} />
               <Route path="/profile" element={<Home />} />
               <Route path="*" element={<Navigate to="/connections" replace />} />
             </Routes>

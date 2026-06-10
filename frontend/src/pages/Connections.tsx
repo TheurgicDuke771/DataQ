@@ -18,9 +18,9 @@ import {
   CONNECTION_TYPE_LABELS,
   CONNECTION_TYPES,
   type Connection,
-  type ConnectionEnv,
   type ConnectionType,
   deleteConnection,
+  ENV_COLORS,
   envLabel,
   listConnections,
   testConnection,
@@ -28,13 +28,6 @@ import {
 import { ConnectionDrawer } from '../components/connections/ConnectionDrawer';
 import { ReauthModal } from '../components/connections/ReauthModal';
 import { type AsyncState, useAsyncData } from '../hooks/useAsyncData';
-
-const ENV_COLORS: Record<ConnectionEnv, string> = {
-  dev: 'blue',
-  qa: 'gold',
-  uat: 'purple',
-  prod: 'red',
-};
 
 /** Per-card actions, threaded from the page so they can mutate shared state. */
 interface ConnectionActions {
