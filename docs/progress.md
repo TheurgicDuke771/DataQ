@@ -20,12 +20,12 @@
 | | |
 |---|---|
 | **Active since** | 2026-05-24 |
-| **Current week** | Week 3 **complete** → Week 4 of 8 (Execution backend) |
-| **Roadmap tasks done** | 44 ✅ + 6 🟡 / 155 (~28%) |
-| **Out-of-roadmap PRs landed** | governance, tooling lock, Entire CLI, Dependabot triage, PR-3 cleanup + ADRs 0005/0006/0007/0010/0011/0012/0013/0014/0016 + the Week-3 testing-discipline upgrade (adversarial harness + mutation spikes, CONTRIBUTING rule 4a) |
+| **Current week** | Week 4 of 8 (Connection manager UI + check editor UI) — **in progress** (Weeks 1–3 complete) |
+| **Roadmap tasks done** | 55 ✅ + 8 🟡 / 155 (~35%) |
+| **Out-of-roadmap PRs landed** | governance, tooling lock, Entire CLI, Dependabot triage (10 bumps + pyarrow direct-dep fix #202/#201), PR-3 cleanup + ADRs 0005/0006/0007/0010/0011/0012/0013/0014/0016/**0017** (Python 3.11→3.13 + Snowflake 3→4 CVE refresh, [#129](https://github.com/TheurgicDuke771/DataQ/issues/129)) + the Week-3 testing-discipline upgrade (adversarial harness + mutation spikes, CONTRIBUTING rule 4a) |
 | **Week-1 exit gate** | A logged-in user can hit a FastAPI endpoint that triggers GX against Snowflake DEV and persists a result row. — **met** (plumbing complete via PR 4a–4c; live-Snowflake run fails-soft pending DEV creds — deferred smoke) |
-| **Next milestone** | Week 4 — execution backend (async run UI/progress, run history). Week-5 carry-over: wire connection-type → `CheckRunner` dispatch into the worker ([#146](https://github.com/TheurgicDuke771/DataQ/issues/146) — it hardcodes `build_snowflake_runner` today) + ADF/Airflow polling fallback |
-| **Open issues** | 13 — follow-ups [#146](https://github.com/TheurgicDuke771/DataQ/issues/146) (runner dispatch) / [#147](https://github.com/TheurgicDuke771/DataQ/issues/147) (profiler cleanup) / [#129](https://github.com/TheurgicDuke771/DataQ/issues/129) (Snowflake connector CVE bump, ~W5) / [#128](https://github.com/TheurgicDuke771/DataQ/issues/128) (E2E/Playwright) / [#124](https://github.com/TheurgicDuke771/DataQ/issues/124) (DQ dimensions) / [#122](https://github.com/TheurgicDuke771/DataQ/issues/122) (skip/error statuses) + governance polish #92/#20/#19/#18/#17/#10/#8 |
+| **Next milestone** | Week 4 (frontend) in flight: connection manager UI (list/add/edit/reauth/delete) + suites list/detail + catalog-driven check editor all shipped; **remaining**: check dry-run + profiler panel, sharing/admin UI, Monaco custom-SQL, connection health page. Week-5 early-credit already landed (worker runner-dispatch [#146](https://github.com/TheurgicDuke771/DataQ/issues/146), ADF/Airflow polling [#171](https://github.com/TheurgicDuke771/DataQ/issues/171), `trigger_bindings` CRUD [#172](https://github.com/TheurgicDuke771/DataQ/issues/172)) |
+| **Open issues** | follow-ups [#147](https://github.com/TheurgicDuke771/DataQ/issues/147) (profiler cleanup) / [#128](https://github.com/TheurgicDuke771/DataQ/issues/128) (E2E/Playwright) / [#124](https://github.com/TheurgicDuke771/DataQ/issues/124) (DQ dimensions) / [#122](https://github.com/TheurgicDuke771/DataQ/issues/122) (skip/error statuses — seam landed) + Week-4 frontend follow-ups [#192](https://github.com/TheurgicDuke771/DataQ/issues/192) (nav prefix-match) / [#194](https://github.com/TheurgicDuke771/DataQ/issues/194) (Snowflake encrypted keys) / [#195](https://github.com/TheurgicDuke771/DataQ/issues/195) (GX deprecated API) / [#197](https://github.com/TheurgicDuke771/DataQ/issues/197) (Select test helper) / [#199](https://github.com/TheurgicDuke771/DataQ/issues/199) (toast helper) / [#204](https://github.com/TheurgicDuke771/DataQ/issues/204) (drawer/delete dedup) / [#205](https://github.com/TheurgicDuke771/DataQ/issues/205) (catalog↔GX contract test) + governance polish #92/#20/#19/#18/#17/#10/#8. **Closed this stretch:** #129, #146, #171, #172, #201 |
 | **Open PRs** | none |
 | **Design gates** | all Week-3 design gates resolved (ADR 0005 severity weights, 0012 monitor-kind seam, 0016 severity derivation — migration shipped). Pending: two-connection model for `comparison` checks (ADR 0015, post-v1, non-blocking) |
 
@@ -159,31 +159,31 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [ ] ⬜ Bundle code-splitting — `React.lazy` per route + `manualChunks` for antd (689 KB pre-gzip warning, defer until more routes exist) ([PR #63 perf](https://github.com/TheurgicDuke771/DataQ/pull/63))
 - [ ] ⬜ Tighten `Settings.model_config` `extra="ignore"` → `"forbid"` once compose-only vs app-only `.env` are split ([PR #39 nit](https://github.com/TheurgicDuke771/DataQ/pull/39))
 
-### Connection manager UI (6 tasks — 0/6)
-- [ ] ⬜ Connection cards — Snowflake (3 envs), ADF, ADLS/S3, Databricks sections with status badges
-- [ ] ⬜ Add connection drawer — type-specific form fields per connection type
-- [ ] ⬜ Connection health page — bulk test, live status, re-auth surface
-- [ ] ⬜ Connection re-auth UI — surface expired tokens, inline refresh action
-- [ ] ⬜ ADLS/S3 connection form — account URL, container browser, managed identity / SAS toggle
-- [ ] ⬜ Databricks connection form — workspace URL, PAT, SQL Warehouse picker
+### Connection manager UI (6 tasks — 5/6 ✅, 1 ⬜)
+- [x] ✅ Connection cards — Snowflake (3 envs), ADF, ADLS/S3, Databricks sections with status badges — grouped-by-type cards with env tag + credential badge + Test action — [PR #191](https://github.com/TheurgicDuke771/DataQ/pull/191)
+- [x] ✅ Add connection drawer — type-specific form fields per connection type — spec-driven `ConnectionTypeFields` from `CONNECTION_FORM_SPECS` (all six types; Snowflake password/key-pair auth toggle) — [PR #196](https://github.com/TheurgicDuke771/DataQ/pull/196) (+ Snowflake key-pair backend [PR #193](https://github.com/TheurgicDuke771/DataQ/pull/193))
+- [ ] ⬜ Connection health page — bulk test, live status, re-auth surface _(per-card Test shipped; the bulk/aggregate health page is still pending)_
+- [x] ✅ Connection re-auth UI — surface expired tokens, inline refresh action — `ReauthModal` (single-secret rotate+verify) + edit drawer + delete via the card actions menu — [PR #198](https://github.com/TheurgicDuke771/DataQ/pull/198)
+- [x] ✅ ADLS/S3 connection form — account URL, SAS toggle — covered by the spec-driven drawer ([PR #196](https://github.com/TheurgicDuke771/DataQ/pull/196)) _(container browser + managed-identity/IAM-role modes deferred with the backend, ADR 0010/0011)_
+- [x] ✅ Databricks connection form — workspace URL, PAT, warehouse id — covered by the spec-driven drawer ([PR #196](https://github.com/TheurgicDuke771/DataQ/pull/196)) _(live SQL-Warehouse picker deferred; warehouse id is a text field)_
 
-### Check editor UI (9 tasks — 0/9)
-- [ ] ⬜ Suite list + detail two-panel layout, environment badge on each suite
-- [ ] ⬜ Form-based check editor (Snowflake) — database / schema / table picker, check type dropdown, threshold
-- [ ] ⬜ Flat file check editor — container picker, batching regex input, file format selector, check type
-- [ ] ⬜ Unity Catalog check editor — catalog / schema / table three-level picker
+### Check editor UI (9 tasks — 3/9 ✅, 2 🟡)
+- [x] ✅ Suite list + detail two-panel layout, environment badge on each suite — selectable suites list ←→ detail (connection chip + env tag + checks) — [PR #200](https://github.com/TheurgicDuke771/DataQ/pull/200)
+- [x] ✅ Form-based check editor — catalog-driven expectation picker + dynamic typed config fields + create/edit/delete — `expectationCatalog.ts` + `CheckDrawer` ([PR #203](https://github.com/TheurgicDuke771/DataQ/pull/203)). GX expectations are datasource-agnostic in v1, so one catalog serves all four types
+- [ ] 🟡 Flat file check editor — container picker, batching regex input, file format selector — generic catalog editor covers flat-file expectations ([PR #203](https://github.com/TheurgicDuke771/DataQ/pull/203)); the batch/format/container-specific inputs are still pending
+- [ ] 🟡 Unity Catalog check editor — catalog / schema / table three-level picker — generic catalog editor covers UC expectations ([PR #203](https://github.com/TheurgicDuke771/DataQ/pull/203)); the 3-level table picker is still pending
 - [ ] ⬜ Monaco SQL editor for custom check (all datasource types, Snowflake keyword autocomplete)
-- [ ] ⬜ Column profiler panel — inline in check editor, loads on table / file selection
-- [ ] ⬜ Check dry-run button — show preview pass / fail inline before saving
+- [ ] ⬜ Column profiler panel — inline in check editor, loads on table / file selection _(next slice)_
+- [ ] ⬜ Check dry-run button — show preview pass / fail inline before saving _(next slice; backend `POST /suites/{id}/checks/dryrun` ready)_
 - [ ] ⬜ Check version history drawer — see previous config before overwriting
-- [ ] ⬜ Severity tier toggle in check editor — three-threshold UI when enabled
+- [x] ✅ Severity tier toggle in check editor — three-threshold UI — optional warn/fail/critical inputs banding the unexpected-% (ADR 0016), blank = binary — [PR #203](https://github.com/TheurgicDuke771/DataQ/pull/203)
 
 ### Access & admin UI (3 tasks — 0/3)
-- [ ] ⬜ Suite sharing panel — add / remove users, assign roles inline
+- [ ] ⬜ Suite sharing panel — add / remove users, assign roles inline _(backend sharing API ready from Week 3)_
 - [ ] ⬜ Admin page — list all suites, all users, access overview
-- [ ] ⬜ Suite export / import UI (download JSON, upload JSON)
+- [ ] ⬜ Suite export / import UI (download JSON, upload JSON) _(backend export/import ready from Week 3)_
 
-**Week 4 total: 1 / 22**
+**Week 4 total: 9 / 22 ✅ (+2 🟡)** _(connection manager UI essentially complete bar the bulk health page; check editor core shipped — dry-run + profiler panel + sharing/admin UI remain)_
 
 ---
 
@@ -193,18 +193,20 @@ These were preconditions for executing the roadmap. Listed for completeness.
 
 ### Async execution backend (7 tasks — 1/7 ✅, early)
 - [x] ✅ Celery + Redis background task runner for GX scan execution — `run_suite` task + `run_service` — landed early via [PR 4a](https://github.com/TheurgicDuke771/DataQ/pull/74) + [PR 4c-i](https://github.com/TheurgicDuke771/DataQ/pull/78) + [PR 4c-ii](https://github.com/TheurgicDuke771/DataQ/pull/79)
-- [ ] ⬜ Generalise `run_suite` worker dispatch — select the `CheckRunner` by `connection.type` (replaces the Snowflake-hardcoded wiring in `worker/tasks.py`); prerequisite for the flat-file / UC run paths below, and the seam that makes post-v1 RDBMS adapters (MS-SQL, BigQuery) a drop-in _(added per [ADR 0011](adr/0011-extensibility-seams-for-deferred-integrations.md))_
+- [x] ✅ Generalise `run_suite` worker dispatch — select the `CheckRunner` by `connection.type` via the runner registry (`build_check_runner`), replacing the Snowflake-hardcoded wiring in `worker/tasks.py`; the seam that makes the flat-file / UC run paths route correctly and post-v1 RDBMS adapters a drop-in — [PR #146-fix](https://github.com/TheurgicDuke771/DataQ/issues/146) _(added per [ADR 0011](adr/0011-extensibility-seams-for-deferred-integrations.md); profiler dispatch collapsed onto a parallel registry in the same effort, [#147](https://github.com/TheurgicDuke771/DataQ/issues/147))_
 - [ ] ⬜ Run progress API — poll endpoint returning per-check live status
 - [ ] ⬜ Cancel run endpoint — gracefully terminate in-progress Celery task
 - [ ] ⬜ Run history retention policy — configurable purge of results older than N days
 - [ ] ⬜ Flat file run path — resolve batch, load via Pandas, execute GX suite
 - [ ] ⬜ UC run path — submit job to Databricks SQL Warehouse, execute GX suite
 
-### ADF + Airflow hybrid monitoring (webhook + polling fallback) (4 tasks — 0/4)
-- [ ] ⬜ Celery beat task — poll ADF REST API every 10 min for **succeeded** runs (skip pipelines updated by webhook recently)
-- [ ] ⬜ Celery beat task — poll Airflow REST API `dagRuns` every 10 min _(added per ADR 0004; not in roadmap)_
+### ADF + Airflow hybrid monitoring (webhook + polling fallback) (4 tasks — 2/4 ✅)
+- [x] ✅ Celery beat task — poll ADF REST API every 10 min for **succeeded** runs (skip pipelines updated by webhook recently) — provider-agnostic `poll_orchestration_runs` beat task through the `OrchestrationProvider` seam — [PR #171](https://github.com/TheurgicDuke771/DataQ/pull/189)
+- [x] ✅ Celery beat task — poll Airflow REST API `dagRuns` every 10 min — same provider-agnostic beat task (ADF + Airflow share it) — [PR #171](https://github.com/TheurgicDuke771/DataQ/pull/189) _(added per ADR 0004; not in roadmap)_
 - [ ] ⬜ Gap recovery logic — on startup + every 30 min, fetch last hour of run statuses
 - [ ] ⬜ `GET /api/v1/orchestration/pipelines` — latest status per pipeline/DAG, provider-agnostic
+
+> **`trigger_bindings` CRUD** (provider-agnostic suite-run triggers — `provider`/`pipeline_or_dag_id`/`env` → `suite_id`) landed early via [PR #172](https://github.com/TheurgicDuke771/DataQ/pull/190), unblocking the trigger-on-success path skeletoned in Week 2 PR 8.
 
 ### Execution UI (4 tasks — 0/4)
 - [ ] ⬜ Run now panel — suite picker, env / datasource, notification target
@@ -212,7 +214,7 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [ ] ⬜ Scheduled runs table — create, pause, delete cron schedules
 - [ ] ⬜ Recent runs audit table with drill-down link to results
 
-**Week 5 total: 1 / 15** _(the Celery task runner landed early in PR 4)_
+**Week 5 total: 4 / 15** _(early credit: Celery task runner in PR 4; worker runner-dispatch #146; ADF + Airflow 10-min polling #171; plus `trigger_bindings` CRUD #172 out-of-band)_
 
 ---
 
@@ -342,12 +344,12 @@ These were preconditions for executing the roadmap. Listed for completeness.
 | Week 1 | 7 | 1 | 2 | 10 |
 | Week 2 | 15 | 1 | 3 | 19 |
 | Week 3 | 18 | 0 | 0 | 18 |
-| Week 4 | 1 | 0 | 21 | 22 |
-| Week 5 | 1 | 0 | 14 | 15 |
+| Week 4 | 9 | 2 | 11 | 22 |
+| Week 5 | 4 | 0 | 11 | 15 |
 | Week 6 | 0 | 0 | 16 | 16 |
 | Week 7 | 0 | 1 | 28 | 29 |
 | Week 8 | 2 | 3 | 21 | 26 |
-| **TOTAL** | **44** | **6** | **105** | **155** |
+| **TOTAL** | **55** | **8** | **92** | **155** |
 
 > 155 > 100 because ADR 0004 added Airflow tasks, ADR 0011 added two seam tasks (generic runner dispatch, `ResultPublisher`), ADR 0012 added three Week-3 monitor-kind / metric seam tasks, plus PR-review follow-ups not in the original roadmap. Tracked here for honesty.
 
@@ -367,6 +369,9 @@ Issues that aren't roadmap tasks but block / risk the work.
 | ~~[#62](https://github.com/TheurgicDuke771/DataQ/issues/62)~~ | ~~MSAL redirect lifecycle (real-AAD smoke test deferred)~~ | **Closed** (completed 2026-05-28) | n/a |
 | ~~[#65](https://github.com/TheurgicDuke771/DataQ/issues/65)~~ | ~~Vite 8 coordinated bump (vite + plugin-react + vitest)~~ | **Closed** ([PR #119](https://github.com/TheurgicDuke771/DataQ/pull/119)) | n/a — superseded Dependabot #111 |
 | [#92](https://github.com/TheurgicDuke771/DataQ/issues/92) | Surface the ADF webhook URL instead of hand-assembling a secret-bearing URL | Open | Week 4 connection UI / ADF onboarding |
+| ~~[#129](https://github.com/TheurgicDuke771/DataQ/issues/129)~~ | ~~Snowflake connector 3→4 + Python 3.11→3.13 CVE refresh~~ | **Closed** ([#178](https://github.com/TheurgicDuke771/DataQ/pull/178), ADR 0017) | n/a — cleared 5 CVEs |
+| ~~[#146](https://github.com/TheurgicDuke771/DataQ/issues/146)~~ | ~~Worker hardcodes `build_snowflake_runner` — dispatch `CheckRunner` by `connection.type`~~ | **Closed** (#165 + profiler registry) | n/a — runner + profiler registries |
+| ~~[#201](https://github.com/TheurgicDuke771/DataQ/issues/201)~~ | ~~Undeclared direct dependency: pyarrow (Parquet flat-file relied on a transitive)~~ | **Closed** ([PR #202](https://github.com/TheurgicDuke771/DataQ/pull/202)) | n/a — unblocked databricks 4.x bump |
 | ~~[#72](https://github.com/TheurgicDuke771/DataQ/issues/72)~~ | ~~ADR 0004 follow-up: document `trigger_bindings` one-orchestrator-per-(provider, env) assumption~~ | **Closed** ([PR #83](https://github.com/TheurgicDuke771/DataQ/pull/83)) | n/a — guard enforced in PR 6 ADF CRUD |
 | ~~[#75](https://github.com/TheurgicDuke771/DataQ/issues/75)~~ | ~~Integration-assert request_id propagates FastAPI→Celery worker logs~~ | **Closed** ([PR 4c-ii](https://github.com/TheurgicDuke771/DataQ/pull/79)) | n/a |
 | ~~[#86](https://github.com/TheurgicDuke771/DataQ/issues/86)~~ | ~~`EnvSecretStore.set` is per-process — Celery worker can't resolve API-written secrets (dev only)~~ | **Closed** ([PR #95](https://github.com/TheurgicDuke771/DataQ/pull/95)) | n/a — Redis-backed dev secret store |
