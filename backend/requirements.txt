@@ -36,7 +36,7 @@ great-expectations==1.17.2
 
 # ── Observability ──
 structlog==25.5.0
-opencensus-ext-azure==1.1.14      # App Insights via OpenCensus bridge
+opencensus-ext-azure==1.1.15      # App Insights via OpenCensus bridge
 
 # ── Auth / secrets ──
 fastapi-azure-auth==5.2.0
