@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "8f845a031c60",
+  "strategy": "manual-commit",
+  "branch": "docs/track-week5-run-gaps",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/8f/845a031c60/0/metadata.json",
+      "transcript": "/8f/845a031c60/0/full.jsonl",
+      "content_hash": "/8f/845a031c60/0/content_hash.txt",
+      "prompt": "/8f/845a031c60/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 147005,
+    "cache_creation_tokens": 9875680,
+    "cache_read_tokens": 411499144,
+    "output_tokens": 950734,
+    "api_call_count": 1114
+  }
+}
