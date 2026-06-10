@@ -1,0 +1,37 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "090e6e0f5a25",
+  "session_id": "8603fa2a-25c9-4c76-87d4-83228bd296a6",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-10T16:48:29.850815Z",
+  "branch": "feat/week4-connection-edit-reauth-delete",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/components/connections/ReauthModal.tsx"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "c93c157d85c9",
+  "token_usage": {
+    "input_tokens": 80346,
+    "cache_creation_tokens": 8747105,
+    "cache_read_tokens": 324803946,
+    "output_tokens": 698657,
+    "api_call_count": 787
+  },
+  "session_metrics": {
+    "turn_count": 22
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-10T16:48:29.773249Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 8,
+    "human_modified": 1,
+    "human_removed": 0,
+    "total_committed": 8,
+    "total_lines_changed": 9,
+    "agent_percentage": 0,
+    "metric_version": 2
+  }
+}
