@@ -70,3 +70,25 @@ export async function createConnection(payload: ConnectionCreate): Promise<Conne
   const { data } = await api.post<Connection>('/connections', payload);
   return data;
 }
+
+/** Mirrors the backend `ConnectionUpdate` schema — type/env are immutable. */
+export interface ConnectionUpdate {
+  name?: string;
+  config?: Record<string, unknown>;
+  secret?: string;
+}
+
+export async function updateConnection(id: string, payload: ConnectionUpdate): Promise<Connection> {
+  const { data } = await api.patch<Connection>(`/connections/${id}`, payload);
+  return data;
+}
+
+export async function deleteConnection(id: string): Promise<void> {
+  await api.delete(`/connections/${id}`);
+}
+
+/** Rotate the credential and verify it in one step (bad credential → error). */
+export async function reauthConnection(id: string, secret: string): Promise<{ ok: boolean }> {
+  const { data } = await api.post<{ ok: boolean }>(`/connections/${id}/reauth`, { secret });
+  return data;
+}

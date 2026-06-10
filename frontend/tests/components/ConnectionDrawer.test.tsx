@@ -3,20 +3,21 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { createConnection } from '../../src/api/connections';
-import { AddConnectionDrawer } from '../../src/components/connections/AddConnectionDrawer';
+import { type Connection, createConnection, updateConnection } from '../../src/api/connections';
+import { ConnectionDrawer } from '../../src/components/connections/ConnectionDrawer';
 
 vi.mock('../../src/api/connections', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/api/connections')>();
-  return { ...actual, createConnection: vi.fn() };
+  return { ...actual, createConnection: vi.fn(), updateConnection: vi.fn() };
 });
 
 const mockCreate = vi.mocked(createConnection);
+const mockUpdate = vi.mocked(updateConnection);
 
-function renderDrawer(onCreated = vi.fn()) {
+function renderDrawer(props: Partial<Parameters<typeof ConnectionDrawer>[0]> = {}) {
   return render(
     <AntApp>
-      <AddConnectionDrawer open onClose={vi.fn()} onCreated={onCreated} />
+      <ConnectionDrawer open onClose={vi.fn()} onSaved={vi.fn()} {...props} />
     </AntApp>,
   );
 }
@@ -37,7 +38,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe('AddConnectionDrawer', () => {
+describe('ConnectionDrawer — create', () => {
   it('shows type-specific fields after picking a type (Snowflake)', async () => {
     const user = userEvent.setup();
     renderDrawer();
@@ -57,7 +58,6 @@ describe('AddConnectionDrawer', () => {
     await selectOption(user, 'Type', 'Snowflake');
     await selectOption(user, 'Auth type', 'Key pair (RSA)');
 
-    // The secret control is now a PEM textarea, not a masked password input.
     expect(await screen.findByLabelText('Private key (PEM)')).toBeInTheDocument();
     expect(
       screen.queryByLabelText('Password', { selector: 'input,textarea' }),
@@ -72,13 +72,12 @@ describe('AddConnectionDrawer', () => {
 
     expect(await screen.findByLabelText('Access key ID')).toBeInTheDocument();
     expect(screen.getByLabelText('Secret access key')).toBeInTheDocument();
-    // v1 S3 has only access-key auth — no auth-type select.
     expect(screen.queryByLabelText('Auth type')).not.toBeInTheDocument();
   });
 
-  it('submits the assembled payload and calls onCreated', async () => {
+  it('submits the assembled payload and calls onSaved', async () => {
     const user = userEvent.setup();
-    const onCreated = vi.fn();
+    const onSaved = vi.fn();
     mockCreate.mockResolvedValue({
       id: 'c1',
       name: 'uc-dev',
@@ -88,7 +87,7 @@ describe('AddConnectionDrawer', () => {
       has_secret: true,
       created_by: 'u1',
     });
-    renderDrawer(onCreated);
+    renderDrawer({ onSaved });
 
     await user.type(screen.getByLabelText('Name'), 'uc-dev');
     await selectOption(user, 'Environment', 'DEV');
@@ -107,7 +106,7 @@ describe('AddConnectionDrawer', () => {
       config: { workspace_url: 'https://w', warehouse_id: 'wh1' },
       secret: 'pat-xyz',
     });
-    expect(onCreated).toHaveBeenCalled();
+    expect(onSaved).toHaveBeenCalled();
   });
 
   it('does not submit when required fields are missing', async () => {
@@ -118,5 +117,52 @@ describe('AddConnectionDrawer', () => {
 
     await waitFor(() => expect(screen.getAllByText('Name').length).toBeGreaterThan(0));
     expect(mockCreate).not.toHaveBeenCalled();
+  });
+});
+
+describe('ConnectionDrawer — edit', () => {
+  const existing: Connection = {
+    id: 'c1',
+    name: 'sf-dev',
+    type: 'snowflake',
+    env: 'dev',
+    config: {
+      account: 'acc1',
+      user: 'svc',
+      database: 'DB',
+      schema: 'SC',
+      warehouse: 'WH',
+      auth_type: 'password',
+    },
+    has_secret: true,
+    created_by: 'u1',
+  };
+
+  it('prefills config, omits the secret field, and submits an update via PATCH', async () => {
+    const user = userEvent.setup();
+    const onSaved = vi.fn();
+    mockUpdate.mockResolvedValue({ ...existing, name: 'sf-dev-2' });
+    renderDrawer({ connection: existing, onSaved });
+
+    // Prefilled name + config (effect-driven, so wait for it).
+    await waitFor(() => expect(screen.getByLabelText('Account')).toHaveValue('acc1'));
+    expect(screen.getByLabelText('Name')).toHaveValue('sf-dev');
+    // Edit mode omits the secret — rotation is the Re-auth flow.
+    expect(screen.queryByLabelText('Password')).not.toBeInTheDocument();
+
+    await user.clear(screen.getByLabelText('Name'));
+    await user.type(screen.getByLabelText('Name'), 'sf-dev-2');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
+    expect(mockUpdate).toHaveBeenCalledWith(
+      'c1',
+      expect.objectContaining({
+        name: 'sf-dev-2',
+        config: expect.objectContaining({ account: 'acc1', auth_type: 'password' }),
+      }),
+    );
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(onSaved).toHaveBeenCalled();
   });
 });
