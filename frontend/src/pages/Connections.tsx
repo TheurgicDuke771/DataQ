@@ -39,6 +39,8 @@ interface ConnectionActions {
   onChanged: () => void;
   /** Run a connectivity test and reflect the result on the card's health badge. */
   onTest: (connection: Connection) => Promise<boolean>;
+  /** Drop a connection's stale health entry (after delete / edit / re-auth). */
+  onClearHealth: (id: string) => void;
 }
 
 /** Group connections by type in one pass, preserving canonical type order. */
@@ -77,6 +79,15 @@ export function Connections() {
     }
   }, []);
 
+  // Drop a stale health result when the connection changes underneath it —
+  // after a re-auth, an edit, or a delete the prior pass/fail no longer holds,
+  // so the badge returns to idle until re-tested (and the map can't leak).
+  const clearHealth = useCallback((id: string) => {
+    setHealth((h) =>
+      id in h ? Object.fromEntries(Object.entries(h).filter(([key]) => key !== id)) : h,
+    );
+  }, []);
+
   const connections = state.status === 'ok' ? state.data : [];
 
   const testAll = async () => {
@@ -93,6 +104,7 @@ export function Connections() {
     onReauth: setReauthing,
     onChanged: reload,
     onTest: testOne,
+    onClearHealth: clearHealth,
   };
 
   return (
@@ -116,6 +128,8 @@ export function Connections() {
         connection={drawer.connection}
         onClose={() => setDrawer({ open: false })}
         onSaved={() => {
+          // An edit may have changed the host/credential → invalidate any prior test.
+          if (drawer.connection) clearHealth(drawer.connection.id);
           setDrawer({ open: false });
           reload();
         }}
@@ -124,6 +138,8 @@ export function Connections() {
         connection={reauthing}
         onClose={() => setReauthing(null)}
         onDone={() => {
+          // Credential rotated → the old unreachable verdict no longer holds.
+          if (reauthing) clearHealth(reauthing.id);
           setReauthing(null);
           reload();
         }}
@@ -239,6 +255,7 @@ function ConnectionCard({
         try {
           await deleteConnection(connection.id);
           message.success(`${connection.name} deleted`);
+          actions.onClearHealth(connection.id);
           actions.onChanged();
         } catch (err) {
           message.error(`Delete failed: ${err instanceof Error ? err.message : 'unknown error'}`);

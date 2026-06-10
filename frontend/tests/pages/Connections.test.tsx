@@ -7,6 +7,7 @@ import {
   type Connection,
   deleteConnection,
   listConnections,
+  reauthConnection,
   testConnection,
 } from '../../src/api/connections';
 import { Connections } from '../../src/pages/Connections';
@@ -19,12 +20,14 @@ vi.mock('../../src/api/connections', async (importOriginal) => {
     listConnections: vi.fn(),
     testConnection: vi.fn(),
     deleteConnection: vi.fn(),
+    reauthConnection: vi.fn(),
   };
 });
 
 const mockList = vi.mocked(listConnections);
 const mockTest = vi.mocked(testConnection);
 const mockDelete = vi.mocked(deleteConnection);
+const mockReauth = vi.mocked(reauthConnection);
 
 function conn(overrides: Partial<Connection>): Connection {
   return {
@@ -108,6 +111,29 @@ describe('Connections', () => {
     expect(await screen.findByText('healthy')).toBeInTheDocument();
     expect(await screen.findByText('unreachable')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Re-authenticate' })).toBeInTheDocument();
+  });
+
+  it('clears the unreachable badge after a successful re-authentication', async () => {
+    const user = userEvent.setup();
+    mockList.mockResolvedValue([conn({ id: 'c1', name: 'sf-dev' })]);
+    mockTest.mockResolvedValue({ ok: false });
+    mockReauth.mockResolvedValue({ ok: true });
+
+    renderPage();
+    await screen.findByText('sf-dev');
+
+    // Fail a test → unreachable badge + inline re-auth link.
+    await user.click(screen.getByRole('button', { name: 'Test' }));
+    expect(await screen.findByText('unreachable')).toBeInTheDocument();
+
+    // Re-auth via the inline link, rotate the credential successfully.
+    await user.click(screen.getByRole('button', { name: 'Re-authenticate' }));
+    await user.type(await screen.findByLabelText('New credential'), 'fresh-secret');
+    await user.click(screen.getByRole('button', { name: 'Rotate credential' }));
+
+    // The stale verdict is dropped — badge + link gone until re-tested.
+    await waitFor(() => expect(mockReauth).toHaveBeenCalledWith('c1', 'fresh-secret'));
+    await waitFor(() => expect(screen.queryByText('unreachable')).not.toBeInTheDocument());
   });
 
   it('surfaces a load error', async () => {
