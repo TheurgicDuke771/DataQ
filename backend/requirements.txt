@@ -50,6 +50,7 @@ snowflake-connector-python==4.6.0  # 3→4: drops cffi<2 / pyOpenSSL<26 caps →
 azure-storage-blob==12.25.0       # ADLS Gen2
 boto3==1.38.29                    # S3
 databricks-sql-connector==3.7.0   # Unity Catalog
+pyarrow==24.0.0                   # Parquet flat-file IO (read_parquet/profiler) — was a databricks-sql-connector transitive until its 4.x dropped it (#201)
 
 # ── MCP (Week 7) ──
 fastmcp==3.4.1                    # CVE-2025-62800/62801/64340/69196, GHSA-rcfx-77hg-w2wv, CVE-2026-27124 (was 2.8.1)
