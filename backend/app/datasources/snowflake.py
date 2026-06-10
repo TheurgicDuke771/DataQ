@@ -17,10 +17,11 @@ warehouse is a tracked follow-up.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import quote_plus
 
 import great_expectations as gx
+from cryptography.hazmat.primitives import serialization
 from pydantic import BaseModel, ConfigDict, Field
 
 from backend.app.core.secrets import SecretStore
@@ -43,6 +44,7 @@ __all__ = [
     "UnknownExpectationError",
     "_expectation_class_name",
     "_to_gx_expectation",
+    "build_connect_args",
     "build_connection_string",
     "build_snowflake_runner",
     "to_suite_outcome",
@@ -64,26 +66,66 @@ class SnowflakeConfig(BaseModel):
     schema_: str = Field(alias="schema")
     warehouse: str
     role: str | None = None
+    # Auth method. 'password' (default — back-compat for existing configs that
+    # carry no auth_type) puts the password in the DSN. 'key_pair' authenticates
+    # with an RSA private key: the secret is the **PEM private key** (v1: an
+    # unencrypted key) passed as `private_key` connect-arg, and the DSN carries
+    # no password. Both share the same SecretStore `secret_ref`.
+    auth_type: Literal["password", "key_pair"] = "password"
 
 
-def build_connection_string(config: SnowflakeConfig, password: str) -> str:
-    """Assemble a snowflake-sqlalchemy URL. User/password/params are URL-encoded."""
+def _private_key_der(pem: str) -> bytes:
+    """Load a PEM RSA private key (v1: unencrypted) → DER PKCS8 bytes.
+
+    snowflake-connector's `private_key` connect-arg wants DER PKCS8, not PEM.
+    Encrypted keys (passphrase) are a follow-up — v1 key-pair uses unencrypted keys.
+    """
+    key = serialization.load_pem_private_key(pem.encode(), password=None)
+    return key.private_bytes(
+        encoding=serialization.Encoding.DER,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    )
+
+
+def build_connection_string(config: SnowflakeConfig, secret: str) -> str:
+    """Assemble a snowflake-sqlalchemy URL. User/password/params are URL-encoded.
+
+    For key-pair auth the DSN carries **no password** (the key rides in
+    connect-args, see `build_connect_args`); ``secret`` is then ignored here.
+    """
     params = {"warehouse": config.warehouse}
     if config.role:
         params["role"] = config.role
     query = "&".join(f"{key}={quote_plus(value)}" for key, value in params.items())
-    return (
-        f"snowflake://{quote_plus(config.user)}:{quote_plus(password)}"
-        f"@{config.account}/{config.database}/{config.schema_}?{query}"
+    credentials = (
+        quote_plus(config.user)
+        if config.auth_type == "key_pair"
+        else f"{quote_plus(config.user)}:{quote_plus(secret)}"
     )
+    return f"snowflake://{credentials}@{config.account}/{config.database}/{config.schema_}?{query}"
+
+
+def build_connect_args(config: SnowflakeConfig, secret: str) -> dict[str, Any]:
+    """SQLAlchemy `connect_args` carrying the key-pair credential, if any.
+
+    Empty for password auth (the password is in the DSN). For key-pair, the
+    loaded DER private key under `private_key` (the snowflake-connector arg).
+    """
+    if config.auth_type == "key_pair":
+        return {"private_key": _private_key_der(secret)}
+    return {}
 
 
 class SnowflakeCheckRunner:
     """`CheckRunner` for Snowflake. Building the asset connects to the warehouse."""
 
-    def __init__(self, config: SnowflakeConfig, password: str) -> None:
+    def __init__(self, config: SnowflakeConfig, secret: str) -> None:
         self._config = config
-        self._connection_string = build_connection_string(config, password)
+        self._connection_string = build_connection_string(config, secret)
+        # Key-pair auth passes the private key as a SQLAlchemy connect-arg (GX
+        # forwards `kwargs` to the engine); empty for password auth.
+        self._connect_args = build_connect_args(config, secret)
 
     def run_checks(
         self,
@@ -93,9 +135,17 @@ class SnowflakeCheckRunner:
         checks: list[CheckSpec],
     ) -> SuiteOutcome:
         context = gx.get_context(mode="ephemeral")
+        add_kwargs: dict[str, Any] = {}
+        if self._connect_args:
+            # GX 1.17 deprecates passing private_key via kwargs['connect_args'] in
+            # favour of a direct private_key= arg; this works today but should
+            # migrate during the live-Snowflake smoke (#195). The adapter test +
+            # profiler paths use create_engine directly, so they're unaffected.
+            add_kwargs["kwargs"] = {"connect_args": self._connect_args}
         datasource = context.data_sources.add_snowflake(
             name=f"sf-{table}",
             connection_string=self._connection_string,
+            **add_kwargs,
         )
         asset = datasource.add_table_asset(
             name=table,
@@ -122,10 +172,10 @@ def build_snowflake_runner(
     DB layer.
     """
     if not secret_ref:
-        raise ValueError("Snowflake connection requires secret_ref for the password")
+        raise ValueError("Snowflake connection requires secret_ref for the password / private key")
     sf_config = SnowflakeConfig.model_validate(config)
-    password = secret_store.get(secret_ref)
-    return SnowflakeCheckRunner(sf_config, password)
+    secret = secret_store.get(secret_ref)
+    return SnowflakeCheckRunner(sf_config, secret)
 
 
 # Snowflake connector timeouts (seconds) for the connectivity test — fail fast
@@ -153,6 +203,7 @@ class SnowflakeConnectionAdapter:
             connect_args={
                 "login_timeout": _TEST_LOGIN_TIMEOUT,
                 "network_timeout": _TEST_NETWORK_TIMEOUT,
+                **build_connect_args(config, secret),
             },
         )
         try:

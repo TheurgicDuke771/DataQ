@@ -25,10 +25,25 @@ from backend.app.datasources.snowflake import (
     UnknownExpectationError,
     _expectation_class_name,
     _to_gx_expectation,
+    build_connect_args,
     build_connection_string,
     build_snowflake_runner,
     to_suite_outcome,
 )
+
+
+def _rsa_pem() -> str:
+    """An unencrypted PEM RSA private key for key-pair auth tests."""
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    return key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    ).decode()
+
 
 _CONFIG = {
     "account": "ab12345.eu-west-1",
@@ -96,6 +111,53 @@ def test_connection_string_omits_role_when_absent() -> None:
     cs = build_connection_string(cfg, "pw")
     assert "role=" not in cs
     assert "warehouse=WH_DQ" in cs
+
+
+# ───────────────────────── key-pair auth ───────────────────────────
+
+
+def test_config_auth_type_defaults_to_password() -> None:
+    # Existing configs carry no auth_type → password (back-compat).
+    cfg = SnowflakeConfig.model_validate(_CONFIG)
+    assert cfg.auth_type == "password"
+
+
+def test_config_accepts_key_pair_auth_type() -> None:
+    cfg = SnowflakeConfig.model_validate({**_CONFIG, "auth_type": "key_pair"})
+    assert cfg.auth_type == "key_pair"
+
+
+def test_config_rejects_unknown_auth_type() -> None:
+    with pytest.raises(ValidationError):
+        SnowflakeConfig.model_validate({**_CONFIG, "auth_type": "oauth"})
+
+
+def test_key_pair_connection_string_omits_password() -> None:
+    cfg = SnowflakeConfig.model_validate({**_CONFIG, "auth_type": "key_pair"})
+    cs = build_connection_string(cfg, _rsa_pem())
+    # No `user:password@` — just `user@`; the key rides in connect-args.
+    assert cs.startswith("snowflake://svc_dataq@ab12345.eu-west-1/")
+    assert "svc_dataq:" not in cs
+
+
+def test_build_connect_args_password_is_empty() -> None:
+    cfg = SnowflakeConfig.model_validate(_CONFIG)
+    assert build_connect_args(cfg, "pw") == {}
+
+
+def test_build_connect_args_key_pair_loads_der_private_key() -> None:
+    cfg = SnowflakeConfig.model_validate({**_CONFIG, "auth_type": "key_pair"})
+    args = build_connect_args(cfg, _rsa_pem())
+    assert set(args) == {"private_key"}
+    # DER PKCS8 bytes (not the PEM text) — what snowflake-connector wants.
+    assert isinstance(args["private_key"], bytes)
+    assert b"-----BEGIN" not in args["private_key"]
+
+
+def test_build_connect_args_rejects_malformed_key() -> None:
+    cfg = SnowflakeConfig.model_validate({**_CONFIG, "auth_type": "key_pair"})
+    with pytest.raises(ValueError):
+        build_connect_args(cfg, "not a pem key")
 
 
 # ───────────────────────── expectation translation ─────────────────
@@ -283,6 +345,29 @@ def test_adapter_test_runs_select_1_and_disposes(monkeypatch: pytest.MonkeyPatch
     assert engine.disposed is True
     assert captured["connect_args"] == {"login_timeout": 10, "network_timeout": 10}
     assert "p%40ss" in str(captured["url"])  # password URL-encoded into the DSN
+
+
+def test_adapter_test_key_pair_passes_private_key_in_connect_args(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine = _FakeEngine([])
+    captured: dict[str, object] = {}
+
+    def fake_create_engine(url: str, **kwargs: object) -> _FakeEngine:
+        captured["url"] = url
+        captured["connect_args"] = kwargs.get("connect_args")
+        return engine
+
+    monkeypatch.setattr("sqlalchemy.create_engine", fake_create_engine)
+    SnowflakeConnectionAdapter().test({**_CONFIG, "auth_type": "key_pair"}, _rsa_pem())
+
+    connect_args = captured["connect_args"]
+    assert isinstance(connect_args, dict)
+    # The DER private key is threaded into connect_args alongside the timeouts…
+    assert isinstance(connect_args.get("private_key"), bytes)
+    assert connect_args["login_timeout"] == 10
+    # …and the DSN carries no password.
+    assert "svc_dataq:" not in str(captured["url"])
 
 
 def test_adapter_test_disposes_engine_on_failure(monkeypatch: pytest.MonkeyPatch) -> None:
