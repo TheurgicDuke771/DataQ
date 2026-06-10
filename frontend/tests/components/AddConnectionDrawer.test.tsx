@@ -64,18 +64,16 @@ describe('AddConnectionDrawer', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('hides the secret field for S3 IAM-role auth (no stored credential)', async () => {
+  it('shows S3 access-key fields with no auth toggle (IAM role deferred in v1)', async () => {
     const user = userEvent.setup();
     renderDrawer();
 
     await selectOption(user, 'Type', 'AWS S3');
-    expect(await screen.findByLabelText('Secret access key')).toBeInTheDocument();
 
-    await selectOption(user, 'Auth type', 'IAM role');
-    await waitFor(() =>
-      expect(screen.queryByLabelText('Secret access key')).not.toBeInTheDocument(),
-    );
-    expect(screen.queryByLabelText('Access key ID')).not.toBeInTheDocument();
+    expect(await screen.findByLabelText('Access key ID')).toBeInTheDocument();
+    expect(screen.getByLabelText('Secret access key')).toBeInTheDocument();
+    // v1 S3 has only access-key auth — no auth-type select.
+    expect(screen.queryByLabelText('Auth type')).not.toBeInTheDocument();
   });
 
   it('submits the assembled payload and calls onCreated', async () => {

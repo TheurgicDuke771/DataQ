@@ -8,8 +8,10 @@ import {
   type ConnectionCreate,
   type ConnectionType,
   createConnection,
+  envLabel,
 } from '../../api/connections';
 import { ConnectionTypeFields } from './ConnectionTypeFields';
+import { initialConfigForType } from './connectionFormSpec';
 
 interface FormValues {
   name: string;
@@ -18,14 +20,6 @@ interface FormValues {
   config?: Record<string, unknown>;
   secret?: string;
 }
-
-/** Default `config.auth_type` for the types that have one (so the select starts set). */
-const DEFAULT_AUTH_TYPE: Partial<Record<ConnectionType, string>> = {
-  snowflake: 'password',
-  adls_gen2: 'sas',
-  s3: 'access_key',
-  airflow: 'token',
-};
 
 export function AddConnectionDrawer({
   open,
@@ -44,9 +38,9 @@ export function AddConnectionDrawer({
 
   // Switching type invalidates the previous config fields — reset them and seed
   // the new type's default auth_type so its conditional fields render correctly.
+  // (Submission only collects mounted fields, but reset keeps the live form tidy.)
   const onTypeChange = (next: ConnectionType) => {
-    const authType = DEFAULT_AUTH_TYPE[next];
-    form.setFieldsValue({ config: authType ? { auth_type: authType } : {}, secret: undefined });
+    form.setFieldsValue({ config: initialConfigForType(next), secret: undefined });
   };
 
   const onFinish = async (values: FormValues) => {
@@ -91,7 +85,7 @@ export function AddConnectionDrawer({
         </Form.Item>
         <Form.Item name="env" label="Environment" rules={[{ required: true }]}>
           <Select
-            options={CONNECTION_ENVS.map((e) => ({ value: e, label: e.toUpperCase() }))}
+            options={CONNECTION_ENVS.map((e) => ({ value: e, label: envLabel(e) }))}
             placeholder="Select an environment"
           />
         </Form.Item>

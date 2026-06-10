@@ -7,6 +7,7 @@ import {
   type Connection,
   type ConnectionEnv,
   type ConnectionType,
+  envLabel,
   listConnections,
   testConnection,
 } from '../api/connections';
@@ -133,7 +134,7 @@ function ConnectionCard({ connection }: { connection: Connection }) {
         <Flex vertical gap={6}>
           <Typography.Text strong>{connection.name}</Typography.Text>
           <Flex gap={8} align="center">
-            <Tag color={ENV_COLORS[connection.env]}>{connection.env.toUpperCase()}</Tag>
+            <Tag color={ENV_COLORS[connection.env]}>{envLabel(connection.env)}</Tag>
             {connection.has_secret ? (
               <Badge status="success" text="credential set" />
             ) : (
