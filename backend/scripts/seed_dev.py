@@ -24,8 +24,10 @@ from backend.app.core.auth import (
     _upsert_user,
 )
 from backend.app.core.config import get_settings
+from backend.app.core.secrets import get_secret_store
 from backend.app.db.session import get_session
 from backend.app.services.probe import ensure_probe_fixtures
+from backend.scripts.demo_data import seed_demo_data
 
 
 def seed() -> None:
@@ -39,10 +41,15 @@ def seed() -> None:
             display_name=DEV_BYPASS_DISPLAY_NAME,
         )
         connection, suite, checks = ensure_probe_fixtures(session, user=user, settings=settings)
+        # Plus a representative dataset (all six connection types, several suites
+        # with varied checks, a cross-user share) for the UI / E2E smoke.
+        summary = seed_demo_data(session, owner=user, secret_store=get_secret_store())
         print(
             "Seeded dev data: "
-            f"user={user.email} connection={connection.name} "
-            f"suite={suite.name} checks={len(checks)}"
+            f"user={user.email} probe_connection={connection.name} "
+            f"probe_suite={suite.name} probe_checks={len(checks)} | "
+            f"demo connections={summary['connections']} suites={summary['suites']} "
+            f"checks={summary['checks']} shares={summary['shares']}"
         )
     finally:
         session.close()
