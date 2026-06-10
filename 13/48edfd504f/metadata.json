@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "1348edfd504f",
+  "strategy": "manual-commit",
+  "branch": "feat/week4-add-connection-drawer",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/api/connections.ts",
+    "frontend/src/hooks/useAsyncData.ts",
+    "frontend/src/pages/Connections.tsx",
+    "frontend/src/pages/Home.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/13/48edfd504f/0/metadata.json",
+      "transcript": "/13/48edfd504f/0/full.jsonl",
+      "content_hash": "/13/48edfd504f/0/content_hash.txt",
+      "prompt": "/13/48edfd504f/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 65838,
+    "cache_creation_tokens": 7976582,
+    "cache_read_tokens": 284758830,
+    "output_tokens": 639369,
+    "api_call_count": 730
+  }
+}
