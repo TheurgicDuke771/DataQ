@@ -21,7 +21,7 @@
 |---|---|
 | **Active since** | 2026-05-24 |
 | **Current week** | Week 4 of 8 (Connection manager UI + check editor UI) — **in progress** (Weeks 1–3 complete) |
-| **Roadmap tasks done** | 56 ✅ + 8 🟡 / 155 (~36%) |
+| **Roadmap tasks done** | 58 ✅ + 8 🟡 / 155 (~37%) |
 | **Out-of-roadmap PRs landed** | governance, tooling lock, Entire CLI, Dependabot triage (10 bumps + pyarrow direct-dep fix #202/#201), PR-3 cleanup + ADRs 0005/0006/0007/0010/0011/0012/0013/0014/0016/**0017** (Python 3.11→3.13 + Snowflake 3→4 CVE refresh, [#129](https://github.com/TheurgicDuke771/DataQ/issues/129)) + the Week-3 testing-discipline upgrade (adversarial harness + mutation spikes, CONTRIBUTING rule 4a) |
 | **Week-1 exit gate** | A logged-in user can hit a FastAPI endpoint that triggers GX against Snowflake DEV and persists a result row. — **met** (plumbing complete via PR 4a–4c; live-Snowflake run fails-soft pending DEV creds — deferred smoke) |
 | **Next milestone** | Week 4 (frontend) in flight: connection manager UI complete (list/add/edit/reauth/delete + bulk health) + suites list/detail + catalog-driven check editor all shipped; **remaining**: check dry-run + profiler panel, sharing/admin UI, Monaco custom-SQL. Week-5 early-credit already landed (worker runner-dispatch [#146](https://github.com/TheurgicDuke771/DataQ/issues/146), ADF/Airflow polling [#171](https://github.com/TheurgicDuke771/DataQ/issues/171), `trigger_bindings` CRUD [#172](https://github.com/TheurgicDuke771/DataQ/issues/172)) |
@@ -154,10 +154,10 @@ These were preconditions for executing the roadmap. Listed for completeness.
 ### Frontend tooling coordinated bumps (added — not in original roadmap) (1 task — 1/1)
 - [x] ✅ Vite 8 coordinated bump — `vite` ^6→^8.0.16 + `@vitejs/plugin-react` ^5→^6.0.2 + `vitest` ^3→^4.1.8 + `@vitest/coverage-v8` ^4.1.8 in lockstep — [PR #119](https://github.com/TheurgicDuke771/DataQ/pull/119) (Fixes [#65](https://github.com/TheurgicDuke771/DataQ/issues/65); supersedes Dependabot #111 + closed [#57](https://github.com/TheurgicDuke771/DataQ/pull/57)). plugin-react v6 peers `vite ^8`, vitest v4 peers `vite ^6||^7||^8` — done early to drain the frontend dep backlog; format/lint/typecheck/test/build all green
 
-### Frontend polish from PR-3c review (added — not in original roadmap) (3 tasks — 0/3)
-- [ ] ⬜ Wrap `MsalProvider` subtree in an antd `AntApp` / React error boundary so MSAL render-time failures don't fall back to plain text ([PR #63 worth-noting](https://github.com/TheurgicDuke771/DataQ/pull/63))
-- [ ] ⬜ Bundle code-splitting — `React.lazy` per route + `manualChunks` for antd (689 KB pre-gzip warning, defer until more routes exist) ([PR #63 perf](https://github.com/TheurgicDuke771/DataQ/pull/63))
-- [ ] ⬜ Tighten `Settings.model_config` `extra="ignore"` → `"forbid"` once compose-only vs app-only `.env` are split ([PR #39 nit](https://github.com/TheurgicDuke771/DataQ/pull/39))
+### Frontend polish from PR-3c review (added — not in original roadmap) (3 tasks — 2/3 ✅, 1 🔵 blocked)
+- [x] ✅ Wrap `MsalProvider` subtree in an antd `AntApp` / React error boundary so render-time failures don't fall back to plain text — `AntApp` already wrapped the tree; added a class `ErrorBoundary` (antd `Result` fallback + Reload) inside it covering everything after first paint — [PR #209](https://github.com/TheurgicDuke771/DataQ/pull/209)
+- [x] ✅ Bundle code-splitting — `React.lazy` per route + Suspense + `manualChunks` vendor split (react / antd / msal / vendor) — initial `index` chunk ~1.1 MB → **6.7 kB**; pages load on navigation — [PR #209](https://github.com/TheurgicDuke771/DataQ/pull/209) _(the residual >500 KB chunk is antd itself, now isolated as one long-cache vendor)_
+- [ ] 🔵 Tighten `Settings.model_config` `extra="ignore"` → `"forbid"` — **blocked** on the precondition: `.env.example` mixes compose-only vars (`POSTGRES_USER/PASSWORD/DB`, consumed by the postgres container) with app vars, and Settings has no fields for them, so `forbid` would crash startup. Needs the compose-only ↔ app-only `.env` split first ([PR #39 nit](https://github.com/TheurgicDuke771/DataQ/pull/39))
 
 ### Connection manager UI (6 tasks — 6/6 ✅)
 - [x] ✅ Connection cards — Snowflake (3 envs), ADF, ADLS/S3, Databricks sections with status badges — grouped-by-type cards with env tag + credential badge + Test action — [PR #191](https://github.com/TheurgicDuke771/DataQ/pull/191)
@@ -183,7 +183,7 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [ ] ⬜ Admin page — list all suites, all users, access overview
 - [ ] ⬜ Suite export / import UI (download JSON, upload JSON) _(backend export/import ready from Week 3)_
 
-**Week 4 total: 10 / 22 ✅ (+2 🟡)** _(connection manager UI complete (6/6); check editor core shipped — dry-run + profiler panel + sharing/admin UI remain)_
+**Week 4 total: 12 / 22 ✅ (+2 🟡, 1 🔵)** _(connection manager UI complete (6/6); check editor core shipped; PR-3c polish 2/3 (Settings `forbid` 🔵 blocked on the `.env` split) — dry-run + profiler panel + sharing/admin UI remain)_
 
 ---
 
@@ -344,12 +344,12 @@ These were preconditions for executing the roadmap. Listed for completeness.
 | Week 1 | 7 | 1 | 2 | 10 |
 | Week 2 | 15 | 1 | 3 | 19 |
 | Week 3 | 18 | 0 | 0 | 18 |
-| Week 4 | 10 | 2 | 10 | 22 |
+| Week 4 | 12 | 2 | 8 | 22 |
 | Week 5 | 4 | 0 | 11 | 15 |
 | Week 6 | 0 | 0 | 16 | 16 |
 | Week 7 | 0 | 1 | 28 | 29 |
 | Week 8 | 2 | 3 | 21 | 26 |
-| **TOTAL** | **56** | **8** | **91** | **155** |
+| **TOTAL** | **58** | **8** | **89** | **155** |
 
 > 155 > 100 because ADR 0004 added Airflow tasks, ADR 0011 added two seam tasks (generic runner dispatch, `ResultPublisher`), ADR 0012 added three Week-3 monitor-kind / metric seam tasks, plus PR-review follow-ups not in the original roadmap. Tracked here for honesty.
 
