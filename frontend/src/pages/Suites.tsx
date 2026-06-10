@@ -4,20 +4,13 @@ import { useState } from 'react';
 import {
   CONNECTION_TYPE_LABELS,
   type Connection,
-  type ConnectionEnv,
+  ENV_COLORS,
   envLabel,
   listConnections,
 } from '../api/connections';
 import { type Check, deleteSuite, listChecks, listSuites, type Suite } from '../api/suites';
 import { SuiteDrawer } from '../components/suites/SuiteDrawer';
 import { type AsyncState, useAsyncData } from '../hooks/useAsyncData';
-
-const ENV_COLORS: Record<ConnectionEnv, string> = {
-  dev: 'blue',
-  qa: 'gold',
-  uat: 'purple',
-  prod: 'red',
-};
 
 export function Suites() {
   const { state, reload } = useAsyncData(listSuites);
@@ -36,12 +29,23 @@ export function Suites() {
         </Typography.Title>
         <Button
           type="primary"
+          loading={connState.status === 'loading'}
           disabled={connections.length === 0}
           onClick={() => setDrawer({ open: true })}
         >
           New suite
         </Button>
       </Flex>
+      {connState.status === 'error' && (
+        // Suites can still be viewed/deleted, but creating one needs the
+        // connection list — surface the failure rather than silently disabling.
+        <Alert
+          type="warning"
+          showIcon
+          title="Couldn’t load connections"
+          description={`Creating a suite is unavailable until connections load. ${connState.error}`}
+        />
+      )}
       <SuitesBody
         state={state}
         connections={connections}

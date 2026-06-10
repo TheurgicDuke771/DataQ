@@ -104,6 +104,16 @@ describe('Suites', () => {
     ).toBeInTheDocument();
   });
 
+  it('warns when connections fail to load (create depends on them)', async () => {
+    mockListConnections.mockRejectedValue(new Error('conn down'));
+    mockListSuites.mockResolvedValue([]);
+
+    renderPage();
+
+    expect(await screen.findByText('Couldn’t load connections')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /New suite/ })).toBeDisabled();
+  });
+
   it('surfaces a load error', async () => {
     mockListConnections.mockResolvedValue([connection]);
     mockListSuites.mockRejectedValue(new Error('boom'));

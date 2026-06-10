@@ -33,11 +33,6 @@ export async function listSuites(params?: { connection_id?: string }): Promise<S
   return data;
 }
 
-export async function getSuite(id: string): Promise<Suite> {
-  const { data } = await api.get<Suite>(`/suites/${id}`);
-  return data;
-}
-
 export async function createSuite(payload: SuiteCreate): Promise<Suite> {
   const { data } = await api.post<Suite>('/suites', payload);
   return data;
