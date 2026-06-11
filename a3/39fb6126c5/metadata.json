@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "a339fb6126c5",
+  "strategy": "manual-commit",
+  "branch": "feature/pr-c0b-run-api",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "CLAUDE.md",
+    "backend/app/api/v1/suites.py",
+    "backend/app/main.py",
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/a3/39fb6126c5/0/metadata.json",
+      "transcript": "/a3/39fb6126c5/0/full.jsonl",
+      "content_hash": "/a3/39fb6126c5/0/content_hash.txt",
+      "prompt": "/a3/39fb6126c5/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 252261,
+    "cache_creation_tokens": 11313542,
+    "cache_read_tokens": 526866815,
+    "output_tokens": 1311751,
+    "api_call_count": 1724
+  }
+}

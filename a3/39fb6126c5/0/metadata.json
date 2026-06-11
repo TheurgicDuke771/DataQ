@@ -1,0 +1,52 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "a339fb6126c5",
+  "session_id": "8603fa2a-25c9-4c76-87d4-83228bd296a6",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-11T23:58:49.544547Z",
+  "branch": "feature/pr-c0b-run-api",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "CLAUDE.md",
+    "backend/app/api/v1/suites.py",
+    "backend/app/main.py",
+    "docs/progress.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-4-8",
+  "turn_id": "4a5a67160f0d",
+  "token_usage": {
+    "input_tokens": 252261,
+    "cache_creation_tokens": 11313542,
+    "cache_read_tokens": 526866815,
+    "output_tokens": 1311751,
+    "api_call_count": 1724
+  },
+  "session_metrics": {
+    "turn_count": 48
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-11T23:58:49.311734Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 607,
+    "human_modified": 9,
+    "human_removed": 0,
+    "total_committed": 607,
+    "total_lines_changed": 617,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}
