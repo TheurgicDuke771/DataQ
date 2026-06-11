@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "29642f493d36",
+  "strategy": "manual-commit",
+  "branch": "chore/node-24",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".github/workflows/ci.yml",
+    "docker-compose.yml",
+    "frontend/package.json"
+  ],
+  "sessions": [
+    {
+      "metadata": "/29/642f493d36/0/metadata.json",
+      "transcript": "/29/642f493d36/0/full.jsonl",
+      "content_hash": "/29/642f493d36/0/content_hash.txt",
+      "prompt": "/29/642f493d36/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 183738,
+    "cache_creation_tokens": 10316382,
+    "cache_read_tokens": 442748704,
+    "output_tokens": 1067789,
+    "api_call_count": 1333
+  }
+}
