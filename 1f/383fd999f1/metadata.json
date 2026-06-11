@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "1f383fd999f1",
+  "strategy": "manual-commit",
+  "branch": "feature/connections-create-page",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/progress.md",
+    "frontend/src/App.tsx",
+    "frontend/src/api/connections.ts",
+    "frontend/src/pages/Connections.tsx",
+    "frontend/tests/pages/Connections.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/1f/383fd999f1/0/metadata.json",
+      "transcript": "/1f/383fd999f1/0/full.jsonl",
+      "content_hash": "/1f/383fd999f1/0/content_hash.txt",
+      "prompt": "/1f/383fd999f1/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 176018,
+    "cache_creation_tokens": 10273926,
+    "cache_read_tokens": 434146474,
+    "output_tokens": 1044131,
+    "api_call_count": 1293
+  }
+}
