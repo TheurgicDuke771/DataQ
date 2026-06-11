@@ -12,6 +12,8 @@ test.describe('Suites page', () => {
   test('selecting a seeded suite shows its checks', async ({ page }) => {
     await page.getByText('Orders quality').click();
 
+    // Selection is the route now — the URL carries the suite id (deep-linkable).
+    await expect(page).toHaveURL(/\/suites\/[0-9a-f-]+$/);
     // Detail panel renders the suite title (h4) and its seeded checks.
     await expect(page.getByRole('heading', { name: 'Orders quality', level: 4 })).toBeVisible();
     await expect(page.getByText('order_id not null')).toBeVisible();

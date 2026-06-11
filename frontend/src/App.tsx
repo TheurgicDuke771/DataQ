@@ -56,6 +56,7 @@ export function App() {
                 <Route path="/connections" element={<Connections />} />
                 <Route path="/connections/new" element={<ConnectionNew />} />
                 <Route path="/suites" element={<Suites />} />
+                <Route path="/suites/:suiteId" element={<Suites />} />
                 <Route path="/profile" element={<Home />} />
                 <Route path="*" element={<Navigate to="/connections" replace />} />
               </Routes>

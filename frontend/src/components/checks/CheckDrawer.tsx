@@ -18,7 +18,7 @@ import { type Check, createCheck, updateCheck } from '../../api/suites';
 import {
   type ConfigField,
   EXPECTATION_BY_TYPE,
-  EXPECTATION_CATALOG,
+  EXPECTATIONS_BY_CATEGORY,
   type ExpectationSpec,
 } from './expectationCatalog';
 
@@ -122,7 +122,11 @@ export function CheckDrawer({
         <Form.Item name="expectation_type" label="Expectation" rules={[{ required: true }]}>
           <Select
             placeholder="Select an expectation"
-            options={EXPECTATION_CATALOG.map((e) => ({ value: e.type, label: e.label }))}
+            // Grouped by category (antd optgroups) — the GX-Cloud-style picker.
+            options={EXPECTATIONS_BY_CATEGORY.map((g) => ({
+              label: g.category,
+              options: g.specs.map((e) => ({ value: e.type, label: e.label })),
+            }))}
           />
         </Form.Item>
 

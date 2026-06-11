@@ -38,6 +38,20 @@ afterEach(() => {
 });
 
 describe('CheckDrawer — create', () => {
+  it('groups the expectation picker by category', async () => {
+    const user = userEvent.setup();
+    renderDrawer();
+
+    await user.click(screen.getByLabelText('Expectation'));
+    // antd renders optgroup headers with the category labels.
+    expect(
+      await screen.findByText('Column values', { selector: '.ant-select-item-group' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('Table shape', { selector: '.ant-select-item-group' }),
+    ).toBeInTheDocument();
+  });
+
   it('renders config fields for the chosen expectation and parses a value-set list', async () => {
     const user = userEvent.setup();
     const onSaved = vi.fn();
