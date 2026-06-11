@@ -60,7 +60,7 @@ def test_post_creates_queued_run_and_dispatches(
         select(Connection).where(Connection.name == PROBE_CONNECTION_NAME)
     ).first()
 
-    # dispatched once with (str(run_id), table)
+    # dispatched once with (str(run_id),) — the worker resolves the target (#215)
     assert len(delay_calls) == 1
     assert delay_calls[0][0] == body["run_id"]
 

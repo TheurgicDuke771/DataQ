@@ -28,15 +28,36 @@ from backend.app.services.suite_authz import require_permission
 router = APIRouter(tags=["suites"])
 
 
+class SuiteTarget(BaseModel):
+    """Datasource-shaped run target (#215) — which table / flat-file path / Unity
+    Catalog name the suite's checks run against. Same shape as the column-profiler
+    request; `run_target.resolve_target` validates the right fields per connection
+    type (`table` for SQL, `path` for flat files, `catalog` for Unity Catalog)."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    table: str | None = Field(default=None, max_length=255)
+    schema_: str | None = Field(default=None, alias="schema", max_length=255)
+    catalog: str | None = Field(default=None, max_length=255)
+    path: str | None = Field(default=None, max_length=1024)
+    file_format: Literal["csv", "parquet"] | None = None
+
+    def to_storage(self) -> dict[str, Any]:
+        """JSONB dict with the canonical `schema` key (not the `schema_` alias)."""
+        return self.model_dump(by_alias=True, exclude_none=True)
+
+
 class SuiteCreate(BaseModel):
     name: str = Field(min_length=1, max_length=128)
     description: str | None = Field(default=None, max_length=1024)
     connection_id: uuid.UUID
+    target: SuiteTarget | None = None
 
 
 class SuiteUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=128)
     description: str | None = Field(default=None, max_length=1024)
+    target: SuiteTarget | None = None
 
 
 class SuiteRead(BaseModel):
@@ -46,6 +67,7 @@ class SuiteRead(BaseModel):
     name: str
     description: str | None
     connection_id: uuid.UUID
+    target: dict[str, Any] | None
     created_by: uuid.UUID
 
 
@@ -66,6 +88,7 @@ def create_suite(
         description=payload.description,
         connection_id=payload.connection_id,
         created_by=current_user.id,
+        target=payload.target.to_storage() if payload.target is not None else None,
     )
     return SuiteRead.model_validate(suite)
 
@@ -99,7 +122,13 @@ def update_suite(
     db: Annotated[Session, Depends(get_db)],
 ) -> SuiteRead:
     require_permission(db, suite_id, current_user.id, minimum="edit")
-    suite = svc.update_suite(db, suite_id, name=payload.name, description=payload.description)
+    suite = svc.update_suite(
+        db,
+        suite_id,
+        name=payload.name,
+        description=payload.description,
+        target=payload.target.to_storage() if payload.target is not None else None,
+    )
     return SuiteRead.model_validate(suite)
 
 

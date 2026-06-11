@@ -378,7 +378,9 @@ def test_ingest_airflow_resolves_by_base_url_and_skips_enrichment(db_session: An
 # ── polling ingestion (ingest_polled_runs) ──
 
 
-def test_polled_succeeded_run_records_and_triggers(db_session: Any) -> None:
+def test_polled_succeeded_run_records_and_triggers(
+    db_session: Any, stub_run_dispatch: list[str]
+) -> None:
     conn = _adf_connection_with_secret(db_session)
     suite = _suite(db_session, conn)
     _binding(db_session, suite=suite, pipeline="load_finance", env=conn.env)
@@ -395,6 +397,8 @@ def test_polled_succeeded_run_records_and_triggers(db_session: Any) -> None:
     assert result.pipeline_runs[0].status == "succeeded"
     assert len(result.triggered_runs) == 1  # binding fired
     assert result.skipped == 0
+    # The ungate (#215): each triggered run is handed to Celery.
+    assert stub_run_dispatch == [str(result.triggered_runs[0].id)]
 
 
 def test_polled_non_succeeded_run_is_ignored(db_session: Any) -> None:

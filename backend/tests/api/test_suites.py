@@ -95,6 +95,44 @@ def test_create_allows_null_description(client: TestClient, db_session: Any) -> 
     assert resp.json()["description"] is None
 
 
+# ───────────────────────── run target (#215) ───────────────────────
+
+
+def test_create_with_target_persists_storage_shape(client: TestClient, db_session: Any) -> None:
+    conn = _connection(db_session)  # snowflake
+    resp = client.post(
+        "/api/v1/suites",
+        json=_payload(conn.id, target={"table": "ORDERS", "schema": "SALES"}),
+    )
+    assert resp.status_code == 201
+    # Stored with the canonical `schema` key (not the `schema_` alias), no nulls.
+    assert resp.json()["target"] == {"table": "ORDERS", "schema": "SALES"}
+
+
+def test_create_without_target_is_null(client: TestClient, db_session: Any) -> None:
+    conn = _connection(db_session)
+    resp = client.post("/api/v1/suites", json=_payload(conn.id))
+    assert resp.status_code == 201
+    assert resp.json()["target"] is None
+
+
+def test_create_with_wrong_datasource_target_returns_422(
+    client: TestClient, db_session: Any
+) -> None:
+    conn = _connection(db_session)  # snowflake needs `table`, not `path`
+    resp = client.post("/api/v1/suites", json=_payload(conn.id, target={"path": "data/o.csv"}))
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "suite_target_invalid"
+
+
+def test_patch_sets_target(client: TestClient, db_session: Any) -> None:
+    conn = _connection(db_session)
+    sid = client.post("/api/v1/suites", json=_payload(conn.id)).json()["id"]
+    resp = client.patch(f"/api/v1/suites/{sid}", json={"target": {"table": "T2"}})
+    assert resp.status_code == 200
+    assert resp.json()["target"] == {"table": "T2"}
+
+
 # ───────────────────────── read / list ─────────────────────────────
 
 

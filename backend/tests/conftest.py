@@ -25,6 +25,24 @@ def _reset_caches() -> Iterator[None]:
     secrets.reset_secret_store_cache()
 
 
+@pytest.fixture(autouse=True)
+def stub_run_dispatch(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Stub `run_suite.delay` so any code path that triggers a suite run (the
+    pipeline-success ungate #215, manual runs) never publishes to a real broker.
+
+    Returns the list of dispatched run-id args, so a test can assert dispatch
+    happened. Tests that need bespoke dispatch behaviour (e.g. the probe broker-
+    failure path) re-patch `.delay` themselves — their function-scoped patch is
+    applied after this autouse fixture and so wins. The probe e2e test uses
+    `apply_async` (a real publish), which this does not touch.
+    """
+    from backend.app.worker import tasks
+
+    calls: list[str] = []
+    monkeypatch.setattr(tasks.run_suite, "delay", lambda run_id: calls.append(run_id))
+    return calls
+
+
 @pytest.fixture
 def clean_kv_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Strip every KV_SECRET_* env var so tests start from a clean slate."""

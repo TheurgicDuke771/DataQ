@@ -60,6 +60,12 @@ def ensure_probe_fixtures(
         session.add(connection)
         session.flush()  # populate connection.id for the suite FK
 
+    # The run target (#215) — the probe table the suite's checks run against.
+    # Set every call (idempotent) so a suite seeded before the target column
+    # existed becomes runnable; NULL when no probe table is configured (the run
+    # then fails cleanly with `suite_target_invalid` rather than guessing a table).
+    target = {"table": settings.probe_snowflake_table} if settings.probe_snowflake_table else None
+
     suite = session.scalars(
         select(Suite).where(Suite.name == PROBE_SUITE_NAME, Suite.connection_id == connection.id)
     ).first()
@@ -69,9 +75,12 @@ def ensure_probe_fixtures(
             description="Week 1 exit-gate probe suite",
             connection_id=connection.id,
             created_by=user.id,
+            target=target,
         )
         session.add(suite)
         session.flush()  # populate suite.id for the check FK
+    else:
+        suite.target = target
 
     checks = list(session.scalars(select(Check).where(Check.suite_id == suite.id)))
     existing_names = {c.name for c in checks}

@@ -69,9 +69,8 @@ def trigger_snowflake_probe(
     db.commit()
     db.refresh(run)
 
-    table = settings.probe_snowflake_table or "UNSET"
     try:
-        run_suite.delay(str(run.id), table)
+        run_suite.delay(str(run.id))
     except Exception as exc:  # broker unreachable — don't leave the run stuck queued
         run.status = "failed"
         db.commit()

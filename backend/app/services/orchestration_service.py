@@ -188,10 +188,10 @@ def _trigger_suites(
     a replayed event (or a webhook + poll double-delivery) does not spawn a
     second run for the same (suite, pipeline-run).
 
-    NOTE — dispatch is intentionally **gated**: ``run_suite`` needs a target table
-    the suite/check model doesn't carry until Week 3. The queued runs are created
-    (so the binding→run wiring is exercised) but not yet handed to Celery; the
-    dispatch lands once the target-table work does.
+    Each created run is handed to Celery (``run_suite``) once committed; the
+    worker resolves the suite's target (#215) and fails the run cleanly if the
+    suite is targetless. A broker failure marks that run ``failed`` rather than
+    leaving it stuck ``queued`` (the 10-min poll won't re-dispatch a stale row).
     """
     marker = f"{provider}:{update.pipeline_or_dag_id}:{update.provider_run_id}"
     bindings = list(
@@ -226,11 +226,17 @@ def _trigger_suites(
             run_marker=marker,
             count=len(created),
         )
-        log.info(
-            "suite_dispatch_deferred",
-            reason="target_table_unavailable_until_week3",
-            count=len(created),
-        )
+        # Lazy import: `worker.tasks` imports this module, so a module-level
+        # import would be circular. The worker resolves each suite's target.
+        from backend.app.worker.tasks import run_suite
+
+        for run in created:
+            try:
+                run_suite.delay(str(run.id))
+            except Exception:
+                run.status = "failed"
+                session.commit()
+                log.exception("suite_dispatch_failed", run_id=str(run.id))
     return created
 
 
