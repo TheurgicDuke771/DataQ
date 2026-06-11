@@ -70,6 +70,11 @@ build/
 # Vitest / Jest
 coverage/
 
+# Playwright (browser E2E artifacts + downloaded browsers)
+frontend/test-results/
+frontend/playwright-report/
+frontend/playwright/.cache/
+
 # ---- Environment / secrets ----
 .env
 .env.*
@@ -138,4 +143,6 @@ azure.json
 
 # ---- Entire CLI (per-repo machine-local session data) ----
 .entire/
+
+# ---- Mutmut (mutation testing) cache ----
 .mutmut-cache
