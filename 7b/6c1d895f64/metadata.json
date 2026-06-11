@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "7b6c1d895f64",
+  "strategy": "manual-commit",
+  "branch": "feature/playwright-e2e",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".github/workflows/ci.yml",
+    ".gitignore",
+    "frontend/vite.config.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/7b/6c1d895f64/0/metadata.json",
+      "transcript": "/7b/6c1d895f64/0/full.jsonl",
+      "content_hash": "/7b/6c1d895f64/0/content_hash.txt",
+      "prompt": "/7b/6c1d895f64/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 166709,
+    "cache_creation_tokens": 10043598,
+    "cache_read_tokens": 420773544,
+    "output_tokens": 988821,
+    "api_call_count": 1200
+  }
+}

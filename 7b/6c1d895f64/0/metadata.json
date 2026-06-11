@@ -1,0 +1,51 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "7b6c1d895f64",
+  "session_id": "8603fa2a-25c9-4c76-87d4-83228bd296a6",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-11T03:43:51.182083Z",
+  "branch": "feature/playwright-e2e",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".github/workflows/ci.yml",
+    ".gitignore",
+    "frontend/vite.config.ts"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-4-8",
+  "turn_id": "acb20deb9917",
+  "token_usage": {
+    "input_tokens": 166709,
+    "cache_creation_tokens": 10043598,
+    "cache_read_tokens": 420773544,
+    "output_tokens": 988821,
+    "api_call_count": 1200
+  },
+  "session_metrics": {
+    "turn_count": 35
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-11T03:43:51.01833Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 376,
+    "human_modified": 1,
+    "human_removed": 0,
+    "total_committed": 376,
+    "total_lines_changed": 385,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}
