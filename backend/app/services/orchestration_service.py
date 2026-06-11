@@ -234,7 +234,11 @@ def _trigger_suites(
             try:
                 run_suite.delay(str(run.id))
             except Exception:
+                # Mirror the worker's terminal-failed shape: a failed run carries
+                # a finished_at (started_at stays NULL — it never started). Keeps
+                # run-history/duration views consistent across dispatch paths.
                 run.status = "failed"
+                run.finished_at = datetime.now(UTC)
                 session.commit()
                 log.exception("suite_dispatch_failed", run_id=str(run.id))
     return created

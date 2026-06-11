@@ -60,10 +60,9 @@ def ensure_probe_fixtures(
         session.add(connection)
         session.flush()  # populate connection.id for the suite FK
 
-    # The run target (#215) — the probe table the suite's checks run against.
-    # Set every call (idempotent) so a suite seeded before the target column
-    # existed becomes runnable; NULL when no probe table is configured (the run
-    # then fails cleanly with `suite_target_invalid` rather than guessing a table).
+    # The run target (#215) — the probe table the suite's checks run against,
+    # from settings. NULL when no probe table is configured (the run then fails
+    # cleanly with `suite_target_invalid` rather than guessing a table).
     target = {"table": settings.probe_snowflake_table} if settings.probe_snowflake_table else None
 
     suite = session.scalars(
@@ -79,7 +78,10 @@ def ensure_probe_fixtures(
         )
         session.add(suite)
         session.flush()  # populate suite.id for the check FK
-    else:
+    elif target is not None:
+        # Backfill a suite seeded before the target column existed, but never
+        # auto-clear an already-configured target just because the env setting
+        # is currently unset.
         suite.target = target
 
     checks = list(session.scalars(select(Check).where(Check.suite_id == suite.id)))

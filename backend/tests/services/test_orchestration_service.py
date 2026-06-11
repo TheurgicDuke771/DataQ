@@ -401,6 +401,38 @@ def test_polled_succeeded_run_records_and_triggers(
     assert stub_run_dispatch == [str(result.triggered_runs[0].id)]
 
 
+def test_dispatch_broker_failure_marks_run_failed_with_finished_at(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """If `run_suite.delay` raises (broker down), the triggered run must not be
+    left stuck 'queued' — it's marked failed with a finished_at, mirroring the
+    worker's terminal-failed shape so run-history views stay consistent (#215)."""
+    from backend.app.worker import tasks
+
+    def _boom(_run_id: str) -> None:
+        raise RuntimeError("broker unreachable")
+
+    monkeypatch.setattr(tasks.run_suite, "delay", _boom)
+
+    conn = _adf_connection_with_secret(db_session)
+    suite = _suite(db_session, conn)
+    _binding(db_session, suite=suite, pipeline="load_finance", env=conn.env)
+    since = datetime.now(UTC) - timedelta(minutes=15)
+
+    result = ingest_polled_runs(
+        db_session,
+        provider_impl=_FakeProvider(),
+        connection=conn,
+        updates=[_update(status="succeeded", provider_run_id="run-broker-fail")],
+        skip_updated_since=since,
+    )
+    assert len(result.triggered_runs) == 1
+    run = db_session.get(Run, result.triggered_runs[0].id)
+    assert run.status == "failed"
+    assert run.finished_at is not None
+    assert run.started_at is None  # never started — only dispatch failed
+
+
 def test_polled_non_succeeded_run_is_ignored(db_session: Any) -> None:
     conn = _adf_connection_with_secret(db_session)
     result = ingest_polled_runs(
