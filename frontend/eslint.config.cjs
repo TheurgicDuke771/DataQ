@@ -7,7 +7,7 @@ const tseslint = require('typescript-eslint');
 const prettierConfig = require('eslint-config-prettier');
 
 module.exports = tseslint.config(
-  { ignores: ['dist', 'coverage', 'node_modules'] },
+  { ignores: ['dist', 'coverage', 'node_modules', 'playwright-report', 'test-results'] },
   {
     extends: [js.configs.recommended, ...tseslint.configs.strict, prettierConfig],
     files: ['**/*.{ts,tsx}'],
@@ -31,6 +31,14 @@ module.exports = tseslint.config(
     files: ['**/*.test.{ts,tsx}', '**/*.spec.{ts,tsx}'],
     rules: {
       '@typescript-eslint/no-explicit-any': 'off', // relax in tests
+    },
+  },
+  {
+    // Playwright config + E2E specs run under Node (process.env, etc.), not the
+    // browser, so give them Node globals.
+    files: ['playwright.config.ts', 'e2e/**/*.ts'],
+    languageOptions: {
+      globals: globals.node,
     },
   },
 );

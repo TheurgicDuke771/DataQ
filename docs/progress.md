@@ -21,7 +21,7 @@
 |---|---|
 | **Active since** | 2026-05-24 |
 | **Current week** | Week 4 of 8 (Connection manager UI + check editor UI) — **in progress** (Weeks 1–3 complete) |
-| **Roadmap tasks done** | 58 ✅ + 8 🟡 / 157 (~37%) |
+| **Roadmap tasks done** | 58 ✅ + 9 🟡 / 157 (~37%) |
 | **Out-of-roadmap PRs landed** | governance, tooling lock, Entire CLI, Dependabot triage (10 bumps + pyarrow direct-dep fix #202/#201), PR-3 cleanup + ADRs 0005/0006/0007/0010/0011/0012/0013/0014/0016/**0017** (Python 3.11→3.13 + Snowflake 3→4 CVE refresh, [#129](https://github.com/TheurgicDuke771/DataQ/issues/129)) + the Week-3 testing-discipline upgrade (adversarial harness + mutation spikes, CONTRIBUTING rule 4a) |
 | **Week-1 exit gate** | A logged-in user can hit a FastAPI endpoint that triggers GX against Snowflake DEV and persists a result row. — **met** (plumbing complete via PR 4a–4c; live-Snowflake run fails-soft pending DEV creds — deferred smoke) |
 | **Next milestone** | Week 4 (frontend) in flight: connection manager UI complete (list/add/edit/reauth/delete + bulk health) + suites list/detail + catalog-driven check editor all shipped; **remaining**: check dry-run + profiler panel, sharing/admin UI, Monaco custom-SQL. Week-5 early-credit already landed (worker runner-dispatch [#146](https://github.com/TheurgicDuke771/DataQ/issues/146), ADF/Airflow polling [#171](https://github.com/TheurgicDuke771/DataQ/issues/171), `trigger_bindings` CRUD [#172](https://github.com/TheurgicDuke771/DataQ/issues/172)) |
@@ -281,8 +281,8 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [ ] ⬜ LLM-optimised docstrings for all 8 tools
 - [ ] ⬜ E2E test with Claude Desktop — 4 canonical natural-language queries
 
-### Hardening & docs (5 tasks — 0/5)
-- [ ] ⬜ E2E test coverage for critical paths (auth, Snowflake run, flat file run, UC run, results)
+### Hardening & docs (5 tasks — 0/5 + 1 🟡)
+- [ ] 🟡 E2E test coverage for critical paths — full-stack E2E landed early ([#128](https://github.com/TheurgicDuke771/DataQ/issues/128)): API smoke (`backend/scripts/e2e_smoke.py`, 12/12) + browser smoke (`frontend/e2e/`, Playwright, 6/6, CI `frontend-e2e` job) cover auth/dev-bypass + the read + authoring paths. **Live run paths (Snowflake/flat-file/UC) still pending the W5 execution path + #215.**
 - [ ] ⬜ Error handling audit — consistent error shapes across all endpoints
 - [ ] ⬜ Ensure all FastAPI endpoints have `summary`, `description`, `tags`, `response_model`
 - [ ] ⬜ README + deployment guide + env-var reference
@@ -337,7 +337,11 @@ These were preconditions for executing the roadmap. Listed for completeness.
 
 **Week 8 total: ~4 / 26 (early credit from per-slice tests in W1 — overall coverage ~91% backend; frontend ~80% lines)**
 
-> **Full-stack API E2E (advances [#128](https://github.com/TheurgicDuke771/DataQ/issues/128), partial):** `backend/scripts/e2e_smoke.py` drives the **real** running stack (docker compose + dev-bypass + the demo seed) with no mocks — asserts the six connection types list (secrets never returned), suites + checks read back, severity thresholds round-trip, the create→add-check→dry-run→delete authoring loop, and dry-run failing soft (422, not a crash). **Verified locally: 12/12 pass**, and the browser path `localhost:3000 → Vite proxy → api → Postgres` returns the seeded data. The **automated browser E2E (Playwright)** half of #128 is the next step. Live datasource `test()`/runs remain the deferred smoke (no real creds).
+> **Full-stack E2E ([#128](https://github.com/TheurgicDuke771/DataQ/issues/128) — both halves landed):**
+> - **API half** — `backend/scripts/e2e_smoke.py` drives the **real** running stack (docker compose + dev-bypass + the demo seed) with no mocks: asserts the six connection types list (secrets never returned), suites + checks read back, severity thresholds round-trip, the create→add-check→dry-run→delete authoring loop, and dry-run failing soft (502/422, not a crash). **12/12 pass.**
+> - **Browser half** — `frontend/e2e/` (Playwright) drives the **React UI** the same way a user does (`browser → Vite proxy → api → Postgres`): app-shell loads under dev-bypass, sider nav, seeded connections grouped by type + "Test all" health path, seeded suite → its checks, and a full create-suite → add → delete authoring round-trip. **6/6 pass.** Wired into CI as the `frontend-e2e` job (Postgres + Redis services, migrate + seed, uvicorn on :8000, Playwright starts its own Vite server). See [frontend/e2e/README.md](../frontend/e2e/README.md).
+>
+> Live datasource `test()`/runs remain the deferred smoke (no real creds — connectivity fails-soft).
 
 ---
 
@@ -352,8 +356,8 @@ These were preconditions for executing the roadmap. Listed for completeness.
 | Week 5 | 4 | 0 | 13 | 17 |
 | Week 6 | 0 | 0 | 16 | 16 |
 | Week 7 | 0 | 1 | 28 | 29 |
-| Week 8 | 2 | 3 | 21 | 26 |
-| **TOTAL** | **58** | **8** | **91** | **157** |
+| Week 8 | 2 | 4 | 20 | 26 |
+| **TOTAL** | **58** | **9** | **90** | **157** |
 
 > 157 > 100 because ADR 0004 added Airflow tasks, ADR 0011 added two seam tasks (generic runner dispatch, `ResultPublisher`), ADR 0012 added three Week-3 monitor-kind / metric seam tasks, the W5 run-enablement gaps surfaced in review (check target-table #215, Suite Triggers UI #216), plus PR-review follow-ups not in the original roadmap. Tracked here for honesty.
 
