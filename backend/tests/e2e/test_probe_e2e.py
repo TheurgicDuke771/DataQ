@@ -74,6 +74,9 @@ def test_probe_round_trip_over_real_broker(monkeypatch: pytest.MonkeyPatch) -> N
         session.add(user)
         session.commit()
         _, suite, _ = ensure_probe_fixtures(session, user=user, settings=get_settings())
+        # The worker resolves the table from the suite's target (#215); pin it so
+        # the run is deterministic regardless of the probe-table env setting.
+        suite.target = {"table": "ORDERS"}
         run = Run(suite_id=suite.id, status="queued", triggered_by="e2e")
         session.add(run)
         session.commit()
@@ -86,9 +89,7 @@ def test_probe_round_trip_over_real_broker(monkeypatch: pytest.MonkeyPatch) -> N
         queue = f"e2e-{uuid.uuid4()}"
         with start_worker(celery_app, perform_ping_check=False, loglevel="info", queues=[queue]):
             request_id_var.set("e2e-REQ")
-            tasks.run_suite.apply_async(  # real publish over Redis
-                args=[str(run_id), "ORDERS"], queue=queue
-            )
+            tasks.run_suite.apply_async(args=[str(run_id)], queue=queue)  # real publish over Redis
 
             deadline = time.time() + 30
             final: str | None = None

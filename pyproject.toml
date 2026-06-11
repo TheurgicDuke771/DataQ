@@ -90,6 +90,9 @@ asyncio_mode = "auto"
 testpaths = ["backend/tests"]
 addopts = "--cov=backend/app --cov-report=term-missing --cov-fail-under=0"
 # cov-fail-under raised to 80 in Week 8
+markers = [
+    "real_dispatch: opt out of the autouse run_dispatch stub (test dispatch_run itself)",
+]
 
 # ── Bandit ───────────────────────────────────────────────────────────────────
 

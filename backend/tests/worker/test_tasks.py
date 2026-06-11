@@ -66,7 +66,13 @@ def _graph(n_checks: int = 1) -> tuple[Run, Suite, Connection, tuple[Check, ...]
     conn_id = uuid.uuid4()
     user_id = uuid.uuid4()
     run = Run(id=uuid.uuid4(), suite_id=suite_id, status="queued")
-    suite = Suite(id=suite_id, name="probe", connection_id=conn_id, created_by=user_id)
+    suite = Suite(
+        id=suite_id,
+        name="probe",
+        connection_id=conn_id,
+        created_by=user_id,
+        target={"table": "ORDERS"},
+    )
     connection = Connection(
         id=conn_id,
         name="probe-sf",
@@ -104,7 +110,7 @@ def test_run_suite_executes_and_persists(monkeypatch: pytest.MonkeyPatch) -> Non
     )
     monkeypatch.setattr(tasks, "build_check_runner", lambda **_kw: runner)
 
-    status = tasks._run_suite(session, run_id=run.id, table="ORDERS", schema=None)
+    status = tasks._run_suite(session, run_id=run.id)
 
     assert status == "succeeded"
     assert run.status == "succeeded"
@@ -116,14 +122,14 @@ def test_run_suite_executes_and_persists(monkeypatch: pytest.MonkeyPatch) -> Non
 
 def test_run_suite_missing_run_returns_not_found() -> None:
     session = FakeSession(run=None)
-    status = tasks._run_suite(session, run_id=uuid.uuid4(), table="T", schema=None)
+    status = tasks._run_suite(session, run_id=uuid.uuid4())
     assert status == "not_found"
 
 
 def test_run_suite_missing_connection_marks_failed() -> None:
     run, suite, _conn, checks = _graph(1)
     session = FakeSession(run=run, suite=suite, connection=None, checks=checks)
-    status = tasks._run_suite(session, run_id=run.id, table="T", schema=None)
+    status = tasks._run_suite(session, run_id=run.id)
     assert status == "failed"
     assert run.status == "failed"
     assert run.finished_at is not None
@@ -139,7 +145,7 @@ def test_run_suite_runner_build_failure_marks_failed(monkeypatch: pytest.MonkeyP
 
     monkeypatch.setattr(tasks, "build_check_runner", _boom)
 
-    status = tasks._run_suite(session, run_id=run.id, table="T", schema=None)
+    status = tasks._run_suite(session, run_id=run.id)
     assert status == "failed"
     assert run.status == "failed"
 
@@ -152,9 +158,21 @@ def test_run_suite_invalid_connection_config_marks_failed() -> None:
     session = FakeSession(run=run, suite=suite, connection=connection, checks=checks)
     # build_check_runner is NOT monkeypatched here — real SnowflakeConfig
     # validation runs and raises, exercising the task's setup-failure handling.
-    status = tasks._run_suite(session, run_id=run.id, table="T", schema=None)
+    status = tasks._run_suite(session, run_id=run.id)
     assert status == "failed"
     assert run.status == "failed"
+
+
+def test_run_suite_targetless_suite_marks_failed() -> None:
+    """A suite with no `target` (#215) can't resolve a table → the run fails
+    cleanly (suite_target_invalid) instead of running against an unknown table."""
+    run, suite, connection, checks = _graph(1)
+    suite.target = None
+    session = FakeSession(run=run, suite=suite, connection=connection, checks=checks)
+    status = tasks._run_suite(session, run_id=run.id)
+    assert status == "failed"
+    assert run.status == "failed"
+    assert session.added == []  # never reached execution
 
 
 # ───────────────────────── task wrapper ────────────────────────────
@@ -167,7 +185,7 @@ def test_task_wrapper_opens_and_closes_session(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setattr(tasks, "get_session", lambda: session)
     monkeypatch.setattr(tasks, "build_check_runner", lambda **_kw: runner)
 
-    status = tasks.run_suite(str(run.id), "ORDERS")
+    status = tasks.run_suite(str(run.id))
 
     assert status == "succeeded"
     assert session.closed is True

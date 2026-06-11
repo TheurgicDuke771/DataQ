@@ -1,13 +1,16 @@
 """Celery tasks for asynchronous suite execution.
 
-``run_suite`` is the worker entry point dispatched by the probe endpoint. It
-loads the run's suite / connection / checks, builds the datasource adapter, and
-hands off to ``run_service.execute_run``. The DB-touching core is factored into
-``_run_suite`` so it can be unit-tested with a fake session + fake runner (no
-Postgres, no Snowflake); real-DB integration coverage is a Week 8 item.
+``run_suite`` is the worker entry point dispatched by the manual-run / probe /
+pipeline-trigger paths. It loads the run's suite / connection / checks, resolves
+the suite's datasource-shaped **target** (#215) to the runner's
+``(table, schema, catalog)``, builds the datasource adapter, and hands off to
+``run_service.execute_run``. The DB-touching core is factored into ``_run_suite``
+so it can be unit-tested with a fake session + fake runner (no Postgres, no
+Snowflake); real-DB integration coverage is a Week 8 item.
 
-The target table is passed in by the caller: the suite/dataset model does not
-carry a target table until Week 3, so for now the probe endpoint supplies it.
+The target lives on the suite (``Suite.target``, resolved by
+``run_target.resolve_target``): a targetless suite drives the run to ``failed``
+with a clear log rather than running against an unknown table.
 """
 
 from __future__ import annotations
@@ -24,7 +27,7 @@ from backend.app.datasources.registry import build_check_runner
 from backend.app.db.models import ORCHESTRATION_PROVIDERS, Check, Connection, Run, Suite
 from backend.app.db.session import get_session
 from backend.app.orchestration.registry import get_orchestration_provider
-from backend.app.services import orchestration_service, run_service
+from backend.app.services import orchestration_service, run_service, run_target
 from backend.app.worker.celery_app import celery_app
 
 # Polling fallback (#171): look back slightly further than the 10-min beat
@@ -34,23 +37,18 @@ _POLL_LOOKBACK = timedelta(minutes=15)
 log = get_logger(__name__)
 
 
-def _run_suite(
-    session: Session,
-    *,
-    run_id: uuid.UUID,
-    table: str,
-    schema: str | None,
-    catalog: str | None = None,
-) -> str:
-    """Load the run's graph, build the runner, execute. Returns the final status.
+def _run_suite(session: Session, *, run_id: uuid.UUID) -> str:
+    """Load the run's graph, resolve its target, build the runner, execute.
 
-    Dispatches by ``connection.type`` through the runner registry, so a Snowflake
-    / Unity Catalog / flat-file suite each gets its correct `CheckRunner` (#146).
-    ``catalog`` is required for Unity Catalog and ignored by the other types.
+    The suite's datasource-shaped ``target`` (#215) resolves to the runner's
+    ``(table, schema, catalog)`` via ``run_target.resolve_target``; dispatch by
+    ``connection.type`` through the runner registry gives a Snowflake / Unity
+    Catalog / flat-file suite its correct `CheckRunner` (#146).
 
-    Failures while loading or building the runner (missing rows, bad connection
-    config, unresolved secret) drive the run to ``failed`` so it never lingers in
-    ``queued``; execution failures are handled inside ``execute_run``.
+    Failures while loading, resolving the target (targetless or malformed suite),
+    or building the runner (missing rows, bad connection config, unresolved
+    secret) drive the run to ``failed`` so it never lingers in ``queued``;
+    execution failures are handled inside ``execute_run``.
     """
     run = session.get(Run, run_id)
     if run is None:
@@ -62,13 +60,14 @@ def _run_suite(
         connection = session.get(Connection, suite.connection_id) if suite is not None else None
         if suite is None or connection is None:
             raise RuntimeError("suite or connection not found for run")
+        target = run_target.resolve_target(connection.type, suite.target)
         checks = list(session.scalars(select(Check).where(Check.suite_id == suite.id)))
         runner = build_check_runner(
             conn_type=connection.type,
             config=connection.config,
             secret_ref=connection.secret_ref,
             secret_store=get_secret_store(),
-            catalog=catalog,
+            catalog=target.catalog,
         )
     except Exception:
         run.status = "failed"
@@ -79,24 +78,21 @@ def _run_suite(
         return "failed"
 
     run_service.execute_run(
-        session, run=run, checks=checks, runner=runner, table=table, schema=schema
+        session, run=run, checks=checks, runner=runner, table=target.table, schema=target.schema
     )
     return str(run.status)
 
 
 @celery_app.task(name="run_suite")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
-def run_suite(
-    run_id: str, table: str, schema: str | None = None, catalog: str | None = None
-) -> str:
+def run_suite(run_id: str) -> str:
     """Worker entry point. ``run_id`` is a string so it serialises over JSON.
 
-    ``catalog`` is passed through for Unity Catalog suites; other types ignore it.
+    The target is resolved from the suite (``Suite.target``), so the only
+    argument the dispatcher supplies is the run id.
     """
     session = get_session()
     try:
-        return _run_suite(
-            session, run_id=uuid.UUID(run_id), table=table, schema=schema, catalog=catalog
-        )
+        return _run_suite(session, run_id=uuid.UUID(run_id))
     finally:
         session.close()
 

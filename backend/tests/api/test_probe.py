@@ -1,8 +1,8 @@
 """Probe endpoint tests against a real Postgres (db_session) via TestClient.
 
 get_db is overridden to the test session so requests share the rolled-back
-transaction; run_suite.delay is spied so no broker is needed. Auth runs in
-dev-bypass mode (conftest), which upserts the dev user into the same session.
+transaction; run_dispatch.dispatch_run is spied so no broker is needed. Auth runs
+in dev-bypass mode (conftest), which upserts the dev user into the same session.
 """
 
 import uuid
@@ -30,7 +30,7 @@ def probe_client(
     app.dependency_overrides[get_db] = lambda: db_session
     delay_calls: list[tuple[Any, ...]] = []
     monkeypatch.setattr(
-        probe_module.run_suite, "delay", lambda *args, **_kw: delay_calls.append(args)
+        probe_module.run_dispatch, "dispatch_run", lambda *args, **_kw: delay_calls.append(args)
     )
     try:
         yield TestClient(app), delay_calls
@@ -60,9 +60,9 @@ def test_post_creates_queued_run_and_dispatches(
         select(Connection).where(Connection.name == PROBE_CONNECTION_NAME)
     ).first()
 
-    # dispatched once with (str(run_id), table)
+    # dispatched once with (run_id,) — the worker resolves the target (#215)
     assert len(delay_calls) == 1
-    assert delay_calls[0][0] == body["run_id"]
+    assert str(delay_calls[0][0]) == body["run_id"]
 
 
 def test_post_dispatch_failure_marks_run_failed(
@@ -74,7 +74,7 @@ def test_post_dispatch_failure_marks_run_failed(
     def _boom(*_a: Any, **_k: Any) -> None:
         raise RuntimeError("broker down")
 
-    monkeypatch.setattr(probe_module.run_suite, "delay", _boom)
+    monkeypatch.setattr(probe_module.run_dispatch, "dispatch_run", _boom)
     try:
         resp = TestClient(app).post("/api/v1/_probe/snowflake-suite")
         assert resp.status_code == 503

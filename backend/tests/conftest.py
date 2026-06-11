@@ -25,6 +25,29 @@ def _reset_caches() -> Iterator[None]:
     secrets.reset_secret_store_cache()
 
 
+@pytest.fixture(autouse=True)
+def stub_run_dispatch(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Stub `run_dispatch.dispatch_run` so any code path that triggers a suite run
+    (the pipeline-success ungate #215, the probe, manual runs) never publishes to
+    a real broker.
+
+    Returns the list of dispatched run-ids (as strings), so a test can assert
+    dispatch happened. Tests that need bespoke dispatch behaviour (e.g. the
+    broker-failure path) re-patch `run_dispatch.dispatch_run` themselves — their
+    function-scoped patch is applied after this autouse fixture and so wins. The
+    probe e2e test uses `apply_async` (a real publish), which this does not touch.
+
+    `@pytest.mark.real_dispatch` opts out entirely — for tests of `dispatch_run`
+    itself, which spy `celery_app.send_task` instead.
+    """
+    calls: list[str] = []
+    if request.node.get_closest_marker("real_dispatch") is None:
+        from backend.app.services import run_dispatch
+
+        monkeypatch.setattr(run_dispatch, "dispatch_run", lambda run_id: calls.append(str(run_id)))
+    return calls
+
+
 @pytest.fixture
 def clean_kv_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Strip every KV_SECRET_* env var so tests start from a clean slate."""

@@ -31,6 +31,7 @@ from backend.app.core.secrets import SecretStore
 from backend.app.db.models import Connection, PipelineRun, Run, TriggerBinding
 from backend.app.orchestration.base import OrchestrationProvider, RunUpdate
 from backend.app.orchestration.registry import get_orchestration_provider
+from backend.app.services import run_dispatch
 
 log = get_logger(__name__)
 
@@ -188,10 +189,10 @@ def _trigger_suites(
     a replayed event (or a webhook + poll double-delivery) does not spawn a
     second run for the same (suite, pipeline-run).
 
-    NOTE — dispatch is intentionally **gated**: ``run_suite`` needs a target table
-    the suite/check model doesn't carry until Week 3. The queued runs are created
-    (so the binding→run wiring is exercised) but not yet handed to Celery; the
-    dispatch lands once the target-table work does.
+    Each created run is handed to Celery (``run_suite``) once committed; the
+    worker resolves the suite's target (#215) and fails the run cleanly if the
+    suite is targetless. A broker failure marks that run ``failed`` rather than
+    leaving it stuck ``queued`` (the 10-min poll won't re-dispatch a stale row).
     """
     marker = f"{provider}:{update.pipeline_or_dag_id}:{update.provider_run_id}"
     bindings = list(
@@ -226,11 +227,18 @@ def _trigger_suites(
             run_marker=marker,
             count=len(created),
         )
-        log.info(
-            "suite_dispatch_deferred",
-            reason="target_table_unavailable_until_week3",
-            count=len(created),
-        )
+        for run in created:
+            try:
+                run_dispatch.dispatch_run(run.id)
+            except Exception:
+                # Broker down: don't leave the run stuck 'queued'. Mark it failed
+                # with the worker's terminal-failed shape — finished_at set,
+                # started_at NULL (it never started) — so run-history/duration
+                # views stay consistent across dispatch paths.
+                run.status = "failed"
+                run.finished_at = datetime.now(UTC)
+                session.commit()
+                log.exception("suite_dispatch_failed", run_id=str(run.id))
     return created
 
 

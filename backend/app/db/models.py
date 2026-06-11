@@ -139,6 +139,12 @@ class Suite(Base):
     connection_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("connections.id"), nullable=False
     )
+    # Datasource-shaped run target (#215): the table / flat-file path / Unity
+    # Catalog 3-level name the suite's checks run against. Shaped like the column
+    # profiler request (`table`/`schema`/`catalog`/`path`/`file_format`) and
+    # resolved per connection type to the runner's (table, schema, catalog) by
+    # `services.run_target.resolve_target`. NULL = targetless = not yet runnable.
+    target: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     created_by: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
     )

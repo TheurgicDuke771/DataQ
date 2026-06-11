@@ -15,6 +15,7 @@ shapes and dependency wiring. Share-based access control is layered on separatel
 from __future__ import annotations
 
 import uuid
+from typing import Any
 
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
@@ -22,6 +23,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.db.models import Connection, Share, Suite
+from backend.app.services import run_target
 
 log = get_logger(__name__)
 
@@ -43,22 +45,29 @@ def create_suite(
     description: str | None,
     connection_id: uuid.UUID,
     created_by: uuid.UUID,
+    target: dict[str, Any] | None = None,
 ) -> Suite:
     """Create a suite bound to an existing connection.
 
     Raises `SuiteConnectionInvalidError` (422) if the connection does not exist
     — caught here so a bad `connection_id` is a clean validation error, not a
-    raw FK IntegrityError surfacing as 500.
+    raw FK IntegrityError surfacing as 500. A provided ``target`` is validated
+    against the connection's datasource type (422 if malformed); a suite may also
+    be created targetless (NULL) and have a target set later via update.
     """
-    if session.get(Connection, connection_id) is None:
+    connection = session.get(Connection, connection_id)
+    if connection is None:
         raise SuiteConnectionInvalidError(
             "connection not found", detail={"connection_id": str(connection_id)}
         )
+    if target is not None:
+        run_target.validate_target(connection.type, target)
     suite = Suite(
         name=name,
         description=description,
         connection_id=connection_id,
         created_by=created_by,
+        target=target,
     )
     session.add(suite)
     session.commit()
@@ -95,13 +104,25 @@ def update_suite(
     *,
     name: str | None = None,
     description: str | None = None,
+    target: dict[str, Any] | None = None,
 ) -> Suite:
-    """Partial update of name / description. `connection_id` is immutable."""
+    """Partial update of name / description / target. `connection_id` is immutable.
+
+    A provided ``target`` is validated against the suite's connection type (422
+    if malformed) and replaces the existing target. ``None`` means "leave the
+    target unchanged" (the same partial-update semantics as name/description), so
+    this path sets/replaces a target but never clears one back to NULL.
+    """
     suite = get_suite(session, suite_id)
     if name is not None:
         suite.name = name
     if description is not None:
         suite.description = description
+    if target is not None:
+        connection = session.get(Connection, suite.connection_id)
+        assert connection is not None  # FK is RESTRICT; a suite always has its connection
+        run_target.validate_target(connection.type, target)
+        suite.target = target
     session.commit()
     session.refresh(suite)
     log.info("suite_updated", suite_id=str(suite.id))

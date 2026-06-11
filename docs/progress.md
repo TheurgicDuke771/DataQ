@@ -84,7 +84,7 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [x] ✅ `POST /api/v1/orchestration/events/adf` — receive Azure Monitor payload, validate shared secret (constant-time, ADR 0006), return 200 — PR 7 _(unified `OrchestrationProvider` seam landed: `orchestration/base.py` Protocol + `RunUpdate` DTO + provider registry; ADF reference impl per ADR 0004 — service code dispatches by provider, never branches on ADF)_
 - [x] ✅ Parse webhook payload — `AdfProvider.parse_event` extracts `factoryName`/`pipelineName`/`runId`/`status`/`firedDateTime` → `RunUpdate`, ADF→`PIPELINE_RUN_STATUSES` normalisation — PR 7 _(exact Common-Alert-Schema field mapping validated at Week-7 deploy smoke)_
 - [x] ✅ Follow-up ADF REST API call on webhook receipt — fetch run details — PR 8 _(`AdfProvider.fetch_run_detail` GETs the ARM `pipelineruns/{runId}` for authoritative status/timing/message; `orchestration_service.ingest_event` enriches **best-effort** before upsert — any failure (no creds, transport) falls back to the parsed event so a valid webhook is never dropped)_
-- [ ] 🟡 Upsert pipeline run status into `pipeline_runs`; correlate with suite run — idempotent upsert (PR 7) + **trigger-on-success skeleton** (PR 8): a `succeeded` run matching enabled `trigger_bindings` creates queued `Run` rows (`triggered_by="<provider>:<pipeline>:<run_id>"`, idempotent on replay); failures never trigger (ADR 0004). **`run_suite` dispatch is gated** until checks carry a target table (slipped from Week 3 → now tracked Week 5, [#215](https://github.com/TheurgicDuke771/DataQ/issues/215)); `trigger_bindings` CRUD shipped ([#172](https://github.com/TheurgicDuke771/DataQ/pull/190)) — its UI is Week 5 ([#216](https://github.com/TheurgicDuke771/DataQ/issues/216)). `list_recent_runs` + 10-min polling beat shipped ([#171](https://github.com/TheurgicDuke771/DataQ/pull/189)).
+- [ ] 🟡 Upsert pipeline run status into `pipeline_runs`; correlate with suite run — idempotent upsert (PR 7) + **trigger-on-success skeleton** (PR 8): a `succeeded` run matching enabled `trigger_bindings` creates queued `Run` rows (`triggered_by="<provider>:<pipeline>:<run_id>"`, idempotent on replay); failures never trigger (ADR 0004). **`run_suite` dispatch ungated** in Week 5 ([#215](https://github.com/TheurgicDuke771/DataQ/issues/215), PR-C0a — `Suite.target` + `run_target` resolver; `_trigger_suites` now `run_suite.delay`s each created run); `trigger_bindings` CRUD shipped ([#172](https://github.com/TheurgicDuke771/DataQ/pull/190)) — its UI is Week 5 ([#216](https://github.com/TheurgicDuke771/DataQ/issues/216)). `list_recent_runs` + 10-min polling beat shipped ([#171](https://github.com/TheurgicDuke771/DataQ/pull/189)).
 - [x] ✅ Shared secret config in Key Vault → `ADF_WEBHOOK_SECRET` env var — `settings.adf_webhook_secret_name` resolved via `SecretStore` (→ `KV_SECRET_ADF_WEBHOOK_SECRET` in dev) — PR 7
 
 ### Airflow orchestration (added per ADR 0004; not in original roadmap) (3 tasks — 3/3)
@@ -198,10 +198,10 @@ These were preconditions for executing the roadmap. Listed for completeness.
 
 **Exit gate:** Async runs with live progress across all datasource types; scheduling operational.
 
-### Async execution backend (8 tasks — 2/8 ✅, early)
+### Async execution backend (8 tasks — 3/8 ✅, early)
 - [x] ✅ Celery + Redis background task runner for GX scan execution — `run_suite` task + `run_service` — landed early via [PR 4a](https://github.com/TheurgicDuke771/DataQ/pull/74) + [PR 4c-i](https://github.com/TheurgicDuke771/DataQ/pull/78) + [PR 4c-ii](https://github.com/TheurgicDuke771/DataQ/pull/79)
 - [x] ✅ Generalise `run_suite` worker dispatch — select the `CheckRunner` by `connection.type` via the runner registry (`build_check_runner`), replacing the Snowflake-hardcoded wiring in `worker/tasks.py`; the seam that makes the flat-file / UC run paths route correctly and post-v1 RDBMS adapters a drop-in — [PR #146-fix](https://github.com/TheurgicDuke771/DataQ/issues/146) _(added per [ADR 0011](adr/0011-extensibility-seams-for-deferred-integrations.md); profiler dispatch collapsed onto a parallel registry in the same effort, [#147](https://github.com/TheurgicDuke771/DataQ/issues/147))_
-- [ ] ⬜ **Check target table/path** — checks carry no target today (dry-run takes `table` in the request body), so the trigger-on-success path is **gated** (`orchestration_service` logs `suite_dispatch_deferred`). The load-bearing prerequisite for *every* run path (manual / scheduled / pipeline-triggered): model the target (per-check vs per-suite; table vs flat-file path vs UC `catalog.schema.table`), migrate, then ungate dispatch + drop the stale "until_week3" wording. _(Re-tracked from Week 3, where it slipped, to Week 5 — [#215](https://github.com/TheurgicDuke771/DataQ/issues/215))_
+- [x] ✅ **Check target table/path** — modeled as a **per-suite** datasource-shaped `Suite.target` (JSONB, shaped like the column-profiler request: `table`/`schema`/`catalog`/`path`/`file_format`), since `execute_run` runs all of a suite's checks against one batch (the GX data-asset-per-suite shape). `services/run_target.resolve_target` resolves it per connection type to the runner's `(table, schema, catalog)` triple (flat-file path rides the table-shaped `CheckRunner`'s `table` slot); `validate_target` is the write-time 422 guard on suite create/update. Migration `b1f2c3d4e5a6` (additive nullable column, tested up/down on Postgres). **Dispatch ungated**: `_trigger_suites` now hands each created run to `run_suite.delay` (lazy import — worker↔service cycle), broker-fail marks the run `failed`; `run_suite` resolves the target from the suite (targetless → clean `failed`), so the worker no longer takes a `table` arg; stale `until_week3` wording removed. 13 resolver units + worker/orchestration/suite-API target tests. _(Re-tracked from Week 3; [#215](https://github.com/TheurgicDuke771/DataQ/issues/215); PR-C0a)_
 - [ ] ⬜ Run progress API — poll endpoint returning per-check live status
 - [ ] ⬜ Cancel run endpoint — gracefully terminate in-progress Celery task
 - [ ] ⬜ Run history retention policy — configurable purge of results older than N days
@@ -223,7 +223,7 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [ ] ⬜ Recent runs audit table with drill-down link to results
 - [ ] ⬜ **Suite Triggers panel** — UI over the existing `trigger_bindings` CRUD (#172): bind/unbind a pipeline/DAG (`provider` + `pipeline_or_dag_id` + `env`) to a suite so it runs on the pipeline's success. **Suite-level**, not a check field (orchestration providers are never a datasource/check attribute, CLAUDE.md §4); lives on the suite detail. Backend done; UI pending — [#216](https://github.com/TheurgicDuke771/DataQ/issues/216)
 
-**Week 5 total: 4 / 17** _(early credit: Celery task runner in PR 4; worker runner-dispatch #146; ADF + Airflow 10-min polling #171; plus `trigger_bindings` CRUD #172 out-of-band. +2 tasks re-tracked here: check target-table #215 (slipped from W3) + Suite Triggers UI #216)_
+**Week 5 total: 5 / 17** _(early credit: Celery task runner in PR 4; worker runner-dispatch #146; ADF + Airflow 10-min polling #171; plus `trigger_bindings` CRUD #172 out-of-band; check target-table + dispatch ungate #215 (PR-C0a). +2 tasks re-tracked here: check target-table #215 (slipped from W3) + Suite Triggers UI #216)_
 
 ---
 
@@ -361,7 +361,7 @@ These were preconditions for executing the roadmap. Listed for completeness.
 | Week 2 | 15 | 1 | 3 | 19 |
 | Week 3 | 18 | 0 | 0 | 18 |
 | Week 4 | 16 | 2 | 8 | 26 |
-| Week 5 | 4 | 0 | 13 | 17 |
+| Week 5 | 5 | 0 | 12 | 17 |
 | Week 6 | 0 | 0 | 16 | 16 |
 | Week 7 | 0 | 1 | 28 | 29 |
 | Week 8 | 2 | 4 | 20 | 26 |

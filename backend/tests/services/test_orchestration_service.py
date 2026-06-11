@@ -378,7 +378,9 @@ def test_ingest_airflow_resolves_by_base_url_and_skips_enrichment(db_session: An
 # ── polling ingestion (ingest_polled_runs) ──
 
 
-def test_polled_succeeded_run_records_and_triggers(db_session: Any) -> None:
+def test_polled_succeeded_run_records_and_triggers(
+    db_session: Any, stub_run_dispatch: list[str]
+) -> None:
     conn = _adf_connection_with_secret(db_session)
     suite = _suite(db_session, conn)
     _binding(db_session, suite=suite, pipeline="load_finance", env=conn.env)
@@ -395,6 +397,40 @@ def test_polled_succeeded_run_records_and_triggers(db_session: Any) -> None:
     assert result.pipeline_runs[0].status == "succeeded"
     assert len(result.triggered_runs) == 1  # binding fired
     assert result.skipped == 0
+    # The ungate (#215): each triggered run is handed to Celery.
+    assert stub_run_dispatch == [str(result.triggered_runs[0].id)]
+
+
+def test_dispatch_broker_failure_marks_run_failed_with_finished_at(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """If dispatch raises (broker down), the triggered run must not be left stuck
+    'queued' — it's marked failed with a finished_at, mirroring the worker's
+    terminal-failed shape so run-history views stay consistent (#215)."""
+    from backend.app.services import run_dispatch
+
+    def _boom(_run_id: Any) -> None:
+        raise RuntimeError("broker unreachable")
+
+    monkeypatch.setattr(run_dispatch, "dispatch_run", _boom)
+
+    conn = _adf_connection_with_secret(db_session)
+    suite = _suite(db_session, conn)
+    _binding(db_session, suite=suite, pipeline="load_finance", env=conn.env)
+    since = datetime.now(UTC) - timedelta(minutes=15)
+
+    result = ingest_polled_runs(
+        db_session,
+        provider_impl=_FakeProvider(),
+        connection=conn,
+        updates=[_update(status="succeeded", provider_run_id="run-broker-fail")],
+        skip_updated_since=since,
+    )
+    assert len(result.triggered_runs) == 1
+    run = db_session.get(Run, result.triggered_runs[0].id)
+    assert run.status == "failed"
+    assert run.finished_at is not None
+    assert run.started_at is None  # never started — only dispatch failed
 
 
 def test_polled_non_succeeded_run_is_ignored(db_session: Any) -> None:
