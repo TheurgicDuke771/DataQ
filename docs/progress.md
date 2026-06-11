@@ -198,10 +198,11 @@ These were preconditions for executing the roadmap. Listed for completeness.
 
 **Exit gate:** Async runs with live progress across all datasource types; scheduling operational.
 
-### Async execution backend (8 tasks — 3/8 ✅, early)
+### Async execution backend (9 tasks — 4/9 ✅, early)
 - [x] ✅ Celery + Redis background task runner for GX scan execution — `run_suite` task + `run_service` — landed early via [PR 4a](https://github.com/TheurgicDuke771/DataQ/pull/74) + [PR 4c-i](https://github.com/TheurgicDuke771/DataQ/pull/78) + [PR 4c-ii](https://github.com/TheurgicDuke771/DataQ/pull/79)
 - [x] ✅ Generalise `run_suite` worker dispatch — select the `CheckRunner` by `connection.type` via the runner registry (`build_check_runner`), replacing the Snowflake-hardcoded wiring in `worker/tasks.py`; the seam that makes the flat-file / UC run paths route correctly and post-v1 RDBMS adapters a drop-in — [PR #146-fix](https://github.com/TheurgicDuke771/DataQ/issues/146) _(added per [ADR 0011](adr/0011-extensibility-seams-for-deferred-integrations.md); profiler dispatch collapsed onto a parallel registry in the same effort, [#147](https://github.com/TheurgicDuke771/DataQ/issues/147))_
 - [x] ✅ **Check target table/path** — modeled as a **per-suite** datasource-shaped `Suite.target` (JSONB, shaped like the column-profiler request: `table`/`schema`/`catalog`/`path`/`file_format`), since `execute_run` runs all of a suite's checks against one batch (the GX data-asset-per-suite shape). `services/run_target.resolve_target` resolves it per connection type to the runner's `(table, schema, catalog)` triple (flat-file path rides the table-shaped `CheckRunner`'s `table` slot); `validate_target` is the write-time 422 guard on suite create/update. Migration `b1f2c3d4e5a6` (additive nullable column, tested up/down on Postgres). **Dispatch ungated**: `_trigger_suites` now hands each created run to `run_suite.delay` (lazy import — worker↔service cycle), broker-fail marks the run `failed`; `run_suite` resolves the target from the suite (targetless → clean `failed`), so the worker no longer takes a `table` arg; stale `until_week3` wording removed. 13 resolver units + worker/orchestration/suite-API target tests. _(Re-tracked from Week 3; [#215](https://github.com/TheurgicDuke771/DataQ/issues/215); PR-C0a)_
+- [x] ✅ **Manual run trigger + run/result read API** — `POST /suites/{id}/run` queues a `Run` and dispatches it via the shared `run_dispatch.dispatch_run` helper (**edit**-gated — the capability ladder grants "trigger runs" at edit); the suite target (#215) is resolved **up front** so a targetless/misconfigured suite fails fast with 422 instead of a queued→failed run, and a broker outage marks the run `failed` + returns 503 (same contract as the probe). New `api/v1/runs.py` read surface for the results page: `GET /runs?suite_id=&status=&limit=` and `GET /runs/{id}` (run + joined `Result`s) are **suite-scoped** — the list filters to accessible suites and the detail gates on `require_permission(view)`, so per-suite sharing + existence-hiding hold (exactly why direct-Postgres/Grafana is rejected as the primary surface); `GET /pipeline_runs?provider=&status=` is the orchestration monitoring feed (auth-only, not suite-scoped). Read helpers live in `run_service.list_runs/get_run/list_results` + `orchestration_service.list_pipeline_runs`. 14 DB-backed API tests (trigger happy/targetless-422/edit-403/no-access-404/broker-503; list scoping+filters+limit; detail+results / 404s; pipeline filters + auth). _(Run-enablement gap; PR-C0b; gates the Week-6 Results page PR-C1)_
 - [ ] ⬜ Run progress API — poll endpoint returning per-check live status
 - [ ] ⬜ Cancel run endpoint — gracefully terminate in-progress Celery task
 - [ ] ⬜ Run history retention policy — configurable purge of results older than N days
@@ -223,7 +224,7 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [ ] ⬜ Recent runs audit table with drill-down link to results
 - [ ] ⬜ **Suite Triggers panel** — UI over the existing `trigger_bindings` CRUD (#172): bind/unbind a pipeline/DAG (`provider` + `pipeline_or_dag_id` + `env`) to a suite so it runs on the pipeline's success. **Suite-level**, not a check field (orchestration providers are never a datasource/check attribute, CLAUDE.md §4); lives on the suite detail. Backend done; UI pending — [#216](https://github.com/TheurgicDuke771/DataQ/issues/216)
 
-**Week 5 total: 5 / 17** _(early credit: Celery task runner in PR 4; worker runner-dispatch #146; ADF + Airflow 10-min polling #171; plus `trigger_bindings` CRUD #172 out-of-band; check target-table + dispatch ungate #215 (PR-C0a). +2 tasks re-tracked here: check target-table #215 (slipped from W3) + Suite Triggers UI #216)_
+**Week 5 total: 6 / 18** _(early credit: Celery task runner in PR 4; worker runner-dispatch #146; ADF + Airflow 10-min polling #171; plus `trigger_bindings` CRUD #172 out-of-band; check target-table + dispatch ungate #215 (PR-C0a); manual run trigger + run/result read API (PR-C0b). +3 tasks re-tracked here: check target-table #215 (slipped from W3), Suite Triggers UI #216, and the run-enablement read API (PR-C0b))_
 
 ---
 
@@ -232,7 +233,7 @@ These were preconditions for executing the roadmap. Listed for completeness.
 **Exit gate:** Full results dashboard live across all source types; alerts firing with suppression.
 
 ### Results dashboard (10 tasks — 0/10)
-> **Build as an in-app React page** (the GX-Cloud-style redesign Phase C), **not Grafana** — reading Postgres directly would bypass DataQ's per-suite sharing + PII redaction; Grafana is deferred to an optional post-v1 ops add-on (ADR 0018 pending). Gated on the Week-5 run-enablement backend (new `runs.py` read endpoints + `POST /suites/{id}/run` + [#215](https://github.com/TheurgicDuke771/DataQ/issues/215) target table). The `results.metric_value`/`duration_ms` columns were seam-built for these trend charts (ADR 0012).
+> **Build as an in-app React page** (the GX-Cloud-style redesign Phase C), **not Grafana** — reading Postgres directly would bypass DataQ's per-suite sharing + PII redaction; Grafana is deferred to an optional post-v1 ops add-on (ADR 0018 pending). The Week-5 run-enablement backend it gates on is now **done**: `runs.py` read endpoints (`GET /runs`, `GET /runs/{id}`, `GET /pipeline_runs`) + `POST /suites/{id}/run` shipped in PR-C0b; [#215](https://github.com/TheurgicDuke771/DataQ/issues/215) target table in PR-C0a. The `results.metric_value`/`duration_ms` columns were seam-built for these trend charts (ADR 0012).
 - [ ] ⬜ Health score stat cards + 7-day trend chart
 - [ ] ⬜ Per-suite pass / fail progress bars — warn / fail / critical breakdown
 - [ ] ⬜ Results filter bar — env, datasource type, suite, date range, status
@@ -361,11 +362,11 @@ These were preconditions for executing the roadmap. Listed for completeness.
 | Week 2 | 15 | 1 | 3 | 19 |
 | Week 3 | 18 | 0 | 0 | 18 |
 | Week 4 | 16 | 2 | 8 | 26 |
-| Week 5 | 5 | 0 | 12 | 17 |
+| Week 5 | 6 | 0 | 12 | 18 |
 | Week 6 | 0 | 0 | 16 | 16 |
 | Week 7 | 0 | 1 | 28 | 29 |
 | Week 8 | 2 | 4 | 20 | 26 |
-| **TOTAL** | **62** | **9** | **90** | **161** |
+| **TOTAL** | **63** | **9** | **90** | **162** |
 
 > 161 > 100 because ADR 0004 added Airflow tasks, ADR 0011 added two seam tasks (generic runner dispatch, `ResultPublisher`), ADR 0012 added three Week-3 monitor-kind / metric seam tasks, the W5 run-enablement gaps surfaced in review (check target-table #215, Suite Triggers UI #216), the GX-Cloud-style UI redesign added four UI-shape tasks (dedicated/classified connection + check pages), plus PR-review follow-ups not in the original roadmap. Tracked here for honesty.
 

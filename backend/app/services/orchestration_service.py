@@ -334,3 +334,29 @@ def ingest_polled_runs(
             _trigger_suites(session, provider=provider, connection=connection, update=update)
         )
     return PollIngestResult(pipeline_runs=pipeline_runs, triggered_runs=triggered, skipped=skipped)
+
+
+# ── read model (PR-C0b: the pipeline-runs monitoring feed) ───────────────────
+# `pipeline_runs` is orchestration *monitoring*, not suite-scoped data — it has
+# no `suite_id` and no share rows — so the feed is gated on authentication only
+# (any signed-in user), unlike the suite-scoped `runs`/`results` reads. The link
+# back to a DQ run is the `triggered_by` marker on `runs`, not a column here.
+
+
+def list_pipeline_runs(
+    session: Session,
+    *,
+    provider: str | None = None,
+    status: str | None = None,
+    limit: int = 50,
+) -> list[PipelineRun]:
+    """Monitored orchestrator pipeline/DAG runs, newest first (`created_at` desc).
+
+    Optionally filtered by ``provider`` (adf / airflow) and/or ``status``.
+    """
+    stmt = select(PipelineRun).order_by(PipelineRun.created_at.desc()).limit(limit)
+    if provider is not None:
+        stmt = stmt.where(PipelineRun.provider == provider)
+    if status is not None:
+        stmt = stmt.where(PipelineRun.status == status)
+    return list(session.scalars(stmt))
