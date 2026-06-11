@@ -121,7 +121,7 @@ services:
   # working tree. The browser loads from localhost:3000 and the Vite proxy forwards
   # /api + /mcp to the api service over the compose network.
   frontend:
-    image: node:20-alpine
+    image: node:24-alpine
     restart: unless-stopped
     working_dir: /app
     command: sh -c "corepack enable && pnpm config set store-dir /pnpm-store && pnpm install && pnpm dev --host"
