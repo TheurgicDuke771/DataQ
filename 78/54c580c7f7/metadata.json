@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "7854c580c7f7",
+  "strategy": "manual-commit",
+  "branch": "feature/suite-target-ungate-dispatch",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".github/workflows/ci.yml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/78/54c580c7f7/0/metadata.json",
+      "transcript": "/78/54c580c7f7/0/full.jsonl",
+      "content_hash": "/78/54c580c7f7/0/content_hash.txt",
+      "prompt": "/78/54c580c7f7/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 246492,
+    "cache_creation_tokens": 10883310,
+    "cache_read_tokens": 517333280,
+    "output_tokens": 1262601,
+    "api_call_count": 1656
+  }
+}
