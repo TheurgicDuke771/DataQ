@@ -8,15 +8,60 @@ test.describe('Connections page', () => {
     await expect(page.getByRole('heading', { name: 'Connections', level: 3 })).toBeVisible();
   });
 
-  test('lists the seeded connections grouped by type', async ({ page }) => {
-    // A datasource and an orchestration provider both render — the page shows
-    // every connection type, grouped under its type heading.
+  test('lists the seeded connections under kind sections, grouped by type', async ({ page }) => {
+    // The two top-level kind sections (datasource vs orchestration) and the
+    // per-type sub-headings are both present.
+    await expect(page.getByRole('heading', { name: 'Data sources', level: 4 })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Orchestration', level: 4 })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Snowflake', level: 5 })).toBeVisible();
+
+    // A datasource and an orchestration provider both render.
     await expect(page.getByText('snowflake-analytics').first()).toBeVisible();
     await expect(page.getByText('s3-datalake').first()).toBeVisible();
     await expect(page.getByText('airflow-dags').first()).toBeVisible();
+  });
 
-    // The type-section headings (CONNECTION_TYPE_LABELS) are present.
-    await expect(page.getByRole('heading', { name: 'Snowflake', level: 5 })).toBeVisible();
+  test('add a connection via the dedicated page, then delete it', async ({ page }) => {
+    const name = `e2e-conn-${Date.now()}`;
+
+    await page.getByRole('button', { name: 'Add connection' }).click();
+    await expect(page).toHaveURL(/\/connections\/new$/);
+
+    // Step 1: the picker is split into the two kind sections; pick a datasource.
+    await expect(page.getByRole('heading', { name: 'Data sources', level: 5 })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Orchestration', level: 5 })).toBeVisible();
+    await page.getByText('Snowflake', { exact: true }).click();
+
+    // Step 2: the Snowflake form appears; fill the required fields + secret.
+    await expect(page.getByRole('heading', { name: /New Snowflake connection/ })).toBeVisible();
+    await page.getByLabel('Name').fill(name);
+    const env = page.getByLabel('Environment');
+    await env.click();
+    await env.press('ArrowDown');
+    await env.press('Enter');
+    for (const label of ['Account', 'User', 'Database', 'Schema', 'Warehouse']) {
+      await page.getByLabel(label, { exact: true }).fill(`${label.toLowerCase()}-val`);
+    }
+    await page.getByLabel('Password').fill('sekret');
+    await page.getByRole('button', { name: 'Create' }).click();
+
+    // Back on the list, the new connection card is visible.
+    await expect(page).toHaveURL(/\/connections$/);
+    const card = page.locator('.ant-card').filter({ hasText: name });
+    await expect(card).toBeVisible();
+
+    // Clean up: the card's ⋮ menu → Delete → confirm.
+    await card
+      .locator('button')
+      .filter({ has: page.locator('.anticon-more') })
+      .click();
+    await page.getByRole('menuitem', { name: 'Delete' }).click();
+    await page
+      .getByRole('dialog')
+      .filter({ hasText: 'Delete' })
+      .getByRole('button', { name: 'Delete' })
+      .click();
+    await expect(page.locator('.ant-card').filter({ hasText: name })).toHaveCount(0);
   });
 
   test('"Test all" kicks off a connectivity test on every connection', async ({ page }) => {

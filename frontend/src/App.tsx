@@ -12,6 +12,9 @@ import { getMsalInstance } from './auth/msalInstance';
 const Connections = lazy(() =>
   import('./pages/Connections').then((m) => ({ default: m.Connections })),
 );
+const ConnectionNew = lazy(() =>
+  import('./pages/ConnectionNew').then((m) => ({ default: m.ConnectionNew })),
+);
 const Suites = lazy(() => import('./pages/Suites').then((m) => ({ default: m.Suites })));
 const Home = lazy(() => import('./pages/Home').then((m) => ({ default: m.Home })));
 
@@ -51,6 +54,7 @@ export function App() {
               <Routes>
                 <Route path="/" element={<Navigate to="/connections" replace />} />
                 <Route path="/connections" element={<Connections />} />
+                <Route path="/connections/new" element={<ConnectionNew />} />
                 <Route path="/suites" element={<Suites />} />
                 <Route path="/profile" element={<Home />} />
                 <Route path="*" element={<Navigate to="/connections" replace />} />

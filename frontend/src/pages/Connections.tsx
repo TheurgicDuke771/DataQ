@@ -13,8 +13,12 @@ import {
   Typography,
 } from 'antd';
 import { useCallback, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 import {
+  CONNECTION_KIND,
+  CONNECTION_KIND_LABELS,
+  CONNECTION_KINDS,
   CONNECTION_TYPE_LABELS,
   CONNECTION_TYPES,
   type Connection,
@@ -59,6 +63,7 @@ function groupByType(connections: Connection[]): [ConnectionType, Connection[]][
 
 export function Connections() {
   const { message } = App.useApp();
+  const navigate = useNavigate();
   const { state, reload } = useAsyncData(listConnections);
   // `drawer.connection === undefined` while open = create mode; a connection = edit.
   const [drawer, setDrawer] = useState<{ open: boolean; connection?: Connection }>({ open: false });
@@ -117,7 +122,7 @@ export function Connections() {
           <Button loading={testingAll} disabled={connections.length === 0} onClick={testAll}>
             Test all
           </Button>
-          <Button type="primary" onClick={() => setDrawer({ open: true })}>
+          <Button type="primary" onClick={() => navigate('/connections/new')}>
             Add connection
           </Button>
         </Flex>
@@ -175,18 +180,30 @@ function ConnectionsBody({
   if (connections.length === 0) {
     return <Empty description="No connections configured yet" />;
   }
+  // Two top-level sections (Data sources / Orchestration), each grouping by type.
   return (
-    <>
-      {groupByType(connections).map(([type, group]) => (
-        <ConnectionTypeSection
-          key={type}
-          type={type}
-          connections={group}
-          actions={actions}
-          health={health}
-        />
-      ))}
-    </>
+    <Flex vertical gap={24}>
+      {CONNECTION_KINDS.map((kind) => {
+        const ofKind = connections.filter((c) => CONNECTION_KIND[c.type] === kind);
+        if (ofKind.length === 0) return null;
+        return (
+          <Flex key={kind} vertical gap={16}>
+            <Typography.Title level={4} style={{ margin: 0 }}>
+              {CONNECTION_KIND_LABELS[kind]}
+            </Typography.Title>
+            {groupByType(ofKind).map(([type, group]) => (
+              <ConnectionTypeSection
+                key={type}
+                type={type}
+                connections={group}
+                actions={actions}
+                health={health}
+              />
+            ))}
+          </Flex>
+        );
+      })}
+    </Flex>
   );
 }
 

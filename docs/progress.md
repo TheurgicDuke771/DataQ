@@ -21,7 +21,7 @@
 |---|---|
 | **Active since** | 2026-05-24 |
 | **Current week** | Week 4 of 8 (Connection manager UI + check editor UI) — **in progress** (Weeks 1–3 complete) |
-| **Roadmap tasks done** | 58 ✅ + 9 🟡 / 157 (~37%) |
+| **Roadmap tasks done** | 59 ✅ + 9 🟡 / 161 (~37%) |
 | **Out-of-roadmap PRs landed** | governance, tooling lock, Entire CLI, Dependabot triage (10 bumps + pyarrow direct-dep fix #202/#201), PR-3 cleanup + ADRs 0005/0006/0007/0010/0011/0012/0013/0014/0016/**0017** (Python 3.11→3.13 + Snowflake 3→4 CVE refresh, [#129](https://github.com/TheurgicDuke771/DataQ/issues/129)) + the Week-3 testing-discipline upgrade (adversarial harness + mutation spikes, CONTRIBUTING rule 4a) |
 | **Week-1 exit gate** | A logged-in user can hit a FastAPI endpoint that triggers GX against Snowflake DEV and persists a result row. — **met** (plumbing complete via PR 4a–4c; live-Snowflake run fails-soft pending DEV creds — deferred smoke) |
 | **Next milestone** | Week 4 (frontend) in flight: connection manager UI complete (list/add/edit/reauth/delete + bulk health) + suites list/detail + catalog-driven check editor all shipped; **remaining**: check dry-run + profiler panel, sharing/admin UI, Monaco custom-SQL. Week-5 early-credit already landed (worker runner-dispatch [#146](https://github.com/TheurgicDuke771/DataQ/issues/146), ADF/Airflow polling [#171](https://github.com/TheurgicDuke771/DataQ/issues/171), `trigger_bindings` CRUD [#172](https://github.com/TheurgicDuke771/DataQ/issues/172)) |
@@ -183,7 +183,14 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [ ] ⬜ Admin page — list all suites, all users, access overview
 - [ ] ⬜ Suite export / import UI (download JSON, upload JSON) _(backend export/import ready from Week 3)_
 
-**Week 4 total: 12 / 22 ✅ (+2 🟡, 1 🔵)** _(connection manager UI complete (6/6); check editor core shipped; PR-3c polish 2/3 (Settings `forbid` 🔵 blocked on the `.env` split) — dry-run + profiler panel + sharing/admin UI remain)_
+### GX-Cloud-style UI redesign (added — not in original roadmap) (4 tasks — 1/4 ✅)
+> Model the UI on [GX Cloud](https://greatexpectations.io/gx-cloud/): dedicated **full-page create flows** that **classify** what you're creating, keeping the lighter drawers for *edit*. Plan: `~/.claude/plans/fancy-moseying-raccoon.md`. Decided: in-app results page (Grafana deferred to an optional post-v1 ops add-on, never the per-suite authz path — ADR 0018 pending); full-page create + drawer edit; connections/checks redesign now (backends ready), results after the Week-5 run-enablement backend.
+- [x] ✅ **Connections — dedicated, classified add page** — `/connections/new` splits the type picker into **Data sources** vs **Orchestration** sections (CLAUDE.md §4), then the spec-driven form; the list page is grouped the same way. `CONNECTION_KIND` is the single source for the split. Edit/re-auth/delete stay on the drawer. _(PR-A1; `ConnectionNew.tsx` + sectioned `Connections.tsx`)_
+- [ ] ⬜ Connections — trim `ConnectionDrawer` to **edit-only** (create now lives on the page) _(PR-A2)_
+- [ ] ⬜ Checks — **suite selection as a route** (`/suites/:suiteId`) + **classify expectations by category** (Column values / Table shape; reserved Freshness/Volume/Schema-drift per ADR 0012) _(PR-B1)_
+- [ ] ⬜ Checks — **dedicated `/suites/:suiteId/checks/new` page** (category → expectation → config), the natural home for the [#215](https://github.com/TheurgicDuke771/DataQ/issues/215) target table/path field _(PR-B2)_
+
+**Week 4 total: 13 / 26 ✅ (+2 🟡, 1 🔵)** _(connection manager UI complete (6/6); check editor core shipped; GX-Cloud redesign started — connections add page shipped (PR-A1); PR-3c polish 2/3 (Settings `forbid` 🔵 blocked on the `.env` split) — dry-run + profiler panel + sharing/admin UI + the redesign tail remain)_
 
 ---
 
@@ -225,6 +232,7 @@ These were preconditions for executing the roadmap. Listed for completeness.
 **Exit gate:** Full results dashboard live across all source types; alerts firing with suppression.
 
 ### Results dashboard (10 tasks — 0/10)
+> **Build as an in-app React page** (the GX-Cloud-style redesign Phase C), **not Grafana** — reading Postgres directly would bypass DataQ's per-suite sharing + PII redaction; Grafana is deferred to an optional post-v1 ops add-on (ADR 0018 pending). Gated on the Week-5 run-enablement backend (new `runs.py` read endpoints + `POST /suites/{id}/run` + [#215](https://github.com/TheurgicDuke771/DataQ/issues/215) target table). The `results.metric_value`/`duration_ms` columns were seam-built for these trend charts (ADR 0012).
 - [ ] ⬜ Health score stat cards + 7-day trend chart
 - [ ] ⬜ Per-suite pass / fail progress bars — warn / fail / critical breakdown
 - [ ] ⬜ Results filter bar — env, datasource type, suite, date range, status
@@ -352,14 +360,14 @@ These were preconditions for executing the roadmap. Listed for completeness.
 | Week 1 | 7 | 1 | 2 | 10 |
 | Week 2 | 15 | 1 | 3 | 19 |
 | Week 3 | 18 | 0 | 0 | 18 |
-| Week 4 | 12 | 2 | 8 | 22 |
+| Week 4 | 13 | 2 | 11 | 26 |
 | Week 5 | 4 | 0 | 13 | 17 |
 | Week 6 | 0 | 0 | 16 | 16 |
 | Week 7 | 0 | 1 | 28 | 29 |
 | Week 8 | 2 | 4 | 20 | 26 |
-| **TOTAL** | **58** | **9** | **90** | **157** |
+| **TOTAL** | **59** | **9** | **93** | **161** |
 
-> 157 > 100 because ADR 0004 added Airflow tasks, ADR 0011 added two seam tasks (generic runner dispatch, `ResultPublisher`), ADR 0012 added three Week-3 monitor-kind / metric seam tasks, the W5 run-enablement gaps surfaced in review (check target-table #215, Suite Triggers UI #216), plus PR-review follow-ups not in the original roadmap. Tracked here for honesty.
+> 161 > 100 because ADR 0004 added Airflow tasks, ADR 0011 added two seam tasks (generic runner dispatch, `ResultPublisher`), ADR 0012 added three Week-3 monitor-kind / metric seam tasks, the W5 run-enablement gaps surfaced in review (check target-table #215, Suite Triggers UI #216), the GX-Cloud-style UI redesign added four UI-shape tasks (dedicated/classified connection + check pages), plus PR-review follow-ups not in the original roadmap. Tracked here for honesty.
 
 ---
 
