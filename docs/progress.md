@@ -21,7 +21,7 @@
 |---|---|
 | **Active since** | 2026-05-24 |
 | **Current week** | Week 4 of 8 (Connection manager UI + check editor UI) — **in progress** (Weeks 1–3 complete) |
-| **Roadmap tasks done** | 61 ✅ + 9 🟡 / 161 (~38%) |
+| **Roadmap tasks done** | 62 ✅ + 9 🟡 / 161 (~38%) |
 | **Out-of-roadmap PRs landed** | governance, tooling lock, Entire CLI, Dependabot triage (10 bumps + pyarrow direct-dep fix #202/#201), PR-3 cleanup + ADRs 0005/0006/0007/0010/0011/0012/0013/0014/0016/**0017** (Python 3.11→3.13 + Snowflake 3→4 CVE refresh, [#129](https://github.com/TheurgicDuke771/DataQ/issues/129)) + the Week-3 testing-discipline upgrade (adversarial harness + mutation spikes, CONTRIBUTING rule 4a) |
 | **Week-1 exit gate** | A logged-in user can hit a FastAPI endpoint that triggers GX against Snowflake DEV and persists a result row. — **met** (plumbing complete via PR 4a–4c; live-Snowflake run fails-soft pending DEV creds — deferred smoke) |
 | **Next milestone** | Week 4 (frontend) in flight: connection manager UI complete (list/add/edit/reauth/delete + bulk health) + suites list/detail + catalog-driven check editor all shipped; **remaining**: check dry-run + profiler panel, sharing/admin UI, Monaco custom-SQL. Week-5 early-credit already landed (worker runner-dispatch [#146](https://github.com/TheurgicDuke771/DataQ/issues/146), ADF/Airflow polling [#171](https://github.com/TheurgicDuke771/DataQ/issues/171), `trigger_bindings` CRUD [#172](https://github.com/TheurgicDuke771/DataQ/issues/172)) |
@@ -183,14 +183,14 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [ ] ⬜ Admin page — list all suites, all users, access overview
 - [ ] ⬜ Suite export / import UI (download JSON, upload JSON) _(backend export/import ready from Week 3)_
 
-### GX-Cloud-style UI redesign (added — not in original roadmap) (4 tasks — 3/4 ✅)
+### GX-Cloud-style UI redesign (added — not in original roadmap) (4 tasks — 4/4 ✅)
 > Model the UI on [GX Cloud](https://greatexpectations.io/gx-cloud/): dedicated **full-page create flows** that **classify** what you're creating, keeping the lighter drawers for *edit*. Plan: `~/.claude/plans/fancy-moseying-raccoon.md`. Decided: in-app results page (Grafana deferred to an optional post-v1 ops add-on, never the per-suite authz path — ADR 0018 pending); full-page create + drawer edit; connections/checks redesign now (backends ready), results after the Week-5 run-enablement backend.
 - [x] ✅ **Connections — dedicated, classified add page** — `/connections/new` splits the type picker into **Data sources** vs **Orchestration** sections (CLAUDE.md §4), then the spec-driven form; the list page is grouped the same way. `CONNECTION_KIND` is the single source for the split. Edit/re-auth/delete stay on the drawer. _(PR-A1; `ConnectionNew.tsx` + sectioned `Connections.tsx`)_
 - [x] ✅ **Connections — `ConnectionDrawer` trimmed to edit-only** — create now lives on the page; the drawer drops the type/env Selects + secret + create branch, shows type/env read-only, and the list owns a simpler `editing: Connection | null` state. _(PR-A2)_
 - [x] ✅ **Checks — suite selection as a route + categorized expectation picker** — `/suites/:suiteId` makes the selected suite deep-linkable and survives the check-editor round-trip; the catalog gains a `category` (Column values / Table shape) and the picker groups by it (antd optgroups). Reserved Freshness/Volume/Schema-drift categories (ADR 0012) land with the dedicated page. _(PR-B1)_
-- [ ] ⬜ Checks — **dedicated `/suites/:suiteId/checks/new` page** (category → expectation → config), the natural home for the [#215](https://github.com/TheurgicDuke771/DataQ/issues/215) target table/path field _(PR-B2)_
+- [x] ✅ **Checks — dedicated `/suites/:suiteId/checks/new` page** — category → expectation → config/thresholds, with reserved monitor-kind categories (Freshness/Volume/Schema-drift, ADR 0012) shown disabled. Shared form logic extracted to `checkForm.ts` (conversions) + `checkFormFields.tsx` (field components), reused by the page and the now edit-only `CheckDrawer`. The natural home for the [#215](https://github.com/TheurgicDuke771/DataQ/issues/215) target table/path field. _(PR-B2; `CheckNew.tsx`)_
 
-**Week 4 total: 15 / 26 ✅ (+2 🟡, 1 🔵)** _(connection manager UI complete (6/6); check editor core shipped; GX-Cloud redesign — connections add page + edit-only drawer + suite-route/categorized picker shipped (PR-A1/A2/B1); dedicated check page next (PR-B2); PR-3c polish 2/3 (Settings `forbid` 🔵 blocked on the `.env` split) — dry-run + profiler panel + sharing/admin UI remain)_
+**Week 4 total: 16 / 26 ✅ (+2 🟡, 1 🔵)** _(connection manager UI complete (6/6); check editor core shipped; **GX-Cloud redesign complete (4/4)** — classified connection + check create pages, edit-only drawers, suite-route/categorized picker (PR-A1/A2/B1/B2); PR-3c polish 2/3 (Settings `forbid` 🔵 blocked on the `.env` split) — dry-run + profiler panel + sharing/admin UI remain)_
 
 ---
 
@@ -360,12 +360,12 @@ These were preconditions for executing the roadmap. Listed for completeness.
 | Week 1 | 7 | 1 | 2 | 10 |
 | Week 2 | 15 | 1 | 3 | 19 |
 | Week 3 | 18 | 0 | 0 | 18 |
-| Week 4 | 15 | 2 | 9 | 26 |
+| Week 4 | 16 | 2 | 8 | 26 |
 | Week 5 | 4 | 0 | 13 | 17 |
 | Week 6 | 0 | 0 | 16 | 16 |
 | Week 7 | 0 | 1 | 28 | 29 |
 | Week 8 | 2 | 4 | 20 | 26 |
-| **TOTAL** | **61** | **9** | **91** | **161** |
+| **TOTAL** | **62** | **9** | **90** | **161** |
 
 > 161 > 100 because ADR 0004 added Airflow tasks, ADR 0011 added two seam tasks (generic runner dispatch, `ResultPublisher`), ADR 0012 added three Week-3 monitor-kind / metric seam tasks, the W5 run-enablement gaps surfaced in review (check target-table #215, Suite Triggers UI #216), the GX-Cloud-style UI redesign added four UI-shape tasks (dedicated/classified connection + check pages), plus PR-review follow-ups not in the original roadmap. Tracked here for honesty.
 

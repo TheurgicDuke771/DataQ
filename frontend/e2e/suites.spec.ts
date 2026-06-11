@@ -22,6 +22,39 @@ test.describe('Suites page', () => {
     await expect(page.getByText('expect_column_values_to_not_be_null').first()).toBeVisible();
   });
 
+  test('add a check via the dedicated page, then delete it', async ({ page }) => {
+    const name = `e2e check ${Date.now()}`;
+
+    // Open a seeded suite, then the dedicated check page.
+    await page.getByText('Orders quality').click();
+    await page.getByRole('button', { name: 'Add check' }).click();
+    await expect(page).toHaveURL(/\/suites\/[0-9a-f-]+\/checks\/new$/);
+
+    // Step 1: categories (real + reserved) → pick one.
+    await expect(page.getByText('Column values', { exact: true })).toBeVisible();
+    await expect(page.getByText('Freshness', { exact: true })).toBeVisible();
+    await page.getByText('Column values', { exact: true }).click();
+
+    // Step 2: pick an expectation → Step 3: fill config + create.
+    await page.getByText('Column values not null', { exact: true }).click();
+    await page.getByLabel('Name').fill(name);
+    await page.getByLabel('Column', { exact: true }).fill('order_id');
+    await page.getByRole('button', { name: 'Create check' }).click();
+
+    // Back on the suite detail, the new check is listed.
+    await expect(page).toHaveURL(/\/suites\/[0-9a-f-]+$/);
+    const row = page.locator('.ant-list-item').filter({ hasText: name });
+    await expect(row).toBeVisible();
+
+    // Clean up: the check row's Delete → confirm.
+    await row.getByRole('button', { name: 'Delete' }).click();
+    await page
+      .getByRole('dialog', { name: /^Delete/ })
+      .getByRole('button', { name: 'Delete' })
+      .click();
+    await expect(page.locator('.ant-list-item').filter({ hasText: name })).toHaveCount(0);
+  });
+
   test('create a suite, see it in the list, then delete it', async ({ page }) => {
     const name = `e2e suite ${Date.now()}`;
 

@@ -3,15 +3,16 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { type Check, createCheck, updateCheck } from '../../src/api/suites';
+import { type Check, updateCheck } from '../../src/api/suites';
 import { CheckDrawer } from '../../src/components/checks/CheckDrawer';
 
+// The drawer is edit-only — creating a check is the dedicated /checks/new page
+// (CheckNew). So only the update path is mocked + exercised here.
 vi.mock('../../src/api/suites', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/api/suites')>();
-  return { ...actual, createCheck: vi.fn(), updateCheck: vi.fn() };
+  return { ...actual, updateCheck: vi.fn() };
 });
 
-const mockCreate = vi.mocked(createCheck);
 const mockUpdate = vi.mocked(updateCheck);
 
 function renderDrawer(props: Partial<Parameters<typeof CheckDrawer>[0]> = {}) {
@@ -22,88 +23,8 @@ function renderDrawer(props: Partial<Parameters<typeof CheckDrawer>[0]> = {}) {
   );
 }
 
-// antd Select renders options in a portal; pick by visible option text.
-async function selectOption(
-  user: ReturnType<typeof userEvent.setup>,
-  label: string,
-  option: string,
-) {
-  await user.click(screen.getByLabelText(label));
-  const opt = await screen.findByText(option, { selector: '.ant-select-item-option-content' });
-  await user.click(opt);
-}
-
 afterEach(() => {
   vi.clearAllMocks();
-});
-
-describe('CheckDrawer — create', () => {
-  it('groups the expectation picker by category', async () => {
-    const user = userEvent.setup();
-    renderDrawer();
-
-    await user.click(screen.getByLabelText('Expectation'));
-    // antd renders optgroup headers with the category labels.
-    expect(
-      await screen.findByText('Column values', { selector: '.ant-select-item-group' }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText('Table shape', { selector: '.ant-select-item-group' }),
-    ).toBeInTheDocument();
-  });
-
-  it('renders config fields for the chosen expectation and parses a value-set list', async () => {
-    const user = userEvent.setup();
-    const onSaved = vi.fn();
-    mockCreate.mockResolvedValue({} as Check);
-    renderDrawer({ onSaved });
-
-    await user.type(screen.getByLabelText('Name'), 'status in set');
-    await selectOption(user, 'Expectation', 'Column values in set');
-
-    // Fields from the catalog appear.
-    await user.type(await screen.findByLabelText('Column'), 'status');
-    await user.type(screen.getByLabelText('Allowed values'), 'active, closed , pending');
-
-    await user.click(screen.getByRole('button', { name: 'Create' }));
-
-    await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1));
-    expect(mockCreate).toHaveBeenCalledWith('s1', {
-      name: 'status in set',
-      expectation_type: 'expect_column_values_to_be_in_set',
-      // list is split/trimmed; thresholds omitted → null
-      config: { column: 'status', value_set: ['active', 'closed', 'pending'] },
-      warn_threshold: null,
-      fail_threshold: null,
-      critical_threshold: null,
-    });
-    expect(onSaved).toHaveBeenCalled();
-  });
-
-  it('rejects a delimiter-only value-set instead of saving an empty config', async () => {
-    const user = userEvent.setup();
-    renderDrawer();
-
-    await user.type(screen.getByLabelText('Name'), 'bad set');
-    await selectOption(user, 'Expectation', 'Column values in set');
-    await user.type(await screen.findByLabelText('Column'), 'status');
-    await user.type(screen.getByLabelText('Allowed values'), ' , ');
-
-    await user.click(screen.getByRole('button', { name: 'Create' }));
-
-    expect(await screen.findByText('Enter at least one value')).toBeInTheDocument();
-    expect(mockCreate).not.toHaveBeenCalled();
-  });
-
-  it('does not submit without a name and expectation', async () => {
-    const user = userEvent.setup();
-    renderDrawer();
-
-    await user.click(screen.getByRole('button', { name: 'Create' }));
-
-    await waitFor(() => expect(screen.getAllByText('Name').length).toBeGreaterThan(0));
-    expect(mockCreate).not.toHaveBeenCalled();
-  });
 });
 
 describe('CheckDrawer — edit', () => {
@@ -141,7 +62,21 @@ describe('CheckDrawer — edit', () => {
       fail_threshold: 10,
       critical_threshold: null,
     });
-    expect(mockCreate).not.toHaveBeenCalled();
     expect(onSaved).toHaveBeenCalled();
+  });
+
+  it('groups the expectation picker by category', async () => {
+    const user = userEvent.setup();
+    renderDrawer({ check: existing });
+
+    await waitFor(() => expect(screen.getByLabelText('Column')).toHaveValue('amount'));
+    await user.click(screen.getByLabelText('Expectation'));
+    // antd renders optgroup headers with the category labels.
+    expect(
+      await screen.findByText('Column values', { selector: '.ant-select-item-group' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('Table shape', { selector: '.ant-select-item-group' }),
+    ).toBeInTheDocument();
   });
 });
