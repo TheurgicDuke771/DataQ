@@ -47,8 +47,10 @@ test.describe('Suites page', () => {
     await expect(page.getByRole('heading', { name, level: 4 })).toBeVisible();
 
     // Delete it via the detail action → confirm modal → the list row disappears.
+    // Anchor the confirm to the Modal by its title (`Delete "<name>"?`) — antd
+    // renders role=dialog for the (now-hidden) Drawer too, so filter by name.
     await page.getByRole('button', { name: 'Delete' }).click();
-    const confirm = page.getByRole('dialog').filter({ hasText: 'Delete' });
+    const confirm = page.getByRole('dialog', { name: /^Delete/ });
     await confirm.getByRole('button', { name: 'Delete' }).click();
     await expect(page.locator('.ant-list-item').filter({ hasText: name })).toHaveCount(0);
   });

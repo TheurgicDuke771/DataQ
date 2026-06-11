@@ -25,10 +25,11 @@ test.describe('Connections page', () => {
     await testAll.click();
 
     // With placeholder creds the tests fail-soft — we assert the health signal
-    // *appears* (testing→failed), not that connectivity succeeds. Either a
-    // transient "testing…" or a settled "failed/healthy" badge proves the
-    // per-card health path ran end-to-end.
-    await expect(page.getByText(/testing…|failed|healthy/).first()).toBeVisible({
+    // *appears* (testing → unreachable), not that connectivity succeeds. The
+    // settled failure badge reads "unreachable" (HealthBadge, Connections.tsx);
+    // "healthy" only if real creds happened to work. A transient "testing…"
+    // also counts — any of them proves the per-card health path ran end-to-end.
+    await expect(page.getByText(/testing…|unreachable|healthy/).first()).toBeVisible({
       timeout: 20_000,
     });
   });
