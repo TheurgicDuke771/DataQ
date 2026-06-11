@@ -23,10 +23,10 @@ import {
 } from './expectationCatalog';
 
 /**
- * Author a GX expectation (v1's only check kind). The expectation Select drives
- * which config fields render (from EXPECTATION_CATALOG); the submitted `config`
- * is rebuilt from only the selected expectation's declared fields, so switching
- * types never leaks stale kwargs to the backend.
+ * Author a GX expectation (v1's only check kind). The expectation Select (grouped
+ * by category) drives which config fields render (from the expectation catalog);
+ * the submitted `config` is rebuilt from only the selected expectation's declared
+ * fields, so switching types never leaks stale kwargs to the backend.
  */
 export function CheckDrawer({
   open,
