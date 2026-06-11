@@ -167,11 +167,12 @@ function SuiteDetail({
   onDeleted: () => void;
 }) {
   const { message, modal } = App.useApp();
+  const navigate = useNavigate();
   // Remounted (keyed by suite.id) when the selection changes → checks refetch.
   const { state, reload } = useAsyncData(() => listChecks(suite.id));
   const connection = connections.find((c) => c.id === suite.connection_id);
-  // `checkDrawer.check === undefined` while open = create; a check = edit.
-  const [checkDrawer, setCheckDrawer] = useState<{ open: boolean; check?: Check }>({ open: false });
+  // The edit drawer (create is the dedicated /checks/new page) → open iff editing.
+  const [editingCheck, setEditingCheck] = useState<Check | null>(null);
 
   const onDelete = () => {
     modal.confirm({
@@ -221,17 +222,17 @@ function SuiteDetail({
       <ChecksList
         suiteId={suite.id}
         state={state}
-        onAdd={() => setCheckDrawer({ open: true })}
-        onEdit={(check) => setCheckDrawer({ open: true, check })}
+        onAdd={() => navigate(`/suites/${suite.id}/checks/new`)}
+        onEdit={(check) => setEditingCheck(check)}
         onChanged={reload}
       />
       <CheckDrawer
-        open={checkDrawer.open}
+        open={editingCheck !== null}
         suiteId={suite.id}
-        check={checkDrawer.check}
-        onClose={() => setCheckDrawer({ open: false })}
+        check={editingCheck ?? undefined}
+        onClose={() => setEditingCheck(null)}
         onSaved={() => {
-          setCheckDrawer({ open: false });
+          setEditingCheck(null);
           reload();
         }}
       />

@@ -16,6 +16,7 @@ const ConnectionNew = lazy(() =>
   import('./pages/ConnectionNew').then((m) => ({ default: m.ConnectionNew })),
 );
 const Suites = lazy(() => import('./pages/Suites').then((m) => ({ default: m.Suites })));
+const CheckNew = lazy(() => import('./pages/CheckNew').then((m) => ({ default: m.CheckNew })));
 const Home = lazy(() => import('./pages/Home').then((m) => ({ default: m.Home })));
 
 const { Header, Sider, Content } = Layout;
@@ -57,6 +58,7 @@ export function App() {
                 <Route path="/connections/new" element={<ConnectionNew />} />
                 <Route path="/suites" element={<Suites />} />
                 <Route path="/suites/:suiteId" element={<Suites />} />
+                <Route path="/suites/:suiteId/checks/new" element={<CheckNew />} />
                 <Route path="/profile" element={<Home />} />
                 <Route path="*" element={<Navigate to="/connections" replace />} />
               </Routes>
