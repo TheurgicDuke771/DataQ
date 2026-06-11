@@ -21,6 +21,26 @@ test.describe('Connections page', () => {
     await expect(page.getByText('airflow-dags').first()).toBeVisible();
   });
 
+  test('the edit drawer opens read-only on type + env (no create fields)', async ({ page }) => {
+    // Open the ⋮ menu on a seeded Snowflake connection → Edit.
+    const card = page.locator('.ant-card').filter({ hasText: 'snowflake-analytics' }).first();
+    await card
+      .locator('button')
+      .filter({ has: page.locator('.anticon-more') })
+      .click();
+    await page.getByRole('menuitem', { name: 'Edit' }).click();
+
+    const drawer = page.getByRole('dialog', { name: 'Edit connection' });
+    await expect(drawer).toBeVisible();
+    // Type is shown read-only; name stays editable; the secret field is omitted
+    // (rotation is the separate Re-auth flow) — i.e. none of the create-only UI.
+    await expect(drawer.getByText('Snowflake')).toBeVisible();
+    await expect(drawer.getByLabel('Name')).toBeVisible();
+    await expect(drawer.getByLabel('Password')).toHaveCount(0);
+    await drawer.getByRole('button', { name: 'Cancel' }).click();
+    await expect(drawer).toBeHidden();
+  });
+
   test('add a connection via the dedicated page, then delete it', async ({ page }) => {
     const name = `e2e-conn-${Date.now()}`;
 

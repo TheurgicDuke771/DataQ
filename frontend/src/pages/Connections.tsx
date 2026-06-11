@@ -65,8 +65,9 @@ export function Connections() {
   const { message } = App.useApp();
   const navigate = useNavigate();
   const { state, reload } = useAsyncData(listConnections);
-  // `drawer.connection === undefined` while open = create mode; a connection = edit.
-  const [drawer, setDrawer] = useState<{ open: boolean; connection?: Connection }>({ open: false });
+  // The drawer is edit-only (create is the /connections/new page) → it's open iff
+  // a connection is being edited.
+  const [editing, setEditing] = useState<Connection | null>(null);
   const [reauthing, setReauthing] = useState<Connection | null>(null);
   // Per-connection live connectivity status (the bulk health view).
   const [health, setHealth] = useState<Record<string, HealthState>>({});
@@ -105,7 +106,7 @@ export function Connections() {
   };
 
   const actions: ConnectionActions = {
-    onEdit: (connection) => setDrawer({ open: true, connection }),
+    onEdit: setEditing,
     onReauth: setReauthing,
     onChanged: reload,
     onTest: testOne,
@@ -129,13 +130,13 @@ export function Connections() {
       </Flex>
       <ConnectionsBody state={state} actions={actions} health={health} />
       <ConnectionDrawer
-        open={drawer.open}
-        connection={drawer.connection}
-        onClose={() => setDrawer({ open: false })}
+        open={editing !== null}
+        connection={editing ?? undefined}
+        onClose={() => setEditing(null)}
         onSaved={() => {
           // An edit may have changed the host/credential → invalidate any prior test.
-          if (drawer.connection) clearHealth(drawer.connection.id);
-          setDrawer({ open: false });
+          if (editing) clearHealth(editing.id);
+          setEditing(null);
           reload();
         }}
       />
