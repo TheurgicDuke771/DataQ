@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "b04f028ccde8",
+  "strategy": "manual-commit",
+  "branch": "feature/suite-target-ungate-dispatch",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "CLAUDE.md",
+    "backend/app/db/models.py",
+    "backend/app/services/orchestration_service.py",
+    "backend/app/worker/tasks.py",
+    "backend/tests/e2e/test_probe_e2e.py",
+    "backend/tests/services/test_orchestration_service.py",
+    "backend/tests/worker/test_tasks.py",
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/b0/4f028ccde8/0/metadata.json",
+      "transcript": "/b0/4f028ccde8/0/full.jsonl",
+      "content_hash": "/b0/4f028ccde8/0/content_hash.txt",
+      "prompt": "/b0/4f028ccde8/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 229697,
+    "cache_creation_tokens": 10781102,
+    "cache_read_tokens": 497342109,
+    "output_tokens": 1204011,
+    "api_call_count": 1573
+  }
+}

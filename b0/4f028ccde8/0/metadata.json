@@ -1,0 +1,92 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "b04f028ccde8",
+  "session_id": "8603fa2a-25c9-4c76-87d4-83228bd296a6",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-11T08:51:40.270863Z",
+  "branch": "feature/suite-target-ungate-dispatch",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "CLAUDE.md",
+    "backend/app/db/models.py",
+    "backend/app/services/orchestration_service.py",
+    "backend/app/worker/tasks.py",
+    "backend/tests/e2e/test_probe_e2e.py",
+    "backend/tests/services/test_orchestration_service.py",
+    "backend/tests/worker/test_tasks.py",
+    "docs/progress.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-4-8",
+  "turn_id": "001d8efd4125",
+  "token_usage": {
+    "input_tokens": 229697,
+    "cache_creation_tokens": 10781102,
+    "cache_read_tokens": 497342109,
+    "output_tokens": 1204011,
+    "api_call_count": 1573
+  },
+  "session_metrics": {
+    "turn_count": 46
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-11T08:51:40.069786Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 394,
+    "human_modified": 119,
+    "human_removed": 0,
+    "total_committed": 394,
+    "total_lines_changed": 520,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 430,
+      "user_lines_removed": 61,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6,
+        "backend/alembic/versions/b1f2c3d4e5a6_add_suites_target.py": 40,
+        "backend/app/api/v1/probe.py": 1,
+        "backend/app/api/v1/suites.py": 30,
+        "backend/app/db/models.py": 6,
+        "backend/app/services/orchestration_service.py": 15,
+        "backend/app/services/probe.py": 9,
+        "backend/app/services/run_target.py": 102,
+        "backend/app/services/suite_service.py": 24,
+        "backend/app/worker/tasks.py": 28,
+        "backend/tests/api/test_probe.py": 1,
+        "backend/tests/api/test_suites.py": 38,
+        "backend/tests/conftest.py": 18,
+        "backend/tests/e2e/test_probe_e2e.py": 4,
+        "backend/tests/services/test_orchestration_service.py": 5,
+        "backend/tests/services/test_run_target.py": 76,
+        "backend/tests/worker/test_tasks.py": 25,
+        "docs/progress.md": 2
+      },
+      "user_removed_per_file": {
+        "backend/app/api/v1/probe.py": 2,
+        "backend/app/api/v1/suites.py": 1,
+        "backend/app/services/orchestration_service.py": 9,
+        "backend/app/services/suite_service.py": 3,
+        "backend/app/worker/tasks.py": 32,
+        "backend/tests/api/test_probe.py": 1,
+        "backend/tests/e2e/test_probe_e2e.py": 3,
+        "backend/tests/services/test_orchestration_service.py": 1,
+        "backend/tests/worker/test_tasks.py": 7,
+        "docs/progress.md": 2
+      }
+    }
+  ]
+}
