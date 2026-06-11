@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "59823159068e",
+  "strategy": "manual-commit",
+  "branch": "chore/connection-drawer-edit-only",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/components/connections/ConnectionDrawer.tsx",
+    "frontend/tests/components/ConnectionDrawer.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/59/823159068e/0/metadata.json",
+      "transcript": "/59/823159068e/0/full.jsonl",
+      "content_hash": "/59/823159068e/0/content_hash.txt",
+      "prompt": "/59/823159068e/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 187441,
+    "cache_creation_tokens": 10343365,
+    "cache_read_tokens": 450593897,
+    "output_tokens": 1083900,
+    "api_call_count": 1365
+  }
+}

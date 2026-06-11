@@ -1,0 +1,50 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "59823159068e",
+  "session_id": "8603fa2a-25c9-4c76-87d4-83228bd296a6",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-11T05:48:26.914227Z",
+  "branch": "chore/connection-drawer-edit-only",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/components/connections/ConnectionDrawer.tsx",
+    "frontend/tests/components/ConnectionDrawer.test.tsx"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-4-8",
+  "turn_id": "0a382a991cd5",
+  "token_usage": {
+    "input_tokens": 187441,
+    "cache_creation_tokens": 10343365,
+    "cache_read_tokens": 450593897,
+    "output_tokens": 1083900,
+    "api_call_count": 1365
+  },
+  "session_metrics": {
+    "turn_count": 42
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-11T05:48:26.72677Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 84,
+    "human_removed": 86,
+    "total_committed": 0,
+    "total_lines_changed": 184,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}
