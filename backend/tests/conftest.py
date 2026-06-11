@@ -26,20 +26,25 @@ def _reset_caches() -> Iterator[None]:
 
 
 @pytest.fixture(autouse=True)
-def stub_run_dispatch(monkeypatch: pytest.MonkeyPatch) -> list[str]:
-    """Stub `run_suite.delay` so any code path that triggers a suite run (the
-    pipeline-success ungate #215, manual runs) never publishes to a real broker.
+def stub_run_dispatch(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Stub `run_dispatch.dispatch_run` so any code path that triggers a suite run
+    (the pipeline-success ungate #215, the probe, manual runs) never publishes to
+    a real broker.
 
-    Returns the list of dispatched run-id args, so a test can assert dispatch
-    happened. Tests that need bespoke dispatch behaviour (e.g. the probe broker-
-    failure path) re-patch `.delay` themselves — their function-scoped patch is
-    applied after this autouse fixture and so wins. The probe e2e test uses
-    `apply_async` (a real publish), which this does not touch.
+    Returns the list of dispatched run-ids (as strings), so a test can assert
+    dispatch happened. Tests that need bespoke dispatch behaviour (e.g. the
+    broker-failure path) re-patch `run_dispatch.dispatch_run` themselves — their
+    function-scoped patch is applied after this autouse fixture and so wins. The
+    probe e2e test uses `apply_async` (a real publish), which this does not touch.
+
+    `@pytest.mark.real_dispatch` opts out entirely — for tests of `dispatch_run`
+    itself, which spy `celery_app.send_task` instead.
     """
-    from backend.app.worker import tasks
-
     calls: list[str] = []
-    monkeypatch.setattr(tasks.run_suite, "delay", lambda run_id: calls.append(run_id))
+    if request.node.get_closest_marker("real_dispatch") is None:
+        from backend.app.services import run_dispatch
+
+        monkeypatch.setattr(run_dispatch, "dispatch_run", lambda run_id: calls.append(str(run_id)))
     return calls
 
 

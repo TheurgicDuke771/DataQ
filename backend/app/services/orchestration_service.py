@@ -31,6 +31,7 @@ from backend.app.core.secrets import SecretStore
 from backend.app.db.models import Connection, PipelineRun, Run, TriggerBinding
 from backend.app.orchestration.base import OrchestrationProvider, RunUpdate
 from backend.app.orchestration.registry import get_orchestration_provider
+from backend.app.services import run_dispatch
 
 log = get_logger(__name__)
 
@@ -226,17 +227,14 @@ def _trigger_suites(
             run_marker=marker,
             count=len(created),
         )
-        # Lazy import: `worker.tasks` imports this module, so a module-level
-        # import would be circular. The worker resolves each suite's target.
-        from backend.app.worker.tasks import run_suite
-
         for run in created:
             try:
-                run_suite.delay(str(run.id))
+                run_dispatch.dispatch_run(run.id)
             except Exception:
-                # Mirror the worker's terminal-failed shape: a failed run carries
-                # a finished_at (started_at stays NULL — it never started). Keeps
-                # run-history/duration views consistent across dispatch paths.
+                # Broker down: don't leave the run stuck 'queued'. Mark it failed
+                # with the worker's terminal-failed shape — finished_at set,
+                # started_at NULL (it never started) — so run-history/duration
+                # views stay consistent across dispatch paths.
                 run.status = "failed"
                 run.finished_at = datetime.now(UTC)
                 session.commit()

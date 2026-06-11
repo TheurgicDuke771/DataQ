@@ -20,8 +20,8 @@ from backend.app.core.auth import get_current_user
 from backend.app.core.config import get_settings
 from backend.app.db.models import Result, Run, User
 from backend.app.db.session import get_db
+from backend.app.services import run_dispatch
 from backend.app.services.probe import ensure_probe_fixtures
-from backend.app.worker.tasks import run_suite
 
 router = APIRouter(tags=["probe"])
 
@@ -70,7 +70,7 @@ def trigger_snowflake_probe(
     db.refresh(run)
 
     try:
-        run_suite.delay(str(run.id))
+        run_dispatch.dispatch_run(run.id)
     except Exception as exc:  # broker unreachable — don't leave the run stuck queued
         run.status = "failed"
         db.commit()

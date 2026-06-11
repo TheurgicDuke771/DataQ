@@ -404,15 +404,15 @@ def test_polled_succeeded_run_records_and_triggers(
 def test_dispatch_broker_failure_marks_run_failed_with_finished_at(
     db_session: Any, monkeypatch: Any
 ) -> None:
-    """If `run_suite.delay` raises (broker down), the triggered run must not be
-    left stuck 'queued' — it's marked failed with a finished_at, mirroring the
-    worker's terminal-failed shape so run-history views stay consistent (#215)."""
-    from backend.app.worker import tasks
+    """If dispatch raises (broker down), the triggered run must not be left stuck
+    'queued' — it's marked failed with a finished_at, mirroring the worker's
+    terminal-failed shape so run-history views stay consistent (#215)."""
+    from backend.app.services import run_dispatch
 
-    def _boom(_run_id: str) -> None:
+    def _boom(_run_id: Any) -> None:
         raise RuntimeError("broker unreachable")
 
-    monkeypatch.setattr(tasks.run_suite, "delay", _boom)
+    monkeypatch.setattr(run_dispatch, "dispatch_run", _boom)
 
     conn = _adf_connection_with_secret(db_session)
     suite = _suite(db_session, conn)
