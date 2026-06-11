@@ -14,6 +14,16 @@
 
 export type ConfigFieldType = 'string' | 'number' | 'list';
 
+/**
+ * Expectation categories — the GX-Cloud-style classification the check editor
+ * groups by. v1 ships value-level GX expectations only; the monitor-kind seam
+ * (ADR 0012) reserves Freshness / Volume / Schema-drift categories for v1.x
+ * auto-monitors, surfaced (disabled) on the dedicated check page.
+ */
+export type ExpectationCategory = 'Column values' | 'Table shape';
+
+export const EXPECTATION_CATEGORIES: ExpectationCategory[] = ['Column values', 'Table shape'];
+
 export interface ConfigField {
   /** Key in the GX `config` kwargs object. */
   name: string;
@@ -28,6 +38,7 @@ export interface ExpectationSpec {
   type: string;
   label: string;
   description: string;
+  category: ExpectationCategory;
   fields: ConfigField[];
 }
 
@@ -38,18 +49,21 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
     type: 'expect_column_values_to_not_be_null',
     label: 'Column values not null',
     description: 'Every value in the column is non-null.',
+    category: 'Column values',
     fields: [COLUMN],
   },
   {
     type: 'expect_column_values_to_be_unique',
     label: 'Column values unique',
     description: 'Values in the column are distinct (no duplicates).',
+    category: 'Column values',
     fields: [COLUMN],
   },
   {
     type: 'expect_column_values_to_be_between',
     label: 'Column values in range',
     description: 'Numeric values fall within [min, max].',
+    category: 'Column values',
     fields: [
       COLUMN,
       { name: 'min_value', label: 'Minimum', type: 'number', optional: true },
@@ -60,6 +74,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
     type: 'expect_column_values_to_be_in_set',
     label: 'Column values in set',
     description: 'Every value is one of an allowed set.',
+    category: 'Column values',
     fields: [
       COLUMN,
       {
@@ -74,6 +89,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
     type: 'expect_column_value_lengths_to_be_between',
     label: 'Column value lengths in range',
     description: 'String lengths fall within [min, max].',
+    category: 'Column values',
     fields: [
       COLUMN,
       { name: 'min_value', label: 'Min length', type: 'number', optional: true },
@@ -84,12 +100,14 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
     type: 'expect_column_values_to_match_regex',
     label: 'Column values match regex',
     description: 'Every value matches the given regular expression.',
+    category: 'Column values',
     fields: [COLUMN, { name: 'regex', label: 'Regex', type: 'string' }],
   },
   {
     type: 'expect_table_row_count_to_be_between',
     label: 'Table row count in range',
     description: 'The table’s row count falls within [min, max].',
+    category: 'Table shape',
     fields: [
       { name: 'min_value', label: 'Minimum rows', type: 'number', optional: true },
       { name: 'max_value', label: 'Maximum rows', type: 'number', optional: true },
@@ -101,3 +119,13 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
 export const EXPECTATION_BY_TYPE: Record<string, ExpectationSpec> = Object.fromEntries(
   EXPECTATION_CATALOG.map((e) => [e.type, e]),
 );
+
+/** Expectations grouped by category, in category order — drives the grouped
+ *  expectation picker (antd Select optgroups / the dedicated check page). */
+export const EXPECTATIONS_BY_CATEGORY: {
+  category: ExpectationCategory;
+  specs: ExpectationSpec[];
+}[] = EXPECTATION_CATEGORIES.map((category) => ({
+  category,
+  specs: EXPECTATION_CATALOG.filter((e) => e.category === category),
+}));

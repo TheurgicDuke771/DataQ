@@ -1,6 +1,7 @@
 import { App as AntApp } from 'antd';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { type Connection, listConnections } from '../../src/api/connections';
@@ -72,11 +73,18 @@ function check(overrides: Partial<Check> = {}): Check {
   };
 }
 
+// Selecting a suite navigates to /suites/:suiteId, so render both routes at the
+// same Suites component (the param drives which suite is shown).
 function renderPage() {
   return render(
-    <AntApp>
-      <Suites />
-    </AntApp>,
+    <MemoryRouter initialEntries={['/suites']}>
+      <AntApp>
+        <Routes>
+          <Route path="/suites" element={<Suites />} />
+          <Route path="/suites/:suiteId" element={<Suites />} />
+        </Routes>
+      </AntApp>
+    </MemoryRouter>,
   );
 }
 
@@ -99,6 +107,27 @@ describe('Suites', () => {
     expect(await screen.findByText('order_id not null')).toBeInTheDocument();
     expect(screen.getByText('sf-dev · Snowflake')).toBeInTheDocument();
     expect(screen.getByText('DEV')).toBeInTheDocument();
+    expect(mockListChecks).toHaveBeenCalledWith('s1');
+  });
+
+  it('deep-links to a suite via the route param (no click needed)', async () => {
+    mockListConnections.mockResolvedValue([connection]);
+    mockListSuites.mockResolvedValue([suite()]);
+    mockListChecks.mockResolvedValue([check()]);
+
+    render(
+      <MemoryRouter initialEntries={['/suites/s1']}>
+        <AntApp>
+          <Routes>
+            <Route path="/suites" element={<Suites />} />
+            <Route path="/suites/:suiteId" element={<Suites />} />
+          </Routes>
+        </AntApp>
+      </MemoryRouter>,
+    );
+
+    // The detail panel renders straight from the URL.
+    expect(await screen.findByText('order_id not null')).toBeInTheDocument();
     expect(mockListChecks).toHaveBeenCalledWith('s1');
   });
 

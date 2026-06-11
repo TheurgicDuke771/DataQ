@@ -1,5 +1,6 @@
 import { App, Alert, Button, Card, Empty, Flex, List, Spin, Tag, Typography } from 'antd';
 import { useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 
 import {
   CONNECTION_TYPE_LABELS,
@@ -21,9 +22,13 @@ import { SuiteDrawer } from '../components/suites/SuiteDrawer';
 import { type AsyncState, useAsyncData } from '../hooks/useAsyncData';
 
 export function Suites() {
+  const navigate = useNavigate();
+  // The selected suite is the route (`/suites/:suiteId`) so it deep-links and
+  // survives the round-trip to the check editor; `/suites` selects nothing.
+  const { suiteId } = useParams<{ suiteId: string }>();
+  const selectedId = suiteId ?? null;
   const { state, reload } = useAsyncData(listSuites);
   const { state: connState } = useAsyncData(listConnections);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
   // `drawer.suite === undefined` while open = create mode; a suite = edit.
   const [drawer, setDrawer] = useState<{ open: boolean; suite?: Suite }>({ open: false });
 
@@ -58,10 +63,10 @@ export function Suites() {
         state={state}
         connections={connections}
         selectedId={selectedId}
-        onSelect={setSelectedId}
+        onSelect={(id) => navigate(`/suites/${id}`)}
         onEdit={(suite) => setDrawer({ open: true, suite })}
         onDeleted={() => {
-          setSelectedId(null);
+          navigate('/suites');
           reload();
         }}
       />
