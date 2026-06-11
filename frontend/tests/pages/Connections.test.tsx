@@ -1,6 +1,7 @@
 import { App as AntApp } from 'antd';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -42,12 +43,15 @@ function conn(overrides: Partial<Connection>): Connection {
   };
 }
 
-// ConnectionCard uses antd's App.useApp() for messages → wrap in <AntApp>.
+// ConnectionCard uses antd's App.useApp() for messages → wrap in <AntApp>; the
+// page navigates to /connections/new → wrap in a router.
 function renderPage() {
   return render(
-    <AntApp>
-      <Connections />
-    </AntApp>,
+    <MemoryRouter>
+      <AntApp>
+        <Connections />
+      </AntApp>
+    </MemoryRouter>,
   );
 }
 

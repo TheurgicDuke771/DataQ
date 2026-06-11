@@ -16,6 +16,37 @@ export const CONNECTION_TYPES = [
 ] as const;
 export type ConnectionType = (typeof CONNECTION_TYPES)[number];
 
+/**
+ * Datasource vs orchestration is the load-bearing distinction in DataQ
+ * (CLAUDE.md §4): datasources are stores you write checks against; ADF/Airflow
+ * are orchestration providers we monitor + trigger from, never queryable. This
+ * map is the single source for that split — the add-connection picker and the
+ * sectioned list both derive their groups from it (no hardcoded lists elsewhere).
+ */
+export const CONNECTION_KINDS = ['datasource', 'orchestration'] as const;
+export type ConnectionKind = (typeof CONNECTION_KINDS)[number];
+
+export const CONNECTION_KIND: Record<ConnectionType, ConnectionKind> = {
+  snowflake: 'datasource',
+  adls_gen2: 'datasource',
+  s3: 'datasource',
+  unity_catalog: 'datasource',
+  adf: 'orchestration',
+  airflow: 'orchestration',
+};
+
+export const CONNECTION_KIND_LABELS: Record<ConnectionKind, string> = {
+  datasource: 'Data sources',
+  orchestration: 'Orchestration',
+};
+
+/** Types of a given kind, in canonical CONNECTION_TYPES order. */
+export const typesOfKind = (kind: ConnectionKind): ConnectionType[] =>
+  CONNECTION_TYPES.filter((t) => CONNECTION_KIND[t] === kind);
+
+export const DATASOURCE_TYPES = typesOfKind('datasource');
+export const ORCHESTRATION_TYPES = typesOfKind('orchestration');
+
 export const CONNECTION_ENVS = ['dev', 'qa', 'uat', 'prod'] as const;
 export type ConnectionEnv = (typeof CONNECTION_ENVS)[number];
 
