@@ -129,4 +129,27 @@ describe('ImportSuiteDrawer', () => {
     // Document parsed but no connection selected yet.
     expect(screen.getByRole('button', { name: 'Import' })).toBeDisabled();
   });
+
+  it('excludes orchestration connections from the picker (#242)', async () => {
+    const user = userEvent.setup();
+    const adf: Connection = {
+      id: 'conn-adf',
+      name: 'adf-prod',
+      type: 'adf',
+      env: 'prod',
+      config: {},
+      has_secret: true,
+      created_by: 'u1',
+    };
+    // Only the datasource (Snowflake) connection should be offered, never ADF.
+    renderDrawer({ connections: [connection, adf] });
+
+    await user.click(screen.getByRole('combobox'));
+    expect(
+      await screen.findByText('sf-dev · Snowflake · DEV', {
+        selector: '.ant-select-item-option-content',
+      }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/adf-prod/)).not.toBeInTheDocument();
+  });
 });

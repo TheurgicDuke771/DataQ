@@ -51,6 +51,25 @@ def _connection(db_session: Any) -> Connection:
     return conn
 
 
+def _orchestration_connection(db_session: Any, provider: str = "adf") -> Connection:
+    """Insert an ADF/Airflow connection — an orchestration provider, never a
+    suite datasource (CLAUDE.md §4)."""
+    owner = User(aad_object_id=uuid.uuid4().hex, email="orch@example.com")
+    db_session.add(owner)
+    db_session.flush()
+    conn = Connection(
+        name=f"{provider}-{uuid.uuid4().hex[:8]}",
+        type=provider,
+        env="prod",
+        config={},
+        secret_ref=f"kv-{provider}",
+        created_by=owner.id,
+    )
+    db_session.add(conn)
+    db_session.commit()
+    return conn
+
+
 def _payload(connection_id: uuid.UUID, **overrides: Any) -> dict[str, Any]:
     body: dict[str, Any] = {
         "name": "finance-checks",
@@ -80,6 +99,15 @@ def test_create_unknown_connection_returns_422(client: TestClient) -> None:
     resp = client.post("/api/v1/suites", json=_payload(uuid.uuid4()))
     assert resp.status_code == 422
     assert resp.json()["error"]["code"] == "suite_connection_invalid"
+
+
+def test_create_on_orchestration_connection_rejected(client: TestClient, db_session: Any) -> None:
+    # ADF/Airflow are orchestration providers, never suite datasources (#242).
+    for provider in ("adf", "airflow"):
+        conn = _orchestration_connection(db_session, provider)
+        resp = client.post("/api/v1/suites", json=_payload(conn.id))
+        assert resp.status_code == 422
+        assert resp.json()["error"]["code"] == "suite_connection_invalid"
 
 
 def test_create_blank_name_returns_422(client: TestClient, db_session: Any) -> None:
@@ -425,6 +453,19 @@ def test_import_unknown_connection_returns_422(client: TestClient, db_session: A
     assert resp.json()["error"]["code"] == "suite_import_connection_invalid"
 
 
+def test_import_onto_orchestration_connection_rejected(client: TestClient, db_session: Any) -> None:
+    # A suite document can't be imported onto an ADF/Airflow connection (#242).
+    src = _suite_with_checks(client, db_session)
+    document = client.get(f"/api/v1/suites/{src}/export").json()
+    target = _orchestration_connection(db_session, "airflow")
+    resp = client.post(
+        "/api/v1/suites/import",
+        json={"connection_id": str(target.id), "document": document},
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "suite_import_connection_invalid"
+
+
 def test_import_unknown_version_returns_422(client: TestClient, db_session: Any) -> None:
     target = _connection(db_session)
     resp = client.post(
@@ -600,10 +641,16 @@ def test_profile_unsupported_connection_type_returns_422(
     client: TestClient, db_session: Any
 ) -> None:
     # all four datasources are profilable now; an orchestration type (ADF) is not.
+    # A suite can no longer be created on an ADF connection via the API (#242), so
+    # seed one directly to still exercise the profiler's defensive rejection.
     conn = _typed_connection(db_session, "adf", {"subscription_id": "s", "factory_name": "f"})
-    sid = client.post("/api/v1/suites", json=_payload(conn.id, name="adf-suite")).json()["id"]
+    owner = db_session.get(User, conn.created_by)
+    suite = Suite(name="adf-suite", connection_id=conn.id, created_by=conn.created_by)
+    db_session.add(suite)
+    db_session.commit()
+    _as(owner)
     resp = client.post(
-        f"/api/v1/suites/{sid}/profile",
+        f"/api/v1/suites/{suite.id}/profile",
         json={"table": "orders", "schema": "public", "columns": ["amount"]},
     )
     assert resp.status_code == 422

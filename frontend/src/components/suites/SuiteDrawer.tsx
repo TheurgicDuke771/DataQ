@@ -1,7 +1,12 @@
 import { App, Button, Drawer, Flex, Form, Input, Select } from 'antd';
 import { useEffect } from 'react';
 
-import { CONNECTION_TYPE_LABELS, type Connection, envLabel } from '../../api/connections';
+import {
+  CONNECTION_KIND,
+  CONNECTION_TYPE_LABELS,
+  type Connection,
+  envLabel,
+} from '../../api/connections';
 import { createSuite, type Suite, updateSuite } from '../../api/suites';
 
 interface SuiteFormValues {
@@ -32,6 +37,9 @@ export function SuiteDrawer({
   const { message } = App.useApp();
   const [form] = Form.useForm<SuiteFormValues>();
   const isEdit = suite !== undefined;
+  // A suite's connection is its datasource — orchestration providers (ADF/
+  // Airflow) are never queryable, so they can't back a suite (CLAUDE.md §4, #242).
+  const datasourceConnections = connections.filter((c) => CONNECTION_KIND[c.type] === 'datasource');
 
   // Prefill on open/edit; reset to a blank form for create.
   useEffect(() => {
@@ -106,8 +114,8 @@ export function SuiteDrawer({
         >
           <Select
             disabled={isEdit}
-            placeholder="Select a connection"
-            options={connections.map((c) => ({
+            placeholder="Select a datasource connection"
+            options={datasourceConnections.map((c) => ({
               value: c.id,
               label: `${c.name} · ${CONNECTION_TYPE_LABELS[c.type]} · ${envLabel(c.env)}`,
             }))}

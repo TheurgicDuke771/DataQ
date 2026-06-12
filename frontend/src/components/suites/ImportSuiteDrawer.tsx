@@ -14,7 +14,12 @@ import {
 import type { UploadFile } from 'antd';
 import { useState } from 'react';
 
-import { CONNECTION_TYPE_LABELS, type Connection, envLabel } from '../../api/connections';
+import {
+  CONNECTION_KIND,
+  CONNECTION_TYPE_LABELS,
+  type Connection,
+  envLabel,
+} from '../../api/connections';
 import { importSuite, type Suite, type SuiteDocument } from '../../api/suites';
 
 /**
@@ -37,6 +42,9 @@ export function ImportSuiteDrawer({
   onImported: (suite: Suite) => void;
 }) {
   const { message } = App.useApp();
+  // A suite imports onto a datasource — orchestration providers (ADF/Airflow)
+  // are never queryable, so they can't back a suite (CLAUDE.md §4, #242).
+  const datasourceConnections = connections.filter((c) => CONNECTION_KIND[c.type] === 'datasource');
   const [connectionId, setConnectionId] = useState<string>();
   const [doc, setDoc] = useState<SuiteDocument | null>(null);
   const [fileName, setFileName] = useState<string>();
@@ -161,8 +169,8 @@ export function ImportSuiteDrawer({
             <Select
               value={connectionId}
               onChange={setConnectionId}
-              placeholder="Select a connection"
-              options={connections.map((c) => ({
+              placeholder="Select a datasource connection"
+              options={datasourceConnections.map((c) => ({
                 value: c.id,
                 label: `${c.name} · ${CONNECTION_TYPE_LABELS[c.type]} · ${envLabel(c.env)}`,
               }))}
@@ -170,7 +178,7 @@ export function ImportSuiteDrawer({
           </Form.Item>
         </Form>
 
-        {connections.length === 0 && (
+        {datasourceConnections.length === 0 && (
           <Typography.Text type="secondary">
             Create a datasource connection first — a suite must import onto one.
           </Typography.Text>
