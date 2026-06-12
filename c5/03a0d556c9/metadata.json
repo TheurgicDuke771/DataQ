@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "c503a0d556c9",
+  "strategy": "manual-commit",
+  "branch": "chore/issue-231-frontend-reuse-cleanup",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "frontend/src/api/suites.ts",
+    "frontend/src/components/checks/ColumnProfilePanel.tsx",
+    "frontend/src/components/checks/DryRunPreview.tsx",
+    "frontend/src/components/results/ScalarValue.tsx",
+    "frontend/src/pages/Results.tsx",
+    "frontend/tests/api/suites.test.ts",
+    "frontend/tests/components/ScalarValue.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/c5/03a0d556c9/0/metadata.json",
+      "transcript": "/c5/03a0d556c9/0/full.jsonl",
+      "content_hash": "/c5/03a0d556c9/0/content_hash.txt",
+      "prompt": "/c5/03a0d556c9/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 17324,
+    "cache_creation_tokens": 59841,
+    "cache_read_tokens": 2355619,
+    "output_tokens": 12935,
+    "api_call_count": 37
+  }
+}

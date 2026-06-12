@@ -1,0 +1,57 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "c503a0d556c9",
+  "session_id": "80ae0122-48e1-4446-85d1-a5f459a89af0",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-12T05:56:35.254089Z",
+  "branch": "chore/issue-231-frontend-reuse-cleanup",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "frontend/src/api/suites.ts",
+    "frontend/src/components/checks/ColumnProfilePanel.tsx",
+    "frontend/src/components/checks/DryRunPreview.tsx",
+    "frontend/src/components/results/ScalarValue.tsx",
+    "frontend/src/pages/Results.tsx",
+    "frontend/tests/api/suites.test.ts",
+    "frontend/tests/components/ScalarValue.test.tsx"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-4-8",
+  "turn_id": "6d28a09c5649",
+  "checkpoint_transcript_start": 223,
+  "transcript_lines_at_start": 223,
+  "token_usage": {
+    "input_tokens": 17324,
+    "cache_creation_tokens": 59841,
+    "cache_read_tokens": 2355619,
+    "output_tokens": 12935,
+    "api_call_count": 37
+  },
+  "session_metrics": {
+    "turn_count": 3
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-12T05:56:35.241269Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 79,
+    "human_modified": 23,
+    "human_removed": 0,
+    "total_committed": 79,
+    "total_lines_changed": 102,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}
