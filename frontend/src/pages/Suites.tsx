@@ -149,6 +149,13 @@ function SuitesBody({
   }
   const selected = suites.find((s) => s.id === selectedId) ?? null;
 
+  // Nothing selected → a full-width grid of suite cards that fills the page,
+  // rather than a narrow list beside a big empty panel. Picking one switches to
+  // the focused master-detail (the list stays, for quick switching).
+  if (!selected) {
+    return <SuiteGrid suites={suites} connections={connections} onSelect={onSelect} />;
+  }
+
   return (
     <Flex gap={24} align="flex-start">
       <Card size="small" style={{ width: 320, flexShrink: 0 }} styles={{ body: { padding: 0 } }}>
@@ -166,18 +173,19 @@ function SuitesBody({
                   background: isSelected ? '#eef0fe' : undefined,
                 }}
               >
-                <List.Item.Meta
-                  avatar={conn ? <ConnectionTypeAvatar type={conn.type} size={34} /> : undefined}
-                  title={
+                {/* Plain Flex (not List.Item.Meta) so the name renders as text,
+                    not an <h4> — the detail panel owns the only suite heading. */}
+                <Flex gap={12} align="center" style={{ width: '100%', minWidth: 0 }}>
+                  {conn && <ConnectionTypeAvatar type={conn.type} size={34} />}
+                  <Flex vertical gap={2} style={{ minWidth: 0 }}>
                     <Typography.Text
                       strong
+                      ellipsis
                       style={isSelected ? { color: BRAND.primary } : undefined}
                     >
                       {suite.name}
                     </Typography.Text>
-                  }
-                  description={
-                    conn ? (
+                    {conn ? (
                       <Flex gap={6} align="center">
                         <Typography.Text type="secondary" style={{ fontSize: 12 }} ellipsis>
                           {conn.name}
@@ -190,28 +198,90 @@ function SuitesBody({
                       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                         No connection
                       </Typography.Text>
-                    )
-                  }
-                />
+                    )}
+                  </Flex>
+                </Flex>
               </List.Item>
             );
           }}
         />
       </Card>
       <div style={{ flex: 1, minWidth: 0 }}>
-        {selected ? (
-          <SuiteDetail
-            key={selected.id}
-            suite={selected}
-            connections={connections}
-            onEdit={() => onEdit(selected)}
-            onDeleted={onDeleted}
-          />
-        ) : (
-          <Empty description="Select a suite to view its checks." style={{ marginTop: 64 }} />
-        )}
+        <SuiteDetail
+          key={selected.id}
+          suite={selected}
+          connections={connections}
+          onEdit={() => onEdit(selected)}
+          onDeleted={onDeleted}
+        />
       </div>
     </Flex>
+  );
+}
+
+/** Browse view: suite cards in a responsive grid that fills the page width. */
+function SuiteGrid({
+  suites,
+  connections,
+  onSelect,
+}: {
+  suites: Suite[];
+  connections: Connection[];
+  onSelect: (id: string) => void;
+}) {
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
+        gap: 16,
+      }}
+    >
+      {suites.map((suite) => {
+        const conn = connections.find((c) => c.id === suite.connection_id);
+        return (
+          <Card
+            key={suite.id}
+            size="small"
+            className="dq-card--interactive"
+            style={{ cursor: 'pointer' }}
+            onClick={() => onSelect(suite.id)}
+          >
+            <Flex gap={12} align="flex-start">
+              {conn && <ConnectionTypeAvatar type={conn.type} />}
+              <Flex vertical gap={4} style={{ minWidth: 0, flex: 1 }}>
+                <Typography.Text strong ellipsis>
+                  {suite.name}
+                </Typography.Text>
+                {conn ? (
+                  <Flex gap={6} align="center">
+                    <Typography.Text type="secondary" style={{ fontSize: 12 }} ellipsis>
+                      {conn.name}
+                    </Typography.Text>
+                    <Tag color={ENV_COLORS[conn.env]} style={{ marginInlineEnd: 0 }}>
+                      {envLabel(conn.env)}
+                    </Tag>
+                  </Flex>
+                ) : (
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    No connection
+                  </Typography.Text>
+                )}
+                {suite.description && (
+                  <Typography.Paragraph
+                    type="secondary"
+                    ellipsis={{ rows: 2 }}
+                    style={{ fontSize: 12, margin: 0, marginTop: 2 }}
+                  >
+                    {suite.description}
+                  </Typography.Paragraph>
+                )}
+              </Flex>
+            </Flex>
+          </Card>
+        );
+      })}
+    </div>
   );
 }
 
