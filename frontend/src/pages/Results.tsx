@@ -7,6 +7,8 @@ import {
   listPipelineRuns,
   listRuns,
   type PipelineRun,
+  type Result,
+  type ResultStatus,
   type Run,
   type RunStatus,
   RUN_STATUSES,
@@ -141,13 +143,16 @@ function RunDetailDrawer({
       title={run ? `Run · ${suiteName ?? run.suite_id.slice(0, 8)}` : 'Run'}
       destroyOnClose
     >
-      {run && <RunDetailBody run={run} />}
+      {/* Keyed by run id so switching runs (without closing) remounts and
+          refetches — useAsyncData only fetches on mount/reload, not on prop
+          change, so without the key the drawer would show the prior run. */}
+      {run && <RunDetailBody key={run.id} run={run} />}
     </Drawer>
   );
 }
 
 function RunDetailBody({ run }: { run: Run }) {
-  // Keyed remount per run (the drawer sets destroyOnClose) → fresh fetch.
+  // Remounted per run via the `key` at the call site → these fetch fresh.
   const { state } = useAsyncData(() => getRun(run.id));
   const { state: checksState } = useAsyncData(() => listChecks(run.suite_id));
 
@@ -179,13 +184,7 @@ function RunDetailBody({ run }: { run: Run }) {
   );
 }
 
-function ResultsTable({
-  results,
-  checks,
-}: {
-  results: import('../api/runs').Result[];
-  checks: Map<string, Check>;
-}) {
+function ResultsTable({ results, checks }: { results: Result[]; checks: Map<string, Check> }) {
   if (results.length === 0) {
     return <Empty description="No check results — the run did not complete." />;
   }
@@ -209,9 +208,7 @@ function ResultsTable({
       title: 'Status',
       dataIndex: 'status',
       width: 100,
-      render: (s: import('../api/runs').ResultStatus) => (
-        <Tag color={RESULT_STATUS_COLORS[s]}>{s}</Tag>
-      ),
+      render: (s: ResultStatus) => <Tag color={RESULT_STATUS_COLORS[s]}>{s}</Tag>,
     },
     {
       title: 'Metric',

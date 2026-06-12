@@ -146,6 +146,54 @@ describe('Results page', () => {
     expect(mockGetRun).toHaveBeenCalledWith('r1');
   });
 
+  it('filters the runs table by status', async () => {
+    mockListRuns.mockResolvedValue([succeededRun, failedRun]);
+    mockListSuites.mockResolvedValue([suite]);
+    mockListPipelineRuns.mockResolvedValue([]);
+
+    renderResults();
+    const user = userEvent.setup();
+
+    await waitFor(() => expect(screen.getAllByText('Orders quality').length).toBe(2));
+
+    // Pick "failed" in the status Select → only the failed run's row remains.
+    await user.click(screen.getByRole('combobox'));
+    await user.click(await screen.findByTitle('failed'));
+
+    // Scope to the table body rows (the closed dropdown still holds the
+    // 'succeeded' option text, so assert on rows, not document-wide text).
+    await waitFor(() => expect(document.querySelectorAll('tr.ant-table-row').length).toBe(1));
+    const row = document.querySelector('tr.ant-table-row');
+    expect(row?.textContent).toContain('failed');
+    expect(row?.textContent).not.toContain('succeeded');
+  });
+
+  it('refetches when switching runs while the drawer stays open', async () => {
+    const otherSuite: Suite = { ...suite, id: 's2', name: 'Customer files' };
+    const runA: Run = { ...succeededRun, id: 'rA', suite_id: 's1' };
+    const runB: Run = { ...succeededRun, id: 'rB', suite_id: 's2' };
+    mockListRuns.mockResolvedValue([runA, runB]);
+    mockListSuites.mockResolvedValue([suite, otherSuite]);
+    mockListPipelineRuns.mockResolvedValue([]);
+    mockListChecks.mockResolvedValue([check]);
+    mockGetRun.mockImplementation((id) =>
+      Promise.resolve({ ...runDetail, id, suite_id: id === 'rA' ? 's1' : 's2' }),
+    );
+
+    renderResults();
+    const user = userEvent.setup();
+
+    await waitFor(() => expect(screen.getByText('Orders quality')).toBeInTheDocument());
+    // Open run A, then click run B's row without closing the drawer.
+    await user.click(screen.getByText('Orders quality'));
+    await screen.findByRole('dialog');
+    expect(mockGetRun).toHaveBeenLastCalledWith('rA');
+    await user.click(screen.getByText('Customer files'));
+
+    // The keyed remount must refetch run B (not show run A's stale data).
+    await waitFor(() => expect(mockGetRun).toHaveBeenLastCalledWith('rB'));
+  });
+
   it('shows monitored pipeline runs on the Pipeline runs tab', async () => {
     mockListRuns.mockResolvedValue([]);
     mockListSuites.mockResolvedValue([]);
