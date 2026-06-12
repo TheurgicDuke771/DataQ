@@ -13,12 +13,15 @@ import {
   type Check,
   deleteCheck,
   deleteSuite,
+  exportSuite,
   listChecks,
   listSuites,
   type Suite,
 } from '../api/suites';
 import { CheckDrawer } from '../components/checks/CheckDrawer';
+import { ImportSuiteDrawer } from '../components/suites/ImportSuiteDrawer';
 import { SuiteDrawer } from '../components/suites/SuiteDrawer';
+import { downloadJson, toFilenameStem } from '../utils/download';
 import { type AsyncState, useAsyncData } from '../hooks/useAsyncData';
 
 export function Suites() {
@@ -31,6 +34,7 @@ export function Suites() {
   const { state: connState } = useAsyncData(listConnections);
   // `drawer.suite === undefined` while open = create mode; a suite = edit.
   const [drawer, setDrawer] = useState<{ open: boolean; suite?: Suite }>({ open: false });
+  const [importOpen, setImportOpen] = useState(false);
 
   const connections = connState.status === 'ok' ? connState.data : [];
 
@@ -40,14 +44,23 @@ export function Suites() {
         <Typography.Title level={3} style={{ margin: 0 }}>
           Suites
         </Typography.Title>
-        <Button
-          type="primary"
-          loading={connState.status === 'loading'}
-          disabled={connections.length === 0}
-          onClick={() => setDrawer({ open: true })}
-        >
-          New suite
-        </Button>
+        <Flex gap={8}>
+          <Button
+            loading={connState.status === 'loading'}
+            disabled={connections.length === 0}
+            onClick={() => setImportOpen(true)}
+          >
+            Import
+          </Button>
+          <Button
+            type="primary"
+            loading={connState.status === 'loading'}
+            disabled={connections.length === 0}
+            onClick={() => setDrawer({ open: true })}
+          >
+            New suite
+          </Button>
+        </Flex>
       </Flex>
       {connState.status === 'error' && (
         // Suites can still be viewed/deleted, but creating one needs the
@@ -78,6 +91,16 @@ export function Suites() {
         onSaved={() => {
           setDrawer({ open: false });
           reload();
+        }}
+      />
+      <ImportSuiteDrawer
+        open={importOpen}
+        connections={connections}
+        onClose={() => setImportOpen(false)}
+        onImported={(suite) => {
+          setImportOpen(false);
+          reload();
+          navigate(`/suites/${suite.id}`);
         }}
       />
     </Flex>
@@ -174,6 +197,20 @@ function SuiteDetail({
   // The edit drawer (create is the dedicated /checks/new page) → open iff editing.
   const [editingCheck, setEditingCheck] = useState<Check | null>(null);
 
+  const [exporting, setExporting] = useState(false);
+
+  const onExport = async () => {
+    setExporting(true);
+    try {
+      const doc = await exportSuite(suite.id);
+      downloadJson(`${toFilenameStem(suite.name)}.json`, doc);
+    } catch (err) {
+      message.error(`Export failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const onDelete = () => {
     modal.confirm({
       title: `Delete “${suite.name}”?`,
@@ -212,6 +249,9 @@ function SuiteDetail({
           )}
         </Flex>
         <Flex gap={8}>
+          <Button loading={exporting} onClick={onExport}>
+            Export
+          </Button>
           <Button onClick={onEdit}>Edit</Button>
           <Button danger onClick={onDelete}>
             Delete
