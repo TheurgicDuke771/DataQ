@@ -252,6 +252,14 @@ class Share(Base):
     permission: Mapped[str] = mapped_column(String(16), nullable=False)
     created_at: Mapped[datetime] = _created_at()
 
+    # Read-only convenience for enriching a share with the grantee's directory
+    # identity (email / display_name) so the sharing UI can name collaborators.
+    # ORM-only — no schema change. Default-lazy: the hot authz path
+    # (`effective_permission`) selects shares without ever reading `.user`, so
+    # the eager load is scoped to `list_shares` (selectinload) instead of taxing
+    # every permission check with a `users` join.
+    user: Mapped["User"] = relationship()
+
 
 class PipelineRun(Base):
     __tablename__ = "pipeline_runs"

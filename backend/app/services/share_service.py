@@ -17,7 +17,7 @@ import uuid
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
@@ -94,8 +94,15 @@ def grant_share(
 def list_shares(session: Session, suite_id: uuid.UUID, *, actor_id: uuid.UUID) -> list[Share]:
     """List a suite's shares. Actor needs `view` (collaborators can see who else has access)."""
     require_permission(session, suite_id, actor_id, minimum="view")
+    # Eager-load the grantee here (not model-wide) so the API can name each
+    # collaborator without an N+1 — the only Share query that reads `.user`.
     return list(
-        session.scalars(select(Share).where(Share.suite_id == suite_id).order_by(Share.created_at))
+        session.scalars(
+            select(Share)
+            .where(Share.suite_id == suite_id)
+            .options(selectinload(Share.user))
+            .order_by(Share.created_at)
+        )
     )
 
 
