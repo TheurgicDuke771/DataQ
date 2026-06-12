@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "e8326f5efa61",
+  "strategy": "manual-commit",
+  "branch": "feature/pr-e3-sharing-panel",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/api/suites.ts",
+    "frontend/src/pages/Suites.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/e8/326f5efa61/0/metadata.json",
+      "transcript": "/e8/326f5efa61/0/full.jsonl",
+      "content_hash": "/e8/326f5efa61/0/content_hash.txt",
+      "prompt": "/e8/326f5efa61/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 68934,
+    "cache_creation_tokens": 796401,
+    "cache_read_tokens": 31091312,
+    "output_tokens": 156390,
+    "api_call_count": 304
+  }
+}
