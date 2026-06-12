@@ -28,7 +28,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
-from backend.app.db.models import Check, Connection, Suite
+from backend.app.db.models import ORCHESTRATION_PROVIDERS, Check, Connection, Suite
 from backend.app.services.check_service import validate_kind
 
 log = get_logger(__name__)
@@ -97,9 +97,18 @@ def import_suite(
             f"unsupported export version {version!r}; this server imports v{EXPORT_VERSION}",
             detail={"version": version, "supported": EXPORT_VERSION},
         )
-    if session.get(Connection, connection_id) is None:
+    connection = session.get(Connection, connection_id)
+    if connection is None:
         raise SuiteImportConnectionInvalidError(
             "connection not found", detail={"connection_id": str(connection_id)}
+        )
+    if connection.type in ORCHESTRATION_PROVIDERS:
+        # Orchestration providers (ADF/Airflow) are never suite datasources
+        # (CLAUDE.md §4) — same guard as create_suite, applied at import time.
+        raise SuiteImportConnectionInvalidError(
+            "orchestration providers cannot be a suite's datasource; "
+            "they trigger suites via trigger bindings",
+            detail={"connection_id": str(connection_id), "type": connection.type},
         )
     # Validate every check kind up front so a bad document writes nothing.
     for c in checks:

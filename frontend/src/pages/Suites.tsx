@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import {
+  CONNECTION_KIND,
   CONNECTION_TYPE_LABELS,
   type Connection,
   ENV_COLORS,
@@ -38,6 +39,9 @@ export function Suites() {
   const [importOpen, setImportOpen] = useState(false);
 
   const connections = connState.status === 'ok' ? connState.data : [];
+  // A suite binds to a datasource only — creating/importing needs at least one
+  // (orchestration providers don't count; CLAUDE.md §4, #242).
+  const hasDatasource = connections.some((c) => CONNECTION_KIND[c.type] === 'datasource');
 
   return (
     <Flex vertical gap={24}>
@@ -48,7 +52,7 @@ export function Suites() {
         <Flex gap={8}>
           <Button
             loading={connState.status === 'loading'}
-            disabled={connections.length === 0}
+            disabled={!hasDatasource}
             onClick={() => setImportOpen(true)}
           >
             Import
@@ -56,7 +60,7 @@ export function Suites() {
           <Button
             type="primary"
             loading={connState.status === 'loading'}
-            disabled={connections.length === 0}
+            disabled={!hasDatasource}
             onClick={() => setDrawer({ open: true })}
           >
             New suite

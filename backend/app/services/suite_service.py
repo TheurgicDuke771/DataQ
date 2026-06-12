@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
-from backend.app.db.models import Connection, Share, Suite
+from backend.app.db.models import ORCHESTRATION_PROVIDERS, Connection, Share, Suite
 from backend.app.services import run_target
 
 log = get_logger(__name__)
@@ -70,6 +70,15 @@ def create_suite(
     if connection is None:
         raise SuiteConnectionInvalidError(
             "connection not found", detail={"connection_id": str(connection_id)}
+        )
+    if connection.type in ORCHESTRATION_PROVIDERS:
+        # ADF/Airflow are orchestration providers, never suite datasources
+        # (CLAUDE.md §4): a suite's connection is where its checks run. They
+        # relate to suites only via trigger_bindings (trigger on pipeline success).
+        raise SuiteConnectionInvalidError(
+            "orchestration providers cannot be a suite's datasource; "
+            "they trigger suites via trigger bindings",
+            detail={"connection_id": str(connection_id), "type": connection.type},
         )
     if target is not None:
         run_target.validate_target(connection.type, target)
