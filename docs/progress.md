@@ -167,14 +167,14 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [x] ✅ ADLS/S3 connection form — account URL, SAS toggle — covered by the spec-driven drawer ([PR #196](https://github.com/TheurgicDuke771/DataQ/pull/196)) _(container browser + managed-identity/IAM-role modes deferred with the backend, ADR 0010/0011)_
 - [x] ✅ Databricks connection form — workspace URL, PAT, warehouse id — covered by the spec-driven drawer ([PR #196](https://github.com/TheurgicDuke771/DataQ/pull/196)) _(live SQL-Warehouse picker deferred; warehouse id is a text field)_
 
-### Check editor UI (9 tasks — 3/9 ✅, 2 🟡)
+### Check editor UI (9 tasks — 4/9 ✅, 2 🟡)
 - [x] ✅ Suite list + detail two-panel layout, environment badge on each suite — selectable suites list ←→ detail (connection chip + env tag + checks) — [PR #200](https://github.com/TheurgicDuke771/DataQ/pull/200)
 - [x] ✅ Form-based check editor — catalog-driven expectation picker + dynamic typed config fields + create/edit/delete — `expectationCatalog.ts` + `CheckDrawer` ([PR #203](https://github.com/TheurgicDuke771/DataQ/pull/203)). GX expectations are datasource-agnostic in v1, so one catalog serves all four types
 - [ ] 🟡 Flat file check editor — container picker, batching regex input, file format selector — generic catalog editor covers flat-file expectations ([PR #203](https://github.com/TheurgicDuke771/DataQ/pull/203)); the batch/format/container-specific inputs are still pending
 - [ ] 🟡 Unity Catalog check editor — catalog / schema / table three-level picker — generic catalog editor covers UC expectations ([PR #203](https://github.com/TheurgicDuke771/DataQ/pull/203)); the 3-level table picker is still pending
 - [ ] ⬜ Monaco SQL editor for custom check (all datasource types, Snowflake keyword autocomplete)
 - [ ] ⬜ Column profiler panel — inline in check editor, loads on table / file selection _(next slice)_
-- [ ] ⬜ Check dry-run button — show preview pass / fail inline before saving _(next slice; backend `POST /suites/{id}/checks/dryrun` ready)_
+- [x] ✅ **Check dry-run button** — preview pass/fail inline before saving — `DryRunPreview` component (shared by the create page `CheckNew` + the edit drawer `CheckDrawer`): runs the in-progress check against the suite's live target via `POST /suites/{id}/checks/dryrun` and renders the severity outcome (status tag + `metric_value` + observed/expected), **no persistence**. Reuses `buildCheckPayload` (so the preview runs exactly the saved check's config/thresholds) + the severity colour map; `table`/`schema` come from the suite's run target (#215, fetched via new `getSuite`). Disabled with a reason until an expectation is picked + the suite has a table target; backend limits (Snowflake-only, no-credential/unreachable) surface as a clean error alert (dev fail-softs to a 502 with fake creds). 4 vitest (disabled-states / success-outcome with request-shape assertion / error) + an e2e button-enabled assertion. _(PR-D1; `DryRunPreview.tsx` + `api/suites.ts` `getSuite`/`dryRunCheck`)_
 - [ ] ⬜ Check version history drawer — see previous config before overwriting
 - [x] ✅ Severity tier toggle in check editor — three-threshold UI — optional warn/fail/critical inputs banding the unexpected-% (ADR 0016), blank = binary — [PR #203](https://github.com/TheurgicDuke771/DataQ/pull/203)
 
@@ -190,7 +190,7 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [x] ✅ **Checks — suite selection as a route + categorized expectation picker** — `/suites/:suiteId` makes the selected suite deep-linkable and survives the check-editor round-trip; the catalog gains a `category` (Column values / Table shape) and the picker groups by it (antd optgroups). Reserved Freshness/Volume/Schema-drift categories (ADR 0012) land with the dedicated page. _(PR-B1)_
 - [x] ✅ **Checks — dedicated `/suites/:suiteId/checks/new` page** — category → expectation → config/thresholds, with reserved monitor-kind categories (Freshness/Volume/Schema-drift, ADR 0012) shown disabled. Shared form logic extracted to `checkForm.ts` (conversions) + `checkFormFields.tsx` (field components), reused by the page and the now edit-only `CheckDrawer`. The natural home for the [#215](https://github.com/TheurgicDuke771/DataQ/issues/215) target table/path field. _(PR-B2; `CheckNew.tsx`)_
 
-**Week 4 total: 16 / 26 ✅ (+2 🟡, 1 🔵)** _(connection manager UI complete (6/6); check editor core shipped; **GX-Cloud redesign complete (4/4)** — classified connection + check create pages, edit-only drawers, suite-route/categorized picker (PR-A1/A2/B1/B2); PR-3c polish 2/3 (Settings `forbid` 🔵 blocked on the `.env` split) — dry-run + profiler panel + sharing/admin UI remain)_
+**Week 4 total: 17 / 26 ✅ (+2 🟡, 1 🔵)** _(connection manager UI complete (6/6); check editor core shipped + **dry-run preview** (PR-D1); **GX-Cloud redesign complete (4/4)** — classified connection + check create pages, edit-only drawers, suite-route/categorized picker (PR-A1/A2/B1/B2); PR-3c polish 2/3 (Settings `forbid` 🔵 blocked on the `.env` split) — profiler panel + sharing/admin UI remain)_
 
 ---
 
@@ -362,12 +362,12 @@ These were preconditions for executing the roadmap. Listed for completeness.
 | Week 1 | 7 | 1 | 2 | 10 |
 | Week 2 | 15 | 1 | 3 | 19 |
 | Week 3 | 18 | 0 | 0 | 18 |
-| Week 4 | 16 | 2 | 8 | 26 |
+| Week 4 | 17 | 2 | 7 | 26 |
 | Week 5 | 6 | 0 | 12 | 18 |
 | Week 6 | 2 | 0 | 14 | 16 |
 | Week 7 | 0 | 1 | 28 | 29 |
 | Week 8 | 2 | 4 | 20 | 26 |
-| **TOTAL** | **65** | **9** | **88** | **162** |
+| **TOTAL** | **66** | **9** | **87** | **162** |
 
 > 161 > 100 because ADR 0004 added Airflow tasks, ADR 0011 added two seam tasks (generic runner dispatch, `ResultPublisher`), ADR 0012 added three Week-3 monitor-kind / metric seam tasks, the W5 run-enablement gaps surfaced in review (check target-table #215, Suite Triggers UI #216), the GX-Cloud-style UI redesign added four UI-shape tasks (dedicated/classified connection + check pages), plus PR-review follow-ups not in the original roadmap. Tracked here for honesty.
 

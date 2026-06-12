@@ -230,6 +230,7 @@ function SuiteDetail({
         open={editingCheck !== null}
         suiteId={suite.id}
         check={editingCheck ?? undefined}
+        target={suite.target}
         onClose={() => setEditingCheck(null)}
         onSaved={() => {
           setEditingCheck(null);
