@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { type Check, updateCheck } from '../../api/suites';
 import { buildCheckPayload, configToForm } from './checkForm';
 import { ConfigFieldItem, SeverityThresholdFields } from './checkFormFields';
+import { DryRunPreview } from './DryRunPreview';
 import { EXPECTATION_BY_TYPE, EXPECTATIONS_BY_CATEGORY } from './expectationCatalog';
 
 /**
@@ -17,12 +18,15 @@ export function CheckDrawer({
   open,
   suiteId,
   check,
+  target,
   onClose,
   onSaved,
 }: {
   open: boolean;
   suiteId: string;
   check?: Check;
+  /** The suite's run target (#215) — drives the dry-run preview's table/schema. */
+  target: Record<string, unknown> | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -111,6 +115,13 @@ export function CheckDrawer({
         )}
 
         <SeverityThresholdFields />
+
+        <DryRunPreview
+          suiteId={suiteId}
+          expectationType={selectedType}
+          target={target}
+          form={form}
+        />
       </Form>
     </Drawer>
   );

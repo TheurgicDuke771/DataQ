@@ -18,7 +18,7 @@ const mockUpdate = vi.mocked(updateCheck);
 function renderDrawer(props: Partial<Parameters<typeof CheckDrawer>[0]> = {}) {
   return render(
     <AntApp>
-      <CheckDrawer open suiteId="s1" onClose={vi.fn()} onSaved={vi.fn()} {...props} />
+      <CheckDrawer open suiteId="s1" target={null} onClose={vi.fn()} onSaved={vi.fn()} {...props} />
     </AntApp>,
   );
 }

@@ -35,6 +35,11 @@ export async function listSuites(params?: { connection_id?: string }): Promise<S
   return data;
 }
 
+export async function getSuite(id: string): Promise<Suite> {
+  const { data } = await api.get<Suite>(`/suites/${id}`);
+  return data;
+}
+
 export async function createSuite(payload: SuiteCreate): Promise<Suite> {
   const { data } = await api.post<Suite>('/suites', payload);
   return data;
@@ -103,4 +108,32 @@ export async function updateCheck(
 
 export async function deleteCheck(suiteId: string, checkId: string): Promise<void> {
   await api.delete(`/suites/${suiteId}/checks/${checkId}`);
+}
+
+/** Mirrors `CheckDryRunRequest` — preview one check against live data, no persist.
+ *  `table`/`schema` come from the suite's run target (#215). v1: Snowflake only. */
+export interface CheckDryRunRequest {
+  expectation_type: string;
+  config: Record<string, unknown>;
+  warn_threshold?: number | null;
+  fail_threshold?: number | null;
+  critical_threshold?: number | null;
+  table: string;
+  schema?: string | null;
+}
+
+/** Mirrors `CheckDryRunResult` — the preview outcome (severity tier + metric). */
+export interface CheckDryRunResult {
+  status: string; // pass | warn | fail | critical
+  metric_value: number | null;
+  observed_value: Record<string, unknown> | null;
+  expected_value: Record<string, unknown> | null;
+}
+
+export async function dryRunCheck(
+  suiteId: string,
+  payload: CheckDryRunRequest,
+): Promise<CheckDryRunResult> {
+  const { data } = await api.post<CheckDryRunResult>(`/suites/${suiteId}/checks/dryrun`, payload);
+  return data;
 }

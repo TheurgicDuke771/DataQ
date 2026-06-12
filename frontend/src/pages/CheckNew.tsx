@@ -2,14 +2,16 @@ import { App, Button, Card, Flex, Form, Input, Tag, Typography } from 'antd';
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
-import { createCheck } from '../api/suites';
+import { createCheck, getSuite } from '../api/suites';
 import { buildCheckPayload } from '../components/checks/checkForm';
 import { ConfigFieldItem, SeverityThresholdFields } from '../components/checks/checkFormFields';
+import { DryRunPreview } from '../components/checks/DryRunPreview';
 import {
   EXPECTATION_BY_TYPE,
   EXPECTATIONS_BY_CATEGORY,
   type ExpectationCategory,
 } from '../components/checks/expectationCatalog';
+import { useAsyncData } from '../hooks/useAsyncData';
 
 // Monitor-kind categories reserved by ADR 0012 — surfaced (disabled) so the
 // roadmap is visible; v1 authors GX expectations only.
@@ -28,6 +30,11 @@ export function CheckNew() {
   const [expectationType, setExpectationType] = useState<string>();
   const [form] = Form.useForm();
   const [submitting, setSubmitting] = useState(false);
+  // The suite's run target (#215) drives the dry-run preview's table/schema.
+  const { state: suiteState } = useAsyncData(() =>
+    suiteId ? getSuite(suiteId) : Promise.reject(new Error('no suite')),
+  );
+  const target = suiteState.status === 'ok' ? suiteState.data.target : null;
 
   const backToSuite = () => navigate(suiteId ? `/suites/${suiteId}` : '/suites');
   const spec = expectationType ? EXPECTATION_BY_TYPE[expectationType] : undefined;
@@ -76,6 +83,16 @@ export function CheckNew() {
             <ConfigFieldItem key={field.name} field={field} />
           ))}
           <SeverityThresholdFields />
+          {suiteId && (
+            <Form.Item>
+              <DryRunPreview
+                suiteId={suiteId}
+                expectationType={expectationType}
+                target={target}
+                form={form}
+              />
+            </Form.Item>
+          )}
           <Flex justify="end" gap={8}>
             <Button onClick={() => setExpectationType(undefined)}>Back</Button>
             <Button type="primary" htmlType="submit" loading={submitting}>

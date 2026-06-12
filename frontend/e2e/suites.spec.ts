@@ -39,6 +39,10 @@ test.describe('Suites page', () => {
     await page.getByText('Column values not null', { exact: true }).click();
     await page.getByLabel('Name').fill(name);
     await page.getByLabel('Column', { exact: true }).fill('order_id');
+    // The dry-run preview is wired + enabled (the seeded suite has a Snowflake
+    // table target). Not clicked here — a live warehouse round-trip is the
+    // deferred smoke; the unit tests cover the success/error rendering.
+    await expect(page.getByRole('button', { name: 'Dry-run preview' })).toBeEnabled();
     await page.getByRole('button', { name: 'Create check' }).click();
 
     // Back on the suite detail, the new check is listed.
