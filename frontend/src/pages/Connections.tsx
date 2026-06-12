@@ -5,6 +5,7 @@ import {
   Badge,
   Button,
   Card,
+  Divider,
   Dropdown,
   Empty,
   Flex,
@@ -183,28 +184,32 @@ function ConnectionsBody({
     return <Empty description="No connections configured yet" />;
   }
   // Two top-level sections (Data sources / Orchestration), each grouping by type.
+  // A subtle divider reinforces the datasource-vs-orchestration split (the
+  // load-bearing distinction in DataQ) without competing with the headings.
+  const sections = CONNECTION_KINDS.map((kind) => ({
+    kind,
+    ofKind: connections.filter((c) => CONNECTION_KIND[c.type] === kind),
+  })).filter((s) => s.ofKind.length > 0);
+
   return (
     <Flex vertical gap={24}>
-      {CONNECTION_KINDS.map((kind) => {
-        const ofKind = connections.filter((c) => CONNECTION_KIND[c.type] === kind);
-        if (ofKind.length === 0) return null;
-        return (
-          <Flex key={kind} vertical gap={16}>
-            <Typography.Title level={4} style={{ margin: 0 }}>
-              {CONNECTION_KIND_LABELS[kind]}
-            </Typography.Title>
-            {groupByType(ofKind).map(([type, group]) => (
-              <ConnectionTypeSection
-                key={type}
-                type={type}
-                connections={group}
-                actions={actions}
-                health={health}
-              />
-            ))}
-          </Flex>
-        );
-      })}
+      {sections.map(({ kind, ofKind }, i) => (
+        <Flex key={kind} vertical gap={16}>
+          {i > 0 && <Divider style={{ margin: '0 0 4px' }} />}
+          <Typography.Title level={4} style={{ margin: 0 }}>
+            {CONNECTION_KIND_LABELS[kind]}
+          </Typography.Title>
+          {groupByType(ofKind).map(([type, group]) => (
+            <ConnectionTypeSection
+              key={type}
+              type={type}
+              connections={group}
+              actions={actions}
+              health={health}
+            />
+          ))}
+        </Flex>
+      ))}
     </Flex>
   );
 }
