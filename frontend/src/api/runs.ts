@@ -4,8 +4,8 @@ import { api } from './client';
  * Runs / results / pipeline-runs API — the read surface behind the Results page
  * (backend `runs.py`, PR-C0b). The DQ-run reads are suite-scoped: the backend
  * filters to suites the caller can access, so this client never has to. Manual
- * run *triggering* (`POST /suites/{id}/run`) is the execution UI's concern, not
- * this read module's.
+ * run *triggering* (`runSuite` → `POST /suites/{id}/run`) lives here too, since
+ * it produces a `Run`.
  */
 
 /** Run execution lifecycle — `status` is execution, not data quality. */
@@ -68,6 +68,16 @@ export async function listRuns(params?: {
 
 export async function getRun(runId: string): Promise<RunDetail> {
   const { data } = await api.get<RunDetail>(`/runs/${runId}`);
+  return data;
+}
+
+/**
+ * Trigger a run of a suite (`POST /suites/{id}/run`). Edit-gated; returns the
+ * queued `Run` (HTTP 202). The backend resolves the suite's target up front, so
+ * a targetless/misconfigured suite fails with 422, and a broker outage with 503.
+ */
+export async function runSuite(suiteId: string): Promise<Run> {
+  const { data } = await api.post<Run>(`/suites/${suiteId}/run`);
   return data;
 }
 
