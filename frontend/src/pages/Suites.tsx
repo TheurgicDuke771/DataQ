@@ -20,6 +20,7 @@ import {
 } from '../api/suites';
 import { CheckDrawer } from '../components/checks/CheckDrawer';
 import { ImportSuiteDrawer } from '../components/suites/ImportSuiteDrawer';
+import { SharePanel } from '../components/suites/SharePanel';
 import { SuiteDrawer } from '../components/suites/SuiteDrawer';
 import { downloadJson, toFilenameStem } from '../utils/download';
 import { type AsyncState, useAsyncData } from '../hooks/useAsyncData';
@@ -198,6 +199,9 @@ function SuiteDetail({
   const [editingCheck, setEditingCheck] = useState<Check | null>(null);
 
   const [exporting, setExporting] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  // Managing shares (and deleting) needs admin; the read stamps the caller's level.
+  const canManage = suite.my_permission === 'owner' || suite.my_permission === 'admin';
 
   const onExport = async () => {
     setExporting(true);
@@ -249,6 +253,7 @@ function SuiteDetail({
           )}
         </Flex>
         <Flex gap={8}>
+          <Button onClick={() => setShareOpen(true)}>Share</Button>
           <Button loading={exporting} onClick={onExport}>
             Export
           </Button>
@@ -276,6 +281,13 @@ function SuiteDetail({
           setEditingCheck(null);
           reload();
         }}
+      />
+      <SharePanel
+        open={shareOpen}
+        suiteId={suite.id}
+        ownerId={suite.created_by}
+        canManage={canManage}
+        onClose={() => setShareOpen(false)}
       />
     </Flex>
   );

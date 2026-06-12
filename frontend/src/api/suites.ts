@@ -15,6 +15,9 @@ export interface Suite {
   /** Datasource-shaped run target (#215); null = not yet runnable. */
   target: Record<string, unknown> | null;
   created_by: string;
+  /** The caller's effective level — gates per-suite actions (share, delete).
+   *  `owner`/`admin`/`edit`/`view`; absent on older payloads. */
+  my_permission?: 'owner' | 'admin' | 'edit' | 'view' | null;
 }
 
 /**
