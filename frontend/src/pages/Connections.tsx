@@ -224,7 +224,15 @@ function ConnectionTypeSection({
       <Typography.Title level={5} style={{ margin: 0 }}>
         {CONNECTION_TYPE_LABELS[type]}
       </Typography.Title>
-      <Flex wrap gap={12}>
+      {/* A responsive grid (not a wrap row) so cards stretch to fill the width
+          instead of clustering at their min size and leaving the row half-empty. */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
+          gap: 12,
+        }}
+      >
         {connections.map((connection) => (
           <ConnectionCard
             key={connection.id}
@@ -233,7 +241,7 @@ function ConnectionTypeSection({
             health={health[connection.id] ?? 'idle'}
           />
         ))}
-      </Flex>
+      </div>
     </Flex>
   );
 }
@@ -291,7 +299,7 @@ function ConnectionCard({
   ];
 
   return (
-    <Card size="small" style={{ minWidth: 280 }}>
+    <Card size="small">
       <Flex justify="space-between" align="center" gap={12}>
         <Flex vertical gap={6}>
           <Typography.Text strong>{connection.name}</Typography.Text>
