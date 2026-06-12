@@ -1,6 +1,6 @@
 import { DeleteOutlined } from '@ant-design/icons';
 import { App, Alert, Button, Drawer, Empty, Flex, List, Select, Spin, Tag } from 'antd';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import {
   grantShare,
@@ -43,8 +43,10 @@ export function SharePanel({
   onClose: () => void;
 }) {
   return (
+    // `destroyOnHidden` unmounts the body on close, so it (and its share-list
+    // fetch) starts fresh on each open — matching the other drawers in the app.
     <Drawer title="Share suite" open={open} onClose={onClose} width={480} destroyOnHidden>
-      {open && <SharePanelBody suiteId={suiteId} ownerId={ownerId} canManage={canManage} />}
+      <SharePanelBody suiteId={suiteId} ownerId={ownerId} canManage={canManage} />
     </Drawer>
   );
 }
@@ -197,6 +199,17 @@ function AddCollaborator({
   const [permission, setPermission] = useState<SharePermission>('view');
   const [adding, setAdding] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  // Monotonic token so a slow earlier search can't overwrite a newer one's
+  // results (last-wins); unmount bumps it to a sentinel to drop any in-flight
+  // response, and clears the pending debounce so it never fires post-unmount.
+  const latest = useRef(0);
+  useEffect(
+    () => () => {
+      clearTimeout(timer.current);
+      latest.current = -1;
+    },
+    [],
+  );
 
   // Debounce the directory query so a fast typist fires one search, not one per
   // keystroke. The 2-char floor mirrors the backend (a shorter query returns []).
@@ -205,14 +218,23 @@ function AddCollaborator({
     clearTimeout(timer.current);
     if (q.length < 2) {
       setOptions([]);
+      setSearching(false); // a pending debounce was cancelled — drop its spinner
       return;
     }
     setSearching(true);
+    const token = (latest.current += 1);
     timer.current = setTimeout(() => {
       searchUsers(q)
-        .then((users) => setOptions(users.filter((u) => !excludedIds.includes(u.id))))
-        .catch(() => setOptions([]))
-        .finally(() => setSearching(false));
+        .then((users) => {
+          if (token !== latest.current) return; // superseded by a newer search
+          setOptions(users.filter((u) => !excludedIds.includes(u.id)));
+        })
+        .catch(() => {
+          if (token === latest.current) setOptions([]);
+        })
+        .finally(() => {
+          if (token === latest.current) setSearching(false);
+        });
     }, 300);
   };
 
