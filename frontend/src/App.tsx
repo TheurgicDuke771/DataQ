@@ -72,22 +72,25 @@ export function App() {
             style={{ height: '100%', borderInlineEnd: 0, paddingTop: 8 }}
           />
         </Sider>
-        <Content style={{ padding: 24 }}>
-          <AuthGate>
-            <Suspense fallback={<Spin size="large" style={{ marginTop: 80 }} />}>
-              <Routes>
-                <Route path="/" element={<Navigate to="/connections" replace />} />
-                <Route path="/connections" element={<Connections />} />
-                <Route path="/connections/new" element={<ConnectionNew />} />
-                <Route path="/suites" element={<Suites />} />
-                <Route path="/suites/:suiteId" element={<Suites />} />
-                <Route path="/suites/:suiteId/checks/new" element={<CheckNew />} />
-                <Route path="/results" element={<Results />} />
-                <Route path="/profile" element={<Home />} />
-                <Route path="*" element={<Navigate to="/connections" replace />} />
-              </Routes>
-            </Suspense>
-          </AuthGate>
+        <Content style={{ padding: 24, position: 'relative', overflow: 'hidden' }}>
+          <BrandWatermark />
+          <div style={{ position: 'relative' }}>
+            <AuthGate>
+              <Suspense fallback={<Spin size="large" style={{ marginTop: 80 }} />}>
+                <Routes>
+                  <Route path="/" element={<Navigate to="/connections" replace />} />
+                  <Route path="/connections" element={<Connections />} />
+                  <Route path="/connections/new" element={<ConnectionNew />} />
+                  <Route path="/suites" element={<Suites />} />
+                  <Route path="/suites/:suiteId" element={<Suites />} />
+                  <Route path="/suites/:suiteId/checks/new" element={<CheckNew />} />
+                  <Route path="/results" element={<Results />} />
+                  <Route path="/profile" element={<Home />} />
+                  <Route path="*" element={<Navigate to="/connections" replace />} />
+                </Routes>
+              </Suspense>
+            </AuthGate>
+          </div>
         </Content>
       </Layout>
     </Layout>
@@ -130,6 +133,29 @@ function initialsOf(name: string): string {
  * no real session, so Sign out is shown disabled (the affordance is visible, but
  * honest about there being nothing to end) rather than hidden entirely.
  */
+/**
+ * A very subtle brand watermark behind every page: the yin-yang mark bled off
+ * the content area's bottom-right corner at low opacity. Decorative only
+ * (`aria-hidden`, no pointer events), clipped by the Content's `overflow:hidden`.
+ */
+function BrandWatermark() {
+  return (
+    <div
+      aria-hidden
+      style={{
+        position: 'absolute',
+        right: -70,
+        bottom: -70,
+        opacity: 0.05,
+        pointerEvents: 'none',
+        lineHeight: 0,
+      }}
+    >
+      <BrandMark size={460} />
+    </div>
+  );
+}
+
 function UserMenu() {
   const user = useCurrentUser();
   if (!user) return null;
