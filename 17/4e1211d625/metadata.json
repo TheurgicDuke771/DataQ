@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "174e1211d625",
+  "strategy": "manual-commit",
+  "branch": "feature/pr-c1-results",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "CLAUDE.md",
+    "backend/scripts/demo_data.py",
+    "docs/adr/README.md",
+    "docs/progress.md",
+    "frontend/src/App.tsx",
+    "frontend/src/api/suites.ts",
+    "frontend/tests/components/SuiteDrawer.test.tsx",
+    "frontend/tests/pages/Suites.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/17/4e1211d625/0/metadata.json",
+      "transcript": "/17/4e1211d625/0/full.jsonl",
+      "content_hash": "/17/4e1211d625/0/content_hash.txt",
+      "prompt": "/17/4e1211d625/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 267162,
+    "cache_creation_tokens": 11658827,
+    "cache_read_tokens": 551184817,
+    "output_tokens": 1393149,
+    "api_call_count": 1832
+  }
+}
