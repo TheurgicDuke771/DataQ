@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { type Connection, listConnections } from '../../src/api/connections';
+import { runSuite } from '../../src/api/runs';
 import {
   type Check,
   deleteCheck,
@@ -31,11 +32,14 @@ vi.mock('../../src/api/suites', async (importOriginal) => {
   };
 });
 
+vi.mock('../../src/api/runs', () => ({ runSuite: vi.fn() }));
+
 const mockListSuites = vi.mocked(listSuites);
 const mockListConnections = vi.mocked(listConnections);
 const mockListChecks = vi.mocked(listChecks);
 const mockDeleteSuite = vi.mocked(deleteSuite);
 const mockDeleteCheck = vi.mocked(deleteCheck);
+const mockRunSuite = vi.mocked(runSuite);
 
 const connection: Connection = {
   id: 'conn1',
@@ -200,5 +204,60 @@ describe('Suites', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
 
     await waitFor(() => expect(mockDeleteSuite).toHaveBeenCalledWith('s1'));
+  });
+
+  it('triggers a run from the detail panel when runnable', async () => {
+    const user = userEvent.setup();
+    mockListConnections.mockResolvedValue([connection]);
+    mockListSuites.mockResolvedValue([
+      suite({ target: { table: 'orders' }, my_permission: 'owner' }),
+    ]);
+    mockListChecks.mockResolvedValue([check()]);
+    mockRunSuite.mockResolvedValue({
+      id: 'r1',
+      suite_id: 's1',
+      status: 'queued',
+      triggered_by: 'manual:u1',
+      started_at: null,
+      finished_at: null,
+      created_at: '2026-06-12T00:00:00Z',
+    });
+
+    renderPage();
+    await user.click(await screen.findByText('orders-suite'));
+    await user.click(await screen.findByRole('button', { name: /Run/ }));
+
+    await waitFor(() => expect(mockRunSuite).toHaveBeenCalledWith('s1'));
+  });
+
+  it('disables Run (no click) when the suite has no target', async () => {
+    const user = userEvent.setup();
+    mockListConnections.mockResolvedValue([connection]);
+    // target null = not runnable, even for the owner.
+    mockListSuites.mockResolvedValue([suite({ target: null, my_permission: 'owner' })]);
+    mockListChecks.mockResolvedValue([check()]);
+
+    renderPage();
+    await user.click(await screen.findByText('orders-suite'));
+
+    const runButton = await screen.findByRole('button', { name: /Run/ });
+    expect(runButton).toBeDisabled();
+    await user.click(runButton);
+    expect(mockRunSuite).not.toHaveBeenCalled();
+  });
+
+  it('hides Run for a viewer (no edit permission)', async () => {
+    const user = userEvent.setup();
+    mockListConnections.mockResolvedValue([connection]);
+    mockListSuites.mockResolvedValue([
+      suite({ target: { table: 'orders' }, my_permission: 'view' }),
+    ]);
+    mockListChecks.mockResolvedValue([check()]);
+
+    renderPage();
+    await user.click(await screen.findByText('orders-suite'));
+    await screen.findByText('order_id not null');
+
+    expect(screen.queryByRole('button', { name: /Run/ })).not.toBeInTheDocument();
   });
 });

@@ -1,6 +1,9 @@
-import { App, Alert, Button, Card, Empty, Flex, List, Spin, Tag, Typography } from 'antd';
-import { useState } from 'react';
+import { PlayCircleOutlined } from '@ant-design/icons';
+import { App, Alert, Button, Card, Empty, Flex, List, Spin, Tag, Tooltip, Typography } from 'antd';
+import { useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+
+import { runSuite } from '../api/runs';
 
 import {
   CONNECTION_KIND,
@@ -309,8 +312,30 @@ function SuiteDetail({
 
   const [exporting, setExporting] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  const [running, setRunning] = useState(false);
   // Managing shares (and deleting) needs admin; the read stamps the caller's level.
   const canManage = suite.my_permission === 'owner' || suite.my_permission === 'admin';
+  // Triggering a run is edit-gated (matches the backend); a null target isn't runnable.
+  const canRun = canManage || suite.my_permission === 'edit';
+
+  // Ref guard (not just `running` state) so a synchronous double-click can't
+  // dispatch two runs in the render-tick before `loading` disables the button.
+  const runningRef = useRef(false);
+  const onRun = async () => {
+    if (runningRef.current) return;
+    runningRef.current = true;
+    setRunning(true);
+    try {
+      await runSuite(suite.id);
+      message.success(`${suite.name}: run queued`);
+      navigate('/results');
+    } catch (err) {
+      message.error(`Run failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+    } finally {
+      runningRef.current = false;
+      setRunning(false);
+    }
+  };
 
   const onExport = async () => {
     setExporting(true);
@@ -362,6 +387,28 @@ function SuiteDetail({
           )}
         </Flex>
         <Flex gap={8}>
+          {canRun &&
+            (suite.target ? (
+              <Button
+                type="primary"
+                icon={<PlayCircleOutlined />}
+                loading={running}
+                onClick={onRun}
+              >
+                Run
+              </Button>
+            ) : (
+              // No target yet → not runnable; show why rather than a 422 on click.
+              // The <span> is required: a disabled antd Button has pointer-events:
+              // none, so the Tooltip must hover the wrapper, not the button.
+              <Tooltip title="Set a run target (Edit) before running this suite">
+                <span style={{ cursor: 'not-allowed' }}>
+                  <Button type="primary" icon={<PlayCircleOutlined />} disabled>
+                    Run
+                  </Button>
+                </span>
+              </Tooltip>
+            ))}
           <Button onClick={() => setShareOpen(true)}>Share</Button>
           <Button loading={exporting} onClick={onExport}>
             Export
