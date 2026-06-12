@@ -3,15 +3,17 @@
   "checkpoint_id": "631e75331358",
   "strategy": "manual-commit",
   "branch": "feature/check-editor-column-profiler-panel",
-  "checkpoints_count": 0,
+  "checkpoints_count": 1,
   "files_touched": [
     "CLAUDE.md",
     "docs/progress.md",
     "frontend/src/api/suites.ts",
     "frontend/src/components/checks/CheckDrawer.tsx",
     "frontend/src/components/checks/ColumnProfilePanel.tsx",
+    "frontend/src/components/results/resultsFormat.ts",
     "frontend/src/pages/CheckNew.tsx",
-    "frontend/tests/components/ColumnProfilePanel.test.tsx"
+    "frontend/tests/components/ColumnProfilePanel.test.tsx",
+    "frontend/tests/components/resultsFormat.test.ts"
   ],
   "sessions": [
     {
@@ -19,13 +21,19 @@
       "transcript": "/63/1e75331358/0/full.jsonl",
       "content_hash": "/63/1e75331358/0/content_hash.txt",
       "prompt": "/63/1e75331358/0/prompt.txt"
+    },
+    {
+      "metadata": "/63/1e75331358/1/metadata.json",
+      "transcript": "/63/1e75331358/1/full.jsonl",
+      "content_hash": "/63/1e75331358/1/content_hash.txt",
+      "prompt": "/63/1e75331358/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 10272,
-    "cache_creation_tokens": 247984,
-    "cache_read_tokens": 4169128,
-    "output_tokens": 29489,
-    "api_call_count": 47
+    "input_tokens": 292153,
+    "cache_creation_tokens": 12978401,
+    "cache_read_tokens": 589918215,
+    "output_tokens": 1489362,
+    "api_call_count": 1978
   }
 }
