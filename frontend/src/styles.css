@@ -18,3 +18,31 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+/* Gentle resting elevation so white cards lift off the gray canvas rather than
+   reading as flat panels — depth without the heavy stock-antd borders. */
+.ant-card {
+  box-shadow: 0 1px 3px rgba(16, 24, 40, 0.06);
+}
+
+/* Interactive cards (e.g. a connection) lift and deepen their shadow on hover,
+   with a short ease so it feels responsive, not animated-for-its-own-sake. */
+.dq-card--interactive {
+  transition:
+    box-shadow 0.18s ease,
+    transform 0.18s ease;
+}
+.dq-card--interactive:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(16, 24, 40, 0.1);
+}
+
+/* Respect users who prefer reduced motion — keep the elevation, drop the move. */
+@media (prefers-reduced-motion: reduce) {
+  .dq-card--interactive {
+    transition: box-shadow 0.18s ease;
+  }
+  .dq-card--interactive:hover {
+    transform: none;
+  }
+}

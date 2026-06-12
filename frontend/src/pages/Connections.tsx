@@ -299,7 +299,7 @@ function ConnectionCard({
   ];
 
   return (
-    <Card size="small">
+    <Card size="small" className="dq-card--interactive">
       <Flex justify="space-between" align="center" gap={12}>
         <Flex vertical gap={6}>
           <Typography.Text strong>{connection.name}</Typography.Text>
