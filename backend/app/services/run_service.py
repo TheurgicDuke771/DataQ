@@ -16,13 +16,14 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.jsonsafe import sanitize_json
 from backend.app.core.logging import get_logger
 from backend.app.datasources.base import CheckOutcome, CheckRunner, CheckSpec
-from backend.app.db.models import Check, Result, Run, Share, Suite
+from backend.app.db.models import Check, Result, Run
+from backend.app.services import suite_service
 from backend.app.services.severity import derive_status, extract_metric
 
 log = get_logger(__name__)
@@ -163,8 +164,7 @@ def list_runs(
     yields an empty list (the API layer 404s that case up front via
     `require_permission`, but the filter keeps the service safe on its own).
     """
-    shared = select(Share.suite_id).where(Share.user_id == user_id)
-    accessible = select(Suite.id).where(or_(Suite.created_by == user_id, Suite.id.in_(shared)))
+    accessible = suite_service.accessible_suite_ids(user_id)
     stmt = (
         select(Run).where(Run.suite_id.in_(accessible)).order_by(Run.created_at.desc()).limit(limit)
     )

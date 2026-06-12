@@ -52,8 +52,14 @@ class RunRead(BaseModel):
 
 class ResultRead(BaseModel):
     """One check's result within a run. `metric_value` is the SQL-aggregatable
-    badness scalar (ADR 0012); `sample_failures` is sanitised at write time and
-    only reaches a caller who cleared the suite-view gate."""
+    badness scalar (ADR 0012); `observed_value`/`expected_value` are GX summary
+    values (same fields the dry-run / probe already surface).
+
+    `sample_failures` (the raw failing rows) is **deliberately not exposed** here:
+    it can carry real data and is treated as redactor-only elsewhere (gx_runner,
+    and the dry-run path omits it for the same reason). Surfacing it on the
+    results drill-down needs row-level redaction / an opt-in policy first — see
+    the follow-up issue, to land with the Results page (PR-C1)."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -64,7 +70,6 @@ class ResultRead(BaseModel):
     duration_ms: int | None
     observed_value: dict[str, Any] | None
     expected_value: dict[str, Any] | None
-    sample_failures: dict[str, Any] | None
 
 
 class RunDetailRead(RunRead):
@@ -121,8 +126,9 @@ def get_run(
     # runs (404 hides the run id too, matching the suite existence-hiding rule).
     require_permission(db, run.suite_id, current_user.id, minimum="view")
     results = svc.list_results(db, run_id)
-    # Build from the validated RunRead — `Run` has no `results` relationship to
-    # validate from, and results are fetched + redaction-gated separately.
+    # `Run` has no `results` relationship to validate a RunDetailRead from
+    # directly, so validate the run fields (as RunRead) and graft the
+    # separately-fetched, redaction-gated results on.
     return RunDetailRead(
         **RunRead.model_validate(run).model_dump(),
         results=[ResultRead.model_validate(r) for r in results],

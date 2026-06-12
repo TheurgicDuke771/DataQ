@@ -162,7 +162,11 @@ def test_trigger_broker_failure_marks_run_failed_and_503(
 
     assert resp.status_code == 503
     run = db_session.scalars(select(Run).where(Run.suite_id == suite.id)).first()
+    # Canonical terminal-failed shape: finished_at set, started_at NULL (never
+    # started) — matching the pipeline-trigger dispatch-failure path.
     assert run is not None and run.status == "failed"
+    assert run.finished_at is not None
+    assert run.started_at is None
 
 
 # ───────────────────────── GET /runs ───────────────────────────────
@@ -268,6 +272,9 @@ def test_get_run_returns_results(client: TestClient, db_session: Any) -> None:
     assert res["status"] == "warn"
     assert res["metric_value"] == 2.5
     assert res["observed_value"] == {"observed_value": 5}
+    # sample_failures (raw failing rows) is deliberately NOT exposed — PII; the
+    # row is stored but withheld from the API until row-level redaction lands.
+    assert "sample_failures" not in res
 
 
 def test_get_run_unknown_returns_404(client: TestClient, db_session: Any) -> None:
