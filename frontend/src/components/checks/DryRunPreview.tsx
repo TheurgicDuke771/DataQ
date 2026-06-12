@@ -38,6 +38,17 @@ export function DryRunPreview({
     | { status: 'error'; error: string }
   >({ status: 'idle' });
 
+  // Clear a previous preview when the expectation changes — in the edit drawer
+  // the picker switches type in-place (DryRunPreview stays mounted), so without
+  // this the old result would linger, misattributed to the new expectation.
+  // Render-phase reset (React's "adjust state when a prop changes" pattern)
+  // rather than an effect, so the stale result never paints.
+  const [prevExpectation, setPrevExpectation] = useState(expectationType);
+  if (expectationType !== prevExpectation) {
+    setPrevExpectation(expectationType);
+    setState({ status: 'idle' });
+  }
+
   const table = typeof target?.table === 'string' ? target.table : undefined;
   const schema = typeof target?.schema === 'string' ? target.schema : null;
 

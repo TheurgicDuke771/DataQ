@@ -92,6 +92,32 @@ describe('DryRunPreview', () => {
     expect(screen.getByText(/"unexpected_percent":2.5/)).toBeInTheDocument();
   });
 
+  it('clears a stale result when the expectation changes', async () => {
+    mockDryRun.mockResolvedValue({
+      status: 'fail',
+      metric_value: 6,
+      observed_value: null,
+      expected_value: null,
+    });
+    const iv = { config: { column: 'order_id' } };
+    const { rerender } = render(
+      <Harness expectationType={NOT_NULL} target={TARGET} initialValues={iv} />,
+    );
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Dry-run preview' }));
+    expect(await screen.findByText('fail')).toBeInTheDocument();
+
+    // Switching the expectation must drop the now-misattributed result.
+    rerender(
+      <Harness
+        expectationType="expect_column_values_to_be_unique"
+        target={TARGET}
+        initialValues={iv}
+      />,
+    );
+    await waitFor(() => expect(screen.queryByText('fail')).not.toBeInTheDocument());
+  });
+
   it('surfaces the API error message when the dry-run fails', async () => {
     mockDryRun.mockRejectedValue(new Error('dry run could not execute against the datasource'));
     render(<Harness expectationType={NOT_NULL} target={TARGET} />);
