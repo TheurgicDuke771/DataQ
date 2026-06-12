@@ -5,6 +5,7 @@ import {
   Badge,
   Button,
   Card,
+  Divider,
   Dropdown,
   Empty,
   Flex,
@@ -30,6 +31,7 @@ import {
   testConnection,
 } from '../api/connections';
 import { ConnectionDrawer } from '../components/connections/ConnectionDrawer';
+import { ConnectionTypeAvatar } from '../components/connections/connectionVisuals';
 import { ReauthModal } from '../components/connections/ReauthModal';
 import { type AsyncState, useAsyncData } from '../hooks/useAsyncData';
 
@@ -182,28 +184,32 @@ function ConnectionsBody({
     return <Empty description="No connections configured yet" />;
   }
   // Two top-level sections (Data sources / Orchestration), each grouping by type.
+  // A subtle divider reinforces the datasource-vs-orchestration split (the
+  // load-bearing distinction in DataQ) without competing with the headings.
+  const sections = CONNECTION_KINDS.map((kind) => ({
+    kind,
+    ofKind: connections.filter((c) => CONNECTION_KIND[c.type] === kind),
+  })).filter((s) => s.ofKind.length > 0);
+
   return (
     <Flex vertical gap={24}>
-      {CONNECTION_KINDS.map((kind) => {
-        const ofKind = connections.filter((c) => CONNECTION_KIND[c.type] === kind);
-        if (ofKind.length === 0) return null;
-        return (
-          <Flex key={kind} vertical gap={16}>
-            <Typography.Title level={4} style={{ margin: 0 }}>
-              {CONNECTION_KIND_LABELS[kind]}
-            </Typography.Title>
-            {groupByType(ofKind).map(([type, group]) => (
-              <ConnectionTypeSection
-                key={type}
-                type={type}
-                connections={group}
-                actions={actions}
-                health={health}
-              />
-            ))}
-          </Flex>
-        );
-      })}
+      {sections.map(({ kind, ofKind }, i) => (
+        <Flex key={kind} vertical gap={16}>
+          {i > 0 && <Divider style={{ margin: '0 0 4px' }} />}
+          <Typography.Title level={4} style={{ margin: 0 }}>
+            {CONNECTION_KIND_LABELS[kind]}
+          </Typography.Title>
+          {groupByType(ofKind).map(([type, group]) => (
+            <ConnectionTypeSection
+              key={type}
+              type={type}
+              connections={group}
+              actions={actions}
+              health={health}
+            />
+          ))}
+        </Flex>
+      ))}
     </Flex>
   );
 }
@@ -224,7 +230,15 @@ function ConnectionTypeSection({
       <Typography.Title level={5} style={{ margin: 0 }}>
         {CONNECTION_TYPE_LABELS[type]}
       </Typography.Title>
-      <Flex wrap gap={12}>
+      {/* A responsive grid (not a wrap row) so cards stretch to fill the width
+          instead of clustering at their min size and leaving the row half-empty. */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
+          gap: 12,
+        }}
+      >
         {connections.map((connection) => (
           <ConnectionCard
             key={connection.id}
@@ -233,7 +247,7 @@ function ConnectionTypeSection({
             health={health[connection.id] ?? 'idle'}
           />
         ))}
-      </Flex>
+      </div>
     </Flex>
   );
 }
@@ -291,29 +305,34 @@ function ConnectionCard({
   ];
 
   return (
-    <Card size="small" style={{ minWidth: 280 }}>
+    <Card size="small" className="dq-card--interactive">
       <Flex justify="space-between" align="center" gap={12}>
-        <Flex vertical gap={6}>
-          <Typography.Text strong>{connection.name}</Typography.Text>
-          <Flex gap={8} align="center" wrap>
-            <Tag color={ENV_COLORS[connection.env]}>{envLabel(connection.env)}</Tag>
-            {connection.has_secret ? (
-              <Badge status="success" text="credential set" />
-            ) : (
-              <Badge status="warning" text="no credential" />
+        <Flex gap={12} align="center" style={{ minWidth: 0 }}>
+          <ConnectionTypeAvatar type={connection.type} />
+          <Flex vertical gap={6} style={{ minWidth: 0 }}>
+            <Typography.Text strong ellipsis>
+              {connection.name}
+            </Typography.Text>
+            <Flex gap={8} align="center" wrap>
+              <Tag color={ENV_COLORS[connection.env]}>{envLabel(connection.env)}</Tag>
+              {connection.has_secret ? (
+                <Badge status="success" text="credential set" />
+              ) : (
+                <Badge status="warning" text="no credential" />
+              )}
+              <HealthBadge health={health} />
+            </Flex>
+            {health === 'failed' && (
+              <Button
+                type="link"
+                size="small"
+                style={{ padding: 0, height: 'auto' }}
+                onClick={() => actions.onReauth(connection)}
+              >
+                Re-authenticate
+              </Button>
             )}
-            <HealthBadge health={health} />
           </Flex>
-          {health === 'failed' && (
-            <Button
-              type="link"
-              size="small"
-              style={{ padding: 0, height: 'auto' }}
-              onClick={() => actions.onReauth(connection)}
-            >
-              Re-authenticate
-            </Button>
-          )}
         </Flex>
         <Flex gap={8} align="center">
           <Button
