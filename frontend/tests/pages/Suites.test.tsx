@@ -53,6 +53,7 @@ function suite(overrides: Partial<Suite> = {}): Suite {
     name: 'orders-suite',
     description: 'Checks for the orders table',
     connection_id: 'conn1',
+    target: null,
     created_by: 'u1',
     ...overrides,
   };

@@ -46,6 +46,7 @@ describe('SuiteDrawer — create', () => {
       name: 'orders-suite',
       description: null,
       connection_id: 'conn1',
+      target: null,
       created_by: 'u1',
     });
     renderDrawer({ onSaved });
@@ -85,6 +86,7 @@ describe('SuiteDrawer — edit', () => {
     name: 'orders-suite',
     description: 'old desc',
     connection_id: 'conn1',
+    target: null,
     created_by: 'u1',
   };
 
