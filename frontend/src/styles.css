@@ -46,3 +46,12 @@ body {
     transform: none;
   }
 }
+
+/* Clickable suite list rows get a hover tint so they read as interactive (the
+   card grid lifts; the rows can't lift, so a subtle background does the job). */
+.dq-suite-row {
+  transition: background 0.15s ease;
+}
+.dq-suite-row:hover {
+  background: rgba(79, 70, 229, 0.04);
+}

@@ -14,6 +14,10 @@ import type { ThemeConfig } from 'antd';
 export const BRAND = {
   /** Indigo-600 — the primary accent (buttons, active nav, links). */
   primary: '#4f46e5',
+  /** Indigo-200 — the logo's light lobe + the watermark tint. */
+  primarySoft: '#c7d2fe',
+  /** Pale indigo — the "selected" row/nav background (one tint everywhere). */
+  selectedBg: '#eef0fe',
   /** The soft canvas behind white surfaces. */
   canvas: '#f4f5f7',
   /** Hairline border for header / sider / cards. */
@@ -53,7 +57,7 @@ export const appTheme: ThemeConfig = {
       itemBorderRadius: 8,
       itemMarginInline: 8,
       itemHeight: 38,
-      itemSelectedBg: '#eef0fe',
+      itemSelectedBg: BRAND.selectedBg,
       itemSelectedColor: BRAND.primary,
     },
     Card: {

@@ -28,6 +28,65 @@ import { BRAND } from '../theme';
 import { downloadJson, toFilenameStem } from '../utils/download';
 import { type AsyncState, useAsyncData } from '../hooks/useAsyncData';
 
+/**
+ * A suite's identity block — datasource avatar + name + connection/env — shared
+ * by the browse-grid card and the master list row so the two never drift. The
+ * name renders as plain text (never an `<h4>`), so only the detail panel owns
+ * the suite heading. `description` is opt-in (the grid card shows it; the row
+ * doesn't).
+ */
+function SuiteIdentity({
+  suite,
+  conn,
+  size = 40,
+  selected = false,
+  showDescription = false,
+}: {
+  suite: Suite;
+  conn: Connection | undefined;
+  size?: number;
+  selected?: boolean;
+  showDescription?: boolean;
+}) {
+  return (
+    <Flex
+      gap={12}
+      align={showDescription ? 'flex-start' : 'center'}
+      style={{ width: '100%', minWidth: 0 }}
+    >
+      {conn && <ConnectionTypeAvatar type={conn.type} size={size} />}
+      <Flex vertical gap={2} style={{ minWidth: 0, flex: 1 }}>
+        <Typography.Text strong ellipsis style={selected ? { color: BRAND.primary } : undefined}>
+          {suite.name}
+        </Typography.Text>
+        {conn ? (
+          <Flex gap={6} align="center">
+            <Typography.Text type="secondary" style={{ fontSize: 12 }} ellipsis>
+              {conn.name}
+            </Typography.Text>
+            <Tag color={ENV_COLORS[conn.env]} style={{ marginInlineEnd: 0 }}>
+              {envLabel(conn.env)}
+            </Tag>
+          </Flex>
+        ) : (
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            No connection
+          </Typography.Text>
+        )}
+        {showDescription && suite.description && (
+          <Typography.Paragraph
+            type="secondary"
+            ellipsis={{ rows: 2 }}
+            style={{ fontSize: 12, margin: 0, marginTop: 2 }}
+          >
+            {suite.description}
+          </Typography.Paragraph>
+        )}
+      </Flex>
+    </Flex>
+  );
+}
+
 export function Suites() {
   const navigate = useNavigate();
   // The selected suite is the route (`/suites/:suiteId`) so it deep-links and
@@ -167,40 +226,14 @@ function SuitesBody({
             return (
               <List.Item
                 onClick={() => onSelect(suite.id)}
+                className="dq-suite-row"
                 style={{
                   cursor: 'pointer',
                   padding: '12px 16px',
-                  background: isSelected ? '#eef0fe' : undefined,
+                  background: isSelected ? BRAND.selectedBg : undefined,
                 }}
               >
-                {/* Plain Flex (not List.Item.Meta) so the name renders as text,
-                    not an <h4> — the detail panel owns the only suite heading. */}
-                <Flex gap={12} align="center" style={{ width: '100%', minWidth: 0 }}>
-                  {conn && <ConnectionTypeAvatar type={conn.type} size={34} />}
-                  <Flex vertical gap={2} style={{ minWidth: 0 }}>
-                    <Typography.Text
-                      strong
-                      ellipsis
-                      style={isSelected ? { color: BRAND.primary } : undefined}
-                    >
-                      {suite.name}
-                    </Typography.Text>
-                    {conn ? (
-                      <Flex gap={6} align="center">
-                        <Typography.Text type="secondary" style={{ fontSize: 12 }} ellipsis>
-                          {conn.name}
-                        </Typography.Text>
-                        <Tag color={ENV_COLORS[conn.env]} style={{ marginInlineEnd: 0 }}>
-                          {envLabel(conn.env)}
-                        </Tag>
-                      </Flex>
-                    ) : (
-                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                        No connection
-                      </Typography.Text>
-                    )}
-                  </Flex>
-                </Flex>
+                <SuiteIdentity suite={suite} conn={conn} size={34} selected={isSelected} />
               </List.Item>
             );
           }}
@@ -247,37 +280,7 @@ function SuiteGrid({
             style={{ cursor: 'pointer' }}
             onClick={() => onSelect(suite.id)}
           >
-            <Flex gap={12} align="flex-start">
-              {conn && <ConnectionTypeAvatar type={conn.type} />}
-              <Flex vertical gap={4} style={{ minWidth: 0, flex: 1 }}>
-                <Typography.Text strong ellipsis>
-                  {suite.name}
-                </Typography.Text>
-                {conn ? (
-                  <Flex gap={6} align="center">
-                    <Typography.Text type="secondary" style={{ fontSize: 12 }} ellipsis>
-                      {conn.name}
-                    </Typography.Text>
-                    <Tag color={ENV_COLORS[conn.env]} style={{ marginInlineEnd: 0 }}>
-                      {envLabel(conn.env)}
-                    </Tag>
-                  </Flex>
-                ) : (
-                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                    No connection
-                  </Typography.Text>
-                )}
-                {suite.description && (
-                  <Typography.Paragraph
-                    type="secondary"
-                    ellipsis={{ rows: 2 }}
-                    style={{ fontSize: 12, margin: 0, marginTop: 2 }}
-                  >
-                    {suite.description}
-                  </Typography.Paragraph>
-                )}
-              </Flex>
-            </Flex>
+            <SuiteIdentity suite={suite} conn={conn} showDescription />
           </Card>
         );
       })}

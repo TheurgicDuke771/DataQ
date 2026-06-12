@@ -72,7 +72,7 @@ export function App() {
             style={{ height: '100%', borderInlineEnd: 0, paddingTop: 8 }}
           />
         </Sider>
-        <Content style={{ padding: 24, position: 'relative', overflow: 'hidden' }}>
+        <Content style={{ padding: 24, position: 'relative' }}>
           <BrandWatermark />
           <div style={{ position: 'relative' }}>
             <AuthGate>
@@ -105,7 +105,7 @@ export function App() {
  */
 function BrandMark({ size = 30 }: { size?: number }) {
   const dark = BRAND.primary;
-  const light = '#c7d2fe'; // indigo-200
+  const light = BRAND.primarySoft; // indigo-200
   return (
     <svg width={size} height={size} viewBox="0 0 100 100" role="img" aria-label="DataQ logo">
       <circle cx="50" cy="50" r="49" fill={light} stroke={BRAND.border} strokeWidth="1" />
@@ -128,15 +128,11 @@ function initialsOf(name: string): string {
 }
 
 /**
- * Header identity + account menu: an avatar/name button that opens a dropdown
- * with the signed-in identity and a Sign out action. Under dev-bypass there is
- * no real session, so Sign out is shown disabled (the affordance is visible, but
- * honest about there being nothing to end) rather than hidden entirely.
- */
-/**
  * A very subtle brand watermark behind every page: the yin-yang mark bled off
  * the content area's bottom-right corner at low opacity. Decorative only
- * (`aria-hidden`, no pointer events), clipped by the Content's `overflow:hidden`.
+ * (`aria-hidden`, no pointer events). The mark is clipped by *this* layer
+ * (`inset:0; overflow:hidden`), not by the Content itself — so real page
+ * content can still overflow/scroll normally; only the watermark is clipped.
  */
 function BrandWatermark() {
   return (
@@ -144,18 +140,24 @@ function BrandWatermark() {
       aria-hidden
       style={{
         position: 'absolute',
-        right: -70,
-        bottom: -70,
-        opacity: 0.05,
+        inset: 0,
+        overflow: 'hidden',
         pointerEvents: 'none',
-        lineHeight: 0,
       }}
     >
-      <BrandMark size={460} />
+      <div style={{ position: 'absolute', right: -70, bottom: -70, opacity: 0.05, lineHeight: 0 }}>
+        <BrandMark size={460} />
+      </div>
     </div>
   );
 }
 
+/**
+ * Header identity + account menu: an avatar/name button that opens a dropdown
+ * with the signed-in identity and a Sign out action. Under dev-bypass there is
+ * no real session, so Sign out is shown disabled (the affordance is visible, but
+ * honest about there being nothing to end) rather than hidden entirely.
+ */
 function UserMenu() {
   const user = useCurrentUser();
   if (!user) return null;
