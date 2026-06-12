@@ -12,6 +12,8 @@ export interface Suite {
   name: string;
   description: string | null;
   connection_id: string;
+  /** Datasource-shaped run target (#215); null = not yet runnable. */
+  target: Record<string, unknown> | null;
   created_by: string;
 }
 

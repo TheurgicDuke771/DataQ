@@ -232,17 +232,18 @@ These were preconditions for executing the roadmap. Listed for completeness.
 
 **Exit gate:** Full results dashboard live across all source types; alerts firing with suppression.
 
-### Results dashboard (10 tasks — 0/10)
-> **Build as an in-app React page** (the GX-Cloud-style redesign Phase C), **not Grafana** — reading Postgres directly would bypass DataQ's per-suite sharing + PII redaction; Grafana is deferred to an optional post-v1 ops add-on (ADR 0018 pending). The Week-5 run-enablement backend it gates on is now **done**: `runs.py` read endpoints (`GET /runs`, `GET /runs/{id}`, `GET /pipeline_runs`) + `POST /suites/{id}/run` shipped in PR-C0b; [#215](https://github.com/TheurgicDuke771/DataQ/issues/215) target table in PR-C0a. The `results.metric_value`/`duration_ms` columns were seam-built for these trend charts (ADR 0012).
+### Results dashboard (10 tasks — 1/10 ✅, + PR-C1 scaffold)
+> **Build as an in-app React page** (the GX-Cloud-style redesign Phase C), **not Grafana** — reading Postgres directly would bypass DataQ's per-suite sharing + PII redaction; Grafana is deferred to an optional post-v1 ops add-on ([ADR 0018](adr/0018-results-surface-and-grafana-deferral.md), accepted). The Week-5 run-enablement backend it gates on is **done**: `runs.py` read endpoints (`GET /runs`, `GET /runs/{id}`, `GET /pipeline_runs`) + `POST /suites/{id}/run` (PR-C0b); [#215](https://github.com/TheurgicDuke771/DataQ/issues/215) target (PR-C0a). The `results.metric_value`/`duration_ms` columns were seam-built for these trend charts (ADR 0012).
+- [x] ✅ **Results page scaffold** (PR-C1) — the in-app `/results` page + sidebar nav (Connections · Suites · **Results** · Profile). **Runs tab**: a runs table (suite name, status, triggered-by, started, duration) with a status filter, each row opening a **run-detail drawer** that drills into the per-check results (check name + expectation, severity tag, `metric_value`, observed value). **Pipeline runs tab**: the orchestration monitoring feed (`pipeline_runs`) with a provider filter. Pure presentation helpers (`resultsFormat.ts` — duration/timestamp formatters, status→colour maps) are unit-tested; `api/runs.ts` mirrors the C0b schemas. Demo seed (`demo_data.py`) now lands runs + results (pass/pass/warn/fail spread) + two pipeline-runs + suite targets so the page has real content. 10 vitest + 2 Playwright (`results.spec.ts`). _The rich widgets below build on this scaffold._
 - [ ] ⬜ Health score stat cards + 7-day trend chart
 - [ ] ⬜ Per-suite pass / fail progress bars — warn / fail / critical breakdown
-- [ ] ⬜ Results filter bar — env, datasource type, suite, date range, status
-- [ ] ⬜ Failed check drill-down — sample failing rows from GX result
+- [ ] 🟡 Results filter bar — env, datasource type, suite, date range, status — _run **status** filter + pipeline **provider** filter shipped (PR-C1); env/datasource/suite/date-range pending_
+- [ ] 🟡 Failed check drill-down — sample failing rows from GX result — _per-check drill-down shipped (PR-C1); **sample rows withheld** pending row-level PII redaction ([#226](https://github.com/TheurgicDuke771/DataQ/issues/226), ADR 0018)_
 - [ ] ⬜ Per-check historical trend chart
-- [ ] ⬜ Orchestration status panel — pipeline/DAG status, polls every 30s, correlated DQ result
+- [ ] 🟡 Orchestration status panel — pipeline/DAG status, polls every 30s, correlated DQ result — _pipeline-runs feed + status shipped (PR-C1, `/pipeline_runs` tab); 30s auto-poll + DQ-run correlation pending_
 - [ ] ⬜ Datasource type filter — Snowflake / flat file / Unity Catalog toggle
 - [ ] ⬜ CSV + PDF export of results
-- [ ] ⬜ Severity badge colours — green / amber / red / dark red
+- [x] ✅ Severity badge colours — green / amber / red / dark red — severity-tier (pass/warn/fail/critical) + run-status tag colour maps in `resultsFormat.ts`, rendered as antd Tags on the runs table + run detail (PR-C1)
 - [ ] ⬜ Health score weighting — apply warn/fail/critical penalty weights
 
 ### Alerting (6 tasks — 0/6)
@@ -253,7 +254,7 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [ ] ⬜ Teams adaptive card payload — check, datasource, table / file, observed vs expected
 - [ ] ⬜ Severity-aware alert routing — warn quiet, fail standard, critical @channel
 
-**Week 6 total: 0 / 16**
+**Week 6 total: 2 / 16** _(early credit: Results page scaffold + severity badge colours (PR-C1, the GX-Cloud redesign Phase C); 3 dashboard tasks partially landed — status/provider filters, per-check drill-down, pipeline-runs feed)_
 
 ---
 
@@ -363,10 +364,10 @@ These were preconditions for executing the roadmap. Listed for completeness.
 | Week 3 | 18 | 0 | 0 | 18 |
 | Week 4 | 16 | 2 | 8 | 26 |
 | Week 5 | 6 | 0 | 12 | 18 |
-| Week 6 | 0 | 0 | 16 | 16 |
+| Week 6 | 2 | 0 | 14 | 16 |
 | Week 7 | 0 | 1 | 28 | 29 |
 | Week 8 | 2 | 4 | 20 | 26 |
-| **TOTAL** | **63** | **9** | **90** | **162** |
+| **TOTAL** | **65** | **9** | **88** | **162** |
 
 > 161 > 100 because ADR 0004 added Airflow tasks, ADR 0011 added two seam tasks (generic runner dispatch, `ResultPublisher`), ADR 0012 added three Week-3 monitor-kind / metric seam tasks, the W5 run-enablement gaps surfaced in review (check target-table #215, Suite Triggers UI #216), the GX-Cloud-style UI redesign added four UI-shape tasks (dedicated/classified connection + check pages), plus PR-review follow-ups not in the original roadmap. Tracked here for honesty.
 

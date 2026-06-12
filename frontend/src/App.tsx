@@ -17,6 +17,7 @@ const ConnectionNew = lazy(() =>
 );
 const Suites = lazy(() => import('./pages/Suites').then((m) => ({ default: m.Suites })));
 const CheckNew = lazy(() => import('./pages/CheckNew').then((m) => ({ default: m.CheckNew })));
+const Results = lazy(() => import('./pages/Results').then((m) => ({ default: m.Results })));
 const Home = lazy(() => import('./pages/Home').then((m) => ({ default: m.Home })));
 
 const { Header, Sider, Content } = Layout;
@@ -24,6 +25,7 @@ const { Header, Sider, Content } = Layout;
 const NAV_ITEMS = [
   { key: '/connections', label: <Link to="/connections">Connections</Link> },
   { key: '/suites', label: <Link to="/suites">Suites</Link> },
+  { key: '/results', label: <Link to="/results">Results</Link> },
   { key: '/profile', label: <Link to="/profile">Profile</Link> },
 ];
 
@@ -59,6 +61,7 @@ export function App() {
                 <Route path="/suites" element={<Suites />} />
                 <Route path="/suites/:suiteId" element={<Suites />} />
                 <Route path="/suites/:suiteId/checks/new" element={<CheckNew />} />
+                <Route path="/results" element={<Results />} />
                 <Route path="/profile" element={<Home />} />
                 <Route path="*" element={<Navigate to="/connections" replace />} />
               </Routes>
