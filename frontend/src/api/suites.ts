@@ -134,6 +134,50 @@ export async function deleteCheck(suiteId: string, checkId: string): Promise<voi
   await api.delete(`/suites/${suiteId}/checks/${checkId}`);
 }
 
+// ───────────────────────── export / import (portable documents) ─────
+
+/**
+ * Mirrors the backend `CheckDocument` — a check's authoring fields only, no DB
+ * identity. Thresholds may arrive as a number or a string (the backend's
+ * `Decimal` JSON encoding is not pinned); kept as-is so the document round-trips
+ * byte-for-faithful on re-import — never coerce or re-format them.
+ */
+export interface CheckDocument {
+  name: string;
+  kind: string;
+  expectation_type: string;
+  config: Record<string, unknown>;
+  warn_threshold: number | string | null;
+  fail_threshold: number | string | null;
+  critical_threshold: number | string | null;
+}
+
+/** Mirrors the backend `SuiteDocument` — a portable, connection-agnostic suite
+ *  (the export response and the import payload are the same shape). */
+export interface SuiteDocument {
+  version: number;
+  name: string;
+  description: string | null;
+  checks: CheckDocument[];
+}
+
+export async function exportSuite(suiteId: string): Promise<SuiteDocument> {
+  const { data } = await api.get<SuiteDocument>(`/suites/${suiteId}/export`);
+  return data;
+}
+
+/** Mirrors `SuiteImportRequest` — import a document onto a target connection
+ *  (the new suite is owned by the importing user, like create). */
+export interface SuiteImportRequest {
+  connection_id: string;
+  document: SuiteDocument;
+}
+
+export async function importSuite(payload: SuiteImportRequest): Promise<Suite> {
+  const { data } = await api.post<Suite>('/suites/import', payload);
+  return data;
+}
+
 /** Mirrors `CheckDryRunRequest` — preview one check against live data, no persist.
  *  `table`/`schema` come from the suite's run target (#215). v1: Snowflake only. */
 export interface CheckDryRunRequest {

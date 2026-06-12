@@ -178,10 +178,10 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [ ] ⬜ Check version history drawer — see previous config before overwriting
 - [x] ✅ Severity tier toggle in check editor — three-threshold UI — optional warn/fail/critical inputs banding the unexpected-% (ADR 0016), blank = binary — [PR #203](https://github.com/TheurgicDuke771/DataQ/pull/203)
 
-### Access & admin UI (3 tasks — 0/3)
-- [ ] ⬜ Suite sharing panel — add / remove users, assign roles inline _(backend sharing API ready from Week 3)_
+### Access & admin UI (3 tasks — 1/3)
+- [ ] ⬜ Suite sharing panel — add / remove users, assign roles inline _(backend sharing API ready from Week 3; **blocked on a user-directory backend** — shares key on a raw `user_id` UUID, no user-search endpoint + `ShareRead` returns only the UUID; PR-E2 adds search + enriched share read, then PR-E3 the panel)_
 - [ ] ⬜ Admin page — list all suites, all users, access overview
-- [ ] ⬜ Suite export / import UI (download JSON, upload JSON) _(backend export/import ready from Week 3)_
+- [x] ✅ Suite export / import UI (download JSON, upload JSON) — **Export** button on the suite detail header downloads `<suite>.json` from `GET /suites/{id}/export` via a transient-anchor blob (`utils/download.ts` — `downloadJson` + `toFilenameStem`); **Import** button on the suites header opens `ImportSuiteDrawer` — drag/drop a `.json`, client-side parse + shape-check (fail-fast on non-suite/malformed JSON), pick a target connection, `POST /suites/import`. The parsed document is handed back **untouched** so thresholds round-trip exactly (string-or-number Decimal encoding never coerced). 11 tests (download lib: stem slug + blob/anchor/revoke; drawer: valid→import-with-faithful-document, non-suite/malformed-JSON rejection, connection-gated Import). _(PR-E1; backend ready from Week 3)_
 
 ### GX-Cloud-style UI redesign (added — not in original roadmap) (4 tasks — 4/4 ✅)
 > Model the UI on [GX Cloud](https://greatexpectations.io/gx-cloud/): dedicated **full-page create flows** that **classify** what you're creating, keeping the lighter drawers for *edit*. Plan: `~/.claude/plans/fancy-moseying-raccoon.md`. Decided: in-app results page (Grafana deferred to an optional post-v1 ops add-on, never the per-suite authz path — ADR 0018 pending); full-page create + drawer edit; connections/checks redesign now (backends ready), results after the Week-5 run-enablement backend.
@@ -190,7 +190,7 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [x] ✅ **Checks — suite selection as a route + categorized expectation picker** — `/suites/:suiteId` makes the selected suite deep-linkable and survives the check-editor round-trip; the catalog gains a `category` (Column values / Table shape) and the picker groups by it (antd optgroups). Reserved Freshness/Volume/Schema-drift categories (ADR 0012) land with the dedicated page. _(PR-B1)_
 - [x] ✅ **Checks — dedicated `/suites/:suiteId/checks/new` page** — category → expectation → config/thresholds, with reserved monitor-kind categories (Freshness/Volume/Schema-drift, ADR 0012) shown disabled. Shared form logic extracted to `checkForm.ts` (conversions) + `checkFormFields.tsx` (field components), reused by the page and the now edit-only `CheckDrawer`. The natural home for the [#215](https://github.com/TheurgicDuke771/DataQ/issues/215) target table/path field. _(PR-B2; `CheckNew.tsx`)_
 
-**Week 4 total: 18 / 26 ✅ (+2 🟡, 1 🔵)** _(connection manager UI complete (6/6); check editor core shipped + **dry-run preview** (PR-D1) + **column profiler panel** (PR-D2); **GX-Cloud redesign complete (4/4)** — classified connection + check create pages, edit-only drawers, suite-route/categorized picker (PR-A1/A2/B1/B2); PR-3c polish 2/3 (Settings `forbid` 🔵 blocked on the `.env` split) — sharing/admin UI + Monaco custom-SQL remain)_
+**Week 4 total: 19 / 26 ✅ (+2 🟡, 1 🔵)** _(connection manager UI complete (6/6); check editor core shipped + **dry-run preview** (PR-D1) + **column profiler panel** (PR-D2); **suite export/import UI** (PR-E1); **GX-Cloud redesign complete (4/4)** — classified connection + check create pages, edit-only drawers, suite-route/categorized picker (PR-A1/A2/B1/B2); PR-3c polish 2/3 (Settings `forbid` 🔵 blocked on the `.env` split) — sharing/admin UI (blocked on PR-E2 user-directory backend) + Monaco custom-SQL remain)_
 
 ---
 
