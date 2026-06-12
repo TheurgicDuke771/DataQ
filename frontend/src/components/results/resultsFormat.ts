@@ -41,6 +41,18 @@ export function pipelineStatusColor(status: string): string {
   }
 }
 
+/**
+ * Render an unknown scalar (a GX observed/expected value, a profiled min/max or
+ * top value) for display: an em dash for null/undefined, JSON for objects, the
+ * `String` form otherwise. Falsy scalars (`0`, `false`, `''`) render as
+ * themselves — not collapsed to the em dash — so a real zero isn't mistaken for
+ * "no value". The em-dash sentinel matches `formatTimestamp` / `formatDuration`.
+ */
+export function formatScalar(value: unknown): string {
+  if (value === null || value === undefined) return '—';
+  return typeof value === 'object' ? JSON.stringify(value) : String(value);
+}
+
 /** Absolute timestamp as a locale string, or an em dash when absent. */
 export function formatTimestamp(iso: string | null): string {
   if (!iso) return '—';

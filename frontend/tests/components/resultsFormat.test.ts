@@ -2,11 +2,35 @@ import { describe, expect, it } from 'vitest';
 
 import {
   formatDuration,
+  formatScalar,
   formatTimestamp,
   pipelineStatusColor,
   RESULT_STATUS_COLORS,
   RUN_STATUS_COLORS,
 } from '../../src/components/results/resultsFormat';
+
+describe('formatScalar', () => {
+  it('returns an em dash for null or undefined', () => {
+    expect(formatScalar(null)).toBe('—');
+    expect(formatScalar(undefined)).toBe('—');
+  });
+
+  it('renders falsy scalars as themselves, not the em dash', () => {
+    expect(formatScalar(0)).toBe('0');
+    expect(formatScalar(false)).toBe('false');
+    expect(formatScalar('')).toBe('');
+  });
+
+  it('JSON-stringifies objects and arrays', () => {
+    expect(formatScalar({ a: 1 })).toBe('{"a":1}');
+    expect(formatScalar([1, 2])).toBe('[1,2]');
+  });
+
+  it('stringifies plain scalars', () => {
+    expect(formatScalar('PUBLIC')).toBe('PUBLIC');
+    expect(formatScalar(9999)).toBe('9999');
+  });
+});
 
 describe('formatDuration', () => {
   it('returns an em dash when either bound is missing', () => {
