@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "efecf17a68c0",
+  "strategy": "manual-commit",
+  "branch": "feature/pr-d1-dryrun",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/components/checks/DryRunPreview.tsx",
+    "frontend/tests/components/DryRunPreview.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ef/ecf17a68c0/0/metadata.json",
+      "transcript": "/ef/ecf17a68c0/0/full.jsonl",
+      "content_hash": "/ef/ecf17a68c0/0/content_hash.txt",
+      "prompt": "/ef/ecf17a68c0/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 281236,
+    "cache_creation_tokens": 12726015,
+    "cache_read_tokens": 581288266,
+    "output_tokens": 1456785,
+    "api_call_count": 1920
+  }
+}
