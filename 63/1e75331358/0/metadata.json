@@ -1,0 +1,52 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "631e75331358",
+  "session_id": "80ae0122-48e1-4446-85d1-a5f459a89af0",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-12T05:32:04.131763Z",
+  "branch": "feature/check-editor-column-profiler-panel",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "CLAUDE.md",
+    "docs/progress.md",
+    "frontend/src/api/suites.ts",
+    "frontend/src/components/checks/CheckDrawer.tsx",
+    "frontend/src/components/checks/ColumnProfilePanel.tsx",
+    "frontend/src/pages/CheckNew.tsx",
+    "frontend/tests/components/ColumnProfilePanel.test.tsx"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "410804089fc1",
+  "token_usage": {
+    "input_tokens": 10272,
+    "cache_creation_tokens": 247984,
+    "cache_read_tokens": 4169128,
+    "output_tokens": 29489,
+    "api_call_count": 47
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-12T05:32:04.121203Z",
+    "agent_lines": 354,
+    "agent_removed": 12,
+    "human_added": 32,
+    "human_modified": 8,
+    "human_removed": 0,
+    "total_committed": 394,
+    "total_lines_changed": 406,
+    "agent_percentage": 90.14778325123153,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}

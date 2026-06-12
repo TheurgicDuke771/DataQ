@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "631e75331358",
+  "strategy": "manual-commit",
+  "branch": "feature/check-editor-column-profiler-panel",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "CLAUDE.md",
+    "docs/progress.md",
+    "frontend/src/api/suites.ts",
+    "frontend/src/components/checks/CheckDrawer.tsx",
+    "frontend/src/components/checks/ColumnProfilePanel.tsx",
+    "frontend/src/pages/CheckNew.tsx",
+    "frontend/tests/components/ColumnProfilePanel.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/63/1e75331358/0/metadata.json",
+      "transcript": "/63/1e75331358/0/full.jsonl",
+      "content_hash": "/63/1e75331358/0/content_hash.txt",
+      "prompt": "/63/1e75331358/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 10272,
+    "cache_creation_tokens": 247984,
+    "cache_read_tokens": 4169128,
+    "output_tokens": 29489,
+    "api_call_count": 47
+  }
+}
