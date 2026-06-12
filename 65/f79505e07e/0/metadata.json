@@ -1,0 +1,39 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "65f79505e07e",
+  "session_id": "80ae0122-48e1-4446-85d1-a5f459a89af0",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-12T13:26:32.149733Z",
+  "branch": "feature/pr-e3-sharing-panel",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "frontend/tests/components/SharePanel.test.tsx"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-4-8",
+  "turn_id": "e6c69130f126",
+  "checkpoint_transcript_start": 1633,
+  "transcript_lines_at_start": 1633,
+  "token_usage": {
+    "input_tokens": 2694,
+    "cache_creation_tokens": 3378,
+    "cache_read_tokens": 1002593,
+    "output_tokens": 2213,
+    "api_call_count": 5
+  },
+  "session_metrics": {
+    "turn_count": 10
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-12T13:26:32.102319Z",
+    "agent_lines": 7,
+    "agent_removed": 12,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 7,
+    "total_lines_changed": 19,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
