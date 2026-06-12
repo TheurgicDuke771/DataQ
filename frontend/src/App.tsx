@@ -1,4 +1,6 @@
-import { Button, Flex, Layout, Menu, Spin, Tag, Typography } from 'antd';
+import { DownOutlined, LogoutOutlined } from '@ant-design/icons';
+import { Avatar, Dropdown, Flex, Layout, Menu, Spin, Tag, Typography } from 'antd';
+import type { MenuProps } from 'antd';
 import { lazy, Suspense } from 'react';
 import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 
@@ -45,13 +47,15 @@ export function App() {
           borderBottom: `1px solid ${BRAND.border}`,
         }}
       >
-        <Flex align="center" gap={10} style={{ flex: 1 }}>
-          <BrandMark />
-          <Typography.Text strong style={{ fontSize: 17, color: BRAND.ink }}>
-            DataQ
-          </Typography.Text>
-        </Flex>
-        <UserChip />
+        <Link to="/" aria-label="DataQ home" style={{ flex: 1 }}>
+          <Flex align="center" gap={10}>
+            <BrandMark />
+            <Typography.Text strong style={{ fontSize: 17, color: BRAND.ink }}>
+              DataQ
+            </Typography.Text>
+          </Flex>
+        </Link>
+        <UserMenu />
       </Header>
       <Layout>
         <Sider
@@ -113,7 +117,20 @@ function BrandMark({ size = 30 }: { size?: number }) {
   );
 }
 
-function UserChip() {
+/** Up-to-two-letter initials for the avatar (e.g. "Dev Bypass User" → "DB"). */
+function initialsOf(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase();
+}
+
+/**
+ * Header identity + account menu: an avatar/name button that opens a dropdown
+ * with the signed-in identity and a Sign out action. Under dev-bypass there is
+ * no real session, so Sign out is shown disabled (the affordance is visible, but
+ * honest about there being nothing to end) rather than hidden entirely.
+ */
+function UserMenu() {
   const user = useCurrentUser();
   if (!user) return null;
 
@@ -123,15 +140,45 @@ function UserChip() {
     void instance?.logoutRedirect({ account: instance.getAllAccounts()[0] });
   };
 
+  const items: MenuProps['items'] = [
+    {
+      type: 'group',
+      label: (
+        <Flex vertical gap={2} style={{ padding: '4px 4px 8px' }}>
+          <Typography.Text strong style={{ color: BRAND.ink }}>
+            {user.name}
+          </Typography.Text>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            {user.username}
+          </Typography.Text>
+          {user.isDev && (
+            <Tag color="orange" style={{ marginTop: 4, width: 'fit-content' }}>
+              DEV BYPASS
+            </Tag>
+          )}
+        </Flex>
+      ),
+    },
+    { type: 'divider' },
+    {
+      key: 'logout',
+      icon: <LogoutOutlined />,
+      label: user.isDev ? 'Sign out (dev bypass)' : 'Sign out',
+      danger: !user.isDev,
+      disabled: user.isDev,
+      onClick: onLogout,
+    },
+  ];
+
   return (
-    <Flex align="center" gap={12}>
-      {user.isDev && <Tag color="orange">DEV BYPASS</Tag>}
-      <Typography.Text style={{ color: BRAND.ink }}>{user.name}</Typography.Text>
-      {!user.isDev && (
-        <Button size="small" onClick={onLogout}>
-          Sign out
-        </Button>
-      )}
-    </Flex>
+    <Dropdown menu={{ items }} trigger={['click']} placement="bottomRight">
+      <Flex align="center" gap={8} style={{ cursor: 'pointer' }}>
+        <Avatar size="small" style={{ backgroundColor: BRAND.primary, flexShrink: 0 }}>
+          {initialsOf(user.name)}
+        </Avatar>
+        <Typography.Text style={{ color: BRAND.ink }}>{user.name}</Typography.Text>
+        <DownOutlined style={{ fontSize: 10, color: '#8c8c8c' }} />
+      </Flex>
+    </Dropdown>
   );
 }
