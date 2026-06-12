@@ -30,6 +30,7 @@ import {
   testConnection,
 } from '../api/connections';
 import { ConnectionDrawer } from '../components/connections/ConnectionDrawer';
+import { ConnectionTypeAvatar } from '../components/connections/connectionVisuals';
 import { ReauthModal } from '../components/connections/ReauthModal';
 import { type AsyncState, useAsyncData } from '../hooks/useAsyncData';
 
@@ -301,27 +302,32 @@ function ConnectionCard({
   return (
     <Card size="small" className="dq-card--interactive">
       <Flex justify="space-between" align="center" gap={12}>
-        <Flex vertical gap={6}>
-          <Typography.Text strong>{connection.name}</Typography.Text>
-          <Flex gap={8} align="center" wrap>
-            <Tag color={ENV_COLORS[connection.env]}>{envLabel(connection.env)}</Tag>
-            {connection.has_secret ? (
-              <Badge status="success" text="credential set" />
-            ) : (
-              <Badge status="warning" text="no credential" />
+        <Flex gap={12} align="center" style={{ minWidth: 0 }}>
+          <ConnectionTypeAvatar type={connection.type} />
+          <Flex vertical gap={6} style={{ minWidth: 0 }}>
+            <Typography.Text strong ellipsis>
+              {connection.name}
+            </Typography.Text>
+            <Flex gap={8} align="center" wrap>
+              <Tag color={ENV_COLORS[connection.env]}>{envLabel(connection.env)}</Tag>
+              {connection.has_secret ? (
+                <Badge status="success" text="credential set" />
+              ) : (
+                <Badge status="warning" text="no credential" />
+              )}
+              <HealthBadge health={health} />
+            </Flex>
+            {health === 'failed' && (
+              <Button
+                type="link"
+                size="small"
+                style={{ padding: 0, height: 'auto' }}
+                onClick={() => actions.onReauth(connection)}
+              >
+                Re-authenticate
+              </Button>
             )}
-            <HealthBadge health={health} />
           </Flex>
-          {health === 'failed' && (
-            <Button
-              type="link"
-              size="small"
-              style={{ padding: 0, height: 'auto' }}
-              onClick={() => actions.onReauth(connection)}
-            >
-              Re-authenticate
-            </Button>
-          )}
         </Flex>
         <Flex gap={8} align="center">
           <Button

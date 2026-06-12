@@ -20,9 +20,11 @@ import {
   type Suite,
 } from '../api/suites';
 import { CheckDrawer } from '../components/checks/CheckDrawer';
+import { ConnectionTypeAvatar } from '../components/connections/connectionVisuals';
 import { ImportSuiteDrawer } from '../components/suites/ImportSuiteDrawer';
 import { SharePanel } from '../components/suites/SharePanel';
 import { SuiteDrawer } from '../components/suites/SuiteDrawer';
+import { BRAND } from '../theme';
 import { downloadJson, toFilenameStem } from '../utils/download';
 import { type AsyncState, useAsyncData } from '../hooks/useAsyncData';
 
@@ -149,21 +151,51 @@ function SuitesBody({
 
   return (
     <Flex gap={24} align="flex-start">
-      <Card size="small" style={{ width: 300, flexShrink: 0 }} styles={{ body: { padding: 0 } }}>
+      <Card size="small" style={{ width: 320, flexShrink: 0 }} styles={{ body: { padding: 0 } }}>
         <List
           dataSource={suites}
-          renderItem={(suite) => (
-            <List.Item
-              onClick={() => onSelect(suite.id)}
-              style={{
-                cursor: 'pointer',
-                padding: '12px 16px',
-                background: suite.id === selectedId ? 'rgba(22,119,255,0.08)' : undefined,
-              }}
-            >
-              <Typography.Text strong={suite.id === selectedId}>{suite.name}</Typography.Text>
-            </List.Item>
-          )}
+          renderItem={(suite) => {
+            const conn = connections.find((c) => c.id === suite.connection_id);
+            const isSelected = suite.id === selectedId;
+            return (
+              <List.Item
+                onClick={() => onSelect(suite.id)}
+                style={{
+                  cursor: 'pointer',
+                  padding: '12px 16px',
+                  background: isSelected ? '#eef0fe' : undefined,
+                }}
+              >
+                <List.Item.Meta
+                  avatar={conn ? <ConnectionTypeAvatar type={conn.type} size={34} /> : undefined}
+                  title={
+                    <Typography.Text
+                      strong
+                      style={isSelected ? { color: BRAND.primary } : undefined}
+                    >
+                      {suite.name}
+                    </Typography.Text>
+                  }
+                  description={
+                    conn ? (
+                      <Flex gap={6} align="center">
+                        <Typography.Text type="secondary" style={{ fontSize: 12 }} ellipsis>
+                          {conn.name}
+                        </Typography.Text>
+                        <Tag color={ENV_COLORS[conn.env]} style={{ marginInlineEnd: 0 }}>
+                          {envLabel(conn.env)}
+                        </Tag>
+                      </Flex>
+                    ) : (
+                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                        No connection
+                      </Typography.Text>
+                    )
+                  }
+                />
+              </List.Item>
+            );
+          }}
         />
       </Card>
       <div style={{ flex: 1, minWidth: 0 }}>

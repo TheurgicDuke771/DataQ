@@ -107,7 +107,8 @@ describe('Suites', () => {
     // Detail panel: connection context + the check.
     expect(await screen.findByText('order_id not null')).toBeInTheDocument();
     expect(screen.getByText('sf-dev · Snowflake')).toBeInTheDocument();
-    expect(screen.getByText('DEV')).toBeInTheDocument();
+    // The env tag now renders in both the list row and the detail panel.
+    expect(screen.getAllByText('DEV').length).toBeGreaterThan(0);
     expect(mockListChecks).toHaveBeenCalledWith('s1');
   });
 
