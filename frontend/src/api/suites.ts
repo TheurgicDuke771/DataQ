@@ -17,6 +17,30 @@ export interface Suite {
   created_by: string;
 }
 
+/**
+ * The datasource-shaped identity carried in `Suite.target` (#215): SQL targets
+ * fill `table`/`schema`/`catalog`, flat-file targets fill `path`/`file_format`.
+ * The wire shape is an untyped JSONB bag (`Record<string, unknown>`); read it
+ * through `targetString` so the dry-run preview and column profiler don't each
+ * re-hand-roll the `typeof x === 'string'` extraction.
+ */
+export interface RunTarget {
+  table?: string;
+  schema?: string;
+  catalog?: string;
+  path?: string;
+  file_format?: 'csv' | 'parquet';
+}
+
+/** Read one string field out of the untyped run-target bag, or `undefined`. */
+export function targetString(
+  target: Record<string, unknown> | null,
+  key: keyof RunTarget,
+): string | undefined {
+  const value = target?.[key];
+  return typeof value === 'string' ? value : undefined;
+}
+
 /** Mirrors `SuiteCreate` — connection_id is required and immutable. */
 export interface SuiteCreate {
   name: string;

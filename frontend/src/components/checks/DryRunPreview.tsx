@@ -2,8 +2,9 @@ import { Alert, Button, Descriptions, type FormInstance, Flex, Tag, Typography }
 import { useState } from 'react';
 
 import type { ResultStatus } from '../../api/runs';
-import { type CheckDryRunResult, dryRunCheck } from '../../api/suites';
+import { type CheckDryRunResult, dryRunCheck, targetString } from '../../api/suites';
 import { RESULT_STATUS_COLORS } from '../results/resultsFormat';
+import { ScalarValue } from '../results/ScalarValue';
 import { buildCheckPayload } from './checkForm';
 
 /**
@@ -49,8 +50,8 @@ export function DryRunPreview({
     setState({ status: 'idle' });
   }
 
-  const table = typeof target?.table === 'string' ? target.table : undefined;
-  const schema = typeof target?.schema === 'string' ? target.schema : null;
+  const table = targetString(target, 'table');
+  const schema = targetString(target, 'schema') ?? null;
 
   const disabledReason = !expectationType
     ? 'Pick an expectation to preview it.'
@@ -122,20 +123,12 @@ function DryRunResultView({ result }: { result: CheckDryRunResult }) {
         {
           key: 'observed',
           label: 'Observed',
-          children: result.observed_value ? (
-            <Typography.Text code>{JSON.stringify(result.observed_value)}</Typography.Text>
-          ) : (
-            '—'
-          ),
+          children: <ScalarValue value={result.observed_value} />,
         },
         {
           key: 'expected',
           label: 'Expected',
-          children: result.expected_value ? (
-            <Typography.Text code>{JSON.stringify(result.expected_value)}</Typography.Text>
-          ) : (
-            '—'
-          ),
+          children: <ScalarValue value={result.expected_value} />,
         },
       ]}
     />
