@@ -20,13 +20,18 @@ from sqlalchemy.orm import Session
 from backend.app.api.v1.runs import RunRead
 from backend.app.core.auth import get_current_user
 from backend.app.core.secrets import SecretStore, get_secret_store
-from backend.app.db.models import Connection, Run, User
+from backend.app.db.models import Connection, Run, Suite, User
 from backend.app.db.session import get_db
 from backend.app.services import profile_service as profile
 from backend.app.services import run_dispatch, run_target
 from backend.app.services import suite_io_service as suite_io
 from backend.app.services import suite_service as svc
-from backend.app.services.suite_authz import require_permission
+from backend.app.services.suite_authz import (
+    OWNER,
+    effective_permission,
+    effective_permissions,
+    require_permission,
+)
 
 router = APIRouter(tags=["suites"])
 
@@ -72,6 +77,17 @@ class SuiteRead(BaseModel):
     connection_id: uuid.UUID
     target: dict[str, Any] | None
     created_by: uuid.UUID
+    # The caller's effective level on this suite (`owner`/`admin`/`edit`/`view`)
+    # so the UI can gate per-suite actions — manage shares, delete — without a
+    # second round-trip or guessing from `created_by`. Always set on an
+    # accessible read (the read is already permission-gated).
+    my_permission: str | None = None
+
+    @classmethod
+    def of(cls, suite: Suite, my_permission: str | None) -> SuiteRead:
+        read = cls.model_validate(suite)
+        read.my_permission = my_permission
+        return read
 
 
 @router.post(
@@ -93,7 +109,8 @@ def create_suite(
         created_by=current_user.id,
         target=payload.target.to_storage() if payload.target is not None else None,
     )
-    return SuiteRead.model_validate(suite)
+    # The creator is, by definition, the owner.
+    return SuiteRead.of(suite, OWNER)
 
 
 @router.get("/suites", response_model=list[SuiteRead], summary="List suites")
@@ -104,7 +121,8 @@ def list_suites(
 ) -> list[SuiteRead]:
     # Scoped to suites the user owns or has a share on.
     suites = svc.list_suites(db, user_id=current_user.id, connection_id=connection_id)
-    return [SuiteRead.model_validate(s) for s in suites]
+    levels = effective_permissions(db, suites, current_user.id)
+    return [SuiteRead.of(s, levels[s.id]) for s in suites]
 
 
 @router.get("/suites/{suite_id}", response_model=SuiteRead, summary="Get a suite")
@@ -114,7 +132,7 @@ def get_suite(
     db: Annotated[Session, Depends(get_db)],
 ) -> SuiteRead:
     suite = require_permission(db, suite_id, current_user.id, minimum="view")
-    return SuiteRead.model_validate(suite)
+    return SuiteRead.of(suite, effective_permission(db, suite, current_user.id))
 
 
 @router.patch("/suites/{suite_id}", response_model=SuiteRead, summary="Update a suite")
@@ -132,7 +150,7 @@ def update_suite(
         description=payload.description,
         target=payload.target.to_storage() if payload.target is not None else None,
     )
-    return SuiteRead.model_validate(suite)
+    return SuiteRead.of(suite, effective_permission(db, suite, current_user.id))
 
 
 @router.delete(

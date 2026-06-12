@@ -242,7 +242,10 @@ def test_viewer_reads_but_cannot_write(client: TestClient, db_session: Any) -> N
     owner, b, _e, sid = _owner_b_e_suite(db_session)
     _share(client, owner, sid, b, "view")
     _as(b)
-    assert client.get(f"/api/v1/suites/{sid}").status_code == 200
+    got = client.get(f"/api/v1/suites/{sid}")
+    assert got.status_code == 200
+    # The read stamps the caller's effective level so the UI can gate actions.
+    assert got.json()["my_permission"] == "view"
     patched = client.patch(f"/api/v1/suites/{sid}", json={"name": "x"})
     assert patched.status_code == 403
     deleted = client.delete(f"/api/v1/suites/{sid}")
@@ -263,8 +266,20 @@ def test_admin_can_delete(client: TestClient, db_session: Any) -> None:
     owner, b, _e, sid = _owner_b_e_suite(db_session)
     _share(client, owner, sid, b, "admin")
     _as(b)
+    # A non-owner admin sees their level → the UI can show share-management.
+    assert client.get(f"/api/v1/suites/{sid}").json()["my_permission"] == "admin"
     deleted = client.delete(f"/api/v1/suites/{sid}")
     assert deleted.status_code == 204
+
+
+def test_owner_sees_owner_permission(client: TestClient, db_session: Any) -> None:
+    owner, _b, _e, sid = _owner_b_e_suite(db_session)
+    _as(owner)
+    got = client.get(f"/api/v1/suites/{sid}")
+    assert got.json()["my_permission"] == "owner"
+    # And the list stamps it too (batch path).
+    listed = {s["id"]: s["my_permission"] for s in client.get("/api/v1/suites").json()}
+    assert listed[sid] == "owner"
 
 
 def test_outsider_sees_404_everywhere(client: TestClient, db_session: Any) -> None:

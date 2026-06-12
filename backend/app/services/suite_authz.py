@@ -21,6 +21,7 @@ FastAPI-free (takes a `Session` + the user id); the API layer passes
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -50,6 +51,26 @@ def effective_permission(session: Session, suite: Suite, user_id: uuid.UUID) -> 
         select(Share).where(Share.suite_id == suite.id, Share.user_id == user_id)
     ).first()
     return share.permission if share is not None else None
+
+
+def effective_permissions(
+    session: Session, suites: Sequence[Suite], user_id: uuid.UUID
+) -> dict[uuid.UUID, str | None]:
+    """Batch `effective_permission` for many suites in one shares query (no N+1).
+
+    Owned suites resolve to `owner` without touching `shares`; the rest are
+    looked up in a single `IN` query. Used to stamp each suite in a list with the
+    caller's level so the UI can gate per-suite actions (manage shares, delete).
+    """
+    owned = {s.id for s in suites if s.created_by == user_id}
+    shared_ids = [s.id for s in suites if s.id not in owned]
+    levels: dict[uuid.UUID, str] = {}
+    if shared_ids:
+        rows = session.scalars(
+            select(Share).where(Share.user_id == user_id, Share.suite_id.in_(shared_ids))
+        )
+        levels = {row.suite_id: row.permission for row in rows}
+    return {s.id: (OWNER if s.id in owned else levels.get(s.id)) for s in suites}
 
 
 def require_permission(
