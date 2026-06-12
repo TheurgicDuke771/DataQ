@@ -6,6 +6,7 @@ import { AuthGate } from './auth/AuthGate';
 import { authMode } from './auth/config';
 import { useCurrentUser } from './auth/useCurrentUser';
 import { getMsalInstance } from './auth/msalInstance';
+import { BRAND, SHELL } from './theme';
 
 // Route components are code-split so the initial bundle doesn't ship every page
 // (and antd-heavy pages only load on navigation). Named exports → map to default.
@@ -36,19 +37,35 @@ export function App() {
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
-      <Header style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-        <Typography.Title level={4} style={{ color: '#fff', margin: 0, flex: 1 }}>
-          DataQ
-        </Typography.Title>
+      <Header
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 16,
+          borderBottom: `1px solid ${BRAND.border}`,
+        }}
+      >
+        <Flex align="center" gap={10} style={{ flex: 1 }}>
+          <BrandMark />
+          <Typography.Text strong style={{ fontSize: 17, color: BRAND.ink }}>
+            DataQ
+          </Typography.Text>
+        </Flex>
         <UserChip />
       </Header>
       <Layout>
-        <Sider width={200} theme="light" breakpoint="lg" collapsedWidth={0}>
+        <Sider
+          width={SHELL.siderWidth}
+          theme="light"
+          breakpoint="lg"
+          collapsedWidth={0}
+          style={{ borderInlineEnd: `1px solid ${BRAND.border}` }}
+        >
           <Menu
             mode="inline"
             selectedKeys={selectedKeys}
             items={NAV_ITEMS}
-            style={{ height: '100%', borderInlineEnd: 0 }}
+            style={{ height: '100%', borderInlineEnd: 0, paddingTop: 8 }}
           />
         </Sider>
         <Content style={{ padding: 24 }}>
@@ -73,6 +90,29 @@ export function App() {
   );
 }
 
+/**
+ * A yin-yang app glyph (two-tone indigo) so the header reads as a product, not a
+ * bare title — the balance motif nods at DataQ's pass/fail, expected/observed
+ * duality. Self-contained colours (dark + light indigo) keep it legible on the
+ * white header.
+ */
+function BrandMark({ size = 30 }: { size?: number }) {
+  const dark = BRAND.primary;
+  const light = '#c7d2fe'; // indigo-200
+  return (
+    <svg width={size} height={size} viewBox="0 0 100 100" role="img" aria-label="DataQ logo">
+      <circle cx="50" cy="50" r="49" fill={light} stroke={BRAND.border} strokeWidth="1" />
+      {/* The dark half: right lobe + the two interlocking teardrops. */}
+      <path
+        d="M50 1 a49 49 0 0 1 0 98 a24.5 24.5 0 0 1 0 -49 a24.5 24.5 0 0 0 0 -49 Z"
+        fill={dark}
+      />
+      <circle cx="50" cy="25.5" r="9" fill={light} />
+      <circle cx="50" cy="74.5" r="9" fill={dark} />
+    </svg>
+  );
+}
+
 function UserChip() {
   const user = useCurrentUser();
   if (!user) return null;
@@ -86,7 +126,7 @@ function UserChip() {
   return (
     <Flex align="center" gap={12}>
       {user.isDev && <Tag color="orange">DEV BYPASS</Tag>}
-      <Typography.Text style={{ color: '#fff' }}>{user.name}</Typography.Text>
+      <Typography.Text style={{ color: BRAND.ink }}>{user.name}</Typography.Text>
       {!user.isDev && (
         <Button size="small" onClick={onLogout}>
           Sign out

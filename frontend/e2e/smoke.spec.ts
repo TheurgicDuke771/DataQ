@@ -9,9 +9,10 @@ test('app shell loads under dev-bypass and redirects to Connections', async ({ p
   // Root → /connections (App.tsx Navigate).
   await expect(page).toHaveURL(/\/connections$/);
 
-  // The header brand + the dev-bypass identity chip (proves auth resolved, so
-  // every /api call below carries the dev-bypass user — not a 401 wall).
-  await expect(page.getByRole('heading', { name: 'DataQ', level: 4 })).toBeVisible();
+  // The header brand (yin-yang logo + wordmark) + the dev-bypass identity chip
+  // (proves auth resolved, so every /api call carries the dev-bypass user).
+  await expect(page.getByRole('img', { name: 'DataQ logo' })).toBeVisible();
+  await expect(page.getByText('DataQ', { exact: true })).toBeVisible();
   await expect(page.getByText('DEV BYPASS', { exact: true })).toBeVisible();
 });
 

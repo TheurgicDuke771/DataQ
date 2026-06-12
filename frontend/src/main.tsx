@@ -8,6 +8,7 @@ import { CurrentUserProvider } from './auth/CurrentUserProvider';
 import { MsalProvider } from './auth/MsalProvider';
 import { getMsalInstance } from './auth/msalInstance';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { appTheme } from './theme';
 import './styles.css';
 
 const maybeRoot = document.getElementById('root');
@@ -29,7 +30,7 @@ async function bootstrap() {
   }
   createRoot(rootEl).render(
     <StrictMode>
-      <ConfigProvider>
+      <ConfigProvider theme={appTheme}>
         <AntApp>
           <ErrorBoundary>
             <MsalProvider>
