@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "dd9a8e9e1a40",
+  "strategy": "manual-commit",
+  "branch": "feature/manual-run-button",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/tests/pages/Suites.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/dd/9a8e9e1a40/0/metadata.json",
+      "transcript": "/dd/9a8e9e1a40/0/full.jsonl",
+      "content_hash": "/dd/9a8e9e1a40/0/content_hash.txt",
+      "prompt": "/dd/9a8e9e1a40/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 110122,
+    "cache_creation_tokens": 1903255,
+    "cache_read_tokens": 112642956,
+    "output_tokens": 326000,
+    "api_call_count": 578
+  }
+}
