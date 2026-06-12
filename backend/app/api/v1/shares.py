@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
 from backend.app.core.auth import get_current_user
-from backend.app.db.models import User
+from backend.app.db.models import Share, User
 from backend.app.db.session import get_db
 from backend.app.services import share_service as svc
 
@@ -40,6 +40,20 @@ class ShareRead(BaseModel):
     suite_id: uuid.UUID
     user_id: uuid.UUID
     permission: str
+    # The grantee's directory identity, joined from `Share.user` so the sharing
+    # UI can name collaborators without a second lookup per row.
+    email: str
+    display_name: str | None
+
+    @classmethod
+    def from_share(cls, share: Share) -> ShareRead:
+        return cls(
+            suite_id=share.suite_id,
+            user_id=share.user_id,
+            permission=share.permission,
+            email=share.user.email,
+            display_name=share.user.display_name,
+        )
 
 
 @router.post(
@@ -61,7 +75,7 @@ def grant_share(
         target_user_id=payload.user_id,
         permission=payload.permission,
     )
-    return ShareRead.model_validate(share)
+    return ShareRead.from_share(share)
 
 
 @router.get(
@@ -75,7 +89,7 @@ def list_shares(
     db: Annotated[Session, Depends(get_db)],
 ) -> list[ShareRead]:
     return [
-        ShareRead.model_validate(s) for s in svc.list_shares(db, suite_id, actor_id=current_user.id)
+        ShareRead.from_share(s) for s in svc.list_shares(db, suite_id, actor_id=current_user.id)
     ]
 
 
@@ -94,7 +108,7 @@ def update_share(
     share = svc.update_share(
         db, suite_id, user_id, actor_id=current_user.id, permission=payload.permission
     )
-    return ShareRead.model_validate(share)
+    return ShareRead.from_share(share)
 
 
 @router.delete(

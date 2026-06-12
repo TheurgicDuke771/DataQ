@@ -252,6 +252,11 @@ class Share(Base):
     permission: Mapped[str] = mapped_column(String(16), nullable=False)
     created_at: Mapped[datetime] = _created_at()
 
+    # Read-only convenience for enriching a share with the grantee's directory
+    # identity (email / display_name) so the sharing UI can name collaborators
+    # without a second round-trip. ORM-only — no schema change.
+    user: Mapped["User"] = relationship(lazy="joined")
+
 
 class PipelineRun(Base):
     __tablename__ = "pipeline_runs"

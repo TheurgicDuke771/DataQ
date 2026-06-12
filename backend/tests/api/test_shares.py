@@ -28,8 +28,8 @@ def client(db_session: Any) -> Iterator[TestClient]:
         app.dependency_overrides.clear()
 
 
-def _user(db_session: Any, email: str) -> User:
-    u = User(aad_object_id=uuid.uuid4().hex, email=email)
+def _user(db_session: Any, email: str, display_name: str | None = None) -> User:
+    u = User(aad_object_id=uuid.uuid4().hex, email=email, display_name=display_name)
     db_session.add(u)
     db_session.flush()
     return u
@@ -37,7 +37,7 @@ def _user(db_session: Any, email: str) -> User:
 
 def _seed(db_session: Any) -> tuple[User, User, User, User, Suite]:
     owner = _user(db_session, "owner@ex")
-    b = _user(db_session, "b@ex")
+    b = _user(db_session, "b@ex", display_name="Bee")
     c = _user(db_session, "c@ex")
     e = _user(db_session, "e@ex")  # no access
     conn = Connection(
@@ -72,6 +72,10 @@ def test_owner_grants_share(client: TestClient, db_session: Any) -> None:
     body = resp.json()
     assert body["user_id"] == str(b.id)
     assert body["permission"] == "view"
+    # Enriched with the grantee's directory identity (joined from Share.user) so
+    # the sharing UI can name collaborators without a second lookup.
+    assert body["email"] == "b@ex"
+    assert body["display_name"] == "Bee"
 
 
 def test_admin_can_grant_owner_only_via_admin(client: TestClient, db_session: Any) -> None:
