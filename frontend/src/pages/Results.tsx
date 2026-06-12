@@ -22,6 +22,7 @@ import {
   RESULT_STATUS_COLORS,
   RUN_STATUS_COLORS,
 } from '../components/results/resultsFormat';
+import { ScalarValue } from '../components/results/ScalarValue';
 
 const LIST_LIMIT = 200;
 
@@ -219,8 +220,7 @@ function ResultsTable({ results, checks }: { results: Result[]; checks: Map<stri
     {
       title: 'Observed',
       dataIndex: 'observed_value',
-      render: (v: Record<string, unknown> | null) =>
-        v ? <Typography.Text code>{JSON.stringify(v)}</Typography.Text> : '—',
+      render: (v: Record<string, unknown> | null) => <ScalarValue value={v} />,
     },
   ];
   return (

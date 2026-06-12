@@ -6,6 +6,7 @@ import {
   type ColumnProfileRequest,
   profileColumns,
   type ProfileResult,
+  targetString,
 } from '../../api/suites';
 import { formatScalar } from '../results/resultsFormat';
 
@@ -121,18 +122,15 @@ export function ColumnProfilePanel({
 function extractProfileTarget(
   target: Record<string, unknown> | null,
 ): Pick<ColumnProfileRequest, 'table' | 'schema' | 'catalog' | 'path' | 'file_format'> | null {
-  if (!target) return null;
-  const str = (k: string): string | undefined =>
-    typeof target[k] === 'string' ? (target[k] as string) : undefined;
-  const table = str('table');
-  const path = str('path');
+  const table = targetString(target, 'table');
+  const path = targetString(target, 'path');
   if (!table && !path) return null;
   return {
     table,
-    schema: str('schema'),
-    catalog: str('catalog'),
+    schema: targetString(target, 'schema'),
+    catalog: targetString(target, 'catalog'),
     path,
-    file_format: str('file_format') as 'csv' | 'parquet' | undefined,
+    file_format: targetString(target, 'file_format') as 'csv' | 'parquet' | undefined,
   };
 }
 
