@@ -17,7 +17,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from sqlalchemy import or_, select
+from sqlalchemy import Select, or_, select
 from sqlalchemy.orm import Session
 
 from backend.app.core.errors import DataQError
@@ -26,6 +26,17 @@ from backend.app.db.models import Connection, Share, Suite
 from backend.app.services import run_target
 
 log = get_logger(__name__)
+
+
+def accessible_suite_ids(user_id: uuid.UUID) -> Select[tuple[uuid.UUID]]:
+    """Subquery of suite ids the user can access — owned (`created_by`) or shared.
+
+    The single source of truth for suite visibility, shared by `list_suites` and
+    the run/result reads (`run_service.list_runs`) so the owned-OR-shared rule is
+    encoded once — a divergence here would be a silent authz leak.
+    """
+    shared = select(Share.suite_id).where(Share.user_id == user_id)
+    return select(Suite.id).where(or_(Suite.created_by == user_id, Suite.id.in_(shared)))
 
 
 class SuiteNotFoundError(DataQError):
@@ -80,10 +91,9 @@ def list_suites(
     session: Session, *, user_id: uuid.UUID, connection_id: uuid.UUID | None = None
 ) -> list[Suite]:
     """Suites the user can access: owned (`created_by`) or shared with them."""
-    shared = select(Share.suite_id).where(Share.user_id == user_id)
     stmt = (
         select(Suite)
-        .where(or_(Suite.created_by == user_id, Suite.id.in_(shared)))
+        .where(Suite.id.in_(accessible_suite_ids(user_id)))
         .order_by(Suite.created_at.desc())
     )
     if connection_id is not None:

@@ -16,12 +16,14 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.jsonsafe import sanitize_json
 from backend.app.core.logging import get_logger
 from backend.app.datasources.base import CheckOutcome, CheckRunner, CheckSpec
 from backend.app.db.models import Check, Result, Run
+from backend.app.services import suite_service
 from backend.app.services.severity import derive_status, extract_metric
 
 log = get_logger(__name__)
@@ -137,3 +139,49 @@ def execute_run(
         n_results=len(rows),
     )
     return run
+
+
+# ── read model (PR-C0b: the runs/results surface) ────────────────────────────
+# Reads are scoped to suites the user can access — owned (`created_by`) or shared
+# (`shares`), the same visibility `suite_service.list_suites` enforces. The API
+# layer additionally calls `require_permission` for single-suite / single-run
+# lookups (404 hides existence); this subquery is the defence-in-depth filter so
+# a list query can never leak a run from a suite the caller can't see.
+
+
+def list_runs(
+    session: Session,
+    *,
+    user_id: uuid.UUID,
+    suite_id: uuid.UUID | None = None,
+    status: str | None = None,
+    limit: int = 50,
+) -> list[Run]:
+    """Runs for suites the user can access, newest first (`created_at` desc).
+
+    Optionally narrowed to one ``suite_id`` and/or a ``status``. The accessible
+    subquery is always applied, so passing a ``suite_id`` the user can't see
+    yields an empty list (the API layer 404s that case up front via
+    `require_permission`, but the filter keeps the service safe on its own).
+    """
+    accessible = suite_service.accessible_suite_ids(user_id)
+    stmt = (
+        select(Run).where(Run.suite_id.in_(accessible)).order_by(Run.created_at.desc()).limit(limit)
+    )
+    if suite_id is not None:
+        stmt = stmt.where(Run.suite_id == suite_id)
+    if status is not None:
+        stmt = stmt.where(Run.status == status)
+    return list(session.scalars(stmt))
+
+
+def get_run(session: Session, run_id: uuid.UUID) -> Run | None:
+    """Fetch a run by id (no authz — the API layer gates on the run's suite)."""
+    return session.get(Run, run_id)
+
+
+def list_results(session: Session, run_id: uuid.UUID) -> list[Result]:
+    """The result rows for a run, in stable check order (`created_at`)."""
+    return list(
+        session.scalars(select(Result).where(Result.run_id == run_id).order_by(Result.created_at))
+    )

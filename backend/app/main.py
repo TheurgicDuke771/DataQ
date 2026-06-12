@@ -12,6 +12,7 @@ from backend.app.api.v1 import connections as connections_router
 from backend.app.api.v1 import me as me_router
 from backend.app.api.v1 import orchestration as orchestration_router
 from backend.app.api.v1 import probe as probe_router
+from backend.app.api.v1 import runs as runs_router
 from backend.app.api.v1 import shares as shares_router
 from backend.app.api.v1 import suites as suites_router
 from backend.app.api.v1 import trigger_bindings as trigger_bindings_router
@@ -89,6 +90,7 @@ app.include_router(probe_router.router, prefix="/api/v1")
 app.include_router(connections_router.router, prefix="/api/v1")
 app.include_router(suites_router.router, prefix="/api/v1")
 app.include_router(checks_router.router, prefix="/api/v1")
+app.include_router(runs_router.router, prefix="/api/v1")
 app.include_router(shares_router.router, prefix="/api/v1")
 app.include_router(orchestration_router.router, prefix="/api/v1")
 app.include_router(trigger_bindings_router.router, prefix="/api/v1")

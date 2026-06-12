@@ -9,18 +9,21 @@ set at create and immutable thereafter (re-pointing would orphan child checks).
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
+from backend.app.api.v1.runs import RunRead
 from backend.app.core.auth import get_current_user
 from backend.app.core.secrets import SecretStore, get_secret_store
-from backend.app.db.models import Connection, User
+from backend.app.db.models import Connection, Run, User
 from backend.app.db.session import get_db
 from backend.app.services import profile_service as profile
+from backend.app.services import run_dispatch, run_target
 from backend.app.services import suite_io_service as suite_io
 from backend.app.services import suite_service as svc
 from backend.app.services.suite_authz import require_permission
@@ -144,6 +147,56 @@ def delete_suite(
 ) -> None:
     require_permission(db, suite_id, current_user.id, minimum="admin")
     svc.delete_suite(db, suite_id)
+
+
+# ───────────────────────── manual run trigger ──────────────────────
+
+
+@router.post(
+    "/suites/{suite_id}/run",
+    response_model=RunRead,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Trigger a run of the suite",
+)
+def trigger_suite_run(
+    suite_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> RunRead:
+    """Queue a run of the suite and dispatch it to the worker.
+
+    `edit` gates this (the capability ladder grants 'trigger runs' at edit). The
+    suite's target (#215) is resolved up front so a targetless/misconfigured
+    suite fails fast with a 422 instead of a queued→failed run the caller has to
+    poll to discover. A broker outage marks the run `failed` (never left stuck
+    `queued`) and surfaces 503 — the same contract as the probe endpoint.
+    """
+    suite = require_permission(db, suite_id, current_user.id, minimum="edit")
+    connection = db.get(Connection, suite.connection_id)
+    assert connection is not None  # FK is RESTRICT; a suite always has its connection
+    # Raises SuiteTargetInvalidError (422) for a targetless / wrong-datasource target.
+    run_target.resolve_target(connection.type, suite.target)
+
+    run = Run(suite_id=suite.id, status="queued", triggered_by=f"manual:{current_user.id}")
+    db.add(run)
+    db.commit()
+    db.refresh(run)
+
+    try:
+        run_dispatch.dispatch_run(run.id)
+    except Exception as exc:  # broker unreachable — don't leave the run stuck queued
+        # Mark with the canonical terminal-failed shape — finished_at set,
+        # started_at NULL (it never started) — matching the pipeline-trigger
+        # dispatch-failure path (orchestration_service._trigger_suites) so
+        # run-history / duration views stay consistent across trigger paths.
+        run.status = "failed"
+        run.finished_at = datetime.now(UTC)
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="failed to dispatch run",
+        ) from exc
+    return RunRead.model_validate(run)
 
 
 # ───────────────────────── export / import (portable documents) ─────
