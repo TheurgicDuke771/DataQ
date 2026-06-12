@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "583340677efd",
+  "strategy": "manual-commit",
+  "branch": "feature/ui-theme-restyle",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/pages/Connections.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/58/3340677efd/0/metadata.json",
+      "transcript": "/58/3340677efd/0/full.jsonl",
+      "content_hash": "/58/3340677efd/0/content_hash.txt",
+      "prompt": "/58/3340677efd/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 80624,
+    "cache_creation_tokens": 1129642,
+    "cache_read_tokens": 68100524,
+    "output_tokens": 248645,
+    "api_call_count": 454
+  }
+}
