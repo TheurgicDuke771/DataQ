@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "d253e4be2338",
+  "strategy": "manual-commit",
+  "branch": "feature/pr-c1-results",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/pages/Results.tsx",
+    "frontend/tests/pages/Results.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/d2/53e4be2338/0/metadata.json",
+      "transcript": "/d2/53e4be2338/0/full.jsonl",
+      "content_hash": "/d2/53e4be2338/0/content_hash.txt",
+      "prompt": "/d2/53e4be2338/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 273840,
+    "cache_creation_tokens": 11683790,
+    "cache_read_tokens": 556414414,
+    "output_tokens": 1405123,
+    "api_call_count": 1849
+  }
+}
