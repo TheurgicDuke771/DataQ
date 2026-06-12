@@ -5,6 +5,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { createCheck, getSuite } from '../api/suites';
 import { buildCheckPayload } from '../components/checks/checkForm';
 import { ConfigFieldItem, SeverityThresholdFields } from '../components/checks/checkFormFields';
+import { ColumnProfilePanel } from '../components/checks/ColumnProfilePanel';
 import { DryRunPreview } from '../components/checks/DryRunPreview';
 import {
   EXPECTATION_BY_TYPE,
@@ -29,6 +30,7 @@ export function CheckNew() {
   const [category, setCategory] = useState<ExpectationCategory>();
   const [expectationType, setExpectationType] = useState<string>();
   const [form] = Form.useForm();
+  const column = Form.useWatch(['config', 'column'], form) as string | undefined;
   const [submitting, setSubmitting] = useState(false);
   // The suite's run target (#215) drives the dry-run preview's table/schema.
   const { state: suiteState } = useAsyncData(() =>
@@ -84,14 +86,19 @@ export function CheckNew() {
           ))}
           <SeverityThresholdFields />
           {suiteId && (
-            <Form.Item>
-              <DryRunPreview
-                suiteId={suiteId}
-                expectationType={expectationType}
-                target={target}
-                form={form}
-              />
-            </Form.Item>
+            <>
+              <Form.Item>
+                <ColumnProfilePanel suiteId={suiteId} target={target} column={column} />
+              </Form.Item>
+              <Form.Item>
+                <DryRunPreview
+                  suiteId={suiteId}
+                  expectationType={expectationType}
+                  target={target}
+                  form={form}
+                />
+              </Form.Item>
+            </>
           )}
           <Flex justify="end" gap={8}>
             <Button onClick={() => setExpectationType(undefined)}>Back</Button>

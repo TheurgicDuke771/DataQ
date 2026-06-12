@@ -137,3 +137,55 @@ export async function dryRunCheck(
   const { data } = await api.post<CheckDryRunResult>(`/suites/${suiteId}/checks/dryrun`, payload);
   return data;
 }
+
+/** Mirrors the backend `ColumnProfileRequest` — profile columns of the suite's
+ *  table/file (no persistence). The target identity (`table`/`schema`/`catalog`
+ *  for SQL, `path`/`file_format` for flat files) comes from the suite's run
+ *  target (#215); `columns` is the subset to profile. */
+export interface ColumnProfileRequest {
+  columns: string[];
+  top_n?: number;
+  table?: string | null;
+  schema?: string | null;
+  catalog?: string | null;
+  path?: string | null;
+  file_format?: 'csv' | 'parquet' | null;
+}
+
+/** Mirrors the backend `TopValue` — a value and how often it occurs. */
+export interface TopValue {
+  value: unknown;
+  count: number;
+}
+
+/** Mirrors the backend `ColumnProfileRead` — per-column stats. */
+export interface ColumnProfile {
+  column: string;
+  null_count: number;
+  null_fraction: number;
+  distinct_count: number | null;
+  min_value: unknown;
+  max_value: unknown;
+  top_values: TopValue[];
+}
+
+/** Mirrors the backend `ProfileRead` — row count + per-column stats. Identity
+ *  fields are type-specific (SQL fills `table`/`schema`/`catalog`, flat files
+ *  fill `path`/`file_format`). */
+export interface ProfileResult {
+  row_count: number;
+  columns: ColumnProfile[];
+  table?: string | null;
+  schema?: string | null;
+  catalog?: string | null;
+  path?: string | null;
+  file_format?: string | null;
+}
+
+export async function profileColumns(
+  suiteId: string,
+  payload: ColumnProfileRequest,
+): Promise<ProfileResult> {
+  const { data } = await api.post<ProfileResult>(`/suites/${suiteId}/profile`, payload);
+  return data;
+}

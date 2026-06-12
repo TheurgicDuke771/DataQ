@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { type Check, updateCheck } from '../../api/suites';
 import { buildCheckPayload, configToForm } from './checkForm';
 import { ConfigFieldItem, SeverityThresholdFields } from './checkFormFields';
+import { ColumnProfilePanel } from './ColumnProfilePanel';
 import { DryRunPreview } from './DryRunPreview';
 import { EXPECTATION_BY_TYPE, EXPECTATIONS_BY_CATEGORY } from './expectationCatalog';
 
@@ -34,6 +35,7 @@ export function CheckDrawer({
   const [form] = Form.useForm();
   const [submitting, setSubmitting] = useState(false);
   const selectedType = Form.useWatch('expectation_type', form) as string | undefined;
+  const column = Form.useWatch(['config', 'column'], form) as string | undefined;
   const spec = selectedType ? EXPECTATION_BY_TYPE[selectedType] : undefined;
 
   // Reset first (antd keeps values for unmounted fields, so stale config can
@@ -115,6 +117,8 @@ export function CheckDrawer({
         )}
 
         <SeverityThresholdFields />
+
+        <ColumnProfilePanel suiteId={suiteId} target={target} column={column} />
 
         <DryRunPreview
           suiteId={suiteId}
