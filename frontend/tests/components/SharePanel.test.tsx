@@ -42,14 +42,7 @@ const SHARE_B: Share = {
 function renderPanel(props: Partial<Parameters<typeof SharePanel>[0]> = {}) {
   return render(
     <AntApp>
-      <SharePanel
-        open
-        suiteId="s1"
-        ownerId="u-owner"
-        canManage
-        onClose={vi.fn()}
-        {...props}
-      />
+      <SharePanel open suiteId="s1" ownerId="u-owner" canManage onClose={vi.fn()} {...props} />
     </AntApp>,
   );
 }
@@ -102,10 +95,12 @@ describe('SharePanel', () => {
     await user.click(screen.getByText('Carol · carol@acme.io'));
     await user.click(screen.getByRole('button', { name: 'Add' }));
 
-    await waitFor(() => expect(mockGrant).toHaveBeenCalledWith('s1', {
-      user_id: 'u-c',
-      permission: 'view',
-    }));
+    await waitFor(() =>
+      expect(mockGrant).toHaveBeenCalledWith('s1', {
+        user_id: 'u-c',
+        permission: 'view',
+      }),
+    );
   });
 
   it('changes a collaborator permission', async () => {
