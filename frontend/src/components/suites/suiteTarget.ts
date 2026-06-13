@@ -33,6 +33,13 @@ export interface TargetFormValues {
   target_format?: 'csv' | 'parquet';
 }
 
+/** Narrow an untyped stored `file_format` to the supported set, else `undefined`
+ *  — the suite target is an untyped JSONB bag, so a stray value (e.g. `json`)
+ *  must not prefill the Select with an option that doesn't exist. */
+export function asFileFormat(value: string | undefined): 'csv' | 'parquet' | undefined {
+  return value === 'csv' || value === 'parquet' ? value : undefined;
+}
+
 export interface AssembledTarget {
   /** The target to send: `null` = leave targetless (no field was filled). */
   target: RunTarget | null;

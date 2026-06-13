@@ -188,4 +188,17 @@ describe('SuiteDrawer — edit', () => {
       target: { table: 'ANALYTICS.ORDERS', schema: 'PUBLIC' },
     });
   });
+
+  it('refuses to clear an existing target (backend keeps the last one)', async () => {
+    const user = userEvent.setup();
+    renderDrawer({ suite: { ...existing, target: { table: 'ANALYTICS.ORDERS' } } });
+
+    await waitFor(() => expect(screen.getByLabelText('Table')).toHaveValue('ANALYTICS.ORDERS'));
+    // Clearing the only target field and saving must not silently no-op.
+    await user.clear(screen.getByLabelText('Table'));
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(await screen.findByText(/can’t be removed once set/)).toBeInTheDocument();
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
 });

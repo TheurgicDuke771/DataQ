@@ -8,7 +8,13 @@ import {
   envLabel,
 } from '../../api/connections';
 import { createSuite, type Suite, targetString, updateSuite } from '../../api/suites';
-import { assembleTarget, type TargetFormValues, type TargetKind, targetKind } from './suiteTarget';
+import {
+  asFileFormat,
+  assembleTarget,
+  type TargetFormValues,
+  type TargetKind,
+  targetKind,
+} from './suiteTarget';
 
 interface SuiteFormValues extends TargetFormValues {
   name: string;
@@ -64,7 +70,7 @@ export function SuiteDrawer({
         target_schema: targetString(suite.target, 'schema'),
         target_catalog: targetString(suite.target, 'catalog'),
         target_path: targetString(suite.target, 'path'),
-        target_format: targetString(suite.target, 'file_format') as 'csv' | 'parquet' | undefined,
+        target_format: asFileFormat(targetString(suite.target, 'file_format')),
       });
     } else {
       form.resetFields();
@@ -83,6 +89,14 @@ export function SuiteDrawer({
     const { target, error } = kind ? assembleTarget(kind, values) : { target: null };
     if (error) {
       form.setFields([{ name: error.field, errors: [error.message] }]);
+      return;
+    }
+    // The backend update treats a null target as "leave unchanged" (it never
+    // clears a target back to NULL), so clearing the fields on a suite that has
+    // a target would silently keep the old one. Say so rather than no-op.
+    const hadTarget = isEdit && !!suite.target && Object.keys(suite.target).length > 0;
+    if (hadTarget && target === null) {
+      message.error('A run target can’t be removed once set — edit it to point elsewhere instead.');
       return;
     }
     try {
