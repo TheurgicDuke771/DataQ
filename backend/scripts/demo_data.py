@@ -292,11 +292,15 @@ def _ensure_check(
     )
 
 
-# One seeded run's results: (check name, severity status, metric_value,
-# observed_value, expected_value) — a pass/pass/warn/fail spread so the Results
-# drill-down shows every severity tier (ADR 0005/0016). `metric_value` is the
-# unexpected-% badness scalar (ADR 0012).
-_SEED_RUN_RESULTS: list[tuple[str, str, Decimal, dict[str, Any], dict[str, Any]]] = [
+# A seeded run's results: (check name, status, metric_value, observed_value,
+# expected_value). `metric_value` is the unexpected-% badness scalar (ADR 0012);
+# operational statuses (`error`/`skip`) carry NO metric (no penalty weight, #122)
+# so theirs is None.
+_SeedResult = tuple[str, str, Decimal | None, dict[str, Any] | None, dict[str, Any] | None]
+
+# Run 1 — a pass/pass/warn/fail spread so the drill-down shows the severity tiers
+# (ADR 0005/0016).
+_SEED_RUN_RESULTS: list[_SeedResult] = [
     ("order_id not null", "pass", Decimal("0"), {"unexpected_percent": 0.0}, {"min_value": None}),
     ("order_id unique", "pass", Decimal("0"), {"unexpected_percent": 0.0}, {"min_value": None}),
     (
@@ -315,53 +319,119 @@ _SEED_RUN_RESULTS: list[tuple[str, str, Decimal, dict[str, Any], dict[str, Any]]
     ),
 ]
 
+# Run 2 — the *operational* spectrum the first run doesn't cover: a `critical`
+# breach, an `error` (the check's evaluation threw — distinct from a fail), and a
+# `skip` (precondition unmet, not evaluated). Gives the Results page the full
+# pass | warn | fail | critical | error | skip mix across the two runs.
+_SEED_RUN_MIXED_RESULTS: list[_SeedResult] = [
+    ("order_id not null", "pass", Decimal("0"), {"unexpected_percent": 0.0}, {"min_value": None}),
+    (
+        "status in set",
+        "critical",
+        Decimal("18.0"),
+        {"unexpected_percent": 18.0},
+        {"value_set": ["new", "paid", "shipped", "cancelled"]},
+    ),
+    (
+        "amount in range",
+        "error",
+        None,
+        {"error": 'column "amount" could not be cast to NUMERIC'},
+        None,
+    ),
+    ("order_id unique", "skip", None, {"reason": "upstream load incomplete — not evaluated"}, None),
+]
+
+
+def _seed_result_run(
+    session: Session,
+    *,
+    suite: Suite,
+    checks: dict[str, Check],
+    marker: str,
+    results: list[_SeedResult],
+    started_at: datetime,
+    finished_at: datetime,
+) -> None:
+    """Seed one succeeded run carrying `results`, mapping result rows to the
+    suite's checks by name. A run can succeed while individual checks `error`/
+    `skip` — the run status is execution lifecycle, the result status is the
+    per-check outcome."""
+    run = Run(
+        suite_id=suite.id,
+        status="succeeded",
+        triggered_by=marker,
+        # created_at tracks started_at so the Results list (ordered created_at
+        # desc) is deterministic across seeds — runs share one transaction, so
+        # the server-default now() would tie.
+        created_at=started_at,
+        started_at=started_at,
+        finished_at=finished_at,
+    )
+    session.add(run)
+    session.flush()  # assign run.id for the result FKs
+    for name, status, metric, observed, expected in results:
+        check = checks.get(name)
+        if check is None:  # suite without the expected check (shouldn't happen) — skip
+            continue
+        session.add(
+            Result(
+                run_id=run.id,
+                check_id=check.id,
+                status=status,
+                metric_value=metric,
+                observed_value=observed,
+                expected_value=expected,
+            )
+        )
+
 
 def _seed_runs(session: Session, *, suite: Suite) -> int:
-    """Seed a succeeded run (with per-check results) and a failed run for `suite`.
+    """Seed runs for `suite`: a severity-spread run, an operational-spectrum run,
+    and a terminal-`failed` run.
 
     Idempotent on the `triggered_by` seed markers, so re-running adds nothing.
-    Gives the Results page real content: one run with a severity spread to drill
-    into, one terminal-`failed` run (adapter couldn't reach the warehouse — the
+    Gives the Results page real content spanning the full result vocabulary —
+    pass | warn | fail | critical | error | skip across the two succeeded runs —
+    plus one terminal-`failed` run (adapter couldn't reach the warehouse, the
     documented deferred-smoke shape)."""
-    succeeded_marker, failed_marker = "seed:run:succeeded", "seed:run:failed"
+    succeeded_marker = "seed:run:succeeded"
+    mixed_marker = "seed:run:mixed"
+    failed_marker = "seed:run:failed"
     existing = set(
         session.scalars(
             select(Run.triggered_by).where(
                 Run.suite_id == suite.id,
-                Run.triggered_by.in_([succeeded_marker, failed_marker]),
+                Run.triggered_by.in_([succeeded_marker, mixed_marker, failed_marker]),
             )
         )
     )
     now = datetime.now(UTC)
     created = 0
+    checks = {c.name: c for c in session.scalars(select(Check).where(Check.suite_id == suite.id))}
 
     if succeeded_marker not in existing:
-        checks = {
-            c.name: c for c in session.scalars(select(Check).where(Check.suite_id == suite.id))
-        }
-        run = Run(
-            suite_id=suite.id,
-            status="succeeded",
-            triggered_by=succeeded_marker,
+        _seed_result_run(
+            session,
+            suite=suite,
+            checks=checks,
+            marker=succeeded_marker,
+            results=_SEED_RUN_RESULTS,
             started_at=now - timedelta(minutes=5),
             finished_at=now - timedelta(minutes=4, seconds=48),
         )
-        session.add(run)
-        session.flush()  # assign run.id for the result FKs
-        for name, status, metric, observed, expected in _SEED_RUN_RESULTS:
-            check = checks.get(name)
-            if check is None:  # suite without the expected check (shouldn't happen) — skip
-                continue
-            session.add(
-                Result(
-                    run_id=run.id,
-                    check_id=check.id,
-                    status=status,
-                    metric_value=metric,
-                    observed_value=observed,
-                    expected_value=expected,
-                )
-            )
+        created += 1
+
+    if mixed_marker not in existing:
+        _seed_result_run(
+            session,
+            suite=suite,
+            checks=checks,
+            marker=mixed_marker,
+            results=_SEED_RUN_MIXED_RESULTS,
+            started_at=now - timedelta(minutes=3, seconds=30),
+            finished_at=now - timedelta(minutes=3, seconds=18),
+        )
         created += 1
 
     if failed_marker not in existing:
@@ -370,6 +440,7 @@ def _seed_runs(session: Session, *, suite: Suite) -> int:
                 suite_id=suite.id,
                 status="failed",
                 triggered_by=failed_marker,
+                created_at=now - timedelta(minutes=2),
                 started_at=now - timedelta(minutes=2),
                 finished_at=now - timedelta(minutes=1, seconds=58),
             )
