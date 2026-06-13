@@ -27,6 +27,7 @@ import { ConnectionTypeAvatar } from '../components/connections/connectionVisual
 import { ImportSuiteDrawer } from '../components/suites/ImportSuiteDrawer';
 import { SharePanel } from '../components/suites/SharePanel';
 import { SuiteDrawer } from '../components/suites/SuiteDrawer';
+import { TriggersPanel } from '../components/suites/TriggersPanel';
 import { BRAND } from '../theme';
 import { downloadJson, toFilenameStem } from '../utils/download';
 import { type AsyncState, useAsyncData } from '../hooks/useAsyncData';
@@ -427,6 +428,9 @@ function SuiteDetail({
         onEdit={(check) => setEditingCheck(check)}
         onChanged={reload}
       />
+      {/* Triggers are edit-gated (same as runs): a pipeline/DAG bound here runs
+          the suite on its success. canRun is exactly the edit-level capability. */}
+      <TriggersPanel suiteId={suite.id} canManage={canRun} />
       <CheckDrawer
         open={editingCheck !== null}
         suiteId={suite.id}
