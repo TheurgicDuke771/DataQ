@@ -1,0 +1,50 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "e470d9fdd7d9",
+  "session_id": "80ae0122-48e1-4446-85d1-a5f459a89af0",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-13T08:50:41.119075Z",
+  "branch": "docs/week4-ledger-reconcile",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "CLAUDE.md",
+    "docs/progress.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-4-8",
+  "turn_id": "c97cc35eb0d2",
+  "token_usage": {
+    "input_tokens": 117655,
+    "cache_creation_tokens": 2337963,
+    "cache_read_tokens": 145130585,
+    "output_tokens": 408427,
+    "api_call_count": 685
+  },
+  "session_metrics": {
+    "turn_count": 16
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-13T08:50:41.011239Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 9,
+    "human_removed": 0,
+    "total_committed": 0,
+    "total_lines_changed": 9,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}
