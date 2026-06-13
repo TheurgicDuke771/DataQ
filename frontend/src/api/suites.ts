@@ -44,17 +44,22 @@ export function targetString(
   return typeof value === 'string' ? value : undefined;
 }
 
-/** Mirrors `SuiteCreate` — connection_id is required and immutable. */
+/** Mirrors `SuiteCreate` — connection_id is required and immutable. `target` is
+ *  optional (a suite may be created targetless = not-yet-runnable). */
 export interface SuiteCreate {
   name: string;
   description?: string | null;
   connection_id: string;
+  target?: RunTarget | null;
 }
 
-/** Mirrors `SuiteUpdate` — only name/description are mutable. */
+/** Mirrors `SuiteUpdate` — name/description/target are mutable (connection isn't).
+ *  A `null`/omitted `target` leaves the existing one unchanged (backend semantics:
+ *  it never clears a target back to NULL). */
 export interface SuiteUpdate {
   name?: string;
   description?: string | null;
+  target?: RunTarget | null;
 }
 
 export async function listSuites(params?: { connection_id?: string }): Promise<Suite[]> {
