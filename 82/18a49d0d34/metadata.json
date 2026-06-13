@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "8218a49d0d34",
+  "strategy": "manual-commit",
+  "branch": "feature/demo-seed-result-spectrum",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/scripts/demo_data.py",
+    "frontend/e2e/results.spec.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/82/18a49d0d34/0/metadata.json",
+      "transcript": "/82/18a49d0d34/0/full.jsonl",
+      "content_hash": "/82/18a49d0d34/0/content_hash.txt",
+      "prompt": "/82/18a49d0d34/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 118199,
+    "cache_creation_tokens": 2376015,
+    "cache_read_tokens": 156093086,
+    "output_tokens": 432753,
+    "api_call_count": 713
+  }
+}
