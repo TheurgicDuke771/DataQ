@@ -70,7 +70,9 @@ describe('assembleTarget', () => {
   });
 
   it('trims whitespace and treats blank-only input as absent', () => {
-    expect(assembleTarget('sql', { target_table: '  ORDERS  ' }).target).toEqual({ table: 'ORDERS' });
+    expect(assembleTarget('sql', { target_table: '  ORDERS  ' }).target).toEqual({
+      table: 'ORDERS',
+    });
     expect(assembleTarget('sql', { target_table: '   ' }).target).toBeNull();
   });
 });
