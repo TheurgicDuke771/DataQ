@@ -11,15 +11,21 @@ test.describe('Results page', () => {
     await expect(page.getByRole('heading', { name: 'Results', level: 3 })).toBeVisible();
   });
 
-  test('lists seeded runs and drills into a run’s results', async ({ page }) => {
-    // Both seeded runs resolve to the suite name; the status tags render.
+  test('lists seeded runs and drills into the severity-spread run (pass/warn/fail)', async ({
+    page,
+  }) => {
+    // The seeded runs resolve to the suite name; the run status tags render.
     await expect(page.getByText('Orders quality').first()).toBeVisible();
     await expect(page.getByText('succeeded').first()).toBeVisible();
     await expect(page.getByText('failed').first()).toBeVisible();
 
-    // Open the succeeded run → its detail drawer shows per-check results,
-    // mapping check ids to names with severity tags (pass/warn/fail).
-    await page.locator('tr.ant-table-row').filter({ hasText: 'succeeded' }).first().click();
+    // Target the severity-spread run by its "Triggered by" marker (there are two
+    // succeeded runs now — this one and the operational-spectrum run).
+    await page
+      .locator('tr.ant-table-row')
+      .filter({ hasText: 'seed:run:succeeded' })
+      .first()
+      .click();
     const drawer = page.getByRole('dialog');
     await expect(drawer.getByText('order_id not null')).toBeVisible();
     await expect(drawer.getByText('amount in range')).toBeVisible();
@@ -27,6 +33,17 @@ test.describe('Results page', () => {
     // The warn + fail severity tiers from the seeded spread are visible.
     await expect(drawer.getByText('warn').first()).toBeVisible();
     await expect(drawer.getByText('fail').first()).toBeVisible();
+  });
+
+  test('drills into the operational-spectrum run (critical / error / skip)', async ({ page }) => {
+    // The second succeeded run carries the operational vocabulary the first
+    // doesn't: a critical breach, an error (evaluation threw), and a skip.
+    await page.locator('tr.ant-table-row').filter({ hasText: 'seed:run:mixed' }).first().click();
+    const drawer = page.getByRole('dialog');
+    await expect(drawer.getByText('status in set')).toBeVisible();
+    await expect(drawer.getByText('critical').first()).toBeVisible();
+    await expect(drawer.getByText('error').first()).toBeVisible();
+    await expect(drawer.getByText('skip').first()).toBeVisible();
   });
 
   test('shows the orchestration pipeline-runs monitoring feed', async ({ page }) => {
