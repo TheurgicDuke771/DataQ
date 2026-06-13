@@ -2,9 +2,11 @@ import { expect, test } from '@playwright/test';
 
 // Seeded runs / results / pipeline-runs (backend/scripts/demo_data.py) read
 // through the real API and rendered on the in-app Results page (ADR 0018 — the
-// suite-scoped, redaction-aware surface, not Grafana). The seed lands a
-// succeeded run with a pass/pass/warn/fail spread plus a failed run on the
-// "Orders quality" suite, and two monitored pipeline runs.
+// suite-scoped, redaction-aware surface, not Grafana). The seed lands, on the
+// "Orders quality" suite, two succeeded runs — a pass/pass/warn/fail severity
+// spread (seed:run:succeeded) and an operational-spectrum run with
+// critical/error/skip (seed:run:mixed) — plus a terminal-failed run, and two
+// monitored pipeline runs.
 test.describe('Results page', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/results');

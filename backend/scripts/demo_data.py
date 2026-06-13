@@ -361,6 +361,10 @@ def _seed_result_run(
         suite_id=suite.id,
         status="succeeded",
         triggered_by=marker,
+        # created_at tracks started_at so the Results list (ordered created_at
+        # desc) is deterministic across seeds — runs share one transaction, so
+        # the server-default now() would tie.
+        created_at=started_at,
         started_at=started_at,
         finished_at=finished_at,
     )
@@ -436,6 +440,7 @@ def _seed_runs(session: Session, *, suite: Suite) -> int:
                 suite_id=suite.id,
                 status="failed",
                 triggered_by=failed_marker,
+                created_at=now - timedelta(minutes=2),
                 started_at=now - timedelta(minutes=2),
                 finished_at=now - timedelta(minutes=1, seconds=58),
             )
