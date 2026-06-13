@@ -61,12 +61,66 @@ describe('SuiteDrawer — create', () => {
     await user.click(screen.getByRole('button', { name: 'Create' }));
 
     await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1));
+    // No target fields filled → created targetless (null), still valid.
     expect(mockCreate).toHaveBeenCalledWith({
       name: 'orders-suite',
       description: null,
       connection_id: 'conn1',
+      target: null,
     });
     expect(onSaved).toHaveBeenCalled();
+  });
+
+  it('sends the datasource-shaped target when filled', async () => {
+    const user = userEvent.setup();
+    mockCreate.mockResolvedValue({
+      id: 's1',
+      name: 'orders-suite',
+      description: null,
+      connection_id: 'conn1',
+      target: { table: 'ANALYTICS.ORDERS' },
+      created_by: 'u1',
+    });
+    renderDrawer();
+
+    await user.type(screen.getByLabelText('Name'), 'orders-suite');
+    await user.click(screen.getByLabelText('Connection'));
+    await user.click(
+      await screen.findByText('sf-dev · Snowflake · DEV', {
+        selector: '.ant-select-item-option-content',
+      }),
+    );
+    // The Snowflake target fields appear once the connection is chosen.
+    await user.type(await screen.findByLabelText('Table'), 'ANALYTICS.ORDERS');
+    await user.type(screen.getByLabelText('Schema (optional)'), 'PUBLIC');
+    await user.click(screen.getByRole('button', { name: 'Create' }));
+
+    await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1));
+    expect(mockCreate).toHaveBeenCalledWith({
+      name: 'orders-suite',
+      description: null,
+      connection_id: 'conn1',
+      target: { table: 'ANALYTICS.ORDERS', schema: 'PUBLIC' },
+    });
+  });
+
+  it('blocks submit when the target section is partially filled', async () => {
+    const user = userEvent.setup();
+    renderDrawer();
+
+    await user.type(screen.getByLabelText('Name'), 'orders-suite');
+    await user.click(screen.getByLabelText('Connection'));
+    await user.click(
+      await screen.findByText('sf-dev · Snowflake · DEV', {
+        selector: '.ant-select-item-option-content',
+      }),
+    );
+    // Schema without a table → required-table error, no submit.
+    await user.type(await screen.findByLabelText('Schema (optional)'), 'PUBLIC');
+    await user.click(screen.getByRole('button', { name: 'Create' }));
+
+    expect(await screen.findByText('Table is required to run this suite.')).toBeInTheDocument();
+    expect(mockCreate).not.toHaveBeenCalled();
   });
 
   it('does not submit when required fields are missing', async () => {
@@ -108,8 +162,30 @@ describe('SuiteDrawer — edit', () => {
     expect(mockUpdate).toHaveBeenCalledWith('s1', {
       name: 'orders-suite-2',
       description: 'old desc',
+      target: null,
     });
     expect(mockCreate).not.toHaveBeenCalled();
     expect(onSaved).toHaveBeenCalled();
+  });
+
+  it('prefills the existing target and round-trips it on save', async () => {
+    const user = userEvent.setup();
+    mockUpdate.mockResolvedValue(existing);
+    renderDrawer({
+      suite: { ...existing, target: { table: 'ANALYTICS.ORDERS', schema: 'PUBLIC' } },
+    });
+
+    // The target fields are prefilled from the suite's stored target.
+    await waitFor(() => expect(screen.getByLabelText('Table')).toHaveValue('ANALYTICS.ORDERS'));
+    expect(screen.getByLabelText('Schema (optional)')).toHaveValue('PUBLIC');
+
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
+    expect(mockUpdate).toHaveBeenCalledWith('s1', {
+      name: 'orders-suite',
+      description: 'old desc',
+      target: { table: 'ANALYTICS.ORDERS', schema: 'PUBLIC' },
+    });
   });
 });
