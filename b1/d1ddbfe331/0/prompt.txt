@@ -1,0 +1,21 @@
+merge the PR-E2, then start with PR-E3
+
+---
+
+continue
+
+---
+
+merge #239, then UI theme and restyle, also utilize the space now there is too much white space
+
+---
+
+merge #243 then review #241
+
+---
+
+Yeah, merge #241 first then Run button in separate PR
+
+---
+
+merge #245, then pick up the week 4 remaining check editors
