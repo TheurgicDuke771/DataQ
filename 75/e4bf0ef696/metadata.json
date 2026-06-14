@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "75e4bf0ef696",
+  "strategy": "manual-commit",
+  "branch": "feature/custom-sql-check-backend",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "backend/tests/services/test_custom_sql.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/75/e4bf0ef696/0/metadata.json",
+      "transcript": "/75/e4bf0ef696/0/full.jsonl",
+      "content_hash": "/75/e4bf0ef696/0/content_hash.txt",
+      "prompt": "/75/e4bf0ef696/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 366,
+    "cache_creation_tokens": 444527,
+    "cache_read_tokens": 6988782,
+    "output_tokens": 28207,
+    "api_call_count": 17
+  }
+}

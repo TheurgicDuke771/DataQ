@@ -1,0 +1,51 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "75e4bf0ef696",
+  "session_id": "a924d94a-4e18-45a5-9c36-7250cd2ff4f4",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-14T23:42:04.733298Z",
+  "branch": "feature/custom-sql-check-backend",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "backend/tests/services/test_custom_sql.py"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "75a42ca354ce",
+  "checkpoint_transcript_start": 1086,
+  "transcript_lines_at_start": 1086,
+  "token_usage": {
+    "input_tokens": 366,
+    "cache_creation_tokens": 444527,
+    "cache_read_tokens": 6988782,
+    "output_tokens": 28207,
+    "api_call_count": 17
+  },
+  "session_metrics": {
+    "turn_count": 10
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-14T23:42:04.701444Z",
+    "agent_lines": 229,
+    "agent_removed": 0,
+    "human_added": 415,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 644,
+    "total_lines_changed": 652,
+    "agent_percentage": 35.12269938650307,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}
