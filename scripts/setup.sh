@@ -18,22 +18,34 @@ command -v pnpm   >/dev/null || die "pnpm not found — run: npm install -g pnpm
 command -v git    >/dev/null || die "git not found"
 ok "Prerequisites OK"
 
-# ── Local env file ────────────────────────────────────────────────────────────
+# ── Local env files ───────────────────────────────────────────────────────────
+# Two files (split in #209 so Settings can run extra="forbid"):
+#   .env     — infra/compose only (POSTGRES_*, VITE_*); compose substitutes ${...}
+#              from it and the postgres service reads it.
+#   .env.app — app config (DATABASE_URL, AZURE_*, …); the file Settings reads.
 # App code carries no DB credentials (config.py default is credential-less), so
-# host-side tooling (alembic, seed, uvicorn) needs DATABASE_URL from .env. Create
-# it from the template on first run, then export so child processes inherit it
-# regardless of their working dir (alembic runs from backend/, so a CWD-relative
-# .env lookup wouldn't find the root file).
-step "Preparing .env"
+# host-side tooling (alembic, seed, uvicorn) needs DATABASE_URL from .env.app.
+# Create both from their templates on first run, then export so child processes
+# inherit them regardless of working dir (alembic runs from backend/, so a
+# CWD-relative dotenv lookup wouldn't find the root file).
+step "Preparing .env / .env.app"
 if [ ! -f .env ]; then
   cp .env.example .env
   ok ".env created from .env.example"
 else
   ok ".env already present"
 fi
+if [ ! -f .env.app ]; then
+  cp .env.app.example .env.app
+  ok ".env.app created from .env.app.example"
+else
+  ok ".env.app already present"
+fi
 set -a
 # shellcheck disable=SC1091
 . ./.env
+# shellcheck disable=SC1091
+. ./.env.app
 set +a
 
 # ── Conda environment ─────────────────────────────────────────────────────────

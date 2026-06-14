@@ -7,9 +7,14 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        # App config lives in .env.app (host dev reads it directly; compose injects
+        # it into the api/worker containers via env_file). The root .env is
+        # compose/infra-only (POSTGRES_*, VITE_*) and is NOT read here. extra=forbid
+        # catches typo'd/stale keys — the split keeps those infra keys from tripping
+        # it. See #209.
+        env_file=".env.app",
         env_file_encoding="utf-8",
-        extra="ignore",
+        extra="forbid",
         case_sensitive=False,
     )
 

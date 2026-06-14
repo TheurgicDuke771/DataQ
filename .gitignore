@@ -79,6 +79,7 @@ frontend/playwright/.cache/
 .env
 .env.*
 !.env.example
+!.env.app.example
 *.pem
 *.key
 *.crt
