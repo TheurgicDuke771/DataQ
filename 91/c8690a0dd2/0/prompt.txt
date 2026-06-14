@@ -1,0 +1,47 @@
+merge the PR-E2, then start with PR-E3
+
+---
+
+continue
+
+---
+
+merge #239, then UI theme and restyle, also utilize the space now there is too much white space
+
+---
+
+merge #243 then review #241
+
+---
+
+Yeah, merge #241 first then Run button in separate PR
+
+---
+
+merge #245, then pick up the week 4 remaining check editors
+
+---
+
+continue
+
+---
+
+merge #246, then you decide based on priority and dependency for the remaining week 4 items
+
+---
+
+merge #247
+
+---
+
+merge #248. 
+After that can we do a E2E with real world mock data with mix of PASS | FAIL | ERROR scenarios
+
+---
+
+Merge #249. 
+And file the download as week 6 item (once the PII thing resolves). go with both JSON + CSV
+
+---
+
+Okay, what's left of week 4
