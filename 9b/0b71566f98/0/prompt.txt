@@ -1,0 +1,2 @@
+Okay, now that design part is documented, lets pick up the remaining items from week 4. 
+Can we start with - "Config — #209: .env.example mixes compose-only vars (POSTGRES_*) with app vars; forbid crashes startup until the .env is split"?
