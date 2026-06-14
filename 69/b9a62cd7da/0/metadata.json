@@ -1,0 +1,37 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "69b9a62cd7da",
+  "session_id": "80ae0122-48e1-4446-85d1-a5f459a89af0",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-14T21:44:13.903209Z",
+  "branch": "test/suitetarget-mutation-gaps",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/tests/components/suiteTarget.test.ts"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-4-8",
+  "turn_id": "eef976d076bf",
+  "token_usage": {
+    "input_tokens": 118809,
+    "cache_creation_tokens": 2744856,
+    "cache_read_tokens": 158930094,
+    "output_tokens": 437964,
+    "api_call_count": 721
+  },
+  "session_metrics": {
+    "turn_count": 20
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-14T21:44:13.781978Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 22,
+    "human_modified": 5,
+    "human_removed": 0,
+    "total_committed": 22,
+    "total_lines_changed": 27,
+    "agent_percentage": 0,
+    "metric_version": 2
+  }
+}
