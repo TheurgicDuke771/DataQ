@@ -1,0 +1,51 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "69b9a62cd7da",
+  "session_id": "a924d94a-4e18-45a5-9c36-7250cd2ff4f4",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-14T21:44:23.429588Z",
+  "branch": "test/suitetarget-mutation-gaps",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "frontend/tests/components/suiteTarget.test.ts"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "5fa847326979",
+  "checkpoint_transcript_start": 600,
+  "transcript_lines_at_start": 600,
+  "token_usage": {
+    "input_tokens": 266,
+    "cache_creation_tokens": 13436,
+    "cache_read_tokens": 3030157,
+    "output_tokens": 7800,
+    "api_call_count": 11
+  },
+  "session_metrics": {
+    "turn_count": 7
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-14T21:44:23.412016Z",
+    "agent_lines": 27,
+    "agent_removed": 5,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 27,
+    "total_lines_changed": 32,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}
