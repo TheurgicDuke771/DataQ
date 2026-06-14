@@ -1,0 +1,39 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "dd9238d3051d",
+  "session_id": "a924d94a-4e18-45a5-9c36-7250cd2ff4f4",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-14T23:03:53.388526Z",
+  "branch": "fix/prettier-stryker-readme",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "frontend/mutation/README.md"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "ee456441e850",
+  "checkpoint_transcript_start": 996,
+  "transcript_lines_at_start": 996,
+  "token_usage": {
+    "input_tokens": 10886,
+    "cache_creation_tokens": 17651,
+    "cache_read_tokens": 2339141,
+    "output_tokens": 5960,
+    "api_call_count": 6
+  },
+  "session_metrics": {
+    "turn_count": 9
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-14T23:03:53.361085Z",
+    "agent_lines": 1,
+    "agent_removed": 1,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 1,
+    "total_lines_changed": 2,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}

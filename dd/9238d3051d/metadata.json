@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "dd9238d3051d",
+  "strategy": "manual-commit",
+  "branch": "fix/prettier-stryker-readme",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "frontend/mutation/README.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/dd/9238d3051d/0/metadata.json",
+      "transcript": "/dd/9238d3051d/0/full.jsonl",
+      "content_hash": "/dd/9238d3051d/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 10886,
+    "cache_creation_tokens": 17651,
+    "cache_read_tokens": 2339141,
+    "output_tokens": 5960,
+    "api_call_count": 6
+  }
+}
