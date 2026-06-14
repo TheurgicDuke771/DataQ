@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "506962d85dc5",
+  "strategy": "manual-commit",
+  "branch": "docs/mutmut-py313-results-note",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "CONTRIBUTING.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/50/6962d85dc5/0/metadata.json",
+      "transcript": "/50/6962d85dc5/0/full.jsonl",
+      "content_hash": "/50/6962d85dc5/0/content_hash.txt",
+      "prompt": "/50/6962d85dc5/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 534,
+    "cache_creation_tokens": 33090,
+    "cache_read_tokens": 4641319,
+    "output_tokens": 20398,
+    "api_call_count": 23
+  }
+}

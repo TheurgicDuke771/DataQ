@@ -1,0 +1,51 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "506962d85dc5",
+  "session_id": "a924d94a-4e18-45a5-9c36-7250cd2ff4f4",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-14T20:20:48.868421Z",
+  "branch": "docs/mutmut-py313-results-note",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "CONTRIBUTING.md"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "bc61bdf42b15",
+  "checkpoint_transcript_start": 335,
+  "transcript_lines_at_start": 335,
+  "token_usage": {
+    "input_tokens": 534,
+    "cache_creation_tokens": 33090,
+    "cache_read_tokens": 4641319,
+    "output_tokens": 20398,
+    "api_call_count": 23
+  },
+  "session_metrics": {
+    "turn_count": 6
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-14T20:20:48.851031Z",
+    "agent_lines": 2,
+    "agent_removed": 1,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 2,
+    "total_lines_changed": 3,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}
