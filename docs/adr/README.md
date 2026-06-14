@@ -29,6 +29,7 @@ Each ADR captures a single significant architecture decision: the context, the d
 | [0016](0016-severity-derivation-semantics.md) | Severity derivation semantics (band the unexpected-%, thresholds override GX success) | Accepted |
 | [0017](0017-python-313-runtime-upgrade.md) | Upgrade Python runtime 3.11 → 3.13 (3.14 deferred — GX-capped); bundled with the Snowflake 3→4 CVE refresh | Accepted |
 | [0018](0018-results-surface-and-grafana-deferral.md) | Results surface is an in-app page (suite-scoped authz + PII redaction); Grafana deferred to optional ops add-on | Accepted |
+| [0019](0019-custom-sql-check-kind.md) | Custom-SQL checks ride `kind='expectation'` via GX `UnexpectedRowsExpectation` (no new kind); read-only validation + SQL-datasource gating | Accepted |
 
 ## Pending (to be written in their respective weeks)
 

@@ -27,7 +27,8 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
-from backend.app.db.models import Check
+from backend.app.db.models import Check, Connection, Suite
+from backend.app.services.custom_sql import is_custom_sql, validate_custom_sql_check
 from backend.app.services.suite_service import get_suite
 
 log = get_logger(__name__)
@@ -45,6 +46,16 @@ class CheckNotFoundError(DataQError):
 class CheckConfigInvalidError(DataQError):
     status_code = 422
     code = "check_config_invalid"
+
+
+def _connection_type(session: Session, suite: Suite) -> str:
+    """The datasource type of the suite's connection — for custom-SQL gating.
+
+    The suite's `connection_id` FK is NOT NULL, so the connection always exists.
+    """
+    connection = session.get(Connection, suite.connection_id)
+    assert connection is not None
+    return connection.type
 
 
 def validate_kind(kind: str) -> None:
@@ -73,8 +84,14 @@ def create_check(
     Raises `SuiteNotFoundError` (404) if the suite does not exist, or
     `CheckConfigInvalidError` (422) for an unsupported kind.
     """
-    get_suite(session, suite_id)  # 404 if the suite is missing
+    suite = get_suite(session, suite_id)  # 404 if the suite is missing
     validate_kind(kind)
+    if is_custom_sql(expectation_type):
+        validate_custom_sql_check(
+            expectation_type=expectation_type,
+            config=config,
+            connection_type=_connection_type(session, suite),
+        )
 
     check = Check(
         suite_id=suite_id,
@@ -142,6 +159,16 @@ def update_check(
         check.fail_threshold = fail_threshold
     if critical_threshold is not None:
         check.critical_threshold = critical_threshold
+    # Re-validate against the post-patch state: a PATCH may change only the query
+    # (config) or only the type, so guard the effective custom-SQL check before
+    # commit (a rejected update persists nothing).
+    if is_custom_sql(check.expectation_type):
+        suite = get_suite(session, suite_id)
+        validate_custom_sql_check(
+            expectation_type=check.expectation_type,
+            config=check.config,
+            connection_type=_connection_type(session, suite),
+        )
     session.commit()
     session.refresh(check)
     log.info("check_updated", check_id=str(check.id))
