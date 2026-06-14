@@ -1,0 +1,42 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "bfa3e7cef6ad",
+  "session_id": "a924d94a-4e18-45a5-9c36-7250cd2ff4f4",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-14T21:11:12.092913Z",
+  "branch": "chore/frontend-stryker-mutation-harness",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "frontend/stryker.conf.json",
+    "frontend/mutation/run.sh",
+    "frontend/mutation/README.md",
+    "CONTRIBUTING.md"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "bc61bdf42b15",
+  "checkpoint_transcript_start": 450,
+  "transcript_lines_at_start": 450,
+  "token_usage": {
+    "input_tokens": 670,
+    "cache_creation_tokens": 47288,
+    "cache_read_tokens": 7204740,
+    "output_tokens": 33970,
+    "api_call_count": 30
+  },
+  "session_metrics": {
+    "turn_count": 6
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-14T21:11:12.073222Z",
+    "agent_lines": 95,
+    "agent_removed": 0,
+    "human_added": 4,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 99,
+    "total_lines_changed": 99,
+    "agent_percentage": 95.95959595959596,
+    "metric_version": 2
+  }
+}

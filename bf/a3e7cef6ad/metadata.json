@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "bfa3e7cef6ad",
+  "strategy": "manual-commit",
+  "branch": "chore/frontend-stryker-mutation-harness",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "CONTRIBUTING.md",
+    "frontend/mutation/README.md",
+    "frontend/mutation/run.sh",
+    "frontend/stryker.conf.json"
+  ],
+  "sessions": [
+    {
+      "metadata": "/bf/a3e7cef6ad/0/metadata.json",
+      "transcript": "/bf/a3e7cef6ad/0/full.jsonl",
+      "content_hash": "/bf/a3e7cef6ad/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 670,
+    "cache_creation_tokens": 47288,
+    "cache_read_tokens": 7204740,
+    "output_tokens": 33970,
+    "api_call_count": 30
+  }
+}
