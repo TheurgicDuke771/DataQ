@@ -1,7 +1,14 @@
+# Two env files (split in #209 so app Settings can run extra="forbid"):
+#   .env      — infra/compose only: POSTGRES_* (+ VITE_* for the frontend). This is
+#               the file compose auto-substitutes ${...} from. setup.sh creates it
+#               from .env.example. NOT loaded into the api/worker containers.
+#   .env.app  — app config (DATABASE_URL, AZURE_*, AUTH_DEV_BYPASS, SECRET_STORE, …):
+#               only keys the app's Settings recognizes. Loaded into api/worker/
+#               migrate via env_file below; created from .env.app.example.
 # DATABASE_URL is identical across migrate/api/worker. Postgres user/password/db
-# carry NO embedded defaults — they come from .env (setup.sh creates it from
-# .env.example) or the shell. The `:?` on the canonical postgres block below makes
-# compose fail fast if any is unset, rather than baking credentials into the file.
+# carry NO embedded defaults — they come from .env or the shell. The `:?` on the
+# canonical postgres block below makes compose fail fast if any is unset, rather
+# than baking credentials into the file.
 x-database-url: &database-url "postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
 
 services:
@@ -44,7 +51,7 @@ services:
     restart: "no"
     command: sh -c "cd backend && alembic upgrade head"
     env_file:
-      - path: .env
+      - path: .env.app
         required: false
     environment:
       DATABASE_URL: *database-url
@@ -66,7 +73,7 @@ services:
     ports:
       - "8000:8000"
     env_file:
-      - path: .env
+      - path: .env.app
         required: false
     environment:
       DATABASE_URL: *database-url
@@ -96,7 +103,7 @@ services:
     # schedule). Fine for the single-worker dev stack; prod runs a separate beat.
     command: celery -A backend.app.worker.celery_app worker -B --loglevel=INFO
     env_file:
-      - path: .env
+      - path: .env.app
         required: false
     environment:
       DATABASE_URL: *database-url
