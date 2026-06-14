@@ -31,7 +31,7 @@ mutation-score table. Triage each survivor:
 - **Low-value** — e.g. an error-`message` string mutated to `""`. Pin it only if the
   copy is contractual; asserting exact UI strings is usually brittle.
 
-A score < 100% is fine — chase the *real* gaps, not the number.
+A score < 100% is fine — chase the _real_ gaps, not the number.
 
 ## Gotchas (Node ≥ 20, pnpm v11)
 
