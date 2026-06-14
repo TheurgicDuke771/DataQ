@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ConnectionType } from '../../src/api/connections';
-import { assembleTarget, targetKind } from '../../src/components/suites/suiteTarget';
+import { asFileFormat, assembleTarget, targetKind } from '../../src/components/suites/suiteTarget';
 
 describe('targetKind', () => {
   it('maps each datasource type to its input shape; orchestration → null', () => {
@@ -18,10 +18,16 @@ describe('targetKind', () => {
 });
 
 describe('assembleTarget', () => {
-  it('returns a null target when nothing is filled (valid targetless suite)', () => {
-    expect(assembleTarget('sql', {}).target).toBeNull();
-    expect(assembleTarget('uc', {}).target).toBeNull();
-    expect(assembleTarget('flatfile', {}).target).toBeNull();
+  it('returns a null target AND no error when nothing is filled (valid targetless suite)', () => {
+    // The all-blank short-circuit must yield a clean targetless suite, not a
+    // missing-field error — asserting error===undefined here pins that each
+    // kind's `if (all blank) return null` guard runs before the required-field
+    // checks (a dropped guard would still leave target=null but set an error).
+    for (const kind of ['sql', 'uc', 'flatfile'] as const) {
+      const { target, error } = assembleTarget(kind, {});
+      expect(target).toBeNull();
+      expect(error).toBeUndefined();
+    }
   });
 
   it('builds a SQL target, omitting an empty schema', () => {
@@ -74,5 +80,21 @@ describe('assembleTarget', () => {
       table: 'ORDERS',
     });
     expect(assembleTarget('sql', { target_table: '   ' }).target).toBeNull();
+  });
+});
+
+describe('asFileFormat', () => {
+  it('passes the two supported formats through unchanged', () => {
+    expect(asFileFormat('csv')).toBe('csv');
+    expect(asFileFormat('parquet')).toBe('parquet');
+  });
+
+  it('narrows anything unsupported or absent to undefined', () => {
+    // The guard exists so a stray stored value can't prefill the format Select
+    // with a non-existent option — case-sensitive, exact match only.
+    expect(asFileFormat('json')).toBeUndefined();
+    expect(asFileFormat('CSV')).toBeUndefined();
+    expect(asFileFormat('')).toBeUndefined();
+    expect(asFileFormat(undefined)).toBeUndefined();
   });
 });
