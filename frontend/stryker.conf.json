@@ -1,0 +1,11 @@
+{
+  "$schema": "https://raw.githubusercontent.com/stryker-mutator/stryker-js/master/packages/api/schema/stryker-core.json",
+  "_comment": "Frontend mutation testing — manual/periodic spike, NOT CI (mirrors backend mutmut, CONTRIBUTING rule 4a). Stryker + the vitest runner are deliberately NOT in package.json so they stay off the `pnpm audit` merge gate; run them ad-hoc with the pinned versions in mutation/README.md. Scope `mutate` to the module under test before running.",
+  "testRunner": "vitest",
+  "plugins": ["@stryker-mutator/vitest-runner"],
+  "coverageAnalysis": "perTest",
+  "mutate": ["src/components/suites/suiteTarget.ts"],
+  "reporters": ["clear-text", "progress"],
+  "concurrency": 4,
+  "tempDirName": ".stryker-tmp"
+}

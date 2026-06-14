@@ -147,3 +147,7 @@ azure.json
 
 # ---- Mutmut (mutation testing) cache ----
 .mutmut-cache
+
+# Stryker (frontend mutation spike) — sandbox + reports, never committed
+frontend/.stryker-tmp/
+frontend/reports/mutation/
