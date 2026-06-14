@@ -20,6 +20,7 @@ htmlcov
 # Local env / secrets — never bake into an image
 .env
 *.env
+.env.*
 !.env.example
 
 # Docs / context not needed at runtime
