@@ -1,0 +1,37 @@
+Hey, I was checking in Claude Design for updating DataQ's UI, and came up with this prototype - 
+Fetch this design file, read its readme -  https://api.anthropic.com/v1/design/h/SVkQJqee7xsc2FNWVOsnIQ 
+Can you check the feasibility of implementing the prototype in this project.
+
+---
+
+so for this prototype the flow is - 
+
+* User log in → lands to Enhanced-Monitoring-Dashboard page. 
+* Clicks connection from side bar → goes to connection management page → clicks new connection → goes to new connection select source page → select a source → goes to new connection configuration page. 
+* Clicks suits from Side bar → goes to suits overview page. 
+* In Suit over view page → clicks on new suit from nav bar → goes to new suit details source page. 
+* In Suit over view page → select a suit and click Add Check button → goes to new suit define rules page. 
+* Click Result from side bar → goes to results overview page → click non any result row → goes to result drill down page. 
+* Click Profile from side bar → goes to user profile page. 
+* Click on settings from side bar → goes to workspace settings page. 
+* Click on Admin from side bar → goes to admin control centre page (403 for non Admins). 
+
+And each flow open in its dedicated page not in drawer (the current app state), the only thing open in drawer is the suit share flow. 
+
+How easy or difficult it will be to swith from current app flow to this prototype's flow?
+
+---
+
+Okay, which all thing from the prototype can't be added in DataQ?
+
+---
+
+Okay, 
+Keep the The marketing landing page for when DataQ goes multi-tanent. 
+The remaining - "View as" role switch, the prototype's component code/bundle, and the teal palette can be ignored. 
+Lets create a plan to incorporate this prototype (including what can be done +  Can't yet — no backend, not a design problem + Not a "can't" — just deferred) with detailed steps and add them in @docs/progress.md  , for the timeline I'm thinking week 6 (major implementation) & week 7 (final polishing), Alao add the post v1 items in there respective section.
+
+---
+
+Add the claude design link or fetching details in the @docs/progress.md so that when task is picked up ait can reffer to the actual design. Also add a reference section forom the prototype for each task you added (i.e. - which section from prototype to refer for that task). 
+Also add number of task and progress for both the week 6 & 7 section you just added as per doc's convention
