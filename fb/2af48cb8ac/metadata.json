@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "fb2af48cb8ac",
+  "strategy": "manual-commit",
+  "branch": "feature/custom-sql-check-backend",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "backend/app/services/custom_sql.py",
+    "backend/tests/api/test_checks.py",
+    "backend/tests/services/test_custom_sql.py",
+    "docs/adr/0019-custom-sql-check-kind.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/fb/2af48cb8ac/0/metadata.json",
+      "transcript": "/fb/2af48cb8ac/0/full.jsonl",
+      "content_hash": "/fb/2af48cb8ac/0/content_hash.txt",
+      "prompt": "/fb/2af48cb8ac/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 3386,
+    "cache_creation_tokens": 491820,
+    "cache_read_tokens": 12103248,
+    "output_tokens": 28612,
+    "api_call_count": 26
+  }
+}
