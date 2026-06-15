@@ -436,6 +436,7 @@ function SuiteDetail({
         suiteId={suite.id}
         check={editingCheck ?? undefined}
         target={suite.target}
+        connectionType={connection?.type}
         onClose={() => setEditingCheck(null)}
         onSaved={() => {
           setEditingCheck(null);

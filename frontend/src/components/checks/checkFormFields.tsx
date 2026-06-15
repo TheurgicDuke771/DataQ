@@ -1,7 +1,9 @@
-import { Divider, Flex, Form, Input, InputNumber, Typography } from 'antd';
+import { Divider, Flex, Form, Input, InputNumber, Skeleton, Typography } from 'antd';
 import type { Rule } from 'antd/es/form';
+import { lazy, Suspense } from 'react';
 
 import { parseList } from './checkForm';
+import { validateCustomSqlQuery } from './customSql';
 import type { ConfigField } from './expectationCatalog';
 
 /**
@@ -9,6 +11,25 @@ import type { ConfigField } from './expectationCatalog';
  * and the dedicated create page (`CheckNew`): the dynamic config-field renderer
  * and the severity-threshold block. Pure conversions live in `checkForm.ts`.
  */
+
+// Monaco lives in its own lazy chunk, pulled in only when a custom-SQL ('sql')
+// field renders. The wrapper is the direct Form.Item child so antd's value/onChange
+// injection reaches the editor through the Suspense boundary.
+const LazySqlEditor = lazy(() => import('./SqlEditorField'));
+
+function SqlEditorControl({
+  value,
+  onChange,
+}: {
+  value?: string;
+  onChange?: (value: string) => void;
+}) {
+  return (
+    <Suspense fallback={<Skeleton.Input active block style={{ height: 180 }} />}>
+      <LazySqlEditor value={value} onChange={onChange} />
+    </Suspense>
+  );
+}
 
 export function ConfigFieldItem({ field }: { field: ConfigField }) {
   const label = field.optional ? `${field.label} (optional)` : field.label;
@@ -23,6 +44,28 @@ export function ConfigFieldItem({ field }: { field: ConfigField }) {
           ? Promise.resolve()
           : Promise.reject(new Error('Enter at least one value')),
     });
+  }
+  if (field.type === 'sql') {
+    // Inline mirror of the backend read-only guardrail (ADR 0019) for fast
+    // feedback; the backend is authoritative. `required` is covered by the same
+    // check (empty → message), so it replaces the bare required rule.
+    return (
+      <Form.Item
+        name={['config', field.name]}
+        label={label}
+        extra={field.help}
+        rules={[
+          {
+            validator: (_: unknown, value: unknown) => {
+              const error = validateCustomSqlQuery(value as string | undefined);
+              return error ? Promise.reject(new Error(error)) : Promise.resolve();
+            },
+          },
+        ]}
+      >
+        <SqlEditorControl />
+      </Form.Item>
+    );
   }
   return (
     <Form.Item name={['config', field.name]} label={label} rules={rules} extra={field.help}>

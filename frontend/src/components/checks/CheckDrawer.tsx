@@ -1,12 +1,13 @@
 import { App, Button, Drawer, Flex, Form, Input, Select, Typography } from 'antd';
 import { useEffect, useState } from 'react';
 
+import type { ConnectionType } from '../../api/connections';
 import { type Check, updateCheck } from '../../api/suites';
 import { buildCheckPayload, configToForm } from './checkForm';
 import { ConfigFieldItem, SeverityThresholdFields } from './checkFormFields';
 import { ColumnProfilePanel } from './ColumnProfilePanel';
 import { DryRunPreview } from './DryRunPreview';
-import { EXPECTATION_BY_TYPE, EXPECTATIONS_BY_CATEGORY } from './expectationCatalog';
+import { EXPECTATION_BY_TYPE, expectationsByCategoryFor } from './expectationCatalog';
 
 /**
  * Edit a GX check. The expectation Select (grouped by category) drives which
@@ -20,6 +21,7 @@ export function CheckDrawer({
   suiteId,
   check,
   target,
+  connectionType,
   onClose,
   onSaved,
 }: {
@@ -28,6 +30,8 @@ export function CheckDrawer({
   check?: Check;
   /** The suite's run target (#215) — drives the dry-run preview's table/schema. */
   target: Record<string, unknown> | null;
+  /** The suite's datasource type — gates the Custom-SQL category (ADR 0019). */
+  connectionType?: ConnectionType;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -98,10 +102,15 @@ export function CheckDrawer({
           <Select
             placeholder="Select an expectation"
             // Grouped by category (antd optgroups) — the GX-Cloud-style picker.
-            options={EXPECTATIONS_BY_CATEGORY.map((g) => ({
-              label: g.category,
-              options: g.specs.map((e) => ({ value: e.type, label: e.label })),
-            }))}
+            // Pass the check's current type so Custom SQL stays selectable when
+            // editing one even before the connection type loads (else its
+            // prefilled value would have no matching option).
+            options={expectationsByCategoryFor(connectionType, check?.expectation_type).map(
+              (g) => ({
+                label: g.category,
+                options: g.specs.map((e) => ({ value: e.type, label: e.label })),
+              }),
+            )}
           />
         </Form.Item>
 

@@ -2,6 +2,7 @@ import { App, Button, Card, Flex, Form, Input, Tag, Typography } from 'antd';
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
+import { getConnection } from '../api/connections';
 import { createCheck, getSuite } from '../api/suites';
 import { buildCheckPayload } from '../components/checks/checkForm';
 import { ConfigFieldItem, SeverityThresholdFields } from '../components/checks/checkFormFields';
@@ -9,7 +10,7 @@ import { ColumnProfilePanel } from '../components/checks/ColumnProfilePanel';
 import { DryRunPreview } from '../components/checks/DryRunPreview';
 import {
   EXPECTATION_BY_TYPE,
-  EXPECTATIONS_BY_CATEGORY,
+  expectationsByCategoryFor,
   type ExpectationCategory,
 } from '../components/checks/expectationCatalog';
 import { useAsyncData } from '../hooks/useAsyncData';
@@ -32,11 +33,21 @@ export function CheckNew() {
   const [form] = Form.useForm();
   const column = Form.useWatch(['config', 'column'], form) as string | undefined;
   const [submitting, setSubmitting] = useState(false);
-  // The suite's run target (#215) drives the dry-run preview's table/schema.
-  const { state: suiteState } = useAsyncData(() =>
-    suiteId ? getSuite(suiteId) : Promise.reject(new Error('no suite')),
-  );
-  const target = suiteState.status === 'ok' ? suiteState.data.target : null;
+  // Load the suite + its connection together: the run target (#215) drives the
+  // dry-run preview's table/schema, and the connection type gates the Custom-SQL
+  // category (ADR 0019 — SQL datasources only).
+  const { state } = useAsyncData(async () => {
+    if (!suiteId) throw new Error('no suite');
+    const suite = await getSuite(suiteId);
+    // Best-effort: a suite may be readable while its connection isn't (shared
+    // suite). The connection only gates the Custom-SQL category — never let its
+    // absence break the rest of the page (target / dry-run / profiler).
+    const connection = await getConnection(suite.connection_id).catch(() => null);
+    return { suite, connection };
+  });
+  const target = state.status === 'ok' ? state.data.suite.target : null;
+  const connectionType = state.status === 'ok' ? state.data.connection?.type : undefined;
+  const categories = expectationsByCategoryFor(connectionType);
 
   const backToSuite = () => navigate(suiteId ? `/suites/${suiteId}` : '/suites');
   const spec = expectationType ? EXPECTATION_BY_TYPE[expectationType] : undefined;
@@ -113,7 +124,7 @@ export function CheckNew() {
 
   // Step 2 — pick an expectation within the chosen category.
   if (category) {
-    const group = EXPECTATIONS_BY_CATEGORY.find((g) => g.category === category);
+    const group = categories.find((g) => g.category === category);
     return (
       <Flex vertical gap={24} style={{ maxWidth: 720 }}>
         <Header
@@ -146,7 +157,7 @@ export function CheckNew() {
     <Flex vertical gap={24} style={{ maxWidth: 720 }}>
       <Header title="New check" onBack={backToSuite} backLabel="Cancel" />
       <Flex wrap gap={12}>
-        {EXPECTATIONS_BY_CATEGORY.map((g) => (
+        {categories.map((g) => (
           <Card
             key={g.category}
             hoverable
