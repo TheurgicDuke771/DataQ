@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "3c7c17fdb726",
+  "strategy": "manual-commit",
+  "branch": "chore/epic-drift-reminder-hook",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/3c/7c17fdb726/0/metadata.json",
+      "transcript": "/3c/7c17fdb726/0/full.jsonl",
+      "content_hash": "/3c/7c17fdb726/0/content_hash.txt",
+      "prompt": "/3c/7c17fdb726/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 39401,
+    "cache_creation_tokens": 2062247,
+    "cache_read_tokens": 148368248,
+    "output_tokens": 422786,
+    "api_call_count": 401
+  }
+}
