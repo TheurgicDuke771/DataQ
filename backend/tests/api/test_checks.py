@@ -29,16 +29,21 @@ def client(db_session: Any) -> Iterator[TestClient]:
         app.dependency_overrides.clear()
 
 
-def _suite_id(client: TestClient, db_session: Any) -> str:
-    """Create a connection (ORM) + suite (API) and return the suite id."""
+def _suite_id(client: TestClient, db_session: Any, conn_type: str = "snowflake") -> str:
+    """Create a connection (ORM) + suite (API) and return the suite id.
+
+    `conn_type` lets a test pick the datasource (e.g. 's3' to exercise custom-SQL
+    datasource gating); defaults to Snowflake.
+    """
     owner = User(aad_object_id=uuid.uuid4().hex, email="owner@example.com")
     db_session.add(owner)
     db_session.flush()
+    config = {"account": "ab12345.eu-west-1"} if conn_type == "snowflake" else {}
     conn = Connection(
-        name=f"sf-{uuid.uuid4().hex[:8]}",
-        type="snowflake",
+        name=f"{conn_type}-{uuid.uuid4().hex[:8]}",
+        type=conn_type,
         env="dev",
-        config={"account": "ab12345.eu-west-1"},
+        config=config,
         created_by=owner.id,
     )
     db_session.add(conn)
@@ -107,6 +112,63 @@ def test_create_blank_name_or_expectation_returns_422(client: TestClient, db_ses
     assert blank_name.status_code == 422
     blank_type = client.post(f"/api/v1/suites/{sid}/checks", json=_payload(expectation_type=""))
     assert blank_type.status_code == 422
+
+
+# ───────────────────────── custom-SQL (ADR 0019) ───────────────────
+
+
+def _custom_sql_payload(**overrides: Any) -> dict[str, Any]:
+    body: dict[str, Any] = {
+        "name": "no negative totals",
+        "expectation_type": "unexpected_rows_expectation",
+        "config": {"unexpected_rows_query": "SELECT * FROM {batch} WHERE total < 0"},
+    }
+    body.update(overrides)
+    return body
+
+
+def test_create_custom_sql_on_sql_datasource_returns_201(
+    client: TestClient, db_session: Any
+) -> None:
+    sid = _suite_id(client, db_session, conn_type="snowflake")
+    resp = client.post(f"/api/v1/suites/{sid}/checks", json=_custom_sql_payload())
+    assert resp.status_code == 201
+    assert resp.json()["expectation_type"] == "unexpected_rows_expectation"
+
+
+def test_create_custom_sql_rejects_non_readonly_query(client: TestClient, db_session: Any) -> None:
+    sid = _suite_id(client, db_session, conn_type="snowflake")
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks",
+        json=_custom_sql_payload(config={"unexpected_rows_query": "DELETE FROM {batch}"}),
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "custom_sql_invalid"
+
+
+def test_create_custom_sql_on_flatfile_datasource_rejected(
+    client: TestClient, db_session: Any
+) -> None:
+    sid = _suite_id(client, db_session, conn_type="s3")
+    resp = client.post(f"/api/v1/suites/{sid}/checks", json=_custom_sql_payload())
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "custom_sql_invalid"
+
+
+def test_update_custom_sql_to_non_readonly_query_rejected(
+    client: TestClient, db_session: Any
+) -> None:
+    sid = _suite_id(client, db_session, conn_type="snowflake")
+    created = client.post(f"/api/v1/suites/{sid}/checks", json=_custom_sql_payload())
+    check_id = created.json()["id"]
+    # PATCH only the config (query) — the effective custom-SQL check must be
+    # re-validated against the post-patch state.
+    resp = client.patch(
+        f"/api/v1/suites/{sid}/checks/{check_id}",
+        json={"config": {"unexpected_rows_query": "DROP TABLE orders"}},
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "custom_sql_invalid"
 
 
 # ───────────────────────── read / list ─────────────────────────────
@@ -386,6 +448,27 @@ def test_dryrun_rejects_non_snowflake_connection(client: TestClient, db_session:
     resp = client.post(f"/api/v1/suites/{suite.id}/checks/dryrun", json=_dryrun_body())
     assert resp.status_code == 422
     assert resp.json()["error"]["code"] == "dry_run_unsupported"
+
+
+def test_dryrun_rejects_non_readonly_custom_sql_before_running(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Dry-run executes the query, so the custom-SQL guardrail must apply here too
+    # (ADR 0019 review): a non-read-only query is a 422 and the runner is never
+    # reached.
+    sid = _suite_id(client, db_session)
+    runner = _FakeRunner(outcome=SuiteOutcome(success=True, checks=[]))
+    _patch_runner(monkeypatch, runner)
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks/dryrun",
+        json=_dryrun_body(
+            expectation_type="unexpected_rows_expectation",
+            config={"unexpected_rows_query": "DELETE FROM {batch}"},
+        ),
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "custom_sql_invalid"
+    assert runner.called_with is None  # rejected before the runner ran
 
 
 def test_dryrun_runner_failure_returns_502(

@@ -26,6 +26,7 @@ from backend.app.core.secrets import SecretStore
 from backend.app.datasources.base import CheckSpec
 from backend.app.datasources.snowflake import build_snowflake_runner
 from backend.app.db.models import Connection
+from backend.app.services.custom_sql import validate_custom_sql_check
 from backend.app.services.severity import derive_status, extract_metric
 
 log = get_logger(__name__)
@@ -83,6 +84,14 @@ def dry_run_check(
             f"dry-run is not supported for {connection.type!r} connections in v1",
             detail={"type": connection.type, "supported": sorted(_SUPPORTED_TYPES)},
         )
+    # Dry-run is the one path that *executes* the query before save, so the
+    # custom-SQL read-only guardrail (ADR 0019) must apply here too — outside the
+    # try, so a bad query is a clean 422, not a 502. No-op for other expectations.
+    validate_custom_sql_check(
+        expectation_type=expectation_type,
+        config=config,
+        connection_type=connection.type,
+    )
 
     try:
         runner = build_snowflake_runner(

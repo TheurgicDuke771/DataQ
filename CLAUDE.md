@@ -222,6 +222,7 @@ curl -X POST http://localhost:8000/api/v1/_probe/snowflake-suite
 | Severity derivation (thresholds band the GX unexpected-% as `metric_value`, higher=worse; thresholds-as-policy override GX `success`; binary fallback; A→B reversible since raw `observed_value` retained) | [0016](docs/adr/0016-severity-derivation-semantics.md) | Accepted (2026-06-04) |
 | Python runtime 3.11 → 3.13 (3.14 deferred — GX 1.17 caps at 3.13; supersedes the W1 Python-3.11 lock); bundled with the Snowflake 3→4 + cryptography/pyOpenSSL CVE refresh (#129) | [0017](docs/adr/0017-python-313-runtime-upgrade.md) | Accepted (2026-06-08) |
 | Results surface is an in-app React page (suite-scoped authz + PII redaction the API owns); Grafana deferred to an optional post-v1 read-only **ops** add-on, never the per-user product surface | [0018](docs/adr/0018-results-surface-and-grafana-deferral.md) | Accepted (2026-06-11) |
+| Custom-SQL checks ride `kind='expectation'` via GX `UnexpectedRowsExpectation` (no new kind / migration / runner change); guardrails = read-only single-statement validation + SQL-datasource-only gating + least-privilege role; binary pass/fail in v1 | [0019](docs/adr/0019-custom-sql-check-kind.md) | Accepted (2026-06-14) |
 
 ---
 

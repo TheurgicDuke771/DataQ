@@ -30,6 +30,7 @@ from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.db.models import ORCHESTRATION_PROVIDERS, Check, Connection, Suite
 from backend.app.services.check_service import validate_kind
+from backend.app.services.custom_sql import validate_custom_sql_check
 
 log = get_logger(__name__)
 
@@ -110,9 +111,16 @@ def import_suite(
             "they trigger suites via trigger bindings",
             detail={"connection_id": str(connection_id), "type": connection.type},
         )
-    # Validate every check kind up front so a bad document writes nothing.
+    # Validate every check (kind + custom-SQL guardrail) up front so a bad
+    # document writes nothing. connection.type is known here, so custom-SQL
+    # datasource gating + read-only checks apply at import too (ADR 0019).
     for c in checks:
         validate_kind(c["kind"])
+        validate_custom_sql_check(
+            expectation_type=c["expectation_type"],
+            config=c["config"],
+            connection_type=connection.type,
+        )
 
     suite = Suite(
         name=name,
