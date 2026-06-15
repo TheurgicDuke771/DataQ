@@ -20,7 +20,7 @@ export const isCustomSql = (expectationType: string | undefined): boolean =>
 // must contain none of them (as a bareword, after strings/comments are stripped).
 // `comment` / `replace` are omitted (common column name / `replace()` function),
 // matching the backend set.
-const FORBIDDEN_KEYWORDS = new Set([
+export const FORBIDDEN_KEYWORDS = new Set([
   'insert',
   'update',
   'delete',

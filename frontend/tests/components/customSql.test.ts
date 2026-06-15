@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   CUSTOM_SQL_EXPECTATION_TYPE,
+  FORBIDDEN_KEYWORDS,
   isCustomSql,
   validateCustomSqlQuery,
 } from '../../src/components/checks/customSql';
@@ -10,6 +11,11 @@ import {
  * Client-side mirror of the backend custom-SQL guardrail (ADR 0019). The backend
  * `validate_query` is authoritative; this is the inline editor pre-check. Mirrors
  * the backend battery's hostile cases so the two don't drift on what they reject.
+ *
+ * Stryker-spiked (~78%): every forbidden-keyword member is isolated and the
+ * scanner edges (escaped quote, unterminated, backtick) are pinned; the residual
+ * survivors are equivalent/brittle (message text, whitespace-placeholder), same
+ * as the backend — not chased on a UX mirror whose real boundary is the backend.
  */
 
 const VALID = [
@@ -52,6 +58,21 @@ describe('validateCustomSqlQuery', () => {
 
   it('reports the offending keyword in the message', () => {
     expect(validateCustomSqlQuery('SELECT 1 FROM {batch} WHERE drop = 1')).toContain('drop');
+  });
+
+  // Isolate every forbidden keyword as a bareword in a SELECT — a top-level DML
+  // statement is caught by the SELECT/WITH check, so without this each set
+  // member's removal goes unnoticed.
+  it.each([...FORBIDDEN_KEYWORDS])('rejects the bareword keyword %s', (keyword) => {
+    expect(validateCustomSqlQuery(`SELECT 1 FROM {batch} WHERE ${keyword} = 1`)).not.toBeNull();
+  });
+
+  it('treats an escaped quote as staying inside the string (no statement break)', () => {
+    // 'a''; DROP TABLE y' is ONE string literal ('' = escaped quote); the
+    // '; DROP' is inside it, so this is a single valid SELECT.
+    expect(
+      validateCustomSqlQuery("SELECT * FROM {batch} WHERE x = 'a''; DROP TABLE y'"),
+    ).toBeNull();
   });
 
   it('handles a huge trailing-whitespace query without hanging', () => {
