@@ -39,11 +39,14 @@ export function CheckNew() {
   const { state } = useAsyncData(async () => {
     if (!suiteId) throw new Error('no suite');
     const suite = await getSuite(suiteId);
-    const connection = await getConnection(suite.connection_id);
+    // Best-effort: a suite may be readable while its connection isn't (shared
+    // suite). The connection only gates the Custom-SQL category — never let its
+    // absence break the rest of the page (target / dry-run / profiler).
+    const connection = await getConnection(suite.connection_id).catch(() => null);
     return { suite, connection };
   });
   const target = state.status === 'ok' ? state.data.suite.target : null;
-  const connectionType = state.status === 'ok' ? state.data.connection.type : undefined;
+  const connectionType = state.status === 'ok' ? state.data.connection?.type : undefined;
   const categories = expectationsByCategoryFor(connectionType);
 
   const backToSuite = () => navigate(suiteId ? `/suites/${suiteId}` : '/suites');

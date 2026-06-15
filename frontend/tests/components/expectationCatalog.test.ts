@@ -43,6 +43,17 @@ describe('expectationsByCategoryFor (custom-SQL datasource gating, ADR 0019)', (
     expect(categoryNames(expectationsByCategoryFor(undefined))).not.toContain('Custom SQL');
   });
 
+  it('keeps Custom SQL when editing one even if the connection type is unknown', () => {
+    // Edit-drawer fallback: the prefilled custom-SQL type must stay selectable
+    // before the connection loads (and on a non-SQL type it stays hidden).
+    const editing = 'unexpected_rows_expectation';
+    expect(categoryNames(expectationsByCategoryFor(undefined, editing))).toContain('Custom SQL');
+    expect(categoryNames(expectationsByCategoryFor('s3', editing))).toContain('Custom SQL');
+    expect(
+      categoryNames(expectationsByCategoryFor('s3', 'expect_column_values_to_not_be_null')),
+    ).not.toContain('Custom SQL');
+  });
+
   it('keeps the datasource-agnostic categories regardless of type', () => {
     for (const type of ['snowflake', 's3', undefined] as const) {
       const names = categoryNames(expectationsByCategoryFor(type));

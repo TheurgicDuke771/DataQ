@@ -49,9 +49,9 @@ export const ORCHESTRATION_TYPES = typesOfKind('orchestration');
 
 /**
  * Datasources GX can run a custom-SQL (`UnexpectedRowsExpectation`) query against
- * — mirrors the backend `custom_sql.SQL_QUERYABLE_TYPES` (ADR 0019). Flat files
- * (ADLS / S3) are DataFrame assets, not SQL, so the custom-SQL check category is
- * offered only for these types; the backend rejects it (422) for any other.
+ * — mirrors the backend `custom_sql.SQL_QUERYABLE_TYPES` (ADR 0019). The custom-SQL
+ * check category is offered only for these SQL-queryable types; flat files (ADLS /
+ * S3) are DataFrame assets, not SQL, and the backend 422s custom-SQL on any other.
  */
 export const SQL_QUERYABLE_TYPES: ConnectionType[] = ['snowflake', 'unity_catalog'];
 

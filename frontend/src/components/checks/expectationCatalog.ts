@@ -157,11 +157,21 @@ export const EXPECTATIONS_BY_CATEGORY: {
  * for flat-file suites — and while the connection type is still loading
  * (`undefined`), so we never offer a category the backend would 422. Every other
  * category is datasource-agnostic.
+ *
+ * `alwaysIncludeType` keeps the group of an already-selected expectation visible
+ * regardless of gating — the edit drawer passes the check's current type so a
+ * custom-SQL check stays editable even before its connection type is known (else
+ * the Select would have no option matching the prefilled value).
  */
-export function expectationsByCategoryFor(connectionType: ConnectionType | undefined): {
+export function expectationsByCategoryFor(
+  connectionType: ConnectionType | undefined,
+  alwaysIncludeType?: string,
+): {
   category: ExpectationCategory;
   specs: ExpectationSpec[];
 }[] {
-  const allowCustomSql = connectionType !== undefined && isSqlQueryable(connectionType);
+  const allowCustomSql =
+    (connectionType !== undefined && isSqlQueryable(connectionType)) ||
+    alwaysIncludeType === CUSTOM_SQL_EXPECTATION_TYPE;
   return EXPECTATIONS_BY_CATEGORY.filter((g) => g.category !== 'Custom SQL' || allowCustomSql);
 }

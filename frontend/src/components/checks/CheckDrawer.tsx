@@ -102,10 +102,15 @@ export function CheckDrawer({
           <Select
             placeholder="Select an expectation"
             // Grouped by category (antd optgroups) — the GX-Cloud-style picker.
-            options={expectationsByCategoryFor(connectionType).map((g) => ({
-              label: g.category,
-              options: g.specs.map((e) => ({ value: e.type, label: e.label })),
-            }))}
+            // Pass the check's current type so Custom SQL stays selectable when
+            // editing one even before the connection type loads (else its
+            // prefilled value would have no matching option).
+            options={expectationsByCategoryFor(connectionType, check?.expectation_type).map(
+              (g) => ({
+                label: g.category,
+                options: g.specs.map((e) => ({ value: e.type, label: e.label })),
+              }),
+            )}
           />
         </Form.Item>
 
