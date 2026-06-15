@@ -8,6 +8,10 @@
           {
             "type": "command",
             "command": "input=$(cat); file_path=$(printf '%s' \"$input\" | jq -r '.tool_input.file_path // empty'); if [ -z \"$file_path\" ]; then exit 0; fi; case \"$file_path\" in *.py) if command -v black >/dev/null 2>&1; then black --quiet \"$file_path\"; fi; if command -v ruff >/dev/null 2>&1; then ruff check --fix --quiet \"$file_path\" || true; fi ;; esac"
+          },
+          {
+            "type": "command",
+            "command": "input=$(cat); fp=$(printf '%s' \"$input\" | jq -r '.tool_input.file_path // empty'); case \"$fp\" in */docs/progress.md) printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\",\"additionalContext\":\"docs/progress.md changed - if a roadmap item changed status, tick/untick the matching GitHub tracking epic (label:epic, issues #173-#177) so the epic mirror stays in sync with progress.md.\"}}';; esac"
           }
         ]
       },
