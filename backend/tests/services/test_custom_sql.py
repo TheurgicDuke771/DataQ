@@ -238,6 +238,14 @@ def test_unterminated_string_is_rejected() -> None:
         validate_query("SELECT 1 FROM {batch} WHERE n = 'unterminated ; DROP TABLE y")
 
 
+def test_large_trailing_whitespace_handled_linearly() -> None:
+    # Guards against reintroducing a polynomial-ReDoS in the trailing-token strip
+    # (CodeQL py/polynomial-redos): the query is user-provided, and a `[;\s]+$`
+    # regex would backtrack quadratically here. str.rstrip is linear — this
+    # returns instantly; a regex version would hang the test.
+    validate_query("SELECT 1 FROM {batch} WHERE x = 1" + "\t" * 50_000)
+
+
 def test_backtick_is_not_a_string_quote() -> None:
     # Snowflake / Unity Catalog don't quote strings with backticks, so a backtick
     # span must stay as code — otherwise a '; DROP' smuggled inside it is blanked

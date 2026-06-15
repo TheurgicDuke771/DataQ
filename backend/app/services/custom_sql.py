@@ -24,9 +24,15 @@ FastAPI-free like the sibling services: raises ``DataQError`` subclasses.
 from __future__ import annotations
 
 import re
+import string
 from typing import Any
 
 from backend.app.core.errors import DataQError
+
+# Trailing characters a single statement may end with (whitespace + a closing
+# semicolon). Stripped with str.rstrip (linear) rather than a `[;\s]+$` regex,
+# which is a polynomial-ReDoS sink on the user-provided query (CodeQL).
+_TRAILING_CHARS = string.whitespace + ";"
 
 # The GX expectation a custom-SQL check maps to (ADR 0019).
 CUSTOM_SQL_EXPECTATION_TYPE = "unexpected_rows_expectation"
@@ -177,7 +183,7 @@ def validate_query(raw_query: Any) -> None:
             detail={"query_key": QUERY_KEY},
         )
 
-    analysis = re.sub(r"[;\s]+$", "", code.strip())
+    analysis = code.strip().rstrip(_TRAILING_CHARS)
     if not analysis:
         raise CustomSqlInvalidError(
             "custom-SQL query is empty after removing comments",
