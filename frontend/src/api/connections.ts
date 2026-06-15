@@ -47,6 +47,16 @@ export const typesOfKind = (kind: ConnectionKind): ConnectionType[] =>
 export const DATASOURCE_TYPES = typesOfKind('datasource');
 export const ORCHESTRATION_TYPES = typesOfKind('orchestration');
 
+/**
+ * Datasources GX can run a custom-SQL (`UnexpectedRowsExpectation`) query against
+ * — mirrors the backend `custom_sql.SQL_QUERYABLE_TYPES` (ADR 0019). Flat files
+ * (ADLS / S3) are DataFrame assets, not SQL, so the custom-SQL check category is
+ * offered only for these types; the backend rejects it (422) for any other.
+ */
+export const SQL_QUERYABLE_TYPES: ConnectionType[] = ['snowflake', 'unity_catalog'];
+
+export const isSqlQueryable = (type: ConnectionType): boolean => SQL_QUERYABLE_TYPES.includes(type);
+
 export const CONNECTION_ENVS = ['dev', 'qa', 'uat', 'prod'] as const;
 export type ConnectionEnv = (typeof CONNECTION_ENVS)[number];
 
@@ -87,6 +97,12 @@ export async function listConnections(params?: {
   env?: ConnectionEnv;
 }): Promise<Connection[]> {
   const { data } = await api.get<Connection[]>('/connections', { params });
+  return data;
+}
+
+/** Fetch one connection by id (e.g. to learn a suite's datasource type). */
+export async function getConnection(id: string): Promise<Connection> {
+  const { data } = await api.get<Connection>(`/connections/${id}`);
   return data;
 }
 

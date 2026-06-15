@@ -12,17 +12,24 @@
  * every suite regardless of its connection type.
  */
 
-export type ConfigFieldType = 'string' | 'number' | 'list';
+import { isSqlQueryable, type ConnectionType } from '../../api/connections';
+import { CUSTOM_SQL_EXPECTATION_TYPE, CUSTOM_SQL_QUERY_KEY } from './customSql';
+
+export type ConfigFieldType = 'string' | 'number' | 'list' | 'sql';
 
 /**
  * Expectation categories — the GX-Cloud-style classification the check editor
- * groups by. v1 ships value-level GX expectations only; the monitor-kind seam
- * (ADR 0012) reserves Freshness / Volume / Schema-drift categories for v1.x
- * auto-monitors, surfaced (disabled) on the dedicated check page.
+ * groups by. v1 ships value-level GX expectations + custom-SQL (ADR 0019); the
+ * monitor-kind seam (ADR 0012) reserves Freshness / Volume / Schema-drift
+ * categories for v1.x auto-monitors, surfaced (disabled) on the dedicated page.
  */
-export type ExpectationCategory = 'Column values' | 'Table shape';
+export type ExpectationCategory = 'Column values' | 'Table shape' | 'Custom SQL';
 
-export const EXPECTATION_CATEGORIES: ExpectationCategory[] = ['Column values', 'Table shape'];
+export const EXPECTATION_CATEGORIES: ExpectationCategory[] = [
+  'Column values',
+  'Table shape',
+  'Custom SQL',
+];
 
 export interface ConfigField {
   /** Key in the GX `config` kwargs object. */
@@ -113,6 +120,20 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
       { name: 'max_value', label: 'Maximum rows', type: 'number', optional: true },
     ],
   },
+  {
+    type: CUSTOM_SQL_EXPECTATION_TYPE,
+    label: 'Custom SQL',
+    description: 'A SQL query that should return no rows — any rows it returns are failures.',
+    category: 'Custom SQL',
+    fields: [
+      {
+        name: CUSTOM_SQL_QUERY_KEY,
+        label: 'SQL query',
+        type: 'sql',
+        help: 'Use {batch} for the suite’s target table. The check passes when the query returns no rows. Read-only (SELECT / WITH) only.',
+      },
+    ],
+  },
 ];
 
 /** Lookup by expectation_type (for prefilling the editor in edit mode). */
@@ -129,3 +150,18 @@ export const EXPECTATIONS_BY_CATEGORY: {
   category,
   specs: EXPECTATION_CATALOG.filter((e) => e.category === category),
 }));
+
+/**
+ * Grouped catalog filtered for a suite's datasource. Custom SQL (ADR 0019) runs
+ * only on SQL-queryable connections (Snowflake / Unity Catalog), so it's hidden
+ * for flat-file suites — and while the connection type is still loading
+ * (`undefined`), so we never offer a category the backend would 422. Every other
+ * category is datasource-agnostic.
+ */
+export function expectationsByCategoryFor(connectionType: ConnectionType | undefined): {
+  category: ExpectationCategory;
+  specs: ExpectationSpec[];
+}[] {
+  const allowCustomSql = connectionType !== undefined && isSqlQueryable(connectionType);
+  return EXPECTATIONS_BY_CATEGORY.filter((g) => g.category !== 'Custom SQL' || allowCustomSql);
+}

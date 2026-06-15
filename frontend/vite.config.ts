@@ -35,6 +35,10 @@ export default defineConfig({
           if (!id.includes('node_modules')) return undefined;
           if (id.includes('/antd/') || id.includes('@ant-design/')) return 'antd';
           if (id.includes('@azure/')) return 'msal';
+          // Monaco is huge (~4 MB) and only used by the custom-SQL editor — keep
+          // it in its own chunk so the catch-all `vendor` doesn't pull it eagerly;
+          // it's reached only via the React.lazy SqlEditorField (ADR 0019).
+          if (id.includes('monaco-editor') || id.includes('@monaco-editor/')) return 'monaco';
           if (
             id.includes('/react/') ||
             id.includes('/react-dom/') ||
