@@ -450,6 +450,27 @@ def test_dryrun_rejects_non_snowflake_connection(client: TestClient, db_session:
     assert resp.json()["error"]["code"] == "dry_run_unsupported"
 
 
+def test_dryrun_rejects_non_readonly_custom_sql_before_running(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Dry-run executes the query, so the custom-SQL guardrail must apply here too
+    # (ADR 0019 review): a non-read-only query is a 422 and the runner is never
+    # reached.
+    sid = _suite_id(client, db_session)
+    runner = _FakeRunner(outcome=SuiteOutcome(success=True, checks=[]))
+    _patch_runner(monkeypatch, runner)
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks/dryrun",
+        json=_dryrun_body(
+            expectation_type="unexpected_rows_expectation",
+            config={"unexpected_rows_query": "DELETE FROM {batch}"},
+        ),
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "custom_sql_invalid"
+    assert runner.called_with is None  # rejected before the runner ran
+
+
 def test_dryrun_runner_failure_returns_502(
     client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:

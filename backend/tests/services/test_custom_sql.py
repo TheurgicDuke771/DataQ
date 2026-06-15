@@ -224,6 +224,23 @@ def test_keyword_immediately_after_block_comment_is_caught() -> None:
     assert exc.value.detail["forbidden"] == ["drop"]
 
 
-def test_unterminated_block_comment_consumes_to_end() -> None:
-    # No closing '*/' → the rest is comment; what's left ('SELECT 1') is valid.
-    validate_query("SELECT 1 FROM {batch} /* unclosed")
+def test_unterminated_block_comment_is_rejected() -> None:
+    # An unterminated string/comment swallows the rest of the query as literal
+    # text — we can't reason about it, so fail closed (ADR 0019 review).
+    with pytest.raises(CustomSqlInvalidError):
+        validate_query("SELECT 1 FROM {batch} /* unclosed ; DROP TABLE x")
+
+
+def test_unterminated_string_is_rejected() -> None:
+    # Without this, the open quote hides the trailing '; DROP TABLE y' from the
+    # multi-statement + keyword scan (a confirmed fail-open bypass).
+    with pytest.raises(CustomSqlInvalidError):
+        validate_query("SELECT 1 FROM {batch} WHERE n = 'unterminated ; DROP TABLE y")
+
+
+def test_backtick_is_not_a_string_quote() -> None:
+    # Snowflake / Unity Catalog don't quote strings with backticks, so a backtick
+    # span must stay as code — otherwise a '; DROP' smuggled inside it is blanked
+    # out before the scan (a confirmed bypass). The embedded ';' must be caught.
+    with pytest.raises(CustomSqlInvalidError):
+        validate_query("SELECT 1 FROM {batch} WHERE x = 1 `; DROP TABLE y; SELECT *`")

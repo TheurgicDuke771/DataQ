@@ -58,6 +58,28 @@ _FORBIDDEN_KEYWORDS = frozenset(
         "commit",
         "rollback",
         "into",  # SELECT ... INTO <table> creates a table in some dialects
+        # Defence-in-depth: other state-changing / proc-invoking statements. These
+        # are already blocked at the leading position (not SELECT/WITH); listing
+        # them catches a CTE- or subquery-embedded occurrence too. `comment` and
+        # `replace` are deliberately omitted — they collide with a common column
+        # name and the `replace()` string function respectively.
+        "call",
+        "exec",
+        "execute",
+        "do",
+        "copy",
+        "lock",
+        "set",
+        "reset",
+        "discard",
+        "prepare",
+        "deallocate",
+        "vacuum",
+        "analyze",
+        "use",
+        "attach",
+        "detach",
+        "unload",
     }
 )
 
@@ -75,18 +97,29 @@ def is_custom_sql(expectation_type: str) -> bool:
     return expectation_type == CUSTOM_SQL_EXPECTATION_TYPE
 
 
-def _strip_noncode(sql: str) -> str:
-    """Replace comments, string literals, and quoted identifiers with spaces in a
-    single left-to-right pass, leaving only executable code.
+def _strip_noncode(sql: str) -> tuple[str, bool]:
+    """Replace comments and string literals with spaces in a single left-to-right
+    pass, leaving only executable code. Returns ``(code, well_formed)``.
 
     A single pass (not sequential regexes) is required so neither construct can
     mask the other: a ``--`` *inside* a string must not be read as a comment (which
     could hide a trailing ``; DROP ...`` from the keyword scan), and a quote inside
     a comment must not start a bogus string. Handles ``--`` line comments, ``/* */``
-    block comments, and ``'`` / ``"`` / `` ` `` quotes (``''``/``""`` doubled-escape).
+    block comments, and ``'`` / ``"`` string/identifier quotes (``''``/``""``
+    doubled-escape).
+
+    **Backtick is intentionally NOT a quote here.** Our SQL datasources (Snowflake,
+    Unity Catalog) don't delimit strings with `` ` ``, so treating a backtick span as
+    a string would blank it out and let a ``; DROP`` hide inside it. Backticks stay
+    as code, so anything between them is keyword/`;`-scanned like the rest.
+
+    ``well_formed`` is ``False`` if a string or block comment is left unterminated:
+    the lexical analysis is then unreliable (the rest of the query was swallowed as
+    "string"/"comment"), so the caller must **fail closed** and reject.
     """
     out: list[str] = []
     i, n = 0, len(sql)
+    well_formed = True
     while i < n:
         pair = sql[i : i + 2]
         if pair == "--":
@@ -95,24 +128,32 @@ def _strip_noncode(sql: str) -> str:
             out.append(" ")
         elif pair == "/*":
             end = sql.find("*/", i + 2)
-            i = n if end == -1 else end + 2
+            if end == -1:
+                well_formed = False  # unterminated block comment
+                i = n
+            else:
+                i = end + 2
             out.append(" ")
-        elif sql[i] in "'\"`":
+        elif sql[i] in "'\"":
             quote = sql[i]
             i += 1
+            closed = False
             while i < n:
                 if sql[i] == quote:
-                    if quote in "'\"" and sql[i + 1 : i + 2] == quote:
+                    if sql[i + 1 : i + 2] == quote:
                         i += 2  # doubled quote = escaped, stay in the string
                         continue
                     i += 1
+                    closed = True
                     break
                 i += 1
+            if not closed:
+                well_formed = False  # unterminated string literal
             out.append(" ")
         else:
             out.append(sql[i])
             i += 1
-    return "".join(out)
+    return "".join(out), well_formed
 
 
 def validate_query(raw_query: Any) -> None:
@@ -127,7 +168,16 @@ def validate_query(raw_query: Any) -> None:
             detail={"query_key": QUERY_KEY},
         )
 
-    analysis = re.sub(r"[;\s]+$", "", _strip_noncode(raw_query).strip())
+    code, well_formed = _strip_noncode(raw_query)
+    if not well_formed:
+        # An unterminated string/comment means the rest of the query was swallowed
+        # as literal text — we can't reason about it, so fail closed.
+        raise CustomSqlInvalidError(
+            "custom-SQL has an unterminated string literal or comment",
+            detail={"query_key": QUERY_KEY},
+        )
+
+    analysis = re.sub(r"[;\s]+$", "", code.strip())
     if not analysis:
         raise CustomSqlInvalidError(
             "custom-SQL query is empty after removing comments",
