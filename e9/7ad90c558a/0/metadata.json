@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "e97ad90c558a",
+  "session_id": "a924d94a-4e18-45a5-9c36-7250cd2ff4f4",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-15T04:14:28.490932Z",
+  "branch": "feature/custom-sql-monaco-frontend",
+  "checkpoints_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "05b463c8f8e6",
+  "token_usage": {
+    "input_tokens": 35461,
+    "cache_creation_tokens": 1945268,
+    "cache_read_tokens": 119424258,
+    "output_tokens": 370194,
+    "api_call_count": 356
+  },
+  "session_metrics": {
+    "turn_count": 14
+  }
+}
