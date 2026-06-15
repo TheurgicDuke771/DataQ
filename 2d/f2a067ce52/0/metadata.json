@@ -1,0 +1,41 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "2df2a067ce52",
+  "session_id": "a924d94a-4e18-45a5-9c36-7250cd2ff4f4",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-15T04:23:39.150561Z",
+  "branch": "feature/custom-sql-monaco-frontend",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/api/connections.ts",
+    "frontend/src/components/checks/CheckDrawer.tsx",
+    "frontend/src/components/checks/expectationCatalog.ts",
+    "frontend/src/pages/CheckNew.tsx",
+    "frontend/tests/components/expectationCatalog.test.ts"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "05b463c8f8e6",
+  "token_usage": {
+    "input_tokens": 38449,
+    "cache_creation_tokens": 1971834,
+    "cache_read_tokens": 128000713,
+    "output_tokens": 385370,
+    "api_call_count": 370
+  },
+  "session_metrics": {
+    "turn_count": 14
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-15T04:23:39.107445Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 29,
+    "human_modified": 11,
+    "human_removed": 0,
+    "total_committed": 29,
+    "total_lines_changed": 40,
+    "agent_percentage": 0,
+    "metric_version": 2
+  }
+}
