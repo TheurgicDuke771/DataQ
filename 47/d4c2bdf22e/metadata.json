@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "47d4c2bdf22e",
+  "strategy": "manual-commit",
+  "branch": "docs/sync-week4-custom-sql-status",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "CLAUDE.md",
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/47/d4c2bdf22e/0/metadata.json",
+      "transcript": "/47/d4c2bdf22e/0/full.jsonl",
+      "content_hash": "/47/d4c2bdf22e/0/content_hash.txt",
+      "prompt": "/47/d4c2bdf22e/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 38853,
+    "cache_creation_tokens": 1996752,
+    "cache_read_tokens": 140129653,
+    "output_tokens": 402955,
+    "api_call_count": 389
+  }
+}
