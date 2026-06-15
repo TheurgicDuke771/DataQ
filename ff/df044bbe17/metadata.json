@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.6.3",
+  "checkpoint_id": "ffdf044bbe17",
+  "strategy": "manual-commit",
+  "branch": "docs/sync-prototype-epics-week67",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/ff/df044bbe17/0/metadata.json",
+      "transcript": "/ff/df044bbe17/0/full.jsonl",
+      "content_hash": "/ff/df044bbe17/0/content_hash.txt",
+      "prompt": "/ff/df044bbe17/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 40041,
+    "cache_creation_tokens": 2082875,
+    "cache_read_tokens": 157816567,
+    "output_tokens": 436045,
+    "api_call_count": 414
+  }
+}
