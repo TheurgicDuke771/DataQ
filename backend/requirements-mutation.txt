@@ -9,4 +9,4 @@
 #
 # Install:  pip install -r backend/requirements-mutation.txt
 
-mutmut==2.5.0
+mutmut==3.6.0
