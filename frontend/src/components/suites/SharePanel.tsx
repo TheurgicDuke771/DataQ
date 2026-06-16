@@ -1,5 +1,5 @@
 import { DeleteOutlined } from '@ant-design/icons';
-import { App, Alert, Button, Drawer, Empty, Flex, List, Select, Spin, Tag } from 'antd';
+import { App, Alert, Button, Drawer, Empty, Flex, List, Select, Spin, Tag, Tooltip } from 'antd';
 import { useEffect, useRef, useState } from 'react';
 
 import {
@@ -12,6 +12,7 @@ import {
   updateShare,
   type UserSummary,
 } from '../../api/shares';
+import { useCurrentUser } from '../../auth/useCurrentUser';
 import { useAsyncData } from '../../hooks/useAsyncData';
 
 /** The three grantable levels, in ladder order, with human labels. */
@@ -61,6 +62,10 @@ function SharePanelBody({
   canManage: boolean;
 }) {
   const { state, reload } = useAsyncData(() => listShares(suiteId));
+  // The signed-in user's directory address (MSAL UPN === their share `email`), so
+  // we can lock their own row: a non-owner admin must not self-revoke/-downgrade
+  // and brick the panel (every later mutation would 403). #240.
+  const currentEmail = useCurrentUser()?.username;
 
   if (state.status === 'loading') {
     return <Spin tip="Loading collaborators…" />;
@@ -97,6 +102,7 @@ function SharePanelBody({
               suiteId={suiteId}
               share={share}
               canManage={canManage}
+              isSelf={!!currentEmail && share.email.toLowerCase() === currentEmail.toLowerCase()}
               onChanged={reload}
             />
           )}
@@ -110,11 +116,14 @@ function ShareRow({
   suiteId,
   share,
   canManage,
+  isSelf,
   onChanged,
 }: {
   suiteId: string;
   share: Share;
   canManage: boolean;
+  /** This row is the signed-in user — lock it so they can't remove their own access. */
+  isSelf: boolean;
   onChanged: () => void;
 }) {
   const { message } = App.useApp();
@@ -149,7 +158,7 @@ function ShareRow({
   return (
     <List.Item
       actions={
-        canManage
+        canManage && !isSelf
           ? [
               <Select
                 key="perm"
@@ -171,7 +180,15 @@ function ShareRow({
                 aria-label={`Remove ${share.email}`}
               />,
             ]
-          : [<Tag key="perm">{share.permission}</Tag>]
+          : isSelf
+            ? [
+                // Locked: managers can't change their own access here (it would
+                // 403 every later mutation and brick the panel). #240.
+                <Tooltip key="perm" title="You can’t change your own access">
+                  <Tag>{share.permission} · You</Tag>
+                </Tooltip>,
+              ]
+            : [<Tag key="perm">{share.permission}</Tag>]
       }
     >
       <List.Item.Meta
