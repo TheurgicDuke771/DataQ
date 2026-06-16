@@ -29,7 +29,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.db.models import ORCHESTRATION_PROVIDERS, Check, Connection, Suite
-from backend.app.services.check_service import validate_kind
+from backend.app.services.check_service import record_check_version, validate_kind
 from backend.app.services.custom_sql import validate_custom_sql_check
 
 log = get_logger(__name__)
@@ -141,6 +141,9 @@ def import_suite(
         for c in checks
     ]
     session.add(suite)
+    session.flush()  # assign check ids so each can carry a v1 snapshot (#280)
+    for check in suite.checks:
+        record_check_version(session, check, actor_id=created_by)
     session.commit()
     session.refresh(suite)
     log.info(

@@ -12,6 +12,7 @@ responses emit `float` for clean JSON numbers, coerced from the stored Decimal.
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from decimal import Decimal
 from typing import Annotated, Any
 
@@ -87,6 +88,7 @@ def create_check(
         warn_threshold=payload.warn_threshold,
         fail_threshold=payload.fail_threshold,
         critical_threshold=payload.critical_threshold,
+        actor_id=current_user.id,
     )
     return CheckRead.model_validate(check)
 
@@ -143,6 +145,7 @@ def update_check(
         warn_threshold=payload.warn_threshold,
         fail_threshold=payload.fail_threshold,
         critical_threshold=payload.critical_threshold,
+        actor_id=current_user.id,
     )
     return CheckRead.model_validate(check)
 
@@ -160,6 +163,48 @@ def delete_check(
 ) -> None:
     require_permission(db, suite_id, current_user.id, minimum="edit")
     svc.delete_check(db, suite_id, check_id)
+
+
+# ───────────────────────── version history (#280) ──────────────────
+
+
+class CheckVersionRead(BaseModel):
+    """One snapshot in a check's history. Like `CheckRead`, thresholds are coerced
+    Decimal→float by Pydantic; `changed_by_name` (the author's display name or
+    email, NULL for a system actor / removed user) comes from the model property,
+    resolved server-side so the drawer needn't join users.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    version_no: int
+    name: str
+    kind: str
+    expectation_type: str
+    config: dict[str, Any]
+    warn_threshold: float | None
+    fail_threshold: float | None
+    critical_threshold: float | None
+    changed_by: uuid.UUID | None
+    changed_by_name: str | None
+    created_at: datetime
+
+
+@router.get(
+    "/suites/{suite_id}/checks/{check_id}/versions",
+    response_model=list[CheckVersionRead],
+    summary="List a check's version history (newest first)",
+)
+def list_check_versions(
+    suite_id: uuid.UUID,
+    check_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> list[CheckVersionRead]:
+    require_permission(db, suite_id, current_user.id, minimum="view")
+    return [
+        CheckVersionRead.model_validate(v) for v in svc.list_check_versions(db, suite_id, check_id)
+    ]
 
 
 # ───────────────────────── dry-run (preview, no persistence) ────────

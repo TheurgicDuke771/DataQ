@@ -323,6 +323,144 @@ def test_outsider_cannot_see_checks(client: TestClient, db_session: Any) -> None
     assert client.get(f"/api/v1/suites/{sid}/checks").status_code == 404
 
 
+# ───────────────────────── version history (#280) ──────────────────
+
+
+def test_create_records_initial_version(client: TestClient, db_session: Any) -> None:
+    sid = _suite_id(client, db_session)
+    cid = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()["id"]
+
+    resp = client.get(f"/api/v1/suites/{sid}/checks/{cid}/versions")
+    assert resp.status_code == 200
+    versions = resp.json()
+    assert len(versions) == 1
+    v1 = versions[0]
+    assert v1["version_no"] == 1
+    assert v1["expectation_type"] == "expect_column_values_to_not_be_null"
+    assert v1["config"] == {"column": "order_id"}
+    assert v1["changed_by_name"]  # the dev-bypass actor authored it
+
+
+def test_update_appends_version_newest_first(client: TestClient, db_session: Any) -> None:
+    sid = _suite_id(client, db_session)
+    cid = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()["id"]
+    client.patch(
+        f"/api/v1/suites/{sid}/checks/{cid}",
+        json={"config": {"column": "amount"}, "warn_threshold": 0.9},
+    )
+
+    versions = client.get(f"/api/v1/suites/{sid}/checks/{cid}/versions").json()
+    assert [v["version_no"] for v in versions] == [2, 1]  # newest first
+    # v2 is the post-update state; v1 still carries the original config (the
+    # whole point — "see previous config before overwriting").
+    assert versions[0]["config"] == {"column": "amount"}
+    assert versions[0]["warn_threshold"] == 0.9
+    assert versions[1]["config"] == {"column": "order_id"}
+    assert versions[1]["warn_threshold"] is None
+
+
+def test_noop_update_does_not_append_a_version(client: TestClient, db_session: Any) -> None:
+    sid = _suite_id(client, db_session)
+    cid = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()["id"]
+    # A PATCH that changes nothing (resends the current name) must not mint a
+    # duplicate version — history stays at v1.
+    assert (
+        client.patch(
+            f"/api/v1/suites/{sid}/checks/{cid}", json={"name": "orders not null"}
+        ).status_code
+        == 200
+    )
+    assert client.patch(f"/api/v1/suites/{sid}/checks/{cid}", json={}).status_code == 200
+
+    versions = client.get(f"/api/v1/suites/{sid}/checks/{cid}/versions").json()
+    assert [v["version_no"] for v in versions] == [1]
+
+
+def test_version_records_its_author(client: TestClient, db_session: Any) -> None:
+    owner = User(aad_object_id=uuid.uuid4().hex, email="ed@ex", display_name="Ed Editor")
+    db_session.add(owner)
+    db_session.flush()
+    conn = Connection(
+        name=f"sf-{uuid.uuid4().hex[:8]}",
+        type="snowflake",
+        env="dev",
+        config={"account": "x"},
+        created_by=owner.id,
+    )
+    db_session.add(conn)
+    db_session.commit()
+    _as(owner)
+    sid = client.post(
+        "/api/v1/suites", json={"name": "s", "description": None, "connection_id": str(conn.id)}
+    ).json()["id"]
+    cid = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()["id"]
+
+    v1 = client.get(f"/api/v1/suites/{sid}/checks/{cid}/versions").json()[0]
+    assert v1["changed_by"] == str(owner.id)
+    assert v1["changed_by_name"] == "Ed Editor"
+
+
+def test_versions_unknown_check_returns_404(client: TestClient, db_session: Any) -> None:
+    sid = _suite_id(client, db_session)
+    resp = client.get(f"/api/v1/suites/{sid}/checks/{uuid.uuid4()}/versions")
+    assert resp.status_code == 404
+
+
+def test_viewer_reads_versions_outsider_cannot(client: TestClient, db_session: Any) -> None:
+    owner, b, e, sid = _owner_b_e_suite(db_session)
+    _as(owner)
+    cid = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()["id"]
+    _grant(client, owner, sid, b, "view")
+
+    _as(b)  # a viewer can read history
+    assert client.get(f"/api/v1/suites/{sid}/checks/{cid}/versions").status_code == 200
+    _as(e)  # an outsider sees the suite as nonexistent (404, not 403)
+    assert client.get(f"/api/v1/suites/{sid}/checks/{cid}/versions").status_code == 404
+
+
+def test_import_records_initial_version_per_check(client: TestClient, db_session: Any) -> None:
+    owner = User(aad_object_id=uuid.uuid4().hex, email="imp@ex")
+    db_session.add(owner)
+    db_session.flush()
+    conn = Connection(
+        name=f"sf-{uuid.uuid4().hex[:8]}",
+        type="snowflake",
+        env="dev",
+        config={"account": "x"},
+        created_by=owner.id,
+    )
+    db_session.add(conn)
+    db_session.commit()
+    _as(owner)
+    resp = client.post(
+        "/api/v1/suites/import",
+        json={
+            "connection_id": str(conn.id),
+            "document": {
+                "name": "imported",
+                "checks": [
+                    {
+                        "name": "a",
+                        "expectation_type": "expect_column_values_to_not_be_null",
+                        "config": {"column": "x"},
+                    },
+                    {
+                        "name": "b",
+                        "expectation_type": "expect_column_values_to_be_unique",
+                        "config": {"column": "y"},
+                    },
+                ],
+            },
+        },
+    )
+    assert resp.status_code == 201
+    sid = resp.json()["id"]
+    for check in client.get(f"/api/v1/suites/{sid}/checks").json():
+        versions = client.get(f"/api/v1/suites/{sid}/checks/{check['id']}/versions").json()
+        assert len(versions) == 1
+        assert versions[0]["version_no"] == 1
+
+
 # ───────────────────────── dry-run (preview, no persistence) ────────
 
 
