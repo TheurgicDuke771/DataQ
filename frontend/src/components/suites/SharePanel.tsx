@@ -62,9 +62,11 @@ function SharePanelBody({
   canManage: boolean;
 }) {
   const { state, reload } = useAsyncData(() => listShares(suiteId));
-  // The signed-in user's directory address (MSAL UPN === their share `email`), so
-  // we can lock their own row: a non-owner admin must not self-revoke/-downgrade
-  // and brick the panel (every later mutation would 403). #240.
+  // Best-effort UX lock on the signed-in user's own row (MSAL UPN ≈ their share
+  // `email`): a non-owner admin self-revoking/-downgrading would brick the panel
+  // (every later mutation 403s). The durable guard is server-side
+  // (share_service._reject_self_target) since UPN can differ from mail and the
+  // API is reachable directly; this just hides the footgun in the common case. #240.
   const currentEmail = useCurrentUser()?.username;
 
   if (state.status === 'loading') {
@@ -158,37 +160,39 @@ function ShareRow({
   return (
     <List.Item
       actions={
-        canManage && !isSelf
-          ? [
-              <Select
-                key="perm"
-                size="small"
-                value={share.permission}
-                options={PERMISSION_OPTIONS}
-                disabled={busy}
-                onChange={onPermissionChange}
-                style={{ width: 110 }}
-              />,
-              <Button
-                key="remove"
-                size="small"
-                type="text"
-                danger
-                icon={<DeleteOutlined />}
-                loading={busy}
-                onClick={onRevoke}
-                aria-label={`Remove ${share.email}`}
-              />,
-            ]
+        !canManage
+          ? // Read-only for anyone without manage rights — including their own row.
+            [<Tag key="perm">{share.permission}</Tag>]
           : isSelf
             ? [
-                // Locked: managers can't change their own access here (it would
-                // 403 every later mutation and brick the panel). #240.
+                // A manager's own row is locked: self-revoke/-downgrade would 403
+                // every later mutation and brick the panel (backend rejects it too,
+                // share_service._reject_self_target). #240.
                 <Tooltip key="perm" title="You can’t change your own access">
                   <Tag>{share.permission} · You</Tag>
                 </Tooltip>,
               ]
-            : [<Tag key="perm">{share.permission}</Tag>]
+            : [
+                <Select
+                  key="perm"
+                  size="small"
+                  value={share.permission}
+                  options={PERMISSION_OPTIONS}
+                  disabled={busy}
+                  onChange={onPermissionChange}
+                  style={{ width: 110 }}
+                />,
+                <Button
+                  key="remove"
+                  size="small"
+                  type="text"
+                  danger
+                  icon={<DeleteOutlined />}
+                  loading={busy}
+                  onClick={onRevoke}
+                  aria-label={`Remove ${share.email}`}
+                />,
+              ]
       }
     >
       <List.Item.Meta
