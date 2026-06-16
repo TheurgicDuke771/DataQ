@@ -100,3 +100,16 @@ markers = [
 targets = ["backend/app"]
 exclude_dirs = ["backend/tests", "backend/alembic"]
 skips = ["B101"]  # assert is fine in non-production code
+
+# ── mutmut (mutation spikes) ─────────────────────────────────────────────────
+# Manual/periodic, NOT a CI gate (CONTRIBUTING rule 4a). mutmut 3.x copies the
+# tree into ./mutants/, chdir's in, and runs pytest there — so `also_copy` must
+# bring the whole importable package + tests + this config, and `-o addopts=`
+# strips the repo's --cov flags (mutmut runs its own coverage plugin; a second
+# --cov is a pytest usage error in-process). Per-spike: point `source_paths` at
+# the one module you're spiking and narrow the test selection to its tests.
+[tool.mutmut]
+source_paths = ["backend/app/services/custom_sql.py"]
+also_copy = ["backend", "pyproject.toml"]
+pytest_add_cli_args_test_selection = ["backend/tests/services/test_custom_sql.py"]
+pytest_add_cli_args = ["-o", "addopts="]
