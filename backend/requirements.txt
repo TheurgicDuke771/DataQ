@@ -35,7 +35,7 @@ pydantic-settings==2.14.1
 great-expectations==1.17.2
 
 # ── Observability ──
-structlog==25.5.0
+structlog==26.1.0
 opencensus-ext-azure==1.1.15      # App Insights via OpenCensus bridge
 
 # ── Auth / secrets ──
