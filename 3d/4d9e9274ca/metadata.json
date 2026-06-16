@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.7.5",
+  "checkpoint_id": "3d4d9e9274ca",
+  "strategy": "manual-commit",
+  "branch": "fix/security-cve-cryptography-formdata",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/3d/4d9e9274ca/0/metadata.json",
+      "transcript": "/3d/4d9e9274ca/0/full.jsonl",
+      "content_hash": "/3d/4d9e9274ca/0/content_hash.txt",
+      "prompt": "/3d/4d9e9274ca/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 43497,
+    "cache_creation_tokens": 3517006,
+    "cache_read_tokens": 164889233,
+    "output_tokens": 471505,
+    "api_call_count": 464
+  }
+}
