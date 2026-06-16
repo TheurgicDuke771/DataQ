@@ -187,6 +187,55 @@ class Check(Base):
     suite: Mapped["Suite"] = relationship(back_populates="checks")
 
 
+class CheckVersion(Base):
+    """An immutable snapshot of a check's editable state, written on create and
+    after every successful update — the source for the "version history" drawer
+    ("see previous config before overwriting"). v1 is view-only; restore is a
+    deferred follow-up. This is per-check config history, not the cross-entity
+    audit log (deferred to v1.1).
+
+    `version_no` is a per-check sequence starting at 1 (unique with `check_id`).
+    Rows survive the check (`ondelete=SET NULL` on `changed_by` for a deleted
+    author) but are cascade-deleted with the check itself.
+    """
+
+    __tablename__ = "check_versions"
+    __table_args__ = (
+        UniqueConstraint("check_id", "version_no", name="uq_check_versions_check_version"),
+        Index("ix_check_versions_check_id", "check_id"),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    check_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("checks.id", ondelete="CASCADE"), nullable=False
+    )
+    version_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Snapshot of the editable check fields (kind is immutable but snapshotted for
+    # a self-contained record). `config` is the GX expectation kwargs, as stored.
+    name: Mapped[str] = mapped_column(String(256), nullable=False)
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    expectation_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    config: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    warn_threshold: Mapped[Decimal | None] = mapped_column(Numeric)
+    fail_threshold: Mapped[Decimal | None] = mapped_column(Numeric)
+    critical_threshold: Mapped[Decimal | None] = mapped_column(Numeric)
+    # Who authored this version. NULL for a system/unknown actor or once the user
+    # is removed — the snapshot must outlive its author (SET NULL, not CASCADE).
+    changed_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = _created_at()
+
+    author: Mapped["User | None"] = relationship()
+
+    @property
+    def changed_by_name(self) -> str | None:
+        """The author's display name (or email) for the history drawer, or None
+        for a system actor / removed user. Reads the eager-loaded `author` —
+        callers that serialize this must `selectinload(CheckVersion.author)`."""
+        return (self.author.display_name or self.author.email) if self.author else None
+
+
 class Run(Base):
     __tablename__ = "runs"
     __table_args__ = (

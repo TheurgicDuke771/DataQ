@@ -22,12 +22,12 @@ import uuid
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session, selectinload
 
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
-from backend.app.db.models import Check, Connection, Suite
+from backend.app.db.models import Check, CheckVersion, Connection, Suite
 from backend.app.services.custom_sql import is_custom_sql, validate_custom_sql_check
 from backend.app.services.suite_service import get_suite
 
@@ -67,6 +67,39 @@ def validate_kind(kind: str) -> None:
         )
 
 
+def record_check_version(
+    session: Session, check: Check, *, actor_id: uuid.UUID | None
+) -> CheckVersion:
+    """Append an immutable snapshot of `check`'s current state as its next
+    version (a per-check sequence starting at 1). The caller commits — this only
+    adds the row, so the snapshot and the create/update it records commit
+    atomically. The `(check_id, version_no)` unique constraint is the backstop
+    against a concurrent double-write computing the same number (rare under v1's
+    single-tenant, low-concurrency editing).
+
+    `check.id` must be populated (flush or commit the check first).
+    """
+    # MAX over no rows is NULL → None; `or 0` makes the first version 1.
+    current_max = session.scalar(
+        select(func.max(CheckVersion.version_no)).where(CheckVersion.check_id == check.id)
+    )
+    next_no = (current_max or 0) + 1
+    version = CheckVersion(
+        check_id=check.id,
+        version_no=next_no,
+        name=check.name,
+        kind=check.kind,
+        expectation_type=check.expectation_type,
+        config=check.config,
+        warn_threshold=check.warn_threshold,
+        fail_threshold=check.fail_threshold,
+        critical_threshold=check.critical_threshold,
+        changed_by=actor_id,
+    )
+    session.add(version)
+    return version
+
+
 def create_check(
     session: Session,
     *,
@@ -78,8 +111,9 @@ def create_check(
     warn_threshold: Decimal | None,
     fail_threshold: Decimal | None,
     critical_threshold: Decimal | None,
+    actor_id: uuid.UUID | None = None,
 ) -> Check:
-    """Create a check in a suite.
+    """Create a check in a suite, recording its first version (#280).
 
     Raises `SuiteNotFoundError` (404) if the suite does not exist, or
     `CheckConfigInvalidError` (422) for an unsupported kind.
@@ -104,6 +138,8 @@ def create_check(
         critical_threshold=critical_threshold,
     )
     session.add(check)
+    session.flush()  # assign check.id so the v1 snapshot can reference it
+    record_check_version(session, check, actor_id=actor_id)
     session.commit()
     session.refresh(check)
     log.info("check_created", check_id=str(check.id), suite_id=str(suite_id))
@@ -139,8 +175,9 @@ def update_check(
     warn_threshold: Decimal | None = None,
     fail_threshold: Decimal | None = None,
     critical_threshold: Decimal | None = None,
+    actor_id: uuid.UUID | None = None,
 ) -> Check:
-    """Partial update. `suite_id` and `kind` are immutable.
+    """Partial update, snapshotting the post-update state as a new version (#280).
 
     Follows the codebase PATCH convention (connections / suites): a `None`
     argument means "not provided", so an omitted field is left unchanged. v1 has
@@ -169,6 +206,12 @@ def update_check(
             config=check.config,
             connection_type=_connection_type(session, suite),
         )
+    # Only snapshot a real change: a no-op PATCH (empty body, or fields set to
+    # their current values) must not mint a duplicate version — that would fill
+    # the history drawer with noise and defeat "see previous config". SQLAlchemy
+    # reports net changes, so setting a field to its existing value isn't dirty.
+    if session.is_modified(check):
+        record_check_version(session, check, actor_id=actor_id)
     session.commit()
     session.refresh(check)
     log.info("check_updated", check_id=str(check.id))
@@ -180,3 +223,21 @@ def delete_check(session: Session, suite_id: uuid.UUID, check_id: uuid.UUID) -> 
     session.delete(check)
     session.commit()
     log.info("check_deleted", check_id=str(check_id))
+
+
+def list_check_versions(
+    session: Session, suite_id: uuid.UUID, check_id: uuid.UUID
+) -> list[CheckVersion]:
+    """A check's version history, newest first (#280). 404 if the check is
+    missing or doesn't belong to `suite_id`. Eager-loads each version's author
+    (only query that needs it) so the API can name the editor without an N+1.
+    """
+    get_check(session, suite_id, check_id)  # 404 / cross-suite guard
+    return list(
+        session.scalars(
+            select(CheckVersion)
+            .where(CheckVersion.check_id == check_id)
+            .options(selectinload(CheckVersion.author))
+            .order_by(CheckVersion.version_no.desc())
+        )
+    )
