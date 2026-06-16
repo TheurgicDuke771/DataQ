@@ -1,7 +1,7 @@
 import { App as AntApp } from 'antd';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   grantShare,
@@ -11,7 +11,11 @@ import {
   searchUsers,
   updateShare,
 } from '../../src/api/shares';
+import { useCurrentUser } from '../../src/auth/useCurrentUser';
 import { SharePanel } from '../../src/components/suites/SharePanel';
+
+vi.mock('../../src/auth/useCurrentUser', () => ({ useCurrentUser: vi.fn(() => null) }));
+const mockCurrentUser = vi.mocked(useCurrentUser);
 
 vi.mock('../../src/api/shares', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/api/shares')>();
@@ -47,6 +51,9 @@ function renderPanel(props: Partial<Parameters<typeof SharePanel>[0]> = {}) {
   );
 }
 
+// Default: no signed-in identity matches any row (existing tests stay editable);
+// clearAllMocks doesn't reset return values, so re-establish the default per test.
+beforeEach(() => mockCurrentUser.mockReturnValue(null));
 afterEach(() => vi.clearAllMocks());
 
 describe('SharePanel', () => {
@@ -128,6 +135,24 @@ describe('SharePanel', () => {
     await user.click(screen.getByRole('button', { name: 'Remove b@acme.io' }));
 
     await waitFor(() => expect(mockRevoke).toHaveBeenCalledWith('s1', 'u-b'));
+  });
+
+  it("locks the signed-in user's own row so they can't self-revoke/-downgrade (#240)", async () => {
+    // MSAL username (UPN) matches the share email case-insensitively → self row.
+    mockCurrentUser.mockReturnValue({
+      name: 'Bee',
+      username: 'B@Acme.io',
+      homeAccountId: 'h',
+      isDev: false,
+    });
+    mockList.mockResolvedValue([SHARE_B]);
+    renderPanel(); // canManage — but the self row must still be read-only
+    await screen.findByText('Bee');
+
+    // No remove button + no editable permission select on the self row; instead a
+    // locked "· You" tag. (The add-collaborator picker's comboboxes still exist.)
+    expect(screen.queryByRole('button', { name: 'Remove b@acme.io' })).not.toBeInTheDocument();
+    expect(screen.getByText(/·\s*You/)).toBeInTheDocument();
   });
 
   it('hides management controls for a non-admin (read-only list)', async () => {

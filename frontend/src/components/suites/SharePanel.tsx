@@ -1,5 +1,5 @@
 import { DeleteOutlined } from '@ant-design/icons';
-import { App, Alert, Button, Drawer, Empty, Flex, List, Select, Spin, Tag } from 'antd';
+import { App, Alert, Button, Drawer, Empty, Flex, List, Select, Spin, Tag, Tooltip } from 'antd';
 import { useEffect, useRef, useState } from 'react';
 
 import {
@@ -12,6 +12,7 @@ import {
   updateShare,
   type UserSummary,
 } from '../../api/shares';
+import { useCurrentUser } from '../../auth/useCurrentUser';
 import { useAsyncData } from '../../hooks/useAsyncData';
 
 /** The three grantable levels, in ladder order, with human labels. */
@@ -61,6 +62,12 @@ function SharePanelBody({
   canManage: boolean;
 }) {
   const { state, reload } = useAsyncData(() => listShares(suiteId));
+  // Best-effort UX lock on the signed-in user's own row (MSAL UPN ≈ their share
+  // `email`): a non-owner admin self-revoking/-downgrading would brick the panel
+  // (every later mutation 403s). The durable guard is server-side
+  // (share_service._reject_self_target) since UPN can differ from mail and the
+  // API is reachable directly; this just hides the footgun in the common case. #240.
+  const currentEmail = useCurrentUser()?.username;
 
   if (state.status === 'loading') {
     return <Spin tip="Loading collaborators…" />;
@@ -97,6 +104,7 @@ function SharePanelBody({
               suiteId={suiteId}
               share={share}
               canManage={canManage}
+              isSelf={!!currentEmail && share.email.toLowerCase() === currentEmail.toLowerCase()}
               onChanged={reload}
             />
           )}
@@ -110,11 +118,14 @@ function ShareRow({
   suiteId,
   share,
   canManage,
+  isSelf,
   onChanged,
 }: {
   suiteId: string;
   share: Share;
   canManage: boolean;
+  /** This row is the signed-in user — lock it so they can't remove their own access. */
+  isSelf: boolean;
   onChanged: () => void;
 }) {
   const { message } = App.useApp();
@@ -149,29 +160,39 @@ function ShareRow({
   return (
     <List.Item
       actions={
-        canManage
-          ? [
-              <Select
-                key="perm"
-                size="small"
-                value={share.permission}
-                options={PERMISSION_OPTIONS}
-                disabled={busy}
-                onChange={onPermissionChange}
-                style={{ width: 110 }}
-              />,
-              <Button
-                key="remove"
-                size="small"
-                type="text"
-                danger
-                icon={<DeleteOutlined />}
-                loading={busy}
-                onClick={onRevoke}
-                aria-label={`Remove ${share.email}`}
-              />,
-            ]
-          : [<Tag key="perm">{share.permission}</Tag>]
+        !canManage
+          ? // Read-only for anyone without manage rights — including their own row.
+            [<Tag key="perm">{share.permission}</Tag>]
+          : isSelf
+            ? [
+                // A manager's own row is locked: self-revoke/-downgrade would 403
+                // every later mutation and brick the panel (backend rejects it too,
+                // share_service._reject_self_target). #240.
+                <Tooltip key="perm" title="You can’t change your own access">
+                  <Tag>{share.permission} · You</Tag>
+                </Tooltip>,
+              ]
+            : [
+                <Select
+                  key="perm"
+                  size="small"
+                  value={share.permission}
+                  options={PERMISSION_OPTIONS}
+                  disabled={busy}
+                  onChange={onPermissionChange}
+                  style={{ width: 110 }}
+                />,
+                <Button
+                  key="remove"
+                  size="small"
+                  type="text"
+                  danger
+                  icon={<DeleteOutlined />}
+                  loading={busy}
+                  onClick={onRevoke}
+                  aria-label={`Remove ${share.email}`}
+                />,
+              ]
       }
     >
       <List.Item.Meta

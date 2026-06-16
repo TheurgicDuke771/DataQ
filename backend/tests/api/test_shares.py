@@ -202,6 +202,33 @@ def test_update_missing_share_404(client: TestClient, db_session: Any) -> None:
     assert resp.json()["error"]["code"] == "share_not_found"
 
 
+def test_admin_cannot_self_downgrade(client: TestClient, db_session: Any) -> None:
+    # A non-owner admin downgrading their OWN share would self-lock out of share
+    # management (every later mutation 403s, bricking the panel) — rejected. #240.
+    owner, _b, c, _e, suite = _seed(db_session)
+    _as(owner)
+    client.post(
+        f"/api/v1/suites/{suite.id}/shares", json={"user_id": str(c.id), "permission": "admin"}
+    )
+    _as(c)
+    resp = client.patch(f"/api/v1/suites/{suite.id}/shares/{c.id}", json={"permission": "view"})
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "share_target_invalid"
+
+
+def test_admin_cannot_self_revoke(client: TestClient, db_session: Any) -> None:
+    # Likewise, an admin can't revoke their own share (same self-lockout). #240.
+    owner, _b, c, _e, suite = _seed(db_session)
+    _as(owner)
+    client.post(
+        f"/api/v1/suites/{suite.id}/shares", json={"user_id": str(c.id), "permission": "admin"}
+    )
+    _as(c)
+    resp = client.delete(f"/api/v1/suites/{suite.id}/shares/{c.id}")
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "share_target_invalid"
+
+
 def test_revoke_then_no_access(client: TestClient, db_session: Any) -> None:
     owner, b, _c, _e, suite = _seed(db_session)
     _as(owner)

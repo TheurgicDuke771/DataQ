@@ -42,6 +42,21 @@ class ShareTargetInvalidError(DataQError):
     code = "share_target_invalid"
 
 
+def _reject_self_target(
+    suite_id: uuid.UUID, actor_id: uuid.UUID, target_user_id: uuid.UUID
+) -> None:
+    """Forbid an admin from changing/revoking their *own* share. A non-owner admin
+    who self-downgrades or self-revokes loses access mid-session, and every later
+    share mutation then 403s — bricking the share panel (#240). Self-management is
+    never a legitimate need here (the owner has immutable full access; a non-owner
+    leaving a suite is a separate flow we don't offer in v1)."""
+    if target_user_id == actor_id:
+        raise ShareTargetInvalidError(
+            "cannot change or revoke your own share (would self-revoke your access)",
+            detail={"suite_id": str(suite_id), "user_id": str(target_user_id)},
+        )
+
+
 def _get_share(session: Session, suite_id: uuid.UUID, user_id: uuid.UUID) -> Share:
     share = session.scalars(
         select(Share).where(Share.suite_id == suite_id, Share.user_id == user_id)
@@ -116,6 +131,7 @@ def update_share(
 ) -> Share:
     """Change a user's permission. Actor needs `admin`."""
     require_permission(session, suite_id, actor_id, minimum="admin")
+    _reject_self_target(suite_id, actor_id, target_user_id)
     share = _get_share(session, suite_id, target_user_id)
     share.permission = permission
     session.commit()
@@ -135,6 +151,7 @@ def revoke_share(
 ) -> None:
     """Revoke a user's share. Actor needs `admin`."""
     require_permission(session, suite_id, actor_id, minimum="admin")
+    _reject_self_target(suite_id, actor_id, target_user_id)
     share = _get_share(session, suite_id, target_user_id)
     session.delete(share)
     session.commit()
