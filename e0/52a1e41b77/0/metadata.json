@@ -145,6 +145,37 @@
         "label": "Skill: update-config",
         "default_collapsed": true
       }
+    },
+    {
+      "id": "claude-skill-toolu_01BJtxB9fP3nEyxstDegqk97",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "69f329bb3734",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 2683,
+        "end": 2684,
+        "entry_ids": [
+          "f9382050-c221-4c13-b739-5f6a4805b0d3"
+        ],
+        "tool_use_id": "toolu_01BJtxB9fP3nEyxstDegqk97"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01BJtxB9fP3nEyxstDegqk97"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
     }
   ],
   "session_metrics": {
