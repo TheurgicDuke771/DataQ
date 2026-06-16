@@ -2,7 +2,9 @@
 const js = require('@eslint/js');
 const globals = require('globals');
 const reactHooks = require('eslint-plugin-react-hooks');
-const reactRefresh = require('eslint-plugin-react-refresh');
+// 0.5.x ships as an ESM module; the CJS require returns an interop wrapper, so
+// reach the plugin (with .rules/.configs) via .default.
+const reactRefresh = require('eslint-plugin-react-refresh').default;
 const tseslint = require('typescript-eslint');
 const prettierConfig = require('eslint-config-prettier');
 
