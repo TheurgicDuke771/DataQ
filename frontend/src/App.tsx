@@ -34,8 +34,12 @@ const NAV_ITEMS = [
 
 export function App() {
   const location = useLocation();
-  // Highlight the nav item whose path prefixes the current location.
-  const selectedKeys = NAV_ITEMS.map((i) => i.key).filter((k) => location.pathname.startsWith(k));
+  // Highlight the nav item whose path matches the current location — exact, or a
+  // sub-path at a segment boundary (so `/suites` matches `/suites/123` but not a
+  // sibling like `/suites-archive`). Plain startsWith would mis-highlight those.
+  const selectedKeys = NAV_ITEMS.map((i) => i.key).filter(
+    (k) => location.pathname === k || location.pathname.startsWith(`${k}/`),
+  );
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
