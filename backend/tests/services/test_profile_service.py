@@ -444,8 +444,8 @@ def test_profile_dataframe_survives_adversarial_input(name: str, frame: pd.DataF
 
 def test_profile_dataframe_empty_frame_null_fraction_is_zero() -> None:
     # pandas-path parity with assemble_profile (which pins this): a 0-row frame
-    # must report null_fraction 0.0, not 1.0. Surfaced by the mutation spike
-    # (mutmut id=155 — the `else 0.0` branch was covered but unasserted here).
+    # must report null_fraction 0.0, not 1.0. Surfaced by a mutation spike: the
+    # `else 0.0` branch was covered but unasserted here.
     df = pd.DataFrame({"x": pd.Series([], dtype="object")})
     result = profile_dataframe(df, columns=["x"], top_n=5, path="x.csv", file_format="csv")
     assert result.row_count == 0
