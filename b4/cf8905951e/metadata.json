@@ -5,6 +5,9 @@
   "branch": "feature/check-version-history-280",
   "checkpoints_count": 1,
   "files_touched": [
+    "backend/alembic/versions/c4d5e6f7a8b9_add_check_versions.py",
+    "backend/app/api/v1/checks.py",
+    "backend/app/db/models.py",
     "backend/app/services/check_service.py",
     "backend/app/services/suite_io_service.py",
     "backend/tests/api/test_checks.py"
@@ -18,10 +21,10 @@
     }
   ],
   "token_usage": {
-    "input_tokens": 60969,
-    "cache_creation_tokens": 3913786,
-    "cache_read_tokens": 215432303,
-    "output_tokens": 689251,
-    "api_call_count": 722
+    "input_tokens": 64021,
+    "cache_creation_tokens": 3943290,
+    "cache_read_tokens": 217291641,
+    "output_tokens": 701821,
+    "api_call_count": 735
   }
 }
