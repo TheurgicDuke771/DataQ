@@ -142,6 +142,31 @@ export async function deleteCheck(suiteId: string, checkId: string): Promise<voi
   await api.delete(`/suites/${suiteId}/checks/${checkId}`);
 }
 
+/**
+ * Mirrors the backend `CheckVersionRead` — one immutable snapshot in a check's
+ * history (#280). `changed_by_name` is the author's display name (or email),
+ * resolved server-side; null for a system actor or a removed user.
+ */
+export interface CheckVersion {
+  version_no: number;
+  name: string;
+  kind: string;
+  expectation_type: string;
+  config: Record<string, unknown>;
+  warn_threshold: number | null;
+  fail_threshold: number | null;
+  critical_threshold: number | null;
+  changed_by: string | null;
+  changed_by_name: string | null;
+  created_at: string;
+}
+
+/** A check's version history, newest first. Requires `view` on the suite. */
+export async function listCheckVersions(suiteId: string, checkId: string): Promise<CheckVersion[]> {
+  const { data } = await api.get<CheckVersion[]>(`/suites/${suiteId}/checks/${checkId}/versions`);
+  return data;
+}
+
 // ───────────────────────── export / import (portable documents) ─────
 
 /**
