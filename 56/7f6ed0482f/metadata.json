@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.7.5",
+  "checkpoint_id": "567f6ed0482f",
+  "strategy": "manual-commit",
+  "branch": "fix/week4-frontend-bug-sweep",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/56/7f6ed0482f/0/metadata.json",
+      "transcript": "/56/7f6ed0482f/0/full.jsonl",
+      "content_hash": "/56/7f6ed0482f/0/content_hash.txt",
+      "prompt": "/56/7f6ed0482f/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 55435,
+    "cache_creation_tokens": 3791190,
+    "cache_read_tokens": 205612211,
+    "output_tokens": 644380,
+    "api_call_count": 642
+  }
+}
