@@ -12,7 +12,7 @@ import {
   Upload,
 } from 'antd';
 import type { UploadFile } from 'antd';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import {
   CONNECTION_KIND,
@@ -50,6 +50,15 @@ export function ImportSuiteDrawer({
   const [fileName, setFileName] = useState<string>();
   const [parseError, setParseError] = useState<string>();
   const [submitting, setSubmitting] = useState(false);
+  // Monotonic token so a slow earlier file read can't overwrite a newer pick's
+  // result (last-wins). Bumped on every pick and on remove; the effect below
+  // bumps it on open/close so an in-flight parse from a prior open can't land in
+  // a freshly-reopened drawer. Ref writes aren't allowed during render, hence the
+  // effect rather than the render-phase reset block.
+  const latestFile = useRef(0);
+  useEffect(() => {
+    latestFile.current += 1;
+  }, [open]);
 
   // Reset everything when the drawer (re)opens — a stale document/connection from
   // a previous (possibly cancelled) import must not leak into the next one. The
@@ -69,15 +78,18 @@ export function ImportSuiteDrawer({
 
   // Parse + shape-check the dropped file; return false so antd never uploads it.
   const onFile = (file: File) => {
+    const token = (latestFile.current += 1);
     file
       .text()
       .then((text) => {
+        if (token !== latestFile.current) return; // superseded by a newer pick
         const parsed = parseSuiteDocument(text);
         setDoc(parsed);
         setFileName(file.name);
         setParseError(undefined);
       })
       .catch((err: unknown) => {
+        if (token !== latestFile.current) return; // superseded by a newer pick
         setDoc(null);
         setFileName(file.name);
         setParseError(err instanceof Error ? err.message : 'Could not read the file.');
@@ -132,6 +144,7 @@ export function ImportSuiteDrawer({
           beforeUpload={onFile}
           fileList={fileList}
           onRemove={() => {
+            latestFile.current += 1; // drop any in-flight parse for the removed file
             setDoc(null);
             setFileName(undefined);
             setParseError(undefined);
