@@ -3,21 +3,25 @@
   "checkpoint_id": "6d6ac7392c67",
   "session_id": "a924d94a-4e18-45a5-9c36-7250cd2ff4f4",
   "strategy": "manual-commit",
-  "created_at": "2026-06-16T07:51:41.344197Z",
+  "created_at": "2026-06-16T08:01:37.469304Z",
   "branch": "feature/check-history-drawer-frontend-280",
   "checkpoints_count": 1,
   "files_touched": [
-    "frontend/src/components/checks/CheckDrawer.tsx"
+    "frontend/src/api/suites.ts",
+    "frontend/src/components/checks/CheckDrawer.tsx",
+    "frontend/src/components/checks/CheckHistoryDrawer.tsx",
+    "frontend/tests/components/CheckDrawer.test.tsx",
+    "frontend/tests/components/CheckHistoryDrawer.test.tsx"
   ],
   "agent": "Claude Code",
   "model": "claude-opus-4-8",
   "turn_id": "915593e6d40b",
   "token_usage": {
-    "input_tokens": 68668,
-    "cache_creation_tokens": 4124203,
-    "cache_read_tokens": 222562096,
-    "output_tokens": 717395,
-    "api_call_count": 767
+    "input_tokens": 71567,
+    "cache_creation_tokens": 4151306,
+    "cache_read_tokens": 226183900,
+    "output_tokens": 730256,
+    "api_call_count": 785
   },
   "skill_events_version": 1,
   "skill_events": [
@@ -237,33 +241,52 @@
         "label": "Skill: code-review",
         "default_collapsed": true
       }
+    },
+    {
+      "id": "claude-skill-toolu_01HB2m6yJMPMib9UsRfNEu9t",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "915593e6d40b",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 3741,
+        "end": 3742,
+        "entry_ids": [
+          "2a55f6a2-183d-43ca-a7f1-50441ab40e5d"
+        ],
+        "tool_use_id": "toolu_01HB2m6yJMPMib9UsRfNEu9t"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01HB2m6yJMPMib9UsRfNEu9t"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
     }
   ],
   "session_metrics": {
     "turn_count": 28
   },
   "initial_attribution": {
-    "calculated_at": "2026-06-16T07:51:41.261652Z",
+    "calculated_at": "2026-06-16T08:01:37.379351Z",
     "agent_lines": 0,
     "agent_removed": 0,
-    "human_added": 250,
-    "human_modified": 0,
+    "human_added": 49,
+    "human_modified": 9,
     "human_removed": 0,
-    "total_committed": 250,
-    "total_lines_changed": 252,
+    "total_committed": 49,
+    "total_lines_changed": 58,
     "agent_percentage": 0,
     "metric_version": 2
-  },
-  "prompt_attributions": [
-    {
-      "checkpoint_number": 2,
-      "user_lines_added": 6,
-      "user_lines_removed": 0,
-      "agent_lines_added": 0,
-      "agent_lines_removed": 0,
-      "user_added_per_file": {
-        ".claude/settings.local.json": 6
-      }
-    }
-  ]
+  }
 }

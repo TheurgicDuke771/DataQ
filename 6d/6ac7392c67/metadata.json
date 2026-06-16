@@ -5,7 +5,11 @@
   "branch": "feature/check-history-drawer-frontend-280",
   "checkpoints_count": 1,
   "files_touched": [
-    "frontend/src/components/checks/CheckDrawer.tsx"
+    "frontend/src/api/suites.ts",
+    "frontend/src/components/checks/CheckDrawer.tsx",
+    "frontend/src/components/checks/CheckHistoryDrawer.tsx",
+    "frontend/tests/components/CheckDrawer.test.tsx",
+    "frontend/tests/components/CheckHistoryDrawer.test.tsx"
   ],
   "sessions": [
     {
@@ -16,10 +20,10 @@
     }
   ],
   "token_usage": {
-    "input_tokens": 68668,
-    "cache_creation_tokens": 4124203,
-    "cache_read_tokens": 222562096,
-    "output_tokens": 717395,
-    "api_call_count": 767
+    "input_tokens": 71567,
+    "cache_creation_tokens": 4151306,
+    "cache_read_tokens": 226183900,
+    "output_tokens": 730256,
+    "api_call_count": 785
   }
 }
