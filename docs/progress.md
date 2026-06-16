@@ -21,7 +21,7 @@
 |---|---|
 | **Active since** | 2026-05-24 |
 | **Current week** | Week 4 of 8 (Connection manager UI + check editor UI) — **in progress** (Weeks 1–3 complete) |
-| **Roadmap tasks done** | 65 ✅ + 7 🟡 / 161 (~40%) |
+| **Roadmap tasks done** | 76 ✅ + 18 🟡 / 177 (~43%) |
 | **Out-of-roadmap PRs landed** | governance, tooling lock, Entire CLI, Dependabot triage (10 bumps + pyarrow direct-dep fix #202/#201), PR-3 cleanup + ADRs 0005/0006/0007/0010/0011/0012/0013/0014/0016/**0017** (Python 3.11→3.13 + Snowflake 3→4 CVE refresh, [#129](https://github.com/TheurgicDuke771/DataQ/issues/129)) + the Week-3 testing-discipline upgrade (adversarial harness + mutation spikes, CONTRIBUTING rule 4a) |
 | **Week-1 exit gate** | A logged-in user can hit a FastAPI endpoint that triggers GX against Snowflake DEV and persists a result row. — **met** (plumbing complete via PR 4a–4c; live-Snowflake run fails-soft pending DEV creds — deferred smoke) |
 | **Next milestone** | Week 4 (frontend) nearly done: connection manager + suites list/detail + catalog check editor + dry-run + profiler + export/import + **sharing panel** + **run-target editor** + **manual Run button** + **Suite Triggers panel** (#216) + **Monaco custom-SQL editor** (ADR 0019; backend #258 + frontend #259) all shipped; **remaining**: admin page (still **backend-blocked** — needs a list-all endpoint) + the check version-history drawer. Week-5 early-credit landed (worker runner-dispatch [#146](https://github.com/TheurgicDuke771/DataQ/issues/146), ADF/Airflow polling [#171](https://github.com/TheurgicDuke771/DataQ/issues/171), `trigger_bindings` CRUD [#172](https://github.com/TheurgicDuke771/DataQ/issues/172)) |
@@ -80,7 +80,7 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [x] ✅ Connection re-auth endpoint — refresh expired Key Vault token — `POST /connections/{id}/reauth` (`svc.reauth_connection`): rotates the credential through `SecretStore.set` **and** verifies it via the same adapter probe as `/test`, in one step (the gap PATCH+`/test` leave open). Rotation persists before the probe, so a bad new credential surfaces as 502 `connection_test_failed`; a store-write failure is 502 `connection_secret_write_failed` with the old credential untouched. 6 TestClient tests (rotate+verify ok, failed-verify-but-rotation-persists, write-fail 502, 404, secret-required 422). Type-agnostic — applies to all six connection types
 - [x] ✅ Review `connections.secret_ref` nullability — decide based on Airflow basic-poll / unauthenticated S3 cases ([PR #41 nit](https://github.com/TheurgicDuke771/DataQ/pull/41)) — **decision: keep nullable.** It's NULL for the transient flush→secret-write window (create), for credential-less auth (managed-identity/IAM-role, W7, ADR 0010/0011), and for unauthenticated sources. v1 types are all secret-bearing, but presence is enforced in the **service layer** (`test_connection` → 502 without a credential), not the schema — so W7 credential-less modes need no later migration. Recorded as a comment on the `secret_ref` column in `db/models.py`
 
-### ADF webhook receiver (Azure Monitor → DQ platform) (5 tasks — 3 ✅ / 1 🟡 / 1 ⬜)
+### ADF webhook receiver (Azure Monitor → DQ platform) (5 tasks — 4 ✅ / 1 🟡)
 - [x] ✅ `POST /api/v1/orchestration/events/adf` — receive Azure Monitor payload, validate shared secret (constant-time, ADR 0006), return 200 — PR 7 _(unified `OrchestrationProvider` seam landed: `orchestration/base.py` Protocol + `RunUpdate` DTO + provider registry; ADF reference impl per ADR 0004 — service code dispatches by provider, never branches on ADF)_
 - [x] ✅ Parse webhook payload — `AdfProvider.parse_event` extracts `factoryName`/`pipelineName`/`runId`/`status`/`firedDateTime` → `RunUpdate`, ADF→`PIPELINE_RUN_STATUSES` normalisation — PR 7 _(exact Common-Alert-Schema field mapping validated at Week-7 deploy smoke)_
 - [x] ✅ Follow-up ADF REST API call on webhook receipt — fetch run details — PR 8 _(`AdfProvider.fetch_run_detail` GETs the ARM `pipelineruns/{runId}` for authoritative status/timing/message; `orchestration_service.ingest_event` enriches **best-effort** before upsert — any failure (no creds, transport) falls back to the parsed event so a valid webhook is never dropped)_
@@ -117,14 +117,14 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [x] ✅ API: suite export to JSON + import from JSON — `suite_io_service` + `GET /suites/{id}/export` (view) / `POST /suites/import` (any authed user, like create). Document is **connection-agnostic** — omits all DB identity (`id`/`connection_id`/`created_by`/timestamps), so it's a reusable template; import **re-binds** to a freshly chosen `connection_id` and owns the new suite as the importer. Round-trippable: thresholds are `Decimal` in/out (exact). Import is **atomic** — every check kind is validated before any row is written (bad doc → 422, nothing persisted); unknown `version` → 422; missing connection → 422. Checks emitted in stable creation order (diffable). Reuses `check_service.validate_kind` (no dup). 7 TestClient tests (no-identity-leak, view-gated, owned-by-importer, export→import→export round-trip, unknown-connection/version/kind-atomic); `suite_io_service` + `suites.py` 100%
 - [x] ✅ API: check dry-run endpoint — validate against live data, return preview result — `POST /suites/{id}/checks/dryrun` (`dryrun_service`): runs **one ad-hoc check** against the suite's connection synchronously and returns a preview (severity `status` + `metric_value` + sanitized `observed/expected`) **without persisting** any Run/Result. Reuses the severity derivation (ADR 0005/0016) + JSON sanitiser. `require_permission` **edit** (authoring); table passed in the body (checks don't carry a target table yet). v1 → 422: non-`expectation` kind, non-Snowflake connection (runner dispatch generalises Week 5); execution failure → 502 (adapter exception never echoed). No `sample_failures` in the preview (PII; follow-up). 7 TestClient tests (mocked runner); `dryrun_service` + `checks.py` 100%
 
-### Severity threshold tiers (warn / fail / critical) (4 tasks — 4/4)
+### Severity threshold tiers (warn / fail / critical) (4 tasks — 4/4 ✅)
 > **Day 1 design decision: severity weights — ✅ settled in [ADR 0005](adr/0005-severity-tier-weights.md) (warn 0.5 / fail 1.0 / critical 2.0; health = 100×(1−Σpenalty/(N×2.0))).**
 - [x] ✅ Add `warn_threshold`, `fail_threshold`, `critical_threshold` fields to check model — nullable `Numeric` columns on `Check` (NULL → plain pass/fail) — migration `9c59b6a44f33`
 - [x] ✅ Alembic migration — threshold columns + `status` enum (`pass`, `warn`, `fail`, `critical`) **+ the monitor-kind / metric columns below (one migration)** — the one-shot Week-3 schema seam `9c59b6a44f33` (tested up→down→up; `results.status` retargeted from `passed/failed/skipped` with a data-update-before-CHECK-swap; `run_service` now writes `pass`/`fail` binary-fallback per ADR 0005). `alembic check` clean (no model drift)
 - [x] ✅ Post-processing in GX result handler — derive `warn` / `fail` / `critical` from observed value (PR-C) — `services/severity.py` (`extract_metric` + `derive_status`), wired into `run_service._build_result`. Thresholds band the GX **unexpected-%** as `metric_value` (higher=worse, ordered, unset-tier skipped); thresholds-as-policy override GX `success`; binary fallback when no thresholds / no metric. **Settled in [ADR 0016](adr/0016-severity-derivation-semantics.md)** (incl. A→B reversibility: raw `observed_value` retained → switch is additive `direction` column + backfill, never destructive). `duration_ms` stays NULL (per-check timing not separable from GX's suite-level `validate()`). 16 unit + 1 integration test; both modules 100%
 - [x] ✅ Update check CRUD + run result response schemas with threshold fields + status values — check-CRUD thresholds (PR-B2) + result response now carries `status` (`pass`/`warn`/`fail`/`critical`) + `metric_value` (probe `CheckResultResponse`, PR-C)
 
-### Monitor abstraction & metric storage — do-now seams (3 tasks — 3/3)
+### Monitor abstraction & metric storage — do-now seams (3 tasks — 3/3 ✅)
 > **Day 1 design decision: `check.kind` discriminator + numeric metric storage — ✅ settled in [ADR 0012](adr/0012-monitor-kind-seam.md); rides the same migration.** Keeps v1.x auto-monitors (freshness / volume / schema-drift / anomaly — post-v1 Theme A) from forcing a check/result schema rewrite. v1 implements `expectation` only.
 - [x] ✅ Add `kind` discriminator to check model (`'expectation'` default; `freshness`/`volume`/`schema_drift`/`anomaly` reserved) — `checks.kind` `NOT NULL DEFAULT 'expectation'` + CHECK over the 6 reserved kinds (incl. `comparison`, ADR 0014) — migration `9c59b6a44f33`
 - [x] ✅ Generalise run path to dispatch by `check.kind` (`expectation` → GX `CheckRunner`; others raise `NotImplementedError`) — PR-D: `run_service._specs_for_checks` dispatches by kind; a non-`expectation` check raises `NotImplementedError` → the run goes terminal `failed` **without invoking the adapter** (never silently run as a GX expectation). Composes with the Week-5 `connection.type` runner selection (`kind` picks the monitor, type picks the adapter). `run_service` 100%; test fixtures now set `kind` to mirror DB rows
@@ -151,7 +151,7 @@ These were preconditions for executing the roadmap. Listed for completeness.
 
 **Exit gate:** Users can configure any connection type and author checks end-to-end in the UI.
 
-### Frontend tooling coordinated bumps (added — not in original roadmap) (1 task — 1/1)
+### Frontend tooling coordinated bumps (added — not in original roadmap) (1 task — 1/1 ✅)
 - [x] ✅ Vite 8 coordinated bump — `vite` ^6→^8.0.16 + `@vitejs/plugin-react` ^5→^6.0.2 + `vitest` ^3→^4.1.8 + `@vitest/coverage-v8` ^4.1.8 in lockstep — [PR #119](https://github.com/TheurgicDuke771/DataQ/pull/119) (Fixes [#65](https://github.com/TheurgicDuke771/DataQ/issues/65); supersedes Dependabot #111 + closed [#57](https://github.com/TheurgicDuke771/DataQ/pull/57)). plugin-react v6 peers `vite ^8`, vitest v4 peers `vite ^6||^7||^8` — done early to drain the frontend dep backlog; format/lint/typecheck/test/build all green
 
 ### Frontend polish from PR-3c review (added — not in original roadmap) (3 tasks — 3/3 ✅)
@@ -167,7 +167,7 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [x] ✅ ADLS/S3 connection form — account URL, SAS toggle — covered by the spec-driven drawer ([PR #196](https://github.com/TheurgicDuke771/DataQ/pull/196)) _(container browser + managed-identity/IAM-role modes deferred with the backend, ADR 0010/0011)_
 - [x] ✅ Databricks connection form — workspace URL, PAT, warehouse id — covered by the spec-driven drawer ([PR #196](https://github.com/TheurgicDuke771/DataQ/pull/196)) _(live SQL-Warehouse picker deferred; warehouse id is a text field)_
 
-### Check editor UI (9 tasks — 7/9 ✅)
+### Check editor UI (9 tasks — 9/9 ✅)
 - [x] ✅ Suite list + detail two-panel layout, environment badge on each suite — selectable suites list ←→ detail (connection chip + env tag + checks) — [PR #200](https://github.com/TheurgicDuke771/DataQ/pull/200)
 - [x] ✅ Form-based check editor — catalog-driven expectation picker + dynamic typed config fields + create/edit/delete — `expectationCatalog.ts` + `CheckDrawer` ([PR #203](https://github.com/TheurgicDuke771/DataQ/pull/203)). GX expectations are datasource-agnostic in v1, so one catalog serves all four types
 - [x] ✅ Flat file check editor — file path + format selector — the datasource-shaped **run-target editor** on the suite drawer ([PR #246](https://github.com/TheurgicDuke771/DataQ/pull/246)) authors a flat-file target (`path` + optional CSV/Parquet `file_format`), so ADLS/S3 suites become runnable; the generic catalog editor ([PR #203](https://github.com/TheurgicDuke771/DataQ/pull/203)) already covers flat-file expectations. _(Container/regex **batch-resolution** inputs remain a post-v1 polish — needs the flat-file listing surface.)_
@@ -217,7 +217,7 @@ These were preconditions for executing the roadmap. Listed for completeness.
 
 > **`trigger_bindings` CRUD** (provider-agnostic suite-run triggers — `provider`/`pipeline_or_dag_id`/`env` → `suite_id`) landed early via [PR #172](https://github.com/TheurgicDuke771/DataQ/pull/190), unblocking the trigger-on-success path skeletoned in Week 2 PR 8.
 
-### Execution UI (5 tasks — 0/5)
+### Execution UI (5 tasks — 1/5 ✅)
 - [ ] ⬜ Run now panel — suite picker, env / datasource, notification target
 - [ ] ⬜ Live run progress UI — check-by-check status with spinner + cancel button
 - [ ] ⬜ Scheduled runs table — create, pause, delete cron schedules
@@ -232,7 +232,7 @@ These were preconditions for executing the roadmap. Listed for completeness.
 
 **Exit gate:** Full results dashboard live across all source types; alerts firing with suppression.
 
-### Results dashboard (10 tasks — 1/10 ✅, + PR-C1 scaffold)
+### Results dashboard (10 tasks — 2/10 ✅)
 > **Build as an in-app React page** (the GX-Cloud-style redesign Phase C), **not Grafana** — reading Postgres directly would bypass DataQ's per-suite sharing + PII redaction; Grafana is deferred to an optional post-v1 ops add-on ([ADR 0018](adr/0018-results-surface-and-grafana-deferral.md), accepted). The Week-5 run-enablement backend it gates on is **done**: `runs.py` read endpoints (`GET /runs`, `GET /runs/{id}`, `GET /pipeline_runs`) + `POST /suites/{id}/run` (PR-C0b); [#215](https://github.com/TheurgicDuke771/DataQ/issues/215) target (PR-C0a). The `results.metric_value`/`duration_ms` columns were seam-built for these trend charts (ADR 0012).
 - [x] ✅ **Results page scaffold** (PR-C1) — the in-app `/results` page + sidebar nav (Connections · Suites · **Results** · Profile). **Runs tab**: a runs table (suite name, status, triggered-by, started, duration) with a status filter, each row opening a **run-detail drawer** that drills into the per-check results (check name + expectation, severity tag, `metric_value`, observed value). **Pipeline runs tab**: the orchestration monitoring feed (`pipeline_runs`) with a provider filter. Pure presentation helpers (`resultsFormat.ts` — duration/timestamp formatters, status→colour maps) are unit-tested; `api/runs.ts` mirrors the C0b schemas. Demo seed (`demo_data.py`) now lands runs + results (pass/pass/warn/fail spread) + two pipeline-runs + suite targets so the page has real content. 10 vitest + 2 Playwright (`results.spec.ts`). _The rich widgets below build on this scaffold._
 - [ ] ⬜ Health score stat cards + 7-day trend chart
@@ -273,7 +273,7 @@ These were preconditions for executing the roadmap. Listed for completeness.
 
 **Exit gate:** Production-ready v1 deployed to Azure, CI/CD live, team onboarded.
 
-### DevOps & deployment (5 tasks — 0/5, 1 partial early)
+### DevOps & deployment (6 tasks — 0/6, 1 partial early)
 - [ ] 🟡 Containerise FastAPI + React + Celery + Redis — backend `Dockerfile` + `api`/`worker` compose services landed early ([PR 4a](https://github.com/TheurgicDuke771/DataQ/pull/74)); React image + ACR/ACA still pending
 - [ ] ⬜ Push images to Azure Container Registry
 - [ ] ⬜ Deploy to Azure Container Apps (API + Celery worker) + Azure Static Web App (React UI) — wire CORS middleware for Static-Web-App → Container-Apps cross-origin ([PR #40 nit](https://github.com/TheurgicDuke771/DataQ/pull/40)); override hardcoded `dataq:dataq` Postgres creds + all secrets via Container Apps secret refs ([PR #39 nit](https://github.com/TheurgicDuke771/DataQ/pull/39))
@@ -302,7 +302,7 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [ ] ⬜ LLM-optimised docstrings for all 8 tools
 - [ ] ⬜ E2E test with Claude Desktop — 4 canonical natural-language queries
 
-### Hardening & docs (5 tasks — 0/5 + 1 🟡)
+### Hardening & docs (6 tasks — 0/6 + 1 🟡)
 - [ ] 🟡 E2E test coverage for critical paths — full-stack E2E landed early ([#128](https://github.com/TheurgicDuke771/DataQ/issues/128)): API smoke (`backend/scripts/e2e_smoke.py`, 12/12) + browser smoke (`frontend/e2e/`, Playwright, 6/6, CI `frontend-e2e` job) cover auth/dev-bypass + the read + authoring paths. **Live run paths (Snowflake/flat-file/UC) still pending the W5 execution path + #215.**
 - [ ] ⬜ Error handling audit — consistent error shapes across all endpoints
 - [ ] ⬜ Ensure all FastAPI endpoints have `summary`, `description`, `tags`, `response_model`
@@ -349,7 +349,7 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [ ] ⬜ Results endpoints — dashboard data, drill-down, filters, download
 - [x] 🟡 ADF webhook endpoint — valid payload → 200 (recorded/ignored), missing+wrong token → 401, malformed/non-JSON → 422, secret-unconfigured → 503 (9 TestClient tests) — PR 7; duplicate-runId idempotency asserted at the service layer
 
-### Frontend unit tests (Vitest + RTL) (6 tasks — 1/6)
+### Frontend unit tests (Vitest + RTL) (8 tasks — 1/8 ✅)
 - [x] ✅ **AuthGate** — 4 tests (dev_bypass renders children, unconfigured banner, real+unauth sign-in button, real+auth renders children) — [PR 3c](https://github.com/TheurgicDuke771/DataQ/pull/63)
 - [x] 🟡 **API client interceptor** — 3 tests (no-token in dev, Bearer in real-with-account, no-token in real-without-account) — [PR 3c](https://github.com/TheurgicDuke771/DataQ/pull/63)
 - [ ] ⬜ Login screen — Azure AD button renders, redirects on click
@@ -378,15 +378,15 @@ These were preconditions for executing the roadmap. Listed for completeness.
 
 | Week | Done | In progress | Pending | Total |
 |---|---|---|---|---|
-| Week 1 | 7 | 1 | 2 | 10 |
+| Week 1 | 7 | 3 | 0 | 10 |
 | Week 2 | 15 | 1 | 3 | 19 |
 | Week 3 | 18 | 0 | 0 | 18 |
-| Week 4 | 17 | 2 | 7 | 26 |
-| Week 5 | 6 | 0 | 12 | 18 |
-| Week 6 | 2 | 0 | 20 | 22 |
-| Week 7 | 0 | 1 | 33 | 34 |
-| Week 8 | 2 | 4 | 20 | 26 |
-| **TOTAL** | **66** | **9** | **98** | **173** |
+| Week 4 | 25 | 0 | 1 | 26 |
+| Week 5 | 7 | 0 | 11 | 18 |
+| Week 6 | 2 | 3 | 17 | 22 |
+| Week 7 | 0 | 2 | 32 | 34 |
+| Week 8 | 2 | 9 | 19 | 30 |
+| **TOTAL** | **76** | **18** | **83** | **177** |
 
 > Post-v1 items (marketing landing page, dark mode) are tracked in their own section below and are **excluded** from this weekly aggregate.
 
