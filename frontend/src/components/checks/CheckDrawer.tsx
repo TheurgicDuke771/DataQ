@@ -1,3 +1,4 @@
+import { HistoryOutlined } from '@ant-design/icons';
 import { App, Button, Drawer, Flex, Form, Input, Select, Typography } from 'antd';
 import { useEffect, useState } from 'react';
 
@@ -5,6 +6,7 @@ import type { ConnectionType } from '../../api/connections';
 import { type Check, updateCheck } from '../../api/suites';
 import { buildCheckPayload, configToForm } from './checkForm';
 import { ConfigFieldItem, SeverityThresholdFields } from './checkFormFields';
+import { CheckHistoryDrawer } from './CheckHistoryDrawer';
 import { ColumnProfilePanel } from './ColumnProfilePanel';
 import { DryRunPreview } from './DryRunPreview';
 import { EXPECTATION_BY_TYPE, expectationsByCategoryFor } from './expectationCatalog';
@@ -38,6 +40,7 @@ export function CheckDrawer({
   const { message } = App.useApp();
   const [form] = Form.useForm();
   const [submitting, setSubmitting] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const selectedType = Form.useWatch('expectation_type', form) as string | undefined;
   const column = Form.useWatch(['config', 'column'], form) as string | undefined;
   const spec = selectedType ? EXPECTATION_BY_TYPE[selectedType] : undefined;
@@ -56,6 +59,18 @@ export function CheckDrawer({
       critical_threshold: check.critical_threshold ?? undefined,
     });
   }, [open, check, form]);
+
+  // Close the history sub-drawer whenever this drawer closes or switches to a
+  // different check — otherwise a left-open history would re-pop (showing the
+  // new check) the next time the editor opens. Render-phase reset (the same
+  // "adjust state when a prop changes" pattern as ImportSuiteDrawer's prevOpen),
+  // not an effect, which can't setState synchronously.
+  const histScope = open ? (check?.id ?? null) : null;
+  const [histScopeSeen, setHistScopeSeen] = useState(histScope);
+  if (histScope !== histScopeSeen) {
+    setHistScopeSeen(histScope);
+    setHistoryOpen(false);
+  }
 
   const onSubmit = async () => {
     if (!check) return;
@@ -87,6 +102,11 @@ export function CheckDrawer({
       destroyOnHidden
       extra={
         <Flex gap={8}>
+          {check && (
+            <Button icon={<HistoryOutlined />} onClick={() => setHistoryOpen(true)}>
+              History
+            </Button>
+          )}
           <Button onClick={onClose}>Cancel</Button>
           <Button type="primary" loading={submitting} onClick={onSubmit}>
             Save
@@ -136,6 +156,13 @@ export function CheckDrawer({
           form={form}
         />
       </Form>
+
+      <CheckHistoryDrawer
+        open={historyOpen}
+        suiteId={suiteId}
+        check={check ?? null}
+        onClose={() => setHistoryOpen(false)}
+      />
     </Drawer>
   );
 }
