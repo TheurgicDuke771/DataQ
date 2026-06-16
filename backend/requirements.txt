@@ -49,7 +49,7 @@ snowflake-sqlalchemy==1.10.1       # ≥1.8 lifts the connector<4.0 cap (#129)
 snowflake-connector-python==4.6.0  # 3→4: drops cffi<2 / pyOpenSSL<26 caps → unblocks cryptography≥46.0.7 + pyOpenSSL≥26 CVE fixes (#129)
 azure-storage-blob==12.30.0       # ADLS Gen2
 boto3==1.38.29                    # S3
-databricks-sql-connector==4.2.6   # Unity Catalog
+databricks-sql-connector==4.3.0   # Unity Catalog
 pyarrow==24.0.0                   # Parquet flat-file IO (read_parquet/profiler) — was a databricks-sql-connector transitive until its 4.x dropped it (#201)
 
 # ── MCP (Week 7) ──
