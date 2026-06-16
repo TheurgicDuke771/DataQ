@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.5",
+  "checkpoint_id": "6d6ac7392c67",
+  "strategy": "manual-commit",
+  "branch": "feature/check-history-drawer-frontend-280",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/components/checks/CheckDrawer.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/6d/6ac7392c67/0/metadata.json",
+      "transcript": "/6d/6ac7392c67/0/full.jsonl",
+      "content_hash": "/6d/6ac7392c67/0/content_hash.txt",
+      "prompt": "/6d/6ac7392c67/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 68668,
+    "cache_creation_tokens": 4124203,
+    "cache_read_tokens": 222562096,
+    "output_tokens": 717395,
+    "api_call_count": 767
+  }
+}
