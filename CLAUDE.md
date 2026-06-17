@@ -6,7 +6,7 @@
 
 ## 1. Project summary
 
-**DataQ** is the v1 evolution of SnowQ — a single-tenant data quality monitoring platform built around Great Expectations (GX Core). It runs DQ checks across **4 datasources** and integrates with **2 orchestration providers**.
+**DataQ** is a single-tenant data quality monitoring platform built around Great Expectations (GX Core). It runs DQ checks across **4 datasources** and integrates with **2 orchestration providers**.
 
 | Layer | Components |
 |---|---|

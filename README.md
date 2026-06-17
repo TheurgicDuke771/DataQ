@@ -1,7 +1,6 @@
 # DataQ
 
-> Data quality monitoring platform built around Great Expectations.
-> v1 evolution of SnowQ — Snowflake (DEV/QA/UAT), ADLS Gen2, S3, Unity Catalog (Databricks), with ADF + Airflow orchestration integrations.
+> Data quality monitoring platform built around Great Expectations — Snowflake (DEV/QA/UAT), ADLS Gen2, S3, Unity Catalog (Databricks), with ADF + Airflow orchestration integrations.
 
 **Status:** pre-v1 — Week 4 in progress (execution backend). Weeks 1–3 complete. Live task-level progress at [docs/progress.md](docs/progress.md).
 
