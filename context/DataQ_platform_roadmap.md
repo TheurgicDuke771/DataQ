@@ -9,7 +9,7 @@
 > - **Apache Airflow** was added as a second orchestration provider after this roadmap was written and is in scope for v1.
 > - **DQX for Databricks DLT / streaming** is deferred to v1.1. See [ADR 0003](../docs/adr/0003-gx-only-for-v1.md). v1 uses GX-only across all four datasources.
 
-> **DataQ** — Data quality monitoring platform. The evolution of SnowQ, extended to Snowflake · ADLS Gen2 · S3 · Unity Catalog · ADF.
+> **DataQ** — Data quality monitoring platform. Covers Snowflake · ADLS Gen2 · S3 · Unity Catalog · ADF.
 
 **Stack:** GX Core · FastAPI · React + Vite + Ant Design · Celery + Redis · PostgreSQL · Azure Container Apps  
 **Timeline:** 8 weeks  
