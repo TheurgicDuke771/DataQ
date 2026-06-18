@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.7.6",
+  "checkpoint_id": "bca60a398d51",
+  "strategy": "manual-commit",
+  "branch": "feature/admin-backend-list-all",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "frontend/src/auth/MeProvider.tsx",
+    "frontend/src/components/Forbidden.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/bc/a60a398d51/0/metadata.json",
+      "transcript": "/bc/a60a398d51/0/full.jsonl",
+      "content_hash": "/bc/a60a398d51/0/content_hash.txt",
+      "prompt": "/bc/a60a398d51/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 102172,
+    "cache_creation_tokens": 4787295,
+    "cache_read_tokens": 246380112,
+    "output_tokens": 829737,
+    "api_call_count": 925
+  }
+}
