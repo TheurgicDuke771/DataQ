@@ -5,6 +5,7 @@ import { BrowserRouter } from 'react-router-dom';
 
 import { App } from './App';
 import { CurrentUserProvider } from './auth/CurrentUserProvider';
+import { MeProvider } from './auth/MeProvider';
 import { MsalProvider } from './auth/MsalProvider';
 import { getMsalInstance } from './auth/msalInstance';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -35,9 +36,11 @@ async function bootstrap() {
           <ErrorBoundary>
             <MsalProvider>
               <CurrentUserProvider>
-                <BrowserRouter>
-                  <App />
-                </BrowserRouter>
+                <MeProvider>
+                  <BrowserRouter>
+                    <App />
+                  </BrowserRouter>
+                </MeProvider>
               </CurrentUserProvider>
             </MsalProvider>
           </ErrorBoundary>
