@@ -40,7 +40,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "input=$(cat); file_path=$(printf '%s' \"$input\" | jq -r '.tool_input.file_path // empty'); if [ -z \"$file_path\" ]; then exit 0; fi; if printf '%s' \"$file_path\" | grep -qE '(^|/)\\.env($|\\.)' && ! printf '%s' \"$file_path\" | grep -qE '\\.env\\.example$'; then echo 'Blocked: .env files must not be created or edited (public repo). Use .env.example as the template.' >&2; exit 2; fi"
+            "command": "input=$(cat); file_path=$(printf '%s' \"$input\" | jq -r '.tool_input.file_path // empty'); if [ -z \"$file_path\" ]; then exit 0; fi; if printf '%s' \"$file_path\" | grep -qE '(^|/)\\.env($|\\.)' && ! printf '%s' \"$file_path\" | grep -qE '\\.env(\\.[^/]+)?\\.example$'; then echo 'Blocked: .env files must not be created or edited (public repo). Use .env.example as the template.' >&2; exit 2; fi"
           }
         ]
       },
