@@ -1,10 +1,11 @@
 import { Alert, Card, Descriptions, Spin, Typography } from 'antd';
 
-import { fetchMe } from '../api/me';
-import { useAsyncData } from '../hooks/useAsyncData';
+import { useMe } from '../auth/useMe';
 
 export function Home() {
-  const { state } = useAsyncData(fetchMe);
+  // Reuse the shared /me fetch (MeProvider) rather than fetching again — it's
+  // already resolved by the time the Profile page renders.
+  const state = useMe();
 
   if (state.status === 'loading') {
     return <Spin tip="Loading /api/v1/me…" size="large" style={{ marginTop: 80 }} />;

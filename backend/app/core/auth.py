@@ -176,3 +176,36 @@ elif _dev_bypass_allowed(_settings):
     get_current_user = _get_current_user_dev_bypass
 else:
     get_current_user = _get_current_user_unconfigured
+
+
+def is_workspace_admin(user: User) -> bool:
+    """True iff the user is in the workspace-admin allowlist (WORKSPACE_ADMIN_EMAILS).
+
+    Workspace admin is a single config-driven set — the whole-workspace
+    administrator, distinct from the per-suite view/edit/admin/owner ladder in
+    `suite_authz`. Matched case-insensitively on the IdP-supplied email, a
+    generic identity attribute, so no Azure/Entra claim is read here
+    (ADR 0010/0013, CLAUDE.md §11). Resolves the allowlist via `get_settings()`
+    (not the import-time `_settings` singleton) so a test can vary it with
+    `get_settings.cache_clear()`; in a running process settings are read once at
+    startup (12-factor — change the env and restart).
+    """
+    email = (user.email or "").strip().lower()
+    return bool(email) and email in get_settings().workspace_admin_email_set
+
+
+def require_workspace_admin(
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> User:
+    """FastAPI dependency gating the /admin endpoints — 403 for a non-admin.
+
+    Server-side authz (never a client toggle): a non-admin gets a real 403, which
+    the frontend renders as the forbidden page.
+    """
+    if not is_workspace_admin(current_user):
+        raise DataQError(
+            code="workspace_admin_required",
+            message="This action requires workspace-admin access.",
+            status_code=403,
+        )
+    return current_user

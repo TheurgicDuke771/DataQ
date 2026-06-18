@@ -7,6 +7,7 @@ from typing import Final
 
 from fastapi import FastAPI, Request, Response
 
+from backend.app.api.v1 import admin as admin_router
 from backend.app.api.v1 import checks as checks_router
 from backend.app.api.v1 import connections as connections_router
 from backend.app.api.v1 import me as me_router
@@ -96,6 +97,7 @@ app.include_router(runs_router.router, prefix="/api/v1")
 app.include_router(shares_router.router, prefix="/api/v1")
 app.include_router(orchestration_router.router, prefix="/api/v1")
 app.include_router(trigger_bindings_router.router, prefix="/api/v1")
+app.include_router(admin_router.router, prefix="/api/v1")
 
 
 @app.get("/healthz")

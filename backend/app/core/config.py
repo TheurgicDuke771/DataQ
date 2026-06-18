@@ -39,6 +39,18 @@ class Settings(BaseSettings):
 
     auth_dev_bypass: bool = False
 
+    # Workspace-admin allowlist — emails permitted to use the /admin read
+    # endpoints (all-suites / all-users / access overview). Single-tenant, so this
+    # is the whole-workspace admin set, distinct from the per-suite
+    # view/edit/admin/owner ladder in suite_authz. Matched case-insensitively
+    # against the IdP-supplied email — a generic identity attribute, so no
+    # Azure/Entra claim is read in service code (ADR 0010/0013, CLAUDE.md §11).
+    # Stored as a comma-separated string (not list[str]) to sidestep
+    # pydantic-settings' JSON decoding of complex env values; read it via the
+    # normalised `workspace_admin_email_set` property, never the raw field.
+    #   WORKSPACE_ADMIN_EMAILS=ada@acme.io,grace@acme.io
+    workspace_admin_emails: str = ""
+
     secret_store: Literal["env", "redis", "azure_key_vault"] = (
         "env"  # noqa: S105 — mode selector, not a password
     )
@@ -66,6 +78,17 @@ class Settings(BaseSettings):
     probe_snowflake_role: str | None = None
     probe_snowflake_table: str | None = None
     probe_snowflake_secret_ref: str | None = None
+
+    @property
+    def workspace_admin_email_set(self) -> frozenset[str]:
+        """Normalised (lower-cased, stripped) admin emails for membership tests.
+
+        Empty when unset → no workspace admins (every /admin request 403s), the
+        safe default.
+        """
+        return frozenset(
+            part.strip().lower() for part in self.workspace_admin_emails.split(",") if part.strip()
+        )
 
     @property
     def azure_auth_configured(self) -> bool:

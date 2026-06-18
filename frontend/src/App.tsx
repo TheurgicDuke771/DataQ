@@ -7,6 +7,7 @@ import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { AuthGate } from './auth/AuthGate';
 import { authMode } from './auth/config';
 import { useCurrentUser } from './auth/useCurrentUser';
+import { useIsWorkspaceAdmin } from './auth/useMe';
 import { getMsalInstance } from './auth/msalInstance';
 import { BRAND, SHELL } from './theme';
 
@@ -22,6 +23,7 @@ const Suites = lazy(() => import('./pages/Suites').then((m) => ({ default: m.Sui
 const CheckNew = lazy(() => import('./pages/CheckNew').then((m) => ({ default: m.CheckNew })));
 const Results = lazy(() => import('./pages/Results').then((m) => ({ default: m.Results })));
 const Home = lazy(() => import('./pages/Home').then((m) => ({ default: m.Home })));
+const Admin = lazy(() => import('./pages/Admin').then((m) => ({ default: m.Admin })));
 
 const { Header, Sider, Content } = Layout;
 
@@ -31,15 +33,21 @@ const NAV_ITEMS = [
   { key: '/results', label: <Link to="/results">Results</Link> },
   { key: '/profile', label: <Link to="/profile">Profile</Link> },
 ];
+// Shown only to workspace admins (server-driven via /me). The route is always
+// registered — a non-admin who deep-links to /admin hits the page's Forbidden
+// state — so this gate is for nav convenience, not the security boundary.
+const ADMIN_NAV_ITEM = { key: '/admin', label: <Link to="/admin">Admin</Link> };
 
 export function App() {
   const location = useLocation();
+  const isAdmin = useIsWorkspaceAdmin();
+  const navItems = isAdmin ? [...NAV_ITEMS, ADMIN_NAV_ITEM] : NAV_ITEMS;
   // Highlight the nav item whose path matches the current location — exact, or a
   // sub-path at a segment boundary (so `/suites` matches `/suites/123` but not a
   // sibling like `/suites-archive`). Plain startsWith would mis-highlight those.
-  const selectedKeys = NAV_ITEMS.map((i) => i.key).filter(
-    (k) => location.pathname === k || location.pathname.startsWith(`${k}/`),
-  );
+  const selectedKeys = navItems
+    .map((i) => i.key)
+    .filter((k) => location.pathname === k || location.pathname.startsWith(`${k}/`));
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
@@ -72,7 +80,7 @@ export function App() {
           <Menu
             mode="inline"
             selectedKeys={selectedKeys}
-            items={NAV_ITEMS}
+            items={navItems}
             style={{ height: '100%', borderInlineEnd: 0, paddingTop: 8 }}
           />
         </Sider>
@@ -90,6 +98,7 @@ export function App() {
                   <Route path="/suites/:suiteId/checks/new" element={<CheckNew />} />
                   <Route path="/results" element={<Results />} />
                   <Route path="/profile" element={<Home />} />
+                  <Route path="/admin" element={<Admin />} />
                   <Route path="*" element={<Navigate to="/connections" replace />} />
                 </Routes>
               </Suspense>
