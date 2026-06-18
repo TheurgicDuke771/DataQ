@@ -62,7 +62,8 @@
   "pnpm": {
     "overrides": {
       "dompurify": ">=3.4.9",
-      "js-yaml": ">=4.2.0"
+      "js-yaml": ">=4.2.0",
+      "undici": ">=7.28.0 <8"
     }
   }
 }
