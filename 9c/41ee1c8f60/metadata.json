@@ -5,7 +5,14 @@
   "branch": "feature/admin-backend-list-all",
   "checkpoints_count": 32,
   "files_touched": [
-    "backend/app/core/config.py"
+    "backend/app/api/v1/admin.py",
+    "backend/app/api/v1/me.py",
+    "backend/app/core/auth.py",
+    "backend/app/core/config.py",
+    "backend/app/main.py",
+    "backend/app/services/admin_service.py",
+    "backend/tests/api/test_admin.py",
+    "backend/tests/api/test_me.py"
   ],
   "sessions": [
     {
@@ -16,10 +23,10 @@
     }
   ],
   "token_usage": {
-    "input_tokens": 91186,
-    "cache_creation_tokens": 4541053,
-    "cache_read_tokens": 234888478,
-    "output_tokens": 773588,
-    "api_call_count": 857
+    "input_tokens": 94291,
+    "cache_creation_tokens": 4569354,
+    "cache_read_tokens": 236032709,
+    "output_tokens": 782683,
+    "api_call_count": 866
   }
 }
