@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.7.6",
+  "checkpoint_id": "0f17ede90d3a",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-293-dompurify-cve",
+  "checkpoints_count": 2,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/0f/17ede90d3a/0/metadata.json",
+      "transcript": "/0f/17ede90d3a/0/full.jsonl",
+      "content_hash": "/0f/17ede90d3a/0/content_hash.txt",
+      "prompt": "/0f/17ede90d3a/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 111988,
+    "cache_creation_tokens": 5316851,
+    "cache_read_tokens": 277646901,
+    "output_tokens": 906898,
+    "api_call_count": 1016
+  }
+}
