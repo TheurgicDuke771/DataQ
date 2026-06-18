@@ -2,9 +2,10 @@ import { Button, Result } from 'antd';
 import { Link } from 'react-router-dom';
 
 /**
- * The 403 page. Server-driven: shown when an endpoint returns 403 (the
- * workspace-admin gate), not a client-side role guess — so a non-admin who
- * deep-links to /admin still hits the API and lands here.
+ * The 403 page. Rendered by a page when the server's own determination denies
+ * access — e.g. the Admin page shows it when `/me`'s `is_workspace_admin` is
+ * false (a server-computed flag, not a client-side role guess), so a non-admin
+ * who deep-links to /admin lands here rather than seeing admin UI.
  */
 export function Forbidden({
   message = "You don't have access to this page.",

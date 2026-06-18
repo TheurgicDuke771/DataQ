@@ -17,12 +17,21 @@ export function MeProvider({ children }: { children: ReactNode }) {
   const user = useCurrentUser();
   const [state, setState] = useState<AsyncState<MeResponse>>({ status: 'loading' });
 
+  // Reset to loading the instant the signed-in identity changes — including
+  // sign-out (user→null) — so the previous user's /me (and its
+  // is_workspace_admin) can never linger and keep admin UI visible. Render-phase
+  // adjustment, not an effect (an effect can't setState synchronously, and the
+  // reset must land before children read the context this render).
+  const userId = user?.homeAccountId ?? null;
+  const [seenUserId, setSeenUserId] = useState(userId);
+  if (userId !== seenUserId) {
+    setSeenUserId(userId);
+    setState({ status: 'loading' });
+  }
+
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
-    // No synchronous setState('loading') here — the initial value is already
-    // loading, and on an identity change we keep the prior data visible until the
-    // refetch resolves (same "no flash to loading" behaviour as useAsyncData).
     fetchMe()
       .then((data) => {
         if (!cancelled) setState({ status: 'ok', data });
