@@ -138,12 +138,34 @@ def test_validate_target_accepts_batch_spec() -> None:
     validate_target("s3", {"pattern": r"(\d+)\.csv", "strategy": "latest"})  # no raise
 
 
+def test_flatfile_ambiguous_path_and_pattern_raises() -> None:
+    # A literal path and a batch pattern are mutually exclusive — both set is a
+    # configuration error, not a silent batch win.
+    with pytest.raises(SuiteTargetInvalidError):
+        resolve_target("s3", {"path": "data/o.csv", "pattern": r"(\d+)\.csv"})
+
+
+def test_flatfile_batch_invalid_regex_raises() -> None:
+    with pytest.raises(SuiteTargetInvalidError):
+        resolve_target("s3", {"pattern": r"orders_([0-9.csv"})  # unbalanced group
+
+
+def test_flatfile_batch_specific_without_capture_group_raises() -> None:
+    # 'specific' matches on the first capture group; a group-less pattern could
+    # never match a key → it would skip forever, masking the misconfig.
+    with pytest.raises(SuiteTargetInvalidError):
+        resolve_target("s3", {"pattern": r"orders\.csv", "strategy": "specific", "batch": "x"})
+
+
 # ───────────────────────── materialize_path (A4 live step) ─────────
 
 
 class _FakeStore:
-    def get(self, ref: str) -> str:
+    def get(self, name: str) -> str:
         return "secret-value"
+
+    def set(self, name: str, value: str) -> None:  # pragma: no cover - protocol completeness
+        raise NotImplementedError
 
 
 def test_materialize_path_passthrough_for_non_batch() -> None:

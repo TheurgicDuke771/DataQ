@@ -35,6 +35,7 @@ FastAPI-free: takes a connection type + the stored dict, raises `DataQError`.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -93,7 +94,14 @@ def resolve_target(conn_type: str, target: dict[str, Any] | None) -> ResolvedTar
 
     if conn_type in _FLATFILE_TYPES:
         # A batch target (regex `pattern`) is resolved to a concrete path at run
-        # time; a literal target carries the `path` directly.
+        # time; a literal target carries the `path` directly. The two are mutually
+        # exclusive — both set is an ambiguous target, not a silent batch win.
+        if "pattern" in target and target.get("path"):
+            raise SuiteTargetInvalidError(
+                "flat-file target is ambiguous: set either 'path' (literal) or "
+                "'pattern' (batch), not both",
+                detail={"connection_type": conn_type},
+            )
         if "pattern" in target:
             return ResolvedTarget(
                 table="", schema=None, catalog=None, batch=_batch_spec(target, conn_type)
@@ -168,8 +176,22 @@ def materialize_path(
 
 
 def _batch_spec(target: dict[str, Any], conn_type: str) -> BatchSpec:
-    """Validate + build a flat-file `BatchSpec` from a batch target (422 on bad shape)."""
+    """Validate + build a flat-file `BatchSpec` from a batch target (422 on bad shape).
+
+    Validates at save time what would otherwise only fail (or silently skip
+    forever) at run time: the regex must compile, and a ``specific`` strategy needs
+    a capture group in the pattern to extract the batch key — without one,
+    `resolve_batch` can never match a key, so every run would skip indefinitely and
+    mask the misconfiguration.
+    """
     pattern = _require(target, "pattern", conn_type)
+    try:
+        compiled = re.compile(pattern)
+    except re.error as exc:
+        raise SuiteTargetInvalidError(
+            f"batch 'pattern' is not a valid regex: {exc}",
+            detail={"connection_type": conn_type},
+        ) from exc
     strategy = target.get("strategy", "latest")
     if strategy not in _BATCH_STRATEGIES:
         raise SuiteTargetInvalidError(
@@ -177,11 +199,18 @@ def _batch_spec(target: dict[str, Any], conn_type: str) -> BatchSpec:
             detail={"connection_type": conn_type, "strategy": strategy},
         )
     batch = target.get("batch")
-    if strategy == "specific" and (not isinstance(batch, str) or not batch.strip()):
-        raise SuiteTargetInvalidError(
-            "batch strategy 'specific' requires a non-empty 'batch' key",
-            detail={"connection_type": conn_type, "strategy": strategy},
-        )
+    if strategy == "specific":
+        if not isinstance(batch, str) or not batch.strip():
+            raise SuiteTargetInvalidError(
+                "batch strategy 'specific' requires a non-empty 'batch' key",
+                detail={"connection_type": conn_type, "strategy": strategy},
+            )
+        if compiled.groups < 1:
+            raise SuiteTargetInvalidError(
+                "batch strategy 'specific' needs a capture group in 'pattern' to "
+                "extract the batch key",
+                detail={"connection_type": conn_type, "pattern": pattern},
+            )
     prefix = target.get("prefix", "")
     if not isinstance(prefix, str):
         raise SuiteTargetInvalidError(
