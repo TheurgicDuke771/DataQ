@@ -43,6 +43,13 @@ class CheckOutcome:
     matching JSONB columns. `sample_failures` may contain real data rows, so it
     is governed by the retention sweep and must only ever be logged through the
     PII-redacting structlog chain.
+
+    `errored` marks a check that could not be *evaluated* (the runner caught an
+    exception while computing it — e.g. it references a missing column), as
+    opposed to a check that evaluated and *failed* (`success=False`). The two are
+    distinct result statuses (#122): an errored check maps to ``error`` (no
+    severity, no metric), a failed one to a severity tier. A single errored check
+    never fails its siblings — they still evaluate and persist.
     """
 
     expectation_type: str
@@ -50,6 +57,8 @@ class CheckOutcome:
     observed_value: dict[str, Any] | None = None
     expected_value: dict[str, Any] | None = None
     sample_failures: dict[str, Any] | None = None
+    errored: bool = False
+    error_message: str | None = None
 
 
 @dataclass(frozen=True)

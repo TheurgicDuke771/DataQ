@@ -40,7 +40,26 @@ def _build_result(run_id: uuid.UUID, check: Check, outcome: CheckOutcome) -> Res
     the tier (ADR 0005 / 0016) and to persist as the durable, SQL-aggregatable
     `metric_value` (ADR 0012). `duration_ms` stays NULL in v1 — per-check timing
     isn't separable from GX's single suite-level `validate()` (reserved seam).
+
+    A check the runner could not *evaluate* (`outcome.errored` — e.g. it raised
+    referencing a missing column) is an operational ``error`` result (#122), not a
+    data failure: no severity tier, no `metric_value`. It's orthogonal to the
+    health score (ADR 0005 weights only the four tiers), so it must never be
+    banded as `fail`. The error message lands in `observed_value` for debugging —
+    GX exception messages are schema-level (no row data), so they don't go through
+    the `sample_failures` retention/PII path.
     """
+    if outcome.errored:
+        return Result(
+            run_id=run_id,
+            check_id=check.id,
+            status="error",
+            metric_value=None,
+            observed_value={"error": outcome.error_message} if outcome.error_message else None,
+            expected_value=sanitize_json(outcome.expected_value),
+            sample_failures=None,
+        )
+
     metric = extract_metric(outcome)
     status = derive_status(
         success=outcome.success,
