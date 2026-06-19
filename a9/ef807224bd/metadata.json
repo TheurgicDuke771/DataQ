@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "a9ef807224bd",
+  "strategy": "manual-commit",
+  "branch": "feature/a4-flatfile-batch-run-path",
+  "checkpoints_count": 5,
+  "files_touched": [
+    "backend/app/services/run_target.py",
+    "backend/tests/services/test_run_target.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/a9/ef807224bd/0/metadata.json",
+      "transcript": "/a9/ef807224bd/0/full.jsonl",
+      "content_hash": "/a9/ef807224bd/0/content_hash.txt",
+      "prompt": "/a9/ef807224bd/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 21466,
+    "cache_creation_tokens": 1031239,
+    "cache_read_tokens": 31421082,
+    "output_tokens": 141675,
+    "api_call_count": 175
+  }
+}
