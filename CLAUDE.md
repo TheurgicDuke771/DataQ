@@ -245,7 +245,8 @@ curl -X POST http://localhost:8000/api/v1/_probe/snowflake-suite
 - ❌ Don't bypass the `OrchestrationProvider` abstraction with provider-specific branching in service code.
 - ❌ Don't deepen Azure lock-in: no reading MSAL/Entra claims in route/service code (depend on the generic `get_current_user`), no hardcoded Azure resource names/endpoints in business logic, no Azure-only assumptions baked into container images. Azure is one impl behind each seam — see ADR [0010](docs/adr/0010-provider-agnostic-infrastructure-seams.md) / [0013](docs/adr/0013-marketplace-distribution-and-anti-lock-in.md).
 - ❌ Don't `git commit --no-verify` past hooks. If a hook fails, fix the underlying issue.
-- ❌ Don't commit `.env` files. Use `.env.example` as the template.
+- ❌ Don't commit `.env` files. Use `.env.example` / `.env.app.example` as the templates.
+- ❌ Don't put a credential — **even a local/mock one** — in any git-tracked file (templates, `scripts/`, CI, compose). Env templates ship the secret keys **blank** with the shape in a comment; `scripts/setup.sh` generates the local-dev password into the gitignored `.env`/`.env.app` on first run. Non-secret config defaults and non-secret identifiers (db/user name) may stay populated.
 - ❌ Don't drop columns in the same PR as the code change that stops using them. Two-step it.
 - ❌ Don't fix bugs silently. Raise a GitHub issue, then PR with `Fixes #N`.
 - ❌ Don't batch unrelated changes into one commit. One functionality per commit.
