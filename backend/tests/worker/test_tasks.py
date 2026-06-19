@@ -119,6 +119,39 @@ def test_run_suite_executes_and_persists(monkeypatch: pytest.MonkeyPatch) -> Non
     assert len(session.added) == 2
 
 
+def test_run_suite_unity_catalog_threads_target_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A Unity Catalog suite resolves its `catalog` (+ schema/table) from the
+    target (#215) and threads it to the runner builder + the runner — the worker
+    glue between `resolve_target` and `build_check_runner` that the registry/runner
+    unit tests can't cover on their own. (UC's run path is otherwise the same
+    in-process GX path as flat files; the live SQL-Warehouse read is the deferred
+    smoke seam.)"""
+    run, suite, connection, checks = _graph(1)
+    connection.type = "unity_catalog"
+    connection.config = {
+        "workspace_url": "https://adb-1.2.azuredatabricks.net",
+        "warehouse_id": "w",
+    }
+    suite.target = {"catalog": "main", "schema": "sales", "table": "orders"}
+    session = FakeSession(run=run, suite=suite, connection=connection, checks=checks)
+    runner = FakeRunner(SuiteOutcome(success=True, checks=[CheckOutcome("x", success=True)]))
+    captured: dict[str, Any] = {}
+
+    def _capture(**kwargs: Any) -> FakeRunner:
+        captured.update(kwargs)
+        return runner
+
+    monkeypatch.setattr(tasks, "build_check_runner", _capture)
+
+    status = tasks._run_suite(session, run_id=run.id)
+
+    assert status == "succeeded"
+    assert captured["conn_type"] == "unity_catalog"
+    assert captured["catalog"] == "main"  # resolved from the suite target, not hardcoded
+    assert runner.table == "orders"  # catalog.schema.table → table rides the runner slot
+    assert len(session.added) == 1
+
+
 # ───────────────────────── failure paths ───────────────────────────
 
 
