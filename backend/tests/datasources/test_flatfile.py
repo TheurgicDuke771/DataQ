@@ -126,6 +126,32 @@ def test_run_checks_all_pass(monkeypatch: pytest.MonkeyPatch) -> None:
     assert outcome.checks[0].success is True
 
 
+def test_run_checks_errored_check_flagged_without_failing_siblings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A check that raises while evaluating (here: referencing a missing column)
+    is flagged `errored` via GX's per-expectation `exception_info` (#122) — real
+    GX end to end — while a sibling on a real column still evaluates cleanly. This
+    is the producer the run-service maps to `error`. (The `exception_info` shape
+    branches are unit-tested directly in `test_gx_runner.py`.)"""
+    df = pd.DataFrame({"id": [1, 2, 3]})
+    runner = _runner_over(df, monkeypatch)
+    outcome = runner.run_checks(
+        table="data/orders.csv",
+        schema=None,
+        checks=[
+            CheckSpec("expect_column_values_to_not_be_null", {"column": "does_not_exist"}),
+            CheckSpec("expect_column_values_to_not_be_null", {"column": "id"}),
+        ],
+    )
+    by_type_first = outcome.checks[0]
+    assert by_type_first.errored is True
+    assert by_type_first.error_message and "does_not_exist" in by_type_first.error_message
+    # the sibling on a real column evaluated cleanly — not errored
+    assert outcome.checks[1].errored is False
+    assert outcome.checks[1].success is True
+
+
 # ── batch resolution (pure resolve_batch + mocked list orchestrator) ──
 
 from datetime import UTC, datetime  # noqa: E402

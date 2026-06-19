@@ -118,6 +118,41 @@ def test_flatfile_suite_run_persists_results(
     _assert_persisted(db_session, run, checks)
 
 
+def test_flatfile_run_persists_error_status_for_unevaluable_check(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """End to end (#122): a check GX can't evaluate (missing column) persists as
+    `error` — not `fail` — while its sibling persists normally and the run still
+    succeeds. Also proves the `results.status` CHECK constraint accepts `error`."""
+    checks_spec = [
+        {
+            "name": "missing_col",
+            "type": "expect_column_values_to_not_be_null",
+            "config": {"column": "does_not_exist"},
+        },
+        {
+            "name": "rowcount",
+            "type": "expect_table_row_count_to_be_between",
+            "config": {"min_value": 1, "max_value": 100},
+        },
+    ]
+    suite, checks = _seed(
+        db_session, conn_type="s3", config={"bucket": "b", "region": "r"}, checks_spec=checks_spec
+    )
+    run = _queued_run(db_session, suite)
+    monkeypatch.setattr(flatfile, "read_dataframe", lambda **k: _SAMPLE)
+    runner = flatfile.FlatFileCheckRunner(conn_type="s3", config={}, secret="x")
+
+    run_service.execute_run(db_session, run=run, checks=checks, runner=runner, table="data/o.csv")
+
+    assert run.status == "succeeded"
+    results = db_session.scalars(select(Result).where(Result.run_id == run.id)).all()
+    by_check = {r.check_id: r for r in results}
+    assert by_check[checks[0].id].status == "error"  # unevaluable → error (persisted by Postgres)
+    assert by_check[checks[0].id].metric_value is None
+    assert by_check[checks[1].id].status == "pass"  # sibling unaffected
+
+
 # ───────────────────────── Unity Catalog (real GX) ─────────────────
 
 

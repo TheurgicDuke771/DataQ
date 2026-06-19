@@ -228,6 +228,67 @@ def test_thresholds_derive_tier_and_persist_metric() -> None:
     assert persisted.metric_value == Decimal("7.5")
 
 
+def test_errored_check_maps_to_error_status_without_failing_siblings() -> None:
+    """A check the runner could not evaluate (`outcome.errored`) is an operational
+    `error` result (#122) — no severity, no metric — and never fails its siblings:
+    the sibling still maps to its tier and the RUN still succeeds."""
+    session = FakeSession()
+    run = _run()
+    checks = _checks(2)
+    outcome = SuiteOutcome(
+        success=False,  # GX marks the suite failed because one check raised
+        checks=[
+            CheckOutcome(
+                "expect_bad",
+                success=False,
+                errored=True,
+                error_message='Error: The column "nope" in BatchData does not exist.',
+            ),
+            CheckOutcome("expect_ok", success=True, observed_value={"observed_value": 3}),
+        ],
+    )
+
+    result = run_service.execute_run(
+        session, run=run, checks=checks, runner=FakeRunner(outcome=outcome), table="T"
+    )
+
+    assert result.status == "succeeded"  # an errored check doesn't fail the run
+    by_check = {r.check_id: r for r in session.added}
+    errored = by_check[checks[0].id]
+    assert errored.status == "error"  # not 'fail' — it never evaluated
+    assert errored.metric_value is None
+    assert errored.observed_value == {"error": outcome.checks[0].error_message}
+    assert by_check[checks[1].id].status == "pass"  # sibling unaffected
+
+
+def test_errored_check_with_thresholds_is_still_error_not_banded() -> None:
+    """Thresholds don't apply to an errored check — there's no metric to band, so
+    it must resolve to `error`, not slip through severity derivation as a tier."""
+    session = FakeSession()
+    run = _run()
+    check = Check(
+        id=uuid.uuid4(),
+        suite_id=uuid.uuid4(),
+        name="c",
+        kind="expectation",
+        expectation_type="x",
+        config={},
+        warn_threshold=Decimal("1"),
+        fail_threshold=Decimal("5"),
+        critical_threshold=Decimal("20"),
+    )
+    outcome = SuiteOutcome(success=False, checks=[CheckOutcome("x", success=False, errored=True)])
+
+    run_service.execute_run(
+        session, run=run, checks=[check], runner=FakeRunner(outcome=outcome), table="T"
+    )
+
+    persisted = session.added[0]
+    assert persisted.status == "error"
+    assert persisted.metric_value is None
+    assert persisted.observed_value is None  # no message → no observed payload
+
+
 def test_non_expectation_kind_fails_run_without_invoking_runner() -> None:
     """A reserved (non-expectation) check kind has no runner in v1 (ADR 0012):
     the run fails loudly rather than silently feeding it to GX, and the adapter

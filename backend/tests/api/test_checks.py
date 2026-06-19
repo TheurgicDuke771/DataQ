@@ -539,6 +539,33 @@ def test_dryrun_derives_tier_from_thresholds(
     assert body["metric_value"] == 7.5
 
 
+def test_dryrun_previews_error_for_unevaluable_check(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A check GX can't evaluate previews as `error` — not a misleading `fail`
+    tag — so the editor preview matches what a persisted run would record (#122)."""
+    sid = _suite_id(client, db_session)
+    _patch_runner(
+        monkeypatch,
+        _FakeRunner(
+            SuiteOutcome(
+                success=False,
+                checks=[
+                    CheckOutcome(
+                        "x", success=False, errored=True, error_message="column does not exist"
+                    )
+                ],
+            )
+        ),
+    )
+    resp = client.post(f"/api/v1/suites/{sid}/checks/dryrun", json=_dryrun_body())
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "error"
+    assert body["metric_value"] is None
+    assert body["observed_value"] == {"error": "column does not exist"}
+
+
 def test_dryrun_sanitizes_nan_observed_value(
     client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:

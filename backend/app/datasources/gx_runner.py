@@ -59,6 +59,31 @@ def _extract_sample_failures(result: dict[str, Any]) -> dict[str, Any] | None:
     return sample or None
 
 
+def _check_errored(exception_info: Any) -> tuple[bool, str | None]:
+    """Did this expectation raise while being evaluated? (GX `exception_info`).
+
+    GX (1.17) reports `exception_info` in two shapes per `ExpectationValidationResult`:
+
+    * a **flat** dict ``{'raised_exception': bool, 'exception_message': str|None,
+      ...}`` for a cleanly-evaluated expectation, and
+    * a dict **keyed by `MetricConfigurationID`** when a metric computation raised,
+      each value being a flat dict with its own ``raised_exception``.
+
+    Treat the check as errored if the flat form raised, or any keyed entry did;
+    return the first exception message for debuggability. An errored check is an
+    ``error`` result (#122), not a data ``fail``.
+    """
+    if not isinstance(exception_info, dict) or not exception_info:
+        return False, None
+    if "raised_exception" in exception_info:  # flat shape
+        return bool(exception_info.get("raised_exception")), exception_info.get("exception_message")
+    # keyed-by-metric shape: errored if any metric computation raised
+    for entry in exception_info.values():
+        if isinstance(entry, dict) and entry.get("raised_exception"):
+            return True, entry.get("exception_message")
+    return False, None
+
+
 def _expected_value(kwargs: Any) -> dict[str, Any] | None:
     cleaned = {key: value for key, value in dict(kwargs).items() if key not in _GX_INTERNAL_KWARGS}
     return cleaned or None
@@ -77,6 +102,7 @@ def to_suite_outcome(gx_result: Any) -> SuiteOutcome:
         observed = (
             {"observed_value": detail["observed_value"]} if "observed_value" in detail else None
         )
+        errored, error_message = _check_errored(getattr(check_result, "exception_info", None))
         outcomes.append(
             CheckOutcome(
                 expectation_type=config.type,
@@ -84,6 +110,8 @@ def to_suite_outcome(gx_result: Any) -> SuiteOutcome:
                 observed_value=observed,
                 expected_value=_expected_value(config.kwargs) if config.kwargs else None,
                 sample_failures=_extract_sample_failures(detail),
+                errored=errored,
+                error_message=error_message,
             )
         )
     return SuiteOutcome(success=bool(gx_result.success), checks=outcomes)

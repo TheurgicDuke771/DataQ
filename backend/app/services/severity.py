@@ -57,6 +57,37 @@ def extract_metric(outcome: CheckOutcome) -> Decimal | None:
     return metric if metric.is_finite() else None
 
 
+def resolve_status(
+    outcome: CheckOutcome,
+    *,
+    warn_threshold: Decimal | None,
+    fail_threshold: Decimal | None,
+    critical_threshold: Decimal | None,
+) -> tuple[str, Decimal | None]:
+    """Resolve a check outcome to its persisted ``(status, metric_value)``.
+
+    The single decision both run-result persistence (`run_service`) and the
+    check-editor dry-run (`dryrun_service`) share, so a preview can never disagree
+    with the run it previews:
+
+    * a check the runner could not *evaluate* (`outcome.errored`, #122) is the
+      operational ``error`` status — no severity tier, no metric to band; vs.
+    * an evaluated check, whose unexpected-% metric is banded into a tier
+      (ADR 0005 / 0016).
+    """
+    if outcome.errored:
+        return "error", None
+    metric = extract_metric(outcome)
+    status = derive_status(
+        success=outcome.success,
+        metric_value=metric,
+        warn_threshold=warn_threshold,
+        fail_threshold=fail_threshold,
+        critical_threshold=critical_threshold,
+    )
+    return status, metric
+
+
 def derive_status(
     *,
     success: bool,
