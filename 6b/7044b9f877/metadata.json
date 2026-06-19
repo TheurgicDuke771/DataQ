@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "6b7044b9f877",
+  "strategy": "manual-commit",
+  "branch": "chore/no-creds-in-tracked-env-examples",
+  "checkpoints_count": 3,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/6b/7044b9f877/0/metadata.json",
+      "transcript": "/6b/7044b9f877/0/full.jsonl",
+      "content_hash": "/6b/7044b9f877/0/content_hash.txt",
+      "prompt": "/6b/7044b9f877/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 23396,
+    "cache_creation_tokens": 2028388,
+    "cache_read_tokens": 44564877,
+    "output_tokens": 179604,
+    "api_call_count": 218
+  }
+}
