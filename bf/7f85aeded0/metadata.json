@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "bf7f85aeded0",
+  "strategy": "manual-commit",
+  "branch": "feature/a3-run-path-error-status",
+  "checkpoints_count": 3,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/bf/7f85aeded0/0/metadata.json",
+      "transcript": "/bf/7f85aeded0/0/full.jsonl",
+      "content_hash": "/bf/7f85aeded0/0/content_hash.txt",
+      "prompt": "/bf/7f85aeded0/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 3320,
+    "cache_creation_tokens": 67071,
+    "cache_read_tokens": 7902217,
+    "output_tokens": 36568,
+    "api_call_count": 58
+  }
+}
