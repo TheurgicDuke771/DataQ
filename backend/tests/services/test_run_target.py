@@ -1,13 +1,20 @@
-"""Unit tests for run_target.resolve_target / validate_target (#215).
+"""Unit tests for run_target.resolve_target / validate_target / materialize_path.
 
-Pure functions — no DB, no datasource. Covers each datasource's required field,
-the targetless / wrong-datasource error paths, and that a flat-file path rides
-the runner's `table` slot (the table-shaped CheckRunner contract).
+`resolve_target` / `validate_target` are pure (no DB, no datasource): each
+datasource's required field, the targetless / wrong-datasource error paths, the
+flat-file path riding the runner's `table` slot, and the flat-file *batch* spec
+validation (#122/A4). `materialize_path` is the live step — its batch branch is
+exercised with `flatfile.resolve_batch_file` monkeypatched (the listing is the
+deferred-smoke seam); the non-batch branch is a pure pass-through.
 """
+
+from typing import Any
 
 import pytest
 
+from backend.app.services import run_target
 from backend.app.services.run_target import (
+    ResolvedTarget,
     SuiteTargetInvalidError,
     resolve_target,
     validate_target,
@@ -74,3 +81,122 @@ def test_validate_target_is_resolve_without_return() -> None:
     validate_target("snowflake", {"table": "ORDERS"})  # no raise
     with pytest.raises(SuiteTargetInvalidError):
         validate_target("snowflake", {"schema": "SALES"})
+
+
+# ───────────────────────── flat-file batch spec (A4) ───────────────
+
+
+@pytest.mark.parametrize("conn_type", ["adls_gen2", "s3"])
+def test_flatfile_batch_latest_default(conn_type: str) -> None:
+    r = resolve_target(
+        conn_type, {"prefix": "orders/", "pattern": r"orders_(\d{4}-\d{2}-\d{2})\.csv"}
+    )
+    assert r.table == "" and r.batch is not None
+    assert (r.batch.prefix, r.batch.strategy, r.batch.batch) == ("orders/", "latest", None)
+    assert r.batch.pattern == r"orders_(\d{4}-\d{2}-\d{2})\.csv"
+
+
+def test_flatfile_batch_prefix_optional_defaults_empty() -> None:
+    r = resolve_target("s3", {"pattern": r"(\d+)\.csv"})
+    assert r.batch is not None and r.batch.prefix == ""
+
+
+def test_flatfile_batch_specific_requires_batch_key() -> None:
+    r = resolve_target(
+        "s3", {"pattern": r"(\d+)\.csv", "strategy": "specific", "batch": "2026-06-01"}
+    )
+    assert r.batch is not None and r.batch.strategy == "specific" and r.batch.batch == "2026-06-01"
+
+
+def test_flatfile_batch_specific_without_batch_raises() -> None:
+    with pytest.raises(SuiteTargetInvalidError):
+        resolve_target("s3", {"pattern": r"(\d+)\.csv", "strategy": "specific"})
+
+
+def test_flatfile_batch_latest_ignores_batch_key() -> None:
+    # 'batch' only applies to 'specific'; under 'latest' it is dropped.
+    r = resolve_target("s3", {"pattern": r"(\d+)\.csv", "batch": "ignored"})
+    assert r.batch is not None and r.batch.batch is None
+
+
+def test_flatfile_batch_unknown_strategy_raises() -> None:
+    with pytest.raises(SuiteTargetInvalidError):
+        resolve_target("s3", {"pattern": r"(\d+)\.csv", "strategy": "newest"})
+
+
+def test_flatfile_batch_blank_pattern_raises() -> None:
+    with pytest.raises(SuiteTargetInvalidError):
+        resolve_target("s3", {"pattern": "   "})
+
+
+def test_flatfile_batch_non_string_prefix_raises() -> None:
+    with pytest.raises(SuiteTargetInvalidError):
+        resolve_target("s3", {"pattern": r"(\d+)\.csv", "prefix": 123})
+
+
+def test_validate_target_accepts_batch_spec() -> None:
+    validate_target("s3", {"pattern": r"(\d+)\.csv", "strategy": "latest"})  # no raise
+
+
+def test_flatfile_ambiguous_path_and_pattern_raises() -> None:
+    # A literal path and a batch pattern are mutually exclusive — both set is a
+    # configuration error, not a silent batch win.
+    with pytest.raises(SuiteTargetInvalidError):
+        resolve_target("s3", {"path": "data/o.csv", "pattern": r"(\d+)\.csv"})
+
+
+def test_flatfile_batch_invalid_regex_raises() -> None:
+    with pytest.raises(SuiteTargetInvalidError):
+        resolve_target("s3", {"pattern": r"orders_([0-9.csv"})  # unbalanced group
+
+
+def test_flatfile_batch_specific_without_capture_group_raises() -> None:
+    # 'specific' matches on the first capture group; a group-less pattern could
+    # never match a key → it would skip forever, masking the misconfig.
+    with pytest.raises(SuiteTargetInvalidError):
+        resolve_target("s3", {"pattern": r"orders\.csv", "strategy": "specific", "batch": "x"})
+
+
+# ───────────────────────── materialize_path (A4 live step) ─────────
+
+
+class _FakeStore:
+    def get(self, name: str) -> str:
+        return "secret-value"
+
+    def set(self, name: str, value: str) -> None:  # pragma: no cover - protocol completeness
+        raise NotImplementedError
+
+
+def test_materialize_path_passthrough_for_non_batch() -> None:
+    # SQL / literal flat-file targets have no batch → table returned unchanged,
+    # and the store is never consulted (no listing needed).
+    resolved = ResolvedTarget(table="ORDERS", schema="SALES", catalog=None)
+    out = run_target.materialize_path(
+        "snowflake", {}, resolved, secret_ref=None, secret_store=_FakeStore()
+    )
+    assert out == "ORDERS"
+
+
+def test_materialize_path_resolves_batch(monkeypatch: pytest.MonkeyPatch) -> None:
+    resolved = resolve_target("s3", {"prefix": "orders/", "pattern": r"orders_(\d+)\.csv"})
+    captured: dict[str, Any] = {}
+
+    def _fake_resolve(**kwargs: Any) -> str:
+        captured.update(kwargs)
+        return "orders/orders_20260601.csv"
+
+    monkeypatch.setattr("backend.app.datasources.flatfile.resolve_batch_file", _fake_resolve)
+    out = run_target.materialize_path(
+        "s3", {"bucket": "b"}, resolved, secret_ref="kv-ref", secret_store=_FakeStore()
+    )
+    assert out == "orders/orders_20260601.csv"
+    # the resolved BatchSpec + resolved secret are threaded to the lister
+    assert captured["prefix"] == "orders/" and captured["strategy"] == "latest"
+    assert captured["secret"] == "secret-value" and captured["conn_type"] == "s3"
+
+
+def test_materialize_path_batch_without_secret_raises() -> None:
+    resolved = resolve_target("s3", {"pattern": r"(\d+)\.csv"})
+    with pytest.raises(SuiteTargetInvalidError):
+        run_target.materialize_path("s3", {}, resolved, secret_ref=None, secret_store=_FakeStore())

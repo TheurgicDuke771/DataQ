@@ -155,6 +155,31 @@ def execute_run(
     return run
 
 
+def skip_run(session: Session, *, run: Run, checks: list[Check], reason: str) -> Run:
+    """Record a run that had nothing to evaluate — every check `skip`ped (#122).
+
+    Used when the adapter is never invoked because there's no data to validate
+    (e.g. the target batch hasn't landed yet). The run still **succeeds** — it
+    executed end to end, it just found nothing to check — and each check gets a
+    ``skip`` Result carrying the ``reason`` (operational, not a severity tier, so
+    it's excluded from the health-score N per ADR 0005). Distinct from ``failed``,
+    which means the run could not execute.
+    """
+    run.status = "running"
+    run.started_at = _now()
+    session.commit()
+    rows = [
+        Result(run_id=run.id, check_id=check.id, status="skip", observed_value={"reason": reason})
+        for check in checks
+    ]
+    session.add_all(rows)
+    run.status = "succeeded"
+    run.finished_at = _now()
+    session.commit()
+    log.info("run_skipped", run_id=str(run.id), reason=reason, n_checks=len(checks))
+    return run
+
+
 # ── read model (PR-C0b: the runs/results surface) ────────────────────────────
 # Reads are scoped to suites the user can access — owned (`created_by`) or shared
 # (`shares`), the same visibility `suite_service.list_suites` enforces. The API

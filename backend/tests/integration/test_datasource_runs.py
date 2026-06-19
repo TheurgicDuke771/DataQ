@@ -210,6 +210,22 @@ def test_snowflake_suite_run_persists_results(db_session: Any) -> None:
     _assert_persisted(db_session, run, checks)
 
 
+def test_skip_run_persists_skip_results(db_session: Any) -> None:
+    """End to end (#122): a run with nothing to evaluate (e.g. the target batch
+    hasn't landed) persists a `skip` Result per check and succeeds. Proves the
+    `results.status` CHECK constraint accepts `skip`."""
+    suite, checks = _seed(db_session, conn_type="s3", config={"bucket": "b", "region": "r"})
+    run = _queued_run(db_session, suite)
+
+    run_service.skip_run(db_session, run=run, checks=checks, reason="batch_not_found")
+
+    assert run.status == "succeeded"
+    results = db_session.scalars(select(Result).where(Result.run_id == run.id)).all()
+    assert len(results) == 2
+    assert all(r.status == "skip" for r in results)
+    assert all(r.observed_value == {"reason": "batch_not_found"} for r in results)
+
+
 # ───────────────────────── adversarial robustness ──────────────────
 
 

@@ -137,6 +137,33 @@ def test_create_with_target_persists_storage_shape(client: TestClient, db_sessio
     assert resp.json()["target"] == {"table": "ORDERS", "schema": "SALES"}
 
 
+def test_create_with_flatfile_batch_target_persists(client: TestClient, db_session: Any) -> None:
+    """A flat-file batch target (pattern/strategy/prefix) round-trips through the
+    API — the SuiteTarget model must carry the batch keys, else the batch run path
+    (A4) is unreachable (the keys would be stripped before persistence)."""
+    owner = User(aad_object_id=uuid.uuid4().hex, email="ff@example.com")
+    db_session.add(owner)
+    db_session.flush()
+    conn = Connection(
+        name=f"s3-{uuid.uuid4().hex[:8]}",
+        type="s3",
+        env="dev",
+        config={"bucket": "b", "region": "r"},
+        secret_ref="kv-s3",
+        created_by=owner.id,
+    )
+    db_session.add(conn)
+    db_session.commit()
+    target = {
+        "prefix": "orders/",
+        "pattern": r"orders_(\d{4}-\d{2}-\d{2})\.csv",
+        "strategy": "latest",
+    }
+    resp = client.post("/api/v1/suites", json=_payload(conn.id, target=target))
+    assert resp.status_code == 201
+    assert resp.json()["target"] == target  # batch keys survived to storage
+
+
 def test_create_without_target_is_null(client: TestClient, db_session: Any) -> None:
     conn = _connection(db_session)
     resp = client.post("/api/v1/suites", json=_payload(conn.id))

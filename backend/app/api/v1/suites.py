@@ -40,7 +40,13 @@ class SuiteTarget(BaseModel):
     """Datasource-shaped run target (#215) — which table / flat-file path / Unity
     Catalog name the suite's checks run against. Same shape as the column-profiler
     request; `run_target.resolve_target` validates the right fields per connection
-    type (`table` for SQL, `path` for flat files, `catalog` for Unity Catalog)."""
+    type (`table` for SQL, `path` for flat files, `catalog` for Unity Catalog).
+
+    A flat-file target can instead select a **batch** of files: `pattern` (a regex
+    whose first capture group is the batch key) + `strategy` (`latest`/`specific`,
+    with `batch` for `specific`) + optional `prefix` (A4). The exact field
+    combination is validated by `run_target.resolve_target` per connection type, so
+    those rules live in one place — this model only declares the storable keys."""
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -49,6 +55,11 @@ class SuiteTarget(BaseModel):
     catalog: str | None = Field(default=None, max_length=255)
     path: str | None = Field(default=None, max_length=1024)
     file_format: Literal["csv", "parquet"] | None = None
+    # Flat-file batch selection (A4); validated in run_target, not here.
+    pattern: str | None = Field(default=None, max_length=1024)
+    strategy: Literal["latest", "specific"] | None = None
+    batch: str | None = Field(default=None, max_length=255)
+    prefix: str | None = Field(default=None, max_length=1024)
 
     def to_storage(self) -> dict[str, Any]:
         """JSONB dict with the canonical `schema` key (not the `schema_` alias)."""
