@@ -24,7 +24,7 @@ from backend.app.core.logging import get_logger
 from backend.app.datasources.base import CheckOutcome, CheckRunner, CheckSpec
 from backend.app.db.models import Check, Result, Run
 from backend.app.services import suite_service
-from backend.app.services.severity import derive_status, extract_metric
+from backend.app.services.severity import resolve_status
 
 log = get_logger(__name__)
 
@@ -49,33 +49,28 @@ def _build_result(run_id: uuid.UUID, check: Check, outcome: CheckOutcome) -> Res
     GX exception messages are schema-level (no row data), so they don't go through
     the `sample_failures` retention/PII path.
     """
-    if outcome.errored:
-        return Result(
-            run_id=run_id,
-            check_id=check.id,
-            status="error",
-            metric_value=None,
-            observed_value={"error": outcome.error_message} if outcome.error_message else None,
-            expected_value=sanitize_json(outcome.expected_value),
-            sample_failures=None,
-        )
-
-    metric = extract_metric(outcome)
-    status = derive_status(
-        success=outcome.success,
-        metric_value=metric,
+    status, metric = resolve_status(
+        outcome,
         warn_threshold=check.warn_threshold,
         fail_threshold=check.fail_threshold,
         critical_threshold=check.critical_threshold,
     )
+    if outcome.errored:
+        # An errored check has no observed metric and no failing-row sample; surface
+        # the (schema-level, row-data-free) GX message for debugging instead.
+        observed = {"error": outcome.error_message} if outcome.error_message else None
+        sample = None
+    else:
+        observed = sanitize_json(outcome.observed_value)
+        sample = sanitize_json(outcome.sample_failures)
     return Result(
         run_id=run_id,
         check_id=check.id,
         status=status,
         metric_value=metric,
-        observed_value=sanitize_json(outcome.observed_value),
+        observed_value=observed,
         expected_value=sanitize_json(outcome.expected_value),
-        sample_failures=sanitize_json(outcome.sample_failures),
+        sample_failures=sample,
     )
 
 

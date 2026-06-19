@@ -131,8 +131,9 @@ def test_run_checks_errored_check_flagged_without_failing_siblings(
 ) -> None:
     """A check that raises while evaluating (here: referencing a missing column)
     is flagged `errored` via GX's per-expectation `exception_info` (#122) — real
-    GX, both exception_info shapes exercised — while a sibling on a real column
-    still evaluates. This is the producer the run-service maps to `error`."""
+    GX end to end — while a sibling on a real column still evaluates cleanly. This
+    is the producer the run-service maps to `error`. (The `exception_info` shape
+    branches are unit-tested directly in `test_gx_runner.py`.)"""
     df = pd.DataFrame({"id": [1, 2, 3]})
     runner = _runner_over(df, monkeypatch)
     outcome = runner.run_checks(

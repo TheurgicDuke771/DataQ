@@ -27,7 +27,7 @@ from backend.app.datasources.base import CheckSpec
 from backend.app.datasources.snowflake import build_snowflake_runner
 from backend.app.db.models import Connection
 from backend.app.services.custom_sql import validate_custom_sql_check
-from backend.app.services.severity import derive_status, extract_metric
+from backend.app.services.severity import resolve_status
 
 log = get_logger(__name__)
 
@@ -49,7 +49,7 @@ class DryRunFailedError(DataQError):
 
 @dataclass(frozen=True)
 class DryRunOutcome:
-    status: str  # pass | warn | fail | critical
+    status: str  # pass | warn | fail | critical | error (#122 — unevaluable check)
     metric_value: Decimal | None
     observed_value: dict[str, Any] | None
     expected_value: dict[str, Any] | None
@@ -115,17 +115,21 @@ def dry_run_check(
             "dry run could not execute against the datasource", detail={"table": table}
         ) from exc
 
-    metric = extract_metric(check_outcome)
-    status = derive_status(
-        success=check_outcome.success,
-        metric_value=metric,
+    status, metric = resolve_status(
+        check_outcome,
         warn_threshold=warn_threshold,
         fail_threshold=fail_threshold,
         critical_threshold=critical_threshold,
     )
+    # Preview exactly what a persisted run would record: an unevaluable check
+    # (#122) is 'error', not a misleading 'fail' tag, and surfaces the GX message.
+    if check_outcome.errored:
+        observed = {"error": check_outcome.error_message} if check_outcome.error_message else None
+    else:
+        observed = sanitize_json(check_outcome.observed_value)
     return DryRunOutcome(
         status=status,
         metric_value=metric,
-        observed_value=sanitize_json(check_outcome.observed_value),
+        observed_value=observed,
         expected_value=sanitize_json(check_outcome.expected_value),
     )

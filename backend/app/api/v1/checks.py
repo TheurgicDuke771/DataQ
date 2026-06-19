@@ -222,7 +222,7 @@ class CheckDryRunRequest(BaseModel):
 
 
 class CheckDryRunResult(BaseModel):
-    status: str  # pass | warn | fail | critical (ADR 0005)
+    status: str  # pass | warn | fail | critical (ADR 0005) | error (#122)
     metric_value: float | None
     observed_value: dict[str, Any] | None
     expected_value: dict[str, Any] | None

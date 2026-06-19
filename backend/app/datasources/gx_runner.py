@@ -73,7 +73,7 @@ def _check_errored(exception_info: Any) -> tuple[bool, str | None]:
     return the first exception message for debuggability. An errored check is an
     ``error`` result (#122), not a data ``fail``.
     """
-    if not exception_info:
+    if not isinstance(exception_info, dict) or not exception_info:
         return False, None
     if "raised_exception" in exception_info:  # flat shape
         return bool(exception_info.get("raised_exception")), exception_info.get("exception_message")
