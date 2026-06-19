@@ -142,6 +142,10 @@ azure.json
 .claude/cache/
 .claude/scheduled_tasks.lock
 
+# ---- Local working-plan scratch (per-developer, never committed) ----
+*_TODO.md
+*.todo.local.md
+
 # ---- Entire CLI (per-repo machine-local session data) ----
 .entire/
 
