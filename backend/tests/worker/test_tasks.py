@@ -54,10 +54,12 @@ class FakeSession:
 class FakeRunner:
     def __init__(self, outcome: SuiteOutcome) -> None:
         self._outcome = outcome
+        self.table: str | None = None
 
     def run_checks(
         self, *, table: str, schema: str | None, checks: list[CheckSpec]
     ) -> SuiteOutcome:
+        self.table = table
         return self._outcome
 
 
@@ -173,6 +175,83 @@ def test_run_suite_targetless_suite_marks_failed() -> None:
     assert status == "failed"
     assert run.status == "failed"
     assert session.added == []  # never reached execution
+
+
+# ───────────────────────── flat-file batch (A4) ────────────────────
+
+
+def _flatfile_batch_graph() -> tuple[Run, Suite, Connection, tuple[Check, ...]]:
+    run, suite, connection, checks = _graph(2)
+    connection.type = "s3"
+    connection.config = {"bucket": "b", "region": "r"}
+    suite.target = {"prefix": "orders/", "pattern": r"orders_(\d+)\.csv"}
+    return run, suite, connection, checks
+
+
+def test_run_suite_batch_target_materialized_to_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A flat-file batch target is materialized to a concrete path (live listing)
+    and that resolved path is what the runner executes against."""
+    run, suite, connection, checks = _flatfile_batch_graph()
+    session = FakeSession(run=run, suite=suite, connection=connection, checks=checks)
+    runner = FakeRunner(
+        SuiteOutcome(
+            success=True, checks=[CheckOutcome("x", success=True), CheckOutcome("x", success=True)]
+        )
+    )
+    monkeypatch.setattr(tasks, "build_check_runner", lambda **_kw: runner)
+    monkeypatch.setattr(
+        tasks.run_target, "materialize_path", lambda *a, **k: "orders/orders_20260601.csv"
+    )
+
+    status = tasks._run_suite(session, run_id=run.id)
+
+    assert status == "succeeded"
+    assert runner.table == "orders/orders_20260601.csv"  # ran against the resolved batch file
+    assert len(session.added) == 2
+
+
+def test_run_suite_missing_batch_skips_without_running(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A genuinely-absent batch (BatchNotFoundError) is a skip, not a failure
+    (#122): every check gets a `skip` Result, the run succeeds, and the adapter
+    is never executed."""
+    run, suite, connection, checks = _flatfile_batch_graph()
+    session = FakeSession(run=run, suite=suite, connection=connection, checks=checks)
+    runner = FakeRunner(SuiteOutcome(success=True, checks=[]))
+    monkeypatch.setattr(tasks, "build_check_runner", lambda **_kw: runner)
+
+    def _missing(*_a: Any, **_k: Any) -> str:
+        raise tasks.BatchNotFoundError("no files matched")
+
+    monkeypatch.setattr(tasks.run_target, "materialize_path", _missing)
+
+    status = tasks._run_suite(session, run_id=run.id)
+
+    assert status == "succeeded"
+    assert run.status == "succeeded"
+    assert runner.table is None  # adapter never invoked
+    assert len(session.added) == 2
+    assert all(r.status == "skip" for r in session.added)
+    assert all(r.observed_value == {"reason": "batch_not_found"} for r in session.added)
+
+
+def test_run_suite_batch_listing_failure_marks_failed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A transport/listing error during materialization (not a missing batch) is a
+    real failure, not a skip."""
+    run, suite, connection, checks = _flatfile_batch_graph()
+    session = FakeSession(run=run, suite=suite, connection=connection, checks=checks)
+    monkeypatch.setattr(tasks, "build_check_runner", lambda **_kw: FakeRunner(None))  # type: ignore[arg-type]
+
+    def _boom(*_a: Any, **_k: Any) -> str:
+        raise RuntimeError("S3 unreachable")
+
+    monkeypatch.setattr(tasks.run_target, "materialize_path", _boom)
+
+    status = tasks._run_suite(session, run_id=run.id)
+
+    assert status == "failed"
+    assert run.status == "failed"
+    assert run.finished_at is not None
+    assert session.added == []
 
 
 # ───────────────────────── task wrapper ────────────────────────────

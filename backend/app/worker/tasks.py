@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore, get_secret_store
+from backend.app.datasources.flatfile import BatchNotFoundError
 from backend.app.datasources.registry import build_check_runner
 from backend.app.db.models import ORCHESTRATION_PROVIDERS, Check, Connection, Run, Suite
 from backend.app.db.session import get_session
@@ -37,18 +38,32 @@ _POLL_LOOKBACK = timedelta(minutes=15)
 log = get_logger(__name__)
 
 
+def _terminal_failed(session: Session, run: Run, *, event: str, run_id: uuid.UUID) -> str:
+    """Drive ``run`` to terminal ``failed`` (never left ``queued``/``running``)."""
+    run.status = "failed"
+    run.started_at = run.started_at or datetime.now(UTC)
+    run.finished_at = datetime.now(UTC)
+    session.commit()
+    log.exception(event, run_id=str(run_id))
+    return "failed"
+
+
 def _run_suite(session: Session, *, run_id: uuid.UUID) -> str:
     """Load the run's graph, resolve its target, build the runner, execute.
 
     The suite's datasource-shaped ``target`` (#215) resolves to the runner's
     ``(table, schema, catalog)`` via ``run_target.resolve_target``; dispatch by
     ``connection.type`` through the runner registry gives a Snowflake / Unity
-    Catalog / flat-file suite its correct `CheckRunner` (#146).
+    Catalog / flat-file suite its correct `CheckRunner` (#146). A flat-file *batch*
+    target is then materialized to a concrete path by listing the store
+    (`materialize_path`).
 
     Failures while loading, resolving the target (targetless or malformed suite),
     or building the runner (missing rows, bad connection config, unresolved
     secret) drive the run to ``failed`` so it never lingers in ``queued``;
-    execution failures are handled inside ``execute_run``.
+    execution failures are handled inside ``execute_run``. A genuinely-absent
+    batch (`BatchNotFoundError`) is **not** a failure — the data hasn't landed, so
+    every check is ``skip``ped (#122) and the run succeeds.
     """
     run = session.get(Run, run_id)
     if run is None:
@@ -70,15 +85,27 @@ def _run_suite(session: Session, *, run_id: uuid.UUID) -> str:
             catalog=target.catalog,
         )
     except Exception:
-        run.status = "failed"
-        run.started_at = run.started_at or datetime.now(UTC)
-        run.finished_at = datetime.now(UTC)
-        session.commit()
-        log.exception("run_suite_setup_failed", run_id=str(run_id))
-        return "failed"
+        return _terminal_failed(session, run, event="run_suite_setup_failed", run_id=run_id)
+
+    # Materialize the concrete path (live for a flat-file batch target). Kept
+    # separate from setup so a missing batch is a skip, not a setup failure.
+    try:
+        table = run_target.materialize_path(
+            connection.type,
+            connection.config,
+            target,
+            secret_ref=connection.secret_ref,
+            secret_store=get_secret_store(),
+        )
+    except BatchNotFoundError:
+        run_service.skip_run(session, run=run, checks=checks, reason="batch_not_found")
+        log.info("run_suite_skipped_no_batch", run_id=str(run_id), suite_id=str(suite.id))
+        return str(run.status)
+    except Exception:
+        return _terminal_failed(session, run, event="run_suite_materialize_failed", run_id=run_id)
 
     run_service.execute_run(
-        session, run=run, checks=checks, runner=runner, table=target.table, schema=target.schema
+        session, run=run, checks=checks, runner=runner, table=table, schema=target.schema
     )
     return str(run.status)
 

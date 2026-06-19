@@ -289,6 +289,23 @@ def test_errored_check_with_thresholds_is_still_error_not_banded() -> None:
     assert persisted.observed_value is None  # no message → no observed payload
 
 
+def test_skip_run_marks_all_checks_skip_and_run_succeeded() -> None:
+    """skip_run (#122) records a `skip` Result per check without an adapter run,
+    and the run succeeds — it executed, it just had nothing to validate."""
+    session = FakeSession()
+    run = _run()
+    checks = _checks(3)
+
+    result = run_service.skip_run(session, run=run, checks=checks, reason="batch_not_found")
+
+    assert result.status == "succeeded"
+    assert run.started_at is not None and run.finished_at is not None
+    assert len(session.added) == 3
+    assert all(r.status == "skip" for r in session.added)
+    assert all(r.observed_value == {"reason": "batch_not_found"} for r in session.added)
+    assert all(r.metric_value is None for r in session.added)
+
+
 def test_non_expectation_kind_fails_run_without_invoking_runner() -> None:
     """A reserved (non-expectation) check kind has no runner in v1 (ADR 0012):
     the run fails loudly rather than silently feeding it to GX, and the adapter
