@@ -1,0 +1,14 @@
+Lets get started with week 5. 
+Can you check what are the tasks already completed, and what is waiting for us in the roadmap
+
+---
+
+Also, can you check if there are any pre-requisite we need to complete before we start week 5 (like any open issues)
+
+---
+
+Okay, lets create a plan for the week 5 tasks based on the priority and dependencies
+
+---
+
+can you add this in a TODO file (git ignored), so that we can keep a track of it while progressing.
