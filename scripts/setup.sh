@@ -29,17 +29,42 @@ ok "Prerequisites OK"
 # inherit them regardless of working dir (alembic runs from backend/, so a
 # CWD-relative dotenv lookup wouldn't find the root file).
 step "Preparing .env / .env.app"
-if [ ! -f .env ]; then
-  cp .env.example .env
-  ok ".env created from .env.example"
-else
-  ok ".env already present"
+# Local-dev DB credentials are GENERATED here, never shipped in the tracked
+# templates (those ship blank — we don't commit credentials, even mock ones).
+# The password must match across both files: .env's POSTGRES_PASSWORD (the
+# postgres container + the compose-built container DATABASE_URL) and .env.app's
+# host-side DATABASE_URL (alembic/seed/uvicorn). user/db are non-secret
+# identifiers; only the password is generated.
+local_pg_user="dataq"
+local_pg_db="dataq"
+# Reuse a password already set in .env (so re-runs stay consistent); otherwise
+# generate a fresh hex one (URL-safe — no special chars to encode in
+# DATABASE_URL). `=..*` matches only a NON-blank value, so a blank line doesn't
+# count as "set".
+local_pg_password="$(sed -n 's/^POSTGRES_PASSWORD=\(..*\)$/\1/p' .env 2>/dev/null | head -n1 || true)"
+if [ -z "${local_pg_password}" ]; then
+  local_pg_password="$(openssl rand -hex 16 2>/dev/null || date +%s | shasum | cut -c1-32)"
 fi
-if [ ! -f .env.app ]; then
-  cp .env.app.example .env.app
-  ok ".env.app created from .env.app.example"
-else
-  ok ".env.app already present"
+
+# Create each file from its template if missing, then BACK-FILL the local-dev
+# creds whenever the key is still blank — covers a fresh copy AND a pre-existing
+# file left blank (e.g. a manual `cp` of the now-blank template). Without the
+# back-fill, a blank POSTGRES_PASSWORD trips compose's `${VAR:?}` guard / mismatches
+# the host DATABASE_URL.
+[ -f .env ] || { cp .env.example .env; ok ".env created from .env.example"; }
+if ! grep -qE '^POSTGRES_PASSWORD=..*$' .env; then
+  sed -i.bak \
+    -e "s|^POSTGRES_USER=.*|POSTGRES_USER=${local_pg_user}|" \
+    -e "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${local_pg_password}|" \
+    -e "s|^POSTGRES_DB=.*|POSTGRES_DB=${local_pg_db}|" .env && rm -f .env.bak
+  ok ".env local Postgres creds generated"
+fi
+
+[ -f .env.app ] || { cp .env.app.example .env.app; ok ".env.app created from .env.app.example"; }
+if ! grep -qE '^DATABASE_URL=..*$' .env.app; then
+  db_url="postgresql+psycopg2://${local_pg_user}:${local_pg_password}@localhost:5432/${local_pg_db}"
+  sed -i.bak -e "s|^DATABASE_URL=.*|DATABASE_URL=${db_url}|" .env.app && rm -f .env.app.bak
+  ok ".env.app host DATABASE_URL set"
 fi
 set -a
 # shellcheck disable=SC1091
