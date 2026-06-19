@@ -209,6 +209,8 @@ These were preconditions for executing the roadmap. Listed for completeness.
 - [ ] ⬜ Flat file run path — resolve batch, load via Pandas, execute GX suite
 - [ ] ⬜ UC run path — submit job to Databricks SQL Warehouse, execute GX suite
 
+> **Operational result statuses ([#122](https://github.com/TheurgicDuke771/DataQ/issues/122), folded into the run-path work):** the `error` half shipped — a check GX can't *evaluate* (per-expectation exception, e.g. a missing column) now persists as the `error` operational status (no severity, no `metric_value`) instead of being conflated with a data `fail`, and never fails its siblings or the run. `CheckOutcome.errored`/`error_message` seam + `gx_runner` detection (both GX 1.17 `exception_info` shapes) + `run_service` mapping; unit + real-GX + Postgres-integration tests. The `skip` half (missing batch/file is its real producer) lands with the flat-file run path. The `RESULT_STATUSES` CHECK already carried both values (Week-3 schema seam).
+
 ### ADF + Airflow hybrid monitoring (webhook + polling fallback) (4 tasks — 2/4 ✅)
 - [x] ✅ Celery beat task — poll ADF REST API every 10 min for **succeeded** runs (skip pipelines updated by webhook recently) — provider-agnostic `poll_orchestration_runs` beat task through the `OrchestrationProvider` seam — [PR #171](https://github.com/TheurgicDuke771/DataQ/pull/189)
 - [x] ✅ Celery beat task — poll Airflow REST API `dagRuns` every 10 min — same provider-agnostic beat task (ADF + Airflow share it) — [PR #171](https://github.com/TheurgicDuke771/DataQ/pull/189) _(added per ADR 0004; not in roadmap)_
