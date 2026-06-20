@@ -34,6 +34,12 @@ from backend.app.worker.celery_app import celery_app
 # Polling fallback (#171): look back slightly further than the 10-min beat
 # interval so a run can't slip through the gap between consecutive polls.
 _POLL_LOOKBACK = timedelta(minutes=15)
+# Gap recovery (B2): a wider window swept on startup + every 30 min to re-ingest
+# runs missed while the system was down (worker/beat restart, webhook + poll both
+# offline). Same provider-agnostic pipeline; only the lookback differs. Safe to
+# overlap the regular poll — the upsert is idempotent and `skip_updated_since`
+# drops runs already recorded inside the window.
+_GAP_RECOVERY_LOOKBACK = timedelta(hours=1)
 
 log = get_logger(__name__)
 
@@ -132,18 +138,27 @@ def run_suite(run_id: str) -> str:
 
 
 def _poll_orchestration_runs(
-    session: Session, *, secret_store: SecretStore, now: datetime | None = None
+    session: Session,
+    *,
+    secret_store: SecretStore,
+    now: datetime | None = None,
+    lookback: timedelta = _POLL_LOOKBACK,
 ) -> dict[str, int]:
     """Poll every orchestrator connection for recent succeeded runs (#171, ADR 0004).
 
     The polling fallback for runs that never produced a webhook: iterate each
     ADF / Airflow connection, ask the provider's `list_recent_runs` for runs
-    updated within the lookback window, and hand them to `ingest_polled_runs`
+    updated within the ``lookback`` window, and hand them to `ingest_polled_runs`
     (upsert + trigger-on-success). Goes through the `OrchestrationProvider` seam —
     no per-provider branching. Each connection is isolated: a transport/auth
     failure logs + continues so one bad connection can't starve the rest.
+
+    ``lookback`` widens for gap recovery (B2): the same sweep over a 1-hour window
+    re-ingests runs missed during downtime. ``skip_updated_since`` rides the same
+    window, so a run we already recorded inside it is skipped while a genuinely
+    missed one (no row) is upserted.
     """
-    since = (now or datetime.now(UTC)) - _POLL_LOOKBACK
+    since = (now or datetime.now(UTC)) - lookback
     summary = {"connections": 0, "recorded": 0, "triggered": 0, "skipped": 0, "errors": 0}
     connections = list(
         session.scalars(
@@ -189,5 +204,22 @@ def poll_orchestration_runs() -> dict[str, int]:
     session = get_session()
     try:
         return _poll_orchestration_runs(session, secret_store=get_secret_store())
+    finally:
+        session.close()
+
+
+@celery_app.task(name="recover_orchestration_gaps")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
+def recover_orchestration_gaps() -> dict[str, int]:
+    """Celery-beat entry point — gap recovery (B2), startup + every 30 min.
+
+    The same poll pipeline over the wider ``_GAP_RECOVERY_LOOKBACK`` window, to
+    re-ingest runs missed while the system was down. Idempotent with the regular
+    poll (upsert + `skip_updated_since`).
+    """
+    session = get_session()
+    try:
+        return _poll_orchestration_runs(
+            session, secret_store=get_secret_store(), lookback=_GAP_RECOVERY_LOOKBACK
+        )
     finally:
         session.close()

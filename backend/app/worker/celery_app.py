@@ -19,10 +19,11 @@ from celery.signals import (
     setup_logging,
     task_postrun,
     task_prerun,
+    worker_ready,
 )
 
 from backend.app.core.config import get_settings
-from backend.app.core.logging import configure_logging, request_id_var
+from backend.app.core.logging import configure_logging, get_logger, request_id_var
 
 # Message-header key carrying the originating request_id across the broker.
 REQUEST_ID_HEADER = "request_id"
@@ -53,10 +54,17 @@ def create_celery_app() -> Celery:
         # the task looks back further than the interval so nothing slips the gap.
         # Beat runs embedded in the dev worker (`worker -B`); prod uses a separate
         # beat process.
+        # Gap recovery (B2) sweeps a wider 1-hour window every 30 min (plus once
+        # on worker boot, via the worker_ready signal below) to re-ingest runs
+        # missed while the system was down — idempotent with the 10-min poll.
         beat_schedule={
             "poll-orchestration-runs": {
                 "task": "poll_orchestration_runs",
                 "schedule": 600.0,  # 10 minutes
+            },
+            "recover-orchestration-gaps": {
+                "task": "recover_orchestration_gaps",
+                "schedule": 1800.0,  # 30 minutes
             },
         },
     )
@@ -116,3 +124,19 @@ def _clear_request_id(task: Any = None, **_kwargs: Any) -> None:
     token = getattr(task.request, _REQUEST_ID_RESET_ATTR, None) if task is not None else None
     if token is not None:
         request_id_var.reset(token)
+
+
+@worker_ready.connect  # type: ignore[untyped-decorator]  # celery signal .connect is unannotated
+def _recover_gaps_on_startup(**_kwargs: Any) -> None:
+    """On worker boot, kick a one-off gap recovery (B2).
+
+    Enqueued by name (not imported) so this stays decoupled from the task module,
+    and dispatched to the broker so any ready worker runs it. Catches runs that
+    completed while the system was down — the regular 30-min beat alone would
+    leave that window unswept until its first tick. Best-effort: a broker hiccup
+    at boot must not crash worker startup (the beat will recover shortly after).
+    """
+    try:
+        celery_app.send_task("recover_orchestration_gaps")
+    except Exception:  # pragma: no cover - defensive; boot must not fail on broker
+        get_logger(__name__).exception("gap_recovery_startup_dispatch_failed")
