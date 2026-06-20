@@ -63,3 +63,12 @@ Merge #301 once CI clears, then start A2
 ---
 
 merge #302 once CI completes
+
+---
+
+Hey last 5 CI either cancelled or failed but the PR got merged, I thought we enforced the CI to pass in order to merge, is it not? 
+Also check why CI are failing
+
+---
+
+yeah file and then fix it, Also Stop merging via the REST PUT shortcut — let the PR merge only once checks are green.
