@@ -426,6 +426,47 @@ class TriggerBinding(Base):
     updated_at: Mapped[datetime] = _updated_at()
 
 
+class Schedule(Base):
+    """A cron schedule that fires a suite run automatically (A7).
+
+    The beat dispatcher (`worker.tasks.dispatch_due_schedules`) ticks every
+    minute and queries `enabled AND next_run_at <= now()` — an indexed scan, so
+    the cron is parsed only when a schedule actually fires, never per tick.
+
+    `next_run_at` is precomputed (`services.cron.next_fire`) on create and after
+    each fire / cron change. **No-backfill semantics**: a fire advances it to the
+    next *future* occurrence, so a downtime gap fires at most once on recovery
+    rather than backfilling every missed slot (correct for monitoring). `cron` is
+    a standard 5-field expression evaluated in `timezone` (IANA, DST-aware,
+    default UTC). Cascade-deleted with the suite.
+    """
+
+    __tablename__ = "schedules"
+    __table_args__ = (
+        Index("ix_schedules_suite_id", "suite_id"),
+        # The dispatcher's hot path: due + enabled schedules, oldest-due first.
+        Index("ix_schedules_enabled_next_run_at", "enabled", "next_run_at"),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    suite_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("suites.id", ondelete="CASCADE"), nullable=False
+    )
+    cron: Mapped[str] = mapped_column(String(128), nullable=False)
+    # IANA tz name the cron is evaluated in (e.g. 'America/New_York'); 'UTC' default.
+    timezone: Mapped[str] = mapped_column(String(64), nullable=False, server_default=text("'UTC'"))
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+    # Precomputed next fire (UTC). The dispatcher scans on this; never parses cron.
+    next_run_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # Last time the dispatcher fired this schedule (NULL until first fire).
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_by: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
+    )
+    created_at: Mapped[datetime] = _created_at()
+    updated_at: Mapped[datetime] = _updated_at()
+
+
 __all__ = [
     "Base",
     "Check",
@@ -433,6 +474,7 @@ __all__ = [
     "PipelineRun",
     "Result",
     "Run",
+    "Schedule",
     "Share",
     "Suite",
     "TriggerBinding",

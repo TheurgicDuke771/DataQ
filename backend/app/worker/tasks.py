@@ -21,14 +21,22 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore, get_secret_store
 from backend.app.datasources.flatfile import BatchNotFoundError
 from backend.app.datasources.registry import build_check_runner
-from backend.app.db.models import ORCHESTRATION_PROVIDERS, Check, Connection, Run, Suite
+from backend.app.db.models import (
+    ORCHESTRATION_PROVIDERS,
+    Check,
+    Connection,
+    Run,
+    Schedule,
+    Suite,
+)
 from backend.app.db.session import get_session
 from backend.app.orchestration.registry import get_orchestration_provider
-from backend.app.services import orchestration_service, run_service, run_target
+from backend.app.services import cron, orchestration_service, run_dispatch, run_service, run_target
 from backend.app.worker.celery_app import celery_app
 
 # Polling fallback (#171): look back slightly further than the 10-min beat
@@ -226,3 +234,115 @@ def recover_orchestration_gaps() -> dict[str, int]:
     poll (upsert + `skip_updated_since`).
     """
     return _run_orchestration_poll(_GAP_RECOVERY_LOOKBACK)
+
+
+# ──────────────────────── scheduled run dispatch (A7) ──────────────────────
+
+
+def _advance_schedule(schedule: Schedule, *, now: datetime) -> bool:
+    """Roll ``schedule`` forward to its next future fire and stamp ``last_run_at``.
+
+    **No-backfill semantics**: ``cron.next_fire`` returns the next occurrence
+    strictly after ``now``, so a gap (worker/beat down across several slots) is
+    collapsed to a single fire rather than backfilled. Returns True if advanced;
+    False (and disables the schedule) if the stored cron/tz is somehow invalid —
+    validated on write, so this only guards against direct DB tampering and stops
+    an un-advanceable row from hot-looping the dispatcher every tick.
+    """
+    schedule.last_run_at = now
+    try:
+        schedule.next_run_at = cron.next_fire(schedule.cron, schedule.timezone, after=now)
+    except DataQError:
+        schedule.enabled = False
+        log.error(
+            "schedule_disabled_invalid_cron",
+            schedule_id=str(schedule.id),
+            cron=schedule.cron,
+            timezone=schedule.timezone,
+        )
+        return False
+    return True
+
+
+def _fire_schedule(session: Session, schedule: Schedule, *, now: datetime) -> str:
+    """Fire one due schedule: advance it, then queue + dispatch a suite run.
+
+    Advancing ``next_run_at`` happens **before** the run is created and is
+    committed in every branch, so the schedule leaves the due window for this
+    tick whatever the run's fate — a misconfigured suite never hot-loops. The run
+    is created with the canonical ``schedule:<id>`` ``triggered_by`` marker and
+    handed to the worker exactly like the manual / pipeline-trigger paths; a
+    targetless suite is skipped (not queued-then-failed), and a broker outage
+    marks the run ``failed`` rather than leaving it stuck ``queued`` (#227).
+    """
+    if not _advance_schedule(schedule, now=now):
+        session.commit()
+        return "disabled"
+
+    suite = session.get(Suite, schedule.suite_id)
+    assert suite is not None  # schedule cascade-deletes with its suite
+    connection = session.get(Connection, suite.connection_id)
+    assert connection is not None  # suite.connection_id FK is RESTRICT
+    try:
+        run_target.resolve_target(connection.type, suite.target)
+    except DataQError:
+        session.commit()  # persist the advance; skip the doomed run
+        log.warning(
+            "schedule_skipped_invalid_target",
+            schedule_id=str(schedule.id),
+            suite_id=str(suite.id),
+        )
+        return "skipped_target"
+
+    run = Run(suite_id=suite.id, status="queued", triggered_by=f"schedule:{schedule.id}")
+    session.add(run)
+    session.commit()
+    session.refresh(run)
+    try:
+        run.celery_task_id = run_dispatch.dispatch_run(run.id)
+        session.commit()
+    except Exception:
+        run_dispatch.mark_dispatch_failed(run)
+        session.commit()
+        log.exception("schedule_dispatch_failed", schedule_id=str(schedule.id), run_id=str(run.id))
+        return "dispatch_failed"
+    log.info("schedule_fired", schedule_id=str(schedule.id), run_id=str(run.id))
+    return "dispatched"
+
+
+def _dispatch_due_schedules(session: Session, *, now: datetime | None = None) -> dict[str, int]:
+    """Fire every enabled schedule whose ``next_run_at`` has passed (A7).
+
+    Pulls due schedules one at a time with ``FOR UPDATE SKIP LOCKED`` so two
+    overlapping dispatcher ticks can't double-fire the same schedule: the second
+    skips a row the first holds, and once fired the row's ``next_run_at`` is past
+    ``now`` so it drops out of the due set. ``now`` is fixed at entry, so the loop
+    is finite (each iteration advances one row out of the window).
+    """
+    now = now or datetime.now(UTC)
+    summary = {"due": 0, "dispatched": 0, "skipped_target": 0, "dispatch_failed": 0, "disabled": 0}
+    while True:
+        schedule = session.scalars(
+            select(Schedule)
+            .where(Schedule.enabled.is_(True), Schedule.next_run_at <= now)
+            .order_by(Schedule.next_run_at)
+            .with_for_update(skip_locked=True)
+            .limit(1)
+        ).first()
+        if schedule is None:
+            break
+        summary["due"] += 1
+        outcome = _fire_schedule(session, schedule, now=now)
+        summary[outcome] = summary.get(outcome, 0) + 1
+    log.info("schedules_dispatch_completed", **summary)
+    return summary
+
+
+@celery_app.task(name="dispatch_due_schedules")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
+def dispatch_due_schedules() -> dict[str, int]:
+    """Celery-beat entry point — fire due suite-run schedules (A7), every minute."""
+    session = get_session()
+    try:
+        return _dispatch_due_schedules(session)
+    finally:
+        session.close()
