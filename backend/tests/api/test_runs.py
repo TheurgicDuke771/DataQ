@@ -360,6 +360,26 @@ def test_progress_completed_run_reports_per_check_status_and_histogram(
     assert body["counts"]["warn"] == 0
 
 
+def test_progress_failed_run_has_terminal_status_and_no_results(
+    client: TestClient, db_session: Any
+) -> None:
+    """A failed run rolls back and writes no results, so per-check status stays
+    null — consumers must read it together with the terminal `status='failed'`,
+    not treat null as 'still running' (the documented contract)."""
+    dev = _user(db_session, "dev@ex")
+    suite = _suite(db_session, dev, target={"table": "T"})
+    _check(db_session, suite, "a")
+    db_session.commit()
+    run = _run(db_session, suite, status="failed")
+
+    _as(dev)
+    body = client.get(f"/api/v1/runs/{run.id}/progress").json()
+    assert body["status"] == "failed"
+    assert body["total_checks"] == 1
+    assert body["completed_checks"] == 0
+    assert body["checks"][0]["status"] is None
+
+
 def test_progress_unknown_run_returns_404(client: TestClient, db_session: Any) -> None:
     dev = _user(db_session, "dev@ex")
     _as(dev)

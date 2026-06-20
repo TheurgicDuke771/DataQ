@@ -232,8 +232,10 @@ def list_results(session: Session, run_id: uuid.UUID) -> list[Result]:
 
 @dataclass(frozen=True)
 class CheckProgress:
-    """One check's progress within a run. ``status`` is ``None`` while the check
-    is still **pending** (no result row yet)."""
+    """One check's progress within a run. ``status`` is ``None`` when the check has
+    no result row — *pending* while the run is active, or *not recorded* for a
+    terminal run (a ``failed`` run rolls back and writes no results, so consumers
+    must read this together with the run's lifecycle ``status``, not in isolation)."""
 
     check_id: uuid.UUID
     name: str
@@ -272,8 +274,10 @@ def get_run_progress(session: Session, run: Run) -> RunProgress:
             select(Check).where(Check.suite_id == run.suite_id).order_by(Check.created_at)
         )
     )
+    # One result per (run_id, check_id) in v1 (each run writes one row per check);
+    # keyed by check_id to join against the suite's current checks.
     results = {r.check_id: r for r in list_results(session, run.id)}
-    counts = dict.fromkeys(RESULT_STATUSES, 0)
+    counts: dict[str, int] = dict.fromkeys(RESULT_STATUSES, 0)
     per_check: list[CheckProgress] = []
     completed = 0
     for check in checks:
