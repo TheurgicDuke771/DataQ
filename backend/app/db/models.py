@@ -126,6 +126,59 @@ class Connection(Base):
     updated_at: Mapped[datetime] = _updated_at()
 
 
+class ConnectionVersion(Base):
+    """An immutable snapshot of a connection's editable, **non-secret** state,
+    written on create and after every successful name/config update — the source
+    for the connection "version history" view. Mirrors `check_versions`: per-entity
+    config history, not the cross-entity audit log (deferred — see #310).
+
+    Deliberately omits the credential: the secret lives only in the SecretStore
+    (referenced by `secret_ref`, which is the constant `conn-<id>` pointer, not the
+    value), so it is never copied here. A credential rotation (`reauth`, or an
+    update that only changes the secret) therefore records **no** version — that is
+    an audit-log concern, not config history.
+
+    `version_no` is a per-connection sequence starting at 1 (unique with
+    `connection_id`). A version is cascade-deleted with its connection (history is
+    not retained past deletion — accepted), but survives its author (`changed_by`
+    is `SET NULL`).
+    """
+
+    __tablename__ = "connection_versions"
+    __table_args__ = (
+        UniqueConstraint("connection_id", "version_no", name="uq_connection_versions_conn_version"),
+        Index("ix_connection_versions_connection_id", "connection_id"),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    connection_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("connections.id", ondelete="CASCADE"), nullable=False
+    )
+    version_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Snapshot of the editable fields. type/env are immutable on a connection but
+    # snapshotted for a self-contained record; `config` is the non-secret
+    # datasource config as stored. No credential / secret_ref (see class docstring).
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    type: Mapped[str] = mapped_column(String(32), nullable=False)
+    env: Mapped[str] = mapped_column(String(16), nullable=False)
+    config: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    # Who authored this version. NULL for a system/unknown actor or once the user
+    # is removed — the snapshot must outlive its author (SET NULL, not CASCADE).
+    changed_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = _created_at()
+
+    author: Mapped["User | None"] = relationship()
+
+    @property
+    def changed_by_name(self) -> str | None:
+        """The author's display name (or email) for the history view, or None for
+        a system actor / removed user. Reads the eager-loaded `author` — callers
+        that serialize this must `selectinload(ConnectionVersion.author)`."""
+        return (self.author.display_name or self.author.email) if self.author else None
+
+
 class Suite(Base):
     __tablename__ = "suites"
     __table_args__ = (

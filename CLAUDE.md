@@ -223,6 +223,7 @@ curl -X POST http://localhost:8000/api/v1/_probe/snowflake-suite
 | Python runtime 3.11 → 3.13 (3.14 deferred — GX 1.17 caps at 3.13; supersedes the W1 Python-3.11 lock); bundled with the Snowflake 3→4 + cryptography/pyOpenSSL CVE refresh (#129) | [0017](docs/adr/0017-python-313-runtime-upgrade.md) | Accepted (2026-06-08) |
 | Results surface is an in-app React page (suite-scoped authz + PII redaction the API owns); Grafana deferred to an optional post-v1 read-only **ops** add-on, never the per-user product surface | [0018](docs/adr/0018-results-surface-and-grafana-deferral.md) | Accepted (2026-06-11) |
 | Custom-SQL checks ride `kind='expectation'` via GX `UnexpectedRowsExpectation` (no new kind / migration / runner change); guardrails = read-only single-statement validation + SQL-datasource-only gating + least-privilege role; binary pass/fail in v1 | [0019](docs/adr/0019-custom-sql-check-kind.md) | Accepted (2026-06-14) |
+| History/audit strategy: per-entity Type-4 snapshot tables (`check_versions`, `connection_versions`) where config history is needed; **no SCD-2** (breaks the FK model + maintenance tax); credentials never snapshotted; cascade-delete accepted (history not retained past delete); soft-delete + cross-entity audit log deferred | [0020](docs/adr/0020-history-and-audit-strategy.md) | Accepted (2026-06-20) |
 
 ---
 

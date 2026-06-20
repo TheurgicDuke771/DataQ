@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 
 from backend.app.core.secrets import SecretNotFoundError, SecretWriteError
-from backend.app.db.models import Connection, User
+from backend.app.db.models import Connection, ConnectionVersion, User
 from backend.app.services import connection_service as svc
 from backend.app.services.connection_service import (
     ConnectionConfigInvalidError,
@@ -448,3 +448,90 @@ def test_update_secret_write_failure_raises_502(db_session: Any) -> None:
         svc.update_connection(db_session, conn.id, secret="rotated", secret_store=_WriteFailStore())
     assert excinfo.value.status_code == 502
     assert isinstance(excinfo.value.__cause__, SecretWriteError)
+
+
+# ───────────────────────── version history ─────────────────────────
+
+
+def _versions(db_session: Any, conn_id: uuid.UUID) -> list[ConnectionVersion]:
+    return list(
+        db_session.scalars(
+            select(ConnectionVersion)
+            .where(ConnectionVersion.connection_id == conn_id)
+            .order_by(ConnectionVersion.version_no)
+        )
+    )
+
+
+def test_create_records_v1_snapshot(db_session: Any) -> None:
+    user = _user(db_session)
+    conn = _create(db_session, FakeStore(), user=user)
+    versions = _versions(db_session, conn.id)
+    assert len(versions) == 1
+    v1 = versions[0]
+    assert v1.version_no == 1
+    assert v1.name == conn.name
+    assert v1.type == conn.type
+    assert v1.env == conn.env
+    assert v1.config == conn.config
+    assert v1.changed_by == user.id
+
+
+def test_snapshot_omits_credential(db_session: Any) -> None:
+    """The secret must never be copied into history — only non-secret config."""
+    conn = _create(db_session, FakeStore(), secret="super-secret")
+    v1 = _versions(db_session, conn.id)[0]
+    # the snapshot has no secret column at all; the live value never leaks into it
+    assert "super-secret" not in str(v1.config)
+    assert not hasattr(v1, "secret_ref")
+
+
+def test_update_name_or_config_records_new_version(db_session: Any) -> None:
+    actor = _user(db_session)
+    conn = _create(db_session, FakeStore(), user=actor)
+    svc.update_connection(
+        db_session,
+        conn.id,
+        name="renamed",
+        config={**_SF_CONFIG, "warehouse": "WH_BIG"},
+        secret_store=FakeStore(),
+        actor_id=actor.id,
+    )
+    versions = _versions(db_session, conn.id)
+    assert [v.version_no for v in versions] == [1, 2]
+    assert versions[1].name == "renamed"
+    assert versions[1].config["warehouse"] == "WH_BIG"
+    assert versions[1].changed_by == actor.id
+
+
+def test_secret_only_update_records_no_version(db_session: Any) -> None:
+    """Credential rotation is not config history — no new snapshot (mirrors reauth)."""
+    conn = _create(db_session, FakeStore())
+    store = FakeStore()
+    store.set(f"conn-{conn.id}", "old")
+    svc.update_connection(db_session, conn.id, secret="rotated", secret_store=store)
+    assert [v.version_no for v in _versions(db_session, conn.id)] == [1]  # still just the create
+
+
+def test_list_connection_versions_newest_first_with_author(db_session: Any) -> None:
+    actor = _user(db_session)
+    conn = _create(db_session, FakeStore(), user=actor)
+    svc.update_connection(
+        db_session, conn.id, name="v2", secret_store=FakeStore(), actor_id=actor.id
+    )
+    versions = svc.list_connection_versions(db_session, conn.id)
+    assert [v.version_no for v in versions] == [2, 1]  # newest first
+    assert versions[0].changed_by_name == actor.email  # eager-loaded author
+
+
+def test_list_connection_versions_unknown_connection_404(db_session: Any) -> None:
+    with pytest.raises(ConnectionNotFoundError):
+        svc.list_connection_versions(db_session, uuid.uuid4())
+
+
+def test_delete_connection_cascades_versions(db_session: Any) -> None:
+    """Cascade delete is accepted policy — history is not retained past deletion."""
+    conn = _create(db_session, FakeStore())
+    assert len(_versions(db_session, conn.id)) == 1
+    svc.delete_connection(db_session, conn.id)
+    assert _versions(db_session, conn.id) == []

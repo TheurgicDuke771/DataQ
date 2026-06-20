@@ -12,6 +12,7 @@ Snowflake connect is blocking and must not stall the event loop.
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, status
@@ -145,6 +146,7 @@ def update_connection(
         config=payload.config,
         secret=payload.secret,
         secret_store=secret_store,
+        actor_id=current_user.id,
     )
     return ConnectionRead.from_model(conn)
 
@@ -194,3 +196,41 @@ def reauth_connection(
     # the credential then probes it; a bad new credential surfaces as 502.
     svc.reauth_connection(db, connection_id, secret=payload.secret, secret_store=secret_store)
     return ConnectionTestResult(ok=True)
+
+
+# ───────────────────────── version history ─────────────────────────
+
+
+class ConnectionVersionRead(BaseModel):
+    """One snapshot in a connection's history. `changed_by_name` (the author's
+    display name or email, NULL for a system actor / removed user) comes from the
+    model property, resolved server-side so the client needn't join users. No
+    credential is present — only the editable, non-secret fields are versioned.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    version_no: int
+    name: str
+    type: str
+    env: str
+    config: dict[str, Any]
+    changed_by: uuid.UUID | None
+    changed_by_name: str | None
+    created_at: datetime
+
+
+@router.get(
+    "/connections/{connection_id}/versions",
+    response_model=list[ConnectionVersionRead],
+    summary="List a connection's version history (newest first)",
+)
+def list_connection_versions(
+    connection_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> list[ConnectionVersionRead]:
+    return [
+        ConnectionVersionRead.model_validate(v)
+        for v in svc.list_connection_versions(db, connection_id)
+    ]

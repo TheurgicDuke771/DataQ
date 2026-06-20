@@ -17,9 +17,9 @@ import uuid
 from typing import Any
 
 from pydantic import ValidationError
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
@@ -28,7 +28,7 @@ from backend.app.datasources.registry import (
     UnsupportedConnectionTypeError,
     get_connection_adapter,
 )
-from backend.app.db.models import ENVS, Connection
+from backend.app.db.models import ENVS, Connection, ConnectionVersion
 
 log = get_logger(__name__)
 
@@ -107,6 +107,39 @@ def _conflict_from_integrity_error(
     )
 
 
+def record_connection_version(
+    session: Session, conn: Connection, *, actor_id: uuid.UUID | None
+) -> ConnectionVersion:
+    """Append an immutable snapshot of `conn`'s current non-secret state as its
+    next version (a per-connection sequence starting at 1). The caller commits —
+    this only adds the row, so the snapshot and the create/update it records
+    commit atomically. The `(connection_id, version_no)` unique constraint is the
+    backstop against a concurrent double-write computing the same number (rare
+    under v1's single-tenant editing).
+
+    The credential is **not** snapshotted (see `ConnectionVersion`); only the
+    editable, non-secret fields. `conn.id` must be populated (flush first).
+    """
+    # MAX over no rows is NULL → None; `or 0` makes the first version 1.
+    current_max = session.scalar(
+        select(func.max(ConnectionVersion.version_no)).where(
+            ConnectionVersion.connection_id == conn.id
+        )
+    )
+    next_no = (current_max or 0) + 1
+    version = ConnectionVersion(
+        connection_id=conn.id,
+        version_no=next_no,
+        name=conn.name,
+        type=conn.type,
+        env=conn.env,
+        config=conn.config,
+        changed_by=actor_id,
+    )
+    session.add(version)
+    return version
+
+
 def create_connection(
     session: Session,
     *,
@@ -142,6 +175,8 @@ def create_connection(
             secret_ref = f"conn-{conn.id}"
             secret_store.set(secret_ref, secret)
             conn.secret_ref = secret_ref
+        # v1 snapshot — atomic with the insert (same commit).
+        record_connection_version(session, conn, actor_id=created_by)
         session.commit()
     except IntegrityError as exc:
         session.rollback()
@@ -192,18 +227,27 @@ def update_connection(
     config: dict[str, Any] | None = None,
     secret: str | None = None,
     secret_store: SecretStore,
+    actor_id: uuid.UUID | None = None,
 ) -> Connection:
-    """Partial update of name / config / secret. Type and env are immutable."""
+    """Partial update of name / config / secret. Type and env are immutable.
+
+    Records a new `ConnectionVersion` only when a snapshotted field (name/config)
+    changed — a secret-only update (credential rotation) is not config history and
+    records no version (mirrors `reauth_connection`).
+    """
     conn = get_connection(session, connection_id)
     # Capture before commit: a unique violation rolls back and expires the
     # instance, so read the (immutable) type/env now for the conflict message.
     conn_type, conn_env = conn.type, conn.env
 
+    versioned_change = False
     if config is not None:
         _validated_config(conn.type, config)
         conn.config = config
+        versioned_change = True
     if name is not None:
         conn.name = name
+        versioned_change = True
     if secret is not None:
         secret_ref = conn.secret_ref or f"conn-{conn.id}"
         try:
@@ -218,6 +262,12 @@ def update_connection(
         conn.secret_ref = secret_ref
 
     try:
+        # Snapshot the post-update state, atomic with the update (same commit).
+        # Inside the try: recording reads `MAX(version_no)`, which autoflushes the
+        # pending name/config change — so a (name, env) collision can surface here
+        # rather than at commit, and must map to the same conflict error.
+        if versioned_change:
+            record_connection_version(session, conn, actor_id=actor_id)
         session.commit()
     except IntegrityError as exc:
         session.rollback()
@@ -265,6 +315,22 @@ def reauth_connection(
     # raises ConnectionTestFailedError (502) if the new credential doesn't work.
     test_connection(session, connection_id, secret_store=secret_store)
     log.info("connection_reauthed", connection_id=str(connection_id))
+
+
+def list_connection_versions(session: Session, connection_id: uuid.UUID) -> list[ConnectionVersion]:
+    """A connection's version history, newest first. 404 if the connection is
+    missing. Eager-loads each version's author (only query that needs it) so the
+    API can name the editor without an N+1.
+    """
+    get_connection(session, connection_id)  # 404 guard
+    return list(
+        session.scalars(
+            select(ConnectionVersion)
+            .where(ConnectionVersion.connection_id == connection_id)
+            .options(selectinload(ConnectionVersion.author))
+            .order_by(ConnectionVersion.version_no.desc())
+        )
+    )
 
 
 def delete_connection(session: Session, connection_id: uuid.UUID) -> None:
