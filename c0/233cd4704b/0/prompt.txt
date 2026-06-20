@@ -104,3 +104,8 @@ For #305 merger it once CI completes.
 <status>completed</status>
 <summary>Background command "Wait for CI completion via until loop" completed (exit code 0)</summary>
 </task-notification>
+
+---
+
+yeah strart with B2. 
+But going forward never do a direct commit to main.
