@@ -366,3 +366,43 @@ def test_create_requires_auth(db_session: Any) -> None:
         assert rows == []  # handler must not have created a row
     finally:
         app.dependency_overrides.clear()
+
+
+# ───────────────────────── version history ─────────────────────────
+
+
+def test_list_versions_returns_history_newest_first(
+    client: tuple[TestClient, FakeStore],
+) -> None:
+    api, _ = client
+    cid = api.post("/api/v1/connections", json=_create_payload()).json()["id"]
+    api.patch(f"/api/v1/connections/{cid}", json={"name": "renamed"})
+
+    resp = api.get(f"/api/v1/connections/{cid}/versions")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert [v["version_no"] for v in body] == [2, 1]
+    assert body[0]["name"] == "renamed"
+    assert body[0]["changed_by_name"] is not None  # the dev-bypass author
+    assert all("secret" not in v for v in body)  # credential never surfaced
+
+
+def test_list_versions_unknown_connection_404(client: tuple[TestClient, FakeStore]) -> None:
+    api, _ = client
+    resp = api.get(f"/api/v1/connections/{uuid.uuid4()}/versions")
+    assert resp.status_code == 404
+    assert resp.json()["error"]["code"] == "connection_not_found"
+
+
+def test_list_versions_requires_auth(db_session: Any) -> None:
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    def _reject() -> None:
+        raise HTTPException(status_code=401, detail="unauthorized")
+
+    app.dependency_overrides[get_current_user] = _reject
+    try:
+        resp = TestClient(app).get(f"/api/v1/connections/{uuid.uuid4()}/versions")
+        assert resp.status_code == 401
+    finally:
+        app.dependency_overrides.clear()

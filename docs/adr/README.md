@@ -30,6 +30,7 @@ Each ADR captures a single significant architecture decision: the context, the d
 | [0017](0017-python-313-runtime-upgrade.md) | Upgrade Python runtime 3.11 → 3.13 (3.14 deferred — GX-capped); bundled with the Snowflake 3→4 CVE refresh | Accepted |
 | [0018](0018-results-surface-and-grafana-deferral.md) | Results surface is an in-app page (suite-scoped authz + PII redaction); Grafana deferred to optional ops add-on | Accepted |
 | [0019](0019-custom-sql-check-kind.md) | Custom-SQL checks ride `kind='expectation'` via GX `UnexpectedRowsExpectation` (no new kind); read-only validation + SQL-datasource gating | Accepted |
+| [0020](0020-history-and-audit-strategy.md) | History/audit: per-entity Type-4 snapshot tables (`check_versions`, `connection_versions`) where config history is needed; no SCD-2; credentials never snapshotted; cascade-delete accepted; cross-entity audit log deferred | Accepted |
 
 ## Pending (to be written in their respective weeks)
 
