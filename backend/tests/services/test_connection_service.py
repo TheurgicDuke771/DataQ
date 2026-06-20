@@ -513,6 +513,29 @@ def test_secret_only_update_records_no_version(db_session: Any) -> None:
     assert [v.version_no for v in _versions(db_session, conn.id)] == [1]  # still just the create
 
 
+def test_noop_update_records_no_version(db_session: Any) -> None:
+    """A PATCH that re-sends the current name/config (no net change) must not mint
+    a duplicate version — `is_modified` reports no change."""
+    conn = _create(db_session, FakeStore())
+    svc.update_connection(
+        db_session,
+        conn.id,
+        name=conn.name,  # unchanged
+        config=dict(conn.config),  # equal value
+        secret_store=FakeStore(),
+    )
+    assert [v.version_no for v in _versions(db_session, conn.id)] == [1]
+
+
+def test_create_without_secret_still_snapshots_v1(db_session: Any) -> None:
+    """The credential-less create path still records v1 (conn.id is flushed before
+    the snapshot regardless of whether a secret is written)."""
+    conn = _create(db_session, FakeStore(), secret=None)
+    versions = _versions(db_session, conn.id)
+    assert [v.version_no for v in versions] == [1]
+    assert versions[0].connection_id == conn.id
+
+
 def test_list_connection_versions_newest_first_with_author(db_session: Any) -> None:
     actor = _user(db_session)
     conn = _create(db_session, FakeStore(), user=actor)

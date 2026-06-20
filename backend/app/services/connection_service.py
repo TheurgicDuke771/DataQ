@@ -240,14 +240,17 @@ def update_connection(
     # instance, so read the (immutable) type/env now for the conflict message.
     conn_type, conn_env = conn.type, conn.env
 
-    versioned_change = False
     if config is not None:
         _validated_config(conn.type, config)
         conn.config = config
-        versioned_change = True
     if name is not None:
         conn.name = name
-        versioned_change = True
+    # Snapshot only a *real* name/config change. `is_modified` reports net changes,
+    # so a no-op PATCH (fields re-sent at their current values) doesn't mint a
+    # duplicate version (mirrors `check_service.update_check`). Captured **before**
+    # the secret write so a credential rotation — which dirties `secret_ref` — is
+    # not counted as config history (a secret-only update records no version).
+    versioned_change = session.is_modified(conn)
     if secret is not None:
         secret_ref = conn.secret_ref or f"conn-{conn.id}"
         try:
