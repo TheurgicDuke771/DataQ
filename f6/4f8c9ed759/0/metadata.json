@@ -1,0 +1,59 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "f64f8c9ed759",
+  "session_id": "00e4a513-4666-4dd4-936b-a2e8b31b1e81",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-20T22:37:34.425921Z",
+  "branch": "feature/scheduling-backend-a7",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/requirements.txt",
+    "pyproject.toml",
+    "backend/app/db/models.py",
+    "backend/app/services/cron.py",
+    "backend/alembic/versions/f7a8b9c0d1e2_add_schedules.py",
+    "backend/app/services/schedule_service.py",
+    "backend/app/api/v1/schedules.py",
+    "backend/app/main.py",
+    "backend/app/worker/tasks.py",
+    "backend/app/worker/celery_app.py",
+    "backend/tests/services/test_cron.py",
+    "backend/tests/api/test_schedules.py",
+    "backend/tests/worker/test_schedule_dispatch.py",
+    "docs/progress.md"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "f74e327e2c49",
+  "token_usage": {
+    "input_tokens": 11054,
+    "cache_creation_tokens": 146107,
+    "cache_read_tokens": 8810213,
+    "output_tokens": 59338,
+    "api_call_count": 94
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-20T22:37:34.413188Z",
+    "agent_lines": 1053,
+    "agent_removed": 8,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 1053,
+    "total_lines_changed": 1061,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "f64f8c9ed759",
+  "strategy": "manual-commit",
+  "branch": "feature/scheduling-backend-a7",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/alembic/versions/f7a8b9c0d1e2_add_schedules.py",
+    "backend/app/api/v1/schedules.py",
+    "backend/app/db/models.py",
+    "backend/app/main.py",
+    "backend/app/services/cron.py",
+    "backend/app/services/schedule_service.py",
+    "backend/app/worker/celery_app.py",
+    "backend/app/worker/tasks.py",
+    "backend/requirements.txt",
+    "backend/tests/api/test_schedules.py",
+    "backend/tests/services/test_cron.py",
+    "backend/tests/worker/test_schedule_dispatch.py",
+    "docs/progress.md",
+    "pyproject.toml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f6/4f8c9ed759/0/metadata.json",
+      "transcript": "/f6/4f8c9ed759/0/full.jsonl",
+      "content_hash": "/f6/4f8c9ed759/0/content_hash.txt",
+      "prompt": "/f6/4f8c9ed759/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 11054,
+    "cache_creation_tokens": 146107,
+    "cache_read_tokens": 8810213,
+    "output_tokens": 59338,
+    "api_call_count": 94
+  }
+}
