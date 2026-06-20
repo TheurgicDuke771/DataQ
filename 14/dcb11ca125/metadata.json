@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "14dcb11ca125",
+  "strategy": "manual-commit",
+  "branch": "feature/a2-cancel-run",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "CLAUDE.md",
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/14/dcb11ca125/0/metadata.json",
+      "transcript": "/14/dcb11ca125/0/full.jsonl",
+      "content_hash": "/14/dcb11ca125/0/content_hash.txt",
+      "prompt": "/14/dcb11ca125/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 49412,
+    "cache_creation_tokens": 4056249,
+    "cache_read_tokens": 94322764,
+    "output_tokens": 291038,
+    "api_call_count": 348
+  }
+}
