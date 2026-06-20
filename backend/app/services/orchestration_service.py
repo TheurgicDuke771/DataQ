@@ -229,14 +229,12 @@ def _trigger_suites(
         )
         for run in created:
             try:
-                run_dispatch.dispatch_run(run.id)
+                run.celery_task_id = run_dispatch.dispatch_run(run.id)
+                session.commit()
             except Exception:
-                # Broker down: don't leave the run stuck 'queued'. Mark it failed
-                # with the worker's terminal-failed shape — finished_at set,
-                # started_at NULL (it never started) — so run-history/duration
-                # views stay consistent across dispatch paths.
-                run.status = "failed"
-                run.finished_at = datetime.now(UTC)
+                # Broker down: don't leave the run stuck 'queued'. Canonical
+                # terminal-failed shape shared across all trigger paths (#227).
+                run_dispatch.mark_dispatch_failed(run)
                 session.commit()
                 log.exception("suite_dispatch_failed", run_id=str(run.id))
     return created

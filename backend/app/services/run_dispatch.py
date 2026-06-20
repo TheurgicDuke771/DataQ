@@ -16,12 +16,53 @@ Raises on a broker/publish failure; the caller owns the policy for a stuck run
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 
+from backend.app.core.logging import get_logger
+from backend.app.db.models import Run
 from backend.app.worker.celery_app import celery_app
+
+log = get_logger(__name__)
 
 _RUN_SUITE_TASK = "run_suite"
 
 
-def dispatch_run(run_id: uuid.UUID) -> None:
-    """Publish the ``run_suite`` task for ``run_id``. Raises if the broker is down."""
-    celery_app.send_task(_RUN_SUITE_TASK, args=[str(run_id)])
+def dispatch_run(run_id: uuid.UUID) -> str:
+    """Publish the ``run_suite`` task for ``run_id`` and return its Celery task id.
+
+    The task id is stored on the `Run` (``celery_task_id``) so a later cancel can
+    revoke a still-queued task. Raises if the broker is down — the caller owns the
+    policy for the stuck run (`mark_dispatch_failed` + 503 / log).
+    """
+    result = celery_app.send_task(_RUN_SUITE_TASK, args=[str(run_id)])
+    return str(result.id)
+
+
+def mark_dispatch_failed(run: Run) -> None:
+    """The canonical terminal-failed shape for a broker/dispatch failure.
+
+    One definition shared by every trigger path (probe, manual run, pipeline
+    success) so a never-dispatched run is recorded identically everywhere:
+    ``failed`` with ``finished_at`` set and ``started_at`` left as-is (NULL — it
+    never started), keeping run-history / duration views consistent (#227).
+    """
+    run.status = "failed"
+    run.finished_at = datetime.now(UTC)
+
+
+def revoke_run(task_id: str | None) -> None:
+    """Best-effort revoke of a dispatched run's Celery task.
+
+    Drops the task if it's still **queued** (not yet picked up). Deliberately no
+    ``terminate`` — we don't SIGKILL a worker mid-GX (it would take out sibling
+    tasks); an already-running task is stopped **cooperatively** (the worker
+    checks for a ``cancelled`` run status). A no-op for an un-dispatched run
+    (``task_id is None``); broker errors are swallowed (the DB status is already
+    ``cancelled`` and the worker's cooperative check still applies).
+    """
+    if not task_id:
+        return
+    try:
+        celery_app.control.revoke(task_id)
+    except Exception:
+        log.warning("run_revoke_failed", celery_task_id=task_id)

@@ -80,6 +80,10 @@ def test_post_dispatch_failure_marks_run_failed(
         assert resp.status_code == 503
         run = db_session.scalars(select(Run)).first()
         assert run is not None and run.status == "failed"
+        # #227: probe now uses the canonical dispatch-failed shape — finished_at
+        # set (was NULL before), started_at left NULL (it never started).
+        assert run.finished_at is not None
+        assert run.started_at is None
     finally:
         app.dependency_overrides.clear()
 

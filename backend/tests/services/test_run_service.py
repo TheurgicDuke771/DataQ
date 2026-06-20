@@ -18,11 +18,16 @@ class FakeSession:
     """Records add_all'd rows; counts commits/rollbacks. `add_all_raises` simulates
     a persistence failure (e.g. DB error) after the adapter has already run."""
 
-    def __init__(self, *, add_all_raises: Exception | None = None) -> None:
+    def __init__(
+        self, *, add_all_raises: Exception | None = None, refresh_status: str | None = None
+    ) -> None:
         self.added: list[Result] = []
         self.commits = 0
         self.rollbacks = 0
         self._add_all_raises = add_all_raises
+        # When set, refresh() stamps this onto the refreshed object's `status`,
+        # simulating a concurrent cancel that committed from another session.
+        self._refresh_status = refresh_status
 
     def add_all(self, rows: list[Result]) -> None:
         if self._add_all_raises is not None:
@@ -34,6 +39,11 @@ class FakeSession:
 
     def rollback(self) -> None:
         self.rollbacks += 1
+        self.added.clear()  # discard staged-but-uncommitted rows, like a real rollback
+
+    def refresh(self, obj: object) -> None:
+        if self._refresh_status is not None:
+            obj.status = self._refresh_status  # type: ignore[attr-defined]
 
 
 class FakeRunner:
@@ -304,6 +314,24 @@ def test_skip_run_marks_all_checks_skip_and_run_succeeded() -> None:
     assert all(r.status == "skip" for r in session.added)
     assert all(r.observed_value == {"reason": "batch_not_found"} for r in session.added)
     assert all(r.metric_value is None for r in session.added)
+
+
+def test_cancel_during_execution_keeps_cancelled_and_persists_no_results() -> None:
+    """If a cancel commits while GX is running, the worker must not overwrite it
+    with a terminal success: refresh() sees the 'cancelled' status, the moot
+    results are rolled back, and the run stays cancelled (A2 cooperative guard)."""
+    session = FakeSession(refresh_status="cancelled")  # a concurrent cancel landed
+    run = _run()
+    checks = _checks(1)
+    outcome = SuiteOutcome(success=True, checks=[CheckOutcome("x", success=True)])
+
+    result = run_service.execute_run(
+        session, run=run, checks=checks, runner=FakeRunner(outcome=outcome), table="T"
+    )
+
+    assert result.status == "cancelled"  # not 'succeeded' — cancel wins
+    assert session.added == []  # staged results rolled back, nothing persisted
+    assert session.rollbacks >= 1
 
 
 def test_non_expectation_kind_fails_run_without_invoking_runner() -> None:

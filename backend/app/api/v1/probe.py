@@ -70,9 +70,10 @@ def trigger_snowflake_probe(
     db.refresh(run)
 
     try:
-        run_dispatch.dispatch_run(run.id)
+        run.celery_task_id = run_dispatch.dispatch_run(run.id)
+        db.commit()
     except Exception as exc:  # broker unreachable — don't leave the run stuck queued
-        run.status = "failed"
+        run_dispatch.mark_dispatch_failed(run)  # canonical failed shape (#227)
         db.commit()
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

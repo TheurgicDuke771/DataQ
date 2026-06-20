@@ -250,6 +250,10 @@ class Run(Base):
     )
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     triggered_by: Mapped[str | None] = mapped_column(String(256))
+    # Celery task id of the dispatched run_suite task, captured at dispatch so a
+    # cancel can revoke a still-queued task. NULL until dispatched (or if dispatch
+    # failed). String(155): Celery ids are UUIDs but keep headroom.
+    celery_task_id: Mapped[str | None] = mapped_column(String(155))
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = _created_at()
