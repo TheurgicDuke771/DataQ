@@ -70,6 +70,13 @@ def _run_suite(session: Session, *, run_id: uuid.UUID) -> str:
         log.error("run_suite_run_not_found", run_id=str(run_id))
         return "not_found"
 
+    # Cooperative cancellation: a cancel that landed while the run was queued (or
+    # in the dispatch→pickup window) already set 'cancelled' — don't execute it.
+    # (revoke also drops a still-queued task; this is the belt-and-braces check.)
+    if run.status == "cancelled":
+        log.info("run_suite_already_cancelled", run_id=str(run_id))
+        return "cancelled"
+
     try:
         suite = session.get(Suite, run.suite_id)
         connection = session.get(Connection, suite.connection_id) if suite is not None else None

@@ -44,7 +44,14 @@ def stub_run_dispatch(request: pytest.FixtureRequest, monkeypatch: pytest.Monkey
     if request.node.get_closest_marker("real_dispatch") is None:
         from backend.app.services import run_dispatch
 
-        monkeypatch.setattr(run_dispatch, "dispatch_run", lambda run_id: calls.append(str(run_id)))
+        def _fake_dispatch(run_id: object) -> str:
+            calls.append(str(run_id))
+            return f"task-{run_id}"  # the captured celery_task_id
+
+        monkeypatch.setattr(run_dispatch, "dispatch_run", _fake_dispatch)
+        # revoke goes to the broker (control bus); no-op it so cancel tests don't
+        # need a live Celery.
+        monkeypatch.setattr(run_dispatch, "revoke_run", lambda task_id: None)
     return calls
 
 

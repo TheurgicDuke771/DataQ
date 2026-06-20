@@ -46,6 +46,10 @@ class FakeSession:
 
     def rollback(self) -> None:
         self.rollbacks += 1
+        self.added.clear()
+
+    def refresh(self, obj: object) -> None:  # no-op reload (status unchanged here)
+        pass
 
     def close(self) -> None:
         self.closed = True
@@ -208,6 +212,29 @@ def test_run_suite_targetless_suite_marks_failed() -> None:
     assert status == "failed"
     assert run.status == "failed"
     assert session.added == []  # never reached execution
+
+
+def test_run_suite_already_cancelled_skips_execution(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A run cancelled while queued (cooperative cancel, A2): the worker sees the
+    'cancelled' status on pickup and skips — no runner built, nothing persisted,
+    status left cancelled."""
+    run, suite, connection, checks = _graph(1)
+    run.status = "cancelled"
+    session = FakeSession(run=run, suite=suite, connection=connection, checks=checks)
+    called = False
+
+    def _should_not_run(**_kw: Any) -> Any:
+        nonlocal called
+        called = True
+        raise AssertionError("runner must not be built for a cancelled run")
+
+    monkeypatch.setattr(tasks, "build_check_runner", _should_not_run)
+
+    status = tasks._run_suite(session, run_id=run.id)
+    assert status == "cancelled"
+    assert run.status == "cancelled"
+    assert called is False
+    assert session.added == []
 
 
 # ───────────────────────── flat-file batch (A4) ────────────────────

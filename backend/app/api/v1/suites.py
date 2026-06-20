@@ -9,7 +9,6 @@ set at create and immutable thereafter (re-pointing would orphan child checks).
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Annotated, Any, Literal
 
@@ -212,14 +211,12 @@ def trigger_suite_run(
     db.refresh(run)
 
     try:
-        run_dispatch.dispatch_run(run.id)
+        run.celery_task_id = run_dispatch.dispatch_run(run.id)
+        db.commit()
     except Exception as exc:  # broker unreachable — don't leave the run stuck queued
-        # Mark with the canonical terminal-failed shape — finished_at set,
-        # started_at NULL (it never started) — matching the pipeline-trigger
-        # dispatch-failure path (orchestration_service._trigger_suites) so
-        # run-history / duration views stay consistent across trigger paths.
-        run.status = "failed"
-        run.finished_at = datetime.now(UTC)
+        # Canonical terminal-failed shape shared across all trigger paths (#227):
+        # finished_at set, started_at NULL (it never started).
+        run_dispatch.mark_dispatch_failed(run)
         db.commit()
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

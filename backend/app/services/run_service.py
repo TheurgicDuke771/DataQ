@@ -98,6 +98,19 @@ def _specs_for_checks(checks: list[Check]) -> list[CheckSpec]:
     return [CheckSpec(expectation_type=c.expectation_type, kwargs=dict(c.config)) for c in checks]
 
 
+def _cancelled_mid_run(session: Session, run: Run) -> bool:
+    """Did a cancel commit (from the API session) while this run was executing?
+
+    ``refresh`` issues a fresh SELECT, so under READ COMMITTED it sees the API
+    session's committed ``cancelled`` even though this (worker) session set the
+    run ``running`` earlier. Note: with ``autoflush=False`` (db/session.py) the
+    refresh does NOT flush the caller's pending result rows — they stay staged for
+    the caller to either ``commit`` (not cancelled) or ``rollback`` (cancelled).
+    """
+    session.refresh(run)
+    return run.status == "cancelled"
+
+
 def execute_run(
     session: Session,
     *,
@@ -136,11 +149,23 @@ def execute_run(
             for check, check_outcome in zip(checks, outcome.checks, strict=True)
         ]
         session.add_all(rows)
+        # Cooperative cancellation: if a cancel committed (from the API session)
+        # while GX ran, don't overwrite it with a terminal success — drop the now-
+        # moot (still-pending, unflushed) results and leave the run 'cancelled'.
+        if _cancelled_mid_run(session, run):
+            session.rollback()
+            log.info("run_cancelled_during_execution", run_id=str(run.id))
+            return run
         run.status = "succeeded"
         run.finished_at = _now()
         session.commit()
     except Exception:
         session.rollback()
+        # Same cooperative check on the failure path: a run the user cancelled
+        # mid-flight that *also* errored stays 'cancelled', not masked as 'failed'.
+        if _cancelled_mid_run(session, run):
+            log.info("run_cancelled_during_execution", run_id=str(run.id))
+            return run
         run.status = "failed"
         run.finished_at = _now()
         session.commit()
@@ -218,6 +243,27 @@ def list_runs(
 def get_run(session: Session, run_id: uuid.UUID) -> Run | None:
     """Fetch a run by id (no authz — the API layer gates on the run's suite)."""
     return session.get(Run, run_id)
+
+
+_TERMINAL_STATUSES = frozenset({"succeeded", "failed", "cancelled"})
+
+
+def cancel_run(session: Session, run: Run) -> bool:
+    """Transition a non-terminal run to ``cancelled``; return whether it changed.
+
+    Returns ``False`` if the run is already terminal (succeeded/failed/cancelled)
+    — the API surfaces that as 409. Sets ``finished_at``; ``started_at`` is left
+    as-is (NULL if the run was still queued). This is the DB half; the API layer
+    also best-effort revokes the Celery task, and the worker honours the
+    ``cancelled`` status cooperatively (start-check + in-flight guard).
+    """
+    if run.status in _TERMINAL_STATUSES:
+        return False
+    run.status = "cancelled"
+    run.finished_at = _now()
+    session.commit()
+    log.info("run_cancelled", run_id=str(run.id))
+    return True
 
 
 def list_results(session: Session, run_id: uuid.UUID) -> list[Result]:

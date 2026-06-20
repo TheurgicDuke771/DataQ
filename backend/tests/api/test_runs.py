@@ -396,6 +396,77 @@ def test_progress_no_access_returns_404(client: TestClient, db_session: Any) -> 
     assert client.get(f"/api/v1/runs/{run.id}/progress").status_code == 404
 
 
+# ───────────────────────── POST /runs/{id}/cancel ──────────────────
+
+
+@pytest.mark.parametrize("start_status", ["queued", "running"])
+def test_cancel_non_terminal_run_marks_cancelled_and_revokes(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch, start_status: str
+) -> None:
+    """A queued or running run cancels: status→cancelled, finished_at set, and the
+    Celery task is revoked (best-effort) with the run's captured task id."""
+    revoked: list[str | None] = []
+    monkeypatch.setattr(run_dispatch, "revoke_run", lambda task_id: revoked.append(task_id))
+
+    dev = _user(db_session, "dev@ex")
+    suite = _suite(db_session, dev, target={"table": "T"})
+    run = _run(db_session, suite, status=start_status)
+    run.celery_task_id = "task-xyz"
+    db_session.commit()
+
+    _as(dev)
+    resp = client.post(f"/api/v1/runs/{run.id}/cancel")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "cancelled"
+    db_session.refresh(run)
+    assert run.status == "cancelled"
+    assert run.finished_at is not None
+    assert revoked == ["task-xyz"]
+
+
+def test_cancel_terminal_run_returns_409(client: TestClient, db_session: Any) -> None:
+    dev = _user(db_session, "dev@ex")
+    suite = _suite(db_session, dev, target={"table": "T"})
+    run = _run(db_session, suite, status="succeeded")
+
+    _as(dev)
+    resp = client.post(f"/api/v1/runs/{run.id}/cancel")
+    assert resp.status_code == 409
+    db_session.refresh(run)
+    assert run.status == "succeeded"  # unchanged
+
+
+def test_cancel_unknown_run_returns_404(client: TestClient, db_session: Any) -> None:
+    dev = _user(db_session, "dev@ex")
+    _as(dev)
+    assert client.post(f"/api/v1/runs/{uuid.uuid4()}/cancel").status_code == 404
+
+
+def test_cancel_no_access_returns_404(client: TestClient, db_session: Any) -> None:
+    owner = _user(db_session, "owner@ex")
+    stranger = _user(db_session, "stranger@ex")
+    suite = _suite(db_session, owner, target={"table": "T"})
+    run = _run(db_session, suite, status="queued")
+
+    _as(stranger)
+    assert client.post(f"/api/v1/runs/{run.id}/cancel").status_code == 404
+
+
+def test_cancel_requires_edit_permission(client: TestClient, db_session: Any) -> None:
+    owner = _user(db_session, "owner@ex")
+    viewer = _user(db_session, "viewer@ex")
+    suite = _suite(db_session, owner, target={"table": "T"})
+    db_session.add(Share(suite_id=suite.id, user_id=viewer.id, permission="view"))
+    run = _run(db_session, suite, status="queued")
+    db_session.commit()
+
+    _as(viewer)
+    resp = client.post(f"/api/v1/runs/{run.id}/cancel")
+    assert resp.status_code == 403
+    db_session.refresh(run)
+    assert run.status == "queued"  # unchanged
+
+
 # ───────────────────────── GET /pipeline_runs ──────────────────────
 
 

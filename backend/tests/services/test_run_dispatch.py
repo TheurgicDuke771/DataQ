@@ -1,34 +1,74 @@
-"""Unit test for run_dispatch.dispatch_run — publishes run_suite by name.
+"""Unit tests for run_dispatch — dispatch / revoke / dispatch-failure shape.
 
 No broker: celery_app.send_task is spied. Asserts the task is published by its
-registered name with the run id as the sole arg, and that a publish failure
-propagates (callers own the stuck-run policy).
+registered name with the run id as the sole arg, that the captured task id is
+returned, that a publish failure propagates (callers own the stuck-run policy),
+and the canonical terminal-failed shape (#227).
 """
 
 import uuid
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
+from backend.app.db.models import Run
 from backend.app.services import run_dispatch
 
 pytestmark = pytest.mark.real_dispatch
 
 
-def test_dispatch_run_sends_task_by_name(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_dispatch_run_sends_task_by_name_and_returns_task_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     calls: list[tuple[str, list[str]]] = []
-    monkeypatch.setattr(
-        run_dispatch.celery_app,
-        "send_task",
-        lambda name, args: calls.append((name, args)),
-    )
+
+    def _send(name: str, args: list[str]) -> SimpleNamespace:
+        calls.append((name, args))
+        return SimpleNamespace(id="celery-task-123")
+
+    monkeypatch.setattr(run_dispatch.celery_app, "send_task", _send)
     run_id = uuid.uuid4()
 
-    run_dispatch.dispatch_run(run_id)
+    task_id = run_dispatch.dispatch_run(run_id)
 
     # Published by registered name (decoupled from worker.tasks — no import edge),
-    # with the run id stringified for JSON serialisation.
+    # with the run id stringified for JSON serialisation; the AsyncResult id is
+    # returned so the caller can store it on the run for later revoke.
     assert calls == [("run_suite", [str(run_id)])]
+    assert task_id == "celery-task-123"
+
+
+def test_mark_dispatch_failed_sets_canonical_shape() -> None:
+    """#227: one definition of the dispatch-failure shape — failed + finished_at
+    set, started_at left NULL (it never started)."""
+    run = Run(id=uuid.uuid4(), suite_id=uuid.uuid4(), status="queued")
+    run_dispatch.mark_dispatch_failed(run)
+    assert run.status == "failed"
+    assert run.finished_at is not None
+    assert run.started_at is None
+
+
+def test_revoke_run_noop_without_task_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    called = False
+
+    def _revoke(_task_id: str) -> None:
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(run_dispatch.celery_app.control, "revoke", _revoke)
+    run_dispatch.revoke_run(None)  # un-dispatched run → no broker call
+    assert called is False
+
+
+def test_revoke_run_swallows_broker_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _boom(_task_id: str) -> None:
+        raise RuntimeError("control bus unreachable")
+
+    monkeypatch.setattr(run_dispatch.celery_app.control, "revoke", _boom)
+    # Best-effort: the DB status is already 'cancelled' + the worker checks
+    # cooperatively, so a broker error must not propagate.
+    run_dispatch.revoke_run("task-1")
 
 
 def test_dispatch_run_propagates_broker_failure(monkeypatch: pytest.MonkeyPatch) -> None:

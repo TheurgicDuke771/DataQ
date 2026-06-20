@@ -26,7 +26,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.auth import get_current_user
 from backend.app.db.models import User
 from backend.app.db.session import get_db
-from backend.app.services import orchestration_service
+from backend.app.services import orchestration_service, run_dispatch
 from backend.app.services import run_service as svc
 from backend.app.services.suite_authz import require_permission
 
@@ -188,6 +188,35 @@ def get_run_progress(
         started_at=run.started_at,
         finished_at=run.finished_at,
     )
+
+
+@router.post(
+    "/runs/{run_id}/cancel",
+    response_model=RunRead,
+    summary="Cancel a queued or running run",
+)
+def cancel_run(
+    run_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> RunRead:
+    """Cancel a non-terminal run. `edit`-gated (same capability as triggering).
+
+    Marks the run `cancelled` and best-effort revokes its Celery task (dropping it
+    if still queued). An already-finished run (succeeded/failed/cancelled) → 409.
+    An in-flight run is stopped cooperatively by the worker (it won't overwrite a
+    `cancelled` status with results), so cancel may race a fast run to completion.
+    """
+    run = svc.get_run(db, run_id)
+    if run is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="run not found")
+    # Cancel is a control action on the suite's runs → edit (404 hides the run
+    # for a caller who can't see the suite, matching the read endpoints).
+    require_permission(db, run.suite_id, current_user.id, minimum="edit")
+    if not svc.cancel_run(db, run):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="run is already finished")
+    run_dispatch.revoke_run(run.celery_task_id)
+    return RunRead.model_validate(run)
 
 
 @router.get(
