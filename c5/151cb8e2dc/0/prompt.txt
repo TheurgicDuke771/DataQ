@@ -1,0 +1,57 @@
+don't do auto, do a review first then mege
+
+---
+
+Did we completed the code review for #297
+
+---
+
+I reviewed the changes, looks good. You can merge it once CI completes
+
+---
+
+<task-notification>
+<task-id>br2s9sag0</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/4bc13446-7dfa-442d-bc8c-6f955e33c0a0/tasks/br2s9sag0.output</output-file>
+<status>completed</status>
+<summary>Background command "Poll until PR 297 merges" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Okay, on to A4
+
+---
+
+PR looks good, merge once CI completes
+
+---
+
+<task-notification>
+<task-id>bvzfpwlwd</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/4bc13446-7dfa-442d-bc8c-6f955e33c0a0/tasks/bvzfpwlwd.output</output-file>
+<status>completed</status>
+<summary>Background command "Poll until PR 298 merges" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+merge #299
+
+---
+
+Why we are maintaining values in the env.example, isn't suppose to be blank?
+
+---
+
+You can make the Postgres creds blank in the example file (we have actual .env files for the value) no need to maintain it in the example file, never put a cred (even if its mock) in a file that is tracked in git
+
+---
+
+Merge #300 once CI done, we can stop here for today
+
+---
+
+Lets start with Phase 2

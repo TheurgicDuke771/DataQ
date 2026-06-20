@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "c5151cb8e2dc",
+  "strategy": "manual-commit",
+  "branch": "feature/a1-run-progress-api",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/app/services/run_service.py",
+    "backend/tests/api/test_runs.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/c5/151cb8e2dc/0/metadata.json",
+      "transcript": "/c5/151cb8e2dc/0/full.jsonl",
+      "content_hash": "/c5/151cb8e2dc/0/content_hash.txt",
+      "prompt": "/c5/151cb8e2dc/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 40538,
+    "cache_creation_tokens": 3163234,
+    "cache_read_tokens": 61959566,
+    "output_tokens": 218441,
+    "api_call_count": 269
+  }
+}
