@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "62442d2c489c",
+  "strategy": "manual-commit",
+  "branch": "feature/a2-cancel-run",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/api/v1/runs.py",
+    "backend/app/api/v1/suites.py",
+    "backend/app/worker/tasks.py",
+    "backend/tests/services/test_run_service.py",
+    "backend/tests/worker/test_tasks.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/62/442d2c489c/0/metadata.json",
+      "transcript": "/62/442d2c489c/0/full.jsonl",
+      "content_hash": "/62/442d2c489c/0/content_hash.txt",
+      "prompt": "/62/442d2c489c/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 46735,
+    "cache_creation_tokens": 4015424,
+    "cache_read_tokens": 82969741,
+    "output_tokens": 262898,
+    "api_call_count": 323
+  }
+}
