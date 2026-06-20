@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "b6efcc399c9d",
+  "strategy": "manual-commit",
+  "branch": "docs/consistency-hardening-followups",
+  "checkpoints_count": 4,
+  "files_touched": [
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/b6/efcc399c9d/0/metadata.json",
+      "transcript": "/b6/efcc399c9d/0/full.jsonl",
+      "content_hash": "/b6/efcc399c9d/0/content_hash.txt",
+      "prompt": "/b6/efcc399c9d/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1115,
+    "cache_creation_tokens": 313204,
+    "cache_read_tokens": 9375679,
+    "output_tokens": 31156,
+    "api_call_count": 33
+  }
+}
