@@ -15,6 +15,7 @@ from typing import Any
 
 from celery import Celery
 from celery.signals import (
+    beat_init,
     before_task_publish,
     setup_logging,
     task_postrun,
@@ -22,7 +23,7 @@ from celery.signals import (
 )
 
 from backend.app.core.config import get_settings
-from backend.app.core.logging import configure_logging, request_id_var
+from backend.app.core.logging import configure_logging, get_logger, request_id_var
 
 # Message-header key carrying the originating request_id across the broker.
 REQUEST_ID_HEADER = "request_id"
@@ -53,10 +54,17 @@ def create_celery_app() -> Celery:
         # the task looks back further than the interval so nothing slips the gap.
         # Beat runs embedded in the dev worker (`worker -B`); prod uses a separate
         # beat process.
+        # Gap recovery (B2) sweeps a wider 1-hour window every 30 min (plus once
+        # on beat startup, via the beat_init signal below) to re-ingest runs
+        # missed while the system was down — idempotent with the 10-min poll.
         beat_schedule={
             "poll-orchestration-runs": {
                 "task": "poll_orchestration_runs",
                 "schedule": 600.0,  # 10 minutes
+            },
+            "recover-orchestration-gaps": {
+                "task": "recover_orchestration_gaps",
+                "schedule": 1800.0,  # 30 minutes
             },
         },
     )
@@ -116,3 +124,21 @@ def _clear_request_id(task: Any = None, **_kwargs: Any) -> None:
     token = getattr(task.request, _REQUEST_ID_RESET_ATTR, None) if task is not None else None
     if token is not None:
         request_id_var.reset(token)
+
+
+@beat_init.connect  # type: ignore[untyped-decorator]  # celery signal .connect is unannotated
+def _recover_gaps_on_beat_start(**_kwargs: Any) -> None:
+    """When the beat scheduler starts, kick a one-off gap recovery (B2).
+
+    Tied to ``beat_init`` (one beat process per deployment) rather than worker
+    boot, so it fires **once** per restart instead of once per worker — no
+    thundering herd of identical sweeps on a multi-worker deploy. Catches runs
+    that completed while the system was down; the 30-min beat alone would leave
+    that window unswept until its first tick. Enqueued by name (decoupled from
+    the task module) to the broker so a ready worker runs it. Best-effort: a
+    broker hiccup at startup must not crash beat (the schedule recovers shortly).
+    """
+    try:
+        celery_app.send_task("recover_orchestration_gaps")
+    except Exception:  # pragma: no cover - defensive; startup must not fail on broker
+        get_logger(__name__).exception("gap_recovery_startup_dispatch_failed")
