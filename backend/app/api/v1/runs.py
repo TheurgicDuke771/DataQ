@@ -76,6 +76,29 @@ class RunDetailRead(RunRead):
     results: list[ResultRead]
 
 
+class CheckProgressRead(BaseModel):
+    """One check's progress; `status` is null while the check is still pending."""
+
+    check_id: uuid.UUID
+    name: str
+    status: str | None  # null = pending | pass | warn | fail | critical | skip | error
+
+
+class RunProgressRead(BaseModel):
+    """Compact live-progress view for polling: run lifecycle + per-check
+    resolution + a status histogram. Lighter than the full run+results detail."""
+
+    run_id: uuid.UUID
+    suite_id: uuid.UUID
+    status: str  # queued | running | succeeded | failed | cancelled
+    total_checks: int
+    completed_checks: int
+    counts: dict[str, int]  # histogram over result statuses (all keys present)
+    checks: list[CheckProgressRead]
+    started_at: datetime | None
+    finished_at: datetime | None
+
+
 class PipelineRunRead(BaseModel):
     """A monitored orchestrator pipeline/DAG run (`pipeline_runs` ≠ `runs`)."""
 
@@ -132,6 +155,38 @@ def get_run(
     return RunDetailRead(
         **RunRead.model_validate(run).model_dump(),
         results=[ResultRead.model_validate(r) for r in results],
+    )
+
+
+@router.get(
+    "/runs/{run_id}/progress",
+    response_model=RunProgressRead,
+    summary="Poll a run's live progress (lifecycle + per-check status)",
+)
+def get_run_progress(
+    run_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> RunProgressRead:
+    run = svc.get_run(db, run_id)
+    if run is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="run not found")
+    # Same suite-scoped gate as the run detail: can't see the suite → 404 the run.
+    require_permission(db, run.suite_id, current_user.id, minimum="view")
+    progress = svc.get_run_progress(db, run)
+    return RunProgressRead(
+        run_id=run.id,
+        suite_id=run.suite_id,
+        status=run.status,
+        total_checks=progress.total_checks,
+        completed_checks=progress.completed_checks,
+        counts=progress.counts,
+        checks=[
+            CheckProgressRead(check_id=c.check_id, name=c.name, status=c.status)
+            for c in progress.checks
+        ],
+        started_at=run.started_at,
+        finished_at=run.finished_at,
     )
 
 

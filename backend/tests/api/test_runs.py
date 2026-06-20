@@ -293,6 +293,89 @@ def test_get_run_no_access_returns_404(client: TestClient, db_session: Any) -> N
     assert client.get(f"/api/v1/runs/{run.id}").status_code == 404
 
 
+# ───────────────────────── GET /runs/{id}/progress ─────────────────
+
+
+def _check(db_session: Any, suite: Suite, name: str) -> Any:
+    from backend.app.db.models import Check
+
+    check = Check(suite_id=suite.id, name=name, expectation_type="expect_x", config={})
+    db_session.add(check)
+    db_session.flush()
+    return check
+
+
+def test_progress_running_run_all_checks_pending(client: TestClient, db_session: Any) -> None:
+    """A running run with no results yet: every check pending, 0/N, zeroed counts."""
+    dev = _user(db_session, "dev@ex")
+    suite = _suite(db_session, dev, target={"table": "T"})
+    _check(db_session, suite, "a")
+    _check(db_session, suite, "b")
+    db_session.commit()
+    run = _run(db_session, suite, status="running")
+
+    _as(dev)
+    resp = client.get(f"/api/v1/runs/{run.id}/progress")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "running"
+    assert body["total_checks"] == 2
+    assert body["completed_checks"] == 0
+    assert {c["name"]: c["status"] for c in body["checks"]} == {"a": None, "b": None}
+    assert body["counts"]["pass"] == 0 and body["counts"]["error"] == 0
+
+
+def test_progress_completed_run_reports_per_check_status_and_histogram(
+    client: TestClient, db_session: Any
+) -> None:
+    """A finished run resolves each check to its result status; the histogram and
+    completed count reflect the persisted rows (incl. operational `error`)."""
+    dev = _user(db_session, "dev@ex")
+    suite = _suite(db_session, dev, target={"table": "T"})
+    c_pass = _check(db_session, suite, "ok")
+    c_fail = _check(db_session, suite, "bad")
+    c_err = _check(db_session, suite, "broken")
+    _check(db_session, suite, "added_later")  # no result row → stays pending
+    db_session.commit()
+    run = _run(db_session, suite, status="succeeded")
+    db_session.add_all(
+        [
+            Result(run_id=run.id, check_id=c_pass.id, status="pass"),
+            Result(run_id=run.id, check_id=c_fail.id, status="fail", metric_value=Decimal("9")),
+            Result(run_id=run.id, check_id=c_err.id, status="error"),
+        ]
+    )
+    db_session.commit()
+
+    _as(dev)
+    body = client.get(f"/api/v1/runs/{run.id}/progress").json()
+    assert body["status"] == "succeeded"
+    assert body["total_checks"] == 4
+    assert body["completed_checks"] == 3  # c_pending has no result row → pending
+    by_name = {c["name"]: c["status"] for c in body["checks"]}
+    assert by_name == {"ok": "pass", "bad": "fail", "broken": "error", "added_later": None}
+    assert body["counts"]["pass"] == 1
+    assert body["counts"]["fail"] == 1
+    assert body["counts"]["error"] == 1
+    assert body["counts"]["warn"] == 0
+
+
+def test_progress_unknown_run_returns_404(client: TestClient, db_session: Any) -> None:
+    dev = _user(db_session, "dev@ex")
+    _as(dev)
+    assert client.get(f"/api/v1/runs/{uuid.uuid4()}/progress").status_code == 404
+
+
+def test_progress_no_access_returns_404(client: TestClient, db_session: Any) -> None:
+    owner = _user(db_session, "owner@ex")
+    stranger = _user(db_session, "stranger@ex")
+    suite = _suite(db_session, owner, target={"table": "T"})
+    run = _run(db_session, suite, status="running")
+
+    _as(stranger)
+    assert client.get(f"/api/v1/runs/{run.id}/progress").status_code == 404
+
+
 # ───────────────────────── GET /pipeline_runs ──────────────────────
 
 

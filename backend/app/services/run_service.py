@@ -14,6 +14,7 @@ adapter raised (e.g. could not reach the warehouse).
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from sqlalchemy import select
@@ -22,7 +23,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.jsonsafe import sanitize_json
 from backend.app.core.logging import get_logger
 from backend.app.datasources.base import CheckOutcome, CheckRunner, CheckSpec
-from backend.app.db.models import Check, Result, Run
+from backend.app.db.models import RESULT_STATUSES, Check, Result, Run
 from backend.app.services import suite_service
 from backend.app.services.severity import resolve_status
 
@@ -223,4 +224,69 @@ def list_results(session: Session, run_id: uuid.UUID) -> list[Result]:
     """The result rows for a run, in stable check order (`created_at`)."""
     return list(
         session.scalars(select(Result).where(Result.run_id == run_id).order_by(Result.created_at))
+    )
+
+
+# ── run progress (A1: the poll surface for the live-progress UI) ──────────────
+
+
+@dataclass(frozen=True)
+class CheckProgress:
+    """One check's progress within a run. ``status`` is ``None`` while the check
+    is still **pending** (no result row yet)."""
+
+    check_id: uuid.UUID
+    name: str
+    status: str | None
+
+
+@dataclass(frozen=True)
+class RunProgress:
+    """A run's live progress: lifecycle status + per-check resolution + a status
+    histogram, the compact shape the live-progress UI polls."""
+
+    run: Run
+    total_checks: int
+    completed_checks: int
+    counts: dict[str, int]
+    checks: list[CheckProgress]
+
+
+def get_run_progress(session: Session, run: Run) -> RunProgress:
+    """Assemble a run's progress from the suite's checks + the run's results.
+
+    DB-driven (not Celery task state): the worker writes the ``run.status``
+    lifecycle (queued → running → succeeded/failed/cancelled) and the per-check
+    ``Result`` rows, so the DB is the source of truth and this composes with the
+    same suite-scoped authz the rest of the read API uses.
+
+    Each suite check maps to its result's status, or ``None`` while pending.
+    Note: because GX validates a suite in one atomic batch, all result rows land
+    together at completion — so mid-run a check reads ``pending`` and the
+    histogram fills at the terminal transition (this endpoint reports lifecycle +
+    final per-check resolution, not sub-GX incremental progress). Checks are taken
+    from the *current* suite definition; a result is matched to its check by id.
+    """
+    checks = list(
+        session.scalars(
+            select(Check).where(Check.suite_id == run.suite_id).order_by(Check.created_at)
+        )
+    )
+    results = {r.check_id: r for r in list_results(session, run.id)}
+    counts = dict.fromkeys(RESULT_STATUSES, 0)
+    per_check: list[CheckProgress] = []
+    completed = 0
+    for check in checks:
+        result = results.get(check.id)
+        status = result.status if result is not None else None
+        per_check.append(CheckProgress(check_id=check.id, name=check.name, status=status))
+        if status is not None:
+            completed += 1
+            counts[status] = counts.get(status, 0) + 1
+    return RunProgress(
+        run=run,
+        total_checks=len(checks),
+        completed_checks=completed,
+        counts=counts,
+        checks=per_check,
     )
