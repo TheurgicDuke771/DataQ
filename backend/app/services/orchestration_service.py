@@ -358,3 +358,47 @@ def list_pipeline_runs(
     if status is not None:
         stmt = stmt.where(PipelineRun.status == status)
     return list(session.scalars(stmt))
+
+
+def list_pipelines(
+    session: Session,
+    *,
+    provider: str | None = None,
+    env: str | None = None,
+) -> list[PipelineRun]:
+    """Latest run per distinct pipeline (provider, pipeline_or_dag_id, env).
+
+    The orchestration "pipeline status" view (one row per monitored pipeline,
+    carrying its most-recent run's status/timing), as opposed to the flat
+    per-run feed in :func:`list_pipeline_runs`. Provider-agnostic — ADF and
+    Airflow share the shape — and optionally narrowed by ``provider`` and/or
+    ``env``. Same auth-only gating: monitoring data, not suite-scoped.
+    """
+    # Postgres DISTINCT ON keeps the first row of each partition under the
+    # ORDER BY, so the ordering must lead with the partition keys, then put each
+    # pipeline's newest run first (started_at desc, nulls last for runs we have
+    # no start time for yet; created_at breaks ties).
+    stmt = (
+        select(PipelineRun)
+        .distinct(
+            PipelineRun.provider,
+            PipelineRun.pipeline_or_dag_id,
+            PipelineRun.env,
+        )
+        .order_by(
+            PipelineRun.provider,
+            PipelineRun.pipeline_or_dag_id,
+            PipelineRun.env,
+            PipelineRun.started_at.desc().nullslast(),
+            PipelineRun.created_at.desc(),
+        )
+    )
+    if provider is not None:
+        stmt = stmt.where(PipelineRun.provider == provider)
+    if env is not None:
+        stmt = stmt.where(PipelineRun.env == env)
+    pipelines = list(session.scalars(stmt))
+    # DISTINCT ON forces a partition-key ordering; re-sort for display so the
+    # most-recently-active pipeline leads (the UI status panel wants newest-first).
+    pipelines.sort(key=lambda p: (p.started_at or p.created_at), reverse=True)
+    return pipelines
