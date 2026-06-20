@@ -527,7 +527,7 @@ def _pipeline_run_at(
     pipeline: str,
     env: str,
     status: str,
-    started_at: datetime,
+    started_at: datetime | None,
 ) -> PipelineRun:
     pr = PipelineRun(
         provider=provider,
@@ -670,6 +670,69 @@ def test_list_pipelines_filters_by_provider_and_env(client: TestClient, db_sessi
         ("adf", "etl"),
         ("airflow", "dag"),
     }
+
+
+def test_list_pipelines_newest_run_without_started_at_is_not_masked(
+    client: TestClient, db_session: Any
+) -> None:
+    """Regression: a fresh run whose event carried no start time (started_at
+    NULL — realistic for a failure webhook) must still win its partition. Naive
+    `started_at DESC NULLS LAST` would rank it last and surface the stale older
+    run instead; recency falls back to created_at."""
+    owner = _user(db_session, "owner@ex")
+    conn = _connection(db_session, owner, type_="adf")
+    # older run, fully timed, succeeded — inserted first (earlier created_at)
+    _pipeline_run_at(
+        db_session,
+        conn,
+        provider="adf",
+        pipeline="etl",
+        env="dev",
+        status="succeeded",
+        started_at=datetime(2026, 6, 1, tzinfo=UTC),
+    )
+    # newest run, no start time, failed — inserted second (later created_at)
+    _pipeline_run_at(
+        db_session,
+        conn,
+        provider="adf",
+        pipeline="etl",
+        env="dev",
+        status="failed",
+        started_at=None,
+    )
+
+    _as(owner)
+    rows = client.get("/api/v1/orchestration/pipelines").json()
+
+    assert len(rows) == 1
+    assert rows[0]["status"] == "failed"  # the freshest run, despite NULL started_at
+    assert rows[0]["started_at"] is None
+
+
+def test_list_pipelines_respects_limit(client: TestClient, db_session: Any) -> None:
+    """`limit` caps to the N most-recently-active pipelines (parity with
+    /pipeline_runs)."""
+    owner = _user(db_session, "owner@ex")
+    conn = _connection(db_session, owner, type_="adf")
+    base = datetime(2026, 6, 1, tzinfo=UTC)
+    for i in range(3):
+        _pipeline_run_at(
+            db_session,
+            conn,
+            provider="adf",
+            pipeline=f"etl{i}",
+            env="dev",
+            status="succeeded",
+            started_at=base + timedelta(hours=i),
+        )
+
+    _as(owner)
+    rows = client.get("/api/v1/orchestration/pipelines?limit=2").json()
+
+    assert len(rows) == 2
+    # the two most-recently-active pipelines (etl2 @ +2h, etl1 @ +1h)
+    assert [r["pipeline_or_dag_id"] for r in rows] == ["etl2", "etl1"]
 
 
 def test_list_pipelines_requires_auth(db_session: Any) -> None:
