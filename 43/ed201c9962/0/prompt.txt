@@ -51,3 +51,7 @@ You can make the Postgres creds blank in the example file (we have actual .env f
 ---
 
 Merge #300 once CI done, we can stop here for today
+
+---
+
+Lets start with Phase 2
