@@ -51,6 +51,17 @@ def test_create_celery_app_uses_redis_url_and_json() -> None:
     assert app.conf.task_track_started is True
 
 
+def test_beat_schedule_registers_poll_and_gap_recovery() -> None:
+    """Both orchestration beats are wired with the right tasks + intervals — the
+    10-min poll (#171) and the 30-min gap-recovery sweep (B2). Guards against a
+    dropped entry silently disabling either schedule."""
+    schedule = create_celery_app().conf.beat_schedule
+    assert schedule["poll-orchestration-runs"]["task"] == "poll_orchestration_runs"
+    assert schedule["poll-orchestration-runs"]["schedule"] == 600.0
+    assert schedule["recover-orchestration-gaps"]["task"] == "recover_orchestration_gaps"
+    assert schedule["recover-orchestration-gaps"]["schedule"] == 1800.0
+
+
 # ───────────────────────── inject (publisher side) ─────────────────
 
 

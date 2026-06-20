@@ -197,20 +197,20 @@ def test_recover_orchestration_gaps_task_uses_gap_lookback(monkeypatch: Any) -> 
     assert session.closed is True
 
 
-def test_startup_signal_dispatches_gap_recovery(monkeypatch: Any) -> None:
-    """worker_ready → one-off gap recovery enqueued by task name."""
+def test_beat_start_signal_dispatches_gap_recovery(monkeypatch: Any) -> None:
+    """beat_init → one-off gap recovery enqueued by task name (once per beat)."""
     from backend.app.worker import celery_app as celery_mod
 
     sent: list[str] = []
     monkeypatch.setattr(celery_mod.celery_app, "send_task", lambda name: sent.append(name))
 
-    celery_mod._recover_gaps_on_startup()
+    celery_mod._recover_gaps_on_beat_start()
 
     assert sent == ["recover_orchestration_gaps"]
 
 
-def test_startup_signal_swallows_broker_failure(monkeypatch: Any) -> None:
-    """A broker outage at boot must not crash worker startup."""
+def test_beat_start_signal_swallows_broker_failure(monkeypatch: Any) -> None:
+    """A broker outage at beat startup must not crash the scheduler."""
     from backend.app.worker import celery_app as celery_mod
 
     def _boom(_name: str) -> None:
@@ -218,4 +218,4 @@ def test_startup_signal_swallows_broker_failure(monkeypatch: Any) -> None:
 
     monkeypatch.setattr(celery_mod.celery_app, "send_task", _boom)
 
-    celery_mod._recover_gaps_on_startup()  # must not raise
+    celery_mod._recover_gaps_on_beat_start()  # must not raise

@@ -198,14 +198,23 @@ def _poll_orchestration_runs(
     return summary
 
 
+def _run_orchestration_poll(lookback: timedelta) -> dict[str, int]:
+    """Open a session, run the poll core over ``lookback``, always close.
+
+    Shared by both beat entry points (regular poll + gap recovery) so the session
+    lifecycle lives in one place — the only thing that varies is the window.
+    """
+    session = get_session()
+    try:
+        return _poll_orchestration_runs(session, secret_store=get_secret_store(), lookback=lookback)
+    finally:
+        session.close()
+
+
 @celery_app.task(name="poll_orchestration_runs")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
 def poll_orchestration_runs() -> dict[str, int]:
     """Celery-beat entry point — the 10-min orchestration polling fallback."""
-    session = get_session()
-    try:
-        return _poll_orchestration_runs(session, secret_store=get_secret_store())
-    finally:
-        session.close()
+    return _run_orchestration_poll(_POLL_LOOKBACK)
 
 
 @celery_app.task(name="recover_orchestration_gaps")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
@@ -216,10 +225,4 @@ def recover_orchestration_gaps() -> dict[str, int]:
     re-ingest runs missed while the system was down. Idempotent with the regular
     poll (upsert + `skip_updated_since`).
     """
-    session = get_session()
-    try:
-        return _poll_orchestration_runs(
-            session, secret_store=get_secret_store(), lookback=_GAP_RECOVERY_LOOKBACK
-        )
-    finally:
-        session.close()
+    return _run_orchestration_poll(_GAP_RECOVERY_LOOKBACK)
