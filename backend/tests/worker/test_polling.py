@@ -202,7 +202,7 @@ def test_beat_start_signal_dispatches_gap_recovery(monkeypatch: Any) -> None:
     from backend.app.worker import celery_app as celery_mod
 
     sent: list[str] = []
-    monkeypatch.setattr(celery_mod.celery_app, "send_task", lambda name: sent.append(name))
+    monkeypatch.setattr(celery_mod.celery_app, "send_task", sent.append)
 
     celery_mod._recover_gaps_on_beat_start()
 
