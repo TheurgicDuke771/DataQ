@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "20c1dc53fe80",
+  "strategy": "manual-commit",
+  "branch": "feature/b1-orchestration-pipelines",
+  "checkpoints_count": 4,
+  "files_touched": [
+    "backend/app/api/v1/runs.py",
+    "backend/app/services/orchestration_service.py",
+    "backend/tests/api/test_runs.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/20/c1dc53fe80/0/metadata.json",
+      "transcript": "/20/c1dc53fe80/0/full.jsonl",
+      "content_hash": "/20/c1dc53fe80/0/content_hash.txt",
+      "prompt": "/20/c1dc53fe80/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 57011,
+    "cache_creation_tokens": 4772006,
+    "cache_read_tokens": 106434710,
+    "output_tokens": 356528,
+    "api_call_count": 456
+  }
+}

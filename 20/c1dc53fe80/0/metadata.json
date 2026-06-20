@@ -1,0 +1,229 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "20c1dc53fe80",
+  "session_id": "4bc13446-7dfa-442d-bc8c-6f955e33c0a0",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-20T16:38:49.978695Z",
+  "branch": "feature/b1-orchestration-pipelines",
+  "checkpoints_count": 4,
+  "save_step_count": 1,
+  "files_touched": [
+    "backend/app/api/v1/runs.py",
+    "backend/app/services/orchestration_service.py",
+    "backend/tests/api/test_runs.py"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-4-8",
+  "turn_id": "b89b7b76ddbe",
+  "token_usage": {
+    "input_tokens": 57011,
+    "cache_creation_tokens": 4772006,
+    "cache_read_tokens": 106434710,
+    "output_tokens": 356528,
+    "api_call_count": 456
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0129HAdRVpnuJ9BfYbTyxNiL",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "b89b7b76ddbe",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 403,
+        "end": 404,
+        "entry_ids": [
+          "591d1a7e-0aa7-4eb0-adbb-1381a2a7ac44"
+        ],
+        "tool_use_id": "toolu_0129HAdRVpnuJ9BfYbTyxNiL"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0129HAdRVpnuJ9BfYbTyxNiL"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01WdrKXgvnix6MgwzFcqjw6L",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "b89b7b76ddbe",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 739,
+        "end": 740,
+        "entry_ids": [
+          "ff883bbd-38d2-4771-9529-715ba8fd557e"
+        ],
+        "tool_use_id": "toolu_01WdrKXgvnix6MgwzFcqjw6L"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01WdrKXgvnix6MgwzFcqjw6L"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01VpQR2vw5UewUjaiytCyRrk",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "b89b7b76ddbe",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 928,
+        "end": 929,
+        "entry_ids": [
+          "a65e0fff-953a-402a-ae0d-b5d7f163a814"
+        ],
+        "tool_use_id": "toolu_01VpQR2vw5UewUjaiytCyRrk"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01VpQR2vw5UewUjaiytCyRrk"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_018hGpHNGMuGvsXiNchhrGHW",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "b89b7b76ddbe",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 1075,
+        "end": 1076,
+        "entry_ids": [
+          "f5a7517c-d425-4ef5-9ecd-1d54ec33a5c4"
+        ],
+        "tool_use_id": "toolu_018hGpHNGMuGvsXiNchhrGHW"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_018hGpHNGMuGvsXiNchhrGHW"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01S4qjBsWT8xk4wzPUXLDQpf",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "b89b7b76ddbe",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 1810,
+        "end": 1811,
+        "entry_ids": [
+          "cf5e7306-41db-4df4-b41f-ab3a15e4affd"
+        ],
+        "tool_use_id": "toolu_01S4qjBsWT8xk4wzPUXLDQpf"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01S4qjBsWT8xk4wzPUXLDQpf"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01GCqtwLstFaX9514ak4nroD",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "b89b7b76ddbe",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 2111,
+        "end": 2112,
+        "entry_ids": [
+          "aeef3476-a950-4f92-a1b1-90f077d77eb9"
+        ],
+        "tool_use_id": "toolu_01GCqtwLstFaX9514ak4nroD"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01GCqtwLstFaX9514ak4nroD"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 27
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-20T16:38:49.923045Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 71,
+    "human_modified": 21,
+    "human_removed": 0,
+    "total_committed": 71,
+    "total_lines_changed": 92,
+    "agent_percentage": 0,
+    "metric_version": 2
+  }
+}
