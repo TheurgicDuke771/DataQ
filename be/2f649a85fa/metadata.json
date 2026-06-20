@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "be2f649a85fa",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-303-pydantic-settings-cve",
+  "checkpoints_count": 3,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/be/2f649a85fa/0/metadata.json",
+      "transcript": "/be/2f649a85fa/0/full.jsonl",
+      "content_hash": "/be/2f649a85fa/0/content_hash.txt",
+      "prompt": "/be/2f649a85fa/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 51931,
+    "cache_creation_tokens": 4592887,
+    "cache_read_tokens": 98453191,
+    "output_tokens": 305563,
+    "api_call_count": 384
+  }
+}
