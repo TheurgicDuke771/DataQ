@@ -109,3 +109,33 @@ For #305 merger it once CI completes.
 
 yeah strart with B2. 
 But going forward never do a direct commit to main.
+
+---
+
+Merge #307 once CI is green.
+How strongly ACID is being followed in this project?
+
+---
+
+what are the gaps, and where can we improve?
+also for the internal prostgres data are we maintaining any knid of SCD or is it just alembic?
+
+---
+
+<task-notification>
+<task-id>b0cnjlbui</task-id>
+<tool-use-id>toolu_01LdWBZDVU9DJyCZypg3JXpW</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/4bc13446-7dfa-442d-bc8c-6f955e33c0a0/tasks/b0cnjlbui.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for #307 CI via until loop" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b3g8rkihy</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/4bc13446-7dfa-442d-bc8c-6f955e33c0a0/tasks/b3g8rkihy.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch #307 CI then check mergeability" completed (exit code 0)</summary>
+</task-notification>
