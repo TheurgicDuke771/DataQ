@@ -29,7 +29,7 @@ psycopg2-binary==2.9.12           # swap for psycopg2 in the production image
 
 # ── Config / validation ──
 pydantic==2.13.4
-pydantic-settings==2.14.1
+pydantic-settings==2.14.2
 
 # ── DQ engine (PINNED — GX v1 API drifts across point releases) ──
 great-expectations==1.17.2
