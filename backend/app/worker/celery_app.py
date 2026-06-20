@@ -66,6 +66,14 @@ def create_celery_app() -> Celery:
                 "task": "recover_orchestration_gaps",
                 "schedule": 1800.0,  # 30 minutes
             },
+            # Scheduled suite runs (A7): tick every minute, fire schedules whose
+            # precomputed next_run_at has passed. Minute granularity matches the
+            # finest standard cron resolution; the task is a cheap indexed scan
+            # when nothing is due.
+            "dispatch-due-schedules": {
+                "task": "dispatch_due_schedules",
+                "schedule": 60.0,  # 1 minute
+            },
         },
     )
     # Register task modules on worker boot (looks for backend.app.worker.tasks).
