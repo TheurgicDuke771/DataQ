@@ -334,6 +334,19 @@ def test_cancel_during_execution_keeps_cancelled_and_persists_no_results() -> No
     assert session.rollbacks >= 1
 
 
+def test_cancel_during_execution_that_also_errors_stays_cancelled() -> None:
+    """A run cancelled mid-flight that then ALSO raises must stay 'cancelled', not
+    be masked as 'failed' (the cooperative guard applies on the failure path too)."""
+    session = FakeSession(refresh_status="cancelled")  # cancel landed during the run
+    run = _run()
+    runner = FakeRunner(raises=RuntimeError("warehouse dropped mid-run"))
+
+    result = run_service.execute_run(session, run=run, checks=_checks(1), runner=runner, table="T")
+
+    assert result.status == "cancelled"  # not 'failed'
+    assert session.added == []
+
+
 def test_non_expectation_kind_fails_run_without_invoking_runner() -> None:
     """A reserved (non-expectation) check kind has no runner in v1 (ADR 0012):
     the run fails loudly rather than silently feeding it to GX, and the adapter

@@ -33,6 +33,11 @@ def dispatch_run(run_id: uuid.UUID) -> str:
     The task id is stored on the `Run` (``celery_task_id``) so a later cancel can
     revoke a still-queued task. Raises if the broker is down — the caller owns the
     policy for the stuck run (`mark_dispatch_failed` + 503 / log).
+
+    No 2-phase commit spans the broker and the DB: if the publish succeeds but the
+    caller's follow-up commit of ``celery_task_id`` fails (a rare DB blip in that
+    window), the task still runs — the worker just can't be revoked by id and falls
+    back to the cooperative ``cancelled``-status check. Self-correcting and benign.
     """
     result = celery_app.send_task(_RUN_SUITE_TASK, args=[str(run_id)])
     return str(result.id)
