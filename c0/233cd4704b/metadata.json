@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "c0233cd4704b",
+  "strategy": "manual-commit",
+  "branch": "feature/b2-gap-recovery",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/worker/tasks.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/c0/233cd4704b/0/metadata.json",
+      "transcript": "/c0/233cd4704b/0/full.jsonl",
+      "content_hash": "/c0/233cd4704b/0/content_hash.txt",
+      "prompt": "/c0/233cd4704b/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 61189,
+    "cache_creation_tokens": 5338286,
+    "cache_read_tokens": 117504013,
+    "output_tokens": 394258,
+    "api_call_count": 515
+  }
+}

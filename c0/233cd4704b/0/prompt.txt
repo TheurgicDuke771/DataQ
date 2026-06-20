@@ -1,0 +1,106 @@
+don't do auto, do a review first then mege
+
+---
+
+Did we completed the code review for #297
+
+---
+
+I reviewed the changes, looks good. You can merge it once CI completes
+
+---
+
+<task-notification>
+<task-id>br2s9sag0</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/4bc13446-7dfa-442d-bc8c-6f955e33c0a0/tasks/br2s9sag0.output</output-file>
+<status>completed</status>
+<summary>Background command "Poll until PR 297 merges" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Okay, on to A4
+
+---
+
+PR looks good, merge once CI completes
+
+---
+
+<task-notification>
+<task-id>bvzfpwlwd</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/4bc13446-7dfa-442d-bc8c-6f955e33c0a0/tasks/bvzfpwlwd.output</output-file>
+<status>completed</status>
+<summary>Background command "Poll until PR 298 merges" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+merge #299
+
+---
+
+Why we are maintaining values in the env.example, isn't suppose to be blank?
+
+---
+
+You can make the Postgres creds blank in the example file (we have actual .env files for the value) no need to maintain it in the example file, never put a cred (even if its mock) in a file that is tracked in git
+
+---
+
+Merge #300 once CI done, we can stop here for today
+
+---
+
+Lets start with Phase 2
+
+---
+
+Merge #301 once CI clears, then start A2
+
+---
+
+merge #302 once CI completes
+
+---
+
+Hey last 5 CI either cancelled or failed but the PR got merged, I thought we enforced the CI to pass in order to merge, is it not? 
+Also check why CI are failing
+
+---
+
+yeah file and then fix it, Also Stop merging via the REST PUT shortcut — let the PR merge only once checks are green.
+
+---
+
+merge it once CI passed using gh
+
+---
+
+No, let the admin bypass be
+
+---
+
+Lets call it a day
+
+---
+
+Good morning. 
+Lets start from where where left off last night
+
+---
+
+yeah, file for the typo returns 200 issue. 
+For #305 merger it once CI completes.
+
+---
+
+<task-notification>
+<task-id>b23sdibz0</task-id>
+<tool-use-id>toolu_01FEQ8TTsNTmuBFzbaJSVePz</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/4bc13446-7dfa-442d-bc8c-6f955e33c0a0/tasks/b23sdibz0.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for CI completion via until loop" completed (exit code 0)</summary>
+</task-notification>
