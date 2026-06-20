@@ -239,6 +239,37 @@
         "label": "Skill: code-review",
         "default_collapsed": true
       }
+    },
+    {
+      "id": "claude-skill-toolu_01AGy41LKHco4N3CA6sZAd2U",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "44f84760ea9e",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 3138,
+        "end": 3139,
+        "entry_ids": [
+          "9a8b54d4-80da-4721-ae5d-2754d1cc0f91"
+        ],
+        "tool_use_id": "toolu_01AGy41LKHco4N3CA6sZAd2U"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01AGy41LKHco4N3CA6sZAd2U"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
     }
   ],
   "session_metrics": {
