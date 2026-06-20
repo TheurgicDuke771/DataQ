@@ -22,9 +22,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
@@ -357,4 +357,55 @@ def list_pipeline_runs(
         stmt = stmt.where(PipelineRun.provider == provider)
     if status is not None:
         stmt = stmt.where(PipelineRun.status == status)
+    return list(session.scalars(stmt))
+
+
+def list_pipelines(
+    session: Session,
+    *,
+    provider: str | None = None,
+    env: str | None = None,
+    limit: int = 50,
+) -> list[PipelineRun]:
+    """Latest run per distinct pipeline (provider, pipeline_or_dag_id, env).
+
+    The orchestration "pipeline status" view (one row per monitored pipeline,
+    carrying its most-recent run's status/timing), as opposed to the flat
+    per-run feed in :func:`list_pipeline_runs`. Provider-agnostic — ADF and
+    Airflow share the shape — and optionally narrowed by ``provider`` and/or
+    ``env``. Same auth-only gating: monitoring data, not suite-scoped.
+    """
+    # "Recency" = COALESCE(started_at, created_at): started_at is the truth, but
+    # it is nullable (a failure event can land before — or without — a start
+    # time), so fall back to created_at (NOT NULL) rather than ordering those
+    # runs last. Ordering them last would let an older, fully-timed run mask the
+    # freshest run inside its partition — the opposite of a "latest status" view.
+    recency = func.coalesce(PipelineRun.started_at, PipelineRun.created_at)
+    # Inner DISTINCT ON picks each pipeline's most-recent run. Postgres requires
+    # the ORDER BY to lead with the partition keys, so the recency ordering can't
+    # also drive the cross-pipeline display order here…
+    latest = (
+        select(PipelineRun)
+        .distinct(
+            PipelineRun.provider,
+            PipelineRun.pipeline_or_dag_id,
+            PipelineRun.env,
+        )
+        .order_by(
+            PipelineRun.provider,
+            PipelineRun.pipeline_or_dag_id,
+            PipelineRun.env,
+            recency.desc(),
+            PipelineRun.created_at.desc(),  # deterministic tie-break
+        )
+    )
+    if provider is not None:
+        latest = latest.where(PipelineRun.provider == provider)
+    if env is not None:
+        latest = latest.where(PipelineRun.env == env)
+    # …so wrap it and order by recency in the outer query, where LIMIT then caps
+    # to the N most-recently-active pipelines (symmetry with list_pipeline_runs).
+    sub = latest.subquery()
+    pr = aliased(PipelineRun, sub)
+    stmt = select(pr).order_by(func.coalesce(pr.started_at, pr.created_at).desc()).limit(limit)
     return list(session.scalars(stmt))

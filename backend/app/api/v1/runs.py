@@ -235,3 +235,24 @@ def list_pipeline_runs(
         db, provider=provider, status=run_status, limit=limit
     )
     return [PipelineRunRead.model_validate(p) for p in pipeline_runs]
+
+
+@router.get(
+    "/orchestration/pipelines",
+    response_model=list[PipelineRunRead],
+    summary="List monitored pipelines with their latest run status",
+)
+def list_pipelines(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    provider: str | None = None,
+    env: str | None = None,
+    limit: int = Query(default=_LIST_LIMIT_DEFAULT, ge=1, le=_LIST_LIMIT_MAX),
+) -> list[PipelineRunRead]:
+    """The pipeline status view: one row per monitored pipeline (provider /
+    pipeline-or-dag / env), carrying its most-recent run, most-recently-active
+    first. Auth-only gated (orchestration monitoring, not suite-scoped); the
+    per-run feed is `/pipeline_runs`.
+    """
+    pipelines = orchestration_service.list_pipelines(db, provider=provider, env=env, limit=limit)
+    return [PipelineRunRead.model_validate(p) for p in pipelines]
