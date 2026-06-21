@@ -3,7 +3,7 @@
   "checkpoint_id": "dbe242f5bff0",
   "strategy": "manual-commit",
   "branch": "feature/a8-sample-failures-retention",
-  "checkpoints_count": 2,
+  "checkpoints_count": 6,
   "files_touched": [
     "backend/app/services/run_service.py",
     "backend/app/worker/celery_app.py",
@@ -18,13 +18,19 @@
       "transcript": "/db/e242f5bff0/0/full.jsonl",
       "content_hash": "/db/e242f5bff0/0/content_hash.txt",
       "prompt": "/db/e242f5bff0/0/prompt.txt"
+    },
+    {
+      "metadata": "/db/e242f5bff0/1/metadata.json",
+      "transcript": "/db/e242f5bff0/1/full.jsonl",
+      "content_hash": "/db/e242f5bff0/1/content_hash.txt",
+      "prompt": "/db/e242f5bff0/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 15974,
-    "cache_creation_tokens": 319295,
-    "cache_read_tokens": 11599828,
-    "output_tokens": 81242,
-    "api_call_count": 108
+    "input_tokens": 50911,
+    "cache_creation_tokens": 1054008,
+    "cache_read_tokens": 51458181,
+    "output_tokens": 252932,
+    "api_call_count": 341
   }
 }
