@@ -5,7 +5,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { type Connection, listConnections } from '../../src/api/connections';
-import { runSuite } from '../../src/api/runs';
+import { getRunProgress, runSuite } from '../../src/api/runs';
 import {
   type Check,
   deleteCheck,
@@ -32,7 +32,12 @@ vi.mock('../../src/api/suites', async (importOriginal) => {
   };
 });
 
-vi.mock('../../src/api/runs', () => ({ runSuite: vi.fn() }));
+// Preserve the real types/helpers; the manual Run flow opens LiveRunProgress,
+// which polls getRunProgress — so it must be a mock here too, not undefined.
+vi.mock('../../src/api/runs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/api/runs')>();
+  return { ...actual, runSuite: vi.fn(), getRunProgress: vi.fn(), cancelRun: vi.fn() };
+});
 
 const mockListSuites = vi.mocked(listSuites);
 const mockListConnections = vi.mocked(listConnections);
@@ -40,6 +45,7 @@ const mockListChecks = vi.mocked(listChecks);
 const mockDeleteSuite = vi.mocked(deleteSuite);
 const mockDeleteCheck = vi.mocked(deleteCheck);
 const mockRunSuite = vi.mocked(runSuite);
+const mockGetRunProgress = vi.mocked(getRunProgress);
 
 const connection: Connection = {
   id: 'conn1',
@@ -222,12 +228,27 @@ describe('Suites', () => {
       finished_at: null,
       created_at: '2026-06-12T00:00:00Z',
     });
+    mockGetRunProgress.mockResolvedValue({
+      run_id: 'r1',
+      suite_id: 's1',
+      status: 'running',
+      total_checks: 1,
+      completed_checks: 0,
+      counts: {},
+      checks: [{ check_id: 'c1', name: 'not-null id', status: null }],
+      started_at: null,
+      finished_at: null,
+    });
 
     renderPage();
     await user.click(await screen.findByText('orders-suite'));
     await user.click(await screen.findByRole('button', { name: /Run/ }));
 
     await waitFor(() => expect(mockRunSuite).toHaveBeenCalledWith('s1'));
+    // The manual run opens the live-progress drawer (it polls the queued run)
+    // rather than navigating away.
+    expect(await screen.findByText('Run progress · orders-suite')).toBeInTheDocument();
+    await waitFor(() => expect(mockGetRunProgress).toHaveBeenCalledWith('r1'));
   });
 
   it('disables Run (no click) when the suite has no target', async () => {

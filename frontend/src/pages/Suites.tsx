@@ -24,6 +24,7 @@ import {
 } from '../api/suites';
 import { CheckDrawer } from '../components/checks/CheckDrawer';
 import { ConnectionTypeAvatar } from '../components/connections/connectionVisuals';
+import { LiveRunProgress } from '../components/runs/LiveRunProgress';
 import { ImportSuiteDrawer } from '../components/suites/ImportSuiteDrawer';
 import { SharePanel } from '../components/suites/SharePanel';
 import { SuiteDrawer } from '../components/suites/SuiteDrawer';
@@ -314,6 +315,8 @@ function SuiteDetail({
   const [exporting, setExporting] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [running, setRunning] = useState(false);
+  // The live-progress drawer opens on the run id returned by a manual trigger.
+  const [progressRunId, setProgressRunId] = useState<string | null>(null);
   // Managing shares (and deleting) needs admin; the read stamps the caller's level.
   const canManage = suite.my_permission === 'owner' || suite.my_permission === 'admin';
   // Triggering a run is edit-gated (matches the backend); a null target isn't runnable.
@@ -327,9 +330,11 @@ function SuiteDetail({
     runningRef.current = true;
     setRunning(true);
     try {
-      await runSuite(suite.id);
+      const run = await runSuite(suite.id);
       message.success(`${suite.name}: run queued`);
-      navigate('/results');
+      // Open the live-progress drawer on the queued run rather than bouncing to
+      // /results — the user watches it execute check-by-check (and can cancel).
+      setProgressRunId(run.id);
     } catch (err) {
       message.error(`Run failed: ${err instanceof Error ? err.message : 'unknown error'}`);
     } finally {
@@ -449,6 +454,12 @@ function SuiteDetail({
         ownerId={suite.created_by}
         canManage={canManage}
         onClose={() => setShareOpen(false)}
+      />
+      <LiveRunProgress
+        runId={progressRunId}
+        suiteName={suite.name}
+        canManage={canRun}
+        onClose={() => setProgressRunId(null)}
       />
     </Flex>
   );

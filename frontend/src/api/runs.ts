@@ -42,6 +42,30 @@ export interface RunDetail extends Run {
   results: Result[];
 }
 
+/** Mirrors `CheckProgressRead` — `status` is null while the check is pending. */
+export interface CheckProgress {
+  check_id: string;
+  name: string;
+  status: ResultStatus | null;
+}
+
+/**
+ * Mirrors `RunProgressRead` — the compact live-progress shape the run-progress
+ * UI polls: run lifecycle + per-check resolution + a status histogram. Lighter
+ * than the full run+results detail (`getRun`).
+ */
+export interface RunProgress {
+  run_id: string;
+  suite_id: string;
+  status: RunStatus;
+  total_checks: number;
+  completed_checks: number;
+  counts: Record<string, number>;
+  checks: CheckProgress[];
+  started_at: string | null;
+  finished_at: string | null;
+}
+
 /** Mirrors `PipelineRunRead` — a monitored orchestrator run (`pipeline_runs` ≠ `runs`). */
 export interface PipelineRun {
   id: string;
@@ -78,6 +102,26 @@ export async function getRun(runId: string): Promise<RunDetail> {
  */
 export async function runSuite(suiteId: string): Promise<Run> {
   const { data } = await api.post<Run>(`/suites/${suiteId}/run`);
+  return data;
+}
+
+/**
+ * Poll a run's live progress (`GET /runs/{id}/progress`). Suite-scoped (view).
+ * Cheaper than `getRun` — no observed/expected payloads — so it's the call the
+ * live-progress UI hits on its polling interval.
+ */
+export async function getRunProgress(runId: string): Promise<RunProgress> {
+  const { data } = await api.get<RunProgress>(`/runs/${runId}/progress`);
+  return data;
+}
+
+/**
+ * Cancel a non-terminal run (`POST /runs/{id}/cancel`). Edit-gated; returns the
+ * updated `Run`. An already-finished run → 409. Cancel is cooperative (best-effort
+ * for an in-flight run), so it may race a fast run to completion.
+ */
+export async function cancelRun(runId: string): Promise<Run> {
+  const { data } = await api.post<Run>(`/runs/${runId}/cancel`);
   return data;
 }
 
