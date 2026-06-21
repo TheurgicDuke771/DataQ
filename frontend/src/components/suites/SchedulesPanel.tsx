@@ -100,14 +100,18 @@ function ScheduleTable({
   canManage: boolean;
   onChanged: () => void;
 }) {
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
   const [busyId, setBusyId] = useState<string | null>(null);
+
+  // cron is not unique per row (the same cron can run in two timezones), so
+  // identify a schedule by cron + timezone in labels/toasts/confirms.
+  const label = (s: Schedule) => `${s.cron} (${s.timezone})`;
 
   const onToggle = async (s: Schedule, enabled: boolean) => {
     setBusyId(s.id);
     try {
       await updateSchedule(s.id, { enabled });
-      message.success(`${s.cron}: ${enabled ? 'resumed' : 'paused'}`);
+      message.success(`${label(s)}: ${enabled ? 'resumed' : 'paused'}`);
       onChanged();
     } catch (err) {
       message.error(`Update failed: ${err instanceof Error ? err.message : 'unknown error'}`);
@@ -116,17 +120,26 @@ function ScheduleTable({
     }
   };
 
-  const onRemove = async (s: Schedule) => {
-    setBusyId(s.id);
-    try {
-      await deleteSchedule(s.id);
-      message.success(`${s.cron}: removed`);
-      onChanged();
-    } catch (err) {
-      message.error(`Remove failed: ${err instanceof Error ? err.message : 'unknown error'}`);
-    } finally {
-      setBusyId(null);
-    }
+  const onRemove = (s: Schedule) => {
+    modal.confirm({
+      title: `Delete schedule ${label(s)}?`,
+      content: 'This suite will no longer run on this cadence.',
+      okText: 'Delete',
+      okType: 'danger',
+      onOk: async () => {
+        setBusyId(s.id);
+        try {
+          await deleteSchedule(s.id);
+          message.success(`${label(s)}: removed`);
+          onChanged();
+        } catch (err) {
+          message.error(`Remove failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+          throw err; // keep the confirm modal open on failure
+        } finally {
+          setBusyId(null);
+        }
+      },
+    });
   };
 
   const columns: ColumnsType<Schedule> = [
@@ -157,7 +170,7 @@ function ScheduleTable({
             checked={enabled}
             loading={busyId === s.id}
             onChange={(next) => onToggle(s, next)}
-            aria-label={`${enabled ? 'Pause' : 'Resume'} ${s.cron}`}
+            aria-label={`${enabled ? 'Pause' : 'Resume'} ${label(s)}`}
           />
         ) : (
           <Tag color={enabled ? 'success' : 'default'}>{enabled ? 'enabled' : 'paused'}</Tag>
@@ -177,7 +190,7 @@ function ScheduleTable({
                 icon={<DeleteOutlined />}
                 loading={busyId === s.id}
                 onClick={() => onRemove(s)}
-                aria-label={`Remove ${s.cron}`}
+                aria-label={`Remove ${label(s)}`}
               />
             ),
           },

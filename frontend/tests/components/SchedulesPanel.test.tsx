@@ -54,8 +54,9 @@ describe('SchedulesPanel', () => {
     renderPanel();
 
     expect(await screen.findByText('0 9 * * 1-5')).toBeInTheDocument();
-    // An enabled schedule offers a Pause toggle.
-    expect(screen.getByRole('switch', { name: 'Pause 0 9 * * 1-5' })).toBeInTheDocument();
+    // An enabled schedule offers a Pause toggle, labelled by cron + timezone
+    // (cron alone isn't unique — the same cron can run in two timezones).
+    expect(screen.getByRole('switch', { name: 'Pause 0 9 * * 1-5 (UTC)' })).toBeInTheDocument();
   });
 
   it('shows an empty state when there are no schedules', async () => {
@@ -93,19 +94,22 @@ describe('SchedulesPanel', () => {
     renderPanel();
     await screen.findByText('0 9 * * 1-5');
 
-    await user.click(screen.getByRole('switch', { name: 'Pause 0 9 * * 1-5' }));
+    await user.click(screen.getByRole('switch', { name: 'Pause 0 9 * * 1-5 (UTC)' }));
 
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith('sch1', { enabled: false }));
   });
 
-  it('deletes a schedule', async () => {
+  it('deletes a schedule after confirmation', async () => {
     mockList.mockResolvedValue([SCHEDULE]);
     mockDelete.mockResolvedValue();
     const user = userEvent.setup();
     renderPanel();
     await screen.findByText('0 9 * * 1-5');
 
-    await user.click(screen.getByRole('button', { name: 'Remove 0 9 * * 1-5' }));
+    await user.click(screen.getByRole('button', { name: 'Remove 0 9 * * 1-5 (UTC)' }));
+    // Destructive → gated behind a confirm modal; nothing deleted until confirmed.
+    expect(mockDelete).not.toHaveBeenCalled();
+    await user.click(await screen.findByRole('button', { name: 'Delete' }));
 
     await waitFor(() => expect(mockDelete).toHaveBeenCalledWith('sch1'));
   });
@@ -117,7 +121,9 @@ describe('SchedulesPanel', () => {
 
     expect(screen.queryByRole('button', { name: 'Add' })).not.toBeInTheDocument();
     expect(screen.queryByRole('switch')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Remove 0 9 * * 1-5' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Remove 0 9 * * 1-5 (UTC)' }),
+    ).not.toBeInTheDocument();
     // The enabled state is shown read-only as a tag.
     expect(screen.getByText('enabled')).toBeInTheDocument();
   });
