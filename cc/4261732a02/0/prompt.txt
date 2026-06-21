@@ -1,0 +1,30 @@
+Yes, apply 1–5 now and re-run the suite. 
+File 6, 7 and if anything from the note section worth filling. 
+Also can you update the recently filled issues with lables.
+
+---
+
+Okay, merge #315 once CI is green, then on to the next open item. 
+Also check if we can take up any of the open issues (like the #310)
+
+---
+
+merge #319 then do #227
+
+---
+
+<task-notification>
+<task-id>bgzmcjbv6</task-id>
+<tool-use-id>toolu_01PKfGqnFDgXbmWbkq91jeqq</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d0e2f994-bd08-4455-8506-92e041c9f9f7/tasks/bgzmcjbv6.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch CI on PR 320 until complete" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+The 4 Bandit issues and the mypy celery_app errors you found recently, are they serious? If yes file an issue. Also check if any similar pre-existing issues are there, if any file them based on seriousness and priority.
+
+---
+
+There is a security alert (something regarding a lambda function in @backend/tests/worker/test_polling.py file (L184)
