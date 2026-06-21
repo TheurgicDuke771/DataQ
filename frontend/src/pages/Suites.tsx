@@ -26,6 +26,7 @@ import { CheckDrawer } from '../components/checks/CheckDrawer';
 import { ConnectionTypeAvatar } from '../components/connections/connectionVisuals';
 import { LiveRunProgress } from '../components/runs/LiveRunProgress';
 import { ImportSuiteDrawer } from '../components/suites/ImportSuiteDrawer';
+import { SchedulesPanel } from '../components/suites/SchedulesPanel';
 import { SharePanel } from '../components/suites/SharePanel';
 import { SuiteDrawer } from '../components/suites/SuiteDrawer';
 import { TriggersPanel } from '../components/suites/TriggersPanel';
@@ -433,9 +434,11 @@ function SuiteDetail({
         onEdit={(check) => setEditingCheck(check)}
         onChanged={reload}
       />
-      {/* Triggers are edit-gated (same as runs): a pipeline/DAG bound here runs
-          the suite on its success. canRun is exactly the edit-level capability. */}
+      {/* Triggers + schedules are edit-gated (same as runs): a pipeline/DAG bound
+          here runs the suite on its success; a schedule runs it on a cron cadence.
+          canRun is exactly the edit-level capability. */}
       <TriggersPanel suiteId={suite.id} canManage={canRun} />
+      <SchedulesPanel suiteId={suite.id} canManage={canRun} />
       <CheckDrawer
         open={editingCheck !== null}
         suiteId={suite.id}
