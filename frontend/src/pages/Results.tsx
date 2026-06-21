@@ -1,4 +1,17 @@
-import { Alert, Drawer, Empty, Flex, Select, Spin, Table, Tabs, Tag, Typography } from 'antd';
+import { PlayCircleOutlined } from '@ant-design/icons';
+import {
+  Alert,
+  Button,
+  Drawer,
+  Empty,
+  Flex,
+  Select,
+  Spin,
+  Table,
+  Tabs,
+  Tag,
+  Typography,
+} from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useMemo, useState } from 'react';
 
@@ -14,6 +27,7 @@ import {
   RUN_STATUSES,
 } from '../api/runs';
 import { type Check, listChecks, listSuites } from '../api/suites';
+import { RunNowPanel } from '../components/runs/RunNowPanel';
 import { useAsyncData } from '../hooks/useAsyncData';
 import {
   formatDuration,
@@ -27,11 +41,18 @@ import { ScalarValue } from '../components/results/ScalarValue';
 const LIST_LIMIT = 200;
 
 export function Results() {
+  const [runNowOpen, setRunNowOpen] = useState(false);
   return (
     <Flex vertical gap={24}>
-      <Typography.Title level={3} style={{ margin: 0 }}>
-        Results
-      </Typography.Title>
+      <Flex justify="space-between" align="center" gap={12}>
+        <Typography.Title level={3} style={{ margin: 0 }}>
+          Results
+        </Typography.Title>
+        <Button type="primary" icon={<PlayCircleOutlined />} onClick={() => setRunNowOpen(true)}>
+          Run now
+        </Button>
+      </Flex>
+      <RunNowPanel open={runNowOpen} onClose={() => setRunNowOpen(false)} />
       <Tabs
         defaultActiveKey="runs"
         items={[
