@@ -181,7 +181,7 @@ def test_recover_orchestration_gaps_task_uses_gap_lookback(monkeypatch: Any) -> 
 
     session = _Session()
     monkeypatch.setattr(tasks, "get_session", lambda: session)
-    monkeypatch.setattr(tasks, "get_secret_store", lambda: _FakeStore())
+    monkeypatch.setattr(tasks, "get_secret_store", _FakeStore)
 
     def _capture(_session: Any, *, secret_store: Any, lookback: Any = None) -> dict[str, int]:
         captured["session"] = _session
