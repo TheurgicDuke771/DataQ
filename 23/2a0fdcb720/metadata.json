@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "232a0fdcb720",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-227-dispatch-dedup",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/23/2a0fdcb720/0/metadata.json",
+      "transcript": "/23/2a0fdcb720/0/full.jsonl",
+      "content_hash": "/23/2a0fdcb720/0/content_hash.txt",
+      "prompt": "/23/2a0fdcb720/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 26298,
+    "cache_creation_tokens": 639554,
+    "cache_read_tokens": 31589309,
+    "output_tokens": 140620,
+    "api_call_count": 182
+  }
+}
