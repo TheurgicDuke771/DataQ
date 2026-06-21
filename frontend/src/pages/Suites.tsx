@@ -1,9 +1,7 @@
 import { PlayCircleOutlined } from '@ant-design/icons';
 import { App, Alert, Button, Card, Empty, Flex, List, Spin, Tag, Tooltip, Typography } from 'antd';
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-
-import { runSuite } from '../api/runs';
 
 import {
   CONNECTION_KIND,
@@ -14,6 +12,8 @@ import {
   listConnections,
 } from '../api/connections';
 import {
+  canManageSuite,
+  canRunSuite,
   type Check,
   deleteCheck,
   deleteSuite,
@@ -33,6 +33,7 @@ import { TriggersPanel } from '../components/suites/TriggersPanel';
 import { BRAND } from '../theme';
 import { downloadJson, toFilenameStem } from '../utils/download';
 import { type AsyncState, useAsyncData } from '../hooks/useAsyncData';
+import { useRunTrigger } from '../hooks/useRunTrigger';
 
 /**
  * A suite's identity block — datasource avatar + name + connection/env — shared
@@ -315,34 +316,16 @@ function SuiteDetail({
 
   const [exporting, setExporting] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
-  const [running, setRunning] = useState(false);
   // The live-progress drawer opens on the run id returned by a manual trigger.
   const [progressRunId, setProgressRunId] = useState<string | null>(null);
   // Managing shares (and deleting) needs admin; the read stamps the caller's level.
-  const canManage = suite.my_permission === 'owner' || suite.my_permission === 'admin';
+  const canManage = canManageSuite(suite);
   // Triggering a run is edit-gated (matches the backend); a null target isn't runnable.
-  const canRun = canManage || suite.my_permission === 'edit';
+  const canRun = canRunSuite(suite);
 
-  // Ref guard (not just `running` state) so a synchronous double-click can't
-  // dispatch two runs in the render-tick before `loading` disables the button.
-  const runningRef = useRef(false);
-  const onRun = async () => {
-    if (runningRef.current) return;
-    runningRef.current = true;
-    setRunning(true);
-    try {
-      const run = await runSuite(suite.id);
-      message.success(`${suite.name}: run queued`);
-      // Open the live-progress drawer on the queued run rather than bouncing to
-      // /results — the user watches it execute check-by-check (and can cancel).
-      setProgressRunId(run.id);
-    } catch (err) {
-      message.error(`Run failed: ${err instanceof Error ? err.message : 'unknown error'}`);
-    } finally {
-      runningRef.current = false;
-      setRunning(false);
-    }
-  };
+  // Open the live-progress drawer on the queued run rather than bouncing to
+  // /results — the user watches it execute check-by-check (and can cancel).
+  const { running, run } = useRunTrigger((queued) => setProgressRunId(queued.id));
 
   const onExport = async () => {
     setExporting(true);
@@ -400,7 +383,7 @@ function SuiteDetail({
                 type="primary"
                 icon={<PlayCircleOutlined />}
                 loading={running}
-                onClick={onRun}
+                onClick={() => run(suite)}
               >
                 Run
               </Button>

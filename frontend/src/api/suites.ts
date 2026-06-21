@@ -21,6 +21,24 @@ export interface Suite {
 }
 
 /**
+ * Owner/admin — may manage shares + delete the suite. The single source for the
+ * "manage" gate so the suite-detail actions and any other surface never drift.
+ */
+export function canManageSuite(suite: Suite): boolean {
+  return suite.my_permission === 'owner' || suite.my_permission === 'admin';
+}
+
+/**
+ * The `edit` capability ladder (owner/admin/edit) — may trigger/cancel runs and
+ * manage triggers/schedules, mirroring the backend `POST /suites/{id}/run` gate.
+ * Shared by the suite-detail Run button and the cross-suite Run-now panel so the
+ * runnable-permission policy lives in one place.
+ */
+export function canRunSuite(suite: Suite): boolean {
+  return canManageSuite(suite) || suite.my_permission === 'edit';
+}
+
+/**
  * The datasource-shaped identity carried in `Suite.target` (#215): SQL targets
  * fill `table`/`schema`/`catalog`, flat-file targets fill `path`/`file_format`.
  * The wire shape is an untyped JSONB bag (`Record<string, unknown>`); read it

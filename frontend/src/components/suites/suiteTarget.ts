@@ -1,5 +1,5 @@
 import type { ConnectionType } from '../../api/connections';
-import type { RunTarget } from '../../api/suites';
+import { type RunTarget, targetString } from '../../api/suites';
 
 /**
  * A suite's run target (#215) is datasource-shaped: SQL warehouses identify a
@@ -22,6 +22,25 @@ export function targetKind(type: ConnectionType): TargetKind | null {
     default:
       return null; // adf / airflow — not a datasource
   }
+}
+
+/**
+ * Collapse a stored run target to a one-line summary for read-only display:
+ * flat files show their `path`; SQL / Unity Catalog show the dotted
+ * `catalog.schema.table` (only the parts present). Returns `null` for a
+ * targetless (not-yet-runnable) suite. Lives here next to the other
+ * datasource-target-shape logic so a new target field has one owner.
+ */
+export function summarizeTarget(target: Record<string, unknown> | null): string | null {
+  if (!target) return null;
+  const path = targetString(target, 'path');
+  if (path) return path;
+  const parts = [
+    targetString(target, 'catalog'),
+    targetString(target, 'schema'),
+    targetString(target, 'table'),
+  ].filter((p): p is string => Boolean(p));
+  return parts.length > 0 ? parts.join('.') : null;
 }
 
 /** The raw target inputs the drawer collects (all optional strings). */
