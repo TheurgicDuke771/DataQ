@@ -20,6 +20,7 @@ from backend.app.services.profile_service import (
     build_aggregate_query,
     build_top_values_query,
     infer_file_format,
+    null_fraction,
     profile_dataframe,
     validate_identifier,
 )
@@ -50,6 +51,19 @@ def test_validate_identifier_rejects_unsafe(bad: str) -> None:
 def test_validate_identifier_rejects_none() -> None:
     with pytest.raises(ProfileIdentifierInvalidError):
         validate_identifier(None)
+
+
+# ── null_fraction (shared SQL/pandas stat contract) ──
+
+
+@pytest.mark.parametrize(
+    ("nulls", "rows", "expected"),
+    [(0, 4, 0.0), (1, 4, 0.25), (4, 4, 1.0), (0, 0, 0.0), (3, 0, 0.0)],
+)
+def test_null_fraction_contract(nulls: int, rows: int, expected: float) -> None:
+    # The one stat both profiler paths share — empty target is 0.0, never a
+    # divide-by-zero (the contract assemble_profile + profile_dataframe both honour).
+    assert null_fraction(nulls, rows) == expected
 
 
 # ── query builders (compiled SQL inspection) ──
