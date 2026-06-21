@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "889a9e06079e",
+  "strategy": "manual-commit",
+  "branch": "docs/week-5-closeout",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/88/9a9e06079e/0/metadata.json",
+      "transcript": "/88/9a9e06079e/0/full.jsonl",
+      "content_hash": "/88/9a9e06079e/0/content_hash.txt",
+      "prompt": "/88/9a9e06079e/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 16498,
+    "cache_creation_tokens": 235665,
+    "cache_read_tokens": 9008805,
+    "output_tokens": 53785,
+    "api_call_count": 89
+  }
+}
