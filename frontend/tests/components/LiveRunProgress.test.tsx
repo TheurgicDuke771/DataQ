@@ -68,6 +68,9 @@ describe('LiveRunProgress', () => {
     // The unresolved check shows the pending affordance, not a status tag.
     expect(screen.getByText('pending')).toBeInTheDocument();
     expect(screen.getByText('1 / 2 checks')).toBeInTheDocument();
+    // The results link is always offered — even mid-run — so closing the drawer
+    // never strands the run.
+    expect(screen.getByText('View full results →')).toBeInTheDocument();
   });
 
   it('polls until the run is terminal, then stops and links to results', async () => {
@@ -105,6 +108,46 @@ describe('LiveRunProgress', () => {
     // The drawer reflects the terminal state and drops the cancel control.
     expect(await screen.findByText('cancelled')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Cancel' })).not.toBeInTheDocument();
+    // A never-run check on a now-terminal run reads "not run", not a live spinner.
+    expect(screen.getByText('not run')).toBeInTheDocument();
+    expect(screen.queryByText('pending')).not.toBeInTheDocument();
+  });
+
+  it('does not flip back to running when a late poll resolves after a cancel', async () => {
+    // Backend cancel is cooperative — a poll already in flight can still read
+    // `running`. The cancelled state must stick and polling must stop.
+    mockProgress.mockResolvedValue(progress('running'));
+    mockCancel.mockResolvedValue({
+      id: 'r1',
+      suite_id: 's1',
+      status: 'cancelled',
+      triggered_by: null,
+      started_at: null,
+      finished_at: '2026-06-20T00:00:00Z',
+      created_at: '2026-06-20T00:00:00Z',
+    });
+    const user = userEvent.setup();
+    renderDrawer({ pollMs: 5 });
+    await screen.findByText('not-null id');
+
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    await screen.findByText('cancelled');
+
+    const callsAtCancel = mockProgress.mock.calls.length;
+    // Let any in-flight / would-be-scheduled polls settle.
+    await new Promise((r) => setTimeout(r, 40));
+    expect(screen.getByText('cancelled')).toBeInTheDocument();
+    expect(screen.queryByText('running')).not.toBeInTheDocument();
+    // Polling has stopped — no further progress fetches after the cancel.
+    expect(mockProgress.mock.calls.length).toBe(callsAtCancel);
+  });
+
+  it('recovers from a transient poll error and keeps polling', async () => {
+    mockProgress.mockRejectedValueOnce(new Error('blip')).mockResolvedValue(progress('succeeded'));
+    renderDrawer({ pollMs: 5 });
+
+    // The first poll failed, but polling self-heals to the terminal state.
+    expect(await screen.findByText('succeeded')).toBeInTheDocument();
   });
 
   it('hides the cancel button for a terminal run', async () => {

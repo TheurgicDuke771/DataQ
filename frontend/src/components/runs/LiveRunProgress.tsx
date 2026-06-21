@@ -92,25 +92,38 @@ function LiveRunProgressBody({
   const [error, setError] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // `stopped` latches once the run reaches a terminal state (poll-observed or
+  // cancel-forced). It guards against a poll that was already in flight before a
+  // cancel resolving afterwards and clobbering the terminal status back to
+  // `running` (cancel is cooperative — the next poll can briefly still read the
+  // pre-cancel state). Terminal is sticky.
+  const stoppedRef = useRef(false);
 
   // Poll until terminal via a self-scheduling timeout (not setInterval, so a slow
   // request can't pile up overlapping fetches). `active` guards a late resolution
-  // after unmount. Polling stops on a terminal status or a fetch error — the
-  // latter surfaces an alert rather than hot-looping a broken endpoint.
+  // after unmount. A transient fetch error keeps polling (the live view
+  // self-heals when the endpoint recovers) — only a terminal status stops it.
   useEffect(() => {
     let active = true;
+    stoppedRef.current = false;
     const tick = async () => {
       try {
         const next = await getRunProgress(runId);
-        if (!active) return;
+        if (!active || stoppedRef.current) return;
         setProgress(next);
         setError(null);
-        if (!isTerminal(next.status)) {
+        if (isTerminal(next.status)) {
+          stoppedRef.current = true;
+        } else {
           timerRef.current = setTimeout(tick, pollMs);
         }
       } catch (err) {
-        if (!active) return;
+        if (!active || stoppedRef.current) return;
         setError(err instanceof Error ? err.message : String(err));
+        // Keep polling through a transient error rather than freezing the live
+        // view; the cadence is bounded by pollMs, and a terminal status / unmount
+        // still stops it.
+        timerRef.current = setTimeout(tick, pollMs);
       }
     };
     void tick();
@@ -124,8 +137,10 @@ function LiveRunProgressBody({
     setCancelling(true);
     try {
       const run = await cancelRun(runId);
-      // Reflect the terminal state immediately; the in-flight poll (if any) will
-      // also resolve to it and stop.
+      // Stop polling and latch terminal so an in-flight pre-cancel poll can't
+      // flip the status back to `running`.
+      stoppedRef.current = true;
+      if (timerRef.current) clearTimeout(timerRef.current);
       setProgress((p) => (p ? { ...p, status: run.status, finished_at: run.finished_at } : p));
       message.success('Run cancelled');
     } catch (err) {
@@ -179,20 +194,31 @@ function LiveRunProgressBody({
           renderItem={(c) => (
             <List.Item>
               <Typography.Text>{c.name}</Typography.Text>
-              <CheckStatus status={c.status} />
+              <CheckStatus status={c.status} terminal={terminal} />
             </List.Item>
           )}
         />
       )}
 
-      {terminal && <Link to="/results">View full results →</Link>}
+      {/* Always offer the persistent results surface — the drawer can be closed
+          mid-run, and (unlike the old navigate-on-run) it's the only in-app path
+          back to this run until the recent-runs table lands. */}
+      <Link to="/results">View full results →</Link>
     </Flex>
   );
 }
 
-/** A pending check shows a spinner; a resolved one its severity tag. */
-function CheckStatus({ status }: { status: ResultStatus | null }) {
+/**
+ * A check's status cell: a resolved check shows its severity tag; a pending
+ * check spins *while the run is live*, but on a terminal run (a check that never
+ * produced a result — e.g. a cancelled run) it shows a neutral "not run" rather
+ * than an eternal spinner.
+ */
+function CheckStatus({ status, terminal }: { status: ResultStatus | null; terminal: boolean }) {
   if (status === null) {
+    if (terminal) {
+      return <Typography.Text type="secondary">not run</Typography.Text>;
+    }
     return (
       <Flex gap={6} align="center">
         <Spin size="small" />
