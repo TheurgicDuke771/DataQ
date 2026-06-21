@@ -299,9 +299,9 @@ def _fire_schedule(session: Session, schedule: Schedule, *, now: datetime) -> st
     session.commit()
     session.refresh(run)
     # Shared dispatch+broker-failure block (#227): on failure the run is marked
-    # terminal-`failed` and logged; the advance is already committed, so the
-    # schedule has left the due window regardless.
-    if not run_dispatch.dispatch_or_fail(session, run):
+    # terminal-`failed` and logged (with schedule_id kept on the event); the
+    # advance is already committed, so the schedule has left the due window.
+    if not run_dispatch.dispatch_or_fail(session, run, schedule_id=str(schedule.id)):
         return "dispatch_failed"
     log.info("schedule_fired", schedule_id=str(schedule.id), run_id=str(run.id))
     return "dispatched"

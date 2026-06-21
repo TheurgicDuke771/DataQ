@@ -57,7 +57,7 @@ def mark_dispatch_failed(run: Run) -> None:
     run.finished_at = datetime.now(UTC)
 
 
-def dispatch_or_fail(session: Session, run: Run) -> bool:
+def dispatch_or_fail(session: Session, run: Run, **log_context: str) -> bool:
     """Dispatch a committed queued ``run``; on broker failure record the canonical
     terminal-failed shape. Returns ``True`` if dispatched, ``False`` if the broker
     was unreachable (the run is now ``failed`` with ``finished_at`` set, committed).
@@ -66,16 +66,19 @@ def dispatch_or_fail(session: Session, run: Run) -> bool:
     (probe, manual run, pipeline-success batch, scheduled run) so a never-dispatched
     run is recorded — and its traceback logged — identically everywhere (#227). The
     caller owns the *policy* for a ``False`` return: the HTTP paths surface 503; the
-    batch / scheduled paths skip the run and carry on. Mirrors ``run_suite``'s own
-    no-2-phase-commit contract (see ``dispatch_run``): the publish and the
-    ``celery_task_id`` commit aren't atomic, which is benign and self-correcting.
+    batch / scheduled paths skip the run and carry on. ``log_context`` is merged into
+    the failure log so a caller can keep its correlation keys (``schedule_id``, the
+    triggering ``provider``/``pipeline``) on the one ``run_dispatch_failed`` event.
+    Mirrors ``run_suite``'s own no-2-phase-commit contract (see ``dispatch_run``):
+    the publish and the ``celery_task_id`` commit aren't atomic, which is benign
+    and self-correcting.
     """
     try:
         run.celery_task_id = dispatch_run(run.id)
         session.commit()
         return True
     except Exception:
-        log.exception("run_dispatch_failed", run_id=str(run.id))
+        log.exception("run_dispatch_failed", run_id=str(run.id), **log_context)
         mark_dispatch_failed(run)
         session.commit()
         return False

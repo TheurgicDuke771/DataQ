@@ -124,4 +124,5 @@ def test_dispatch_or_fail_broker_failure_marks_failed(monkeypatch: pytest.Monkey
     assert run.status == "failed"
     assert run.finished_at is not None
     assert run.started_at is None
+    assert run.celery_task_id is None  # never published → no stale id for revoke
     assert session.commits == 1

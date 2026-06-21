@@ -229,9 +229,12 @@ def _trigger_suites(
         )
         for run in created:
             # Broker down: the shared helper marks the run terminal-`failed` and
-            # logs; the batch carries on so one stuck broker can't drop the rest
-            # (#227). The run stays in `created` either way (it was created).
-            run_dispatch.dispatch_or_fail(session, run)
+            # logs (with the pipeline correlation kept on the event); the batch
+            # carries on so one stuck broker can't drop the rest (#227). The run
+            # stays in `created` either way (it was created).
+            run_dispatch.dispatch_or_fail(
+                session, run, provider=provider, pipeline=update.pipeline_or_dag_id
+            )
     return created
 
 
