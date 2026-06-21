@@ -1,6 +1,5 @@
 import { PlayCircleOutlined } from '@ant-design/icons';
 import {
-  App,
   Alert,
   Button,
   Descriptions,
@@ -13,7 +12,7 @@ import {
   Tooltip,
   Typography,
 } from 'antd';
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 
 import {
   type Connection,
@@ -22,40 +21,12 @@ import {
   envLabel,
   listConnections,
 } from '../../api/connections';
-import { type Run, runSuite } from '../../api/runs';
-import { listSuites, type Suite, targetString } from '../../api/suites';
+import { type Run } from '../../api/runs';
+import { canRunSuite, listSuites, type Suite } from '../../api/suites';
+import { summarizeTarget } from '../suites/suiteTarget';
 import { useAsyncData } from '../../hooks/useAsyncData';
+import { useRunTrigger } from '../../hooks/useRunTrigger';
 import { LiveRunProgress } from './LiveRunProgress';
-
-/**
- * Permission levels that may trigger a run — the same edit-capability ladder the
- * suite-detail Run button and the backend `POST /suites/{id}/run` enforce. A
- * suite the caller can only `view` never appears in the picker.
- */
-const RUNNABLE: ReadonlyArray<NonNullable<Suite['my_permission']>> = ['owner', 'admin', 'edit'];
-
-function canRun(suite: Suite): boolean {
-  return suite.my_permission != null && RUNNABLE.includes(suite.my_permission);
-}
-
-/**
- * Collapse the datasource-shaped run target (#215) to a one-line summary for the
- * picker's read-only target display: flat files show their `path`; SQL / Unity
- * Catalog show the dotted `catalog.schema.table` (only the parts present). Mirrors
- * the suite-target shapes in `suiteTarget.ts`; returns `null` for a targetless
- * (not-yet-runnable) suite.
- */
-function summarizeTarget(target: Record<string, unknown> | null): string | null {
-  if (!target) return null;
-  const path = targetString(target, 'path');
-  if (path) return path;
-  const parts = [
-    targetString(target, 'catalog'),
-    targetString(target, 'schema'),
-    targetString(target, 'table'),
-  ].filter((p): p is string => Boolean(p));
-  return parts.length > 0 ? parts.join('.') : null;
-}
 
 /**
  * Run-now panel — a cross-suite run launcher (suite picker + env/datasource
@@ -69,8 +40,8 @@ function summarizeTarget(target: Record<string, unknown> | null): string | null 
  * rework can drop it onto the dedicated Execution page unchanged.
  */
 export function RunNowPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
-  // The live-progress drawer opens on the queued run; the modal closes first so
-  // the two aren't stacked. Carries the suite name for the drawer title.
+  // The launcher hands the queued run to the live-progress drawer (closing the
+  // modal first); `progress` carries the suite name for the drawer title.
   const [progress, setProgress] = useState<{ run: Run; suiteName: string } | null>(null);
 
   return (
@@ -88,9 +59,9 @@ export function RunNowPanel({ open, onClose }: { open: boolean; onClose: () => v
         {open && (
           <RunNowForm
             onCancel={onClose}
-            onQueued={(run, suiteName) => {
+            onQueued={(run, suite) => {
               onClose();
-              setProgress({ run, suiteName });
+              setProgress({ run, suiteName: suite.name });
             }}
           />
         )}
@@ -98,8 +69,9 @@ export function RunNowPanel({ open, onClose }: { open: boolean; onClose: () => v
       <LiveRunProgress
         runId={progress?.run.id ?? null}
         suiteName={progress?.suiteName ?? null}
-        // Every runnable suite is edit+ (the picker filters to RUNNABLE), and cancel
-        // is the same edit capability — so the launched run is always cancellable.
+        // Every runnable suite is edit+ (the picker filters to canRunSuite), and
+        // cancel is the same edit capability — so the launched run is always
+        // cancellable.
         canManage
         onClose={() => setProgress(null)}
       />
@@ -111,20 +83,17 @@ function RunNowForm({
   onQueued,
   onCancel,
 }: {
-  onQueued: (run: Run, suiteName: string) => void;
+  onQueued: (run: Run, suite: Suite) => void;
   onCancel: () => void;
 }) {
-  const { message } = App.useApp();
   const { state: suitesState } = useAsyncData(listSuites);
   const { state: connState } = useAsyncData(listConnections);
   const [suiteId, setSuiteId] = useState<string | null>(null);
-  const [running, setRunning] = useState(false);
-  // Ref guard (not just `running`) so a double-click can't dispatch two runs in
-  // the tick before the button disables — same pattern as the suite-detail Run.
-  const runningRef = useRef(false);
+  // Shared trigger logic (in-flight state + double-click guard + toasts).
+  const { running, run } = useRunTrigger(onQueued);
 
   const runnable = useMemo(
-    () => (suitesState.status === 'ok' ? suitesState.data.filter(canRun) : []),
+    () => (suitesState.status === 'ok' ? suitesState.data.filter(canRunSuite) : []),
     [suitesState],
   );
   const connById = useMemo(() => {
@@ -158,22 +127,6 @@ function RunNowForm({
   // A suite with no target isn't runnable yet (the backend would 422) — block the
   // Run button and say why, rather than launching a run that fails on dispatch.
   const runnableNow = suite !== null && target !== null;
-
-  const onRun = async () => {
-    if (!suite || runningRef.current) return;
-    runningRef.current = true;
-    setRunning(true);
-    try {
-      const run = await runSuite(suite.id);
-      message.success(`${suite.name}: run queued`);
-      onQueued(run, suite.name);
-    } catch (err) {
-      message.error(`Run failed: ${err instanceof Error ? err.message : 'unknown error'}`);
-    } finally {
-      runningRef.current = false;
-      setRunning(false);
-    }
-  };
 
   return (
     <Flex vertical gap={20}>
@@ -260,7 +213,7 @@ function RunNowForm({
           icon={<PlayCircleOutlined />}
           disabled={!runnableNow}
           loading={running}
-          onClick={onRun}
+          onClick={() => suite && run(suite)}
         >
           Run
         </Button>
