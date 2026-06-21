@@ -42,6 +42,20 @@ These were preconditions for executing the roadmap. Listed for completeness.
 | **PR 2 hygiene follow-ups** | #44 (mermaid + tsconfig + ADR 0009 + CLAUDE.md status), #47 (precommit reorder), #48 (mermaid fix #2), #49 (precommit mypy deps), #52 (markdown linebreak preservation) | ✅ |
 | **Architecture Q&A ADRs** | ADR 0010 (provider-agnostic infra seams — cloud portability) + ADR 0011 (extensibility seams — more datasources, `ResultPublisher`, dbt-as-orchestration-provider) + ADR 0013/0014 (marketplace/BYOL anti-lock-in; reconciliation `comparison` kind) + ADR 0016 (severity derivation). Record the now-vs-post-v1 timing per seam | ✅ |
 
+### Live test/demo-data environment (v1-supporting harness — lives _outside_ this repo, ADR [0021](adr/0021-demo-test-data-environment-strategy.md))
+
+The mechanism that finally discharges the standing **"live warehouse/file run — deferred Week-1 smoke"** caveat. The harness (Terraform infra, retail mock-data generators, Databricks RAW→Silver→Gold notebook) is **not git-tracked** — only this pointer + ADR 0021 live in the repo. Feeds Week-7 hardening + demo seed + the team-onboarding session.
+
+| Workstream item | Home | Status |
+|---|---|---|
+| Terraform infra bootstrap (Azure + Snowflake, post-account-enable) | external / local, not git-tracked | ⬜ |
+| Retail data model + mock-data generators (Product/Inventory/Location/Sales/Returns/Logistics/Guest + discount/promo/tax/FX/price) | external harness | ⬜ |
+| Reference **Flow A** — file lands in ADLS → ADF/Airflow loads to Snowflake/UC → DataQ checks the warehouse table | external harness (exercises `OrchestrationProvider`, ADR 0004) | ⬜ |
+| Reference **Flow B** — file lands in UC RAW → Databricks notebook RAW→Silver→Gold → DataQ checks UC tables | external harness + notebook (not git-tracked) | ⬜ |
+| Reference **Flow C** — file lands in ADLS, stays flat → DataQ checks it in place (`FlatFileCheckRunner` + batch resolution) | external harness | ⬜ |
+| **QA/QE agent** — test the DataQ framework module-by-module + E2E (new Claude Code subagent, like `migration-safety`) | repo (`.claude/agents/`) — Week 8 / ongoing | ⬜ |
+| **HashiCorp Vault** secret-management spike — second `SecretStore` impl, validates the ADR 0010/0013 seam (Key Vault = one impl) | post-v1 / backlog | ⬜ |
+
 ---
 
 ## Week 1 — Foundation, auth & project scaffold
