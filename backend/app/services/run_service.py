@@ -378,7 +378,7 @@ def purge_expired_sample_failures(
     # session.execute(<DML>) returns a CursorResult; the typed overload widens it
     # to Result (no rowcount), so cast to read the affected-row count.
     purge_result = cast(
-        "CursorResult[Any]",
+        CursorResult[Any],
         session.execute(
             update(Result)
             .where(
