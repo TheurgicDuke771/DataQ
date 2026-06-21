@@ -1,0 +1,10 @@
+Hey, I was thinking some pointers for DataQ, and jotted down these. Can you check how these can be added to the Road map
+
+---
+
+We can use terraform for Airflow also, correct? 
+Also Airflow we can host locally using docker, right?
+
+---
+
+Add the hosting part also in the ADR, and lets go with - `Local / fast iteration: Airflow via docker-compose, ADLS/Snowflake/UC pointed at real cloud accounts.`
