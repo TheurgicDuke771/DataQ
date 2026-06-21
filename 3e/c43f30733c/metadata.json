@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "3ec43f30733c",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-227-dispatch-dedup",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/services/orchestration_service.py",
+    "backend/app/services/run_dispatch.py",
+    "backend/app/worker/tasks.py",
+    "backend/tests/services/test_run_dispatch.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/3e/c43f30733c/0/metadata.json",
+      "transcript": "/3e/c43f30733c/0/full.jsonl",
+      "content_hash": "/3e/c43f30733c/0/content_hash.txt",
+      "prompt": "/3e/c43f30733c/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 28306,
+    "cache_creation_tokens": 664855,
+    "cache_read_tokens": 35433159,
+    "output_tokens": 152106,
+    "api_call_count": 194
+  }
+}

@@ -1,0 +1,12 @@
+Yes, apply 1–5 now and re-run the suite. 
+File 6, 7 and if anything from the note section worth filling. 
+Also can you update the recently filled issues with lables.
+
+---
+
+Okay, merge #315 once CI is green, then on to the next open item. 
+Also check if we can take up any of the open issues (like the #310)
+
+---
+
+merge #319 then do #227
