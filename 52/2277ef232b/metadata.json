@@ -3,9 +3,13 @@
   "checkpoint_id": "522277ef232b",
   "strategy": "manual-commit",
   "branch": "feature/live-run-progress-ui",
-  "checkpoints_count": 4,
+  "checkpoints_count": 6,
   "files_touched": [
-    "docs/progress.md"
+    "docs/progress.md",
+    "frontend/src/api/runs.ts",
+    "frontend/src/components/runs/LiveRunProgress.tsx",
+    "frontend/src/pages/Suites.tsx",
+    "frontend/tests/components/LiveRunProgress.test.tsx"
   ],
   "sessions": [
     {
@@ -13,13 +17,19 @@
       "transcript": "/52/2277ef232b/0/full.jsonl",
       "content_hash": "/52/2277ef232b/0/content_hash.txt",
       "prompt": "/52/2277ef232b/0/prompt.txt"
+    },
+    {
+      "metadata": "/52/2277ef232b/1/metadata.json",
+      "transcript": "/52/2277ef232b/1/full.jsonl",
+      "content_hash": "/52/2277ef232b/1/content_hash.txt",
+      "prompt": "/52/2277ef232b/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 4424,
-    "cache_creation_tokens": 233231,
-    "cache_read_tokens": 7965579,
-    "output_tokens": 33511,
-    "api_call_count": 44
+    "input_tokens": 16370,
+    "cache_creation_tokens": 413093,
+    "cache_read_tokens": 11627645,
+    "output_tokens": 62180,
+    "api_call_count": 97
   }
 }
