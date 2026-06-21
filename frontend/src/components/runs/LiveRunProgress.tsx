@@ -21,7 +21,7 @@ import {
   type RunProgress,
   type RunStatus,
 } from '../../api/runs';
-import { RESULT_STATUS_COLORS, RUN_STATUS_COLORS } from '../results/resultsFormat';
+import { RESULT_STATUS_COLORS, RUN_BAR_STATUS, RUN_STATUS_COLORS } from '../results/resultsFormat';
 
 /** Run lifecycle states past which polling stops. */
 const TERMINAL: readonly RunStatus[] = ['succeeded', 'failed', 'cancelled'];
@@ -29,14 +29,6 @@ const DEFAULT_POLL_MS = 1500;
 
 function isTerminal(status: RunStatus): boolean {
   return TERMINAL.includes(status);
-}
-
-/** antd Progress bar status from the run lifecycle. */
-function barStatus(status: RunStatus): 'success' | 'exception' | 'active' | 'normal' {
-  if (status === 'succeeded') return 'success';
-  if (status === 'failed' || status === 'cancelled') return 'exception';
-  if (status === 'running') return 'active';
-  return 'normal';
 }
 
 /**
@@ -177,7 +169,7 @@ function LiveRunProgressBody({
         )}
       </Flex>
 
-      <Progress percent={percent} status={barStatus(status)} />
+      <Progress percent={percent} status={RUN_BAR_STATUS[status]} />
 
       {/* A transient poll error while we still have prior progress to show. */}
       {error && (
