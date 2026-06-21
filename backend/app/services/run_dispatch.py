@@ -18,6 +18,8 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
+from sqlalchemy.orm import Session
+
 from backend.app.core.logging import get_logger
 from backend.app.db.models import Run
 from backend.app.worker.celery_app import celery_app
@@ -53,6 +55,30 @@ def mark_dispatch_failed(run: Run) -> None:
     """
     run.status = "failed"
     run.finished_at = datetime.now(UTC)
+
+
+def dispatch_or_fail(session: Session, run: Run) -> bool:
+    """Dispatch a committed queued ``run``; on broker failure record the canonical
+    terminal-failed shape. Returns ``True`` if dispatched, ``False`` if the broker
+    was unreachable (the run is now ``failed`` with ``finished_at`` set, committed).
+
+    The one copy of the dispatch + broker-failure block every trigger path shares
+    (probe, manual run, pipeline-success batch, scheduled run) so a never-dispatched
+    run is recorded — and its traceback logged — identically everywhere (#227). The
+    caller owns the *policy* for a ``False`` return: the HTTP paths surface 503; the
+    batch / scheduled paths skip the run and carry on. Mirrors ``run_suite``'s own
+    no-2-phase-commit contract (see ``dispatch_run``): the publish and the
+    ``celery_task_id`` commit aren't atomic, which is benign and self-correcting.
+    """
+    try:
+        run.celery_task_id = dispatch_run(run.id)
+        session.commit()
+        return True
+    except Exception:
+        log.exception("run_dispatch_failed", run_id=str(run.id))
+        mark_dispatch_failed(run)
+        session.commit()
+        return False
 
 
 def revoke_run(task_id: str | None) -> None:

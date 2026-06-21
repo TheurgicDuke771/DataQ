@@ -228,15 +228,10 @@ def _trigger_suites(
             count=len(created),
         )
         for run in created:
-            try:
-                run.celery_task_id = run_dispatch.dispatch_run(run.id)
-                session.commit()
-            except Exception:
-                # Broker down: don't leave the run stuck 'queued'. Canonical
-                # terminal-failed shape shared across all trigger paths (#227).
-                run_dispatch.mark_dispatch_failed(run)
-                session.commit()
-                log.exception("suite_dispatch_failed", run_id=str(run.id))
+            # Broker down: the shared helper marks the run terminal-`failed` and
+            # logs; the batch carries on so one stuck broker can't drop the rest
+            # (#227). The run stays in `created` either way (it was created).
+            run_dispatch.dispatch_or_fail(session, run)
     return created
 
 
