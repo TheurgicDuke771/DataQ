@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "96a5adbba52c",
+  "strategy": "manual-commit",
+  "branch": "feature/live-run-progress-ui",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/components/runs/LiveRunProgress.tsx",
+    "frontend/tests/components/LiveRunProgress.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/96/a5adbba52c/0/metadata.json",
+      "transcript": "/96/a5adbba52c/0/full.jsonl",
+      "content_hash": "/96/a5adbba52c/0/content_hash.txt",
+      "prompt": "/96/a5adbba52c/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 6510,
+    "cache_creation_tokens": 67993,
+    "cache_read_tokens": 3448852,
+    "output_tokens": 30049,
+    "api_call_count": 25
+  }
+}
