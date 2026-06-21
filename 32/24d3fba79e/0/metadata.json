@@ -1,0 +1,40 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "3224d3fba79e",
+  "session_id": "e09d0a70-842d-4dc9-89b0-0de83d829ed6",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-21T19:35:25.312854Z",
+  "branch": "fix/issue-147-profiler-cleanup",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/services/profile_service.py",
+    "backend/tests/services/test_profile_service.py"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "1d047d14a125",
+  "checkpoint_transcript_start": 80,
+  "transcript_lines_at_start": 80,
+  "token_usage": {
+    "input_tokens": 6153,
+    "cache_creation_tokens": 34601,
+    "cache_read_tokens": 1107699,
+    "output_tokens": 9581,
+    "api_call_count": 15
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-21T19:35:25.305164Z",
+    "agent_lines": 32,
+    "agent_removed": 2,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 32,
+    "total_lines_changed": 34,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
