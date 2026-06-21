@@ -15,6 +15,19 @@ export const RUN_STATUS_COLORS: Record<RunStatus, string> = {
   cancelled: 'warning',
 };
 
+/**
+ * antd `Progress` bar status per run lifecycle state. A `Record` (not a switch)
+ * so a new `RunStatus` value is a compile error here rather than silently
+ * falling through to `'normal'`.
+ */
+export const RUN_BAR_STATUS: Record<RunStatus, 'success' | 'exception' | 'active' | 'normal'> = {
+  queued: 'normal',
+  running: 'active',
+  succeeded: 'success',
+  failed: 'exception',
+  cancelled: 'exception',
+};
+
 /** antd Tag colour per result severity / operational status (ADR 0005 / #122). */
 export const RESULT_STATUS_COLORS: Record<ResultStatus, string> = {
   pass: 'success',

@@ -6,6 +6,7 @@ import {
   formatTimestamp,
   pipelineStatusColor,
   RESULT_STATUS_COLORS,
+  RUN_BAR_STATUS,
   RUN_STATUS_COLORS,
 } from '../../src/components/results/resultsFormat';
 
@@ -75,5 +76,13 @@ describe('status colour maps', () => {
     expect(pipelineStatusColor('succeeded')).toBe('success');
     expect(pipelineStatusColor('failed')).toBe('error');
     expect(pipelineStatusColor('something-new')).toBe('default');
+  });
+
+  it('maps every run status to a Progress bar status', () => {
+    expect(RUN_BAR_STATUS.queued).toBe('normal');
+    expect(RUN_BAR_STATUS.running).toBe('active');
+    expect(RUN_BAR_STATUS.succeeded).toBe('success');
+    expect(RUN_BAR_STATUS.failed).toBe('exception');
+    expect(RUN_BAR_STATUS.cancelled).toBe('exception');
   });
 });
