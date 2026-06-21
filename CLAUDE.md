@@ -224,6 +224,7 @@ curl -X POST http://localhost:8000/api/v1/_probe/snowflake-suite
 | Results surface is an in-app React page (suite-scoped authz + PII redaction the API owns); Grafana deferred to an optional post-v1 read-only **ops** add-on, never the per-user product surface | [0018](docs/adr/0018-results-surface-and-grafana-deferral.md) | Accepted (2026-06-11) |
 | Custom-SQL checks ride `kind='expectation'` via GX `UnexpectedRowsExpectation` (no new kind / migration / runner change); guardrails = read-only single-statement validation + SQL-datasource-only gating + least-privilege role; binary pass/fail in v1 | [0019](docs/adr/0019-custom-sql-check-kind.md) | Accepted (2026-06-14) |
 | History/audit strategy: per-entity Type-4 snapshot tables (`check_versions`, `connection_versions`) where config history is needed; **no SCD-2** (breaks the FK model + maintenance tax); credentials never snapshotted; cascade-delete accepted (history not retained past delete); soft-delete + cross-entity audit log deferred | [0020](docs/adr/0020-history-and-audit-strategy.md) | Accepted (2026-06-20) |
+| Live test/demo-data environment (retail model + 3 reference flows A/B/C) lives **outside** the repo — Terraform/mock-data/Databricks notebook **not git-tracked**; only the ADR + `progress.md` pointer are committed; v1-supporting, discharges the deferred live-warehouse/file smoke | [0021](docs/adr/0021-demo-test-data-environment-strategy.md) | Accepted (2026-06-21) |
 
 ---
 
