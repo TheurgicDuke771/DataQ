@@ -210,18 +210,14 @@ def trigger_suite_run(
     db.commit()
     db.refresh(run)
 
-    try:
-        run.celery_task_id = run_dispatch.dispatch_run(run.id)
-        db.commit()
-    except Exception as exc:  # broker unreachable — don't leave the run stuck queued
-        # Canonical terminal-failed shape shared across all trigger paths (#227):
-        # finished_at set, started_at NULL (it never started).
-        run_dispatch.mark_dispatch_failed(run)
-        db.commit()
+    # Shared create-adjacent dispatch+broker-failure block (#227): on a broker
+    # outage the run is marked terminal-`failed` (never left stuck `queued`) and we
+    # surface 503 — the same contract as the probe endpoint.
+    if not run_dispatch.dispatch_or_fail(db, run):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="failed to dispatch run",
-        ) from exc
+        )
     return RunRead.model_validate(run)
 
 

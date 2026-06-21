@@ -69,16 +69,13 @@ def trigger_snowflake_probe(
     db.commit()
     db.refresh(run)
 
-    try:
-        run.celery_task_id = run_dispatch.dispatch_run(run.id)
-        db.commit()
-    except Exception as exc:  # broker unreachable — don't leave the run stuck queued
-        run_dispatch.mark_dispatch_failed(run)  # canonical failed shape (#227)
-        db.commit()
+    # Shared create-adjacent dispatch+broker-failure block (#227): on failure the
+    # run is marked terminal-`failed` (never left stuck `queued`); we surface 503.
+    if not run_dispatch.dispatch_or_fail(db, run):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="failed to dispatch run",
-        ) from exc
+        )
     return ProbeRunResponse(run_id=run.id, status=run.status)
 
 

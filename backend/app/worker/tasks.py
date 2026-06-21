@@ -298,13 +298,10 @@ def _fire_schedule(session: Session, schedule: Schedule, *, now: datetime) -> st
     session.add(run)
     session.commit()
     session.refresh(run)
-    try:
-        run.celery_task_id = run_dispatch.dispatch_run(run.id)
-        session.commit()
-    except Exception:
-        run_dispatch.mark_dispatch_failed(run)
-        session.commit()
-        log.exception("schedule_dispatch_failed", schedule_id=str(schedule.id), run_id=str(run.id))
+    # Shared dispatch+broker-failure block (#227): on failure the run is marked
+    # terminal-`failed` and logged (with schedule_id kept on the event); the
+    # advance is already committed, so the schedule has left the due window.
+    if not run_dispatch.dispatch_or_fail(session, run, schedule_id=str(schedule.id)):
         return "dispatch_failed"
     log.info("schedule_fired", schedule_id=str(schedule.id), run_id=str(run.id))
     return "dispatched"
