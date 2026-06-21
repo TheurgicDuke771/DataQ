@@ -1,0 +1,51 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "9393398fccc6",
+  "session_id": "e09d0a70-842d-4dc9-89b0-0de83d829ed6",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-21T19:30:34.245458Z",
+  "branch": "fix/issue-317-barstatus-resultsformat",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/components/results/resultsFormat.ts",
+    "frontend/src/components/runs/LiveRunProgress.tsx",
+    "frontend/tests/components/resultsFormat.test.ts"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "1d047d14a125",
+  "token_usage": {
+    "input_tokens": 5846,
+    "cache_creation_tokens": 43810,
+    "cache_read_tokens": 634947,
+    "output_tokens": 5934,
+    "api_call_count": 15
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-21T19:30:34.240875Z",
+    "agent_lines": 24,
+    "agent_removed": 10,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 24,
+    "total_lines_changed": 34,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}

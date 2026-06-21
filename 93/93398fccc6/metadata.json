@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "9393398fccc6",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-317-barstatus-resultsformat",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/components/results/resultsFormat.ts",
+    "frontend/src/components/runs/LiveRunProgress.tsx",
+    "frontend/tests/components/resultsFormat.test.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/93/93398fccc6/0/metadata.json",
+      "transcript": "/93/93398fccc6/0/full.jsonl",
+      "content_hash": "/93/93398fccc6/0/content_hash.txt",
+      "prompt": "/93/93398fccc6/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 5846,
+    "cache_creation_tokens": 43810,
+    "cache_read_tokens": 634947,
+    "output_tokens": 5934,
+    "api_call_count": 15
+  }
+}

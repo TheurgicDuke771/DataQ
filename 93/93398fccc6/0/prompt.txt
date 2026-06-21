@@ -1,0 +1,6 @@
+Okay, what is left for week 5 (including open issues)
+
+---
+
+We can fold the Recent-runs audit table to week 6 `/dashboard`. 
+Lets close out the issues - #147 & #317.
