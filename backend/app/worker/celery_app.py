@@ -74,6 +74,14 @@ def create_celery_app() -> Celery:
                 "task": "dispatch_due_schedules",
                 "schedule": 60.0,  # 1 minute
             },
+            # Result retention sweep: once a day, scrub `sample_failures` (the only
+            # potentially-PII result column) from results past the configured
+            # retention window. Keeps the row + `metric_value` so dashboard trends
+            # survive (ADR 0012); this is PII minimisation, not a history delete.
+            "purge-sample-failures": {
+                "task": "purge_sample_failures",
+                "schedule": 86400.0,  # 24 hours
+            },
         },
     )
     # Register task modules on worker boot (looks for backend.app.worker.tasks).

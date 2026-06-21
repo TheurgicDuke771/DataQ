@@ -21,6 +21,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.core.config import get_settings
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore, get_secret_store
@@ -341,5 +342,24 @@ def dispatch_due_schedules() -> dict[str, int]:
     session = get_session()
     try:
         return _dispatch_due_schedules(session)
+    finally:
+        session.close()
+
+
+# ─────────────────────── result retention sweep (PII purge) ─────────────────
+
+
+@celery_app.task(name="purge_sample_failures")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
+def purge_sample_failures() -> int:
+    """Celery-beat entry point — daily PII-retention sweep.
+
+    Scrubs `sample_failures` from results older than the configured
+    ``sample_failures_retention_days`` window (keeping the row + `metric_value` so
+    trends survive — ADR 0012). Returns the number of rows scrubbed.
+    """
+    session = get_session()
+    try:
+        retention_days = get_settings().sample_failures_retention_days
+        return run_service.purge_expired_sample_failures(session, retention_days=retention_days)
     finally:
         session.close()
