@@ -128,6 +128,22 @@ class ProfileResult:
     file_format: str | None = None
 
 
+# ───────────────────────── shared stat contract ────────────────────
+
+
+def null_fraction(null_count: int, row_count: int) -> float:
+    """Fraction of rows that are null, guarding the empty-target divide-by-zero.
+
+    The one stat definition the SQL profiler (`assemble_profile`) and the pandas
+    profiler (`profile_dataframe`) can actually share — both must agree that a
+    0-row target reports `0.0`, not `1.0` or a `ZeroDivisionError` (#147). The
+    other contract points (distinct excludes nulls; top values are non-null,
+    highest-count-first) are structurally SQL-vs-pandas and can't share code, so
+    they're pinned by the parallel-path tests instead.
+    """
+    return (null_count / row_count) if row_count else 0.0
+
+
 # ───────────────────────── pure query builders ─────────────────────
 
 
@@ -215,7 +231,7 @@ def assemble_profile(
             ColumnProfile(
                 column=col,
                 null_count=nulls,
-                null_fraction=(nulls / row_count) if row_count else 0.0,
+                null_fraction=null_fraction(nulls, row_count),
                 distinct_count=int(aggregate[f"distinct_{i}"]),
                 min_value=sanitize_json(aggregate[f"min_{i}"]),
                 max_value=sanitize_json(aggregate[f"max_{i}"]),
@@ -468,7 +484,7 @@ def _profile_series(column: str, series: Any, *, row_count: int, top_n: int) -> 
     return ColumnProfile(
         column=column,
         null_count=null_count,
-        null_fraction=(null_count / row_count) if row_count else 0.0,
+        null_fraction=null_fraction(null_count, row_count),
         distinct_count=distinct,
         min_value=sanitize_json(minimum),
         max_value=sanitize_json(maximum),
