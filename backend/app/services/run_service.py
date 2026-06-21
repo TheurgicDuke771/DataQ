@@ -15,9 +15,10 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from typing import Any, cast
 
-from sqlalchemy import select
+from sqlalchemy import CursorResult, func, null, select, update
 from sqlalchemy.orm import Session
 
 from backend.app.core.jsonsafe import sanitize_json
@@ -340,3 +341,67 @@ def get_run_progress(session: Session, run: Run) -> RunProgress:
         counts=counts,
         checks=per_check,
     )
+
+
+# ── retention sweep (configurable PII purge of old result samples) ────────────
+
+
+def purge_expired_sample_failures(
+    session: Session, *, retention_days: int, now: datetime | None = None
+) -> int:
+    """Scrub `sample_failures` from results older than ``retention_days``.
+
+    ``sample_failures`` is the only result column that can carry real (possibly
+    PII-bearing) data rows; after the retention window we null it out (to a true
+    SQL NULL) and stamp ``sample_failures_purged_at`` so the purge is auditable.
+    The result row itself — and crucially ``metric_value`` — is **kept**, so
+    dashboard trends / anomaly baselines survive the purge (ADR 0012); this is a
+    PII-minimisation sweep, not a run-history delete. Returns the rows scrubbed.
+
+    Only rows that actually hold a sample *object* are touched: the JSONB column
+    stores Python ``None`` as JSON ``'null'`` (``none_as_null`` defaults False),
+    and passing/errored checks write that — so ``IS NOT NULL`` would over-match
+    millions of empty rows. ``jsonb_typeof`` excludes both SQL NULL (→ NULL) and
+    JSON ``'null'`` (→ ``'null'``), leaving only real ``object``/``array``
+    samples. Naturally idempotent (a scrubbed row is SQL NULL → typeof NULL →
+    excluded); the ``purged_at IS NULL`` guard makes that intent explicit.
+
+    ``retention_days <= 0`` disables the sweep (returns 0 without touching the DB)
+    — a clean off-switch rather than purging everything. The cutoff is anchored on
+    ``Result.created_at`` (when the result landed ≈ when the run completed).
+    """
+    if retention_days <= 0:
+        return 0
+    moment = now or _now()
+    cutoff = moment - timedelta(days=retention_days)
+    sample_typeof = func.jsonb_typeof(Result.sample_failures)
+    # session.execute(<DML>) returns a CursorResult; the typed overload widens it
+    # to Result (no rowcount), so cast to read the affected-row count.
+    purge_result = cast(
+        "CursorResult[Any]",
+        session.execute(
+            update(Result)
+            .where(
+                Result.created_at < cutoff,
+                Result.sample_failures_purged_at.is_(None),
+                sample_typeof.isnot(None),
+                sample_typeof != "null",
+            )
+            .values(sample_failures=null(), sample_failures_purged_at=moment)
+            # Fire-and-forget bulk DML on a fresh, short-lived worker session with
+            # no loaded Result identities — skip the ORM identity-map sync, which
+            # under the default 'auto'/'fetch' would emit an extra SELECT of every
+            # matching PK before the UPDATE (the WHERE uses jsonb_typeof, so the
+            # in-Python 'evaluate' strategy can't apply).
+            .execution_options(synchronize_session=False)
+        ),
+    )
+    session.commit()
+    purged = purge_result.rowcount
+    log.info(
+        "sample_failures_purged",
+        purged=purged,
+        retention_days=retention_days,
+        cutoff=cutoff.isoformat(),
+    )
+    return purged
