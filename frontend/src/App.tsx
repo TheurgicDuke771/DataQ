@@ -13,6 +13,7 @@ import { BRAND, SHELL } from './theme';
 
 // Route components are code-split so the initial bundle doesn't ship every page
 // (and antd-heavy pages only load on navigation). Named exports → map to default.
+const Dashboard = lazy(() => import('./pages/Dashboard').then((m) => ({ default: m.Dashboard })));
 const Connections = lazy(() =>
   import('./pages/Connections').then((m) => ({ default: m.Connections })),
 );
@@ -28,6 +29,7 @@ const Admin = lazy(() => import('./pages/Admin').then((m) => ({ default: m.Admin
 const { Header, Sider, Content } = Layout;
 
 const NAV_ITEMS = [
+  { key: '/dashboard', label: <Link to="/dashboard">Dashboard</Link> },
   { key: '/connections', label: <Link to="/connections">Connections</Link> },
   { key: '/suites', label: <Link to="/suites">Suites</Link> },
   { key: '/results', label: <Link to="/results">Results</Link> },
@@ -90,7 +92,8 @@ export function App() {
             <AuthGate>
               <Suspense fallback={<Spin size="large" style={{ marginTop: 80 }} />}>
                 <Routes>
-                  <Route path="/" element={<Navigate to="/connections" replace />} />
+                  <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                  <Route path="/dashboard" element={<Dashboard />} />
                   <Route path="/connections" element={<Connections />} />
                   <Route path="/connections/new" element={<ConnectionNew />} />
                   <Route path="/suites" element={<Suites />} />
