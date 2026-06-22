@@ -1,34 +1,25 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useParams } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import {
-  getRun,
-  listPipelineRuns,
-  listRuns,
-  type PipelineRun,
-  type Run,
-  type RunDetail,
-} from '../../src/api/runs';
-import { type Check, type Suite, listChecks, listSuites } from '../../src/api/suites';
+import { listPipelineRuns, listRuns, type PipelineRun, type Run } from '../../src/api/runs';
+import { type Suite, listSuites } from '../../src/api/suites';
 import { Results } from '../../src/pages/Results';
 
 vi.mock('../../src/api/runs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/api/runs')>();
-  return { ...actual, listRuns: vi.fn(), getRun: vi.fn(), listPipelineRuns: vi.fn() };
+  return { ...actual, listRuns: vi.fn(), listPipelineRuns: vi.fn() };
 });
 
 vi.mock('../../src/api/suites', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/api/suites')>();
-  return { ...actual, listSuites: vi.fn(), listChecks: vi.fn() };
+  return { ...actual, listSuites: vi.fn() };
 });
 
 const mockListRuns = vi.mocked(listRuns);
-const mockGetRun = vi.mocked(getRun);
 const mockListPipelineRuns = vi.mocked(listPipelineRuns);
 const mockListSuites = vi.mocked(listSuites);
-const mockListChecks = vi.mocked(listChecks);
 
 const suite: Suite = {
   id: 's1',
@@ -57,33 +48,6 @@ const failedRun: Run = {
   finished_at: '2026-06-11T00:00:02Z',
 };
 
-const check: Check = {
-  id: 'chk1',
-  suite_id: 's1',
-  name: 'order_id not null',
-  kind: 'expectation',
-  expectation_type: 'expect_column_values_to_not_be_null',
-  config: { column: 'order_id' },
-  warn_threshold: null,
-  fail_threshold: null,
-  critical_threshold: null,
-};
-
-const runDetail: RunDetail = {
-  ...succeededRun,
-  results: [
-    {
-      id: 'res1',
-      check_id: 'chk1',
-      status: 'warn',
-      metric_value: 2,
-      duration_ms: null,
-      observed_value: { unexpected_percent: 2 },
-      expected_value: null,
-    },
-  ],
-};
-
 const pipelineRun: PipelineRun = {
   id: 'p1',
   provider: 'adf',
@@ -98,10 +62,19 @@ const pipelineRun: PipelineRun = {
   created_at: '2026-06-11T00:00:00Z',
 };
 
+/** A stub for the run-detail route so a row click's navigation is observable. */
+function RunDetailStub() {
+  const { runId } = useParams<{ runId: string }>();
+  return <div>run-detail:{runId}</div>;
+}
+
 function renderResults() {
   return render(
-    <MemoryRouter>
-      <Results />
+    <MemoryRouter initialEntries={['/results']}>
+      <Routes>
+        <Route path="/results" element={<Results />} />
+        <Route path="/results/:runId" element={<RunDetailStub />} />
+      </Routes>
     </MemoryRouter>,
   );
 }
@@ -124,12 +97,10 @@ describe('Results page', () => {
     expect(screen.getByText('failed')).toBeInTheDocument();
   });
 
-  it('opens a run and shows its per-check results', async () => {
+  it('navigates to the routed run-detail page on row click', async () => {
     mockListRuns.mockResolvedValue([succeededRun]);
     mockListSuites.mockResolvedValue([suite]);
     mockListPipelineRuns.mockResolvedValue([]);
-    mockGetRun.mockResolvedValue(runDetail);
-    mockListChecks.mockResolvedValue([check]);
 
     renderResults();
     const user = userEvent.setup();
@@ -137,13 +108,8 @@ describe('Results page', () => {
     await waitFor(() => expect(screen.getByText('Orders quality')).toBeInTheDocument());
     await user.click(screen.getByText('Orders quality'));
 
-    // The detail drawer fetches the run + checks and renders the result row,
-    // mapping check_id → name and showing the severity tag.
-    const dialog = await screen.findByRole('dialog');
-    await waitFor(() => expect(within(dialog).getByText('order_id not null')).toBeInTheDocument());
-    expect(within(dialog).getByText('expect_column_values_to_not_be_null')).toBeInTheDocument();
-    expect(within(dialog).getByText('warn')).toBeInTheDocument();
-    expect(mockGetRun).toHaveBeenCalledWith('r1');
+    // The run-detail drawer is gone — the row deep-links to /results/:runId.
+    expect(await screen.findByText('run-detail:r1')).toBeInTheDocument();
   });
 
   it('filters the runs table by status', async () => {
@@ -166,32 +132,6 @@ describe('Results page', () => {
     const row = document.querySelector('tr.ant-table-row');
     expect(row?.textContent).toContain('failed');
     expect(row?.textContent).not.toContain('succeeded');
-  });
-
-  it('refetches when switching runs while the drawer stays open', async () => {
-    const otherSuite: Suite = { ...suite, id: 's2', name: 'Customer files' };
-    const runA: Run = { ...succeededRun, id: 'rA', suite_id: 's1' };
-    const runB: Run = { ...succeededRun, id: 'rB', suite_id: 's2' };
-    mockListRuns.mockResolvedValue([runA, runB]);
-    mockListSuites.mockResolvedValue([suite, otherSuite]);
-    mockListPipelineRuns.mockResolvedValue([]);
-    mockListChecks.mockResolvedValue([check]);
-    mockGetRun.mockImplementation((id) =>
-      Promise.resolve({ ...runDetail, id, suite_id: id === 'rA' ? 's1' : 's2' }),
-    );
-
-    renderResults();
-    const user = userEvent.setup();
-
-    await waitFor(() => expect(screen.getByText('Orders quality')).toBeInTheDocument());
-    // Open run A, then click run B's row without closing the drawer.
-    await user.click(screen.getByText('Orders quality'));
-    await screen.findByRole('dialog');
-    expect(mockGetRun).toHaveBeenLastCalledWith('rA');
-    await user.click(screen.getByText('Customer files'));
-
-    // The keyed remount must refetch run B (not show run A's stale data).
-    await waitFor(() => expect(mockGetRun).toHaveBeenLastCalledWith('rB'));
   });
 
   it('shows monitored pipeline runs on the Pipeline runs tab', async () => {

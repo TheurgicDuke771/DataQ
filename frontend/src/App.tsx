@@ -23,6 +23,7 @@ const ConnectionNew = lazy(() =>
 const Suites = lazy(() => import('./pages/Suites').then((m) => ({ default: m.Suites })));
 const CheckNew = lazy(() => import('./pages/CheckNew').then((m) => ({ default: m.CheckNew })));
 const Results = lazy(() => import('./pages/Results').then((m) => ({ default: m.Results })));
+const RunDetail = lazy(() => import('./pages/RunDetail').then((m) => ({ default: m.RunDetail })));
 const Home = lazy(() => import('./pages/Home').then((m) => ({ default: m.Home })));
 const Admin = lazy(() => import('./pages/Admin').then((m) => ({ default: m.Admin })));
 
@@ -100,6 +101,7 @@ export function App() {
                   <Route path="/suites/:suiteId" element={<Suites />} />
                   <Route path="/suites/:suiteId/checks/new" element={<CheckNew />} />
                   <Route path="/results" element={<Results />} />
+                  <Route path="/results/:runId" element={<RunDetail />} />
                   <Route path="/profile" element={<Home />} />
                   <Route path="/admin" element={<Admin />} />
                   <Route path="*" element={<Navigate to="/connections" replace />} />
