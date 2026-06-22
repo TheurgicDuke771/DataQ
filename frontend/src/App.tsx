@@ -1,4 +1,15 @@
-import { DownOutlined, LogoutOutlined } from '@ant-design/icons';
+import {
+  ApiOutlined,
+  BarChartOutlined,
+  ContainerOutlined,
+  DashboardOutlined,
+  DownOutlined,
+  LogoutOutlined,
+  ReadOutlined,
+  SafetyOutlined,
+  SettingOutlined,
+  UserOutlined,
+} from '@ant-design/icons';
 import { Avatar, Dropdown, Flex, Layout, Menu, Spin, Tag, Typography } from 'antd';
 import type { MenuProps } from 'antd';
 import { lazy, Suspense } from 'react';
@@ -26,31 +37,46 @@ const Results = lazy(() => import('./pages/Results').then((m) => ({ default: m.R
 const RunDetail = lazy(() => import('./pages/RunDetail').then((m) => ({ default: m.RunDetail })));
 const Home = lazy(() => import('./pages/Home').then((m) => ({ default: m.Home })));
 const Admin = lazy(() => import('./pages/Admin').then((m) => ({ default: m.Admin })));
+const Settings = lazy(() => import('./pages/Settings').then((m) => ({ default: m.Settings })));
 
 const { Header, Sider, Content } = Layout;
 
+// Primary nav (top of the sider).
 const NAV_ITEMS = [
-  { key: '/dashboard', label: <Link to="/dashboard">Dashboard</Link> },
-  { key: '/connections', label: <Link to="/connections">Connections</Link> },
-  { key: '/suites', label: <Link to="/suites">Suites</Link> },
-  { key: '/results', label: <Link to="/results">Results</Link> },
-  { key: '/profile', label: <Link to="/profile">Profile</Link> },
+  { key: '/dashboard', icon: <DashboardOutlined />, label: <Link to="/dashboard">Dashboard</Link> },
+  { key: '/connections', icon: <ApiOutlined />, label: <Link to="/connections">Connections</Link> },
+  { key: '/suites', icon: <ContainerOutlined />, label: <Link to="/suites">Suites</Link> },
+  { key: '/results', icon: <BarChartOutlined />, label: <Link to="/results">Results</Link> },
+  { key: '/profile', icon: <UserOutlined />, label: <Link to="/profile">Profile</Link> },
 ];
-// Shown only to workspace admins (server-driven via /me). The route is always
-// registered — a non-admin who deep-links to /admin hits the page's Forbidden
-// state — so this gate is for nav convenience, not the security boundary.
-const ADMIN_NAV_ITEM = { key: '/admin', label: <Link to="/admin">Admin</Link> };
+// Footer nav (pinned to the bottom). Admin + Settings show only to workspace
+// admins (server-driven via /me) — the routes stay registered either way, so a
+// non-admin who deep-links hits the page's Forbidden state; this gate is for nav
+// convenience, not the security boundary. Documentation is a placeholder
+// (disabled) until the docs site exists.
+const ADMIN_FOOTER_ITEMS = [
+  { key: '/admin', icon: <SafetyOutlined />, label: <Link to="/admin">Admin</Link> },
+  { key: '/settings', icon: <SettingOutlined />, label: <Link to="/settings">Settings</Link> },
+];
+const DOC_ITEM = {
+  key: 'documentation',
+  icon: <ReadOutlined />,
+  label: 'Documentation',
+  disabled: true,
+};
+// Keys that can be "selected" (the disabled Documentation placeholder can't).
+const SELECTABLE_KEYS = [...NAV_ITEMS, ...ADMIN_FOOTER_ITEMS].map((i) => i.key);
 
 export function App() {
   const location = useLocation();
   const isAdmin = useIsWorkspaceAdmin();
-  const navItems = isAdmin ? [...NAV_ITEMS, ADMIN_NAV_ITEM] : NAV_ITEMS;
+  const footerItems = isAdmin ? [...ADMIN_FOOTER_ITEMS, DOC_ITEM] : [DOC_ITEM];
   // Highlight the nav item whose path matches the current location — exact, or a
   // sub-path at a segment boundary (so `/suites` matches `/suites/123` but not a
   // sibling like `/suites-archive`). Plain startsWith would mis-highlight those.
-  const selectedKeys = navItems
-    .map((i) => i.key)
-    .filter((k) => location.pathname === k || location.pathname.startsWith(`${k}/`));
+  const selectedKeys = SELECTABLE_KEYS.filter(
+    (k) => location.pathname === k || location.pathname.startsWith(`${k}/`),
+  );
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
@@ -80,12 +106,27 @@ export function App() {
           collapsedWidth={0}
           style={{ borderInlineEnd: `1px solid ${BRAND.border}` }}
         >
-          <Menu
-            mode="inline"
-            selectedKeys={selectedKeys}
-            items={navItems}
-            style={{ height: '100%', borderInlineEnd: 0, paddingTop: 8 }}
-          />
+          {/* Primary nav up top, footer group (Admin · Settings · Documentation)
+              pinned to the bottom by the flex spacer, separated by a hairline. */}
+          <Flex vertical style={{ height: '100%' }}>
+            <Menu
+              mode="inline"
+              selectedKeys={selectedKeys}
+              items={NAV_ITEMS}
+              style={{ borderInlineEnd: 0, paddingTop: 8 }}
+            />
+            <div style={{ flex: 1 }} />
+            <Menu
+              mode="inline"
+              selectedKeys={selectedKeys}
+              items={footerItems}
+              style={{
+                borderInlineEnd: 0,
+                borderTop: `1px solid ${BRAND.border}`,
+                paddingBlock: 8,
+              }}
+            />
+          </Flex>
         </Sider>
         <Content style={{ padding: 24, position: 'relative' }}>
           <BrandWatermark />
@@ -104,7 +145,9 @@ export function App() {
                   <Route path="/results/:runId" element={<RunDetail />} />
                   <Route path="/profile" element={<Home />} />
                   <Route path="/admin" element={<Admin />} />
-                  <Route path="*" element={<Navigate to="/connections" replace />} />
+                  <Route path="/settings" element={<Settings />} />
+                  {/* Catch-all → dashboard for now; swapped for a 404 page in Phase 6. */}
+                  <Route path="*" element={<Navigate to="/dashboard" replace />} />
                 </Routes>
               </Suspense>
             </AuthGate>
