@@ -4,6 +4,8 @@ import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { type DashboardSummary, getDashboardSummary } from '../../src/api/dashboard';
+import { listRuns } from '../../src/api/runs';
+import { listSuites } from '../../src/api/suites';
 import { Dashboard } from '../../src/pages/Dashboard';
 
 vi.mock('../../src/api/dashboard', async (importOriginal) => {
@@ -11,7 +13,20 @@ vi.mock('../../src/api/dashboard', async (importOriginal) => {
   return { ...actual, getDashboardSummary: vi.fn() };
 });
 
+// The Recent Runs widget fetches its own slice; stub it out here so these tests
+// stay focused on the KPI row / range behaviour.
+vi.mock('../../src/api/runs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/api/runs')>();
+  return { ...actual, listRuns: vi.fn() };
+});
+vi.mock('../../src/api/suites', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/api/suites')>();
+  return { ...actual, listSuites: vi.fn() };
+});
+
 const mockGet = vi.mocked(getDashboardSummary);
+vi.mocked(listRuns).mockResolvedValue([]);
+vi.mocked(listSuites).mockResolvedValue([]);
 
 const summary: DashboardSummary = {
   window_days: 7,
