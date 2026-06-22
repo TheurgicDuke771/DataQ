@@ -66,6 +66,19 @@ export function formatScalar(value: unknown): string {
   return typeof value === 'object' ? JSON.stringify(value) : String(value);
 }
 
+/**
+ * True when `iso` falls within the last `windowDays` days (inclusive). Used by
+ * the Results date filter; a null/unparseable timestamp is treated as out of
+ * window so rows with no date never leak past a date filter. Kept pure so it can
+ * be unit-tested without rendering.
+ */
+export function isWithinWindowDays(iso: string | null, windowDays: number): boolean {
+  if (!iso) return false;
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return false;
+  return t >= Date.now() - windowDays * 24 * 60 * 60 * 1000;
+}
+
 /** Absolute timestamp as a locale string, or an em dash when absent. */
 export function formatTimestamp(iso: string | null): string {
   if (!iso) return '—';

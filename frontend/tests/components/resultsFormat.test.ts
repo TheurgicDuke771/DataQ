@@ -4,6 +4,7 @@ import {
   formatDuration,
   formatScalar,
   formatTimestamp,
+  isWithinWindowDays,
   pipelineStatusColor,
   RESULT_STATUS_COLORS,
   RUN_BAR_STATUS,
@@ -61,6 +62,21 @@ describe('formatTimestamp', () => {
     const out = formatTimestamp('2026-06-11T00:00:00Z');
     expect(out).not.toBe('—');
     expect(out.length).toBeGreaterThan(0);
+  });
+});
+
+describe('isWithinWindowDays', () => {
+  it('treats null or unparseable timestamps as out of window', () => {
+    expect(isWithinWindowDays(null, 7)).toBe(false);
+    expect(isWithinWindowDays('not-a-date', 7)).toBe(false);
+  });
+
+  it('includes a just-now timestamp and excludes one past the window', () => {
+    const now = new Date().toISOString();
+    const tenDaysAgo = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString();
+    expect(isWithinWindowDays(now, 7)).toBe(true);
+    expect(isWithinWindowDays(tenDaysAgo, 7)).toBe(false);
+    expect(isWithinWindowDays(tenDaysAgo, 30)).toBe(true);
   });
 });
 
