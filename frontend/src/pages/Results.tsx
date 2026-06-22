@@ -1,42 +1,26 @@
 import { PlayCircleOutlined } from '@ant-design/icons';
-import {
-  Alert,
-  Button,
-  Drawer,
-  Empty,
-  Flex,
-  Select,
-  Spin,
-  Table,
-  Tabs,
-  Tag,
-  Typography,
-} from 'antd';
+import { Alert, Button, Empty, Flex, Select, Spin, Table, Tabs, Tag, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 import {
-  getRun,
   listPipelineRuns,
   listRuns,
   type PipelineRun,
-  type Result,
-  type ResultStatus,
   type Run,
   type RunStatus,
   RUN_STATUSES,
 } from '../api/runs';
-import { type Check, listChecks, listSuites } from '../api/suites';
+import { listSuites } from '../api/suites';
 import { RunNowPanel } from '../components/runs/RunNowPanel';
 import { useAsyncData } from '../hooks/useAsyncData';
 import {
   formatDuration,
   formatTimestamp,
   pipelineStatusColor,
-  RESULT_STATUS_COLORS,
   RUN_STATUS_COLORS,
 } from '../components/results/resultsFormat';
-import { ScalarValue } from '../components/results/ScalarValue';
 
 const LIST_LIMIT = 200;
 
@@ -69,10 +53,10 @@ export function Results() {
 function RunsTab() {
   // Fetch a page of runs + the accessible suites (for id→name), then filter by
   // status client-side — cheap at this volume and avoids a refetch per filter.
+  const navigate = useNavigate();
   const { state } = useAsyncData(() => listRuns({ limit: LIST_LIMIT }));
   const { state: suitesState } = useAsyncData(listSuites);
   const [status, setStatus] = useState<RunStatus | 'all'>('all');
-  const [openRun, setOpenRun] = useState<Run | null>(null);
 
   const suiteNames = useMemo(() => {
     const map = new Map<string, string>();
@@ -135,117 +119,12 @@ function RunsTab() {
         dataSource={runs}
         pagination={false}
         locale={{ emptyText: <Empty description="No runs yet." /> }}
-        onRow={(run) => ({ onClick: () => setOpenRun(run), style: { cursor: 'pointer' } })}
-      />
-      <RunDetailDrawer
-        run={openRun}
-        suiteName={openRun ? (suiteNames.get(openRun.suite_id) ?? null) : null}
-        onClose={() => setOpenRun(null)}
+        onRow={(run) => ({
+          onClick: () => navigate(`/results/${run.id}`),
+          style: { cursor: 'pointer' },
+        })}
       />
     </Flex>
-  );
-}
-
-// ─────────────────────────── Run detail drawer ──────────────────────
-
-function RunDetailDrawer({
-  run,
-  suiteName,
-  onClose,
-}: {
-  run: Run | null;
-  suiteName: string | null;
-  onClose: () => void;
-}) {
-  return (
-    <Drawer
-      open={run !== null}
-      onClose={onClose}
-      width={640}
-      title={run ? `Run · ${suiteName ?? run.suite_id.slice(0, 8)}` : 'Run'}
-      destroyOnClose
-    >
-      {/* Keyed by run id so switching runs (without closing) remounts and
-          refetches — useAsyncData only fetches on mount/reload, not on prop
-          change, so without the key the drawer would show the prior run. */}
-      {run && <RunDetailBody key={run.id} run={run} />}
-    </Drawer>
-  );
-}
-
-function RunDetailBody({ run }: { run: Run }) {
-  // Remounted per run via the `key` at the call site → these fetch fresh.
-  const { state } = useAsyncData(() => getRun(run.id));
-  const { state: checksState } = useAsyncData(() => listChecks(run.suite_id));
-
-  const checks = useMemo(() => {
-    const map = new Map<string, Check>();
-    if (checksState.status === 'ok') {
-      for (const c of checksState.data) map.set(c.id, c);
-    }
-    return map;
-  }, [checksState]);
-
-  return (
-    <Flex vertical gap={16}>
-      <Flex gap={16} wrap>
-        <Meta label="Status">
-          <Tag color={RUN_STATUS_COLORS[run.status]}>{run.status}</Tag>
-        </Meta>
-        <Meta label="Triggered by">{run.triggered_by ?? '—'}</Meta>
-        <Meta label="Started">{formatTimestamp(run.started_at)}</Meta>
-        <Meta label="Duration">{formatDuration(run.started_at, run.finished_at)}</Meta>
-      </Flex>
-
-      {state.status === 'loading' && <Spin tip="Loading results…" />}
-      {state.status === 'error' && (
-        <Alert type="error" showIcon message="Failed to load results" description={state.error} />
-      )}
-      {state.status === 'ok' && <ResultsTable results={state.data.results} checks={checks} />}
-    </Flex>
-  );
-}
-
-function ResultsTable({ results, checks }: { results: Result[]; checks: Map<string, Check> }) {
-  if (results.length === 0) {
-    return <Empty description="No check results — the run did not complete." />;
-  }
-  const columns: ColumnsType<(typeof results)[number]> = [
-    {
-      title: 'Check',
-      dataIndex: 'check_id',
-      render: (id: string) =>
-        checks.get(id)?.name ?? <Typography.Text code>{id.slice(0, 8)}</Typography.Text>,
-    },
-    {
-      title: 'Expectation',
-      dataIndex: 'check_id',
-      render: (id: string) => (
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          {checks.get(id)?.expectation_type ?? '—'}
-        </Typography.Text>
-      ),
-    },
-    {
-      title: 'Status',
-      dataIndex: 'status',
-      width: 100,
-      render: (s: ResultStatus) => <Tag color={RESULT_STATUS_COLORS[s]}>{s}</Tag>,
-    },
-    {
-      title: 'Metric',
-      dataIndex: 'metric_value',
-      width: 90,
-      render: (v: number | null) => (v === null ? '—' : v),
-    },
-    {
-      title: 'Observed',
-      dataIndex: 'observed_value',
-      render: (v: Record<string, unknown> | null) => <ScalarValue value={v} />,
-    },
-  ];
-  return (
-    <Table rowKey="id" size="small" columns={columns} dataSource={results} pagination={false} />
   );
 }
 
@@ -313,19 +192,6 @@ function PipelineRunsTab() {
         pagination={false}
         locale={{ emptyText: <Empty description="No pipeline runs monitored yet." /> }}
       />
-    </Flex>
-  );
-}
-
-// ───────────────────────────── shared ───────────────────────────────
-
-function Meta({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <Flex vertical gap={2}>
-      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-        {label}
-      </Typography.Text>
-      <span>{children}</span>
     </Flex>
   );
 }

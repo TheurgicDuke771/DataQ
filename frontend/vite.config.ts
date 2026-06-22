@@ -39,6 +39,18 @@ export default defineConfig({
           // it in its own chunk so the catch-all `vendor` doesn't pull it eagerly;
           // it's reached only via the React.lazy SqlEditorField (ADR 0019).
           if (id.includes('monaco-editor') || id.includes('@monaco-editor/')) return 'monaco';
+          // recharts (+ its d3 deps) is only used by the dashboard chart widgets,
+          // which live on lazy routes. Keep it out of the catch-all `vendor` chunk
+          // (which loads eagerly) so it ships only when a chart route loads, like
+          // monaco above (ADR 0022).
+          if (
+            id.includes('/recharts/') ||
+            id.includes('/victory-vendor/') ||
+            id.includes('/d3-') ||
+            id.includes('/internmap/')
+          ) {
+            return 'recharts';
+          }
           if (
             id.includes('/react/') ||
             id.includes('/react-dom/') ||

@@ -7,6 +7,7 @@ TEST_DATABASE_URL.
 
 import uuid
 from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -14,7 +15,7 @@ from fastapi.testclient import TestClient
 
 from backend.app.core.auth import get_current_user
 from backend.app.datasources.base import CheckOutcome, SuiteOutcome
-from backend.app.db.models import Connection, Suite, User
+from backend.app.db.models import Connection, Result, Run, Suite, User
 from backend.app.db.session import get_db
 from backend.app.main import app
 from backend.app.services import dryrun_service
@@ -398,6 +399,78 @@ def test_version_records_its_author(client: TestClient, db_session: Any) -> None
     v1 = client.get(f"/api/v1/suites/{sid}/checks/{cid}/versions").json()[0]
     assert v1["changed_by"] == str(owner.id)
     assert v1["changed_by_name"] == "Ed Editor"
+
+
+# ───────────────────────── result history (trend, ADR 0022) ─────────
+
+
+def _run_with_result(
+    db_session: Any,
+    suite_id: str,
+    check_id: str,
+    *,
+    status: str,
+    metric_value: float | None,
+    age_days: float,
+) -> None:
+    when = datetime.now(UTC) - timedelta(days=age_days)
+    run = Run(suite_id=uuid.UUID(suite_id), status="succeeded", created_at=when)
+    db_session.add(run)
+    db_session.flush()
+    db_session.add(
+        Result(
+            run_id=run.id,
+            check_id=uuid.UUID(check_id),
+            status=status,
+            metric_value=metric_value,
+            created_at=when,
+        )
+    )
+    db_session.commit()
+
+
+def test_history_returns_results_oldest_first(client: TestClient, db_session: Any) -> None:
+    sid = _suite_id(client, db_session)
+    cid = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()["id"]
+    _run_with_result(db_session, sid, cid, status="pass", metric_value=0.0, age_days=2)
+    _run_with_result(db_session, sid, cid, status="warn", metric_value=2.5, age_days=0)
+
+    history = client.get(f"/api/v1/suites/{sid}/checks/{cid}/history").json()
+    assert [p["status"] for p in history] == ["pass", "warn"]  # chronological
+    assert [p["metric_value"] for p in history] == [0.0, 2.5]
+
+
+def test_history_empty_for_check_with_no_runs(client: TestClient, db_session: Any) -> None:
+    sid = _suite_id(client, db_session)
+    cid = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()["id"]
+    assert client.get(f"/api/v1/suites/{sid}/checks/{cid}/history").json() == []
+
+
+def test_history_honours_limit_keeping_most_recent(client: TestClient, db_session: Any) -> None:
+    sid = _suite_id(client, db_session)
+    cid = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()["id"]
+    for age in (3, 2, 1):
+        _run_with_result(db_session, sid, cid, status="pass", metric_value=age, age_days=age)
+
+    history = client.get(f"/api/v1/suites/{sid}/checks/{cid}/history?limit=2").json()
+    # Latest 2 by run time, returned chronologically: age=2 then age=1.
+    assert [p["metric_value"] for p in history] == [2.0, 1.0]
+    assert client.get(f"/api/v1/suites/{sid}/checks/{cid}/history?limit=0").status_code == 422
+
+
+def test_history_unknown_check_returns_404(client: TestClient, db_session: Any) -> None:
+    sid = _suite_id(client, db_session)
+    assert client.get(f"/api/v1/suites/{sid}/checks/{uuid.uuid4()}/history").status_code == 404
+
+
+def test_history_outsider_cannot_read(client: TestClient, db_session: Any) -> None:
+    owner, _b, e, sid = _owner_b_e_suite(db_session)
+    _as(owner)
+    cid = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()["id"]
+    _as(e)  # not owner, not shared
+    # An outsider gets 404, not 403 — the suite's existence is hidden from
+    # non-members (same as `test_outsider_cannot_see_checks`).
+    assert client.get(f"/api/v1/suites/{sid}/checks/{cid}/history").status_code == 404
 
 
 def test_versions_unknown_check_returns_404(client: TestClient, db_session: Any) -> None:

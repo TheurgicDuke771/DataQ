@@ -16,7 +16,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
@@ -204,6 +204,39 @@ def list_check_versions(
     require_permission(db, suite_id, current_user.id, minimum="view")
     return [
         CheckVersionRead.model_validate(v) for v in svc.list_check_versions(db, suite_id, check_id)
+    ]
+
+
+# ───────────────────────── result history (trend, ADR 0022) ─────────
+
+
+class CheckResultPointRead(BaseModel):
+    """One past result for a check — the per-check trend datum (metric over time)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    run_id: uuid.UUID
+    status: str
+    metric_value: float | None
+    created_at: datetime
+
+
+@router.get(
+    "/suites/{suite_id}/checks/{check_id}/history",
+    response_model=list[CheckResultPointRead],
+    summary="A check's recent result history (chronological) for the trend chart",
+)
+def list_check_result_history(
+    suite_id: uuid.UUID,
+    check_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    limit: Annotated[int, Query(ge=1, le=180)] = 30,
+) -> list[CheckResultPointRead]:
+    require_permission(db, suite_id, current_user.id, minimum="view")
+    return [
+        CheckResultPointRead.model_validate(p)
+        for p in svc.list_check_result_history(db, suite_id, check_id, limit=limit)
     ]
 
 
