@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "aa8b8b1fe5b4",
+  "strategy": "manual-commit",
+  "branch": "feature/dashboard-aggregates",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/components/dashboard/SuitePerformance.tsx",
+    "frontend/src/pages/Dashboard.tsx",
+    "frontend/tests/components/SuitePerformance.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/aa/8b8b1fe5b4/0/metadata.json",
+      "transcript": "/aa/8b8b1fe5b4/0/full.jsonl",
+      "content_hash": "/aa/8b8b1fe5b4/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 138,
+    "cache_creation_tokens": 6505,
+    "cache_read_tokens": 906606,
+    "output_tokens": 4301,
+    "api_call_count": 8
+  }
+}
