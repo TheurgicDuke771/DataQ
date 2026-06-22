@@ -10,6 +10,7 @@ import { useState } from 'react';
 import { getDashboardSummary } from '../api/dashboard';
 import { MetricCard } from '../components/dashboard/MetricCard';
 import { QualityTrends } from '../components/dashboard/QualityTrends';
+import { SuitePerformance } from '../components/dashboard/SuitePerformance';
 import { useAsyncData } from '../hooks/useAsyncData';
 
 /**
@@ -112,7 +113,14 @@ export function Dashboard() {
         </Col>
       </Row>
 
-      <QualityTrends trend={summary?.trend ?? []} />
+      <Row gutter={[16, 16]}>
+        <Col xs={24} xl={15}>
+          <QualityTrends trend={summary?.trend ?? []} />
+        </Col>
+        <Col xs={24} xl={9}>
+          <SuitePerformance suites={summary?.suite_performance ?? []} />
+        </Col>
+      </Row>
     </Flex>
   );
 }
