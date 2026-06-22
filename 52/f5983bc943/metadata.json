@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "52f5983bc943",
+  "strategy": "manual-commit",
+  "branch": "feature/dashboard-aggregates",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/utils/download.ts",
+    "frontend/tests/utils/download.test.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/52/f5983bc943/0/metadata.json",
+      "transcript": "/52/f5983bc943/0/full.jsonl",
+      "content_hash": "/52/f5983bc943/0/content_hash.txt",
+      "prompt": "/52/f5983bc943/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 838,
+    "cache_creation_tokens": 478378,
+    "cache_read_tokens": 3478648,
+    "output_tokens": 17977,
+    "api_call_count": 16
+  }
+}
