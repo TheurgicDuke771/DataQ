@@ -32,6 +32,7 @@ Each ADR captures a single significant architecture decision: the context, the d
 | [0019](0019-custom-sql-check-kind.md) | Custom-SQL checks ride `kind='expectation'` via GX `UnexpectedRowsExpectation` (no new kind); read-only validation + SQL-datasource gating | Accepted |
 | [0020](0020-history-and-audit-strategy.md) | History/audit: per-entity Type-4 snapshot tables (`check_versions`, `connection_versions`) where config history is needed; no SCD-2; credentials never snapshotted; cascade-delete accepted; cross-entity audit log deferred | Accepted |
 | [0021](0021-demo-test-data-environment-strategy.md) | Live test/demo-data environment (retail model, 3 reference flows) lives outside the repo — Terraform/mock-data/Databricks notebook not git-tracked; discharges the deferred live-warehouse/file smoke | Accepted |
+| [0022](0022-week6-prototype-adoption-and-chart-library.md) | Week-6 prototype adoption — full 13-screen set as dedicated pages (Share is the only drawer; prototype wins on conflicts; Settings/Admin pulled into W6); chart library = recharts (lazy-loaded) | Accepted |
 
 ## Pending (to be written in their respective weeks)
 
