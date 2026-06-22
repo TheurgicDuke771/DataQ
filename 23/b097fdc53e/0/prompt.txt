@@ -1,0 +1,17 @@
+Lets start week 6. 
+Before we start anything, can you pull the prototype from claude design and check where we stand
+
+---
+
+`The two screens that matter for Week 6`
+We need to build all the screens in this week not just 2. 
+It wasn't documented properly earlier. 
+
+If there is a difference b/w current design and prototype (drawer vs full page, etc.) - prototype wins.
+Also, yes as mentioned you can ignore - `uploads/DESIGN.md`
+
+After you assess the full scope, we can start with the ADR
+
+---
+
+lets create a detailed step by step todo for week 6 (make sure it is gitignored)
