@@ -23,12 +23,21 @@ export function downloadJson(filename: string, data: unknown): void {
 /**
  * Quote a CSV cell per RFC 4180: a field containing a comma, double-quote, or
  * newline is wrapped in double-quotes with inner quotes doubled. `null`/
- * `undefined` become an empty field. Everything is coerced via `String()` — an
- * object should be JSON-stringified by the caller before it gets here.
+ * `undefined` become an empty field. An object should be JSON-stringified by
+ * the caller before it gets here.
+ *
+ * Text cells are also guarded against spreadsheet formula injection (CWE-1236):
+ * a value starting with `=`, `+`, `-`, `@`, tab, or CR makes Excel/Sheets
+ * evaluate it as a formula, so we prefix such text with an apostrophe to force
+ * it literal. Exported check names / expectations are user-authored and could
+ * start with these. Numbers/booleans are emitted as-is (they can't carry a
+ * formula payload, and we don't want a negative metric turned into text).
  */
 function csvCell(value: unknown): string {
   if (value === null || value === undefined) return '';
-  const s = String(value);
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  let s = String(value);
+  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 

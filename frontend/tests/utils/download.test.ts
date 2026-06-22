@@ -66,4 +66,15 @@ describe('toCsv', () => {
   it('renders null/undefined as an empty field', () => {
     expect(toCsv(['x', 'y'], [[null, undefined]])).toBe('x,y\r\n,');
   });
+
+  it('neutralises spreadsheet formula injection in text cells (CWE-1236)', () => {
+    // Leading =, +, @ (and -, tab, CR) get an apostrophe prefix; the value is
+    // then RFC-4180-quoted as needed.
+    const csv = toCsv(['name'], [['=HYPERLINK("evil")'], ['+1+2'], ['@SUM(A1)'], ['safe']]);
+    expect(csv).toBe('name\r\n"\'=HYPERLINK(""evil"")"\r\n\'+1+2\r\n\'@SUM(A1)\r\nsafe');
+  });
+
+  it('leaves negative numbers numeric (no apostrophe guard on number cells)', () => {
+    expect(toCsv(['m'], [[-2.5]])).toBe('m\r\n-2.5');
+  });
 });
