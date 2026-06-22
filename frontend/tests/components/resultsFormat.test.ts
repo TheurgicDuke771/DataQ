@@ -5,6 +5,7 @@ import {
   formatScalar,
   formatTimestamp,
   isWithinWindowDays,
+  pipelineRunMarker,
   pipelineStatusColor,
   RESULT_STATUS_COLORS,
   RUN_BAR_STATUS,
@@ -92,6 +93,24 @@ describe('status colour maps', () => {
     expect(pipelineStatusColor('succeeded')).toBe('success');
     expect(pipelineStatusColor('failed')).toBe('error');
     expect(pipelineStatusColor('something-new')).toBe('default');
+  });
+
+  it('builds the provider:dag:run_id correlation marker', () => {
+    expect(
+      pipelineRunMarker({
+        id: 'p1',
+        provider: 'adf',
+        connection_id: 'c1',
+        provider_run_id: 'seed-adf-0001',
+        pipeline_or_dag_id: 'daily_orders_load',
+        env: 'prod',
+        status: 'succeeded',
+        started_at: null,
+        finished_at: null,
+        failure_reason: null,
+        created_at: '2026-06-11T00:00:00Z',
+      }),
+    ).toBe('adf:daily_orders_load:seed-adf-0001');
   });
 
   it('maps every run status to a Progress bar status', () => {

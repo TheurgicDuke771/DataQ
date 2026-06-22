@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useParams } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -280,5 +280,32 @@ describe('Results page', () => {
     // Provider + status render as tags in the row.
     expect(screen.getByText('adf')).toBeInTheDocument();
     expect(screen.getByText('succeeded')).toBeInTheDocument();
+  });
+
+  it('correlates a pipeline run to the DQ run it triggered', async () => {
+    // A DQ run stamped with the pipeline run's marker (provider:dag:run_id).
+    const triggeredRun: Run = {
+      ...failedRun,
+      id: 'rdq',
+      suite_id: 's1',
+      triggered_by: 'adf:daily_orders_load:seed-adf-0001',
+    };
+    mockListRuns.mockResolvedValue([triggeredRun]);
+    mockListSuites.mockResolvedValue([]);
+    mockListConnections.mockResolvedValue([]);
+    mockListPipelineRuns.mockResolvedValue([pipelineRun]);
+
+    renderResults();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('tab', { name: 'Pipeline runs' }));
+    await waitFor(() => expect(screen.getByText('daily_orders_load')).toBeInTheDocument());
+
+    // The pipeline run's row carries a clickable DQ-run tag (the triggered run is
+    // 'failed' — distinct from the pipeline status 'succeeded') that deep-links.
+    const row = screen.getByText('daily_orders_load').closest('tr') as HTMLElement;
+    await user.click(within(row).getByText('failed'));
+
+    expect(await screen.findByText('run-detail:rdq')).toBeInTheDocument();
   });
 });

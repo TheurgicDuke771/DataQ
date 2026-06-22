@@ -1,7 +1,7 @@
 import { PlayCircleOutlined } from '@ant-design/icons';
 import { Alert, Button, Empty, Flex, Select, Spin, Table, Tabs, Tag, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import {
@@ -29,6 +29,7 @@ import {
   formatDuration,
   formatTimestamp,
   isWithinWindowDays,
+  pipelineRunMarker,
   pipelineStatusColor,
   RUN_STATUS_COLORS,
 } from '../components/results/resultsFormat';
@@ -253,9 +254,43 @@ function RunsTab() {
 
 // ─────────────────────────── Pipeline runs tab ──────────────────────
 
-function PipelineRunsTab() {
-  const { state } = useAsyncData(() => listPipelineRuns({ limit: LIST_LIMIT }));
+/** Pipeline-runs auto-poll cadence — orchestrator runs move on the minute scale,
+ *  so 30s keeps the panel near-live without hammering the API. */
+const PIPELINE_POLL_MS = 30_000;
+
+function PipelineRunsTab({ pollMs = PIPELINE_POLL_MS }: { pollMs?: number }) {
+  const navigate = useNavigate();
+  // Pipeline runs + the DQ runs they triggered, both auto-refreshed so a newly
+  // triggered run shows up against its pipeline run without a manual reload.
+  const { state, reload } = useAsyncData(() => listPipelineRuns({ limit: LIST_LIMIT }));
+  const { state: runsState, reload: reloadRuns } = useAsyncData(() =>
+    listRuns({ limit: LIST_LIMIT }),
+  );
   const [provider, setProvider] = useState<'all' | 'adf' | 'airflow'>('all');
+
+  // Refresh both sources on the poll cadence; `reload` keeps the current rows
+  // visible across the refetch (no flash back to the spinner).
+  useEffect(() => {
+    const id = setInterval(() => {
+      reload();
+      reloadRuns();
+    }, pollMs);
+    return () => clearInterval(id);
+  }, [reload, reloadRuns, pollMs]);
+
+  // triggered_by marker → the DQ runs it spawned (one pipeline run can trigger
+  // several, one per binding).
+  const runsByMarker = useMemo(() => {
+    const map = new Map<string, Run[]>();
+    if (runsState.status !== 'ok') return map;
+    for (const r of runsState.data) {
+      if (!r.triggered_by) continue;
+      const list = map.get(r.triggered_by);
+      if (list) list.push(r);
+      else map.set(r.triggered_by, [r]);
+    }
+    return map;
+  }, [runsState]);
 
   if (state.status === 'loading') return <Spin tip="Loading pipeline runs…" size="large" />;
   if (state.status === 'error') {
@@ -280,6 +315,28 @@ function PipelineRunsTab() {
       dataIndex: 'status',
       width: 110,
       render: (s: string) => <Tag color={pipelineStatusColor(s)}>{s}</Tag>,
+    },
+    {
+      title: 'DQ run',
+      width: 160,
+      render: (_: unknown, p: PipelineRun) => {
+        const triggered = runsByMarker.get(pipelineRunMarker(p)) ?? [];
+        if (triggered.length === 0) return <Typography.Text type="secondary">—</Typography.Text>;
+        return (
+          <Flex gap={6} wrap="wrap">
+            {triggered.map((r) => (
+              <Tag
+                key={r.id}
+                color={RUN_STATUS_COLORS[r.status]}
+                style={{ cursor: 'pointer', marginInlineEnd: 0 }}
+                onClick={() => navigate(`/results/${r.id}`)}
+              >
+                {r.status}
+              </Tag>
+            ))}
+          </Flex>
+        );
+      },
     },
     {
       title: 'Started',
