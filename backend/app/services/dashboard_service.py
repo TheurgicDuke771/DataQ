@@ -137,8 +137,13 @@ def _run_trend(
     session: Session, accessible: Select[tuple[uuid.UUID]], since: datetime
 ) -> list[TrendPoint]:
     """Per-day succeeded/failed run counts, zero-filled across the window so the
-    chart has a contiguous x-axis even on quiet days."""
-    day = func.date(Run.created_at)
+    chart has a contiguous x-axis even on quiet days.
+
+    Days are bucketed in UTC (``timezone('UTC', …)``) so SQL bucketing agrees
+    with the UTC zero-fill cursor below regardless of the DB session timezone —
+    otherwise a run near midnight could bucket into a day the cursor never emits.
+    """
+    day = func.date(func.timezone("UTC", Run.created_at))
     stmt = (
         select(day, Run.status, func.count())
         .where(Run.suite_id.in_(accessible), Run.created_at >= since)
