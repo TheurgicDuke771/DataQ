@@ -6,6 +6,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 
 import { getRun, type Result, type ResultStatus } from '../api/runs';
 import { type Check, getSuite, listChecks } from '../api/suites';
+import { CheckTrend } from '../components/checks/CheckTrend';
 import {
   formatDuration,
   formatTimestamp,
@@ -99,7 +100,7 @@ function RunDetailBody({
         <Stat label="Duration">{formatDuration(run.started_at, run.finished_at)}</Stat>
       </Flex>
 
-      <ResultsTable results={run.results} checks={checksById} />
+      <ResultsTable results={run.results} checks={checksById} suiteId={run.suite_id} />
     </Flex>
   );
 }
@@ -117,7 +118,15 @@ function Stat({ label, children }: { label: string; children: React.ReactNode })
   );
 }
 
-function ResultsTable({ results, checks }: { results: Result[]; checks: Map<string, Check> }) {
+function ResultsTable({
+  results,
+  checks,
+  suiteId,
+}: {
+  results: Result[];
+  checks: Map<string, Check>;
+  suiteId: string;
+}) {
   if (results.length === 0) {
     return <Empty description="No check results — the run did not complete." />;
   }
@@ -156,6 +165,20 @@ function ResultsTable({ results, checks }: { results: Result[]; checks: Map<stri
     },
   ];
   return (
-    <Table rowKey="id" size="small" columns={columns} dataSource={results} pagination={false} />
+    <Table
+      rowKey="id"
+      size="small"
+      columns={columns}
+      dataSource={results}
+      pagination={false}
+      expandable={{
+        // Lazily fetch a check's metric trend only when its row is expanded —
+        // keyed by check_id so each row's chart fetches its own history.
+        expandedRowRender: (record) => (
+          <CheckTrend key={record.check_id} suiteId={suiteId} checkId={record.check_id} />
+        ),
+        rowExpandable: (record) => checks.has(record.check_id),
+      }}
+    />
   );
 }

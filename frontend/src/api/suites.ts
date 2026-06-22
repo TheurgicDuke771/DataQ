@@ -185,6 +185,34 @@ export async function listCheckVersions(suiteId: string, checkId: string): Promi
   return data;
 }
 
+/**
+ * Mirrors the backend `CheckResultPointRead` — one past result of a check
+ * (status + `metric_value` + run time), the datum behind the per-check trend
+ * chart (ADR 0022). `metric_value` is null for checks that record no metric.
+ */
+export interface CheckResultPoint {
+  run_id: string;
+  status: string;
+  metric_value: number | null;
+  created_at: string;
+}
+
+/**
+ * A check's recent results in chronological order (oldest→newest) for the trend
+ * chart. Requires `view` on the suite; `limit` caps the window (1–180, default 30).
+ */
+export async function listCheckHistory(
+  suiteId: string,
+  checkId: string,
+  limit?: number,
+): Promise<CheckResultPoint[]> {
+  const { data } = await api.get<CheckResultPoint[]>(
+    `/suites/${suiteId}/checks/${checkId}/history`,
+    { params: limit ? { limit } : undefined },
+  );
+  return data;
+}
+
 // ───────────────────────── export / import (portable documents) ─────
 
 /**
