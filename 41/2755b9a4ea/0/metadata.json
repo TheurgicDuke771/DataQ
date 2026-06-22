@@ -1,0 +1,40 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "412755b9a4ea",
+  "session_id": "a341653f-436c-4caa-abf9-8421256d054d",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-22T03:28:20.129689Z",
+  "branch": "feature/dashboard-aggregates",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "frontend/src/components/dashboard/QualityTrends.tsx",
+    "frontend/src/pages/Dashboard.tsx",
+    "frontend/tests/components/QualityTrends.test.tsx"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-4-8",
+  "turn_id": "9f4d253e67b2",
+  "token_usage": {
+    "input_tokens": 36998,
+    "cache_creation_tokens": 560594,
+    "cache_read_tokens": 25036922,
+    "output_tokens": 137821,
+    "api_call_count": 149
+  },
+  "session_metrics": {
+    "turn_count": 4
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-22T03:28:20.104117Z",
+    "agent_lines": 116,
+    "agent_removed": 1,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 116,
+    "total_lines_changed": 117,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
