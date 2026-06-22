@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "e5b197a7e557",
+  "strategy": "manual-commit",
+  "branch": "feature/dashboard-aggregates",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/api/v1/checks.py",
+    "backend/app/services/check_service.py",
+    "backend/tests/api/test_checks.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/e5/b197a7e557/0/metadata.json",
+      "transcript": "/e5/b197a7e557/0/full.jsonl",
+      "content_hash": "/e5/b197a7e557/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2886,
+    "cache_creation_tokens": 31643,
+    "cache_read_tokens": 5855103,
+    "output_tokens": 15882,
+    "api_call_count": 35
+  }
+}
