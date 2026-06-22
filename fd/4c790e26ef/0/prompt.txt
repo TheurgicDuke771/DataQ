@@ -1,0 +1,2 @@
+<ide_opened_file>The user opened the file /Users/arijit/Coding/Python/DataQ/docker-compose.yml in the IDE. This may or may not be related to the current task.</ide_opened_file>
+Okay, now lets start with Week 6: Phase 3 (results filters) from the WEEK6_TODO
