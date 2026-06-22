@@ -17,6 +17,9 @@ import { ScalarValue } from '../components/results/ScalarValue';
 import { useAsyncData } from '../hooks/useAsyncData';
 import { downloadCsv, downloadJson, toFilenameStem } from '../utils/download';
 
+/** The four severity tiers that count as "evaluated" (ADR 0005) — skip/error don't. */
+const SEVERITY_STATUSES = new Set<ResultStatus>(['pass', 'warn', 'fail', 'critical']);
+
 /**
  * Routed run-detail page (`/results/:runId`, ADR 0022) — replaces the run-detail
  * drawer so a run is deep-linkable and refreshable. Loads the run + its results
@@ -81,7 +84,12 @@ function RunDetailBody({
     return map;
   }, [checks]);
 
-  const passed = run.results.filter((r) => r.status === 'pass').length;
+  // "Checks passed" counts only evaluated (severity-tier) results — skip/error
+  // didn't evaluate a severity, so they're excluded from the denominator, same
+  // as the ADR-0005 health score (a run with skipped checks shouldn't read worse
+  // than its health).
+  const evaluated = run.results.filter((r) => SEVERITY_STATUSES.has(r.status));
+  const passed = evaluated.filter((r) => r.status === 'pass').length;
 
   return (
     <Flex vertical gap={16}>
@@ -97,7 +105,7 @@ function RunDetailBody({
           <Tag color={RUN_STATUS_COLORS[run.status]}>{run.status}</Tag>
         </Stat>
         <Stat label="Checks passed">
-          {run.results.length === 0 ? '—' : `${passed} / ${run.results.length}`}
+          {evaluated.length === 0 ? '—' : `${passed} / ${evaluated.length}`}
         </Stat>
         <Stat label="Triggered by">{run.triggered_by ?? '—'}</Stat>
         <Stat label="Started">{formatTimestamp(run.started_at)}</Stat>
