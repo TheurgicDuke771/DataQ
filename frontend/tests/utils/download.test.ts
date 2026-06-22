@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { downloadJson, toFilenameStem } from '../../src/utils/download';
+import { downloadJson, toCsv, toFilenameStem } from '../../src/utils/download';
 
 describe('toFilenameStem', () => {
   it('lowercases and collapses non-word runs to single underscores', () => {
@@ -36,5 +36,34 @@ describe('downloadJson', () => {
     expect(await blob.text()).toBe('{\n  "a": 1\n}');
     expect(clickSpy).toHaveBeenCalledTimes(1);
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:mock');
+  });
+});
+
+describe('toCsv', () => {
+  it('joins a header row + data rows with CRLF', () => {
+    expect(
+      toCsv(
+        ['a', 'b'],
+        [
+          [1, 2],
+          [3, 4],
+        ],
+      ),
+    ).toBe('a,b\r\n1,2\r\n3,4');
+  });
+
+  it('quotes fields with commas, quotes, or newlines (RFC 4180)', () => {
+    const csv = toCsv(
+      ['name', 'note'],
+      [
+        ['a,b', 'he said "hi"'],
+        ['line1\nline2', 'plain'],
+      ],
+    );
+    expect(csv).toBe('name,note\r\n"a,b","he said ""hi"""\r\n"line1\nline2",plain');
+  });
+
+  it('renders null/undefined as an empty field', () => {
+    expect(toCsv(['x', 'y'], [[null, undefined]])).toBe('x,y\r\n,');
   });
 });

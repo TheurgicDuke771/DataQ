@@ -1,5 +1,5 @@
-import { ArrowLeftOutlined } from '@ant-design/icons';
-import { Alert, Button, Card, Empty, Flex, Spin, Table, Tag, Typography } from 'antd';
+import { ArrowLeftOutlined, DownloadOutlined } from '@ant-design/icons';
+import { Alert, Button, Card, Dropdown, Empty, Flex, Spin, Table, Tag, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -15,6 +15,7 @@ import {
 } from '../components/results/resultsFormat';
 import { ScalarValue } from '../components/results/ScalarValue';
 import { useAsyncData } from '../hooks/useAsyncData';
+import { downloadCsv, downloadJson, toFilenameStem } from '../utils/download';
 
 /**
  * Routed run-detail page (`/results/:runId`, ADR 0022) — replaces the run-detail
@@ -84,9 +85,12 @@ function RunDetailBody({
 
   return (
     <Flex vertical gap={16}>
-      <Typography.Title level={3} style={{ margin: 0 }}>
-        {suiteName ?? `Run ${run.suite_id.slice(0, 8)}`}
-      </Typography.Title>
+      <Flex justify="space-between" align="center" gap={12} wrap>
+        <Typography.Title level={3} style={{ margin: 0 }}>
+          {suiteName ?? `Run ${run.suite_id.slice(0, 8)}`}
+        </Typography.Title>
+        <DownloadMenu run={run} suiteName={suiteName} checks={checksById} />
+      </Flex>
 
       <Flex gap={12} wrap>
         <Stat label="Status">
@@ -115,6 +119,80 @@ function Stat({ label, children }: { label: string; children: React.ReactNode })
         <span style={{ fontSize: 15 }}>{children}</span>
       </Flex>
     </Card>
+  );
+}
+
+// ─────────────────────────── export (CSV / JSON) ────────────────────
+
+type RunWithResults = Awaited<ReturnType<typeof getRun>>;
+
+/** Compact, stable string for a JSONB scalar in a flat export cell. */
+function exportScalar(value: Record<string, unknown> | null): string {
+  return value === null ? '' : JSON.stringify(value);
+}
+
+function DownloadMenu({
+  run,
+  suiteName,
+  checks,
+}: {
+  run: RunWithResults;
+  suiteName: string | null;
+  checks: Map<string, Check>;
+}) {
+  const stem = `${toFilenameStem(suiteName ?? 'run')}_run_${run.id.slice(0, 8)}`;
+  const checkName = (id: string) => checks.get(id)?.name ?? id;
+  const expectation = (id: string) => checks.get(id)?.expectation_type ?? '';
+
+  const exportCsv = () => {
+    downloadCsv(
+      `${stem}.csv`,
+      ['check', 'expectation', 'status', 'metric_value', 'observed'],
+      run.results.map((r) => [
+        checkName(r.check_id),
+        expectation(r.check_id),
+        r.status,
+        r.metric_value,
+        exportScalar(r.observed_value),
+      ]),
+    );
+  };
+
+  const exportJson = () => {
+    // Sample failing rows are never in the payload (PII, withheld by the API).
+    downloadJson(`${stem}.json`, {
+      run: {
+        id: run.id,
+        suite_id: run.suite_id,
+        suite_name: suiteName,
+        status: run.status,
+        triggered_by: run.triggered_by,
+        started_at: run.started_at,
+        finished_at: run.finished_at,
+      },
+      checks: run.results.map((r) => ({
+        check: checkName(r.check_id),
+        expectation_type: expectation(r.check_id) || null,
+        status: r.status,
+        metric_value: r.metric_value,
+        observed_value: r.observed_value,
+        expected_value: r.expected_value,
+      })),
+    });
+  };
+
+  return (
+    <Dropdown
+      menu={{
+        items: [
+          { key: 'csv', label: 'Download CSV', onClick: exportCsv },
+          { key: 'json', label: 'Download JSON', onClick: exportJson },
+        ],
+      }}
+      disabled={run.results.length === 0}
+    >
+      <Button icon={<DownloadOutlined />}>Download</Button>
+    </Dropdown>
   );
 }
 

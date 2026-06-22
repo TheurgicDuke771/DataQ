@@ -1,10 +1,12 @@
 import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { getRun, type RunDetail as RunDetailType } from '../../src/api/runs';
 import { type Check, type Suite, getSuite, listChecks } from '../../src/api/suites';
 import { RunDetail } from '../../src/pages/RunDetail';
+import { downloadCsv, downloadJson } from '../../src/utils/download';
 
 vi.mock('../../src/api/runs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/api/runs')>();
@@ -14,6 +16,11 @@ vi.mock('../../src/api/runs', async (importOriginal) => {
 vi.mock('../../src/api/suites', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/api/suites')>();
   return { ...actual, getSuite: vi.fn(), listChecks: vi.fn() };
+});
+
+vi.mock('../../src/utils/download', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/utils/download')>();
+  return { ...actual, downloadCsv: vi.fn(), downloadJson: vi.fn() };
 });
 
 const mockGetRun = vi.mocked(getRun);
@@ -110,5 +117,47 @@ describe('RunDetail page', () => {
     mockGetRun.mockRejectedValue(new Error('boom'));
     renderAt('rX');
     expect(await screen.findByText('Failed to load run')).toBeInTheDocument();
+  });
+
+  it('exports the run results as CSV with check names resolved', async () => {
+    mockGetRun.mockResolvedValue(runDetail);
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]);
+    renderAt('r1');
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole('button', { name: /download/i }));
+    await user.click(await screen.findByText('Download CSV'));
+
+    expect(downloadCsv).toHaveBeenCalledTimes(1);
+    const [filename, headers, rows] = vi.mocked(downloadCsv).mock.calls[0];
+    expect(filename).toBe('orders_quality_run_r1.csv');
+    expect(headers).toEqual(['check', 'expectation', 'status', 'metric_value', 'observed']);
+    // check_id → name, observed scalar JSON-stringified.
+    expect(rows[0]).toEqual([
+      'order_id not null',
+      'expect_column_values_to_not_be_null',
+      'warn',
+      2,
+      '{"unexpected_percent":2}',
+    ]);
+  });
+
+  it('exports the run as JSON (no withheld sample rows in the payload)', async () => {
+    mockGetRun.mockResolvedValue(runDetail);
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]);
+    renderAt('r1');
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole('button', { name: /download/i }));
+    await user.click(await screen.findByText('Download JSON'));
+
+    expect(downloadJson).toHaveBeenCalledTimes(1);
+    const [filename, payload] = vi.mocked(downloadJson).mock.calls[0];
+    expect(filename).toBe('orders_quality_run_r1.json');
+    const body = payload as { run: { suite_name: string }; checks: unknown[] };
+    expect(body.run.suite_name).toBe('Orders quality');
+    expect(body.checks).toHaveLength(1);
   });
 });
