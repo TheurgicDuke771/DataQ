@@ -22,30 +22,31 @@ test.describe('Results page', () => {
     await expect(page.getByText('failed').first()).toBeVisible();
 
     // Target the severity-spread run by its "Triggered by" marker (there are two
-    // succeeded runs now — this one and the operational-spectrum run).
+    // succeeded runs now — this one and the operational-spectrum run). The row
+    // deep-links to the routed run-detail page (ADR 0022 — the drawer is gone).
     await page
       .locator('tr.ant-table-row')
       .filter({ hasText: 'seed:run:succeeded' })
       .first()
       .click();
-    const drawer = page.getByRole('dialog');
-    await expect(drawer.getByText('order_id not null')).toBeVisible();
-    await expect(drawer.getByText('amount in range')).toBeVisible();
-    await expect(drawer.getByText('expect_column_values_to_be_between').first()).toBeVisible();
+    await expect(page).toHaveURL(/\/results\/[0-9a-f-]+$/);
+    await expect(page.getByText('order_id not null')).toBeVisible();
+    await expect(page.getByText('amount in range')).toBeVisible();
+    await expect(page.getByText('expect_column_values_to_be_between').first()).toBeVisible();
     // The warn + fail severity tiers from the seeded spread are visible.
-    await expect(drawer.getByText('warn').first()).toBeVisible();
-    await expect(drawer.getByText('fail').first()).toBeVisible();
+    await expect(page.getByText('warn').first()).toBeVisible();
+    await expect(page.getByText('fail').first()).toBeVisible();
   });
 
   test('drills into the operational-spectrum run (critical / error / skip)', async ({ page }) => {
     // The second succeeded run carries the operational vocabulary the first
     // doesn't: a critical breach, an error (evaluation threw), and a skip.
     await page.locator('tr.ant-table-row').filter({ hasText: 'seed:run:mixed' }).first().click();
-    const drawer = page.getByRole('dialog');
-    await expect(drawer.getByText('status in set')).toBeVisible();
-    await expect(drawer.getByText('critical').first()).toBeVisible();
-    await expect(drawer.getByText('error').first()).toBeVisible();
-    await expect(drawer.getByText('skip').first()).toBeVisible();
+    await expect(page).toHaveURL(/\/results\/[0-9a-f-]+$/);
+    await expect(page.getByText('status in set')).toBeVisible();
+    await expect(page.getByText('critical').first()).toBeVisible();
+    await expect(page.getByText('error').first()).toBeVisible();
+    await expect(page.getByText('skip').first()).toBeVisible();
   });
 
   test('shows the orchestration pipeline-runs monitoring feed', async ({ page }) => {
