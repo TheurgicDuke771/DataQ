@@ -9,6 +9,7 @@ import { useState } from 'react';
 
 import { getDashboardSummary } from '../api/dashboard';
 import { MetricCard } from '../components/dashboard/MetricCard';
+import { QualityTrends } from '../components/dashboard/QualityTrends';
 import { useAsyncData } from '../hooks/useAsyncData';
 
 /**
@@ -47,7 +48,8 @@ export function Dashboard() {
   };
 
   const loading = state.status === 'loading';
-  const kpis = state.status === 'ok' ? state.data.kpis : null;
+  const summary = state.status === 'ok' ? state.data : null;
+  const kpis = summary?.kpis ?? null;
 
   return (
     <Flex vertical gap={20} style={{ maxWidth: 1200 }}>
@@ -109,6 +111,8 @@ export function Dashboard() {
           />
         </Col>
       </Row>
+
+      <QualityTrends trend={summary?.trend ?? []} />
     </Flex>
   );
 }
