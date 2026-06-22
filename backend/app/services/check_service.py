@@ -19,6 +19,8 @@ raises `DataQError` subclasses.
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass
+from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
@@ -27,7 +29,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
-from backend.app.db.models import Check, CheckVersion, Connection, Suite
+from backend.app.db.models import Check, CheckVersion, Connection, Result, Run, Suite
 from backend.app.services.custom_sql import is_custom_sql, validate_custom_sql_check
 from backend.app.services.suite_service import get_suite
 
@@ -241,3 +243,46 @@ def list_check_versions(
             .order_by(CheckVersion.version_no.desc())
         )
     )
+
+
+@dataclass(frozen=True)
+class CheckResultPoint:
+    """One past result for a check — the trend datum behind the per-check chart."""
+
+    run_id: uuid.UUID
+    status: str
+    metric_value: float | None
+    created_at: datetime
+
+
+def list_check_result_history(
+    session: Session, suite_id: uuid.UUID, check_id: uuid.UUID, *, limit: int = 30
+) -> list[CheckResultPoint]:
+    """A check's recent results in chronological order (oldest→newest) for the
+    per-check trend (ADR 0022). 404 if the check is missing or cross-suite.
+
+    Takes the latest `limit` results (newest-first in SQL, then reversed) so the
+    chart shows the most recent window left-to-right. `metric_value` is the
+    SQL-aggregatable scalar a run measured (ADR 0012); `None` for checks that
+    record no metric. Suite scoping is the caller's (router `require_permission`);
+    the Run join only guards against a result leaking across suites.
+    """
+    get_check(session, suite_id, check_id)  # 404 / cross-suite guard
+    stmt = (
+        select(Result.run_id, Result.status, Result.metric_value, Run.created_at)
+        .join(Run, Result.run_id == Run.id)
+        .where(Result.check_id == check_id, Run.suite_id == suite_id)
+        .order_by(Run.created_at.desc())
+        .limit(limit)
+    )
+    rows = [
+        CheckResultPoint(
+            run_id=run_id,
+            status=status,
+            metric_value=float(metric_value) if metric_value is not None else None,
+            created_at=created_at,
+        )
+        for run_id, status, metric_value, created_at in session.execute(stmt)
+    ]
+    rows.reverse()  # chronological for the chart x-axis
+    return rows
