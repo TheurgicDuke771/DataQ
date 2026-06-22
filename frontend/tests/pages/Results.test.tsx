@@ -1,8 +1,9 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useParams } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { type Connection, listConnections } from '../../src/api/connections';
 import { listPipelineRuns, listRuns, type PipelineRun, type Run } from '../../src/api/runs';
 import { type Suite, listSuites } from '../../src/api/suites';
 import { Results } from '../../src/pages/Results';
@@ -17,17 +18,48 @@ vi.mock('../../src/api/suites', async (importOriginal) => {
   return { ...actual, listSuites: vi.fn() };
 });
 
+vi.mock('../../src/api/connections', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/api/connections')>();
+  return { ...actual, listConnections: vi.fn() };
+});
+
 const mockListRuns = vi.mocked(listRuns);
 const mockListPipelineRuns = vi.mocked(listPipelineRuns);
 const mockListSuites = vi.mocked(listSuites);
+const mockListConnections = vi.mocked(listConnections);
 
-const suite: Suite = {
+const snowflakeConn: Connection = {
+  id: 'c1',
+  name: 'Snowflake DEV',
+  type: 'snowflake',
+  env: 'dev',
+  config: {},
+  has_secret: true,
+  created_by: 'u1',
+};
+
+const s3Conn: Connection = {
+  ...snowflakeConn,
+  id: 'c2',
+  name: 'S3 PROD',
+  type: 's3',
+  env: 'prod',
+};
+
+const ordersSuite: Suite = {
   id: 's1',
   name: 'Orders quality',
   description: null,
   connection_id: 'c1',
   target: { table: 'ORDERS' },
   created_by: 'u1',
+};
+
+const eventsSuite: Suite = {
+  ...ordersSuite,
+  id: 's2',
+  name: 'Events lake',
+  connection_id: 'c2',
 };
 
 const succeededRun: Run = {
@@ -46,6 +78,18 @@ const failedRun: Run = {
   status: 'failed',
   triggered_by: 'seed:run:failed',
   finished_at: '2026-06-11T00:00:02Z',
+};
+
+/** A run on the S3 (flat-file, prod) suite, started "now" so it falls inside the
+ *  recent date windows. */
+const recentEventsRun: Run = {
+  id: 'r3',
+  suite_id: 's2',
+  status: 'succeeded',
+  triggered_by: 'schedule',
+  started_at: new Date().toISOString(),
+  finished_at: new Date().toISOString(),
+  created_at: new Date().toISOString(),
 };
 
 const pipelineRun: PipelineRun = {
@@ -79,6 +123,21 @@ function renderResults() {
   );
 }
 
+/** The runs-tab filter Selects, in DOM order. */
+const FILTER = { status: 0, suite: 1, env: 2, datasource: 3, date: 4 } as const;
+
+/** Open the Nth filter Select and pick the option titled `optionTitle`. */
+async function pickFilter(
+  user: ReturnType<typeof userEvent.setup>,
+  index: number,
+  optionTitle: string,
+) {
+  await user.click(screen.getAllByRole('combobox')[index]);
+  await user.click(await screen.findByTitle(optionTitle));
+}
+
+const tableRowCount = () => document.querySelectorAll('tr.ant-table-row').length;
+
 afterEach(() => {
   vi.clearAllMocks();
 });
@@ -86,7 +145,8 @@ afterEach(() => {
 describe('Results page', () => {
   it('lists runs with the suite name and a status tag', async () => {
     mockListRuns.mockResolvedValue([succeededRun, failedRun]);
-    mockListSuites.mockResolvedValue([suite]);
+    mockListSuites.mockResolvedValue([ordersSuite]);
+    mockListConnections.mockResolvedValue([snowflakeConn]);
     mockListPipelineRuns.mockResolvedValue([]);
 
     renderResults();
@@ -99,7 +159,8 @@ describe('Results page', () => {
 
   it('navigates to the routed run-detail page on row click', async () => {
     mockListRuns.mockResolvedValue([succeededRun]);
-    mockListSuites.mockResolvedValue([suite]);
+    mockListSuites.mockResolvedValue([ordersSuite]);
+    mockListConnections.mockResolvedValue([snowflakeConn]);
     mockListPipelineRuns.mockResolvedValue([]);
 
     renderResults();
@@ -114,7 +175,8 @@ describe('Results page', () => {
 
   it('filters the runs table by status', async () => {
     mockListRuns.mockResolvedValue([succeededRun, failedRun]);
-    mockListSuites.mockResolvedValue([suite]);
+    mockListSuites.mockResolvedValue([ordersSuite]);
+    mockListConnections.mockResolvedValue([snowflakeConn]);
     mockListPipelineRuns.mockResolvedValue([]);
 
     renderResults();
@@ -123,20 +185,90 @@ describe('Results page', () => {
     await waitFor(() => expect(screen.getAllByText('Orders quality').length).toBe(2));
 
     // Pick "failed" in the status Select → only the failed run's row remains.
-    await user.click(screen.getByRole('combobox'));
-    await user.click(await screen.findByTitle('failed'));
+    await pickFilter(user, FILTER.status, 'failed');
 
-    // Scope to the table body rows (the closed dropdown still holds the
-    // 'succeeded' option text, so assert on rows, not document-wide text).
-    await waitFor(() => expect(document.querySelectorAll('tr.ant-table-row').length).toBe(1));
+    await waitFor(() => expect(tableRowCount()).toBe(1));
     const row = document.querySelector('tr.ant-table-row');
     expect(row?.textContent).toContain('failed');
     expect(row?.textContent).not.toContain('succeeded');
   });
 
+  it('filters the runs table by suite', async () => {
+    mockListRuns.mockResolvedValue([succeededRun, recentEventsRun]);
+    mockListSuites.mockResolvedValue([ordersSuite, eventsSuite]);
+    mockListConnections.mockResolvedValue([snowflakeConn, s3Conn]);
+    mockListPipelineRuns.mockResolvedValue([]);
+
+    renderResults();
+    const user = userEvent.setup();
+
+    await waitFor(() => expect(tableRowCount()).toBe(2));
+
+    await pickFilter(user, FILTER.suite, 'Events lake');
+
+    await waitFor(() => expect(tableRowCount()).toBe(1));
+    expect(document.querySelector('tr.ant-table-row')?.textContent).toContain('Events lake');
+  });
+
+  it('filters the runs table by environment', async () => {
+    mockListRuns.mockResolvedValue([succeededRun, recentEventsRun]);
+    mockListSuites.mockResolvedValue([ordersSuite, eventsSuite]);
+    mockListConnections.mockResolvedValue([snowflakeConn, s3Conn]);
+    mockListPipelineRuns.mockResolvedValue([]);
+
+    renderResults();
+    const user = userEvent.setup();
+
+    await waitFor(() => expect(tableRowCount()).toBe(2));
+
+    // PROD env → only the run on the prod-connection suite (Events lake).
+    await pickFilter(user, FILTER.env, 'PROD');
+
+    await waitFor(() => expect(tableRowCount()).toBe(1));
+    expect(document.querySelector('tr.ant-table-row')?.textContent).toContain('Events lake');
+  });
+
+  it('filters the runs table by datasource category', async () => {
+    mockListRuns.mockResolvedValue([succeededRun, recentEventsRun]);
+    mockListSuites.mockResolvedValue([ordersSuite, eventsSuite]);
+    mockListConnections.mockResolvedValue([snowflakeConn, s3Conn]);
+    mockListPipelineRuns.mockResolvedValue([]);
+
+    renderResults();
+    const user = userEvent.setup();
+
+    await waitFor(() => expect(tableRowCount()).toBe(2));
+
+    // S3 collapses into the "Flat file" category → only the Events lake run.
+    await pickFilter(user, FILTER.datasource, 'Flat file');
+
+    await waitFor(() => expect(tableRowCount()).toBe(1));
+    expect(document.querySelector('tr.ant-table-row')?.textContent).toContain('Events lake');
+  });
+
+  it('filters the runs table by date window', async () => {
+    // succeededRun started 2026-06-11 (>7d before the 2026-06-22 fixture date);
+    // recentEventsRun started now → only the recent run is inside "Last 7 days".
+    mockListRuns.mockResolvedValue([succeededRun, recentEventsRun]);
+    mockListSuites.mockResolvedValue([ordersSuite, eventsSuite]);
+    mockListConnections.mockResolvedValue([snowflakeConn, s3Conn]);
+    mockListPipelineRuns.mockResolvedValue([]);
+
+    renderResults();
+    const user = userEvent.setup();
+
+    await waitFor(() => expect(tableRowCount()).toBe(2));
+
+    await pickFilter(user, FILTER.date, 'Last 7 days');
+
+    await waitFor(() => expect(tableRowCount()).toBe(1));
+    expect(document.querySelector('tr.ant-table-row')?.textContent).toContain('Events lake');
+  });
+
   it('shows monitored pipeline runs on the Pipeline runs tab', async () => {
     mockListRuns.mockResolvedValue([]);
     mockListSuites.mockResolvedValue([]);
+    mockListConnections.mockResolvedValue([]);
     mockListPipelineRuns.mockResolvedValue([pipelineRun]);
 
     renderResults();
@@ -148,5 +280,32 @@ describe('Results page', () => {
     // Provider + status render as tags in the row.
     expect(screen.getByText('adf')).toBeInTheDocument();
     expect(screen.getByText('succeeded')).toBeInTheDocument();
+  });
+
+  it('correlates a pipeline run to the DQ run it triggered', async () => {
+    // A DQ run stamped with the pipeline run's marker (provider:dag:run_id).
+    const triggeredRun: Run = {
+      ...failedRun,
+      id: 'rdq',
+      suite_id: 's1',
+      triggered_by: 'adf:daily_orders_load:seed-adf-0001',
+    };
+    mockListRuns.mockResolvedValue([triggeredRun]);
+    mockListSuites.mockResolvedValue([]);
+    mockListConnections.mockResolvedValue([]);
+    mockListPipelineRuns.mockResolvedValue([pipelineRun]);
+
+    renderResults();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('tab', { name: 'Pipeline runs' }));
+    await waitFor(() => expect(screen.getByText('daily_orders_load')).toBeInTheDocument());
+
+    // The pipeline run's row carries a clickable DQ-run tag (the triggered run is
+    // 'failed' — distinct from the pipeline status 'succeeded') that deep-links.
+    const row = screen.getByText('daily_orders_load').closest('tr') as HTMLElement;
+    await user.click(within(row).getByText('failed'));
+
+    expect(await screen.findByText('run-detail:rdq')).toBeInTheDocument();
   });
 });

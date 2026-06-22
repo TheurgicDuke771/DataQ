@@ -48,6 +48,30 @@ export const DATASOURCE_TYPES = typesOfKind('datasource');
 export const ORCHESTRATION_TYPES = typesOfKind('orchestration');
 
 /**
+ * Coarser datasource grouping for the Results datasource-type filter (ADR 0022):
+ * the two flat-file types (ADLS Gen2 + S3) share a runner shape and read as one
+ * "Flat file" choice, while Snowflake and Unity Catalog stand alone. Orchestration
+ * types map to `null` — they're never queryable, so they never back a suite/run.
+ */
+export const DATASOURCE_CATEGORIES = ['snowflake', 'flatfile', 'unity_catalog'] as const;
+export type DatasourceCategory = (typeof DATASOURCE_CATEGORIES)[number];
+
+export const DATASOURCE_CATEGORY: Record<ConnectionType, DatasourceCategory | null> = {
+  snowflake: 'snowflake',
+  adls_gen2: 'flatfile',
+  s3: 'flatfile',
+  unity_catalog: 'unity_catalog',
+  adf: null,
+  airflow: null,
+};
+
+export const DATASOURCE_CATEGORY_LABELS: Record<DatasourceCategory, string> = {
+  snowflake: 'Snowflake',
+  flatfile: 'Flat file',
+  unity_catalog: 'Unity Catalog',
+};
+
+/**
  * Datasources GX can run a custom-SQL (`UnexpectedRowsExpectation`) query against
  * — mirrors the backend `custom_sql.SQL_QUERYABLE_TYPES` (ADR 0019). The custom-SQL
  * check category is offered only for these SQL-queryable types; flat files (ADLS /
