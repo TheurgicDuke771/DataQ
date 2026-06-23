@@ -13,6 +13,7 @@ import {
   RESULT_STATUS_COLORS,
   RUN_STATUS_COLORS,
 } from '../components/results/resultsFormat';
+import { Page } from '../components/layout/Page';
 import { ScalarValue } from '../components/results/ScalarValue';
 import { useAsyncData } from '../hooks/useAsyncData';
 import { downloadCsv, downloadJson, toFilenameStem } from '../utils/download';
@@ -47,7 +48,7 @@ export function RunDetail() {
   const back = () => navigate('/results');
 
   return (
-    <Flex vertical gap={16} style={{ maxWidth: 1000 }}>
+    <Page width={1000} gap={16}>
       <div>
         <Button type="text" icon={<ArrowLeftOutlined />} onClick={back} style={{ paddingLeft: 0 }}>
           Results
@@ -65,7 +66,7 @@ export function RunDetail() {
           checks={state.data.checks}
         />
       )}
-    </Flex>
+    </Page>
   );
 }
 

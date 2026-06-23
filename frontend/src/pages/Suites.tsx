@@ -23,6 +23,7 @@ import {
   type Suite,
 } from '../api/suites';
 import { ConnectionTypeAvatar } from '../components/connections/connectionVisuals';
+import { Page } from '../components/layout/Page';
 import { LiveRunProgress } from '../components/runs/LiveRunProgress';
 import { ImportSuiteDrawer } from '../components/suites/ImportSuiteDrawer';
 import { SchedulesPanel } from '../components/suites/SchedulesPanel';
@@ -108,7 +109,7 @@ export function Suites() {
   const hasDatasource = connections.some((c) => CONNECTION_KIND[c.type] === 'datasource');
 
   return (
-    <Flex vertical gap={24}>
+    <Page>
       <Flex justify="space-between" align="center" gap={12}>
         <Typography.Title level={3} style={{ margin: 0 }}>
           Suites
@@ -162,7 +163,7 @@ export function Suites() {
           navigate(`/suites/${suite.id}`);
         }}
       />
-    </Flex>
+    </Page>
   );
 }
 
@@ -259,25 +260,71 @@ function SuiteGrid({
     <div
       style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
+        gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
         gap: 16,
       }}
     >
-      {suites.map((suite) => {
-        const conn = connections.find((c) => c.id === suite.connection_id);
-        return (
-          <Card
-            key={suite.id}
-            size="small"
-            className="dq-card--interactive"
-            style={{ cursor: 'pointer' }}
-            onClick={() => onSelect(suite.id)}
-          >
-            <SuiteIdentity suite={suite} conn={conn} showDescription />
-          </Card>
-        );
-      })}
+      {suites.map((suite) => (
+        <SuiteBrowseCard
+          key={suite.id}
+          suite={suite}
+          conn={connections.find((c) => c.id === suite.connection_id)}
+          onSelect={() => onSelect(suite.id)}
+        />
+      ))}
     </div>
+  );
+}
+
+/**
+ * A suite's browse-grid card — the vertical layout the Connections cards use
+ * (avatar top-left + env tag top-right, then name, connection · type, and an
+ * optional 2-line description) so the two list pages read the same on first open.
+ */
+function SuiteBrowseCard({
+  suite,
+  conn,
+  onSelect,
+}: {
+  suite: Suite;
+  conn: Connection | undefined;
+  onSelect: () => void;
+}) {
+  return (
+    <Card
+      className="dq-card--interactive"
+      style={{ cursor: 'pointer' }}
+      styles={{ body: { padding: 20 } }}
+      onClick={onSelect}
+    >
+      <Flex vertical gap={14}>
+        <Flex justify="space-between" align="flex-start" style={{ minHeight: 44 }}>
+          {conn ? <ConnectionTypeAvatar type={conn.type} size={44} /> : <span />}
+          {conn && (
+            <Tag color={ENV_COLORS[conn.env]} style={{ marginInlineEnd: 0 }}>
+              {envLabel(conn.env)}
+            </Tag>
+          )}
+        </Flex>
+        <Flex vertical gap={2} style={{ minWidth: 0 }}>
+          <Typography.Text strong ellipsis style={{ fontSize: 15 }}>
+            {suite.name}
+          </Typography.Text>
+          <Typography.Text type="secondary" style={{ fontSize: 13 }} ellipsis>
+            {conn ? `${conn.name} · ${CONNECTION_TYPE_LABELS[conn.type]}` : 'No connection'}
+          </Typography.Text>
+        </Flex>
+        {suite.description && (
+          <Typography.Paragraph
+            type="secondary"
+            ellipsis={{ rows: 2 }}
+            style={{ margin: 0, fontSize: 13 }}
+          >
+            {suite.description}
+          </Typography.Paragraph>
+        )}
+      </Flex>
+    </Card>
   );
 }
 

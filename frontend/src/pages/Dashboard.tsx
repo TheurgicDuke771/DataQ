@@ -8,6 +8,7 @@ import { Alert, Col, Flex, Row, Segmented, Typography } from 'antd';
 import { useState } from 'react';
 
 import { getDashboardSummary } from '../api/dashboard';
+import { Page } from '../components/layout/Page';
 import { MetricCard } from '../components/dashboard/MetricCard';
 import { QualityTrends } from '../components/dashboard/QualityTrends';
 import { RecentRuns } from '../components/dashboard/RecentRuns';
@@ -54,7 +55,7 @@ export function Dashboard() {
   const kpis = summary?.kpis ?? null;
 
   return (
-    <Flex vertical gap={20} style={{ maxWidth: 1200 }}>
+    <Page gap={20}>
       <Flex justify="space-between" align="center" gap={12} wrap>
         <div>
           <Typography.Title level={3} style={{ margin: 0 }}>
@@ -124,6 +125,6 @@ export function Dashboard() {
       </Row>
 
       <RecentRuns />
-    </Flex>
+    </Page>
   );
 }

@@ -8,14 +8,13 @@ test.describe('Connections page', () => {
     await expect(page.getByRole('heading', { name: 'Connections', level: 3 })).toBeVisible();
   });
 
-  test('lists the seeded connections under kind sections, grouped by type', async ({ page }) => {
-    // The two top-level kind sections (datasource vs orchestration) and the
-    // per-type sub-headings are both present.
+  test('lists the seeded connections under the two kind sections', async ({ page }) => {
+    // The two top-level kind sections (datasource vs orchestration) head one even
+    // card grid each — the per-source avatar identifies the type (no sub-headings).
     await expect(page.getByRole('heading', { name: 'Data sources', level: 4 })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Orchestration', level: 4 })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Snowflake', level: 5 })).toBeVisible();
 
-    // A datasource and an orchestration provider both render.
+    // A datasource and an orchestration provider both render as cards.
     await expect(page.getByText('snowflake-analytics').first()).toBeVisible();
     await expect(page.getByText('s3-datalake').first()).toBeVisible();
     await expect(page.getByText('airflow-dags').first()).toBeVisible();

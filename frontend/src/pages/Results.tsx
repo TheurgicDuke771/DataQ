@@ -23,6 +23,7 @@ import {
   RUN_STATUSES,
 } from '../api/runs';
 import { listSuites } from '../api/suites';
+import { Page } from '../components/layout/Page';
 import { RunNowPanel } from '../components/runs/RunNowPanel';
 import { useAsyncData } from '../hooks/useAsyncData';
 import {
@@ -62,7 +63,7 @@ function Filter({ label, children }: { label: string; children: React.ReactNode 
 export function Results() {
   const [runNowOpen, setRunNowOpen] = useState(false);
   return (
-    <Flex vertical gap={24}>
+    <Page>
       <Flex justify="space-between" align="center" gap={12}>
         <Typography.Title level={3} style={{ margin: 0 }}>
           Results
@@ -79,7 +80,7 @@ export function Results() {
           { key: 'pipelines', label: 'Pipeline runs', children: <PipelineRunsTab /> },
         ]}
       />
-    </Flex>
+    </Page>
   );
 }
 

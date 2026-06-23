@@ -14,6 +14,7 @@ import {
   EXPECTATION_BY_TYPE,
   expectationsByCategoryFor,
 } from '../components/checks/expectationCatalog';
+import { Page } from '../components/layout/Page';
 import { useAsyncData } from '../hooks/useAsyncData';
 
 /**
@@ -52,7 +53,7 @@ function CheckEditView({ suiteId, checkId }: { suiteId?: string; checkId?: strin
   });
 
   return (
-    <Flex vertical gap={24} style={{ maxWidth: 640 }}>
+    <Page width={'form'}>
       <Flex justify="space-between" align="center" gap={12}>
         <Typography.Title level={3} style={{ margin: 0 }}>
           {state.status === 'ok' ? `Edit “${state.data.check.name}”` : 'Edit check'}
@@ -76,7 +77,7 @@ function CheckEditView({ suiteId, checkId }: { suiteId?: string; checkId?: strin
           />
         </Card>
       )}
-    </Flex>
+    </Page>
   );
 }
 

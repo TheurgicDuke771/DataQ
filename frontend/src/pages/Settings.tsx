@@ -1,7 +1,8 @@
-import { Alert, Flex, Spin, Typography } from 'antd';
+import { Alert, Spin, Typography } from 'antd';
 
 import { useMe } from '../auth/useMe';
 import { Forbidden } from '../components/Forbidden';
+import { Page } from '../components/layout/Page';
 
 /**
  * Workspace Settings (`/settings`, ADR 0022). Phase 0.2 lands the routed shell +
@@ -28,7 +29,7 @@ export function Settings() {
   }
 
   return (
-    <Flex vertical gap={16}>
+    <Page gap={16}>
       <Typography.Title level={3} style={{ margin: 0 }}>
         Settings
       </Typography.Title>
@@ -38,6 +39,6 @@ export function Settings() {
         message="Workspace settings are coming soon."
         description="General, secrets, notifications, and danger-zone controls land in a later Week-6 step — each wired only once a backend backs it."
       />
-    </Flex>
+    </Page>
   );
 }

@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 
 import { listConnections } from '../api/connections';
 import { getSuite } from '../api/suites';
+import { Page } from '../components/layout/Page';
 import { SuiteForm } from '../components/suites/SuiteForm';
 import { useAsyncData } from '../hooks/useAsyncData';
 
@@ -30,7 +31,7 @@ function SuiteEditView({ suiteId }: { suiteId?: string }) {
   });
 
   return (
-    <Flex vertical gap={24} style={{ maxWidth: 640 }}>
+    <Page width={'form'}>
       <Flex justify="space-between" align="center" gap={12}>
         <Typography.Title level={3} style={{ margin: 0 }}>
           {state.status === 'ok' ? `Edit “${state.data.suite.name}”` : 'Edit suite'}
@@ -52,6 +53,6 @@ function SuiteEditView({ suiteId }: { suiteId?: string }) {
           />
         </Card>
       )}
-    </Flex>
+    </Page>
   );
 }

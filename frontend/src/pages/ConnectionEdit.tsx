@@ -2,6 +2,7 @@ import { Alert, Button, Card, Flex, Spin, Typography } from 'antd';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import { CONNECTION_TYPE_LABELS, getConnection } from '../api/connections';
+import { Page } from '../components/layout/Page';
 import { ConnectionForm } from '../components/connections/ConnectionForm';
 import { useAsyncData } from '../hooks/useAsyncData';
 
@@ -28,7 +29,7 @@ function ConnectionEditView({ connectionId }: { connectionId?: string }) {
   });
 
   return (
-    <Flex vertical gap={24} style={{ maxWidth: 640 }}>
+    <Page width={'form'}>
       <Flex justify="space-between" align="center" gap={12}>
         <Typography.Title level={3} style={{ margin: 0 }}>
           {state.status === 'ok'
@@ -52,6 +53,6 @@ function ConnectionEditView({ connectionId }: { connectionId?: string }) {
           />
         </Card>
       )}
-    </Flex>
+    </Page>
   );
 }

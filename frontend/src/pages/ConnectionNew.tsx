@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { CONNECTION_TYPE_LABELS, type ConnectionType } from '../api/connections';
+import { Page } from '../components/layout/Page';
 import { ConnectionForm } from '../components/connections/ConnectionForm';
 import {
   CONNECTION_BLURB,
@@ -23,7 +24,7 @@ export function ConnectionNew() {
   const [type, setType] = useState<ConnectionType>();
 
   return (
-    <Flex vertical gap={24} style={{ maxWidth: type ? 640 : 720 }}>
+    <Page width={type ? 'form' : 'picker'}>
       <Flex justify="space-between" align="center" gap={12}>
         <Flex vertical gap={2}>
           <Typography.Title level={3} style={{ margin: 0 }}>
@@ -55,7 +56,7 @@ export function ConnectionNew() {
           ))}
         </Flex>
       )}
-    </Flex>
+    </Page>
   );
 }
 
@@ -105,15 +106,17 @@ function SourceCard({
   return (
     <Card
       hoverable
-      size="small"
       className="dq-card--interactive"
+      styles={{ body: { padding: 20 } }}
       onClick={() => onPick(type)}
       aria-label={`Add ${CONNECTION_TYPE_LABELS[type]} connection`}
     >
       <Flex align="center" gap={14}>
-        <ConnectionTypeAvatar type={type} size={44} />
+        <ConnectionTypeAvatar type={type} size={48} />
         <Flex vertical gap={2} style={{ flex: 1, minWidth: 0 }}>
-          <Typography.Text strong>{CONNECTION_TYPE_LABELS[type]}</Typography.Text>
+          <Typography.Text strong style={{ fontSize: 15 }}>
+            {CONNECTION_TYPE_LABELS[type]}
+          </Typography.Text>
           <Typography.Text type="secondary" style={{ fontSize: 13 }} ellipsis>
             {CONNECTION_BLURB[type]}
           </Typography.Text>
