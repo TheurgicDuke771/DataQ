@@ -12,7 +12,7 @@ import { buildCheckPayload } from './checkForm';
  * in-progress check against the suite's live target via the dry-run API
  * (`POST /suites/{id}/checks/dryrun`) and shows the severity outcome — without
  * persisting a Run/Result. Shared by the create page (`CheckNew`) and the edit
- * drawer (`CheckDrawer`); both pass the suite's run target (#215) so the same
+ * page (`CheckEdit`); both pass the suite's run target (#215) so the same
  * `table`/`schema` the run would use is previewed.
  *
  * v1 backend limits (surfaced as the API's error message): dry-run needs a
@@ -39,7 +39,7 @@ export function DryRunPreview({
     | { status: 'error'; error: string }
   >({ status: 'idle' });
 
-  // Clear a previous preview when the expectation changes — in the edit drawer
+  // Clear a previous preview when the expectation changes — on the edit page
   // the picker switches type in-place (DryRunPreview stays mounted), so without
   // this the old result would linger, misattributed to the new expectation.
   // Render-phase reset (React's "adjust state when a prop changes" pattern)

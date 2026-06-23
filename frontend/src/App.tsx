@@ -31,8 +31,14 @@ const Connections = lazy(() =>
 const ConnectionNew = lazy(() =>
   import('./pages/ConnectionNew').then((m) => ({ default: m.ConnectionNew })),
 );
+const ConnectionEdit = lazy(() =>
+  import('./pages/ConnectionEdit').then((m) => ({ default: m.ConnectionEdit })),
+);
 const Suites = lazy(() => import('./pages/Suites').then((m) => ({ default: m.Suites })));
+const SuiteNew = lazy(() => import('./pages/SuiteNew').then((m) => ({ default: m.SuiteNew })));
+const SuiteEdit = lazy(() => import('./pages/SuiteEdit').then((m) => ({ default: m.SuiteEdit })));
 const CheckNew = lazy(() => import('./pages/CheckNew').then((m) => ({ default: m.CheckNew })));
+const CheckEdit = lazy(() => import('./pages/CheckEdit').then((m) => ({ default: m.CheckEdit })));
 const Results = lazy(() => import('./pages/Results').then((m) => ({ default: m.Results })));
 const RunDetail = lazy(() => import('./pages/RunDetail').then((m) => ({ default: m.RunDetail })));
 const Home = lazy(() => import('./pages/Home').then((m) => ({ default: m.Home })));
@@ -138,9 +144,13 @@ export function App() {
                   <Route path="/dashboard" element={<Dashboard />} />
                   <Route path="/connections" element={<Connections />} />
                   <Route path="/connections/new" element={<ConnectionNew />} />
+                  <Route path="/connections/:connectionId/edit" element={<ConnectionEdit />} />
                   <Route path="/suites" element={<Suites />} />
+                  <Route path="/suites/new" element={<SuiteNew />} />
                   <Route path="/suites/:suiteId" element={<Suites />} />
+                  <Route path="/suites/:suiteId/edit" element={<SuiteEdit />} />
                   <Route path="/suites/:suiteId/checks/new" element={<CheckNew />} />
+                  <Route path="/suites/:suiteId/checks/:checkId/edit" element={<CheckEdit />} />
                   <Route path="/results" element={<Results />} />
                   <Route path="/results/:runId" element={<RunDetail />} />
                   <Route path="/profile" element={<Home />} />

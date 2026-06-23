@@ -22,13 +22,11 @@ import {
   listSuites,
   type Suite,
 } from '../api/suites';
-import { CheckDrawer } from '../components/checks/CheckDrawer';
 import { ConnectionTypeAvatar } from '../components/connections/connectionVisuals';
 import { LiveRunProgress } from '../components/runs/LiveRunProgress';
 import { ImportSuiteDrawer } from '../components/suites/ImportSuiteDrawer';
 import { SchedulesPanel } from '../components/suites/SchedulesPanel';
 import { SharePanel } from '../components/suites/SharePanel';
-import { SuiteDrawer } from '../components/suites/SuiteDrawer';
 import { TriggersPanel } from '../components/suites/TriggersPanel';
 import { BRAND } from '../theme';
 import { downloadJson, toFilenameStem } from '../utils/download';
@@ -102,8 +100,6 @@ export function Suites() {
   const selectedId = suiteId ?? null;
   const { state, reload } = useAsyncData(listSuites);
   const { state: connState } = useAsyncData(listConnections);
-  // `drawer.suite === undefined` while open = create mode; a suite = edit.
-  const [drawer, setDrawer] = useState<{ open: boolean; suite?: Suite }>({ open: false });
   const [importOpen, setImportOpen] = useState(false);
 
   const connections = connState.status === 'ok' ? connState.data : [];
@@ -129,7 +125,7 @@ export function Suites() {
             type="primary"
             loading={connState.status === 'loading'}
             disabled={!hasDatasource}
-            onClick={() => setDrawer({ open: true })}
+            onClick={() => navigate('/suites/new')}
           >
             New suite
           </Button>
@@ -150,19 +146,9 @@ export function Suites() {
         connections={connections}
         selectedId={selectedId}
         onSelect={(id) => navigate(`/suites/${id}`)}
-        onEdit={(suite) => setDrawer({ open: true, suite })}
+        onEdit={(suite) => navigate(`/suites/${suite.id}/edit`)}
         onDeleted={() => {
           navigate('/suites');
-          reload();
-        }}
-      />
-      <SuiteDrawer
-        open={drawer.open}
-        suite={drawer.suite}
-        connections={connections}
-        onClose={() => setDrawer({ open: false })}
-        onSaved={() => {
-          setDrawer({ open: false });
           reload();
         }}
       />
@@ -311,8 +297,6 @@ function SuiteDetail({
   // Remounted (keyed by suite.id) when the selection changes → checks refetch.
   const { state, reload } = useAsyncData(() => listChecks(suite.id));
   const connection = connections.find((c) => c.id === suite.connection_id);
-  // The edit drawer (create is the dedicated /checks/new page) → open iff editing.
-  const [editingCheck, setEditingCheck] = useState<Check | null>(null);
 
   const [exporting, setExporting] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
@@ -414,7 +398,7 @@ function SuiteDetail({
         suiteId={suite.id}
         state={state}
         onAdd={() => navigate(`/suites/${suite.id}/checks/new`)}
-        onEdit={(check) => setEditingCheck(check)}
+        onEdit={(check) => navigate(`/suites/${suite.id}/checks/${check.id}/edit`)}
         onChanged={reload}
       />
       {/* Triggers + schedules are edit-gated (same as runs): a pipeline/DAG bound
@@ -422,18 +406,6 @@ function SuiteDetail({
           canRun is exactly the edit-level capability. */}
       <TriggersPanel suiteId={suite.id} canManage={canRun} />
       <SchedulesPanel suiteId={suite.id} canManage={canRun} />
-      <CheckDrawer
-        open={editingCheck !== null}
-        suiteId={suite.id}
-        check={editingCheck ?? undefined}
-        target={suite.target}
-        connectionType={connection?.type}
-        onClose={() => setEditingCheck(null)}
-        onSaved={() => {
-          setEditingCheck(null);
-          reload();
-        }}
-      />
       <SharePanel
         open={shareOpen}
         suiteId={suite.id}

@@ -2,10 +2,10 @@ import type { CheckCreate } from '../../api/suites';
 import { EXPECTATION_BY_TYPE, type ExpectationSpec } from './expectationCatalog';
 
 /**
- * Pure check-authoring form helpers shared by the edit drawer (`CheckDrawer`)
- * and the dedicated create page (`CheckNew`): the form↔payload conversions, so
- * the two surfaces can't drift on kwarg shaping. The matching field components
- * live in `checkFormFields.tsx`.
+ * Pure check-authoring form helpers shared by the edit page (`CheckEdit`)
+ * and the create page (`CheckNew`): the form↔payload conversions, so the two
+ * surfaces can't drift on kwarg shaping. The matching field components live in
+ * `checkFormFields.tsx`.
  */
 
 /** Split a comma-separated list field into trimmed, non-empty items. */

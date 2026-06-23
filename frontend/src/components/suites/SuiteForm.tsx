@@ -1,5 +1,5 @@
-import { App, Button, Divider, Drawer, Flex, Form, Input, Select, Typography } from 'antd';
-import { useEffect } from 'react';
+import { App, Button, Divider, Flex, Form, Input, Select, Typography } from 'antd';
+import { useEffect, useState } from 'react';
 
 import {
   CONNECTION_KIND,
@@ -23,29 +23,30 @@ interface SuiteFormValues extends TargetFormValues {
 }
 
 /**
- * Create or edit a suite. `suite === undefined` is create mode (connection is
- * chosen and then locked); editing exposes name/description + the run target
- * (`connection_id` is immutable on the backend — re-pointing orphans child
- * checks). The target is datasource-shaped (#215): the fields shown depend on
- * the selected connection's type, and the target is optional (a suite may stay
- * targetless = not-yet-runnable, which disables the Run button until it's set).
+ * Create or edit a suite — the form body shared by the `/suites/new` page and the
+ * `/suites/:id/edit` page (the drawer is retired in W6, ADR 0022). `suite ===
+ * undefined` is create mode (connection is chosen then locked); editing exposes
+ * name/description + the run target (`connection_id` is immutable on the backend —
+ * re-pointing orphans child checks). The target is datasource-shaped (#215): the
+ * fields shown depend on the selected connection's type, and the target is optional
+ * (a suite may stay targetless = not-yet-runnable, which disables Run until set).
  */
-export function SuiteDrawer({
-  open,
+export function SuiteForm({
   suite,
   connections,
-  onClose,
   onSaved,
+  onCancel,
 }: {
-  open: boolean;
   suite?: Suite;
   /** Available connections for the create-mode picker. */
   connections: Connection[];
-  onClose: () => void;
-  onSaved: () => void;
+  /** Called with the saved suite (created or updated). */
+  onSaved: (suite: Suite) => void;
+  onCancel: () => void;
 }) {
   const { message } = App.useApp();
   const [form] = Form.useForm<SuiteFormValues>();
+  const [submitting, setSubmitting] = useState(false);
   const isEdit = suite !== undefined;
   // A suite's connection is its datasource — orchestration providers (ADF/
   // Airflow) are never queryable, so they can't back a suite (CLAUDE.md §4, #242).
@@ -58,9 +59,8 @@ export function SuiteDrawer({
   const activeConn = connections.find((c) => c.id === activeConnId);
   const kind = activeConn ? targetKind(activeConn.type) : null;
 
-  // Prefill on open/edit; reset to a blank form for create.
+  // Prefill once on mount/edit; create starts blank.
   useEffect(() => {
-    if (!open) return;
     if (suite) {
       form.setFieldsValue({
         name: suite.name,
@@ -72,10 +72,8 @@ export function SuiteDrawer({
         target_path: targetString(suite.target, 'path'),
         target_format: asFileFormat(targetString(suite.target, 'file_format')),
       });
-    } else {
-      form.resetFields();
     }
-  }, [open, suite, form]);
+  }, [suite, form]);
 
   const onSubmit = async () => {
     let values: SuiteFormValues;
@@ -99,70 +97,60 @@ export function SuiteDrawer({
       message.error('A run target can’t be removed once set — edit it to point elsewhere instead.');
       return;
     }
+    setSubmitting(true);
     try {
-      if (isEdit) {
-        await updateSuite(suite.id, {
-          name: values.name,
-          description: values.description ?? null,
-          target,
-        });
-        message.success(`${values.name}: saved`);
-      } else {
-        await createSuite({
-          name: values.name,
-          description: values.description ?? null,
-          connection_id: values.connection_id,
-          target,
-        });
-        message.success(`${values.name}: created`);
-      }
-      onSaved();
+      const saved = isEdit
+        ? await updateSuite(suite.id, {
+            name: values.name,
+            description: values.description ?? null,
+            target,
+          })
+        : await createSuite({
+            name: values.name,
+            description: values.description ?? null,
+            connection_id: values.connection_id,
+            target,
+          });
+      message.success(`${values.name}: ${isEdit ? 'saved' : 'created'}`);
+      onSaved(saved);
     } catch (err) {
       message.error(`Save failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+    } finally {
+      setSubmitting(false);
     }
   };
 
   return (
-    <Drawer
-      title={isEdit ? `Edit “${suite.name}”` : 'New suite'}
-      open={open}
-      onClose={onClose}
-      width={480}
-      destroyOnHidden
-      extra={
-        <Flex gap={8}>
-          <Button onClick={onClose}>Cancel</Button>
-          <Button type="primary" onClick={onSubmit}>
-            {isEdit ? 'Save' : 'Create'}
-          </Button>
-        </Flex>
-      }
-    >
-      <Form form={form} layout="vertical">
-        <Form.Item name="name" label="Name" rules={[{ required: true }]}>
-          <Input />
-        </Form.Item>
-        <Form.Item name="description" label="Description (optional)">
-          <Input.TextArea rows={3} />
-        </Form.Item>
-        <Form.Item
-          name="connection_id"
-          label="Connection"
-          rules={[{ required: true }]}
-          extra={isEdit ? 'The connection is fixed once a suite is created.' : undefined}
-        >
-          <Select
-            disabled={isEdit}
-            placeholder="Select a datasource connection"
-            options={datasourceConnections.map((c) => ({
-              value: c.id,
-              label: `${c.name} · ${CONNECTION_TYPE_LABELS[c.type]} · ${envLabel(c.env)}`,
-            }))}
-          />
-        </Form.Item>
-        {kind && <TargetFields kind={kind} />}
-      </Form>
-    </Drawer>
+    <Form form={form} layout="vertical" onFinish={onSubmit}>
+      <Form.Item name="name" label="Name" rules={[{ required: true }]}>
+        <Input placeholder="Daily Revenue Audit" />
+      </Form.Item>
+      <Form.Item name="description" label="Description (optional)">
+        <Input.TextArea rows={3} placeholder="What this suite validates and why." />
+      </Form.Item>
+      <Form.Item
+        name="connection_id"
+        label="Connection"
+        rules={[{ required: true }]}
+        extra={isEdit ? 'The connection is fixed once a suite is created.' : undefined}
+      >
+        <Select
+          disabled={isEdit}
+          placeholder="Select a datasource connection"
+          options={datasourceConnections.map((c) => ({
+            value: c.id,
+            label: `${c.name} · ${CONNECTION_TYPE_LABELS[c.type]} · ${envLabel(c.env)}`,
+          }))}
+        />
+      </Form.Item>
+      {kind && <TargetFields kind={kind} />}
+      <Flex justify="end" gap={8}>
+        <Button onClick={onCancel}>Cancel</Button>
+        <Button type="primary" htmlType="submit" loading={submitting}>
+          {isEdit ? 'Save' : 'Create & add checks'}
+        </Button>
+      </Flex>
+    </Form>
   );
 }
 
@@ -171,7 +159,7 @@ export function SuiteDrawer({
  * not-yet-runnable suite); when started, the required field for the datasource is
  * enforced at submit by `assembleTarget`. Field names match `TargetFormValues`.
  */
-function TargetFields({ kind }: { kind: TargetKind }) {
+export function TargetFields({ kind }: { kind: TargetKind }) {
   return (
     <>
       <Divider style={{ marginTop: 4 }} />

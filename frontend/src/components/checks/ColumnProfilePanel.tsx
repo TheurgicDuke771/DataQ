@@ -16,7 +16,7 @@ import { formatScalar } from '../results/resultsFormat';
  * the author can ground a check's config (a value range, an allowed set, a null
  * threshold) in the real data before saving. Reads-only, persists nothing
  * (`POST /suites/{id}/profile`). Shared by the create page (`CheckNew`) and the
- * edit drawer (`CheckDrawer`).
+ * edit page (`CheckEdit`).
  *
  * The profiled column pre-fills from the check's `column` config field (so
  * picking a column for the expectation primes the profiler), but stays editable

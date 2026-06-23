@@ -62,24 +62,27 @@ test.describe('Suites page', () => {
   test('create a suite, see it in the list, then delete it', async ({ page }) => {
     const name = `e2e suite ${Date.now()}`;
 
+    // Creating a suite is now a dedicated page (/suites/new), not a drawer.
     await page.getByRole('button', { name: 'New suite' }).click();
-    const drawer = page.getByRole('dialog', { name: 'New suite' });
-    await drawer.getByLabel('Name').fill(name);
+    await expect(page).toHaveURL(/\/suites\/new$/);
+    await page.getByLabel('Name').fill(name);
 
     // antd Select (not searchable): focus the combobox, wait for the dropdown,
     // then keyboard-select the first option. Keyboard on the focused combobox is
     // more stable than clicking a virtual-list option (rc-virtual-list keeps
     // items visibility:hidden during measurement).
-    const combo = drawer.getByRole('combobox');
+    const combo = page.getByRole('combobox');
     await combo.click();
     await expect(page.locator('.ant-select-dropdown').last()).toBeVisible();
     await combo.press('ArrowDown');
     await combo.press('Enter');
 
-    await drawer.getByRole('button', { name: 'Create' }).click();
-    await expect(drawer).toBeHidden();
+    // Create continues to the Add Check page (the suite now exists, untargeted).
+    await page.getByRole('button', { name: /Create & add checks/ }).click();
+    await expect(page).toHaveURL(/\/suites\/[0-9a-f-]+\/checks\/new$/);
 
-    // The new suite appears in the left list; select it.
+    // Back on the list, the new suite is there; select it.
+    await page.goto('/suites');
     const item = page.getByText(name, { exact: true });
     await expect(item).toBeVisible();
     await item.click();

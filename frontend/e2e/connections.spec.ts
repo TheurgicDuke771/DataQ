@@ -21,7 +21,7 @@ test.describe('Connections page', () => {
     await expect(page.getByText('airflow-dags').first()).toBeVisible();
   });
 
-  test('the edit drawer opens read-only on type + env (no create fields)', async ({ page }) => {
+  test('the edit page opens read-only on type + env (no create fields)', async ({ page }) => {
     // Open the ⋮ menu on a seeded Snowflake connection → Edit.
     const card = page.locator('.ant-card').filter({ hasText: 'snowflake-analytics' }).first();
     await card
@@ -30,15 +30,17 @@ test.describe('Connections page', () => {
       .click();
     await page.getByRole('menuitem', { name: 'Edit' }).click();
 
-    const drawer = page.getByRole('dialog', { name: 'Edit connection' });
-    await expect(drawer).toBeVisible();
+    // Editing is now a dedicated page (/connections/:id/edit), not a drawer.
+    await expect(page).toHaveURL(/\/connections\/[0-9a-f-]+\/edit$/);
+    await expect(page.getByRole('heading', { name: /Edit Snowflake connection/ })).toBeVisible();
     // Type is shown read-only; name stays editable; the secret field is omitted
     // (rotation is the separate Re-auth flow) — i.e. none of the create-only UI.
-    await expect(drawer.getByText('Snowflake')).toBeVisible();
-    await expect(drawer.getByLabel('Name')).toBeVisible();
-    await expect(drawer.getByLabel('Password')).toHaveCount(0);
-    await drawer.getByRole('button', { name: 'Cancel' }).click();
-    await expect(drawer).toBeHidden();
+    await expect(page.getByText('Snowflake').first()).toBeVisible();
+    await expect(page.getByLabel('Name')).toBeVisible();
+    await expect(page.getByLabel('Password')).toHaveCount(0);
+    // Two Cancels (page header + form footer), both → /connections; take the first.
+    await page.getByRole('button', { name: 'Cancel' }).first().click();
+    await expect(page).toHaveURL(/\/connections$/);
   });
 
   test('add a connection via the dedicated page, then delete it', async ({ page }) => {
@@ -47,9 +49,9 @@ test.describe('Connections page', () => {
     await page.getByRole('button', { name: 'Add connection' }).click();
     await expect(page).toHaveURL(/\/connections\/new$/);
 
-    // Step 1: the picker is split into the two kind sections; pick a datasource.
-    await expect(page.getByRole('heading', { name: 'Data sources', level: 5 })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Orchestration', level: 5 })).toBeVisible();
+    // Step 1: the categorized source picker (Orchestration first); pick a datasource.
+    await expect(page.getByText('Orchestration', { exact: true })).toBeVisible();
+    await expect(page.getByText('Warehouses', { exact: true })).toBeVisible();
     await page.getByText('Snowflake', { exact: true }).click();
 
     // Step 2: the Snowflake form appears; fill the required fields + secret.

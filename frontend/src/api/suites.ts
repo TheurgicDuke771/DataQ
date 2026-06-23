@@ -122,6 +122,12 @@ export async function listChecks(suiteId: string): Promise<Check[]> {
   return data;
 }
 
+/** Fetch one check by id — backs the deep-linkable `/checks/:id/edit` page. */
+export async function getCheck(suiteId: string, checkId: string): Promise<Check> {
+  const { data } = await api.get<Check>(`/suites/${suiteId}/checks/${checkId}`);
+  return data;
+}
+
 /** Mirrors `CheckCreate` — v1 only authors `kind: 'expectation'` (service-enforced). */
 export interface CheckCreate {
   name: string;
