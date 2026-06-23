@@ -3,10 +3,11 @@ import { CONNECTION_TYPES, type ConnectionType } from '../../api/connections';
 /**
  * Presentation grouping for the add-connection source picker (ADR 0022 prototype).
  * Finer than the load-bearing datasource/orchestration split (`CONNECTION_KIND`):
- * it fans the four datasources into product-shaped buckets and — crucially — leads
- * with **Orchestration**, because DataQ's integration story starts there (watch the
- * provider's runs, then trigger suites on completion). Picker-only; the runtime
- * datasource-vs-orchestration distinction still flows through `CONNECTION_KIND`.
+ * it fans the four datasources into product-shaped buckets and leads with
+ * **Orchestration** to surface the less-obvious integration up front. Orchestration
+ * is *optional* — suites also run on a cron schedule or on demand (the picker copy
+ * says so). Picker-only; the runtime datasource-vs-orchestration distinction still
+ * flows through `CONNECTION_KIND`.
  */
 export const SOURCE_CATEGORIES = [
   'Orchestration',
@@ -38,7 +39,7 @@ export const CONNECTION_BLURB: Record<ConnectionType, string> = {
 /** Lead-in copy shown under a category heading (only Orchestration has one). */
 export const SOURCE_CATEGORY_NOTE: Partial<Record<SourceCategory, string>> = {
   Orchestration:
-    'Add your orchestration provider first — DataQ integrates by watching its runs, then triggers suites on completion.',
+    'Optional — connect Azure Data Factory or Airflow to watch their pipeline runs and trigger suites on completion. Suites can also run on a schedule or on demand without one.',
 };
 
 export interface SourceGroup {

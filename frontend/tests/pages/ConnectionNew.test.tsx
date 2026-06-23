@@ -41,8 +41,10 @@ describe('ConnectionNew', () => {
     // Orchestration is the first category in document order (ADR 0022).
     const labels = screen.getAllByText(/Orchestration|Warehouses|Lakehouses|Cloud Storage/);
     expect(labels[0]).toHaveTextContent('Orchestration');
-    // Its lead-in nudge is shown.
-    expect(screen.getByText(/Add your orchestration provider first/)).toBeInTheDocument();
+    // Its lead-in note frames orchestration as optional (cron/manual also run suites).
+    expect(
+      screen.getByText(/Optional — connect Azure Data Factory or Airflow/),
+    ).toBeInTheDocument();
     // A datasource and an orchestration source are each offered.
     expect(screen.getByText('Snowflake')).toBeInTheDocument();
     expect(screen.getByText('Azure Data Factory')).toBeInTheDocument();
