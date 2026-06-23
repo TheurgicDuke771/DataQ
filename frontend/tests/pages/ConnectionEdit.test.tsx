@@ -1,7 +1,7 @@
 import { App as AntApp } from 'antd';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { Link, MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { type Connection, getConnection, updateConnection } from '../../src/api/connections';
@@ -91,5 +91,35 @@ describe('ConnectionEdit', () => {
     renderPage();
 
     expect(await screen.findByText('Failed to load connection')).toBeInTheDocument();
+  });
+
+  it('refetches + reseeds when the route param changes (no stale prior connection)', async () => {
+    const user = userEvent.setup();
+    const other: Connection = {
+      ...existing,
+      id: 'c2',
+      name: 'sf-qa',
+      config: { ...existing.config, account: 'acc2' },
+    };
+    mockGet.mockImplementation(async (id: string) => (id === 'c2' ? other : existing));
+
+    render(
+      <MemoryRouter initialEntries={['/connections/c1/edit']}>
+        <AntApp>
+          {/* A param-only link → react-router reuses the element (no unmount). */}
+          <Link to="/connections/c2/edit">go c2</Link>
+          <Routes>
+            <Route path="/connections/:connectionId/edit" element={<ConnectionEdit />} />
+          </Routes>
+        </AntApp>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(screen.getByLabelText('Account')).toHaveValue('acc1'));
+    await user.click(screen.getByRole('link', { name: 'go c2' }));
+
+    // The key remounts the view → c2 is fetched and the form reseeds.
+    await waitFor(() => expect(screen.getByLabelText('Account')).toHaveValue('acc2'));
+    expect(screen.getByLabelText('Name')).toHaveValue('sf-qa');
   });
 });

@@ -22,21 +22,32 @@ import { useAsyncData } from '../hooks/useAsyncData';
  * submitted `config` is rebuilt from only the selected expectation's declared
  * fields, so switching types never leaks stale kwargs. Creating a check is the
  * dedicated `/suites/:suiteId/checks/new` page. Version history is still a drawer
- * (the surviving read-only drawer alongside Share).
+ * (the surviving read-only drawer alongside Share). The fetch + form live in a
+ * view keyed on the check id so a param-only route change reloads cleanly.
  */
 export function CheckEdit() {
   const { suiteId, checkId } = useParams<{ suiteId: string; checkId: string }>();
+  return <CheckEditView key={checkId} suiteId={suiteId} checkId={checkId} />;
+}
+
+function CheckEditView({ suiteId, checkId }: { suiteId?: string; checkId?: string }) {
   const navigate = useNavigate();
   const back = () => navigate(suiteId ? `/suites/${suiteId}` : '/suites');
   // Load the suite (target + datasource type) and the check together: the target
   // drives the dry-run preview, the connection type gates Custom SQL (ADR 0019),
-  // and the check seeds the form.
+  // and the check seeds the form. The connection only depends on the suite, so it
+  // chains off getSuite while getCheck runs alongside (not serially after both).
   const { state } = useAsyncData(async () => {
     if (!suiteId || !checkId) throw new Error('no check');
-    const [suite, check] = await Promise.all([getSuite(suiteId), getCheck(suiteId, checkId)]);
+    const suiteP = getSuite(suiteId);
     // Best-effort: a suite may be readable while its connection isn't (shared
     // suite). The connection only gates the Custom-SQL category.
-    const connection = await getConnection(suite.connection_id).catch(() => null);
+    const connectionP = suiteP.then((s) => getConnection(s.connection_id)).catch(() => null);
+    const [suite, check, connection] = await Promise.all([
+      suiteP,
+      getCheck(suiteId, checkId),
+      connectionP,
+    ]);
     return { suite, check, connection };
   });
 
