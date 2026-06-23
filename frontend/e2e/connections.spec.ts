@@ -38,7 +38,8 @@ test.describe('Connections page', () => {
     await expect(page.getByText('Snowflake').first()).toBeVisible();
     await expect(page.getByLabel('Name')).toBeVisible();
     await expect(page.getByLabel('Password')).toHaveCount(0);
-    await page.getByRole('button', { name: 'Cancel' }).click();
+    // Two Cancels (page header + form footer), both → /connections; take the first.
+    await page.getByRole('button', { name: 'Cancel' }).first().click();
     await expect(page).toHaveURL(/\/connections$/);
   });
 
