@@ -92,6 +92,7 @@ function renderPage() {
       <AntApp>
         <Routes>
           <Route path="/suites" element={<Suites />} />
+          <Route path="/suites/new" element={<div>New suite page</div>} />
           <Route path="/suites/:suiteId" element={<Suites />} />
         </Routes>
       </AntApp>
@@ -141,6 +142,17 @@ describe('Suites', () => {
     // The detail panel renders straight from the URL.
     expect(await screen.findByText('order_id not null')).toBeInTheDocument();
     expect(mockListChecks).toHaveBeenCalledWith('s1');
+  });
+
+  it('navigates to the new-suite page from the New suite button', async () => {
+    const user = userEvent.setup();
+    mockListConnections.mockResolvedValue([connection]);
+    mockListSuites.mockResolvedValue([]);
+
+    renderPage();
+
+    await user.click(await screen.findByRole('button', { name: /New suite/ }));
+    expect(await screen.findByText('New suite page')).toBeInTheDocument();
   });
 
   it('shows an empty state when there are no suites', async () => {

@@ -1,4 +1,4 @@
-import { App, Button, Divider, Drawer, Flex, Form, Input, Select, Typography } from 'antd';
+import { App, Button, Drawer, Flex, Form, Input, Select } from 'antd';
 import { useEffect } from 'react';
 
 import {
@@ -8,13 +8,8 @@ import {
   envLabel,
 } from '../../api/connections';
 import { createSuite, type Suite, targetString, updateSuite } from '../../api/suites';
-import {
-  asFileFormat,
-  assembleTarget,
-  type TargetFormValues,
-  type TargetKind,
-  targetKind,
-} from './suiteTarget';
+import { TargetFields } from './SuiteForm';
+import { asFileFormat, assembleTarget, type TargetFormValues, targetKind } from './suiteTarget';
 
 interface SuiteFormValues extends TargetFormValues {
   name: string;
@@ -163,56 +158,5 @@ export function SuiteDrawer({
         {kind && <TargetFields kind={kind} />}
       </Form>
     </Drawer>
-  );
-}
-
-/**
- * The datasource-shaped run-target inputs. Optional as a whole (leave blank for a
- * not-yet-runnable suite); when started, the required field for the datasource is
- * enforced at submit by `assembleTarget`. Field names match `TargetFormValues`.
- */
-function TargetFields({ kind }: { kind: TargetKind }) {
-  return (
-    <>
-      <Divider style={{ marginTop: 4 }} />
-      <Flex vertical gap={2} style={{ marginBottom: 12 }}>
-        <Typography.Text strong>Run target</Typography.Text>
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          Where this suite’s checks run. Optional — required to run the suite.
-        </Typography.Text>
-      </Flex>
-
-      {kind === 'flatfile' ? (
-        <>
-          <Form.Item name="target_path" label="File path">
-            <Input placeholder="container/path/to/data.csv" />
-          </Form.Item>
-          <Form.Item name="target_format" label="File format">
-            <Select
-              allowClear
-              placeholder="Infer from extension"
-              options={[
-                { value: 'csv', label: 'CSV' },
-                { value: 'parquet', label: 'Parquet' },
-              ]}
-            />
-          </Form.Item>
-        </>
-      ) : (
-        <>
-          {kind === 'uc' && (
-            <Form.Item name="target_catalog" label="Catalog">
-              <Input placeholder="main" />
-            </Form.Item>
-          )}
-          <Form.Item name="target_schema" label="Schema (optional)">
-            <Input placeholder={kind === 'uc' ? 'default' : 'PUBLIC'} />
-          </Form.Item>
-          <Form.Item name="target_table" label="Table">
-            <Input placeholder={kind === 'uc' ? 'orders' : 'ANALYTICS.ORDERS'} />
-          </Form.Item>
-        </>
-      )}
-    </>
   );
 }

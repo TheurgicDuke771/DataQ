@@ -102,7 +102,7 @@ export function Suites() {
   const selectedId = suiteId ?? null;
   const { state, reload } = useAsyncData(listSuites);
   const { state: connState } = useAsyncData(listConnections);
-  // `drawer.suite === undefined` while open = create mode; a suite = edit.
+  // Edit-only drawer (create is the `/suites/new` page) — open carries the suite.
   const [drawer, setDrawer] = useState<{ open: boolean; suite?: Suite }>({ open: false });
   const [importOpen, setImportOpen] = useState(false);
 
@@ -129,7 +129,7 @@ export function Suites() {
             type="primary"
             loading={connState.status === 'loading'}
             disabled={!hasDatasource}
-            onClick={() => setDrawer({ open: true })}
+            onClick={() => navigate('/suites/new')}
           >
             New suite
           </Button>

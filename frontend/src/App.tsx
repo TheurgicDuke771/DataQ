@@ -32,6 +32,7 @@ const ConnectionNew = lazy(() =>
   import('./pages/ConnectionNew').then((m) => ({ default: m.ConnectionNew })),
 );
 const Suites = lazy(() => import('./pages/Suites').then((m) => ({ default: m.Suites })));
+const SuiteNew = lazy(() => import('./pages/SuiteNew').then((m) => ({ default: m.SuiteNew })));
 const CheckNew = lazy(() => import('./pages/CheckNew').then((m) => ({ default: m.CheckNew })));
 const Results = lazy(() => import('./pages/Results').then((m) => ({ default: m.Results })));
 const RunDetail = lazy(() => import('./pages/RunDetail').then((m) => ({ default: m.RunDetail })));
@@ -139,6 +140,7 @@ export function App() {
                   <Route path="/connections" element={<Connections />} />
                   <Route path="/connections/new" element={<ConnectionNew />} />
                   <Route path="/suites" element={<Suites />} />
+                  <Route path="/suites/new" element={<SuiteNew />} />
                   <Route path="/suites/:suiteId" element={<Suites />} />
                   <Route path="/suites/:suiteId/checks/new" element={<CheckNew />} />
                   <Route path="/results" element={<Results />} />
