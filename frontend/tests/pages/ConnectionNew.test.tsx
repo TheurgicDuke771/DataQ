@@ -32,16 +32,17 @@ function renderPage() {
 afterEach(() => vi.clearAllMocks());
 
 describe('ConnectionNew', () => {
-  it('categorizes the source picker with Orchestration first', () => {
+  it('categorizes the source picker with datasources first, orchestration last', () => {
     renderPage();
-    // The category labels render (Orchestration leads, datasources fan out).
-    expect(screen.getByText('Orchestration')).toBeInTheDocument();
+    // The category labels render (datasources fan out; orchestration is optional).
     expect(screen.getByText('Warehouses')).toBeInTheDocument();
     expect(screen.getByText('Cloud Storage')).toBeInTheDocument();
-    // Orchestration is the first category in document order (ADR 0022).
+    expect(screen.getByText('Orchestration')).toBeInTheDocument();
+    // Datasources lead; Orchestration is last (a suite always needs a datasource).
     const labels = screen.getAllByText(/Orchestration|Warehouses|Lakehouses|Cloud Storage/);
-    expect(labels[0]).toHaveTextContent('Orchestration');
-    // Its lead-in note frames orchestration as optional (cron/manual also run suites).
+    expect(labels[0]).toHaveTextContent('Warehouses');
+    expect(labels[labels.length - 1]).toHaveTextContent('Orchestration');
+    // The Orchestration note frames it as optional (cron/manual also run suites).
     expect(
       screen.getByText(/Optional — connect Azure Data Factory or Airflow/),
     ).toBeInTheDocument();
