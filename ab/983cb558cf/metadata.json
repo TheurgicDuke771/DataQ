@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "ab983cb558cf",
+  "strategy": "manual-commit",
+  "branch": "feature/w6-phase4-drawer-to-page",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/pages/CheckEdit.tsx",
+    "frontend/src/pages/ConnectionEdit.tsx",
+    "frontend/src/pages/SuiteEdit.tsx",
+    "frontend/tests/pages/ConnectionEdit.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ab/983cb558cf/0/metadata.json",
+      "transcript": "/ab/983cb558cf/0/full.jsonl",
+      "content_hash": "/ab/983cb558cf/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2942,
+    "cache_creation_tokens": 23581,
+    "cache_read_tokens": 3176594,
+    "output_tokens": 14218,
+    "api_call_count": 16
+  }
+}

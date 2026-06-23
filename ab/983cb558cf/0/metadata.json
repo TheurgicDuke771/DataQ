@@ -1,0 +1,73 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "ab983cb558cf",
+  "session_id": "ef5a3226-b94d-4bcd-9e8e-d6b1c4817290",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-23T01:25:19.325701Z",
+  "branch": "feature/w6-phase4-drawer-to-page",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/pages/CheckEdit.tsx",
+    "frontend/src/pages/ConnectionEdit.tsx",
+    "frontend/src/pages/SuiteEdit.tsx",
+    "frontend/tests/pages/ConnectionEdit.test.tsx"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "b90601c954a4",
+  "checkpoint_transcript_start": 441,
+  "transcript_lines_at_start": 441,
+  "token_usage": {
+    "input_tokens": 2942,
+    "cache_creation_tokens": 23581,
+    "cache_read_tokens": 3176594,
+    "output_tokens": 14218,
+    "api_call_count": 16
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_015pTq2X4JdJpcUmZQyZiiZr",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "b90601c954a4",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 446,
+        "end": 447,
+        "entry_ids": [
+          "97aca737-a336-4402-bca6-552eeb0c7a48"
+        ],
+        "tool_use_id": "toolu_015pTq2X4JdJpcUmZQyZiiZr"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_015pTq2X4JdJpcUmZQyZiiZr"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "initial_attribution": {
+    "calculated_at": "2026-06-23T01:25:19.305616Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 58,
+    "human_modified": 9,
+    "human_removed": 0,
+    "total_committed": 58,
+    "total_lines_changed": 67,
+    "agent_percentage": 0,
+    "metric_version": 2
+  }
+}
