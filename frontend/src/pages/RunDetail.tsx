@@ -13,6 +13,7 @@ import {
   RESULT_STATUS_COLORS,
   RUN_STATUS_COLORS,
 } from '../components/results/resultsFormat';
+import { Page } from '../components/layout/Page';
 import { ScalarValue } from '../components/results/ScalarValue';
 import { useAsyncData } from '../hooks/useAsyncData';
 import { downloadCsv, downloadJson, toFilenameStem } from '../utils/download';
@@ -47,7 +48,7 @@ export function RunDetail() {
   const back = () => navigate('/results');
 
   return (
-    <Flex vertical gap={16} style={{ maxWidth: 1000 }}>
+    <Page width={1000} gap={16}>
       <div>
         <Button type="text" icon={<ArrowLeftOutlined />} onClick={back} style={{ paddingLeft: 0 }}>
           Results
@@ -65,7 +66,7 @@ export function RunDetail() {
           checks={state.data.checks}
         />
       )}
-    </Flex>
+    </Page>
   );
 }
 
@@ -100,7 +101,15 @@ function RunDetailBody({
         <DownloadMenu run={run} suiteName={suiteName} checks={checksById} />
       </Flex>
 
-      <Flex gap={12} wrap>
+      {/* Equal-width cards that fill the row so its right edge lines up with the
+          results table below (auto-fit + 1fr stretches them to the full width). */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+          gap: 12,
+        }}
+      >
         <Stat label="Status">
           <Tag color={RUN_STATUS_COLORS[run.status]}>{run.status}</Tag>
         </Stat>
@@ -110,7 +119,7 @@ function RunDetailBody({
         <Stat label="Triggered by">{run.triggered_by ?? '—'}</Stat>
         <Stat label="Started">{formatTimestamp(run.started_at)}</Stat>
         <Stat label="Duration">{formatDuration(run.started_at, run.finished_at)}</Stat>
-      </Flex>
+      </div>
 
       <ResultsTable results={run.results} checks={checksById} suiteId={run.suite_id} />
     </Flex>
@@ -119,7 +128,7 @@ function RunDetailBody({
 
 function Stat({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <Card size="small" style={{ minWidth: 150 }}>
+    <Card size="small" style={{ height: '100%' }}>
       <Flex vertical gap={4}>
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
           {label}

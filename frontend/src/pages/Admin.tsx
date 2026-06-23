@@ -10,6 +10,7 @@ import {
   listAdminUsers,
 } from '../api/admin';
 import { useMe } from '../auth/useMe';
+import { Page } from '../components/layout/Page';
 import { Forbidden } from '../components/Forbidden';
 import { formatTimestamp } from '../components/results/resultsFormat';
 import { useAsyncData } from '../hooks/useAsyncData';
@@ -37,7 +38,7 @@ export function Admin() {
   }
 
   return (
-    <Flex vertical gap={24}>
+    <Page>
       <Typography.Title level={3} style={{ margin: 0 }}>
         Admin
       </Typography.Title>
@@ -49,7 +50,7 @@ export function Admin() {
           { key: 'access', label: 'Access', children: <AccessTab /> },
         ]}
       />
-    </Flex>
+    </Page>
   );
 }
 

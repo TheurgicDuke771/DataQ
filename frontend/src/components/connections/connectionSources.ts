@@ -3,16 +3,16 @@ import { CONNECTION_TYPES, type ConnectionType } from '../../api/connections';
 /**
  * Presentation grouping for the add-connection source picker (ADR 0022 prototype).
  * Finer than the load-bearing datasource/orchestration split (`CONNECTION_KIND`):
- * it fans the four datasources into product-shaped buckets and — crucially — leads
- * with **Orchestration**, because DataQ's integration story starts there (watch the
- * provider's runs, then trigger suites on completion). Picker-only; the runtime
- * datasource-vs-orchestration distinction still flows through `CONNECTION_KIND`.
+ * it fans the four datasources into product-shaped buckets, listed first (a suite
+ * always needs a datasource), with **Orchestration** last — it's *optional* (suites
+ * also run on a cron schedule or on demand). Picker-only; the runtime datasource-vs-
+ * orchestration distinction still flows through `CONNECTION_KIND`.
  */
 export const SOURCE_CATEGORIES = [
-  'Orchestration',
   'Warehouses',
   'Lakehouses',
   'Cloud Storage',
+  'Orchestration',
 ] as const;
 export type SourceCategory = (typeof SOURCE_CATEGORIES)[number];
 
@@ -35,20 +35,25 @@ export const CONNECTION_BLURB: Record<ConnectionType, string> = {
   airflow: 'Monitor DAG runs',
 };
 
-/** Lead-in copy shown under a category heading (only Orchestration has one). */
-export const SOURCE_CATEGORY_NOTE: Partial<Record<SourceCategory, string>> = {
+/** Lead-in copy shown under each category heading — what you do with that bucket
+ *  (distinct from the per-source blurbs, which say what each product is). */
+export const SOURCE_CATEGORY_NOTE: Record<SourceCategory, string> = {
+  Warehouses: 'Run checks directly against tables in a cloud data warehouse.',
+  Lakehouses: 'Validate lakehouse tables governed by Unity Catalog.',
+  'Cloud Storage': 'Run checks on flat files (CSV / Parquet) in object storage.',
   Orchestration:
-    'Add your orchestration provider first — DataQ integrates by watching its runs, then triggers suites on completion.',
+    'Optional — connect Azure Data Factory or Airflow to watch their pipeline runs and trigger suites on completion.',
 };
 
 export interface SourceGroup {
   category: SourceCategory;
   types: ConnectionType[];
-  note?: string;
+  note: string;
 }
 
-/** Source types grouped by category in display order (Orchestration first), each
- *  group in canonical `CONNECTION_TYPES` order. Empty categories are dropped. */
+/** Source types grouped by category in display order (datasources first,
+ *  Orchestration last), each group in canonical `CONNECTION_TYPES` order. Empty
+ *  categories are dropped. */
 export function sourcesByCategory(): SourceGroup[] {
   return SOURCE_CATEGORIES.map((category) => ({
     category,

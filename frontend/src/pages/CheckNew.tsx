@@ -13,6 +13,7 @@ import {
   expectationsByCategoryFor,
   type ExpectationCategory,
 } from '../components/checks/expectationCatalog';
+import { Page } from '../components/layout/Page';
 import { useAsyncData } from '../hooks/useAsyncData';
 
 // Monitor-kind categories reserved by ADR 0012 — surfaced (disabled) so the
@@ -79,7 +80,7 @@ export function CheckNew() {
   // Step 3 — config + thresholds for the chosen expectation.
   if (spec) {
     return (
-      <Flex vertical gap={24} style={{ maxWidth: 640 }}>
+      <Page width={'form'}>
         <Header
           title={spec.label}
           onBack={() => setExpectationType(undefined)}
@@ -118,7 +119,7 @@ export function CheckNew() {
             </Button>
           </Flex>
         </Form>
-      </Flex>
+      </Page>
     );
   }
 
@@ -126,7 +127,7 @@ export function CheckNew() {
   if (category) {
     const group = categories.find((g) => g.category === category);
     return (
-      <Flex vertical gap={24} style={{ maxWidth: 720 }}>
+      <Page width={'form'}>
         <Header
           title={category}
           onBack={() => setCategory(undefined)}
@@ -148,13 +149,13 @@ export function CheckNew() {
             </Card>
           ))}
         </Flex>
-      </Flex>
+      </Page>
     );
   }
 
   // Step 1 — pick a category.
   return (
-    <Flex vertical gap={24} style={{ maxWidth: 720 }}>
+    <Page width={'form'}>
       <Header title="New check" onBack={backToSuite} backLabel="Cancel" />
       <Flex wrap gap={12}>
         {categories.map((g) => (
@@ -183,7 +184,7 @@ export function CheckNew() {
           </Card>
         ))}
       </Flex>
-    </Flex>
+    </Page>
   );
 }
 

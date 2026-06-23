@@ -2,6 +2,7 @@ import { Alert, Button, Card, Flex, Spin, Typography } from 'antd';
 import { useNavigate } from 'react-router-dom';
 
 import { CONNECTION_KIND, type Connection, listConnections } from '../api/connections';
+import { Page } from '../components/layout/Page';
 import { SuiteForm } from '../components/suites/SuiteForm';
 import { type AsyncState, useAsyncData } from '../hooks/useAsyncData';
 
@@ -15,7 +16,7 @@ export function SuiteNew() {
   const { state } = useAsyncData(listConnections);
 
   return (
-    <Flex vertical gap={24} style={{ maxWidth: 640 }}>
+    <Page width={'form'}>
       <Flex justify="space-between" align="center" gap={12}>
         <Flex vertical gap={2}>
           <Typography.Title level={3} style={{ margin: 0 }}>
@@ -31,7 +32,7 @@ export function SuiteNew() {
       <Card size="small">
         <SuiteBody state={state} navigate={navigate} />
       </Card>
-    </Flex>
+    </Page>
   );
 }
 

@@ -21,9 +21,7 @@ import {
   CONNECTION_KIND_LABELS,
   CONNECTION_KINDS,
   CONNECTION_TYPE_LABELS,
-  CONNECTION_TYPES,
   type Connection,
-  type ConnectionType,
   deleteConnection,
   ENV_COLORS,
   envLabel,
@@ -32,6 +30,7 @@ import {
 } from '../api/connections';
 import { ConnectionTypeAvatar } from '../components/connections/connectionVisuals';
 import { ReauthModal } from '../components/connections/ReauthModal';
+import { Page } from '../components/layout/Page';
 import { type AsyncState, useAsyncData } from '../hooks/useAsyncData';
 
 /** Live connectivity state for a card — the health-page badge. */
@@ -46,20 +45,6 @@ interface ConnectionActions {
   onTest: (connection: Connection) => Promise<boolean>;
   /** Drop a connection's stale health entry (after delete / edit / re-auth). */
   onClearHealth: (id: string) => void;
-}
-
-/** Group connections by type in one pass, preserving canonical type order. */
-function groupByType(connections: Connection[]): [ConnectionType, Connection[]][] {
-  const byType = new Map<ConnectionType, Connection[]>();
-  for (const c of connections) {
-    const group = byType.get(c.type);
-    if (group) group.push(c);
-    else byType.set(c.type, [c]);
-  }
-  return CONNECTION_TYPES.filter((type) => byType.has(type)).map((type) => [
-    type,
-    byType.get(type) as Connection[],
-  ]);
 }
 
 export function Connections() {
@@ -113,7 +98,7 @@ export function Connections() {
   };
 
   return (
-    <Flex vertical gap={24}>
+    <Page>
       <Flex justify="space-between" align="center" gap={12}>
         <Typography.Title level={3} style={{ margin: 0 }}>
           Connections
@@ -138,7 +123,7 @@ export function Connections() {
           reload();
         }}
       />
-    </Flex>
+    </Page>
   );
 }
 
@@ -169,9 +154,10 @@ function ConnectionsBody({
   if (connections.length === 0) {
     return <Empty description="No connections configured yet" />;
   }
-  // Two top-level sections (Data sources / Orchestration), each grouping by type.
-  // A subtle divider reinforces the datasource-vs-orchestration split (the
-  // load-bearing distinction in DataQ) without competing with the headings.
+  // Two top-level sections (Data sources / Orchestration) — the load-bearing
+  // distinction in DataQ (CLAUDE.md §4). Each renders as one even card grid (the
+  // per-type avatar already identifies the source), so cards stay large and
+  // evenly spaced rather than fragmenting into ragged per-type rows.
   const sections = CONNECTION_KINDS.map((kind) => ({
     kind,
     ofKind: connections.filter((c) => CONNECTION_KIND[c.type] === kind),
@@ -185,55 +171,24 @@ function ConnectionsBody({
           <Typography.Title level={4} style={{ margin: 0 }}>
             {CONNECTION_KIND_LABELS[kind]}
           </Typography.Title>
-          {groupByType(ofKind).map(([type, group]) => (
-            <ConnectionTypeSection
-              key={type}
-              type={type}
-              connections={group}
-              actions={actions}
-              health={health}
-            />
-          ))}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
+              gap: 16,
+            }}
+          >
+            {ofKind.map((connection) => (
+              <ConnectionCard
+                key={connection.id}
+                connection={connection}
+                actions={actions}
+                health={health[connection.id] ?? 'idle'}
+              />
+            ))}
+          </div>
         </Flex>
       ))}
-    </Flex>
-  );
-}
-
-function ConnectionTypeSection({
-  type,
-  connections,
-  actions,
-  health,
-}: {
-  type: ConnectionType;
-  connections: Connection[];
-  actions: ConnectionActions;
-  health: Record<string, HealthState>;
-}) {
-  return (
-    <Flex vertical gap={12}>
-      <Typography.Title level={5} style={{ margin: 0 }}>
-        {CONNECTION_TYPE_LABELS[type]}
-      </Typography.Title>
-      {/* A responsive grid (not a wrap row) so cards stretch to fill the width
-          instead of clustering at their min size and leaving the row half-empty. */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
-          gap: 12,
-        }}
-      >
-        {connections.map((connection) => (
-          <ConnectionCard
-            key={connection.id}
-            connection={connection}
-            actions={actions}
-            health={health[connection.id] ?? 'idle'}
-          />
-        ))}
-      </div>
     </Flex>
   );
 }
@@ -290,37 +245,50 @@ function ConnectionCard({
     { key: 'delete', label: 'Delete', danger: true, onClick: onDelete },
   ];
 
+  const isOrchestration = CONNECTION_KIND[connection.type] === 'orchestration';
+
   return (
-    <Card size="small" className="dq-card--interactive">
-      <Flex justify="space-between" align="center" gap={12}>
-        <Flex gap={12} align="center" style={{ minWidth: 0 }}>
-          <ConnectionTypeAvatar type={connection.type} />
-          <Flex vertical gap={6} style={{ minWidth: 0 }}>
-            <Typography.Text strong ellipsis>
-              {connection.name}
-            </Typography.Text>
-            <Flex gap={8} align="center" wrap>
-              <Tag color={ENV_COLORS[connection.env]}>{envLabel(connection.env)}</Tag>
-              {connection.has_secret ? (
-                <Badge status="success" text="credential set" />
-              ) : (
-                <Badge status="warning" text="no credential" />
-              )}
-              <HealthBadge health={health} />
-            </Flex>
-            {health === 'failed' && (
+    <Card size="small" className="dq-card--interactive" styles={{ body: { padding: 20 } }}>
+      <Flex vertical gap={14}>
+        {/* Avatar left; live health badge + actions menu top-right. */}
+        <Flex justify="space-between" align="flex-start">
+          <ConnectionTypeAvatar type={connection.type} size={44} />
+          <Flex gap={4} align="center">
+            <HealthBadge health={health} />
+            <Dropdown menu={{ items: menuItems }} trigger={['click']}>
               <Button
-                type="link"
                 size="small"
-                style={{ padding: 0, height: 'auto' }}
-                onClick={() => actions.onReauth(connection)}
-              >
-                Re-authenticate
-              </Button>
-            )}
+                type="text"
+                icon={<MoreOutlined />}
+                aria-label={`${connection.name} actions`}
+              />
+            </Dropdown>
           </Flex>
         </Flex>
-        <Flex gap={8} align="center">
+
+        {/* Identity: name + type (· Orchestration for providers). */}
+        <Flex vertical gap={2} style={{ minWidth: 0 }}>
+          <Typography.Text strong ellipsis style={{ fontSize: 15 }}>
+            {connection.name}
+          </Typography.Text>
+          <Typography.Text type="secondary" style={{ fontSize: 13 }}>
+            {CONNECTION_TYPE_LABELS[connection.type]}
+            {isOrchestration ? ' · Orchestration' : ''}
+          </Typography.Text>
+        </Flex>
+
+        {/* Footer: env + credential state on the left, Test on the right. */}
+        <Flex justify="space-between" align="center" gap={8}>
+          <Flex gap={8} align="center" wrap style={{ minWidth: 0 }}>
+            <Tag color={ENV_COLORS[connection.env]} style={{ marginInlineEnd: 0 }}>
+              {envLabel(connection.env)}
+            </Tag>
+            {connection.has_secret ? (
+              <Badge status="success" text="credential set" />
+            ) : (
+              <Badge status="warning" text="no credential" />
+            )}
+          </Flex>
           <Button
             size="small"
             loading={health === 'testing'}
@@ -328,14 +296,18 @@ function ConnectionCard({
           >
             Test
           </Button>
-          <Dropdown menu={{ items: menuItems }} trigger={['click']}>
-            <Button
-              size="small"
-              icon={<MoreOutlined />}
-              aria-label={`${connection.name} actions`}
-            />
-          </Dropdown>
         </Flex>
+
+        {health === 'failed' && (
+          <Button
+            type="link"
+            size="small"
+            style={{ padding: 0, height: 'auto', alignSelf: 'flex-start' }}
+            onClick={() => actions.onReauth(connection)}
+          >
+            Re-authenticate
+          </Button>
+        )}
       </Flex>
     </Card>
   );
