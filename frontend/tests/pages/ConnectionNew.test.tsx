@@ -32,11 +32,18 @@ function renderPage() {
 afterEach(() => vi.clearAllMocks());
 
 describe('ConnectionNew', () => {
-  it('splits the type picker into Data sources and Orchestration sections', () => {
+  it('categorizes the source picker with Orchestration first', () => {
     renderPage();
-    expect(screen.getByRole('heading', { name: 'Data sources' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Orchestration' })).toBeInTheDocument();
-    // A datasource and an orchestration type are each offered.
+    // The category labels render (Orchestration leads, datasources fan out).
+    expect(screen.getByText('Orchestration')).toBeInTheDocument();
+    expect(screen.getByText('Warehouses')).toBeInTheDocument();
+    expect(screen.getByText('Cloud Storage')).toBeInTheDocument();
+    // Orchestration is the first category in document order (ADR 0022).
+    const labels = screen.getAllByText(/Orchestration|Warehouses|Lakehouses|Cloud Storage/);
+    expect(labels[0]).toHaveTextContent('Orchestration');
+    // Its lead-in nudge is shown.
+    expect(screen.getByText(/Add your orchestration provider first/)).toBeInTheDocument();
+    // A datasource and an orchestration source are each offered.
     expect(screen.getByText('Snowflake')).toBeInTheDocument();
     expect(screen.getByText('Azure Data Factory')).toBeInTheDocument();
   });
