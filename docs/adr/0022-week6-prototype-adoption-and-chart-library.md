@@ -18,14 +18,14 @@ Two problems pushed this to an ADR:
 
 ### A. Adopt the full prototype screen set in Week 6
 
-Every create/edit flow becomes a **dedicated, deep-linkable page**; **the Share drawer is the _only_ surviving drawer**. Where the prototype differs from the shipped app, **the prototype wins**. The 13 screens and their disposition:
+Every create/edit flow becomes a **dedicated, deep-linkable page**; **no create/edit drawer survives**. The drawers that remain are read-only or workflow-modal: **Share** (collaborative access), **version history** (`CheckHistoryDrawer` — read-only, no edit path), **live run-progress** (`LiveRunProgress` — transient polling modal), and **import suite** (`ImportSuiteDrawer`). Where the prototype differs from the shipped app, **the prototype wins**. The 13 screens and their disposition:
 
 | Screen | Route | Disposition |
 |---|---|---|
 | AppShell / nav | — | Restructure: sider → **Dashboard · Connections · Suites · Results · Profile**; footer group **Admin · Settings · Documentation**; login redirect `/` → `/dashboard` |
 | **Dashboard** | `/dashboard` | **New** landing — KPI cards, Quality Trends chart, Suite Performance bars, Recent Runs table (gated on §B) |
 | Connections | `/connections` | Exists — align |
-| New Connection | `/connections/new` → source-select → config | Adopt the **categorized source-select** step (Orchestration first), then spec-driven config |
+| New Connection | `/connections/new` → source-select → config | Adopt the **categorized source-select** step (datasources first: Warehouses · Lakehouses · Cloud Storage; Orchestration last — optional), then spec-driven config |
 | Suites | `/suites` | Exists — align (two-panel) |
 | **New Suite** | `/suites/new` | **Restructure** `SuiteDrawer` create → page |
 | Add Check | `/suites/:id/checks/new` | Exists — align |
@@ -35,7 +35,7 @@ Every create/edit flow becomes a **dedicated, deep-linkable page**; **the Share 
 | **Profile** | `/profile` | **New** real content (identity + alert-channel toggles) — replaces the placeholder `Home` |
 | Admin | `/admin` | Exists (#289) — reconcile layout to the prototype (MetricCards + Members & access + All suites) |
 | **Settings** | `/settings` | **New** — General · Secrets (Key Vault) · Notifications · Danger zone. **Pulled into Week 6** (was Week 7) |
-| Share | drawer | Stays a drawer (the only one) ✓ |
+| Share | drawer | Stays a drawer ✓ (no create/edit drawers survive; Share + version-history + run-progress + import-suite stay as non-edit drawers) |
 | **Error pages** | router catch-all + `ErrorBoundary` fallback | **New** `ErrorState`-based 400/401/403/404/429/500/502/503/504 catalog |
 
 **Built with real Ant Design**, reading tokens from `theme.ts`. The prototype's framework-free `.jsx` recreations and `_ds_bundle.js` are **reference only** (per the design `readme.md`).
