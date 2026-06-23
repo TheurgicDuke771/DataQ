@@ -1,0 +1,1 @@
+wait on CI for #347, and once done, squash-merge the PR
