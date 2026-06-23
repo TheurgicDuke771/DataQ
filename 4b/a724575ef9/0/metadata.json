@@ -1,0 +1,125 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "4ba724575ef9",
+  "session_id": "ef5a3226-b94d-4bcd-9e8e-d6b1c4817290",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-23T05:05:35.924755Z",
+  "branch": "feature/w6-layout-prototype-fidelity",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/pages/SuiteNew.tsx",
+    "frontend/src/pages/Suites.tsx",
+    "frontend/src/pages/ConnectionNew.tsx",
+    "frontend/src/pages/ConnectionEdit.tsx",
+    "frontend/src/pages/SuiteEdit.tsx",
+    "frontend/src/pages/CheckEdit.tsx",
+    "frontend/src/pages/Connections.tsx",
+    "frontend/e2e/connections.spec.ts",
+    "frontend/src/components/layout/Page.tsx",
+    "frontend/src/pages/CheckNew.tsx",
+    "frontend/src/pages/Dashboard.tsx",
+    "frontend/src/pages/Results.tsx",
+    "frontend/src/pages/Admin.tsx",
+    "frontend/src/pages/RunDetail.tsx",
+    "frontend/src/pages/Settings.tsx"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "2de5d816ce50",
+  "token_usage": {
+    "input_tokens": 37032,
+    "cache_creation_tokens": 955966,
+    "cache_read_tokens": 66714738,
+    "output_tokens": 183914,
+    "api_call_count": 287
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_015pTq2X4JdJpcUmZQyZiiZr",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "2de5d816ce50",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 446,
+        "end": 447,
+        "entry_ids": [
+          "97aca737-a336-4402-bca6-552eeb0c7a48"
+        ],
+        "tool_use_id": "toolu_015pTq2X4JdJpcUmZQyZiiZr"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_015pTq2X4JdJpcUmZQyZiiZr"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "initial_attribution": {
+    "calculated_at": "2026-06-23T05:05:35.884768Z",
+    "agent_lines": 0,
+    "agent_removed": 13,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 140,
+    "total_committed": 58,
+    "total_lines_changed": 153,
+    "agent_percentage": 8.49673202614379,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 168,
+      "user_lines_removed": 140,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6,
+        "frontend/e2e/connections.spec.ts": 4,
+        "frontend/src/components/layout/Page.tsx": 36,
+        "frontend/src/pages/Admin.tsx": 3,
+        "frontend/src/pages/CheckEdit.tsx": 3,
+        "frontend/src/pages/CheckNew.tsx": 7,
+        "frontend/src/pages/ConnectionEdit.tsx": 3,
+        "frontend/src/pages/ConnectionNew.tsx": 8,
+        "frontend/src/pages/Connections.tsx": 73,
+        "frontend/src/pages/Dashboard.tsx": 3,
+        "frontend/src/pages/Results.tsx": 3,
+        "frontend/src/pages/RunDetail.tsx": 3,
+        "frontend/src/pages/Settings.tsx": 4,
+        "frontend/src/pages/SuiteEdit.tsx": 3,
+        "frontend/src/pages/SuiteNew.tsx": 3,
+        "frontend/src/pages/Suites.tsx": 6
+      },
+      "user_removed_per_file": {
+        "frontend/e2e/connections.spec.ts": 5,
+        "frontend/src/pages/Admin.tsx": 2,
+        "frontend/src/pages/CheckEdit.tsx": 2,
+        "frontend/src/pages/CheckNew.tsx": 6,
+        "frontend/src/pages/ConnectionEdit.tsx": 2,
+        "frontend/src/pages/ConnectionNew.tsx": 5,
+        "frontend/src/pages/Connections.tsx": 101,
+        "frontend/src/pages/Dashboard.tsx": 2,
+        "frontend/src/pages/Results.tsx": 2,
+        "frontend/src/pages/RunDetail.tsx": 2,
+        "frontend/src/pages/Settings.tsx": 3,
+        "frontend/src/pages/SuiteEdit.tsx": 2,
+        "frontend/src/pages/SuiteNew.tsx": 2,
+        "frontend/src/pages/Suites.tsx": 4
+      }
+    }
+  ]
+}

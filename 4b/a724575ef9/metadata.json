@@ -1,0 +1,39 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "4ba724575ef9",
+  "strategy": "manual-commit",
+  "branch": "feature/w6-layout-prototype-fidelity",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/e2e/connections.spec.ts",
+    "frontend/src/components/layout/Page.tsx",
+    "frontend/src/pages/Admin.tsx",
+    "frontend/src/pages/CheckEdit.tsx",
+    "frontend/src/pages/CheckNew.tsx",
+    "frontend/src/pages/ConnectionEdit.tsx",
+    "frontend/src/pages/ConnectionNew.tsx",
+    "frontend/src/pages/Connections.tsx",
+    "frontend/src/pages/Dashboard.tsx",
+    "frontend/src/pages/Results.tsx",
+    "frontend/src/pages/RunDetail.tsx",
+    "frontend/src/pages/Settings.tsx",
+    "frontend/src/pages/SuiteEdit.tsx",
+    "frontend/src/pages/SuiteNew.tsx",
+    "frontend/src/pages/Suites.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/4b/a724575ef9/0/metadata.json",
+      "transcript": "/4b/a724575ef9/0/full.jsonl",
+      "content_hash": "/4b/a724575ef9/0/content_hash.txt",
+      "prompt": "/4b/a724575ef9/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 37032,
+    "cache_creation_tokens": 955966,
+    "cache_read_tokens": 66714738,
+    "output_tokens": 183914,
+    "api_call_count": 287
+  }
+}
