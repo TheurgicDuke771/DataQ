@@ -68,7 +68,7 @@ function SourceSection({
   onPick: (type: ConnectionType) => void;
 }) {
   return (
-    <Flex vertical gap={group.note ? 6 : 12}>
+    <Flex vertical gap={6}>
       <Typography.Text
         type="secondary"
         strong
@@ -76,11 +76,9 @@ function SourceSection({
       >
         {group.category}
       </Typography.Text>
-      {group.note && (
-        <Typography.Text type="secondary" style={{ maxWidth: 560 }}>
-          {group.note}
-        </Typography.Text>
-      )}
+      <Typography.Text type="secondary" style={{ maxWidth: 560 }}>
+        {group.note}
+      </Typography.Text>
       <div
         style={{
           display: 'grid',

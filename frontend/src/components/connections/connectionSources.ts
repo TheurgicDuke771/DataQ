@@ -48,11 +48,12 @@ export const SOURCE_CATEGORY_NOTE: Record<SourceCategory, string> = {
 export interface SourceGroup {
   category: SourceCategory;
   types: ConnectionType[];
-  note?: string;
+  note: string;
 }
 
-/** Source types grouped by category in display order (Orchestration first), each
- *  group in canonical `CONNECTION_TYPES` order. Empty categories are dropped. */
+/** Source types grouped by category in display order (datasources first,
+ *  Orchestration last), each group in canonical `CONNECTION_TYPES` order. Empty
+ *  categories are dropped. */
 export function sourcesByCategory(): SourceGroup[] {
   return SOURCE_CATEGORIES.map((category) => ({
     category,
