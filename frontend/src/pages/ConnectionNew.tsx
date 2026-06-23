@@ -111,9 +111,14 @@ function SourceCard({
       onClick={() => onPick(type)}
       aria-label={`Add ${CONNECTION_TYPE_LABELS[type]} connection`}
     >
-      <Flex align="center" gap={14}>
-        <ConnectionTypeAvatar type={type} size={48} />
-        <Flex vertical gap={2} style={{ flex: 1, minWidth: 0 }}>
+      {/* Vertical layout matching the Connections / Suites cards: avatar top-left,
+          chevron affordance top-right, then name + blurb. */}
+      <Flex vertical gap={14}>
+        <Flex justify="space-between" align="flex-start">
+          <ConnectionTypeAvatar type={type} size={48} />
+          <RightOutlined style={{ color: '#bfbfbf', marginTop: 4 }} />
+        </Flex>
+        <Flex vertical gap={2} style={{ minWidth: 0 }}>
           <Typography.Text strong style={{ fontSize: 15 }}>
             {CONNECTION_TYPE_LABELS[type]}
           </Typography.Text>
@@ -121,7 +126,6 @@ function SourceCard({
             {CONNECTION_BLURB[type]}
           </Typography.Text>
         </Flex>
-        <RightOutlined style={{ color: '#bfbfbf' }} />
       </Flex>
     </Card>
   );

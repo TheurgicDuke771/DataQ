@@ -268,6 +268,7 @@ function PipelineRunsTab({ pollMs = PIPELINE_POLL_MS }: { pollMs?: number }) {
     listRuns({ limit: LIST_LIMIT }),
   );
   const [provider, setProvider] = useState<'all' | 'adf' | 'airflow'>('all');
+  const [dateWindow, setDateWindow] = useState<DateWindow>('all');
 
   // Refresh both sources on the poll cadence; `reload` keeps the current rows
   // visible across the refetch (no flash back to the spinner).
@@ -305,11 +306,30 @@ function PipelineRunsTab({ pollMs = PIPELINE_POLL_MS }: { pollMs?: number }) {
     );
   }
 
-  const rows = provider === 'all' ? state.data : state.data.filter((p) => p.provider === provider);
+  const windowDays = dateWindow === 'all' ? null : Number(dateWindow);
+  const rows = state.data.filter((p) => {
+    if (provider !== 'all' && p.provider !== provider) return false;
+    if (windowDays !== null && !isWithinWindowDays(p.started_at ?? p.created_at, windowDays))
+      return false;
+    return true;
+  });
 
   const columns: ColumnsType<PipelineRun> = [
     { title: 'Provider', dataIndex: 'provider', width: 110, render: (p: string) => <Tag>{p}</Tag> },
     { title: 'Pipeline / DAG', dataIndex: 'pipeline_or_dag_id' },
+    {
+      // The provider's own run id — the handle for cross-referencing this run in
+      // ADF / Airflow when debugging. Copyable for exactly that. Distinct from the
+      // "DQ run" column, which links the DataQ run this pipeline triggered.
+      title: 'Provider run',
+      dataIndex: 'provider_run_id',
+      width: 200,
+      render: (v: string) => (
+        <Typography.Text code copyable={{ text: v }} style={{ fontSize: 12 }} ellipsis>
+          {v}
+        </Typography.Text>
+      ),
+    },
     { title: 'Env', dataIndex: 'env', width: 80, render: (e: string) => e.toUpperCase() },
     {
       title: 'Status',
@@ -353,18 +373,27 @@ function PipelineRunsTab({ pollMs = PIPELINE_POLL_MS }: { pollMs?: number }) {
 
   return (
     <Flex vertical gap={16}>
-      <Flex gap={12} align="center">
-        <Typography.Text type="secondary">Provider</Typography.Text>
-        <Select<'all' | 'adf' | 'airflow'>
-          value={provider}
-          onChange={setProvider}
-          style={{ width: 160 }}
-          options={[
-            { value: 'all', label: 'All' },
-            { value: 'adf', label: 'ADF' },
-            { value: 'airflow', label: 'Airflow' },
-          ]}
-        />
+      <Flex gap={12} align="flex-end" wrap>
+        <Filter label="Provider">
+          <Select<'all' | 'adf' | 'airflow'>
+            value={provider}
+            onChange={setProvider}
+            style={{ width: 160 }}
+            options={[
+              { value: 'all', label: 'All' },
+              { value: 'adf', label: 'ADF' },
+              { value: 'airflow', label: 'Airflow' },
+            ]}
+          />
+        </Filter>
+        <Filter label="Date">
+          <Select<DateWindow>
+            value={dateWindow}
+            onChange={setDateWindow}
+            style={{ width: 150 }}
+            options={DATE_WINDOWS.map((w) => ({ value: w.value, label: w.label }))}
+          />
+        </Filter>
       </Flex>
       <Table<PipelineRun>
         rowKey="id"

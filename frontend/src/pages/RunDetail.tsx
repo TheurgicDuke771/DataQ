@@ -101,7 +101,15 @@ function RunDetailBody({
         <DownloadMenu run={run} suiteName={suiteName} checks={checksById} />
       </Flex>
 
-      <Flex gap={12} wrap>
+      {/* Equal-width cards that fill the row so its right edge lines up with the
+          results table below (auto-fit + 1fr stretches them to the full width). */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+          gap: 12,
+        }}
+      >
         <Stat label="Status">
           <Tag color={RUN_STATUS_COLORS[run.status]}>{run.status}</Tag>
         </Stat>
@@ -111,7 +119,7 @@ function RunDetailBody({
         <Stat label="Triggered by">{run.triggered_by ?? '—'}</Stat>
         <Stat label="Started">{formatTimestamp(run.started_at)}</Stat>
         <Stat label="Duration">{formatDuration(run.started_at, run.finished_at)}</Stat>
-      </Flex>
+      </div>
 
       <ResultsTable results={run.results} checks={checksById} suiteId={run.suite_id} />
     </Flex>
@@ -120,7 +128,7 @@ function RunDetailBody({
 
 function Stat({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <Card size="small" style={{ minWidth: 150 }}>
+    <Card size="small" style={{ height: '100%' }}>
       <Flex vertical gap={4}>
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
           {label}
