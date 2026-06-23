@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "b4955d035862",
+  "strategy": "manual-commit",
+  "branch": "feature/w6-layout-prototype-fidelity",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/b4/955d035862/0/metadata.json",
+      "transcript": "/b4/955d035862/0/full.jsonl",
+      "content_hash": "/b4/955d035862/0/content_hash.txt",
+      "prompt": "/b4/955d035862/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 40768,
+    "cache_creation_tokens": 1005630,
+    "cache_read_tokens": 88686509,
+    "output_tokens": 218175,
+    "api_call_count": 338
+  }
+}
