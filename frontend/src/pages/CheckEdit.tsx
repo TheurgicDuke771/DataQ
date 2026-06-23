@@ -1,0 +1,190 @@
+import { HistoryOutlined } from '@ant-design/icons';
+import { Alert, App, Button, Card, Flex, Form, Input, Select, Spin, Typography } from 'antd';
+import { useEffect, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+
+import { type ConnectionType, getConnection } from '../api/connections';
+import { type Check, getCheck, getSuite, updateCheck } from '../api/suites';
+import { buildCheckPayload, configToForm } from '../components/checks/checkForm';
+import { ConfigFieldItem, SeverityThresholdFields } from '../components/checks/checkFormFields';
+import { CheckHistoryDrawer } from '../components/checks/CheckHistoryDrawer';
+import { ColumnProfilePanel } from '../components/checks/ColumnProfilePanel';
+import { DryRunPreview } from '../components/checks/DryRunPreview';
+import {
+  EXPECTATION_BY_TYPE,
+  expectationsByCategoryFor,
+} from '../components/checks/expectationCatalog';
+import { useAsyncData } from '../hooks/useAsyncData';
+
+/**
+ * Dedicated full-page edit-check flow (ADR 0022 — replaces the edit drawer). The
+ * expectation Select (grouped by category) drives which config fields render; the
+ * submitted `config` is rebuilt from only the selected expectation's declared
+ * fields, so switching types never leaks stale kwargs. Creating a check is the
+ * dedicated `/suites/:suiteId/checks/new` page. Version history is still a drawer
+ * (the surviving read-only drawer alongside Share).
+ */
+export function CheckEdit() {
+  const { suiteId, checkId } = useParams<{ suiteId: string; checkId: string }>();
+  const navigate = useNavigate();
+  const back = () => navigate(suiteId ? `/suites/${suiteId}` : '/suites');
+  // Load the suite (target + datasource type) and the check together: the target
+  // drives the dry-run preview, the connection type gates Custom SQL (ADR 0019),
+  // and the check seeds the form.
+  const { state } = useAsyncData(async () => {
+    if (!suiteId || !checkId) throw new Error('no check');
+    const [suite, check] = await Promise.all([getSuite(suiteId), getCheck(suiteId, checkId)]);
+    // Best-effort: a suite may be readable while its connection isn't (shared
+    // suite). The connection only gates the Custom-SQL category.
+    const connection = await getConnection(suite.connection_id).catch(() => null);
+    return { suite, check, connection };
+  });
+
+  return (
+    <Flex vertical gap={24} style={{ maxWidth: 640 }}>
+      <Flex justify="space-between" align="center" gap={12}>
+        <Typography.Title level={3} style={{ margin: 0 }}>
+          {state.status === 'ok' ? `Edit “${state.data.check.name}”` : 'Edit check'}
+        </Typography.Title>
+        <Button onClick={back}>Cancel</Button>
+      </Flex>
+
+      {state.status === 'loading' && <Spin tip="Loading check…" />}
+      {state.status === 'error' && (
+        <Alert type="error" showIcon title="Failed to load check" description={state.error} />
+      )}
+      {state.status === 'ok' && suiteId && (
+        <Card size="small">
+          <CheckEditForm
+            suiteId={suiteId}
+            check={state.data.check}
+            target={state.data.suite.target}
+            connectionType={state.data.connection?.type}
+            onCancel={back}
+            onSaved={back}
+          />
+        </Card>
+      )}
+    </Flex>
+  );
+}
+
+function CheckEditForm({
+  suiteId,
+  check,
+  target,
+  connectionType,
+  onCancel,
+  onSaved,
+}: {
+  suiteId: string;
+  check: Check;
+  target: Record<string, unknown> | null;
+  connectionType?: ConnectionType;
+  onCancel: () => void;
+  onSaved: () => void;
+}) {
+  const { message } = App.useApp();
+  const [form] = Form.useForm();
+  const [submitting, setSubmitting] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const selectedType = Form.useWatch('expectation_type', form) as string | undefined;
+  const column = Form.useWatch(['config', 'column'], form) as string | undefined;
+  const spec = selectedType ? EXPECTATION_BY_TYPE[selectedType] : undefined;
+
+  // Seed from the loaded check once.
+  useEffect(() => {
+    form.setFieldsValue({
+      name: check.name,
+      expectation_type: check.expectation_type,
+      config: configToForm(EXPECTATION_BY_TYPE[check.expectation_type], check.config),
+      warn_threshold: check.warn_threshold ?? undefined,
+      fail_threshold: check.fail_threshold ?? undefined,
+      critical_threshold: check.critical_threshold ?? undefined,
+    });
+  }, [check, form]);
+
+  const onSubmit = async () => {
+    let values: Record<string, unknown>;
+    try {
+      values = await form.validateFields();
+    } catch {
+      return; // inline validation errors
+    }
+    setSubmitting(true);
+    try {
+      await updateCheck(suiteId, check.id, buildCheckPayload(values));
+      message.success(`${values.name as string}: saved`);
+      onSaved();
+    } catch (err) {
+      message.error(`Save failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <>
+      <Form form={form} layout="vertical" onFinish={onSubmit}>
+        <Form.Item name="name" label="Name" rules={[{ required: true }]}>
+          <Input placeholder="e.g. order_id not null" />
+        </Form.Item>
+        <Form.Item name="expectation_type" label="Expectation" rules={[{ required: true }]}>
+          <Select
+            placeholder="Select an expectation"
+            // Grouped by category (antd optgroups). Pass the check's current type
+            // so Custom SQL stays selectable even before the connection loads.
+            options={expectationsByCategoryFor(connectionType, check.expectation_type).map((g) => ({
+              label: g.category,
+              options: g.specs.map((e) => ({ value: e.type, label: e.label })),
+            }))}
+          />
+        </Form.Item>
+
+        {spec && (
+          <>
+            <Typography.Paragraph type="secondary" style={{ marginTop: -8 }}>
+              {spec.description}
+            </Typography.Paragraph>
+            {spec.fields.map((field) => (
+              <ConfigFieldItem key={field.name} field={field} />
+            ))}
+          </>
+        )}
+
+        <SeverityThresholdFields />
+
+        <Form.Item>
+          <ColumnProfilePanel suiteId={suiteId} target={target} column={column} />
+        </Form.Item>
+        <Form.Item>
+          <DryRunPreview
+            suiteId={suiteId}
+            expectationType={selectedType}
+            target={target}
+            form={form}
+          />
+        </Form.Item>
+
+        <Flex justify="space-between" align="center" gap={8}>
+          <Button icon={<HistoryOutlined />} onClick={() => setHistoryOpen(true)}>
+            History
+          </Button>
+          <Flex gap={8}>
+            <Button onClick={onCancel}>Cancel</Button>
+            <Button type="primary" htmlType="submit" loading={submitting}>
+              Save
+            </Button>
+          </Flex>
+        </Flex>
+      </Form>
+
+      <CheckHistoryDrawer
+        open={historyOpen}
+        suiteId={suiteId}
+        check={check}
+        onClose={() => setHistoryOpen(false)}
+      />
+    </>
+  );
+}

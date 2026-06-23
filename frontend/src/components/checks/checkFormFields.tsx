@@ -7,8 +7,8 @@ import { validateCustomSqlQuery } from './customSql';
 import type { ConfigField } from './expectationCatalog';
 
 /**
- * Shared check-form field components, used by both the edit drawer (`CheckDrawer`)
- * and the dedicated create page (`CheckNew`): the dynamic config-field renderer
+ * Shared check-form field components, used by both the edit page (`CheckEdit`)
+ * and the create page (`CheckNew`): the dynamic config-field renderer
  * and the severity-threshold block. Pure conversions live in `checkForm.ts`.
  */
 

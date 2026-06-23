@@ -30,7 +30,6 @@ import {
   listConnections,
   testConnection,
 } from '../api/connections';
-import { ConnectionDrawer } from '../components/connections/ConnectionDrawer';
 import { ConnectionTypeAvatar } from '../components/connections/connectionVisuals';
 import { ReauthModal } from '../components/connections/ReauthModal';
 import { type AsyncState, useAsyncData } from '../hooks/useAsyncData';
@@ -67,9 +66,6 @@ export function Connections() {
   const { message } = App.useApp();
   const navigate = useNavigate();
   const { state, reload } = useAsyncData(listConnections);
-  // The drawer is edit-only (create is the /connections/new page) → it's open iff
-  // a connection is being edited.
-  const [editing, setEditing] = useState<Connection | null>(null);
   const [reauthing, setReauthing] = useState<Connection | null>(null);
   // Per-connection live connectivity status (the bulk health view).
   const [health, setHealth] = useState<Record<string, HealthState>>({});
@@ -108,7 +104,8 @@ export function Connections() {
   };
 
   const actions: ConnectionActions = {
-    onEdit: setEditing,
+    // Editing is a dedicated page (create + edit pages replace the drawer, ADR 0022).
+    onEdit: (connection) => navigate(`/connections/${connection.id}/edit`),
     onReauth: setReauthing,
     onChanged: reload,
     onTest: testOne,
@@ -131,17 +128,6 @@ export function Connections() {
         </Flex>
       </Flex>
       <ConnectionsBody state={state} actions={actions} health={health} />
-      <ConnectionDrawer
-        open={editing !== null}
-        connection={editing ?? undefined}
-        onClose={() => setEditing(null)}
-        onSaved={() => {
-          // An edit may have changed the host/credential → invalidate any prior test.
-          if (editing) clearHealth(editing.id);
-          setEditing(null);
-          reload();
-        }}
-      />
       <ReauthModal
         connection={reauthing}
         onClose={() => setReauthing(null)}
