@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "7157fdb3002b",
+  "strategy": "manual-commit",
+  "branch": "feature/w6-phase4-drawer-to-page",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/App.tsx",
+    "frontend/src/components/suites/SuiteDrawer.tsx",
+    "frontend/src/components/suites/SuiteForm.tsx",
+    "frontend/src/pages/SuiteNew.tsx",
+    "frontend/src/pages/Suites.tsx",
+    "frontend/tests/pages/SuiteNew.test.tsx",
+    "frontend/tests/pages/Suites.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/71/57fdb3002b/0/metadata.json",
+      "transcript": "/71/57fdb3002b/0/full.jsonl",
+      "content_hash": "/71/57fdb3002b/0/content_hash.txt",
+      "prompt": "/71/57fdb3002b/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 7894,
+    "cache_creation_tokens": 170791,
+    "cache_read_tokens": 4033349,
+    "output_tokens": 25955,
+    "api_call_count": 48
+  }
+}
