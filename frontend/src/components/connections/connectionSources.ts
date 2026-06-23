@@ -42,7 +42,7 @@ export const SOURCE_CATEGORY_NOTE: Record<SourceCategory, string> = {
   Lakehouses: 'Validate lakehouse tables governed by Unity Catalog.',
   'Cloud Storage': 'Run checks on flat files (CSV / Parquet) in object storage.',
   Orchestration:
-    'Optional — connect Azure Data Factory or Airflow to watch their pipeline runs and trigger suites on completion. Suites can also run on a schedule or on demand without one.',
+    'Optional — connect Azure Data Factory or Airflow to watch their pipeline runs and trigger suites on completion.',
 };
 
 export interface SourceGroup {
