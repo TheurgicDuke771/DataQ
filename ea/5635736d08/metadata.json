@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "ea5635736d08",
+  "strategy": "manual-commit",
+  "branch": "feature/w6-layout-prototype-fidelity",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/components/connections/connectionSources.ts",
+    "frontend/tests/pages/ConnectionNew.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ea/5635736d08/0/metadata.json",
+      "transcript": "/ea/5635736d08/0/full.jsonl",
+      "content_hash": "/ea/5635736d08/0/content_hash.txt",
+      "prompt": "/ea/5635736d08/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 40463,
+    "cache_creation_tokens": 994205,
+    "cache_read_tokens": 83746768,
+    "output_tokens": 210250,
+    "api_call_count": 327
+  }
+}
