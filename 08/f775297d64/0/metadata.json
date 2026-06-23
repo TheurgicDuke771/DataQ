@@ -1,0 +1,38 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "08f775297d64",
+  "session_id": "ef5a3226-b94d-4bcd-9e8e-d6b1c4817290",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-23T01:09:32.796908Z",
+  "branch": "feature/w6-phase4-drawer-to-page",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/components/connections/connectionSources.ts",
+    "frontend/src/pages/ConnectionNew.tsx",
+    "frontend/tests/pages/ConnectionNew.test.tsx"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "b90601c954a4",
+  "checkpoint_transcript_start": 397,
+  "transcript_lines_at_start": 397,
+  "token_usage": {
+    "input_tokens": 722,
+    "cache_creation_tokens": 13464,
+    "cache_read_tokens": 1966233,
+    "output_tokens": 9248,
+    "api_call_count": 11
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-23T01:09:32.781253Z",
+    "agent_lines": 150,
+    "agent_removed": 44,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 150,
+    "total_lines_changed": 194,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
