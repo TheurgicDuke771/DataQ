@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "7c92882550cd",
+  "strategy": "manual-commit",
+  "branch": "docs/adr0021-pointer-readme-week6",
+  "checkpoints_count": 15,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/7c/92882550cd/0/metadata.json",
+      "transcript": "/7c/92882550cd/0/full.jsonl",
+      "content_hash": "/7c/92882550cd/0/content_hash.txt",
+      "prompt": "/7c/92882550cd/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 53086,
+    "cache_creation_tokens": 2291196,
+    "cache_read_tokens": 142445370,
+    "output_tokens": 322773,
+    "api_call_count": 443
+  }
+}
