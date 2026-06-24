@@ -2,7 +2,7 @@
 
 > Data quality monitoring platform built around Great Expectations — Snowflake (DEV/QA/UAT), ADLS Gen2, S3, Unity Catalog (Databricks), with ADF + Airflow orchestration integrations.
 
-**Status:** pre-v1 — Week 4 in progress (execution backend). Weeks 1–3 complete. Live task-level progress at [docs/progress.md](docs/progress.md).
+**Status:** pre-v1 — Week 6 in progress (Results dashboard + alerting). Weeks 1–5 complete. Live task-level progress at [docs/progress.md](docs/progress.md).
 
 ## Stack
 
