@@ -139,3 +139,11 @@ Also add a step for Pref testing [we can discuss on this first if needed]
 ---
 
 yeah, go with this plan
+
+---
+
+Can we create an ADR for all the decisions for HARNESS_TODO, or do you think it is not needed?
+
+---
+
+Yeah, update the ADR 0021, also check Project README, it still says we are in week 4.
