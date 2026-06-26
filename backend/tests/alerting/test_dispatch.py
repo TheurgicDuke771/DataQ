@@ -9,6 +9,7 @@ fail the task. Skips without TEST_DATABASE_URL.
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -96,3 +97,40 @@ def test_publisher_exception_is_swallowed(db_session: Any, monkeypatch: pytest.M
 
     # Must not raise — a broken channel can't fail the run/task.
     assert dispatch.publish_run_outcome(db_session, run_id=run.id) is False
+
+
+def test_dedup_suppresses_an_unchanged_repeat(db_session: Any, spy: _SpyPublisher) -> None:
+    # Two consecutive runs of one suite, the same check failing both times.
+    owner = User(aad_object_id=uuid.uuid4().hex, email=f"u-{uuid.uuid4().hex[:6]}@x.io")
+    db_session.add(owner)
+    db_session.flush()
+    conn = Connection(
+        name=f"c-{uuid.uuid4().hex[:8]}",
+        type="snowflake",
+        env="dev",
+        config={"account": "a"},
+        secret_ref="kv",
+        created_by=owner.id,
+    )
+    db_session.add(conn)
+    db_session.flush()
+    suite = Suite(name="s", connection_id=conn.id, created_by=owner.id, target={"table": "T"})
+    db_session.add(suite)
+    db_session.flush()
+    check = Check(suite_id=suite.id, name="c", expectation_type="e", config={})
+    db_session.add(check)
+    db_session.flush()
+    base = datetime(2026, 6, 26, tzinfo=UTC)
+    r1 = Run(suite_id=suite.id, status="succeeded", created_at=base)
+    r2 = Run(suite_id=suite.id, status="succeeded", created_at=base + timedelta(minutes=5))
+    db_session.add_all([r1, r2])
+    db_session.flush()
+    db_session.add(Result(run_id=r1.id, check_id=check.id, status="fail"))
+    db_session.add(Result(run_id=r2.id, check_id=check.id, status="fail"))
+    db_session.commit()
+
+    # First failure fires…
+    assert dispatch.publish_run_outcome(db_session, run_id=r1.id) is True
+    # …the identical repeat is deduped (no second card).
+    assert dispatch.publish_run_outcome(db_session, run_id=r2.id) is False
+    assert [r.run_id for r in spy.reports] == [r1.id]
