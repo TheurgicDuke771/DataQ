@@ -65,6 +65,14 @@ class Settings(BaseSettings):
     # in prod. The signing key, not a webhook value.
     airflow_webhook_secret_name: str = "airflow-webhook-secret"  # noqa: S105 — KV key name
 
+    # SecretStore key holding the workspace MS Teams incoming-webhook URL (the URL
+    # carries a token, so it lives in the SecretStore, not in config). Unset →
+    # no Teams alerting (the no-op publisher). The value is the webhook URL,
+    # resolved per run via SecretStore so a rotated webhook is picked up;
+    # per-suite notification config (a later PR) extends the resolver. Provider-
+    # neutral: Teams is one ResultPublisher impl behind the registry (ADR 0011).
+    teams_webhook_secret_name: str | None = None
+
     # ── Snowflake probe (Week 1 exit-gate endpoint) ──────────────────────────
     # Config for the single seeded dev Snowflake connection the probe runs
     # against. All optional: when unset the probe still creates + dispatches a
