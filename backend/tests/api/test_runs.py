@@ -7,6 +7,7 @@ suites. `run_dispatch.dispatch_run` is stubbed by the autouse conftest fixture
 the broker-failure path re-patches it. Skips without TEST_DATABASE_URL.
 """
 
+import json
 import uuid
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
@@ -272,9 +273,54 @@ def test_get_run_returns_results(client: TestClient, db_session: Any) -> None:
     assert res["status"] == "warn"
     assert res["metric_value"] == 2.5
     assert res["observed_value"] == {"observed_value": 5}
-    # sample_failures (raw failing rows) is deliberately NOT exposed — PII; the
-    # row is stored but withheld from the API until row-level redaction lands.
-    assert "sample_failures" not in res
+    # sample_failures is now exposed, but redacted at the boundary (#226). An
+    # empty container redacts to itself (no values to mask).
+    assert res["sample_failures"] == {"rows": []}
+
+
+def test_get_run_redacts_sample_failure_values(client: TestClient, db_session: Any) -> None:
+    """Raw failing cell values must be masked before leaving DataQ; the numeric
+    counts and the row/column shape are kept (#226)."""
+    from backend.app.db.models import Check
+
+    dev = _user(db_session, "dev@ex")
+    suite = _suite(db_session, dev, target={"table": "T"})
+    check = Check(suite_id=suite.id, name="c", expectation_type="expect_x", config={})
+    db_session.add(check)
+    db_session.flush()
+    run = _run(db_session, suite, status="succeeded")
+    # A realistic GX sample: aggregate counts (safe) + the offending rows (PII).
+    db_session.add(
+        Result(
+            run_id=run.id,
+            check_id=check.id,
+            status="fail",
+            metric_value=Decimal("40.0"),
+            sample_failures={
+                "unexpected_count": 2,
+                "unexpected_percent": 40.0,
+                "partial_unexpected_list": [
+                    {"id": 7, "email": "alice@example.com"},
+                    {"id": 9, "email": "bob@example.com"},
+                ],
+            },
+        )
+    )
+    db_session.commit()
+
+    _as(dev)
+    body = client.get(f"/api/v1/runs/{run.id}").json()
+    sample = body["results"][0]["sample_failures"]
+
+    # Counts kept; row count + column names (schema) kept; cell values masked.
+    assert sample["unexpected_count"] == 2
+    assert sample["unexpected_percent"] == 40.0
+    assert len(sample["partial_unexpected_list"]) == 2
+    assert sample["partial_unexpected_list"][0] == {"id": "<redacted>", "email": "<redacted>"}
+    # The raw values must not appear anywhere in the serialized response.
+    serialized = json.dumps(body)
+    assert "alice@example.com" not in serialized
+    assert "bob@example.com" not in serialized
 
 
 def test_get_run_unknown_returns_404(client: TestClient, db_session: Any) -> None:

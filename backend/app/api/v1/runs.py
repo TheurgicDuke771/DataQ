@@ -55,11 +55,11 @@ class ResultRead(BaseModel):
     badness scalar (ADR 0012); `observed_value`/`expected_value` are GX summary
     values (same fields the dry-run / probe already surface).
 
-    `sample_failures` (the raw failing rows) is **deliberately not exposed** here:
-    it can carry real data and is treated as redactor-only elsewhere (gx_runner,
-    and the dry-run path omits it for the same reason). Surfacing it on the
-    results drill-down needs row-level redaction / an opt-in policy first — see
-    the follow-up issue, to land with the Results page (PR-C1)."""
+    `sample_failures` is the raw GX failing-row sample — it can carry real data,
+    so it is **redacted at the boundary** before it leaves DataQ (the numeric
+    counts are kept; the offending cell values are masked). See
+    `run_service.redact_sample_failures` for the policy and `_result_read` below
+    for why it is never auto-populated from the ORM object (#226)."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -70,6 +70,7 @@ class ResultRead(BaseModel):
     duration_ms: int | None
     observed_value: dict[str, Any] | None
     expected_value: dict[str, Any] | None
+    sample_failures: dict[str, Any] | None  # redacted (counts kept, values masked)
 
 
 class RunDetailRead(RunRead):
@@ -136,6 +137,24 @@ def list_runs(
     return [RunRead.model_validate(r) for r in runs]
 
 
+def _result_read(result: Any) -> ResultRead:
+    """Map a `Result` ORM row to `ResultRead`, redacting `sample_failures`.
+
+    Built field-by-field rather than via `model_validate(from_attributes)` so the
+    raw, PII-bearing `sample_failures` can never be auto-copied onto the wire —
+    redaction is the only path it can take out of here (#226)."""
+    return ResultRead(
+        id=result.id,
+        check_id=result.check_id,
+        status=result.status,
+        metric_value=result.metric_value,
+        duration_ms=result.duration_ms,
+        observed_value=result.observed_value,
+        expected_value=result.expected_value,
+        sample_failures=svc.redact_sample_failures(result.sample_failures),
+    )
+
+
 @router.get("/runs/{run_id}", response_model=RunDetailRead, summary="Get a run with its results")
 def get_run(
     run_id: uuid.UUID,
@@ -154,7 +173,7 @@ def get_run(
     # separately-fetched, redaction-gated results on.
     return RunDetailRead(
         **RunRead.model_validate(run).model_dump(),
-        results=[ResultRead.model_validate(r) for r in results],
+        results=[_result_read(r) for r in results],
     )
 
 

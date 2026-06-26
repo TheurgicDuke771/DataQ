@@ -343,6 +343,52 @@ def get_run_progress(session: Session, run: Run) -> RunProgress:
     )
 
 
+# ── sample-failures redaction (PII-safe surfacing on the read API) ────────────
+
+# Aggregate summary keys in a GX sample are counts/percentages, not row data, so
+# they are safe to surface. Everything else — notably `partial_unexpected_list`,
+# the raw offending cell values — is treated as potential PII and masked.
+_SAMPLE_SAFE_KEYS = frozenset({"unexpected_count", "unexpected_percent"})
+_REDACTED_VALUE = "<redacted>"
+
+
+def _redact_sample_value(value: Any) -> Any:
+    """Mask data values while preserving container shape and dict keys.
+
+    List length and row-dict column names are *schema*, not row data, so they
+    stay (they tell the viewer how many rows / which columns failed); every leaf
+    value is replaced with ``"<redacted>"``.
+    """
+    if isinstance(value, dict):
+        return {key: _redact_sample_value(val) for key, val in value.items()}
+    if isinstance(value, list):
+        return [_redact_sample_value(item) for item in value]
+    return _REDACTED_VALUE
+
+
+def redact_sample_failures(sample: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Redact a result's `sample_failures` for safe surfacing on the read API.
+
+    `sample_failures` carries aggregate counts plus `partial_unexpected_list` —
+    the actual failing cell values, which can be PII. Suite-level ``view`` authz
+    lets share-recipients read a suite's results, so the raw rows must not cross
+    that boundary unredacted (CLAUDE.md PII rule; the column is redactor-only
+    everywhere else and is purged on the retention sweep below).
+
+    Policy: keep the numeric summary keys; mask every value in the rest,
+    preserving shape (list length, row-dict column names) so the drill-down shows
+    *how much* failed without leaking *what*. ``None`` (passing / errored /
+    purged results) passes through unchanged. A future opt-in could surface raw
+    rows to privileged viewers — that policy seam lives at this one call site.
+    """
+    if not sample:
+        return None
+    return {
+        key: (value if key in _SAMPLE_SAFE_KEYS else _redact_sample_value(value))
+        for key, value in sample.items()
+    }
+
+
 # ── retention sweep (configurable PII purge of old result samples) ────────────
 
 
