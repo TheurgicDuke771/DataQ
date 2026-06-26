@@ -1,0 +1,17 @@
+Tis data generation have to be in a regular credences (4 times a day, twice a day, every 2 days, etc.) how are we planning to do that?
+
+---
+
+build the tick mode + state now
+
+---
+
+Hey, for the regular file creation can we utilize a function app, or will it be over kill?
+
+---
+
+For Load + trigger = ADF/Airflow  -  don't keep all the jobs based on file land, keep some based on schedule time also
+
+---
+
+Go ahead with 2a and dockerfile

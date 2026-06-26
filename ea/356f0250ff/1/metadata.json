@@ -1,0 +1,122 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "ea356f0250ff",
+  "session_id": "f4bc72b1-2ea6-4652-90c2-d70d040c7bc7",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-26T20:56:14.996737Z",
+  "branch": "chore/review-followup-tooling-polish",
+  "checkpoints_count": 5,
+  "save_step_count": 5,
+  "files_touched": [
+    "docs/adr/0001-trunk-based-branching.md",
+    "docs/adr/0002-conventional-commits.md",
+    "docs/adr/0004-orchestration-abstraction.md",
+    "docs/adr/README.md"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "3aba4ec11309",
+  "checkpoint_transcript_start": 278,
+  "transcript_lines_at_start": 278,
+  "token_usage": {
+    "input_tokens": 4600,
+    "cache_creation_tokens": 399141,
+    "cache_read_tokens": 9379362,
+    "output_tokens": 67233,
+    "api_call_count": 51
+  },
+  "session_metrics": {
+    "turn_count": 8
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-26T20:56:14.980664Z",
+    "agent_lines": 31,
+    "agent_removed": 2,
+    "human_added": 2,
+    "human_modified": 2,
+    "human_removed": 0,
+    "total_committed": 35,
+    "total_lines_changed": 37,
+    "agent_percentage": 89.1891891891892,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    },
+    {
+      "checkpoint_number": 4,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    },
+    {
+      "checkpoint_number": 5,
+      "user_lines_added": 10,
+      "user_lines_removed": 2,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6,
+        "docs/adr/0001-trunk-based-branching.md": 1,
+        "docs/adr/0002-conventional-commits.md": 3
+      },
+      "user_removed_per_file": {
+        "docs/adr/0001-trunk-based-branching.md": 1,
+        "docs/adr/0002-conventional-commits.md": 1
+      }
+    },
+    {
+      "checkpoint_number": 6,
+      "user_lines_added": 89,
+      "user_lines_removed": 10,
+      "agent_lines_added": 37,
+      "agent_lines_removed": 4,
+      "user_added_per_file": {
+        ".claude/agents/migration-safety.md": 16,
+        ".claude/agents/orchestration-abstraction-guard.md": 12,
+        ".claude/settings.local.json": 6,
+        ".claude/skills/adr-create/SKILL.md": 18,
+        ".claude/skills/adr-create/next-number.sh": 16,
+        ".claude/skills/gh-issue-from-finding/SKILL.md": 20,
+        ".gitignore": 1
+      },
+      "user_removed_per_file": {
+        ".claude/agents/migration-safety.md": 1,
+        ".claude/skills/adr-create/SKILL.md": 3,
+        ".claude/skills/gh-issue-from-finding/SKILL.md": 6
+      }
+    }
+  ]
+}

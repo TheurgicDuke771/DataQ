@@ -3,21 +3,32 @@
   "checkpoint_id": "ea356f0250ff",
   "strategy": "manual-commit",
   "branch": "chore/review-followup-tooling-polish",
-  "checkpoints_count": 3,
-  "files_touched": null,
+  "checkpoints_count": 8,
+  "files_touched": [
+    "docs/adr/0001-trunk-based-branching.md",
+    "docs/adr/0002-conventional-commits.md",
+    "docs/adr/0004-orchestration-abstraction.md",
+    "docs/adr/README.md"
+  ],
   "sessions": [
     {
       "metadata": "/ea/356f0250ff/0/metadata.json",
       "transcript": "/ea/356f0250ff/0/full.jsonl",
       "content_hash": "/ea/356f0250ff/0/content_hash.txt",
       "prompt": "/ea/356f0250ff/0/prompt.txt"
+    },
+    {
+      "metadata": "/ea/356f0250ff/1/metadata.json",
+      "transcript": "/ea/356f0250ff/1/full.jsonl",
+      "content_hash": "/ea/356f0250ff/1/content_hash.txt",
+      "prompt": "/ea/356f0250ff/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 12370,
-    "cache_creation_tokens": 133419,
-    "cache_read_tokens": 10187619,
-    "output_tokens": 56329,
-    "api_call_count": 118
+    "input_tokens": 16970,
+    "cache_creation_tokens": 532560,
+    "cache_read_tokens": 19566981,
+    "output_tokens": 123562,
+    "api_call_count": 169
   }
 }
