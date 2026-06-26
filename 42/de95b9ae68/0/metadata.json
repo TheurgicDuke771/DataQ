@@ -1,0 +1,36 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "42de95b9ae68",
+  "session_id": "0c4da650-d50d-4dd6-a154-ba6b6e5a9c5d",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-26T21:25:24.589618Z",
+  "branch": "dependabot/pip/fastapi-0.138.1",
+  "checkpoints_count": 3,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "de862f9a629b",
+  "token_usage": {
+    "input_tokens": 21768,
+    "cache_creation_tokens": 157109,
+    "cache_read_tokens": 14708134,
+    "output_tokens": 68119,
+    "api_call_count": 147
+  },
+  "session_metrics": {
+    "turn_count": 13
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}

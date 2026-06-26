@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "42de95b9ae68",
+  "strategy": "manual-commit",
+  "branch": "dependabot/pip/fastapi-0.138.1",
+  "checkpoints_count": 3,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/42/de95b9ae68/0/metadata.json",
+      "transcript": "/42/de95b9ae68/0/full.jsonl",
+      "content_hash": "/42/de95b9ae68/0/content_hash.txt",
+      "prompt": "/42/de95b9ae68/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 21768,
+    "cache_creation_tokens": 157109,
+    "cache_read_tokens": 14708134,
+    "output_tokens": 68119,
+    "api_call_count": 147
+  }
+}
