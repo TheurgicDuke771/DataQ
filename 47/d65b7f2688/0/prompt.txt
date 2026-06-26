@@ -1,2 +1,0 @@
-Lets try to wrap up week 6. Refer @docs/progress.md , WEEK6_TODO.md and for the cloud components check the HARNESS_TODO.md. 
-Also lets ship DataQ to cloud.

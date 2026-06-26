@@ -23,14 +23,14 @@
       "metadata": "/47/d65b7f2688/0/metadata.json",
       "transcript": "/47/d65b7f2688/0/full.jsonl",
       "content_hash": "/47/d65b7f2688/0/content_hash.txt",
-      "prompt": "/47/d65b7f2688/0/prompt.txt"
+      "prompt": ""
     }
   ],
   "token_usage": {
-    "input_tokens": 16175,
-    "cache_creation_tokens": 289203,
-    "cache_read_tokens": 7912632,
-    "output_tokens": 48714,
-    "api_call_count": 52
+    "input_tokens": 2134,
+    "cache_creation_tokens": 18702,
+    "cache_read_tokens": 2075462,
+    "output_tokens": 8829,
+    "api_call_count": 10
   }
 }
