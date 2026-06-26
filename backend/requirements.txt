@@ -20,7 +20,7 @@ python-multipart==0.0.32          # required for FastAPI form data; CVE-2026-244
 
 # ── Task queue ──
 celery[redis]==5.6.3
-redis==5.2.1
+redis==8.0.1
 croniter==6.2.2                   # cron-expression parsing for suite run schedules (A7)
 
 # ── Database ──
