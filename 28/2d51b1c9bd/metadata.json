@@ -3,14 +3,22 @@
   "checkpoint_id": "282d51b1c9bd",
   "strategy": "manual-commit",
   "branch": "chore/review-followup-tooling-polish",
-  "checkpoints_count": 3,
-  "files_touched": null,
+  "checkpoints_count": 8,
+  "files_touched": [
+    ".gitignore"
+  ],
   "sessions": [
     {
       "metadata": "/28/2d51b1c9bd/0/metadata.json",
       "transcript": "/28/2d51b1c9bd/0/full.jsonl",
       "content_hash": "/28/2d51b1c9bd/0/content_hash.txt",
       "prompt": "/28/2d51b1c9bd/0/prompt.txt"
+    },
+    {
+      "metadata": "/28/2d51b1c9bd/1/metadata.json",
+      "transcript": "/28/2d51b1c9bd/1/full.jsonl",
+      "content_hash": "/28/2d51b1c9bd/1/content_hash.txt",
+      "prompt": ""
     }
   ],
   "token_usage": {

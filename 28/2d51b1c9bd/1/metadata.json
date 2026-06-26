@@ -1,0 +1,39 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "282d51b1c9bd",
+  "session_id": "f4bc72b1-2ea6-4652-90c2-d70d040c7bc7",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-26T21:03:50.300813Z",
+  "branch": "chore/review-followup-tooling-polish",
+  "checkpoints_count": 5,
+  "files_touched": [
+    ".gitignore"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "3aba4ec11309",
+  "checkpoint_transcript_start": 518,
+  "transcript_lines_at_start": 518,
+  "token_usage": {
+    "input_tokens": 0,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 0,
+    "output_tokens": 0,
+    "api_call_count": 0
+  },
+  "session_metrics": {
+    "turn_count": 8
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-26T21:03:50.284248Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 1,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 1,
+    "total_lines_changed": 1,
+    "agent_percentage": 0,
+    "metric_version": 2
+  }
+}
