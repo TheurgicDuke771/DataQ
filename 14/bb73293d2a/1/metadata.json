@@ -1,0 +1,46 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "14bb73293d2a",
+  "session_id": "f4bc72b1-2ea6-4652-90c2-d70d040c7bc7",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-26T19:51:13.457979Z",
+  "branch": "dependabot/pip/sqlalchemy-2.0.51",
+  "checkpoints_count": 2,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "173dc0ab9c95",
+  "token_usage": {
+    "input_tokens": 10497,
+    "cache_creation_tokens": 80560,
+    "cache_read_tokens": 1915440,
+    "output_tokens": 28530,
+    "api_call_count": 33
+  },
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}

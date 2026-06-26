@@ -3,7 +3,7 @@
   "checkpoint_id": "14bb73293d2a",
   "strategy": "manual-commit",
   "branch": "dependabot/pip/sqlalchemy-2.0.51",
-  "checkpoints_count": 1,
+  "checkpoints_count": 3,
   "files_touched": [
     ".pre-commit-config.yaml"
   ],
@@ -13,13 +13,19 @@
       "transcript": "/14/bb73293d2a/0/full.jsonl",
       "content_hash": "/14/bb73293d2a/0/content_hash.txt",
       "prompt": "/14/bb73293d2a/0/prompt.txt"
+    },
+    {
+      "metadata": "/14/bb73293d2a/1/metadata.json",
+      "transcript": "/14/bb73293d2a/1/full.jsonl",
+      "content_hash": "/14/bb73293d2a/1/content_hash.txt",
+      "prompt": "/14/bb73293d2a/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 9884,
-    "cache_creation_tokens": 50402,
-    "cache_read_tokens": 1121764,
-    "output_tokens": 8169,
-    "api_call_count": 23
+    "input_tokens": 20381,
+    "cache_creation_tokens": 130962,
+    "cache_read_tokens": 3037204,
+    "output_tokens": 36699,
+    "api_call_count": 56
   }
 }
