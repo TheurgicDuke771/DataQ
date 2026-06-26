@@ -146,9 +146,13 @@ function RunsTab() {
   const runs = state.data.filter((r) => {
     if (status !== 'all' && r.status !== status) return false;
     if (suiteId !== 'all' && r.suite_id !== suiteId) return false;
+    // Keep runs with unknown env/datasource visible under any filter — a
+    // shared-suite viewer may lack access to the underlying connection (meta is
+    // null), and listRuns is already suite-scoped. Only exclude when the run's
+    // metadata is known and actually differs. (#348)
     const meta = suiteMeta.get(r.suite_id);
-    if (env !== 'all' && meta?.env !== env) return false;
-    if (category !== 'all' && meta?.category !== category) return false;
+    if (env !== 'all' && meta?.env != null && meta.env !== env) return false;
+    if (category !== 'all' && meta?.category != null && meta.category !== category) return false;
     if (windowDays !== null && !isWithinWindowDays(r.started_at ?? r.created_at, windowDays))
       return false;
     return true;
@@ -180,8 +184,22 @@ function RunsTab() {
     },
   ];
 
+  // Env / datasource come from the connections join; gate those two filters on
+  // connections being loaded so the user can't filter by facts we can't yet
+  // compute, and flag it if the join data failed to load entirely. (#348)
+  const connectionsReady = connectionsState.status === 'ok';
+  const connectionsFailed = connectionsState.status === 'error';
+
   return (
     <Flex vertical gap={16}>
+      {connectionsFailed && (
+        <Alert
+          type="warning"
+          showIcon
+          message="Environment / datasource filters unavailable"
+          description="Couldn't load connections, so runs can't be filtered by environment or datasource. All runs are still shown."
+        />
+      )}
       <Flex gap={16} align="flex-end" wrap="wrap">
         <Filter label="Status">
           <Select<RunStatus | 'all'>
@@ -208,6 +226,8 @@ function RunsTab() {
           <Select<ConnectionEnv | 'all'>
             value={env}
             onChange={setEnv}
+            disabled={!connectionsReady}
+            loading={connectionsState.status === 'loading'}
             style={{ width: 130 }}
             options={[
               { value: 'all', label: 'All' },
@@ -219,6 +239,8 @@ function RunsTab() {
           <Select<DatasourceCategory | 'all'>
             value={category}
             onChange={setCategory}
+            disabled={!connectionsReady}
+            loading={connectionsState.status === 'loading'}
             style={{ width: 160 }}
             options={[
               { value: 'all', label: 'All' },
@@ -371,8 +393,20 @@ function PipelineRunsTab({ pollMs = PIPELINE_POLL_MS }: { pollMs?: number }) {
     },
   ];
 
+  // The DQ-run column joins against listRuns; if that fetch failed, every row
+  // would show '—' — a confidently-wrong "no triggered runs". Flag it instead. (#348)
+  const runsJoinFailed = runsState.status === 'error';
+
   return (
     <Flex vertical gap={16}>
+      {runsJoinFailed && (
+        <Alert
+          type="warning"
+          showIcon
+          message="Triggered DQ runs unavailable"
+          description="Couldn't load DataQ runs, so the “DQ run” column can't show which runs each pipeline triggered. Pipeline runs below are still accurate."
+        />
+      )}
       <Flex gap={12} align="flex-end" wrap>
         <Filter label="Provider">
           <Select<'all' | 'adf' | 'airflow'>
