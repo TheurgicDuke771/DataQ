@@ -119,6 +119,16 @@ def test_fail_has_no_banner_and_red_title() -> None:
     assert content["body"][0]["color"] == "attention"  # red
 
 
+def test_clean_run_renders_as_a_success_card() -> None:
+    # An 'always'-policy heartbeat on an all-pass run reads positive.
+    content = _content(_report(worst=None, counts={"pass": 3}))
+    title = content["body"][0]
+    assert title["text"] == "Orders QA"
+    assert title["color"] == "good"  # green
+    assert any("All 3 checks passed" in t for t in _texts(content))
+    assert not any("@channel" in t for t in _texts(content))
+
+
 def test_compact_handles_empty() -> None:
     assert card._compact(None) == "—"
     assert card._compact({}) == "—"

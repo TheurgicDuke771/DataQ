@@ -67,11 +67,15 @@ def _adaptive_card(report: RunReport, route: Route) -> dict[str, Any]:
 
 
 def _title_block(report: RunReport, route: Route) -> dict[str, Any]:
-    color = _URGENCY_COLOR.get(route.urgency, _DEFAULT_COLOR)
+    # A clean run delivered under the 'always' (heartbeat) policy reads positive;
+    # otherwise the title colour follows the alert urgency.
+    color = "good" if report.success else _URGENCY_COLOR.get(route.urgency, _DEFAULT_COLOR)
     return _text(report.suite_name, size="Large", weight="Bolder", color=color)
 
 
 def _subtitle_block(report: RunReport) -> dict[str, Any]:
+    if report.success:
+        return _text(f"All {report.total_checks} checks passed", is_subtle=True)
     # An operational run failure (adapter raised) has no result rows to tally.
     if report.run_status == "failed" and not report.checks:
         return _text("Run failed to execute", is_subtle=True)

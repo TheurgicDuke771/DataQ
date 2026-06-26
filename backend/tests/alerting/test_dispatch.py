@@ -16,7 +16,7 @@ import pytest
 
 from backend.app.alerting import dispatch, registry
 from backend.app.alerting.base import RunReport
-from backend.app.db.models import Check, Connection, Result, Run, Suite, User
+from backend.app.db.models import Check, Connection, Result, Run, Suite, SuiteNotification, User
 
 
 class _SpyPublisher:
@@ -24,7 +24,7 @@ class _SpyPublisher:
         self.reports: list[RunReport] = []
         self._boom = boom
 
-    def publish(self, report: RunReport) -> None:
+    def publish(self, session: Any, report: RunReport) -> None:
         if self._boom:
             raise RuntimeError("channel down")
         self.reports.append(report)
@@ -171,3 +171,41 @@ def test_snoozed_failure_is_suppressed(db_session: Any, spy: _SpyPublisher) -> N
 
     assert dispatch.publish_run_outcome(db_session, run_id=run.id) is False
     assert spy.reports == []
+
+
+def test_always_policy_bypasses_dedup(db_session: Any, spy: _SpyPublisher) -> None:
+    # An 'always' (heartbeat) suite alerts on every run, even an unchanged repeat
+    # failure that would otherwise be deduped.
+    owner = User(aad_object_id=uuid.uuid4().hex, email=f"u-{uuid.uuid4().hex[:6]}@x.io")
+    db_session.add(owner)
+    db_session.flush()
+    conn = Connection(
+        name=f"c-{uuid.uuid4().hex[:8]}",
+        type="snowflake",
+        env="dev",
+        config={"account": "a"},
+        secret_ref="kv",
+        created_by=owner.id,
+    )
+    db_session.add(conn)
+    db_session.flush()
+    suite = Suite(name="s", connection_id=conn.id, created_by=owner.id, target={"table": "T"})
+    db_session.add(suite)
+    db_session.flush()
+    db_session.add(SuiteNotification(suite_id=suite.id, enabled=True, alert_on="always"))
+    check = Check(suite_id=suite.id, name="c", expectation_type="e", config={})
+    db_session.add(check)
+    db_session.flush()
+    base = datetime(2026, 6, 26, tzinfo=UTC)
+    r1 = Run(suite_id=suite.id, status="succeeded", created_at=base)
+    r2 = Run(suite_id=suite.id, status="succeeded", created_at=base + timedelta(minutes=5))
+    db_session.add_all([r1, r2])
+    db_session.flush()
+    db_session.add(Result(run_id=r1.id, check_id=check.id, status="fail"))
+    db_session.add(Result(run_id=r2.id, check_id=check.id, status="fail"))
+    db_session.commit()
+
+    # Both runs publish — the repeat isn't deduped under 'always'.
+    assert dispatch.publish_run_outcome(db_session, run_id=r1.id) is True
+    assert dispatch.publish_run_outcome(db_session, run_id=r2.id) is True
+    assert [r.run_id for r in spy.reports] == [r1.id, r2.id]

@@ -40,6 +40,9 @@ PIPELINE_RUN_STATUSES = ("queued", "running", "succeeded", "failed", "cancelled"
 ORCHESTRATION_PROVIDERS = ("adf", "airflow")
 PERMISSIONS = ("view", "edit", "admin")
 ENVS = ("dev", "qa", "uat", "prod")
+# Per-suite alert delivery threshold (suite_notifications.alert_on). 'fail' =
+# fail/critical only, 'warn' = warn+, 'always' = every terminal run.
+ALERT_ON_POLICIES = ("fail", "warn", "always")
 
 
 def _uuid_pk() -> Mapped[uuid.UUID]:
@@ -472,6 +475,41 @@ class Schedule(Base):
     updated_at: Mapped[datetime] = _updated_at()
 
 
+class SuiteNotification(Base):
+    """Per-suite alert delivery config (one row per suite).
+
+    Decides *whether* a suite's run outcomes are delivered (``enabled``), at what
+    threshold (``alert_on``), and *where* — an optional per-suite Teams webhook
+    referenced via ``webhook_secret_ref`` (the URL is token-bearing, so it lives
+    in the SecretStore, never the DB), falling back to the workspace webhook when
+    NULL. Suites with no row use the default policy (alert on warn+). The Teams
+    publisher reads this when delivering (``alerting.teams``). Cascade-deleted
+    with the suite.
+    """
+
+    __tablename__ = "suite_notifications"
+    __table_args__ = (
+        _in_check("alert_on", ALERT_ON_POLICIES, "alert_on_valid"),
+        UniqueConstraint("suite_id", name="uq_suite_notifications_suite_id"),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    suite_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("suites.id", ondelete="CASCADE"), nullable=False
+    )
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+    # Delivery threshold (ADR 0005 tiers): 'fail' = fail/critical only, 'warn' =
+    # warn+, 'always' = every terminal run. Default 'warn' matches the no-config
+    # fallback (`notification_service.DEFAULT_ALERT_ON`) so saving a config
+    # doesn't silently change the threshold. See `alerting.routing.route_for`.
+    alert_on: Mapped[str] = mapped_column(String(16), nullable=False, server_default=text("'warn'"))
+    # SecretStore key for the per-suite Teams webhook URL (NULL → workspace webhook).
+    # The URL is a secret; only the ref is stored here.
+    webhook_secret_ref: Mapped[str | None] = mapped_column(String(256))
+    created_at: Mapped[datetime] = _created_at()
+    updated_at: Mapped[datetime] = _updated_at()
+
+
 __all__ = [
     "Base",
     "Check",
@@ -482,6 +520,7 @@ __all__ = [
     "Schedule",
     "Share",
     "Suite",
+    "SuiteNotification",
     "TriggerBinding",
     "User",
 ]
