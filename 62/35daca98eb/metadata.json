@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "6235daca98eb",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-226-redacted-sample-rows",
+  "checkpoints_count": 2,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/62/35daca98eb/0/metadata.json",
+      "transcript": "/62/35daca98eb/0/full.jsonl",
+      "content_hash": "/62/35daca98eb/0/content_hash.txt",
+      "prompt": "/62/35daca98eb/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 27667,
+    "cache_creation_tokens": 265917,
+    "cache_read_tokens": 35553670,
+    "output_tokens": 126109,
+    "api_call_count": 242
+  }
+}
