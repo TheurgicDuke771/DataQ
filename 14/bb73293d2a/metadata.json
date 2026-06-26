@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "14bb73293d2a",
+  "strategy": "manual-commit",
+  "branch": "dependabot/pip/sqlalchemy-2.0.51",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".pre-commit-config.yaml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/14/bb73293d2a/0/metadata.json",
+      "transcript": "/14/bb73293d2a/0/full.jsonl",
+      "content_hash": "/14/bb73293d2a/0/content_hash.txt",
+      "prompt": "/14/bb73293d2a/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 9884,
+    "cache_creation_tokens": 50402,
+    "cache_read_tokens": 1121764,
+    "output_tokens": 8169,
+    "api_call_count": 23
+  }
+}

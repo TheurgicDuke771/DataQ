@@ -1,0 +1,49 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "14bb73293d2a",
+  "session_id": "0c4da650-d50d-4dd6-a154-ba6b6e5a9c5d",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-26T19:51:10.324847Z",
+  "branch": "dependabot/pip/sqlalchemy-2.0.51",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".pre-commit-config.yaml"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "682469a86069",
+  "token_usage": {
+    "input_tokens": 9884,
+    "cache_creation_tokens": 50402,
+    "cache_read_tokens": 1121764,
+    "output_tokens": 8169,
+    "api_call_count": 23
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-26T19:51:10.32032Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 1,
+    "human_removed": 0,
+    "total_committed": 0,
+    "total_lines_changed": 1,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}
