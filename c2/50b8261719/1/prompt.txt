@@ -1,0 +1,5 @@
+So, just to check we are on the same page - can you explain me the flow end to end
+
+---
+
+shouldn't airflow part of clock 2? your diagram shows it with clock 1

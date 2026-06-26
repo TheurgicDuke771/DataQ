@@ -3,7 +3,7 @@
   "checkpoint_id": "c250b8261719",
   "strategy": "manual-commit",
   "branch": "fix/issue-348-results-filter-unknown-metadata",
-  "checkpoints_count": 1,
+  "checkpoints_count": 3,
   "files_touched": [
     "frontend/src/pages/Results.tsx"
   ],
@@ -13,13 +13,19 @@
       "transcript": "/c2/50b8261719/0/full.jsonl",
       "content_hash": "/c2/50b8261719/0/content_hash.txt",
       "prompt": "/c2/50b8261719/0/prompt.txt"
+    },
+    {
+      "metadata": "/c2/50b8261719/1/metadata.json",
+      "transcript": "/c2/50b8261719/1/full.jsonl",
+      "content_hash": "/c2/50b8261719/1/content_hash.txt",
+      "prompt": "/c2/50b8261719/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 24618,
-    "cache_creation_tokens": 198599,
-    "cache_read_tokens": 20769536,
-    "output_tokens": 90377,
-    "api_call_count": 180
+    "input_tokens": 24622,
+    "cache_creation_tokens": 204374,
+    "cache_read_tokens": 21408707,
+    "output_tokens": 96580,
+    "api_call_count": 182
   }
 }
