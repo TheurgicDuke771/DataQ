@@ -5,7 +5,9 @@
   "branch": "feature/w6-alert-dedup",
   "checkpoints_count": 1,
   "files_touched": [
+    "backend/app/alerting/dedup.py",
     "backend/app/alerting/dispatch.py",
+    "backend/tests/alerting/test_dedup.py",
     "backend/tests/alerting/test_dispatch.py"
   ],
   "sessions": [
@@ -17,10 +19,10 @@
     }
   ],
   "token_usage": {
-    "input_tokens": 27360,
-    "cache_creation_tokens": 403985,
-    "cache_read_tokens": 25579690,
-    "output_tokens": 129696,
-    "api_call_count": 121
+    "input_tokens": 29571,
+    "cache_creation_tokens": 417669,
+    "cache_read_tokens": 28120995,
+    "output_tokens": 138131,
+    "api_call_count": 129
   }
 }

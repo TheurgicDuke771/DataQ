@@ -3,23 +3,25 @@
   "checkpoint_id": "dd7c337da58a",
   "session_id": "81337ef4-3e4c-4b90-96b4-35982b06e236",
   "strategy": "manual-commit",
-  "created_at": "2026-06-26T23:14:36.999737Z",
+  "created_at": "2026-06-26T23:19:33.424712Z",
   "branch": "feature/w6-alert-dedup",
   "checkpoints_count": 1,
   "save_step_count": 1,
   "files_touched": [
+    "backend/app/alerting/dedup.py",
     "backend/app/alerting/dispatch.py",
+    "backend/tests/alerting/test_dedup.py",
     "backend/tests/alerting/test_dispatch.py"
   ],
   "agent": "Claude Code",
   "model": "",
   "turn_id": "c4ca2568235b",
   "token_usage": {
-    "input_tokens": 27360,
-    "cache_creation_tokens": 403985,
-    "cache_read_tokens": 25579690,
-    "output_tokens": 129696,
-    "api_call_count": 121
+    "input_tokens": 29571,
+    "cache_creation_tokens": 417669,
+    "cache_read_tokens": 28120995,
+    "output_tokens": 138131,
+    "api_call_count": 129
   },
   "skill_events_version": 1,
   "skill_events": [
@@ -56,14 +58,14 @@
     }
   ],
   "initial_attribution": {
-    "calculated_at": "2026-06-26T23:14:36.973809Z",
+    "calculated_at": "2026-06-26T23:19:33.3967Z",
     "agent_lines": 0,
     "agent_removed": 0,
-    "human_added": 277,
-    "human_modified": 1,
+    "human_added": 34,
+    "human_modified": 3,
     "human_removed": 0,
-    "total_committed": 277,
-    "total_lines_changed": 278,
+    "total_committed": 34,
+    "total_lines_changed": 37,
     "agent_percentage": 0,
     "metric_version": 2
   }
