@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "68b20b4e62a7",
+  "strategy": "manual-commit",
+  "branch": "feature/w6-alert-suppression",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/68/b20b4e62a7/0/metadata.json",
+      "transcript": "/68/b20b4e62a7/0/full.jsonl",
+      "content_hash": "/68/b20b4e62a7/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 34362,
+    "cache_creation_tokens": 465806,
+    "cache_read_tokens": 42522537,
+    "output_tokens": 168236,
+    "api_call_count": 170
+  }
+}
