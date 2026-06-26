@@ -22,7 +22,7 @@ repos:
         # Must match backend/requirements-typecheck.txt exactly.
         # Drift is caught by the typecheck-deps-sync hook below.
         additional_dependencies:
-          - fastapi==0.136.3
+          - fastapi==0.138.1
           - fastapi-azure-auth==5.2.0
           - psycopg2-binary==2.9.12
           - pydantic==2.13.4
