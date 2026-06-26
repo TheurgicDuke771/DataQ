@@ -7,6 +7,13 @@ from datetime import UTC, datetime
 
 from backend.app.alerting import card
 from backend.app.alerting.base import CheckReport, RunReport
+from backend.app.alerting.routing import route_for
+
+
+def _content(report: RunReport) -> dict:
+    """Render a report through its computed route and return the card content."""
+    msg = card.render_teams_message(report, route_for(report))
+    return msg["attachments"][0]["content"]
 
 
 def _report(
@@ -44,8 +51,13 @@ def _check(status: str = "fail", **kw: object) -> CheckReport:
     return CheckReport(**base)  # type: ignore[arg-type]
 
 
+def _texts(content: dict) -> list[str]:
+    return [b.get("text", "") for b in content["body"] if b["type"] == "TextBlock"]
+
+
 def test_message_wraps_an_adaptive_card() -> None:
-    msg = card.render_teams_message(_report())
+    report = _report()
+    msg = card.render_teams_message(report, route_for(report))
     assert msg["type"] == "message"
     (attachment,) = msg["attachments"]
     assert attachment["contentType"] == "application/vnd.microsoft.card.adaptive"
@@ -55,8 +67,7 @@ def test_message_wraps_an_adaptive_card() -> None:
 
 
 def test_card_carries_datasource_target_and_severity() -> None:
-    content = card.render_teams_message(_report())["attachments"][0]["content"]
-    factset = next(b for b in content["body"] if b["type"] == "FactSet")
+    factset = next(b for b in _content(_report())["body"] if b["type"] == "FactSet")
     facts = {f["title"]: f["value"] for f in factset["facts"]}
     assert facts["Datasource"] == "snowflake"
     assert facts["Target"] == "RETAIL.ORDERS"
@@ -65,10 +76,7 @@ def test_card_carries_datasource_target_and_severity() -> None:
 
 
 def test_card_lists_failing_checks_with_observed_vs_expected() -> None:
-    content = card.render_teams_message(
-        _report(checks=[_check(status="fail"), _check(status="pass")])
-    )["attachments"][0]["content"]
-    texts = [b.get("text", "") for b in content["body"] if b["type"] == "TextBlock"]
+    texts = _texts(_content(_report(checks=[_check(status="fail"), _check(status="pass")])))
     blob = "\n".join(texts)
     # The failing check is rendered; the passing one is not listed.
     assert "not-null id" in blob
@@ -80,21 +88,35 @@ def test_card_lists_failing_checks_with_observed_vs_expected() -> None:
 
 
 def test_operational_failure_has_no_check_tally() -> None:
-    content = card.render_teams_message(
-        _report(run_status="failed", checks=[], counts={}, worst=None)
-    )["attachments"][0]["content"]
-    texts = [b.get("text", "") for b in content["body"] if b["type"] == "TextBlock"]
+    texts = _texts(_content(_report(run_status="failed", checks=[], counts={}, worst=None)))
     assert any("Run failed to execute" in t for t in texts)
 
 
 def test_check_overflow_is_summarised() -> None:
-    content = card.render_teams_message(_report(checks=[_check() for _ in range(13)]))[
-        "attachments"
-    ][0]["content"]
-    texts = [b.get("text", "") for b in content["body"] if b["type"] == "TextBlock"]
+    texts = _texts(_content(_report(checks=[_check() for _ in range(13)])))
     # 10 rows rendered + a "+3 more".
     assert sum("not-null id" in t for t in texts) == 10
     assert any("+3 more" in t for t in texts)
+
+
+def test_critical_adds_channel_escalation_banner() -> None:
+    texts = _texts(_content(_report(worst="critical", counts={"critical": 1})))
+    assert any("@channel" in t and "CRITICAL" in t for t in texts)
+
+
+def test_warn_is_quiet_no_banner_and_amber_title() -> None:
+    content = _content(_report(worst="warn", counts={"warn": 1}))
+    texts = _texts(content)
+    assert not any("@channel" in t for t in texts)
+    title = content["body"][0]  # no banner → title is first
+    assert title["text"] == "Orders QA"
+    assert title["color"] == "warning"  # amber, calm
+
+
+def test_fail_has_no_banner_and_red_title() -> None:
+    content = _content(_report(worst="fail"))
+    assert not any("@channel" in t for t in _texts(content))
+    assert content["body"][0]["color"] == "attention"  # red
 
 
 def test_compact_handles_empty() -> None:
