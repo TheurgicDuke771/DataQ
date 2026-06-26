@@ -24,7 +24,7 @@ redis==5.2.1
 croniter==6.2.2                   # cron-expression parsing for suite run schedules (A7)
 
 # ── Database ──
-sqlalchemy==2.0.50
+sqlalchemy==2.0.51
 alembic==1.18.4
 psycopg2-binary==2.9.12           # swap for psycopg2 in the production image
 
