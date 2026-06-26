@@ -1,0 +1,76 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "fa77cfbe58ae",
+  "session_id": "81337ef4-3e4c-4b90-96b4-35982b06e236",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-26T23:00:02.946523Z",
+  "branch": "feature/w6-teams-adaptive-card",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/alerting/card.py",
+    "backend/app/alerting/teams.py",
+    "backend/app/core/config.py",
+    "backend/app/alerting/registry.py",
+    "backend/tests/alerting/test_card.py",
+    "backend/tests/alerting/test_teams.py",
+    "backend/tests/alerting/test_registry.py"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "c4ca2568235b",
+  "checkpoint_transcript_start": 303,
+  "transcript_lines_at_start": 303,
+  "token_usage": {
+    "input_tokens": 3963,
+    "cache_creation_tokens": 36633,
+    "cache_read_tokens": 5411078,
+    "output_tokens": 28303,
+    "api_call_count": 23
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01K1KVfCXHS3TgQtUeUWLYLY",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "c4ca2568235b",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 258,
+        "end": 259,
+        "entry_ids": [
+          "0fc70ba0-3d64-4e57-a2f6-44e613dc1fb4"
+        ],
+        "tool_use_id": "toolu_01K1KVfCXHS3TgQtUeUWLYLY"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01K1KVfCXHS3TgQtUeUWLYLY"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "initial_attribution": {
+    "calculated_at": "2026-06-26T23:00:02.924854Z",
+    "agent_lines": 476,
+    "agent_removed": 8,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 476,
+    "total_lines_changed": 484,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
