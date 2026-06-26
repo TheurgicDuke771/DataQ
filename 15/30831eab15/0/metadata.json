@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "1530831eab15",
+  "session_id": "0c4da650-d50d-4dd6-a154-ba6b6e5a9c5d",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-26T21:03:37.170184Z",
+  "branch": "chore/review-followup-tooling-polish",
+  "checkpoints_count": 3,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "f210bc5ed7d6",
+  "token_usage": {
+    "input_tokens": 12498,
+    "cache_creation_tokens": 135282,
+    "cache_read_tokens": 10614309,
+    "output_tokens": 58137,
+    "api_call_count": 121
+  },
+  "session_metrics": {
+    "turn_count": 10
+  }
+}
