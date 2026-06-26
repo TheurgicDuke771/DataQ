@@ -1,0 +1,9 @@
+Where are we hosting the Airflow?
+
+---
+
+What will be the cost difference for ADF Managed Airflow vs Airflow on Container Apps?
+
+---
+
+Okay, lets go with Airflow on Container Apps.
