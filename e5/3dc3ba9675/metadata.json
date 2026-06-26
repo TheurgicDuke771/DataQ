@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "e53dc3ba9675",
+  "strategy": "manual-commit",
+  "branch": "chore/dependabot-ignore-redis-major",
+  "checkpoints_count": 6,
+  "files_touched": [
+    ".github/dependabot.yml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/e5/3dc3ba9675/0/metadata.json",
+      "transcript": "/e5/3dc3ba9675/0/full.jsonl",
+      "content_hash": "/e5/3dc3ba9675/0/content_hash.txt",
+      "prompt": "/e5/3dc3ba9675/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1088,
+    "cache_creation_tokens": 22769,
+    "cache_read_tokens": 2722388,
+    "output_tokens": 15450,
+    "api_call_count": 38
+  }
+}
