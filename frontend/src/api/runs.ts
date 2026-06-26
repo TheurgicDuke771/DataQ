@@ -26,7 +26,9 @@ export interface Run {
   created_at: string;
 }
 
-/** Mirrors `ResultRead` — `sample_failures` is withheld by the API (PII, ADR 0018). */
+/** Mirrors `ResultRead`. `sample_failures` is the GX failing-row sample, redacted
+ *  at the API boundary (#226): the numeric counts are kept; the raw cell values
+ *  are masked to `"<redacted>"`. */
 export interface Result {
   id: string;
   check_id: string;
@@ -35,6 +37,7 @@ export interface Result {
   duration_ms: number | null;
   observed_value: Record<string, unknown> | null;
   expected_value: Record<string, unknown> | null;
+  sample_failures: Record<string, unknown> | null;
 }
 
 /** Mirrors `RunDetailRead` — a run plus its result rows. */

@@ -65,6 +65,12 @@ const runDetail: RunDetailType = {
       duration_ms: null,
       observed_value: { unexpected_percent: 2 },
       expected_value: null,
+      // Redacted at the API boundary (#226): counts kept, cell values masked.
+      sample_failures: {
+        unexpected_count: 2,
+        unexpected_percent: 2,
+        partial_unexpected_list: [{ order_id: '<redacted>' }, { order_id: '<redacted>' }],
+      },
     },
   ],
 };
@@ -143,7 +149,23 @@ describe('RunDetail page', () => {
     ]);
   });
 
-  it('exports the run as JSON (no withheld sample rows in the payload)', async () => {
+  it('surfaces the redacted failing-row sample in a check’s expanded row', async () => {
+    mockGetRun.mockResolvedValue(runDetail);
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]);
+    renderAt('r1');
+    const user = userEvent.setup();
+
+    await screen.findByText('order_id not null');
+    await user.click(screen.getByRole('button', { name: /expand row/i }));
+
+    // Count is surfaced; the masked cell value shows the shape, not real data.
+    expect(await screen.findByText(/Failing rows/)).toBeInTheDocument();
+    expect(screen.getByText(/2 rows/)).toBeInTheDocument();
+    expect(screen.getAllByText('<redacted>').length).toBeGreaterThan(0);
+  });
+
+  it('exports the run as JSON (failing-row sample omitted from the payload)', async () => {
     mockGetRun.mockResolvedValue(runDetail);
     mockGetSuite.mockResolvedValue(suite);
     mockListChecks.mockResolvedValue([check]);

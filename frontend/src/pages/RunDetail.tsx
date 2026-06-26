@@ -26,8 +26,8 @@ const SEVERITY_STATUSES = new Set<ResultStatus>(['pass', 'warn', 'fail', 'critic
  * drawer so a run is deep-linkable and refreshable. Loads the run + its results
  * by id, plus the suite name and per-check names for display.
  *
- * Sample failing rows stay withheld by the API (PII, #226 / ADR 0018) — this
- * page never requests or renders them.
+ * Sample failing rows are surfaced in each check's expanded row, redacted at the
+ * API boundary (#226): the counts are shown; the raw cell values are masked.
  */
 export function RunDetail() {
   const navigate = useNavigate();
@@ -176,7 +176,8 @@ function DownloadMenu({
   };
 
   const exportJson = () => {
-    // Sample failing rows are never in the payload (PII, withheld by the API).
+    // Export stays metric/observed-focused; the (redacted) failing-row sample is
+    // surfaced in-app on each check's expanded row, not in the download.
     downloadJson(`${stem}.json`, {
       run: {
         id: run.id,
@@ -210,6 +211,64 @@ function DownloadMenu({
     >
       <Button icon={<DownloadOutlined />}>Download</Button>
     </Dropdown>
+  );
+}
+
+/** Redacted failing-row sample for a check (#226). The API masks every cell
+ *  value to "<redacted>"; we surface the counts and the row/column *shape* so a
+ *  reviewer sees how much (and structurally what) failed without seeing PII. */
+function SampleFailures({ sample }: { sample: Record<string, unknown> | null }) {
+  if (!sample) return null;
+  const count = typeof sample.unexpected_count === 'number' ? sample.unexpected_count : null;
+  const percent = typeof sample.unexpected_percent === 'number' ? sample.unexpected_percent : null;
+  const rawList = sample.partial_unexpected_list;
+  // Entries are either row dicts ({col: value}) or bare scalars; normalise both
+  // to row objects so a single column-derived table renders them.
+  const rows: Record<string, unknown>[] = Array.isArray(rawList)
+    ? rawList.map((entry) =>
+        entry !== null && typeof entry === 'object'
+          ? (entry as Record<string, unknown>)
+          : { value: entry },
+      )
+    : [];
+  // GX's partial_unexpected_list rows share one schema, but union the keys
+  // defensively so a ragged sample still renders every column.
+  const colKeys = [...new Set(rows.flatMap((r) => Object.keys(r)))];
+  const columns: ColumnsType<Record<string, unknown>> = colKeys.map((key) => ({
+    title: key,
+    dataIndex: key,
+    render: (v: unknown) => (
+      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+        {/* Values are already masked by the API; stringify objects so a nested
+            redacted cell shows as JSON rather than "[object Object]". */}
+        {v === undefined ? '' : typeof v === 'object' && v !== null ? JSON.stringify(v) : String(v)}
+      </Typography.Text>
+    ),
+  }));
+
+  return (
+    <Flex vertical gap={8}>
+      <Typography.Text strong style={{ fontSize: 13 }}>
+        Failing rows{' '}
+        <Typography.Text type="secondary" style={{ fontWeight: 'normal' }}>
+          {count !== null && `· ${count} row${count === 1 ? '' : 's'}`}
+          {percent !== null && ` · ${percent}%`} · values redacted
+        </Typography.Text>
+      </Typography.Text>
+      {rows.length > 0 ? (
+        <Table<Record<string, unknown>>
+          rowKey={(_, i) => String(i)}
+          size="small"
+          columns={columns}
+          dataSource={rows}
+          pagination={false}
+        />
+      ) : (
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          No sample rows captured.
+        </Typography.Text>
+      )}
+    </Flex>
   );
 }
 
@@ -268,11 +327,16 @@ function ResultsTable({
       pagination={false}
       expandable={{
         // Lazily fetch a check's metric trend only when its row is expanded —
-        // keyed by check_id so each row's chart fetches its own history.
+        // keyed by check_id so each row's chart fetches its own history. The
+        // redacted failing-row sample (if any) sits below the trend.
         expandedRowRender: (record) => (
-          <CheckTrend key={record.check_id} suiteId={suiteId} checkId={record.check_id} />
+          <Flex vertical gap={16}>
+            <CheckTrend key={record.check_id} suiteId={suiteId} checkId={record.check_id} />
+            <SampleFailures sample={record.sample_failures} />
+          </Flex>
         ),
-        rowExpandable: (record) => checks.has(record.check_id),
+        // Expandable when we can show a trend (known check) or a failing sample.
+        rowExpandable: (record) => checks.has(record.check_id) || record.sample_failures !== null,
       }}
     />
   );

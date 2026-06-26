@@ -369,3 +369,54 @@ def test_non_expectation_kind_fails_run_without_invoking_runner() -> None:
     assert runner.called_with is None  # dispatch short-circuited before the adapter
     assert session.added == []  # nothing persisted
     assert session.rollbacks == 1
+
+
+# ── redact_sample_failures (#226) ─────────────────────────────────────────────
+
+
+def test_redact_sample_failures_none_and_empty_pass_through() -> None:
+    assert run_service.redact_sample_failures(None) is None
+    assert run_service.redact_sample_failures({}) is None
+
+
+def test_redact_sample_failures_keeps_counts_masks_row_dicts() -> None:
+    out = run_service.redact_sample_failures(
+        {
+            "unexpected_count": 3,
+            "unexpected_percent": 12.5,
+            "partial_unexpected_list": [{"id": 1, "ssn": "111-22-3333"}],
+        }
+    )
+    assert out == {
+        "unexpected_count": 3,
+        "unexpected_percent": 12.5,
+        "partial_unexpected_list": [{"id": "<redacted>", "ssn": "<redacted>"}],
+    }
+
+
+def test_redact_sample_failures_masks_scalar_list_preserving_length() -> None:
+    # Column-values expectations yield a flat list of raw cell values, not dicts.
+    out = run_service.redact_sample_failures(
+        {"partial_unexpected_list": ["a@x.com", "b@y.com", "c@z.com"]}
+    )
+    assert out == {"partial_unexpected_list": ["<redacted>", "<redacted>", "<redacted>"]}
+
+
+def test_redact_sample_failures_masks_unknown_keys_and_nested_values() -> None:
+    # Any non-summary key is treated as data and fully masked, including nesting.
+    out = run_service.redact_sample_failures(
+        {"unexpected_index_list": [{"row": {"name": "Alice"}}]}
+    )
+    assert out == {"unexpected_index_list": [{"row": {"name": "<redacted>"}}]}
+
+
+def test_redact_sample_failures_masks_non_numeric_value_under_safe_key() -> None:
+    # The safe-key passthrough trusts value *shape*: a non-number under a safe key
+    # (a hypothetical future runner stowing row data there) must still be masked.
+    out = run_service.redact_sample_failures(
+        {
+            "unexpected_count": 3,  # genuine scalar → kept
+            "unexpected_percent": ["secret@x.com"],  # not a number → masked
+        }
+    )
+    assert out == {"unexpected_count": 3, "unexpected_percent": ["<redacted>"]}
