@@ -12,7 +12,7 @@ DataQ v1 has an 8-week timeline and a small team (starting solo, expected to gro
 
 Adopt **trunk-based development** with short-lived feature branches off `main`, and **squash-merge** as the only allowed merge method into `main`.
 
-- All work happens on a branch named `feature/<desc>`, `fix/issue-<N>-<desc>`, `chore/<desc>`, or `docs/<desc>`.
+- All work happens on a branch named `feature/<desc>`, `fix/issue-<N>-<desc>`, `chore/<desc>`, `docs/<desc>`, `refactor/<desc>`, or `test/<desc>`. The branch prefix matches the conventional-commit type of the eventual PR title (see ADR 0002 for the full allowed type set).
 - Branches are short-lived (ideally hours to a couple of days), opened as PRs against `main`.
 - PRs are squash-merged — the PR title becomes the single commit on `main` (so PR titles MUST follow conventional commits — see ADR 0002).
 - No long-lived `develop` branch.
