@@ -1,0 +1,49 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "e53dc3ba9675",
+  "session_id": "f4bc72b1-2ea6-4652-90c2-d70d040c7bc7",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-26T20:11:46.35544Z",
+  "branch": "chore/dependabot-ignore-redis-major",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    ".github/dependabot.yml"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "173dc0ab9c95",
+  "checkpoint_transcript_start": 150,
+  "transcript_lines_at_start": 150,
+  "token_usage": {
+    "input_tokens": 4184,
+    "cache_creation_tokens": 53170,
+    "cache_read_tokens": 3069587,
+    "output_tokens": 42266,
+    "api_call_count": 26
+  },
+  "session_metrics": {
+    "turn_count": 3
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-26T20:11:46.346727Z",
+    "agent_lines": 6,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 6,
+    "total_lines_changed": 6,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
