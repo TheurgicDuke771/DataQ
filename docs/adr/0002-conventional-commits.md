@@ -23,12 +23,14 @@ Allowed type prefixes:
 | `test:` | Test-only change |
 | `refactor:` | Internal change with no behaviour change |
 
+This is an **intentional subset** of the Conventional Commits spec. The spec also defines `build:`, `ci:`, `perf:`, `style:`, and `revert:`; we deliberately exclude them to keep the `git log` taxonomy small and unambiguous for a small team — build/CI changes ride `chore:`, performance work rides `fix:` or `refactor:`, formatting rides `chore:`/`refactor:`, and reverts use `revert:`-style PR titles only if the spec type is later adopted. Expand the table if a real need emerges.
+
 Format: `<type>(<optional-scope>): <imperative summary>`
 
 Examples:
 - `feat(orchestration): add Airflow callback webhook handler`
 - `fix(adf): debounce duplicate trigger events within 30s window`
-- `chore: pin GX Core to 1.x`
+- `chore: pin GX Core to 1.4.2` (exact pin — ADR 0003 requires an exact version, not a range)
 - `docs: add ADR 0005 for severity tier weights`
 
 ## Consequences

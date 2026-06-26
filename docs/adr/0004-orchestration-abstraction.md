@@ -26,13 +26,17 @@ Treating orchestrators as datasources pollutes the suite/check editor, mixes unr
 ### Interface
 
 ```
+from collections.abc import Mapping
+
 class OrchestrationProvider:
-    def parse_event(self, payload: bytes, headers: dict) -> RunUpdate: ...
+    def parse_event(self, payload: bytes, headers: Mapping[str, str]) -> RunUpdate: ...
     def fetch_run_detail(self, provider_run_id: str) -> RunDetail: ...
     def list_recent_runs(self, since: datetime) -> list[RunUpdate]: ...
 ```
 
 Both `AdfProvider` and `AirflowProvider` implement this interface. Service code routes by `provider` enum, never by provider-specific branching.
+
+**Retry/backoff is an implementation detail**, not part of this interface. The polling fallback (`list_recent_runs`) may retry with backoff on transient provider-API errors; the interface guarantees no double-emit because ingestion is idempotent on (`provider`, `provider_run_id`) plus the run's `last_updated_at` — a re-delivered or re-polled event for an already-current run is a no-op upsert, not a duplicate `pipeline_runs` row.
 
 ### Event channels per provider
 

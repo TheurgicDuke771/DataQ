@@ -78,6 +78,7 @@ frontend/playwright/.cache/
 # ---- Environment / secrets ----
 .env
 .env.*
+.envrc
 !.env.example
 !.env.app.example
 *.pem

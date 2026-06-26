@@ -5,9 +5,36 @@ Each ADR captures a single significant architecture decision: the context, the d
 ## Format
 
 - File name: `NNNN-short-kebab-slug.md` (zero-padded 4-digit sequence)
-- Frontmatter fields: Status, Date, Deciders
+- Frontmatter fields:
+  - **Status** — one of `Proposed`, `Accepted`, `Deprecated`, `Superseded by ADR-NNNN` (title-case)
+  - **Date** — `YYYY-MM-DD`
+  - **Deciders** — who made the call
+  - **Consulted** *(optional)* — stakeholders whose sign-off the decision needed (e.g. product owner for ADR 0005). Omit when none.
+  - **Supersedes** *(optional)* — `ADR-NNNN` this decision replaces. Omit when none.
+  - **Superseded by** *(optional)* — `ADR-NNNN` that later replaced this one. Add when the status flips to `Superseded by`.
 - Sections: Context, Decision, Consequences, Alternatives considered, Related (optional)
 - Keep each ADR short — 1–2 pages. If it grows past that, the decision is probably two decisions.
+
+### Template
+
+```markdown
+# ADR NNNN — <title>
+
+- **Status:** Proposed
+- **Date:** YYYY-MM-DD
+- **Deciders:** @handle
+- **Consulted:** <stakeholder>   <!-- optional; omit when none -->
+- **Supersedes:** ADR-NNNN       <!-- optional; omit when none -->
+- **Superseded by:** ADR-NNNN    <!-- optional; add when superseded -->
+
+## Context
+
+## Decision
+
+## Consequences
+
+## Alternatives considered
+```
 
 ## Index
 
