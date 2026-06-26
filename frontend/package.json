@@ -20,7 +20,7 @@
   },
   "dependencies": {
     "@ant-design/icons": "^6.2.5",
-    "@azure/msal-browser": "5.12.0",
+    "@azure/msal-browser": "5.14.0",
     "@azure/msal-react": "5.4.3",
     "@monaco-editor/react": "^4.7.0",
     "antd": "^6.4.5",
