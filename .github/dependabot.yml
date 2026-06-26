@@ -11,6 +11,12 @@ updates:
     ignore:
       # GX Core is manually pinned — do not auto-update (API drifts across point releases)
       - dependency-name: great-expectations
+      # redis-py 8.x (Redis-8-aligned renumber) is capped by kombu's [redis] extra
+      # (redis<6.5); no released celery/kombu allows it yet. Skip major bumps until
+      # upstream adopts the new scheme. See closed PR #338.
+      - dependency-name: redis
+        update-types:
+          - version-update:semver-major
 
   - package-ecosystem: npm
     directory: /frontend
