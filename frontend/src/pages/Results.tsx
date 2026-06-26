@@ -184,20 +184,22 @@ function RunsTab() {
     },
   ];
 
-  // Env / datasource come from the connections join; gate those two filters on
-  // connections being loaded so the user can't filter by facts we can't yet
-  // compute, and flag it if the join data failed to load entirely. (#348)
-  const connectionsReady = connectionsState.status === 'ok';
-  const connectionsFailed = connectionsState.status === 'error';
+  // Env / datasource are derived from the suite→connection join (suiteMeta), so
+  // both fetches must succeed before those two filters can compute anything.
+  // Gate the selects on that combined readiness — otherwise a suites/connections
+  // load failure leaves the selects enabled but silently inert (a non-'all'
+  // choice no-ops because every meta is null). (#348)
+  const metaReady = suitesState.status === 'ok' && connectionsState.status === 'ok';
+  const metaFailed = suitesState.status === 'error' || connectionsState.status === 'error';
 
   return (
     <Flex vertical gap={16}>
-      {connectionsFailed && (
+      {metaFailed && (
         <Alert
           type="warning"
           showIcon
           message="Environment / datasource filters unavailable"
-          description="Couldn't load connections, so runs can't be filtered by environment or datasource. All runs are still shown."
+          description="Couldn't load suites or connections, so runs can't be filtered by environment or datasource. All runs are still shown."
         />
       )}
       <Flex gap={16} align="flex-end" wrap="wrap">
@@ -226,8 +228,8 @@ function RunsTab() {
           <Select<ConnectionEnv | 'all'>
             value={env}
             onChange={setEnv}
-            disabled={!connectionsReady}
-            loading={connectionsState.status === 'loading'}
+            disabled={!metaReady}
+            loading={!metaReady && !metaFailed}
             style={{ width: 130 }}
             options={[
               { value: 'all', label: 'All' },
@@ -239,8 +241,8 @@ function RunsTab() {
           <Select<DatasourceCategory | 'all'>
             value={category}
             onChange={setCategory}
-            disabled={!connectionsReady}
-            loading={connectionsState.status === 'loading'}
+            disabled={!metaReady}
+            loading={!metaReady && !metaFailed}
             style={{ width: 160 }}
             options={[
               { value: 'all', label: 'All' },
