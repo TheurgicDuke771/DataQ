@@ -1,0 +1,9 @@
+Okay, and we are providing IAM access to each objects so they can communicate [wherever applicable], right?
+
+---
+
+What will be the major drawback of key based vs IAM?
+
+---
+
+Okay leave it key based [but make sure every communication works fine], and lets start with #3
