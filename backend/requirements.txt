@@ -48,7 +48,7 @@ azure-identity==1.23.0
 # ── Datasource connectors ──
 snowflake-sqlalchemy==1.10.2       # ≥1.8 lifts the connector<4.0 cap (#129)
 snowflake-connector-python==4.6.0  # 3→4: drops cffi<2 / pyOpenSSL<26 caps → unblocks cryptography≥46.0.7 + pyOpenSSL≥26 CVE fixes (#129)
-cryptography==48.0.1               # direct floor — transitive (snowflake/pyOpenSSL/azure/GX); pins past GHSA-537c-gmf6-5ccf in 46.0.7 (#274)
+cryptography==49.0.0               # direct floor — transitive (snowflake/pyOpenSSL/azure/GX); pins past GHSA-537c-gmf6-5ccf in 46.0.7 (#274)
 azure-storage-blob==12.30.0       # ADLS Gen2
 boto3==1.43.34                    # S3
 databricks-sql-connector==4.3.0   # Unity Catalog
