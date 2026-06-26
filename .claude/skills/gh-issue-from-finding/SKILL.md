@@ -15,7 +15,7 @@ Operationalize working-agreement #3: every defect (and every deferred-but-known 
 User invokes with a short description of the finding. Required context the skill must collect:
 - `--from-pr <N>` — source PR where the finding was identified (optional but strongly preferred for traceability)
 - `--from-comment <url>` — direct link to the /review comment (optional)
-- `--severity critical|high|medium|low` (defaults to `medium`; use `critical` only for production-down / data-loss; never use `critical` for security — see `--security` flag below)
+- `--severity critical|high|medium|low` (defaults to `medium`; use `critical` only for production-down / data-loss; never use `critical` for security — see `--security` flag below). Maps to a `priority/*` label **and** a `**Severity:**` line in the body (see Steps 2–4).
 - `--type bug|enhancement|documentation` (defaults to `bug`; maps to GitHub label)
 - `--security` — flag for security-adjacent issues. If set, the skill SHOULD NOT proceed with `gh issue create`; instead it prints the GitHub Security Advisories URL and exits, per the security-disclosure policy (see issue [#9](https://github.com/TheurgicDuke771/DataQ/issues/9) for context).
 - `--blocker-for-week <N>` — optional, marks the issue as a Week-N blocker.
@@ -30,10 +30,11 @@ User invokes with a short description of the finding. Required context the skill
    ```
    Exit successfully without calling `gh issue create`.
 
-2. **Resolve the label** from `--type`:
-   - `bug` → `bug`
-   - `enhancement` → `enhancement`
-   - `documentation` → `documentation`
+2. **Resolve and validate the labels.**
+   - **Type label** from `--type`: `bug` → `bug`, `enhancement` → `enhancement`, `documentation` → `documentation`.
+   - **Priority label** from `--severity`: `critical` → `priority/P0`, `high` → `priority/P1`, `medium` → `priority/P2`, `low` → `priority/P3`.
+   - **Validate both labels exist before filing.** Run `gh label list --json name -q '.[].name'` and confirm each resolved label is present. If a label is missing, stop and tell the user (e.g. `gh issue create` with an unknown `--label` fails with "label not found") — do not invent or create labels. The current repo labels are: `bug`, `enhancement`, `documentation`, `refactor`, `test`, `security`, `priority/P0`–`priority/P3`. A `--type` outside `bug|enhancement|documentation` (e.g. `refactor`/`test`) is allowed only if that label already exists.
+   - Pass both to `gh issue create` as a comma-joined `--label "$TYPE_LABEL,$PRIORITY_LABEL"`.
 
 3. **Build the issue title** as a plain descriptive sentence (not a `fix:` / `feat:` prefix — that belongs on the fixing PR). Examples:
    - "ADR template missing Consulted field"
@@ -44,7 +45,7 @@ User invokes with a short description of the finding. Required context the skill
 5. **Call `gh issue create`.** The body template contains backticks, code blocks, and `$`-signs that break shell-interpolated `--body "..."` quoting. Use `--body-file` with a temp file instead:
    ```bash
    tmp=$(mktemp); printf '%s' "$BODY" > "$tmp"
-   gh issue create --title "$TITLE" --label "$LABEL" --body-file "$tmp"
+   gh issue create --title "$TITLE" --label "$TYPE_LABEL,$PRIORITY_LABEL" --body-file "$tmp"
    rm "$tmp"
    ```
    Capture the returned URL.
@@ -61,6 +62,8 @@ User invokes with a short description of the finding. Required context the skill
 
 ```markdown
 <one-line problem statement>
+
+**Severity:** <critical|high|medium|low> (priority/P0–P3)
 
 ## Items
 
@@ -86,6 +89,17 @@ If `--blocker-for-week N` is set, prepend a bold line to the body:
 - **Backlink is the source of truth.** Always include the /review comment URL or source PR number so the issue can be cross-referenced.
 - **Fix PR must reference `Fixes #N`** to auto-close on merge (working-agreement #3 + PR template's "Linked issue" section).
 - **Do not create the fix branch from this skill.** Branch creation is a separate workflow.
+
+## Test scenarios
+
+Worked examples so the skill behaves consistently:
+
+1. **Standard bug from review.** `gh-issue-from-finding "double-trigger race in _trigger_suites" --from-pr 215 --severity high --type bug` →
+   validate `bug` + `priority/P1` exist; title is the plain sentence (no `fix:`); body carries `**Severity:** high`, the source-PR backlink, and `--label "bug,priority/P1"`.
+2. **Default severity.** `... --type enhancement` with no `--severity` → defaults to `medium` → `priority/P2`; body `**Severity:** medium`.
+3. **Security finding.** `... --security` → does **not** call `gh issue create`; prints the Security Advisory URL and exits 0.
+4. **Unknown type label.** `... --type custom` → label validation fails (`custom` not in `gh label list`); stop and report instead of filing.
+5. **Critical / production-down.** `... --severity critical --type bug` → `priority/P0`; body `**Severity:** critical`.
 
 ## Anti-patterns to avoid
 
