@@ -1,0 +1,57 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "47d65b7f2688",
+  "session_id": "81337ef4-3e4c-4b90-96b4-35982b06e236",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-26T22:48:28.221111Z",
+  "branch": "feature/w6-result-publisher-seam",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/alerting/__init__.py",
+    "backend/app/alerting/base.py",
+    "backend/app/alerting/builder.py",
+    "backend/app/alerting/dispatch.py",
+    "backend/app/alerting/noop.py",
+    "backend/app/alerting/registry.py",
+    "backend/app/worker/tasks.py",
+    "backend/tests/alerting/__init__.py",
+    "backend/tests/alerting/test_builder.py",
+    "backend/tests/alerting/test_dispatch.py",
+    "backend/tests/alerting/test_registry.py",
+    "backend/tests/conftest.py"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "c4ca2568235b",
+  "token_usage": {
+    "input_tokens": 16175,
+    "cache_creation_tokens": 289203,
+    "cache_read_tokens": 7912632,
+    "output_tokens": 48714,
+    "api_call_count": 52
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-26T22:48:28.203802Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 685,
+    "human_modified": 2,
+    "human_removed": 0,
+    "total_committed": 685,
+    "total_lines_changed": 687,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}

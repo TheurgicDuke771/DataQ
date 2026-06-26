@@ -1,0 +1,36 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "47d65b7f2688",
+  "strategy": "manual-commit",
+  "branch": "feature/w6-result-publisher-seam",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/alerting/__init__.py",
+    "backend/app/alerting/base.py",
+    "backend/app/alerting/builder.py",
+    "backend/app/alerting/dispatch.py",
+    "backend/app/alerting/noop.py",
+    "backend/app/alerting/registry.py",
+    "backend/app/worker/tasks.py",
+    "backend/tests/alerting/__init__.py",
+    "backend/tests/alerting/test_builder.py",
+    "backend/tests/alerting/test_dispatch.py",
+    "backend/tests/alerting/test_registry.py",
+    "backend/tests/conftest.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/47/d65b7f2688/0/metadata.json",
+      "transcript": "/47/d65b7f2688/0/full.jsonl",
+      "content_hash": "/47/d65b7f2688/0/content_hash.txt",
+      "prompt": "/47/d65b7f2688/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 16175,
+    "cache_creation_tokens": 289203,
+    "cache_read_tokens": 7912632,
+    "output_tokens": 48714,
+    "api_call_count": 52
+  }
+}
