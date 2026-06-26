@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -225,6 +225,38 @@ def delete_check(session: Session, suite_id: uuid.UUID, check_id: uuid.UUID) -> 
     session.delete(check)
     session.commit()
     log.info("check_deleted", check_id=str(check_id))
+
+
+def snooze_check(
+    session: Session,
+    suite_id: uuid.UUID,
+    check_id: uuid.UUID,
+    *,
+    hours: float,
+    now: datetime | None = None,
+) -> Check:
+    """Mute a check's alerts until ``hours`` from now (alert suppression).
+
+    Operational state only — sets ``alert_snoozed_until`` directly and does **not**
+    record a ``check_versions`` snapshot (a snooze isn't a config change; config
+    history shouldn't churn on it). 404 / cross-suite guard via ``get_check``.
+    """
+    check = get_check(session, suite_id, check_id)
+    check.alert_snoozed_until = (now or datetime.now(UTC)) + timedelta(hours=hours)
+    session.commit()
+    session.refresh(check)
+    log.info("check_snoozed", check_id=str(check.id), hours=hours)
+    return check
+
+
+def clear_check_snooze(session: Session, suite_id: uuid.UUID, check_id: uuid.UUID) -> Check:
+    """Clear a check's alert snooze (re-enable alerts immediately). Idempotent."""
+    check = get_check(session, suite_id, check_id)
+    check.alert_snoozed_until = None
+    session.commit()
+    session.refresh(check)
+    log.info("check_snooze_cleared", check_id=str(check.id))
+    return check
 
 
 def list_check_versions(

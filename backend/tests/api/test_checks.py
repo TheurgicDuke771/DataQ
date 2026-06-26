@@ -725,3 +725,65 @@ def test_dryrun_requires_edit_permission(client: TestClient, db_session: Any) ->
     _as(b)
     resp = client.post(f"/api/v1/suites/{sid}/checks/dryrun", json=_dryrun_body())
     assert resp.status_code == 403
+
+
+# ───────────────────────── snooze (suppression) ────────────────────
+
+
+def _make_check(client: TestClient, sid: str) -> str:
+    resp = client.post(f"/api/v1/suites/{sid}/checks", json=_payload())
+    assert resp.status_code == 201
+    return str(resp.json()["id"])
+
+
+def test_snooze_sets_future_until_and_clear_resets(client: TestClient, db_session: Any) -> None:
+    sid = _suite_id(client, db_session)
+    cid = _make_check(client, sid)
+    # Fresh check is not snoozed.
+    assert client.get(f"/api/v1/suites/{sid}/checks/{cid}").json()["alert_snoozed_until"] is None
+
+    snoozed = client.post(f"/api/v1/suites/{sid}/checks/{cid}/snooze", json={"hours": 4})
+    assert snoozed.status_code == 200
+    until = snoozed.json()["alert_snoozed_until"]
+    assert until is not None
+    assert datetime.fromisoformat(until) > datetime.now(UTC)
+
+    cleared = client.request("DELETE", f"/api/v1/suites/{sid}/checks/{cid}/snooze")
+    assert cleared.status_code == 200
+    assert cleared.json()["alert_snoozed_until"] is None
+
+
+def test_snooze_does_not_create_a_version(client: TestClient, db_session: Any) -> None:
+    # Snooze is operational state, not config — it must not churn version history.
+    sid = _suite_id(client, db_session)
+    cid = _make_check(client, sid)
+    before = client.get(f"/api/v1/suites/{sid}/checks/{cid}/versions").json()
+    client.post(f"/api/v1/suites/{sid}/checks/{cid}/snooze", json={"hours": 1})
+    after = client.get(f"/api/v1/suites/{sid}/checks/{cid}/versions").json()
+    assert len(after) == len(before) == 1  # create made v1; snooze added none
+
+
+@pytest.mark.parametrize("hours", [0, -3, 721])
+def test_snooze_rejects_out_of_range_hours(
+    client: TestClient, db_session: Any, hours: float
+) -> None:
+    sid = _suite_id(client, db_session)
+    cid = _make_check(client, sid)
+    resp = client.post(f"/api/v1/suites/{sid}/checks/{cid}/snooze", json={"hours": hours})
+    assert resp.status_code == 422
+
+
+def test_snooze_unknown_check_returns_404(client: TestClient, db_session: Any) -> None:
+    sid = _suite_id(client, db_session)
+    resp = client.post(f"/api/v1/suites/{sid}/checks/{uuid.uuid4()}/snooze", json={"hours": 1})
+    assert resp.status_code == 404
+
+
+def test_snooze_requires_edit_permission(client: TestClient, db_session: Any) -> None:
+    owner, b, _e, sid = _owner_b_e_suite(db_session)
+    _as(owner)
+    cid = _make_check(client, sid)
+    _grant(client, owner, sid, b, "view")  # viewer cannot snooze
+    _as(b)
+    resp = client.post(f"/api/v1/suites/{sid}/checks/{cid}/snooze", json={"hours": 1})
+    assert resp.status_code == 403

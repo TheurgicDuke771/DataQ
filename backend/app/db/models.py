@@ -234,6 +234,11 @@ class Check(Base):
     config: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, server_default=text("'{}'::jsonb")
     )
+    # Alert snooze (suppression): mute this check's alerts until this moment (UTC).
+    # NULL or in the past = active. Operational state set via the snooze endpoint —
+    # NOT an editable config field, so it's excluded from the check PATCH and from
+    # `check_versions` snapshots (config history shouldn't churn on a snooze).
+    alert_snoozed_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = _created_at()
     updated_at: Mapped[datetime] = _updated_at()
 
