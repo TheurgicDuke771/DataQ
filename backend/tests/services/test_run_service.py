@@ -408,3 +408,15 @@ def test_redact_sample_failures_masks_unknown_keys_and_nested_values() -> None:
         {"unexpected_index_list": [{"row": {"name": "Alice"}}]}
     )
     assert out == {"unexpected_index_list": [{"row": {"name": "<redacted>"}}]}
+
+
+def test_redact_sample_failures_masks_non_numeric_value_under_safe_key() -> None:
+    # The safe-key passthrough trusts value *shape*: a non-number under a safe key
+    # (a hypothetical future runner stowing row data there) must still be masked.
+    out = run_service.redact_sample_failures(
+        {
+            "unexpected_count": 3,  # genuine scalar → kept
+            "unexpected_percent": ["secret@x.com"],  # not a number → masked
+        }
+    )
+    assert out == {"unexpected_count": 3, "unexpected_percent": ["<redacted>"]}

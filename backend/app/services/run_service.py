@@ -347,8 +347,12 @@ def get_run_progress(session: Session, run: Run) -> RunProgress:
 
 # Aggregate summary keys in a GX sample are counts/percentages, not row data, so
 # they are safe to surface. Everything else — notably `partial_unexpected_list`,
-# the raw offending cell values — is treated as potential PII and masked.
+# the raw offending cell values — is treated as potential PII and masked. These
+# mirror the producer's `gx_runner._SAMPLE_KEYS`; keep the two in sync when the
+# sample shape grows (a new safe aggregate must be added here or it gets masked).
 _SAMPLE_SAFE_KEYS = frozenset({"unexpected_count", "unexpected_percent"})
+# Same sentinel string as the structlog redactor (core.logging._REDACTED); the
+# two redactors stay deliberately separate (key-based for logs, value-based here).
 _REDACTED_VALUE = "<redacted>"
 
 
@@ -380,13 +384,31 @@ def redact_sample_failures(sample: dict[str, Any] | None) -> dict[str, Any] | No
     *how much* failed without leaking *what*. ``None`` (passing / errored /
     purged results) passes through unchanged. A future opt-in could surface raw
     rows to privileged viewers — that policy seam lives at this one call site.
+
+    This redacts by *value* (mask everything except an allowlist), not by *key*
+    like the structlog redactor (``core.logging._PII_KEYS``): a failing sample is
+    arbitrary table columns whose PII-ness can't be enumerated as key names ahead
+    of time, so masking only known-PII keys would leak any un-enumerated column.
+    Do not "harmonise" this toward the key-based approach.
+
+    A safe key is passed through only when its value is actually a scalar number —
+    the boundary trusts value *shape*, not just the key name — so a future runner
+    that ever stowed row data under one of those keys can't bypass redaction.
     """
     if not sample:
         return None
     return {
-        key: (value if key in _SAMPLE_SAFE_KEYS else _redact_sample_value(value))
+        key: (value if _is_safe_summary(key, value) else _redact_sample_value(value))
         for key, value in sample.items()
     }
+
+
+def _is_safe_summary(key: str, value: Any) -> bool:
+    """A passthrough-safe aggregate: an allowlisted key whose value is a plain
+    number (``bool`` excluded — it's an ``int`` subclass but not a count)."""
+    return (
+        key in _SAMPLE_SAFE_KEYS and isinstance(value, (int, float)) and not isinstance(value, bool)
+    )
 
 
 # ── retention sweep (configurable PII purge of old result samples) ────────────

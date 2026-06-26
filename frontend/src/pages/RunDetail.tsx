@@ -231,13 +231,17 @@ function SampleFailures({ sample }: { sample: Record<string, unknown> | null }) 
           : { value: entry },
       )
     : [];
+  // GX's partial_unexpected_list rows share one schema, but union the keys
+  // defensively so a ragged sample still renders every column.
   const colKeys = [...new Set(rows.flatMap((r) => Object.keys(r)))];
   const columns: ColumnsType<Record<string, unknown>> = colKeys.map((key) => ({
     title: key,
     dataIndex: key,
     render: (v: unknown) => (
       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-        {v === undefined ? '' : String(v)}
+        {/* Values are already masked by the API; stringify objects so a nested
+            redacted cell shows as JSON rather than "[object Object]". */}
+        {v === undefined ? '' : typeof v === 'object' && v !== null ? JSON.stringify(v) : String(v)}
       </Typography.Text>
     ),
   }));
