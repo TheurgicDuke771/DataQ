@@ -1,4 +1,5 @@
-import { Alert, Flex, Spin, Table, Tabs, Tag, Typography } from 'antd';
+import { AppstoreOutlined, KeyOutlined, TeamOutlined } from '@ant-design/icons';
+import { Alert, Card, Col, Flex, Row, Spin, Table, Tag, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 
 import {
@@ -10,17 +11,20 @@ import {
   listAdminUsers,
 } from '../api/admin';
 import { useMe } from '../auth/useMe';
-import { Page } from '../components/layout/Page';
+import { MetricCard } from '../components/dashboard/MetricCard';
 import { Forbidden } from '../components/Forbidden';
+import { Page } from '../components/layout/Page';
 import { formatTimestamp } from '../components/results/resultsFormat';
-import { useAsyncData } from '../hooks/useAsyncData';
+import { type AsyncState, useAsyncData } from '../hooks/useAsyncData';
 
 /**
- * Workspace-admin control centre (#173): all suites / users / access overview.
+ * Workspace-admin control centre (#173): all suites / members / access overview.
  *
- * Access is server-driven — gated on `/me`'s `is_workspace_admin` (the backend's
- * own determination, not a client role guess), and the endpoints themselves
- * re-enforce with a 403. A non-admin who deep-links here sees the Forbidden page.
+ * Layout reconciled to the prototype (ADR 0022 AdminScreen): KPI MetricCards over
+ * stacked tables, **no tabs**. Presentation only — same `/admin/{suites,users,
+ * access}` endpoints. Access is server-driven (gated on `/me`'s
+ * `is_workspace_admin`; the endpoints re-enforce with 403); a non-admin deep-link
+ * sees the Forbidden page and no data is fetched.
  */
 export function Admin() {
   const me = useMe();
@@ -37,39 +41,103 @@ export function Admin() {
     return <Forbidden message="The admin overview is restricted to workspace admins." />;
   }
 
+  return <AdminOverview />;
+}
+
+/** Hooks live here so they only run for an admin (Admin renders this after the gate). */
+function AdminOverview() {
+  const suites = useAsyncData(listAdminSuites);
+  const users = useAsyncData(listAdminUsers);
+  const access = useAsyncData(listAdminAccess);
+
   return (
     <Page>
       <Typography.Title level={3} style={{ margin: 0 }}>
         Admin
       </Typography.Title>
-      <Tabs
-        defaultActiveKey="suites"
-        items={[
-          { key: 'suites', label: 'Suites', children: <SuitesTab /> },
-          { key: 'users', label: 'Users', children: <UsersTab /> },
-          { key: 'access', label: 'Access', children: <AccessTab /> },
-        ]}
-      />
+
+      <Row gutter={[16, 16]}>
+        <Col xs={24} sm={8}>
+          <MetricCard
+            label="Suites"
+            value={count(suites.state)}
+            loading={suites.state.status === 'loading'}
+            icon={<AppstoreOutlined />}
+          />
+        </Col>
+        <Col xs={24} sm={8}>
+          <MetricCard
+            label="Members"
+            value={count(users.state)}
+            loading={users.state.status === 'loading'}
+            icon={<TeamOutlined />}
+          />
+        </Col>
+        <Col xs={24} sm={8}>
+          <MetricCard
+            label="Access grants"
+            value={count(access.state)}
+            loading={access.state.status === 'loading'}
+            icon={<KeyOutlined />}
+          />
+        </Col>
+      </Row>
+
+      <Section title="All suites">
+        <DataTable
+          state={suites.state}
+          columns={SUITE_COLUMNS}
+          rowKey={(s) => s.id}
+          errorMessage="Failed to load suites"
+        />
+      </Section>
+
+      <Section title="Members & access">
+        <DataTable
+          state={users.state}
+          columns={USER_COLUMNS}
+          rowKey={(u) => u.id}
+          errorMessage="Failed to load members"
+        />
+        <DataTable
+          state={access.state}
+          columns={ACCESS_COLUMNS}
+          // A user appears once per suite (owner or a single share row).
+          rowKey={(a) => `${a.suite_id}:${a.user_id}`}
+          errorMessage="Failed to load access overview"
+        />
+      </Section>
     </Page>
   );
 }
 
-/** Shared load/error/table boilerplate for the three admin overviews. */
-function AdminTable<T extends object>({
-  fetcher,
+function count<T>(state: AsyncState<T[]>): number | null {
+  return state.status === 'ok' ? state.data.length : null;
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <Card title={title} size="small">
+      <Flex vertical gap={16}>
+        {children}
+      </Flex>
+    </Card>
+  );
+}
+
+/** Load/error/table boilerplate for an already-fetched admin dataset. */
+function DataTable<T extends object>({
+  state,
   columns,
   rowKey,
-  loadingTip,
   errorMessage,
 }: {
-  fetcher: () => Promise<T[]>;
+  state: AsyncState<T[]>;
   columns: ColumnsType<T>;
   rowKey: (row: T) => string;
-  loadingTip: string;
   errorMessage: string;
 }) {
-  const { state } = useAsyncData(fetcher);
-  if (state.status === 'loading') return <Spin tip={loadingTip} size="large" />;
+  if (state.status === 'loading') return <Spin size="large" />;
   if (state.status === 'error') {
     return <Alert type="error" showIcon message={errorMessage} description={state.error} />;
   }
@@ -104,88 +172,54 @@ const PERMISSION_COLORS: Record<string, string> = {
   view: 'default',
 };
 
-function SuitesTab() {
-  const columns: ColumnsType<AdminSuite> = [
-    { title: 'Suite', dataIndex: 'name' },
-    {
-      title: 'Owner',
-      key: 'owner',
-      render: (_, s) => <Identity name={s.owner_name} email={s.owner_email} />,
-    },
-    {
-      title: 'Datasource',
-      key: 'datasource',
-      render: (_, s) => (
-        <Flex align="center" gap={6}>
-          <Typography.Text>{s.connection_name}</Typography.Text>
-          <Tag>{s.connection_type}</Tag>
-        </Flex>
-      ),
-    },
-    { title: 'Env', dataIndex: 'env', render: (env: string) => <Tag>{env}</Tag> },
-    { title: 'Checks', dataIndex: 'check_count', align: 'right' },
-    { title: 'Shared with', dataIndex: 'share_count', align: 'right' },
-    { title: 'Created', dataIndex: 'created_at', render: (v: string) => formatTimestamp(v) },
-  ];
-  return (
-    <AdminTable
-      fetcher={listAdminSuites}
-      columns={columns}
-      rowKey={(s) => s.id}
-      loadingTip="Loading suites…"
-      errorMessage="Failed to load suites"
-    />
-  );
-}
+const SUITE_COLUMNS: ColumnsType<AdminSuite> = [
+  { title: 'Suite', dataIndex: 'name' },
+  {
+    title: 'Owner',
+    key: 'owner',
+    render: (_, s) => <Identity name={s.owner_name} email={s.owner_email} />,
+  },
+  {
+    title: 'Datasource',
+    key: 'datasource',
+    render: (_, s) => (
+      <Flex align="center" gap={6}>
+        <Typography.Text>{s.connection_name}</Typography.Text>
+        <Tag>{s.connection_type}</Tag>
+      </Flex>
+    ),
+  },
+  { title: 'Env', dataIndex: 'env', render: (env: string) => <Tag>{env}</Tag> },
+  { title: 'Checks', dataIndex: 'check_count', align: 'right' },
+  { title: 'Shared with', dataIndex: 'share_count', align: 'right' },
+  { title: 'Created', dataIndex: 'created_at', render: (v: string) => formatTimestamp(v) },
+];
 
-function UsersTab() {
-  const columns: ColumnsType<AdminUser> = [
-    {
-      title: 'User',
-      key: 'user',
-      render: (_, u) => <Identity name={u.display_name} email={u.email} />,
-    },
-    { title: 'Suites owned', dataIndex: 'owned_suite_count', align: 'right' },
-    { title: 'Shared with them', dataIndex: 'shared_suite_count', align: 'right' },
-    {
-      title: 'Last seen',
-      dataIndex: 'last_seen_at',
-      render: (v: string | null) => formatTimestamp(v),
-    },
-  ];
-  return (
-    <AdminTable
-      fetcher={listAdminUsers}
-      columns={columns}
-      rowKey={(u) => u.id}
-      loadingTip="Loading users…"
-      errorMessage="Failed to load users"
-    />
-  );
-}
+const USER_COLUMNS: ColumnsType<AdminUser> = [
+  {
+    title: 'Member',
+    key: 'user',
+    render: (_, u) => <Identity name={u.display_name} email={u.email} />,
+  },
+  { title: 'Suites owned', dataIndex: 'owned_suite_count', align: 'right' },
+  { title: 'Shared with them', dataIndex: 'shared_suite_count', align: 'right' },
+  {
+    title: 'Last seen',
+    dataIndex: 'last_seen_at',
+    render: (v: string | null) => formatTimestamp(v),
+  },
+];
 
-function AccessTab() {
-  const columns: ColumnsType<AdminAccess> = [
-    { title: 'Suite', dataIndex: 'suite_name' },
-    {
-      title: 'User',
-      key: 'user',
-      render: (_, a) => <Identity name={a.user_name} email={a.user_email} />,
-    },
-    {
-      title: 'Permission',
-      dataIndex: 'permission',
-      render: (p: string) => <Tag color={PERMISSION_COLORS[p] ?? 'default'}>{p}</Tag>,
-    },
-  ];
-  return (
-    <AdminTable
-      fetcher={listAdminAccess}
-      columns={columns}
-      // A user appears once per suite (owner or a single share row), so suite+user is unique.
-      rowKey={(a) => `${a.suite_id}:${a.user_id}`}
-      loadingTip="Loading access…"
-      errorMessage="Failed to load access overview"
-    />
-  );
-}
+const ACCESS_COLUMNS: ColumnsType<AdminAccess> = [
+  { title: 'Suite', dataIndex: 'suite_name' },
+  {
+    title: 'User',
+    key: 'user',
+    render: (_, a) => <Identity name={a.user_name} email={a.user_email} />,
+  },
+  {
+    title: 'Permission',
+    dataIndex: 'permission',
+    render: (p: string) => <Tag color={PERMISSION_COLORS[p] ?? 'default'}>{p}</Tag>,
+  },
+];

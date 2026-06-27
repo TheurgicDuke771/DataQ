@@ -1,10 +1,16 @@
 import { App as AntApp } from 'antd';
 import { render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { listAdminAccess, listAdminSuites, listAdminUsers } from '../../src/api/admin';
+import {
+  type AdminAccess,
+  type AdminSuite,
+  type AdminUser,
+  listAdminAccess,
+  listAdminSuites,
+  listAdminUsers,
+} from '../../src/api/admin';
 import type { MeResponse } from '../../src/api/me';
 import { MeContext } from '../../src/auth/meContext';
 import type { AsyncState } from '../../src/hooks/useAsyncData';
@@ -32,6 +38,48 @@ const adminMe: AsyncState<MeResponse> = {
   },
 };
 
+const SUITE: AdminSuite = {
+  id: 's1',
+  name: 'Finance DQ',
+  connection_name: 'sf-prod',
+  connection_type: 'snowflake',
+  env: 'prod',
+  owner_id: 'o1',
+  owner_email: 'olive@x.io',
+  owner_name: 'Olive Owner',
+  check_count: 7,
+  share_count: 2,
+  created_at: '2026-06-10T10:00:00Z',
+  updated_at: '2026-06-10T10:00:00Z',
+};
+const USER: AdminUser = {
+  id: 'u9',
+  email: 'bob@x.io',
+  display_name: null,
+  last_seen_at: null,
+  created_at: '2026-06-01T00:00:00Z',
+  owned_suite_count: 3,
+  shared_suite_count: 1,
+};
+const ACCESS: AdminAccess[] = [
+  {
+    suite_id: 's1',
+    suite_name: 'Finance DQ',
+    user_id: 'o1',
+    user_email: 'olive@x.io',
+    user_name: 'Olive Owner',
+    permission: 'owner',
+  },
+  {
+    suite_id: 's1',
+    suite_name: 'Finance DQ',
+    user_id: 'e1',
+    user_email: 'ed@x.io',
+    user_name: null,
+    permission: 'edit',
+  },
+];
+
 function renderAdmin(me: AsyncState<MeResponse>) {
   return render(
     <MemoryRouter>
@@ -44,96 +92,39 @@ function renderAdmin(me: AsyncState<MeResponse>) {
   );
 }
 
+beforeEach(() => {
+  mockSuites.mockResolvedValue([SUITE]);
+  mockUsers.mockResolvedValue([USER]);
+  mockAccess.mockResolvedValue(ACCESS);
+});
 afterEach(() => vi.clearAllMocks());
 
 describe('Admin', () => {
-  it('shows the Forbidden page for a non-admin (server-driven via /me)', () => {
+  it('shows the Forbidden page for a non-admin and fetches nothing', () => {
     renderAdmin({ ...adminMe, data: { ...adminMe.data, is_workspace_admin: false } });
-
     expect(screen.getByText('403 — Forbidden')).toBeInTheDocument();
-    // The admin tables must not even attempt to load for a non-admin.
     expect(mockSuites).not.toHaveBeenCalled();
   });
 
-  it('lists all suites with owner + counts on the default tab', async () => {
-    mockSuites.mockResolvedValue([
-      {
-        id: 's1',
-        name: 'Finance DQ',
-        connection_name: 'sf-prod',
-        connection_type: 'snowflake',
-        env: 'prod',
-        owner_id: 'o1',
-        owner_email: 'olive@x.io',
-        owner_name: 'Olive Owner',
-        check_count: 7,
-        share_count: 2,
-        created_at: '2026-06-10T10:00:00Z',
-        updated_at: '2026-06-10T10:00:00Z',
-      },
-    ]);
+  it('renders KPI cards + all suites + members + access in one view (no tabs)', async () => {
     renderAdmin(adminMe);
-
-    expect(await screen.findByText('Finance DQ')).toBeInTheDocument();
-    expect(screen.getByText('Olive Owner')).toBeInTheDocument();
-    expect(screen.getByText('olive@x.io')).toBeInTheDocument();
-    expect(screen.getByText('sf-prod')).toBeInTheDocument();
-    expect(screen.getByText('7')).toBeInTheDocument();
-  });
-
-  it('shows users with owned/shared counts on the Users tab', async () => {
-    mockUsers.mockResolvedValue([
-      {
-        id: 'u9',
-        email: 'bob@x.io',
-        display_name: null,
-        last_seen_at: null,
-        created_at: '2026-06-01T00:00:00Z',
-        owned_suite_count: 3,
-        shared_suite_count: 1,
-      },
-    ]);
-    renderAdmin(adminMe);
-
-    await userEvent.click(screen.getByRole('tab', { name: 'Users' }));
-
-    // No display name → the email stands in as the identity.
-    expect(await screen.findByText('bob@x.io')).toBeInTheDocument();
-    expect(screen.getByText('3')).toBeInTheDocument();
-    expect(mockUsers).toHaveBeenCalledTimes(1);
-  });
-
-  it('shows the access matrix with permission tags on the Access tab', async () => {
-    mockAccess.mockResolvedValue([
-      {
-        suite_id: 's1',
-        suite_name: 'Finance DQ',
-        user_id: 'o1',
-        user_email: 'olive@x.io',
-        user_name: 'Olive Owner',
-        permission: 'owner',
-      },
-      {
-        suite_id: 's1',
-        suite_name: 'Finance DQ',
-        user_id: 'e1',
-        user_email: 'ed@x.io',
-        user_name: null,
-        permission: 'edit',
-      },
-    ]);
-    renderAdmin(adminMe);
-
-    await userEvent.click(screen.getByRole('tab', { name: 'Access' }));
-
-    expect(await screen.findByText('owner')).toBeInTheDocument();
+    // No tabs in the reconciled layout.
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument();
+    // KPI labels.
+    expect(screen.getByText('Suites')).toBeInTheDocument();
+    expect(screen.getByText('Members')).toBeInTheDocument();
+    expect(screen.getByText('Access grants')).toBeInTheDocument();
+    // All three tables render without any interaction. 'Finance DQ' appears in
+    // both the suites table and the access rows (so use findAllByText).
+    expect((await screen.findAllByText('Finance DQ')).length).toBeGreaterThan(0);
+    expect(screen.getByText('bob@x.io')).toBeInTheDocument(); // members
+    expect(screen.getByText('owner')).toBeInTheDocument(); // access permission tag
     expect(screen.getByText('edit')).toBeInTheDocument();
   });
 
-  it('surfaces a load error on a tab', async () => {
+  it('surfaces a load error for a failed dataset', async () => {
     mockSuites.mockRejectedValue(new Error('boom'));
     renderAdmin(adminMe);
-
     expect(await screen.findByText('Failed to load suites')).toBeInTheDocument();
   });
 });
