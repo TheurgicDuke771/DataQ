@@ -49,12 +49,34 @@ jobs:
       # Migrate BEFORE rolling the app: migrations are additive/backward-compatible
       # (CLAUDE.md), so the running old code tolerates the new schema. Runs the
       # one-off migrate Container Apps Job (provisioned per deploy/README.md).
-      - name: Run DB migrations (alembic upgrade head)
+      # `az containerapp job start` only *starts* the execution and returns, so we
+      # capture the execution name and poll it to a terminal state — the rollout
+      # below must not begin until the migration has actually SUCCEEDED, and a
+      # failed migration must abort the deploy (fail-closed) rather than roll the
+      # apps onto an un-migrated schema.
+      - name: Run DB migrations (alembic upgrade head) and wait for success
         run: |
-          az containerapp job start \
+          set -euo pipefail
+          exec_name=$(az containerapp job start \
             --name "${{ vars.MIGRATE_JOB_NAME }}" \
             --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
-            --image "$IMAGE"
+            --image "$IMAGE" \
+            --query name -o tsv)
+          echo "Started migration execution: $exec_name"
+          deadline=$(( SECONDS + 900 ))  # 15-minute cap
+          while (( SECONDS < deadline )); do
+            status=$(az containerapp job execution list \
+              --name "${{ vars.MIGRATE_JOB_NAME }}" \
+              --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+              --query "[?name=='$exec_name'].properties.status | [0]" -o tsv)
+            echo "migration status: ${status:-<pending>}"
+            case "$status" in
+              Succeeded) echo "Migration succeeded."; exit 0 ;;
+              Failed|Degraded|Stopped) echo "::error::Migration $status — aborting before app rollout."; exit 1 ;;
+            esac
+            sleep 10
+          done
+          echo "::error::Timed out waiting for migration to complete."; exit 1
 
       - name: Deploy API
         run: |
