@@ -81,6 +81,8 @@ frontend/playwright/.cache/
 .envrc
 !.env.example
 !.env.app.example
+# Prod env *reference* (blank secret values, like the dev example above).
+!deploy/.env.app.prod.example
 *.pem
 *.key
 *.crt

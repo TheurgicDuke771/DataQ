@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from typing import Final
 
 from fastapi import FastAPI, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
 
 from backend.app.api.v1 import admin as admin_router
 from backend.app.api.v1 import checks as checks_router
@@ -52,6 +53,21 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="DataQ API", lifespan=lifespan)
+
+# Cross-origin access for the prod Static-Web-App ↔ Container-Apps split. Added
+# only when origins are configured (empty in dev — the Vite proxy keeps it
+# same-origin), so the allowlist is explicit and never `*`. credentials=True so
+# the bearer/auth flow works from the SPA origin.
+_cors_origins = get_settings().cors_allow_origin_list
+if _cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+        expose_headers=[REQUEST_ID_HEADER],
+    )
 
 
 @app.middleware("http")
