@@ -71,4 +71,40 @@ def test_operational_failure_routes_standard() -> None:
     ],
 )
 def test_send_matrix(worst: str | None, run_status: str, sends: bool) -> None:
+    # Default policy = 'warn' (alert on warn+, not on clean).
     assert route_for(_report(worst=worst, run_status=run_status)).should_send is sends
+
+
+# ── per-suite policy gating ──────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("policy", "worst", "sends"),
+    [
+        ("fail", "critical", True),
+        ("fail", "fail", True),
+        ("fail", "warn", False),  # warn is below 'fail'
+        ("fail", None, False),
+        ("warn", "warn", True),
+        ("warn", None, False),
+        ("always", "critical", True),
+        ("always", "warn", True),
+        ("always", None, True),  # heartbeat — even a clean run sends
+    ],
+)
+def test_policy_gating(policy: str, worst: str | None, sends: bool) -> None:
+    assert route_for(_report(worst=worst), policy).should_send is sends
+
+
+def test_operational_failure_sends_under_every_policy() -> None:
+    # A run that couldn't execute always alerts, even under the strict 'fail'.
+    op = _report(worst=None, run_status="failed")
+    assert route_for(op, "fail").should_send is True
+    assert route_for(op, "always").should_send is True
+
+
+def test_urgency_independent_of_policy() -> None:
+    # Policy gates whether to send; urgency/mention still come from severity.
+    crit = _report(worst="critical")
+    assert route_for(crit, "always").mention_channel is True
+    assert route_for(crit, "fail").urgency == "critical"

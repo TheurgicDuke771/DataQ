@@ -23,14 +23,20 @@ QUIET = "quiet"
 STANDARD = "standard"
 CRITICAL = "critical"
 
+# Per-suite delivery policies (mirror db.models.ALERT_ON_POLICIES). The default
+# preserves the pre-config behaviour: alert on warn+ but not on clean runs.
+FAIL_ONLY = "fail"
+WARN_PLUS = "warn"
+ALWAYS = "always"
+DEFAULT_POLICY = WARN_PLUS
+
 
 @dataclass(frozen=True)
 class Route:
     """The routing decision for one run.
 
-    ``should_send`` gates delivery (a clean run is ``False``); ``urgency`` drives
-    the card's prominence; ``mention_channel`` escalates a critical breach to the
-    whole channel.
+    ``should_send`` gates delivery; ``urgency`` drives the card's prominence;
+    ``mention_channel`` escalates a critical breach to the whole channel.
     """
 
     should_send: bool
@@ -38,22 +44,40 @@ class Route:
     mention_channel: bool
 
 
-_NO_SEND = Route(should_send=False, urgency=QUIET, mention_channel=False)
-
-
-def route_for(report: RunReport) -> Route:
-    """Decide how to route ``report`` from its worst severity.
-
-    - **critical** → send, critical urgency, escalate to the channel.
-    - **fail** (or an operational run failure with no result rows) → send,
-      standard urgency.
-    - **warn** → send, quiet urgency (no escalation).
-    - otherwise (all clean) → don't send.
-    """
+def _urgency(report: RunReport) -> tuple[str, bool]:
+    """(urgency, mention_channel) from the run's worst severity."""
     if report.worst_severity == CRITICAL:
-        return Route(should_send=True, urgency=CRITICAL, mention_channel=True)
+        return CRITICAL, True
     if report.worst_severity == "fail" or report.run_status == "failed":
-        return Route(should_send=True, urgency=STANDARD, mention_channel=False)
-    if report.worst_severity == "warn":
-        return Route(should_send=True, urgency=QUIET, mention_channel=False)
-    return _NO_SEND
+        return STANDARD, False
+    return QUIET, False  # warn or clean
+
+
+def _should_send(report: RunReport, policy: str) -> bool:
+    """Apply the per-suite delivery threshold.
+
+    ``always`` sends every terminal run (a heartbeat). Otherwise an operational
+    run failure always alerts; a clean run never does; and the severity threshold
+    decides the rest (``fail`` = fail/critical only, ``warn`` = warn+).
+    """
+    if policy == ALWAYS:
+        return True
+    if report.run_status == "failed" and report.worst_severity is None:
+        return True  # operational failure — alert regardless of threshold
+    worst = report.worst_severity
+    if worst is None:
+        return False  # clean run
+    if policy == FAIL_ONLY:
+        return worst in ("fail", CRITICAL)
+    return worst in ("warn", "fail", CRITICAL)  # WARN_PLUS
+
+
+def route_for(report: RunReport, policy: str = DEFAULT_POLICY) -> Route:
+    """Decide whether + how loudly to alert on ``report`` under ``policy``.
+
+    Urgency/escalation come from the worst severity (``critical`` pings the
+    channel, ``fail``/operational is standard, ``warn`` is quiet); the per-suite
+    ``policy`` gates *whether* to send (see ``_should_send``).
+    """
+    urgency, mention = _urgency(report)
+    return Route(should_send=_should_send(report, policy), urgency=urgency, mention_channel=mention)

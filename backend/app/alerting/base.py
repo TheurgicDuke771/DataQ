@@ -16,7 +16,10 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 # Severity tiers that count as "not clean", worst last. A run is alert-worthy
 # when any check lands in one of these (or the run failed to execute). `pass` is
@@ -98,8 +101,10 @@ class ResultPublisher(Protocol):
 
     Implementations must be side-effect-safe to call on *every* terminal run:
     the dispatch layer hands them all publishable runs and they decide whether
-    (and how) to deliver. They may raise — the dispatch layer isolates failures
+    (and how) to deliver. ``session`` is the dispatch DB session, so a publisher
+    can read its own per-suite config (e.g. the Teams webhook + alert policy)
+    without opening another. They may raise — the dispatch layer isolates failures
     so a broken channel never fails the run.
     """
 
-    def publish(self, report: RunReport) -> None: ...
+    def publish(self, session: Session, report: RunReport) -> None: ...

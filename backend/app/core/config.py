@@ -73,6 +73,14 @@ class Settings(BaseSettings):
     # neutral: Teams is one ResultPublisher impl behind the registry (ADR 0011).
     teams_webhook_secret_name: str | None = None
 
+    # SSRF allowlist for the per-suite Teams webhook URL. The webhook is supplied
+    # by a suite editor and POSTed server-side, so its host is constrained to this
+    # comma-separated set of suffixes (defaults to MS Teams incoming-webhook +
+    # Power Automate workflow hosts; extend via env for a private relay). Stored as
+    # a string — not list[str] — like workspace_admin_emails, to sidestep Pydantic
+    # env list-parsing.
+    teams_webhook_allowed_hosts: str = "webhook.office.com,logic.azure.com"
+
     # ── Snowflake probe (Week 1 exit-gate endpoint) ──────────────────────────
     # Config for the single seeded dev Snowflake connection the probe runs
     # against. All optional: when unset the probe still creates + dispatches a
