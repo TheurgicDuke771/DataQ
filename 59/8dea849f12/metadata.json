@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "598dea849f12",
+  "strategy": "manual-commit",
+  "branch": "feature/w6-settings-page",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/59/8dea849f12/0/metadata.json",
+      "transcript": "/59/8dea849f12/0/full.jsonl",
+      "content_hash": "/59/8dea849f12/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 52289,
+    "cache_creation_tokens": 643016,
+    "cache_read_tokens": 102217761,
+    "output_tokens": 291598,
+    "api_call_count": 297
+  }
+}
