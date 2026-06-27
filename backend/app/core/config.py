@@ -39,6 +39,13 @@ class Settings(BaseSettings):
 
     auth_dev_bypass: bool = False
 
+    # Browser origins allowed to call the API cross-origin (the Static Web App ↔
+    # Container Apps split in prod — PR #40 nit). Comma-separated; empty = no
+    # cross-origin allowed (same-origin / dev proxy needs none). Provider-neutral:
+    # it's a list of origins, not an Azure concept. Read via `cors_allow_origin_list`.
+    #   CORS_ALLOW_ORIGINS=https://app.example.com,https://dataq.example.com
+    cors_allow_origins: str = ""
+
     # Workspace-admin allowlist — emails permitted to use the /admin read
     # endpoints (all-suites / all-users / access overview). Single-tenant, so this
     # is the whole-workspace admin set, distinct from the per-suite
@@ -105,6 +112,11 @@ class Settings(BaseSettings):
         return frozenset(
             part.strip().lower() for part in self.workspace_admin_emails.split(",") if part.strip()
         )
+
+    @property
+    def cors_allow_origin_list(self) -> list[str]:
+        """Parsed CORS origins (stripped, empties dropped). Empty → CORS off."""
+        return [o.strip() for o in self.cors_allow_origins.split(",") if o.strip()]
 
     @property
     def azure_auth_configured(self) -> bool:

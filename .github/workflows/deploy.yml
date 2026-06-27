@@ -1,0 +1,106 @@
+name: Deploy
+
+# Manual-only for now (workflow_dispatch): apply-ready scaffolding that never
+# fires on its own until the Azure resources exist + secrets/vars are set. Once
+# the infra is provisioned (see deploy/README.md), flip on the push trigger:
+#   push:
+#     branches: [main]
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Image tag to build + deploy"
+        default: "latest"
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+# OIDC federated login to Azure (no stored client secret). The federated cred +
+# the listed vars/secrets must be configured first — see deploy/README.md.
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  IMAGE: ${{ vars.ACR_LOGIN_SERVER }}/dataq-backend:${{ inputs.image_tag }}
+
+jobs:
+  backend:
+    name: Backend — build, migrate, deploy (API + worker)
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Build + push backend image to ACR
+        run: |
+          az acr login --name "${{ vars.ACR_NAME }}"
+          docker build -f backend/Dockerfile -t "$IMAGE" .
+          docker push "$IMAGE"
+
+      # Migrate BEFORE rolling the app: migrations are additive/backward-compatible
+      # (CLAUDE.md), so the running old code tolerates the new schema. Runs the
+      # one-off migrate Container Apps Job (provisioned per deploy/README.md).
+      - name: Run DB migrations (alembic upgrade head)
+        run: |
+          az containerapp job start \
+            --name "${{ vars.MIGRATE_JOB_NAME }}" \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --image "$IMAGE"
+
+      - name: Deploy API
+        run: |
+          az containerapp update \
+            --name "${{ vars.API_APP_NAME }}" \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --image "$IMAGE"
+
+      - name: Deploy worker
+        run: |
+          az containerapp update \
+            --name "${{ vars.WORKER_APP_NAME }}" \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --image "$IMAGE"
+
+  frontend:
+    name: Frontend — build + deploy to Static Web App
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Build
+        working-directory: frontend
+        # VITE_* are inlined at build time. Non-secret azure client/tenant ids
+        # come from repo vars; never the SPA secret (there is none — MSAL is public).
+        env:
+          VITE_AZURE_TENANT_ID: ${{ vars.VITE_AZURE_TENANT_ID }}
+          VITE_AZURE_SPA_CLIENT_ID: ${{ vars.VITE_AZURE_SPA_CLIENT_ID }}
+          VITE_AZURE_API_CLIENT_ID: ${{ vars.VITE_AZURE_API_CLIENT_ID }}
+          VITE_AZURE_API_SCOPE: ${{ vars.VITE_AZURE_API_SCOPE }}
+          VITE_AUTH_DEV_BYPASS: "false"
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: Deploy to Azure Static Web Apps
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          action: upload
+          app_location: frontend/dist
+          skip_app_build: true
