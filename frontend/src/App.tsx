@@ -41,7 +41,7 @@ const CheckNew = lazy(() => import('./pages/CheckNew').then((m) => ({ default: m
 const CheckEdit = lazy(() => import('./pages/CheckEdit').then((m) => ({ default: m.CheckEdit })));
 const Results = lazy(() => import('./pages/Results').then((m) => ({ default: m.Results })));
 const RunDetail = lazy(() => import('./pages/RunDetail').then((m) => ({ default: m.RunDetail })));
-const Home = lazy(() => import('./pages/Home').then((m) => ({ default: m.Home })));
+const Profile = lazy(() => import('./pages/Profile').then((m) => ({ default: m.Profile })));
 const Admin = lazy(() => import('./pages/Admin').then((m) => ({ default: m.Admin })));
 const Settings = lazy(() => import('./pages/Settings').then((m) => ({ default: m.Settings })));
 
@@ -153,7 +153,7 @@ export function App() {
                   <Route path="/suites/:suiteId/checks/:checkId/edit" element={<CheckEdit />} />
                   <Route path="/results" element={<Results />} />
                   <Route path="/results/:runId" element={<RunDetail />} />
-                  <Route path="/profile" element={<Home />} />
+                  <Route path="/profile" element={<Profile />} />
                   <Route path="/admin" element={<Admin />} />
                   <Route path="/settings" element={<Settings />} />
                   {/* Catch-all → dashboard for now; swapped for a 404 page in Phase 6. */}
