@@ -1,5 +1,6 @@
-import { Button, Result } from 'antd';
 import { Component, type ErrorInfo, type ReactNode } from 'react';
+
+import { ErrorState } from './feedback/ErrorState';
 
 interface Props {
   children: ReactNode;
@@ -30,18 +31,9 @@ export class ErrorBoundary extends Component<Props, State> {
 
   render(): ReactNode {
     if (this.state.error) {
-      return (
-        <Result
-          status="error"
-          title="Something went wrong"
-          subTitle={this.state.error.message}
-          extra={
-            <Button type="primary" onClick={() => window.location.reload()}>
-              Reload
-            </Button>
-          }
-        />
-      );
+      // A render-time crash is a client-side 500-equivalent — use the shared
+      // in-brand error page (its 5xx branch offers Reload).
+      return <ErrorState code={500} message={this.state.error.message} />;
     }
     return this.props.children;
   }

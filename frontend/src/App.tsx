@@ -44,6 +44,7 @@ const RunDetail = lazy(() => import('./pages/RunDetail').then((m) => ({ default:
 const Profile = lazy(() => import('./pages/Profile').then((m) => ({ default: m.Profile })));
 const Admin = lazy(() => import('./pages/Admin').then((m) => ({ default: m.Admin })));
 const Settings = lazy(() => import('./pages/Settings').then((m) => ({ default: m.Settings })));
+const NotFound = lazy(() => import('./pages/NotFound').then((m) => ({ default: m.NotFound })));
 
 const { Header, Sider, Content } = Layout;
 
@@ -156,8 +157,8 @@ export function App() {
                   <Route path="/profile" element={<Profile />} />
                   <Route path="/admin" element={<Admin />} />
                   <Route path="/settings" element={<Settings />} />
-                  {/* Catch-all → dashboard for now; swapped for a 404 page in Phase 6. */}
-                  <Route path="*" element={<Navigate to="/dashboard" replace />} />
+                  {/* Unknown route → in-brand 404 (not a silent redirect). */}
+                  <Route path="*" element={<NotFound />} />
                 </Routes>
               </Suspense>
             </AuthGate>
