@@ -13,6 +13,7 @@ from __future__ import annotations
 from typing import Any
 
 from backend.app.alerting.base import FAILING_TIERS, CheckReport, RunReport
+from backend.app.alerting.routing import QUIET, Route
 
 # Teams' incoming-webhook (Workflows) body shape: a message wrapping one or more
 # adaptive-card attachments.
@@ -24,26 +25,32 @@ _CARD_CONTENT_TYPE = "application/vnd.microsoft.card.adaptive"
 # produce a multi-megabyte card. Overflow is summarised as "+N more".
 _MAX_CHECK_ROWS = 10
 
-# Worst-severity → accent colour for the title (Adaptive Card named colours).
-_SEVERITY_COLOR = {"critical": "attention", "fail": "attention", "warn": "warning"}
+# Routing urgency → title accent colour (Adaptive Card named colours). A quiet
+# (warn) alert is amber and calm; standard/critical are red.
+_URGENCY_COLOR = {QUIET: "warning"}
+_DEFAULT_COLOR = "attention"
 
 
-def render_teams_message(report: RunReport) -> dict[str, Any]:
-    """The full Teams webhook payload for ``report`` (message + adaptive card)."""
+def render_teams_message(report: RunReport, route: Route) -> dict[str, Any]:
+    """The full Teams webhook payload for ``report`` (message + adaptive card).
+
+    ``route`` (from ``routing.route_for``) sets the prominence: the title colour
+    follows the urgency, and a critical ``mention_channel`` adds a channel-escalation
+    banner at the top.
+    """
     return {
         "type": "message",
         "attachments": [
-            {"contentType": _CARD_CONTENT_TYPE, "content": _adaptive_card(report)},
+            {"contentType": _CARD_CONTENT_TYPE, "content": _adaptive_card(report, route)},
         ],
     }
 
 
-def _adaptive_card(report: RunReport) -> dict[str, Any]:
-    body: list[dict[str, Any]] = [
-        _title_block(report),
-        _subtitle_block(report),
-        _facts_block(report),
-    ]
+def _adaptive_card(report: RunReport, route: Route) -> dict[str, Any]:
+    body: list[dict[str, Any]] = []
+    if route.mention_channel:
+        body.append(_text("@channel · CRITICAL", weight="Bolder", color="attention"))
+    body += [_title_block(report, route), _subtitle_block(report), _facts_block(report)]
     failing = [c for c in report.checks if c.status in FAILING_TIERS]
     if failing:
         body.append(_text("Failing checks", weight="Bolder", spacing="Medium"))
@@ -59,8 +66,8 @@ def _adaptive_card(report: RunReport) -> dict[str, Any]:
     }
 
 
-def _title_block(report: RunReport) -> dict[str, Any]:
-    color = _SEVERITY_COLOR.get(report.worst_severity or "", "attention")
+def _title_block(report: RunReport, route: Route) -> dict[str, Any]:
+    color = _URGENCY_COLOR.get(route.urgency, _DEFAULT_COLOR)
     return _text(report.suite_name, size="Large", weight="Bolder", color=color)
 
 

@@ -15,6 +15,7 @@ import httpx
 
 from backend.app.alerting.base import RunReport
 from backend.app.alerting.card import render_teams_message
+from backend.app.alerting.routing import route_for
 from backend.app.core.logging import get_logger
 
 log = get_logger(__name__)
@@ -35,18 +36,21 @@ class TeamsPublisher:
         self._timeout = timeout
 
     def publish(self, report: RunReport) -> None:
-        """Send the run's card, if it has failures and a webhook is configured.
+        """Send the run's card, per the severity route, if a webhook is configured.
 
-        Raises on an HTTP error — the dispatch layer isolates that so a flaky
-        webhook can't fail the run. A clean run (nothing breached) or an
-        unresolved webhook is a silent no-op, not a send.
+        The send decision + prominence come from ``routing.route_for`` (the one
+        policy point): a clean run isn't sent, and the card's urgency/escalation
+        follow the route. Raises on an HTTP error — the dispatch layer isolates
+        that so a flaky webhook can't fail the run; an unresolved webhook is a
+        silent no-op.
         """
-        if not report.has_failures:
+        route = route_for(report)
+        if not route.should_send:
             return
         webhook = self._resolve_webhook(report)
         if not webhook:
             return
-        message = render_teams_message(report)
+        message = render_teams_message(report, route)
         response = httpx.post(webhook, json=message, timeout=self._timeout)
         response.raise_for_status()
         log.info(
@@ -54,5 +58,6 @@ class TeamsPublisher:
             run_id=str(report.run_id),
             suite=report.suite_name,
             worst_severity=report.worst_severity,
+            urgency=route.urgency,
             failed_checks=report.failed_checks,
         )
