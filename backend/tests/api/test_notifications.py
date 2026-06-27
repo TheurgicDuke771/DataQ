@@ -122,7 +122,8 @@ def test_delete_reverts_to_defaults(client: TestClient, db_session: Any) -> None
     _as(owner)
     sid = _suite(db_session, owner)
     client.put(f"/api/v1/suites/{sid}/notifications", json={"alert_on": "fail"})
-    assert client.delete(f"/api/v1/suites/{sid}/notifications").status_code == 204
+    delete_resp = client.delete(f"/api/v1/suites/{sid}/notifications")
+    assert delete_resp.status_code == 204
     assert client.get(f"/api/v1/suites/{sid}/notifications").json()["configured"] is False
 
 
