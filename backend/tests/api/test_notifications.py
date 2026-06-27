@@ -124,7 +124,8 @@ def test_delete_reverts_to_defaults(client: TestClient, db_session: Any) -> None
     client.put(f"/api/v1/suites/{sid}/notifications", json={"alert_on": "fail"})
     delete_resp = client.delete(f"/api/v1/suites/{sid}/notifications")
     assert delete_resp.status_code == 204
-    assert client.get(f"/api/v1/suites/{sid}/notifications").json()["configured"] is False
+    get_resp = client.get(f"/api/v1/suites/{sid}/notifications")
+    assert get_resp.json()["configured"] is False
 
 
 def test_viewer_can_read_not_write(client: TestClient, db_session: Any) -> None:
@@ -136,11 +137,10 @@ def test_viewer_can_read_not_write(client: TestClient, db_session: Any) -> None:
         f"/api/v1/suites/{sid}/shares", json={"user_id": str(viewer.id), "permission": "view"}
     )
     _as(viewer)
-    assert client.get(f"/api/v1/suites/{sid}/notifications").status_code == 200
-    assert (
-        client.put(f"/api/v1/suites/{sid}/notifications", json={"alert_on": "fail"}).status_code
-        == 403
-    )
+    read_resp = client.get(f"/api/v1/suites/{sid}/notifications")
+    assert read_resp.status_code == 200
+    write_resp = client.put(f"/api/v1/suites/{sid}/notifications", json={"alert_on": "fail"})
+    assert write_resp.status_code == 403
 
 
 def test_outsider_gets_404(client: TestClient, db_session: Any) -> None:
@@ -149,4 +149,5 @@ def test_outsider_gets_404(client: TestClient, db_session: Any) -> None:
     _as(owner)
     sid = _suite(db_session, owner)
     _as(outsider)
-    assert client.get(f"/api/v1/suites/{sid}/notifications").status_code == 404
+    get_resp = client.get(f"/api/v1/suites/{sid}/notifications")
+    assert get_resp.status_code == 404
