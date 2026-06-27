@@ -21,6 +21,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.alerting import dispatch as alert_dispatch
 from backend.app.core.config import get_settings
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
@@ -138,10 +139,18 @@ def run_suite(run_id: str) -> str:
 
     The target is resolved from the suite (``Suite.target``), so the only
     argument the dispatcher supplies is the run id.
+
+    After the run reaches a terminal state, its outcome is published through the
+    ``ResultPublisher`` seam (ADR 0011). The publish is best-effort and isolated
+    (``publish_run_outcome`` never raises), so a notification failure can't
+    affect the already-persisted run or the task's return value.
     """
+    rid = uuid.UUID(run_id)
     session = get_session()
     try:
-        return _run_suite(session, run_id=uuid.UUID(run_id))
+        outcome = _run_suite(session, run_id=rid)
+        alert_dispatch.publish_run_outcome(session, run_id=rid)
+        return outcome
     finally:
         session.close()
 

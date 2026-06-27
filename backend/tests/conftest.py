@@ -11,18 +11,22 @@ os.environ.setdefault("AUTH_DEV_BYPASS", "true")
 
 import pytest
 
+from backend.app.alerting.registry import reset_result_publisher_cache
 from backend.app.core import secrets
 from backend.app.core.config import get_settings
 
 
 @pytest.fixture(autouse=True)
 def _reset_caches() -> Iterator[None]:
-    """Clear cached singletons between tests so settings + secret store rebuild."""
+    """Clear cached singletons between tests so settings + secret store + the
+    result publisher rebuild."""
     get_settings.cache_clear()
     secrets.reset_secret_store_cache()
+    reset_result_publisher_cache()
     yield
     get_settings.cache_clear()
     secrets.reset_secret_store_cache()
+    reset_result_publisher_cache()
 
 
 @pytest.fixture(autouse=True)
