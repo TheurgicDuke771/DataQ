@@ -26,6 +26,7 @@ import { ConnectionTypeAvatar } from '../components/connections/connectionVisual
 import { Page } from '../components/layout/Page';
 import { LiveRunProgress } from '../components/runs/LiveRunProgress';
 import { ImportSuiteDrawer } from '../components/suites/ImportSuiteDrawer';
+import { NotificationsPanel } from '../components/suites/NotificationsPanel';
 import { SchedulesPanel } from '../components/suites/SchedulesPanel';
 import { SharePanel } from '../components/suites/SharePanel';
 import { TriggersPanel } from '../components/suites/TriggersPanel';
@@ -453,6 +454,7 @@ function SuiteDetail({
           canRun is exactly the edit-level capability. */}
       <TriggersPanel suiteId={suite.id} canManage={canRun} />
       <SchedulesPanel suiteId={suite.id} canManage={canRun} />
+      <NotificationsPanel suiteId={suite.id} canManage={canRun} />
       <SharePanel
         open={shareOpen}
         suiteId={suite.id}
