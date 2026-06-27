@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "d20372313af0",
+  "strategy": "manual-commit",
+  "branch": "feature/w6-error-pages",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/d2/0372313af0/0/metadata.json",
+      "transcript": "/d2/0372313af0/0/full.jsonl",
+      "content_hash": "/d2/0372313af0/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 53834,
+    "cache_creation_tokens": 660854,
+    "cache_read_tokens": 115659647,
+    "output_tokens": 304018,
+    "api_call_count": 321
+  }
+}
