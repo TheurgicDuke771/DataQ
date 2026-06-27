@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 
 import { useMe } from '../auth/useMe';
 import { Page } from '../components/layout/Page';
+import { BRAND } from '../theme';
 
 /**
  * Profile (`/profile`, ADR 0022 ProfileScreen). The account screen: an identity
@@ -38,7 +39,7 @@ export function Profile() {
 
       <Card>
         <Flex gap={16} align="center">
-          <Avatar size={56} style={{ backgroundColor: '#4f46e5' }}>
+          <Avatar size={56} style={{ backgroundColor: BRAND.primary }}>
             {initial}
           </Avatar>
           <Flex vertical gap={2}>
