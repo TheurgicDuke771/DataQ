@@ -12,10 +12,12 @@ where credentials are involved), returns ORM models, raises ``DataQError``.
 from __future__ import annotations
 
 import uuid
+from urllib.parse import urlparse
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.core.config import get_settings
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretNotFoundError, SecretStore
@@ -37,10 +39,44 @@ class InvalidAlertPolicyError(DataQError):
 
 
 class InvalidWebhookError(DataQError):
-    """Raised when a provided webhook URL isn't an https URL."""
+    """Raised when a webhook URL isn't https or targets a non-allowlisted host."""
 
     status_code = 422
     code = "webhook_invalid"
+
+
+def allowed_webhook_hosts() -> tuple[str, ...]:
+    """Host suffixes a per-suite Teams webhook URL may target (SSRF allowlist).
+
+    Sourced from the ``teams_webhook_allowed_hosts`` setting (comma-separated).
+    """
+    raw = get_settings().teams_webhook_allowed_hosts
+    return tuple(host.strip().lower() for host in raw.split(",") if host.strip())
+
+
+def is_allowed_webhook(url: str) -> bool:
+    """True iff ``url`` is an https URL whose host is within the allowlist.
+
+    SSRF guard: the webhook is user-supplied and POSTed server-side, so the
+    destination host is constrained to the configured Teams/Power-Automate set
+    (an exact match or a subdomain of an allowed suffix).
+    """
+    parsed = urlparse(url)
+    if parsed.scheme != "https" or not parsed.hostname:
+        return False
+    host = parsed.hostname.lower()
+    return any(
+        host == allowed or host.endswith(f".{allowed}") for allowed in allowed_webhook_hosts()
+    )
+
+
+def assert_allowed_webhook(url: str) -> None:
+    """Raise ``InvalidWebhookError`` unless ``url`` passes :func:`is_allowed_webhook`."""
+    if not is_allowed_webhook(url):
+        raise InvalidWebhookError(
+            "webhook must be an https URL on an allowed host",
+            detail={"allowed_hosts": list(allowed_webhook_hosts())},
+        )
 
 
 def get_config(session: Session, suite_id: uuid.UUID) -> SuiteNotification | None:
@@ -71,9 +107,8 @@ def upsert_config(
             "invalid alert policy",
             detail={"alert_on": alert_on, "allowed": list(ALERT_ON_POLICIES)},
         )
-    if webhook:  # non-empty → must be an https URL (token-bearing, sent server-side)
-        if not webhook.startswith("https://"):
-            raise InvalidWebhookError("webhook must be an https URL")
+    if webhook:  # non-empty → https + allowlisted host (token-bearing, sent server-side)
+        assert_allowed_webhook(webhook)
     config = get_config(session, suite_id)
     if config is None:
         config = SuiteNotification(suite_id=suite_id, enabled=enabled, alert_on=alert_on)

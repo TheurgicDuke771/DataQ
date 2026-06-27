@@ -10,6 +10,8 @@ for what the suite asked to be told about.
 
 from __future__ import annotations
 
+from urllib.parse import urlparse
+
 import httpx
 from sqlalchemy.orm import Session
 
@@ -59,6 +61,16 @@ class TeamsPublisher:
             workspace_secret_name=self._workspace_secret_name,
         )
         if not webhook:
+            return
+        # SSRF guard at the request sink: the webhook is user-supplied, so only
+        # post to an https URL on an allowlisted host. upsert validates on write;
+        # this re-checks at send time (rotated/workspace secrets, defence in depth).
+        host = (urlparse(webhook).hostname or "").lower()
+        if not any(
+            host == allowed or host.endswith(f".{allowed}")
+            for allowed in notification_service.allowed_webhook_hosts()
+        ):
+            log.warning("teams_webhook_host_not_allowed", run_id=str(report.run_id))
             return
         response = httpx.post(
             webhook, json=render_teams_message(report, route), timeout=self._timeout

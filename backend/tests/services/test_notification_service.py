@@ -94,12 +94,12 @@ def test_upsert_writes_webhook_through_secret_store(db_session: Any) -> None:
         suite_id=suite.id,
         enabled=True,
         alert_on="fail",
-        webhook="https://teams.example/hook",
+        webhook="https://contoso.webhook.office.com/hook",
         secret_store=store,
     )
     assert config.webhook_secret_ref == f"suite-notif-{config.id}"
     # The URL lives in the store, not the DB row.
-    assert store.secrets[config.webhook_secret_ref] == "https://teams.example/hook"
+    assert store.secrets[config.webhook_secret_ref] == "https://contoso.webhook.office.com/hook"
 
 
 def test_upsert_blank_webhook_clears_ref(db_session: Any) -> None:
@@ -110,7 +110,7 @@ def test_upsert_blank_webhook_clears_ref(db_session: Any) -> None:
         suite_id=suite.id,
         enabled=True,
         alert_on="fail",
-        webhook="https://x/h",
+        webhook="https://x.webhook.office.com/h",
         secret_store=store,
     )
     cleared = svc.upsert_config(
@@ -145,6 +145,20 @@ def test_upsert_rejects_non_https_webhook(db_session: Any) -> None:
         )
 
 
+def test_upsert_rejects_non_allowlisted_host(db_session: Any) -> None:
+    # https but a host outside the Teams/Power-Automate allowlist (SSRF guard).
+    suite = _suite(db_session)
+    with pytest.raises(InvalidWebhookError):
+        svc.upsert_config(
+            db_session,
+            suite_id=suite.id,
+            enabled=True,
+            alert_on="fail",
+            webhook="https://169.254.169.254/latest/meta-data",
+            secret_store=_FakeStore(),
+        )
+
+
 def test_delete_config(db_session: Any) -> None:
     suite = _suite(db_session)
     svc.upsert_config(
@@ -175,12 +189,12 @@ def test_resolve_webhook_prefers_suite_then_workspace(db_session: Any) -> None:
         suite_id=suite.id,
         enabled=True,
         alert_on="fail",
-        webhook="https://suite",
+        webhook="https://suite.webhook.office.com",
         secret_store=store,
     )
     assert (
         svc.resolve_webhook(config, secret_store=store, workspace_secret_name="ws")
-        == "https://suite"
+        == "https://suite.webhook.office.com"
     )
 
 

@@ -19,8 +19,8 @@ from backend.app.alerting.teams import TeamsPublisher
 from backend.app.db.models import Connection, Suite, SuiteNotification, User
 
 _WS_NAME = "teams-webhook"
-_WS_URL = "https://teams.example/workspace"
-_SUITE_URL = "https://teams.example/suite"
+_WS_URL = "https://contoso.webhook.office.com/workspace"
+_SUITE_URL = "https://contoso.webhook.office.com/suite"
 
 
 class _FakeStore:
@@ -105,6 +105,20 @@ def test_falls_back_to_workspace_webhook(db_session: Any, monkeypatch: pytest.Mo
     monkeypatch.setattr(teams.httpx, "post", post)
     _publisher({_WS_NAME: _WS_URL}).publish(db_session, _report(suite, worst="fail"))
     assert post.calls == [_WS_URL]
+
+
+def test_non_allowlisted_webhook_host_is_skipped(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # An https URL on a host outside the Teams/Power-Automate allowlist is dropped
+    # at the send sink (SSRF guard) rather than POSTed.
+    suite = _suite(db_session)
+    post = _CapturePost()
+    monkeypatch.setattr(teams.httpx, "post", post)
+    _publisher({_WS_NAME: "https://evil.example/exfil"}).publish(
+        db_session, _report(suite, worst="critical")
+    )
+    assert post.calls == []
 
 
 def test_per_suite_webhook_overrides_workspace(

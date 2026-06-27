@@ -68,7 +68,11 @@ def test_put_then_get_roundtrips(client: TestClient, db_session: Any) -> None:
     sid = _suite(db_session, owner)
     put = client.put(
         f"/api/v1/suites/{sid}/notifications",
-        json={"enabled": True, "alert_on": "always", "webhook": "https://teams.example/hook"},
+        json={
+            "enabled": True,
+            "alert_on": "always",
+            "webhook": "https://contoso.webhook.office.com/hook",
+        },
     )
     assert put.status_code == 200
     assert put.json() == {
@@ -98,6 +102,17 @@ def test_put_rejects_non_https_webhook(client: TestClient, db_session: Any) -> N
     resp = client.put(
         f"/api/v1/suites/{sid}/notifications",
         json={"alert_on": "fail", "webhook": "http://insecure"},
+    )
+    assert resp.status_code == 422
+
+
+def test_put_rejects_non_allowlisted_webhook_host(client: TestClient, db_session: Any) -> None:
+    owner = _user(db_session, "o@ex")
+    _as(owner)
+    sid = _suite(db_session, owner)
+    resp = client.put(
+        f"/api/v1/suites/{sid}/notifications",
+        json={"alert_on": "fail", "webhook": "https://attacker.example/exfil"},
     )
     assert resp.status_code == 422
 
