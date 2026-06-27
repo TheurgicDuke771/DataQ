@@ -13,7 +13,7 @@ import uuid
 
 from sqlalchemy.orm import Session
 
-from backend.app.alerting import registry
+from backend.app.alerting import dedup, registry
 from backend.app.alerting.builder import build_run_report
 from backend.app.core.logging import get_logger
 from backend.app.db.models import Run
@@ -35,6 +35,12 @@ def publish_run_outcome(session: Session, *, run_id: uuid.UUID) -> bool:
     try:
         run = session.get(Run, run_id)
         if run is None or run.status not in _PUBLISHABLE_STATUSES:
+            return False
+        # Dedup before building/publishing: an ongoing, unchanged failure on a
+        # scheduled suite shouldn't re-alert every run (a clean run is never a
+        # "duplicate", so this is a no-op for the passing path).
+        if dedup.is_duplicate_alert(session, run):
+            log.info("alert_deduped", run_id=str(run_id), suite_id=str(run.suite_id))
             return False
         report = build_run_report(session, run)
         registry.get_result_publisher().publish(report)
