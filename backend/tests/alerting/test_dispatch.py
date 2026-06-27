@@ -134,3 +134,40 @@ def test_dedup_suppresses_an_unchanged_repeat(db_session: Any, spy: _SpyPublishe
     # …the identical repeat is deduped (no second card).
     assert dispatch.publish_run_outcome(db_session, run_id=r2.id) is False
     assert [r.run_id for r in spy.reports] == [r1.id]
+
+
+def test_snoozed_failure_is_suppressed(db_session: Any, spy: _SpyPublisher) -> None:
+    # A failing run whose only failing check is snoozed must not publish.
+    owner = User(aad_object_id=uuid.uuid4().hex, email=f"u-{uuid.uuid4().hex[:6]}@x.io")
+    db_session.add(owner)
+    db_session.flush()
+    conn = Connection(
+        name=f"c-{uuid.uuid4().hex[:8]}",
+        type="snowflake",
+        env="dev",
+        config={"account": "a"},
+        secret_ref="kv",
+        created_by=owner.id,
+    )
+    db_session.add(conn)
+    db_session.flush()
+    suite = Suite(name="s", connection_id=conn.id, created_by=owner.id, target={"table": "T"})
+    db_session.add(suite)
+    db_session.flush()
+    check = Check(
+        suite_id=suite.id,
+        name="c",
+        expectation_type="e",
+        config={},
+        alert_snoozed_until=datetime.now(UTC) + timedelta(hours=2),
+    )
+    db_session.add(check)
+    db_session.flush()
+    run = Run(suite_id=suite.id, status="succeeded")
+    db_session.add(run)
+    db_session.flush()
+    db_session.add(Result(run_id=run.id, check_id=check.id, status="fail"))
+    db_session.commit()
+
+    assert dispatch.publish_run_outcome(db_session, run_id=run.id) is False
+    assert spy.reports == []

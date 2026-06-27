@@ -63,6 +63,9 @@ class CheckRead(BaseModel):
     warn_threshold: float | None
     fail_threshold: float | None
     critical_threshold: float | None
+    # Alert snooze (suppression): when in the future, the check's alerts are muted
+    # until then; NULL / past = active. Set via the snooze endpoints, not PATCH.
+    alert_snoozed_until: datetime | None = None
 
 
 @router.post(
@@ -163,6 +166,47 @@ def delete_check(
 ) -> None:
     require_permission(db, suite_id, current_user.id, minimum="edit")
     svc.delete_check(db, suite_id, check_id)
+
+
+# ───────────────────────── alert snooze (suppression) ──────────────
+
+
+class CheckSnoozeRequest(BaseModel):
+    # Cap at 30 days so a typo can't mute a check effectively forever.
+    hours: float = Field(gt=0, le=720, description="Mute the check's alerts for this many hours")
+
+
+@router.post(
+    "/suites/{suite_id}/checks/{check_id}/snooze",
+    response_model=CheckRead,
+    summary="Snooze a check's alerts for N hours",
+)
+def snooze_check(
+    suite_id: uuid.UUID,
+    check_id: uuid.UUID,
+    payload: CheckSnoozeRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> CheckRead:
+    require_permission(db, suite_id, current_user.id, minimum="edit")
+    check = svc.snooze_check(db, suite_id, check_id, hours=payload.hours)
+    return CheckRead.model_validate(check)
+
+
+@router.delete(
+    "/suites/{suite_id}/checks/{check_id}/snooze",
+    response_model=CheckRead,
+    summary="Clear a check's alert snooze",
+)
+def clear_check_snooze(
+    suite_id: uuid.UUID,
+    check_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> CheckRead:
+    require_permission(db, suite_id, current_user.id, minimum="edit")
+    check = svc.clear_check_snooze(db, suite_id, check_id)
+    return CheckRead.model_validate(check)
 
 
 # ───────────────────────── version history (#280) ──────────────────
