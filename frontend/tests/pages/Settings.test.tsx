@@ -30,10 +30,14 @@ function renderSettings(me: AsyncState<MeResponse>) {
 }
 
 describe('Settings', () => {
-  it('renders the settings shell for a workspace admin', () => {
+  it('renders the tabbed settings shell for a workspace admin', () => {
     renderSettings(adminMe);
     expect(screen.getByRole('heading', { name: 'Settings' })).toBeInTheDocument();
-    expect(screen.getByText('Workspace settings are coming soon.')).toBeInTheDocument();
+    for (const tab of ['General', 'Secrets', 'Notifications', 'Danger zone']) {
+      expect(screen.getByRole('tab', { name: tab })).toBeInTheDocument();
+    }
+    // General tab is default-active: workspace facts visible.
+    expect(screen.getByText('Single tenant')).toBeInTheDocument();
   });
 
   it('shows the Forbidden page for a non-admin (server-driven via /me)', () => {
