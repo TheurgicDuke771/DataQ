@@ -1,16 +1,16 @@
+import { InteractionStatus } from '@azure/msal-browser';
 import { useIsAuthenticated, useMsal } from '@azure/msal-react';
-import { Alert, Button, Flex, Typography } from 'antd';
+import { Alert } from 'antd';
 import type { ReactNode } from 'react';
 
+import { LoginPage } from './LoginPage';
 import { authConfig, authMode } from './config';
-
-const { Title, Paragraph } = Typography;
 
 /**
  * Gates children behind auth. Three paths:
  * - dev_bypass: renders children directly.
  * - unconfigured: renders a setup-needed banner (no MSAL, no children).
- * - real: renders sign-in button when no account, children when authenticated.
+ * - real: renders the sign-in page when no account, children when authenticated.
  */
 export function AuthGate({ children }: { children: ReactNode }) {
   if (authMode === 'dev_bypass') return <>{children}</>;
@@ -20,25 +20,24 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
 function RealAuthGate({ children }: { children: ReactNode }) {
   const isAuthenticated = useIsAuthenticated();
-  const { instance } = useMsal();
+  const { instance, inProgress } = useMsal();
 
   if (isAuthenticated) return <>{children}</>;
 
-  const onLogin = () => {
+  const onSignIn = () => {
     void instance.loginRedirect({
       scopes: authConfig.apiScopeUri ? [authConfig.apiScopeUri] : [],
     });
   };
 
-  return (
-    <Flex vertical align="center" justify="center" gap={16} style={{ paddingTop: 80 }}>
-      <Title level={3}>Sign in to DataQ</Title>
-      <Paragraph type="secondary">Use your organisation Microsoft account.</Paragraph>
-      <Button type="primary" size="large" onClick={onLogin}>
-        Sign in with Microsoft
-      </Button>
-    </Flex>
-  );
+  // Busy whenever MSAL is mid-interaction. On the unauthenticated gate the only
+  // reachable states are Startup (brief boot) and HandleRedirect (the sign-in
+  // redirect handshake) — both are genuinely "auth in progress", so a plain
+  // !== None is correct here. (Logout / AcquireToken don't occur pre-auth, and
+  // this MSAL version's InteractionStatus has no Login member.)
+  const signingIn = inProgress !== InteractionStatus.None;
+
+  return <LoginPage onSignIn={onSignIn} signingIn={signingIn} />;
 }
 
 function UnconfiguredBanner() {

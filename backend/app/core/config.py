@@ -37,6 +37,14 @@ class Settings(BaseSettings):
     azure_spa_client_id: str | None = None
     azure_api_scope: str = "user_impersonation"
 
+    # Allow guest (B2B / external) identities in the tenant to authenticate.
+    # Default off (fastapi-azure-auth's own secure default): the token validator
+    # rejects guests with 403 "Guest users not allowed". Enable for deployments
+    # whose legitimate users sign in with a guest account (e.g. a personal
+    # Microsoft account invited into the tenant). Still bounded by tenant
+    # membership + the API scope; orthogonal to WORKSPACE_ADMIN_EMAILS.
+    azure_allow_guest_users: bool = False
+
     auth_dev_bypass: bool = False
 
     # Browser origins allowed to call the API cross-origin (the Static Web App ↔

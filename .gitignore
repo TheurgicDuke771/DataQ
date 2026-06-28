@@ -179,3 +179,6 @@ mutants/
 # Stryker (frontend mutation spike) — sandbox + reports, never committed
 frontend/.stryker-tmp/
 frontend/reports/mutation/
+
+# Playwright MCP screenshot/snapshot artifacts
+.playwright-mcp/

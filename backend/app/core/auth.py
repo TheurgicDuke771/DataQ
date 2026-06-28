@@ -59,6 +59,7 @@ def _build_azure_scheme(
         app_client_id=settings.azure_api_client_id,
         tenant_id=settings.azure_tenant_id,
         scopes={settings.azure_api_scope_uri: settings.azure_api_scope},
+        allow_guest_users=settings.azure_allow_guest_users,
     )
 
 
