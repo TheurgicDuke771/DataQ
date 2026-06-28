@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "35c268ab684a",
+  "strategy": "manual-commit",
+  "branch": "fix/deploy-migrate-command-and-pnpm-setup",
+  "checkpoints_count": 5,
+  "files_touched": [
+    ".github/workflows/deploy.yml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/35/c268ab684a/0/metadata.json",
+      "transcript": "/35/c268ab684a/0/full.jsonl",
+      "content_hash": "/35/c268ab684a/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 128,
+    "cache_creation_tokens": 1155,
+    "cache_read_tokens": 245086,
+    "output_tokens": 839,
+    "api_call_count": 3
+  }
+}
