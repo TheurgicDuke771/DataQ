@@ -69,10 +69,20 @@ jobs:
       - name: Run DB migrations (alembic upgrade head) and wait for success
         run: |
           set -euo pipefail
+          # Roll the job's image on the template FIRST, then start it with no
+          # --image override. Passing --image to `job start` replaces the
+          # container template without the Terraform-configured command
+          # (`sh -c "cd backend && alembic upgrade head"`), so the execution
+          # falls back to the image's default CMD (uvicorn) and never migrates.
+          # Updating the template preserves that command (mirrors the api/worker
+          # `az containerapp update --image` steps below).
+          az containerapp job update \
+            --name "${{ vars.MIGRATE_JOB_NAME }}" \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --image "$IMAGE"
           exec_name=$(az containerapp job start \
             --name "${{ vars.MIGRATE_JOB_NAME }}" \
             --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
-            --image "$IMAGE" \
             --query name -o tsv)
           echo "Started migration execution: $exec_name"
           deadline=$(( SECONDS + 900 ))  # 15-minute cap
@@ -110,7 +120,11 @@ jobs:
     environment: production
     steps:
       - uses: actions/checkout@v4
+      # version is required: action-setup runs at the repo root, whose
+      # package.json has no `packageManager` field (it lives in frontend/).
       - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
