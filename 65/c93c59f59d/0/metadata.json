@@ -1,0 +1,49 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "65c93c59f59d",
+  "session_id": "241fe94d-0bde-415d-91c0-d8a99074293b",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-28T20:10:09.266804Z",
+  "branch": "fix/deploy-migrate-command-and-pnpm-setup",
+  "checkpoints_count": 5,
+  "files_touched": [
+    ".github/workflows/deploy.yml"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "fcf40bd1bc67",
+  "token_usage": {
+    "input_tokens": 10028,
+    "cache_creation_tokens": 73128,
+    "cache_read_tokens": 1835121,
+    "output_tokens": 25535,
+    "api_call_count": 34
+  },
+  "session_metrics": {
+    "turn_count": 5
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-28T20:10:09.258622Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 10,
+    "human_modified": 1,
+    "human_removed": 0,
+    "total_committed": 10,
+    "total_lines_changed": 11,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}
