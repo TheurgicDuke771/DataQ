@@ -73,6 +73,27 @@ describe('LiveRunProgress', () => {
     expect(screen.getByText('View full results →')).toBeInTheDocument();
   });
 
+  it('renders the per-status histogram, omitting zero buckets (#316)', async () => {
+    mockProgress.mockResolvedValue(
+      progress('succeeded', { counts: { pass: 3, fail: 1, skip: 0 } }),
+    );
+    renderDrawer();
+
+    expect(await screen.findByText('pass · 3')).toBeInTheDocument();
+    expect(screen.getByText('fail · 1')).toBeInTheDocument();
+    // A zero bucket is dropped rather than shown as `skip · 0`.
+    expect(screen.queryByText(/skip/)).not.toBeInTheDocument();
+  });
+
+  it('shows no histogram while all checks are still pending', async () => {
+    mockProgress.mockResolvedValue(progress('running', { counts: {} }));
+    renderDrawer();
+
+    await screen.findByText('not-null id');
+    // No `status · count` histogram tag (the drawer title also uses a middot).
+    expect(screen.queryByText(/\w+ · \d+/)).not.toBeInTheDocument();
+  });
+
   it('polls until the run is terminal, then stops and links to results', async () => {
     mockProgress
       .mockResolvedValueOnce(progress('running'))
