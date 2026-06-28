@@ -1,0 +1,36 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "5b8bb367c6bc",
+  "session_id": "cc0f3de4-3b06-47d4-bc8e-3752f9786504",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-28T05:34:08.213168Z",
+  "branch": "feature/w7-ghcr-deploy-reconcile",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/Dockerfile"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "b174be6bbbde",
+  "checkpoint_transcript_start": 422,
+  "transcript_lines_at_start": 422,
+  "token_usage": {
+    "input_tokens": 466,
+    "cache_creation_tokens": 15685,
+    "cache_read_tokens": 2317217,
+    "output_tokens": 10333,
+    "api_call_count": 12
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-28T05:34:08.197129Z",
+    "agent_lines": 7,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 7,
+    "total_lines_changed": 7,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
