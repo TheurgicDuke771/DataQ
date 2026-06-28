@@ -1,0 +1,43 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "60519e0c45c7",
+  "strategy": "manual-commit",
+  "branch": "feature/w7-ghcr-deploy-reconcile",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".gitignore",
+    "deploy/terraform/README.md",
+    "deploy/terraform/aca.tf",
+    "deploy/terraform/appinsights.tf",
+    "deploy/terraform/containerapps.tf",
+    "deploy/terraform/github_oidc.tf",
+    "deploy/terraform/identity.tf",
+    "deploy/terraform/keyvault.tf",
+    "deploy/terraform/logs.tf",
+    "deploy/terraform/main.tf",
+    "deploy/terraform/outputs.tf",
+    "deploy/terraform/postgres.tf",
+    "deploy/terraform/providers.tf",
+    "deploy/terraform/redis.tf",
+    "deploy/terraform/rp.tf",
+    "deploy/terraform/swa.tf",
+    "deploy/terraform/terraform.tfvars.example",
+    "deploy/terraform/variables.tf",
+    "deploy/terraform/versions.tf"
+  ],
+  "sessions": [
+    {
+      "metadata": "/60/519e0c45c7/0/metadata.json",
+      "transcript": "/60/519e0c45c7/0/full.jsonl",
+      "content_hash": "/60/519e0c45c7/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2117,
+    "cache_creation_tokens": 42382,
+    "cache_read_tokens": 3964632,
+    "output_tokens": 30581,
+    "api_call_count": 31
+  }
+}
