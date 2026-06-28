@@ -1,0 +1,2 @@
+Why manual intervention is still needed?
+And yes, merge #403 (optionally applying the exact-pin suggestion first), then re-run Deploy to confirm migrate + frontend go green end-to-end.
