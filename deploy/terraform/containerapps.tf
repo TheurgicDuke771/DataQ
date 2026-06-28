@@ -39,6 +39,10 @@ locals {
     { name = "AZURE_API_CLIENT_ID", value = azuread_application.api.client_id },
     { name = "AZURE_SPA_CLIENT_ID", value = azuread_application.spa.client_id },
     { name = "AZURE_API_SCOPE", value = var.azure_api_scope },
+    # Allow tenant guest (B2B / external) identities to sign in. Without this the
+    # token validator rejects guests with 403 "Guest users not allowed" — this
+    # deployment's owner signs in with a guest account, so it's enabled.
+    { name = "AZURE_ALLOW_GUEST_USERS", value = var.azure_allow_guest_users ? "true" : "false" },
     { name = "WORKSPACE_ADMIN_EMAILS", value = var.workspace_admin_emails },
     # Empty: the SWA linked backend proxies /api same-origin, so the FastAPI CORS
     # middleware stays off (README §4 / ADR 0018).
