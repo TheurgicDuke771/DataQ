@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>b408qacr2</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/cc0f3de4-3b06-47d4-bc8e-3752f9786504/tasks/b408qacr2.output</output-file>
+<status>completed</status>
+<summary>Background command "Deploy frontend dist to SWA production" completed (exit code 0)</summary>
+</task-notification>

@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "b0e9230082b6",
+  "strategy": "manual-commit",
+  "branch": "feature/w7-ghcr-deploy-reconcile",
+  "checkpoints_count": 9,
+  "files_touched": [
+    "deploy/terraform/README.md",
+    "frontend/public/staticwebapp.config.json"
+  ],
+  "sessions": [
+    {
+      "metadata": "/b0/e9230082b6/0/metadata.json",
+      "transcript": "/b0/e9230082b6/0/full.jsonl",
+      "content_hash": "/b0/e9230082b6/0/content_hash.txt",
+      "prompt": "/b0/e9230082b6/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1554,
+    "cache_creation_tokens": 29154,
+    "cache_read_tokens": 9410572,
+    "output_tokens": 21446,
+    "api_call_count": 18
+  }
+}

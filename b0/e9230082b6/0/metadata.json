@@ -1,0 +1,52 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "b0e9230082b6",
+  "session_id": "cc0f3de4-3b06-47d4-bc8e-3752f9786504",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-28T08:07:19.38136Z",
+  "branch": "feature/w7-ghcr-deploy-reconcile",
+  "checkpoints_count": 9,
+  "files_touched": [
+    "frontend/public/staticwebapp.config.json",
+    "deploy/terraform/README.md"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "4f32fe2e6727",
+  "checkpoint_transcript_start": 1262,
+  "transcript_lines_at_start": 1262,
+  "token_usage": {
+    "input_tokens": 1554,
+    "cache_creation_tokens": 29154,
+    "cache_read_tokens": 9410572,
+    "output_tokens": 21446,
+    "api_call_count": 18
+  },
+  "session_metrics": {
+    "turn_count": 12
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-28T08:07:19.341509Z",
+    "agent_lines": 75,
+    "agent_removed": 27,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 75,
+    "total_lines_changed": 118,
+    "agent_percentage": 86.4406779661017,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}
