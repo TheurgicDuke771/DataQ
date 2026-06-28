@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "498e42cfa9af",
+  "strategy": "manual-commit",
+  "branch": "chore/deploy-image-tag-v5",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "deploy/terraform/variables.tf"
+  ],
+  "sessions": [
+    {
+      "metadata": "/49/8e42cfa9af/0/metadata.json",
+      "transcript": "/49/8e42cfa9af/0/full.jsonl",
+      "content_hash": "/49/8e42cfa9af/0/content_hash.txt",
+      "prompt": "/49/8e42cfa9af/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 153730,
+    "cache_creation_tokens": 3425870,
+    "cache_read_tokens": 306019622,
+    "output_tokens": 1104529,
+    "api_call_count": 949
+  }
+}
