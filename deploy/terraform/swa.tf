@@ -30,7 +30,7 @@ resource "null_resource" "swa_linked_backend" {
         --name ${azurerm_static_web_app.app.name} \
         --resource-group ${data.azurerm_resource_group.dataq.name} \
         --backend-resource-id ${azurerm_container_app.api.id} \
-        --backend-region ${var.azure_location} \
+        --backend-region ${var.aca_location} \
         --only-show-errors --output none || echo "backend already linked (or link pending) — continuing"
     CMD
   }

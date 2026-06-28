@@ -27,6 +27,12 @@ variable "postgres_location" {
   default     = "West US 3"
 }
 
+variable "aca_location" {
+  description = "Region for the Container Apps environment + the apps/redis/migrate job inside it. westus3, NOT westus2: this subscription is capped at 1 Container App Environment per region and the harness already holds the westus2 slot (dataq-harness-cae). The other app resources (KV/logs/App Insights/identity/SWA) stay in azure_location and are referenced cross-region."
+  type        = string
+  default     = "West US 3"
+}
+
 # ── Backend image (GHCR — ADR 0023) ──────────────────────────────────────────
 
 variable "backend_image_repo" {

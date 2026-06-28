@@ -158,7 +158,8 @@ resource "azurerm_container_app_job" "migrate" {
   name                         = "dataq-migrate"
   container_app_environment_id = azurerm_container_app_environment.app.id
   resource_group_name          = data.azurerm_resource_group.dataq.name
-  location                     = var.azure_location
+  # A Container Apps Job must be in the same region as its environment.
+  location = var.aca_location
 
   replica_timeout_in_seconds = 900
   replica_retry_limit        = 1
