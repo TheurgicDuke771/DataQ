@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "161a9431f5bd",
+  "strategy": "manual-commit",
+  "branch": "fix/sider-footer-scroll",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/App.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/16/1a9431f5bd/0/metadata.json",
+      "transcript": "/16/1a9431f5bd/0/full.jsonl",
+      "content_hash": "/16/1a9431f5bd/0/content_hash.txt",
+      "prompt": "/16/1a9431f5bd/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 91655,
+    "cache_creation_tokens": 1939491,
+    "cache_read_tokens": 222856158,
+    "output_tokens": 770968,
+    "api_call_count": 678
+  }
+}
