@@ -60,6 +60,7 @@ Each ADR captures a single significant architecture decision: the context, the d
 | [0020](0020-history-and-audit-strategy.md) | History/audit: per-entity Type-4 snapshot tables (`check_versions`, `connection_versions`) where config history is needed; no SCD-2; credentials never snapshotted; cascade-delete accepted; cross-entity audit log deferred | Accepted |
 | [0021](0021-demo-test-data-environment-strategy.md) | Live test/demo-data environment (retail model, 3 reference flows) lives outside the repo — Terraform/mock-data/Databricks notebook not git-tracked; discharges the deferred live-warehouse/file smoke | Accepted |
 | [0022](0022-week6-prototype-adoption-and-chart-library.md) | Week-6 prototype adoption — full 13-screen set as dedicated pages (Share is the only drawer; prototype wins on conflicts; Settings/Admin pulled into W6); chart library = recharts (lazy-loaded) | Accepted |
+| [0023](0023-container-image-registry-ghcr.md) | Container image registry — GitHub Container Registry (GHCR) over ACR / Docker Hub (vendor-neutral, public package → anonymous ACA pull, reuses `GITHUB_TOKEN`); supersedes the #379 ACR scaffolding | Accepted |
 
 ## Pending (to be written in their respective weeks)
 
