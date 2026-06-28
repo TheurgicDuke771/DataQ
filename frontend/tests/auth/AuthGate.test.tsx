@@ -42,7 +42,7 @@ describe('AuthGate', () => {
     expect(screen.queryByText('protected-content')).not.toBeInTheDocument();
   });
 
-  it('renders sign-in button when real mode + unauthenticated', async () => {
+  it('renders the sign-in page when real mode + unauthenticated', async () => {
     vi.doMock('../../src/auth/config', () => ({
       authMode: 'real',
       authConfig: { apiScopeUri: 'api://x/user_impersonation' },
@@ -50,11 +50,48 @@ describe('AuthGate', () => {
     }));
     vi.doMock('@azure/msal-react', () => ({
       useIsAuthenticated: () => false,
-      useMsal: () => ({ instance: { loginRedirect: vi.fn() } }),
+      useMsal: () => ({ instance: { loginRedirect: vi.fn() }, inProgress: 'none' }),
     }));
     await renderAuthGate();
     expect(screen.getByRole('button', { name: /Sign in with Microsoft/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Sign in to DataQ' })).toBeInTheDocument();
     expect(screen.queryByText('protected-content')).not.toBeInTheDocument();
+  });
+
+  it('fires loginRedirect on click', async () => {
+    const loginRedirect = vi.fn();
+    vi.doMock('../../src/auth/config', () => ({
+      authMode: 'real',
+      authConfig: { apiScopeUri: 'api://x/user_impersonation' },
+      DEV_USER: {},
+    }));
+    vi.doMock('@azure/msal-react', () => ({
+      useIsAuthenticated: () => false,
+      useMsal: () => ({ instance: { loginRedirect }, inProgress: 'none' }),
+    }));
+    const { AuthGate } = await import('../../src/auth/AuthGate');
+    const { default: userEvent } = await import('@testing-library/user-event');
+    render(
+      <AuthGate>
+        <div>protected-content</div>
+      </AuthGate>,
+    );
+    await userEvent.click(screen.getByRole('button', { name: /Sign in with Microsoft/i }));
+    expect(loginRedirect).toHaveBeenCalledWith({ scopes: ['api://x/user_impersonation'] });
+  });
+
+  it('shows a busy button while a redirect is in progress', async () => {
+    vi.doMock('../../src/auth/config', () => ({
+      authMode: 'real',
+      authConfig: { apiScopeUri: 'api://x/user_impersonation' },
+      DEV_USER: {},
+    }));
+    vi.doMock('@azure/msal-react', () => ({
+      useIsAuthenticated: () => false,
+      useMsal: () => ({ instance: { loginRedirect: vi.fn() }, inProgress: 'login' }),
+    }));
+    await renderAuthGate();
+    expect(screen.getByText(/Opening Microsoft sign-in/i)).toBeInTheDocument();
   });
 
   it('renders children when real mode + authenticated', async () => {
@@ -65,7 +102,7 @@ describe('AuthGate', () => {
     }));
     vi.doMock('@azure/msal-react', () => ({
       useIsAuthenticated: () => true,
-      useMsal: () => ({ instance: { loginRedirect: vi.fn() } }),
+      useMsal: () => ({ instance: { loginRedirect: vi.fn() }, inProgress: 'none' }),
     }));
     await renderAuthGate();
     expect(screen.getByText('protected-content')).toBeInTheDocument();

@@ -20,6 +20,7 @@ import { authMode } from './auth/config';
 import { useCurrentUser } from './auth/useCurrentUser';
 import { useIsWorkspaceAdmin } from './auth/useMe';
 import { getMsalInstance } from './auth/msalInstance';
+import { BrandMark } from './components/BrandMark';
 import { BRAND, SHELL } from './theme';
 
 // Route components are code-split so the initial bundle doesn't ship every page
@@ -85,60 +86,62 @@ export function App() {
     (k) => location.pathname === k || location.pathname.startsWith(`${k}/`),
   );
 
+  // Auth gates the whole shell: an unauthenticated user gets the full-screen
+  // LoginPage with no header/sider chrome; the Layout only renders once signed in.
   return (
-    <Layout style={{ minHeight: '100vh' }}>
-      <Header
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 16,
-          borderBottom: `1px solid ${BRAND.border}`,
-        }}
-      >
-        <Link to="/" aria-label="DataQ home" style={{ flex: 1 }}>
-          <Flex align="center" gap={10}>
-            <BrandMark />
-            <Typography.Text strong style={{ fontSize: 17, color: BRAND.ink }}>
-              DataQ
-            </Typography.Text>
-          </Flex>
-        </Link>
-        <UserMenu />
-      </Header>
-      <Layout>
-        <Sider
-          width={SHELL.siderWidth}
-          theme="light"
-          breakpoint="lg"
-          collapsedWidth={0}
-          style={{ borderInlineEnd: `1px solid ${BRAND.border}` }}
+    <AuthGate>
+      <Layout style={{ minHeight: '100vh' }}>
+        <Header
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 16,
+            borderBottom: `1px solid ${BRAND.border}`,
+          }}
         >
-          {/* Primary nav up top, footer group (Admin · Settings · Documentation)
+          <Link to="/" aria-label="DataQ home" style={{ flex: 1 }}>
+            <Flex align="center" gap={10}>
+              <BrandMark />
+              <Typography.Text strong style={{ fontSize: 17, color: BRAND.ink }}>
+                DataQ
+              </Typography.Text>
+            </Flex>
+          </Link>
+          <UserMenu />
+        </Header>
+        <Layout>
+          <Sider
+            width={SHELL.siderWidth}
+            theme="light"
+            breakpoint="lg"
+            collapsedWidth={0}
+            style={{ borderInlineEnd: `1px solid ${BRAND.border}` }}
+          >
+            {/* Primary nav up top, footer group (Admin · Settings · Documentation)
               pinned to the bottom by the flex spacer, separated by a hairline. */}
-          <Flex vertical style={{ height: '100%' }}>
-            <Menu
-              mode="inline"
-              selectedKeys={selectedKeys}
-              items={NAV_ITEMS}
-              style={{ borderInlineEnd: 0, paddingTop: 8 }}
-            />
-            <div style={{ flex: 1 }} />
-            <Menu
-              mode="inline"
-              selectedKeys={selectedKeys}
-              items={footerItems}
-              style={{
-                borderInlineEnd: 0,
-                borderTop: `1px solid ${BRAND.border}`,
-                paddingBlock: 8,
-              }}
-            />
-          </Flex>
-        </Sider>
-        <Content style={{ padding: 24, position: 'relative' }}>
-          <BrandWatermark />
-          <div style={{ position: 'relative' }}>
-            <AuthGate>
+            <Flex vertical style={{ height: '100%' }}>
+              <Menu
+                mode="inline"
+                selectedKeys={selectedKeys}
+                items={NAV_ITEMS}
+                style={{ borderInlineEnd: 0, paddingTop: 8 }}
+              />
+              <div style={{ flex: 1 }} />
+              <Menu
+                mode="inline"
+                selectedKeys={selectedKeys}
+                items={footerItems}
+                style={{
+                  borderInlineEnd: 0,
+                  borderTop: `1px solid ${BRAND.border}`,
+                  paddingBlock: 8,
+                }}
+              />
+            </Flex>
+          </Sider>
+          <Content style={{ padding: 24, position: 'relative' }}>
+            <BrandWatermark />
+            <div style={{ position: 'relative' }}>
               <Suspense fallback={<Spin size="large" style={{ marginTop: 80 }} />}>
                 <Routes>
                   <Route path="/" element={<Navigate to="/dashboard" replace />} />
@@ -161,34 +164,11 @@ export function App() {
                   <Route path="*" element={<NotFound />} />
                 </Routes>
               </Suspense>
-            </AuthGate>
-          </div>
-        </Content>
+            </div>
+          </Content>
+        </Layout>
       </Layout>
-    </Layout>
-  );
-}
-
-/**
- * A yin-yang app glyph (two-tone indigo) so the header reads as a product, not a
- * bare title — the balance motif nods at DataQ's pass/fail, expected/observed
- * duality. Self-contained colours (dark + light indigo) keep it legible on the
- * white header.
- */
-function BrandMark({ size = 30 }: { size?: number }) {
-  const dark = BRAND.primary;
-  const light = BRAND.primarySoft; // indigo-200
-  return (
-    <svg width={size} height={size} viewBox="0 0 100 100" role="img" aria-label="DataQ logo">
-      <circle cx="50" cy="50" r="49" fill={light} stroke={BRAND.border} strokeWidth="1" />
-      {/* The dark half: right lobe + the two interlocking teardrops. */}
-      <path
-        d="M50 1 a49 49 0 0 1 0 98 a24.5 24.5 0 0 1 0 -49 a24.5 24.5 0 0 0 0 -49 Z"
-        fill={dark}
-      />
-      <circle cx="50" cy="25.5" r="9" fill={light} />
-      <circle cx="50" cy="74.5" r="9" fill={dark} />
-    </svg>
+    </AuthGate>
   );
 }
 
