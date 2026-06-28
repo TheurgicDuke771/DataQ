@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "541f7c920ab8",
+  "strategy": "manual-commit",
+  "branch": "chore/deploy-codify-v4-and-guest-users",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "deploy/terraform/terraform.tfvars.example"
+  ],
+  "sessions": [
+    {
+      "metadata": "/54/1f7c920ab8/0/metadata.json",
+      "transcript": "/54/1f7c920ab8/0/full.jsonl",
+      "content_hash": "/54/1f7c920ab8/0/content_hash.txt",
+      "prompt": "/54/1f7c920ab8/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 81789,
+    "cache_creation_tokens": 1901976,
+    "cache_read_tokens": 213109053,
+    "output_tokens": 748442,
+    "api_call_count": 657
+  }
+}
