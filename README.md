@@ -2,7 +2,7 @@
 
 > Data quality monitoring platform built around Great Expectations — Snowflake (DEV/QA/UAT), ADLS Gen2, S3, Unity Catalog (Databricks), with ADF + Airflow orchestration integrations.
 
-**Status:** pre-v1 — Week 6 in progress (Results dashboard + alerting). Weeks 1–5 complete. Live task-level progress at [docs/progress.md](docs/progress.md).
+**Status:** pre-v1 — Week 7 in progress (deployment, hardening & docs). Weeks 1–6 complete; v1 is **deployed to Azure** (Container Apps + Static Web App, with Key Vault, App Insights, and orchestration polling live). Live task-level progress at [docs/progress.md](docs/progress.md).
 
 ## Stack
 
@@ -11,7 +11,7 @@
 | Backend | FastAPI · Celery · Great Expectations · SQLAlchemy + Alembic · PostgreSQL · Redis |
 | Frontend | React · Vite · Ant Design · MSAL React |
 | Auth / secrets | Azure AD (MSAL) · Azure Key Vault |
-| Hosting (planned) | Azure Container Apps + Static Web App + Application Insights |
+| Hosting | Azure Container Apps + Static Web App + Application Insights (deployed) |
 | AI integration | FastMCP — 8 curated MCP tools at `/mcp` for Claude Desktop / Copilot / Cursor |
 
 ## Quick start
