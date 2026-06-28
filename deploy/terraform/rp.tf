@@ -13,7 +13,9 @@ resource "azurerm_resource_provider_registration" "keyvault" {
 }
 
 resource "azurerm_resource_provider_registration" "insights" {
-  name = "Microsoft.Insights" # Application Insights
+  # The azurerm provider's known-RP list spells this one lowercase
+  # ("microsoft.insights"); the resource name match is case-sensitive.
+  name = "microsoft.insights" # Application Insights
 }
 
 resource "azurerm_resource_provider_registration" "cache" {
