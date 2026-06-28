@@ -1,0 +1,9 @@
+Triage the 3 open issues from week 6
+
+---
+
+yes, apply this — re-milestone the three, close #175
+
+---
+
+yeah, close #316 and then close week 6

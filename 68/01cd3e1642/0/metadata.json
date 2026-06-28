@@ -1,0 +1,50 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "6801cd3e1642",
+  "session_id": "46d55ffd-0d5e-4657-836b-f314ba4bd09e",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-28T00:11:46.484514Z",
+  "branch": "fix/issue-316-render-progress-counts",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "frontend/src/components/runs/LiveRunProgress.tsx",
+    "frontend/tests/components/LiveRunProgress.test.tsx"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "32e019be7052",
+  "token_usage": {
+    "input_tokens": 10014,
+    "cache_creation_tokens": 50761,
+    "cache_read_tokens": 1218219,
+    "output_tokens": 10203,
+    "api_call_count": 27
+  },
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-28T00:11:46.479182Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 34,
+    "human_modified": 1,
+    "human_removed": 0,
+    "total_committed": 34,
+    "total_lines_changed": 35,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}
