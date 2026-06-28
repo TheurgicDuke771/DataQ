@@ -31,6 +31,11 @@ locals {
     # Runtime SecretStore -> Key Vault via the user-assigned identity.
     { name = "SECRET_STORE", value = "azure_key_vault" },
     { name = "AZURE_KEY_VAULT_URL", value = azurerm_key_vault.app.vault_uri },
+    # DefaultAzureCredential can't select a USER-assigned identity without being
+    # told which one. Without this, every Key Vault read fails (no MI chosen) —
+    # breaking secret resolution for connection tests, suite runs, and the
+    # orchestration poll (#406). Must be the UAMI's client id, not principal id.
+    { name = "AZURE_CLIENT_ID", value = azurerm_user_assigned_identity.app.client_id },
     # Real SSO in prod (AUTH_DEV_BYPASS=false). Client IDs come from the SSO app
     # registrations created in sso.tf; init_auth() validates v2 tokens against
     # AZURE_API_CLIENT_ID + AZURE_TENANT_ID.
