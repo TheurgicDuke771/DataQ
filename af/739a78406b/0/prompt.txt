@@ -123,3 +123,7 @@ So what is the avg turn arounf time for mock data generation to final table load
 ---
 
 Okay, lets check the current state of project, and run run the document agent to ckeck if every thing is upto date [also organize and optimize the repo a bit].
+
+---
+
+commit and merge the changes
