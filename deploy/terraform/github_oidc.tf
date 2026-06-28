@@ -22,8 +22,22 @@ resource "azuread_application_federated_identity_credential" "github_deploy" {
   subject = "repo:${var.github_repo}:environment:${var.github_environment}"
 }
 
+# Least privilege: scope Contributor to ONLY the three deploy targets, not the
+# whole RG — dataq-rg is SHARED with the harness, so an RG-wide grant would let
+# the CI principal modify harness resources too. The workflow only runs
+# `az containerapp update` (api/worker) + `job start` (migrate); the SWA upload
+# uses a separate static-web-apps API token, not this principal.
+locals {
+  github_deploy_targets = {
+    api     = azurerm_container_app.api.id
+    worker  = azurerm_container_app.worker.id
+    migrate = azurerm_container_app_job.migrate.id
+  }
+}
+
 resource "azurerm_role_assignment" "github_deploy_contributor" {
-  scope                = data.azurerm_resource_group.dataq.id
+  for_each             = local.github_deploy_targets
+  scope                = each.value
   role_definition_name = "Contributor"
   principal_id         = azuread_service_principal.github_deploy.object_id
 }

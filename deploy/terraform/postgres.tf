@@ -19,7 +19,7 @@ resource "azurerm_postgresql_flexible_server" "app" {
   sku_name                      = var.postgres_sku
   storage_mb                    = 32768
   auto_grow_enabled             = true
-  public_network_access_enabled = true
+  public_network_access_enabled = var.postgres_public_network_access
   zone                          = "1"
   tags                          = local.common_tags
 }
@@ -31,8 +31,11 @@ resource "azurerm_postgresql_flexible_server_database" "app" {
   charset   = "utf8"
 }
 
-# start=end=0.0.0.0 is Azure's special "allow access from Azure services" rule.
+# start=end=0.0.0.0 is Azure's special "allow access from Azure services" rule —
+# only meaningful while public access is on. Disappears under the VNet-private
+# hardening path (var.postgres_public_network_access=false).
 resource "azurerm_postgresql_flexible_server_firewall_rule" "azure_services" {
+  count            = var.postgres_public_network_access ? 1 : 0
   name             = "allow-azure-services"
   server_id        = azurerm_postgresql_flexible_server.app.id
   start_ip_address = "0.0.0.0"

@@ -5,11 +5,24 @@
 # name: redis://dataq-app-redis:6379/0 (the full .internal FQDN does not connect
 # for raw TCP — same finding as the harness broker).
 
+# Defense-in-depth: even though ingress is internal-only (reachable solely from
+# within this Container Apps environment), the broker still requires a password
+# (--requirepass) so a compromised neighbour can't use it unauthenticated.
+resource "random_password" "redis" {
+  length  = 32
+  special = false
+}
+
 resource "azurerm_container_app" "redis" {
   name                         = "dataq-app-redis"
   container_app_environment_id = azurerm_container_app_environment.app.id
   resource_group_name          = data.azurerm_resource_group.dataq.name
   revision_mode                = "Single"
+
+  secret {
+    name  = "redis-password"
+    value = random_password.redis.result
+  }
 
   ingress {
     external_enabled = false
@@ -26,10 +39,15 @@ resource "azurerm_container_app" "redis" {
     min_replicas = 1
     max_replicas = 1
     container {
-      name   = "redis"
-      image  = "redis:7-alpine" # public image — no registry auth
-      cpu    = 0.5
-      memory = "1Gi"
+      name    = "redis"
+      image   = "redis:7-alpine" # public image — no registry auth
+      cpu     = 0.5
+      memory  = "1Gi"
+      command = ["sh", "-c", "exec redis-server --requirepass \"$REDIS_PASSWORD\""]
+      env {
+        name        = "REDIS_PASSWORD"
+        secret_name = "redis-password"
+      }
     }
   }
 
@@ -37,5 +55,7 @@ resource "azurerm_container_app" "redis" {
 }
 
 locals {
-  redis_url = "redis://${azurerm_container_app.redis.name}:6379/0"
+  # Password-authenticated broker URL — carries the secret, so it's injected as a
+  # Container App secret (not a plain env) on the api + worker.
+  redis_url = "redis://:${random_password.redis.result}@${azurerm_container_app.redis.name}:6379/0"
 }

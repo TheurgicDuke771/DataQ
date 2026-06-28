@@ -17,7 +17,7 @@ resource "azurerm_key_vault" "app" {
   tenant_id                  = data.azurerm_client_config.current.tenant_id
   sku_name                   = "standard"
   rbac_authorization_enabled = true
-  purge_protection_enabled   = false
+  purge_protection_enabled   = var.key_vault_purge_protection
   tags                       = local.common_tags
 
   depends_on = [azurerm_resource_provider_registration.keyvault]

@@ -16,6 +16,7 @@ locals {
   # Inline secrets shared by api + worker (+ DATABASE_URL also on the migrate job).
   app_secrets = [
     { name = "database-url", value = local.database_url },
+    { name = "redis-url", value = local.redis_url },
     { name = "appinsights-conn", value = azurerm_application_insights.app.connection_string },
   ]
 
@@ -24,7 +25,7 @@ locals {
     { name = "ENVIRONMENT", value = var.environment },
     { name = "LOG_LEVEL", value = "INFO" },
     { name = "DATABASE_URL", secret_name = "database-url" },
-    { name = "REDIS_URL", value = local.redis_url },
+    { name = "REDIS_URL", secret_name = "redis-url" },
     { name = "APPLICATIONINSIGHTS_CONNECTION_STRING", secret_name = "appinsights-conn" },
     { name = "SAMPLE_FAILURES_RETENTION_DAYS", value = "30" },
     # Runtime SecretStore -> Key Vault via the user-assigned identity.

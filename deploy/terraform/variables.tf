@@ -61,6 +61,20 @@ variable "log_retention_days" {
   default     = 30
 }
 
+# ── Security hardening toggles ───────────────────────────────────────────────
+
+variable "postgres_public_network_access" {
+  description = "Postgres public network access. true (v1 default) reaches the DB from Container Apps without VNet integration, gated by the allow-Azure-services firewall rule + TLS + credentials. HARDENING (post-v1): set false and put Postgres + the ACA environment on a VNet with a private endpoint."
+  type        = bool
+  default     = true
+}
+
+variable "key_vault_purge_protection" {
+  description = "Key Vault purge protection. false during bring-up so a destroy/re-apply can reuse the vault name. PROD: set true to make secrets unrecoverable-deletable only after the soft-delete retention window (NOTE: irreversible once enabled)."
+  type        = bool
+  default     = false
+}
+
 variable "swa_sku" {
   description = "Static Web App SKU. Standard is required to link a Container Apps backend (same-origin /api proxy). Drop to Free only with the CORS fallback."
   type        = string
