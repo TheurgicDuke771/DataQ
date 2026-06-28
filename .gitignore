@@ -141,6 +141,21 @@ tmp/
 .azure/
 azure.json
 
+# ---- Terraform (deploy/terraform/) ----
+# State holds the generated Postgres password + secret values — never commit it.
+# The provider lock (.terraform.lock.hcl) and *.example ARE tracked.
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
 # ---- Claude / agent scratch (project-local) ----
 .claude/cache/
 .claude/scheduled_tasks.lock
