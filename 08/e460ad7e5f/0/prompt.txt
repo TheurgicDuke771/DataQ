@@ -1,0 +1,2 @@
+Get started with Week 7. Lets go to cloud. 
+But first clean up the local docker [container, image, volume, etc.]
