@@ -1,0 +1,5 @@
+Now that we are going to cloud, is plain python+pip better than conda?
+
+---
+
+Go with scope 1, and make that linkage rebuild a multi-stage slim image now (+ write the ADR)
