@@ -33,3 +33,79 @@ Can you check and complete what is pending from HARNESS_TODO step 0 to 3
 ---
 
 I've created the UC catalog
+
+---
+
+Hey, sync with remote
+
+---
+
+do we have any local branch to clean up?
+
+---
+
+great, now - 
+* What are the credentials for the Airflow [you can point me the file where it is stored]
+* For ADF pipeline it is thouring an error - 
+```
+"Code": 21410,
+			"Message": "ErrorCode=FormatBasedDatasetMissingFileName,'Type=Microsoft.DataTransfer.Common.Shared.HybridDeliveryException,Message=One of the property \"file name\" or \"wildcard file name\" is required. If you want to copy all the files from a folder instead of copy single file, you can put \"*\" in your wildcard file name,Source=Microsoft.DataTransfer.ClientLibrary,'"
+```
+* Can you check if anything is pending from HARNESS_TODO [step 0-3] and WEEK6_TODO?
+
+---
+
+For the ADF event trigger firing - tell me what to do from the UI?
+
+---
+
+Can you just cross check, if everything from this list is covered - 
+
+[x] Product — sku_id, style_id, category, colour, material, size, unit_price, active, created_at (products)
+[x] Inventory — on_hand, planned, daily snapshot with load_ts (inventory_snapshot, Parquet per date)
+[x] Location — store, address, open/close hours (locations)
+[x] Orders — orders_header (order_number, channel, customer, status, subtotal, tax, order_total, ts) ↔ order_lines (sku, qty, unit_price, line_total). subtotal = sum(line_total) tie-out shaped clean; intra-dataset reconciliation target #1
+[x] Sales lifecycle — placed · shipped · audited events carrying order_number (sales_events, Flow B bronze; rolls up to gold revenue for the cross-platform reconcile)
+[~] Payments / Finance — payments (method, status, captured_amount) + refunds (amount, reason); order_total ↔ payment_captured ↔ refund testbed live. Settlement ledger not modelled (defer until a check needs it)
+[~] Return / Cancellation — returns table (order, sku, reason, channel, qty) + cancelled order status. Cancellation is a status, not a separate entity (sufficient for v1)
+[~] Logistics — shipment/tracking/carrier via tracking_events (stable tracking_number across ready→in_transit→delivered batches). Fulfilling node not modelled (optional)
+[x] Channel / Marketplace — online · store · marketplace as a first-class channels dimension + channel FK on orders/returns/feedback (null-channel + orphan issues seeded)
+[x] Guest / Customer — customers (name, address, email, phone PII for #226) + feedback survey (rating, comment, email). Chatbot folded into feedback
+[~] Cross-cutting — promotions (type/value/coupon-style) + per-order tax. Exchange rate / standalone discount not modelled (USD-only; add if a check needs them)
+[-] Optional (domain realism, lower priority — add if a check needs them) — deferred:
+Supplier / Vendor + Purchase Orders — inbound supply → inventory replenishment (freshness on inbound feeds)
+Fulfillment node / DC / warehouse — the location that fulfilled an order (a join target beyond the store Location)
+Catalog hierarchy — category · department · brand above Product (orphan / FK-integrity checks)
+Calendar / date dimension — fiscal week · season for trend slicing
+
+If not, create a plan to cover it [also we can tager 1 eevent based airflow and 1 timer based adf]
+
+---
+
+Include the differed ones (fulfilment, settelment, etc.) in the plan also
+
+---
+
+Go ahead with the plan
+
+---
+
+yeah, go with - zero DataQ references in the orchestrator
+
+---
+
+continue..
+
+---
+
+What is the issue - Postgres is offer-restricted in westus2
+
+---
+
+<task-notification>
+<task-id>bfdl0sas7</task-id>
+<tool-use-id>toolu_014xrUcwcjoFSDoWb99vobYQ</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/81337ef4-3e4c-4b90-96b4-35982b06e236/tasks/bfdl0sas7.output</output-file>
+<status>completed</status>
+<summary>Background command "Apply Postgres relocation to westus3" completed (exit code 0)</summary>
+</task-notification>
