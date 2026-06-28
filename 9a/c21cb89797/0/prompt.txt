@@ -61,3 +61,27 @@ Why every DAG is schedule based? Isn't some suppose to be event based?
 ---
 
 yes, wire the true push path for flow_a_payments_event
+
+---
+
+Switching context - 
+Why the date / timestamp fields are stored in varchar / string datatype [both sf and uc]?
+
+---
+
+Check the create_ts for feedback in UC
+
+---
+
+Leave these for now. 
+Switching context - 
+We need a login page for DataQ 
+And I'm getting this when login using `royarijit04` - 
+```
+Failed to load dashboard
+{'error': 'insufficient_scope', 'message': 'Guest users not allowed'}
+```
+
+---
+
+Try again

@@ -81,6 +81,37 @@
         "label": "Skill: frontend-design",
         "default_collapsed": true
       }
+    },
+    {
+      "id": "claude-skill-toolu_01SYFJieBk9x8dk9KHP6no6a",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "26513503ed0f",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 2742,
+        "end": 2743,
+        "entry_ids": [
+          "cc8408fd-ac53-45d6-9476-cea958b8dd09"
+        ],
+        "tool_use_id": "toolu_01SYFJieBk9x8dk9KHP6no6a"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01SYFJieBk9x8dk9KHP6no6a"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
     }
   ],
   "session_metrics": {
