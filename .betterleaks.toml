@@ -1,0 +1,24 @@
+title = "DataQ betterleaks config"
+
+# The global `filter` MUST be a top-level key, BEFORE [extend] — otherwise TOML
+# scopes it under [extend] and betterleaks silently ignores it. A finding is
+# skipped when this expression evaluates true (betterleaks discard-on-true).
+#
+# Skip ONLY Entire (entire.io) session-transcript checkpoints. Two path shapes:
+#   - checkpoint shard commits:  <2hex>/<hex>/<seq>/full.jsonl  (e.g. c1/c6b5fdf0cb/0/full.jsonl)
+#   - .entire metadata dir:      .entire/.../full.jsonl
+# These are agent session logs that capture raw tool output (public download-URL
+# hashes, sha256 digests, git SHAs) which trip high-entropy / 40-hex rules such as
+# `sourcegraph-access-token` (e.g. the SWA CLI's StaticSitesClient@<40hex> URL).
+# They live on an ephemeral checkpoint ref and never merge to main.
+#
+# Anchored to those exact shapes so a stray src/full.jsonl or evilfull.jsonl is
+# still fully scanned. Verified (betterleaks v1.4.1, git mode): real secrets in
+# normal files AND in src/full.jsonl / evilfull.jsonl are still reported; only the
+# two checkpoint shapes are filtered; the default ruleset stays active (extend).
+# Also verified the public checkpoint ref holds NO real credentials — only these
+# hash false positives — so this filter hides false positives, not secrets.
+filter = 'attributes[?"path"].orValue("").matches("^([0-9a-f]{2}/[0-9a-f]+/[0-9]+|\\.entire/.*)/full\\.jsonl$")'
+
+[extend]
+useDefault = true
