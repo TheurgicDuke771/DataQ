@@ -1,0 +1,17 @@
+Plan the week 7 task from @docs/progress.md , HARNESS_TODO.md and github epic and milestones
+
+---
+
+keep it gitignored same as harness todo, you can keep it in repo root
+
+---
+
+So, the plan is go to cloud first then start the remsining week 7 works, is the doc conveying that?
+
+---
+
+I'm think about publishing the image to docker hub instead of azure container registry, what do you think? will there be any drawbacks for this?
+
+---
+
+Okay, lets go with GHCR, and create an ADR
