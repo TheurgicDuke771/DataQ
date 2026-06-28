@@ -21,16 +21,30 @@ variable "azure_location" {
   default     = "West US 2"
 }
 
-variable "postgres_location" {
-  description = "Region for the app Postgres. westus3 because Postgres Flexible Server is offer-restricted in West US 2 for this subscription (same constraint the harness hit). Adjacent to westus2 -> low latency from the Container Apps env."
+# ── Shared Postgres (the app's DB lives on the harness's single server) ───────
+
+variable "shared_pg_server_name" {
+  description = "Name of the shared Postgres Flexible Server (harness-owned, neutral name). The app's `dataq` database + `dataq_app` role live here (provisioned out-of-band — see README)."
   type        = string
-  default     = "West US 3"
+  default     = "dataq-pg-wus3-3erlgd"
 }
 
-variable "aca_location" {
-  description = "Region for the Container Apps environment + the apps/redis/migrate job inside it. westus3, NOT westus2: this subscription is capped at 1 Container App Environment per region and the harness already holds the westus2 slot (dataq-harness-cae). The other app resources (KV/logs/App Insights/identity/SWA) stay in azure_location and are referenced cross-region."
+variable "app_db_name" {
+  description = "The app's database on the shared server (distinct from airflow's)."
   type        = string
-  default     = "West US 3"
+  default     = "dataq"
+}
+
+variable "app_db_user" {
+  description = "Least-privilege role the app connects as (owns only app_db_name)."
+  type        = string
+  default     = "dataq_app"
+}
+
+variable "app_db_password" {
+  description = "Password for app_db_user (provisioned out-of-band via psql; pass at apply: TF_VAR_app_db_password=...). Injected as the DATABASE_URL Container App secret; never committed."
+  type        = string
+  sensitive   = true
 }
 
 # ── Backend image (GHCR — ADR 0023) ──────────────────────────────────────────
@@ -42,24 +56,12 @@ variable "backend_image_repo" {
 }
 
 variable "image_tag" {
-  description = "Backend image tag to deploy. Use an IMMUTABLE tag in prod (ACA caches 'latest' at the node, so a same-tag rebuild won't be re-pulled on a new revision). Bump per deploy."
+  description = "Backend image tag to deploy. Use an IMMUTABLE tag in prod (ACA caches 'latest' at the node, so a same-tag rebuild won't be re-pulled on a new revision). Bump per deploy. (v3 = the #393 App-Insights logging-lock fix.)"
   type        = string
-  default     = "v1"
+  default     = "v3"
 }
 
 # ── Sizing ───────────────────────────────────────────────────────────────────
-
-variable "postgres_sku" {
-  description = "Postgres Flexible Server SKU (Burstable B1ms = cheapest)."
-  type        = string
-  default     = "B_Standard_B1ms"
-}
-
-variable "postgres_admin_login" {
-  description = "App Postgres admin login (password is generated, stored in state + KV-adjacent container secret)."
-  type        = string
-  default     = "dataqadmin"
-}
 
 variable "log_retention_days" {
   description = "Log Analytics retention for the Container Apps environment."
@@ -68,12 +70,6 @@ variable "log_retention_days" {
 }
 
 # ── Security hardening toggles ───────────────────────────────────────────────
-
-variable "postgres_public_network_access" {
-  description = "Postgres public network access. true (v1 default) reaches the DB from Container Apps without VNet integration, gated by the allow-Azure-services firewall rule + TLS + credentials. HARDENING (post-v1): set false and put Postgres + the ACA environment on a VNet with a private endpoint."
-  type        = bool
-  default     = true
-}
 
 variable "key_vault_purge_protection" {
   description = "Key Vault purge protection. false during bring-up so a destroy/re-apply can reuse the vault name. PROD: set true to make secrets unrecoverable-deletable only after the soft-delete retention window (NOTE: irreversible once enabled)."

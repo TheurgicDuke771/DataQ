@@ -51,8 +51,8 @@ locals {
 
 # ── API (FastAPI, external ingress) ──────────────────────────────────────────
 resource "azurerm_container_app" "api" {
-  name                         = "dataq-api"
-  container_app_environment_id = azurerm_container_app_environment.app.id
+  name                         = "dataq-app-api"
+  container_app_environment_id = data.azurerm_container_app_environment.shared.id
   resource_group_name          = data.azurerm_resource_group.dataq.name
   revision_mode                = "Single"
 
@@ -106,8 +106,8 @@ resource "azurerm_container_app" "api" {
 
 # ── Worker (Celery worker + embedded beat) ───────────────────────────────────
 resource "azurerm_container_app" "worker" {
-  name                         = "dataq-worker"
-  container_app_environment_id = azurerm_container_app_environment.app.id
+  name                         = "dataq-app-worker"
+  container_app_environment_id = data.azurerm_container_app_environment.shared.id
   resource_group_name          = data.azurerm_resource_group.dataq.name
   revision_mode                = "Single"
 
@@ -155,11 +155,11 @@ resource "azurerm_container_app" "worker" {
 # backward-compatible migrations — CLAUDE.md). alembic.ini's script_location is
 # relative to backend/, so cd there first (mirrors docker-compose's migrate svc).
 resource "azurerm_container_app_job" "migrate" {
-  name                         = "dataq-migrate"
-  container_app_environment_id = azurerm_container_app_environment.app.id
+  name                         = "dataq-app-migrate"
+  container_app_environment_id = data.azurerm_container_app_environment.shared.id
   resource_group_name          = data.azurerm_resource_group.dataq.name
-  # A Container Apps Job must be in the same region as its environment.
-  location = var.aca_location
+  # A Container Apps Job must be in the same region as its (shared) environment.
+  location = data.azurerm_container_app_environment.shared.location
 
   replica_timeout_in_seconds = 900
   replica_retry_limit        = 1

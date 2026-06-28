@@ -18,8 +18,8 @@ output "key_vault_url" {
 }
 
 output "postgres_fqdn" {
-  description = "App Postgres host."
-  value       = azurerm_postgresql_flexible_server.app.fqdn
+  description = "Shared Postgres host (app uses the `dataq` database on it)."
+  value       = data.azurerm_postgresql_flexible_server.shared.fqdn
 }
 
 # ── Container Apps names -> Deploy workflow VARIABLES ─────────────────────────

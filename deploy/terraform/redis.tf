@@ -15,7 +15,7 @@ resource "random_password" "redis" {
 
 resource "azurerm_container_app" "redis" {
   name                         = "dataq-app-redis"
-  container_app_environment_id = azurerm_container_app_environment.app.id
+  container_app_environment_id = data.azurerm_container_app_environment.shared.id
   resource_group_name          = data.azurerm_resource_group.dataq.name
   revision_mode                = "Single"
 

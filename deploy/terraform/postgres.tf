@@ -1,45 +1,21 @@
-# App database — Postgres Flexible Server (Burstable B1ms). Public access +
-# "allow Azure services" so the Container Apps environment reaches it without VNet
-# integration (single-tenant v1). Password generated locally — never committed;
-# state is gitignored. westus3 (see postgres_location) avoids the wus2 offer
-# restriction the harness also hit.
+# App database — a DISTINCT `dataq` database on the SHARED Postgres Flexible Server
+# (this subscription caps Flexible Servers at 1, so the app shares the harness's
+# server — renamed neutrally to dataq-pg-* / purpose=dataq-shared). The app connects
+# as the least-privilege `dataq_app` role, which OWNS only the `dataq` database (no
+# access to the `airflow` metadata DB on the same server).
+#
+# The `dataq_app` role + `dataq` database are provisioned out-of-band (a one-off
+# psql against the server — see deploy/terraform/README.md "Shared Postgres"),
+# keeping this stack connection-free (no postgres provider / no plan-time DB
+# connection, so it stays CI-friendly). Its password is passed in as the sensitive
+# var.app_db_password and injected as the DATABASE_URL Container App secret.
+#
+# Runtime reachability: the ACA apps connect over the server's allow-Azure-services
+# firewall rule (the apps are Azure services), same as airflow.
 
-resource "random_password" "pg" {
-  length  = 28
-  special = false # keep the SQLAlchemy URL clean (no %-encoding)
-}
-
-resource "azurerm_postgresql_flexible_server" "app" {
-  name                          = "dataq-app-pg-wus3-${random_string.suffix.result}"
-  resource_group_name           = data.azurerm_resource_group.dataq.name
-  location                      = var.postgres_location
-  version                       = "16"
-  administrator_login           = var.postgres_admin_login
-  administrator_password        = random_password.pg.result
-  sku_name                      = var.postgres_sku
-  storage_mb                    = 32768
-  auto_grow_enabled             = true
-  public_network_access_enabled = var.postgres_public_network_access
-  zone                          = "1"
-  tags                          = local.common_tags
-}
-
-resource "azurerm_postgresql_flexible_server_database" "app" {
-  name      = "dataq"
-  server_id = azurerm_postgresql_flexible_server.app.id
-  collation = "en_US.utf8"
-  charset   = "utf8"
-}
-
-# start=end=0.0.0.0 is Azure's special "allow access from Azure services" rule —
-# only meaningful while public access is on. Disappears under the VNet-private
-# hardening path (var.postgres_public_network_access=false).
-resource "azurerm_postgresql_flexible_server_firewall_rule" "azure_services" {
-  count            = var.postgres_public_network_access ? 1 : 0
-  name             = "allow-azure-services"
-  server_id        = azurerm_postgresql_flexible_server.app.id
-  start_ip_address = "0.0.0.0"
-  end_ip_address   = "0.0.0.0"
+data "azurerm_postgresql_flexible_server" "shared" {
+  name                = var.shared_pg_server_name
+  resource_group_name = data.azurerm_resource_group.dataq.name
 }
 
 locals {
@@ -47,8 +23,8 @@ locals {
   # Flexible Server enforces TLS.
   database_url = join("", [
     "postgresql+psycopg2://",
-    var.postgres_admin_login, ":", random_password.pg.result,
-    "@", azurerm_postgresql_flexible_server.app.fqdn, ":5432/",
-    azurerm_postgresql_flexible_server_database.app.name, "?sslmode=require",
+    var.app_db_user, ":", var.app_db_password,
+    "@", data.azurerm_postgresql_flexible_server.shared.fqdn, ":5432/",
+    var.app_db_name, "?sslmode=require",
   ])
 }

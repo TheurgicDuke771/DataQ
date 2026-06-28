@@ -1,14 +1,10 @@
-# Container Apps environment — the shared host for the api, worker, redis broker,
-# and the migrate job. Separate from the harness's dataq-harness-cae.
-
-resource "azurerm_container_app_environment" "app" {
-  name = "dataq-app-cae"
-  # westus3, not azure_location: 1-env-per-region cap + harness owns the westus2
-  # slot (see var.aca_location).
-  location                   = var.aca_location
-  resource_group_name        = data.azurerm_resource_group.dataq.name
-  log_analytics_workspace_id = azurerm_log_analytics_workspace.app.id
-  tags                       = local.common_tags
-  # Microsoft.App is already Registered on this subscription (the harness needs
-  # it), so no RP dependency is required here.
+# The Container Apps environment is SHARED with the harness: this subscription is
+# capped at ONE Container App Environment, so we do NOT create one here — the
+# harness Terraform owns it (renamed to the neutral `dataq-cae`). The app stack
+# only REFERENCES it; the app's own apps/redis/migrate job run inside it but stay
+# separate, dataq-app-* resources. The env lives in azure_location (westus2), so
+# the app's container resources land there too.
+data "azurerm_container_app_environment" "shared" {
+  name                = "dataq-cae"
+  resource_group_name = data.azurerm_resource_group.dataq.name
 }
