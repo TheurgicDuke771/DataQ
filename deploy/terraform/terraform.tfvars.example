@@ -16,5 +16,10 @@
 
 # workspace_admin_emails = "you@example.com"
 
+# Auth-widening: allow tenant GUEST (B2B / external) identities to sign in.
+# Default is false (secure). Set true ONLY if your users sign in with a guest
+# account invited into the tenant. This deployment sets it true.
+# azure_allow_guest_users = true
+
 # github_repo        = "TheurgicDuke771/DataQ"
 # github_environment = "production"

@@ -62,9 +62,9 @@ variable "image_tag" {
 }
 
 variable "azure_allow_guest_users" {
-  description = "Allow tenant guest (B2B / external) identities to authenticate (sets AZURE_ALLOW_GUEST_USERS on the API). The app code defaults this off; this deployment enables it because the owner signs in with a guest account."
+  description = "Allow tenant guest (B2B / external) identities to authenticate (sets AZURE_ALLOW_GUEST_USERS on the API). SECURE DEFAULT off — matches the app code default and keeps the BYOL/customer baseline (ADR 0013) locked down. Opt in explicitly per deployment (this one sets it true via tfvars/TF_VAR because the owner signs in with a guest account)."
   type        = bool
-  default     = true
+  default     = false
 }
 
 # ── Sizing ───────────────────────────────────────────────────────────────────
