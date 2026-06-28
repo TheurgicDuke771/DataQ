@@ -111,10 +111,16 @@ def configure_logging() -> None:
         # overrides createLock() to set `self.lock = None` (it does its own
         # queue-based thread-safety). That was fine on older Python, but 3.13's
         # logging.Handler.handle() does `with self.lock` with no None-check, so the
-        # first emitted record crashes app startup. Force a real lock directly
-        # (assigning, NOT createLock() which would re-null it). (#393 — proper fix:
-        # migrate to azure-monitor-opentelemetry; opencensus is EOL.)
-        ai_handler.lock = threading.RLock()
+        # first emitted record crashes app startup. Assigning the lock once isn't
+        # enough: Celery's embedded beat (`worker -B`) re-initialises logging in
+        # its forked process and calls createLock() AGAIN, re-nulling the lock and
+        # killing beat on its first log line — so every periodic task (orchestration
+        # polling, scheduled dispatch, gap recovery) silently stops (#405, a #393
+        # recurrence). Override createLock itself so it can never null the lock,
+        # whoever calls it. (#393 — proper fix: migrate to
+        # azure-monitor-opentelemetry; opencensus is EOL.)
+        ai_handler.createLock = lambda: setattr(ai_handler, "lock", threading.RLock())
+        ai_handler.createLock()
         ai_handler.setLevel(level)
         root.addHandler(ai_handler)
 
