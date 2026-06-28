@@ -1,5 +1,6 @@
 import logging
 import sys
+import threading
 from contextvars import ContextVar
 from typing import Any
 
@@ -106,6 +107,14 @@ def configure_logging() -> None:
         from opencensus.ext.azure.log_exporter import AzureLogHandler
 
         ai_handler = AzureLogHandler(connection_string=conn)
+        # opencensus-ext-azure (unmaintained, not tested on Python 3.13 — ADR 0017)
+        # overrides createLock() to set `self.lock = None` (it does its own
+        # queue-based thread-safety). That was fine on older Python, but 3.13's
+        # logging.Handler.handle() does `with self.lock` with no None-check, so the
+        # first emitted record crashes app startup. Force a real lock directly
+        # (assigning, NOT createLock() which would re-null it). (#393 — proper fix:
+        # migrate to azure-monitor-opentelemetry; opencensus is EOL.)
+        ai_handler.lock = threading.RLock()
         ai_handler.setLevel(level)
         root.addHandler(ai_handler)
 

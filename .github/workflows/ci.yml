@@ -201,7 +201,7 @@ jobs:
             -e GIT_CONFIG_VALUE_0=/repo \
             -v "$PWD:/repo" -w /repo \
             ghcr.io/betterleaks/betterleaks:v1.4.1 \
-            git /repo --redact --verbose
+            git /repo --config /repo/.betterleaks.toml --redact --verbose
 
   # ── Frontend ─────────────────────────────────────────────────────────────────
   frontend-lint:

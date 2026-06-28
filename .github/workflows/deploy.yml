@@ -18,12 +18,16 @@ concurrency:
 
 # OIDC federated login to Azure (no stored client secret). The federated cred +
 # the listed vars/secrets must be configured first — see deploy/README.md.
+# packages:write lets the GITHUB_TOKEN push the backend image to GHCR (ADR 0023).
 permissions:
   id-token: write
   contents: read
+  packages: write
 
 env:
-  IMAGE: ${{ vars.ACR_LOGIN_SERVER }}/dataq-backend:${{ inputs.image_tag }}
+  # GHCR registry (ADR 0023) — public package, lowercase owner. ACA pulls it
+  # anonymously, so no registry credential is stored on the apps/job.
+  IMAGE: ghcr.io/theurgicduke771/dataq-backend:${{ inputs.image_tag }}
 
 jobs:
   backend:
@@ -40,9 +44,17 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Build + push backend image to ACR
+      # Push to GHCR (ADR 0023). The GITHUB_TOKEN has packages:write on this repo's
+      # registry; no Azure/ACR credential is involved in the image push.
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build + push backend image to GHCR
         run: |
-          az acr login --name "${{ vars.ACR_NAME }}"
           docker build -f backend/Dockerfile -t "$IMAGE" .
           docker push "$IMAGE"
 

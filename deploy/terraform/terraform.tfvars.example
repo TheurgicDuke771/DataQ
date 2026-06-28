@@ -1,0 +1,20 @@
+# Copy to terraform.tfvars (gitignored) and fill in. Values here are NON-SECRET
+# (identifiers + sizing). The one SECRET input — app_db_password — must NOT go in
+# this file; pass it at apply time:
+#   TF_VAR_app_db_password=... terraform apply
+# (it's the password for the dataq_app role provisioned out-of-band on the shared
+# Postgres server — see README "Shared Postgres").
+
+# image_tag = "v1"                 # bump per deploy (immutable tag, not "latest")
+# shared_pg_server_name = "dataq-pg-wus3-3erlgd"   # the shared (harness) PG server
+
+# Azure AD SSO (fill once the app registrations exist; empty deploys fine with
+# health/docs reachable — AUTH_DEV_BYPASS stays false regardless).
+# azure_tenant_id     = "00000000-0000-0000-0000-000000000000"
+# azure_api_client_id = "00000000-0000-0000-0000-000000000000"
+# azure_spa_client_id = "00000000-0000-0000-0000-000000000000"
+
+# workspace_admin_emails = "you@example.com"
+
+# github_repo        = "TheurgicDuke771/DataQ"
+# github_environment = "production"
