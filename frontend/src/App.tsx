@@ -90,7 +90,9 @@ export function App() {
   // LoginPage with no header/sider chrome; the Layout only renders once signed in.
   return (
     <AuthGate>
-      <Layout style={{ minHeight: '100vh' }}>
+      {/* Fixed app shell: the Layout is exactly the viewport height and doesn't
+          scroll — the header and sider stay put, and only <Content> scrolls. */}
+      <Layout style={{ height: '100vh', overflow: 'hidden' }}>
         <Header
           style={{
             display: 'flex',
@@ -115,18 +117,25 @@ export function App() {
             theme="light"
             breakpoint="lg"
             collapsedWidth={0}
-            style={{ borderInlineEnd: `1px solid ${BRAND.border}` }}
+            style={{ borderInlineEnd: `1px solid ${BRAND.border}`, height: '100%' }}
           >
             {/* Primary nav up top, footer group (Admin · Settings · Documentation)
-              pinned to the bottom by the flex spacer, separated by a hairline. */}
+              pinned to the bottom by the flex layout, separated by a hairline. The
+              primary nav takes the slack and scrolls if it ever exceeds the height,
+              so the footer stays put. */}
             <Flex vertical style={{ height: '100%' }}>
               <Menu
                 mode="inline"
                 selectedKeys={selectedKeys}
                 items={NAV_ITEMS}
-                style={{ borderInlineEnd: 0, paddingTop: 8 }}
+                style={{
+                  borderInlineEnd: 0,
+                  paddingTop: 8,
+                  flex: 1,
+                  minHeight: 0,
+                  overflowY: 'auto',
+                }}
               />
-              <div style={{ flex: 1 }} />
               <Menu
                 mode="inline"
                 selectedKeys={selectedKeys}
@@ -139,7 +148,8 @@ export function App() {
               />
             </Flex>
           </Sider>
-          <Content style={{ padding: 24, position: 'relative' }}>
+          {/* The only scroll container: header + sider stay fixed, this scrolls. */}
+          <Content style={{ padding: 24, position: 'relative', overflowY: 'auto' }}>
             <BrandWatermark />
             <div style={{ position: 'relative' }}>
               <Suspense fallback={<Spin size="large" style={{ marginTop: 80 }} />}>
