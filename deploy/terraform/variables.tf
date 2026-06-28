@@ -56,9 +56,15 @@ variable "backend_image_repo" {
 }
 
 variable "image_tag" {
-  description = "Backend image tag to deploy. Use an IMMUTABLE tag in prod (ACA caches 'latest' at the node, so a same-tag rebuild won't be re-pulled on a new revision). Bump per deploy. (v3 = the #393 App-Insights logging-lock fix.)"
+  description = "Backend image tag to deploy. Use an IMMUTABLE tag in prod (ACA caches 'latest' at the node, so a same-tag rebuild won't be re-pulled on a new revision). Bump per deploy. (v3 = the #393 App-Insights logging-lock fix; v4 = login page + AZURE_ALLOW_GUEST_USERS support, PR #398.)"
   type        = string
-  default     = "v3"
+  default     = "v4"
+}
+
+variable "azure_allow_guest_users" {
+  description = "Allow tenant guest (B2B / external) identities to authenticate (sets AZURE_ALLOW_GUEST_USERS on the API). SECURE DEFAULT off — matches the app code default and keeps the BYOL/customer baseline (ADR 0013) locked down. Opt in explicitly per deployment (this one sets it true via tfvars/TF_VAR because the owner signs in with a guest account)."
+  type        = bool
+  default     = false
 }
 
 # ── Sizing ───────────────────────────────────────────────────────────────────
