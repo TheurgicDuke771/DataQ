@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "fb1cba1c6d54",
+  "strategy": "manual-commit",
+  "branch": "feature/w7-ghcr-deploy-reconcile",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".gitignore",
+    "deploy/terraform/github_oidc.tf",
+    "deploy/terraform/swa.tf",
+    "frontend/public/staticwebapp.config.json"
+  ],
+  "sessions": [
+    {
+      "metadata": "/fb/1cba1c6d54/0/metadata.json",
+      "transcript": "/fb/1cba1c6d54/0/full.jsonl",
+      "content_hash": "/fb/1cba1c6d54/0/content_hash.txt",
+      "prompt": "/fb/1cba1c6d54/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 4833,
+    "cache_creation_tokens": 38000,
+    "cache_read_tokens": 9730133,
+    "output_tokens": 26003,
+    "api_call_count": 17
+  }
+}
