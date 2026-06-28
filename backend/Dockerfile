@@ -9,6 +9,13 @@
 # (which would interfere with signal forwarding to uvicorn/celery).
 FROM continuumio/miniconda3:24.11.1-0
 
+# Link the GHCR package to this repo (shows under the repo's Packages and lets the
+# repo's Actions GITHUB_TOKEN push to it — ADR 0023/0024). Without this the package
+# is user-scoped + unlinked, so CI can't push and ACA-pull access isn't inherited.
+LABEL org.opencontainers.image.source="https://github.com/TheurgicDuke771/DataQ"
+LABEL org.opencontainers.image.description="DataQ backend (FastAPI API + Celery worker)"
+LABEL org.opencontainers.image.licenses="MIT"
+
 WORKDIR /workspace
 
 # Create the conda env first and cache the layer. environment.yml's pip section
