@@ -1,6 +1,12 @@
 """Tests for the PII redactor (post-2026-05-28 security audit additions)."""
 
-from backend.app.core.logging import _redact_pii
+import logging as std_logging
+from collections.abc import Iterator
+
+import pytest
+
+from backend.app.core.config import get_settings
+from backend.app.core.logging import _redact_pii, configure_logging
 
 
 def _redact(payload: dict[str, object]) -> dict[str, object]:
@@ -103,3 +109,66 @@ def test_safe_keys_pass_through() -> None:
     assert out["status"] == 200
     assert out["duration_ms"] == 12.34
     assert out["level"] == "info"
+
+
+@pytest.fixture
+def _restore_root_logging() -> Iterator[None]:
+    """Snapshot/restore the root logger so the App Insights integration test below
+    doesn't leak its handler into the rest of the suite."""
+    root = std_logging.getLogger()
+    saved_handlers, saved_level = root.handlers[:], root.level
+    yield
+    for h in root.handlers:
+        if h not in saved_handlers:
+            h.close()
+    root.handlers, root.level = saved_handlers, saved_level
+
+
+class _FakeAzureLogHandler(std_logging.Handler):
+    """Stand-in for opencensus's AzureLogHandler that reproduces ONLY the bug-
+    relevant behaviour — `createLock()` nulls `self.lock` — with no network,
+    statsbeat thread, or App Insights export. Lets the test drive the real
+    `configure_logging()` code path (so it catches a revert of the fix) without
+    constructing the real, network-touching handler."""
+
+    def __init__(self, connection_string: str) -> None:
+        super().__init__()  # stdlib __init__ calls self.createLock() -> nulls it
+
+    def createLock(self) -> None:
+        self.lock = None  # type: ignore[assignment]  # mirrors opencensus's override
+
+
+def test_azure_handler_lock_survives_createlock_recall(
+    monkeypatch: pytest.MonkeyPatch, _restore_root_logging: None
+) -> None:
+    """#405 (a #393 recurrence): Celery's embedded beat (`worker -B`) re-initialises
+    logging in its forked process and calls the AzureLogHandler's createLock() again.
+    opencensus's createLock sets `self.lock = None`; on Py3.13 that makes
+    logging.Handler.handle()'s `with self.lock` crash on the first record — killing
+    beat (and every periodic task) on its 'beat: Starting...' line. The handler must
+    keep a real lock no matter how often createLock() is called.
+
+    Uses a fake handler (above) so configure_logging()'s override is exercised
+    without real opencensus network/statsbeat behaviour."""
+    import opencensus.ext.azure.log_exporter as az_log_exporter
+
+    monkeypatch.setattr(az_log_exporter, "AzureLogHandler", _FakeAzureLogHandler)
+    monkeypatch.setattr(
+        get_settings(),
+        "applicationinsights_connection_string",
+        "InstrumentationKey=00000000-0000-0000-0000-000000000000",
+    )
+    configure_logging()
+    ai = [h for h in std_logging.getLogger().handlers if isinstance(h, _FakeAzureLogHandler)]
+    assert ai, "App Insights handler was not attached when a connection string is set"
+    handler = ai[0]
+
+    handler.createLock()  # simulate the beat fork re-initialising logging
+    assert handler.lock is not None, "createLock() re-nulled the lock — beat would crash"
+
+    # The exact prod crash path: handle() acquires `with self.lock`. Don't export.
+    monkeypatch.setattr(handler, "emit", lambda record: None)
+    record = std_logging.LogRecord(
+        "celery.beat", std_logging.INFO, __file__, 1, "beat: Starting...", None, None
+    )
+    handler.handle(record)  # must not raise
