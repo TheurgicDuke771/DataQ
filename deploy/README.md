@@ -24,7 +24,9 @@ Browser ─► Azure Static Web App (frontend/dist)
               ├─► Azure Cache for Redis        (REDIS_URL)
               ├─► Azure Key Vault              (SECRET_STORE=azure_key_vault, managed identity)
               └─► Application Insights         (APPLICATIONINSIGHTS_CONNECTION_STRING)
-        Azure Container Registry (ACR) — holds the backend image
+        GitHub Container Registry (GHCR) — holds the backend image (ADR 0023)
+          ghcr.io/theurgicduke771/dataq-backend:<tag> — public package, so ACA
+          pulls it anonymously (no registry credential stored on the apps/job).
 ```
 
 Both api + worker run the **same** image ([backend/Dockerfile](../backend/Dockerfile),
@@ -37,8 +39,11 @@ alternative — only needed if you run the UI on Container Apps instead of SWA).
 The datasource + compute infra is stood up by the external Terraform harness
 (ADR 0021) — see `HARNESS_TODO.md`. Beyond that, this app needs:
 
-1. **ACR** + an **ACA environment** + the three apps/job above. The api/worker run
-   `uvicorn …` / `celery …`; the migrate **job** runs `alembic upgrade head`.
+1. An **ACA environment** + the three apps/job above (the backend image is on
+   **GHCR**, not ACR — ADR 0023). The api/worker run `uvicorn …` / `celery …`;
+   the migrate **job** runs `alembic upgrade head`. The `deploy/terraform/` stack
+   provisions all of this; the GHCR package must be **public** so ACA pulls it
+   anonymously.
 2. **Managed identity** on the api + worker apps with **Key Vault Secrets User**
    on the vault (so `DefaultAzureCredential` resolves `SECRET_STORE=azure_key_vault`).
 3. **App env**: set the keys in [deploy/.env.app.prod.example](.env.app.prod.example)
@@ -58,11 +63,12 @@ federated credential for OIDC login (subject = this repo's `production`
 environment).
 
 **Secrets:** `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`
-(OIDC app registration), `AZURE_STATIC_WEB_APPS_API_TOKEN`.
+(OIDC app registration), `AZURE_STATIC_WEB_APPS_API_TOKEN`. The GHCR image push
+uses the built-in `GITHUB_TOKEN` (`packages: write`) — no registry secret to set.
 
-**Variables:** `ACR_NAME`, `ACR_LOGIN_SERVER`, `AZURE_RESOURCE_GROUP`,
-`API_APP_NAME`, `WORKER_APP_NAME`, `MIGRATE_JOB_NAME`, and the non-secret
-`VITE_AZURE_*` build values.
+**Variables:** `AZURE_RESOURCE_GROUP`, `API_APP_NAME`, `WORKER_APP_NAME`,
+`MIGRATE_JOB_NAME`, and the non-secret `VITE_AZURE_*` build values. (No `ACR_*` —
+the image lives on GHCR at a fixed `ghcr.io/theurgicduke771/dataq-backend` path.)
 
 ## Going live
 
