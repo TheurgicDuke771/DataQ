@@ -90,7 +90,9 @@ export function App() {
   // LoginPage with no header/sider chrome; the Layout only renders once signed in.
   return (
     <AuthGate>
-      <Layout style={{ minHeight: '100vh' }}>
+      {/* Fixed app shell: the Layout is exactly the viewport height and doesn't
+          scroll — the header and sider stay put, and only <Content> scrolls. */}
+      <Layout style={{ height: '100vh', overflow: 'hidden' }}>
         <Header
           style={{
             display: 'flex',
@@ -115,15 +117,7 @@ export function App() {
             theme="light"
             breakpoint="lg"
             collapsedWidth={0}
-            // Stick to the viewport (not the document): without this the sider grows
-            // as tall as a long page and its bottom-pinned footer falls below the
-            // fold, only reachable by scrolling to the very end of the content.
-            style={{
-              borderInlineEnd: `1px solid ${BRAND.border}`,
-              position: 'sticky',
-              top: SHELL.headerHeight,
-              height: `calc(100vh - ${SHELL.headerHeight}px)`,
-            }}
+            style={{ borderInlineEnd: `1px solid ${BRAND.border}`, height: '100%' }}
           >
             {/* Primary nav up top, footer group (Admin · Settings · Documentation)
               pinned to the bottom by the flex layout, separated by a hairline. The
@@ -154,7 +148,8 @@ export function App() {
               />
             </Flex>
           </Sider>
-          <Content style={{ padding: 24, position: 'relative' }}>
+          {/* The only scroll container: header + sider stay fixed, this scrolls. */}
+          <Content style={{ padding: 24, position: 'relative', overflowY: 'auto' }}>
             <BrandWatermark />
             <div style={{ position: 'relative' }}>
               <Suspense fallback={<Spin size="large" style={{ marginTop: 80 }} />}>
