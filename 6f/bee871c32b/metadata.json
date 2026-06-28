@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "6fbee871c32b",
+  "strategy": "manual-commit",
+  "branch": "feature/login-page-and-guest-access",
+  "checkpoints_count": 9,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/6f/bee871c32b/0/metadata.json",
+      "transcript": "/6f/bee871c32b/0/full.jsonl",
+      "content_hash": "/6f/bee871c32b/0/content_hash.txt",
+      "prompt": "/6f/bee871c32b/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 72200,
+    "cache_creation_tokens": 1788286,
+    "cache_read_tokens": 181157091,
+    "output_tokens": 667777,
+    "api_call_count": 575
+  }
+}
