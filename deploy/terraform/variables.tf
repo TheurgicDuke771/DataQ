@@ -105,17 +105,8 @@ variable "azure_tenant_id" {
   default     = ""
 }
 
-variable "azure_api_client_id" {
-  description = "App-registration (API) client id for token validation."
-  type        = string
-  default     = ""
-}
-
-variable "azure_spa_client_id" {
-  description = "App-registration (SPA) client id (public MSAL client)."
-  type        = string
-  default     = ""
-}
+# API + SPA client ids are no longer inputs — they're created in sso.tf and wired
+# into the app env + outputs directly.
 
 variable "azure_api_scope" {
   description = "API scope the SPA requests."

@@ -64,6 +64,22 @@ output "azure_subscription_id" {
   value       = data.azurerm_subscription.current.subscription_id
 }
 
+# ── Azure AD SSO (sso.tf) -> frontend VITE_* build vars / repo VARIABLES ──────
+output "azure_api_client_id" {
+  description = "-> VITE_AZURE_API_CLIENT_ID (and the backend AZURE_API_CLIENT_ID)."
+  value       = azuread_application.api.client_id
+}
+
+output "azure_spa_client_id" {
+  description = "-> VITE_AZURE_SPA_CLIENT_ID (public MSAL client)."
+  value       = azuread_application.spa.client_id
+}
+
+output "azure_api_scope" {
+  description = "-> VITE_AZURE_API_SCOPE."
+  value       = var.azure_api_scope
+}
+
 # ── Sensitive ────────────────────────────────────────────────────────────────
 output "swa_api_token" {
   description = "-> repo secret AZURE_STATIC_WEB_APPS_API_TOKEN (read with: terraform output -raw swa_api_token)."

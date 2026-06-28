@@ -22,8 +22,10 @@ export function getMsalInstance(): PublicClientApplication | null {
     auth: {
       clientId: spaClientId,
       authority: `https://login.microsoftonline.com/${tenantId}`,
-      redirectUri: window.location.origin,
-      postLogoutRedirectUri: window.location.origin,
+      // Trailing slash to match the registered SPA redirect URI (Azure AD requires
+      // a trailing slash when the URI has no path segment — see deploy/terraform/sso.tf).
+      redirectUri: `${window.location.origin}/`,
+      postLogoutRedirectUri: `${window.location.origin}/`,
     },
     cache: {
       cacheLocation: 'sessionStorage',

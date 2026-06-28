@@ -31,13 +31,13 @@ locals {
     # Runtime SecretStore -> Key Vault via the user-assigned identity.
     { name = "SECRET_STORE", value = "azure_key_vault" },
     { name = "AZURE_KEY_VAULT_URL", value = azurerm_key_vault.app.vault_uri },
-    # Real SSO in prod. The *_CLIENT_ID/TENANT are non-secret; fill via tfvars once
-    # the app registrations exist (empty is fine for the first deploy — health/docs
-    # don't require auth; flip when SSO is wired).
+    # Real SSO in prod (AUTH_DEV_BYPASS=false). Client IDs come from the SSO app
+    # registrations created in sso.tf; init_auth() validates v2 tokens against
+    # AZURE_API_CLIENT_ID + AZURE_TENANT_ID.
     { name = "AUTH_DEV_BYPASS", value = "false" },
     { name = "AZURE_TENANT_ID", value = local.azure_tenant_id },
-    { name = "AZURE_API_CLIENT_ID", value = var.azure_api_client_id },
-    { name = "AZURE_SPA_CLIENT_ID", value = var.azure_spa_client_id },
+    { name = "AZURE_API_CLIENT_ID", value = azuread_application.api.client_id },
+    { name = "AZURE_SPA_CLIENT_ID", value = azuread_application.spa.client_id },
     { name = "AZURE_API_SCOPE", value = var.azure_api_scope },
     { name = "WORKSPACE_ADMIN_EMAILS", value = var.workspace_admin_emails },
     # Empty: the SWA linked backend proxies /api same-origin, so the FastAPI CORS
