@@ -56,9 +56,9 @@ variable "backend_image_repo" {
 }
 
 variable "image_tag" {
-  description = "Backend image tag to deploy. Use an IMMUTABLE tag in prod (ACA caches 'latest' at the node, so a same-tag rebuild won't be re-pulled on a new revision). Bump per deploy. (v3 = the #393 App-Insights logging-lock fix; v4 = login page + AZURE_ALLOW_GUEST_USERS support, PR #398.)"
+  description = "Backend image tag to deploy. Use an IMMUTABLE tag in prod (ACA caches 'latest' at the node, so a same-tag rebuild won't be re-pulled on a new revision). Bump per deploy. (v3 = the #393 App-Insights logging-lock fix; v4 = login page + AZURE_ALLOW_GUEST_USERS support, PR #398; v5 = (superseded) ; v7 = #405 Celery-beat AzureLogHandler-lock fix + #406 KV AZURE_CLIENT_ID.)"
   type        = string
-  default     = "v4"
+  default     = "v7"
 }
 
 variable "azure_allow_guest_users" {
