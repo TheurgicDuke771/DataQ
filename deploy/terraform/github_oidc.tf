@@ -41,3 +41,12 @@ resource "azurerm_role_assignment" "github_deploy_contributor" {
   role_definition_name = "Contributor"
   principal_id         = azuread_service_principal.github_deploy.object_id
 }
+
+# `az containerapp update --image` / `job start` resolve the app's managed
+# environment (the harness-owned shared dataq-cae); without read there the deploy
+# can 403. Grant Reader on the shared env only (still no write to harness resources).
+resource "azurerm_role_assignment" "github_deploy_env_reader" {
+  scope                = data.azurerm_container_app_environment.shared.id
+  role_definition_name = "Reader"
+  principal_id         = azuread_service_principal.github_deploy.object_id
+}

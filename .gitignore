@@ -149,6 +149,10 @@ azure.json
 *.tfstate.*
 *.tfvars
 !*.tfvars.example
+# Plan output is secret-bearing (embeds resolved sensitive values) — never commit.
+tfplan
+*.tfplan
+*.plan
 crash.log
 crash.*.log
 override.tf

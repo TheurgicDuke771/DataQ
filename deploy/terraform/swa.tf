@@ -1,6 +1,6 @@
 # Static Web App — hosts the React/Vite build. Standard SKU so the api Container
 # App can be linked as a backend: SWA then proxies /api/* to it same-origin, which
-# is exactly what frontend/staticwebapp.config.json + the relative axios baseURL
+# is exactly what frontend/public/staticwebapp.config.json + the relative axios baseURL
 # ('/api/v1') expect (no CORS). The SPA content is uploaded by the Deploy workflow
 # (Azure/static-web-apps-deploy) using the api token output below.
 
