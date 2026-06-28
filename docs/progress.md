@@ -296,11 +296,11 @@ The mechanism that finally discharges the standing **"live warehouse/file run �
 
 **Exit gate:** Production-ready v1 deployed to Azure, CI/CD live, team onboarded.
 
-### DevOps & deployment (6 tasks — 0/6, 1 partial early)
+### DevOps & deployment (6 tasks — 1/6, 1 partial early)
 - [ ] 🟡 Containerise FastAPI + React + Celery + Redis — backend `Dockerfile` + `api`/`worker` compose services landed early ([PR 4a](https://github.com/TheurgicDuke771/DataQ/pull/74)); React image + ACR/ACA still pending
 - [ ] ⬜ Push images to Azure Container Registry
 - [ ] ⬜ Deploy to Azure Container Apps (API + Celery worker) + Azure Static Web App (React UI) — wire CORS middleware for Static-Web-App → Container-Apps cross-origin ([PR #40 nit](https://github.com/TheurgicDuke771/DataQ/pull/40)); override hardcoded `dataq:dataq` Postgres creds + all secrets via Container Apps secret refs ([PR #39 nit](https://github.com/TheurgicDuke771/DataQ/pull/39))
-- [ ] ⬜ CI/CD pipeline — lint, test, build, deploy on merge to `main`
+- [x] ✅ CI/CD pipeline — lint, test, build, deploy. The `Deploy` workflow (`workflow_dispatch`) is **validated end-to-end** (build → push GHCR → `alembic upgrade head` migrate job → ACA API/worker roll → SWA deploy, all green on `v6`). The first real run exposed two `deploy.yml` bugs — migrate job ran uvicorn not alembic ([#401](https://github.com/TheurgicDuke771/DataQ/issues/401)), frontend `pnpm/action-setup` version unset ([#402](https://github.com/TheurgicDuke771/DataQ/issues/402)) — fixed in [#403](https://github.com/TheurgicDuke771/DataQ/pull/403). **GHCR package→repo connect done** (Actions-access grant; CI's `GITHUB_TOKEN` now pushes — ADR [0023](adr/0023-container-image-registry-ghcr.md)). _(Push-trigger-on-merge stays off for now — manual dispatch only.)_
 - [ ] ⬜ Application Insights integration — traces, errors, slow queries, Celery task metrics _(keep the export behind the structlog handler seam in `core/logging.py`; if a vendor-neutral path is wanted, route via OpenTelemetry/OTLP so the backend is swappable — per [ADR 0010](adr/0010-provider-agnostic-infrastructure-seams.md). App Insights stays the only v1 backend; do not abstract speculatively)_
 - [ ] ⬜ Real-vault integration test for `AzureKeyVaultStore` lazy-import branch (currently 0% coverage) ([PR #56 nit](https://github.com/TheurgicDuke771/DataQ/pull/56))
 
@@ -347,7 +347,7 @@ The mechanism that finally discharges the standing **"live warehouse/file run �
 - [ ] ⬜ **Dashboard KPI honesty pass** — the Dashboard renders only metrics with a real data model: pass-rate, run counts, and `metric_value`-backed trends (ADR 0012 seam). **Omit "anomalies detected"** (the `anomaly` monitor-kind is reserved, not implemented in v1) and **"avg. time to resolution"** (there is no incident/resolution model). Re-introduce when the monitor kinds / model exist (post-v1 Theme A). _Design ref: `templates/app/DashboardScreen.jsx` (the KPI card row — keep pass-rate / runs / trends, drop the two unbacked KPIs)._
 - [ ] ⬜ **Visual-fidelity pass to the design spec** — self-hosted **Inter** + **JetBrains Mono** `@font-face` (if not already wired), motion tokens (120–180ms ease on bg/border/shadow, 0.5px press nudge), the 2px indigo focus ring, hover elevation on interactive cards, and empty/loading states — matched to the prototype's `guidelines/*` foundation cards. Keep using **semantic tokens** so post-v1 dark mode inherits for free. _Design ref: `guidelines/{type-body,type-mono,color-indigo,color-neutrals,color-status,spacing-scale,elevation,radius}.card.html` + `tokens/{fonts,typography,elevation,spacing,colors}.css` + `assets/fonts/`; readme §"Visual foundations" / "Motion" / "Focus" / "Iconography"._
 
-**Week 7 total: 2 / 33** _(+4 prototype-adoption tasks: workspace-admin endpoint ✅ + Admin page ✅ both shipped early in Week 4 via #289; remaining: Dashboard KPI honesty pass, visual-fidelity pass. **Settings page moved to Week 6** with the full-screen-set adoption, ADR 0022.)_
+**Week 7 total: 3 / 33** _(+4 prototype-adoption tasks: workspace-admin endpoint ✅ + Admin page ✅ both shipped early in Week 4 via #289; **CI/CD pipeline ✅** — Deploy workflow validated end-to-end + GHCR connect done (#403); remaining: Dashboard KPI honesty pass, visual-fidelity pass. **Settings page moved to Week 6** with the full-screen-set adoption, ADR 0022.)_
 
 ---
 
@@ -413,9 +413,9 @@ The mechanism that finally discharges the standing **"live warehouse/file run �
 | Week 4 | 26 | 0 | 0 | 26 |
 | Week 5 | 18 | 0 | 0 | 18 |
 | Week 6 | 27 | 0 | 0 | 27 |
-| Week 7 | 0 | 2 | 31 | 33 |
+| Week 7 | 1 | 2 | 30 | 33 |
 | Week 8 | 2 | 9 | 19 | 30 |
-| **TOTAL** | **113** | **15** | **53** | **181** |
+| **TOTAL** | **114** | **15** | **52** | **181** |
 
 > Post-v1 items (marketing landing page, dark mode) are tracked in their own section below and are **excluded** from this weekly aggregate.
 
