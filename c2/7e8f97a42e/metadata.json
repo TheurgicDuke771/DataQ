@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "c27e8f97a42e",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-406-azure-client-id",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "deploy/terraform/containerapps.tf"
+  ],
+  "sessions": [
+    {
+      "metadata": "/c2/7e8f97a42e/0/metadata.json",
+      "transcript": "/c2/7e8f97a42e/0/full.jsonl",
+      "content_hash": "/c2/7e8f97a42e/0/content_hash.txt",
+      "prompt": "/c2/7e8f97a42e/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 137788,
+    "cache_creation_tokens": 2814089,
+    "cache_read_tokens": 273069596,
+    "output_tokens": 1022033,
+    "api_call_count": 877
+  }
+}
