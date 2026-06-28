@@ -115,18 +115,33 @@ export function App() {
             theme="light"
             breakpoint="lg"
             collapsedWidth={0}
-            style={{ borderInlineEnd: `1px solid ${BRAND.border}` }}
+            // Stick to the viewport (not the document): without this the sider grows
+            // as tall as a long page and its bottom-pinned footer falls below the
+            // fold, only reachable by scrolling to the very end of the content.
+            style={{
+              borderInlineEnd: `1px solid ${BRAND.border}`,
+              position: 'sticky',
+              top: SHELL.headerHeight,
+              height: `calc(100vh - ${SHELL.headerHeight}px)`,
+            }}
           >
             {/* Primary nav up top, footer group (Admin · Settings · Documentation)
-              pinned to the bottom by the flex spacer, separated by a hairline. */}
+              pinned to the bottom by the flex layout, separated by a hairline. The
+              primary nav takes the slack and scrolls if it ever exceeds the height,
+              so the footer stays put. */}
             <Flex vertical style={{ height: '100%' }}>
               <Menu
                 mode="inline"
                 selectedKeys={selectedKeys}
                 items={NAV_ITEMS}
-                style={{ borderInlineEnd: 0, paddingTop: 8 }}
+                style={{
+                  borderInlineEnd: 0,
+                  paddingTop: 8,
+                  flex: 1,
+                  minHeight: 0,
+                  overflowY: 'auto',
+                }}
               />
-              <div style={{ flex: 1 }} />
               <Menu
                 mode="inline"
                 selectedKeys={selectedKeys}
