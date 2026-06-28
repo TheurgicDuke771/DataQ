@@ -30,8 +30,11 @@ function RealAuthGate({ children }: { children: ReactNode }) {
     });
   };
 
-  // A redirect is mid-flight (the click, or the post-redirect handshake) → keep
-  // the button busy so the page doesn't look idle while MSAL navigates.
+  // Busy whenever MSAL is mid-interaction. On the unauthenticated gate the only
+  // reachable states are Startup (brief boot) and HandleRedirect (the sign-in
+  // redirect handshake) — both are genuinely "auth in progress", so a plain
+  // !== None is correct here. (Logout / AcquireToken don't occur pre-auth, and
+  // this MSAL version's InteractionStatus has no Login member.)
   const signingIn = inProgress !== InteractionStatus.None;
 
   return <LoginPage onSignIn={onSignIn} signingIn={signingIn} />;

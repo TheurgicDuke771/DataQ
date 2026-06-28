@@ -88,7 +88,7 @@ describe('AuthGate', () => {
     }));
     vi.doMock('@azure/msal-react', () => ({
       useIsAuthenticated: () => false,
-      useMsal: () => ({ instance: { loginRedirect: vi.fn() }, inProgress: 'login' }),
+      useMsal: () => ({ instance: { loginRedirect: vi.fn() }, inProgress: 'handleRedirect' }),
     }));
     await renderAuthGate();
     expect(screen.getByText(/Opening Microsoft sign-in/i)).toBeInTheDocument();

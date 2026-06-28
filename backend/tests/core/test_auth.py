@@ -16,7 +16,10 @@ def _azure_settings(*, allow_guest_users: bool = False) -> Settings:
 
 
 def test_scheme_is_none_when_auth_unconfigured() -> None:
-    assert _build_azure_scheme(Settings()) is None
+    # Force the azure fields empty so the assertion holds regardless of any
+    # ambient AZURE_* env vars on the dev/CI machine (hermetic).
+    unconfigured = Settings(azure_tenant_id=None, azure_api_client_id=None)
+    assert _build_azure_scheme(unconfigured) is None
 
 
 def test_allow_guest_users_defaults_false() -> None:

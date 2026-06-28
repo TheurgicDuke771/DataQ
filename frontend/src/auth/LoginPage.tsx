@@ -1,6 +1,7 @@
 import { Button } from 'antd';
 
 import { BrandMark } from '../components/BrandMark';
+import { RESULT_STATUS_CHART_COLORS } from '../components/charts/chartTheme';
 import { BRAND } from '../theme';
 
 /**
@@ -52,7 +53,10 @@ export function LoginPage({ onSignIn, signingIn }: { onSignIn: () => void; signi
                 <span className="dqlogin-check">{r.check}</span>
                 <span className="dqlogin-mono dqlogin-expected">{r.expected}</span>
                 <span className="dqlogin-mono dqlogin-observed">
-                  <i className="dqlogin-dot" style={{ background: SEVERITY[r.severity] }} />
+                  <i
+                    className="dqlogin-dot"
+                    style={{ background: RESULT_STATUS_CHART_COLORS[r.severity] }}
+                  />
                   {r.observed}
                 </span>
               </div>
@@ -92,23 +96,17 @@ export function LoginPage({ onSignIn, signingIn }: { onSignIn: () => void; signi
   );
 }
 
-/** Severity tier → dot colour (DataQ warn/fail bands, ADR 0005). */
-const SEVERITY = {
-  pass: '#16a34a',
-  warn: '#d97706',
-  fail: '#dc2626',
-} as const;
-
 /**
  * Illustrative check ledger (decorative, aria-hidden) — three real-shaped DQ
  * monitors that show the expected→observed comparison and that DataQ catches
- * failures, not just greens.
+ * failures, not just greens. Severity dots reuse the app-wide status palette
+ * (RESULT_STATUS_CHART_COLORS) so they match the dashboard/results charts.
  */
 const LEDGER_ROWS: {
   check: string;
   expected: string;
   observed: string;
-  severity: keyof typeof SEVERITY;
+  severity: keyof typeof RESULT_STATUS_CHART_COLORS;
 }[] = [
   { check: 'orders.id unique', expected: '0 dupes', observed: '0', severity: 'pass' },
   { check: 'payments ↔ order_total', expected: 'match', observed: '2 off', severity: 'warn' },
