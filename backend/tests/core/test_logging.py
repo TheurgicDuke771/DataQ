@@ -124,6 +124,20 @@ def _restore_root_logging() -> Iterator[None]:
     root.handlers, root.level = saved_handlers, saved_level
 
 
+class _FakeAzureLogHandler(std_logging.Handler):
+    """Stand-in for opencensus's AzureLogHandler that reproduces ONLY the bug-
+    relevant behaviour — `createLock()` nulls `self.lock` — with no network,
+    statsbeat thread, or App Insights export. Lets the test drive the real
+    `configure_logging()` code path (so it catches a revert of the fix) without
+    constructing the real, network-touching handler."""
+
+    def __init__(self, connection_string: str) -> None:
+        super().__init__()  # stdlib __init__ calls self.createLock() -> nulls it
+
+    def createLock(self) -> None:
+        self.lock = None  # type: ignore[assignment]  # mirrors opencensus's override
+
+
 def test_azure_handler_lock_survives_createlock_recall(
     monkeypatch: pytest.MonkeyPatch, _restore_root_logging: None
 ) -> None:
@@ -132,15 +146,21 @@ def test_azure_handler_lock_survives_createlock_recall(
     opencensus's createLock sets `self.lock = None`; on Py3.13 that makes
     logging.Handler.handle()'s `with self.lock` crash on the first record — killing
     beat (and every periodic task) on its 'beat: Starting...' line. The handler must
-    keep a real lock no matter how often createLock() is called."""
+    keep a real lock no matter how often createLock() is called.
+
+    Uses a fake handler (above) so configure_logging()'s override is exercised
+    without real opencensus network/statsbeat behaviour."""
+    import opencensus.ext.azure.log_exporter as az_log_exporter
+
+    monkeypatch.setattr(az_log_exporter, "AzureLogHandler", _FakeAzureLogHandler)
     monkeypatch.setattr(
         get_settings(),
         "applicationinsights_connection_string",
         "InstrumentationKey=00000000-0000-0000-0000-000000000000",
     )
     configure_logging()
-    ai = [h for h in std_logging.getLogger().handlers if h.__class__.__name__ == "AzureLogHandler"]
-    assert ai, "AzureLogHandler was not attached when a connection string is set"
+    ai = [h for h in std_logging.getLogger().handlers if isinstance(h, _FakeAzureLogHandler)]
+    assert ai, "App Insights handler was not attached when a connection string is set"
     handler = ai[0]
 
     handler.createLock()  # simulate the beat fork re-initialising logging
