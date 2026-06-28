@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "0352065eb279",
+  "strategy": "manual-commit",
+  "branch": "feature/w7-ghcr-deploy-reconcile",
+  "checkpoints_count": 9,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/03/52065eb279/0/metadata.json",
+      "transcript": "/03/52065eb279/0/full.jsonl",
+      "content_hash": "/03/52065eb279/0/content_hash.txt",
+      "prompt": "/03/52065eb279/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 16037,
+    "cache_creation_tokens": 246266,
+    "cache_read_tokens": 49043540,
+    "output_tokens": 182252,
+    "api_call_count": 136
+  }
+}
