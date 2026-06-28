@@ -151,9 +151,12 @@ function LiveRunProgressBody({
     return <Spin tip="Starting run…" size="large" />;
   }
 
-  const { status, total_checks, completed_checks, checks } = progress;
+  const { status, total_checks, completed_checks, counts, checks } = progress;
   const terminal = isTerminal(status);
   const percent = total_checks > 0 ? Math.round((completed_checks / total_checks) * 100) : 0;
+  // Per-status histogram of resolved checks (#316) — show only non-zero buckets;
+  // an all-pending run has none yet, so the row stays empty until results land.
+  const tallies = Object.entries(counts).filter(([, n]) => n > 0) as [ResultStatus, number][];
 
   return (
     <Flex vertical gap={16}>
@@ -170,6 +173,16 @@ function LiveRunProgressBody({
       </Flex>
 
       <Progress percent={percent} status={RUN_BAR_STATUS[status]} />
+
+      {tallies.length > 0 && (
+        <Flex gap={6} wrap>
+          {tallies.map(([s, n]) => (
+            <Tag key={s} color={RESULT_STATUS_COLORS[s]}>
+              {s} · {n}
+            </Tag>
+          ))}
+        </Flex>
+      )}
 
       {/* A transient poll error while we still have prior progress to show. */}
       {error && (
