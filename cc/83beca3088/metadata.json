@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "cc83beca3088",
+  "strategy": "manual-commit",
+  "branch": "docs/week7-polling-fixes-and-redeploy",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "CLAUDE.md",
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/cc/83beca3088/0/metadata.json",
+      "transcript": "/cc/83beca3088/0/full.jsonl",
+      "content_hash": "/cc/83beca3088/0/content_hash.txt",
+      "prompt": "/cc/83beca3088/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 153123,
+    "cache_creation_tokens": 3422593,
+    "cache_read_tokens": 304958813,
+    "output_tokens": 1103250,
+    "api_call_count": 947
+  }
+}
