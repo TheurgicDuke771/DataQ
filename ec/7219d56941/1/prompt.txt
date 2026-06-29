@@ -1,0 +1,9 @@
+Databricks jobs for Airflow is failing can you check
+
+---
+
+you have access to Airflow's basic auth details use that and check
+
+---
+
+I triggred flow_a_uc_reference, please monitor
