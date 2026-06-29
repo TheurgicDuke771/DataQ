@@ -240,3 +240,44 @@ To identify can we - check metadata [like tag] if available first then check col
 Also the PII column and Identifier column should be identify and store as suite level metadat, what do you think?
 
 Also the notification have only bare minimum as of now, can we enrich it a bit?
+
+---
+
+All 6 users already have read access to ADF & Airflow - I'm not able to monitor pipeline run as Olivia
+
+---
+
+Is Airflow also RBAC?
+
+---
+
+Able to see adf runs now with Olivia.
+
+---
+
+Go with b. 
+Make dataq-admin as an Admin for Airflow also [and git it contributor access to rg] 
+For others give viewer access on Airflow.
+
+---
+
+I'm getting this - 
+You do not have authorization to see this data factory. subscriptions/37e710fd-b956-4a2e-94f2-b132bb26b3d6/resourcegroups/dataq-rg/providers/Microsoft.DataFactory/factories/dataq-harness-adf
+
+Request Id: 7a372678-803f-4878-a06d-083fc31e4500
+Correlation Id: ab9f4b36-b974-43ac-9a02-066b648425f3
+Timestamp: 2026-06-29T01:47:23Z
+Message: AADSTS900561: The endpoint only accepts POST requests. Received a GET request.
+
+---
+
+reconcile the changes into the harness airflow.tf
+
+---
+
+Itis showing - Invalid login. Please try again.
+Can you try with playwright
+
+---
+
+Hey, we are getting distracted again, back to the DQ related stuff
