@@ -47,7 +47,7 @@ jobs:
       # Push to GHCR (ADR 0023). The GITHUB_TOKEN has packages:write on this repo's
       # registry; no Azure/ACR credential is involved in the image push.
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
