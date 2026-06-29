@@ -27,3 +27,7 @@ Yeah change week 6 and just reconsile week 1 to week 8 once more (if you find si
 ---
 
 yeah, update the epics accordingly [not just #176, others too]
+
+---
+
+yeah commit the change and merge it.
