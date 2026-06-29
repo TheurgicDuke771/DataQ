@@ -32,6 +32,14 @@ class Settings(BaseSettings):
 
     sample_failures_retention_days: int = 30
 
+    # Stuck-run reaper (#309): a run committed `queued` (before `send_task`) — or
+    # left `running` by a worker that died mid-execution — past this age is driven
+    # to terminal `failed` by the beat janitor so it can't linger forever. Must
+    # comfortably exceed the longest plausible suite run so a slow-but-alive run is
+    # never reaped (a false reap self-corrects when the worker later commits its
+    # real outcome, but would emit a spurious alert).
+    stuck_run_threshold_minutes: int = 60
+
     azure_tenant_id: str | None = None
     azure_api_client_id: str | None = None
     azure_spa_client_id: str | None = None

@@ -33,8 +33,8 @@ from backend.app.datasources.base import (
     MonitorSpec,
 )
 from backend.app.datasources.monitors import MONITOR_KINDS
-from backend.app.db.models import RESULT_STATUSES, Check, Result, Run
-from backend.app.services import suite_service
+from backend.app.db.models import RESULT_STATUSES, RUN_STATUSES, Check, Result, Run
+from backend.app.services import run_dispatch, suite_service
 from backend.app.services.severity import resolve_status
 
 log = get_logger(__name__)
@@ -328,6 +328,9 @@ def get_run(session: Session, run_id: uuid.UUID) -> Run | None:
 
 
 _TERMINAL_STATUSES = frozenset({"succeeded", "failed", "cancelled"})
+# The complement, single-sourced from the canonical status set so a new
+# lifecycle status can't silently escape the reaper's net (#309).
+_NON_TERMINAL_STATUSES = frozenset(RUN_STATUSES) - _TERMINAL_STATUSES
 
 
 def cancel_run(session: Session, run: Run) -> bool:
@@ -633,3 +636,62 @@ def purge_expired_sample_failures(
         cutoff=cutoff.isoformat(),
     )
     return purged
+
+
+def reap_stuck_runs(
+    session: Session, *, threshold_minutes: int, now: datetime | None = None
+) -> list[Run]:
+    """Drive runs stuck in a non-terminal state past ``threshold_minutes`` to ``failed``.
+
+    Closes the orphan window (#309): a run is committed ``queued`` *before*
+    ``run_dispatch`` publishes its task, so a process death in that window — or a
+    worker that died mid-execution leaving a run ``running`` — would otherwise leave
+    the row non-terminal forever (gap recovery only covers ``pipeline_runs``).
+
+    The reaper **fails** stuck runs rather than re-dispatching them: a ``queued``
+    run with no ``celery_task_id`` does *not* prove the task was never published —
+    ``dispatch_run`` commits the id in a second, non-atomic step, so the task may
+    already be in the broker (see its no-2-phase-commit note). Re-dispatching could
+    double-run; failing is safe and visible (the run shows ``failed`` in the runs
+    table / dashboard and the user re-runs manually), reusing the canonical
+    ``run_dispatch.mark_dispatch_failed`` shape every trigger path uses.
+
+    Deliberately **does not publish an alert**: a ``running`` run only crosses the
+    threshold if it ran longer than the longest plausible suite, which can't be
+    distinguished from a slow-but-alive worker without a heartbeat. Alerting would
+    risk an *irreversible* spurious operational-failure notification (and a second
+    one when the live worker later finishes). A reaped run is an infra/liveness
+    event — surfaced in the UI here and via App Insights — not a per-suite
+    data-quality alert. If the worker is in fact still alive it overwrites the
+    status with its true outcome on completion (a harmless self-correction; with
+    no alert sent there is no side effect to retract).
+
+    Staleness is measured from ``COALESCE(started_at, created_at)`` so an actively-
+    running run that *started* recently isn't reaped on the strength of an old
+    ``created_at``. The threshold must exceed the longest plausible run.
+    ``threshold_minutes <= 0`` disables the sweep. Returns the reaped runs.
+    """
+    if threshold_minutes <= 0:
+        return []
+    moment = now or _now()
+    cutoff = moment - timedelta(minutes=threshold_minutes)
+    reference = func.coalesce(Run.started_at, Run.created_at)
+    stuck = list(
+        session.scalars(
+            select(Run).where(Run.status.in_(_NON_TERMINAL_STATUSES), reference < cutoff)
+        )
+    )
+    reaped_ids = [str(run.id) for run in stuck]  # capture before commit expires attrs
+    for run in stuck:
+        # Canonical terminal-failed shape, one shared `moment` across the batch.
+        run_dispatch.mark_dispatch_failed(run, at=moment)
+    if stuck:
+        session.commit()
+        log.warning(
+            "stuck_runs_reaped",
+            count=len(stuck),
+            threshold_minutes=threshold_minutes,
+            cutoff=cutoff.isoformat(),
+            run_ids=reaped_ids,
+        )
+    return stuck

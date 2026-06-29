@@ -372,3 +372,27 @@ def purge_sample_failures() -> int:
         return run_service.purge_expired_sample_failures(session, retention_days=retention_days)
     finally:
         session.close()
+
+
+# ──────────────────────── stuck-run reaper (#309) ──────────────────────────
+
+
+@celery_app.task(name="reap_stuck_runs")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
+def reap_stuck_runs() -> int:
+    """Celery-beat entry point — fail runs orphaned in a non-terminal state (#309).
+
+    A run committed ``queued`` before its task was published — or left ``running``
+    by a worker that died mid-execution — would otherwise linger forever (gap
+    recovery only covers ``pipeline_runs``). The reaper drives such runs, stuck
+    past ``stuck_run_threshold_minutes``, to terminal ``failed`` so they surface in
+    the runs table / dashboard and the user can re-run. No alert is published — see
+    ``run_service.reap_stuck_runs`` for why (a reaped run is an infra/liveness
+    event, and alerting a slow-but-alive run would be an irreversible false alarm).
+    Returns the count reaped.
+    """
+    session = get_session()
+    try:
+        threshold = get_settings().stuck_run_threshold_minutes
+        return len(run_service.reap_stuck_runs(session, threshold_minutes=threshold))
+    finally:
+        session.close()
