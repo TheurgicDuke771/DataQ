@@ -61,6 +61,7 @@ The mechanism that finally discharges the standing **"live warehouse/file run �
 | Theme | Where the design lives | Status |
 |---|---|---|
 | **Admin / access model / UI & IA** — workspace-admin workspace-wide view (#411), admin write actions (#412), Settings/Profile IA, reusable notification channels. Intentionally **not** built in v1: single-tenant doesn't warrant an RBAC console — kept minimal, aim the foundations at the DQ loop instead. | [docs/post-v1-admin-ui-notes.md](post-v1-admin-ui-notes.md) + #411 / #412 (Backlog milestone) | 🔵 |
+| **Expectation expansion, marketplace & LLM-assisted authoring** — the "intelligence" layer on the DQ loop: (1) the 5 high-ROI GX built-ins (`mostly` + compound/cross-column + type/set/date; aggregates likely a 3rd monitor kind, not a GX expectation), (2) LLM custom-SQL generator, (3) LLM curated check-suggestions, (4a) curated server-served expectation catalog (adds the server-side allowlist v1 lacks). LLM integration = an admin-configured, default-off, **BYO-credential `LLMProvider` seam** (Anthropic default · Azure Foundry · Bedrock · any OpenAI-compatible endpoint incl. local Ollama/vLLM/TGI), customer pays, no key-proxy, schema-only (PII-redacted) context. | [docs/post-v1-dq-intelligence-notes.md](post-v1-dq-intelligence-notes.md) | 🔵 |
 
 ---
 
