@@ -13,7 +13,6 @@ from typing import Any
 import httpx
 import pytest
 
-from backend.app.alerting import teams
 from backend.app.alerting.base import CheckReport, RunReport
 from backend.app.alerting.teams import TeamsPublisher
 from backend.app.db.models import Connection, Suite, SuiteNotification, User
@@ -102,7 +101,7 @@ def _publisher(secrets: dict[str, str], *, workspace: str | None = _WS_NAME) -> 
 def test_falls_back_to_workspace_webhook(db_session: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     suite = _suite(db_session)  # no config row
     post = _CapturePost()
-    monkeypatch.setattr(teams.httpx, "post", post)
+    monkeypatch.setattr(httpx, "post", post)
     _publisher({_WS_NAME: _WS_URL}).publish(db_session, _report(suite, worst="fail"))
     assert post.calls == [_WS_URL]
 
@@ -114,7 +113,7 @@ def test_non_allowlisted_webhook_host_is_skipped(
     # at the send sink (SSRF guard) rather than POSTed.
     suite = _suite(db_session)
     post = _CapturePost()
-    monkeypatch.setattr(teams.httpx, "post", post)
+    monkeypatch.setattr(httpx, "post", post)
     _publisher({_WS_NAME: "https://evil.example/exfil"}).publish(
         db_session, _report(suite, worst="critical")
     )
@@ -127,7 +126,7 @@ def test_per_suite_webhook_overrides_workspace(
     suite = _suite(db_session)
     _config(db_session, suite, enabled=True, alert_on="fail", webhook_secret_ref="suite-ref")
     post = _CapturePost()
-    monkeypatch.setattr(teams.httpx, "post", post)
+    monkeypatch.setattr(httpx, "post", post)
     _publisher({_WS_NAME: _WS_URL, "suite-ref": _SUITE_URL}).publish(
         db_session, _report(suite, worst="fail")
     )
@@ -138,7 +137,7 @@ def test_disabled_suite_does_not_send(db_session: Any, monkeypatch: pytest.Monke
     suite = _suite(db_session)
     _config(db_session, suite, enabled=False, alert_on="always")
     post = _CapturePost()
-    monkeypatch.setattr(teams.httpx, "post", post)
+    monkeypatch.setattr(httpx, "post", post)
     _publisher({_WS_NAME: _WS_URL}).publish(db_session, _report(suite, worst="critical"))
     assert post.calls == []
 
@@ -147,7 +146,7 @@ def test_policy_fail_skips_warn_only(db_session: Any, monkeypatch: pytest.Monkey
     suite = _suite(db_session)
     _config(db_session, suite, enabled=True, alert_on="fail")
     post = _CapturePost()
-    monkeypatch.setattr(teams.httpx, "post", post)
+    monkeypatch.setattr(httpx, "post", post)
     _publisher({_WS_NAME: _WS_URL}).publish(db_session, _report(suite, worst="warn"))
     assert post.calls == []  # warn is below the 'fail' threshold
 
@@ -156,7 +155,7 @@ def test_policy_warn_sends_warn(db_session: Any, monkeypatch: pytest.MonkeyPatch
     suite = _suite(db_session)
     _config(db_session, suite, enabled=True, alert_on="warn")
     post = _CapturePost()
-    monkeypatch.setattr(teams.httpx, "post", post)
+    monkeypatch.setattr(httpx, "post", post)
     _publisher({_WS_NAME: _WS_URL}).publish(db_session, _report(suite, worst="warn"))
     assert post.calls == [_WS_URL]
 
@@ -165,7 +164,7 @@ def test_policy_always_sends_clean_run(db_session: Any, monkeypatch: pytest.Monk
     suite = _suite(db_session)
     _config(db_session, suite, enabled=True, alert_on="always")
     post = _CapturePost()
-    monkeypatch.setattr(teams.httpx, "post", post)
+    monkeypatch.setattr(httpx, "post", post)
     # A clean (all-pass) run is a heartbeat under 'always'.
     _publisher({_WS_NAME: _WS_URL}).publish(
         db_session, _report(suite, worst=None, run_status="succeeded")
@@ -176,7 +175,7 @@ def test_policy_always_sends_clean_run(db_session: Any, monkeypatch: pytest.Monk
 def test_no_webhook_resolves_is_a_noop(db_session: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     suite = _suite(db_session)  # no config, no workspace webhook configured
     post = _CapturePost()
-    monkeypatch.setattr(teams.httpx, "post", post)
+    monkeypatch.setattr(httpx, "post", post)
     _publisher({}, workspace=None).publish(db_session, _report(suite, worst="fail"))
     assert post.calls == []
 
@@ -185,13 +184,13 @@ def test_default_policy_when_no_config(db_session: Any, monkeypatch: pytest.Monk
     # No config row → default 'warn' policy: a warn run still sends.
     suite = _suite(db_session)
     post = _CapturePost()
-    monkeypatch.setattr(teams.httpx, "post", post)
+    monkeypatch.setattr(httpx, "post", post)
     _publisher({_WS_NAME: _WS_URL}).publish(db_session, _report(suite, worst="warn"))
     assert post.calls == [_WS_URL]
 
 
 def test_http_error_propagates(db_session: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     suite = _suite(db_session)
-    monkeypatch.setattr(teams.httpx, "post", _CapturePost(status_code=500))
+    monkeypatch.setattr(httpx, "post", _CapturePost(status_code=500))
     with pytest.raises(httpx.HTTPStatusError):
         _publisher({_WS_NAME: _WS_URL}).publish(db_session, _report(suite, worst="critical"))

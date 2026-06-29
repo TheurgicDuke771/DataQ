@@ -51,4 +51,4 @@ def test_noop_publish_is_a_silent_drop() -> None:
         finished_at=None,
     )
     # No channel → publishing must not raise; the session arg is ignored.
-    assert NoopPublisher().publish(None, report) is None  # type: ignore[arg-type]
+    NoopPublisher().publish(None, report)  # type: ignore[arg-type]  # returns None; must not raise

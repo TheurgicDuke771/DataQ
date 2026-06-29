@@ -9,6 +9,7 @@ the GX 1.17 result shape this adapter depends on (`.type`, injected `batch_id`).
 """
 
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from pydantic import ValidationError
@@ -184,7 +185,9 @@ def test_to_gx_expectation_unknown_type_raises() -> None:
 # ───────────────────────── result mapping ──────────────────────────
 
 
-def _fake_check_result(*, success: bool, type_: str, kwargs: dict, result: dict) -> SimpleNamespace:
+def _fake_check_result(
+    *, success: bool, type_: str, kwargs: dict[str, Any], result: dict[str, Any]
+) -> SimpleNamespace:
     return SimpleNamespace(
         success=success,
         expectation_config=SimpleNamespace(type=type_, kwargs=kwargs),
@@ -262,7 +265,7 @@ def test_to_suite_outcome_against_real_gx_result() -> None:
     not_null = by_type["expect_column_values_to_not_be_null"]
     assert not_null.success is False
     assert not_null.expected_value == {"column": "id"}  # no batch_id leak
-    assert not_null.sample_failures["unexpected_count"] == 1
+    assert (not_null.sample_failures or {})["unexpected_count"] == 1
     row_count = by_type["expect_table_row_count_to_be_between"]
     assert row_count.success is True
     assert row_count.observed_value == {"observed_value": 3}
@@ -297,8 +300,8 @@ class _FakeConn:
     def __enter__(self) -> "_FakeConn":
         return self
 
-    def __exit__(self, *exc: object) -> bool:
-        return False
+    def __exit__(self, *exc: object) -> None:
+        return None  # don't suppress exceptions (falsy, like the real cursor CM)
 
 
 class _FakeEngine:

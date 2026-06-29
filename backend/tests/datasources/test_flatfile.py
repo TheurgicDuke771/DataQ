@@ -15,8 +15,11 @@ from backend.app.datasources.base import CheckSpec
 
 
 class _FakeStore:
-    def get(self, ref: str) -> str:
+    def get(self, name: str) -> str:
         return "tok"
+
+    def set(self, name: str, value: str) -> None:  # read-only test double
+        raise NotImplementedError
 
 
 # ── format_from_path ──

@@ -169,6 +169,13 @@ jobs:
           python -m pip install -U pip
           pip install -r backend/requirements-dev.txt
 
+      - name: mypy (tests)
+        # The slim `Backend — type check` job mypies backend/app against the typed
+        # subset; this gates backend/tests too — run here, where the full dev deps
+        # (pytest et al.) are installed so the test imports resolve. Keeps test type
+        # debt from accumulating unseen (the app-only scope had let 78 errors pile up).
+        run: mypy backend/tests/
+
       - name: pytest
         # TEST_DATABASE_URL enables the db_session fixture; DATABASE_URL + REDIS_URL
         # enable the real-broker E2E. All DB/broker tests skip when unset (e.g. a

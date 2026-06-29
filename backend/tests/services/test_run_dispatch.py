@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.db.models import Run
 from backend.app.services import run_dispatch
+from backend.app.worker.celery_app import celery_app
 
 pytestmark = pytest.mark.real_dispatch
 
@@ -38,7 +39,7 @@ def test_dispatch_run_sends_task_by_name_and_returns_task_id(
         calls.append((name, args))
         return SimpleNamespace(id="celery-task-123")
 
-    monkeypatch.setattr(run_dispatch.celery_app, "send_task", _send)
+    monkeypatch.setattr(celery_app, "send_task", _send)
     run_id = uuid.uuid4()
 
     task_id = run_dispatch.dispatch_run(run_id)
@@ -67,7 +68,7 @@ def test_revoke_run_noop_without_task_id(monkeypatch: pytest.MonkeyPatch) -> Non
         nonlocal called
         called = True
 
-    monkeypatch.setattr(run_dispatch.celery_app.control, "revoke", _revoke)
+    monkeypatch.setattr(celery_app.control, "revoke", _revoke)
     run_dispatch.revoke_run(None)  # un-dispatched run → no broker call
     assert called is False
 
@@ -76,7 +77,7 @@ def test_revoke_run_swallows_broker_error(monkeypatch: pytest.MonkeyPatch) -> No
     def _boom(_task_id: str) -> None:
         raise RuntimeError("control bus unreachable")
 
-    monkeypatch.setattr(run_dispatch.celery_app.control, "revoke", _boom)
+    monkeypatch.setattr(celery_app.control, "revoke", _boom)
     # Best-effort: the DB status is already 'cancelled' + the worker checks
     # cooperatively, so a broker error must not propagate.
     run_dispatch.revoke_run("task-1")
@@ -86,7 +87,7 @@ def test_dispatch_run_propagates_broker_failure(monkeypatch: pytest.MonkeyPatch)
     def _boom(name: str, args: Any) -> None:
         raise RuntimeError("broker unreachable")
 
-    monkeypatch.setattr(run_dispatch.celery_app, "send_task", _boom)
+    monkeypatch.setattr(celery_app, "send_task", _boom)
 
     with pytest.raises(RuntimeError):
         run_dispatch.dispatch_run(uuid.uuid4())

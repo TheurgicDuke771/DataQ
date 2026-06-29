@@ -4,16 +4,17 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from typing import Any, cast
 
 from backend.app.alerting import card
 from backend.app.alerting.base import CheckReport, RunReport
 from backend.app.alerting.routing import route_for
 
 
-def _content(report: RunReport) -> dict:
+def _content(report: RunReport) -> dict[str, Any]:
     """Render a report through its computed route and return the card content."""
     msg = card.render_teams_message(report, route_for(report))
-    return msg["attachments"][0]["content"]
+    return cast(dict[str, Any], msg["attachments"][0]["content"])
 
 
 def _report(
@@ -51,7 +52,7 @@ def _check(status: str = "fail", **kw: object) -> CheckReport:
     return CheckReport(**base)  # type: ignore[arg-type]
 
 
-def _texts(content: dict) -> list[str]:
+def _texts(content: dict[str, Any]) -> list[str]:
     return [b.get("text", "") for b in content["body"] if b["type"] == "TextBlock"]
 
 

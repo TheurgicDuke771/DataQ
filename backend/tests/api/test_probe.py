@@ -15,11 +15,11 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from backend.app.api.v1 import probe as probe_module
 from backend.app.core.auth import get_current_user
 from backend.app.db.models import Check, Connection, Result, Run, Suite
 from backend.app.db.session import get_db
 from backend.app.main import app
+from backend.app.services import run_dispatch
 from backend.app.services.probe import PROBE_CONNECTION_NAME, PROBE_SUITE_NAME
 
 
@@ -29,9 +29,7 @@ def probe_client(
 ) -> Iterator[tuple[TestClient, list[Any]]]:
     app.dependency_overrides[get_db] = lambda: db_session
     delay_calls: list[tuple[Any, ...]] = []
-    monkeypatch.setattr(
-        probe_module.run_dispatch, "dispatch_run", lambda *args, **_kw: delay_calls.append(args)
-    )
+    monkeypatch.setattr(run_dispatch, "dispatch_run", lambda *args, **_kw: delay_calls.append(args))
     try:
         yield TestClient(app), delay_calls
     finally:
@@ -74,7 +72,7 @@ def test_post_dispatch_failure_marks_run_failed(
     def _boom(*_a: Any, **_k: Any) -> None:
         raise RuntimeError("broker down")
 
-    monkeypatch.setattr(probe_module.run_dispatch, "dispatch_run", _boom)
+    monkeypatch.setattr(run_dispatch, "dispatch_run", _boom)
     try:
         resp = TestClient(app).post("/api/v1/_probe/snowflake-suite")
         assert resp.status_code == 503

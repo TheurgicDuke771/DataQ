@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from typing import Any
 
 import pytest
 
@@ -102,13 +103,13 @@ def test_email_html_escapes_and_lists_failures() -> None:
 # ── gating (quiet no-op) ─────────────────────────────────────────────────────
 
 
-def test_slack_noop_when_unconfigured(db_session) -> None:
+def test_slack_noop_when_unconfigured(db_session: Any) -> None:
     """No webhook secret name → never touches the network."""
     pub = SlackPublisher(secret_store=_Store({}), webhook_secret_name=None, allowed_hosts=())
     pub.publish(db_session, _report(worst="fail"))  # must not raise / post
 
 
-def test_email_noop_when_unconfigured(db_session) -> None:
+def test_email_noop_when_unconfigured(db_session: Any) -> None:
     pub = EmailPublisher(
         secret_store=_Store({}),
         smtp_host="smtp.example.com",
@@ -122,7 +123,7 @@ def test_email_noop_when_unconfigured(db_session) -> None:
 
 
 def test_slack_noop_on_clean_run_below_threshold(
-    db_session, monkeypatch: pytest.MonkeyPatch
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A clean run under the default 'warn' policy must not post."""
     posted: list[object] = []
@@ -136,7 +137,7 @@ def test_slack_noop_on_clean_run_below_threshold(
     assert posted == []
 
 
-def test_composite_isolates_a_failing_child(db_session) -> None:
+def test_composite_isolates_a_failing_child(db_session: Any) -> None:
     """One child raising must not stop the others."""
     calls: list[str] = []
 

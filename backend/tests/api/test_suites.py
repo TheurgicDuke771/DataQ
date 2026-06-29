@@ -390,7 +390,7 @@ def _suite_with_checks(client: TestClient, db_session: Any) -> str:
         ]
     )
     db_session.commit()
-    return sid
+    return str(sid)
 
 
 def _check_set(checks: list[dict[str, Any]]) -> set[tuple[Any, ...]]:

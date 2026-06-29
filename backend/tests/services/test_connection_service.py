@@ -202,6 +202,7 @@ def test_update_rotates_secret(db_session: Any) -> None:
     store = FakeStore()
     conn = _create(db_session, store)
     svc.update_connection(db_session, conn.id, secret="rotated", secret_store=store)
+    assert conn.secret_ref is not None
     assert store.data[conn.secret_ref] == "rotated"
 
 
