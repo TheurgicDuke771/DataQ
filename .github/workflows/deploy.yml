@@ -122,7 +122,7 @@ jobs:
       - uses: actions/checkout@v4
       # version is required: action-setup runs at the repo root, whose
       # package.json has no `packageManager` field (it lives in frontend/).
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 9.15.4
       - uses: actions/setup-node@v4
