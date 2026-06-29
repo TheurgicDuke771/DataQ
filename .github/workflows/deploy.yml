@@ -35,7 +35,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Azure login (OIDC)
         uses: azure/login@v2
@@ -119,7 +119,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # version is required: action-setup runs at the repo root, whose
       # package.json has no `packageManager` field (it lives in frontend/).
       - uses: pnpm/action-setup@v4
