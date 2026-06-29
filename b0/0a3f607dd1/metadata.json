@@ -3,7 +3,7 @@
   "checkpoint_id": "b00a3f607dd1",
   "strategy": "manual-commit",
   "branch": "docs/reconcile-progress-postv1-home",
-  "checkpoints_count": 6,
+  "checkpoints_count": 7,
   "files_touched": [
     "CLAUDE.md",
     "context/README.md",
@@ -16,13 +16,19 @@
       "transcript": "/b0/0a3f607dd1/0/full.jsonl",
       "content_hash": "/b0/0a3f607dd1/0/content_hash.txt",
       "prompt": "/b0/0a3f607dd1/0/prompt.txt"
+    },
+    {
+      "metadata": "/b0/0a3f607dd1/1/metadata.json",
+      "transcript": "/b0/0a3f607dd1/1/full.jsonl",
+      "content_hash": "/b0/0a3f607dd1/1/content_hash.txt",
+      "prompt": "/b0/0a3f607dd1/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 22606,
-    "cache_creation_tokens": 1272728,
-    "cache_read_tokens": 24166371,
-    "output_tokens": 144740,
-    "api_call_count": 136
+    "input_tokens": 384205,
+    "cache_creation_tokens": 10811039,
+    "cache_read_tokens": 755174347,
+    "output_tokens": 2191321,
+    "api_call_count": 1962
   }
 }
