@@ -42,6 +42,10 @@ export const appTheme: ThemeConfig = {
     borderRadius: 8,
     fontFamily:
       "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
+    // Code / SQL / identifiers — JetBrains Mono (self-hosted via @fontsource),
+    // falling back to the platform monospace stack.
+    fontFamilyCode:
+      "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace",
     fontSize: 14,
   },
   components: {
