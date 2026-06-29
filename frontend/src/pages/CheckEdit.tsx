@@ -128,7 +128,11 @@ function CheckEditForm({
     }
     setSubmitting(true);
     try {
-      await updateCheck(suiteId, check.id, buildCheckPayload(values));
+      // `kind` is immutable on update — omit it from the PATCH (don't rely on the
+      // backend silently ignoring an extra field).
+      const update = buildCheckPayload(values);
+      delete update.kind;
+      await updateCheck(suiteId, check.id, update);
       message.success(`${values.name as string}: saved`);
       onSaved();
     } catch (err) {

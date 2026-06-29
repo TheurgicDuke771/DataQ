@@ -100,6 +100,7 @@ describe('expectationsByCategoryFor (freshness/volume monitor gating, ADR 0012)'
     expect(byType['monitor:freshness'].kind).toBe('freshness');
     expect(byType['monitor:freshness'].thresholds?.requireFailOrCritical).toBe(true);
     expect(byType['monitor:volume'].kind).toBe('volume');
-    expect(byType['monitor:volume'].thresholds?.max).toBe(100);
+    // No max bound — a volume spike's deviation-% is unbounded (can exceed 100).
+    expect(byType['monitor:volume'].thresholds?.max).toBeUndefined();
   });
 });

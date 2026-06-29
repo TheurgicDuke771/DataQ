@@ -38,6 +38,16 @@ MONITOR_KINDS = (FRESHNESS, VOLUME)
 # monitors aren't GX); `monitor:<kind>` keeps it self-describing on the result row.
 _EXPECTATION_PREFIX = "monitor:"
 
+
+def monitor_expectation_type(kind: str) -> str:
+    """The canonical ``expectation_type`` for a monitor kind — ``monitor:<kind>``.
+
+    The single source of truth shared by the run path (stamps it on result rows),
+    the author path (asserts the stored check's type matches its kind), and the
+    frontend catalog — so the kind↔type pairing can't drift."""
+    return f"{_EXPECTATION_PREFIX}{kind}"
+
+
 # SQL identifier we're willing to interpolate into the aggregate. Monitor config is
 # user-authored, so the column/table/schema must be validated before they touch a
 # query string (no bound-param slot for an identifier). Snowflake/Databricks

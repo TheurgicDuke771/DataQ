@@ -243,6 +243,31 @@ def test_create_freshness_with_critical_threshold_only_returns_201(
     assert resp.status_code == 201
 
 
+def test_create_freshness_with_zero_threshold_rejected(client: TestClient, db_session: Any) -> None:
+    # The inverse footgun: fail=0 hours bands every age as a failure (always red).
+    sid = _suite_id(client, db_session, conn_type="snowflake")
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks",
+        json=_freshness_payload(fail_threshold=0, critical_threshold=None),
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "check_config_invalid"
+
+
+def test_create_monitor_with_mismatched_expectation_type_rejected(
+    client: TestClient, db_session: Any
+) -> None:
+    # A monitor's expectation_type must be the canonical monitor:<kind>; a junk /
+    # mismatched type would mislabel result rows and could smuggle a custom-SQL type.
+    sid = _suite_id(client, db_session, conn_type="snowflake")
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks",
+        json=_freshness_payload(expectation_type="monitor:volume"),
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "check_config_invalid"
+
+
 def test_create_freshness_missing_column_rejected(client: TestClient, db_session: Any) -> None:
     sid = _suite_id(client, db_session, conn_type="snowflake")
     resp = client.post(f"/api/v1/suites/{sid}/checks", json=_freshness_payload(config={}))

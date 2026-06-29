@@ -126,6 +126,7 @@ def import_suite(
             validate_monitor_check(
                 c["kind"],
                 c["config"],
+                expectation_type=c["expectation_type"],
                 connection_type=connection.type,
                 fail_threshold=c["fail_threshold"],
                 critical_threshold=c["critical_threshold"],
