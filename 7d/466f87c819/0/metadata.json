@@ -1,0 +1,36 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "7d466f87c819",
+  "session_id": "9ee5a2c3-1ab5-41a4-8d59-50ed8cf55869",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-29T21:27:56.794481Z",
+  "branch": "chore/betterleaks-incremental-scan",
+  "checkpoints_count": 2,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "2a4ea12856a1",
+  "token_usage": {
+    "input_tokens": 23466,
+    "cache_creation_tokens": 1308114,
+    "cache_read_tokens": 35542154,
+    "output_tokens": 169403,
+    "api_call_count": 171
+  },
+  "session_metrics": {
+    "turn_count": 8
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}

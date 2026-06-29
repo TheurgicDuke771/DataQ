@@ -1,0 +1,47 @@
+Hey, Lets update the @docs/progress.md and WEEK7_TODO against current state of the repo and harness setup (refer HARNESS_TODO).
+
+---
+
+In the @docs/progress.md  
+The top section still says `Week-5 exit gate` should not it be week 6?
+Also no need to maintain sections like `Deferred to post-v1`, `Post-v1 — deferred prototype`, `Backlog — post-v1 / testing` seperately just keep 1 section in the end and refer to the new md file. 
+
+And for @docs/post-v1-roadmap.md , move it to context directory, as it will feed as context for a detailed week wise task generator after v1 shipped.
+
+And update - CLAUDE.md §13 and reconcile the Week-7 epic #176 checkboxes. 
+
+In the end you can triage #424
+
+---
+
+Do a count of all tasks from week1 to week8 + the misc and check if it is 181 or 183, as in @docs/progress.md  we have both, which should not be the case.
+
+---
+
+yeah, see what is actually happening in week 7 & 8 and then update the numbers accordingly.
+
+---
+
+Yeah change week 6 and just reconsile week 1 to week 8 once more (if you find similar strays update them too).
+
+---
+
+yeah, update the epics accordingly [not just #176, others too]
+
+---
+
+yeah commit the change and merge it.
+
+---
+
+<task-notification>
+<task-id>bt18decni</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/9ee5a2c3-1ab5-41a4-8d59-50ed8cf55869/tasks/bt18decni.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for betterleaks to conclude" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Betterleaks is taking >15 min to complrte in every CI, can we do anything to optimize it (check the docs also).
