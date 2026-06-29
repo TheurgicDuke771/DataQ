@@ -239,6 +239,9 @@ describe('Suites', () => {
       started_at: null,
       finished_at: null,
       created_at: '2026-06-12T00:00:00Z',
+      checks_total: 0,
+      checks_passed: 0,
+      worst_severity: null,
     });
     mockGetRunProgress.mockResolvedValue({
       run_id: 'r1',

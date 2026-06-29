@@ -36,6 +36,9 @@ const run: Run = {
   started_at: '2026-06-11T00:00:00Z',
   finished_at: '2026-06-11T00:00:12Z',
   created_at: '2026-06-11T00:00:00Z',
+  checks_total: 4,
+  checks_passed: 3,
+  worst_severity: 'fail',
 };
 
 function RunDetailStub() {

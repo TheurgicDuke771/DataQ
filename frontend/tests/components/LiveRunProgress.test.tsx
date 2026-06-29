@@ -118,6 +118,9 @@ describe('LiveRunProgress', () => {
       started_at: null,
       finished_at: '2026-06-20T00:00:00Z',
       created_at: '2026-06-20T00:00:00Z',
+      checks_total: 0,
+      checks_passed: 0,
+      worst_severity: null,
     });
     const user = userEvent.setup();
     renderDrawer();
@@ -146,6 +149,9 @@ describe('LiveRunProgress', () => {
       started_at: null,
       finished_at: '2026-06-20T00:00:00Z',
       created_at: '2026-06-20T00:00:00Z',
+      checks_total: 0,
+      checks_passed: 0,
+      worst_severity: null,
     });
     const user = userEvent.setup();
     renderDrawer({ pollMs: 5 });

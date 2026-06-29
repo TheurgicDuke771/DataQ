@@ -56,6 +56,9 @@ const runDetail: RunDetailType = {
   started_at: '2026-06-11T00:00:00Z',
   finished_at: '2026-06-11T00:00:12Z',
   created_at: '2026-06-11T00:00:00Z',
+  checks_total: 1,
+  checks_passed: 0,
+  worst_severity: 'warn',
   results: [
     {
       id: 'res1',

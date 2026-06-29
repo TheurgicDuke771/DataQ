@@ -49,6 +49,12 @@ class RunRead(BaseModel):
     started_at: datetime | None
     finished_at: datetime | None
     created_at: datetime
+    # Data-quality outcome — distinct from `status` (execution lifecycle): a run is
+    # `succeeded` even when checks fail. Lets the runs list flag failing checks
+    # without a drill-in. 0/0/None on the list until graft; the detail uses results.
+    checks_total: int = 0
+    checks_passed: int = 0
+    worst_severity: str | None = None  # warn | fail | critical | None (all passed)
 
 
 class ResultRead(BaseModel):
@@ -135,7 +141,21 @@ def list_runs(
     runs = svc.list_runs(
         db, user_id=current_user.id, suite_id=suite_id, status=run_status, limit=limit
     )
-    return [RunRead.model_validate(r) for r in runs]
+    # Graft each run's data-quality outcome (total/passed/worst-severity) in one
+    # grouped query, so the list can flag failing checks behind a `succeeded` run.
+    outcomes = svc.check_outcome_counts(db, [r.id for r in runs])
+    return [
+        RunRead.model_validate(r).model_copy(
+            update=dict(
+                zip(
+                    ("checks_total", "checks_passed", "worst_severity"),
+                    outcomes.get(r.id, (0, 0, None)),
+                    strict=True,
+                )
+            )
+        )
+        for r in runs
+    ]
 
 
 def _result_read(

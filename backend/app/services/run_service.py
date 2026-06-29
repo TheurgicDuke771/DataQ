@@ -14,6 +14,8 @@ adapter raised (e.g. could not reach the warehouse).
 from __future__ import annotations
 
 import uuid
+from collections import defaultdict
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
@@ -239,6 +241,49 @@ def list_runs(
     if status is not None:
         stmt = stmt.where(Run.status == status)
     return list(session.scalars(stmt))
+
+
+# Severity tiers (ADR 0005), worst last — for the "worst check outcome" a run
+# carries. Operational statuses (skip/error) aren't failures, so they don't rank.
+_SEVERITY_RANK: dict[str, int] = {"warn": 1, "fail": 2, "critical": 3}
+
+
+def check_outcome_counts(
+    session: Session, run_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, tuple[int, int, str | None]]:
+    """Per-run ``(checks_total, checks_passed, worst_severity)`` for a set of runs,
+    in a single grouped query (no N+1). ``worst_severity`` is the highest of
+    warn/fail/critical present, else ``None`` (all passed / only operational).
+
+    ``checks_total``/``checks_passed`` count **evaluated** checks — the four
+    severity tiers (pass/warn/fail/critical) — and **exclude** operational
+    ``skip``/``error`` (#122), so the X/Y matches the run-detail page's "Checks
+    passed" denominator and an all-skip run reports total 0 (rendered ``—``, not a
+    misleading green ``0/N``).
+
+    Lets the runs list surface a run's *data-quality* outcome — distinct from the
+    run's *execution* status, which is ``succeeded`` even when checks failed."""
+    if not run_ids:
+        return {}
+    rows = session.execute(
+        select(Result.run_id, Result.status, func.count())
+        .where(Result.run_id.in_(run_ids))
+        .group_by(Result.run_id, Result.status)
+    ).all()
+    by_run: dict[uuid.UUID, dict[str, int]] = defaultdict(dict)
+    for run_id, status, n in rows:
+        by_run[run_id][status] = n
+    out: dict[uuid.UUID, tuple[int, int, str | None]] = {}
+    for run_id, by_status in by_run.items():
+        passed = by_status.get("pass", 0)
+        worst, worst_rank = None, 0
+        for tier, rank in _SEVERITY_RANK.items():
+            if by_status.get(tier) and rank > worst_rank:
+                worst, worst_rank = tier, rank
+        # Evaluated checks only: pass + the three failing tiers (skip/error excluded).
+        total = passed + sum(by_status.get(tier, 0) for tier in _SEVERITY_RANK)
+        out[run_id] = (total, passed, worst)
+    return out
 
 
 def get_run(session: Session, run_id: uuid.UUID) -> Run | None:

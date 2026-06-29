@@ -32,6 +32,7 @@ import {
   isWithinWindowDays,
   pipelineRunMarker,
   pipelineStatusColor,
+  RESULT_STATUS_COLORS,
   RUN_STATUS_COLORS,
 } from '../components/results/resultsFormat';
 
@@ -170,6 +171,21 @@ function RunsTab() {
       dataIndex: 'status',
       width: 120,
       render: (s: RunStatus) => <Tag color={RUN_STATUS_COLORS[s]}>{s}</Tag>,
+    },
+    {
+      // Data-quality outcome (passed/total), coloured by worst severity — distinct
+      // from the execution Status, so a `succeeded` run with failing checks reads
+      // amber/red here instead of looking all-green (#423).
+      title: 'Checks',
+      width: 100,
+      render: (_: unknown, run: Run) =>
+        run.checks_total === 0 ? (
+          <Typography.Text type="secondary">—</Typography.Text>
+        ) : (
+          <Tag color={RESULT_STATUS_COLORS[run.worst_severity ?? 'pass']}>
+            {run.checks_passed}/{run.checks_total}
+          </Tag>
+        ),
     },
     { title: 'Triggered by', dataIndex: 'triggered_by', render: (t: string | null) => t ?? '—' },
     {

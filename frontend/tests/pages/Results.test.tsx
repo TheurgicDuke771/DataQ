@@ -70,6 +70,9 @@ const succeededRun: Run = {
   started_at: '2026-06-11T00:00:00Z',
   finished_at: '2026-06-11T00:00:12Z',
   created_at: '2026-06-11T00:00:00Z',
+  checks_total: 3,
+  checks_passed: 3,
+  worst_severity: null,
 };
 
 const failedRun: Run = {
@@ -78,6 +81,9 @@ const failedRun: Run = {
   status: 'failed',
   triggered_by: 'seed:run:failed',
   finished_at: '2026-06-11T00:00:02Z',
+  checks_total: 3,
+  checks_passed: 1,
+  worst_severity: 'fail',
 };
 
 /** A run on the S3 (flat-file, prod) suite, started "now" so it falls inside the
@@ -90,6 +96,9 @@ const recentEventsRun: Run = {
   started_at: new Date().toISOString(),
   finished_at: new Date().toISOString(),
   created_at: new Date().toISOString(),
+  checks_total: 2,
+  checks_passed: 2,
+  worst_severity: null,
 };
 
 const pipelineRun: PipelineRun = {

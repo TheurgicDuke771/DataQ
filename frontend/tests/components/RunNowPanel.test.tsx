@@ -85,6 +85,9 @@ describe('RunNowPanel', () => {
       started_at: null,
       finished_at: null,
       created_at: '2026-06-21T00:00:00Z',
+      checks_total: 0,
+      checks_passed: 0,
+      worst_severity: null,
     };
     mockRunSuite.mockResolvedValue(queued);
     // The handed-off progress drawer polls this once; keep it non-terminal-safe.
