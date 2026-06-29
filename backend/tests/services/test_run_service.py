@@ -10,9 +10,10 @@ import uuid
 from decimal import Decimal
 from typing import cast
 
+import pytest
 from sqlalchemy.orm import Session
 
-from backend.app.datasources.base import CheckOutcome, CheckSpec, SuiteOutcome
+from backend.app.datasources.base import CheckOutcome, CheckRunner, CheckSpec, SuiteOutcome
 from backend.app.db.models import Check, Result, Run
 from backend.app.services import run_service
 
@@ -90,6 +91,81 @@ def _checks(n: int) -> list[Check]:
         )
         for i in range(n)
     ]
+
+
+def _monitor_check(kind: str, config: dict[str, object]) -> Check:
+    return Check(
+        id=uuid.uuid4(),
+        suite_id=uuid.uuid4(),
+        name=kind,
+        kind=kind,
+        expectation_type="",
+        config=config,
+    )
+
+
+class FakeMonitorRunner:
+    """A SQL-datasource-like runner that handles both expectation (run_checks) and
+    monitor (run_monitors) kinds — so the kind-dispatch can route to each."""
+
+    def __init__(
+        self, *, check_outcomes: list[CheckOutcome], monitor_outcomes: list[CheckOutcome]
+    ) -> None:
+        self._check_outcomes = check_outcomes
+        self._monitor_outcomes = monitor_outcomes
+        self.monitors_called_with: list[object] | None = None
+
+    def run_checks(
+        self, *, table: str, schema: str | None, checks: list[CheckSpec]
+    ) -> SuiteOutcome:
+        return SuiteOutcome(success=True, checks=self._check_outcomes)
+
+    def run_monitors(
+        self, *, table: str, schema: str | None, monitors: list[object]
+    ) -> list[CheckOutcome]:
+        self.monitors_called_with = monitors
+        return self._monitor_outcomes
+
+
+# ───────────────────────── kind dispatch (_run_outcomes) ─────────────
+
+
+def test_run_outcomes_routes_by_kind_and_keeps_check_order() -> None:
+    # checks interleaved: [expectation, freshness, expectation] — outcomes must come
+    # back in that same order (so they zip 1:1 onto the result rows).
+    checks = [_checks(1)[0], _monitor_check("freshness", {"column": "ts"}), _checks(1)[0]]
+    runner = FakeMonitorRunner(
+        check_outcomes=[CheckOutcome("e1", success=True), CheckOutcome("e2", success=True)],
+        monitor_outcomes=[CheckOutcome("monitor:freshness", success=True, metric_value=5.0)],
+    )
+
+    outcomes = run_service._run_outcomes(
+        cast(CheckRunner, runner), table="T", schema=None, checks=checks
+    )
+
+    assert [o.expectation_type for o in outcomes] == ["e1", "monitor:freshness", "e2"]
+    assert runner.monitors_called_with is not None and len(runner.monitors_called_with) == 1
+
+
+def test_run_outcomes_monitor_on_non_sql_runner_raises() -> None:
+    # FakeRunner has no run_monitors → not a MonitorRunner → monitor check rejected
+    # (freshness/volume need a SQL datasource).
+    runner = FakeRunner(outcome=SuiteOutcome(success=True, checks=[]))
+    with pytest.raises(NotImplementedError, match="monitor"):
+        run_service._run_outcomes(
+            runner,
+            table="T",
+            schema=None,
+            checks=[_monitor_check("volume", {"min_rows": 1, "max_rows": 9})],
+        )
+
+
+def test_run_outcomes_unsupported_kind_raises() -> None:
+    runner = FakeRunner(outcome=SuiteOutcome(success=True, checks=[]))
+    with pytest.raises(NotImplementedError, match="schema_drift"):
+        run_service._run_outcomes(
+            runner, table="T", schema=None, checks=[_monitor_check("schema_drift", {})]
+        )
 
 
 # ───────────────────────── success path ────────────────────────────

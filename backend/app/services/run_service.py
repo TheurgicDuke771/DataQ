@@ -25,7 +25,14 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.jsonsafe import sanitize_json
 from backend.app.core.logging import get_logger
-from backend.app.datasources.base import CheckOutcome, CheckRunner, CheckSpec
+from backend.app.datasources.base import (
+    CheckOutcome,
+    CheckRunner,
+    CheckSpec,
+    MonitorRunner,
+    MonitorSpec,
+)
+from backend.app.datasources.monitors import MONITOR_KINDS
 from backend.app.db.models import RESULT_STATUSES, Check, Result, Run
 from backend.app.services import suite_service
 from backend.app.services.severity import resolve_status
@@ -81,24 +88,54 @@ def _build_result(run_id: uuid.UUID, check: Check, outcome: CheckOutcome) -> Res
 _EXPECTATION_KIND = "expectation"
 
 
-def _specs_for_checks(checks: list[Check]) -> list[CheckSpec]:
-    """Dispatch checks by `check.kind` to their runner input (ADR 0012).
+def _run_outcomes(
+    runner: CheckRunner, *, table: str, schema: str | None, checks: list[Check]
+) -> list[CheckOutcome]:
+    """Run a suite's checks, dispatching by `check.kind` (ADR 0012), and return one
+    outcome per check in the **same order** (so they zip 1:1 onto result rows).
 
-    v1 implements only the `expectation` kind (the GX `CheckRunner`). The other
-    reserved kinds (`freshness`/`volume`/`schema_drift`/`anomaly`/`comparison`)
-    are constraint-valid but have no runner yet, so a run containing one raises
-    `NotImplementedError` rather than silently feeding it to GX as an
-    expectation. This dispatch composes with the connection-type `CheckRunner`
-    selection (Week 5, ADR 0011): `kind` chooses the *monitor*, `connection.type`
-    chooses the *adapter*.
-    """
-    unsupported = sorted({c.kind for c in checks if c.kind != _EXPECTATION_KIND})
+    * ``expectation`` kind → the GX `CheckRunner.run_checks`.
+    * ``freshness``/``volume`` (monitor kinds) → the `MonitorRunner.run_monitors`
+      SQL path — only when the runner is a SQL datasource (Snowflake/UC). A monitor
+      check on a flat-file runner raises (gated here, not silently mis-run).
+    * any other reserved kind (`schema_drift`/`anomaly`/`comparison`) has no runner
+      yet → `NotImplementedError`.
+
+    This composes with the connection-type runner selection (ADR 0011): `kind`
+    chooses the *monitor*, `connection.type` chose the *adapter* (the runner)."""
+    expectation_idx = [i for i, c in enumerate(checks) if c.kind == _EXPECTATION_KIND]
+    monitor_idx = [i for i, c in enumerate(checks) if c.kind in MONITOR_KINDS]
+    unsupported = sorted(
+        {c.kind for c in checks if c.kind != _EXPECTATION_KIND and c.kind not in MONITOR_KINDS}
+    )
     if unsupported:
-        raise NotImplementedError(
-            f"no run path for check kind(s) {', '.join(unsupported)}; "
-            f"only {_EXPECTATION_KIND!r} is implemented in v1"
-        )
-    return [CheckSpec(expectation_type=c.expectation_type, kwargs=dict(c.config)) for c in checks]
+        raise NotImplementedError(f"no run path for check kind(s) {', '.join(unsupported)}")
+
+    outcomes: list[CheckOutcome | None] = [None] * len(checks)
+    if expectation_idx:
+        specs = [
+            CheckSpec(expectation_type=checks[i].expectation_type, kwargs=dict(checks[i].config))
+            for i in expectation_idx
+        ]
+        suite_outcome = runner.run_checks(table=table, schema=schema, checks=specs)
+        for i, oc in zip(expectation_idx, suite_outcome.checks, strict=True):
+            outcomes[i] = oc
+    if monitor_idx:
+        if not isinstance(runner, MonitorRunner):
+            raise NotImplementedError(
+                f"{type(runner).__name__} does not support monitor checks — "
+                "freshness/volume need a SQL datasource (Snowflake / Unity Catalog)"
+            )
+        monitors = [
+            MonitorSpec(kind=checks[i].kind, config=dict(checks[i].config)) for i in monitor_idx
+        ]
+        monitor_outcomes = runner.run_monitors(table=table, schema=schema, monitors=monitors)
+        for i, oc in zip(monitor_idx, monitor_outcomes, strict=True):
+            outcomes[i] = oc
+
+    # Every index is filled: expectation_idx + monitor_idx together cover all checks
+    # once the unsupported-kind guard above has run.
+    return [cast(CheckOutcome, oc) for oc in outcomes]
 
 
 def _cancelled_mid_run(session: Session, run: Run) -> bool:
@@ -145,11 +182,10 @@ def execute_run(
     # an unrunnable check kind) would leave the run stuck in 'running' forever.
     # rollback() discards any partial result inserts before we record the failure.
     try:
-        specs = _specs_for_checks(checks)
-        outcome = runner.run_checks(table=table, schema=schema, checks=specs)
+        outcomes = _run_outcomes(runner, table=table, schema=schema, checks=checks)
         rows = [
             _build_result(run.id, check, check_outcome)
-            for check, check_outcome in zip(checks, outcome.checks, strict=True)
+            for check, check_outcome in zip(checks, outcomes, strict=True)
         ]
         session.add_all(rows)
         # Cooperative cancellation: if a cancel committed (from the API session)
@@ -178,7 +214,7 @@ def execute_run(
     log.info(
         "run_completed",
         run_id=str(run.id),
-        suite_success=outcome.success,
+        suite_success=all(o.success for o in outcomes),
         n_results=len(rows),
     )
     return run
