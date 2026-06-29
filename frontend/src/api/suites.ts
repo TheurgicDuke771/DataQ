@@ -128,9 +128,11 @@ export async function getCheck(suiteId: string, checkId: string): Promise<Check>
   return data;
 }
 
-/** Mirrors `CheckCreate` — v1 only authors `kind: 'expectation'` (service-enforced). */
+/** Mirrors `CheckCreate` — `kind` is `expectation` (incl. custom-SQL) or a monitor
+ *  kind (`freshness`/`volume`, ADR 0012); omitted defaults to `expectation`. */
 export interface CheckCreate {
   name: string;
+  kind?: string;
   expectation_type: string;
   config: Record<string, unknown>;
   warn_threshold?: number | null;

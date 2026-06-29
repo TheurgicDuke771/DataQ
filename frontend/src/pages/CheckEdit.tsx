@@ -103,6 +103,9 @@ function CheckEditForm({
   const selectedType = Form.useWatch('expectation_type', form) as string | undefined;
   const column = Form.useWatch(['config', 'column'], form) as string | undefined;
   const spec = selectedType ? EXPECTATION_BY_TYPE[selectedType] : undefined;
+  // `kind` is immutable on update (a freshness check can't become an expectation),
+  // so a monitor check locks its type — only its config + thresholds are editable.
+  const isMonitor = check.kind !== 'expectation';
 
   // Seed from the loaded check once.
   useEffect(() => {
@@ -141,11 +144,21 @@ function CheckEditForm({
         <Form.Item name="name" label="Name" rules={[{ required: true }]}>
           <Input placeholder="e.g. order_id not null" />
         </Form.Item>
-        <Form.Item name="expectation_type" label="Expectation" rules={[{ required: true }]}>
+        <Form.Item
+          name="expectation_type"
+          label={isMonitor ? 'Monitor' : 'Expectation'}
+          rules={[{ required: true }]}
+          extra={
+            isMonitor ? 'A monitor’s kind is fixed — recreate the check to change it.' : undefined
+          }
+        >
           <Select
             placeholder="Select an expectation"
+            // A monitor's kind is immutable, so lock the type for monitor checks.
+            disabled={isMonitor}
             // Grouped by category (antd optgroups). Pass the check's current type
-            // so Custom SQL stays selectable even before the connection loads.
+            // so Custom SQL / monitor categories stay selectable even before the
+            // connection loads.
             options={expectationsByCategoryFor(connectionType, check.expectation_type).map((g) => ({
               label: g.category,
               options: g.specs.map((e) => ({ value: e.type, label: e.label })),
@@ -164,19 +177,22 @@ function CheckEditForm({
           </>
         )}
 
-        <SeverityThresholdFields />
+        <SeverityThresholdFields monitor={spec?.thresholds} />
 
         <Form.Item>
           <ColumnProfilePanel suiteId={suiteId} target={target} column={column} />
         </Form.Item>
-        <Form.Item>
-          <DryRunPreview
-            suiteId={suiteId}
-            expectationType={selectedType}
-            target={target}
-            form={form}
-          />
-        </Form.Item>
+        {/* Dry-run previews a GX expectation; monitor kinds aren't GX, so skip it. */}
+        {!spec?.kind && (
+          <Form.Item>
+            <DryRunPreview
+              suiteId={suiteId}
+              expectationType={selectedType}
+              target={target}
+              form={form}
+            />
+          </Form.Item>
+        )}
 
         <Flex justify="space-between" align="center" gap={8}>
           <Button icon={<HistoryOutlined />} onClick={() => setHistoryOpen(true)}>

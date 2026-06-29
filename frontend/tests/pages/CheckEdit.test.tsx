@@ -102,6 +102,7 @@ describe('CheckEdit', () => {
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
     expect(mockUpdate).toHaveBeenCalledWith('s1', 'chk1', {
       name: 'amount range v2',
+      kind: 'expectation',
       expectation_type: 'expect_column_values_to_be_between',
       config: { column: 'amount', min_value: 0, max_value: 100 },
       warn_threshold: 5,

@@ -17,19 +17,34 @@ import { CUSTOM_SQL_EXPECTATION_TYPE, CUSTOM_SQL_QUERY_KEY } from './customSql';
 
 export type ConfigFieldType = 'string' | 'number' | 'list' | 'sql';
 
+/** The check `kind` (ADR 0012). `expectation` (incl. custom-SQL) is GX; the
+ *  monitor kinds run a scalar SQL aggregate instead. Sent to the backend. */
+export type CheckKind = 'expectation' | 'freshness' | 'volume';
+
 /**
  * Expectation categories — the GX-Cloud-style classification the check editor
- * groups by. v1 ships value-level GX expectations + custom-SQL (ADR 0019); the
- * monitor-kind seam (ADR 0012) reserves Freshness / Volume / Schema-drift
- * categories for v1.x auto-monitors, surfaced (disabled) on the dedicated page.
+ * groups by. v1 ships value-level GX expectations + custom-SQL (ADR 0019) + the
+ * freshness/volume monitor kinds (ADR 0012, pulled into v1). `Schema drift` stays
+ * a reserved-only category (surfaced disabled on the dedicated page).
  */
-export type ExpectationCategory = 'Column values' | 'Table shape' | 'Custom SQL';
+export type ExpectationCategory =
+  | 'Column values'
+  | 'Table shape'
+  | 'Freshness'
+  | 'Volume'
+  | 'Custom SQL';
 
 export const EXPECTATION_CATEGORIES: ExpectationCategory[] = [
   'Column values',
   'Table shape',
+  'Freshness',
+  'Volume',
   'Custom SQL',
 ];
+
+/** Monitor categories (ADR 0012) — like Custom SQL, they run a scalar SQL
+ *  aggregate, so they're offered only on SQL-queryable datasources. */
+export const MONITOR_CATEGORIES: ExpectationCategory[] = ['Freshness', 'Volume'];
 
 export interface ConfigField {
   /** Key in the GX `config` kwargs object. */
@@ -40,13 +55,30 @@ export interface ConfigField {
   help?: string;
 }
 
+/** Severity-threshold semantics for a monitor kind (ADR 0012/0016). Monitors band
+ *  their own metric (age-hours / deviation-%), not GX unexpected-%, so the threshold
+ *  block needs kind-specific help/bounds/requiredness. Absent → the default GX %. */
+export interface MonitorThresholdSpec {
+  /** What the warn/fail/critical numbers mean for this kind. */
+  help: string;
+  /** Upper bound on the inputs (omit = unbounded, e.g. freshness age-hours). */
+  max?: number;
+  /** Require a fail or critical threshold (freshness has no in-config bound, so
+   *  without one it can never fail — the #426 silent-green guard). */
+  requireFailOrCritical?: boolean;
+}
+
 export interface ExpectationSpec {
-  /** snake_case GX expectation type sent to the backend. */
+  /** snake_case GX expectation type (or `monitor:<kind>`) sent to the backend. */
   type: string;
+  /** Check kind (ADR 0012); defaults to `expectation` when omitted. */
+  kind?: CheckKind;
   label: string;
   description: string;
   category: ExpectationCategory;
   fields: ConfigField[];
+  /** Present for monitor kinds — drives the threshold block's help/bounds/required. */
+  thresholds?: MonitorThresholdSpec;
 }
 
 const COLUMN: ConfigField = { name: 'column', label: 'Column', type: 'string' };
@@ -121,6 +153,42 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
     ],
   },
   {
+    type: 'monitor:freshness',
+    kind: 'freshness',
+    label: 'Freshness',
+    description:
+      'How stale is the table? Measures hours since the latest value in a timestamp column.',
+    category: 'Freshness',
+    fields: [
+      {
+        name: 'column',
+        label: 'Timestamp column',
+        type: 'string',
+        help: 'The load/updated timestamp column whose MAX() dates the table.',
+      },
+    ],
+    thresholds: {
+      help: 'Band the age in HOURS since the latest row (higher = staler). A fail or critical threshold is required — without one a freshness check can never fail.',
+      requireFailOrCritical: true,
+    },
+  },
+  {
+    type: 'monitor:volume',
+    kind: 'volume',
+    label: 'Volume',
+    description:
+      'Did the load deliver the expected row count? Flags a count outside an allowed range.',
+    category: 'Volume',
+    fields: [
+      { name: 'min_rows', label: 'Minimum rows', type: 'number' },
+      { name: 'max_rows', label: 'Maximum rows', type: 'number' },
+    ],
+    thresholds: {
+      help: 'Band the % the row count falls outside [min, max] (either direction; higher = worse). Leave blank for a binary in-range pass/fail.',
+      max: 100,
+    },
+  },
+  {
     type: CUSTOM_SQL_EXPECTATION_TYPE,
     label: 'Custom SQL',
     description: 'A SQL query that should return no rows — any rows it returns are failures.',
@@ -151,17 +219,21 @@ export const EXPECTATIONS_BY_CATEGORY: {
   specs: EXPECTATION_CATALOG.filter((e) => e.category === category),
 }));
 
+/** The SQL-datasource-only categories — Custom SQL (ADR 0019) + the freshness/
+ *  volume monitors (ADR 0012). All run a SQL query, so they're offered only on
+ *  SQL-queryable connections (Snowflake / Unity Catalog). */
+const SQL_ONLY_CATEGORIES = new Set<ExpectationCategory>(['Custom SQL', ...MONITOR_CATEGORIES]);
+
 /**
- * Grouped catalog filtered for a suite's datasource. Custom SQL (ADR 0019) runs
- * only on SQL-queryable connections (Snowflake / Unity Catalog), so it's hidden
- * for flat-file suites — and while the connection type is still loading
- * (`undefined`), so we never offer a category the backend would 422. Every other
- * category is datasource-agnostic.
+ * Grouped catalog filtered for a suite's datasource. The SQL-only categories
+ * (Custom SQL + Freshness/Volume monitors) are hidden for flat-file suites — and
+ * while the connection type is still loading (`undefined`) — so we never offer a
+ * category the backend would 422. Every other category is datasource-agnostic.
  *
  * `alwaysIncludeType` keeps the group of an already-selected expectation visible
  * regardless of gating — the edit drawer passes the check's current type so a
- * custom-SQL check stays editable even before its connection type is known (else
- * the Select would have no option matching the prefilled value).
+ * custom-SQL / monitor check stays editable even before its connection type is
+ * known (else the Select would have no option matching the prefilled value).
  */
 export function expectationsByCategoryFor(
   connectionType: ConnectionType | undefined,
@@ -170,8 +242,11 @@ export function expectationsByCategoryFor(
   category: ExpectationCategory;
   specs: ExpectationSpec[];
 }[] {
-  const allowCustomSql =
-    (connectionType !== undefined && isSqlQueryable(connectionType)) ||
-    alwaysIncludeType === CUSTOM_SQL_EXPECTATION_TYPE;
-  return EXPECTATIONS_BY_CATEGORY.filter((g) => g.category !== 'Custom SQL' || allowCustomSql);
+  const sqlAllowed = connectionType !== undefined && isSqlQueryable(connectionType);
+  const selectedCategory = alwaysIncludeType
+    ? EXPECTATION_BY_TYPE[alwaysIncludeType]?.category
+    : undefined;
+  return EXPECTATIONS_BY_CATEGORY.filter(
+    (g) => !SQL_ONLY_CATEGORIES.has(g.category) || sqlAllowed || g.category === selectedCategory,
+  );
 }

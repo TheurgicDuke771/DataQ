@@ -62,6 +62,9 @@ export function buildCheckPayload(values: Record<string, unknown>): CheckCreate 
   const spec = EXPECTATION_BY_TYPE[values.expectation_type as string];
   return {
     name: values.name as string,
+    // The monitor kinds (freshness/volume) carry a non-default kind; expectations
+    // (incl. custom-SQL) stay 'expectation'. The backend defaults to 'expectation'.
+    kind: spec?.kind ?? 'expectation',
     expectation_type: values.expectation_type as string,
     config: formToConfig(spec, (values.config ?? {}) as Record<string, unknown>),
     warn_threshold: numOrNull(values.warn_threshold),
