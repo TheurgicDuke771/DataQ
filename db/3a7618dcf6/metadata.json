@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "db3a7618dcf6",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-395-urlencode-db-password",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "deploy/terraform/postgres.tf"
+  ],
+  "sessions": [
+    {
+      "metadata": "/db/3a7618dcf6/0/metadata.json",
+      "transcript": "/db/3a7618dcf6/0/full.jsonl",
+      "content_hash": "/db/3a7618dcf6/0/content_hash.txt",
+      "prompt": "/db/3a7618dcf6/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 236934,
+    "cache_creation_tokens": 6361026,
+    "cache_read_tokens": 512696595,
+    "output_tokens": 1588135,
+    "api_call_count": 1330
+  }
+}
