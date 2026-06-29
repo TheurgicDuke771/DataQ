@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "69fb84d2f600",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-423-runs-table-check-outcome",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/services/run_service.py",
+    "backend/tests/api/test_runs.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/69/fb84d2f600/0/metadata.json",
+      "transcript": "/69/fb84d2f600/0/full.jsonl",
+      "content_hash": "/69/fb84d2f600/0/content_hash.txt",
+      "prompt": "/69/fb84d2f600/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 262455,
+    "cache_creation_tokens": 7663241,
+    "cache_read_tokens": 583125866,
+    "output_tokens": 1749946,
+    "api_call_count": 1476
+  }
+}
