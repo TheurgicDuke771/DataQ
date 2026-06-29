@@ -6,7 +6,12 @@ import { Link, useNavigate } from 'react-router-dom';
 import { listRuns, type Run, type RunStatus } from '../../api/runs';
 import { listSuites } from '../../api/suites';
 import { useAsyncData } from '../../hooks/useAsyncData';
-import { formatDuration, formatTimestamp, RUN_STATUS_COLORS } from '../results/resultsFormat';
+import {
+  formatDuration,
+  formatTimestamp,
+  RESULT_STATUS_COLORS,
+  RUN_STATUS_COLORS,
+} from '../results/resultsFormat';
 
 /**
  * Recent Runs (prototype `RecentRuns`) — a cross-suite feed of the latest runs
@@ -44,6 +49,20 @@ export function RecentRuns() {
       dataIndex: 'status',
       width: 120,
       render: (s: RunStatus) => <Tag color={RUN_STATUS_COLORS[s]}>{s}</Tag>,
+    },
+    {
+      // DQ outcome (passed/total), coloured by worst severity — so a `succeeded`
+      // run with failing checks doesn't read all-green on the dashboard (#423).
+      title: 'Checks',
+      width: 100,
+      render: (_: unknown, run: Run) =>
+        run.checks_total === 0 ? (
+          <Typography.Text type="secondary">—</Typography.Text>
+        ) : (
+          <Tag color={RESULT_STATUS_COLORS[run.worst_severity ?? 'pass']}>
+            {run.checks_passed}/{run.checks_total}
+          </Tag>
+        ),
     },
     { title: 'Triggered by', dataIndex: 'triggered_by', render: (t: string | null) => t ?? '—' },
     { title: 'Started', dataIndex: 'started_at', render: (t: string | null) => formatTimestamp(t) },

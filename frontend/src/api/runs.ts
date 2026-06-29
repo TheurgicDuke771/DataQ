@@ -24,6 +24,11 @@ export interface Run {
   started_at: string | null;
   finished_at: string | null;
   created_at: string;
+  /** Data-quality outcome — distinct from `status` (execution): a run is
+   *  `succeeded` even when checks fail. `worst_severity` is null when all passed. */
+  checks_total: number;
+  checks_passed: number;
+  worst_severity: 'warn' | 'fail' | 'critical' | null;
 }
 
 /** Mirrors `ResultRead`. `sample_failures` is the GX failing-row sample, redacted

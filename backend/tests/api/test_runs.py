@@ -20,6 +20,7 @@ from sqlalchemy import select
 
 from backend.app.core.auth import get_current_user
 from backend.app.db.models import (
+    Check,
     Connection,
     PipelineRun,
     Result,
@@ -213,6 +214,34 @@ def test_list_runs_filters_by_suite_and_status(client: TestClient, db_session: A
     assert [r["status"] for r in by_status] == ["failed"]
 
 
+def test_list_runs_includes_check_outcome_counts(client: TestClient, db_session: Any) -> None:
+    # #423: the runs list surfaces each run's DQ outcome (total/passed/worst-severity)
+    # — distinct from the run's execution `status`, which is `succeeded` even when
+    # checks fail. A run with no results reports 0/0/None.
+    dev = _user(db_session, "dev@ex")
+    suite = _suite(db_session, dev, target={"table": "T"})
+    failing = _run(db_session, suite, status="succeeded")  # executed, but a check failed
+    clean = _run(db_session, suite, status="succeeded")  # no results yet
+    for name, st in [("c1", "pass"), ("c2", "warn"), ("c3", "fail")]:
+        check = Check(suite_id=suite.id, name=name, expectation_type="x", config={})
+        db_session.add(check)
+        db_session.flush()
+        db_session.add(Result(run_id=failing.id, check_id=check.id, status=st))
+    db_session.commit()
+
+    _as(dev)
+    body = client.get("/api/v1/runs").json()
+    rows = {r["id"]: r for r in body}
+
+    bad = rows[str(failing.id)]
+    assert bad["status"] == "succeeded"  # execution status unchanged
+    assert (bad["checks_total"], bad["checks_passed"]) == (3, 1)
+    assert bad["worst_severity"] == "fail"  # worst of pass/warn/fail
+
+    empty = rows[str(clean.id)]
+    assert (empty["checks_total"], empty["checks_passed"], empty["worst_severity"]) == (0, 0, None)
+
+
 def test_list_runs_inaccessible_suite_filter_returns_404(
     client: TestClient, db_session: Any
 ) -> None:
@@ -244,7 +273,6 @@ def test_get_run_returns_results(client: TestClient, db_session: Any) -> None:
     dev = _user(db_session, "dev@ex")
     suite = _suite(db_session, dev, target={"table": "T"})
     # a check for the result FK
-    from backend.app.db.models import Check
 
     check = Check(suite_id=suite.id, name="c", expectation_type="expect_x", config={})
     db_session.add(check)
@@ -281,7 +309,6 @@ def test_get_run_returns_results(client: TestClient, db_session: Any) -> None:
 def test_get_run_redacts_sample_failure_values(client: TestClient, db_session: Any) -> None:
     """Raw failing cell values must be masked before leaving DataQ; the numeric
     counts and the row/column shape are kept (#226)."""
-    from backend.app.db.models import Check
 
     dev = _user(db_session, "dev@ex")
     suite = _suite(db_session, dev, target={"table": "T"})
@@ -343,7 +370,6 @@ def test_get_run_no_access_returns_404(client: TestClient, db_session: Any) -> N
 
 
 def _check(db_session: Any, suite: Suite, name: str) -> Any:
-    from backend.app.db.models import Check
 
     check = Check(suite_id=suite.id, name=name, expectation_type="expect_x", config={})
     db_session.add(check)
