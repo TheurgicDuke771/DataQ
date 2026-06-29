@@ -103,6 +103,27 @@ variable "workspace_admin_emails" {
   default     = ""
 }
 
+# Email alerting addresses (PII → set in the gitignored tfvars, not committed).
+# Empty = email channel off (the publisher self-no-ops). The Gmail app-password
+# lives in Key Vault as `channel-email-password`; these are just the addresses.
+variable "email_username" {
+  description = "SMTP login / sender for the email alert channel (e.g. a Gmail address). Empty = off."
+  type        = string
+  default     = ""
+}
+
+variable "email_from" {
+  description = "From: address for email alerts (defaults to email_username when empty)."
+  type        = string
+  default     = ""
+}
+
+variable "email_to" {
+  description = "Comma-separated recipients for email alerts. Empty = email channel off."
+  type        = string
+  default     = ""
+}
+
 # Azure AD SSO — real auth in prod (AUTH_DEV_BYPASS=false). These are non-secret
 # identifiers (MSAL SPA is a public client; there is no SPA secret).
 variable "azure_tenant_id" {

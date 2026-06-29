@@ -96,6 +96,28 @@ class Settings(BaseSettings):
     # env list-parsing.
     teams_webhook_allowed_hosts: str = "webhook.office.com,logic.azure.com"
 
+    # ── Slack alerting (workspace-level incoming webhook) ────────────────────
+    # SecretStore key holding the Slack incoming-webhook URL
+    # (https://hooks.slack.com/services/...). The URL carries a token, so it
+    # lives in the SecretStore. Unset → no Slack alerting (quiet no-op). Resolved
+    # per run so a rotated webhook is picked up. One ResultPublisher impl behind
+    # the registry composite (ADR 0011) — same per-suite alert_on policy as Teams.
+    slack_webhook_secret_name: str | None = None
+    # SSRF allowlist for the Slack webhook host (POSTed server-side).
+    slack_webhook_allowed_hosts: str = "hooks.slack.com"
+
+    # ── Email (SMTP) alerting ────────────────────────────────────────────────
+    # Non-secret SMTP coordinates live in config; the password (e.g. a Gmail
+    # app-password) lives in the SecretStore by name. Email alerting is active
+    # only when email_to, email_username, and email_password_secret_name are all
+    # set (else a quiet no-op). STARTTLS on the submission port.
+    email_smtp_host: str = "smtp.gmail.com"
+    email_smtp_port: int = 587
+    email_username: str | None = None
+    email_from: str | None = None  # defaults to email_username when unset
+    email_to: str = ""  # comma-separated recipients; empty → no email alerting
+    email_password_secret_name: str | None = None
+
     # ── Snowflake probe (Week 1 exit-gate endpoint) ──────────────────────────
     # Config for the single seeded dev Snowflake connection the probe runs
     # against. All optional: when unset the probe still creates + dispatches a

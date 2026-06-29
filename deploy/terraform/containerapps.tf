@@ -55,6 +55,18 @@ locals {
     # Webhook secret KEY names (values live in Key Vault — keyvault.tf).
     { name = "ADF_WEBHOOK_SECRET_NAME", value = "adf-webhook-secret" },
     { name = "AIRFLOW_WEBHOOK_SECRET_NAME", value = "airflow-webhook-secret" },
+    # Alerting channels (Slack + email) behind the ResultPublisher composite.
+    # Secret NAMES point at Key Vault (the webhook URL / app-password live there);
+    # SMTP coordinates are non-secret. Each publisher self-no-ops until its secret
+    # + (for email) recipients are set, so leaving the email_* vars empty = email
+    # off. Email addresses come from the gitignored tfvars (PII, not in git).
+    { name = "SLACK_WEBHOOK_SECRET_NAME", value = "channel-slack-webhook" },
+    { name = "EMAIL_SMTP_HOST", value = "smtp.gmail.com" },
+    { name = "EMAIL_SMTP_PORT", value = "587" },
+    { name = "EMAIL_PASSWORD_SECRET_NAME", value = "channel-email-password" },
+    { name = "EMAIL_USERNAME", value = var.email_username },
+    { name = "EMAIL_FROM", value = var.email_from },
+    { name = "EMAIL_TO", value = var.email_to },
   ]
 }
 
