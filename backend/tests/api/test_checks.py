@@ -94,9 +94,11 @@ def test_create_stores_thresholds_as_numbers(client: TestClient, db_session: Any
     assert body["critical_threshold"] == 0.5
 
 
-def test_create_rejects_non_expectation_kind(client: TestClient, db_session: Any) -> None:
+def test_create_rejects_still_reserved_kind(client: TestClient, db_session: Any) -> None:
+    # freshness/volume are now authorable (ADR 0012 amendment); the other reserved
+    # kinds still have no runner, so CRUD must keep refusing them.
     sid = _suite_id(client, db_session)
-    resp = client.post(f"/api/v1/suites/{sid}/checks", json=_payload(kind="freshness"))
+    resp = client.post(f"/api/v1/suites/{sid}/checks", json=_payload(kind="schema_drift"))
     assert resp.status_code == 422
     assert resp.json()["error"]["code"] == "check_config_invalid"
 
@@ -170,6 +172,141 @@ def test_update_custom_sql_to_non_readonly_query_rejected(
     )
     assert resp.status_code == 422
     assert resp.json()["error"]["code"] == "custom_sql_invalid"
+
+
+# ───────────────────────── monitors (freshness / volume, ADR 0012) ──
+
+
+def _freshness_payload(**overrides: Any) -> dict[str, Any]:
+    body: dict[str, Any] = {
+        "name": "orders fresh",
+        "kind": "freshness",
+        "expectation_type": "monitor:freshness",
+        "config": {"column": "loaded_at"},
+        "fail_threshold": 48,  # hours — required so it can actually fail
+    }
+    body.update(overrides)
+    return body
+
+
+def _volume_payload(**overrides: Any) -> dict[str, Any]:
+    body: dict[str, Any] = {
+        "name": "orders volume",
+        "kind": "volume",
+        "expectation_type": "monitor:volume",
+        "config": {"min_rows": 1000, "max_rows": 5000},
+    }
+    body.update(overrides)
+    return body
+
+
+def test_create_freshness_monitor_on_sql_datasource_returns_201(
+    client: TestClient, db_session: Any
+) -> None:
+    sid = _suite_id(client, db_session, conn_type="snowflake")
+    resp = client.post(f"/api/v1/suites/{sid}/checks", json=_freshness_payload())
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["kind"] == "freshness"
+    assert body["config"] == {"column": "loaded_at"}
+
+
+def test_create_volume_monitor_on_sql_datasource_returns_201(
+    client: TestClient, db_session: Any
+) -> None:
+    sid = _suite_id(client, db_session, conn_type="unity_catalog")
+    resp = client.post(f"/api/v1/suites/{sid}/checks", json=_volume_payload())
+    assert resp.status_code == 201
+    assert resp.json()["kind"] == "volume"
+
+
+def test_create_freshness_without_threshold_rejected(client: TestClient, db_session: Any) -> None:
+    # The #426 silent-green guard: freshness needs a fail/critical age threshold.
+    sid = _suite_id(client, db_session, conn_type="snowflake")
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks",
+        json=_freshness_payload(fail_threshold=None, critical_threshold=None),
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "check_config_invalid"
+
+
+def test_create_freshness_with_critical_threshold_only_returns_201(
+    client: TestClient, db_session: Any
+) -> None:
+    # A critical (not warn/fail) threshold satisfies the "can fail" requirement.
+    sid = _suite_id(client, db_session, conn_type="snowflake")
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks",
+        json=_freshness_payload(fail_threshold=None, critical_threshold=72),
+    )
+    assert resp.status_code == 201
+
+
+def test_create_freshness_with_zero_threshold_rejected(client: TestClient, db_session: Any) -> None:
+    # The inverse footgun: fail=0 hours bands every age as a failure (always red).
+    sid = _suite_id(client, db_session, conn_type="snowflake")
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks",
+        json=_freshness_payload(fail_threshold=0, critical_threshold=None),
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "check_config_invalid"
+
+
+def test_create_monitor_with_mismatched_expectation_type_rejected(
+    client: TestClient, db_session: Any
+) -> None:
+    # A monitor's expectation_type must be the canonical monitor:<kind>; a junk /
+    # mismatched type would mislabel result rows and could smuggle a custom-SQL type.
+    sid = _suite_id(client, db_session, conn_type="snowflake")
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks",
+        json=_freshness_payload(expectation_type="monitor:volume"),
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "check_config_invalid"
+
+
+def test_create_freshness_missing_column_rejected(client: TestClient, db_session: Any) -> None:
+    sid = _suite_id(client, db_session, conn_type="snowflake")
+    resp = client.post(f"/api/v1/suites/{sid}/checks", json=_freshness_payload(config={}))
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "check_config_invalid"
+
+
+def test_create_volume_with_inverted_range_rejected(client: TestClient, db_session: Any) -> None:
+    sid = _suite_id(client, db_session, conn_type="snowflake")
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks",
+        json=_volume_payload(config={"min_rows": 5000, "max_rows": 1000}),
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "check_config_invalid"
+
+
+def test_create_monitor_on_flatfile_datasource_rejected(
+    client: TestClient, db_session: Any
+) -> None:
+    # Monitors run a scalar SQL aggregate → SQL datasources only, like custom-SQL.
+    sid = _suite_id(client, db_session, conn_type="s3")
+    resp = client.post(f"/api/v1/suites/{sid}/checks", json=_volume_payload())
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "check_config_invalid"
+
+
+def test_update_volume_monitor_to_inverted_range_rejected(
+    client: TestClient, db_session: Any
+) -> None:
+    sid = _suite_id(client, db_session, conn_type="snowflake")
+    created = client.post(f"/api/v1/suites/{sid}/checks", json=_volume_payload())
+    check_id = created.json()["id"]
+    resp = client.patch(
+        f"/api/v1/suites/{sid}/checks/{check_id}",
+        json={"config": {"min_rows": 9, "max_rows": 1}},
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "check_config_invalid"
 
 
 # ───────────────────────── read / list ─────────────────────────────

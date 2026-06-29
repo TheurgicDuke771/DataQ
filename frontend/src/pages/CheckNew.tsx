@@ -16,9 +16,10 @@ import {
 import { Page } from '../components/layout/Page';
 import { useAsyncData } from '../hooks/useAsyncData';
 
-// Monitor-kind categories reserved by ADR 0012 — surfaced (disabled) so the
-// roadmap is visible; v1 authors GX expectations only.
-const RESERVED_CATEGORIES = ['Freshness', 'Volume', 'Schema drift'] as const;
+// Monitor-kind categories still reserved by ADR 0012 — surfaced (disabled) so the
+// roadmap is visible. Freshness + Volume are now authorable (real catalog
+// categories, SQL-datasource-gated); Schema drift remains a v1.x auto-monitor.
+const RESERVED_CATEGORIES = ['Schema drift'] as const;
 
 /**
  * Dedicated full-page check authoring flow (GX-Cloud style): pick a category →
@@ -96,20 +97,24 @@ export function CheckNew() {
           {spec.fields.map((field) => (
             <ConfigFieldItem key={field.name} field={field} />
           ))}
-          <SeverityThresholdFields />
+          <SeverityThresholdFields monitor={spec.thresholds} />
           {suiteId && (
             <>
               <Form.Item>
                 <ColumnProfilePanel suiteId={suiteId} target={target} column={column} />
               </Form.Item>
-              <Form.Item>
-                <DryRunPreview
-                  suiteId={suiteId}
-                  expectationType={expectationType}
-                  target={target}
-                  form={form}
-                />
-              </Form.Item>
+              {/* Dry-run previews a GX expectation; monitor kinds run a scalar SQL
+                  aggregate, not GX, so the GX dry-run path doesn't apply. */}
+              {!spec.kind && (
+                <Form.Item>
+                  <DryRunPreview
+                    suiteId={suiteId}
+                    expectationType={expectationType}
+                    target={target}
+                    form={form}
+                  />
+                </Form.Item>
+              )}
             </>
           )}
           <Flex justify="end" gap={8}>

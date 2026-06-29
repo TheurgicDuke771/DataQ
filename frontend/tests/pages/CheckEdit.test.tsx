@@ -100,6 +100,7 @@ describe('CheckEdit', () => {
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
+    // `kind` is immutable on update, so the PATCH omits it.
     expect(mockUpdate).toHaveBeenCalledWith('s1', 'chk1', {
       name: 'amount range v2',
       expectation_type: 'expect_column_values_to_be_between',

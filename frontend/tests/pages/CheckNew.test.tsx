@@ -32,13 +32,16 @@ function renderPage() {
 afterEach(() => vi.clearAllMocks());
 
 describe('CheckNew', () => {
-  it('shows the real categories plus reserved (disabled) ones', () => {
+  it('shows the datasource-agnostic categories plus the reserved (disabled) one', () => {
     renderPage();
     expect(screen.getByText('Column values')).toBeInTheDocument();
     expect(screen.getByText('Table shape')).toBeInTheDocument();
-    // Reserved monitor-kind categories surface as roadmap markers.
-    expect(screen.getByText('Freshness')).toBeInTheDocument();
+    // Schema drift is still a reserved roadmap marker.
     expect(screen.getByText('Schema drift')).toBeInTheDocument();
+    // Freshness/Volume are now real categories, but SQL-datasource-gated — with no
+    // connection loaded here they're hidden (no longer reserved cards either).
+    expect(screen.queryByText('Freshness')).not.toBeInTheDocument();
+    expect(screen.queryByText('Volume')).not.toBeInTheDocument();
   });
 
   it('walks category → expectation → config, creates, and navigates back', async () => {
@@ -60,6 +63,7 @@ describe('CheckNew', () => {
     await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1));
     expect(mockCreate).toHaveBeenCalledWith('s1', {
       name: 'status in set',
+      kind: 'expectation',
       expectation_type: 'expect_column_values_to_be_in_set',
       config: { column: 'status', value_set: ['active', 'closed', 'pending'] },
       warn_threshold: null,

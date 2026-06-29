@@ -62,3 +62,45 @@ describe('expectationsByCategoryFor (custom-SQL datasource gating, ADR 0019)', (
     }
   });
 });
+
+describe('expectationsByCategoryFor (freshness/volume monitor gating, ADR 0012)', () => {
+  it.each<ConnectionType>(['snowflake', 'unity_catalog'])(
+    'offers Freshness + Volume for SQL datasource %s',
+    (type) => {
+      const names = categoryNames(expectationsByCategoryFor(type));
+      expect(names).toContain('Freshness');
+      expect(names).toContain('Volume');
+    },
+  );
+
+  it.each<ConnectionType>(['s3', 'adls_gen2', 'adf', 'airflow'])(
+    'hides monitor categories for non-SQL datasource %s',
+    (type) => {
+      const names = categoryNames(expectationsByCategoryFor(type));
+      expect(names).not.toContain('Freshness');
+      expect(names).not.toContain('Volume');
+    },
+  );
+
+  it('hides monitor categories while the connection type is still unknown', () => {
+    const names = categoryNames(expectationsByCategoryFor(undefined));
+    expect(names).not.toContain('Freshness');
+    expect(names).not.toContain('Volume');
+  });
+
+  it('keeps a monitor category when editing one even if the connection type is unknown', () => {
+    // Edit fallback: a freshness check stays selectable before its connection loads.
+    expect(categoryNames(expectationsByCategoryFor(undefined, 'monitor:freshness'))).toContain(
+      'Freshness',
+    );
+  });
+
+  it('models freshness as kind=freshness requiring a threshold, volume as kind=volume', () => {
+    const byType = Object.fromEntries(EXPECTATION_CATALOG.map((e) => [e.type, e]));
+    expect(byType['monitor:freshness'].kind).toBe('freshness');
+    expect(byType['monitor:freshness'].thresholds?.requireFailOrCritical).toBe(true);
+    expect(byType['monitor:volume'].kind).toBe('volume');
+    // No max bound — a volume spike's deviation-% is unbounded (can exceed 100).
+    expect(byType['monitor:volume'].thresholds?.max).toBeUndefined();
+  });
+});

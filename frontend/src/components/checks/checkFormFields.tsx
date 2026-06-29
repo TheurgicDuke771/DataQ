@@ -4,7 +4,7 @@ import { lazy, Suspense } from 'react';
 
 import { parseList } from './checkForm';
 import { validateCustomSqlQuery } from './customSql';
-import type { ConfigField } from './expectationCatalog';
+import type { ConfigField, MonitorThresholdSpec } from './expectationCatalog';
 
 /**
  * Shared check-form field components, used by both the edit page (`CheckEdit`)
@@ -78,24 +78,55 @@ export function ConfigFieldItem({ field }: { field: ConfigField }) {
   );
 }
 
-/** The optional warn / fail / critical severity-threshold inputs (ADR 0016). */
-export function SeverityThresholdFields() {
+/**
+ * The optional warn / fail / critical severity-threshold inputs (ADR 0016).
+ *
+ * For GX expectations the bands are the unexpected-% (0–100). A `monitor` spec
+ * overrides the help text + bounds (freshness = age-hours, unbounded; volume =
+ * deviation-%, 0–100) and can make a fail/critical threshold **required**
+ * (freshness has no in-config bound, so without one it can never fail — the #426
+ * silent-green guard, also enforced by the backend 422).
+ */
+export function SeverityThresholdFields({ monitor }: { monitor?: MonitorThresholdSpec }) {
+  const required = monitor?.requireFailOrCritical ?? false;
+  const heading = required
+    ? 'Severity thresholds (fail or critical required)'
+    : 'Severity thresholds (optional)';
+  const help =
+    monitor?.help ??
+    'Band the GX unexpected-% to warn / fail / critical (higher = worse). Leave blank for a binary pass/fail.';
+  // "At least one of fail/critical is set" — attached to ONLY the fail field (so a
+  // single error message renders, not one under each), with a dependency on
+  // critical so filling critical clears it.
+  const failOrCriticalRule: Rule = ({ getFieldValue }) => ({
+    validator: () =>
+      !required ||
+      getFieldValue('fail_threshold') != null ||
+      getFieldValue('critical_threshold') != null
+        ? Promise.resolve()
+        : Promise.reject(new Error('Set a fail or critical threshold')),
+  });
   return (
     <>
-      <Divider style={{ margin: '8px 0 16px' }}>Severity thresholds (optional)</Divider>
+      <Divider style={{ margin: '8px 0 16px' }}>{heading}</Divider>
       <Typography.Paragraph type="secondary" style={{ marginTop: -8 }}>
-        Band the GX unexpected-% to warn / fail / critical (higher = worse). Leave blank for a
-        binary pass/fail.
+        {help}
       </Typography.Paragraph>
       <Flex gap={12}>
         <Form.Item name="warn_threshold" label="Warn ≥" style={{ flex: 1 }}>
-          <InputNumber min={0} max={100} style={{ width: '100%' }} />
+          <InputNumber min={0} max={monitor?.max} style={{ width: '100%' }} />
         </Form.Item>
-        <Form.Item name="fail_threshold" label="Fail ≥" style={{ flex: 1 }}>
-          <InputNumber min={0} max={100} style={{ width: '100%' }} />
+        <Form.Item
+          name="fail_threshold"
+          label="Fail ≥"
+          style={{ flex: 1 }}
+          dependencies={['critical_threshold']}
+          rules={required ? [failOrCriticalRule] : []}
+        >
+          <InputNumber min={0} max={monitor?.max} style={{ width: '100%' }} />
         </Form.Item>
         <Form.Item name="critical_threshold" label="Critical ≥" style={{ flex: 1 }}>
-          <InputNumber min={0} max={100} style={{ width: '100%' }} />
+          <InputNumber min={0} max={monitor?.max} style={{ width: '100%' }} />
         </Form.Item>
       </Flex>
     </>

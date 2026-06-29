@@ -29,15 +29,28 @@ from sqlalchemy.orm import Session, selectinload
 
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
+from backend.app.datasources.monitors import (
+    FRESHNESS,
+    MONITOR_KINDS,
+    MonitorConfigError,
+    monitor_expectation_type,
+    validate_monitor_config,
+)
 from backend.app.db.models import Check, CheckVersion, Connection, Result, Run, Suite
-from backend.app.services.custom_sql import is_custom_sql, validate_custom_sql_check
+from backend.app.services.custom_sql import (
+    SQL_QUERYABLE_TYPES,
+    is_custom_sql,
+    validate_custom_sql_check,
+)
 from backend.app.services.suite_service import get_suite
 
 log = get_logger(__name__)
 
-# v1 authors only GX expectations; the other reserved kinds (ADR 0012) are
-# schema-valid but have no runner yet, so CRUD refuses them.
-_V1_SUPPORTED_KINDS = {"expectation"}
+# v1 authors GX expectations + the freshness/volume monitor kinds (ADR 0012,
+# pulled into v1 per the 2026-06-29 amendment). The remaining reserved kinds
+# (schema_drift / anomaly / comparison) are schema-valid but have no runner yet,
+# so CRUD still refuses them.
+_V1_SUPPORTED_KINDS = {"expectation", *MONITOR_KINDS}
 
 
 class CheckNotFoundError(DataQError):
@@ -61,12 +74,72 @@ def _connection_type(session: Session, suite: Suite) -> str:
 
 
 def validate_kind(kind: str) -> None:
-    """Reject a non-`expectation` kind (422). Shared by CRUD and suite import."""
+    """Reject an unsupported check kind (422). Shared by CRUD and suite import.
+
+    v1 supports `expectation` + the freshness/volume monitor kinds; the remaining
+    reserved kinds (ADR 0012) have no runner yet, so authoring one is refused."""
     if kind not in _V1_SUPPORTED_KINDS:
         raise CheckConfigInvalidError(
-            f"check kind {kind!r} is not supported in v1; only 'expectation'",
+            f"check kind {kind!r} is not supported in v1",
             detail={"kind": kind, "supported": sorted(_V1_SUPPORTED_KINDS)},
         )
+
+
+def validate_monitor_check(
+    kind: str,
+    config: dict[str, Any],
+    *,
+    expectation_type: str,
+    connection_type: str,
+    fail_threshold: Decimal | None,
+    critical_threshold: Decimal | None,
+) -> None:
+    """Validate a freshness/volume monitor check at author time (create/update).
+
+    Four gates, each a 422:
+    1. **SQL datasource only** — monitors run a scalar SQL aggregate, so they need a
+       SQL-queryable connection (Snowflake / Unity Catalog), exactly like custom-SQL.
+       A monitor on a flat-file suite would only fail at run time (the runner has no
+       `run_monitors`), so reject it up front.
+    2. **expectation_type matches the kind** — a monitor's type is the canonical
+       ``monitor:<kind>``. The run path keys off `kind`, so a mismatched/junk type
+       would still execute but mislabel every result row (and could smuggle a
+       custom-SQL type past its guardrails) — keep the stored row self-consistent.
+    3. **Config shape** — a valid `column` (freshness) or `min_rows`/`max_rows` range
+       (volume), via the shared `monitors.validate_monitor_config`.
+    4. **Freshness needs a positive threshold** — freshness has no in-config bound, so
+       without a fail/critical age threshold it would always resolve `pass` no matter
+       how stale (the silent-green footgun flagged in the #426 review); a *zero*
+       threshold is the inverse footgun (always fail). Require a positive fail-or-
+       critical threshold so a freshness check bands meaningfully.
+    """
+    if connection_type not in SQL_QUERYABLE_TYPES:
+        raise CheckConfigInvalidError(
+            f"{kind} monitor checks require a SQL datasource, not {connection_type!r}",
+            detail={"connection_type": connection_type, "supported": sorted(SQL_QUERYABLE_TYPES)},
+        )
+    expected_type = monitor_expectation_type(kind)
+    if expectation_type != expected_type:
+        raise CheckConfigInvalidError(
+            f"a {kind} monitor's expectation_type must be {expected_type!r}, not "
+            f"{expectation_type!r}",
+            detail={"kind": kind, "expectation_type": expectation_type},
+        )
+    try:
+        validate_monitor_config(kind, config)
+    except MonitorConfigError as exc:
+        raise CheckConfigInvalidError(str(exc), detail={"kind": kind, "config": config}) from exc
+    if kind == FRESHNESS and not _has_positive_threshold(fail_threshold, critical_threshold):
+        raise CheckConfigInvalidError(
+            "a freshness monitor needs a positive fail or critical age threshold (hours) — "
+            "without one it can never fail (no threshold) or always fails (zero)",
+            detail={"kind": kind},
+        )
+
+
+def _has_positive_threshold(fail: Decimal | None, critical: Decimal | None) -> bool:
+    """Whether a fail or critical threshold is set to a positive value."""
+    return (fail is not None and fail > 0) or (critical is not None and critical > 0)
 
 
 def record_check_version(
@@ -122,7 +195,16 @@ def create_check(
     """
     suite = get_suite(session, suite_id)  # 404 if the suite is missing
     validate_kind(kind)
-    if is_custom_sql(expectation_type):
+    if kind in MONITOR_KINDS:
+        validate_monitor_check(
+            kind,
+            config,
+            expectation_type=expectation_type,
+            connection_type=_connection_type(session, suite),
+            fail_threshold=fail_threshold,
+            critical_threshold=critical_threshold,
+        )
+    elif is_custom_sql(expectation_type):
         validate_custom_sql_check(
             expectation_type=expectation_type,
             config=config,
@@ -198,10 +280,21 @@ def update_check(
         check.fail_threshold = fail_threshold
     if critical_threshold is not None:
         check.critical_threshold = critical_threshold
-    # Re-validate against the post-patch state: a PATCH may change only the query
-    # (config) or only the type, so guard the effective custom-SQL check before
-    # commit (a rejected update persists nothing).
-    if is_custom_sql(check.expectation_type):
+    # Re-validate against the post-patch state: a PATCH may change only the config
+    # or only a threshold, so guard the effective check before commit (a rejected
+    # update persists nothing). `kind` is immutable on update, so it's read off the
+    # existing check.
+    if check.kind in MONITOR_KINDS:
+        suite = get_suite(session, suite_id)
+        validate_monitor_check(
+            check.kind,
+            check.config,
+            expectation_type=check.expectation_type,
+            connection_type=_connection_type(session, suite),
+            fail_threshold=check.fail_threshold,
+            critical_threshold=check.critical_threshold,
+        )
+    elif is_custom_sql(check.expectation_type):
         suite = get_suite(session, suite_id)
         validate_custom_sql_check(
             expectation_type=check.expectation_type,

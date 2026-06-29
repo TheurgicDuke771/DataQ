@@ -38,6 +38,16 @@ MONITOR_KINDS = (FRESHNESS, VOLUME)
 # monitors aren't GX); `monitor:<kind>` keeps it self-describing on the result row.
 _EXPECTATION_PREFIX = "monitor:"
 
+
+def monitor_expectation_type(kind: str) -> str:
+    """The canonical ``expectation_type`` for a monitor kind — ``monitor:<kind>``.
+
+    The single source of truth shared by the run path (stamps it on result rows),
+    the author path (asserts the stored check's type matches its kind), and the
+    frontend catalog — so the kind↔type pairing can't drift."""
+    return f"{_EXPECTATION_PREFIX}{kind}"
+
+
 # SQL identifier we're willing to interpolate into the aggregate. Monitor config is
 # user-authored, so the column/table/schema must be validated before they touch a
 # query string (no bound-param slot for an identifier). Snowflake/Databricks
@@ -145,6 +155,25 @@ def _volume_bounds(config: dict[str, Any]) -> tuple[int, int]:
     if min_rows < 0 or max_rows < min_rows:
         raise MonitorConfigError(f"volume range must be 0 <= min_rows <= max_rows: {config!r}")
     return min_rows, max_rows
+
+
+def validate_monitor_config(kind: str, config: dict[str, Any]) -> None:
+    """Static (DB-free) validation of a monitor check's ``config`` — the *structural*
+    checks that don't need a live query: a valid ``column`` identifier (freshness) or
+    a well-formed ``min_rows``/``max_rows`` range (volume). Raises
+    :class:`MonitorConfigError` on a bad/missing config or unknown kind.
+
+    Shared by the **check-authoring** path (reject a malformed monitor at create/update
+    time with a 422, not silently at the next run) and implicitly by the run path
+    (`build_monitor_sql`/`monitor_outcome` re-derive the same checks). This is only the
+    config-shape gate; threshold policy (e.g. freshness *requires* a threshold) and the
+    SQL-datasource gate live in the service layer, which owns the Check + connection."""
+    if kind == FRESHNESS:
+        _ident(config.get("column"), what="freshness column")
+    elif kind == VOLUME:
+        _volume_bounds(config)
+    else:
+        raise MonitorConfigError(f"unknown monitor kind: {kind!r}")
 
 
 def monitor_outcome(
