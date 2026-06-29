@@ -15,6 +15,7 @@ import uuid
 from urllib.parse import urlparse
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.app.core.config import get_settings
@@ -111,9 +112,23 @@ def upsert_config(
         assert_allowed_webhook(webhook)
     config = get_config(session, suite_id)
     if config is None:
-        config = SuiteNotification(suite_id=suite_id, enabled=enabled, alert_on=alert_on)
-        session.add(config)
-        session.flush()  # assign id for the secret_ref below
+        try:
+            # SAVEPOINT so a concurrent first-write losing the unique race
+            # (uq_suite_notifications_suite_id) rolls back just this insert, not the
+            # whole transaction. flush() assigns the id for the secret_ref below and
+            # surfaces the conflict here.
+            with session.begin_nested():
+                config = SuiteNotification(suite_id=suite_id, enabled=enabled, alert_on=alert_on)
+                session.add(config)
+                session.flush()
+        except IntegrityError:
+            # A concurrent request won the insert — update its row instead of
+            # 500-ing on the unique violation (#384).
+            config = get_config(session, suite_id)
+            if config is None:  # pragma: no cover — the winner's row must exist post-rollback
+                raise
+            config.enabled = enabled
+            config.alert_on = alert_on
     else:
         config.enabled = enabled
         config.alert_on = alert_on

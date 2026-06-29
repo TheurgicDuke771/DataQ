@@ -10,9 +10,10 @@ import uuid
 from typing import Any
 
 import pytest
+from sqlalchemy import select
 
 from backend.app.core.secrets import SecretNotFoundError
-from backend.app.db.models import Connection, Suite, User
+from backend.app.db.models import Connection, Suite, SuiteNotification, User
 from backend.app.services import notification_service as svc
 from backend.app.services.notification_service import (
     InvalidAlertPolicyError,
@@ -84,6 +85,46 @@ def test_upsert_creates_then_updates(db_session: Any) -> None:
     assert updated.id == created.id  # same row (upsert)
     assert updated.enabled is False
     assert updated.alert_on == "always"
+
+
+def test_upsert_recovers_from_concurrent_first_write_race(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # #384: a concurrent first-write wins the unique (uq_suite_notifications_suite_id)
+    # race. Simulate it — a stale read sees no row, the INSERT then hits the
+    # constraint, and upsert must fall back to updating the winner's row, not raise
+    # IntegrityError (→ 500).
+    suite = _suite(db_session)
+    winner = SuiteNotification(suite_id=suite.id, enabled=False, alert_on="warn")
+    db_session.add(winner)
+    db_session.flush()
+
+    real_get = svc.get_config
+    seen = {"n": 0}
+
+    def stale_then_real(session: Any, suite_id: Any) -> Any:
+        # First read (in upsert) returns None to drive the INSERT path; the
+        # post-conflict re-fetch returns the real winner row.
+        seen["n"] += 1
+        return None if seen["n"] == 1 else real_get(session, suite_id)
+
+    monkeypatch.setattr(svc, "get_config", stale_then_real)
+
+    result = svc.upsert_config(
+        db_session,
+        suite_id=suite.id,
+        enabled=True,
+        alert_on="fail",
+        webhook=None,
+        secret_store=_FakeStore(),
+    )
+
+    assert result.enabled is True  # the winner's row was updated, no exception
+    assert result.alert_on == "fail"
+    rows = db_session.scalars(
+        select(SuiteNotification).where(SuiteNotification.suite_id == suite.id)
+    ).all()
+    assert len(rows) == 1  # no duplicate row inserted
 
 
 def test_upsert_writes_webhook_through_secret_store(db_session: Any) -> None:
