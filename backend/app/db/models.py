@@ -313,6 +313,18 @@ class Run(Base):
         _in_check("status", RUN_STATUSES, "status_valid"),
         Index("ix_runs_suite_id", "suite_id"),
         Index("ix_runs_status", "status"),
+        # Trigger-dedup race guard (#308): one suite run per orchestration
+        # pipeline-run event. Partial — orchestration markers only
+        # (`<provider>:<pipeline>:<run_id>`); manual/probe/schedule markers
+        # legitimately repeat. Predicate mirrors the migration + the service's
+        # ON CONFLICT (orchestration_service._ORCH_TRIGGER_PREDICATE).
+        Index(
+            "uq_runs_suite_triggered_by",
+            "suite_id",
+            "triggered_by",
+            unique=True,
+            postgresql_where=text("triggered_by LIKE 'adf:%' OR triggered_by LIKE 'airflow:%'"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = _uuid_pk()
