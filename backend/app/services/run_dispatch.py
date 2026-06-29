@@ -45,16 +45,19 @@ def dispatch_run(run_id: uuid.UUID) -> str:
     return str(result.id)
 
 
-def mark_dispatch_failed(run: Run) -> None:
+def mark_dispatch_failed(run: Run, *, at: datetime | None = None) -> None:
     """The canonical terminal-failed shape for a broker/dispatch failure.
 
     One definition shared by every trigger path (probe, manual run, pipeline
-    success) so a never-dispatched run is recorded identically everywhere:
-    ``failed`` with ``finished_at`` set and ``started_at`` left as-is (NULL — it
-    never started), keeping run-history / duration views consistent (#227).
+    success) — and the stuck-run reaper (#309) — so a run that never completed is
+    recorded identically everywhere: ``failed`` with ``finished_at`` set and
+    ``started_at`` left as-is (NULL for a run that never started — or its real
+    start for one the worker died mid-execution), keeping run-history / duration
+    views consistent (#227). ``at`` lets a batch caller (the reaper) stamp one
+    shared moment across many runs; defaults to now.
     """
     run.status = "failed"
-    run.finished_at = datetime.now(UTC)
+    run.finished_at = at or datetime.now(UTC)
 
 
 def dispatch_or_fail(session: Session, run: Run, **log_context: str) -> bool:

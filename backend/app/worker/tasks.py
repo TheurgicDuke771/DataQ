@@ -384,17 +384,15 @@ def reap_stuck_runs() -> int:
     A run committed ``queued`` before its task was published — or left ``running``
     by a worker that died mid-execution — would otherwise linger forever (gap
     recovery only covers ``pipeline_runs``). The reaper drives such runs, stuck
-    past ``stuck_run_threshold_minutes``, to terminal ``failed``, then publishes
-    each one's operational-failure alert (best-effort, never raises — same
-    contract as ``run_suite``) so the user sees it and can re-run. Returns the
-    count reaped.
+    past ``stuck_run_threshold_minutes``, to terminal ``failed`` so they surface in
+    the runs table / dashboard and the user can re-run. No alert is published — see
+    ``run_service.reap_stuck_runs`` for why (a reaped run is an infra/liveness
+    event, and alerting a slow-but-alive run would be an irreversible false alarm).
+    Returns the count reaped.
     """
     session = get_session()
     try:
         threshold = get_settings().stuck_run_threshold_minutes
-        reaped = run_service.reap_stuck_runs(session, threshold_minutes=threshold)
-        for run in reaped:
-            alert_dispatch.publish_run_outcome(session, run_id=run.id)
-        return len(reaped)
+        return len(run_service.reap_stuck_runs(session, threshold_minutes=threshold))
     finally:
         session.close()
