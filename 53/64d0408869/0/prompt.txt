@@ -223,3 +223,7 @@ tell me how to generate the slack webhook, and for email lets go with option a [
 ---
 
 read it from - /Users/arijit/Desktop/cred.txt
+
+---
+
+I logged in as Olivia [screenshot above], I can validate it.
