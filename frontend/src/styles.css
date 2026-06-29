@@ -7,7 +7,8 @@
 :root {
   --dq-primary: #4f46e5; /* indigo-600 — accents, focus ring */
   --dq-primary-soft: #c7d2fe;
-  --dq-selected-bg: #eef0fe;
+  --dq-selected-bg: #eef0fe; /* the "selected" fill (nav / active row) */
+  --dq-row-hover: rgba(79, 70, 229, 0.04); /* a fainter hover tint, distinct from selected */
   --dq-canvas: #f4f5f7;
   --dq-border: #e6e8eb;
   --dq-ink: #1f2430;
@@ -45,13 +46,15 @@ body {
 }
 
 /* ── Focus ring ────────────────────────────────────────────────────────────
-   A consistent 2px indigo ring on keyboard focus only (`:focus-visible`, so a
-   mouse click doesn't draw it). Offset so it sits just outside the element.
-   Accessibility (design 'Focus' guideline): keyboard users always see where
-   they are, even on elements whose antd focus style is subtle. */
-/* No border-radius here — modern browsers already round the outline to follow
-   each element's own radius (button 8, card 12); forcing one would square them. */
-:focus-visible {
+   A 2px indigo ring on keyboard focus only (`:focus-visible`, so a mouse click
+   doesn't draw it), offset just outside the element. Scoped to links and our
+   custom clickable surfaces — antd form controls / buttons already draw their
+   own (primary-coloured) focus ring, so a global rule would double-ring them.
+   No border-radius here — browsers round the outline to each element's own
+   radius automatically (design 'Focus' guideline). */
+a:focus-visible,
+.dq-card--interactive:focus-visible,
+.dq-suite-row:focus-visible {
   outline: 2px solid var(--dq-primary);
   outline-offset: 2px;
 }
@@ -85,14 +88,18 @@ body {
   transition: background var(--dq-motion-fast) var(--dq-ease);
 }
 .dq-suite-row:hover {
-  background: var(--dq-selected-bg);
+  /* A fainter tint than --dq-selected-bg so "hovering" stays visually distinct
+     from "selected" (the prior 4% indigo, now tokenised). */
+  background: var(--dq-row-hover);
 }
 
 /* Buttons get the same 0.5px press nudge — a tactile confirmation of the click.
    No `transition` declared on `.ant-btn`: that would clobber antd's own button
    transition (CSS `transition` isn't additive) and make hover colour changes
-   snap. A 0.5px nudge is imperceptible enough to apply instantly on press. */
-.ant-btn:active {
+   snap. A 0.5px nudge is imperceptible enough to apply instantly on press.
+   Excludes loading buttons (loading ≠ disabled in antd — pointer-events stay
+   on) so an in-flight action doesn't bounce and read as still-clickable. */
+.ant-btn:not(.ant-btn-loading):active {
   transform: translateY(0.5px);
 }
 
@@ -106,7 +113,7 @@ body {
   }
   .dq-card--interactive:hover,
   .dq-card--interactive:active,
-  .ant-btn:active {
+  .ant-btn:not(.ant-btn-loading):active {
     transform: none;
   }
 }
