@@ -62,8 +62,12 @@ def _should_send(report: RunReport, policy: str) -> bool:
     """
     if policy == ALWAYS:
         return True
-    if report.run_status == "failed" and report.worst_severity is None:
-        return True  # operational failure — alert regardless of threshold
+    if report.run_status == "failed":
+        # Operational failure always alerts, regardless of threshold — including a
+        # failed run carrying only warn-tier rows, which `fail` would otherwise gate
+        # out on severity (#383). Matches the docstring's "operational run failure
+        # always alerts".
+        return True
     worst = report.worst_severity
     if worst is None:
         return False  # clean run
