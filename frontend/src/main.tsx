@@ -10,6 +10,16 @@ import { MsalProvider } from './auth/MsalProvider';
 import { getMsalInstance } from './auth/msalInstance';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { appTheme } from './theme';
+// Self-hosted fonts (visual-fidelity pass, ADR 0022) — Inter for UI text,
+// JetBrains Mono for code/SQL/identifiers. Bundled via @fontsource (no external
+// CDN fetch, clears pnpm audit), only the weights the design uses. Imported
+// before styles.css so the @font-face rules register ahead of our overrides.
+import '@fontsource/inter/400.css';
+import '@fontsource/inter/500.css';
+import '@fontsource/inter/600.css';
+import '@fontsource/inter/700.css';
+import '@fontsource/jetbrains-mono/400.css';
+import '@fontsource/jetbrains-mono/500.css';
 import './styles.css';
 
 const maybeRoot = document.getElementById('root');

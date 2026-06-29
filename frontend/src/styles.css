@@ -1,3 +1,28 @@
+/* ── Design tokens (visual-fidelity pass, ADR 0022) ────────────────────────
+   Semantic CSS custom properties mirroring the `BRAND` palette in theme.ts.
+   The app's antd theme reads the JS `BRAND`; these are the CSS-layer twin so
+   raw CSS rules below (focus ring, elevation, motion) key off the same names.
+   Keeping them semantic means a post-v1 dark theme can override this one block
+   (e.g. `:root[data-theme='dark']`) and the whole CSS layer inherits for free. */
+:root {
+  --dq-primary: #4f46e5; /* indigo-600 — accents, focus ring */
+  --dq-primary-soft: #c7d2fe;
+  --dq-selected-bg: #eef0fe;
+  --dq-canvas: #f4f5f7;
+  --dq-border: #e6e8eb;
+  --dq-ink: #1f2430;
+
+  /* Elevation — resting + interactive-hover (depth without heavy borders). */
+  --dq-shadow-rest: 0 1px 3px rgba(16, 24, 40, 0.06);
+  --dq-shadow-hover: 0 8px 20px rgba(16, 24, 40, 0.1);
+
+  /* Motion — 120–180ms eases on bg/border/shadow; a 0.5px press nudge. The
+     base ease matches antd's standard motion curve so ours don't read foreign. */
+  --dq-ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --dq-motion-fast: 120ms;
+  --dq-motion-base: 160ms;
+}
+
 html,
 body,
 #root {
@@ -19,39 +44,71 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Gentle resting elevation so white cards lift off the gray canvas rather than
-   reading as flat panels — depth without the heavy stock-antd borders. */
+/* ── Focus ring ────────────────────────────────────────────────────────────
+   A consistent 2px indigo ring on keyboard focus only (`:focus-visible`, so a
+   mouse click doesn't draw it). Offset so it sits just outside the element.
+   Accessibility (design 'Focus' guideline): keyboard users always see where
+   they are, even on elements whose antd focus style is subtle. */
+/* No border-radius here — modern browsers already round the outline to follow
+   each element's own radius (button 8, card 12); forcing one would square them. */
+:focus-visible {
+  outline: 2px solid var(--dq-primary);
+  outline-offset: 2px;
+}
+
+/* ── Elevation + motion on cards ───────────────────────────────────────────
+   Gentle resting elevation so white cards lift off the gray canvas rather than
+   reading as flat panels. */
 .ant-card {
-  box-shadow: 0 1px 3px rgba(16, 24, 40, 0.06);
+  box-shadow: var(--dq-shadow-rest);
 }
 
 /* Interactive cards (e.g. a connection) lift and deepen their shadow on hover,
    with a short ease so it feels responsive, not animated-for-its-own-sake. */
 .dq-card--interactive {
   transition:
-    box-shadow 0.18s ease,
-    transform 0.18s ease;
+    box-shadow var(--dq-motion-base) var(--dq-ease),
+    transform var(--dq-motion-base) var(--dq-ease);
 }
 .dq-card--interactive:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 20px rgba(16, 24, 40, 0.1);
+  box-shadow: var(--dq-shadow-hover);
 }
-
-/* Respect users who prefer reduced motion — keep the elevation, drop the move. */
-@media (prefers-reduced-motion: reduce) {
-  .dq-card--interactive {
-    transition: box-shadow 0.18s ease;
-  }
-  .dq-card--interactive:hover {
-    transform: none;
-  }
+/* A small press nudge on click closes the loop between hover-lift and action. */
+.dq-card--interactive:active {
+  transform: translateY(0.5px);
 }
 
 /* Clickable suite list rows get a hover tint so they read as interactive (the
    card grid lifts; the rows can't lift, so a subtle background does the job). */
 .dq-suite-row {
-  transition: background 0.15s ease;
+  transition: background var(--dq-motion-fast) var(--dq-ease);
 }
 .dq-suite-row:hover {
-  background: rgba(79, 70, 229, 0.04);
+  background: var(--dq-selected-bg);
+}
+
+/* Buttons get the same 0.5px press nudge — a tactile confirmation of the click,
+   under the standard motion curve. */
+.ant-btn {
+  transition: transform var(--dq-motion-fast) var(--dq-ease);
+}
+.ant-btn:active {
+  transform: translateY(0.5px);
+}
+
+/* ── Reduced motion ────────────────────────────────────────────────────────
+   Respect users who prefer reduced motion — keep the elevation/tint, drop every
+   transform and transition so nothing slides or nudges. */
+@media (prefers-reduced-motion: reduce) {
+  .dq-card--interactive,
+  .dq-suite-row,
+  .ant-btn {
+    transition: none;
+  }
+  .dq-card--interactive:hover,
+  .dq-card--interactive:active,
+  .ant-btn:active {
+    transform: none;
+  }
 }
