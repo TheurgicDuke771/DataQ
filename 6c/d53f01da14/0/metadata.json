@@ -1,0 +1,39 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "6cd53f01da14",
+  "session_id": "9ee5a2c3-1ab5-41a4-8d59-50ed8cf55869",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-29T21:29:25.650832Z",
+  "branch": "chore/betterleaks-incremental-scan",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "_leaktest.txt"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "2a4ea12856a1",
+  "checkpoint_transcript_start": 778,
+  "transcript_lines_at_start": 778,
+  "token_usage": {
+    "input_tokens": 3776,
+    "cache_creation_tokens": 7660,
+    "cache_read_tokens": 1046035,
+    "output_tokens": 3953,
+    "api_call_count": 3
+  },
+  "session_metrics": {
+    "turn_count": 8
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-29T21:29:25.627239Z",
+    "agent_lines": 1,
+    "agent_removed": 1,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 1,
+    "total_lines_changed": 2,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}

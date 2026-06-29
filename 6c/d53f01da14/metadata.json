@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "6cd53f01da14",
+  "strategy": "manual-commit",
+  "branch": "chore/betterleaks-incremental-scan",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "_leaktest.txt"
+  ],
+  "sessions": [
+    {
+      "metadata": "/6c/d53f01da14/0/metadata.json",
+      "transcript": "/6c/d53f01da14/0/full.jsonl",
+      "content_hash": "/6c/d53f01da14/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 3776,
+    "cache_creation_tokens": 7660,
+    "cache_read_tokens": 1046035,
+    "output_tokens": 3953,
+    "api_call_count": 3
+  }
+}
