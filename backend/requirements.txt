@@ -25,7 +25,7 @@ croniter==6.2.2                   # cron-expression parsing for suite run schedu
 
 # ── Database ──
 sqlalchemy==2.0.51
-alembic==1.18.4
+alembic==1.18.5
 psycopg2-binary==2.9.12           # swap for psycopg2 in the production image
 
 # ── Config / validation ──
