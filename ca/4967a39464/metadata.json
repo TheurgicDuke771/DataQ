@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "ca4967a39464",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-423-runs-table-check-outcome",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/ca/4967a39464/0/metadata.json",
+      "transcript": "/ca/4967a39464/0/full.jsonl",
+      "content_hash": "/ca/4967a39464/0/content_hash.txt",
+      "prompt": "/ca/4967a39464/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 244705,
+    "cache_creation_tokens": 6977660,
+    "cache_read_tokens": 558773764,
+    "output_tokens": 1684097,
+    "api_call_count": 1433
+  }
+}
