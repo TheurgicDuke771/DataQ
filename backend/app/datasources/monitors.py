@@ -147,6 +147,25 @@ def _volume_bounds(config: dict[str, Any]) -> tuple[int, int]:
     return min_rows, max_rows
 
 
+def validate_monitor_config(kind: str, config: dict[str, Any]) -> None:
+    """Static (DB-free) validation of a monitor check's ``config`` — the *structural*
+    checks that don't need a live query: a valid ``column`` identifier (freshness) or
+    a well-formed ``min_rows``/``max_rows`` range (volume). Raises
+    :class:`MonitorConfigError` on a bad/missing config or unknown kind.
+
+    Shared by the **check-authoring** path (reject a malformed monitor at create/update
+    time with a 422, not silently at the next run) and implicitly by the run path
+    (`build_monitor_sql`/`monitor_outcome` re-derive the same checks). This is only the
+    config-shape gate; threshold policy (e.g. freshness *requires* a threshold) and the
+    SQL-datasource gate live in the service layer, which owns the Check + connection."""
+    if kind == FRESHNESS:
+        _ident(config.get("column"), what="freshness column")
+    elif kind == VOLUME:
+        _volume_bounds(config)
+    else:
+        raise MonitorConfigError(f"unknown monitor kind: {kind!r}")
+
+
 def monitor_outcome(
     kind: str, *, scalar: Any, config: dict[str, Any], now: datetime
 ) -> CheckOutcome:
