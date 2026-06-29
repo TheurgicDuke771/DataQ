@@ -21,10 +21,11 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.auth import get_current_user
-from backend.app.db.models import User
+from backend.app.db.models import Check, User
 from backend.app.db.session import get_db
 from backend.app.services import orchestration_service, run_dispatch
 from backend.app.services import run_service as svc
@@ -137,12 +138,19 @@ def list_runs(
     return [RunRead.model_validate(r) for r in runs]
 
 
-def _result_read(result: Any) -> ResultRead:
+def _result_read(
+    result: Any,
+    *,
+    tested_column: str | None = None,
+    policy: dict[str, Any] | None = None,
+) -> ResultRead:
     """Map a `Result` ORM row to `ResultRead`, redacting `sample_failures`.
 
     Built field-by-field rather than via `model_validate(from_attributes)` so the
     raw, PII-bearing `sample_failures` can never be auto-copied onto the wire —
-    redaction is the only path it can take out of here (#226)."""
+    redaction is the only path it can take out of here (#226). ``tested_column`` +
+    the suite ``policy`` drive column-aware redaction (#415): a non-PII tested
+    column's failing values surface; PII stays masked."""
     return ResultRead(
         id=result.id,
         check_id=result.check_id,
@@ -151,7 +159,9 @@ def _result_read(result: Any) -> ResultRead:
         duration_ms=result.duration_ms,
         observed_value=result.observed_value,
         expected_value=result.expected_value,
-        sample_failures=svc.redact_sample_failures(result.sample_failures),
+        sample_failures=svc.redact_sample_failures(
+            result.sample_failures, tested_column=tested_column, policy=policy
+        ),
     )
 
 
@@ -166,14 +176,27 @@ def get_run(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="run not found")
     # Gate on the run's suite: a caller who can't see the suite can't see its
     # runs (404 hides the run id too, matching the suite existence-hiding rule).
-    require_permission(db, run.suite_id, current_user.id, minimum="view")
+    suite = require_permission(db, run.suite_id, current_user.id, minimum="view")
     results = svc.list_results(db, run_id)
+    # Map check_id → tested column so each result's sample is redacted column-aware
+    # against the suite's policy (#415): a non-PII tested column's values surface.
+    checks = {c.id: c for c in db.scalars(select(Check).where(Check.suite_id == run.suite_id))}
+    policy = suite.column_policy
     # `Run` has no `results` relationship to validate a RunDetailRead from
     # directly, so validate the run fields (as RunRead) and graft the
     # separately-fetched, redaction-gated results on.
     return RunDetailRead(
         **RunRead.model_validate(run).model_dump(),
-        results=[_result_read(r) for r in results],
+        results=[
+            _result_read(
+                r,
+                tested_column=(
+                    checks[r.check_id].config.get("column") if r.check_id in checks else None
+                ),
+                policy=policy,
+            )
+            for r in results
+        ],
     )
 
 

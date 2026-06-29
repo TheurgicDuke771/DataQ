@@ -370,37 +370,116 @@ def _redact_sample_value(value: Any) -> Any:
     return _REDACTED_VALUE
 
 
-def redact_sample_failures(sample: dict[str, Any] | None) -> dict[str, Any] | None:
+# Column-name tokens that mark a column as PII for sample redaction — the
+# name-heuristic layer below datasource classification/tags (#415). A column
+# matches if its name *contains* any token (so `customer_email`, `home_address`
+# match). The authoritative layers (warehouse classification, the suite policy's
+# explicit `pii_columns`) sit above this; unclassified columns still default-mask.
+_PII_COLUMN_TOKENS = frozenset(
+    {
+        "email",
+        "phone",
+        "mobile",
+        "ssn",
+        "passport",
+        "name",
+        "address",
+        "street",
+        "city",
+        "zip",
+        "postal",
+        "dob",
+        "birth",
+        "credit",
+        "card",
+        "iban",
+        "account_number",
+    }
+)
+
+
+def _is_pii_column(column: str, policy: dict[str, Any] | None) -> bool:
+    """Whether a column must be masked in a sample: explicitly in the suite
+    policy's ``pii_columns``, or matched by the column-name heuristic."""
+    name = column.strip().lower()
+    if policy:
+        listed = {str(c).strip().lower() for c in (policy.get("pii_columns") or [])}
+        if name in listed:
+            return True
+    return any(token in name for token in _PII_COLUMN_TOKENS)
+
+
+def _safe_sample_columns(tested_column: str | None, policy: dict[str, Any] | None) -> set[str]:
+    """Columns whose raw values may be surfaced in a sample: the tested column +
+    the suite policy's identifier column, each only if **not** PII (policy
+    ``pii_columns`` / name heuristic). Empty when nothing is classified → the
+    blanket mask (default-redact, so security never regresses)."""
+    safe: set[str] = set()
+    if tested_column and not _is_pii_column(tested_column, policy):
+        safe.add(tested_column)
+    identifier = (policy or {}).get("identifier_column")
+    if identifier and not _is_pii_column(str(identifier), policy):
+        safe.add(str(identifier))
+    return safe
+
+
+def _redact_row(row: Any, safe_columns: set[str]) -> Any:
+    """Mask a failing-row dict per-column: **default-redact** — a column's value
+    is kept only when it's in ``safe_columns`` (the identifier + tested column),
+    every other column (PII or unclassified) is masked. Non-dict rows fall back to
+    full masking."""
+    if not isinstance(row, dict):
+        return _redact_sample_value(row)
+    return {
+        col: (val if str(col) in safe_columns else _redact_sample_value(val))
+        for col, val in row.items()
+    }
+
+
+def redact_sample_failures(
+    sample: dict[str, Any] | None,
+    *,
+    tested_column: str | None = None,
+    policy: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
     """Redact a result's `sample_failures` for safe surfacing on the read API.
 
     `sample_failures` carries aggregate counts plus `partial_unexpected_list` —
-    the actual failing cell values, which can be PII. Suite-level ``view`` authz
-    lets share-recipients read a suite's results, so the raw rows must not cross
-    that boundary unredacted (CLAUDE.md PII rule; the column is redactor-only
-    everywhere else and is purged on the retention sweep below).
+    the failing values of the **tested column** — and (when a future runner records
+    it) an `unexpected_index_list` of failing rows. Suite-level ``view`` authz lets
+    share-recipients read a suite's results, so PII must not cross that boundary
+    unredacted (CLAUDE.md PII rule; purged on the retention sweep below).
 
-    Policy: keep the numeric summary keys; mask every value in the rest,
-    preserving shape (list length, row-dict column names) so the drill-down shows
-    *how much* failed without leaking *what*. ``None`` (passing / errored /
-    purged results) passes through unchanged. A future opt-in could surface raw
-    rows to privileged viewers — that policy seam lives at this one call site.
+    Column-aware policy (#415) — surgical, not blanket:
+    * numeric summary keys (`unexpected_count` / `unexpected_percent`) always pass;
+    * `partial_unexpected_list` (the tested column's failing values) passes when
+      ``tested_column`` is **not** PII — per the suite ``policy.pii_columns`` or the
+      name heuristic — so a non-PII breach (e.g. a bad ``LINE_TOTAL``) is finally
+      *visible*, while a PII tested column (``email``) stays masked;
+    * `unexpected_index_list` row-dicts are masked **per column** (identifier +
+      non-PII shown, PII masked);
+    * everything else default-masks (unclassified → redacted, so security can't
+      regress).
 
-    This redacts by *value* (mask everything except an allowlist), not by *key*
-    like the structlog redactor (``core.logging._PII_KEYS``): a failing sample is
-    arbitrary table columns whose PII-ness can't be enumerated as key names ahead
-    of time, so masking only known-PII keys would leak any un-enumerated column.
-    Do not "harmonise" this toward the key-based approach.
-
-    A safe key is passed through only when its value is actually a scalar number —
-    the boundary trusts value *shape*, not just the key name — so a future runner
-    that ever stowed row data under one of those keys can't bypass redaction.
+    With neither ``tested_column`` nor ``policy`` the legacy **blanket mask** is
+    kept (the safe default for callers that don't know the column) — only the
+    summary keys survive. ``None`` sample passes through unchanged.
     """
     if not sample:
         return None
-    return {
-        key: (value if _is_safe_summary(key, value) else _redact_sample_value(value))
-        for key, value in sample.items()
-    }
+    safe = _safe_sample_columns(tested_column, policy)
+    show_tested = tested_column is not None and tested_column in safe
+    out: dict[str, Any] = {}
+    for key, value in sample.items():
+        if _is_safe_summary(key, value):
+            out[key] = value
+        elif key == "partial_unexpected_list" and show_tested:
+            out[key] = value  # the tested column's failing values — non-PII, surfaced
+        elif key == "unexpected_index_list" and isinstance(value, list):
+            out[key] = [_redact_row(row, safe) for row in value]
+        else:
+            out[key] = _redact_sample_value(value)
+    return out
 
 
 def _is_safe_summary(key: str, value: Any) -> bool:

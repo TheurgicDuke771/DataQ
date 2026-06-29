@@ -428,6 +428,55 @@ def test_redact_sample_failures_masks_unknown_keys_and_nested_values() -> None:
     assert out == {"unexpected_index_list": [{"row": {"name": "<redacted>"}}]}
 
 
+# ── column-aware redaction (#415) ─────────────────────────────────────────────
+
+
+def test_redact_surfaces_non_pii_tested_column_values() -> None:
+    # The whole point: a non-PII tested column's failing values are now shown.
+    out = run_service.redact_sample_failures(
+        {"unexpected_count": 2, "partial_unexpected_list": [-12.5, -5.0]},
+        tested_column="LINE_TOTAL",
+    )
+    assert out == {"unexpected_count": 2, "partial_unexpected_list": [-12.5, -5.0]}
+
+
+def test_redact_masks_pii_tested_column_by_name_heuristic() -> None:
+    # A PII-looking tested column stays masked even when it's the tested column.
+    out = run_service.redact_sample_failures(
+        {"partial_unexpected_list": ["a@x.com", "b@y.com"]},
+        tested_column="CUSTOMER_EMAIL",
+    )
+    assert out == {"partial_unexpected_list": ["<redacted>", "<redacted>"]}
+
+
+def test_redact_masks_tested_column_listed_in_policy_pii() -> None:
+    # An explicit policy PII list masks a column the heuristic wouldn't catch.
+    out = run_service.redact_sample_failures(
+        {"partial_unexpected_list": [42, 43]},
+        tested_column="SALARY",
+        policy={"pii_columns": ["SALARY"]},
+    )
+    assert out == {"partial_unexpected_list": ["<redacted>", "<redacted>"]}
+
+
+def test_redact_index_list_shows_identifier_and_tested_masks_rest() -> None:
+    # Row-dicts: identifier + tested column shown, PII + unclassified masked.
+    out = run_service.redact_sample_failures(
+        {
+            "unexpected_index_list": [
+                {"ORDER_NUMBER": "ORD-1041", "LINE_TOTAL": -12.5, "EMAIL": "a@x.com"},
+            ]
+        },
+        tested_column="LINE_TOTAL",
+        policy={"identifier_column": "ORDER_NUMBER"},
+    )
+    assert out == {
+        "unexpected_index_list": [
+            {"ORDER_NUMBER": "ORD-1041", "LINE_TOTAL": -12.5, "EMAIL": "<redacted>"},
+        ]
+    }
+
+
 def test_redact_sample_failures_masks_non_numeric_value_under_safe_key() -> None:
     # The safe-key passthrough trusts value *shape*: a non-number under a safe key
     # (a hypothetical future runner stowing row data there) must still be masked.

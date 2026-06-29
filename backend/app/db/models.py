@@ -201,6 +201,16 @@ class Suite(Base):
     # resolved per connection type to the runner's (table, schema, catalog) by
     # `services.run_target.resolve_target`. NULL = targetless = not yet runnable.
     target: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    # Column-redaction policy for failing-row samples (#415): which columns may be
+    # shown vs masked when surfacing `Result.sample_failures`. Shape:
+    # `{"identifier_column": str, "pii_columns": [str]}` — the identifier is always
+    # shown (so a failing row is locatable; must be non-PII) and `pii_columns` are
+    # always masked; unclassified columns still default-redact (security can't
+    # regress). NULL = no policy → the blanket-mask fallback. Suite-level for v1
+    # (a suite targets one table); shaped to promote to a connection/column catalog
+    # later. Auto-derivable from datasource classification/tags + name heuristics;
+    # this column stores the resolved/overridden policy.
+    column_policy: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     created_by: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
     )

@@ -80,8 +80,13 @@ def build_run_report(session: Session, run: Run) -> RunReport:
                 ),
                 observed_value=result.observed_value,
                 expected_value=result.expected_value,
-                # Redaction policy at the seam: counts only, never raw rows.
-                sample_summary=run_service.redact_sample_failures(result.sample_failures),
+                # Column-aware redaction (#415): the tested column's failing values
+                # surface when non-PII; the suite policy + heuristics mask PII.
+                sample_summary=run_service.redact_sample_failures(
+                    result.sample_failures,
+                    tested_column=(check.config.get("column") if check is not None else None),
+                    policy=suite.column_policy if suite is not None else None,
+                ),
             )
         )
 
