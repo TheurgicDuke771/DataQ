@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "c49b5cca591e",
+  "strategy": "manual-commit",
+  "branch": "feature/slack-email-alerting",
+  "checkpoints_count": 7,
+  "files_touched": [
+    "backend/app/core/config.py",
+    "deploy/terraform/containerapps.tf"
+  ],
+  "sessions": [
+    {
+      "metadata": "/c4/9b5cca591e/0/metadata.json",
+      "transcript": "/c4/9b5cca591e/0/full.jsonl",
+      "content_hash": "/c4/9b5cca591e/0/content_hash.txt",
+      "prompt": "/c4/9b5cca591e/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 157885,
+    "cache_creation_tokens": 3624218,
+    "cache_read_tokens": 375276159,
+    "output_tokens": 1252745,
+    "api_call_count": 1059
+  }
+}
