@@ -56,6 +56,12 @@ The mechanism that finally discharges the standing **"live warehouse/file run �
 | **QA/QE agent** — test the DataQ framework module-by-module + E2E (new Claude Code subagent, like `migration-safety`) | repo (`.claude/agents/`) — Week 8 / ongoing | ⬜ |
 | **HashiCorp Vault** secret-management spike — second `SecretStore` impl, validates the ADR 0010/0013 seam (Key Vault = one impl) | post-v1 / backlog | ⬜ |
 
+### Deferred to post-v1 (design captured, not built in v1)
+
+| Theme | Where the design lives | Status |
+|---|---|---|
+| **Admin / access model / UI & IA** — workspace-admin workspace-wide view (#411), admin write actions (#412), Settings/Profile IA, reusable notification channels. Intentionally **not** built in v1: single-tenant doesn't warrant an RBAC console — kept minimal, aim the foundations at the DQ loop instead. | [docs/post-v1-admin-ui-notes.md](post-v1-admin-ui-notes.md) + #411 / #412 (Backlog milestone) | 🔵 |
+
 ---
 
 ## Week 1 — Foundation, auth & project scaffold
