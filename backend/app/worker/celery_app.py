@@ -82,6 +82,15 @@ def create_celery_app() -> Celery:
                 "task": "purge_sample_failures",
                 "schedule": 86400.0,  # 24 hours
             },
+            # Stuck-run reaper (#309): every 10 min, fail runs orphaned in a
+            # non-terminal state past `stuck_run_threshold_minutes` (a run committed
+            # `queued` before `send_task`, or left `running` by a dead worker). The
+            # detection threshold (default 60 min) far exceeds the 10-min cadence, so
+            # the sweep interval only bounds detection latency, not false reaps.
+            "reap-stuck-runs": {
+                "task": "reap_stuck_runs",
+                "schedule": 600.0,  # 10 minutes
+            },
         },
     )
     # Register task modules on worker boot (looks for backend.app.worker.tasks).

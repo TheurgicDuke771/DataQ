@@ -633,3 +633,55 @@ def purge_expired_sample_failures(
         cutoff=cutoff.isoformat(),
     )
     return purged
+
+
+def reap_stuck_runs(
+    session: Session, *, threshold_minutes: int, now: datetime | None = None
+) -> list[Run]:
+    """Drive runs stuck in a non-terminal state past ``threshold_minutes`` to ``failed``.
+
+    Closes the orphan window (#309): a run is committed ``queued`` *before*
+    ``run_dispatch`` publishes its task, so a process death in that window — or a
+    worker that died mid-execution leaving a run ``running`` — would otherwise leave
+    the row non-terminal forever (gap recovery only covers ``pipeline_runs``).
+
+    The reaper **fails** stuck runs rather than re-dispatching them: a ``queued``
+    run with no ``celery_task_id`` does *not* prove the task was never published —
+    ``dispatch_run`` commits the id in a second, non-atomic step, so the task may
+    already be in the broker (see its no-2-phase-commit note). Re-dispatching could
+    double-run; failing is safe and visible (the user re-runs manually), matching
+    the canonical ``mark_dispatch_failed`` shape used by every trigger path.
+
+    Staleness is measured from ``COALESCE(started_at, created_at)`` so an actively-
+    running run that *started* recently isn't reaped on the strength of an old
+    ``created_at``. The threshold must exceed the longest plausible run; a rare
+    false reap self-corrects (a still-alive worker overwrites the status with its
+    real outcome on completion). ``threshold_minutes <= 0`` disables the sweep.
+    Returns the reaped runs (the caller publishes their operational-failure alerts).
+    """
+    if threshold_minutes <= 0:
+        return []
+    moment = now or _now()
+    cutoff = moment - timedelta(minutes=threshold_minutes)
+    reference = func.coalesce(Run.started_at, Run.created_at)
+    stuck = list(
+        session.scalars(
+            select(Run).where(Run.status.in_(("queued", "running")), reference < cutoff)
+        )
+    )
+    for run in stuck:
+        # Canonical terminal-failed shape (mirrors run_dispatch.mark_dispatch_failed):
+        # status=failed + finished_at set; started_at left as-is (NULL for a run
+        # that never started → consistent run-history / duration views).
+        run.status = "failed"
+        run.finished_at = moment
+    if stuck:
+        session.commit()
+        log.warning(
+            "stuck_runs_reaped",
+            count=len(stuck),
+            threshold_minutes=threshold_minutes,
+            cutoff=cutoff.isoformat(),
+            run_ids=[str(run.id) for run in stuck],
+        )
+    return stuck
