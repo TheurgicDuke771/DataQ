@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "326745fcfd67",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-308-trigger-dedup-race",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/alembic/versions/d4e5f6a7b8c9_add_runs_trigger_dedup_index.py",
+    "backend/app/db/models.py",
+    "backend/app/services/orchestration_service.py",
+    "backend/tests/services/test_orchestration_service.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/32/6745fcfd67/0/metadata.json",
+      "transcript": "/32/6745fcfd67/0/full.jsonl",
+      "content_hash": "/32/6745fcfd67/0/content_hash.txt",
+      "prompt": "/32/6745fcfd67/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 10945,
+    "cache_creation_tokens": 120652,
+    "cache_read_tokens": 7024132,
+    "output_tokens": 39284,
+    "api_call_count": 70
+  }
+}
