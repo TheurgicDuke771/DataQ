@@ -88,11 +88,10 @@ body {
   background: var(--dq-selected-bg);
 }
 
-/* Buttons get the same 0.5px press nudge — a tactile confirmation of the click,
-   under the standard motion curve. */
-.ant-btn {
-  transition: transform var(--dq-motion-fast) var(--dq-ease);
-}
+/* Buttons get the same 0.5px press nudge — a tactile confirmation of the click.
+   No `transition` declared on `.ant-btn`: that would clobber antd's own button
+   transition (CSS `transition` isn't additive) and make hover colour changes
+   snap. A 0.5px nudge is imperceptible enough to apply instantly on press. */
 .ant-btn:active {
   transform: translateY(0.5px);
 }
@@ -102,8 +101,7 @@ body {
    transform and transition so nothing slides or nudges. */
 @media (prefers-reduced-motion: reduce) {
   .dq-card--interactive,
-  .dq-suite-row,
-  .ant-btn {
+  .dq-suite-row {
     transition: none;
   }
   .dq-card--interactive:hover,
