@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "f54dd23b8fd1",
+  "strategy": "manual-commit",
+  "branch": "feature/monitor-authoring",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/datasources/monitors.py",
+    "backend/app/services/check_service.py",
+    "backend/app/services/suite_io_service.py",
+    "backend/tests/api/test_checks.py",
+    "frontend/src/components/checks/expectationCatalog.ts",
+    "frontend/src/pages/CheckEdit.tsx",
+    "frontend/tests/components/expectationCatalog.test.ts",
+    "frontend/tests/pages/CheckEdit.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f5/4dd23b8fd1/0/metadata.json",
+      "transcript": "/f5/4dd23b8fd1/0/full.jsonl",
+      "content_hash": "/f5/4dd23b8fd1/0/content_hash.txt",
+      "prompt": "/f5/4dd23b8fd1/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 360672,
+    "cache_creation_tokens": 9172349,
+    "cache_read_tokens": 723072932,
+    "output_tokens": 2035413,
+    "api_call_count": 1803
+  }
+}
