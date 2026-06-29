@@ -15,7 +15,7 @@ the compose worker.
 
 import json
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 from backend.app.core.logging import (
     configure_logging,
@@ -40,7 +40,7 @@ def _find_event(captured_out: str, event: str) -> dict[str, Any] | None:
         except ValueError:
             continue
         if record.get("event") == event:
-            return record
+            return cast(dict[str, Any], record)
     return None
 
 

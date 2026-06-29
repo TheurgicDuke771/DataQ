@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 from backend.app.alerting import builder
 from backend.app.alerting.base import CheckReport, RunReport
@@ -78,14 +78,17 @@ def test_worst_severity_none_when_clean_or_operational() -> None:
 
 
 def test_target_label_prefers_path_then_dotted() -> None:
-    assert builder._target_label(_FakeSuite({"path": "abfss://c/landing/x.csv"})) == (
+    assert builder._target_label(cast(Suite, _FakeSuite({"path": "abfss://c/landing/x.csv"}))) == (
         "abfss://c/landing/x.csv"
     )
     assert (
-        builder._target_label(_FakeSuite({"catalog": "C", "schema": "S", "table": "T"})) == "C.S.T"
+        builder._target_label(
+            cast(Suite, _FakeSuite({"catalog": "C", "schema": "S", "table": "T"}))
+        )
+        == "C.S.T"
     )
-    assert builder._target_label(_FakeSuite({"schema": "S", "table": "T"})) == "S.T"
-    assert builder._target_label(_FakeSuite(None)) == "(no target)"
+    assert builder._target_label(cast(Suite, _FakeSuite({"schema": "S", "table": "T"}))) == "S.T"
+    assert builder._target_label(cast(Suite, _FakeSuite(None))) == "(no target)"
     assert builder._target_label(None) == "(no target)"
 
 

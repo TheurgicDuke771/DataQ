@@ -70,7 +70,7 @@ def test_redacts_nested_pii_keys() -> None:
             },
         }
     )
-    assert out["headers"] == {  # type: ignore[comparison-overlap]
+    assert out["headers"] == {
         "authorization": "<redacted>",
         "x-request-id": "safe-value",
     }
@@ -135,7 +135,7 @@ class _FakeAzureLogHandler(std_logging.Handler):
         super().__init__()  # stdlib __init__ calls self.createLock() -> nulls it
 
     def createLock(self) -> None:
-        self.lock = None  # type: ignore[assignment]  # mirrors opencensus's override
+        self.lock = None  # mirrors opencensus's override
 
 
 def test_azure_handler_lock_survives_createlock_recall(

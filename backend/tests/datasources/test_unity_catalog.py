@@ -140,8 +140,11 @@ from backend.app.datasources.unity_catalog import (  # noqa: E402
 
 
 class _FakeStore:
-    def get(self, ref: str) -> str:
+    def get(self, name: str) -> str:
         return "pat-token"
+
+    def set(self, name: str, value: str) -> None:  # read-only test double
+        raise NotImplementedError
 
 
 def test_build_databricks_url_encodes_parts() -> None:

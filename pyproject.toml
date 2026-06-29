@@ -74,6 +74,10 @@ module = [
     "croniter",
 ]
 ignore_missing_imports = true
+# These third-party libs expose public API via internal modules without an explicit
+# __all__ (e.g. great_expectations.expectations.ExpectColumnValuesToNotBeNull), so
+# strict mode's no-implicit-reexport would flag legitimate imports/attribute access.
+implicit_reexport = true
 
 # pyarrow ships a partial py.typed, so when it's installed (dev env) mypy flags
 # its untyped calls (e.g. ParquetFile), but it's absent from the slim CI

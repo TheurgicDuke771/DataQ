@@ -7,6 +7,7 @@ SQL for inspection), SQL result assembly (`assemble_profile`), and the flat-file
 """
 
 import math
+from collections.abc import Mapping
 from typing import Any
 
 import pandas as pd
@@ -190,7 +191,9 @@ def test_assemble_computes_null_fraction_and_maps_top_values() -> None:
         "min_0": 1,
         "max_0": 9,
     }
-    top_values = {"amount": [{"value": 9, "freq": 40}, {"value": 1, "freq": 35}]}
+    top_values: dict[str, list[Mapping[str, Any]]] = {
+        "amount": [{"value": 9, "freq": 40}, {"value": 1, "freq": 35}]
+    }
     profile = assemble_profile(
         table="orders",
         schema="public",
@@ -307,8 +310,11 @@ def test_profile_dataframe_coerces_timestamps_to_iso() -> None:
 
 
 class _FakeStore:
-    def get(self, ref: str) -> str:
+    def get(self, name: str) -> str:
         return "secret"
+
+    def set(self, name: str, value: str) -> None:  # read-only test double
+        raise NotImplementedError
 
 
 def _flatfile_conn() -> Any:

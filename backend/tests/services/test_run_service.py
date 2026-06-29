@@ -8,6 +8,9 @@ under test independent of Postgres and Snowflake.
 
 import uuid
 from decimal import Decimal
+from typing import cast
+
+from sqlalchemy.orm import Session
 
 from backend.app.datasources.base import CheckOutcome, CheckSpec, SuiteOutcome
 from backend.app.db.models import Check, Result, Run
@@ -44,6 +47,13 @@ class FakeSession:
     def refresh(self, obj: object) -> None:
         if self._refresh_status is not None:
             obj.status = self._refresh_status  # type: ignore[attr-defined]
+
+
+def _sess(session: FakeSession) -> Session:
+    """Type a ``FakeSession`` test double as ``Session`` for the service signatures
+    (the tests still hold the ``FakeSession`` ref for their `.added`/`.commits`
+    assertions; only the call arg is cast)."""
+    return cast(Session, session)
 
 
 class FakeRunner:
@@ -104,7 +114,7 @@ def test_successful_run_persists_results_and_marks_succeeded() -> None:
     runner = FakeRunner(outcome=outcome)
 
     result = run_service.execute_run(
-        session, run=run, checks=checks, runner=runner, table="ORDERS", schema="FIN"
+        _sess(session), run=run, checks=checks, runner=runner, table="ORDERS", schema="FIN"
     )
 
     assert result is run
@@ -128,7 +138,7 @@ def test_results_link_to_run_and_check_ids() -> None:
     checks = _checks(1)
     runner = FakeRunner(SuiteOutcome(success=True, checks=[CheckOutcome("x", success=True)]))
 
-    run_service.execute_run(session, run=run, checks=checks, runner=runner, table="T")
+    run_service.execute_run(_sess(session), run=run, checks=checks, runner=runner, table="T")
 
     (row,) = session.added
     assert row.run_id == run.id
@@ -153,7 +163,7 @@ def test_nan_in_sample_failures_is_sanitised_before_persist() -> None:
         )
     )
 
-    run_service.execute_run(session, run=_run(), checks=_checks(1), runner=runner, table="T")
+    run_service.execute_run(_sess(session), run=_run(), checks=_checks(1), runner=runner, table="T")
 
     (row,) = session.added
     assert row.sample_failures == {"partial_unexpected_list": [None, 2.0]}
@@ -167,7 +177,9 @@ def test_runner_exception_marks_failed_and_persists_no_results() -> None:
     run = _run()
     runner = FakeRunner(raises=RuntimeError("cannot reach warehouse"))
 
-    result = run_service.execute_run(session, run=run, checks=_checks(2), runner=runner, table="T")
+    result = run_service.execute_run(
+        _sess(session), run=run, checks=_checks(2), runner=runner, table="T"
+    )
 
     assert result.status == "failed"
     assert run.finished_at is not None
@@ -181,7 +193,9 @@ def test_persistence_failure_marks_failed_not_stuck_running() -> None:
     run = _run()
     runner = FakeRunner(SuiteOutcome(success=True, checks=[CheckOutcome("x", success=True)]))
 
-    result = run_service.execute_run(session, run=run, checks=_checks(1), runner=runner, table="T")
+    result = run_service.execute_run(
+        _sess(session), run=run, checks=_checks(1), runner=runner, table="T"
+    )
 
     assert result.status == "failed"
     assert run.finished_at is not None
@@ -193,7 +207,7 @@ def test_outcome_count_mismatch_marks_failed() -> None:
     session = FakeSession()
     runner = FakeRunner(SuiteOutcome(success=True, checks=[CheckOutcome("x", success=True)]))
 
-    run_service.execute_run(session, run=_run(), checks=_checks(3), runner=runner, table="T")
+    run_service.execute_run(_sess(session), run=_run(), checks=_checks(3), runner=runner, table="T")
 
     assert session.added == []
 
@@ -203,7 +217,7 @@ def test_empty_run_still_succeeds() -> None:
     run = _run()
     runner = FakeRunner(SuiteOutcome(success=True, checks=[]))
 
-    run_service.execute_run(session, run=run, checks=[], runner=runner, table="T")
+    run_service.execute_run(_sess(session), run=run, checks=[], runner=runner, table="T")
 
     assert run.status == "succeeded"
     assert session.added == []
@@ -230,7 +244,7 @@ def test_thresholds_derive_tier_and_persist_metric() -> None:
         checks=[CheckOutcome("x", success=False, sample_failures={"unexpected_percent": 7.5})],
     )
     run_service.execute_run(
-        session, run=run, checks=[check], runner=FakeRunner(outcome=outcome), table="T"
+        _sess(session), run=run, checks=[check], runner=FakeRunner(outcome=outcome), table="T"
     )
 
     persisted = session.added[0]
@@ -259,7 +273,7 @@ def test_errored_check_maps_to_error_status_without_failing_siblings() -> None:
     )
 
     result = run_service.execute_run(
-        session, run=run, checks=checks, runner=FakeRunner(outcome=outcome), table="T"
+        _sess(session), run=run, checks=checks, runner=FakeRunner(outcome=outcome), table="T"
     )
 
     assert result.status == "succeeded"  # an errored check doesn't fail the run
@@ -290,7 +304,7 @@ def test_errored_check_with_thresholds_is_still_error_not_banded() -> None:
     outcome = SuiteOutcome(success=False, checks=[CheckOutcome("x", success=False, errored=True)])
 
     run_service.execute_run(
-        session, run=run, checks=[check], runner=FakeRunner(outcome=outcome), table="T"
+        _sess(session), run=run, checks=[check], runner=FakeRunner(outcome=outcome), table="T"
     )
 
     persisted = session.added[0]
@@ -306,7 +320,7 @@ def test_skip_run_marks_all_checks_skip_and_run_succeeded() -> None:
     run = _run()
     checks = _checks(3)
 
-    result = run_service.skip_run(session, run=run, checks=checks, reason="batch_not_found")
+    result = run_service.skip_run(_sess(session), run=run, checks=checks, reason="batch_not_found")
 
     assert result.status == "succeeded"
     assert run.started_at is not None and run.finished_at is not None
@@ -326,7 +340,7 @@ def test_cancel_during_execution_keeps_cancelled_and_persists_no_results() -> No
     outcome = SuiteOutcome(success=True, checks=[CheckOutcome("x", success=True)])
 
     result = run_service.execute_run(
-        session, run=run, checks=checks, runner=FakeRunner(outcome=outcome), table="T"
+        _sess(session), run=run, checks=checks, runner=FakeRunner(outcome=outcome), table="T"
     )
 
     assert result.status == "cancelled"  # not 'succeeded' — cancel wins
@@ -341,7 +355,9 @@ def test_cancel_during_execution_that_also_errors_stays_cancelled() -> None:
     run = _run()
     runner = FakeRunner(raises=RuntimeError("warehouse dropped mid-run"))
 
-    result = run_service.execute_run(session, run=run, checks=_checks(1), runner=runner, table="T")
+    result = run_service.execute_run(
+        _sess(session), run=run, checks=_checks(1), runner=runner, table="T"
+    )
 
     assert result.status == "cancelled"  # not 'failed'
     assert session.added == []
@@ -363,7 +379,9 @@ def test_non_expectation_kind_fails_run_without_invoking_runner() -> None:
     )
     runner = FakeRunner(SuiteOutcome(success=True, checks=[]))
 
-    result = run_service.execute_run(session, run=run, checks=[freshness], runner=runner, table="T")
+    result = run_service.execute_run(
+        _sess(session), run=run, checks=[freshness], runner=runner, table="T"
+    )
 
     assert result.status == "failed"  # NotImplementedError → terminal 'failed'
     assert runner.called_with is None  # dispatch short-circuited before the adapter

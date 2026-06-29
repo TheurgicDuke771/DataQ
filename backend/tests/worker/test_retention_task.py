@@ -8,6 +8,7 @@ session.
 
 from typing import Any
 
+from backend.app.services import run_service
 from backend.app.worker import tasks
 
 
@@ -33,7 +34,7 @@ def test_purge_task_passes_configured_retention_and_closes_session(monkeypatch: 
         captured["retention_days"] = retention_days
         return 7
 
-    monkeypatch.setattr(tasks.run_service, "purge_expired_sample_failures", _capture)
+    monkeypatch.setattr(run_service, "purge_expired_sample_failures", _capture)
 
     assert tasks.purge_sample_failures() == 7
     assert captured["session"] is session

@@ -6,6 +6,7 @@ binary fallback when no thresholds or no metric).
 """
 
 from decimal import Decimal
+from typing import Any
 
 import pytest
 
@@ -13,7 +14,7 @@ from backend.app.datasources.base import CheckOutcome
 from backend.app.services.severity import derive_status, extract_metric
 
 
-def _outcome(sample: dict | None) -> CheckOutcome:
+def _outcome(sample: dict[str, Any] | None) -> CheckOutcome:
     return CheckOutcome(expectation_type="x", success=False, sample_failures=sample)
 
 
@@ -44,7 +45,9 @@ def test_extract_metric_is_exact_decimal_from_float() -> None:
         {"unexpected_percent": "nan?"},
     ],
 )
-def test_extract_metric_returns_none_when_absent_or_unparseable(sample: dict | None) -> None:
+def test_extract_metric_returns_none_when_absent_or_unparseable(
+    sample: dict[str, Any] | None,
+) -> None:
     assert extract_metric(_outcome(sample)) is None
 
 

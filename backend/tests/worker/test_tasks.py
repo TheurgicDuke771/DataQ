@@ -7,12 +7,15 @@ item (Postgres test fixtures).
 """
 
 import uuid
-from typing import Any
+from typing import Any, cast
 
 import pytest
+from sqlalchemy.orm import Session
 
 from backend.app.datasources.base import CheckOutcome, CheckSpec, SuiteOutcome
+from backend.app.datasources.flatfile import BatchNotFoundError
 from backend.app.db.models import Check, Connection, Run, Suite
+from backend.app.services import run_target
 from backend.app.worker import tasks
 
 
@@ -53,6 +56,12 @@ class FakeSession:
 
     def close(self) -> None:
         self.closed = True
+
+
+def _sess(session: FakeSession) -> Session:
+    """Type a ``FakeSession`` test double as ``Session`` for ``_run_suite``'s
+    signature (tests keep the ``FakeSession`` ref for `.added`/`.closed` asserts)."""
+    return cast(Session, session)
 
 
 class FakeRunner:
@@ -116,7 +125,7 @@ def test_run_suite_executes_and_persists(monkeypatch: pytest.MonkeyPatch) -> Non
     )
     monkeypatch.setattr(tasks, "build_check_runner", lambda **_kw: runner)
 
-    status = tasks._run_suite(session, run_id=run.id)
+    status = tasks._run_suite(_sess(session), run_id=run.id)
 
     assert status == "succeeded"
     assert run.status == "succeeded"
@@ -147,7 +156,7 @@ def test_run_suite_unity_catalog_threads_target_catalog(monkeypatch: pytest.Monk
 
     monkeypatch.setattr(tasks, "build_check_runner", _capture)
 
-    status = tasks._run_suite(session, run_id=run.id)
+    status = tasks._run_suite(_sess(session), run_id=run.id)
 
     assert status == "succeeded"
     assert captured["conn_type"] == "unity_catalog"
@@ -161,14 +170,14 @@ def test_run_suite_unity_catalog_threads_target_catalog(monkeypatch: pytest.Monk
 
 def test_run_suite_missing_run_returns_not_found() -> None:
     session = FakeSession(run=None)
-    status = tasks._run_suite(session, run_id=uuid.uuid4())
+    status = tasks._run_suite(_sess(session), run_id=uuid.uuid4())
     assert status == "not_found"
 
 
 def test_run_suite_missing_connection_marks_failed() -> None:
     run, suite, _conn, checks = _graph(1)
     session = FakeSession(run=run, suite=suite, connection=None, checks=checks)
-    status = tasks._run_suite(session, run_id=run.id)
+    status = tasks._run_suite(_sess(session), run_id=run.id)
     assert status == "failed"
     assert run.status == "failed"
     assert run.finished_at is not None
@@ -184,7 +193,7 @@ def test_run_suite_runner_build_failure_marks_failed(monkeypatch: pytest.MonkeyP
 
     monkeypatch.setattr(tasks, "build_check_runner", _boom)
 
-    status = tasks._run_suite(session, run_id=run.id)
+    status = tasks._run_suite(_sess(session), run_id=run.id)
     assert status == "failed"
     assert run.status == "failed"
 
@@ -197,7 +206,7 @@ def test_run_suite_invalid_connection_config_marks_failed() -> None:
     session = FakeSession(run=run, suite=suite, connection=connection, checks=checks)
     # build_check_runner is NOT monkeypatched here — real SnowflakeConfig
     # validation runs and raises, exercising the task's setup-failure handling.
-    status = tasks._run_suite(session, run_id=run.id)
+    status = tasks._run_suite(_sess(session), run_id=run.id)
     assert status == "failed"
     assert run.status == "failed"
 
@@ -208,7 +217,7 @@ def test_run_suite_targetless_suite_marks_failed() -> None:
     run, suite, connection, checks = _graph(1)
     suite.target = None
     session = FakeSession(run=run, suite=suite, connection=connection, checks=checks)
-    status = tasks._run_suite(session, run_id=run.id)
+    status = tasks._run_suite(_sess(session), run_id=run.id)
     assert status == "failed"
     assert run.status == "failed"
     assert session.added == []  # never reached execution
@@ -230,7 +239,7 @@ def test_run_suite_already_cancelled_skips_execution(monkeypatch: pytest.MonkeyP
 
     monkeypatch.setattr(tasks, "build_check_runner", _should_not_run)
 
-    status = tasks._run_suite(session, run_id=run.id)
+    status = tasks._run_suite(_sess(session), run_id=run.id)
     assert status == "cancelled"
     assert run.status == "cancelled"
     assert called is False
@@ -260,10 +269,10 @@ def test_run_suite_batch_target_materialized_to_path(monkeypatch: pytest.MonkeyP
     )
     monkeypatch.setattr(tasks, "build_check_runner", lambda **_kw: runner)
     monkeypatch.setattr(
-        tasks.run_target, "materialize_path", lambda *a, **k: "orders/orders_20260601.csv"
+        run_target, "materialize_path", lambda *a, **k: "orders/orders_20260601.csv"
     )
 
-    status = tasks._run_suite(session, run_id=run.id)
+    status = tasks._run_suite(_sess(session), run_id=run.id)
 
     assert status == "succeeded"
     assert runner.table == "orders/orders_20260601.csv"  # ran against the resolved batch file
@@ -280,11 +289,11 @@ def test_run_suite_missing_batch_skips_without_running(monkeypatch: pytest.Monke
     monkeypatch.setattr(tasks, "build_check_runner", lambda **_kw: runner)
 
     def _missing(*_a: Any, **_k: Any) -> str:
-        raise tasks.BatchNotFoundError("no files matched")
+        raise BatchNotFoundError("no files matched")
 
-    monkeypatch.setattr(tasks.run_target, "materialize_path", _missing)
+    monkeypatch.setattr(run_target, "materialize_path", _missing)
 
-    status = tasks._run_suite(session, run_id=run.id)
+    status = tasks._run_suite(_sess(session), run_id=run.id)
 
     assert status == "succeeded"
     assert run.status == "succeeded"
@@ -304,9 +313,9 @@ def test_run_suite_batch_listing_failure_marks_failed(monkeypatch: pytest.Monkey
     def _boom(*_a: Any, **_k: Any) -> str:
         raise RuntimeError("S3 unreachable")
 
-    monkeypatch.setattr(tasks.run_target, "materialize_path", _boom)
+    monkeypatch.setattr(run_target, "materialize_path", _boom)
 
-    status = tasks._run_suite(session, run_id=run.id)
+    status = tasks._run_suite(_sess(session), run_id=run.id)
 
     assert status == "failed"
     assert run.status == "failed"
