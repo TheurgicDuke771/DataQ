@@ -103,6 +103,18 @@ def test_operational_failure_sends_under_every_policy() -> None:
     assert route_for(op, "always").should_send is True
 
 
+def test_failed_run_with_warn_rows_still_alerts_under_fail_policy() -> None:
+    # #383: a run that failed operationally but whose result rows are only
+    # warn-tier must still alert under 'fail' — the operational failure overrides
+    # the severity threshold, not just when worst_severity is None (the prior bug
+    # gated this out because warn < fail).
+    op_warn = _report(worst="warn", run_status="failed")
+    assert route_for(op_warn, "fail").should_send is True
+    assert route_for(op_warn, "warn").should_send is True
+    # contrast: a *succeeded* warn-tier run stays suppressed under 'fail'
+    assert route_for(_report(worst="warn"), "fail").should_send is False
+
+
 def test_urgency_independent_of_policy() -> None:
     # Policy gates whether to send; urgency/mention still come from severity.
     crit = _report(worst="critical")
