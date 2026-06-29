@@ -28,8 +28,9 @@ import great_expectations as gx
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from backend.app.core.secrets import SecretStore
-from backend.app.datasources.base import CheckSpec, SuiteOutcome
+from backend.app.datasources.base import CheckOutcome, CheckSpec, MonitorSpec, SuiteOutcome
 from backend.app.datasources.gx_runner import run_expectations
+from backend.app.datasources.monitors import evaluate_monitors
 
 
 class UnityCatalogConfig(BaseModel):
@@ -165,6 +166,30 @@ class UnityCatalogCheckRunner:
             name="suite-uc",
             batch_parameters={"dataframe": df},
         )
+
+    def run_monitors(
+        self, *, table: str, schema: str | None, monitors: list[MonitorSpec]
+    ) -> list[CheckOutcome]:
+        """Evaluate freshness/volume monitors via scalar SQL aggregates over the SQL
+        Warehouse (no GX / no DataFrame read). The pinned ``catalog`` qualifies the
+        target as ``catalog.schema.table``. A connection failure propagates; a bad
+        monitor errors only itself."""
+        from sqlalchemy import create_engine, text
+
+        engine = create_engine(
+            build_databricks_url(self._config, self._token, catalog=self._catalog)
+        )
+        try:
+            with engine.connect() as conn:
+                return evaluate_monitors(
+                    lambda sql: conn.execute(text(sql)).scalar(),
+                    table=table,
+                    schema=schema,
+                    catalog=self._catalog,
+                    monitors=monitors,
+                )
+        finally:
+            engine.dispose()
 
 
 def build_unity_catalog_runner(

@@ -68,6 +68,20 @@ class CheckOutcome:
 
 
 @dataclass(frozen=True)
+class MonitorSpec:
+    """One monitor to evaluate (freshness/volume, ADR 0012), sourced from a `checks`
+    row whose ``kind`` is a monitor kind. ``config`` is the check's JSONB config
+    (e.g. ``{"column": "loaded_at"}`` / ``{"min_rows": 1000, "max_rows": 5000}``).
+
+    A monitor isn't a GX expectation — it runs a scalar SQL aggregate — so it has its
+    own spec/runner path distinct from `CheckSpec`/`CheckRunner`.
+    """
+
+    kind: str
+    config: dict[str, Any]
+
+
+@dataclass(frozen=True)
 class SuiteOutcome:
     """Aggregate result of running a list of checks against one table."""
 
@@ -86,6 +100,27 @@ class CheckRunner(Protocol):
         schema: str | None,
         checks: list[CheckSpec],
     ) -> SuiteOutcome: ...
+
+
+@runtime_checkable
+class MonitorRunner(Protocol):
+    """A datasource runner that can also evaluate **monitor** kinds (freshness/
+    volume) by running scalar SQL aggregates against the table — the SQL datasources
+    (Snowflake, Unity Catalog) in v1. Flat-file runners don't implement this, so the
+    run path can gate monitor checks to SQL datasources via an ``isinstance`` check.
+
+    One ``CheckOutcome`` per ``MonitorSpec``, in order. A monitor that can't be
+    evaluated (bad column, type mismatch) yields an ``errored`` outcome rather than
+    failing its siblings — mirroring `CheckRunner` semantics.
+    """
+
+    def run_monitors(
+        self,
+        *,
+        table: str,
+        schema: str | None,
+        monitors: list[MonitorSpec],
+    ) -> list[CheckOutcome]: ...
 
 
 @runtime_checkable

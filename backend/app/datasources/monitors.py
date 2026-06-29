@@ -24,10 +24,11 @@ Semantics (locked):
 from __future__ import annotations
 
 import re
-from datetime import datetime
+from collections.abc import Callable
+from datetime import UTC, datetime
 from typing import Any
 
-from backend.app.datasources.base import CheckOutcome
+from backend.app.datasources.base import CheckOutcome, MonitorSpec
 
 FRESHNESS = "freshness"
 VOLUME = "volume"
@@ -165,3 +166,43 @@ def monitor_outcome(
             expected_value={"monitor": VOLUME, "min_rows": min_rows, "max_rows": max_rows},
         )
     raise MonitorConfigError(f"unknown monitor kind: {kind!r}")
+
+
+def evaluate_monitors(
+    fetch_scalar: Callable[[str], Any],
+    *,
+    table: str,
+    schema: str | None,
+    catalog: str | None,
+    monitors: list[MonitorSpec],
+) -> list[CheckOutcome]:
+    """Run a list of monitors over an already-open connection, one ``CheckOutcome``
+    each, in order. ``fetch_scalar`` runs a SQL string and returns its scalar result
+    — the only datasource-specific bit (the runner closes over its connection), so
+    this stays DB-free and unit-testable.
+
+    A monitor that can't be evaluated — bad column/range (config error) or its query
+    raised (e.g. unknown column) — yields an ``errored`` outcome for *that* check
+    only; its siblings still run (mirrors `CheckRunner`'s per-check `error`, #122).
+    Connection *establishment* failure is the runner's concern (it opens the
+    connection before calling this), so that propagates and fails the whole run."""
+    now = datetime.now(UTC)
+    outcomes: list[CheckOutcome] = []
+    for spec in monitors:
+        try:
+            sql = build_monitor_sql(
+                spec.kind, table=table, schema=schema, catalog=catalog, config=spec.config
+            )
+            outcomes.append(
+                monitor_outcome(spec.kind, scalar=fetch_scalar(sql), config=spec.config, now=now)
+            )
+        except Exception as exc:  # one bad monitor errors, never its siblings
+            outcomes.append(
+                CheckOutcome(
+                    expectation_type=f"{_EXPECTATION_PREFIX}{spec.kind}",
+                    success=False,
+                    errored=True,
+                    error_message=str(exc),
+                )
+            )
+    return outcomes

@@ -7,7 +7,13 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from backend.app.datasources import monitors
-from backend.app.datasources.monitors import MonitorConfigError, build_monitor_sql, monitor_outcome
+from backend.app.datasources.base import MonitorSpec
+from backend.app.datasources.monitors import (
+    MonitorConfigError,
+    build_monitor_sql,
+    evaluate_monitors,
+    monitor_outcome,
+)
 
 _NOW = datetime(2026, 6, 29, 12, 0, 0, tzinfo=UTC)
 
@@ -126,3 +132,51 @@ def test_volume_bad_range_raises(config: dict[str, object]) -> None:
 
 def test_monitor_kinds_exposed() -> None:
     assert monitors.MONITOR_KINDS == ("freshness", "volume")
+
+
+# ───────────────────────── evaluate_monitors ────────────────────────
+
+
+def test_evaluate_monitors_runs_each_in_order() -> None:
+    # evaluate_monitors stamps its own `now`, so the freshness timestamp must be
+    # relative to real now (not the fixed _NOW). A fake fetch_scalar keys off the
+    # SQL: MAX(...) → a ~10h-old timestamp, COUNT → a count.
+    def fetch(sql: str) -> object:
+        return datetime.now(UTC) - timedelta(hours=10) if "MAX" in sql else 1500
+
+    specs = [
+        MonitorSpec(kind="freshness", config={"column": "loaded_at"}),
+        MonitorSpec(kind="volume", config={"min_rows": 1000, "max_rows": 2000}),
+    ]
+    out = evaluate_monitors(fetch, table="ORDERS", schema="RETAIL", catalog=None, monitors=specs)
+
+    assert [o.expectation_type for o in out] == ["monitor:freshness", "monitor:volume"]
+    assert out[0].metric_value == pytest.approx(10.0, abs=0.05)  # freshness age-hours
+    assert out[1].metric_value == 0.0  # volume in range
+
+
+def test_evaluate_monitors_isolates_a_bad_config_monitor() -> None:
+    # First monitor has an invalid range (config error); the second still runs.
+    specs = [
+        MonitorSpec(kind="volume", config={"min_rows": 9, "max_rows": 1}),  # max < min
+        MonitorSpec(kind="volume", config={"min_rows": 1000, "max_rows": 2000}),
+    ]
+    out = evaluate_monitors(lambda _sql: 1500, table="T", schema=None, catalog=None, monitors=specs)
+    assert out[0].errored is True
+    assert out[1].errored is False and out[1].metric_value == 0.0
+
+
+def test_evaluate_monitors_isolates_a_query_error() -> None:
+    # A query that raises (e.g. unknown column) errors only that monitor.
+    def fetch(_sql: str) -> object:
+        raise RuntimeError("invalid identifier 'NOPE'")
+
+    out = evaluate_monitors(
+        fetch,
+        table="T",
+        schema=None,
+        catalog=None,
+        monitors=[MonitorSpec(kind="freshness", config={"column": "nope"})],
+    )
+    assert out[0].errored is True
+    assert "invalid identifier" in (out[0].error_message or "")

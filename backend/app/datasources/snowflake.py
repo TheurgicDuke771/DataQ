@@ -25,7 +25,7 @@ from cryptography.hazmat.primitives import serialization
 from pydantic import BaseModel, ConfigDict, Field
 
 from backend.app.core.secrets import SecretStore
-from backend.app.datasources.base import CheckSpec, SuiteOutcome
+from backend.app.datasources.base import CheckOutcome, CheckSpec, MonitorSpec, SuiteOutcome
 
 # GX-translation machinery is shared across runners (see `gx_runner`); re-exported
 # here so existing importers (and tests) keep resolving these from `snowflake`.
@@ -36,6 +36,7 @@ from backend.app.datasources.gx_runner import (
     run_expectations,
     to_suite_outcome,
 )
+from backend.app.datasources.monitors import evaluate_monitors
 
 __all__ = [
     "SnowflakeCheckRunner",
@@ -158,6 +159,30 @@ class SnowflakeCheckRunner:
         return run_expectations(
             context, batch_definition=batch_definition, checks=checks, name=f"suite-{table}"
         )
+
+    def run_monitors(
+        self, *, table: str, schema: str | None, monitors: list[MonitorSpec]
+    ) -> list[CheckOutcome]:
+        """Evaluate freshness/volume monitors via scalar SQL aggregates (no GX).
+
+        Opens one SQLAlchemy connection over the same DSN the GX path uses; Snowflake
+        addresses the target as ``schema.table`` (the database is in the DSN), so no
+        catalog. A connection-level failure (can't reach the warehouse) propagates,
+        failing the run like the GX path; a bad monitor errors only itself."""
+        from sqlalchemy import create_engine, text
+
+        engine = create_engine(self._connection_string, connect_args=self._connect_args or {})
+        try:
+            with engine.connect() as conn:
+                return evaluate_monitors(
+                    lambda sql: conn.execute(text(sql)).scalar(),
+                    table=table,
+                    schema=schema or self._config.schema_,
+                    catalog=None,
+                    monitors=monitors,
+                )
+        finally:
+            engine.dispose()
 
 
 def build_snowflake_runner(
