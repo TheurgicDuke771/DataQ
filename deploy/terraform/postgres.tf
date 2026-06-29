@@ -20,10 +20,12 @@ data "azurerm_postgresql_flexible_server" "shared" {
 
 locals {
   # psycopg2 URL the backend Settings read as DATABASE_URL. sslmode=require —
-  # Flexible Server enforces TLS.
+  # Flexible Server enforces TLS. The password is URL-encoded so a future value
+  # containing URL-significant chars (@ : / ? #) can't break DSN parsing (#395);
+  # app_db_user/name are controlled alnum identifiers, no encoding needed.
   database_url = join("", [
     "postgresql+psycopg2://",
-    var.app_db_user, ":", var.app_db_password,
+    var.app_db_user, ":", urlencode(var.app_db_password),
     "@", data.azurerm_postgresql_flexible_server.shared.fqdn, ":5432/",
     var.app_db_name, "?sslmode=require",
   ])
