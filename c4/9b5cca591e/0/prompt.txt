@@ -219,3 +219,7 @@ Also, I'm not able to create channel in teams [It seems like it is not available
 ---
 
 tell me how to generate the slack webhook, and for email lets go with option a [also tell me how to generate the app password]
+
+---
+
+read it from - /Users/arijit/Desktop/cred.txt
