@@ -98,7 +98,12 @@ class _FakeSuite:
 
 
 def _suite_with_check(
-    db: Any, *, status: str, sample: dict[str, Any] | None = None
+    db: Any,
+    *,
+    status: str,
+    sample: dict[str, Any] | None = None,
+    column: str = "id",
+    column_policy: dict[str, Any] | None = None,
 ) -> tuple[Suite, Run]:
     owner = User(aad_object_id=uuid.uuid4().hex, email=f"u-{uuid.uuid4().hex[:6]}@x.io")
     db.add(owner)
@@ -118,14 +123,15 @@ def _suite_with_check(
         connection_id=conn.id,
         created_by=owner.id,
         target={"schema": "RETAIL", "table": "ORDERS"},
+        column_policy=column_policy,
     )
     db.add(suite)
     db.flush()
     check = Check(
         suite_id=suite.id,
-        name="not-null id",
+        name=f"not-null {column}",
         expectation_type="expect_column_values_to_not_be_null",
-        config={"column": "id"},
+        config={"column": column},
     )
     db.add(check)
     db.flush()
@@ -166,23 +172,61 @@ def test_build_report_maps_check_and_metric(db_session: Any) -> None:
     assert isinstance(only.metric_value, float) and only.metric_value == 12.5
 
 
-def test_build_report_redacts_sample_rows(db_session: Any) -> None:
+def test_build_report_surfaces_non_pii_sample_values(db_session: Any) -> None:
+    # #415: a non-PII tested column's failing values surface (the LINE_TOTAL win) so
+    # an alert/Results viewer sees the actual bad data, not a blanket mask. Aggregates
+    # always pass through.
+    raw = {
+        "unexpected_count": 2,
+        "unexpected_percent": 50.0,
+        "partial_unexpected_list": [999.99, -5.0],
+    }
+    _suite, run = _suite_with_check(db_session, status="critical", sample=raw, column="line_total")
+
+    summary = builder.build_run_report(db_session, run).checks[0].sample_summary
+    assert summary is not None
+    assert summary["unexpected_count"] == 2
+    assert summary["unexpected_percent"] == 50.0
+    assert summary["partial_unexpected_list"] == [999.99, -5.0]
+
+
+def test_build_report_masks_pii_column_by_name(db_session: Any) -> None:
+    # A PII-named tested column (email) stays masked even with no explicit policy —
+    # the name heuristic catches it. Length kept, content gone (no PII leaves).
     raw = {
         "unexpected_count": 2,
         "unexpected_percent": 50.0,
         "partial_unexpected_list": ["alice@secret.com", "bob@secret.com"],
     }
-    _suite, run = _suite_with_check(db_session, status="critical", sample=raw)
+    _suite, run = _suite_with_check(db_session, status="critical", sample=raw, column="email")
 
-    report = builder.build_run_report(db_session, run)
-    summary = report.checks[0].sample_summary
+    summary = builder.build_run_report(db_session, run).checks[0].sample_summary
     assert summary is not None
-    # Aggregate counts survive…
-    assert summary["unexpected_count"] == 2
-    assert summary["unexpected_percent"] == 50.0
-    # …the raw cell values are masked (length kept, content gone — no PII leaves).
+    assert summary["unexpected_count"] == 2  # aggregates still survive
     assert summary["partial_unexpected_list"] == ["<redacted>", "<redacted>"]
     assert "secret.com" not in str(summary)
+
+
+def test_build_report_masks_pii_column_by_policy(db_session: Any) -> None:
+    # A column the suite policy flags as PII is masked even when its name looks
+    # innocuous — the explicit policy sits above the name heuristic.
+    raw = {
+        "unexpected_count": 1,
+        "unexpected_percent": 25.0,
+        "partial_unexpected_list": ["VIP-0001"],
+    }
+    _suite, run = _suite_with_check(
+        db_session,
+        status="fail",
+        sample=raw,
+        column="customer_ref",
+        column_policy={"pii_columns": ["customer_ref"]},
+    )
+
+    summary = builder.build_run_report(db_session, run).checks[0].sample_summary
+    assert summary is not None
+    assert summary["partial_unexpected_list"] == ["<redacted>"]
+    assert "VIP-0001" not in str(summary)
 
 
 def test_build_report_all_pass_is_success(db_session: Any) -> None:
