@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "131c42f817a4",
+  "strategy": "manual-commit",
+  "branch": "chore/typecheck-backend-tests",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".github/workflows/ci.yml",
+    "backend/tests/core/test_logging.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/13/1c42f817a4/0/metadata.json",
+      "transcript": "/13/1c42f817a4/0/full.jsonl",
+      "content_hash": "/13/1c42f817a4/0/content_hash.txt",
+      "prompt": "/13/1c42f817a4/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 233301,
+    "cache_creation_tokens": 6017261,
+    "cache_read_tokens": 498683662,
+    "output_tokens": 1549925,
+    "api_call_count": 1285
+  }
+}
