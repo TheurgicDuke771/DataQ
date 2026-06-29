@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "a7fdd66b8121",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-309-stuck-run-reaper",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/services/run_service.py",
+    "backend/app/worker/tasks.py",
+    "backend/tests/worker/test_reaper_task.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/a7/fdd66b8121/0/metadata.json",
+      "transcript": "/a7/fdd66b8121/0/full.jsonl",
+      "content_hash": "/a7/fdd66b8121/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 29933,
+    "cache_creation_tokens": 234162,
+    "cache_read_tokens": 20613611,
+    "output_tokens": 101866,
+    "api_call_count": 140
+  }
+}
