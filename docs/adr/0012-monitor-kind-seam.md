@@ -4,6 +4,18 @@
 - **Date:** 2026-05-30
 - **Deciders:** @TheurgicDuke771
 
+> **Amendment (2026-06-29, Week 7):** the **freshness** and **volume** monitor
+> kinds — reserved-only below ("do not build them") — are **pulled forward into
+> v1**. The original deferral (post-v1 Theme A) was about *net-new scope vs. the
+> 8-week plan*, not a design objection; with the app deployed against live data
+> (Week 7) and the seam proving out, the two highest-ROI monitors (CLAUDE.md §5:
+> "most real incidents are freshness/volume") are worth shipping now. The seam is
+> unchanged — they ride it exactly as designed (non-GX scalar SQL aggregate →
+> `metric_value`, banded by severity thresholds per ADR 0016). `schema_drift`,
+> `anomaly`, and `comparison` stay reserved. The backend engine lands in PR #426;
+> the check-authoring path (lifting `_V1_SUPPORTED_KINDS` + create-time config
+> validation, incl. **a required freshness threshold**) and editor UI follow.
+
 ## Context
 
 Every v1 check is a Great Expectations expectation (ADR 0003): a value-level

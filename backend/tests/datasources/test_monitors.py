@@ -40,6 +40,13 @@ def test_table_only_qualification() -> None:
     assert sql == "SELECT COUNT(*) FROM ORDERS"
 
 
+def test_catalog_without_schema_is_rejected() -> None:
+    # A catalog with no schema would emit a 2-part `catalog.table` that Databricks
+    # reads as schema.table (wrong object) — reject it as a config error up front.
+    with pytest.raises(MonitorConfigError, match="catalog needs a schema"):
+        build_monitor_sql("volume", table="ORDERS", schema=None, catalog="main", config={})
+
+
 @pytest.mark.parametrize("bad", ["a; DROP TABLE x", "a-b", "1col", "a b", "", "a.b"])
 def test_injection_or_bad_identifiers_are_rejected(bad: str) -> None:
     # column (freshness) and table (any) must be safe identifiers — no bind slot.

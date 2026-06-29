@@ -57,7 +57,18 @@ def _ident(name: object, *, what: str) -> str:
 
 
 def qualified_table(*, table: str, schema: str | None, catalog: str | None) -> str:
-    """A dotted, identifier-validated ``[catalog.][schema.]table`` for a monitor query."""
+    """A dotted, identifier-validated ``[catalog.][schema.]table`` for a monitor query.
+
+    A ``catalog`` with no ``schema`` is rejected: skipping the None ``schema`` would
+    emit a 2-part ``catalog.table``, which Databricks/Unity Catalog resolves as
+    ``schema.table`` (wrong object), not the intended 3-part name. So a catalog
+    requires a schema — a misqualified-name footgun raised as a clear config error
+    rather than a confusing "table not found" at query time."""
+    if catalog is not None and schema is None:
+        raise MonitorConfigError(
+            f"monitor target {table!r} has a catalog but no schema — "
+            "a catalog needs a schema (else catalog.table misresolves as schema.table)"
+        )
     parts = [
         _ident(part, what=label)
         for part, label in ((catalog, "catalog"), (schema, "schema"), (table, "table"))
@@ -161,6 +172,12 @@ def monitor_outcome(
             )
         max_ts = _as_aware_datetime(scalar, column)
         age_hours = _freshness_age_hours(max_ts, now)
+        # NOTE: freshness has no in-config bound (unlike volume's min/max_rows), so
+        # the binary fallback is unconditionally `success=True` — "stale" is only
+        # defined by a threshold. A freshness check WITHOUT a fail/critical age
+        # threshold therefore always resolves `pass` no matter how stale (the metric
+        # is computed but never banded). The check-create path (the monitor-authoring
+        # slice) MUST require a freshness threshold so this never ships as silent green.
         return CheckOutcome(
             expectation_type=expectation_type,
             success=True,  # binary fallback when no thresholds; thresholds band the age
