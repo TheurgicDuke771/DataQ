@@ -82,9 +82,9 @@ def build_monitor_sql(
     # (hence the S608 suppressions).
     if kind == FRESHNESS:
         column = _ident(config.get("column"), what="freshness column")
-        return f"SELECT MAX({column}) FROM {target}"  # noqa: S608
+        return f"SELECT MAX({column}) FROM {target}"  # noqa: S608  # nosec B608
     if kind == VOLUME:
-        return f"SELECT COUNT(*) FROM {target}"  # noqa: S608
+        return f"SELECT COUNT(*) FROM {target}"  # noqa: S608  # nosec B608
     raise MonitorConfigError(f"unknown monitor kind: {kind!r}")
 
 
