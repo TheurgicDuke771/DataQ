@@ -33,18 +33,24 @@ _UNEXPECTED_PERCENT_KEY = "unexpected_percent"
 def extract_metric(outcome: CheckOutcome) -> Decimal | None:
     """The numeric badness scalar for a check, or None if it has none.
 
-    Reads the GX unexpected-percent from the outcome's sample detail. Computed at
-    run time and persisted to `results.metric_value`, so it survives the later
-    sample-failures retention purge (the durable scalar the dashboard trends).
-    Uses ``Decimal(str(...))`` so a float like ``0.5`` lands as exact ``0.5`` in
-    the NUMERIC column rather than its binary expansion.
+    A *monitor* (freshness/volume, ADR 0012) computes its metric directly, so its
+    ``outcome.metric_value`` is preferred when set. Otherwise this reads the GX
+    unexpected-percent from the outcome's sample detail. Computed at run time and
+    persisted to `results.metric_value`, so it survives the later sample-failures
+    retention purge (the durable scalar the dashboard trends). Uses
+    ``Decimal(str(...))`` so a float like ``0.5`` lands as exact ``0.5`` in the
+    NUMERIC column rather than its binary expansion.
     """
-    sample: dict[str, Any] | None = outcome.sample_failures
-    if not sample or _UNEXPECTED_PERCENT_KEY not in sample:
-        return None
-    raw = sample[_UNEXPECTED_PERCENT_KEY]
-    if raw is None:
-        return None
+    raw: Any
+    if outcome.metric_value is not None:
+        raw = outcome.metric_value
+    else:
+        sample: dict[str, Any] | None = outcome.sample_failures
+        if not sample or _UNEXPECTED_PERCENT_KEY not in sample:
+            return None
+        raw = sample[_UNEXPECTED_PERCENT_KEY]
+        if raw is None:
+            return None
     try:
         metric = Decimal(str(raw))
     except (InvalidOperation, ValueError, TypeError):

@@ -59,6 +59,12 @@ class CheckOutcome:
     sample_failures: dict[str, Any] | None = None
     errored: bool = False
     error_message: str | None = None
+    # The badness scalar a *monitor* (freshness/volume, ADR 0012) computed directly
+    # — age-hours, % volume deviation. `severity.extract_metric` prefers this when
+    # set, so monitor kinds band the same way (higher = worse, ADR 0016) without
+    # abusing the GX unexpected-% sample shape. None for GX expectations, whose
+    # metric is parsed from the sample.
+    metric_value: float | None = None
 
 
 @dataclass(frozen=True)
