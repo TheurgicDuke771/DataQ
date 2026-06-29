@@ -212,7 +212,7 @@ curl -X POST http://localhost:8000/api/v1/_probe/snowflake-suite
 | Severity tier weights (warn/fail/critical → health score) | [0005](docs/adr/0005-severity-tier-weights.md) | Accepted W2 (weights 0.5/1.0/2.0; SQL-normalised health score) |
 | ADF webhook auth (shared secret in URL, hard-cutover rotation, no v1 replay check) | [0006](docs/adr/0006-adf-webhook-authentication.md) | Accepted W2 |
 | Airflow callback model (HMAC-signed header + polling fallback) | [0007](docs/adr/0007-airflow-callback-model.md) | Accepted W2 |
-| MCP mounted at `/mcp` with Azure AD auth | `0008` (TBD W7) | Pending W7 |
+| MCP at `/mcp` — FastMCP v3 `http_app` + `combine_lifespans`; Azure AD token validated via `JWTVerifier` (same token as REST); all 8 exposed as **tools** (not resources) for LLM invocability; thin wrappers reusing the service layer + per-suite authz + sample redaction; fail-closed (unmounted) without auth | [0008](docs/adr/0008-mcp-server.md) | Accepted (2026-06-29) |
 | Repo layout: flat monorepo (`backend/` + `frontend/`) | [0009](docs/adr/0009-flat-monorepo-layout.md) | Locked W1 |
 | Provider-agnostic infra seams (Azure = default impl, not architecture; auth boundary now, observability via OTel deferred) | [0010](docs/adr/0010-provider-agnostic-infrastructure-seams.md) | Accepted W2 |
 | Extensibility seams (generic runner dispatch, `ResultPublisher`, dbt-as-`OrchestrationProvider`; second impls deferred post-v1) | [0011](docs/adr/0011-extensibility-seams-for-deferred-integrations.md) | Accepted W2 |
