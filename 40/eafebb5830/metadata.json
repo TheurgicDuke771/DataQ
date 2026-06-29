@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "40eafebb5830",
+  "strategy": "manual-commit",
+  "branch": "feature/freshness-volume-monitors",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/datasources/monitors.py",
+    "backend/tests/datasources/test_monitors.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/40/eafebb5830/0/metadata.json",
+      "transcript": "/40/eafebb5830/0/full.jsonl",
+      "content_hash": "/40/eafebb5830/0/content_hash.txt",
+      "prompt": "/40/eafebb5830/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 331092,
+    "cache_creation_tokens": 8752775,
+    "cache_read_tokens": 683222135,
+    "output_tokens": 1900007,
+    "api_call_count": 1636
+  }
+}
