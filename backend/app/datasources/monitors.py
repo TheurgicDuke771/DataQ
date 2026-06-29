@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, time
 from typing import Any
 
 from backend.app.datasources.base import CheckOutcome, MonitorSpec
@@ -94,6 +94,24 @@ def _freshness_age_hours(max_timestamp: datetime, now: datetime) -> float:
     return max((now - max_timestamp).total_seconds() / 3600.0, 0.0)
 
 
+def _as_aware_datetime(scalar: object, column: str) -> datetime:
+    """Normalise a ``MAX(column)`` scalar to a tz-aware datetime for the age math.
+
+    Accepts a ``datetime`` *or* a ``date`` (a DATE column's MAX is a ``date`` — e.g.
+    Snowflake ``SIGNUP_DATE`` → ``datetime.date``; midnight is used). A naive value
+    (Snowflake ``TIMESTAMP_NTZ`` returns no tzinfo) is assumed UTC, so subtracting a
+    UTC ``now`` never raises offset-naive-vs-aware."""
+    if isinstance(scalar, datetime):
+        ts = scalar
+    elif isinstance(scalar, date):  # a plain date (datetime is a date subclass — checked first)
+        ts = datetime.combine(scalar, time.min)
+    else:
+        raise MonitorConfigError(
+            f"freshness column {column!r} is not a date/timestamp (got {type(scalar).__name__})"
+        )
+    return ts if ts.tzinfo is not None else ts.replace(tzinfo=UTC)
+
+
 def _volume_deviation_pct(row_count: int, *, min_rows: int, max_rows: int) -> float:
     """Percent the row count falls **outside** ``[min_rows, max_rows]`` (0 in range).
 
@@ -141,14 +159,13 @@ def monitor_outcome(
                 error_message=f"no rows: MAX({column}) is NULL, freshness can't be assessed",
                 expected_value={"monitor": FRESHNESS, "column": column},
             )
-        if not isinstance(scalar, datetime):
-            raise MonitorConfigError(f"freshness column {column!r} is not a timestamp")
-        age_hours = _freshness_age_hours(scalar, now)
+        max_ts = _as_aware_datetime(scalar, column)
+        age_hours = _freshness_age_hours(max_ts, now)
         return CheckOutcome(
             expectation_type=expectation_type,
             success=True,  # binary fallback when no thresholds; thresholds band the age
             metric_value=age_hours,
-            observed_value={"max_timestamp": scalar.isoformat(), "age_hours": round(age_hours, 3)},
+            observed_value={"max_timestamp": max_ts.isoformat(), "age_hours": round(age_hours, 3)},
             expected_value={"monitor": FRESHNESS, "column": column},
         )
     if kind == VOLUME:

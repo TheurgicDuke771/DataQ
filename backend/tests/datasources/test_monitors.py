@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 
@@ -180,3 +180,27 @@ def test_evaluate_monitors_isolates_a_query_error() -> None:
     )
     assert out[0].errored is True
     assert "invalid identifier" in (out[0].error_message or "")
+
+
+def test_freshness_accepts_a_date_column() -> None:
+    # A DATE column's MAX() is a date (not datetime) — midnight is used (the live
+    # RETAIL.CUSTOMERS.SIGNUP_DATE case). _NOW=2026-06-29 12:00 → date 06-28 = 36h.
+    out = monitor_outcome(
+        "freshness", scalar=date(2026, 6, 28), config={"column": "signup_date"}, now=_NOW
+    )
+    assert out.errored is False
+    assert out.metric_value == pytest.approx(36.0)
+
+
+def test_freshness_naive_timestamp_assumed_utc() -> None:
+    # Snowflake TIMESTAMP_NTZ returns a naive datetime; treat as UTC so the age
+    # subtraction against a UTC now doesn't raise offset-naive-vs-aware.
+    naive = datetime(2026, 6, 29, 2, 0, 0)  # no tzinfo
+    out = monitor_outcome("freshness", scalar=naive, config={"column": "ts"}, now=_NOW)
+    assert out.errored is False
+    assert out.metric_value == pytest.approx(10.0)  # 12:00 - 02:00 UTC
+
+
+def test_freshness_non_date_scalar_still_raises() -> None:
+    with pytest.raises(MonitorConfigError):
+        monitor_outcome("freshness", scalar=12345, config={"column": "ts"}, now=_NOW)
