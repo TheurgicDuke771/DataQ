@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "e8d571641627",
+  "strategy": "manual-commit",
+  "branch": "docs/post-v1-dq-intelligence-notes",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/e8/d571641627/0/metadata.json",
+      "transcript": "/e8/d571641627/0/full.jsonl",
+      "content_hash": "/e8/d571641627/0/content_hash.txt",
+      "prompt": "/e8/d571641627/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 332599,
+    "cache_creation_tokens": 8791200,
+    "cache_read_tokens": 687452213,
+    "output_tokens": 1927370,
+    "api_call_count": 1666
+  }
+}
