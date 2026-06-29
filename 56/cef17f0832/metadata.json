@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "56cef17f0832",
+  "strategy": "manual-commit",
+  "branch": "feature/mcp-server",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/mcp/auth.py",
+    "backend/app/mcp/server.py",
+    "backend/tests/mcp/test_mcp_auth.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/56/cef17f0832/0/metadata.json",
+      "transcript": "/56/cef17f0832/0/full.jsonl",
+      "content_hash": "/56/cef17f0832/0/content_hash.txt",
+      "prompt": "/56/cef17f0832/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 44209,
+    "cache_creation_tokens": 1366335,
+    "cache_read_tokens": 79174750,
+    "output_tokens": 232071,
+    "api_call_count": 312
+  }
+}
