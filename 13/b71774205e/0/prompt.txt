@@ -1,0 +1,60 @@
+Ci cleared
+
+---
+
+<task-notification>
+<task-id>a93e09d0e57440176</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/83180c0d-bbe5-4c61-b9bc-5700e05669e4/tasks/a93e09d0e57440176.output</output-file>
+<status>completed</status>
+<summary>Agent "Review visual-fidelity frontend change" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Note: the prompt's premise that "the transition on .ant-btn was deliberately removed" is not in this diff — there was never a `.ant-btn { transition }` rule; the comment just explains why one isn't added. That's consistent, no finding there.
+
+Here are my findings.
+
+```json
+[
+  {
+    "file": "frontend/src/styles.css",
+    "line": 54,
+    "summary": "Global `:focus-visible { outline: 2px indigo }` doubles up with antd v6's built-in focus indicator on inputs/selects/buttons. antd already draws its own focus ring (box-shadow + colorPrimaryHover border) on Input, Select, Button, Checkbox, DatePicker, etc. on keyboard focus. The new global outline stacks on top, producing two concentric focus rings (antd's inner box-shadow ring + this outer indigo outline) on every focusable antd control, not just the 'subtle' ones the comment targets.",
+    "failure_scenario": "Keyboard-tabbing through a connection or check-editor form shows a doubled/halo focus indicator on every input and select — antd's own ring plus the 2px offset indigo outline — which looks like a visual bug rather than the intended single clean ring. Hard to scope back later because it is a single un-scoped universal selector."
+  },
+  {
+    "file": "frontend/src/styles.css",
+    "line": 95,
+    "summary": "`.ant-btn:active { transform: translateY(0.5px) }` fires on loading buttons. antd `loading` buttons are NOT `disabled` (they keep pointer-events and still receive `:active`), so a button mid-async-action (e.g. 'Run suite', 'Test connection', 'Save') visibly nudges when clicked again during the in-flight spinner. Disabled buttons are safe (pointer-events:none), but loading is the common case here given the async run/test flows.",
+    "failure_scenario": "User clicks 'Test Connection', it enters loading state, they click again impatiently — the loading button bounces 0.5px, signalling 'clickable' when the action is actually in flight, contradicting the disabled-feel a loading button should have."
+  },
+  {
+    "file": "frontend/src/main.tsx",
+    "line": 17,
+    "summary": "Default `@fontsource/inter/400.css` (and each weight) imports ALL unicode subsets — latin, latin-ext, cyrillic, cyrillic-ext, greek, greek-ext, vietnamese — emitting a @font-face block + a separate .woff2 file per subset per weight. With 4 Inter weights + 2 JetBrains Mono weights that is ~6 weights × ~7 subsets ≈ 40+ font files shipped to the SWA, when the app is latin-only. `@fontsource/inter/latin-400.css` (and `jetbrains-mono/latin-*`) would ship just the latin subset.",
+    "failure_scenario": "The deployed Static Web App bundle/asset payload balloons with cyrillic/greek/vietnamese woff2 files that are never rendered, inflating CDN storage and first-load asset count; risks tripping the bundle-size gate mentioned in ADR 0022 / CLAUDE.md and slows cold loads for no benefit."
+  },
+  {
+    "file": "frontend/src/styles.css",
+    "line": 88,
+    "summary": "`.dq-suite-row:hover` background changed from `rgba(79,70,229,0.04)` (a barely-there 4% indigo tint) to `var(--dq-selected-bg)` = #eef0fe, which is the exact 'selected' background used for Menu `itemSelectedBg` in theme.ts. Hover and selected now render the same fill, collapsing the visual distinction between 'pointing at a row' and 'this row is the active selection'.",
+    "failure_scenario": "On the Suites list, hovering a row makes it look identical to the currently-selected suite, so users lose the cue for which suite is actually active vs merely under the cursor — a fidelity regression, not the intended subtle hover tint."
+  },
+  {
+    "file": "frontend/src/main.tsx",
+    "line": 19,
+    "summary": "Inter weight 700 is imported but likely unused. antd v6 headings/strong default to fontWeightStrong=600 (and the theme sets no 700 anywhere; `colorTextHeading` is set but not a 700 weight). If nothing in the app requests font-weight:700, the bold Inter subset files are downloaded/bundled dead weight. Conversely, JetBrains Mono is only loaded 400/500 — if Monaco or any `fontFamilyCode` usage renders bold tokens it'll synthesize faux-bold.",
+    "failure_scenario": "700 weight woff2 files ship and are never matched by any rule (extra bytes); or, if a bold code token does appear, the browser faux-bolds JetBrains Mono since no 600/700 mono weight was imported — inconsistent with the deliberate-weight claim in the import comment."
+  }
+]
+```
+
+Summary of the 5 findings, by angle:
+
+1. **CSS correctness (high confidence):** the global `:focus-visible` outline (styles.css:54) double-rings antd's own focus indicator on every focusable control; and `.ant-btn:active` transform (styles.css:95) still nudges *loading* buttons (loading ≠ disabled in antd, so pointer-events stay on). The reduced-motion block and the press-nudge clipping are actually fine — the block covers every transform/transition the diff adds, and `translateY(0.5px)` is too small to clip the card box-shadow meaningfully. The "transition deliberately removed from .ant-btn" premise is a non-issue: there was never such a rule, the comment just explains the omission.
+2. **Token correctness (verified):** all `--dq-*` values match `BRAND` exactly (primary #4f46e5, primarySoft #c7d2fe, selectedBg #eef0fe, canvas #f4f5f7, border #e6e8eb, ink #1f2430). No drift. But the `.dq-suite-row:hover` → `var(--dq-selected-bg)` change is a real regression: hover now equals the Menu selected background.
+3. **Font loading:** default `@fontsource` imports ship all unicode subsets (latin-only app → ~40+ woff2 files) — real SWA bundle cost; should use `/latin-400.css` variants. Weight 700 Inter appears unused; JetBrains Mono only has 400/500 so bold code tokens would faux-bold.
+4. **Dependency hygiene:** both deps use caret `^` pinning consistent with the rest of `dependencies`; @fontsource is pure static CSS/woff2 (no runtime JS, no CVE-prone transitive surface) so the `pnpm audit` gate is not a concern. The only dependency-side concern is the bundle gate, folded into finding 3.
+
+No findings rise to a 6th concrete defect.</result>
+<usage><subagent_tokens>48500</subagent_tokens><tool_uses>7</tool_uses><duration_ms>57188</duration_ms></usage>
+</task-notification>
