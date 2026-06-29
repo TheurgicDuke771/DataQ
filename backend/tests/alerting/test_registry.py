@@ -10,14 +10,15 @@ import uuid
 
 from backend.app.alerting import registry
 from backend.app.alerting.base import ResultPublisher, RunReport
+from backend.app.alerting.composite import CompositePublisher
 from backend.app.alerting.noop import NoopPublisher
-from backend.app.alerting.teams import TeamsPublisher
 
 
-def test_returns_teams_publisher() -> None:
-    # v1 always returns the Teams publisher; it self-no-ops per run when nothing
-    # is configured (no webhook / disabled / below threshold).
-    assert isinstance(registry.get_result_publisher(), TeamsPublisher)
+def test_returns_composite_publisher() -> None:
+    # The registry returns a composite over every channel (Teams · Slack · email);
+    # each child self-no-ops per run when its channel is unconfigured (no secret /
+    # recipients), notifications are disabled, or the run is below the threshold.
+    assert isinstance(registry.get_result_publisher(), CompositePublisher)
 
 
 def test_publishers_satisfy_the_protocol() -> None:
