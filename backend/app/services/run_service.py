@@ -255,6 +255,12 @@ def check_outcome_counts(
     in a single grouped query (no N+1). ``worst_severity`` is the highest of
     warn/fail/critical present, else ``None`` (all passed / only operational).
 
+    ``checks_total``/``checks_passed`` count **evaluated** checks — the four
+    severity tiers (pass/warn/fail/critical) — and **exclude** operational
+    ``skip``/``error`` (#122), so the X/Y matches the run-detail page's "Checks
+    passed" denominator and an all-skip run reports total 0 (rendered ``—``, not a
+    misleading green ``0/N``).
+
     Lets the runs list surface a run's *data-quality* outcome — distinct from the
     run's *execution* status, which is ``succeeded`` even when checks failed."""
     if not run_ids:
@@ -269,12 +275,13 @@ def check_outcome_counts(
         by_run[run_id][status] = n
     out: dict[uuid.UUID, tuple[int, int, str | None]] = {}
     for run_id, by_status in by_run.items():
-        total = sum(by_status.values())
         passed = by_status.get("pass", 0)
         worst, worst_rank = None, 0
         for tier, rank in _SEVERITY_RANK.items():
             if by_status.get(tier) and rank > worst_rank:
                 worst, worst_rank = tier, rank
+        # Evaluated checks only: pass + the three failing tiers (skip/error excluded).
+        total = passed + sum(by_status.get(tier, 0) for tier in _SEVERITY_RANK)
         out[run_id] = (total, passed, worst)
     return out
 
