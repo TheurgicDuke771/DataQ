@@ -1,0 +1,66 @@
+It started failing
+
+---
+
+<task-notification>
+<task-id>b6vagcr94</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/dd078854-3593-4943-a332-8f03a3ad6807/tasks/b6vagcr94.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for run to reach terminal state" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+How to Re-authorize you to run the Databricks read-only check
+
+---
+
+you can fetch database token from az key-vault
+
+---
+
+No need to file anything related to harness. 
+make the secrets.sh edit + run terraform apply now.
+
+---
+
+Do one thing add these to AZ key-vault first [keep a _hanress naming convenstion] then use that for terraform apply
+
+---
+
+<task-notification>
+<task-id>bgid60e34</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/dd078854-3593-4943-a332-8f03a3ad6807/tasks/bgid60e34.output</output-file>
+<status>completed</status>
+<summary>Background command "Run plan in background-safe long form, capture summary" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b1j7g1ij4</task-id>
+<tool-use-id>toolu_01GgxFLzr8sgKcrsRomGmsDA</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/dd078854-3593-4943-a332-8f03a3ad6807/tasks/b1j7g1ij4.output</output-file>
+<status>completed</status>
+<summary>Background command "Apply saved worker plan" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Check the terraform apply result and verify DATABRICKS_HTTP_PATH on the worker
+
+---
+
+You can trigger the run from Airflow
+
+---
+
+<task-notification>
+<task-id>bq6s9iuyi</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/dd078854-3593-4943-a332-8f03a3ad6807/tasks/bq6s9iuyi.output</output-file>
+<status>completed</status>
+<summary>Background command "Monitor verification run to terminal state" completed (exit code 0)</summary>
+</task-notification>
