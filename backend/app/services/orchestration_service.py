@@ -22,7 +22,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session, aliased
 
@@ -34,6 +34,12 @@ from backend.app.orchestration.registry import get_orchestration_provider
 from backend.app.services import run_dispatch
 
 log = get_logger(__name__)
+
+# Predicate of the partial unique index `uq_runs_suite_triggered_by` (#308) —
+# kept identical to the migration and the model's `postgresql_where`. Scopes the
+# dedup guard to orchestration markers (`<provider>:<pipeline>:<run_id>`) so the
+# repeatable manual/probe/schedule markers are unaffected.
+_ORCH_TRIGGER_PREDICATE = text("triggered_by LIKE 'adf:%' OR triggered_by LIKE 'airflow:%'")
 
 
 def _resolve_connection(
@@ -207,14 +213,22 @@ def _trigger_suites(
     )
     created: list[Run] = []
     for binding in bindings:
-        already = session.scalar(
-            select(Run.id).where(Run.suite_id == binding.suite_id, Run.triggered_by == marker)
-        )
-        if already is not None:
-            continue
-        run = Run(suite_id=binding.suite_id, status="queued", triggered_by=marker)
-        session.add(run)
-        created.append(run)
+        # Atomic dedup: the partial unique index `uq_runs_suite_triggered_by`
+        # (#308) + ON CONFLICT DO NOTHING makes a concurrent second ingestion of
+        # the same pipeline-run event (webhook + poll, or poll + gap-recovery) a
+        # graceful no-op instead of a double-trigger or an IntegrityError. A
+        # row comes back only for the winner; the loser/replay returns nothing.
+        run = session.scalars(
+            pg_insert(Run)
+            .values(suite_id=binding.suite_id, status="queued", triggered_by=marker)
+            .on_conflict_do_nothing(
+                index_elements=["suite_id", "triggered_by"],
+                index_where=_ORCH_TRIGGER_PREDICATE,
+            )
+            .returning(Run)
+        ).one_or_none()
+        if run is not None:
+            created.append(run)
 
     if created:
         session.commit()

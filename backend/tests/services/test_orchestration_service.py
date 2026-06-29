@@ -9,7 +9,9 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import pytest
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from backend.app.core.secrets import SecretNotFoundError
 from backend.app.db.models import Connection, PipelineRun, Run, Suite, TriggerBinding, User
@@ -293,6 +295,40 @@ def test_trigger_is_idempotent_on_replay(db_session: Any) -> None:
     assert len(first.triggered_runs) == 1
     assert second.triggered_runs == []  # replay creates no second run
     assert len(db_session.scalars(select(Run)).all()) == 1
+
+
+def test_duplicate_orchestration_marker_rejected_by_index(db_session: Any) -> None:
+    """The partial unique index is the atomic guard behind ON CONFLICT (#308).
+
+    The in-app check stops the *sequential* replay; the index stops the
+    *concurrent* race (two ingestions both passing the check before either
+    commits). Simulate the race outcome directly: a second insert of the same
+    (suite_id, orchestration marker) must fail at the DB, not double-trigger.
+    """
+    conn = _adf_connection(db_session)
+    suite = _suite(db_session, conn)
+    marker = "adf:load_finance:run-9"
+    db_session.add(Run(suite_id=suite.id, status="queued", triggered_by=marker))
+    db_session.commit()
+
+    with pytest.raises(IntegrityError):
+        with db_session.begin_nested():
+            db_session.add(Run(suite_id=suite.id, status="queued", triggered_by=marker))
+            db_session.flush()
+
+
+def test_repeatable_markers_are_exempt_from_dedup_index(db_session: Any) -> None:
+    """manual/probe/schedule markers legitimately repeat for the same suite.
+
+    The index is partial (orchestration markers only), so re-running a suite
+    manually or on a schedule tick must not collide.
+    """
+    conn = _adf_connection(db_session)
+    suite = _suite(db_session, conn)
+    for marker in ("manual:user-1", "manual:user-1", "schedule:sch-1", "schedule:sch-1"):
+        db_session.add(Run(suite_id=suite.id, status="queued", triggered_by=marker))
+    db_session.commit()
+    assert len(db_session.scalars(select(Run)).all()) == 4
 
 
 def test_failed_run_does_not_trigger(db_session: Any) -> None:
