@@ -195,12 +195,45 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Scan only the commits THIS event introduces, not the whole history.
+      # A full `git` history walk grows unbounded with the repo (300+ commits →
+      # >15 min in CI) and re-scans commits already scanned when they merged.
+      # Every line that reaches main is still scanned exactly once: a PR scans its
+      # own commits (base..head), and the push to main scans the squashed/merged
+      # commit (before..after) — the model gitleaks-action uses. Verified locally:
+      # full history ~88s vs ranged ~0.5s, and a planted non-allowlisted secret in
+      # the range is still detected (exit 1).
+      #
+      # All inputs here are GitHub-generated commit SHAs (no shell metacharacters),
+      # but pass them via env per workflow-injection best practice.
+      - name: Compute commit range to scan
+        id: range
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.sha }}
+        run: |
+          if [ "$EVENT" = "pull_request" ]; then
+            echo "logopts=--no-merges ${PR_BASE}..${PR_HEAD}" >> "$GITHUB_OUTPUT"
+          elif [ -z "$PUSH_BEFORE" ] || [ "$PUSH_BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            # new branch / no parent on record — scan just the tip commit
+            echo "logopts=-1" >> "$GITHUB_OUTPUT"
+          else
+            echo "logopts=--no-merges ${PUSH_BEFORE}..${PUSH_AFTER}" >> "$GITHUB_OUTPUT"
+          fi
+
       # Betterleaks has no official GitHub Action; run the official pinned
       # container image. Drop-in gitleaks replacement: nonzero exit on findings
       # fails the job. safe.directory env is required because the container runs
       # as root while checkout writes files as the runner user — without it git
-      # aborts with "detected dubious ownership".
-      - name: Run betterleaks
+      # aborts with "detected dubious ownership". --log-opts limits the history
+      # walk to the computed range (passed via env to keep it a single arg);
+      # --git-workers parallelises the walk for larger ranges.
+      - name: Run betterleaks (incremental — only this event's new commits)
+        env:
+          LOGOPTS: ${{ steps.range.outputs.logopts }}
         run: |
           docker run --rm \
             -e GIT_CONFIG_COUNT=1 \
@@ -208,7 +241,9 @@ jobs:
             -e GIT_CONFIG_VALUE_0=/repo \
             -v "$PWD:/repo" -w /repo \
             ghcr.io/betterleaks/betterleaks:v1.4.1 \
-            git /repo --config /repo/.betterleaks.toml --redact --verbose
+            git /repo --config /repo/.betterleaks.toml --redact --verbose \
+            --git-workers=4 \
+            --log-opts="$LOGOPTS"
 
   # ── Frontend ─────────────────────────────────────────────────────────────────
   frontend-lint:
