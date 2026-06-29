@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from fastapi_azure_auth.utils import is_guest
 from fastmcp.server.auth import AuthProvider
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.server.dependencies import get_access_token
@@ -84,15 +85,24 @@ def resolve_current_user(session: Session) -> User:
     token = get_access_token()
     if token is not None:
         claims: dict[str, Any] = token.claims or {}
-        aad_oid = str(claims.get("oid") or token.subject or "")
-        email = str(
-            claims.get("preferred_username") or claims.get("email") or claims.get("upn") or ""
-        )
-        name = claims.get("name")
+        # Mirror the REST validator's guest policy: reject Azure AD guests (B2B /
+        # external) unless explicitly allowed, so /mcp can't accept an identity the
+        # REST API would 403. The JWTVerifier already validated signature / issuer /
+        # audience / scope; this is the tenant-membership policy on top.
+        if not get_settings().azure_allow_guest_users and is_guest(claims):
+            raise McpAuthError("guest users are not permitted")
+        # `oid` (the stable directory object id) is mandatory, exactly as the REST
+        # resolver treats it — never fall back to `sub` (a per-app pairwise
+        # pseudonym), which would key a divergent / duplicate users row.
+        aad_oid = claims.get("oid")
         if aad_oid:
+            email = str(
+                claims.get("preferred_username") or claims.get("email") or claims.get("upn") or ""
+            )
+            name = claims.get("name")
             return _upsert_user(
                 session,
-                aad_object_id=aad_oid,
+                aad_object_id=str(aad_oid),
                 email=email,
                 display_name=str(name) if name is not None else None,
             )

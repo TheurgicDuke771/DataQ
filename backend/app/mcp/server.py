@@ -286,9 +286,13 @@ def trigger_suite_run(suite_id: str) -> dict[str, Any]:
         session.add(run)
         session.commit()
         session.refresh(run)
+        run_id = str(run.id)
         if not run_dispatch.dispatch_or_fail(session, run):
             raise ToolError("failed to dispatch run — the task broker is unreachable")
-        return {"run_id": str(run.id), "status": run.status}
+        # Report the queued state at dispatch, not a post-commit reload of
+        # `run.status` (expire_on_commit) which a fast worker may already have
+        # flipped — poll `get_run_status` for live progress.
+        return {"run_id": run_id, "status": "queued"}
 
 
 @mcp.tool

@@ -49,6 +49,31 @@ def test_resolve_user_from_token_claims(db_session: Any, monkeypatch: Any) -> No
     assert user.email == "ada@acme.io"
 
 
+def test_resolve_user_rejects_guest_by_default(db_session: Any, monkeypatch: Any) -> None:
+    """A guest token (acct=1) is rejected unless azure_allow_guest_users — same as REST."""
+    token = SimpleNamespace(claims={"oid": "g1", "preferred_username": "g@ext", "acct": 1})
+    monkeypatch.setattr(auth, "get_access_token", lambda: token)
+    monkeypatch.setattr(auth, "get_settings", lambda: _settings(azure_allow_guest_users=False))
+    with pytest.raises(auth.McpAuthError):
+        auth.resolve_current_user(db_session)
+
+
+def test_resolve_user_allows_guest_when_enabled(db_session: Any, monkeypatch: Any) -> None:
+    token = SimpleNamespace(claims={"oid": "g1", "preferred_username": "g@ext", "acct": 1})
+    monkeypatch.setattr(auth, "get_access_token", lambda: token)
+    monkeypatch.setattr(auth, "get_settings", lambda: _settings(azure_allow_guest_users=True))
+    assert auth.resolve_current_user(db_session).aad_object_id == "g1"
+
+
+def test_resolve_user_requires_oid_no_subject_fallback(db_session: Any, monkeypatch: Any) -> None:
+    """A token without `oid` is not silently keyed on the pairwise `sub`."""
+    token = SimpleNamespace(claims={"preferred_username": "x@acme.io"}, subject="pairwise-sub")
+    monkeypatch.setattr(auth, "get_access_token", lambda: token)
+    monkeypatch.setattr(auth, "get_settings", lambda: _settings(environment="prod"))
+    with pytest.raises(auth.McpAuthError):
+        auth.resolve_current_user(db_session)
+
+
 def test_resolve_user_dev_bypass_when_no_token(db_session: Any, monkeypatch: Any) -> None:
     monkeypatch.setattr(auth, "get_access_token", lambda: None)
     monkeypatch.setattr(
