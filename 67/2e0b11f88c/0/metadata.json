@@ -1,0 +1,151 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "672e0b11f88c",
+  "session_id": "cc0f3de4-3b06-47d4-bc8e-3752f9786504",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-29T03:21:03.161717Z",
+  "branch": "docs/post-v1-admin-ui-notes",
+  "checkpoints_count": 3,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-opus-4-8",
+  "turn_id": "56bfab0035b2",
+  "token_usage": {
+    "input_tokens": 239512,
+    "cache_creation_tokens": 6405648,
+    "cache_read_tokens": 519687693,
+    "output_tokens": 1621054,
+    "api_call_count": 1349
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01YDSYvnhJgQnrNzpH6RwVb9",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "56bfab0035b2",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 1402,
+        "end": 1403,
+        "entry_ids": [
+          "5de4a54f-10d4-4af4-9cf2-cd943da2a50f"
+        ],
+        "tool_use_id": "toolu_01YDSYvnhJgQnrNzpH6RwVb9"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01YDSYvnhJgQnrNzpH6RwVb9"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01XERmswaXzcHmf8MKKUetRs",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "frontend-design"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "56bfab0035b2",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 2357,
+        "end": 2358,
+        "entry_ids": [
+          "e42110c9-daca-4b10-962a-feac10c9d56f"
+        ],
+        "tool_use_id": "toolu_01XERmswaXzcHmf8MKKUetRs"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01XERmswaXzcHmf8MKKUetRs"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: frontend-design",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01SYFJieBk9x8dk9KHP6no6a",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "56bfab0035b2",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 2742,
+        "end": 2743,
+        "entry_ids": [
+          "cc8408fd-ac53-45d6-9476-cea958b8dd09"
+        ],
+        "tool_use_id": "toolu_01SYFJieBk9x8dk9KHP6no6a"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01SYFJieBk9x8dk9KHP6no6a"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01LGHKeuza4NvmkAYJCHWxhg",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "56bfab0035b2",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 4288,
+        "end": 4289,
+        "entry_ids": [
+          "b9e7ec55-4160-423e-83fe-f6d3a5096dc0"
+        ],
+        "tool_use_id": "toolu_01LGHKeuza4NvmkAYJCHWxhg"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01LGHKeuza4NvmkAYJCHWxhg"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 28
+  }
+}
