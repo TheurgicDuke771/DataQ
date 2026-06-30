@@ -244,13 +244,14 @@ class AdfProvider:
     def list_recent_runs(
         self, config: Mapping[str, Any], secret: str, since: datetime
     ) -> list[RunUpdate]:
-        """Poll the factory's recent **succeeded** runs via ARM queryPipelineRuns.
+        """Poll the factory's recent runs (**all statuses**) via ARM queryPipelineRuns.
 
         POSTs a ``lastUpdatedAfter=since`` / ``lastUpdatedBefore=now`` window with
-        a ``Status==Succeeded`` filter (polling is the trigger-on-success channel,
-        ADR 0004 — failures arrive on the webhook), mapping each returned run to a
-        `RunUpdate`. Malformed rows are skipped rather than failing the whole poll;
-        transport/auth errors raise (the polling task fails soft per connection).
+        **no status filter**, mapping each returned run to a `RunUpdate`. The poll
+        records every status for the monitor view (#490); trigger-on-success is
+        enforced downstream in ``ingest_polled_runs`` (only ``succeeded`` triggers
+        a suite, ADR 0004). Malformed rows are skipped rather than failing the whole
+        poll; transport/auth errors raise (the task fails soft per connection).
         """
         cfg = ADFConfig.model_validate(dict(config))
         token = _acquire_token(cfg, secret)
@@ -265,7 +266,6 @@ class AdfProvider:
             json={
                 "lastUpdatedAfter": since.isoformat(),
                 "lastUpdatedBefore": datetime.now(UTC).isoformat(),
-                "filters": [{"operand": "Status", "operator": "Equals", "values": ["Succeeded"]}],
             },
             timeout=_TEST_TIMEOUT_SECONDS,
         )

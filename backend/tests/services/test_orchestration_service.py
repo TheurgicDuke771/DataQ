@@ -469,17 +469,26 @@ def test_dispatch_broker_failure_marks_run_failed_with_finished_at(
     assert run.started_at is None  # never started — only dispatch failed
 
 
-def test_polled_non_succeeded_run_is_ignored(db_session: Any) -> None:
+def test_polled_non_succeeded_run_is_recorded_not_triggered(
+    db_session: Any, stub_run_dispatch: list[str]
+) -> None:
+    # All-status monitor poll (#490): a non-succeeded polled run is now *recorded*
+    # in pipeline_runs, but must NOT trigger a suite (trigger-on-success only).
     conn = _adf_connection_with_secret(db_session)
+    suite = _suite(db_session, conn)
+    _binding(db_session, suite=suite, pipeline="load_finance", env=conn.env)
     result = ingest_polled_runs(
         db_session,
         provider_impl=_FakeProvider(),
         connection=conn,
-        updates=[_update(status="running", provider_run_id="run-poll-2")],
+        updates=[_update(status="failed", provider_run_id="run-poll-2")],
         skip_updated_since=datetime.now(UTC) - timedelta(minutes=15),
     )
-    assert result.pipeline_runs == []
-    assert db_session.scalar(select(PipelineRun.id)) is None
+    assert len(result.pipeline_runs) == 1
+    assert result.pipeline_runs[0].status == "failed"
+    assert result.triggered_runs == []  # failure recorded, never triggers
+    assert stub_run_dispatch == []
+    assert db_session.scalar(select(PipelineRun.id)) is not None
 
 
 def test_polled_run_skipped_when_recently_updated(db_session: Any) -> None:
@@ -510,3 +519,38 @@ def test_polled_run_skipped_when_recently_updated(db_session: Any) -> None:
     assert second.skipped == 1
     # only one run was ever triggered (no double-fire)
     assert len(list(db_session.scalars(select(Run)))) == 1
+
+
+def test_polled_running_then_succeeded_is_not_skipped(
+    db_session: Any, stub_run_dispatch: list[str]
+) -> None:
+    # #490 regression: a run first recorded as `running` has its last_updated_at
+    # inside the next poll window, so the time-based skip WOULD drop it — but a
+    # non-terminal existing row must always be re-processed, or the `running →
+    # succeeded` transition (and its trigger) is lost. Only terminal rows skip.
+    conn = _adf_connection_with_secret(db_session)
+    suite = _suite(db_session, conn)
+    _binding(db_session, suite=suite, pipeline="load_finance", env=conn.env)
+    window = datetime.now(UTC) - timedelta(minutes=15)
+
+    running = ingest_polled_runs(
+        db_session,
+        provider_impl=_FakeProvider(),
+        connection=conn,
+        updates=[_update(status="running", provider_run_id="run-tr-1")],
+        skip_updated_since=window,
+    )
+    assert running.pipeline_runs[0].status == "running"
+    assert running.triggered_runs == []  # running never triggers
+
+    succeeded = ingest_polled_runs(
+        db_session,
+        provider_impl=_FakeProvider(),
+        connection=conn,
+        updates=[_update(status="succeeded", provider_run_id="run-tr-1")],
+        skip_updated_since=window,
+    )
+    assert succeeded.skipped == 0  # NOT skipped despite the recent running write
+    assert succeeded.pipeline_runs[0].status == "succeeded"
+    assert len(succeeded.triggered_runs) == 1  # the transition fires the trigger
+    assert stub_run_dispatch == [str(succeeded.triggered_runs[0].id)]  # handed to the broker
