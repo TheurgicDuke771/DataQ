@@ -66,7 +66,7 @@ The datasource + compute infra is stood up by the external Terraform harness
    are easy to get wrong — #92).
 
    **Easiest path: the in-app webhook-config surface (#490).** Sign in as a
-   workspace admin → **Admin → Inbound webhooks** to copy the ready-to-paste ADF
+   workspace admin → **Settings → Webhooks** to copy the ready-to-paste ADF
    URL (host + current `?token=` from Key Vault) and the Airflow URL. Set
    `PUBLIC_BASE_URL` so the generated host is the public origin (the deploy sets
    it to the SWA host; empty falls back to the request host). Paste the ADF URL
