@@ -1,13 +1,16 @@
-# DataQ — deployment scaffolding
+# DataQ — deployment guide
 
-Apply-ready Azure deploy scaffolding (Week 7). **Nothing here deploys on its own**
-— the workflow ([.github/workflows/deploy.yml](../.github/workflows/deploy.yml)) is
-`workflow_dispatch`-only until the Azure resources exist and the secrets/vars
-below are set. This documents what to provision and how the pieces fit.
+How DataQ v1 is deployed to Azure. Infrastructure is **in-repo Terraform**
+(`deploy/terraform/`, applied — [ADR 0024](../docs/adr/0024-app-deployment-infrastructure.md));
+the app rolls out via the **`Deploy`** workflow
+([.github/workflows/deploy.yml](../.github/workflows/deploy.yml), `workflow_dispatch`).
+The stack is **live** — this is the runbook to provision a fresh environment and to
+deploy a new image. Related: [ADR 0025](../docs/adr/0025-production-image-pip-slim.md)
+(slim+pip image), [ADR 0023](../docs/adr/0023-container-image-registry-ghcr.md) (GHCR).
 
 Azure is **one** deploy target behind the app's seams (ADR 0010/0013) — the
 manifests here are infra config, not business logic. No Azure resource names are
-hardcoded in app code; they live only as workflow `vars`/`secrets`.
+hardcoded in app code; they live only as Terraform vars + workflow `vars`/`secrets`.
 
 ## Topology
 
@@ -46,9 +49,12 @@ The datasource + compute infra is stood up by the external Terraform harness
    anonymously.
 2. **Managed identity** on the api + worker apps with **Key Vault Secrets User**
    on the vault (so `DefaultAzureCredential` resolves `SECRET_STORE=azure_key_vault`).
-3. **App env**: set the keys in [deploy/.env.app.prod.example](.env.app.prod.example)
-   on the api + worker apps. Secret values (DB/Redis URL, App Insights) are Key
-   Vault-backed Container Apps secrets — never literals.
+3. **App env**: set the keys on the api + worker apps. The **complete** env-var
+   reference (every Settings key) is [../.env.app.example](../.env.app.example);
+   the prod-specific *values* are in [deploy/.env.app.prod.example](.env.app.prod.example).
+   Secret values (DB/Redis URL, App Insights, webhook URLs) are Key Vault-backed
+   Container Apps secrets — never literals. The user-assigned managed identity
+   needs `AZURE_CLIENT_ID` set so `DefaultAzureCredential` resolves it (#408).
 4. **SWA linked backend**: link the `dataq-api` Container App as the SWA backend so
    `/api/*` is proxied same-origin (then `CORS_ALLOW_ORIGINS` can stay empty). If
    instead the SPA calls the API cross-origin, set `CORS_ALLOW_ORIGINS` to the SWA
@@ -81,3 +87,28 @@ Migrations are additive/backward-compatible (CLAUDE.md), so the workflow runs
 `alembic upgrade head` **before** rolling the apps — the running old code
 tolerates the new schema. (This is exactly the dev-DB step that, when skipped,
 500s the checks endpoint after a schema-adding deploy.)
+
+Use an **immutable** `image_tag` per release — ACA caches a tag at the node, so a
+same-tag rebuild won't be re-pulled on a new revision. Push-on-merge is
+intentionally **off**; deploys are manual `workflow_dispatch`.
+
+## Verify
+
+- `GET /healthz` → `200 {"status":"ok"}`.
+- `GET /api/v1/me` → **401** (auth enforced; a valid token resolves the user).
+- SPA root + a deep link → 200; sign-in via Azure AD SSO.
+- Interactive API docs (`/docs`, `/redoc`, `/openapi.json`) are **404 in prod**
+  (#170 — the prod-docs gate); the MCP server is mounted at `/mcp` (Azure-AD
+  validated; fail-closed without auth — [ADR 0008](../docs/adr/0008-mcp-server.md)).
+- Celery beat starts clean (no `NoneType` lock crash, #405/#407) and orchestration
+  polling reads Key Vault secrets (#406/#408).
+
+## Operational notes
+
+- **Restart dependent Container Apps after a shared-Postgres delete/recreate** —
+  the DB host is injected as a start-time secret snapshot, so every dependent
+  revision must be restarted or it keeps resolving the old/dead host.
+- The shared RG / Container Apps env / Postgres server are **reused, never
+  destroyed** (free/trial caps one of each; shared with the harness — ADR 0024).
+- `key_vault_purge_protection` is off during bring-up (so a destroy/re-apply can
+  reuse the vault name); set it **true** for a hardened prod (irreversible).
