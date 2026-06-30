@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bbcbl6e0t</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/83180c0d-bbe5-4c61-b9bc-5700e05669e4/tasks/bbcbl6e0t.output</output-file>
+<status>failed</status>
+<summary>Background command "Wait for CI checks to finish" failed with exit code 1</summary>
+</task-notification>
