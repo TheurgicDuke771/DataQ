@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "27540eef9119",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-490-webhook-config-ui",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/27/540eef9119/0/metadata.json",
+      "transcript": "/27/540eef9119/0/full.jsonl",
+      "content_hash": "/27/540eef9119/0/content_hash.txt",
+      "prompt": "/27/540eef9119/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 204317,
+    "cache_creation_tokens": 8450492,
+    "cache_read_tokens": 717724994,
+    "output_tokens": 1111998,
+    "api_call_count": 1520
+  }
+}
