@@ -1,4 +1,5 @@
 import logging
+import re
 import sys
 import threading
 from contextvars import ContextVar
@@ -44,6 +45,19 @@ _PII_KEYS: frozenset[str] = frozenset(
 )
 _REDACTED = "<redacted>"
 
+# Secret-bearing query params / `key=value` pairs embedded in *string* values
+# (the key-based redaction below only catches dict KEYS). The prime case is the
+# ADF webhook URL `…/events/adf?token=<secret>` (ADR 0006) surfacing inside a log
+# message string — e.g. an access line or an error that interpolated the URL —
+# where it would otherwise slip past the key redactor (#494).
+_SECRET_QS_RE = re.compile(
+    r"(?i)\b(token|sig|signature|secret|api[_-]?key|access[_-]?key|password)=[^&\s\"']+"
+)
+
+
+def _scrub_secret_strings(text: str) -> str:
+    return _SECRET_QS_RE.sub(lambda m: f"{m.group(1)}={_REDACTED}", text)
+
 
 def _redact_pii(_logger: Any, _name: str, event_dict: EventDict) -> EventDict:
     def walk(value: Any) -> Any:
@@ -51,6 +65,8 @@ def _redact_pii(_logger: Any, _name: str, event_dict: EventDict) -> EventDict:
             return {k: (_REDACTED if k.lower() in _PII_KEYS else walk(v)) for k, v in value.items()}
         if isinstance(value, list):
             return [walk(v) for v in value]
+        if isinstance(value, str):
+            return _scrub_secret_strings(value)
         return value
 
     result: EventDict = walk(event_dict)
@@ -97,10 +113,20 @@ def configure_logging() -> None:
 
     # Detach uvicorn's pre-configured handlers; let logs propagate to root so
     # they hit the structlog ProcessorFormatter above.
-    for name in ("uvicorn", "uvicorn.access", "uvicorn.error"):
+    for name in ("uvicorn", "uvicorn.error"):
         uvicorn_logger = logging.getLogger(name)
         uvicorn_logger.handlers = []
         uvicorn_logger.propagate = True
+
+    # uvicorn.access is SILENCED, not propagated: its access line includes the raw
+    # query string (get_path_with_query_string), so it would log the ADF webhook
+    # `?token=<secret>` (ADR 0006) to stdout AND — since the AzureLogHandler has no
+    # ProcessorFormatter — straight to App Insights, bypassing redaction (#494).
+    # The request middleware (main.py) already emits a structured, path-only access
+    # log (method/path/status/duration/client/request_id), so nothing is lost.
+    access_logger = logging.getLogger("uvicorn.access")
+    access_logger.handlers = []
+    access_logger.propagate = False
 
     conn = settings.applicationinsights_connection_string
     if conn:
