@@ -1,3 +1,4 @@
+import { InteractionRequiredAuthError } from '@azure/msal-browser';
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios';
 
 import { authConfig, authMode } from '../auth/config';
@@ -12,6 +13,13 @@ import { getMsalInstance } from '../auth/msalInstance';
  * Request interceptor attaches an Azure AD bearer token in real auth mode.
  * In dev_bypass / unconfigured modes the interceptor is a no-op (backend
  * dev-bypass resolves the user without a token).
+ *
+ * When the silent refresh can't complete without user interaction (expired
+ * session / revoked consent / fresh MFA — surfaced by MSAL as
+ * InteractionRequiredAuthError) the interceptor falls back to an interactive
+ * redirect. That navigates the browser to Azure AD, so the in-flight request is
+ * aborted (rejected) — it re-issues cleanly once MSAL completes the redirect
+ * handshake on the way back.
  *
  * Response interceptor surfaces the DataQ error envelope's human message
  * (`{ error: { code, message, detail } }`) as `error.message`, so callers'
@@ -42,10 +50,18 @@ async function attachBearerToken(
   const account = instance.getAllAccounts()[0];
   if (!account || !authConfig.apiScopeUri) return config;
 
-  const result = await instance.acquireTokenSilent({
-    account,
-    scopes: [authConfig.apiScopeUri],
-  });
-  config.headers.set('Authorization', `Bearer ${result.accessToken}`);
-  return config;
+  const scopes = [authConfig.apiScopeUri];
+  try {
+    const result = await instance.acquireTokenSilent({ account, scopes });
+    config.headers.set('Authorization', `Bearer ${result.accessToken}`);
+    return config;
+  } catch (err) {
+    if (err instanceof InteractionRequiredAuthError) {
+      // Silent refresh can't proceed without the user — hand off to an
+      // interactive redirect (consistent with AuthGate's loginRedirect). This
+      // navigates away; reject so the in-flight request doesn't fire tokenless.
+      await instance.acquireTokenRedirect({ account, scopes });
+    }
+    throw err;
+  }
 }
