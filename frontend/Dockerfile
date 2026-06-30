@@ -30,6 +30,12 @@ ENV VITE_AZURE_TENANT_ID=$VITE_AZURE_TENANT_ID \
 RUN pnpm build
 
 FROM nginx:1.27-alpine AS serve
+# Link the GHCR package to this repo (shows under the repo's Packages, lets the
+# repo's Actions GITHUB_TOKEN push it, and inherits anonymous-pull visibility —
+# ADR 0023, mirrors backend/Dockerfile).
+LABEL org.opencontainers.image.source="https://github.com/TheurgicDuke771/DataQ"
+LABEL org.opencontainers.image.description="DataQ frontend (React SPA served by nginx)"
+LABEL org.opencontainers.image.licenses="MIT"
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 8080
