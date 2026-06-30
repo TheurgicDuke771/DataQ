@@ -298,6 +298,22 @@ _All post-v1 / deferred work (design themes + the full `Backlog (post-v1 / testi
 
 **Exit gate:** Production-ready v1 deployed to Azure, CI/CD live, team onboarded.
 
+### Week 1–6 carryover into Week 7 (deferred-task triage)
+
+The `🟡`/`🔵` partial/deferred items from Weeks 1–6, triaged with their current disposition. Most were already tracked as the Week-1-carryover issues or as Week-7 roadmap items; this consolidates them so none is dropped.
+
+| Wk | Deferred item | Status | Disposition |
+|---|---|---|---|
+| W1 | Silent token refresh — `InteractionRequiredAuthError` fallback after `acquireTokenSilent` | open | [#168](https://github.com/TheurgicDuke771/DataQ/issues/168) (W7) — needs a real-AAD smoke |
+| W1 | Provision real Azure Key Vault + validate `DefaultAzureCredential` end-to-end | ✅ **done** | [#169](https://github.com/TheurgicDuke771/DataQ/issues/169) **closed** — discharged by the deploy (ADR 0024 KV+UAMI; #408 credential path; prod reads KV live) |
+| W1 | Disable Swagger `/docs`+`/redoc` in production (prod-docs gate) | open | [#170](https://github.com/TheurgicDuke771/DataQ/issues/170) (W7) — codeable in the hardening pass |
+| W2 | ADF pipeline-run upsert **+ correlate** (trigger-on-success) | ✅ **done** | landed in W5 via [#215](https://github.com/TheurgicDuke771/DataQ/issues/215) (run dispatch ungated); the W2 `🟡` marker is stale |
+| W2/W4 | Surface the ADF webhook URL (don't hand-assemble a secret-bearing URL) | open | [#92](https://github.com/TheurgicDuke771/DataQ/issues/92) (W7) |
+| W6 | App Insights **span** instrumentation (request/task traces, slow-query hook) | 🟡 partial | W7 hardening roadmap item — logs/exceptions live (`AzureLogHandler` seam); spans pending (keep behind the handler seam / OTel-neutral) |
+| W1 | Live warehouse/file run smoke (Reference Flows B/C) | deferred | W7 live-smoke — harness is live end-to-end (ADR 0021 / `HARNESS_TODO.md`); DataQ-side verified runs in progress now the app is deployed |
+
+_Not W1–6 carryover: the `🟡` partials under **Week 8** (lines below) are early per-slice tests landed ahead of the unit-test week, not deferred features._
+
 ### DevOps & deployment (9 tasks — 7/9, 1 partial)
 - [x] ✅ Containerise FastAPI + React + Celery + Redis — backend `Dockerfile` (multi-stage `python:3.13-slim` + pip, ADR 0025) + `frontend/Dockerfile` + self-hosted `dataq-app-redis` (password-auth) on ACA; React UI ships via the SWA (`dataq-app-web`). All live ([PR #394](https://github.com/TheurgicDuke771/DataQ/pull/394))
 - [x] ✅ Push images to container registry — **GHCR, not ACR** (ADR [0023](adr/0023-container-image-registry-ghcr.md)); CI pushes `ghcr.io/theurgicduke771/dataq-backend:<tag>` via `GITHUB_TOKEN`; public package → ACA pulls anonymously (no stored registry credential)
