@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "f568a872c8f7",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-474-profiler-column-dropdown",
+  "checkpoints_count": 11,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/f5/68a872c8f7/0/metadata.json",
+      "transcript": "/f5/68a872c8f7/0/full.jsonl",
+      "content_hash": "/f5/68a872c8f7/0/content_hash.txt",
+      "prompt": "/f5/68a872c8f7/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 97696,
+    "cache_creation_tokens": 5324339,
+    "cache_read_tokens": 301254658,
+    "output_tokens": 590591,
+    "api_call_count": 744
+  }
+}
