@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "5adcd2490fc2",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-482-frontend-share-picker",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/5a/dcd2490fc2/0/metadata.json",
+      "transcript": "/5a/dcd2490fc2/0/full.jsonl",
+      "content_hash": "/5a/dcd2490fc2/0/content_hash.txt",
+      "prompt": "/5a/dcd2490fc2/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 138759,
+    "cache_creation_tokens": 6120701,
+    "cache_read_tokens": 514405318,
+    "output_tokens": 889386,
+    "api_call_count": 1225
+  }
+}
