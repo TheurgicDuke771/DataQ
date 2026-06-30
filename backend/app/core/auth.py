@@ -191,8 +191,7 @@ def is_workspace_admin(user: User) -> bool:
     `get_settings.cache_clear()`; in a running process settings are read once at
     startup (12-factor — change the env and restart).
     """
-    email = (user.email or "").strip().lower()
-    return bool(email) and email in get_settings().workspace_admin_email_set
+    return get_settings().is_admin_email(user.email)
 
 
 def require_workspace_admin(

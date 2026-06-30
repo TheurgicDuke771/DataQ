@@ -7,7 +7,7 @@ TEST_DATABASE_URL.
 """
 
 import uuid
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from decimal import Decimal
 from typing import Any
@@ -18,7 +18,6 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
 from backend.app.core.auth import get_current_user
-from backend.app.core.config import get_settings
 from backend.app.db.models import Check, Connection, Suite, User
 from backend.app.db.session import get_db
 from backend.app.main import app
@@ -32,19 +31,6 @@ def client(db_session: Any) -> Iterator[TestClient]:
         yield TestClient(app)
     finally:
         app.dependency_overrides.clear()
-
-
-@pytest.fixture(autouse=True)
-def _clear_settings_cache() -> Iterator[None]:
-    # Tests that set WORKSPACE_ADMIN_EMAILS mutate the lru_cached Settings; clear
-    # after each so a workspace-admin override never leaks to another test.
-    yield
-    get_settings.cache_clear()
-
-
-def _make_workspace_admin(monkeypatch: pytest.MonkeyPatch, *emails: str) -> None:
-    monkeypatch.setenv("WORKSPACE_ADMIN_EMAILS", ",".join(emails))
-    get_settings.cache_clear()
 
 
 def _connection(db_session: Any) -> Connection:
@@ -332,12 +318,12 @@ def test_editor_updates_but_cannot_delete(client: TestClient, db_session: Any) -
 
 
 def test_workspace_admin_can_delete(
-    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+    client: TestClient, db_session: Any, make_workspace_admin: Callable[..., None]
 ) -> None:
     # The non-owner admin is now the workspace-admin (ADR 0027), implicit on every
     # suite — they see `admin` and can delete a suite they don't own.
     _owner, b, _e, sid = _owner_b_e_suite(db_session)
-    _make_workspace_admin(monkeypatch, b.email)
+    make_workspace_admin(b.email)
     _as(b)  # b owns nothing, has no share — only the allowlist makes them admin
     assert client.get(f"/api/v1/suites/{sid}").json()["my_permission"] == "admin"
     deleted = client.delete(f"/api/v1/suites/{sid}")

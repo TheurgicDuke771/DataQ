@@ -94,8 +94,10 @@ def grant_share(
     permission: str,
 ) -> Share:
     """Grant `target_user_id` a permission on the suite. Actor needs `admin`."""
-    _reject_ungrantable_permission(suite_id, permission)
+    # Authorize first (404-hides a suite the actor can't see) before validating
+    # the permission value, so an outsider can't probe via the input-validity 422.
     suite = require_permission(session, suite_id, actor_id, minimum="admin")
+    _reject_ungrantable_permission(suite_id, permission)
     if target_user_id == suite.created_by:
         raise ShareTargetInvalidError(
             "cannot share a suite with its owner (already has full access)",
@@ -147,8 +149,8 @@ def update_share(
     permission: str,
 ) -> Share:
     """Change a user's permission. Actor needs `admin`."""
-    _reject_ungrantable_permission(suite_id, permission)
     require_permission(session, suite_id, actor_id, minimum="admin")
+    _reject_ungrantable_permission(suite_id, permission)
     _reject_self_target(suite_id, actor_id, target_user_id)
     share = _get_share(session, suite_id, target_user_id)
     share.permission = permission

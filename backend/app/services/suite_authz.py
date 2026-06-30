@@ -57,11 +57,11 @@ def _is_workspace_admin(session: Session, user_id: uuid.UUID) -> bool:
     site — so a workspace-admin is an implicit `admin` on every suite (ADR 0027).
     Empty allowlist short-circuits without a load; otherwise one PK fetch (usually
     an identity-map hit, since the request already loaded the user)."""
-    admins = get_settings().workspace_admin_email_set
-    if not admins:
+    settings = get_settings()
+    if not settings.workspace_admin_email_set:
         return False
     user = session.get(User, user_id)
-    return user is not None and user.email.lower() in admins
+    return user is not None and settings.is_admin_email(user.email)
 
 
 class SuiteForbiddenError(DataQError):

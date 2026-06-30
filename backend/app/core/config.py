@@ -151,6 +151,14 @@ class Settings(BaseSettings):
             part.strip().lower() for part in self.workspace_admin_emails.split(",") if part.strip()
         )
 
+    def is_admin_email(self, email: str | None) -> bool:
+        """True iff `email` is in the workspace-admin allowlist. The one
+        normalization (strip + lower, null-safe) both the REST gate
+        (`core.auth.is_workspace_admin`) and the per-suite gate (`suite_authz`)
+        share — so the two can't drift."""
+        normalized = (email or "").strip().lower()
+        return bool(normalized) and normalized in self.workspace_admin_email_set
+
     @property
     def cors_allow_origin_list(self) -> list[str]:
         """Parsed CORS origins (stripped, empties dropped). Empty → CORS off."""

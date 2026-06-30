@@ -7,14 +7,13 @@ directly. Skips without TEST_DATABASE_URL.
 """
 
 import uuid
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
 from backend.app.core.auth import get_current_user
-from backend.app.core.config import get_settings
 from backend.app.db.models import Connection, Suite, User
 from backend.app.db.session import get_db
 from backend.app.main import app
@@ -27,19 +26,6 @@ def client(db_session: Any) -> Iterator[TestClient]:
         yield TestClient(app)
     finally:
         app.dependency_overrides.clear()
-
-
-@pytest.fixture(autouse=True)
-def _clear_settings_cache() -> Iterator[None]:
-    # Tests that set WORKSPACE_ADMIN_EMAILS mutate the lru_cached Settings; clear
-    # after each so the workspace-admin override never leaks to another test.
-    yield
-    get_settings.cache_clear()
-
-
-def _make_workspace_admin(monkeypatch: pytest.MonkeyPatch, *emails: str) -> None:
-    monkeypatch.setenv("WORKSPACE_ADMIN_EMAILS", ",".join(emails))
-    get_settings.cache_clear()
 
 
 def _user(db_session: Any, email: str, display_name: str | None = None) -> User:
@@ -104,12 +90,12 @@ def test_grant_admin_rejected(client: TestClient, db_session: Any) -> None:
 
 
 def test_workspace_admin_can_grant_on_any_suite(
-    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+    client: TestClient, db_session: Any, make_workspace_admin: Callable[..., None]
 ) -> None:
     # A workspace-admin is an implicit `admin` on every suite (ADR 0027) — they can
     # manage shares on a suite they neither own nor are shared on.
     _owner, b, c, _e, suite = _seed(db_session)
-    _make_workspace_admin(monkeypatch, c.email)
+    make_workspace_admin(c.email)
     _as(c)  # C owns nothing here, has no share — only the allowlist makes them admin
     resp = client.post(
         f"/api/v1/suites/{suite.id}/shares", json={"user_id": str(b.id), "permission": "view"}
@@ -230,13 +216,13 @@ def test_update_missing_share_404(client: TestClient, db_session: Any) -> None:
 
 
 def test_admin_cannot_self_downgrade(
-    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+    client: TestClient, db_session: Any, make_workspace_admin: Callable[..., None]
 ) -> None:
     # The self-target guard (#240) rejects an admin-capable actor managing their
     # OWN share. With grantable admin removed (ADR 0027), the non-owner admin is
     # now the workspace-admin — who self-targeting is still refused (422).
     _owner, _b, c, _e, suite = _seed(db_session)
-    _make_workspace_admin(monkeypatch, c.email)
+    make_workspace_admin(c.email)
     _as(c)
     resp = client.patch(f"/api/v1/suites/{suite.id}/shares/{c.id}", json={"permission": "view"})
     assert resp.status_code == 422
@@ -244,11 +230,11 @@ def test_admin_cannot_self_downgrade(
 
 
 def test_admin_cannot_self_revoke(
-    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+    client: TestClient, db_session: Any, make_workspace_admin: Callable[..., None]
 ) -> None:
     # Likewise, a workspace-admin can't revoke their own share row (#240).
     _owner, _b, c, _e, suite = _seed(db_session)
-    _make_workspace_admin(monkeypatch, c.email)
+    make_workspace_admin(c.email)
     _as(c)
     resp = client.delete(f"/api/v1/suites/{suite.id}/shares/{c.id}")
     assert resp.status_code == 422
