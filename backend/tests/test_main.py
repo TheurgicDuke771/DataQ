@@ -9,7 +9,8 @@ from collections.abc import Iterator
 import pytest
 from fastapi.testclient import TestClient
 
-from backend.app.main import REQUEST_ID_HEADER, app
+from backend.app.core.config import Settings
+from backend.app.main import REQUEST_ID_HEADER, app, docs_kwargs
 
 
 @pytest.fixture
@@ -112,3 +113,27 @@ def test_per_request_log_uses_generated_request_id_when_invalid(
     rid = events[0]["request_id"]
     assert isinstance(rid, str)
     assert len(rid) == 32  # uuid4().hex, not the rejected "with space"
+
+
+# ───────────────────────── prod-docs gate (#170) ─────────────────────────
+
+
+def test_docs_enabled_in_dev_and_staging() -> None:
+    for env in ("dev", "staging"):
+        kw = docs_kwargs(Settings(_env_file=None, environment=env))
+        assert kw == {
+            "docs_url": "/docs",
+            "redoc_url": "/redoc",
+            "openapi_url": "/openapi.json",
+        }
+
+
+def test_docs_disabled_in_prod() -> None:
+    kw = docs_kwargs(Settings(_env_file=None, environment="prod"))
+    assert kw == {"docs_url": None, "redoc_url": None, "openapi_url": None}
+
+
+def test_openapi_schema_served_in_test_env(client: TestClient) -> None:
+    """The test env is non-prod, so the wired app exposes the schema + docs UI."""
+    assert client.get("/openapi.json").status_code == 200
+    assert client.get("/docs").status_code == 200
