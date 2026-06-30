@@ -703,3 +703,65 @@ So for the airflow, we will add one block to each of the DAGs, and the DAG will 
 ---
 
 Uh, don't modify the pipelines directly. Go with option one. And, yes, create the webhook config UI.
+
+---
+
+<task-notification>
+<task-id>aec10673d9bb0e6d0</task-id>
+<tool-use-id>toolu_015Yo9QJB7U2KsnKRf9nCYzd</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/83180c0d-bbe5-4c61-b9bc-5700e05669e4/tasks/aec10673d9bb0e6d0.output</output-file>
+<status>completed</status>
+<summary>Agent "Correctness finder" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I have all I need. Note two more subtle points:
+
+- `token_param = token if token else ...` — uses falsy check, not `token is not None`. If the secret is the empty string `""` (provisioned but empty), `token` is `""` (falsy), so it shows the placeholder AND `token_configured = token is not None` = `True`. Inconsistency: `token_configured=True` but URL shows `&lt;set ... in Key Vault&gt;`. That's a nameable bug.
+
+- The frontend mask regex `/token=[^&amp;]*/i` combined with unencoded `&amp;` in a real token leaks the tail.
+
+Let me finalize the 6 findings.
+
+```json
+[
+  {
+    "file": "backend/app/services/admin_service.py",
+    "line": 211,
+    "summary": "ADF token interpolated into the URL without URL-encoding, but the receiver reads it URL-decoded — a secret containing &amp;, +, %, =, or # produces a pasted URL that no longer matches the stored secret.",
+    "failure_scenario": "Key Vault holds adf-webhook-secret = 'a+b&amp;c=d'. webhook_configs builds inbound_url='https://host/api/v1/orchestration/events/adf?token=a+b&amp;c=d'. When an operator pastes this into the Azure Monitor Action Group webhook, the receiver's FastAPI Query parsing splits on '&amp;' and percent-decodes: token becomes 'a b' (the '+' decodes to space, and '&amp;c=d' is parsed as a separate query param). _authenticate's hmac.compare_digest then fails against the real secret 'a+b&amp;c=d', so every real ADF event is rejected with 401 even though the URL was copied verbatim. The value should be quoted with urllib.parse.quote(token, safe='')."
+  },
+  {
+    "file": "backend/app/services/admin_service.py",
+    "line": 204,
+    "summary": "token_param uses a falsy check (`token if token else ...`) while token_configured uses `token is not None` — an empty-string secret yields the contradictory state token_configured=True but a placeholder URL.",
+    "failure_scenario": "adf-webhook-secret is provisioned but set to the empty string ''. _safe_secret returns ''. token_param = '' if '' else placeholder → placeholder ('&lt;set adf-webhook-secret in Key Vault&gt;'), so inbound_url shows the placeholder, but token_configured = ('' is not None) = True. The UI therefore shows no 'webhook secret not set' tag yet the URL is the non-functional placeholder text — the admin believes the webhook is configured and pastes garbage into Azure Monitor."
+  },
+  {
+    "file": "backend/app/services/admin_service.py",
+    "line": 169,
+    "summary": "_safe_secret catches bare Exception and maps every failure to 'not set', so a transient Key Vault outage is reported as an unconfigured secret rather than an error.",
+    "failure_scenario": "Key Vault is reachable and the secret exists, but during the admin request the managed-identity token is briefly unavailable / Key Vault returns a 429 throttle. AzureKeyVaultStore.get wraps it in SecretNotFoundError; _safe_secret swallows it and returns None. The endpoint then reports token_configured=False with a '&lt;set adf-webhook-secret in Key Vault&gt;' placeholder, telling the admin the secret is missing. The admin may re-provision / rotate the secret unnecessarily, or conclude the webhook is broken. Note the live receiver (_authenticate) treats the same condition as a 503 operator error, so the two surfaces disagree on the same state."
+  },
+  {
+    "file": "frontend/src/pages/Admin.tsx",
+    "line": 168,
+    "summary": "The reveal-mask regex `/token=[^&amp;]*/` only masks up to the first '&amp;'; combined with the unencoded-token bug, a token containing '&amp;' leaks its tail even when 'hidden'.",
+    "failure_scenario": "Secret = 'abc&amp;def'. Backend produces inbound_url='...?token=abc&amp;def'. With revealed=false the display replaces /token=[^&amp;]*/ → 'token=••••••••&amp;def', so 'def' (a fragment of the live secret) is rendered on screen in the supposedly-masked state — a partial credential disclosure over the shoulder / in a screenshot."
+  },
+  {
+    "file": "backend/app/services/admin_service.py",
+    "line": 205,
+    "summary": "The 'not set' placeholder is interpolated directly into the inbound_url as `token=&lt;set ... in Key Vault&gt;`, producing a string with spaces and angle brackets that is not a valid URL and is silently copyable.",
+    "failure_scenario": "adf-webhook-secret is unprovisioned. inbound_url = 'https://host/api/v1/orchestration/events/adf?token=&lt;set adf-webhook-secret in Key Vault&gt;'. The frontend copy control (Typography.Text copyable={{ text: webhook.inbound_url }}) copies this verbatim; an admin who clicks copy and pastes into Azure Monitor registers a webhook whose token literally is '&lt;set adf-webhook-secret in Key Vault&gt;' (after the orchestrator URL-decodes the spaces), which will never authenticate — a silent misconfiguration rather than a clear 'configure the secret first' block."
+  },
+  {
+    "file": "backend/app/services/admin_service.py",
+    "line": 211,
+    "summary": "base_url comes from request.base_url when PUBLIC_BASE_URL is unset, which behind the SWA/ACA proxy can be the internal scheme/host, yielding a webhook URL an external orchestrator cannot reach.",
+    "failure_scenario": "PUBLIC_BASE_URL is left empty and the API sits behind the SWA linked backend / ACA ingress that forwards as http to the container without honored X-Forwarded-* (Starlette's request.base_url reflects the immediate connection). request.base_url resolves to e.g. 'http://localhost:8000/' or the internal ingress host. The admin copies inbound_url='http://localhost:8000/api/v1/orchestration/events/adf?token=...' into Azure Monitor, and ADF deliveries fail because the host is unreachable / non-TLS. The deploy sets PUBLIC_BASE_URL via Terraform, but any environment that misses that env var produces a wrong-host URL with no warning."
+  }
+]
+```
+
+Summary: I reviewed the diff across all three angles (line-by-line, removed-behavior, cross-file). The Pydantic `from_attributes` shape correctly matches the `WebhookConfigRow` dataclass, and the admin-gating / 403 coverage is sound. The 6 findings above center on the ADF token URL assembly: the highest-confidence bug is **no URL-encoding of the secret while the receiver reads it URL-decoded** (Finding 1), which has a clean failure scenario for any secret containing `&amp;`/`+`/`%`/`=`. Findings 2–6 cover an empty-string vs `None` inconsistency, the bare-`Exception` swallow disagreeing with the receiver's 503 semantics, a frontend mask-regex partial leak, the non-URL placeholder being copyable, and the `request.base_url` fallback producing an unreachable host.</result>
+<usage><subagent_tokens>55554</subagent_tokens><tool_uses>5</tool_uses><duration_ms>62627</duration_ms></usage>
+</task-notification>
