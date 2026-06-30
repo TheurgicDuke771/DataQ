@@ -1,0 +1,478 @@
+Ci cleared
+
+---
+
+<task-notification>
+<task-id>a93e09d0e57440176</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/83180c0d-bbe5-4c61-b9bc-5700e05669e4/tasks/a93e09d0e57440176.output</output-file>
+<status>completed</status>
+<summary>Agent "Review visual-fidelity frontend change" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Note: the prompt's premise that "the transition on .ant-btn was deliberately removed" is not in this diff — there was never a `.ant-btn { transition }` rule; the comment just explains why one isn't added. That's consistent, no finding there.
+
+Here are my findings.
+
+```json
+[
+  {
+    "file": "frontend/src/styles.css",
+    "line": 54,
+    "summary": "Global `:focus-visible { outline: 2px indigo }` doubles up with antd v6's built-in focus indicator on inputs/selects/buttons. antd already draws its own focus ring (box-shadow + colorPrimaryHover border) on Input, Select, Button, Checkbox, DatePicker, etc. on keyboard focus. The new global outline stacks on top, producing two concentric focus rings (antd's inner box-shadow ring + this outer indigo outline) on every focusable antd control, not just the 'subtle' ones the comment targets.",
+    "failure_scenario": "Keyboard-tabbing through a connection or check-editor form shows a doubled/halo focus indicator on every input and select — antd's own ring plus the 2px offset indigo outline — which looks like a visual bug rather than the intended single clean ring. Hard to scope back later because it is a single un-scoped universal selector."
+  },
+  {
+    "file": "frontend/src/styles.css",
+    "line": 95,
+    "summary": "`.ant-btn:active { transform: translateY(0.5px) }` fires on loading buttons. antd `loading` buttons are NOT `disabled` (they keep pointer-events and still receive `:active`), so a button mid-async-action (e.g. 'Run suite', 'Test connection', 'Save') visibly nudges when clicked again during the in-flight spinner. Disabled buttons are safe (pointer-events:none), but loading is the common case here given the async run/test flows.",
+    "failure_scenario": "User clicks 'Test Connection', it enters loading state, they click again impatiently — the loading button bounces 0.5px, signalling 'clickable' when the action is actually in flight, contradicting the disabled-feel a loading button should have."
+  },
+  {
+    "file": "frontend/src/main.tsx",
+    "line": 17,
+    "summary": "Default `@fontsource/inter/400.css` (and each weight) imports ALL unicode subsets — latin, latin-ext, cyrillic, cyrillic-ext, greek, greek-ext, vietnamese — emitting a @font-face block + a separate .woff2 file per subset per weight. With 4 Inter weights + 2 JetBrains Mono weights that is ~6 weights × ~7 subsets ≈ 40+ font files shipped to the SWA, when the app is latin-only. `@fontsource/inter/latin-400.css` (and `jetbrains-mono/latin-*`) would ship just the latin subset.",
+    "failure_scenario": "The deployed Static Web App bundle/asset payload balloons with cyrillic/greek/vietnamese woff2 files that are never rendered, inflating CDN storage and first-load asset count; risks tripping the bundle-size gate mentioned in ADR 0022 / CLAUDE.md and slows cold loads for no benefit."
+  },
+  {
+    "file": "frontend/src/styles.css",
+    "line": 88,
+    "summary": "`.dq-suite-row:hover` background changed from `rgba(79,70,229,0.04)` (a barely-there 4% indigo tint) to `var(--dq-selected-bg)` = #eef0fe, which is the exact 'selected' background used for Menu `itemSelectedBg` in theme.ts. Hover and selected now render the same fill, collapsing the visual distinction between 'pointing at a row' and 'this row is the active selection'.",
+    "failure_scenario": "On the Suites list, hovering a row makes it look identical to the currently-selected suite, so users lose the cue for which suite is actually active vs merely under the cursor — a fidelity regression, not the intended subtle hover tint."
+  },
+  {
+    "file": "frontend/src/main.tsx",
+    "line": 19,
+    "summary": "Inter weight 700 is imported but likely unused. antd v6 headings/strong default to fontWeightStrong=600 (and the theme sets no 700 anywhere; `colorTextHeading` is set but not a 700 weight). If nothing in the app requests font-weight:700, the bold Inter subset files are downloaded/bundled dead weight. Conversely, JetBrains Mono is only loaded 400/500 — if Monaco or any `fontFamilyCode` usage renders bold tokens it'll synthesize faux-bold.",
+    "failure_scenario": "700 weight woff2 files ship and are never matched by any rule (extra bytes); or, if a bold code token does appear, the browser faux-bolds JetBrains Mono since no 600/700 mono weight was imported — inconsistent with the deliberate-weight claim in the import comment."
+  }
+]
+```
+
+Summary of the 5 findings, by angle:
+
+1. **CSS correctness (high confidence):** the global `:focus-visible` outline (styles.css:54) double-rings antd's own focus indicator on every focusable control; and `.ant-btn:active` transform (styles.css:95) still nudges *loading* buttons (loading ≠ disabled in antd, so pointer-events stay on). The reduced-motion block and the press-nudge clipping are actually fine — the block covers every transform/transition the diff adds, and `translateY(0.5px)` is too small to clip the card box-shadow meaningfully. The "transition deliberately removed from .ant-btn" premise is a non-issue: there was never such a rule, the comment just explains the omission.
+2. **Token correctness (verified):** all `--dq-*` values match `BRAND` exactly (primary #4f46e5, primarySoft #c7d2fe, selectedBg #eef0fe, canvas #f4f5f7, border #e6e8eb, ink #1f2430). No drift. But the `.dq-suite-row:hover` → `var(--dq-selected-bg)` change is a real regression: hover now equals the Menu selected background.
+3. **Font loading:** default `@fontsource` imports ship all unicode subsets (latin-only app → ~40+ woff2 files) — real SWA bundle cost; should use `/latin-400.css` variants. Weight 700 Inter appears unused; JetBrains Mono only has 400/500 so bold code tokens would faux-bold.
+4. **Dependency hygiene:** both deps use caret `^` pinning consistent with the rest of `dependencies`; @fontsource is pure static CSS/woff2 (no runtime JS, no CVE-prone transitive surface) so the `pnpm audit` gate is not a concern. The only dependency-side concern is the bundle gate, folded into finding 3.
+
+No findings rise to a 6th concrete defect.</result>
+<usage><subagent_tokens>48500</subagent_tokens><tool_uses>7</tool_uses><duration_ms>57188</duration_ms></usage>
+</task-notification>
+
+---
+
+check CI now
+
+---
+
+<task-notification>
+<task-id>a7f0e0de068b0baed</task-id>
+<tool-use-id>toolu_01NFTRLv1MDW627yBT8TDAKF</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/83180c0d-bbe5-4c61-b9bc-5700e05669e4/tasks/a7f0e0de068b0baed.output</output-file>
+<status>completed</status>
+<summary>Agent "Security + auth review of MCP" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I have enough to assess the key findings. The `create_check` and `profile_connection` paths go through the same service-layer validation (custom-SQL guardrails, identifier allowlist) as REST, so those are fine. Let me verify two remaining points: whether the JWTVerifier validates the `tid` (tenant) claim, and the guest enforcement gap. fastapi-azure-auth checks guests and rejects them when `allow_guest_users=False`. The MCP JWTVerifier does neither tenant `tid` validation beyond issuer, nor guest rejection.
+
+Let me confirm the issuer pins tenant (it does — `login.microsoftonline.com/{tenant}/v2.0`), so cross-tenant tokens are rejected. Let me double check whether `get_run_status` leaks run existence and the `list_pipeline_runs` auth model.
+
+The pipeline runs tool returns ALL pipeline runs (auth-only, not suite-scoped) — but per CLAUDE.md and the service docstring, pipeline monitoring data is intentionally auth-only (not suite-scoped). The DQ run correlation IS suite-scoped via `accessible`. That matches REST behavior, so not a finding.
+
+Let me confirm `azure_allow_guest_users` is actually set/intended in prod and whether the gap is material, plus check `auth_dev_bypass` + prod misconfig path one more time.
+
+The `_dev_bypass_allowed` requires `environment == "dev"` AND `not azure_auth_configured`. So `ENVIRONMENT=prod + AUTH_DEV_BYPASS=true` → `_dev_bypass_allowed` is False → if Azure also unconfigured, `mcp_enabled` is False → not mounted. Fail-closed holds. Good.
+
+I have my findings.
+
+Based on my review, here are the findings:
+
+```json
+[
+  {
+    "file": "backend/app/mcp/auth.py",
+    "line": 68,
+    "summary": "MCP JWTVerifier does not reject Azure AD guest (B2B/external) users, unlike the REST validator which enforces `allow_guest_users` (default False).",
+    "failure_scenario": "core/auth.py builds the REST scheme with `allow_guest_users=settings.azure_allow_guest_users` (default False), so fastapi-azure-auth rejects guest identities (is_guest → 403 'Guest users not allowed'). The MCP `build_auth_provider` uses a plain fastmcp JWTVerifier with only jwks_uri/issuer/audience/required_scopes — it has no guest check. A guest account that was invited into the tenant (and therefore can obtain a token with the right aud + scp) is rejected at the REST API but ACCEPTED at /mcp. Since the MCP tools provide read AND write access to suites/checks/runs, this is a privilege gap: the guest is upserted via _upsert_user and can list_suites, trigger_suite_run, create_check, profile_column on any suite owned-or-shared to that resolved user. The two auth surfaces over the same data must enforce the same guest policy."
+  },
+  {
+    "file": "backend/app/mcp/auth.py",
+    "line": 87,
+    "summary": "resolve_current_user falls back to `token.subject` as the AAD object id when the `oid` claim is absent, which can key the users table on a non-stable / non-oid subject.",
+    "failure_scenario": "The REST path (_extract_claims) reads `claims['oid']` directly and would KeyError (500) if oid were missing — i.e. it treats oid as mandatory. The MCP path does `aad_oid = str(claims.get('oid') or token.subject or '')`. For Azure v2 access tokens `sub` is a pairwise, per-app-pseudonymous identifier, NOT the directory object id. If a token ever lacks `oid` (e.g. a token shaped differently than expected, or a future app-token), the user gets upserted/keyed on `sub` instead of `oid`. Because `_upsert_user` does on_conflict_do_update(index_elements=['aad_object_id']), a `sub`-keyed identity could (a) create a parallel duplicate user row distinct from the same human's oid-keyed REST row (divergent suite ownership/sharing), or (b) in the pathological case where a `sub` value collides with another principal's stored aad_object_id, overwrite that row's email/display_name. The MCP resolver should require `oid` exactly like the REST resolver rather than silently falling back to subject."
+  },
+  {
+    "file": "backend/app/mcp/server.py",
+    "line": 285,
+    "summary": "trigger_suite_run stamps `triggered_by=f\"mcp:{user.id}\"`, which collides with the orchestration `triggered_by` marker namespace used for pipeline-run correlation.",
+    "failure_scenario": "get_adf_pipeline_status correlates a pipeline run to a DQ run by `Run.triggered_by == f\"{provider}:{pipeline_or_dag_id}:{provider_run_id}\"`. MCP-triggered runs use the prefix `mcp:&lt;uuid&gt;` — a different shape, so no direct false-positive correlation today. But the `triggered_by` column is the documented cross-table linkage convention (CLAUDE.md §10: `'&lt;provider&gt;:&lt;pipeline_or_dag_id&gt;:&lt;provider_run_id&gt;'`), and overloading it with an actor identity (`mcp:&lt;user_id&gt;`) puts a user's UUID into a free-text field that is queried by string-prefix elsewhere. This is fragile/incorrect use of the correlation key (actor provenance vs trigger linkage are different concepts) and risks future correlation queries matching unexpectedly; provenance should live in a dedicated field, not the triggered_by marker."
+  }
+]
+```
+
+Notes on what I checked and cleared (not findings):
+
+- **Fail-closed mounting**: holds. `_dev_bypass_allowed` requires `environment=="dev"` AND `auth_dev_bypass` AND `not azure_auth_configured`. `ENVIRONMENT=prod + AUTH_DEV_BYPASS=true` → `_dev_bypass_allowed` is False; with Azure unconfigured `mcp_enabled` is False → `build_mcp_app` returns None → `main.py` skips the mount. No unauthenticated prod mount path exists.
+- **Audience/issuer**: correct. fastapi-azure-auth (REST) validates `audience=app_client_id` (bare GUID, the v2 `aud`), and the MCP JWTVerifier uses the same `audience=s.azure_api_client_id`. Issuer is pinned to `https://login.microsoftonline.com/{tenant}/v2.0`, so cross-tenant tokens are rejected. `required_scopes=[azure_api_scope]` is checked against `scp` (fastmcp `_extract_scopes` reads `scope` then `scp`). These match REST.
+- **PII redaction**: `get_suite_results` correctly calls `run_service.redact_sample_failures` with the suite's `column_policy` and the tested column — matches REST.
+- **Per-suite authz**: every suite-touching tool calls `require_permission` (view/edit). `get_adf_pipeline_status` correctly filters the correlated DQ run by `accessible_suite_ids`; raw pipeline-run monitoring data is intentionally auth-only (not suite-scoped) per the service contract.
+- **Injection/input**: `create_check` and `profile_column` route through the same `check_service.create_check` (custom-SQL guardrails via `validate_custom_sql_check`) and `profile_service.profile_connection` (identifier allowlist) as REST — no service-layer bypass.</result>
+<usage><subagent_tokens>67068</subagent_tokens><tool_uses>14</tool_uses><duration_ms>103392</duration_ms></usage>
+</task-notification>
+
+---
+
+How are we enebaling users to use the MCP, is there any programetic access for DataQ available or will it be the SSO?
+
+---
+
+no i think current approach is good, we shouldn't be tied too much with azure (adr 10, 13), but what do you think about DataQ-issued API keys / service tokens [may br post v1]
+
+---
+
+First commit/merge the current change. 
+Then file the post-v1 issue + drop a one-paragraph entry into the post-v1 roadmap and scaffold the ADR stub [also update the ADR README]
+Also we should not build something just for the MCP, it should be applicable for REST API also. 
+Once done lets go back to week 7 task chain
+
+---
+
+CI passed
+
+---
+
+<task-notification>
+<task-id>be2w8mha6</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/83180c0d-bbe5-4c61-b9bc-5700e05669e4/tasks/be2w8mha6.output</output-file>
+<status>failed</status>
+<summary>Background command "Wait for #462 CI" failed with exit code 1</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>biz75n3zu</task-id>
+<tool-use-id>toolu_017Y84E7aKDnK4LeQjQrKy3t</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/83180c0d-bbe5-4c61-b9bc-5700e05669e4/tasks/biz75n3zu.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for #463 CI" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ad2b597dbd8453795</task-id>
+<tool-use-id>toolu_01Uh4TQytgvyZwvfDbgRUKQS</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/83180c0d-bbe5-4c61-b9bc-5700e05669e4/tasks/ad2b597dbd8453795.output</output-file>
+<status>completed</status>
+<summary>Agent "Review prod-docs gate change" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I have enough to conclude. Let me verify the gate behavior summary: `environment` is `Literal["dev","staging","prod"]` default `"dev"`; gate is `!= "prod"`. Frontend client uses relative `/api/v1` (handwritten, no schema fetch). SWA config only has navigation fallback (no proxy to /docs). Probes are empty (TCP default). CI has no openapi/schema consumer.
+
+No concrete prod consumer of the disabled endpoints exists. The gate is correct, the wiring is correct, and tests assert both prod (all-None) and dev/staging (all-enabled) plus the live wired app. No findings.
+
+```json
+[]
+```
+
+Summary of verification (no findings):
+
+1. **Prod consumers** — none break. The frontend API client (`frontend/src/api/client.ts`) is handwritten with a relative `baseURL: '/api/v1'`; there is no OpenAPI codegen (no openapi-typescript/orval/swagger in `frontend/package.json`), so nothing fetches `/openapi.json`. The SWA config (`frontend/public/staticwebapp.config.json`) only does SPA navigation fallback — no proxy to `/docs`. ACA probes are empty arrays in `deploy/terraform/terraform.tfstate` (TCP default, not an HTTP path), and the documented health probe is the separate `/healthz` (still unconditionally registered at `main.py:160`). No CI workflow references openapi/docs/schema.
+
+2. **Gate correctness** — `environment` is `Literal["dev","staging","prod"]` (default `"dev"`, `backend/app/core/config.py:21`). `enabled = environment != "prod"` correctly disables only prod and enables both valid non-prod values. `openapi_url=None` does disable both Swagger and ReDoc UIs (FastAPI auto-disables the doc UIs when the schema URL is None), as the docstring states.
+
+3. **Helper + wiring + tests** — the three dict keys (`docs_url`/`redoc_url`/`openapi_url`) match the `FastAPI(...)` kwargs exactly (`main.py:84-90`), no typo. Tests in `backend/tests/test_main.py` assert all three states: prod → all-None, dev/staging → all-enabled, and the live wired app serves `/openapi.json` + `/docs` (200) in the test/non-prod env.</result>
+<usage><subagent_tokens>45253</subagent_tokens><tool_uses>6</tool_uses><duration_ms>31941</duration_ms></usage>
+</task-notification>
+
+---
+
+$464 merged
+
+---
+
+similarly can you check what are the not started items from week 1-6?
+
+---
+
+<task-notification>
+<task-id>bp1q0wvmy</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/83180c0d-bbe5-4c61-b9bc-5700e05669e4/tasks/bp1q0wvmy.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for #465 to auto-merge" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+persist it all now in one small docs PR (markers + Theme 8 additions)
+
+---
+
+<task-notification>
+<task-id>bd0678gzg</task-id>
+<tool-use-id>toolu_01SH2Ydnx4znpMr5B4yjxBUo</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/83180c0d-bbe5-4c61-b9bc-5700e05669e4/tasks/bd0678gzg.output</output-file>
+<status>completed</status>
+<summary>Background command "Auto-merge + wait for #467" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>btf6x4gw9</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/83180c0d-bbe5-4c61-b9bc-5700e05669e4/tasks/btf6x4gw9.output</output-file>
+<status>completed</status>
+<summary>Background command "Auto-merge + wait for #468" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Can you update the docs (all inscope md files)
+
+---
+
+What happens to - C3 — minor robustness (no issue): concurrent check-edit → 409 not 500;
+
+---
+
+yeah, implement C3.
+Next, there are are some bunch of open PRs from dependabot, can you triage and close them
+
+---
+
+Now triage the open issues of week 7
+
+---
+
+#288 is inscope for v1, we need to publish it before v1 shipped
+
+---
+
+<task-notification>
+<task-id>a4c7065fa8c1131a9</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/83180c0d-bbe5-4c61-b9bc-5700e05669e4/tasks/a4c7065fa8c1131a9.output</output-file>
+<status>completed</status>
+<summary>Agent "Review docs-site accuracy + workflow" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>`TEST_DATABASE_URL` is correct, frontend (React/Vite on :3000) is in docker-compose. Everything in the docs checks out factually.
+
+The documentation is highly accurate and the workflow/config are correct. The build passes `--strict` and produces `site/`. I found essentially no factual inaccuracies or publish-breaking bugs. Let me note the only borderline items.
+
+The content is exceptionally accurate against the codebase. Returning findings.
+
+```json
+[]
+```
+
+## Review summary
+
+I reviewed all 9 nav'd doc pages, `mkdocs.yml`, `.github/workflows/docs.yml`, and `requirements-docs.txt` against the actual codebase. **No findings rise to the level of a factual inaccuracy or a publish-breaking bug.** Returning `[]`.
+
+### What I verified (all confirmed correct)
+
+**Factual accuracy — all claims hold:**
+- Datasources (Snowflake/ADLS/S3/UC) vs orchestration (ADF/Airflow) split — matches CLAUDE.md exactly.
+- Endpoints: `/api/v1/orchestration/events/adf` + `/airflow` (`backend/app/api/v1/orchestration.py:78,134`), `/healthz` (`main.py:160`), `/api/v1/me` returning 401 (`me.py:29`), `/docs` gated off in prod (`main.py:67-82`, the "in dev" qualifier is correct).
+- **MCP: exactly 8 `@mcp.tool` decorators** in `backend/app/mcp/server.py`, mounted at `/mcp` (`main.py:168`) — the "8 tools at `/mcp`" claim is precise.
+- Ports 8000/3000, conda env `dataq`, dev-bypass auth (`backend/app/core/auth.py:10-12`), Node ≥24/pnpm ≥9 (`frontend/package.json:61-62`) — all match.
+- `pipeline_runs` vs `runs`, run statuses `queued→running→succeeded/failed/cancelled` (`models.py:26`), result statuses `pass/warn/fail/critical` + `skip/error` (`models.py:33-35`), health score [0,100] (`dashboard_service.py:26`), trigger binding `(provider, pipeline, env)→suite`, severity-from-thresholds (ADR 0005/0016), freshness/volume monitors, the stuck-run "reaper" beat task (`tasks.py:380`), secret store env/redis/KeyVault seam (`core/secrets.py`) — all accurate.
+- ADR/issue references (ADR 0008 MCP, ADR 0026/#461 API keys) exist on disk.
+
+**Workflow (`docs.yml`):** Valid GitHub Pages deploy — `pages: write` + `id-token: write`, build job uploads `site` via `upload-pages-artifact@v3`, deploy job uses `deploy-pages@v4` with the `github-pages` environment + `concurrency: pages`. The missing `actions/configure-pages` step is **not** a bug — `deploy-pages@v4` works from an uploaded artifact provided Pages source is set to "GitHub Actions" (the workflow comment documents this one-time setting).
+
+**mkdocs.yml + actual build:** I installed `mkdocs-material==9.7.6` and ran `mkdocs build --strict` — **exit 0, `site/index.html` produced.** `exclude_docs` correctly drops the 4 internal docs (progress.md, both post-v1 notes, compliance-posture.md) while publishing all 10 nav pages + 26 ADRs; `validation.omitted_files: ignore` suppresses the not-in-nav warnings for the ADRs so `--strict` stays green. All 10 nav targets exist. `site/` is correctly gitignored.
+
+Minor non-issues (not worth filing): `mkdocs serve` preview port 8000 collides with the local backend, and the `pip install -r requirements-docs.txt` in `contributing.md` doesn't mention isolating from the conda env — neither is incorrect, just preview ergonomics.</result>
+<usage><subagent_tokens>60528</subagent_tokens><tool_uses>25</tool_uses><duration_ms>141541</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bi49uvn7t</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/83180c0d-bbe5-4c61-b9bc-5700e05669e4/tasks/bi49uvn7t.output</output-file>
+<status>completed</status>
+<summary>Background command "Comment + auto-merge #471, wait for merge" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+For the local installation can we go with GHCR package as recomended option and git clone for developer / contributor? what do you think?
+
+---
+
+file it as a tracked issue for week 7. will take it up after the other open issues and live testing
+
+---
+
+There should be a way to link the secret store (currently az kv) to linked to DataQ, how is it happening now?
+
+---
+
+So how will it work post full GHCR image for other secret stores [HashiCorp Vault, AWS Secrets Manager, etc.] or switch to new az kv or locally from a .env file?
+
+---
+
+Keep me honest here, can we add a UI element with dropdown for secret store type and a textbox(s) for the Vault URL, auth or .env path, etc.
+
+---
+
+But what will happen if anyone try to test it locally just by downloading the image? And they have a .env file with them, but they are not building the dataq from scratch. like, they don't have the codebase or anything, just the Docker image.
+or say they already have a vault in cloud, and they just wanted to host that Docker image in the cloud. How will they set it up?
+
+---
+
+So, basically, once we implement #472 and add the back end for HashiCorp/AWS Secrets Manager, the user will download the ghcr.yml file, update the ENVIRONMENT section and do a compose up. That's it. Right? Or is there anything else?
+
+---
+
+gotcha, track these details under #472.
+
+---
+
+The GitHub page look good. Link it to the sidebar's documentation. And you can close the issue, but keep a note that need to updated once #472 lands.
+Then back to Open issues and live testing.
+
+---
+
+<task-notification>
+<task-id>a4fa4b02f6facfee7</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/83180c0d-bbe5-4c61-b9bc-5700e05669e4/tasks/a4fa4b02f6facfee7.output</output-file>
+<status>completed</status>
+<summary>Agent "Correctness review backend" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I've completed a thorough review. The implementation is a faithful mirror of the existing profiler. Here are my findings.
+
+```json
+[
+  {
+    "file": "backend/app/services/profile_service.py",
+    "line": 692,
+    "summary": "Snowflake/Databricks return UPPER-CASE column names for an unquoted `SELECT *`, so the dropdown offers names that don't byte-match what the author typed/stored.",
+    "failure_scenario": "A Snowflake table created as `create table orders (amount int, status text)` stores the identifiers folded to uppercase. `build_columns_query` emits unquoted `SELECT * FROM public.orders LIMIT 0`, so `result.keys()` returns `['AMOUNT', 'STATUS']`. The check-editor dropdown (#474) presents `AMOUNT`/`STATUS`, but the suite's stored/displayed column names elsewhere (and the user's mental model) are lowercase `amount`/`status`. Picking from the dropdown then writes `AMOUNT` into a check, which `validate_identifier` accepts but which mismatches the lowercase name used elsewhere in the same suite, producing inconsistent check config. Worse for a genuinely quoted mixed-case column (`\"Amount\"`): the dropdown yields `Amount` but the unquoted profiler/aggregate path that consumes the picked name will fold it and fail to find it. The profiler's existing aggregate path takes columns the user supplies; this new path is the first to surface raw warehouse-cased names back to the UI, creating the divergence."
+  },
+  {
+    "file": "backend/app/api/v1/suites.py",
+    "line": 408,
+    "summary": "`schema_` query param is the only target field with no `max_length`, unlike `table`/`catalog`/`path`, so an oversized schema is accepted past the FastAPI guard.",
+    "failure_scenario": "A client calls `GET /suites/{id}/columns?table=orders&amp;schema=&lt;200KB string&gt;`. `table` (max 255), `catalog` (255), `path` (1024) are length-bounded at the FastAPI layer and 422 early, but `schema_` has no bound, so the huge value flows into `validate_identifier`. It still 422s there (regex fails), so no crash — but the inconsistency means an unbounded request body field reaches service code, defeating the early-reject intent the sibling params encode. Concrete impact is a slightly larger attack/log surface and behavioral asymmetry, not a crash; included as a low-severity correctness/validation gap."
+  },
+  {
+    "file": "backend/app/services/profile_service.py",
+    "line": 731,
+    "summary": "CSV header read does not pass through the file_format/encoding/delimiter handling `_read_dataframe` relies on; a non-default-delimited CSV returns one bogus 'column'.",
+    "failure_scenario": "An ADLS/S3 file `data.csv` is semicolon-delimited (`a;b;c\\n1;2;3`). `_read_dataframe` (the profiler path) reads with pandas defaults too, so this is a shared limitation — but for the profiler the user explicitly lists columns, whereas `list_file_columns` is the authoritative source the dropdown trusts. `pd.read_csv(raw, nrows=0)` with default comma delimiter returns a single column named `a;b;c`, so the dropdown offers one nonsensical column and the author cannot select the real ones. No exception is raised (it's a 'successful' wrong answer), so the failure is silent: the dropdown is simply populated with garbage and #474's whole purpose is defeated for that file."
+  }
+]
+```
+
+Summary: the new `list_columns` path is a careful mirror of the existing profiler — secret_ref check and identifier validation both run BEFORE the try/except (so bad identifiers correctly 422 rather than getting relabeled as 502), `ProfileFailedError` relabeling and exception non-echoing match `profile_table`/`profile_file`, `infer_file_format` runs outside the try (clean 422 for bad format), `list(result.keys())` correctly handles the `RMKeyView`/non-list case, and `LIMIT 0` / CSV `nrows=0` / Parquet footer reads are all header-only as documented. I found no null-deref, wrong-variable, SQL-injection, or error-swallowing bugs.
+
+The three findings above are all low-severity: the case-folding one (most defensible) is a real behavioral divergence specific to this new UI-facing path; the `schema_` `max_length` gap is a validation asymmetry that doesn't crash; and the CSV-delimiter one is a silent-wrong-answer that is technically shared with the profiler but newly load-bearing here. None are high-confidence "must fix" crashes.</result>
+<usage><subagent_tokens>65012</subagent_tokens><tool_uses>7</tool_uses><duration_ms>76726</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a9fbf4b6995961c0b</task-id>
+<tool-use-id>toolu_0174PspYVuMcvMvWLRoowaPP</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/83180c0d-bbe5-4c61-b9bc-5700e05669e4/tasks/a9fbf4b6995961c0b.output</output-file>
+<status>completed</status>
+<summary>Agent "Cleanup convention altitude review" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I have everything I need. The new `list_columns` follows the exact same pattern as the existing `profile_connection` (which also takes the target via the POST body and doesn't validate against the stored target), so the layering/altitude is consistent with the established pattern. Let me check the CONTRIBUTING for any specific conventions worth quoting, but the commit discipline looks clean (3 commits: endpoint, frontend, tests).
+
+Let me verify the `_table` validation order claim in the docstring (catalog vs schema) and one duplication detail.
+
+The key duplication: `list_columns` dispatch body is a near-verbatim copy of `profile_connection`'s dispatch body (lines 610-655 vs 761-793), and `list_table_columns` duplicates the secret_ref/schema/identifier-validation block from `profile_table` (365-376). I have enough to report.
+
+Here are my findings.
+
+```json
+[
+  {
+    "file": "backend/app/services/profile_service.py",
+    "line": "744-793",
+    "summary": "list_columns is a near-verbatim copy of profile_connection's dispatch body (lines 610-655): same _PROFILERS.get + None check, same secret_ref guard, same _SqlProfiler isinstance branch, same table-required / requires_catalog-and-not-catalog / path-required checks, with only the error wording and the leaf call (list_table_columns vs profile_table) differing. The two will now drift independently whenever the target-validation rules change.",
+    "failure_scenario": "When a new datasource (or a new target rule, e.g. UC also needing a schema) is added to _PROFILERS, an author must remember to edit BOTH dispatchers. Editing only profile_connection leaves list_columns silently using stale validation — the dropdown would 422 or mis-dispatch for a target the profiler accepts. A shared `_resolve_sql_or_file_target(profiler, table, catalog, path, ...)` helper returning a discriminated target (or raising) would let both call sites share the one rule set."
+  },
+  {
+    "file": "backend/app/services/profile_service.py",
+    "line": "680-688",
+    "summary": "list_table_columns duplicates profile_table's effective-schema resolution + identifier-validation block (lines 365-374): the `schema if schema is not None else connection.config.get('schema')` fallback, the isinstance(str) guard raising ProfileIdentifierInvalidError, and the catalog/table/schema validate_identifier calls are copied. validate_identifier is in fact already re-run inside _table() (line 173-179) during build_columns_query, so the pre-validation here is a third copy of the same checks.",
+    "failure_scenario": "The schema-fallback semantics ('connection.config schema when none passed') now live in two functions; a change to where the default schema comes from must be made in both or the dropdown and the profiler disagree on which schema they introspect. A `_resolve_effective_schema(connection, schema)` helper (already implied by the identical code) would remove the divergence risk."
+  },
+  {
+    "file": "backend/app/services/profile_service.py",
+    "line": "703-741",
+    "summary": "list_file_columns re-implements the credential + download plumbing of _read_dataframe (lines 533-556): the secret_ref check, secret_store.get, download_bytes(conn_type/config/path/secret) into io.BytesIO, and the CSV-vs-parquet branch. The only real difference is nrows=0 / schema.names instead of a sampled read. Note the secret_ref check is also a third place it's enforced (list_columns checks it at 767, then list_file_columns checks it again at 719).",
+    "failure_scenario": "Two near-identical file-read paths mean a fix to the download seam (e.g. a new auth arg to download_bytes, or a streaming/range read) must be applied twice. The header-only read could instead be a thin mode on the existing _read_dataframe seam (a `header_only: bool` or `nrows=0` path), keeping one download/parse implementation."
+  },
+  {
+    "file": "backend/app/api/v1/suites.py",
+    "line": "404-427",
+    "summary": "The GET /columns endpoint takes the table/schema/catalog/path/file_format as query params from the client rather than reading the suite's stored run target (suite.target, used by the run path). The frontend re-derives these from the suite target client-side (extractProfileTarget). This mirrors the existing POST /profile endpoint, so it is a consistent altitude choice — but it means the authz gate ('edit on this suite') protects an arbitrary table/file the caller names, not the suite's own target.",
+    "failure_scenario": "An edit-capable user on suite A can introspect any table/schema/catalog reachable by suite A's connection credential, even tables the suite never targets, by hand-passing query params. For a column-name list against a connection the user already has edit access to this is low-severity (same blast radius as the existing /profile endpoint), but it is worth a conscious note that the endpoint trusts caller-supplied identity over the stored target. If the intent was 'columns of THIS suite's target,' resolving from suite.target server-side would both tighten scope and let the frontend drop the param-passing."
+  },
+  {
+    "file": "frontend/src/components/checks/ColumnProfilePanel.tsx",
+    "line": "100-104",
+    "summary": "The `options` IIFE and the separate `useDropdown` boolean both branch on cols.status==='loaded'. options can be simplified to a single expression and useDropdown can be derived from options.length, removing one of the two parallel conditionals: `const options = cols.status === 'loaded' ? (value &amp;&amp; !cols.columns.includes(value) ? [value, ...cols.columns] : cols.columns).map(c =&gt; ({label:c,value:c})) : [];` then `const useDropdown = options.length &gt; 0;`.",
+    "failure_scenario": "Two derivations gated on the same cols.status currently encode the 'loaded with columns' condition twice; a future tweak (e.g. show the dropdown while loading with cached columns) must keep both in sync or the Select renders with empty options / the value-prepend logic and the render branch disagree. Low cost, but it is redundant state derivation the prompt asked to flag."
+  }
+]
+```
+
+A note on the angles that came back clean: CONVENTIONS — commit discipline is clean (three conventional commits: endpoint `feat`, frontend `feat`, `test`, one functionality each); no migration; no silent fix (issue #474 referenced throughout); no datasource/orchestration-rule violation (ADF correctly raises `ProfileUnsupportedError` rather than being treated as a datasource); secrets are handled correctly (adapter exceptions never echoed, `secret_ref` guarded). ALTITUDE — the `SELECT * LIMIT 0` + `result.keys()` approach is a defensible choice over the SQLAlchemy inspector given the documented 3-level Unity Catalog namespace friction, and it reuses the validated `_table` namespace; no finding there beyond the duplication ones above. The `loadColumns` fetch-once guard is correct and not flagged.</result>
+<usage><subagent_tokens>67756</subagent_tokens><tool_uses>6</tool_uses><duration_ms>50995</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bv8hc9128</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/83180c0d-bbe5-4c61-b9bc-5700e05669e4/tasks/bv8hc9128.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for #475 CI after fixups" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bi2moa8fx</task-id>
+<tool-use-id>toolu_012NziCD4Vi8HVp1DNhyD5Zk</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/83180c0d-bbe5-4c61-b9bc-5700e05669e4/tasks/bi2moa8fx.output</output-file>
+<status>completed</status>
+<summary>Background command "Set milestone, wait for CI" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bw3izo4dk</task-id>
+<tool-use-id>toolu_01MauE6ggatinXAuKs7tgXMU</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/83180c0d-bbe5-4c61-b9bc-5700e05669e4/tasks/bw3izo4dk.output</output-file>
+<status>completed</status>
+<summary>Background command "Set milestone, wait for #397 CI" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b0bdf1rkk</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/83180c0d-bbe5-4c61-b9bc-5700e05669e4/tasks/b0bdf1rkk.output</output-file>
+<status>completed</status>
+<summary>Background command "Set milestone, wait for #382 CI" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+For the Live testing use the playwright MCP and use Olivia's account
