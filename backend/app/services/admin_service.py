@@ -10,13 +10,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from urllib.parse import quote
 from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.app.core.config import get_settings
-from backend.app.core.secrets import SecretStore
+from backend.app.core.secrets import SecretNotFoundError, SecretStore
 from backend.app.db.models import ORCHESTRATION_PROVIDERS, Check, Connection, Share, Suite, User
 from backend.app.services.suite_authz import OWNER
 
@@ -168,10 +169,14 @@ class WebhookConfigRow:
 
 def _safe_secret(secret_store: SecretStore, name: str) -> str | None:
     """Resolve a secret, returning None if it isn't provisioned (so the webhook
-    surface degrades to a clear 'not set' marker instead of erroring)."""
+    surface degrades to a clear 'not set' marker instead of erroring).
+
+    Narrow to the store's not-found error (as the event receiver does) — an
+    unexpected error still propagates rather than masquerading as 'not set'.
+    """
     try:
         return secret_store.get(name)
-    except Exception:
+    except SecretNotFoundError:
         return None
 
 
@@ -201,15 +206,21 @@ def webhook_configs(
             continue
         if provider == "adf":
             token = _safe_secret(secret_store, settings.adf_webhook_secret_name)
+            # URL-encode the secret: the receiver reads `token` URL-decoded, so a
+            # secret containing &/+/=/% must be percent-encoded or the pasted URL
+            # won't match (ADR 0006). bool(token) (not `is not None`) so an empty
+            # secret reads as not-configured, consistent with the placeholder.
             token_param = (
-                token if token else f"<set {settings.adf_webhook_secret_name} in Key Vault>"
+                quote(token, safe="")
+                if token
+                else f"<set {settings.adf_webhook_secret_name} in Key Vault>"
             )
             rows.append(
                 WebhookConfigRow(
                     provider="adf",
                     auth="Shared secret in the URL (?token=…), constant-time checked — ADR 0006",
                     inbound_url=f"{base}/api/v1/orchestration/events/adf?token={token_param}",
-                    token_configured=token is not None,
+                    token_configured=bool(token),
                     signing_secret_name=None,
                     connection_names=names,
                 )

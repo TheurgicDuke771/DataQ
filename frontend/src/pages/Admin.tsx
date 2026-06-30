@@ -133,7 +133,7 @@ function WebhooksSection() {
           Ready-to-paste URLs for an orchestrator to notify DataQ on pipeline/DAG completion. The
           ADF URL carries a shared secret in the query string — treat it as a credential.
         </Typography.Text>
-        {state.status === 'loading' && <Spin />}
+        {state.status === 'loading' && <Spin size="large" />}
         {state.status === 'error' && (
           <Alert
             type="error"

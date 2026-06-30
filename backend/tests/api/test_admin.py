@@ -185,7 +185,9 @@ class _FakeStore:
 
     def get(self, name: str) -> str:
         if self._token is None:
-            raise KeyError(name)
+            from backend.app.core.secrets import SecretNotFoundError
+
+            raise SecretNotFoundError(name)
         return self._token
 
     def set(self, name: str, value: str) -> None:  # pragma: no cover - protocol completeness
@@ -228,6 +230,25 @@ def test_admin_webhooks_adf_url_embeds_token(
     assert adf["token_configured"] is True
     assert adf["signing_secret_name"] is None
     assert "prod-factory" in adf["connection_names"]
+
+
+def test_admin_webhooks_url_encodes_token(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A secret with URL-significant chars must be percent-encoded so the pasted URL
+    # decodes back to the exact secret the receiver compares against (ADR 0006).
+    owner = _user(db_session, "owner@x.io")
+    _orch_connection(db_session, owner, ctype="adf", name="prod-factory")
+    db_session.commit()
+    _grant_admin(monkeypatch)
+    _with_store(client, _FakeStore(token="a+b&c=d"))
+
+    [adf] = [
+        r
+        for r in client.get("/api/v1/admin/orchestration/webhooks").json()
+        if r["provider"] == "adf"
+    ]
+    assert adf["inbound_url"].endswith("?token=a%2Bb%26c%3Dd")
 
 
 def test_admin_webhooks_airflow_carries_no_url_token(
