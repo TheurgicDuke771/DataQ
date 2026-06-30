@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "3a217d32adc8",
+  "strategy": "manual-commit",
+  "branch": "docs/adr-0027-suite-permission-model",
+  "checkpoints_count": 8,
+  "files_touched": [
+    "CLAUDE.md",
+    "docs/adr/README.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/3a/217d32adc8/0/metadata.json",
+      "transcript": "/3a/217d32adc8/0/full.jsonl",
+      "content_hash": "/3a/217d32adc8/0/content_hash.txt",
+      "prompt": "/3a/217d32adc8/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 107699,
+    "cache_creation_tokens": 5901276,
+    "cache_read_tokens": 397607045,
+    "output_tokens": 759031,
+    "api_call_count": 1032
+  }
+}
