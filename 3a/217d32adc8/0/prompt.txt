@@ -501,3 +501,32 @@ Also can we add pagination in the result page (i.e. - 20 record per page)?
 <status>completed</status>
 <summary>Background command "Wait for Deploy run to complete" completed (exit code 0)</summary>
 </task-notification>
+
+---
+
+done, you can take over now
+
+---
+
+you mentioned only admin can add connection, but there is a option for normal user to add new connection too, what am I missing?
+
+---
+
+And what is difference between suit admin and suit owner?
+
+---
+
+Can we reserve admin only for workspace admin, and normal user can have owner, edit and view? 
+Is there any real world scenarion where current model will benifit over this?
+And will there be any major downside going to this direction?
+
+---
+
+No. What I am saying is owner and admin will have same level of access in the suite. And when a suite is created, a workspace admin, by default will be the admin of that suite. and when the owner is on leave, admin can manage that suit instead of owner. But no normal user can be a admin to that suit. So for the one suit, there will be one owner, and admin will be the workspace admin. And the other normal users can either view or edit the suit. 
+Tell me what do you think?
+
+---
+
+Yeah, lets document the decision [why we are switching, what was the issue, what will be the implication, etc.] and file an isuue, then we will start the work. 
+And for visibility go with option a.
+And lets check if we can couple this with any backlog issues.
