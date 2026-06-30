@@ -344,3 +344,23 @@ export async function profileColumns(
   const { data } = await api.post<ProfileResult>(`/suites/${suiteId}/profile`, payload);
   return data;
 }
+
+/** The target-identity subset that names a table/file (no `columns`/`top_n`). */
+export type ColumnTarget = Pick<
+  ColumnProfileRequest,
+  'table' | 'schema' | 'catalog' | 'path' | 'file_format'
+>;
+
+/** Mirrors the backend `GET /suites/{id}/columns` — the column names of the
+ *  suite's table/file target, so the check editor can offer a dropdown instead
+ *  of free-text (#474). Target identity is passed as query params. */
+export async function listColumns(suiteId: string, target: ColumnTarget): Promise<string[]> {
+  const params: Record<string, string> = {};
+  if (target.table) params.table = target.table;
+  if (target.schema) params.schema = target.schema;
+  if (target.catalog) params.catalog = target.catalog;
+  if (target.path) params.path = target.path;
+  if (target.file_format) params.file_format = target.file_format;
+  const { data } = await api.get<{ columns: string[] }>(`/suites/${suiteId}/columns`, { params });
+  return data.columns;
+}
