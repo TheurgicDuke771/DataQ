@@ -519,3 +519,38 @@ def test_polled_run_skipped_when_recently_updated(db_session: Any) -> None:
     assert second.skipped == 1
     # only one run was ever triggered (no double-fire)
     assert len(list(db_session.scalars(select(Run)))) == 1
+
+
+def test_polled_running_then_succeeded_is_not_skipped(
+    db_session: Any, stub_run_dispatch: list[str]
+) -> None:
+    # #490 regression: a run first recorded as `running` has its last_updated_at
+    # inside the next poll window, so the time-based skip WOULD drop it — but a
+    # non-terminal existing row must always be re-processed, or the `running →
+    # succeeded` transition (and its trigger) is lost. Only terminal rows skip.
+    conn = _adf_connection_with_secret(db_session)
+    suite = _suite(db_session, conn)
+    _binding(db_session, suite=suite, pipeline="load_finance", env=conn.env)
+    window = datetime.now(UTC) - timedelta(minutes=15)
+
+    running = ingest_polled_runs(
+        db_session,
+        provider_impl=_FakeProvider(),
+        connection=conn,
+        updates=[_update(status="running", provider_run_id="run-tr-1")],
+        skip_updated_since=window,
+    )
+    assert running.pipeline_runs[0].status == "running"
+    assert running.triggered_runs == []  # running never triggers
+
+    succeeded = ingest_polled_runs(
+        db_session,
+        provider_impl=_FakeProvider(),
+        connection=conn,
+        updates=[_update(status="succeeded", provider_run_id="run-tr-1")],
+        skip_updated_since=window,
+    )
+    assert succeeded.skipped == 0  # NOT skipped despite the recent running write
+    assert succeeded.pipeline_runs[0].status == "succeeded"
+    assert len(succeeded.triggered_runs) == 1  # the transition fires the trigger
+    assert stub_run_dispatch == [str(succeeded.triggered_runs[0].id)]  # handed to the broker
