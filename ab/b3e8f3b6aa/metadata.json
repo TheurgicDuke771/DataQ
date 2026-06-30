@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "abb3e8f3b6aa",
+  "strategy": "manual-commit",
+  "branch": "docs/end-of-w7-reconcile",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "CLAUDE.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ab/b3e8f3b6aa/0/metadata.json",
+      "transcript": "/ab/b3e8f3b6aa/0/full.jsonl",
+      "content_hash": "/ab/b3e8f3b6aa/0/content_hash.txt",
+      "prompt": "/ab/b3e8f3b6aa/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 56289,
+    "cache_creation_tokens": 2683686,
+    "cache_read_tokens": 173600223,
+    "output_tokens": 374536,
+    "api_call_count": 485
+  }
+}
