@@ -17,7 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from backend.app.api.v1.runs import RunRead
-from backend.app.core.auth import get_current_user
+from backend.app.core.auth import get_current_user, is_workspace_admin
 from backend.app.core.secrets import SecretStore, get_secret_store
 from backend.app.db.models import Connection, Run, Suite, User
 from backend.app.db.session import get_db
@@ -129,8 +129,14 @@ def list_suites(
     db: Annotated[Session, Depends(get_db)],
     connection_id: uuid.UUID | None = None,
 ) -> list[SuiteRead]:
-    # Scoped to suites the user owns or has a share on.
-    suites = svc.list_suites(db, user_id=current_user.id, connection_id=connection_id)
+    # Scoped to suites the user owns or has a share on — or every suite for a
+    # workspace-admin (ADR 0027). effective_permissions then stamps each as admin.
+    suites = svc.list_suites(
+        db,
+        user_id=current_user.id,
+        connection_id=connection_id,
+        include_all=is_workspace_admin(current_user),
+    )
     levels = effective_permissions(db, suites, current_user.id)
     return [SuiteRead.of(s, levels[s.id]) for s in suites]
 

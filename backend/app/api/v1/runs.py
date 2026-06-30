@@ -24,7 +24,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.auth import get_current_user
+from backend.app.core.auth import get_current_user, is_workspace_admin
 from backend.app.db.models import Check, User
 from backend.app.db.session import get_db
 from backend.app.services import orchestration_service, run_dispatch
@@ -135,11 +135,18 @@ def list_runs(
 ) -> list[RunRead]:
     # When a suite is named, gate on it up front so an inaccessible/unknown suite
     # 404s (existence hidden) rather than silently returning []. With no suite,
-    # the service scopes to every suite the caller can access.
+    # the service scopes to every suite the caller can access — or all suites for
+    # a workspace-admin (ADR 0027). require_permission already grants a
+    # workspace-admin `view` on a named suite, so the per-suite gate is consistent.
     if suite_id is not None:
         require_permission(db, suite_id, current_user.id, minimum="view")
     runs = svc.list_runs(
-        db, user_id=current_user.id, suite_id=suite_id, status=run_status, limit=limit
+        db,
+        user_id=current_user.id,
+        suite_id=suite_id,
+        status=run_status,
+        limit=limit,
+        include_all=is_workspace_admin(current_user),
     )
     # Graft each run's data-quality outcome (total/passed/worst-severity) in one
     # grouped query, so the list can flag failing checks behind a `succeeded` run.

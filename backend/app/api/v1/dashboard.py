@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from backend.app.core.auth import get_current_user
+from backend.app.core.auth import get_current_user, is_workspace_admin
 from backend.app.db.models import User
 from backend.app.db.session import get_db
 from backend.app.services import dashboard_service as svc
@@ -65,7 +65,12 @@ def get_dashboard_summary(
     db: Annotated[Session, Depends(get_db)],
     window_days: Annotated[int, Query(ge=1, le=_WINDOW_MAX)] = _WINDOW_DEFAULT,
 ) -> DashboardSummaryRead:
-    summary = svc.dashboard_summary(db, user_id=current_user.id, window_days=window_days)
+    summary = svc.dashboard_summary(
+        db,
+        user_id=current_user.id,
+        window_days=window_days,
+        include_all=is_workspace_admin(current_user),
+    )
     return DashboardSummaryRead(
         window_days=summary.window_days,
         kpis=KpisRead(

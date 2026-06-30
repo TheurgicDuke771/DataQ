@@ -9,7 +9,7 @@ the broker-failure path re-patches it. Skips without TEST_DATABASE_URL.
 
 import json
 import uuid
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -197,6 +197,23 @@ def test_list_runs_scoped_to_accessible_suites_newest_first(
     ids = [r["id"] for r in body]
     assert str(theirs.id) not in {r["suite_id"] for r in body}
     assert ids[:2] == [str(r2.id), str(r1.id)]  # newest (r2) first
+
+
+def test_list_runs_workspace_admin_sees_all(
+    client: TestClient, db_session: Any, make_workspace_admin: Callable[..., None]
+) -> None:
+    # A workspace-admin's run list spans every suite (ADR 0027), including runs of
+    # a suite they don't own/share — unlike the owned-or-shared scoping above.
+    dev = _user(db_session, "dev@ex")
+    other = _user(db_session, "other@ex")
+    theirs = _suite(db_session, other, target={"table": "T"})
+    r = _run(db_session, theirs, status="succeeded")
+    db_session.commit()
+
+    make_workspace_admin(dev.email)
+    _as(dev)
+    body = client.get("/api/v1/runs").json()
+    assert str(r.id) in {row["id"] for row in body}
 
 
 def test_list_runs_filters_by_suite_and_status(client: TestClient, db_session: Any) -> None:

@@ -330,6 +330,18 @@ def test_workspace_admin_can_delete(
     assert deleted.status_code == 204
 
 
+def test_workspace_admin_sees_all_suites(
+    client: TestClient, db_session: Any, make_workspace_admin: Callable[..., None]
+) -> None:
+    # A workspace-admin's list spans every suite (ADR 0027 option a), each stamped
+    # `admin` — even a suite they neither own nor are shared on.
+    _owner, b, _e, sid = _owner_b_e_suite(db_session)
+    make_workspace_admin(b.email)
+    _as(b)
+    listed = {s["id"]: s["my_permission"] for s in client.get("/api/v1/suites").json()}
+    assert sid in listed and listed[sid] == "admin"
+
+
 def test_owner_sees_owner_permission(client: TestClient, db_session: Any) -> None:
     owner, _b, _e, sid = _owner_b_e_suite(db_session)
     _as(owner)
