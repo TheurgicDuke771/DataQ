@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "f0669238d249",
+  "strategy": "manual-commit",
+  "branch": "fix/c3-concurrent-check-edit-409",
+  "checkpoints_count": 2,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/f0/669238d249/0/metadata.json",
+      "transcript": "/f0/669238d249/0/full.jsonl",
+      "content_hash": "/f0/669238d249/0/content_hash.txt",
+      "prompt": "/f0/669238d249/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 57915,
+    "cache_creation_tokens": 3415284,
+    "cache_read_tokens": 211305381,
+    "output_tokens": 412600,
+    "api_call_count": 540
+  }
+}
