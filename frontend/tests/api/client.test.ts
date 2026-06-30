@@ -93,4 +93,56 @@ describe('api client bearer-token interceptor', () => {
     const out = await runRequestInterceptor(api, makeConfig());
     expect((out.headers as Headers).get('Authorization')).toBeUndefined();
   });
+
+  it('falls back to interactive redirect when silent refresh needs interaction', async () => {
+    vi.doMock('../../src/auth/config', () => ({
+      authMode: 'real',
+      authConfig: { apiScopeUri: 'api://x/user_impersonation' },
+    }));
+    const { InteractionRequiredAuthError } = await import('@azure/msal-browser');
+    const account = { homeAccountId: 'h1' };
+    const acquireTokenSilent = vi
+      .fn()
+      .mockRejectedValue(
+        new InteractionRequiredAuthError('interaction_required', 'interaction is required'),
+      );
+    const acquireTokenRedirect = vi.fn().mockResolvedValue(undefined);
+    vi.doMock('../../src/auth/msalInstance', () => ({
+      getMsalInstance: () => ({
+        getAllAccounts: () => [account],
+        acquireTokenSilent,
+        acquireTokenRedirect,
+      }),
+    }));
+
+    const { api } = await import('../../src/api/client');
+    // The redirect aborts the in-flight request — interceptor rejects.
+    await expect(runRequestInterceptor(api, makeConfig())).rejects.toBeInstanceOf(
+      InteractionRequiredAuthError,
+    );
+    expect(acquireTokenRedirect).toHaveBeenCalledWith({
+      account,
+      scopes: ['api://x/user_impersonation'],
+    });
+  });
+
+  it('re-throws non-interaction silent-refresh errors without redirecting', async () => {
+    vi.doMock('../../src/auth/config', () => ({
+      authMode: 'real',
+      authConfig: { apiScopeUri: 'api://x/user_impersonation' },
+    }));
+    const networkError = new Error('network down');
+    const acquireTokenRedirect = vi.fn();
+    vi.doMock('../../src/auth/msalInstance', () => ({
+      getMsalInstance: () => ({
+        getAllAccounts: () => [{ homeAccountId: 'h1' }],
+        acquireTokenSilent: vi.fn().mockRejectedValue(networkError),
+        acquireTokenRedirect,
+      }),
+    }));
+
+    const { api } = await import('../../src/api/client');
+    await expect(runRequestInterceptor(api, makeConfig())).rejects.toBe(networkError);
+    expect(acquireTokenRedirect).not.toHaveBeenCalled();
+  });
 });
