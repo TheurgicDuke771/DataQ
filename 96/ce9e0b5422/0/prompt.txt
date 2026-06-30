@@ -1,0 +1,190 @@
+Ci cleared
+
+---
+
+<task-notification>
+<task-id>a93e09d0e57440176</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/83180c0d-bbe5-4c61-b9bc-5700e05669e4/tasks/a93e09d0e57440176.output</output-file>
+<status>completed</status>
+<summary>Agent "Review visual-fidelity frontend change" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Note: the prompt's premise that "the transition on .ant-btn was deliberately removed" is not in this diff — there was never a `.ant-btn { transition }` rule; the comment just explains why one isn't added. That's consistent, no finding there.
+
+Here are my findings.
+
+```json
+[
+  {
+    "file": "frontend/src/styles.css",
+    "line": 54,
+    "summary": "Global `:focus-visible { outline: 2px indigo }` doubles up with antd v6's built-in focus indicator on inputs/selects/buttons. antd already draws its own focus ring (box-shadow + colorPrimaryHover border) on Input, Select, Button, Checkbox, DatePicker, etc. on keyboard focus. The new global outline stacks on top, producing two concentric focus rings (antd's inner box-shadow ring + this outer indigo outline) on every focusable antd control, not just the 'subtle' ones the comment targets.",
+    "failure_scenario": "Keyboard-tabbing through a connection or check-editor form shows a doubled/halo focus indicator on every input and select — antd's own ring plus the 2px offset indigo outline — which looks like a visual bug rather than the intended single clean ring. Hard to scope back later because it is a single un-scoped universal selector."
+  },
+  {
+    "file": "frontend/src/styles.css",
+    "line": 95,
+    "summary": "`.ant-btn:active { transform: translateY(0.5px) }` fires on loading buttons. antd `loading` buttons are NOT `disabled` (they keep pointer-events and still receive `:active`), so a button mid-async-action (e.g. 'Run suite', 'Test connection', 'Save') visibly nudges when clicked again during the in-flight spinner. Disabled buttons are safe (pointer-events:none), but loading is the common case here given the async run/test flows.",
+    "failure_scenario": "User clicks 'Test Connection', it enters loading state, they click again impatiently — the loading button bounces 0.5px, signalling 'clickable' when the action is actually in flight, contradicting the disabled-feel a loading button should have."
+  },
+  {
+    "file": "frontend/src/main.tsx",
+    "line": 17,
+    "summary": "Default `@fontsource/inter/400.css` (and each weight) imports ALL unicode subsets — latin, latin-ext, cyrillic, cyrillic-ext, greek, greek-ext, vietnamese — emitting a @font-face block + a separate .woff2 file per subset per weight. With 4 Inter weights + 2 JetBrains Mono weights that is ~6 weights × ~7 subsets ≈ 40+ font files shipped to the SWA, when the app is latin-only. `@fontsource/inter/latin-400.css` (and `jetbrains-mono/latin-*`) would ship just the latin subset.",
+    "failure_scenario": "The deployed Static Web App bundle/asset payload balloons with cyrillic/greek/vietnamese woff2 files that are never rendered, inflating CDN storage and first-load asset count; risks tripping the bundle-size gate mentioned in ADR 0022 / CLAUDE.md and slows cold loads for no benefit."
+  },
+  {
+    "file": "frontend/src/styles.css",
+    "line": 88,
+    "summary": "`.dq-suite-row:hover` background changed from `rgba(79,70,229,0.04)` (a barely-there 4% indigo tint) to `var(--dq-selected-bg)` = #eef0fe, which is the exact 'selected' background used for Menu `itemSelectedBg` in theme.ts. Hover and selected now render the same fill, collapsing the visual distinction between 'pointing at a row' and 'this row is the active selection'.",
+    "failure_scenario": "On the Suites list, hovering a row makes it look identical to the currently-selected suite, so users lose the cue for which suite is actually active vs merely under the cursor — a fidelity regression, not the intended subtle hover tint."
+  },
+  {
+    "file": "frontend/src/main.tsx",
+    "line": 19,
+    "summary": "Inter weight 700 is imported but likely unused. antd v6 headings/strong default to fontWeightStrong=600 (and the theme sets no 700 anywhere; `colorTextHeading` is set but not a 700 weight). If nothing in the app requests font-weight:700, the bold Inter subset files are downloaded/bundled dead weight. Conversely, JetBrains Mono is only loaded 400/500 — if Monaco or any `fontFamilyCode` usage renders bold tokens it'll synthesize faux-bold.",
+    "failure_scenario": "700 weight woff2 files ship and are never matched by any rule (extra bytes); or, if a bold code token does appear, the browser faux-bolds JetBrains Mono since no 600/700 mono weight was imported — inconsistent with the deliberate-weight claim in the import comment."
+  }
+]
+```
+
+Summary of the 5 findings, by angle:
+
+1. **CSS correctness (high confidence):** the global `:focus-visible` outline (styles.css:54) double-rings antd's own focus indicator on every focusable control; and `.ant-btn:active` transform (styles.css:95) still nudges *loading* buttons (loading ≠ disabled in antd, so pointer-events stay on). The reduced-motion block and the press-nudge clipping are actually fine — the block covers every transform/transition the diff adds, and `translateY(0.5px)` is too small to clip the card box-shadow meaningfully. The "transition deliberately removed from .ant-btn" premise is a non-issue: there was never such a rule, the comment just explains the omission.
+2. **Token correctness (verified):** all `--dq-*` values match `BRAND` exactly (primary #4f46e5, primarySoft #c7d2fe, selectedBg #eef0fe, canvas #f4f5f7, border #e6e8eb, ink #1f2430). No drift. But the `.dq-suite-row:hover` → `var(--dq-selected-bg)` change is a real regression: hover now equals the Menu selected background.
+3. **Font loading:** default `@fontsource` imports ship all unicode subsets (latin-only app → ~40+ woff2 files) — real SWA bundle cost; should use `/latin-400.css` variants. Weight 700 Inter appears unused; JetBrains Mono only has 400/500 so bold code tokens would faux-bold.
+4. **Dependency hygiene:** both deps use caret `^` pinning consistent with the rest of `dependencies`; @fontsource is pure static CSS/woff2 (no runtime JS, no CVE-prone transitive surface) so the `pnpm audit` gate is not a concern. The only dependency-side concern is the bundle gate, folded into finding 3.
+
+No findings rise to a 6th concrete defect.</result>
+<usage><subagent_tokens>48500</subagent_tokens><tool_uses>7</tool_uses><duration_ms>57188</duration_ms></usage>
+</task-notification>
+
+---
+
+check CI now
+
+---
+
+<task-notification>
+<task-id>a7f0e0de068b0baed</task-id>
+<tool-use-id>toolu_01NFTRLv1MDW627yBT8TDAKF</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/83180c0d-bbe5-4c61-b9bc-5700e05669e4/tasks/a7f0e0de068b0baed.output</output-file>
+<status>completed</status>
+<summary>Agent "Security + auth review of MCP" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I have enough to assess the key findings. The `create_check` and `profile_connection` paths go through the same service-layer validation (custom-SQL guardrails, identifier allowlist) as REST, so those are fine. Let me verify two remaining points: whether the JWTVerifier validates the `tid` (tenant) claim, and the guest enforcement gap. fastapi-azure-auth checks guests and rejects them when `allow_guest_users=False`. The MCP JWTVerifier does neither tenant `tid` validation beyond issuer, nor guest rejection.
+
+Let me confirm the issuer pins tenant (it does — `login.microsoftonline.com/{tenant}/v2.0`), so cross-tenant tokens are rejected. Let me double check whether `get_run_status` leaks run existence and the `list_pipeline_runs` auth model.
+
+The pipeline runs tool returns ALL pipeline runs (auth-only, not suite-scoped) — but per CLAUDE.md and the service docstring, pipeline monitoring data is intentionally auth-only (not suite-scoped). The DQ run correlation IS suite-scoped via `accessible`. That matches REST behavior, so not a finding.
+
+Let me confirm `azure_allow_guest_users` is actually set/intended in prod and whether the gap is material, plus check `auth_dev_bypass` + prod misconfig path one more time.
+
+The `_dev_bypass_allowed` requires `environment == "dev"` AND `not azure_auth_configured`. So `ENVIRONMENT=prod + AUTH_DEV_BYPASS=true` → `_dev_bypass_allowed` is False → if Azure also unconfigured, `mcp_enabled` is False → not mounted. Fail-closed holds. Good.
+
+I have my findings.
+
+Based on my review, here are the findings:
+
+```json
+[
+  {
+    "file": "backend/app/mcp/auth.py",
+    "line": 68,
+    "summary": "MCP JWTVerifier does not reject Azure AD guest (B2B/external) users, unlike the REST validator which enforces `allow_guest_users` (default False).",
+    "failure_scenario": "core/auth.py builds the REST scheme with `allow_guest_users=settings.azure_allow_guest_users` (default False), so fastapi-azure-auth rejects guest identities (is_guest → 403 'Guest users not allowed'). The MCP `build_auth_provider` uses a plain fastmcp JWTVerifier with only jwks_uri/issuer/audience/required_scopes — it has no guest check. A guest account that was invited into the tenant (and therefore can obtain a token with the right aud + scp) is rejected at the REST API but ACCEPTED at /mcp. Since the MCP tools provide read AND write access to suites/checks/runs, this is a privilege gap: the guest is upserted via _upsert_user and can list_suites, trigger_suite_run, create_check, profile_column on any suite owned-or-shared to that resolved user. The two auth surfaces over the same data must enforce the same guest policy."
+  },
+  {
+    "file": "backend/app/mcp/auth.py",
+    "line": 87,
+    "summary": "resolve_current_user falls back to `token.subject` as the AAD object id when the `oid` claim is absent, which can key the users table on a non-stable / non-oid subject.",
+    "failure_scenario": "The REST path (_extract_claims) reads `claims['oid']` directly and would KeyError (500) if oid were missing — i.e. it treats oid as mandatory. The MCP path does `aad_oid = str(claims.get('oid') or token.subject or '')`. For Azure v2 access tokens `sub` is a pairwise, per-app-pseudonymous identifier, NOT the directory object id. If a token ever lacks `oid` (e.g. a token shaped differently than expected, or a future app-token), the user gets upserted/keyed on `sub` instead of `oid`. Because `_upsert_user` does on_conflict_do_update(index_elements=['aad_object_id']), a `sub`-keyed identity could (a) create a parallel duplicate user row distinct from the same human's oid-keyed REST row (divergent suite ownership/sharing), or (b) in the pathological case where a `sub` value collides with another principal's stored aad_object_id, overwrite that row's email/display_name. The MCP resolver should require `oid` exactly like the REST resolver rather than silently falling back to subject."
+  },
+  {
+    "file": "backend/app/mcp/server.py",
+    "line": 285,
+    "summary": "trigger_suite_run stamps `triggered_by=f\"mcp:{user.id}\"`, which collides with the orchestration `triggered_by` marker namespace used for pipeline-run correlation.",
+    "failure_scenario": "get_adf_pipeline_status correlates a pipeline run to a DQ run by `Run.triggered_by == f\"{provider}:{pipeline_or_dag_id}:{provider_run_id}\"`. MCP-triggered runs use the prefix `mcp:&lt;uuid&gt;` — a different shape, so no direct false-positive correlation today. But the `triggered_by` column is the documented cross-table linkage convention (CLAUDE.md §10: `'&lt;provider&gt;:&lt;pipeline_or_dag_id&gt;:&lt;provider_run_id&gt;'`), and overloading it with an actor identity (`mcp:&lt;user_id&gt;`) puts a user's UUID into a free-text field that is queried by string-prefix elsewhere. This is fragile/incorrect use of the correlation key (actor provenance vs trigger linkage are different concepts) and risks future correlation queries matching unexpectedly; provenance should live in a dedicated field, not the triggered_by marker."
+  }
+]
+```
+
+Notes on what I checked and cleared (not findings):
+
+- **Fail-closed mounting**: holds. `_dev_bypass_allowed` requires `environment=="dev"` AND `auth_dev_bypass` AND `not azure_auth_configured`. `ENVIRONMENT=prod + AUTH_DEV_BYPASS=true` → `_dev_bypass_allowed` is False; with Azure unconfigured `mcp_enabled` is False → `build_mcp_app` returns None → `main.py` skips the mount. No unauthenticated prod mount path exists.
+- **Audience/issuer**: correct. fastapi-azure-auth (REST) validates `audience=app_client_id` (bare GUID, the v2 `aud`), and the MCP JWTVerifier uses the same `audience=s.azure_api_client_id`. Issuer is pinned to `https://login.microsoftonline.com/{tenant}/v2.0`, so cross-tenant tokens are rejected. `required_scopes=[azure_api_scope]` is checked against `scp` (fastmcp `_extract_scopes` reads `scope` then `scp`). These match REST.
+- **PII redaction**: `get_suite_results` correctly calls `run_service.redact_sample_failures` with the suite's `column_policy` and the tested column — matches REST.
+- **Per-suite authz**: every suite-touching tool calls `require_permission` (view/edit). `get_adf_pipeline_status` correctly filters the correlated DQ run by `accessible_suite_ids`; raw pipeline-run monitoring data is intentionally auth-only (not suite-scoped) per the service contract.
+- **Injection/input**: `create_check` and `profile_column` route through the same `check_service.create_check` (custom-SQL guardrails via `validate_custom_sql_check`) and `profile_service.profile_connection` (identifier allowlist) as REST — no service-layer bypass.</result>
+<usage><subagent_tokens>67068</subagent_tokens><tool_uses>14</tool_uses><duration_ms>103392</duration_ms></usage>
+</task-notification>
+
+---
+
+How are we enebaling users to use the MCP, is there any programetic access for DataQ available or will it be the SSO?
+
+---
+
+no i think current approach is good, we shouldn't be tied too much with azure (adr 10, 13), but what do you think about DataQ-issued API keys / service tokens [may br post v1]
+
+---
+
+First commit/merge the current change. 
+Then file the post-v1 issue + drop a one-paragraph entry into the post-v1 roadmap and scaffold the ADR stub [also update the ADR README]
+Also we should not build something just for the MCP, it should be applicable for REST API also. 
+Once done lets go back to week 7 task chain
+
+---
+
+CI passed
+
+---
+
+<task-notification>
+<task-id>be2w8mha6</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/83180c0d-bbe5-4c61-b9bc-5700e05669e4/tasks/be2w8mha6.output</output-file>
+<status>failed</status>
+<summary>Background command "Wait for #462 CI" failed with exit code 1</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>biz75n3zu</task-id>
+<tool-use-id>toolu_017Y84E7aKDnK4LeQjQrKy3t</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/83180c0d-bbe5-4c61-b9bc-5700e05669e4/tasks/biz75n3zu.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for #463 CI" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ad2b597dbd8453795</task-id>
+<tool-use-id>toolu_01Uh4TQytgvyZwvfDbgRUKQS</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/83180c0d-bbe5-4c61-b9bc-5700e05669e4/tasks/ad2b597dbd8453795.output</output-file>
+<status>completed</status>
+<summary>Agent "Review prod-docs gate change" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I have enough to conclude. Let me verify the gate behavior summary: `environment` is `Literal["dev","staging","prod"]` default `"dev"`; gate is `!= "prod"`. Frontend client uses relative `/api/v1` (handwritten, no schema fetch). SWA config only has navigation fallback (no proxy to /docs). Probes are empty (TCP default). CI has no openapi/schema consumer.
+
+No concrete prod consumer of the disabled endpoints exists. The gate is correct, the wiring is correct, and tests assert both prod (all-None) and dev/staging (all-enabled) plus the live wired app. No findings.
+
+```json
+[]
+```
+
+Summary of verification (no findings):
+
+1. **Prod consumers** — none break. The frontend API client (`frontend/src/api/client.ts`) is handwritten with a relative `baseURL: '/api/v1'`; there is no OpenAPI codegen (no openapi-typescript/orval/swagger in `frontend/package.json`), so nothing fetches `/openapi.json`. The SWA config (`frontend/public/staticwebapp.config.json`) only does SPA navigation fallback — no proxy to `/docs`. ACA probes are empty arrays in `deploy/terraform/terraform.tfstate` (TCP default, not an HTTP path), and the documented health probe is the separate `/healthz` (still unconditionally registered at `main.py:160`). No CI workflow references openapi/docs/schema.
+
+2. **Gate correctness** — `environment` is `Literal["dev","staging","prod"]` (default `"dev"`, `backend/app/core/config.py:21`). `enabled = environment != "prod"` correctly disables only prod and enables both valid non-prod values. `openapi_url=None` does disable both Swagger and ReDoc UIs (FastAPI auto-disables the doc UIs when the schema URL is None), as the docstring states.
+
+3. **Helper + wiring + tests** — the three dict keys (`docs_url`/`redoc_url`/`openapi_url`) match the `FastAPI(...)` kwargs exactly (`main.py:84-90`), no typo. Tests in `backend/tests/test_main.py` assert all three states: prod → all-None, dev/staging → all-enabled, and the live wired app serves `/openapi.json` + `/docs` (200) in the test/non-prod env.</result>
+<usage><subagent_tokens>45253</subagent_tokens><tool_uses>6</tool_uses><duration_ms>31941</duration_ms></usage>
+</task-notification>
+
+---
+
+$464 merged
