@@ -260,6 +260,7 @@ def list_runs(
     suite_id: uuid.UUID | None = None,
     status: str | None = None,
     limit: int = 50,
+    include_all: bool = False,
 ) -> list[Run]:
     """Runs for suites the user can access, newest first (`created_at` desc).
 
@@ -267,8 +268,9 @@ def list_runs(
     subquery is always applied, so passing a ``suite_id`` the user can't see
     yields an empty list (the API layer 404s that case up front via
     `require_permission`, but the filter keeps the service safe on its own).
+    ``include_all`` spans every suite — the workspace-admin view (ADR 0027).
     """
-    accessible = suite_service.accessible_suite_ids(user_id)
+    accessible = suite_service.accessible_suite_ids(user_id, include_all=include_all)
     stmt = (
         select(Run).where(Run.suite_id.in_(accessible)).order_by(Run.created_at.desc()).limit(limit)
     )

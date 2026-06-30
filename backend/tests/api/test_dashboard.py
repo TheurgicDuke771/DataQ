@@ -9,7 +9,7 @@ and a clean empty-workspace response. Skips without TEST_DATABASE_URL.
 from __future__ import annotations
 
 import uuid
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime
 from typing import Any
 
@@ -90,6 +90,22 @@ def test_summary_returns_scoped_aggregates(client: TestClient, db_session: Any) 
     assert len(body["suite_performance"]) == 1
     assert body["suite_performance"][0]["name"] == "audit"
     assert isinstance(body["trend"], list) and body["trend"]
+
+
+def test_summary_workspace_admin_spans_all_suites(
+    client: TestClient, db_session: Any, make_workspace_admin: Callable[..., None]
+) -> None:
+    # A workspace-admin's dashboard aggregates across every suite (ADR 0027) —
+    # here Bob owns nothing yet sees Alice's suite + runs.
+    alice = _user(db_session)
+    _suite_with_results(db_session, alice, ["pass", "fail"])
+    bob = _user(db_session)
+    make_workspace_admin(bob.email)
+    _as(bob)
+
+    body = client.get("/api/v1/dashboard/summary").json()
+    assert body["kpis"]["total_runs"] >= 1
+    assert len(body["suite_performance"]) >= 1
 
 
 def test_summary_honours_window_param(client: TestClient, db_session: Any) -> None:

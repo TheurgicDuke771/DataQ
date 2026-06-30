@@ -28,13 +28,24 @@ from backend.app.services import run_target
 log = get_logger(__name__)
 
 
-def accessible_suite_ids(user_id: uuid.UUID) -> Select[tuple[uuid.UUID]]:
+def accessible_suite_ids(
+    user_id: uuid.UUID, *, include_all: bool = False
+) -> Select[tuple[uuid.UUID]]:
     """Subquery of suite ids the user can access — owned (`created_by`) or shared.
 
     The single source of truth for suite visibility, shared by `list_suites` and
-    the run/result reads (`run_service.list_runs`) so the owned-OR-shared rule is
-    encoded once — a divergence here would be a silent authz leak.
+    the run/result reads (`run_service.list_runs`, `dashboard_service`) so the
+    owned-OR-shared rule is encoded once — a divergence here would be a silent
+    authz leak.
+
+    `include_all=True` returns *every* suite id — the workspace-admin view (ADR
+    0027): a workspace-admin is an implicit admin on every suite, so their lists /
+    dashboard / results span the whole workspace, not just owned-or-shared. The
+    caller resolves admin status at the API layer (`is_workspace_admin`) and only
+    a workspace-admin may pass it.
     """
+    if include_all:
+        return select(Suite.id)
     shared = select(Share.suite_id).where(Share.user_id == user_id)
     return select(Suite.id).where(or_(Suite.created_by == user_id, Suite.id.in_(shared)))
 
@@ -97,12 +108,17 @@ def create_suite(
 
 
 def list_suites(
-    session: Session, *, user_id: uuid.UUID, connection_id: uuid.UUID | None = None
+    session: Session,
+    *,
+    user_id: uuid.UUID,
+    connection_id: uuid.UUID | None = None,
+    include_all: bool = False,
 ) -> list[Suite]:
-    """Suites the user can access: owned (`created_by`) or shared with them."""
+    """Suites the user can access: owned (`created_by`) or shared with them — or
+    *all* suites when `include_all` (the workspace-admin view, ADR 0027)."""
     stmt = (
         select(Suite)
-        .where(Suite.id.in_(accessible_suite_ids(user_id)))
+        .where(Suite.id.in_(accessible_suite_ids(user_id, include_all=include_all)))
         .order_by(Suite.created_at.desc())
     )
     if connection_id is not None:

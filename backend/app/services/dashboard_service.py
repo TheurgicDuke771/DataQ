@@ -232,11 +232,12 @@ def _total_runs(session: Session, accessible: Select[tuple[uuid.UUID]], since: d
 
 
 def dashboard_summary(
-    session: Session, *, user_id: uuid.UUID, window_days: int
+    session: Session, *, user_id: uuid.UUID, window_days: int, include_all: bool = False
 ) -> DashboardSummary:
     """KPIs + run trend + per-suite performance for the caller's accessible suites
-    over the trailing ``window_days``."""
-    accessible = suite_service.accessible_suite_ids(user_id)
+    over the trailing ``window_days`` — or every suite when ``include_all`` (the
+    workspace-admin view, ADR 0027)."""
+    accessible = suite_service.accessible_suite_ids(user_id, include_all=include_all)
     since = _window_start(window_days)
 
     counts = _status_counts(session, accessible, since)
