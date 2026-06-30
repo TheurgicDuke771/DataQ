@@ -153,6 +153,8 @@ Rides the harness's parameterizable volume (ADR 0021; HARNESS_TODO §6). Baselin
 | [#195](https://github.com/TheurgicDuke771/DataQ/issues/195) | Snowflake key-pair: migrate GX runner off deprecated `kwargs['connect_args']` private_key path |
 | [#351](https://github.com/TheurgicDuke771/DataQ/issues/351) | Test Connection button on the New/Edit connection page (draft-connection test endpoint) |
 | [#244](https://github.com/TheurgicDuke771/DataQ/issues/244) | Suite-on-suite triggering (run a suite when another suite completes) |
+| [#466](https://github.com/TheurgicDuke771/DataQ/issues/466) | Interactive datasource browsing — container browser (ADLS/S3) + 3-level catalog→schema→table picker (UC); from the W1–6 not-started triage (run/check paths shipped via explicit targets; browsing superseded & deferred) |
+| _(no issue yet)_ | JSON flat-file support — `FlatFileCheckRunner`/profiler/run-target accept `json` alongside `csv`/`parquet` (the W2 file-asset config task listed JSON; v1 shipped CSV/Parquet only) |
 
 ---
 
