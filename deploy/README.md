@@ -144,3 +144,11 @@ intentionally **off**; deploys are manual `workflow_dispatch`.
   destroyed** (free/trial caps one of each; shared with the harness — ADR 0024).
 - `key_vault_purge_protection` is off during bring-up (so a destroy/re-apply can
   reuse the vault name); set it **true** for a hardened prod (irreversible).
+- **Workspace-admins are superusers over every suite** ([ADR 0027](../docs/adr/0027-suite-permission-model-workspace-admin.md) / #482):
+  anyone in `WORKSPACE_ADMIN_EMAILS` can read **all** suites' results — including
+  failing-row samples (`results.sample_failures`), the one place PII/PHI lands —
+  and manage/delete any suite. **Keep the allowlist minimal.** For a **PHI / regulated
+  deployment**, treat the data-access audit trail (G1 / #431 in
+  [compliance-posture.md](../docs/compliance-posture.md)) as a **prerequisite before
+  granting broad workspace-admin** — PHI is already G1-blocked, and this access breadth
+  raises the bar.

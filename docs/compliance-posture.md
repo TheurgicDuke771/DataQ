@@ -48,6 +48,18 @@ only if a customer points DataQ at PHI; GDPR only to EU personal data.
 | **Data residency is deployable** — provider-agnostic seams (ADR 0010); a controller can deploy into their own jurisdiction's region | ADR 0010 / 0013 | GDPR Ch. V transfers |
 | **(Post-v1) LLM transfer minimization** — schema-only, PII-redacted context; local-endpoint option; no key-proxy | [`docs/post-v1-dq-intelligence-notes.md`](post-v1-dq-intelligence-notes.md) | GDPR Ch. V / HIPAA minimum-necessary |
 
+> **Decided change to the Access-control row — ADR [0027](adr/0027-suite-permission-model-workspace-admin.md) / [#482](https://github.com/TheurgicDuke771/DataQ/issues/482) (build pending).**
+> The suite-permission model is being revised so the **workspace-admin is an implicit
+> admin on *every* suite** with **workspace-wide visibility** (Dashboard/Suites/Results),
+> while normal users are capped at `edit`/`view` (grantable suite-`admin` is removed).
+> Net effect on this control: least-privilege for normal users *tightens* (no peer can be
+> granted manage-shares/delete), and the broad grant is concentrated in the explicit
+> `WORKSPACE_ADMIN_EMAILS` allowlist. The trade-off is that a workspace-admin can then
+> **read every suite's `sample_failures`** (the incidental PII/PHI store) — no new
+> *unredacted* path (redaction/retention/secret-isolation are unchanged), but the **read
+> surface widens**, so this read must be covered by the **G1 access-audit log (#431)**
+> (see G1 below). Hold the allowlist tightly.
+
 ---
 
 ## 2. Gaps to close for a credible v2.x "processor-grade controls" claim
@@ -64,6 +76,11 @@ trail either. ADR 0020 explicitly deferred the cross-entity audit log.
 **v2.x target:** an append-only access-audit log (actor, action, suite/run/result,
 timestamp, request_id) for result/sample reads + share grants; tamper-evident; its own
 retention policy. Revisit ADR 0020. **This is the one hard blocker for any PHI customer.**
+**Scope widened by ADR 0027 / #482:** once the workspace-admin is an implicit admin on
+every suite, the audit log must capture **workspace-admin cross-suite result/sample
+reads** (not just owner/shared reads) — the read surface this gap must cover grows. A
+PHI deployment should therefore treat G1 as a prerequisite **before** granting broad
+workspace-admin.
 
 ### G2 — 🟠 Data-subject-rights machinery (erasure / access / portability) — #432
 **Requirement:** GDPR Art 15 (access), 17 (erasure), 20 (portability); CCPA/CPRA right to
