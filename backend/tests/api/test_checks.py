@@ -924,3 +924,45 @@ def test_snooze_requires_edit_permission(client: TestClient, db_session: Any) ->
     _as(b)
     resp = client.post(f"/api/v1/suites/{sid}/checks/{cid}/snooze", json={"hours": 1})
     assert resp.status_code == 403
+
+
+# ───────────────────────── concurrent-edit conflict (C3) ────────────────────
+
+
+def test_concurrent_check_edit_returns_409_not_500(
+    client: TestClient, db_session: Any, monkeypatch: Any
+) -> None:
+    """A version-snapshot collision on a concurrent edit is a benign 409, not a 500.
+
+    Simulate the race outcome: force the next snapshot to reuse an existing
+    `version_no`, so the commit trips `uq_check_versions_check_version` exactly as
+    a concurrent writer would. The handler must surface 409 `check_edit_conflict`.
+    """
+    from backend.app.db.models import CheckVersion
+    from backend.app.services import check_service
+
+    sid = _suite_id(client, db_session)
+    cid = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()["id"]
+
+    def _colliding_version(session: Any, check: Any, *, actor_id: Any) -> CheckVersion:
+        # version_no=1 already exists (minted on create) → IntegrityError on commit
+        version = CheckVersion(
+            check_id=check.id,
+            version_no=1,
+            name=check.name,
+            kind=check.kind,
+            expectation_type=check.expectation_type,
+            config=check.config,
+            warn_threshold=check.warn_threshold,
+            fail_threshold=check.fail_threshold,
+            critical_threshold=check.critical_threshold,
+            changed_by=actor_id,
+        )
+        session.add(version)
+        return version
+
+    monkeypatch.setattr(check_service, "record_check_version", _colliding_version)
+
+    resp = client.patch(f"/api/v1/suites/{sid}/checks/{cid}", json={"name": "renamed"})
+    assert resp.status_code == 409
+    assert resp.json()["error"]["code"] == "check_edit_conflict"

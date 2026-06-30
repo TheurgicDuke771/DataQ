@@ -24,5 +24,12 @@ def get_db() -> Iterator[Session]:
     db = SessionLocal()
     try:
         yield db
+    except Exception:
+        # Explicit rollback so a failed request can't leave a poisoned transaction
+        # for the (pooled) connection's next user. `close()` rolls back implicitly,
+        # but being explicit documents the intent and is the read-modify-write
+        # convention (see CONTRIBUTING).
+        db.rollback()
+        raise
     finally:
         db.close()

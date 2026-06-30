@@ -25,6 +25,7 @@ from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from backend.app.core.errors import DataQError
@@ -61,6 +62,15 @@ class CheckNotFoundError(DataQError):
 class CheckConfigInvalidError(DataQError):
     status_code = 422
     code = "check_config_invalid"
+
+
+class CheckEditConflictError(DataQError):
+    # A concurrent edit of the same check raced on the `(check_id, version_no)`
+    # snapshot backstop (#309-adjacent C3): a benign write-write collision, so 409
+    # (reload + retry) — not an unhandled 500. read-modify-write is only as safe as
+    # its unique constraint (no row-locking on the check-then-write today).
+    status_code = 409
+    code = "check_edit_conflict"
 
 
 def _connection_type(session: Session, suite: Suite) -> str:
@@ -307,7 +317,17 @@ def update_check(
     # reports net changes, so setting a field to its existing value isn't dirty.
     if session.is_modified(check):
         record_check_version(session, check, actor_id=actor_id)
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError as exc:
+        # Two concurrent edits computed the same next `version_no` and raced on the
+        # `uq_check_versions_check_version` backstop. Roll back the poisoned tx and
+        # surface a 409 (reload + retry) instead of an unhandled 500.
+        session.rollback()
+        raise CheckEditConflictError(
+            "this check was edited concurrently — reload and retry",
+            detail={"check_id": str(check_id)},
+        ) from exc
     session.refresh(check)
     log.info("check_updated", check_id=str(check.id))
     return check
