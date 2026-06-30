@@ -116,6 +116,7 @@ These enrich and de-risk it:
 | [#387](https://github.com/TheurgicDuke771/DataQ/issues/387) | `suppression.py` should early-return `False` on `run.status == 'failed'` |
 | [#388](https://github.com/TheurgicDuke771/DataQ/issues/388) | Single-source the `alert_on` literals (model CHECK ↔ validation) to prevent drift |
 | [#389](https://github.com/TheurgicDuke771/DataQ/issues/389) | Rename `teams_webhook_secret_name` → channel-neutral before a 2nd ResultPublisher ships |
+| [#492](https://github.com/TheurgicDuke771/DataQ/issues/492) | **ADF webhook live delivery (deferred from v1).** Azure Log Alerts V2 drop query rows (only dimensions; `runId` high-cardinality); ADF metric alerts are aggregate (no `runId`); v1 alerting is per-suite with **no workspace/orchestration-failure channel**. Revisit needs either a workspace alert channel + metric-alert→bound-suite attribution (failure-alert), or Log-Analytics diagnostics + a dimension-split scheduled-query rule / Logic-App reshaper (per-run). The receiver + in-app URL generator already shipped; the live all-status poll covers ADF monitoring for v1. See the #492 deferral note for full caveats |
 
 ---
 
