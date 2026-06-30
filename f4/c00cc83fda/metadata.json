@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "f4c00cc83fda",
+  "strategy": "manual-commit",
+  "branch": "docs/issue-92-adf-webhook-url",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "deploy/README.md",
+    "docs/orchestration.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f4/c00cc83fda/0/metadata.json",
+      "transcript": "/f4/c00cc83fda/0/full.jsonl",
+      "content_hash": "/f4/c00cc83fda/0/content_hash.txt",
+      "prompt": "/f4/c00cc83fda/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 103818,
+    "cache_creation_tokens": 5713738,
+    "cache_read_tokens": 326485433,
+    "output_tokens": 666942,
+    "api_call_count": 852
+  }
+}
