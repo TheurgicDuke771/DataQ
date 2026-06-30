@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "0a63d381b547",
+  "strategy": "manual-commit",
+  "branch": "docs/compliance-workspace-admin-0027",
+  "checkpoints_count": 3,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/0a/63d381b547/0/metadata.json",
+      "transcript": "/0a/63d381b547/0/full.jsonl",
+      "content_hash": "/0a/63d381b547/0/content_hash.txt",
+      "prompt": "/0a/63d381b547/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 116968,
+    "cache_creation_tokens": 5931931,
+    "cache_read_tokens": 408624268,
+    "output_tokens": 775708,
+    "api_call_count": 1054
+  }
+}
