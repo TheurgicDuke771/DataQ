@@ -1,0 +1,121 @@
+name: Publish images (GHCR, multi-arch)
+
+# Builds + publishes the BYOL distribution images to GHCR — multi-arch
+# (linux/amd64 + linux/arm64) so Apple-Silicon devs pull a native image, not an
+# emulated one (#472). ADR 0023 (GHCR is the BYOL registry) / ADR 0013.
+#
+# This is DELIBERATELY separate from deploy.yml: that workflow builds an
+# amd64-only, SHA-tagged BACKEND image for the Azure rollout (ACA is amd64, the
+# immutable SHA tag is correct there). This one publishes BOTH images, multi-arch,
+# under a moving `:latest` stable pointer for `docker compose ... up`-from-image
+# users. The two never both fire on the same event (deploy is manual-dispatch).
+#
+# Stable tag to pull = `:latest` (moving). The immutable per-deploy `:vN` backend
+# tags (v7, v10, …) stay owned by deploy.yml — this workflow never writes them.
+# A release-tag push (vX.Y.Z) additionally publishes that semver tag.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Extra immutable tag to publish alongside :latest + the commit SHA (e.g. v1.0.0). Blank → just :latest + SHA."
+        default: ""
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  group: publish-images
+  cancel-in-progress: false
+
+# GITHUB_TOKEN needs packages:write to push to the repo-linked GHCR packages
+# (ADR 0023). No Azure/registry credential is involved.
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  # Lowercase owner — GHCR paths are case-sensitive and must be lowercase.
+  OWNER: theurgicduke771
+
+jobs:
+  publish:
+    name: Build + push ${{ matrix.name }} (amd64 + arm64)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Backend build context is the repo ROOT (the app imports as the
+          # top-level `backend.app.*` package — see backend/Dockerfile).
+          - name: backend
+            dockerfile: backend/Dockerfile
+            context: .
+          # Frontend build context is frontend/ (its Dockerfile COPYs from there).
+          - name: frontend
+            dockerfile: frontend/Dockerfile
+            context: frontend
+    steps:
+      - uses: actions/checkout@v7
+
+      # QEMU provides the arm64 emulation the amd64 runner needs to build the
+      # non-native platform; buildx drives the multi-platform build + manifest.
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image tags
+        id: tags
+        # Untrusted inputs come in via env (never interpolated into the script
+        # body) so a dispatch `tag` value can't inject shell — IMAGE_NAME is the
+        # static matrix name, INPUT_TAG the user-supplied one.
+        env:
+          IMAGE_NAME: ${{ matrix.name }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          image="${REGISTRY}/${OWNER}/dataq-${IMAGE_NAME}"
+          # Always: the moving stable pointer + the immutable commit SHA.
+          tags="${image}:latest"$'\n'"${image}:${GITHUB_SHA}"
+          # On a release-tag push, github.ref_name is the tag (vX.Y.Z); on a
+          # manual run, the optional `tag` input. Publish it as a third tag.
+          extra="${INPUT_TAG}"
+          if [ -z "$extra" ] && [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            extra="${GITHUB_REF_NAME}"
+          fi
+          # Validate the extra tag against Docker's tag grammar (alphanumerics +
+          # _.- , ≤128 chars, no leading separator) before it reaches the image ref.
+          if [ -n "$extra" ] && ! printf '%s' "$extra" | grep -Eq '^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$'; then
+            echo "::error::Invalid image tag '${extra}' — must match Docker's tag grammar."
+            exit 1
+          fi
+          if [ -n "$extra" ]; then
+            tags="${tags}"$'\n'"${image}:${extra}"
+          fi
+          echo "Publishing tags:"; echo "$tags"
+          # Multi-line output for the build-push-action `tags:` list.
+          {
+            echo "tags<<EOF"
+            echo "$tags"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build + push (multi-arch)
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          # Attestations off: keep the published manifest a plain multi-arch index
+          # (no extra unknown/attestation entries) so anonymous ACA/compose pulls
+          # resolve cleanly.
+          provenance: false
