@@ -966,3 +966,40 @@ def test_concurrent_check_edit_returns_409_not_500(
     resp = client.patch(f"/api/v1/suites/{sid}/checks/{cid}", json={"name": "renamed"})
     assert resp.status_code == 409
     assert resp.json()["error"]["code"] == "check_edit_conflict"
+
+
+def test_update_check_other_integrity_error_not_mislabelled_409(
+    client: TestClient, db_session: Any, monkeypatch: Any
+) -> None:
+    """Only the version-backstop collision is a 409; a *different* IntegrityError
+    raised at the same commit must re-raise (not be mislabelled 'edited
+    concurrently'), exercising the narrowed `except` branch."""
+    from sqlalchemy.exc import IntegrityError
+
+    from backend.app.db.models import CheckVersion
+    from backend.app.services import check_service
+
+    sid = _suite_id(client, db_session)
+    cid = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()["id"]
+
+    def _bad_fk_version(session: Any, check: Any, *, actor_id: Any) -> CheckVersion:
+        # Bogus check_id → a foreign-key IntegrityError at commit (NOT the version
+        # unique backstop), so the narrowed catch must re-raise it.
+        version = CheckVersion(
+            check_id=uuid.uuid4(),
+            version_no=1,
+            name=check.name,
+            kind=check.kind,
+            expectation_type=check.expectation_type,
+            config=check.config,
+            changed_by=actor_id,
+        )
+        session.add(version)
+        return version
+
+    monkeypatch.setattr(check_service, "record_check_version", _bad_fk_version)
+
+    # The non-version IntegrityError is re-raised (not mapped to a 409); FastAPI's
+    # TestClient propagates an unhandled server exception to the caller.
+    with pytest.raises(IntegrityError):
+        client.patch(f"/api/v1/suites/{sid}/checks/{cid}", json={"name": "renamed"})

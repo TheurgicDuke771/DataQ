@@ -64,6 +64,12 @@ class CheckConfigInvalidError(DataQError):
     code = "check_config_invalid"
 
 
+# The unique-constraint name on `check_versions(check_id, version_no)` — the
+# concurrency backstop a racing double-edit trips. Matched against the DB error
+# so only that collision becomes a 409 (see `update_check`).
+_VERSION_UNIQUE_CONSTRAINT = "uq_check_versions_check_version"
+
+
 class CheckEditConflictError(DataQError):
     # A concurrent edit of the same check raced on the `(check_id, version_no)`
     # snapshot backstop (#309-adjacent C3): a benign write-write collision, so 409
@@ -320,10 +326,14 @@ def update_check(
     try:
         session.commit()
     except IntegrityError as exc:
-        # Two concurrent edits computed the same next `version_no` and raced on the
-        # `uq_check_versions_check_version` backstop. Roll back the poisoned tx and
-        # surface a 409 (reload + retry) instead of an unhandled 500.
+        # Roll back the poisoned tx, then map ONLY the version-snapshot collision to
+        # a 409 (reload + retry): two concurrent edits computed the same next
+        # `version_no` and raced on the `uq_check_versions_check_version` backstop.
+        # Any other IntegrityError (a different constraint) is not a concurrency
+        # conflict — re-raise it rather than mislabel it "edited concurrently".
         session.rollback()
+        if _VERSION_UNIQUE_CONSTRAINT not in str(exc.orig):
+            raise
         raise CheckEditConflictError(
             "this check was edited concurrently — reload and retry",
             detail={"check_id": str(check_id)},
