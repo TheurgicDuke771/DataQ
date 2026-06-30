@@ -83,6 +83,12 @@ The datasource + compute infra is stood up by the external Terraform harness
    single source of truth (Key Vault), so re-run after a rotation
    ([ADR 0006](../docs/adr/0006-adf-webhook-authentication.md) is a hard cutover).
 
+   The token is placed in the URL **un-encoded**, and the receiver compares the
+   *URL-decoded* `token` against the Key Vault value — so the webhook secret must
+   be **URL-safe** (generate it as e.g. `openssl rand -hex 32`). If an existing
+   secret contains reserved characters (`+` `/` `=` `&` `#` space), percent-encode
+   the token in the pasted URL, or it will silently fail auth (401).
+
    The **Airflow** callback URL is the sibling endpoint but carries **no secret**
    — it's HMAC-signed in a header ([ADR 0007](../docs/adr/0007-airflow-callback-model.md)),
    with the signing key configured in the DAG snippet ([integrations/airflow/](../integrations/airflow/)),
