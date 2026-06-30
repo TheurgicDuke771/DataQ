@@ -52,6 +52,7 @@ Point any MCP client at `https://<your-dataq-host>/mcp` with an `Authorization: 
 | | |
 |---|---|
 | **Working agreements + commit/PR conventions** | [CONTRIBUTING.md](CONTRIBUTING.md) |
+| **Deployment guide + env-var reference** | [deploy/README.md](deploy/README.md) · [.env.app.example](.env.app.example) |
 | **Project guide for AI assistants** | [CLAUDE.md](CLAUDE.md) |
 | **Architecture diagram + invariants** | [docs/architecture.md](docs/architecture.md) |
 | **Architecture Decision Records** | [docs/adr/](docs/adr/) |
