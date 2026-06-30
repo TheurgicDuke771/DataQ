@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "6434c5a5b671",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-490-backfill",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/64/34c5a5b671/0/metadata.json",
+      "transcript": "/64/34c5a5b671/0/full.jsonl",
+      "content_hash": "/64/34c5a5b671/0/content_hash.txt",
+      "prompt": "/64/34c5a5b671/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 153984,
+    "cache_creation_tokens": 7016912,
+    "cache_read_tokens": 651222672,
+    "output_tokens": 1009337,
+    "api_call_count": 1397
+  }
+}
