@@ -15,6 +15,7 @@
 
 fastapi==0.138.1
 fastapi-azure-auth==5.2.0
+fastmcp==3.4.2
 psycopg2-binary==2.9.12
 pydantic==2.13.4
 pydantic-settings==2.14.2
