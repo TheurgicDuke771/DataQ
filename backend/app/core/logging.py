@@ -120,10 +120,12 @@ def configure_logging() -> None:
 
     # uvicorn.access is SILENCED, not propagated: its access line includes the raw
     # query string (get_path_with_query_string), so it would log the ADF webhook
-    # `?token=<secret>` (ADR 0006) to stdout AND — since the AzureLogHandler has no
-    # ProcessorFormatter — straight to App Insights, bypassing redaction (#494).
-    # The request middleware (main.py) already emits a structured, path-only access
-    # log (method/path/status/duration/client/request_id), so nothing is lost.
+    # `?token=<secret>` (ADR 0006) to stdout AND straight to App Insights (#494).
+    # The request middleware (main.py) emits a structured, path-only access log
+    # (method/path/status/duration/client/request_id) for every request that reaches
+    # the app — so app-level access logging is unaffected; only server-layer-only
+    # lines (e.g. malformed requests rejected before ASGI dispatch) go unlogged, an
+    # accepted tradeoff for not leaking the secret.
     access_logger = logging.getLogger("uvicorn.access")
     access_logger.handlers = []
     access_logger.propagate = False
@@ -156,6 +158,13 @@ def configure_logging() -> None:
         ai_handler.createLock = _ensure_handler_lock
         ai_handler.createLock()
         ai_handler.setLevel(level)
+        # Use the SAME ProcessorFormatter as stdout so records sent to App Insights
+        # also pass through `_redact_pii` (incl. the secret-string scrubber). Without
+        # a formatter, AzureLogHandler ships the raw record message, so a foreign
+        # (non-structlog) record carrying a secret in its message would reach App
+        # Insights un-redacted (#494). App-level structlog records are already
+        # redacted in the wrapper chain; this closes the foreign-record path too.
+        ai_handler.setFormatter(formatter)
         root.addHandler(ai_handler)
 
     structlog.configure(

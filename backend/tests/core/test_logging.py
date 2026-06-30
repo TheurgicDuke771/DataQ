@@ -207,3 +207,35 @@ def test_azure_handler_lock_survives_createlock_recall(
         "celery.beat", std_logging.INFO, __file__, 1, "beat: Starting...", None, None
     )
     handler.handle(record)  # must not raise
+
+
+def test_app_insights_handler_redacts_foreign_record_secret(
+    monkeypatch: pytest.MonkeyPatch, _restore_root_logging: None
+) -> None:
+    """#494: the AzureLogHandler must carry the redacting ProcessorFormatter, so a
+    FOREIGN (non-structlog) record whose message embeds a secret (e.g. a URL with
+    ?token=) is scrubbed before it reaches App Insights — not just the stdout path."""
+    import opencensus.ext.azure.log_exporter as az_log_exporter
+
+    monkeypatch.setattr(az_log_exporter, "AzureLogHandler", _FakeAzureLogHandler)
+    monkeypatch.setattr(
+        get_settings(),
+        "applicationinsights_connection_string",
+        "InstrumentationKey=00000000-0000-0000-0000-000000000000",
+    )
+    configure_logging()
+    ai = next(h for h in std_logging.getLogger().handlers if isinstance(h, _FakeAzureLogHandler))
+    assert ai.formatter is not None, "AI handler must use the redacting ProcessorFormatter"
+
+    record = std_logging.LogRecord(
+        "uvicorn.error",
+        std_logging.INFO,
+        __file__,
+        1,
+        'GET /api/v1/orchestration/events/adf?token=SUPERSECRET-1 HTTP/1.1" 200',
+        None,
+        None,
+    )
+    rendered = ai.format(record)
+    assert "SUPERSECRET-1" not in rendered
+    assert "token=<redacted>" in rendered
