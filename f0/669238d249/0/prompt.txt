@@ -230,3 +230,12 @@ persist it all now in one small docs PR (markers + Theme 8 additions)
 ---
 
 Can you update the docs (all inscope md files)
+
+---
+
+What happens to - C3 — minor robustness (no issue): concurrent check-edit → 409 not 500;
+
+---
+
+yeah, implement C3.
+Next, there are are some bunch of open PRs from dependabot, can you triage and close them
