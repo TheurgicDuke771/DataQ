@@ -159,9 +159,10 @@ def test_list_recent_runs_maps_query_response(monkeypatch: pytest.MonkeyPatch) -
     assert updates[0].pipeline_or_dag_id == "load_finance"
     assert updates[0].resource_name == _ADF_CONFIG["factory_name"]
     assert updates[0].status == "succeeded"
-    # hit queryPipelineRuns with a Succeeded filter + lastUpdatedAfter window
+    # hit queryPipelineRuns over the lastUpdatedAfter window with NO status filter
+    # — the poll records all statuses now (#490); trigger-on-success is downstream.
     assert "queryPipelineRuns" in seen["url"]
-    assert seen["body"]["filters"][0]["values"] == ["Succeeded"]
+    assert "filters" not in seen["body"]
     assert seen["body"]["lastUpdatedAfter"].startswith("2026-05-31")
 
 

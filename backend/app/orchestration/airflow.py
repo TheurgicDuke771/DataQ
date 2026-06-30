@@ -198,13 +198,14 @@ class AirflowProvider:
     def list_recent_runs(
         self, config: Mapping[str, Any], secret: str, since: datetime
     ) -> list[RunUpdate]:
-        """Poll recent **succeeded** DAG runs via the batch ``dagRuns/list`` endpoint.
+        """Poll recent DAG runs (**all states**) via the batch ``dagRuns/list`` endpoint.
 
-        POSTs ``{states: ["success"], start_date_gte: since}`` across all DAGs
-        (``~``) and maps each run to a `RunUpdate`. Polling backfills DAGs that
-        don't adopt the HMAC callback snippet (ADR 0007); the success filter keeps
-        it the trigger-on-success channel. Malformed rows are skipped; transport/
-        auth errors raise (the polling task fails soft per connection).
+        POSTs ``{start_date_gte: since}`` across all DAGs (``~``) with **no state
+        filter** and maps each run to a `RunUpdate`. The poll records every state
+        for the monitor view (#490); trigger-on-success is enforced downstream in
+        ``ingest_polled_runs`` (only ``succeeded`` triggers, ADR 0004). DAG-run
+        states outside the status map are skipped; malformed rows are skipped;
+        transport/auth errors raise (the polling task fails soft per connection).
         """
         cfg = AirflowConfig.model_validate(dict(config))
         headers, auth = _auth(cfg, secret)
@@ -213,7 +214,6 @@ class AirflowProvider:
             headers=headers,
             auth=auth,
             json={
-                "states": ["success"],
                 "start_date_gte": since.isoformat(),
                 "order_by": "-start_date",
                 "page_limit": _DAGRUNS_PAGE_LIMIT,

@@ -469,17 +469,26 @@ def test_dispatch_broker_failure_marks_run_failed_with_finished_at(
     assert run.started_at is None  # never started — only dispatch failed
 
 
-def test_polled_non_succeeded_run_is_ignored(db_session: Any) -> None:
+def test_polled_non_succeeded_run_is_recorded_not_triggered(
+    db_session: Any, stub_run_dispatch: list[str]
+) -> None:
+    # All-status monitor poll (#490): a non-succeeded polled run is now *recorded*
+    # in pipeline_runs, but must NOT trigger a suite (trigger-on-success only).
     conn = _adf_connection_with_secret(db_session)
+    suite = _suite(db_session, conn)
+    _binding(db_session, suite=suite, pipeline="load_finance", env=conn.env)
     result = ingest_polled_runs(
         db_session,
         provider_impl=_FakeProvider(),
         connection=conn,
-        updates=[_update(status="running", provider_run_id="run-poll-2")],
+        updates=[_update(status="failed", provider_run_id="run-poll-2")],
         skip_updated_since=datetime.now(UTC) - timedelta(minutes=15),
     )
-    assert result.pipeline_runs == []
-    assert db_session.scalar(select(PipelineRun.id)) is None
+    assert len(result.pipeline_runs) == 1
+    assert result.pipeline_runs[0].status == "failed"
+    assert result.triggered_runs == []  # failure recorded, never triggers
+    assert stub_run_dispatch == []
+    assert db_session.scalar(select(PipelineRun.id)) is not None
 
 
 def test_polled_run_skipped_when_recently_updated(db_session: Any) -> None:

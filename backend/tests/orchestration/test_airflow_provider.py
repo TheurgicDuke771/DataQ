@@ -141,5 +141,7 @@ def test_list_recent_runs_maps_dagruns(monkeypatch: pytest.MonkeyPatch) -> None:
     assert updates[0].resource_name == "https://airflow.example.com"
     assert updates[0].status == "succeeded"
     assert "/dagRuns/list" in seen["url"]
-    assert seen["body"]["states"] == ["success"]
+    # no state filter — the poll records all states now (#490); trigger-on-success
+    # is enforced downstream in ingest_polled_runs.
+    assert "states" not in seen["body"]
     assert seen["auth_header"] == "Bearer tok"
