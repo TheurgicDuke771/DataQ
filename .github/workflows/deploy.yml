@@ -85,16 +85,34 @@ jobs:
             --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
             --query name -o tsv)
           echo "Started migration execution: $exec_name"
+          # Poll to a terminal state. Besides the 15-min wall-clock cap, bound the
+          # number of *consecutive* empty/unexpected statuses: a control-plane
+          # hiccup or a CLI status-field rename would otherwise leave the loop
+          # polling a status it never recognises until the full deadline, tying up
+          # the prod concurrency group with no signal (#397). A recognised
+          # in-progress status resets the counter; `|| true` keeps a transient
+          # query failure a retry (counted as unknown) rather than a hard step
+          # abort under `set -e`.
           deadline=$(( SECONDS + 900 ))  # 15-minute cap
+          unknown=0
+          unknown_max=18  # ~3 min of consecutive empty/unexpected status → abort
           while (( SECONDS < deadline )); do
             status=$(az containerapp job execution list \
               --name "${{ vars.MIGRATE_JOB_NAME }}" \
               --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
-              --query "[?name=='$exec_name'].properties.status | [0]" -o tsv)
-            echo "migration status: ${status:-<pending>}"
+              --query "[?name=='$exec_name'].properties.status | [0]" -o tsv 2>/dev/null || true)
+            echo "migration status: ${status:-<pending>} (unknown streak: $unknown)"
             case "$status" in
               Succeeded) echo "Migration succeeded."; exit 0 ;;
               Failed|Degraded|Stopped) echo "::error::Migration $status — aborting before app rollout."; exit 1 ;;
+              Running|Processing|Pending) unknown=0 ;;
+              *)
+                unknown=$(( unknown + 1 ))
+                if (( unknown >= unknown_max )); then
+                  echo "::error::Migration status empty/unexpected ('${status:-<empty>}') $unknown times in a row — aborting before app rollout."
+                  exit 1
+                fi
+                ;;
             esac
             sleep 10
           done
