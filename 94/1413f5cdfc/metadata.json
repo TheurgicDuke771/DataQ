@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "941413f5cdfc",
+  "strategy": "manual-commit",
+  "branch": "docs/deploy-guide-env-reference",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "README.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/94/1413f5cdfc/0/metadata.json",
+      "transcript": "/94/1413f5cdfc/0/full.jsonl",
+      "content_hash": "/94/1413f5cdfc/0/content_hash.txt",
+      "prompt": "/94/1413f5cdfc/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 55561,
+    "cache_creation_tokens": 2633943,
+    "cache_read_tokens": 153700847,
+    "output_tokens": 345813,
+    "api_call_count": 454
+  }
+}
