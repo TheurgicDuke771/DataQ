@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "9ad5f36cace6",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-397-migrate-poll-bounded-unknown",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/9a/d5f36cace6/0/metadata.json",
+      "transcript": "/9a/d5f36cace6/0/full.jsonl",
+      "content_hash": "/9a/d5f36cace6/0/content_hash.txt",
+      "prompt": "/9a/d5f36cace6/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 103138,
+    "cache_creation_tokens": 5415281,
+    "cache_read_tokens": 316670207,
+    "output_tokens": 643752,
+    "api_call_count": 816
+  }
+}
