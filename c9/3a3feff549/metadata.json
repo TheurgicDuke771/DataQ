@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "c93a3feff549",
+  "strategy": "manual-commit",
+  "branch": "docs/post-v1-adf-webhook-and-nav-footer",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "mkdocs.yml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/c9/3a3feff549/0/metadata.json",
+      "transcript": "/c9/3a3feff549/0/full.jsonl",
+      "content_hash": "/c9/3a3feff549/0/content_hash.txt",
+      "prompt": "/c9/3a3feff549/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 215959,
+    "cache_creation_tokens": 8717513,
+    "cache_read_tokens": 784953864,
+    "output_tokens": 1287218,
+    "api_call_count": 1719
+  }
+}
