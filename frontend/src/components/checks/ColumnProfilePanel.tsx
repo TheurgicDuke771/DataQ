@@ -1,12 +1,12 @@
 import { LoadingOutlined } from '@ant-design/icons';
 import {
   Alert,
+  AutoComplete,
   Button,
   Collapse,
   Descriptions,
   Flex,
   Input,
-  Select,
   Table,
   Typography,
 } from 'antd';
@@ -35,11 +35,13 @@ import { formatScalar } from '../results/resultsFormat';
  * so the author can explore neighbouring columns. Collapsed by default to keep
  * the editor uncluttered — it's an opt-in aid, not always-on.
  *
- * The column input is a **searchable dropdown** of the target's actual columns
- * (#474) — introspected lazily when the panel first opens (the lookup hits the
- * warehouse, so not on mount). If introspection fails or returns nothing (no
- * credential, unreachable warehouse), it degrades to a free-text input so the
- * profiler is never *blocked* on introspection.
+ * The column input is a **combobox** (autocomplete) whose suggestions are the
+ * target's actual columns (#474), introspected lazily when the panel first opens
+ * (the lookup hits the warehouse, so not on mount). It stays free-text: the
+ * author can always type a column the introspection didn't return (a new column,
+ * a case-folded name, one a view hides), and if introspection fails or returns
+ * nothing (no credential, unreachable warehouse) it's simply a plain text box —
+ * the profiler is never *blocked* on introspection.
  *
  * Backend limits surface as the API's error message (e.g. no credential,
  * unreachable warehouse); the button is disabled with a reason until the suite
@@ -93,15 +95,12 @@ export function ColumnProfilePanel({
       .catch(() => setCols({ status: 'error' }));
   };
 
-  // A real dropdown only when introspection returned columns; otherwise the
-  // free-text input. The current value is always offered (even if not in the
-  // introspected set) so a pre-filled expectation column still shows.
-  const useDropdown = cols.status === 'loaded' && cols.columns.length > 0;
-  const options = (() => {
-    if (cols.status !== 'loaded') return [];
-    const names = value && !cols.columns.includes(value) ? [value, ...cols.columns] : cols.columns;
-    return names.map((c) => ({ label: c, value: c }));
-  })();
+  // Introspected columns as autocomplete suggestions. A combobox (not a hard
+  // Select) so the author can always free-type a column the introspection didn't
+  // return — a newly-added column, a case-folded name, a column a view hides —
+  // exactly as the old free-text input allowed. Empty until columns load (or if
+  // introspection fails), in which case it's just a plain text box with no list.
+  const options = cols.status === 'loaded' ? cols.columns.map((c) => ({ value: c })) : [];
 
   const disabledReason = !profileTarget
     ? 'Set a table or file target on the suite to profile.'
@@ -137,26 +136,21 @@ export function ColumnProfilePanel({
           children: (
             <Flex vertical gap={8}>
               <Flex gap={8} align="center" wrap>
-                {useDropdown ? (
-                  <Select
-                    showSearch
-                    value={value || undefined}
-                    onChange={(v) => setValue(v ?? '')}
-                    options={options}
-                    optionFilterProp="label"
-                    placeholder="Select a column"
-                    style={{ minWidth: 240 }}
-                  />
-                ) : (
+                <AutoComplete
+                  value={value}
+                  onChange={(v) => setValue(v)}
+                  options={options}
+                  filterOption={(input, option) =>
+                    (option?.value ?? '').toLowerCase().includes(input.toLowerCase())
+                  }
+                  style={{ minWidth: 240 }}
+                >
                   <Input
-                    value={value}
-                    onChange={(e) => setValue(e.target.value)}
                     placeholder="Column to profile"
-                    style={{ maxWidth: 240 }}
                     onPressEnter={run}
                     suffix={cols.status === 'loading' ? <LoadingOutlined /> : undefined}
                   />
-                )}
+                </AutoComplete>
                 <Button
                   onClick={run}
                   loading={state.status === 'running'}
