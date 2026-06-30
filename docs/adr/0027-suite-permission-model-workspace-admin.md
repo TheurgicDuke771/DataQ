@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-06-30
 - **Deciders:** @TheurgicDuke771
-- **Supersedes:** the suite-tier semantics defined in [0005](0005-severity-tier-weights.md)-adjacent code (`suite_authz`); folds in the workspace-admin scope decisions tracked as #411 / #412
+- **Note:** the suite permission tiers were never formalised in an ADR — they were established directly in `suite_authz.py`; this ADR records and revises that model (so there is no prior ADR to mark `Superseded`). Folds in the workspace-admin scope decisions tracked as #411 / #412.
 - **Related:** ADR [0010](0010-provider-agnostic-infrastructure-seams.md) (the generic `get_current_user` identity seam — Azure is one impl), [0020](0020-history-and-audit-strategy.md) (audit), [0026](0026-auth-api-keys-and-principal-seam.md) (principal/identity seam), compliance posture (#431 data-access audit)
 - **Issue:** [#482](https://github.com/TheurgicDuke771/DataQ/issues/482) (supersedes [#411](https://github.com/TheurgicDuke771/DataQ/issues/411), [#412](https://github.com/TheurgicDuke771/DataQ/issues/412))
 
