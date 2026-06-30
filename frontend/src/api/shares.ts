@@ -4,16 +4,19 @@ import { api } from './client';
  * Suite sharing — grant/list/update/revoke per-user access to a suite, plus the
  * directory search that turns an email/name into the `user_id` a share keys on.
  *
- * Permission ladder (backend `suite_authz`): `view` < `edit` < `admin`; `owner`
- * is the implicit, immutable creator (never a share row). Managing shares needs
- * `admin`; listing needs `view`.
+ * Permission ladder (backend `suite_authz`): `view` < `edit` < `admin` < `owner`.
+ * `admin` is the **workspace-admin**, implicit on every suite (never granted to a
+ * normal user — ADR 0027); `owner` is the implicit, immutable creator. So only
+ * `view`/`edit` are grantable. Managing shares needs `admin`; listing needs `view`.
  */
 
-/** Grantable share levels — NOT `owner` (that's the creator, not a share). */
-export type SharePermission = 'view' | 'edit' | 'admin';
+/** Grantable share levels — `view`/`edit` only. NOT `admin` (the workspace-admin,
+ *  implicit on every suite, never granted — ADR 0027) nor `owner` (the creator). */
+export type SharePermission = 'view' | 'edit';
 
-/** The caller's effective level on a suite, as stamped on `SuiteRead.my_permission`. */
-export type EffectivePermission = SharePermission | 'owner';
+/** The caller's effective level on a suite (`SuiteRead.my_permission`): a grantable
+ *  level, or `admin` (workspace-admin) / `owner` (creator). */
+export type EffectivePermission = SharePermission | 'admin' | 'owner';
 
 /** Mirrors the backend `ShareRead` — a share enriched with the grantee's identity. */
 export interface Share {

@@ -15,11 +15,12 @@ import {
 import { useCurrentUser } from '../../auth/useCurrentUser';
 import { useAsyncData } from '../../hooks/useAsyncData';
 
-/** The three grantable levels, in ladder order, with human labels. */
+/** The grantable levels, in ladder order, with human labels. `admin` is the
+ *  workspace-admin (implicit on every suite, never granted) and `owner` is the
+ *  creator — neither is grantable (ADR 0027 / #482). */
 const PERMISSION_OPTIONS: { value: SharePermission; label: string }[] = [
   { value: 'view', label: 'Can view' },
   { value: 'edit', label: 'Can edit' },
-  { value: 'admin', label: 'Admin' },
 ];
 
 /**
