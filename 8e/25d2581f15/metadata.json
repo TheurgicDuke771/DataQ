@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "8e25d2581f15",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-482-authz-core",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/core/config.py",
+    "backend/app/services/share_service.py",
+    "backend/app/services/suite_authz.py",
+    "backend/tests/api/test_shares.py",
+    "backend/tests/api/test_suites.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/8e/25d2581f15/0/metadata.json",
+      "transcript": "/8e/25d2581f15/0/full.jsonl",
+      "content_hash": "/8e/25d2581f15/0/content_hash.txt",
+      "prompt": "/8e/25d2581f15/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 133810,
+    "cache_creation_tokens": 6043202,
+    "cache_read_tokens": 459123386,
+    "output_tokens": 842082,
+    "api_call_count": 1142
+  }
+}
