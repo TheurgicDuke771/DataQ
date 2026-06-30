@@ -60,17 +60,22 @@ const NAV_ITEMS = [
 // Footer nav (pinned to the bottom). Admin + Settings show only to workspace
 // admins (server-driven via /me) — the routes stay registered either way, so a
 // non-admin who deep-links hits the page's Forbidden state; this gate is for nav
-// convenience, not the security boundary. Documentation is a placeholder
-// (disabled) until the docs site exists.
+// convenience, not the security boundary.
 const ADMIN_FOOTER_ITEMS = [
   { key: '/admin', icon: <SafetyOutlined />, label: <Link to="/admin">Admin</Link> },
   { key: '/settings', icon: <SettingOutlined />, label: <Link to="/settings">Settings</Link> },
 ];
+// Published docs site (MkDocs Material → GitHub Pages). External link, opens in
+// a new tab; never a "selected" nav key since it leaves the app.
+const DOCS_URL = 'https://theurgicduke771.github.io/DataQ/';
 const DOC_ITEM = {
   key: 'documentation',
   icon: <ReadOutlined />,
-  label: 'Documentation',
-  disabled: true,
+  label: (
+    <a href={DOCS_URL} target="_blank" rel="noreferrer">
+      Documentation
+    </a>
+  ),
 };
 // Keys that can be "selected" (the disabled Documentation placeholder can't).
 const SELECTABLE_KEYS = [...NAV_ITEMS, ...ADMIN_FOOTER_ITEMS].map((i) => i.key);
