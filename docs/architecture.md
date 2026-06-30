@@ -3,75 +3,69 @@
 > Keep this diagram in sync with the code. When a new component, datasource, or integration is added, update the diagram in the same PR.
 
 ```mermaid
-flowchart TB
-    subgraph clients["Clients"]
-        Browser["Browser<br/>web UI"]
-        AI["AI clients<br/>Claude · Copilot · Cursor"]
+%%{init: {'flowchart': {'curve': 'linear'}}}%%
+flowchart LR
+    subgraph orch["⚙️ Orchestration — monitor + trigger only"]
+        ADF["Azure Data Factory"]
+        AF["Apache Airflow"]
+    end
+    subgraph clients["🌐 Clients"]
+        AICli["AI clients · Claude/Copilot/Cursor"]
+        Web["Web UI · React SPA"]
+    end
+    subgraph platform["🟦 DataQ Platform · Azure Container Apps + SWA"]
+        API["FastAPI<br/>REST /api/v1 + /mcp · Azure AD JWT"]
+        Worker["Celery worker<br/>GX Core execution"]
+        Infra["PostgreSQL · Redis · Key Vault · App Insights<br/>suites·runs·results·pipeline_runs · queue · secrets · traces"]
+    end
+    subgraph alerts["🔔 Alerts · ResultPublisher seam"]
+        Teams["Teams · Slack"]
+        Email["Email · SMTP"]
+    end
+    subgraph ds["📊 Datasources — GX checks execute here"]
+        SF["Snowflake · DEV/QA/UAT"]
+        Files["ADLS Gen2 · S3 · flat files"]
+        UC["Unity Catalog · Databricks"]
     end
 
-    subgraph platform["DataQ platform — Azure Container Apps · Static Web App"]
-        React["React + Vite<br/>Static Web App"]
-        FastAPI["FastAPI<br/>REST · /mcp endpoint"]
-        Celery["Celery worker<br/>GX execution"]
-        PG[("PostgreSQL<br/>results · state")]
-        Redis[("Redis<br/>task queue")]
-        KV["Key Vault<br/>secrets"]
-        AppIns["App Insights<br/>observability"]
-    end
+    Web -->|HTTPS| API
+    AICli -->|MCP · HTTP| API
+    orch -->|"webhook / HMAC callback<br/>+ 10-min REST poll fallback"| API
+    API -->|enqueue run| Worker
+    API -.-> Infra
+    Worker -.-> Infra
+    Worker -->|run outcome| alerts
+    Worker -->|GX checks| ds
 
-    subgraph datasources["Datasources"]
-        SF["Snowflake<br/>DEV · QA · UAT"]
-        ADLS["ADLS Gen2 · S3<br/>flat files"]
-        UC["Unity Catalog<br/>Databricks"]
-    end
-
-    subgraph integrations["Integrations"]
-        Orch["ADF · Airflow<br/>pipeline · DAG events"]
-        Monitor["Azure Monitor<br/>alert rule · webhook"]
-        Teams["MS Teams · Slack · Email<br/>alert publishers"]
-    end
-
-    Browser -->|HTTPS| React
-    AI -->|MCP · HTTP| FastAPI
-    React --> FastAPI
-    FastAPI <--> PG
-    FastAPI <--> Redis
-    FastAPI --> KV
-    FastAPI --> AppIns
-    FastAPI --> Celery
-    Celery <--> PG
-    Celery <--> Redis
-    Celery -->|GX checks| SF
-    Celery -->|GX checks| ADLS
-    Celery -->|GX checks| UC
-    Orch --> Monitor
-    Monitor -->|"POST /orchestration/events/{provider}"| FastAPI
-    FastAPI -->|alerts| Teams
-
-    classDef platform  fill:#E6F1FB,stroke:#185FA5,color:#0C449C
-    classDef infra     fill:#EEEDF8,stroke:#534AB7,color:#3C3489
-    classDef source    fill:#E1F5EE,stroke:#0F6E56,color:#085041
-    classDef integ     fill:#FAEEda,stroke:#854F0B,color:#633806
-    classDef notify    fill:#FAEce7,stroke:#993C1D,color:#712B13
-    classDef client    fill:#F1EFE8,stroke:#5F5E5A,color:#444441
-
-    class React,FastAPI,Celery platform
-    class PG,Redis,KV,AppIns infra
-    class SF,ADLS,UC source
-    class Orch,Monitor integ
-    class Teams notify
-    class Browser,AI client
+    classDef hub fill:#E6F1FB,stroke:#185FA5,color:#0C449C
+    classDef src fill:#E1F5EE,stroke:#0F6E56,color:#085041
+    classDef integ fill:#FAEEDA,stroke:#854F0B,color:#633806
+    classDef notify fill:#FAECE7,stroke:#993C1D,color:#712B13
+    classDef client fill:#F1EFE8,stroke:#5F5E5A,color:#444441
+    class API,Worker,Infra hub
+    class SF,Files,UC src
+    class ADF,AF integ
+    class Teams,Email notify
+    class Web,AICli client
+    style platform fill:#F4F9FE,stroke:#185FA5
+    style ds fill:#F0FBF7,stroke:#0F6E56
+    style orch fill:#FDF7EC,stroke:#854F0B
+    style alerts fill:#FDF3EF,stroke:#993C1D
+    style clients fill:#F7F6F2,stroke:#5F5E5A
+    linkStyle default stroke:#5B6B7B,stroke-width:1.5px
 ```
+
+The flow reads left → right: **inputs** (Clients, Orchestration) drive the **DataQ platform** in the centre, which acts on its **targets** on the right (runs GX checks against datasources, publishes outcomes to alert channels).
 
 ## Legend
 
 | Colour | Group |
 |---|---|
-| Blue | DataQ services (React, FastAPI, Celery) |
-| Purple | Azure platform infrastructure (PostgreSQL, Redis, Key Vault, App Insights) |
+| Grey | Clients — browser web UI + AI clients (over MCP) |
+| Orange | Orchestration — ADF · Airflow (monitor + trigger only, **never** datasources) |
+| Blue | DataQ platform — FastAPI · Celery worker · PostgreSQL · Redis · Key Vault · App Insights |
 | Green | Datasources — GX checks run against these |
-| Orange | Orchestration integrations — monitor + trigger only, never datasources |
-| Brown/red | Notification channel |
+| Red | Alert channels — Teams · Slack · Email (the `ResultPublisher` seam) |
 
 ## Key invariants
 
