@@ -1,11 +1,28 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { type AdminWebhook, listAdminWebhooks } from '../../src/api/admin';
 import type { MeResponse } from '../../src/api/me';
 import { MeContext } from '../../src/auth/meContext';
 import type { AsyncState } from '../../src/hooks/useAsyncData';
 import { Settings } from '../../src/pages/Settings';
+
+vi.mock('../../src/api/admin', () => ({ listAdminWebhooks: vi.fn() }));
+const mockWebhooks = vi.mocked(listAdminWebhooks);
+
+const WEBHOOKS: AdminWebhook[] = [
+  {
+    provider: 'adf',
+    auth: 'Shared secret in the URL (?token=…)',
+    inbound_url: 'https://dataq.example.com/api/v1/orchestration/events/adf?token=abc123',
+    token_configured: true,
+    signing_secret_name: null,
+    connection_names: ['prod-factory'],
+  },
+];
+
+beforeEach(() => mockWebhooks.mockResolvedValue(WEBHOOKS));
 
 const adminMe: AsyncState<MeResponse> = {
   status: 'ok',
@@ -33,11 +50,17 @@ describe('Settings', () => {
   it('renders the tabbed settings shell for a workspace admin', () => {
     renderSettings(adminMe);
     expect(screen.getByRole('heading', { name: 'Settings' })).toBeInTheDocument();
-    for (const tab of ['General', 'Secrets', 'Notifications', 'Danger zone']) {
+    for (const tab of ['General', 'Secrets', 'Webhooks', 'Notifications', 'Danger zone']) {
       expect(screen.getByRole('tab', { name: tab })).toBeInTheDocument();
     }
     // General tab is default-active: workspace facts visible.
     expect(screen.getByText('Single tenant')).toBeInTheDocument();
+  });
+
+  it('shows the inbound-webhooks config on the Webhooks tab', async () => {
+    renderSettings(adminMe);
+    fireEvent.click(screen.getByRole('tab', { name: 'Webhooks' }));
+    expect(await screen.findByText('Azure Data Factory')).toBeInTheDocument();
   });
 
   it('shows the Forbidden page for a non-admin (server-driven via /me)', () => {
