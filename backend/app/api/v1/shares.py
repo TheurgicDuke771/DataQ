@@ -21,8 +21,10 @@ from backend.app.services import share_service as svc
 
 router = APIRouter(tags=["shares"])
 
-# Grantable share levels — NOT 'owner' (that's the immutable creator, not a share).
-SharePermission = Literal["view", "edit", "admin"]
+# Grantable share levels. NOT 'owner' (the immutable creator, not a share) and
+# NOT 'admin' — admin is the workspace-admin, implicit on every suite, never
+# granted to a normal user (ADR 0027 / #482).
+SharePermission = Literal["view", "edit"]
 
 
 class ShareCreate(BaseModel):

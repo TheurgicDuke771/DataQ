@@ -7,7 +7,7 @@ directly. Skips without TEST_DATABASE_URL.
 """
 
 import uuid
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from typing import Any
 
 import pytest
@@ -78,18 +78,30 @@ def test_owner_grants_share(client: TestClient, db_session: Any) -> None:
     assert body["display_name"] == "Bee"
 
 
-def test_admin_can_grant_owner_only_via_admin(client: TestClient, db_session: Any) -> None:
-    owner, b, c, _e, suite = _seed(db_session)
+def test_grant_admin_rejected(client: TestClient, db_session: Any) -> None:
+    # `admin` is no longer grantable to a normal user (ADR 0027 / #482) — it's the
+    # workspace-admin, implicit on every suite. The owner's attempt is a 422.
+    owner, b, _c, _e, suite = _seed(db_session)
     _as(owner)
-    client.post(
-        f"/api/v1/suites/{suite.id}/shares", json={"user_id": str(c.id), "permission": "admin"}
+    resp = client.post(
+        f"/api/v1/suites/{suite.id}/shares", json={"user_id": str(b.id), "permission": "admin"}
     )
-    # C (admin) grants view to B
-    _as(c)
+    assert resp.status_code == 422
+
+
+def test_workspace_admin_can_grant_on_any_suite(
+    client: TestClient, db_session: Any, make_workspace_admin: Callable[..., None]
+) -> None:
+    # A workspace-admin is an implicit `admin` on every suite (ADR 0027) — they can
+    # manage shares on a suite they neither own nor are shared on.
+    _owner, b, c, _e, suite = _seed(db_session)
+    make_workspace_admin(c.email)
+    _as(c)  # C owns nothing here, has no share — only the allowlist makes them admin
     resp = client.post(
         f"/api/v1/suites/{suite.id}/shares", json={"user_id": str(b.id), "permission": "view"}
     )
     assert resp.status_code == 201
+    assert resp.json()["permission"] == "view"
 
 
 def test_viewer_cannot_grant(client: TestClient, db_session: Any) -> None:
@@ -161,7 +173,8 @@ def test_duplicate_grant_409(client: TestClient, db_session: Any) -> None:
 def test_invalid_permission_422(client: TestClient, db_session: Any) -> None:
     owner, b, _c, _e, suite = _seed(db_session)
     _as(owner)
-    for bad in ("owner", "superuser", ""):
+    # 'admin' is now ungrantable too (workspace-admin only) — alongside 'owner'.
+    for bad in ("owner", "admin", "superuser", ""):
         resp = client.post(
             f"/api/v1/suites/{suite.id}/shares", json={"user_id": str(b.id), "permission": bad}
         )
@@ -202,27 +215,26 @@ def test_update_missing_share_404(client: TestClient, db_session: Any) -> None:
     assert resp.json()["error"]["code"] == "share_not_found"
 
 
-def test_admin_cannot_self_downgrade(client: TestClient, db_session: Any) -> None:
-    # A non-owner admin downgrading their OWN share would self-lock out of share
-    # management (every later mutation 403s, bricking the panel) — rejected. #240.
-    owner, _b, c, _e, suite = _seed(db_session)
-    _as(owner)
-    client.post(
-        f"/api/v1/suites/{suite.id}/shares", json={"user_id": str(c.id), "permission": "admin"}
-    )
+def test_admin_cannot_self_downgrade(
+    client: TestClient, db_session: Any, make_workspace_admin: Callable[..., None]
+) -> None:
+    # The self-target guard (#240) rejects an admin-capable actor managing their
+    # OWN share. With grantable admin removed (ADR 0027), the non-owner admin is
+    # now the workspace-admin — who self-targeting is still refused (422).
+    _owner, _b, c, _e, suite = _seed(db_session)
+    make_workspace_admin(c.email)
     _as(c)
     resp = client.patch(f"/api/v1/suites/{suite.id}/shares/{c.id}", json={"permission": "view"})
     assert resp.status_code == 422
     assert resp.json()["error"]["code"] == "share_target_invalid"
 
 
-def test_admin_cannot_self_revoke(client: TestClient, db_session: Any) -> None:
-    # Likewise, an admin can't revoke their own share (same self-lockout). #240.
-    owner, _b, c, _e, suite = _seed(db_session)
-    _as(owner)
-    client.post(
-        f"/api/v1/suites/{suite.id}/shares", json={"user_id": str(c.id), "permission": "admin"}
-    )
+def test_admin_cannot_self_revoke(
+    client: TestClient, db_session: Any, make_workspace_admin: Callable[..., None]
+) -> None:
+    # Likewise, a workspace-admin can't revoke their own share row (#240).
+    _owner, _b, c, _e, suite = _seed(db_session)
+    make_workspace_admin(c.email)
     _as(c)
     resp = client.delete(f"/api/v1/suites/{suite.id}/shares/{c.id}")
     assert resp.status_code == 422

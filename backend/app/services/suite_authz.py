@@ -1,14 +1,23 @@
 """Suite authorization — the single primitive every suite-scoped endpoint gates on.
 
 A user's effective permission on a suite is the highest of: **owner** (they are
-`suite.created_by` — implicit, immutable, never a share row) or their `shares`
-row (`view` < `edit` < `admin`). Capability ladder (decided for v1):
+`suite.created_by` — implicit, immutable, never a share row), **admin** (they are
+a **workspace-admin** — implicit on *every* suite, never a share row; ADR 0027),
+or their `shares` row (`view` < `edit`). Capability ladder:
 
     view   — read the suite, its checks, its results
     edit   — + create/update/delete checks, update the suite, trigger runs
-    admin  — + manage shares (grant/revoke) AND delete the suite
+    admin  — + manage shares (grant/revoke) AND delete the suite. Held by the
+             workspace-admin(s) (`WORKSPACE_ADMIN_EMAILS`), implicit on every
+             suite — the governance / break-glass path. **Not grantable to normal
+             users** (a share can only be `view`/`edit`; ADR 0027).
     owner  — same capabilities as admin, but it is the creator: cannot be
              revoked or demoted, and granting a share to the owner is rejected.
+
+`admin` ranks below `owner` and above the `view`/`edit` shares, so a
+workspace-admin always clears an `admin` gate even on a suite they don't own.
+Legacy `shares.permission = 'admin'` rows (pre-#482) still resolve to `admin`
+until the downgrade migration runs — backward-compatible.
 
 `require_permission` is the gate the API layer calls: it 404s a suite the user
 can't see at all (existence is hidden), and 403s one they can see but lack the
@@ -26,16 +35,33 @@ from collections.abc import Sequence
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.core.config import get_settings
 from backend.app.core.errors import DataQError
-from backend.app.db.models import Share, Suite
+from backend.app.db.models import Share, Suite, User
 from backend.app.services.suite_service import SuiteNotFoundError
 
 OWNER = "owner"
+ADMIN = "admin"
 
 # Ordered capability ranks. `owner` ranks above `admin` so it always clears an
 # admin gate, even though their capabilities are identical — the distinction is
-# that owner is the immutable creator, not a grantable/revocable share.
-_RANK = {"view": 1, "edit": 2, "admin": 3, OWNER: 4}
+# that owner is the immutable creator, `admin` is the workspace-admin (implicit,
+# never a grantable share for normal users).
+_RANK = {"view": 1, "edit": 2, ADMIN: 3, OWNER: 4}
+
+
+def _is_workspace_admin(session: Session, user_id: uuid.UUID) -> bool:
+    """True iff `user_id` is in the workspace-admin allowlist (`WORKSPACE_ADMIN_EMAILS`).
+
+    Resolved here — rather than threaded through every `require_permission` call
+    site — so a workspace-admin is an implicit `admin` on every suite (ADR 0027).
+    Empty allowlist short-circuits without a load; otherwise one PK fetch (usually
+    an identity-map hit, since the request already loaded the user)."""
+    settings = get_settings()
+    if not settings.workspace_admin_email_set:
+        return False
+    user = session.get(User, user_id)
+    return user is not None and settings.is_admin_email(user.email)
 
 
 class SuiteForbiddenError(DataQError):
@@ -44,9 +70,15 @@ class SuiteForbiddenError(DataQError):
 
 
 def effective_permission(session: Session, suite: Suite, user_id: uuid.UUID) -> str | None:
-    """The user's level on `suite` (`owner`/`admin`/`edit`/`view`), or None."""
+    """The user's level on `suite` (`owner`/`admin`/`edit`/`view`), or None.
+
+    Ranking: creator → `owner`; workspace-admin → `admin` (implicit, every suite;
+    ranks above any share they might also hold); else their `shares` row; else None.
+    """
     if suite.created_by == user_id:
         return OWNER
+    if _is_workspace_admin(session, user_id):
+        return ADMIN
     share = session.scalars(
         select(Share).where(Share.suite_id == suite.id, Share.user_id == user_id)
     ).first()
@@ -61,8 +93,13 @@ def effective_permissions(
     Owned suites resolve to `owner` without touching `shares`; the rest are
     looked up in a single `IN` query. Used to stamp each suite in a list with the
     caller's level so the UI can gate per-suite actions (manage shares, delete).
+
+    A workspace-admin is an implicit `admin` on every suite they don't own
+    (ADR 0027), resolved once here — no per-suite shares lookup needed.
     """
     owned = {s.id for s in suites if s.created_by == user_id}
+    if _is_workspace_admin(session, user_id):
+        return {s.id: (OWNER if s.id in owned else ADMIN) for s in suites}
     shared_ids = [s.id for s in suites if s.id not in owned]
     levels: dict[uuid.UUID, str] = {}
     if shared_ids:

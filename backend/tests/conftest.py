@@ -1,7 +1,7 @@
 """Shared pytest fixtures."""
 
 import os
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 
 # Set test-mode env vars BEFORE any backend.app.* import resolves. The auth
 # module computes its mode at import time from settings; without these the
@@ -27,6 +27,19 @@ def _reset_caches() -> Iterator[None]:
     get_settings.cache_clear()
     secrets.reset_secret_store_cache()
     reset_result_publisher_cache()
+
+
+@pytest.fixture
+def make_workspace_admin(monkeypatch: pytest.MonkeyPatch) -> Callable[..., None]:
+    """Return a callable that puts the given emails in WORKSPACE_ADMIN_EMAILS for
+    the current test (making those users workspace-admins). The autouse
+    `_reset_caches` fixture clears the cached Settings afterwards."""
+
+    def _make(*emails: str) -> None:
+        monkeypatch.setenv("WORKSPACE_ADMIN_EMAILS", ",".join(emails))
+        get_settings.cache_clear()
+
+    return _make
 
 
 @pytest.fixture(autouse=True)

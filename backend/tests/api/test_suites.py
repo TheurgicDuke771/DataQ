@@ -7,7 +7,7 @@ TEST_DATABASE_URL.
 """
 
 import uuid
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from decimal import Decimal
 from typing import Any
@@ -317,11 +317,14 @@ def test_editor_updates_but_cannot_delete(client: TestClient, db_session: Any) -
     assert deleted.status_code == 403
 
 
-def test_admin_can_delete(client: TestClient, db_session: Any) -> None:
-    owner, b, _e, sid = _owner_b_e_suite(db_session)
-    _share(client, owner, sid, b, "admin")
-    _as(b)
-    # A non-owner admin sees their level → the UI can show share-management.
+def test_workspace_admin_can_delete(
+    client: TestClient, db_session: Any, make_workspace_admin: Callable[..., None]
+) -> None:
+    # The non-owner admin is now the workspace-admin (ADR 0027), implicit on every
+    # suite — they see `admin` and can delete a suite they don't own.
+    _owner, b, _e, sid = _owner_b_e_suite(db_session)
+    make_workspace_admin(b.email)
+    _as(b)  # b owns nothing, has no share — only the allowlist makes them admin
     assert client.get(f"/api/v1/suites/{sid}").json()["my_permission"] == "admin"
     deleted = client.delete(f"/api/v1/suites/{sid}")
     assert deleted.status_code == 204

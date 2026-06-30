@@ -42,6 +42,22 @@ class ShareTargetInvalidError(DataQError):
     code = "share_target_invalid"
 
 
+# A share can only grant `view` or `edit`. `admin` is the workspace-admin
+# (implicit on every suite, never a share) and `owner` is the creator — neither
+# is grantable (ADR 0027 / #482).
+GRANTABLE_PERMISSIONS = ("view", "edit")
+
+
+def _reject_ungrantable_permission(suite_id: uuid.UUID, permission: str) -> None:
+    """Defence-in-depth behind the API `SharePermission` Literal: reject any
+    permission a share can't carry (`admin`/`owner` or anything unknown)."""
+    if permission not in GRANTABLE_PERMISSIONS:
+        raise ShareTargetInvalidError(
+            "share permission must be 'view' or 'edit' ('admin'/'owner' are not grantable)",
+            detail={"suite_id": str(suite_id), "permission": permission},
+        )
+
+
 def _reject_self_target(
     suite_id: uuid.UUID, actor_id: uuid.UUID, target_user_id: uuid.UUID
 ) -> None:
@@ -78,7 +94,10 @@ def grant_share(
     permission: str,
 ) -> Share:
     """Grant `target_user_id` a permission on the suite. Actor needs `admin`."""
+    # Authorize first (404-hides a suite the actor can't see) before validating
+    # the permission value, so an outsider can't probe via the input-validity 422.
     suite = require_permission(session, suite_id, actor_id, minimum="admin")
+    _reject_ungrantable_permission(suite_id, permission)
     if target_user_id == suite.created_by:
         raise ShareTargetInvalidError(
             "cannot share a suite with its owner (already has full access)",
@@ -131,6 +150,7 @@ def update_share(
 ) -> Share:
     """Change a user's permission. Actor needs `admin`."""
     require_permission(session, suite_id, actor_id, minimum="admin")
+    _reject_ungrantable_permission(suite_id, permission)
     _reject_self_target(suite_id, actor_id, target_user_id)
     share = _get_share(session, suite_id, target_user_id)
     share.permission = permission
