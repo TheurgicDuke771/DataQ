@@ -28,7 +28,7 @@ flowchart TB
     subgraph integrations["Integrations"]
         Orch["ADF · Airflow<br/>pipeline · DAG events"]
         Monitor["Azure Monitor<br/>alert rule · webhook"]
-        Teams["MS Teams<br/>notifications"]
+        Teams["MS Teams · Slack · Email<br/>alert publishers"]
     end
 
     Browser -->|HTTPS| React
@@ -78,3 +78,5 @@ flowchart TB
 - **Orchestration providers (ADF · Airflow) are not datasources.** They live in `pipeline_runs`, not `runs`. Trigger bindings map `(provider, pipeline_id, env) → suite_id`.
 - **Scheduled/triggered suite runs are Celery-only.** FastAPI never enqueues GX itself for a full suite run; it dispatches a task. **Exception — synchronous preview paths:** the check dry-run (`POST /suites/{id}/checks/dryrun`) and the column profiler (`POST /suites/{id}/profile`) run a single GX check / a profiling query against the datasource **synchronously in a threadpool** (persisting nothing) — interactive authoring aids, not scheduled runs.
 - **All connection secrets via Key Vault in production / staging.** Local dev may resolve secrets via `KV_SECRET_*` env vars through the `EnvSecretStore` backend (see [ADR 0009](adr/0009-flat-monorepo-layout.md) layout note and `backend/app/core/secrets.py`). No credentials are ever hardcoded.
+- **The `/mcp` endpoint exposes the same service layer to AI clients.** The 8 FastMCP tools are thin wrappers reusing the same services + per-suite authz + sample redaction as the REST API — no logic duplication. Validated with the same Azure AD bearer token (a `JWTVerifier` on the same tenant/audience/scope), and **fail-closed** (not mounted without resolvable auth). See [ADR 0008](adr/0008-mcp-server.md).
+- **Interactive API docs are off in production.** `/docs`, `/redoc`, and `/openapi.json` are disabled when `ENVIRONMENT=prod` (the prod-docs gate); available in dev/staging.
