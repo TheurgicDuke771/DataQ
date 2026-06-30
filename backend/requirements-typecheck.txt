@@ -13,7 +13,7 @@
 #     match this file, enforced by scripts/check-typecheck-deps.py (run as the
 #     typecheck-deps-sync pre-commit hook AND in CI's backend-lint job).
 
-fastapi==0.138.1
+fastapi==0.138.2
 fastapi-azure-auth==5.2.0
 fastmcp==3.4.2
 psycopg2-binary==2.9.12
