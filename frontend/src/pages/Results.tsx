@@ -38,6 +38,17 @@ import {
 
 const LIST_LIMIT = 200;
 
+// Client-side pagination for the runs / pipeline-runs tables. The API already
+// caps the fetch at LIST_LIMIT; this just keeps the on-screen table to one page
+// at a time. hideOnSinglePage keeps it invisible until there's a second page.
+const ROWS_PER_PAGE = 20;
+const tablePagination = (noun: string) => ({
+  pageSize: ROWS_PER_PAGE,
+  showSizeChanger: false,
+  hideOnSinglePage: true,
+  showTotal: (total: number) => `${total} ${noun}`,
+});
+
 /** Date-window presets for the Results date filter (no true range picker → no
  *  dayjs dependency; mirrors the dashboard's 24h/7d/30d window control). */
 const DATE_WINDOWS = [
@@ -282,7 +293,7 @@ function RunsTab() {
         rowKey="id"
         columns={columns}
         dataSource={runs}
-        pagination={false}
+        pagination={tablePagination('runs')}
         locale={{ emptyText: <Empty description="No runs match these filters." /> }}
         onRow={(run) => ({
           onClick: () => navigate(`/results/${run.id}`),
@@ -451,7 +462,7 @@ function PipelineRunsTab({ pollMs = PIPELINE_POLL_MS }: { pollMs?: number }) {
         rowKey="id"
         columns={columns}
         dataSource={rows}
-        pagination={false}
+        pagination={tablePagination('pipeline runs')}
         locale={{ emptyText: <Empty description="No pipeline runs monitored yet." /> }}
       />
     </Flex>
