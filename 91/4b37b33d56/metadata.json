@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "914b37b33d56",
+  "strategy": "manual-commit",
+  "branch": "docs/adr-0027-suite-permission-model",
+  "checkpoints_count": 8,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/91/4b37b33d56/0/metadata.json",
+      "transcript": "/91/4b37b33d56/0/full.jsonl",
+      "content_hash": "/91/4b37b33d56/0/content_hash.txt",
+      "prompt": "/91/4b37b33d56/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 107874,
+    "cache_creation_tokens": 5907590,
+    "cache_read_tokens": 400049322,
+    "output_tokens": 762060,
+    "api_call_count": 1037
+  }
+}
