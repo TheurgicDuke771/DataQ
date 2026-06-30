@@ -1,0 +1,91 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "b8ce15c131cc",
+  "session_id": "83180c0d-bbe5-4c61-b9bc-5700e05669e4",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-30T03:04:09.572642Z",
+  "branch": "feature/288-docs-site",
+  "checkpoints_count": 2,
+  "save_step_count": 2,
+  "files_touched": [
+    "README.md"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "aa54f09cc2fa",
+  "token_usage": {
+    "input_tokens": 75329,
+    "cache_creation_tokens": 4296430,
+    "cache_read_tokens": 272196919,
+    "output_tokens": 490988,
+    "api_call_count": 619
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01Y26idcG654oeDjGMvt5KLx",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "aa54f09cc2fa",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 378,
+        "end": 379,
+        "entry_ids": [
+          "26826903-406e-42e6-ab5d-07cfad4ccb33"
+        ],
+        "tool_use_id": "toolu_01Y26idcG654oeDjGMvt5KLx"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01Y26idcG654oeDjGMvt5KLx"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 23
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-30T03:04:09.495635Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 460,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 460,
+    "total_lines_changed": 461,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}
