@@ -11,7 +11,7 @@ import { useAsyncData } from '../hooks/useAsyncData';
 
 /**
  * Workspace Settings (`/settings`, ADR 0022 SettingsScreen). A tabbed shell —
- * General · Secrets · Notifications · Danger zone.
+ * General · Secrets · Webhooks · Notifications · Danger zone.
  *
  * There is **no settings/preferences backend** in v1, so this ships the shell +
  * only the controls a real backend backs (notifications are configured per
