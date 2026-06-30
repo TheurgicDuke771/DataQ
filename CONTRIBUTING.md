@@ -103,6 +103,7 @@ These are locked on Day 1 of Week 1. Do not drift.
     1. PR A: migration adds/renames column; old code still works.
     2. PR B (later): code change that depends on the new schema.
 31. **Migration PR checklist:** rollback plan documented + "tested `alembic upgrade head` and `alembic downgrade -1` locally" ticked before requesting review.
+32. **Read-modify-write is only as safe as its constraint.** There is no row-locking on the read-then-write paths today, so any "read current state → compute next → insert" sequence (e.g. the per-check `version_no` snapshot) can be raced by a concurrent writer. Guard each such write with a **unique constraint** (or `SELECT … FOR UPDATE`), and **catch the `IntegrityError`** to surface a **409** (reload + retry), not an unhandled 500 — e.g. `check_service.update_check` on `uq_check_versions_check_version`. `get_db` issues an explicit `rollback()` on any exception so a poisoned transaction never reaches the connection's next user.
 
 ---
 
