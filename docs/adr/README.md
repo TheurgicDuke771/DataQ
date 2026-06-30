@@ -47,6 +47,7 @@ Each ADR captures a single significant architecture decision: the context, the d
 | [0005](0005-severity-tier-weights.md) | Severity tier weights (warn / fail / critical → health score) | Accepted |
 | [0006](0006-adf-webhook-authentication.md) | ADF webhook authentication (shared secret in URL + hard-cutover rotation) | Accepted |
 | [0007](0007-airflow-callback-model.md) | Airflow callback model (HMAC-signed webhook + polling fallback) | Accepted |
+| [0008](0008-mcp-server.md) | FastMCP server at `/mcp` — Azure AD token validated (same token as REST); all 8 exposed as tools; thin wrappers reusing the service layer + per-suite authz; fail-closed without auth | Accepted |
 | [0009](0009-flat-monorepo-layout.md) | Repo layout — flat monorepo (`backend/` + `frontend/`) | Accepted |
 | [0010](0010-provider-agnostic-infrastructure-seams.md) | Provider-agnostic infrastructure seams (Azure is the default, not the architecture) | Accepted |
 | [0011](0011-extensibility-seams-for-deferred-integrations.md) | Extensibility seams for deferred connectors and integrations | Accepted |
@@ -66,5 +67,5 @@ Each ADR captures a single significant architecture decision: the context, the d
 
 | # | Topic | Target week |
 |---|---|---|
-| 0008 | MCP mounted at `/mcp` with Azure AD auth | Week 7 |
 | 0015 | Two-connection check model (source + target refs for `comparison` checks) | When reconciliation build starts (post-v1) |
+| [0026](0026-auth-api-keys-and-principal-seam.md) | DataQ-issued API keys / service tokens behind the auth seam (REST + MCP); provider-neutral identity (**Proposed**) | Post-v1 — Theme 3 (access/identity) |
