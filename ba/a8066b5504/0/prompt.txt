@@ -685,3 +685,21 @@ Okay. Let's do both with a one time back fill of all the past runs.
 <status>completed</status>
 <summary>Background command "Wait for #491 CI" completed (exit code 0)</summary>
 </task-notification>
+
+---
+
+<task-notification>
+<task-id>bjgl7e5mj</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/83180c0d-bbe5-4c61-b9bc-5700e05669e4/tasks/bjgl7e5mj.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for deploy completion" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+So for the airflow, we will add one block to each of the DAGs, and the DAG will call DataQ upon completion, both success and failure. but I'm not fully understood the ADF webhook part. Can you walk me through it once?
+
+---
+
+Uh, don't modify the pipelines directly. Go with option one. And, yes, create the webhook config UI.
