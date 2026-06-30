@@ -52,6 +52,10 @@ locals {
     # Empty: the SWA linked backend proxies /api same-origin, so the FastAPI CORS
     # middleware stays off (README §4 / ADR 0018).
     { name = "CORS_ALLOW_ORIGINS", value = "" },
+    # Public origin for the inbound-webhook URLs the admin webhook-config surface
+    # generates (#490). The SWA host proxies /api same-origin, so an orchestrator
+    # POSTing to <swa>/api/v1/orchestration/events/... reaches the api.
+    { name = "PUBLIC_BASE_URL", value = "https://${azurerm_static_web_app.app.default_host_name}" },
     # Webhook secret KEY names (values live in Key Vault — keyvault.tf).
     { name = "ADF_WEBHOOK_SECRET_NAME", value = "adf-webhook-secret" },
     { name = "AIRFLOW_WEBHOOK_SECRET_NAME", value = "airflow-webhook-secret" },

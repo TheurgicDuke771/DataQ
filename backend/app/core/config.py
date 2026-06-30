@@ -62,6 +62,13 @@ class Settings(BaseSettings):
     #   CORS_ALLOW_ORIGINS=https://app.example.com,https://dataq.example.com
     cors_allow_origins: str = ""
 
+    # Public base URL of the deployed API (scheme+host, no trailing slash), used
+    # to assemble the inbound orchestration webhook URLs the admin webhook-config
+    # surface shows (#490). Set to the public host on deploy (e.g. the SWA origin
+    # that proxies /api). Empty → fall back to the request's own base URL.
+    #   PUBLIC_BASE_URL=https://dataq.example.com
+    public_base_url: str = ""
+
     # Workspace-admin allowlist — emails permitted to use the /admin read
     # endpoints (all-suites / all-users / access overview). Single-tenant, so this
     # is the whole-workspace admin set, distinct from the per-suite

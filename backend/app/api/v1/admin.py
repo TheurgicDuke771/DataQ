@@ -13,11 +13,13 @@ from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
 from backend.app.core.auth import require_workspace_admin
+from backend.app.core.config import get_settings
+from backend.app.core.secrets import SecretStore, get_secret_store
 from backend.app.db.session import get_db
 from backend.app.services import admin_service as svc
 
@@ -81,3 +83,30 @@ def all_users(db: Annotated[Session, Depends(get_db)]) -> list[svc.AdminUserRow]
 @router.get("/access", response_model=list[AdminAccessRead], summary="Access overview (admin)")
 def all_access(db: Annotated[Session, Depends(get_db)]) -> list[svc.AdminAccessRow]:
     return svc.list_all_access(db)
+
+
+class AdminWebhookRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    provider: str
+    auth: str
+    inbound_url: str
+    token_configured: bool
+    signing_secret_name: str | None
+    connection_names: list[str]
+
+
+@router.get(
+    "/orchestration/webhooks",
+    response_model=list[AdminWebhookRead],
+    summary="Inbound orchestration webhook config (admin)",
+)
+def orchestration_webhooks(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    secret_store: Annotated[SecretStore, Depends(get_secret_store)],
+) -> list[svc.WebhookConfigRow]:
+    # The ADF row embeds the shared secret in the URL — admin-gated (router dep)
+    # and never logged. Base URL: the configured public host, else the request's.
+    base_url = get_settings().public_base_url or str(request.base_url)
+    return svc.webhook_configs(db, base_url=base_url, secret_store=secret_store)

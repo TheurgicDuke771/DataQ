@@ -63,7 +63,18 @@ The datasource + compute infra is stood up by the external Terraform harness
    API URL; configure after the first deploy. Per [ADR 0006](../docs/adr/0006-adf-webhook-authentication.md)
    the shared secret rides the URL as a `?token=` query param, so don't
    hand-assemble it (wrong host / stale token after rotation / missing `?token=`
-   are easy to get wrong — #92). Build it from the live host + Key Vault secret:
+   are easy to get wrong — #92).
+
+   **Easiest path: the in-app webhook-config surface (#490).** Sign in as a
+   workspace admin → **Admin → Inbound webhooks** to copy the ready-to-paste ADF
+   URL (host + current `?token=` from Key Vault) and the Airflow URL. Set
+   `PUBLIC_BASE_URL` so the generated host is the public origin (the deploy sets
+   it to the SWA host; empty falls back to the request host). Paste the ADF URL
+   into the Action Group webhook field. Note the **live ADF delivery still needs
+   the Common-Alert-Schema payload mapping (#492)** — the alert body Azure Monitor
+   sends differs from what the receiver parses today.
+
+   Or build it from the CLI (the live host + Key Vault secret):
 
    ```bash
    # Vars you already set for the deploy workflow + the vault name.

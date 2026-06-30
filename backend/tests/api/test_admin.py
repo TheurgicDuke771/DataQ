@@ -70,7 +70,12 @@ def _suite(db_session: Any, owner: User, conn: Connection, name: str) -> Suite:
 def test_non_admin_gets_403(client: TestClient) -> None:
     # No WORKSPACE_ADMIN_EMAILS configured → the caller is not an admin.
     get_settings.cache_clear()
-    for path in ("/api/v1/admin/suites", "/api/v1/admin/users", "/api/v1/admin/access"):
+    for path in (
+        "/api/v1/admin/suites",
+        "/api/v1/admin/users",
+        "/api/v1/admin/access",
+        "/api/v1/admin/orchestration/webhooks",
+    ):
         resp = client.get(path)
         assert resp.status_code == 403, path
 
@@ -167,3 +172,108 @@ def test_admin_access_overview_lists_owner_and_shares(
     grants = {(r["user_email"], r["permission"]) for r in rows}
     assert ("owner@x.io", "owner") in grants
     assert ("editor@x.io", "edit") in grants
+
+
+# ── inbound webhook config (#490) ───────────────────────────────────────────────
+
+
+class _FakeStore:
+    """Minimal SecretStore: returns a fixed token, or raises to simulate a missing secret."""
+
+    def __init__(self, *, token: str | None = "wh-tok-123") -> None:
+        self._token = token
+
+    def get(self, name: str) -> str:
+        if self._token is None:
+            raise KeyError(name)
+        return self._token
+
+    def set(self, name: str, value: str) -> None:  # pragma: no cover - protocol completeness
+        raise NotImplementedError
+
+
+def _orch_connection(db_session: Any, owner: User, *, ctype: str, name: str) -> Connection:
+    config = (
+        {"factory_name": name}
+        if ctype == "adf"
+        else {"base_url": f"https://{name}.example.com", "auth_type": "token"}
+    )
+    conn = Connection(
+        name=name, type=ctype, env="dev", config=config, secret_ref="kv", created_by=owner.id
+    )
+    db_session.add(conn)
+    db_session.flush()
+    return conn
+
+
+def _with_store(client: TestClient, store: Any) -> TestClient:
+    from backend.app.core.secrets import get_secret_store
+
+    app.dependency_overrides[get_secret_store] = lambda: store
+    return client
+
+
+def test_admin_webhooks_adf_url_embeds_token(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    owner = _user(db_session, "owner@x.io")
+    _orch_connection(db_session, owner, ctype="adf", name="prod-factory")
+    db_session.commit()
+    _grant_admin(monkeypatch)
+    _with_store(client, _FakeStore(token="secret-tok"))
+
+    rows = {r["provider"]: r for r in client.get("/api/v1/admin/orchestration/webhooks").json()}
+    adf = rows["adf"]
+    assert adf["inbound_url"].endswith("/api/v1/orchestration/events/adf?token=secret-tok")
+    assert adf["token_configured"] is True
+    assert adf["signing_secret_name"] is None
+    assert "prod-factory" in adf["connection_names"]
+
+
+def test_admin_webhooks_airflow_carries_no_url_token(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    owner = _user(db_session, "owner@x.io")
+    _orch_connection(db_session, owner, ctype="airflow", name="airflow-prod")
+    db_session.commit()
+    _grant_admin(monkeypatch)
+    _with_store(client, _FakeStore())
+
+    rows = {r["provider"]: r for r in client.get("/api/v1/admin/orchestration/webhooks").json()}
+    airflow = rows["airflow"]
+    assert airflow["inbound_url"].endswith("/api/v1/orchestration/events/airflow")
+    assert "token=" not in airflow["inbound_url"]
+    assert airflow["signing_secret_name"] == "airflow-webhook-secret"
+
+
+def test_admin_webhooks_marks_missing_secret(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    owner = _user(db_session, "owner@x.io")
+    _orch_connection(db_session, owner, ctype="adf", name="prod-factory")
+    db_session.commit()
+    _grant_admin(monkeypatch)
+    _with_store(client, _FakeStore(token=None))  # secret not provisioned
+
+    [adf] = [
+        r
+        for r in client.get("/api/v1/admin/orchestration/webhooks").json()
+        if r["provider"] == "adf"
+    ]
+    assert adf["token_configured"] is False
+    assert "token=secret" not in adf["inbound_url"]  # no real token leaked
+    assert "set adf-webhook-secret" in adf["inbound_url"]
+
+
+def test_admin_webhooks_omits_providers_without_connections(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Only an ADF connection exists → no airflow row.
+    owner = _user(db_session, "owner@x.io")
+    _orch_connection(db_session, owner, ctype="adf", name="only-adf")
+    db_session.commit()
+    _grant_admin(monkeypatch)
+    _with_store(client, _FakeStore())
+
+    providers = {r["provider"] for r in client.get("/api/v1/admin/orchestration/webhooks").json()}
+    assert providers == {"adf"}
