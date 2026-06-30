@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "1caee0e08a31",
+  "strategy": "manual-commit",
+  "branch": "feature/webhook-config-to-settings",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/pages/Settings.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/1c/aee0e08a31/0/metadata.json",
+      "transcript": "/1c/aee0e08a31/0/full.jsonl",
+      "content_hash": "/1c/aee0e08a31/0/content_hash.txt",
+      "prompt": "/1c/aee0e08a31/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 215187,
+    "cache_creation_tokens": 8661005,
+    "cache_read_tokens": 771829348,
+    "output_tokens": 1256022,
+    "api_call_count": 1690
+  }
+}
