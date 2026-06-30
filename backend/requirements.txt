@@ -43,7 +43,7 @@ opencensus-ext-azure==1.1.15      # App Insights via OpenCensus bridge
 fastapi-azure-auth==5.2.0
 msal==1.37.0                      # ≥1.34 lifts the cryptography<47 cap → unblocks cryptography≥48 (#274)
 azure-keyvault-secrets==4.11.0
-azure-identity==1.23.0
+azure-identity==1.25.3
 
 # ── Datasource connectors ──
 snowflake-sqlalchemy==1.10.2       # ≥1.8 lifts the connector<4.0 cap (#129)
