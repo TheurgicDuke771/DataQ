@@ -24,7 +24,7 @@ from backend.app.api.v1 import suites as suites_router
 from backend.app.api.v1 import trigger_bindings as trigger_bindings_router
 from backend.app.api.v1 import users as users_router
 from backend.app.core.auth import init_auth
-from backend.app.core.config import get_settings
+from backend.app.core.config import Settings, get_settings
 from backend.app.core.errors import register_exception_handlers
 from backend.app.core.logging import configure_logging, get_logger, request_id_var
 from backend.app.mcp import build_mcp_app
@@ -62,7 +62,32 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 _mcp_app = build_mcp_app()
 _lifespan = combine_lifespans(lifespan, _mcp_app.lifespan) if _mcp_app is not None else lifespan
 
-app = FastAPI(title="DataQ API", lifespan=_lifespan)
+
+def docs_kwargs(settings: Settings) -> dict[str, str | None]:
+    """FastAPI doc-exposure kwargs, gated by environment (#170 — prod-docs gate).
+
+    The interactive docs (`/docs`, `/redoc`) and the raw OpenAPI schema
+    (`/openapi.json`) are OFF in production — don't publish the full API surface
+    on the public ingress — and ON in dev/staging for developer convenience.
+    Disabling `openapi_url` also disables both doc UIs (they fetch it), so all
+    three ride the one environment check.
+    """
+    enabled = settings.environment != "prod"
+    return {
+        "docs_url": "/docs" if enabled else None,
+        "redoc_url": "/redoc" if enabled else None,
+        "openapi_url": "/openapi.json" if enabled else None,
+    }
+
+
+_docs = docs_kwargs(get_settings())
+app = FastAPI(
+    title="DataQ API",
+    lifespan=_lifespan,
+    docs_url=_docs["docs_url"],
+    redoc_url=_docs["redoc_url"],
+    openapi_url=_docs["openapi_url"],
+)
 
 # Cross-origin access for the prod Static-Web-App ↔ Container-Apps split. Added
 # only when origins are configured (empty in dev — the Vite proxy keeps it
