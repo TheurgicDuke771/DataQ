@@ -1,0 +1,79 @@
+site_name: DataQ
+site_description: >-
+  DataQ — a single-tenant data-quality monitoring platform built on Great
+  Expectations. User-friendly guides + developer references.
+site_url: https://theurgicduke771.github.io/DataQ/
+repo_url: https://github.com/TheurgicDuke771/DataQ
+repo_name: TheurgicDuke771/DataQ
+edit_uri: edit/main/docs/
+
+# The repo's docs/ is the source. Internal planning docs are excluded from the
+# published site (below); ADRs are published as reference.
+docs_dir: docs
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: indigo # matches the app's indigo brand
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.instant
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+# Plain-language modules first (audience: PMs / data engineers / SREs / QA /
+# non-technical stakeholders), then developer references. Each module is short
+# and links out to the in-repo source of truth rather than duplicating it.
+nav:
+  - Home: index.md
+  - Concepts: concepts.md
+  - Architecture: architecture.md
+  - Getting started: getting-started.md
+  - Datasources & checks: datasources-checks.md
+  - Orchestration: orchestration.md
+  - Observability & troubleshooting: observability.md
+  - Contributing: contributing.md
+  - Runbook & FAQ: runbook-faq.md
+  - Glossary: glossary.md
+
+# Internal planning docs stay in the repo (version-controlled) but are NOT
+# published to the public site. ADRs (decision records) ARE published.
+exclude_docs: |
+  progress.md
+  post-v1-admin-ui-notes.md
+  post-v1-dq-intelligence-notes.md
+  compliance-posture.md
+
+validation:
+  omitted_files: ignore
+  absolute_links: ignore
+  unrecognized_links: ignore

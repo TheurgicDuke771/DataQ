@@ -27,9 +27,11 @@
 /.pre-commit-config.yaml         @TheurgicDuke771
 /scripts/                        @TheurgicDuke771
 
-# Docs & decisions
+# Docs & decisions (incl. the MkDocs site, #288 — docs owner signs off before release)
 /docs/                           @TheurgicDuke771
 /docs/adr/                       @TheurgicDuke771
+/mkdocs.yml                      @TheurgicDuke771
+/requirements-docs.txt           @TheurgicDuke771
 /CLAUDE.md                       @TheurgicDuke771
 /CONTRIBUTING.md                 @TheurgicDuke771
 /README.md                       @TheurgicDuke771

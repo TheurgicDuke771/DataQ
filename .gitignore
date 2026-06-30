@@ -182,3 +182,6 @@ frontend/reports/mutation/
 
 # Playwright MCP screenshot/snapshot artifacts
 .playwright-mcp/
+
+# MkDocs build output (docs site, #288)
+site/
