@@ -55,3 +55,20 @@ export async function listAdminAccess(): Promise<AdminAccess[]> {
   const { data } = await api.get<AdminAccess[]>('/admin/access');
   return data;
 }
+
+/** One orchestration provider's inbound-webhook config (#490). `inbound_url` is
+ *  ready to paste into the provider's webhook field; for ADF it embeds the shared
+ *  secret (`?token=…`) — secret-bearing, admin-only. */
+export interface AdminWebhook {
+  provider: string;
+  auth: string;
+  inbound_url: string;
+  token_configured: boolean;
+  signing_secret_name: string | null;
+  connection_names: string[];
+}
+
+export async function listAdminWebhooks(): Promise<AdminWebhook[]> {
+  const { data } = await api.get<AdminWebhook[]>('/admin/orchestration/webhooks');
+  return data;
+}

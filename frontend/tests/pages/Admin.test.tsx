@@ -7,9 +7,11 @@ import {
   type AdminAccess,
   type AdminSuite,
   type AdminUser,
+  type AdminWebhook,
   listAdminAccess,
   listAdminSuites,
   listAdminUsers,
+  listAdminWebhooks,
 } from '../../src/api/admin';
 import type { MeResponse } from '../../src/api/me';
 import { MeContext } from '../../src/auth/meContext';
@@ -20,11 +22,13 @@ vi.mock('../../src/api/admin', () => ({
   listAdminSuites: vi.fn(),
   listAdminUsers: vi.fn(),
   listAdminAccess: vi.fn(),
+  listAdminWebhooks: vi.fn(),
 }));
 
 const mockSuites = vi.mocked(listAdminSuites);
 const mockUsers = vi.mocked(listAdminUsers);
 const mockAccess = vi.mocked(listAdminAccess);
+const mockWebhooks = vi.mocked(listAdminWebhooks);
 
 const adminMe: AsyncState<MeResponse> = {
   status: 'ok',
@@ -80,6 +84,17 @@ const ACCESS: AdminAccess[] = [
   },
 ];
 
+const WEBHOOKS: AdminWebhook[] = [
+  {
+    provider: 'adf',
+    auth: 'Shared secret in the URL (?token=…)',
+    inbound_url: 'https://dataq.example.com/api/v1/orchestration/events/adf?token=abc123',
+    token_configured: true,
+    signing_secret_name: null,
+    connection_names: ['prod-factory'],
+  },
+];
+
 function renderAdmin(me: AsyncState<MeResponse>) {
   return render(
     <MemoryRouter>
@@ -96,6 +111,7 @@ beforeEach(() => {
   mockSuites.mockResolvedValue([SUITE]);
   mockUsers.mockResolvedValue([USER]);
   mockAccess.mockResolvedValue(ACCESS);
+  mockWebhooks.mockResolvedValue(WEBHOOKS);
 });
 afterEach(() => vi.clearAllMocks());
 
@@ -120,6 +136,8 @@ describe('Admin', () => {
     expect(screen.getByText('bob@x.io')).toBeInTheDocument(); // members
     expect(screen.getByText('owner')).toBeInTheDocument(); // access permission tag
     expect(screen.getByText('edit')).toBeInTheDocument();
+    // Inbound-webhooks panel: provider label renders once loaded.
+    expect(await screen.findByText('Azure Data Factory')).toBeInTheDocument();
   });
 
   it('surfaces a load error for a failed dataset', async () => {

@@ -10,12 +10,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from urllib.parse import quote
 from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.db.models import Check, Connection, Share, Suite, User
+from backend.app.core.config import get_settings
+from backend.app.core.secrets import SecretNotFoundError, SecretStore
+from backend.app.db.models import ORCHESTRATION_PROVIDERS, Check, Connection, Share, Suite, User
 from backend.app.services.suite_authz import OWNER
 
 # Strongest-first permission rank for ordering the access overview.
@@ -141,4 +144,96 @@ def list_all_access(session: Session) -> list[AdminAccessRow]:
     rows.sort(
         key=lambda r: (r.suite_name.lower(), _PERMISSION_RANK.get(r.permission, 9), r.user_email)
     )
+    return rows
+
+
+@dataclass(frozen=True)
+class WebhookConfigRow:
+    """One orchestration provider's inbound-webhook setup for the admin UI (#490).
+
+    `inbound_url` is ready to paste into the provider's webhook field. For ADF it
+    embeds the shared secret as the `?token=` query param (ADR 0006) — so this row
+    is **secret-bearing**, only returned behind `require_workspace_admin`, and must
+    never be logged. Airflow carries no URL secret (HMAC header, ADR 0007); the
+    signing key lives in Key Vault under `signing_secret_name` and is configured in
+    the DAG callback snippet, not the URL.
+    """
+
+    provider: str
+    auth: str
+    inbound_url: str
+    token_configured: bool
+    signing_secret_name: str | None
+    connection_names: list[str]
+
+
+def _safe_secret(secret_store: SecretStore, name: str) -> str | None:
+    """Resolve a secret, returning None if it isn't provisioned (so the webhook
+    surface degrades to a clear 'not set' marker instead of erroring).
+
+    Narrow to the store's not-found error (as the event receiver does) — an
+    unexpected error still propagates rather than masquerading as 'not set'.
+    """
+    try:
+        return secret_store.get(name)
+    except SecretNotFoundError:
+        return None
+
+
+def webhook_configs(
+    session: Session, *, base_url: str, secret_store: SecretStore
+) -> list[WebhookConfigRow]:
+    """Inbound-webhook config per orchestration provider that has a connection.
+
+    Provider-level (one shared secret per provider), so one row per provider with
+    ≥1 connection, listing the connections it covers. `base_url` is the public API
+    base (scheme+host, no trailing slash). Secret-bearing for ADF — admin-only.
+    """
+    base = base_url.rstrip("/")
+    names_by_provider: dict[str, list[str]] = {}
+    for conn in session.scalars(
+        select(Connection)
+        .where(Connection.type.in_(ORCHESTRATION_PROVIDERS))
+        .order_by(Connection.type, Connection.name)
+    ):
+        names_by_provider.setdefault(conn.type, []).append(conn.name)
+
+    settings = get_settings()
+    rows: list[WebhookConfigRow] = []
+    for provider in ORCHESTRATION_PROVIDERS:
+        names = names_by_provider.get(provider, [])
+        if not names:
+            continue
+        if provider == "adf":
+            token = _safe_secret(secret_store, settings.adf_webhook_secret_name)
+            # URL-encode the secret: the receiver reads `token` URL-decoded, so a
+            # secret containing &/+/=/% must be percent-encoded or the pasted URL
+            # won't match (ADR 0006). bool(token) (not `is not None`) so an empty
+            # secret reads as not-configured, consistent with the placeholder.
+            token_param = (
+                quote(token, safe="")
+                if token
+                else f"<set {settings.adf_webhook_secret_name} in Key Vault>"
+            )
+            rows.append(
+                WebhookConfigRow(
+                    provider="adf",
+                    auth="Shared secret in the URL (?token=…), constant-time checked — ADR 0006",
+                    inbound_url=f"{base}/api/v1/orchestration/events/adf?token={token_param}",
+                    token_configured=bool(token),
+                    signing_secret_name=None,
+                    connection_names=names,
+                )
+            )
+        else:  # airflow
+            rows.append(
+                WebhookConfigRow(
+                    provider="airflow",
+                    auth="HMAC-SHA256 signature header (X-DataQ-Signature) — ADR 0007",
+                    inbound_url=f"{base}/api/v1/orchestration/events/airflow",
+                    token_configured=True,
+                    signing_secret_name=settings.airflow_webhook_secret_name,
+                    connection_names=names,
+                )
+            )
     return rows
