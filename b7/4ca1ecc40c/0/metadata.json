@@ -1,0 +1,86 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "b74ca1ecc40c",
+  "session_id": "91a2ad94-53ea-4a83-ad69-33820c546636",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-30T23:21:46.642008Z",
+  "branch": "feature/issue-472-ghcr-publish-multiarch",
+  "checkpoints_count": 4,
+  "files_touched": [
+    ".github/workflows/publish-images.yml",
+    "frontend/Dockerfile"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "c8dc4ca51139",
+  "checkpoint_transcript_start": 242,
+  "transcript_lines_at_start": 242,
+  "token_usage": {
+    "input_tokens": 804,
+    "cache_creation_tokens": 54296,
+    "cache_read_tokens": 3795445,
+    "output_tokens": 31386,
+    "api_call_count": 36
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01G5oQDmxNkru7jdZGWuW7GZ",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "c8dc4ca51139",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 111,
+        "end": 112,
+        "entry_ids": [
+          "d02d6714-67b7-425f-b6df-db6911e0e8d4"
+        ],
+        "tool_use_id": "toolu_01G5oQDmxNkru7jdZGWuW7GZ"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01G5oQDmxNkru7jdZGWuW7GZ"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 8
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-30T23:21:46.63181Z",
+    "agent_lines": 127,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 127,
+    "total_lines_changed": 127,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "b74ca1ecc40c",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-472-ghcr-publish-multiarch",
+  "checkpoints_count": 4,
+  "files_touched": [
+    ".github/workflows/publish-images.yml",
+    "frontend/Dockerfile"
+  ],
+  "sessions": [
+    {
+      "metadata": "/b7/4ca1ecc40c/0/metadata.json",
+      "transcript": "/b7/4ca1ecc40c/0/full.jsonl",
+      "content_hash": "/b7/4ca1ecc40c/0/content_hash.txt",
+      "prompt": "/b7/4ca1ecc40c/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 804,
+    "cache_creation_tokens": 54296,
+    "cache_read_tokens": 3795445,
+    "output_tokens": 31386,
+    "api_call_count": 36
+  }
+}
