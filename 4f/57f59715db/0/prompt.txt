@@ -1,0 +1,9 @@
+Hey, there are 2 open issues for week 7, which one can we take?
+
+---
+
+Okay, lets start with #168
+
+---
+
+go ahead with code review

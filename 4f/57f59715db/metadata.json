@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "4f57f59715db",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-168-silent-token-refresh-fallback",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "frontend/src/api/client.ts",
+    "frontend/tests/api/client.test.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/4f/57f59715db/0/metadata.json",
+      "transcript": "/4f/57f59715db/0/full.jsonl",
+      "content_hash": "/4f/57f59715db/0/content_hash.txt",
+      "prompt": "/4f/57f59715db/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 9115,
+    "cache_creation_tokens": 57328,
+    "cache_read_tokens": 1283881,
+    "output_tokens": 12328,
+    "api_call_count": 26
+  }
+}
