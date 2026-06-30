@@ -17,10 +17,14 @@ from backend.app.services.profile_service import (
     ProfileColumnNotFoundError,
     ProfileIdentifierInvalidError,
     ProfileTargetInvalidError,
+    ProfileUnsupportedError,
     assemble_profile,
     build_aggregate_query,
+    build_columns_query,
     build_top_values_query,
     infer_file_format,
+    list_columns,
+    list_file_columns,
     null_fraction,
     profile_dataframe,
     validate_identifier,
@@ -107,6 +111,28 @@ def test_builders_with_catalog_qualify_three_part_namespace() -> None:
 def test_builder_rejects_unsafe_catalog() -> None:
     with pytest.raises(ProfileIdentifierInvalidError):
         build_aggregate_query("sales", "orders", ["amt"], "main; DROP")
+
+
+# ── build_columns_query (column-listing introspection, #474) ──
+
+
+def test_columns_query_selects_star_with_limit_zero() -> None:
+    sql = _sql(build_columns_query("public", "orders"))
+    assert "select *" in sql
+    assert "from public.orders" in sql
+    assert "limit 0" in sql  # no rows scanned — only the cursor's column names
+
+
+def test_columns_query_with_catalog_qualifies_three_part_namespace() -> None:
+    sql = _sql(build_columns_query("sales", "orders", "main"))
+    assert "from main.sales.orders" in sql
+
+
+def test_columns_query_rejects_unsafe_identifiers() -> None:
+    with pytest.raises(ProfileIdentifierInvalidError):
+        build_columns_query("public", "orders; DROP TABLE x")
+    with pytest.raises(ProfileIdentifierInvalidError):
+        build_columns_query("public", "orders", "main; DROP")
 
 
 # ── _engine_args (SQL dialect dispatch) ──
@@ -323,6 +349,13 @@ def _flatfile_conn() -> Any:
     return SimpleNamespace(type="s3", config={"bucket": "b", "region": "r"}, secret_ref="ref")
 
 
+def _conn(*, conn_type: str, config: dict[str, Any], secret_ref: str | None = "ref") -> Any:
+    """A duck-typed Connection stand-in (returns Any) for dispatch-only tests."""
+    from types import SimpleNamespace
+
+    return SimpleNamespace(type=conn_type, config=config, secret_ref=secret_ref)
+
+
 def test_read_dataframe_csv_projects_only_requested_columns(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -361,6 +394,65 @@ def test_read_dataframe_parquet_projects_only_requested_columns(
     assert len(df) == 2
     # Arrow-backed (zero-copy) dtypes, not numpy
     assert all("pyarrow" in str(dt) for dt in df.dtypes)
+
+
+# ── list_file_columns (header/footer-only introspection, #474) ──
+
+
+def test_list_file_columns_csv_reads_header_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    from backend.app.services import profile_service as svc
+
+    monkeypatch.setattr(svc, "download_bytes", lambda **k: b"a,b,c\n1,2,3\n4,5,6\n")
+    cols = list_file_columns(
+        _flatfile_conn(), path="x.csv", file_format="csv", secret_store=_FakeStore()
+    )
+    assert cols == ["a", "b", "c"]  # all columns, names only
+
+
+def test_list_file_columns_parquet_reads_schema_names(monkeypatch: pytest.MonkeyPatch) -> None:
+    import io
+
+    from backend.app.services import profile_service as svc
+
+    buf = io.BytesIO()
+    pd.DataFrame({"a": [1, 2], "b": [3, 4], "c": [5, 6]}).to_parquet(buf)
+    monkeypatch.setattr(svc, "download_bytes", lambda **k: buf.getvalue())
+    cols = list_file_columns(
+        _flatfile_conn(), path="x.parquet", file_format="parquet", secret_store=_FakeStore()
+    )
+    assert set(cols) == {"a", "b", "c"}
+
+
+# ── list_columns dispatch (target/type validation, no I/O) ──
+
+
+def test_list_columns_unsupported_type_raises() -> None:
+    conn = _conn(conn_type="adf", config={})
+    with pytest.raises(ProfileUnsupportedError):
+        list_columns(conn, table="orders", secret_store=_FakeStore())
+
+
+def test_list_columns_sql_without_table_raises() -> None:
+    conn = _conn(conn_type="snowflake", config={"schema": "public"})
+    with pytest.raises(ProfileTargetInvalidError):
+        list_columns(conn, secret_store=_FakeStore())
+
+
+def test_list_columns_unity_catalog_without_catalog_raises() -> None:
+    conn = _conn(conn_type="unity_catalog", config={"schema": "s"})
+    with pytest.raises(ProfileTargetInvalidError):
+        list_columns(conn, table="orders", secret_store=_FakeStore())
+
+
+def test_list_columns_flatfile_without_path_raises() -> None:
+    with pytest.raises(ProfileTargetInvalidError):
+        list_columns(_flatfile_conn(), secret_store=_FakeStore())
+
+
+def test_list_columns_without_credential_raises() -> None:
+    conn = _conn(conn_type="snowflake", config={"schema": "public"}, secret_ref=None)
+    with pytest.raises(ProfileTargetInvalidError):
+        list_columns(conn, table="orders", secret_store=_FakeStore())
 
 
 def test_profile_dataframe_handles_arrow_backed_dtypes_with_na() -> None:
