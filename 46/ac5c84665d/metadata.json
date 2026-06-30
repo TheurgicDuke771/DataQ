@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "46ac5c84665d",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-494-webhook-token-log-leak",
+  "checkpoints_count": 9,
+  "files_touched": [
+    "backend/app/main.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/46/ac5c84665d/0/metadata.json",
+      "transcript": "/46/ac5c84665d/0/full.jsonl",
+      "content_hash": "/46/ac5c84665d/0/content_hash.txt",
+      "prompt": "/46/ac5c84665d/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 212903,
+    "cache_creation_tokens": 8594731,
+    "cache_read_tokens": 750372949,
+    "output_tokens": 1211688,
+    "api_call_count": 1636
+  }
+}
