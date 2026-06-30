@@ -343,6 +343,62 @@ def _open_connection(connection: Connection, secret_store: SecretStore) -> Gener
 # ───────────────────────── orchestration ───────────────────────────
 
 
+def resolve_profiler(
+    connection: Connection,
+    *,
+    table: str | None,
+    catalog: str | None,
+    path: str | None,
+) -> _Profiler:
+    """Validate that `connection` is profilable and its target is well-formed,
+    returning the matched profiler strategy.
+
+    The one target-validation rule set shared by the profiler (`profile_connection`)
+    and the column lister (`list_columns`) so they can't drift: a type with no
+    profiler → `ProfileUnsupportedError` (422); a missing credential or a missing
+    target for that type (SQL needs `table`; Unity Catalog also needs `catalog`;
+    a flat-file type needs `path`) → `ProfileTargetInvalidError` (422). The
+    no-credential check is here (not left to the adapter) so it surfaces as a
+    clean 422 rather than a bare `ValueError` the connect guard would relabel 502.
+    """
+    profiler = _PROFILERS.get(connection.type)
+    if profiler is None:
+        raise ProfileUnsupportedError(
+            f"column introspection is not supported for {connection.type!r} connections in v1",
+            detail={"type": connection.type, "supported": sorted(_PROFILERS)},
+        )
+    if not connection.secret_ref:
+        raise ProfileTargetInvalidError(
+            "connection has no stored credential (secret_ref)", detail={"type": connection.type}
+        )
+    if isinstance(profiler, _SqlProfiler):
+        if not table:
+            raise ProfileTargetInvalidError(
+                "table is required for a SQL datasource", detail={"type": connection.type}
+            )
+        if profiler.requires_catalog and not catalog:
+            raise ProfileTargetInvalidError(
+                "catalog is required for a Unity Catalog table", detail={"type": connection.type}
+            )
+    elif not path:
+        raise ProfileTargetInvalidError(
+            "path is required for a flat-file datasource", detail={"type": connection.type}
+        )
+    return profiler
+
+
+def resolve_effective_schema(connection: Connection, schema: str | None) -> str:
+    """The schema to qualify a SQL target with: the explicit `schema`, else the
+    connection's configured default. Raises `ProfileIdentifierInvalidError` (422)
+    when neither is set. Shared by `profile_table` and `list_table_columns`."""
+    effective_schema = schema if schema is not None else connection.config.get("schema")
+    if not isinstance(effective_schema, str):
+        raise ProfileIdentifierInvalidError(
+            "no schema given and the connection has none", detail={"schema": effective_schema}
+        )
+    return effective_schema
+
+
 def profile_table(
     connection: Connection,
     *,
@@ -362,11 +418,7 @@ def profile_table(
     (502) if the profile can't execute — the adapter exception is never echoed
     (it can carry DSN/credential fragments).
     """
-    effective_schema = schema if schema is not None else connection.config.get("schema")
-    if not isinstance(effective_schema, str):
-        raise ProfileIdentifierInvalidError(
-            "no schema given and the connection has none", detail={"schema": effective_schema}
-        )
+    effective_schema = resolve_effective_schema(connection, schema)
     # Validate every identifier up front (422) before any query is built/run.
     if catalog is not None:
         validate_identifier(catalog)
@@ -607,30 +659,9 @@ def profile_connection(
     (a SQL type needs `table`; Unity Catalog also needs `catalog`; a flat-file
     type needs `path`) or the connection has no stored credential.
     """
-    profiler = _PROFILERS.get(connection.type)
-    if profiler is None:
-        raise ProfileUnsupportedError(
-            f"column profiling is not supported for {connection.type!r} connections in v1",
-            detail={"type": connection.type, "supported": sorted(_PROFILERS)},
-        )
-    # A supported connection with no credential is a config problem (422), not a
-    # transient datasource failure — catch it before the adapter raises a bare
-    # ValueError that the read/connect guard would relabel as a 502.
-    if not connection.secret_ref:
-        raise ProfileTargetInvalidError(
-            "connection has no stored credential (secret_ref) to profile with",
-            detail={"type": connection.type},
-        )
+    profiler = resolve_profiler(connection, table=table, catalog=catalog, path=path)
     if isinstance(profiler, _SqlProfiler):
-        if not table:
-            raise ProfileTargetInvalidError(
-                "table is required to profile a SQL datasource", detail={"type": connection.type}
-            )
-        if profiler.requires_catalog and not catalog:
-            raise ProfileTargetInvalidError(
-                "catalog is required to profile a Unity Catalog table",
-                detail={"type": connection.type},
-            )
+        assert table is not None  # resolve_profiler enforced this for SQL types
         return profile_table(
             connection,
             table=table,
@@ -640,11 +671,7 @@ def profile_connection(
             top_n=top_n,
             secret_store=secret_store,
         )
-    if not path:
-        raise ProfileTargetInvalidError(
-            "path is required to profile a flat-file datasource",
-            detail={"type": connection.type},
-        )
+    assert path is not None  # resolve_profiler enforced this for flat-file types
     return profile_file(
         connection,
         path=path,
@@ -677,11 +704,8 @@ def list_table_columns(
     (validated before any query runs) and `ProfileFailedError` (502) if the
     lookup can't execute — the adapter exception is never echoed.
     """
-    effective_schema = schema if schema is not None else connection.config.get("schema")
-    if not isinstance(effective_schema, str):
-        raise ProfileIdentifierInvalidError(
-            "no schema given and the connection has none", detail={"schema": effective_schema}
-        )
+    effective_schema = resolve_effective_schema(connection, schema)
+    # Validate every identifier up front (422) before any query is built/run.
     if catalog is not None:
         validate_identifier(catalog)
     validate_identifier(table)
@@ -715,13 +739,11 @@ def list_file_columns(
     """
     import pandas as pd
 
+    # secret_ref presence is guaranteed by the dispatcher (`resolve_profiler`),
+    # as in `profile_file`; a direct call without it surfaces as a read failure.
     fmt = infer_file_format(path, file_format)
-    if not connection.secret_ref:
-        raise ProfileTargetInvalidError(
-            "connection has no stored credential (secret_ref)", detail={"type": connection.type}
-        )
     try:
-        secret = secret_store.get(connection.secret_ref)
+        secret = secret_store.get(connection.secret_ref or "")
         raw = io.BytesIO(
             download_bytes(
                 conn_type=connection.type, config=connection.config, path=path, secret=secret
@@ -758,36 +780,13 @@ def list_columns(
     `ProfileUnsupportedError` (422) for a type with no profiler and
     `ProfileTargetInvalidError` (422) for a missing target/credential.
     """
-    profiler = _PROFILERS.get(connection.type)
-    if profiler is None:
-        raise ProfileUnsupportedError(
-            f"column listing is not supported for {connection.type!r} connections in v1",
-            detail={"type": connection.type, "supported": sorted(_PROFILERS)},
-        )
-    if not connection.secret_ref:
-        raise ProfileTargetInvalidError(
-            "connection has no stored credential (secret_ref) to list columns with",
-            detail={"type": connection.type},
-        )
+    profiler = resolve_profiler(connection, table=table, catalog=catalog, path=path)
     if isinstance(profiler, _SqlProfiler):
-        if not table:
-            raise ProfileTargetInvalidError(
-                "table is required to list a SQL datasource's columns",
-                detail={"type": connection.type},
-            )
-        if profiler.requires_catalog and not catalog:
-            raise ProfileTargetInvalidError(
-                "catalog is required to list a Unity Catalog table's columns",
-                detail={"type": connection.type},
-            )
+        assert table is not None  # resolve_profiler enforced this for SQL types
         return list_table_columns(
             connection, table=table, schema=schema, catalog=catalog, secret_store=secret_store
         )
-    if not path:
-        raise ProfileTargetInvalidError(
-            "path is required to list a flat-file datasource's columns",
-            detail={"type": connection.type},
-        )
+    assert path is not None  # resolve_profiler enforced this for flat-file types
     return list_file_columns(
         connection, path=path, file_format=file_format, secret_store=secret_store
     )

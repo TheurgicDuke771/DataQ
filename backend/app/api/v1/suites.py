@@ -405,7 +405,7 @@ def list_columns(
     db: Annotated[Session, Depends(get_db)],
     secret_store: Annotated[SecretStore, Depends(get_secret_store)],
     table: Annotated[str | None, Query(max_length=255)] = None,
-    schema_: Annotated[str | None, Query(alias="schema")] = None,
+    schema_: Annotated[str | None, Query(alias="schema", max_length=255)] = None,
     catalog: Annotated[str | None, Query(max_length=255)] = None,
     path: Annotated[str | None, Query(max_length=1024)] = None,
     file_format: Annotated[Literal["csv", "parquet"] | None, Query()] = None,
