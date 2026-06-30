@@ -34,11 +34,18 @@ resource "null_resource" "swa_linked_backend" {
     interpreter = ["/bin/bash", "-c"]
     command     = <<-CMD
       set -euo pipefail
+      # Substring-match the api's resource id against the raw `show` output rather
+      # than a JMESPath: the exact JSON shape of `backends show` (array vs object,
+      # flattened vs `properties`-nested) is version-dependent, but the full
+      # resource id is unique enough that finding it anywhere means it's linked.
+      # `|| true` covers the no-backend-linked case (empty/non-zero) without
+      # masking the link step below. A *different* backend linked (only one is
+      # allowed) won't match, so we fall through to link and that fails loudly.
       linked=$(az staticwebapp backends show \
         --name ${azurerm_static_web_app.app.name} \
         --resource-group ${data.azurerm_resource_group.dataq.name} \
-        --query "linkedBackends[].backendResourceId" -o tsv --only-show-errors || true)
-      if printf '%s\n' "$linked" | grep -qxF "${azurerm_container_app.api.id}"; then
+        --only-show-errors -o json || true)
+      if printf '%s' "$linked" | grep -qF "${azurerm_container_app.api.id}"; then
         echo "api already linked as the SWA backend — skipping"
         exit 0
       fi
