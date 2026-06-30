@@ -729,6 +729,60 @@ def test_profile_without_schema_when_connection_has_none_returns_422(
     assert resp.json()["error"]["code"] == "profile_identifier_invalid"
 
 
+# ── column listing (dropdown introspection, #474) ──
+
+
+class _ColumnsResult:
+    """A cursor result that only exposes column names (SELECT * LIMIT 0)."""
+
+    def __init__(self, names: list[str]) -> None:
+        self._names = names
+
+    def keys(self) -> list[str]:
+        return self._names
+
+
+def test_list_columns_returns_target_columns(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    conn = _connection(db_session)
+    sid = client.post("/api/v1/suites", json=_payload(conn.id)).json()["id"]
+
+    class _Conn:
+        def execute(self, clause: Any) -> _ColumnsResult:
+            return _ColumnsResult(["amount", "status", "created_at"])
+
+    @contextmanager
+    def fake_open(connection: Any, secret_store: Any) -> Iterator[_Conn]:
+        yield _Conn()
+
+    monkeypatch.setattr(profile_service, "_open_connection", fake_open)
+    resp = client.get(
+        f"/api/v1/suites/{sid}/columns", params={"table": "orders", "schema": "public"}
+    )
+    assert resp.status_code == 200
+    assert resp.json()["columns"] == ["amount", "status", "created_at"]
+
+
+def test_list_columns_invalid_table_returns_422(client: TestClient, db_session: Any) -> None:
+    conn = _connection(db_session)
+    sid = client.post("/api/v1/suites", json=_payload(conn.id)).json()["id"]
+    resp = client.get(
+        f"/api/v1/suites/{sid}/columns",
+        params={"table": "orders; DROP TABLE x", "schema": "public"},
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "profile_identifier_invalid"
+
+
+def test_list_columns_requires_edit_access(client: TestClient, db_session: Any) -> None:
+    owner, b, _e, sid = _owner_b_e_suite(db_session)
+    _share(client, owner, sid, b, "view")
+    _as(b)
+    resp = client.get(f"/api/v1/suites/{sid}/columns", params={"table": "orders", "schema": "s"})
+    assert resp.status_code == 403
+
+
 # ── flat-file (ADLS Gen2 / S3) profiling ──
 
 
