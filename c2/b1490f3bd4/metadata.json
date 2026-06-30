@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "c2b1490f3bd4",
+  "strategy": "manual-commit",
+  "branch": "docs/w1-6-not-started-triage",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "context/post-v1-roadmap.md",
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/c2/b1490f3bd4/0/metadata.json",
+      "transcript": "/c2/b1490f3bd4/0/full.jsonl",
+      "content_hash": "/c2/b1490f3bd4/0/content_hash.txt",
+      "prompt": "/c2/b1490f3bd4/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 55019,
+    "cache_creation_tokens": 2029742,
+    "cache_read_tokens": 138101890,
+    "output_tokens": 323969,
+    "api_call_count": 427
+  }
+}
