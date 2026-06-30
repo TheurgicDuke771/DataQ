@@ -17,21 +17,44 @@ resource "azurerm_static_web_app" "app" {
 
 # Link the api Container App as the SWA backend. No azurerm resource covers
 # arbitrary linked backends (only the Functions registration), so use the CLI.
-# `backends link` errors if a backend is already linked, so tolerate that on
-# re-apply; re-run after changing the api by tainting this resource.
+#
+# `backends link` errors if *any* backend is already linked, so we can't just
+# `|| true` — that would also mask a real failure (bad region, missing
+# permission) AND still record the trigger hash as applied, so the broken link
+# is reported as success and never retried (#396). Instead: check the current
+# link state first and skip only when our api is already the linked backend;
+# any other failure from `link` propagates (set -e, no swallow). Re-run after
+# changing the api by tainting this resource.
 resource "null_resource" "swa_linked_backend" {
   triggers = {
     swa_id = azurerm_static_web_app.app.id
     api_id = azurerm_container_app.api.id
   }
   provisioner "local-exec" {
-    command = <<-CMD
+    interpreter = ["/bin/bash", "-c"]
+    command     = <<-CMD
+      set -euo pipefail
+      # Substring-match the api's resource id against the raw `show` output rather
+      # than a JMESPath: the exact JSON shape of `backends show` (array vs object,
+      # flattened vs `properties`-nested) is version-dependent, but the full
+      # resource id is unique enough that finding it anywhere means it's linked.
+      # `|| true` covers the no-backend-linked case (empty/non-zero) without
+      # masking the link step below. A *different* backend linked (only one is
+      # allowed) won't match, so we fall through to link and that fails loudly.
+      linked=$(az staticwebapp backends show \
+        --name ${azurerm_static_web_app.app.name} \
+        --resource-group ${data.azurerm_resource_group.dataq.name} \
+        --only-show-errors -o json || true)
+      if printf '%s' "$linked" | grep -qF "${azurerm_container_app.api.id}"; then
+        echo "api already linked as the SWA backend — skipping"
+        exit 0
+      fi
       az staticwebapp backends link \
         --name ${azurerm_static_web_app.app.name} \
         --resource-group ${data.azurerm_resource_group.dataq.name} \
         --backend-resource-id ${azurerm_container_app.api.id} \
         --backend-region ${data.azurerm_container_app_environment.shared.location} \
-        --only-show-errors --output none || echo "backend already linked (or link pending) — continuing"
+        --only-show-errors --output none
     CMD
   }
   depends_on = [azurerm_static_web_app.app, azurerm_container_app.api]
