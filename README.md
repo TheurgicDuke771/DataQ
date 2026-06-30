@@ -2,6 +2,8 @@
 
 > Data quality monitoring platform built around Great Expectations — Snowflake (DEV/QA/UAT), ADLS Gen2, S3, Unity Catalog (Databricks), with ADF + Airflow orchestration integrations.
 
+**📖 Documentation site: <https://theurgicduke771.github.io/DataQ/>** (MkDocs Material — quickstart, concepts, architecture, guides).
+
 **Status:** pre-v1 — Week 7 in progress (deployment, hardening & docs). Weeks 1–6 complete; v1 is **deployed to Azure** (Container Apps + Static Web App, with Key Vault, App Insights, and orchestration polling live). Live task-level progress at [docs/progress.md](docs/progress.md).
 
 ## Stack
@@ -52,6 +54,7 @@ Point any MCP client at `https://<your-dataq-host>/mcp` with an `Authorization: 
 | | |
 |---|---|
 | **Working agreements + commit/PR conventions** | [CONTRIBUTING.md](CONTRIBUTING.md) |
+| **Documentation site (user guides)** | <https://theurgicduke771.github.io/DataQ/> · source in [docs/](docs/), built by [.github/workflows/docs.yml](.github/workflows/docs.yml) |
 | **Deployment guide + env-var reference** | [deploy/README.md](deploy/README.md) · [.env.app.example](.env.app.example) |
 | **Project guide for AI assistants** | [CLAUDE.md](CLAUDE.md) |
 | **Architecture diagram + invariants** | [docs/architecture.md](docs/architecture.md) |
