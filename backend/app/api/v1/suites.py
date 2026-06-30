@@ -12,7 +12,7 @@ import uuid
 from decimal import Decimal
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
@@ -385,3 +385,43 @@ def profile_columns(
             for c in result.columns
         ],
     )
+
+
+class ColumnsRead(BaseModel):
+    """The column names of a suite target — feeds the check editor's column
+    dropdown (#474) so authors pick instead of recalling exact names."""
+
+    columns: list[str]
+
+
+@router.get(
+    "/suites/{suite_id}/columns",
+    response_model=ColumnsRead,
+    summary="List the column names of a table/file on the suite's connection",
+)
+def list_columns(
+    suite_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    secret_store: Annotated[SecretStore, Depends(get_secret_store)],
+    table: Annotated[str | None, Query(max_length=255)] = None,
+    schema_: Annotated[str | None, Query(alias="schema")] = None,
+    catalog: Annotated[str | None, Query(max_length=255)] = None,
+    path: Annotated[str | None, Query(max_length=1024)] = None,
+    file_format: Annotated[Literal["csv", "parquet"] | None, Query()] = None,
+) -> ColumnsRead:
+    # sync def → threadpool; the datasource connect/introspect is blocking.
+    # Authoring aid → 'edit', same gate as the profiler/dry-run.
+    suite = require_permission(db, suite_id, current_user.id, minimum="edit")
+    connection = db.get(Connection, suite.connection_id)
+    assert connection is not None
+    columns = profile.list_columns(
+        connection,
+        table=table,
+        schema=schema_,
+        catalog=catalog,
+        path=path,
+        file_format=file_format,
+        secret_store=secret_store,
+    )
+    return ColumnsRead(columns=columns)
