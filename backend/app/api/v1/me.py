@@ -26,8 +26,14 @@ class MeResponse(BaseModel):
     is_workspace_admin: bool = False
 
 
-@router.get("/me", response_model=MeResponse)
+@router.get("/me", response_model=MeResponse, summary="Get the current user")
 def me(current_user: Annotated[User, Depends(get_current_user)]) -> MeResponse:
+    """Return the authenticated user's profile plus their workspace-admin flag.
+
+    The identity the rest of the app keys off (resolved from the Azure AD token,
+    or the dev-bypass user locally); the SPA reads `is_workspace_admin` to gate
+    admin-only nav.
+    """
     # model_validate keeps the passthrough fields automatic (a new User/MeResponse
     # column is picked up without editing this handler); only the computed flag is
     # stamped on.

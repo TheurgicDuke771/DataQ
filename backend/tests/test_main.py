@@ -137,3 +137,23 @@ def test_openapi_schema_served_in_test_env(client: TestClient) -> None:
     """The test env is non-prod, so the wired app exposes the schema + docs UI."""
     assert client.get("/openapi.json").status_code == 200
     assert client.get("/docs").status_code == 200
+
+
+def test_every_api_endpoint_has_summary_and_tags() -> None:
+    """Swagger-completeness guardrail (W7 hardening): every /api/* operation
+    carries a `summary` and at least one `tag`, so Swagger/ReDoc stay navigable
+    and self-describing. Fails loudly if a new endpoint omits them."""
+    schema = app.openapi()
+    http_methods = {"get", "post", "put", "patch", "delete"}
+    missing: list[str] = []
+    for path, operations in schema["paths"].items():
+        if not path.startswith("/api/"):
+            continue  # /healthz and the mounted /mcp app are out of scope
+        for method, op in operations.items():
+            if method not in http_methods:
+                continue
+            if not op.get("summary"):
+                missing.append(f"{method.upper()} {path}: missing summary")
+            if not op.get("tags"):
+                missing.append(f"{method.upper()} {path}: missing tags")
+    assert not missing, "endpoints missing Swagger metadata:\n" + "\n".join(missing)
