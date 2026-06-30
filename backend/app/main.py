@@ -7,6 +7,7 @@ from typing import Final
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastmcp.utilities.lifespan import combine_lifespans
 
 from backend.app.api.v1 import admin as admin_router
 from backend.app.api.v1 import checks as checks_router
@@ -26,6 +27,7 @@ from backend.app.core.auth import init_auth
 from backend.app.core.config import get_settings
 from backend.app.core.errors import register_exception_handlers
 from backend.app.core.logging import configure_logging, get_logger, request_id_var
+from backend.app.mcp import build_mcp_app
 
 REQUEST_ID_HEADER: Final = "X-Request-ID"
 # Validate caller-supplied X-Request-ID before echoing it (security audit
@@ -52,7 +54,15 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     logger.info("app_shutdown")
 
 
-app = FastAPI(title="DataQ API", lifespan=lifespan)
+# The FastMCP server (Week 7) mounts at /mcp as an ASGI sub-app. `build_mcp_app`
+# returns None when MCP must not be exposed (no resolvable auth — see
+# mcp.auth.mcp_enabled), so the endpoint never goes live unauthenticated. Its
+# streamable-http session manager needs its lifespan run, so when present we
+# combine it with the app's own startup (combine_lifespans, fastmcp docs).
+_mcp_app = build_mcp_app()
+_lifespan = combine_lifespans(lifespan, _mcp_app.lifespan) if _mcp_app is not None else lifespan
+
+app = FastAPI(title="DataQ API", lifespan=_lifespan)
 
 # Cross-origin access for the prod Static-Web-App ↔ Container-Apps split. Added
 # only when origins are configured (empty in dev — the Vite proxy keeps it
@@ -125,3 +135,9 @@ app.include_router(admin_router.router, prefix="/api/v1")
 @app.get("/healthz")
 async def healthz() -> dict[str, str]:
     return {"status": "ok"}
+
+
+# Mount the FastMCP server last so its routes don't shadow the versioned API.
+# Path "/" on the sub-app since we mount it under /mcp (fastmcp docs).
+if _mcp_app is not None:
+    app.mount("/mcp", _mcp_app)
