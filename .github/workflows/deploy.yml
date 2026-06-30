@@ -9,8 +9,8 @@ on:
   workflow_dispatch:
     inputs:
       image_tag:
-        description: "Image tag to build + deploy"
-        default: "latest"
+        description: "Image tag to build + deploy (blank → the commit SHA, an immutable tag)"
+        default: ""
 
 concurrency:
   group: deploy-production
@@ -27,7 +27,13 @@ permissions:
 env:
   # GHCR registry (ADR 0023) — public package, lowercase owner. ACA pulls it
   # anonymously, so no registry credential is stored on the apps/job.
-  IMAGE: ghcr.io/theurgicduke771/dataq-backend:${{ inputs.image_tag }}
+  #
+  # Default the tag to the commit SHA (#382): `latest` is mutable, so a push
+  # racing the deploy could make the migrate job, API, and worker each resolve a
+  # *different* image; the SHA tag is immutable, so all three roll the exact
+  # build this run produced. A manual `image_tag` input still overrides it. On a
+  # push:[main] trigger `inputs` is empty, so it falls back to the SHA too.
+  IMAGE: ghcr.io/theurgicduke771/dataq-backend:${{ inputs.image_tag || github.sha }}
 
 jobs:
   backend:
@@ -136,6 +142,10 @@ jobs:
     name: Frontend — build + deploy to Static Web App
     runs-on: ubuntu-latest
     environment: production
+    # Gate on the backend (build → migrate → roll API/worker): a failed/aborted
+    # migration must stop the UI deploy, else a new SPA rolls against an un-rolled
+    # or half-migrated API — a partial deploy (#382).
+    needs: backend
     steps:
       - uses: actions/checkout@v7
       # version is required: action-setup runs at the repo root, whose
