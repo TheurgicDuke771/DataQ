@@ -103,7 +103,9 @@ describe('api client bearer-token interceptor', () => {
     const account = { homeAccountId: 'h1' };
     const acquireTokenSilent = vi
       .fn()
-      .mockRejectedValue(new InteractionRequiredAuthError('interaction_required'));
+      .mockRejectedValue(
+        new InteractionRequiredAuthError('interaction_required', 'interaction is required'),
+      );
     const acquireTokenRedirect = vi.fn().mockResolvedValue(undefined);
     vi.doMock('../../src/auth/msalInstance', () => ({
       getMsalInstance: () => ({
