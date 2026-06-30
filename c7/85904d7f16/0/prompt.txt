@@ -476,3 +476,8 @@ A note on the angles that came back clean: CONVENTIONS — commit discipline is 
 ---
 
 For the Live testing use the playwright MCP and use Olivia's account
+
+---
+
+Yes deploy the current image then test the remaining paths [use dataq-admin where needed]. 
+Also can we add pagination in the result page (i.e. - 20 record per page)?
