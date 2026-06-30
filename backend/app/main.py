@@ -112,6 +112,9 @@ async def request_id_middleware(
     incoming = request.headers.get(REQUEST_ID_HEADER)
     rid = incoming if incoming and _REQUEST_ID_RE.match(incoming) else uuid.uuid4().hex
     token = request_id_var.set(rid)
+    # Path only — never request.url (it carries the query string, e.g. the ADF
+    # webhook ?token=<secret>, ADR 0006 / #494). client host kept for audit.
+    client = request.client.host if request.client else None
     start = time.perf_counter()
     try:
         response = await call_next(request)
@@ -121,6 +124,7 @@ async def request_id_middleware(
             "request_failed",
             method=request.method,
             path=request.url.path,
+            client=client,
             duration_ms=elapsed_ms,
         )
         request_id_var.reset(token)
@@ -130,6 +134,7 @@ async def request_id_middleware(
         "request",
         method=request.method,
         path=request.url.path,
+        client=client,
         status=response.status_code,
         duration_ms=elapsed_ms,
     )

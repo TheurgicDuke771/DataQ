@@ -111,6 +111,41 @@ def test_safe_keys_pass_through() -> None:
     assert out["level"] == "info"
 
 
+def test_scrubs_secret_query_params_in_string_values() -> None:
+    """#494: a token embedded in a message STRING (e.g. the ADF webhook URL) must be
+    scrubbed — the key-based redaction only catches dict keys."""
+    out = _redact(
+        {"event": 'POST /api/v1/orchestration/events/adf?token=s3cr3t-VALUE.1 HTTP/1.1" 200'}
+    )
+    assert "s3cr3t-VALUE.1" not in str(out["event"])
+    assert "token=<redacted>" in str(out["event"])
+
+
+def test_scrubs_assorted_secret_params_but_keeps_safe_pairs() -> None:
+    out = _redact({"event": "https://h/x?api_key=AAA&signature=BBB&page=2"})
+    assert "AAA" not in str(out["event"]) and "BBB" not in str(out["event"])
+    assert "api_key=<redacted>" in str(out["event"])
+    assert "signature=<redacted>" in str(out["event"])
+    assert "page=2" in str(out["event"])  # non-secret param untouched
+
+
+def test_uvicorn_access_logger_is_silenced(
+    monkeypatch: pytest.MonkeyPatch, _restore_root_logging: None
+) -> None:
+    """#494: uvicorn.access logs the raw query string (?token=…), so it must not
+    propagate to the root handlers (stdout + App Insights). The request middleware
+    provides a path-only structured access log instead."""
+    access = std_logging.getLogger("uvicorn.access")
+    saved_prop, saved_handlers = access.propagate, access.handlers[:]
+    try:
+        monkeypatch.setattr(get_settings(), "applicationinsights_connection_string", None)
+        configure_logging()
+        assert access.propagate is False
+        assert access.handlers == []
+    finally:
+        access.propagate, access.handlers = saved_prop, saved_handlers
+
+
 @pytest.fixture
 def _restore_root_logging() -> Iterator[None]:
     """Snapshot/restore the root logger so the App Insights integration test below
@@ -172,3 +207,35 @@ def test_azure_handler_lock_survives_createlock_recall(
         "celery.beat", std_logging.INFO, __file__, 1, "beat: Starting...", None, None
     )
     handler.handle(record)  # must not raise
+
+
+def test_app_insights_handler_redacts_foreign_record_secret(
+    monkeypatch: pytest.MonkeyPatch, _restore_root_logging: None
+) -> None:
+    """#494: the AzureLogHandler must carry the redacting ProcessorFormatter, so a
+    FOREIGN (non-structlog) record whose message embeds a secret (e.g. a URL with
+    ?token=) is scrubbed before it reaches App Insights — not just the stdout path."""
+    import opencensus.ext.azure.log_exporter as az_log_exporter
+
+    monkeypatch.setattr(az_log_exporter, "AzureLogHandler", _FakeAzureLogHandler)
+    monkeypatch.setattr(
+        get_settings(),
+        "applicationinsights_connection_string",
+        "InstrumentationKey=00000000-0000-0000-0000-000000000000",
+    )
+    configure_logging()
+    ai = next(h for h in std_logging.getLogger().handlers if isinstance(h, _FakeAzureLogHandler))
+    assert ai.formatter is not None, "AI handler must use the redacting ProcessorFormatter"
+
+    record = std_logging.LogRecord(
+        "uvicorn.error",
+        std_logging.INFO,
+        __file__,
+        1,
+        'GET /api/v1/orchestration/events/adf?token=SUPERSECRET-1 HTTP/1.1" 200',
+        None,
+        None,
+    )
+    rendered = ai.format(record)
+    assert "SUPERSECRET-1" not in rendered
+    assert "token=<redacted>" in rendered
