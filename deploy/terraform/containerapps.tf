@@ -106,6 +106,13 @@ resource "azurerm_container_app" "api" {
     external_enabled = false
     target_port      = 8000
     transport        = "auto"
+    # Accept plain HTTP on the internal endpoint. ACA's internal service-to-service
+    # pattern is HTTP (local.api_internal_url is http://); with this off, ACA
+    # redirects port-80 requests to 443, which surfaces to the frontend nginx proxy
+    # as HTTP 426 "Upgrade Required" and breaks every /api call. Safe here: the api
+    # is internal-only (external_enabled=false), so this traffic never leaves the
+    # Container Apps environment.
+    allow_insecure_connections = true
     traffic_weight {
       latest_revision = true
       percentage      = 100
