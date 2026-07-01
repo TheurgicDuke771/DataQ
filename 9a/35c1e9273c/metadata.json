@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "9a35c1e9273c",
+  "strategy": "manual-commit",
+  "branch": "test/e2e-suite-lifecycle-panels",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "frontend/e2e/README.md",
+    "frontend/e2e/notifications.spec.ts",
+    "frontend/e2e/schedules.spec.ts",
+    "frontend/e2e/trigger-bindings.spec.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/9a/35c1e9273c/0/metadata.json",
+      "transcript": "/9a/35c1e9273c/0/full.jsonl",
+      "content_hash": "/9a/35c1e9273c/0/content_hash.txt",
+      "prompt": "/9a/35c1e9273c/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 52723,
+    "cache_creation_tokens": 793764,
+    "cache_read_tokens": 28546600,
+    "output_tokens": 122349,
+    "api_call_count": 144
+  }
+}
