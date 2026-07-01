@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "27bcfe970efa",
+  "strategy": "manual-commit",
+  "branch": "test/e2e-detail-surfaces",
+  "checkpoints_count": 2,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/27/bcfe970efa/0/metadata.json",
+      "transcript": "/27/bcfe970efa/0/full.jsonl",
+      "content_hash": "/27/bcfe970efa/0/content_hash.txt",
+      "prompt": "/27/bcfe970efa/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 60987,
+    "cache_creation_tokens": 827340,
+    "cache_read_tokens": 33935621,
+    "output_tokens": 138360,
+    "api_call_count": 160
+  }
+}
