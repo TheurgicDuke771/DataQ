@@ -3,7 +3,7 @@
   "checkpoint_id": "b8f0ee36c584",
   "strategy": "manual-commit",
   "branch": "docs/issue-472-image-first-quickstart",
-  "checkpoints_count": 2,
+  "checkpoints_count": 4,
   "files_touched": [
     "README.md",
     "docs/getting-started.md",
@@ -15,13 +15,19 @@
       "transcript": "/b8/f0ee36c584/0/full.jsonl",
       "content_hash": "/b8/f0ee36c584/0/content_hash.txt",
       "prompt": "/b8/f0ee36c584/0/prompt.txt"
+    },
+    {
+      "metadata": "/b8/f0ee36c584/1/metadata.json",
+      "transcript": "/b8/f0ee36c584/1/full.jsonl",
+      "content_hash": "/b8/f0ee36c584/1/content_hash.txt",
+      "prompt": "/b8/f0ee36c584/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 219482,
-    "cache_creation_tokens": 9857285,
-    "cache_read_tokens": 813250268,
-    "output_tokens": 1379188,
-    "api_call_count": 1776
+    "input_tokens": 219888,
+    "cache_creation_tokens": 9874982,
+    "cache_read_tokens": 818476239,
+    "output_tokens": 1391622,
+    "api_call_count": 1796
   }
 }
