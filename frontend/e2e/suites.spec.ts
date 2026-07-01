@@ -68,13 +68,14 @@ test.describe('Suites page', () => {
     await page.getByLabel('Name').fill(name);
 
     // antd Select (not searchable): focus the combobox, wait for the dropdown,
-    // then keyboard-select the first option. Keyboard on the focused combobox is
-    // more stable than clicking a virtual-list option (rc-virtual-list keeps
-    // items visibility:hidden during measurement).
+    // then Enter accepts the auto-highlighted FIRST option — rc-select
+    // pre-highlights option 0 when nothing is selected, so an ArrowDown first
+    // would land on the SECOND (see e2e/README.md). Keyboard on the focused
+    // combobox is more stable than clicking a virtual-list option
+    // (rc-virtual-list keeps items visibility:hidden during measurement).
     const combo = page.getByRole('combobox');
     await combo.click();
     await expect(page.locator('.ant-select-dropdown').last()).toBeVisible();
-    await combo.press('ArrowDown');
     await combo.press('Enter');
 
     // Create continues to the Add Check page (the suite now exists, untargeted).

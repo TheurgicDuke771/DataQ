@@ -21,6 +21,11 @@ test.describe('Suite notifications panel', () => {
     await openSuite(page);
     const panel = card(page);
 
+    // Snapshot the config so the spec doesn't permanently mutate the seeded
+    // suite (alerting behavior for every later dev-stack run); restored below.
+    const suiteId = page.url().match(/suites\/([0-9a-f-]+)/)?.[1];
+    const before = await (await page.request.get(`/api/v1/suites/${suiteId}/notifications`)).json();
+
     // Deterministic target state: enabled + "On warn and worse".
     const enable = panel.getByRole('switch', { name: 'Enable notifications' });
     if (!(await enable.isChecked())) {
@@ -57,6 +62,12 @@ test.describe('Suite notifications panel', () => {
     await page.reload();
     await expect(card(page).getByText('On warn and worse')).toBeVisible();
     await expect(card(page).getByRole('switch', { name: 'Enable notifications' })).toBeChecked();
+
+    // Restore the pre-test config (webhook omitted = unchanged).
+    const restored = await page.request.put(`/api/v1/suites/${suiteId}/notifications`, {
+      data: { enabled: before.enabled, alert_on: before.alert_on },
+    });
+    expect(restored.ok()).toBe(true);
   });
 
   test('webhook is a write-only secret affordance', async ({ page }) => {
@@ -65,8 +76,10 @@ test.describe('Suite notifications panel', () => {
 
     // The field never echoes a stored URL — just a set/not-set tag + password
     // input. (Writing one is out of scope: it lands a secret in the store.)
+    // Neither the seed nor any spec writes a webhook, so the tag is
+    // deterministically 'not set' — pin it so a has_webhook regression fails.
     await expect(panel.getByText('Teams webhook')).toBeVisible();
     await expect(panel.getByLabel('Teams webhook URL')).toBeVisible();
-    await expect(panel.getByText(/^(set|not set)$/)).toBeVisible();
+    await expect(panel.getByText('not set', { exact: true })).toBeVisible();
   });
 });

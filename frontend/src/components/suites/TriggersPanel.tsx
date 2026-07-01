@@ -217,6 +217,7 @@ function AddTrigger({ suiteId, onAdded }: { suiteId: string; onAdded: () => void
         placeholder="Provider"
         style={{ width: 170 }}
         options={ORCHESTRATION_PROVIDERS.map((p) => ({ value: p, label: PROVIDER_LABELS[p] }))}
+        aria-label="Provider"
       />
       <Input
         value={pipelineId}
@@ -231,6 +232,7 @@ function AddTrigger({ suiteId, onAdded }: { suiteId: string; onAdded: () => void
         placeholder="Env"
         style={{ width: 100 }}
         options={CONNECTION_ENVS.map((e) => ({ value: e, label: envLabel(e) }))}
+        aria-label="Env"
       />
       <Button
         type="primary"

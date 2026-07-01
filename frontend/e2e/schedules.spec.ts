@@ -5,9 +5,12 @@ import { expect, test } from '@playwright/test';
 // path (422 → error toast, no row). The dispatcher itself (60s beat) is
 // backend-tested; this proves the UI a user actually drives.
 test.describe('Suite schedules panel', () => {
-  // Distinctive cron so leftovers from an aborted local run can't collide
-  // with the seeded data; the test deletes it on the way out.
-  const CRON = '7 3 * * 2';
+  // Unique per attempt: `create_schedule` has no uniqueness guard, so a fixed
+  // cron would collide with a leftover row from an aborted run or a CI retry
+  // (duplicate row → strict-mode violation). Minute/hour derived from the
+  // clock keep the expression valid and effectively unique per attempt.
+  const now = Date.now();
+  const CRON = `${now % 60} ${Math.floor(now / 60_000) % 24} * * 2`;
 
   const card = (page: import('@playwright/test').Page) =>
     page.locator('.ant-card').filter({ hasText: 'cron cadence' });

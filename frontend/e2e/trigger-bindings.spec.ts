@@ -24,18 +24,18 @@ test.describe('Suite triggers panel', () => {
     // Provider + Env are antd Selects: focus the combobox, wait for the
     // dropdown, then Enter accepts the auto-highlighted FIRST option (an
     // ArrowDown first would move to the second — rc-select pre-highlights
-    // option 0 when nothing is selected). DOM order within the panel:
-    // [0]=Provider ('adf' first), [1]=Env ('dev' first).
-    const combos = panel.getByRole('combobox');
-    await combos.first().click();
+    // option 0 when nothing is selected). First options: 'adf' / 'dev'.
+    const provider = panel.getByLabel('Provider');
+    await provider.click();
     await expect(page.locator('.ant-select-dropdown').last()).toBeVisible();
-    await combos.first().press('Enter');
+    await provider.press('Enter');
 
     await panel.getByPlaceholder('Pipeline / DAG id').fill(pipelineId);
 
-    await combos.nth(1).click();
+    const env = panel.getByLabel('Env');
+    await env.click();
     await expect(page.locator('.ant-select-dropdown').last()).toBeVisible();
-    await combos.nth(1).press('Enter');
+    await env.press('Enter');
 
     await panel.getByRole('button', { name: 'Add' }).click();
     await expect(page.getByText(`${pipelineId}: trigger added`)).toBeVisible();
