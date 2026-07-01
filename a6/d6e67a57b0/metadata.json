@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "a6d6e67a57b0",
+  "strategy": "manual-commit",
+  "branch": "docs/post-cutover-refresh",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/a6/d6e67a57b0/0/metadata.json",
+      "transcript": "/a6/d6e67a57b0/0/full.jsonl",
+      "content_hash": "/a6/d6e67a57b0/0/content_hash.txt",
+      "prompt": "/a6/d6e67a57b0/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 61081,
+    "cache_creation_tokens": 4493498,
+    "cache_read_tokens": 235255398,
+    "output_tokens": 775226,
+    "api_call_count": 736
+  }
+}
