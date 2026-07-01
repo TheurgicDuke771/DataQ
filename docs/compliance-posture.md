@@ -43,7 +43,7 @@ only if a customer points DataQ at PHI; GDPR only to EU personal data.
 | **Secret isolation** — `SecretStore` seam (Azure Key Vault impl via managed identity); secrets never in git-tracked files, never logged | [`core/secrets.py`](../backend/app/core/secrets.py); CLAUDE.md secret rules | GDPR Art 32 / HIPAA §164.312(a) |
 | **Encryption in transit** — Postgres `sslmode=require`; HTTPS ingress | [`deploy/terraform/azure/postgres.tf`](../deploy/terraform/azure/postgres.tf) | GDPR Art 32 / HIPAA §164.312(e) |
 | **Encryption at rest** — Azure platform-managed keys on Postgres / Key Vault / Storage (default) | Azure platform default (not asserted in IaC — see gap G5) | GDPR Art 32 / HIPAA §164.312(a)(2)(iv) |
-| **Access control** — suite-scoped authz (owned-or-shared), workspace-admin allowlist, Azure AD SSO | suite authz, `WORKSPACE_ADMIN_EMAILS`, MSAL | GDPR Art 32 / HIPAA §164.312(a)(1) |
+| **Access control** — suite-scoped authz (owned-or-shared), workspace-admin allowlist, OIDC SSO (Azure AD validated) | suite authz, `WORKSPACE_ADMIN_EMAILS`, generic OIDC client + `fastapi-azure-auth` | GDPR Art 32 / HIPAA §164.312(a)(1) |
 | **Config-change history** — Type-4 snapshot tables (`check_versions`, `connection_versions`); credentials never snapshotted | ADR 0020 | GDPR Art 5(2) accountability (partial) |
 | **Data residency is deployable** — provider-agnostic seams (ADR 0010); a controller can deploy into their own jurisdiction's region | ADR 0010 / 0013 | GDPR Ch. V transfers |
 | **(Post-v1) LLM transfer minimization** — schema-only, PII-redacted context; local-endpoint option; no key-proxy | [`docs/post-v1-dq-intelligence-notes.md`](post-v1-dq-intelligence-notes.md) | GDPR Ch. V / HIPAA minimum-necessary |

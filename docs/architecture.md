@@ -13,8 +13,9 @@ flowchart LR
         AICli["AI clients · Claude/Copilot/Cursor"]
         Web["Web UI · React SPA"]
     end
-    subgraph platform["🟦 DataQ Platform · Azure Container Apps + SWA"]
-        API["FastAPI<br/>REST /api/v1 + /mcp · Azure AD JWT"]
+    subgraph platform["🟦 DataQ Platform · Azure Container Apps"]
+        Frontend["Frontend · nginx + React SPA<br/>sole public ingress · runtime OIDC config"]
+        API["FastAPI · internal ingress<br/>REST /api/v1 + /mcp · OIDC JWT"]
         Worker["Celery worker<br/>GX Core execution"]
         Infra["PostgreSQL · Redis · Key Vault · App Insights<br/>suites·runs·results·pipeline_runs · queue · secrets · traces"]
     end
@@ -28,9 +29,10 @@ flowchart LR
         UC["Unity Catalog · Databricks"]
     end
 
-    Web -->|HTTPS| API
-    AICli -->|MCP · HTTP| API
-    orch -->|"webhook / HMAC callback<br/>+ 10-min REST poll fallback"| API
+    Web -->|HTTPS| Frontend
+    AICli -->|MCP · HTTP| Frontend
+    orch -->|"webhook / HMAC callback<br/>+ 10-min REST poll fallback"| Frontend
+    Frontend -->|"same-origin proxy<br/>/api + /mcp + /healthz"| API
     API -->|enqueue run| Worker
     API -.-> Infra
     Worker -.-> Infra
@@ -42,7 +44,7 @@ flowchart LR
     classDef integ fill:#FAEEDA,stroke:#854F0B,color:#633806
     classDef notify fill:#FAECE7,stroke:#993C1D,color:#712B13
     classDef client fill:#F1EFE8,stroke:#5F5E5A,color:#444441
-    class API,Worker,Infra hub
+    class API,Worker,Infra,Frontend hub
     class SF,Files,UC src
     class ADF,AF integ
     class Teams,Email notify
@@ -63,12 +65,13 @@ The flow reads left → right: **inputs** (Clients, Orchestration) drive the **D
 |---|---|
 | Grey | Clients — browser web UI + AI clients (over MCP) |
 | Orange | Orchestration — ADF · Airflow (monitor + trigger only, **never** datasources) |
-| Blue | DataQ platform — FastAPI · Celery worker · PostgreSQL · Redis · Key Vault · App Insights |
+| Blue | DataQ platform — Frontend (nginx SPA) · FastAPI · Celery worker · PostgreSQL · Redis · Key Vault · App Insights |
 | Green | Datasources — GX checks run against these |
 | Red | Alert channels — Teams · Slack · Email (the `ResultPublisher` seam) |
 
 ## Key invariants
 
+- **The frontend Container App is the sole public surface** (ADR [0028](adr/0028-cloud-neutral-image-runtime-config-generic-oidc.md) §5). It's one generic nginx image whose auth is injected at **runtime** (`DATAQ_AUTH_*` → generic OIDC, validated against Azure AD — no MSAL, nothing cloud-specific baked in), and it reverse-proxies `/api` + `/mcp` + `/healthz` same-origin to the **internal-ingress** API. The API is not reachable directly from the internet; external orchestrator webhooks land on the frontend and are proxied through.
 - **Orchestration providers (ADF · Airflow) are not datasources.** They live in `pipeline_runs`, not `runs`. Trigger bindings map `(provider, pipeline_id, env) → suite_id`.
 - **Scheduled/triggered suite runs are Celery-only.** FastAPI never enqueues GX itself for a full suite run; it dispatches a task. **Exception — synchronous preview paths:** the check dry-run (`POST /suites/{id}/checks/dryrun`) and the column profiler (`POST /suites/{id}/profile`) run a single GX check / a profiling query against the datasource **synchronously in a threadpool** (persisting nothing) — interactive authoring aids, not scheduled runs.
 - **All connection secrets via Key Vault in production / staging.** Local dev may resolve secrets via `KV_SECRET_*` env vars through the `EnvSecretStore` backend (see [ADR 0009](adr/0009-flat-monorepo-layout.md) layout note and `backend/app/core/secrets.py`). No credentials are ever hardcoded.

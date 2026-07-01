@@ -13,9 +13,9 @@
 | **Datasources (you can write checks against)** | Snowflake (DEV/QA/UAT), ADLS Gen2, AWS S3, Unity Catalog (Databricks) |
 | **Orchestration providers (monitor + trigger only — NOT datasources)** | Azure Data Factory (ADF), Apache Airflow |
 | **Backend** | FastAPI + Celery + Redis + PostgreSQL + Alembic |
-| **Frontend** | React + Vite + Ant Design + Monaco editor |
-| **Auth / secrets** | Azure AD (MSAL) + Azure Key Vault |
-| **Deploy** | Azure Container Apps + Azure Static Web App |
+| **Frontend** | React + Vite + Ant Design + Monaco editor (generic OIDC — `oidc-client-ts`) |
+| **Auth / secrets** | OIDC (Azure AD validated; provider-neutral `AUTH_*` contract) + Azure Key Vault |
+| **Deploy** | Azure Container Apps (API + worker + frontend; frontend is the sole public surface, api internal — ADR 0028 §5) |
 | **Observability** | Azure Application Insights + structlog |
 | **AI integration** | FastMCP (8 curated tools mounted at `/mcp`) — Claude Desktop / Claude.ai / Copilot / Cursor |
 
@@ -28,17 +28,19 @@ Timeline: **8 weeks** to v1. Scope: single tenant, suite-level access sharing, A
 See [docs/architecture.md](docs/architecture.md) for the full diagram (Mermaid — renders on GitHub).
 
 ```
-Browser ──HTTPS──► React (Static Web App) ──► FastAPI (Container Apps) ──► PostgreSQL
-                                                    │  │
-AI clients ──MCP/HTTP──► FastAPI /mcp endpoint      │  └──► Celery worker ──► GX execution ──► Snowflake / ADLS / S3 / UC
-                                                    │
-                                                    ├──► Redis (task queue)
-                                                    ├──► Key Vault (secrets)
-                                                    └──► App Insights (observability)
+Browser ──HTTPS──► Frontend Container App (nginx SPA, sole public ingress)
+AI clients ──MCP/HTTP──► │  proxies /api + /mcp + /healthz same-origin
+                         ▼
+                    FastAPI (Container Apps, INTERNAL ingress) ──► PostgreSQL
+                         │  │
+                         │  └──► Celery worker ──► GX execution ──► Snowflake / ADLS / S3 / UC
+                         ├──► Redis (task queue)
+                         ├──► Key Vault (secrets)
+                         └──► App Insights (observability)
 
-ADF ──► Azure Monitor alert rule ──► webhook ──► POST /api/v1/orchestration/events/adf
-Airflow ──► on_success/on_failure_callback ──► POST /api/v1/orchestration/events/airflow
-FastAPI ──► MS Teams webhook (alerts)
+ADF ──► Azure Monitor alert rule ──► webhook ──► POST <frontend>/api/v1/orchestration/events/adf ──► (proxied) api
+Airflow ──► on_success/on_failure_callback ──► POST <frontend>/api/v1/orchestration/events/airflow ──► (proxied) api
+FastAPI ──► MS Teams / Slack / email (alerts, ResultPublisher seam)
 ```
 
 ---
@@ -251,7 +253,7 @@ curl -X POST http://localhost:8000/api/v1/_probe/snowflake-suite
 
 - ❌ Don't add ADF or Airflow as a queryable datasource in the connection editor / check editor / suite model.
 - ❌ Don't bypass the `OrchestrationProvider` abstraction with provider-specific branching in service code.
-- ❌ Don't deepen Azure lock-in: no reading MSAL/Entra claims in route/service code (depend on the generic `get_current_user`), no hardcoded Azure resource names/endpoints in business logic, no Azure-only assumptions baked into container images. Azure is one impl behind each seam — see ADR [0010](docs/adr/0010-provider-agnostic-infrastructure-seams.md) / [0013](docs/adr/0013-marketplace-distribution-and-anti-lock-in.md).
+- ❌ Don't deepen Azure lock-in: no reading Entra/OIDC provider claims in route/service code (depend on the generic `get_current_user`), no hardcoded Azure resource names/endpoints in business logic, no Azure-only assumptions baked into container images. Azure is one impl behind each seam — see ADR [0010](docs/adr/0010-provider-agnostic-infrastructure-seams.md) / [0013](docs/adr/0013-marketplace-distribution-and-anti-lock-in.md).
 - ❌ Don't `git commit --no-verify` past hooks. If a hook fails, fix the underlying issue.
 - ❌ Don't commit `.env` files. Use `.env.example` / `.env.app.example` as the templates.
 - ❌ Don't put a credential — **even a local/mock one** — in any git-tracked file (templates, `scripts/`, CI, compose). Env templates ship the secret keys **blank** with the shape in a comment; `scripts/setup.sh` generates the local-dev password into the gitignored `.env`/`.env.app` on first run. Non-secret config defaults and non-secret identifiers (db/user name) may stay populated.
@@ -313,9 +315,9 @@ Update this section at the end of each week with: current week, the week's exit 
 | Database | PostgreSQL + Alembic |
 | Frontend | React + Vite + Ant Design |
 | SQL editor | Monaco |
-| Auth | Azure AD (MSAL) |
+| Auth | Generic OIDC (`oidc-client-ts`, Azure AD validated) + backend `fastapi-azure-auth` |
 | Secrets | Azure Key Vault |
-| Hosting | Azure Container Apps (API + worker) · Azure Static Web App (UI) |
+| Hosting | Azure Container Apps (API + worker + frontend; frontend = sole public surface, api internal — ADR 0028 §5) |
 | Observability | Azure Application Insights + structlog |
 | CI/CD | GitHub Actions |
 | API docs | FastAPI Swagger + ReDoc |
