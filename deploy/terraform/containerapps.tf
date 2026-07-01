@@ -49,13 +49,15 @@ locals {
     # off, the token validator rejects guests with 403 "Guest users not allowed".
     { name = "AZURE_ALLOW_GUEST_USERS", value = var.azure_allow_guest_users ? "true" : "false" },
     { name = "WORKSPACE_ADMIN_EMAILS", value = var.workspace_admin_emails },
-    # Empty: the SWA linked backend proxies /api same-origin, so the FastAPI CORS
-    # middleware stays off (README §4 / ADR 0018).
+    # Empty: the frontend Container App proxies /api same-origin (nginx), so the
+    # FastAPI CORS middleware stays off (README §4 / ADR 0018 / ADR 0028).
     { name = "CORS_ALLOW_ORIGINS", value = "" },
     # Public origin for the inbound-webhook URLs the admin webhook-config surface
-    # generates (#490). The SWA host proxies /api same-origin, so an orchestrator
-    # POSTing to <swa>/api/v1/orchestration/events/... reaches the api.
-    { name = "PUBLIC_BASE_URL", value = "https://${azurerm_static_web_app.app.default_host_name}" },
+    # generates (#490). The frontend host proxies /api same-origin, so an
+    # orchestrator POSTing to <frontend>/api/v1/orchestration/events/... reaches
+    # the api. Computed from the env domain (local.frontend_url) — not a reference
+    # to the frontend resource — so api + frontend don't form a dependency cycle.
+    { name = "PUBLIC_BASE_URL", value = local.frontend_url },
     # Webhook secret KEY names (values live in Key Vault — keyvault.tf).
     { name = "ADF_WEBHOOK_SECRET_NAME", value = "adf-webhook-secret" },
     { name = "AIRFLOW_WEBHOOK_SECRET_NAME", value = "airflow-webhook-secret" },

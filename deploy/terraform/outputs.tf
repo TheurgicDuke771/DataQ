@@ -3,13 +3,13 @@
 # Sensitive values are marked so `terraform output -raw <name>` is needed to read.
 
 output "api_url" {
-  description = "Public API base URL (also the SWA linked-backend target)."
+  description = "Public API base URL (the frontend nginx proxies /api + /mcp to it same-origin)."
   value       = "https://${azurerm_container_app.api.ingress[0].fqdn}"
 }
 
-output "swa_url" {
-  description = "Static Web App URL (the product surface)."
-  value       = "https://${azurerm_static_web_app.app.default_host_name}"
+output "frontend_url" {
+  description = "Frontend Container App URL — the public product surface (ADR 0028 §5). Proxies /api + /mcp same-origin to the api app."
+  value       = local.frontend_url
 }
 
 output "key_vault_url" {
@@ -38,6 +38,11 @@ output "worker_app_name" {
   value       = azurerm_container_app.worker.name
 }
 
+output "frontend_app_name" {
+  description = "-> repo var FRONTEND_APP_NAME (the Deploy workflow rolls this Container App)."
+  value       = azurerm_container_app.frontend.name
+}
+
 output "migrate_job_name" {
   description = "-> repo var MIGRATE_JOB_NAME"
   value       = azurerm_container_app_job.migrate.name
@@ -64,29 +69,27 @@ output "azure_subscription_id" {
   value       = data.azurerm_subscription.current.subscription_id
 }
 
-# ── Azure AD SSO (sso.tf) -> frontend VITE_* build vars / repo VARIABLES ──────
+# ── Azure AD SSO (sso.tf) — informational / app-registration coordinates ──────
+# No longer build-time VITE_* vars: since the ADR 0028 §5 cutover the frontend is
+# configured at RUNTIME (the DATAQ_AUTH_* env on the frontend Container App is
+# wired straight from these same resources in frontend.tf), so nothing needs to
+# copy them into repo vars. Kept as outputs for manual app-registration checks.
 output "azure_api_client_id" {
-  description = "-> VITE_AZURE_API_CLIENT_ID (and the backend AZURE_API_CLIENT_ID)."
+  description = "API app-registration client id (also the backend AZURE_API_CLIENT_ID)."
   value       = azuread_application.api.client_id
 }
 
 output "azure_spa_client_id" {
-  description = "-> VITE_AZURE_SPA_CLIENT_ID (public MSAL client)."
+  description = "SPA app-registration client id (public OIDC client — DATAQ_AUTH_CLIENT_ID)."
   value       = azuread_application.spa.client_id
 }
 
 output "azure_api_scope" {
-  description = "-> VITE_AZURE_API_SCOPE."
+  description = "API scope value (the frontend requests api://<api-client-id>/<this>)."
   value       = var.azure_api_scope
 }
 
 # ── Sensitive ────────────────────────────────────────────────────────────────
-output "swa_api_token" {
-  description = "-> repo secret AZURE_STATIC_WEB_APPS_API_TOKEN (read with: terraform output -raw swa_api_token)."
-  value       = azurerm_static_web_app.app.api_key
-  sensitive   = true
-}
-
 output "appinsights_connection_string" {
   description = "App Insights connection string (injected into the apps; surfaced for reference)."
   value       = azurerm_application_insights.app.connection_string

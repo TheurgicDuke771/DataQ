@@ -23,8 +23,8 @@ Both shared resources are **owned by the harness Terraform**; this stack only
 | User-assigned identity | `dataq-app-id` (api/worker → Key Vault) |
 | Key Vault (RBAC) | `dataq-app-kv-<suffix>` (SecretStore + webhook secrets) |
 | API / worker / migrate | `dataq-app-api` · `dataq-app-worker` · `dataq-app-migrate` (job) |
+| Frontend (Container App) | `dataq-app-frontend` (nginx SPA; proxies /api + /mcp same-origin to `dataq-app-api`) |
 | Redis broker (Container App) | `dataq-app-redis` (internal TCP, password-auth) |
-| Static Web App (Standard) | `dataq-app-web` (+ linked `dataq-app-api` backend) |
 | Azure AD SSO app regs | `dataq-app-api-sso` (API) + `dataq-app-spa` (SPA) |
 | GitHub-deploy app registration | `dataq-github-deploy` (OIDC federated cred) |
 
@@ -32,8 +32,11 @@ Both shared resources are **owned by the harness Terraform**; this stack only
 `dataq-pg-wus3-*` server (both harness-owned). The app's database is a **distinct
 `dataq` database** + least-privilege **`dataq_app`** role on the shared server.
 
-Backend image: `ghcr.io/theurgicduke771/dataq-backend:<image_tag>` (GHCR, public —
-ACA pulls anonymously, ADR 0023). Must exist + be **public** before apply.
+Images (GHCR, public — ACA pulls anonymously, ADR 0023; must exist + be **public**
+before apply):
+- backend — `ghcr.io/theurgicduke771/dataq-backend:<image_tag>`
+- frontend — `ghcr.io/theurgicduke771/dataq-frontend:<frontend_image_tag>` (one
+  generic runtime-configured image; auth + `/api` upstream injected via env, ADR 0028)
 
 ## Prerequisites
 
@@ -42,7 +45,7 @@ ACA pulls anonymously, ADR 0023). Must exist + be **public** before apply.
   `secrets.sh` — that switches Terraform to the harness SP, which lacks Key Vault
   data-plane rights (403) and isn't the right identity for this stack.
 - The shared `dataq-cae` env + `dataq-pg-wus3-*` server already exist (harness).
-- The GHCR backend image pushed + public.
+- The GHCR backend **and** frontend images pushed + public.
 - The `dataq` database + `dataq_app` role provisioned (one-off, below).
 - State is **local + gitignored**.
 
@@ -83,16 +86,17 @@ TF_VAR_app_db_password='<the dataq_app password>' terraform apply
 gh secret  set AZURE_CLIENT_ID       -b "$(terraform output -raw github_actions_client_id)"
 gh secret  set AZURE_TENANT_ID       -b "$(terraform output -raw azure_tenant_id)"
 gh secret  set AZURE_SUBSCRIPTION_ID -b "$(terraform output -raw azure_subscription_id)"
-gh secret  set AZURE_STATIC_WEB_APPS_API_TOKEN -b "$(terraform output -raw swa_api_token)"
 gh variable set AZURE_RESOURCE_GROUP -b "$(terraform output -raw resource_group)"
 gh variable set API_APP_NAME         -b "$(terraform output -raw api_app_name)"
 gh variable set WORKER_APP_NAME      -b "$(terraform output -raw worker_app_name)"
+gh variable set FRONTEND_APP_NAME    -b "$(terraform output -raw frontend_app_name)"
 gh variable set MIGRATE_JOB_NAME     -b "$(terraform output -raw migrate_job_name)"
-gh variable set VITE_AZURE_TENANT_ID    -b "$(terraform output -raw azure_tenant_id)"
-gh variable set VITE_AZURE_SPA_CLIENT_ID -b "$(terraform output -raw azure_spa_client_id)"
-gh variable set VITE_AZURE_API_CLIENT_ID -b "$(terraform output -raw azure_api_client_id)"
-gh variable set VITE_AZURE_API_SCOPE    -b "$(terraform output -raw azure_api_scope)"
 ```
+
+Since the ADR 0028 §5 cutover there are **no `VITE_*` build vars and no SWA API
+token**: the frontend is one generic image configured at runtime (the Container
+App's `DATAQ_AUTH_*` env is wired straight from the SSO app registrations in
+`frontend.tf`), so nothing needs copying into repo vars.
 
 Create the `production` GitHub environment (federated-credential subject
 `repo:<owner>/<repo>:environment:production`). **One-time GHCR step:** in the
@@ -109,6 +113,7 @@ az resource list -g dataq-rg --query "[?tags.purpose=='dataq-app'].name" -o tsv
 # API up (401 = healthy + auth-enforced):
 curl -s -o /dev/null -w "%{http_code}\n" "$(terraform output -raw api_url)/api/v1/runs"
 
-# SPA + same-origin /api proxy:
-curl -s -o /dev/null -w "%{http_code}\n" "$(terraform output -raw swa_url)/"
+# Frontend up (200) + its same-origin /api proxy (401 = reaches the api, auth-enforced):
+curl -s -o /dev/null -w "%{http_code}\n" "$(terraform output -raw frontend_url)/"
+curl -s -o /dev/null -w "%{http_code}\n" "$(terraform output -raw frontend_url)/api/v1/runs"
 ```

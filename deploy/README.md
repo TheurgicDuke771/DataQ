@@ -30,10 +30,10 @@ loopback. A production deployment must flip all of the following. Values live in
 |---|---|---|
 | `AUTH_DEV_BYPASS` | `true` | **`false`** — this is the master auth switch; leaving it on means **no authentication at all**. |
 | `AZURE_TENANT_ID` / `AZURE_API_CLIENT_ID` / `AZURE_SPA_CLIENT_ID` | empty | your Azure AD tenant + the two app registrations (API + SPA). |
-| **Frontend build** | prebuilt `:dev` image (bypass baked in) | **rebuild the SPA from source with your `VITE_AZURE_*`** — Vite bakes auth config at build time, so no prebuilt image can carry your tenant (the published `:latest` has none baked and shows the "not configured" banner). See [frontend/Dockerfile](../frontend/Dockerfile). |
+| **Frontend auth config** | `DATAQ_AUTH_MODE=bypass` (eval) | the **same generic image**, reconfigured at **runtime** — `DATAQ_AUTH_MODE=oidc` + `DATAQ_AUTH_AUTHORITY` / `DATAQ_AUTH_CLIENT_ID` / `DATAQ_AUTH_API_SCOPE` (ADR 0028). **No rebuild** — nginx injects `/config.js` from env. See [frontend/Dockerfile](../frontend/Dockerfile). |
 | `SECRET_STORE` | `redis` (eval) | **`azure_key_vault`** + `AZURE_KEY_VAULT_URL` + the managed identity's `AZURE_CLIENT_ID` (#408). |
 | `DATABASE_URL` / `REDIS_URL` | inline, passwordless | Key Vault-backed Container Apps secrets — **never literals**; real credentials. |
-| `CORS_ALLOW_ORIGINS` | n/a (same-origin) | empty **if** the SWA links the API same-origin; else the SPA origin. |
+| `CORS_ALLOW_ORIGINS` | n/a (same-origin) | empty — the frontend Container App proxies `/api` same-origin (ADR 0028); set the SPA origin only if you split them. |
 | `PUBLIC_BASE_URL` | n/a | the public origin (used to assemble webhook URLs). |
 | `WORKSPACE_ADMIN_EMAILS` | seeded dev user | a **minimal** real allowlist — admins can read every suite's failing-row samples (see [Operational notes](#operational-notes)). |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | unset | your App Insights resource (observability). |
@@ -43,10 +43,11 @@ loopback. A production deployment must flip all of the following. Values live in
 ### 2. Access you need
 
 - **Azure subscription** — rights to create the resource group, Container Apps
-  environment, PostgreSQL Flexible Server, Cache for Redis, Key Vault, Application
-  Insights + Log Analytics, and the Static Web App (Contributor on the RG/subscription),
-  **plus** `User Access Administrator`/`Owner` to grant the managed identity the **Key
-  Vault Secrets User** role (an RBAC role assignment).
+  environment, PostgreSQL Flexible Server, Cache for Redis, Key Vault, and Application
+  Insights + Log Analytics (Contributor on the RG/subscription); the frontend is a
+  Container App too (no Static Web App since ADR 0028). **Plus** `User Access
+  Administrator`/`Owner` to grant the managed identity the **Key Vault Secrets User**
+  role (an RBAC role assignment).
 - **Azure AD (Entra ID)** — `Application Administrator` (or Global Admin) to create the
   **two app registrations** (API + SPA) and **grant admin consent** for the API scope.
 - **Subscription resource-provider registration** — the app's Terraform registers
@@ -72,8 +73,9 @@ are planned.
 #### Azure — supported today
 
 - An Azure **subscription** + a region with quota for **1 Container Apps environment**,
-  **1 PostgreSQL Flexible Server**, Cache for Redis, Key Vault, App Insights + Log
-  Analytics, and a Static Web App. (Free/trial tiers cap one ACA env + one Postgres
+  **1 PostgreSQL Flexible Server**, Cache for Redis, Key Vault, and App Insights + Log
+  Analytics (the frontend is a Container App, not a Static Web App — ADR 0028).
+  (Free/trial tiers cap one ACA env + one Postgres
   server per subscription, so the app **shares** the RG/env/Postgres server with the
   harness and namespaces its own DB + role — ADR [0024](../docs/adr/0024-app-deployment-infrastructure.md).)
 - The **resource providers** and **app registrations** from §2 registered/created.
@@ -95,27 +97,28 @@ OpenTelemetry · Identity Platform / an OIDC IdP behind `get_current_user`.
 ## Topology
 
 ```
-Browser ─► Azure Static Web App (frontend/dist)
-              │  /api/* proxied to the linked backend (same-origin → no CORS)
+Browser ─► dataq-app-frontend (Container App: nginx SPA, external ingress :8080)
+              │  /api/* + /mcp proxied same-origin (→ no CORS) to ↓
               ▼
         Azure Container Apps
-          • dataq-api     (FastAPI image, external ingress :8000)
-          • dataq-worker  (same image, `celery -A ... worker` + beat)
-          • dataq-migrate (Container Apps Job: `alembic upgrade head`)
+          • dataq-app-api      (FastAPI image, external ingress :8000)
+          • dataq-app-worker   (same image, `celery -A ... worker` + beat)
+          • dataq-app-migrate  (Container Apps Job: `alembic upgrade head`)
               │
               ├─► Azure Database for PostgreSQL (DATABASE_URL)
               ├─► Azure Cache for Redis        (REDIS_URL)
               ├─► Azure Key Vault              (SECRET_STORE=azure_key_vault, managed identity)
               └─► Application Insights         (APPLICATIONINSIGHTS_CONNECTION_STRING)
-        GitHub Container Registry (GHCR) — holds the backend image (ADR 0023)
-          ghcr.io/theurgicduke771/dataq-backend:<tag> — public package, so ACA
-          pulls it anonymously (no registry credential stored on the apps/job).
+        GitHub Container Registry (GHCR) — holds both images (ADR 0023)
+          ghcr.io/theurgicduke771/dataq-{backend,frontend}:<tag> — public packages,
+          so ACA pulls them anonymously (no registry credential on the apps/job).
 ```
 
-Both api + worker run the **same** image ([backend/Dockerfile](../backend/Dockerfile),
-build context = repo root). The frontend is built and uploaded to SWA by the
-workflow (the [frontend/Dockerfile](../frontend/Dockerfile) is the container
-alternative — only needed if you run the UI on Container Apps instead of SWA).
+api + worker run the **same** backend image ([backend/Dockerfile](../backend/Dockerfile),
+build context = repo root). The frontend is **one generic nginx image**
+([frontend/Dockerfile](../frontend/Dockerfile)) whose auth config + `/api` proxy
+upstream are injected at **runtime** from env (ADR 0028) — the same image serves the
+eval stack (`DATAQ_AUTH_MODE=bypass`) and prod (`=oidc`).
 
 ## One-time provisioning
 
@@ -135,10 +138,11 @@ The datasource + compute infra is stood up by the external Terraform harness
    Secret values (DB/Redis URL, App Insights, webhook URLs) are Key Vault-backed
    Container Apps secrets — never literals. The user-assigned managed identity
    needs `AZURE_CLIENT_ID` set so `DefaultAzureCredential` resolves it (#408).
-4. **SWA linked backend**: link the `dataq-api` Container App as the SWA backend so
-   `/api/*` is proxied same-origin (then `CORS_ALLOW_ORIGINS` can stay empty). If
-   instead the SPA calls the API cross-origin, set `CORS_ALLOW_ORIGINS` to the SWA
-   origin (the FastAPI CORS middleware turns on only when it's non-empty).
+4. **Frontend Container App** (`dataq-app-frontend`): the nginx image reverse-proxies
+   `/api/*` + `/mcp` to the api app same-origin (via its `DATAQ_API_UPSTREAM` env), so
+   `CORS_ALLOW_ORIGINS` stays empty. If instead you split the SPA onto a different
+   origin, set `CORS_ALLOW_ORIGINS` to it (the FastAPI CORS middleware turns on only
+   when it's non-empty).
 5. **Azure Monitor → ADF webhook** alert rule (Week-7 task) — needs the deployed
    API URL; configure after the first deploy. Per [ADR 0006](../docs/adr/0006-adf-webhook-authentication.md)
    the shared secret rides the URL as a `?token=` query param, so don't
@@ -149,7 +153,7 @@ The datasource + compute infra is stood up by the external Terraform harness
    workspace admin → **Settings → Webhooks** to copy the ready-to-paste ADF
    URL (host + current `?token=` from Key Vault) and the Airflow URL. Set
    `PUBLIC_BASE_URL` so the generated host is the public origin (the deploy sets
-   it to the SWA host; empty falls back to the request host). Paste the ADF URL
+   it to the frontend Container App host; empty falls back to the request host). Paste the ADF URL
    into the Action Group webhook field. Note the **live ADF delivery still needs
    the Common-Alert-Schema payload mapping (#492)** — the alert body Azure Monitor
    sends differs from what the receiver parses today.
@@ -192,12 +196,15 @@ federated credential for OIDC login (subject = this repo's `production`
 environment).
 
 **Secrets:** `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`
-(OIDC app registration), `AZURE_STATIC_WEB_APPS_API_TOKEN`. The GHCR image push
-uses the built-in `GITHUB_TOKEN` (`packages: write`) — no registry secret to set.
+(OIDC app registration). The GHCR image push uses the built-in `GITHUB_TOKEN`
+(`packages: write`) — no registry secret to set. Since ADR 0028 there is **no
+`AZURE_STATIC_WEB_APPS_API_TOKEN`** — the frontend deploys as a Container App via
+the same OIDC login.
 
 **Variables:** `AZURE_RESOURCE_GROUP`, `API_APP_NAME`, `WORKER_APP_NAME`,
-`MIGRATE_JOB_NAME`, and the non-secret `VITE_AZURE_*` build values. (No `ACR_*` —
-the image lives on GHCR at a fixed `ghcr.io/theurgicduke771/dataq-backend` path.)
+`FRONTEND_APP_NAME`, `MIGRATE_JOB_NAME`. No `VITE_AZURE_*` build values (the
+frontend is configured at runtime, ADR 0028) and no `ACR_*` — the images live on
+GHCR at fixed `ghcr.io/theurgicduke771/dataq-{backend,frontend}` paths.
 
 ## Going live
 

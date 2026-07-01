@@ -1,9 +1,9 @@
 # Azure AD SSO app registrations (real auth in prod; AUTH_DEV_BYPASS=false). The
 # backend's init_auth() requires AZURE_API_CLIENT_ID + AZURE_TENANT_ID at startup
-# and validates v2 access tokens; the SPA (MSAL) uses AZURE_SPA_CLIENT_ID with a
-# redirect URI of the SWA origin. Two registrations:
+# and validates v2 access tokens; the SPA (generic OIDC client, ADR 0028) uses
+# AZURE_SPA_CLIENT_ID with a redirect URI of the frontend origin. Two registrations:
 #   - API  (dataq-app-api-sso): exposes the `user_impersonation` scope, v2 tokens.
-#   - SPA  (dataq-app-spa): public single-page client, redirect = SWA origin,
+#   - SPA  (dataq-app-spa): public single-page client, redirect = frontend origin,
 #                           pre-authorized on the API scope (no consent prompt).
 
 data "azuread_client_config" "current" {}
@@ -48,10 +48,12 @@ resource "azuread_application" "spa" {
   owners       = [data.azuread_client_config.current.object_id]
 
   single_page_application {
-    # Azure AD requires a trailing slash when there's no path segment; the SPA's
-    # MSAL redirectUri is set to `${window.location.origin}/` to match exactly
-    # (frontend/src/auth/msalInstance.ts).
-    redirect_uris = ["https://${azurerm_static_web_app.app.default_host_name}/"]
+    # Azure AD requires a trailing slash when there's no path segment; the OIDC
+    # client's redirect_uri is `${window.location.origin}/` to match exactly
+    # (frontend/src/auth/authClient.ts, generic OIDC per ADR 0028). The origin is
+    # the frontend Container App (ADR 0028 §5 cutover), computed from the env
+    # domain (local.frontend_url) to avoid a resource-reference cycle.
+    redirect_uris = ["${local.frontend_url}/"]
   }
 
   # Request the API's user_impersonation scope.

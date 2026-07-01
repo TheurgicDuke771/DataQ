@@ -8,9 +8,9 @@
 # and a real deployment (DATAQ_AUTH_MODE=oidc + authority/clientId/scope) — set the
 # env at `docker run`, no rebuild. Replaces the #472 two-image (:latest/:dev) split.
 #
-# NOTE: the deploy workflow currently builds dist/ and uploads to Static Web App;
-# ADR 0028 moves the deployed frontend onto this container (SWA can't inject
-# runtime config).
+# The deploy workflow builds + pushes this image and rolls the `dataq-app-frontend`
+# Container App (ADR 0028 §5 cutover — the Static Web App is gone; SWA couldn't
+# inject runtime config). See deploy/terraform/frontend.tf.
 
 FROM node:22-alpine AS build
 WORKDIR /app
@@ -33,6 +33,12 @@ COPY --from=build /app/dist /usr/share/nginx/html
 # Template (not a static conf): the nginx entrypoint envsubst's it at startup so
 # the API upstream + auth config are runtime-configurable.
 COPY nginx.conf.template /etc/nginx/templates/default.conf.template
+# Opt into the nginx image's built-in resolver detection: its
+# 15-local-resolvers.envsh only exports ${NGINX_LOCAL_RESOLVERS} (the
+# /etc/resolv.conf nameservers, used by the proxy `resolver` directive) when this
+# flag is set. Cloud-neutral (ADR 0028) — no resolver IP baked in; works in
+# compose (127.0.0.11) and ACA/K8s (cluster DNS) alike.
+ENV NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1
 # Runtime config env (ADR 0028) — MUST be defined (even if empty) so envsubst
 # always substitutes them in /config.js; empty → SPA is unconfigured (fail-closed),
 # bypass needs an explicit DATAQ_AUTH_MODE=bypass. DATAQ_API_UPSTREAM defaults to

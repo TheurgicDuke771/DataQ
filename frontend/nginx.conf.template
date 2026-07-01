@@ -27,20 +27,33 @@ server {
         return 200 'window.__DATAQ_CONFIG__={"auth":{"mode":"${DATAQ_AUTH_MODE}","authority":"${DATAQ_AUTH_AUTHORITY}","clientId":"${DATAQ_AUTH_CLIENT_ID}","apiScope":"${DATAQ_AUTH_API_SCOPE}"}};';
     }
 
-    # Docker Compose's embedded DNS. Resolving the upstream through a variable
-    # (below) defers DNS to request time, so this image starts even while the api
-    # service is still coming up and survives an api container restart (new IP) —
-    # a literal proxy_pass host is resolved once at startup and would hard-crash
-    # nginx if api isn't up yet.
-    resolver 127.0.0.11 ipv6=off valid=10s;
+    # Runtime DNS resolver from the running container's /etc/resolv.conf. The nginx
+    # image's own 15-local-resolvers.envsh (enabled via NGINX_ENTRYPOINT_LOCAL_RESOLVERS
+    # in the Dockerfile) exports the resolv.conf nameservers into the variable
+    # substituted below, before the startup envsubst, so this is cloud-neutral
+    # (ADR 0028): compose's embedded DNS (127.0.0.11), ACA/K8s cluster DNS, etc. —
+    # no resolver IP baked into the image (a literal 127.0.0.11 would break in ACA).
+    # Resolving the upstream through a variable (below) defers DNS to request time,
+    # so this image starts even while the api is still coming up and survives an api
+    # restart (new IP) — a literal proxy_pass host is resolved once at startup and
+    # would hard-crash nginx if the api isn't up yet.
+    resolver ${NGINX_LOCAL_RESOLVERS} ipv6=off valid=10s;
 
     # REST API — same-origin /api/* forwarded to the backend. proxy_pass uses a
     # variable, so the original URI isn't auto-appended; $request_uri carries the
     # full path + query (/api/v1/...) through unchanged.
+    #
+    # Host is intentionally NOT overridden to the browser's $host: when the
+    # upstream is a real hostname behind a routing front-door (ACA's Envoy routes
+    # external ingress by the app FQDN), the Host must match the upstream, or the
+    # request is misrouted (404). nginx's default is Host = $proxy_host (the
+    # upstream host), which is correct for BOTH compose (`api:8000`, uvicorn
+    # ignores it) and ACA (the api FQDN). proxy_ssl_server_name sends the matching
+    # TLS SNI for the https (ACA) upstream; it's a no-op for the http (compose) one.
     location /api/ {
         set $dataq_upstream "${DATAQ_API_UPSTREAM}";
         proxy_pass $dataq_upstream$request_uri;
-        proxy_set_header Host $host;
+        proxy_ssl_server_name on;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
@@ -51,10 +64,10 @@ server {
     location /mcp {
         set $dataq_upstream "${DATAQ_API_UPSTREAM}";
         proxy_pass $dataq_upstream$request_uri;
+        proxy_ssl_server_name on;
         proxy_http_version 1.1;
         proxy_set_header Connection "";
         proxy_buffering off;
-        proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;

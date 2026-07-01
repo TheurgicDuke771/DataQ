@@ -25,15 +25,17 @@ permissions:
   packages: write
 
 env:
-  # GHCR registry (ADR 0023) — public package, lowercase owner. ACA pulls it
+  # GHCR registry (ADR 0023) — public packages, lowercase owner. ACA pulls them
   # anonymously, so no registry credential is stored on the apps/job.
   #
   # Default the tag to the commit SHA (#382): `latest` is mutable, so a push
-  # racing the deploy could make the migrate job, API, and worker each resolve a
-  # *different* image; the SHA tag is immutable, so all three roll the exact
+  # racing the deploy could make the migrate job, API, worker, and frontend each
+  # resolve a *different* image; the SHA tag is immutable, so all roll the exact
   # build this run produced. A manual `image_tag` input still overrides it. On a
-  # push:[main] trigger `inputs` is empty, so it falls back to the SHA too.
+  # push:[main] trigger `inputs` is empty, so it falls back to the SHA too. Backend
+  # + frontend share the one tag.
   IMAGE: ghcr.io/theurgicduke771/dataq-backend:${{ inputs.image_tag || github.sha }}
+  IMAGE_FRONTEND: ghcr.io/theurgicduke771/dataq-frontend:${{ inputs.image_tag || github.sha }}
 
 jobs:
   backend:
@@ -139,7 +141,7 @@ jobs:
             --image "$IMAGE"
 
   frontend:
-    name: Frontend — build + deploy to Static Web App
+    name: Frontend — build image, deploy to Container App
     runs-on: ubuntu-latest
     environment: production
     # Gate on the backend (build → migrate → roll API/worker): a failed/aborted
@@ -148,35 +150,35 @@ jobs:
     needs: backend
     steps:
       - uses: actions/checkout@v7
-      # version is required: action-setup runs at the repo root, whose
-      # package.json has no `packageManager` field (it lives in frontend/).
-      - uses: pnpm/action-setup@v6
-        with:
-          version: 9.15.4
-      - uses: actions/setup-node@v6
-        with:
-          node-version: "22"
-          cache: pnpm
-          cache-dependency-path: frontend/pnpm-lock.yaml
 
-      - name: Build
-        working-directory: frontend
-        # VITE_* are inlined at build time. Non-secret azure client/tenant ids
-        # come from repo vars; never the SPA secret (there is none — MSAL is public).
-        env:
-          VITE_AZURE_TENANT_ID: ${{ vars.VITE_AZURE_TENANT_ID }}
-          VITE_AZURE_SPA_CLIENT_ID: ${{ vars.VITE_AZURE_SPA_CLIENT_ID }}
-          VITE_AZURE_API_CLIENT_ID: ${{ vars.VITE_AZURE_API_CLIENT_ID }}
-          VITE_AZURE_API_SCOPE: ${{ vars.VITE_AZURE_API_SCOPE }}
-          VITE_AUTH_DEV_BYPASS: "false"
+      - name: Azure login (OIDC)
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # One generic image (ADR 0028) — nothing baked in. Auth config + the /api
+      # proxy upstream are injected at runtime by the Container App env
+      # (DATAQ_AUTH_* / DATAQ_API_UPSTREAM in deploy/terraform/frontend.tf), so
+      # there are NO VITE_* build args here and no per-environment rebuild. amd64
+      # only (ACA is amd64); the multi-arch :latest is published by
+      # publish-images.yml for the BYOL/eval path.
+      - name: Build + push frontend image to GHCR
         run: |
-          pnpm install --frozen-lockfile
-          pnpm build
+          docker build -f frontend/Dockerfile -t "$IMAGE_FRONTEND" frontend
+          docker push "$IMAGE_FRONTEND"
 
-      - name: Deploy to Azure Static Web Apps
-        uses: Azure/static-web-apps-deploy@v1
-        with:
-          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
-          action: upload
-          app_location: frontend/dist
-          skip_app_build: true
+      - name: Deploy frontend
+        run: |
+          az containerapp update \
+            --name "${{ vars.FRONTEND_APP_NAME }}" \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --image "$IMAGE_FRONTEND"

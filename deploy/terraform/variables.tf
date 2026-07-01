@@ -16,7 +16,7 @@ variable "azure_resource_group" {
 }
 
 variable "azure_location" {
-  description = "Region for the app resources (Container Apps, KV, SWA, logs)."
+  description = "Region for the app resources (Container Apps, KV, logs)."
   type        = string
   default     = "West US 2"
 }
@@ -55,6 +55,18 @@ variable "backend_image_repo" {
   default     = "ghcr.io/theurgicduke771/dataq-backend"
 }
 
+variable "frontend_image_repo" {
+  description = "GHCR frontend (nginx SPA) image repository — one generic runtime-configured image (ADR 0028). Public package, anonymous ACA pull."
+  type        = string
+  default     = "ghcr.io/theurgicduke771/dataq-frontend"
+}
+
+variable "frontend_image_tag" {
+  description = "Frontend image tag to deploy. Use an IMMUTABLE tag in prod (ACA caches 'latest' at the node). Bump per deploy. (v1 = the ADR 0028 §5 SWA→Container-App cutover — generic OIDC client + runtime auth config.)"
+  type        = string
+  default     = "v1"
+}
+
 variable "image_tag" {
   description = "Backend image tag to deploy. Use an IMMUTABLE tag in prod (ACA caches 'latest' at the node, so a same-tag rebuild won't be re-pulled on a new revision). Bump per deploy. (v3 = the #393 App-Insights logging-lock fix; v4 = login page + AZURE_ALLOW_GUEST_USERS support, PR #398; v5 = (superseded) ; v7 = #405 beat-lock + #406 KV AZURE_CLIENT_ID; v8 = Slack+email alerting #413; v9 = column-aware redaction #417 + the #383/#384/#395/#423 hardening batch; v10 = freshness/volume monitors #426 + authoring UI #437 + runs-table outcome #425 — the live prod image.)"
   type        = string
@@ -81,12 +93,6 @@ variable "key_vault_purge_protection" {
   description = "Key Vault purge protection. false during bring-up so a destroy/re-apply can reuse the vault name. PROD: set true to make secrets unrecoverable-deletable only after the soft-delete retention window (NOTE: irreversible once enabled)."
   type        = bool
   default     = false
-}
-
-variable "swa_sku" {
-  description = "Static Web App SKU. Standard is required to link a Container Apps backend (same-origin /api proxy). Drop to Free only with the CORS fallback."
-  type        = string
-  default     = "Standard"
 }
 
 # ── App config (non-secret) ──────────────────────────────────────────────────
@@ -125,7 +131,7 @@ variable "email_to" {
 }
 
 # Azure AD SSO — real auth in prod (AUTH_DEV_BYPASS=false). These are non-secret
-# identifiers (MSAL SPA is a public client; there is no SPA secret).
+# identifiers (the OIDC SPA is a public client; there is no SPA secret).
 variable "azure_tenant_id" {
   description = "Azure AD tenant id for SSO. Empty = inherit the deployer's tenant."
   type        = string

@@ -42,4 +42,17 @@ locals {
     managed = "terraform"
     purpose = "dataq-app"
   }
+
+  # Deterministic Container App FQDNs, derived from the shared environment's
+  # default domain rather than each app's own ingress[0].fqdn. This is what breaks
+  # the frontend<->api circular dependency (ADR 0028 §5 cutover): the frontend
+  # needs the api's URL as its proxy upstream, and the api needs the frontend's URL
+  # for PUBLIC_BASE_URL + the SPA redirect. An external-ingress app is reachable at
+  # `https://<app-name>.<env-default-domain>`, so both URLs are computable up front
+  # from the (read-only) environment data source — no resource references crossing.
+  env_default_domain = data.azurerm_container_app_environment.shared.default_domain
+  api_fqdn           = "dataq-app-api.${local.env_default_domain}"
+  frontend_fqdn      = "dataq-app-frontend.${local.env_default_domain}"
+  api_public_url     = "https://${local.api_fqdn}"
+  frontend_url       = "https://${local.frontend_fqdn}"
 }
