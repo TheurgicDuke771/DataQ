@@ -1,5 +1,6 @@
 import os
 from types import SimpleNamespace
+from typing import ClassVar
 
 import pytest
 
@@ -113,6 +114,74 @@ def test_akv_store_set_wraps_sdk_exception(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setattr(store, "_client_lazy", lambda: fake_client)
     with pytest.raises(SecretWriteError, match="network down"):
         store.set("conn-snowflake-dev-finance", "p@ss")
+
+
+class _StubCredential:
+    """Stands in for DefaultAzureCredential — records that it was constructed."""
+
+
+class _StubSecretClient:
+    """Stands in for SecretClient — records ctor args and serves get/set."""
+
+    instances: ClassVar[list["_StubSecretClient"]] = []
+
+    def __init__(self, *, vault_url: str, credential: object) -> None:
+        self.vault_url = vault_url
+        self.credential = credential
+        self.set_calls: list[tuple[str, str]] = []
+        _StubSecretClient.instances.append(self)
+
+    def get_secret(self, name: str) -> SimpleNamespace:
+        return SimpleNamespace(value=f"value-of-{name}")
+
+    def set_secret(self, name: str, value: str) -> None:
+        self.set_calls.append((name, value))
+
+
+@pytest.fixture()
+def stub_azure_sdk(monkeypatch: pytest.MonkeyPatch) -> type[_StubSecretClient]:
+    """Patch the real SDK classes so `_client_lazy`'s import branch runs for real.
+
+    Unlike the tests above (which monkeypatch `_client_lazy` itself and so skip
+    the branch entirely), these patch `azure.identity.DefaultAzureCredential` and
+    `azure.keyvault.secrets.SecretClient` at module level — the in-function
+    `from azure... import ...` then resolves to the stubs, exercising the whole
+    lazy-construction path without any network. Discharges WEEK7 A4 (the 0%-cov
+    tail of #169).
+    """
+    _StubSecretClient.instances = []
+    monkeypatch.setattr("azure.identity.DefaultAzureCredential", _StubCredential)
+    monkeypatch.setattr("azure.keyvault.secrets.SecretClient", _StubSecretClient)
+    return _StubSecretClient
+
+
+def test_akv_client_lazy_constructs_sdk_client_with_vault_url_and_credential(
+    stub_azure_sdk: type[_StubSecretClient],
+) -> None:
+    store = AzureKeyVaultStore("https://example.vault.azure.net/")
+    assert store.get("snowflake-uat-finance") == "value-of-snowflake-uat-finance"
+    (client,) = stub_azure_sdk.instances
+    assert client.vault_url == "https://example.vault.azure.net/"
+    assert isinstance(client.credential, _StubCredential)
+
+
+def test_akv_client_lazy_caches_client_across_calls(
+    stub_azure_sdk: type[_StubSecretClient],
+) -> None:
+    store = AzureKeyVaultStore("https://example.vault.azure.net/")
+    first = store._client_lazy()
+    second = store._client_lazy()
+    assert first is second
+    assert len(stub_azure_sdk.instances) == 1
+
+
+def test_akv_store_set_reaches_sdk_through_lazy_branch(
+    stub_azure_sdk: type[_StubSecretClient],
+) -> None:
+    store = AzureKeyVaultStore("https://example.vault.azure.net/")
+    store.set("conn-snowflake-dev-finance", "p@ss")
+    (client,) = stub_azure_sdk.instances
+    assert client.set_calls == [("conn-snowflake-dev-finance", "p@ss")]
 
 
 # ───────────────────────── Factory + cache ─────────────────────────
