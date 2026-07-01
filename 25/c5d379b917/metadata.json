@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "25c5d379b917",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-472-ghcr-runnable-compose",
+  "checkpoints_count": 2,
+  "files_touched": [
+    ".github/workflows/publish-images.yml",
+    "docker-compose.ghcr.yml",
+    "frontend/Dockerfile",
+    "frontend/nginx.conf.template"
+  ],
+  "sessions": [
+    {
+      "metadata": "/25/c5d379b917/0/metadata.json",
+      "transcript": "/25/c5d379b917/0/full.jsonl",
+      "content_hash": "/25/c5d379b917/0/content_hash.txt",
+      "prompt": "/25/c5d379b917/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 874,
+    "cache_creation_tokens": 215930,
+    "cache_read_tokens": 6557990,
+    "output_tokens": 55501,
+    "api_call_count": 37
+  }
+}
