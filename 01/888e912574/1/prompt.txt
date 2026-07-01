@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bqvabftjh</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/83180c0d-bbe5-4c61-b9bc-5700e05669e4/tasks/bqvabftjh.output</output-file>
+<status>failed</status>
+<summary>Background command "Wait for PR3 CI, show any non-pass" failed with exit code 1</summary>
+</task-notification>
