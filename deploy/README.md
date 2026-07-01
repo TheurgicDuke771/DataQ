@@ -1,7 +1,7 @@
 # DataQ — deployment guide
 
 How DataQ v1 is deployed to Azure. Infrastructure is **in-repo Terraform**
-(`deploy/terraform/`, applied — [ADR 0024](../docs/adr/0024-app-deployment-infrastructure.md));
+(`deploy/terraform/azure/`, applied — [ADR 0024](../docs/adr/0024-app-deployment-infrastructure.md));
 the app rolls out via the **`Deploy`** workflow
 ([.github/workflows/deploy.yml](../.github/workflows/deploy.yml), `workflow_dispatch`).
 The stack is **live** — this is the runbook to provision a fresh environment and to
@@ -24,7 +24,7 @@ The prebuilt-image quickstart ([docs/getting-started](../docs/getting-started.md
 **dev-bypass eval stack** — it disables auth, uses a passwordless DB, and binds to
 loopback. A production deployment must flip all of the following. Values live in
 [`deploy/.env.app.prod.example`](.env.app.prod.example) (app settings) +
-[`deploy/terraform/variables.tf`](terraform/variables.tf) (infra):
+[`deploy/terraform/azure/variables.tf`](terraform/azure/variables.tf) (infra):
 
 | Setting | Eval default | Production |
 |---|---|---|
@@ -52,7 +52,7 @@ loopback. A production deployment must flip all of the following. Values live in
   **two app registrations** (API + SPA) and **grant admin consent** for the API scope.
 - **Subscription resource-provider registration** — the app's Terraform registers
   `Microsoft.App`, `Microsoft.Cache`, `Microsoft.KeyVault`, `Microsoft.Web` (see
-  [rp.tf](terraform/rp.tf)); the PostgreSQL + monitoring providers
+  [rp.tf](terraform/azure/rp.tf)); the PostgreSQL + monitoring providers
   (`Microsoft.DBforPostgreSQL`, `Microsoft.Insights`, `Microsoft.OperationalInsights`)
   come registered with the shared harness resources (ADR 0024). Registration needs
   subscription-level rights.
@@ -127,7 +127,7 @@ The datasource + compute infra is stood up by the external Terraform harness
 
 1. An **ACA environment** + the three apps/job above (the backend image is on
    **GHCR**, not ACR — ADR 0023). The api/worker run `uvicorn …` / `celery …`;
-   the migrate **job** runs `alembic upgrade head`. The `deploy/terraform/` stack
+   the migrate **job** runs `alembic upgrade head`. The `deploy/terraform/azure/` stack
    provisions all of this; the GHCR package must be **public** so ACA pulls it
    anonymously.
 2. **Managed identity** on the api + worker apps with **Key Vault Secrets User**

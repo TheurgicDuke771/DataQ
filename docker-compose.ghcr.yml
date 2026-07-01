@@ -19,7 +19,7 @@
 # Because of that, every published port binds to 127.0.0.1 (loopback) ONLY — the
 # stack is reachable from your own machine but NOT from the LAN, so an
 # auth-bypassed API / passwordless DB is never exposed on a shared network. A
-# real deploy uses the Terraform stack (deploy/terraform, ADR 0024).
+# real deploy uses the Terraform stack (deploy/terraform/azure, ADR 0024).
 
 x-backend-image: &backend-image "ghcr.io/theurgicduke771/dataq-backend:${DATAQ_BACKEND_TAG:-latest}"
 

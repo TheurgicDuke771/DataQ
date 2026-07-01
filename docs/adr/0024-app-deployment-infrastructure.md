@@ -27,7 +27,7 @@ Container Apps environment** — the one deliberate exception to "subscription +
 ## Decision
 
 **Provision the app's production resources with a dedicated, in-repo Terraform stack at
-`deploy/terraform/`, reusing the subscription, `dataq-rg`, and the single Container Apps environment;
+`deploy/terraform/azure/`, reusing the subscription, `dataq-rg`, and the single Container Apps environment;
 everything else is a separate `dataq-app-*` resource.**
 
 - **In-repo IaC, local gitignored state.** Unlike the harness (out-of-repo, ADR 0021), this is the

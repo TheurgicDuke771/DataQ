@@ -25,7 +25,7 @@ to a fixed demo user; no sign-in). API + Swagger at `http://localhost:8000/docs`
 - **Loopback-only:** every port binds to `127.0.0.1` — the stack is reachable from your
   own machine but never the LAN (it deliberately disables auth and runs a passwordless
   DB, so it must not be network-exposed). **Not for production** — a real deploy uses the
-  Terraform stack (`deploy/terraform`, ADR 0024).
+  Terraform stack (`deploy/terraform/azure`, ADR 0024).
 - **Pin a release** instead of the moving stable tags:
   `DATAQ_BACKEND_TAG=vX.Y.Z DATAQ_FRONTEND_TAG=vX.Y.Z docker compose -f docker-compose.ghcr.yml up`.
 - **Reset:** `docker compose -f docker-compose.ghcr.yml down -v` (drops the seeded DB).

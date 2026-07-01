@@ -10,7 +10,7 @@
 #
 # The deploy workflow builds + pushes this image and rolls the `dataq-app-frontend`
 # Container App (ADR 0028 §5 cutover — the Static Web App is gone; SWA couldn't
-# inject runtime config). See deploy/terraform/frontend.tf.
+# inject runtime config). See deploy/terraform/azure/frontend.tf.
 
 FROM node:22-alpine AS build
 WORKDIR /app
