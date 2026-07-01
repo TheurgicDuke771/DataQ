@@ -1,0 +1,109 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "25ed5323f98e",
+  "session_id": "a33e4939-e8b1-4b81-aaa1-168fd7fc382f",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-01T23:04:28.852906Z",
+  "branch": "feature/a3-otel-spans",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/app/core/tracing.py",
+    "backend/requirements.txt",
+    "backend/app/main.py",
+    "backend/app/worker/celery_app.py",
+    "pyproject.toml",
+    "backend/tests/core/test_tracing.py"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "ffa8f28ec995",
+  "checkpoint_transcript_start": 201,
+  "transcript_lines_at_start": 201,
+  "token_usage": {
+    "input_tokens": 14832,
+    "cache_creation_tokens": 46915,
+    "cache_read_tokens": 3683025,
+    "output_tokens": 15459,
+    "api_call_count": 23
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01SZ6kyDQyJcgEAJSxouvFin",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "ffa8f28ec995",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 144,
+        "end": 145,
+        "entry_ids": [
+          "f0dad68a-abfc-4247-8031-1c8d5320148b"
+        ],
+        "tool_use_id": "toolu_01SZ6kyDQyJcgEAJSxouvFin"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01SZ6kyDQyJcgEAJSxouvFin"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01NXBkUbTUg6gHMaJNCnwaZR",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "ffa8f28ec995",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 210,
+        "end": 211,
+        "entry_ids": [
+          "16915686-6303-4969-8e73-1669abfaff42"
+        ],
+        "tool_use_id": "toolu_01NXBkUbTUg6gHMaJNCnwaZR"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01NXBkUbTUg6gHMaJNCnwaZR"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-01T23:04:28.84225Z",
+    "agent_lines": 223,
+    "agent_removed": 2,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 223,
+    "total_lines_changed": 225,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
