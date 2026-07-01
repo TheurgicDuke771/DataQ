@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "0ab1ac728900",
+  "strategy": "manual-commit",
+  "branch": "docs/post-v1-mcp-tool-expansion",
+  "checkpoints_count": 2,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/0a/b1ac728900/0/metadata.json",
+      "transcript": "/0a/b1ac728900/0/full.jsonl",
+      "content_hash": "/0a/b1ac728900/0/content_hash.txt",
+      "prompt": "/0a/b1ac728900/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 61424,
+    "cache_creation_tokens": 838524,
+    "cache_read_tokens": 37170869,
+    "output_tokens": 146978,
+    "api_call_count": 169
+  }
+}
