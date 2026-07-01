@@ -1,6 +1,6 @@
-import { useMsal } from '@azure/msal-react';
 import { useMemo, type ReactNode } from 'react';
 
+import { useAuthUser } from './authContext';
 import { authMode, DEV_USER } from './config';
 import { CurrentUserContext, type CurrentUser } from './currentUserContext';
 
@@ -9,7 +9,7 @@ import { CurrentUserContext, type CurrentUser } from './currentUserContext';
  *
  * - dev_bypass: static dev user.
  * - unconfigured: null (AuthGate shows the banner).
- * - real: subscribes to MSAL accounts via useMsal().
+ * - real: derives from the OIDC user (useAuthUser).
  */
 export function CurrentUserProvider({ children }: { children: ReactNode }) {
   if (authMode === 'dev_bypass') {
@@ -22,16 +22,17 @@ export function CurrentUserProvider({ children }: { children: ReactNode }) {
 }
 
 function RealCurrentUserProvider({ children }: { children: ReactNode }) {
-  const { accounts } = useMsal();
+  const user = useAuthUser();
   const value = useMemo<CurrentUser | null>(() => {
-    const account = accounts[0];
-    if (!account) return null;
+    if (!user) return null;
+    const profile = user.profile;
+    const username = profile.preferred_username ?? profile.email ?? profile.sub;
     return {
-      name: account.name ?? '(unknown)',
-      username: account.username,
-      homeAccountId: account.homeAccountId,
+      name: typeof profile.name === 'string' ? profile.name : '(unknown)',
+      username,
+      homeAccountId: profile.sub,
       isDev: false,
     };
-  }, [accounts]);
+  }, [user]);
   return <CurrentUserContext.Provider value={value}>{children}</CurrentUserContext.Provider>;
 }

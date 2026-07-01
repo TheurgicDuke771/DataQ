@@ -19,7 +19,7 @@ import { AuthGate } from './auth/AuthGate';
 import { authMode } from './auth/config';
 import { useCurrentUser } from './auth/useCurrentUser';
 import { useIsWorkspaceAdmin } from './auth/useMe';
-import { getMsalInstance } from './auth/msalInstance';
+import { logout } from './auth/authClient';
 import { BrandMark } from './components/BrandMark';
 import { BRAND, SHELL } from './theme';
 
@@ -231,8 +231,7 @@ function UserMenu() {
 
   const onLogout = () => {
     if (authMode !== 'real') return;
-    const instance = getMsalInstance();
-    void instance?.logoutRedirect({ account: instance.getAllAccounts()[0] });
+    void logout();
   };
 
   const items: MenuProps['items'] = [

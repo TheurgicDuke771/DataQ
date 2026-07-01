@@ -1,16 +1,18 @@
-import { InteractionStatus } from '@azure/msal-browser';
-import { useIsAuthenticated, useMsal } from '@azure/msal-react';
 import { Alert } from 'antd';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 
+import { useAuthUser } from './authContext';
 import { LoginPage } from './LoginPage';
-import { authConfig, authMode } from './config';
+import { login } from './authClient';
+import { authMode } from './config';
 
 /**
  * Gates children behind auth. Three paths:
  * - dev_bypass: renders children directly.
- * - unconfigured: renders a setup-needed banner (no MSAL, no children).
- * - real: renders the sign-in page when no account, children when authenticated.
+ * - unconfigured: renders a setup-needed banner (no auth client, no children).
+ * - real: renders the sign-in page when signed out, children when authenticated.
+ *
+ * The OIDC user comes from AuthProvider, mounted above this in main.tsx.
  */
 export function AuthGate({ children }: { children: ReactNode }) {
   if (authMode === 'dev_bypass') return <>{children}</>;
@@ -19,23 +21,17 @@ export function AuthGate({ children }: { children: ReactNode }) {
 }
 
 function RealAuthGate({ children }: { children: ReactNode }) {
-  const isAuthenticated = useIsAuthenticated();
-  const { instance, inProgress } = useMsal();
+  const user = useAuthUser();
+  const [signingIn, setSigningIn] = useState(false);
 
-  if (isAuthenticated) return <>{children}</>;
+  if (user) return <>{children}</>;
 
   const onSignIn = () => {
-    void instance.loginRedirect({
-      scopes: authConfig.apiScope ? [authConfig.apiScope] : [],
-    });
+    // signinRedirect navigates away, so this state mainly guards a double-click
+    // before the redirect takes effect.
+    setSigningIn(true);
+    void login().catch(() => setSigningIn(false));
   };
-
-  // Busy whenever MSAL is mid-interaction. On the unauthenticated gate the only
-  // reachable states are Startup (brief boot) and HandleRedirect (the sign-in
-  // redirect handshake) — both are genuinely "auth in progress", so a plain
-  // !== None is correct here. (Logout / AcquireToken don't occur pre-auth, and
-  // this MSAL version's InteractionStatus has no Login member.)
-  const signingIn = inProgress !== InteractionStatus.None;
 
   return <LoginPage onSignIn={onSignIn} signingIn={signingIn} />;
 }

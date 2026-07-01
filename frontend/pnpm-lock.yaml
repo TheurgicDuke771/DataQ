@@ -16,12 +16,6 @@ importers:
       '@ant-design/icons':
         specifier: ^6.2.5
         version: 6.2.5(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
-      '@azure/msal-browser':
-        specifier: 5.15.0
-        version: 5.15.0
-      '@azure/msal-react':
-        specifier: 5.4.3
-        version: 5.4.3(@azure/msal-browser@5.15.0)(react@19.2.7)
       '@fontsource/inter':
         specifier: ^5.2.8
         version: 5.2.8
@@ -40,6 +34,9 @@ importers:
       monaco-editor:
         specifier: ^0.55.1
         version: 0.55.1
+      oidc-client-ts:
+        specifier: ^3.5.0
+        version: 3.5.0
       react:
         specifier: ^19.2.7
         version: 19.2.7
@@ -184,21 +181,6 @@ packages:
 
   '@asamuzakjp/nwsapi@2.3.9':
     resolution: {integrity: sha512-n8GuYSrI9bF7FFZ/SjhwevlHc8xaVlb/7HmHelnc/PZXBD2ZR49NnN9sMMuDdEGPeeRQ5d0hqlSlEpgCX3Wl0Q==}
-
-  '@azure/msal-browser@5.15.0':
-    resolution: {integrity: sha512-2NYT6v+eeQn8kmNddr9LnbXSvXbVELpmFMmfFvtRxD7I/5+5GlkMlncApeuRFj+mY6C9syOwQip1a0Y+TIbyiA==}
-    engines: {node: '>=0.8.0'}
-
-  '@azure/msal-common@16.10.0':
-    resolution: {integrity: sha512-iYtjpanlv6963Jprs0MvzIap07V+QhultjQctfbEDQCflsDAEeO3R7XnVA5gk30fhoBFLdgJT7VqO0TGsEsN9w==}
-    engines: {node: '>=0.8.0'}
-
-  '@azure/msal-react@5.4.3':
-    resolution: {integrity: sha512-hBc/Gpk5/A8uK9tyHvNMYlJEU+vYeYBpg9IlSfmAm4CGiOCgYx7U1fnwOq1QWBj9+/jHqv93ZJ5mg6eBpPzNfg==}
-    engines: {node: '>=20'}
-    peerDependencies:
-      '@azure/msal-browser': ^5.12.0
-      react: ^16.8.0 || ^17 || ^18 || ^19.2.1
 
   '@babel/code-frame@7.29.7':
     resolution: {integrity: sha512-Aup7aUOfpbAUg2ROOJN6Iw5f9DMBlzu0mIkm/malLQFN/YQgO48wCj0Kxa3sEHJvPVFg7siR+qRInwXd2qhQKw==}
@@ -1831,6 +1813,10 @@ packages:
     resolution: {integrity: sha512-ZZow9HBI5O6EPgSJLUb8n2NKgmVWTwCvHGwFuJlMjvLFqlGG6pjirPhtdsseaLZjSibD8eegzmYpUZwoIlj2cQ==}
     engines: {node: '>=4.0'}
 
+  jwt-decode@4.0.0:
+    resolution: {integrity: sha512-+KJGIyHgkGuIq3IEBNftfhW/LfWhXUIY6OmyVWjliu5KH1y0fw7VQ8YndE2O4qZdMSd9SqbnC8GOcZEy0Om7sA==}
+    engines: {node: '>=18'}
+
   keyv@4.5.4:
     resolution: {integrity: sha512-oxVHkHR/EJf2CNXnWxRLW6mg7JyCCUcG0DtEGmL2ctUo1PNTin1PUil+r/+4r5MpVgC/fn1kjsx7mjSujKqIpw==}
 
@@ -2023,6 +2009,10 @@ packages:
 
   obug@2.1.1:
     resolution: {integrity: sha512-uTqF9MuPraAQ+IsnPf366RG4cP9RtUi7MLO1N3KEc+wb0a6yKpeL0lmk2IB1jY5KHPAlTc6T/JRdC/YqxHNwkQ==}
+
+  oidc-client-ts@3.5.0:
+    resolution: {integrity: sha512-l2q8l9CTCTOlbX+AnK4p3M+4CEpKpyQhle6blQkdFhm0IsBqsxm15bYaSa11G7pWdsYr6epdsRZxJpCyCRbT8A==}
+    engines: {node: '>=18'}
 
   optionator@0.9.4:
     resolution: {integrity: sha512-6IpQ7mKUxRcZNLIObR0hz7lxsapSSIYNZJwXPGeF0mTVqGKFIXj1DQcMoT22S3ROcLyY/rz0PWaWZ9ayWmad9g==}
@@ -2684,17 +2674,6 @@ snapshots:
   '@asamuzakjp/generational-cache@1.0.1': {}
 
   '@asamuzakjp/nwsapi@2.3.9': {}
-
-  '@azure/msal-browser@5.15.0':
-    dependencies:
-      '@azure/msal-common': 16.10.0
-
-  '@azure/msal-common@16.10.0': {}
-
-  '@azure/msal-react@5.4.3(@azure/msal-browser@5.15.0)(react@19.2.7)':
-    dependencies:
-      '@azure/msal-browser': 5.15.0
-      react: 19.2.7
 
   '@babel/code-frame@7.29.7':
     dependencies:
@@ -4577,6 +4556,8 @@ snapshots:
       object.assign: 4.1.7
       object.values: 1.2.1
 
+  jwt-decode@4.0.0: {}
+
   keyv@4.5.4:
     dependencies:
       json-buffer: 3.0.1
@@ -4746,6 +4727,10 @@ snapshots:
       es-object-atoms: 1.1.2
 
   obug@2.1.1: {}
+
+  oidc-client-ts@3.5.0:
+    dependencies:
+      jwt-decode: 4.0.0
 
   optionator@0.9.4:
     dependencies:

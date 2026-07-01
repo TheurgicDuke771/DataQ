@@ -11,8 +11,9 @@ import { BRAND } from '../theme';
  * element rather than generic marketing. Reuses the app's indigo + Inter system
  * and the shared balance mark, so the page reads as DataQ, not a template.
  *
- * Pure presentation: the parent (AuthGate) owns the MSAL `loginRedirect`; this
+ * Pure presentation: the parent (AuthGate) owns the OIDC sign-in redirect; this
  * component only renders the panel and reports the click + redirect-in-progress.
+ * Provider-neutral (ADR 0028) — no IdP-specific branding.
  */
 export function LoginPage({ onSignIn, signingIn }: { onSignIn: () => void; signingIn: boolean }) {
   return (
@@ -72,7 +73,7 @@ export function LoginPage({ onSignIn, signingIn }: { onSignIn: () => void; signi
             <BrandMark size={40} />
           </div>
           <h2 className="dqlogin-card-title">Sign in to DataQ</h2>
-          <p className="dqlogin-card-sub">Use your organisation Microsoft account to continue.</p>
+          <p className="dqlogin-card-sub">Use your organisation account to continue.</p>
 
           <Button
             type="primary"
@@ -81,9 +82,8 @@ export function LoginPage({ onSignIn, signingIn }: { onSignIn: () => void; signi
             loading={signingIn}
             onClick={onSignIn}
             className="dqlogin-btn"
-            icon={signingIn ? undefined : <MicrosoftLogo />}
           >
-            {signingIn ? 'Opening Microsoft sign-in…' : 'Sign in with Microsoft'}
+            {signingIn ? 'Opening sign-in…' : 'Sign in'}
           </Button>
 
           <p className="dqlogin-foot">
@@ -112,18 +112,6 @@ const LEDGER_ROWS: {
   { check: 'payments ↔ order_total', expected: 'match', observed: '2 off', severity: 'warn' },
   { check: 'inventory freshness', expected: '< 24h', observed: '31h', severity: 'fail' },
 ];
-
-/** The Microsoft four-square logo (brand colours), sized to sit in the button. */
-function MicrosoftLogo() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 21 21" aria-hidden="true" focusable="false">
-      <rect x="1" y="1" width="9" height="9" fill="#f25022" />
-      <rect x="11" y="1" width="9" height="9" fill="#7fba00" />
-      <rect x="1" y="11" width="9" height="9" fill="#00a4ef" />
-      <rect x="11" y="11" width="9" height="9" fill="#ffb900" />
-    </svg>
-  );
-}
 
 // Deep-indigo extensions of the BRAND.primary scale for the panel canvas; the
 // rest of the palette comes straight from the shared theme tokens.
