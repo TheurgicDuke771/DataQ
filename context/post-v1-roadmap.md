@@ -219,6 +219,51 @@ palette** (the shipped indigo theme stands).
 
 ---
 
+## Theme 13 — MCP tool expansion (candidate endpoints)
+
+The v1 MCP server exposes 8 curated tools (ADR [0008](../docs/adr/0008-mcp-server.md));
+the REST surface has ~52 more endpoints. Candidates below, tiered by risk — every new
+tool stays a thin service-layer wrapper with `require_permission` authz + sample
+redaction, exactly like the existing 8 (`backend/app/mcp/server.py`). Cross-cutting
+dependencies: **#488** (workspace-admin visibility in MCP tools) and **#461 / ADR 0026**
+(DataQ-issued API keys, which unblock headless MCP clients).
+
+**Tier 1 — high-value safe reads:**
+
+| Candidate tool | Wraps | NL query it serves |
+|---|---|---|
+| `list_checks` / `get_check` | `GET /suites/{id}/checks[/{id}]` | "what checks does the orders suite have?" |
+| `get_check_history` | `GET .../checks/{id}/history` | "how has null-rate trended this week?" |
+| `list_runs` | `GET /runs` (filterable) | "show me yesterday's failed runs" |
+| `get_run_results` | `GET /runs/{id}` (redacted) | "why did run X fail?" |
+| `list_connections` | `GET /connections` — names/types/health **only, never config or secrets** | "which connections are unhealthy?" |
+| `list_schedules` | `GET /schedules` | "when does the orders suite run?" |
+| `list_trigger_bindings` | `GET /trigger-bindings` | "what triggers the gold suite?" |
+| `get_notification_config` | `GET /suites/{id}/notifications` | "who gets alerted for this suite?" |
+| `get_suite_performance` | `GET /dashboard/summary` (per-suite slice) | "which suite is worst this month?" |
+| `export_suite` | `GET /suites/{id}/export` | "export the orders suite" |
+
+**Tier 2 — mutating, edit-permission-gated:**
+
+| Candidate tool | Wraps | Note |
+|---|---|---|
+| `dryrun_check` | `POST /suites/{id}/checks/dryrun` | the LLM author-preview loop — pairs with `create_check` |
+| `update_check` / `delete_check` | `PATCH`/`DELETE` check | delete needs confirm-style ergonomics |
+| `snooze_check` / `unsnooze_check` | check snooze endpoints | "snooze this alert for 24h" |
+| `cancel_run` | `POST /runs/{id}/cancel` | |
+| `create_schedule` / `delete_schedule` | schedules CRUD | "run this suite daily at 9am IST" |
+| `create_trigger_binding` | `POST /trigger-bindings` | "run this suite when the orders DAG succeeds" |
+| `import_suite` | `POST /suites/import` | |
+| `suggest_column_policy` | `POST /suites/{id}/column-policy/suggest` | redaction-policy assistant |
+| `test_connection` | `POST /connections/{id}/test` | action but non-destructive |
+
+**Excluded (deliberate):** connection create/update/reauth (**credentials transiting an
+LLM — hard no**); the orchestration webhooks (M2M surface); admin endpoints (workspace-
+admin scoping pending #488); share mutations (permission escalation through a
+conversational interface); `_probe` (demo-only); `/me` + `/users/search` (low value).
+
+---
+
 ## How this maps to GitHub
 
 - **Status** lives on the GitHub `Backlog (post-v1 / testing)` milestone — this doc mirrors it by theme.
