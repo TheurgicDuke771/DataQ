@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "e7ff745dd2e9",
+  "strategy": "manual-commit",
+  "branch": "feature/415-column-classifier",
+  "checkpoints_count": 2,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/e7/ff745dd2e9/0/metadata.json",
+      "transcript": "/e7/ff745dd2e9/0/full.jsonl",
+      "content_hash": "/e7/ff745dd2e9/0/content_hash.txt",
+      "prompt": "/e7/ff745dd2e9/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 101758,
+    "cache_creation_tokens": 6196549,
+    "cache_read_tokens": 320450123,
+    "output_tokens": 1054546,
+    "api_call_count": 1033
+  }
+}
