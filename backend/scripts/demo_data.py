@@ -293,22 +293,47 @@ def _ensure_check(
 
 
 # A seeded run's results: (check name, status, metric_value, observed_value,
-# expected_value). `metric_value` is the unexpected-% badness scalar (ADR 0012);
-# operational statuses (`error`/`skip`) carry NO metric (no penalty weight, #122)
-# so theirs is None.
-_SeedResult = tuple[str, str, Decimal | None, dict[str, Any] | None, dict[str, Any] | None]
+# expected_value, sample_failures). `metric_value` is the unexpected-% badness
+# scalar (ADR 0012); operational statuses (`error`/`skip`) carry NO metric (no
+# penalty weight, #122) so theirs is None. `sample_failures` (usually None)
+# feeds the run-detail redacted-sample drill-down (#226/#415) — the read API
+# redacts it column-aware, the seed stores the raw runner shape.
+_SeedResult = tuple[
+    str,
+    str,
+    Decimal | None,
+    dict[str, Any] | None,
+    dict[str, Any] | None,
+    dict[str, Any] | None,
+]
 
 # Run 1 — a pass/pass/warn/fail spread so the drill-down shows the severity tiers
-# (ADR 0005/0016).
+# (ADR 0005/0016). The fail carries a failing-value sample: its tested column
+# (`status`) is not PII, so the redactor lets the values surface (#415).
 _SEED_RUN_RESULTS: list[_SeedResult] = [
-    ("order_id not null", "pass", Decimal("0"), {"unexpected_percent": 0.0}, {"min_value": None}),
-    ("order_id unique", "pass", Decimal("0"), {"unexpected_percent": 0.0}, {"min_value": None}),
+    (
+        "order_id not null",
+        "pass",
+        Decimal("0"),
+        {"unexpected_percent": 0.0},
+        {"min_value": None},
+        None,
+    ),
+    (
+        "order_id unique",
+        "pass",
+        Decimal("0"),
+        {"unexpected_percent": 0.0},
+        {"min_value": None},
+        None,
+    ),
     (
         "amount in range",
         "warn",
         Decimal("2.0"),
         {"unexpected_percent": 2.0},
         {"min_value": 0, "max_value": 100000},
+        None,
     ),
     (
         "status in set",
@@ -316,6 +341,11 @@ _SEED_RUN_RESULTS: list[_SeedResult] = [
         Decimal("6.0"),
         {"unexpected_percent": 6.0},
         {"value_set": ["new", "paid", "shipped", "cancelled"]},
+        {
+            "unexpected_count": 3,
+            "unexpected_percent": 6.0,
+            "partial_unexpected_list": ["unknwon", "REFNDED", "in transit??"],
+        },
     ),
 ]
 
@@ -324,13 +354,21 @@ _SEED_RUN_RESULTS: list[_SeedResult] = [
 # `skip` (precondition unmet, not evaluated). Gives the Results page the full
 # pass | warn | fail | critical | error | skip mix across the two runs.
 _SEED_RUN_MIXED_RESULTS: list[_SeedResult] = [
-    ("order_id not null", "pass", Decimal("0"), {"unexpected_percent": 0.0}, {"min_value": None}),
+    (
+        "order_id not null",
+        "pass",
+        Decimal("0"),
+        {"unexpected_percent": 0.0},
+        {"min_value": None},
+        None,
+    ),
     (
         "status in set",
         "critical",
         Decimal("18.0"),
         {"unexpected_percent": 18.0},
         {"value_set": ["new", "paid", "shipped", "cancelled"]},
+        None,
     ),
     (
         "amount in range",
@@ -338,8 +376,16 @@ _SEED_RUN_MIXED_RESULTS: list[_SeedResult] = [
         None,
         {"error": 'column "amount" could not be cast to NUMERIC'},
         None,
+        None,
     ),
-    ("order_id unique", "skip", None, {"reason": "upstream load incomplete — not evaluated"}, None),
+    (
+        "order_id unique",
+        "skip",
+        None,
+        {"reason": "upstream load incomplete — not evaluated"},
+        None,
+        None,
+    ),
 ]
 
 
@@ -370,7 +416,7 @@ def _seed_result_run(
     )
     session.add(run)
     session.flush()  # assign run.id for the result FKs
-    for name, status, metric, observed, expected in results:
+    for name, status, metric, observed, expected, sample in results:
         check = checks.get(name)
         if check is None:  # suite without the expected check (shouldn't happen) — skip
             continue
@@ -382,6 +428,7 @@ def _seed_result_run(
                 metric_value=metric,
                 observed_value=observed,
                 expected_value=expected,
+                sample_failures=sample,
             )
         )
 

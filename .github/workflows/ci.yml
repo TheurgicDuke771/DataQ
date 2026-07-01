@@ -336,6 +336,9 @@ jobs:
       SECRET_STORE: redis
       AUTH_DEV_BYPASS: "true"
       ENVIRONMENT: dev
+      # dev-bypass identity is workspace admin (compose parity, ADR 0027) so
+      # admin.spec.ts can drive /admin + /settings.
+      WORKSPACE_ADMIN_EMAILS: dev-bypass@dataq.local
     steps:
       - uses: actions/checkout@v7
 

@@ -83,6 +83,9 @@ services:
       # Redis. NOTE: in redis mode KV_SECRET_* env vars are NOT consulted (that's
       # `env` mode); set SECRET_STORE=env if you rely on env-provided creds.
       SECRET_STORE: ${SECRET_STORE:-redis}
+      # The dev-bypass identity is the workspace admin locally (non-secret dev
+      # default; ADR 0027) so /admin + /settings are drivable in dev and E2E.
+      WORKSPACE_ADMIN_EMAILS: ${WORKSPACE_ADMIN_EMAILS:-dev-bypass@dataq.local}
     volumes:
       # Bind-mount source for hot reload; the conda env in the image is untouched.
       - ./backend:/workspace/backend
