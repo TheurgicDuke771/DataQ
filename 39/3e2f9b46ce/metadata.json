@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "393e2f9b46ce",
+  "strategy": "manual-commit",
+  "branch": "test/e2e-live-smoke-lane",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "frontend/e2e/README.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/39/3e2f9b46ce/0/metadata.json",
+      "transcript": "/39/3e2f9b46ce/0/full.jsonl",
+      "content_hash": "/39/3e2f9b46ce/0/content_hash.txt",
+      "prompt": "/39/3e2f9b46ce/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 69829,
+    "cache_creation_tokens": 867028,
+    "cache_read_tokens": 44027787,
+    "output_tokens": 161744,
+    "api_call_count": 187
+  }
+}
