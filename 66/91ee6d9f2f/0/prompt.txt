@@ -1,0 +1,37 @@
+<task-notification>
+<task-id>bvkrysous</task-id>
+<tool-use-id>toolu_0166g9ur9PMMnus78CywKA8w</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/83180c0d-bbe5-4c61-b9bc-5700e05669e4/tasks/bvkrysous.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for PR503 CI" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Hey. Are we overcomplicating the things, or this is how it is for BYOL projects?
+
+---
+
+How much effort is that to make the change now?
+
+---
+
+Also, keep in mind that it should be accommodating to multi cloud plus local. We don't wanted to make the image or config specific to any one cloud provider.
+
+---
+
+Also, we need to make the deep bypass off by default. It has to be explicitly flip in order to be enabled.
+
+---
+
+Can we check this generic OIDC client with Azure as well?
+
+---
+
+So what is your final verdict on multi vendor, multi architecture, generic container image?
+
+---
+
+Okay. File an issue. Write an ADR. Then we can start with the work. 
+And keep Azure validate generic OIDC client in scope for v1. We can keep the AWS GCP deploy IaC for post v1. 
+Also, once the image is built, Can we clean the current DataQ installation in Azure and rebuild it from the image? We will keep the key-vault and other component as is, just the remove DataQ app.

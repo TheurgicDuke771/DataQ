@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "6691ee6d9f2f",
+  "strategy": "manual-commit",
+  "branch": "docs/adr-0028-cloud-neutral-auth",
+  "checkpoints_count": 8,
+  "files_touched": [
+    "CLAUDE.md",
+    "docs/adr/0028-cloud-neutral-image-runtime-config-generic-oidc.md",
+    "docs/adr/README.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/66/91ee6d9f2f/0/metadata.json",
+      "transcript": "/66/91ee6d9f2f/0/full.jsonl",
+      "content_hash": "/66/91ee6d9f2f/0/content_hash.txt",
+      "prompt": "/66/91ee6d9f2f/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 410,
+    "cache_creation_tokens": 48131,
+    "cache_read_tokens": 7134084,
+    "output_tokens": 41528,
+    "api_call_count": 22
+  }
+}
