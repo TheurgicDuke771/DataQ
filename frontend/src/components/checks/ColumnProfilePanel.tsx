@@ -164,7 +164,7 @@ export function ColumnProfilePanel({
               </Flex>
               {state.status === 'ok' && <ProfileView result={state.result} />}
               {state.status === 'error' && (
-                <Alert type="error" showIcon message="Profile failed" description={state.error} />
+                <Alert type="error" showIcon title="Profile failed" description={state.error} />
               )}
             </Flex>
           ),

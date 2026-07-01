@@ -37,7 +37,7 @@ export function CheckTrend({ suiteId, checkId }: CheckTrendProps) {
 
   if (state.status === 'loading') return <Spin size="small" />;
   if (state.status === 'error') {
-    return <Alert type="error" showIcon message="Failed to load trend" description={state.error} />;
+    return <Alert type="error" showIcon title="Failed to load trend" description={state.error} />;
   }
 
   const withMetric = state.data.filter((p) => p.metric_value !== null);

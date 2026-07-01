@@ -1,16 +1,5 @@
-import {
-  App,
-  Alert,
-  Button,
-  Drawer,
-  Empty,
-  Flex,
-  List,
-  Progress,
-  Spin,
-  Tag,
-  Typography,
-} from 'antd';
+import { App, Alert, Button, Drawer, Empty, Flex, Progress, Spin, Tag, Typography } from 'antd';
+import SimpleList from '../SimpleList';
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 
@@ -59,9 +48,9 @@ export function LiveRunProgress({
     <Drawer
       open={runId !== null}
       onClose={onClose}
-      width={560}
+      size={560}
       title={`Run progress${suiteName ? ` · ${suiteName}` : ''}`}
-      destroyOnClose
+      destroyOnHidden
     >
       {runId !== null && (
         <LiveRunProgressBody key={runId} runId={runId} canManage={canManage} pollMs={pollMs} />
@@ -145,10 +134,10 @@ function LiveRunProgressBody({
   if (!progress) {
     if (error) {
       return (
-        <Alert type="error" showIcon message="Failed to load run progress" description={error} />
+        <Alert type="error" showIcon title="Failed to load run progress" description={error} />
       );
     }
-    return <Spin tip="Starting run…" size="large" />;
+    return <Spin description="Starting run…" size="large" />;
   }
 
   const { status, total_checks, completed_checks, counts, checks } = progress;
@@ -186,21 +175,21 @@ function LiveRunProgressBody({
 
       {/* A transient poll error while we still have prior progress to show. */}
       {error && (
-        <Alert type="warning" showIcon message="Progress update failed" description={error} />
+        <Alert type="warning" showIcon title="Progress update failed" description={error} />
       )}
 
       {checks.length === 0 ? (
         <Empty description="This suite has no checks to run." />
       ) : (
-        <List<(typeof checks)[number]>
+        <SimpleList<(typeof checks)[number]>
           size="small"
           dataSource={checks}
           rowKey="check_id"
           renderItem={(c) => (
-            <List.Item>
+            <SimpleList.Item>
               <Typography.Text>{c.name}</Typography.Text>
               <CheckStatus status={c.status} terminal={terminal} />
-            </List.Item>
+            </SimpleList.Item>
           )}
         />
       )}

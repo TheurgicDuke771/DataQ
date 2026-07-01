@@ -44,7 +44,7 @@ function SuiteBody({
   navigate: ReturnType<typeof useNavigate>;
 }) {
   if (state.status === 'loading') {
-    return <Spin tip="Loading connections…" />;
+    return <Spin description="Loading connections…" />;
   }
   if (state.status === 'error') {
     return (

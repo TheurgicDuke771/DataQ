@@ -39,7 +39,7 @@ function ConnectionEditView({ connectionId }: { connectionId?: string }) {
         <Button onClick={() => navigate('/connections')}>Cancel</Button>
       </Flex>
 
-      {state.status === 'loading' && <Spin tip="Loading connection…" />}
+      {state.status === 'loading' && <Spin description="Loading connection…" />}
       {state.status === 'error' && (
         <Alert type="error" showIcon title="Failed to load connection" description={state.error} />
       )}

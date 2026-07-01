@@ -34,7 +34,7 @@ export function Admin() {
   }
   if (me.status === 'error') {
     return (
-      <Alert type="error" showIcon message="Couldn't verify your access" description={me.error} />
+      <Alert type="error" showIcon title="Couldn't verify your access" description={me.error} />
     );
   }
   if (!me.data.is_workspace_admin) {
@@ -139,7 +139,7 @@ function DataTable<T extends object>({
 }) {
   if (state.status === 'loading') return <Spin size="large" />;
   if (state.status === 'error') {
-    return <Alert type="error" showIcon message={errorMessage} description={state.error} />;
+    return <Alert type="error" showIcon title={errorMessage} description={state.error} />;
   }
   return (
     <Table

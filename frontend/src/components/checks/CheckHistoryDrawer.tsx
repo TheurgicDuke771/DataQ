@@ -1,4 +1,5 @@
-import { Alert, Descriptions, Drawer, Empty, Flex, List, Spin, Tag, Typography } from 'antd';
+import { Alert, Descriptions, Drawer, Empty, Flex, Spin, Tag, Typography } from 'antd';
+import SimpleList from '../SimpleList';
 
 import { type CheckVersion, listCheckVersions } from '../../api/suites';
 import { formatTimestamp } from '../results/resultsFormat';
@@ -28,7 +29,7 @@ export function CheckHistoryDrawer({
       title={check ? `History — “${check.name}”` : 'History'}
       open={open}
       onClose={onClose}
-      width={520}
+      size={520}
       destroyOnHidden
     >
       {check && <CheckHistoryBody suiteId={suiteId} checkId={check.id} />}
@@ -40,12 +41,10 @@ function CheckHistoryBody({ suiteId, checkId }: { suiteId: string; checkId: stri
   const { state } = useAsyncData(() => listCheckVersions(suiteId, checkId));
 
   if (state.status === 'loading') {
-    return <Spin tip="Loading history…" />;
+    return <Spin description="Loading history…" />;
   }
   if (state.status === 'error') {
-    return (
-      <Alert type="error" showIcon message="Failed to load history" description={state.error} />
-    );
+    return <Alert type="error" showIcon title="Failed to load history" description={state.error} />;
   }
   if (state.data.length === 0) {
     // A check created before the history feature shipped has a live config but
@@ -59,7 +58,7 @@ function CheckHistoryBody({ suiteId, checkId }: { suiteId: string; checkId: stri
   }
 
   return (
-    <List
+    <SimpleList
       dataSource={state.data}
       // The first row is the newest snapshot — i.e. the check's current saved state.
       renderItem={(version, index) => <VersionItem version={version} current={index === 0} />}
@@ -70,7 +69,7 @@ function CheckHistoryBody({ suiteId, checkId }: { suiteId: string; checkId: stri
 function VersionItem({ version, current }: { version: CheckVersion; current: boolean }) {
   const label = EXPECTATION_BY_TYPE[version.expectation_type]?.label ?? version.expectation_type;
   return (
-    <List.Item>
+    <SimpleList.Item>
       <Flex vertical gap={8} style={{ width: '100%' }}>
         <Flex align="center" gap={8} wrap>
           <Tag color="blue">v{version.version_no}</Tag>
@@ -92,7 +91,7 @@ function VersionItem({ version, current }: { version: CheckVersion; current: boo
           <Descriptions.Item label="Thresholds">{formatThresholds(version)}</Descriptions.Item>
         </Descriptions>
       </Flex>
-    </List.Item>
+    </SimpleList.Item>
   );
 }
 

@@ -30,7 +30,7 @@ export function Settings() {
   }
   if (me.status === 'error') {
     return (
-      <Alert type="error" showIcon message="Couldn't verify your access" description={me.error} />
+      <Alert type="error" showIcon title="Couldn't verify your access" description={me.error} />
     );
   }
   if (!me.data.is_workspace_admin) {
@@ -75,7 +75,7 @@ function SecretsTab() {
     <Alert
       type="info"
       showIcon
-      message="Credentials live in the secret store, never the database"
+      title="Credentials live in the secret store, never the database"
       description="Connection credentials and notification webhooks are written through the configured secret store (Azure Key Vault in production) and referenced only by key. There's nothing to edit here — secrets are rotated from the connection's Re-authenticate action."
     />
   );
@@ -86,7 +86,7 @@ function NotificationsTab() {
     <Alert
       type="info"
       showIcon
-      message="Alerts are configured per suite"
+      title="Alerts are configured per suite"
       description={
         <span>
           Microsoft Teams alerts (webhook + fail / warn / always threshold) are set on each suite so
@@ -104,7 +104,7 @@ function DangerTab() {
     <Alert
       type="warning"
       showIcon
-      message="No destructive workspace actions in v1"
+      title="No destructive workspace actions in v1"
       description="Workspace-level danger-zone actions (transfer ownership, purge run history, delete workspace) aren't available yet. Per-entity delete lives on each connection / suite."
     />
   );
@@ -126,7 +126,7 @@ function WebhooksTab() {
           <Alert
             type="error"
             showIcon
-            message="Failed to load webhook config"
+            title="Failed to load webhook config"
             description={state.error}
           />
         )}

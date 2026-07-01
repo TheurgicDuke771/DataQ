@@ -67,11 +67,11 @@ function SchedulesBody({
   onChanged: () => void;
 }) {
   if (state.status === 'loading') {
-    return <Spin tip="Loading schedules…" />;
+    return <Spin description="Loading schedules…" />;
   }
   if (state.status === 'error') {
     return (
-      <Alert type="error" showIcon message="Failed to load schedules" description={state.error} />
+      <Alert type="error" showIcon title="Failed to load schedules" description={state.error} />
     );
   }
   const schedules = state.data;
