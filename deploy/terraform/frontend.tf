@@ -36,10 +36,10 @@ resource "azurerm_container_app" "frontend" {
       cpu    = 0.25
       memory = "0.5Gi"
 
-      # Proxy upstream — the api Container App's INTERNAL in-environment FQDN
-      # (computed from the env domain to avoid a resource cycle; see
-      # local.api_internal_url). nginx sends the matching Host + TLS SNI so ACA's
-      # Envoy routes it to the api. Internal = no public round-trip.
+      # Proxy upstream — the api Container App's INTERNAL in-environment FQDN over
+      # plain HTTP (ACA's documented internal pattern; see local.api_internal_url).
+      # nginx forwards the upstream host as Host so Envoy routes it to the api.
+      # Internal = no public round-trip, and traffic never leaves the environment.
       env {
         name  = "DATAQ_API_UPSTREAM"
         value = local.api_internal_url

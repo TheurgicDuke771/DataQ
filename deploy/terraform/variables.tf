@@ -62,9 +62,9 @@ variable "frontend_image_repo" {
 }
 
 variable "frontend_image_tag" {
-  description = "Frontend image tag to deploy. Use an IMMUTABLE tag in prod (ACA caches 'latest' at the node). Bump per deploy. (v1 = the ADR 0028 §5 SWA→Container-App cutover — generic OIDC client + runtime auth config.)"
+  description = "Frontend image tag to deploy. Use an IMMUTABLE tag in prod (ACA caches 'latest' at the node). Bump per deploy. (v1 = the ADR 0028 §5 SWA→Container-App cutover; v2 = nginx proxy_http_version 1.1 so ACA ingress stops 426ing the /api + /healthz proxy.) The live image is rolled out-of-band (ignore_changes on the container image), so this is the create-time default."
   type        = string
-  default     = "v1"
+  default     = "v2"
 }
 
 variable "image_tag" {

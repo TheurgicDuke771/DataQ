@@ -57,9 +57,17 @@ locals {
   # from the internet. External orchestrator webhooks still reach it because they
   # POST to the public frontend (PUBLIC_BASE_URL), which proxies /api to the api.
   # (An external-ingress app would instead be `<app>.<env-default-domain>`.)
+  #
+  # The upstream is **http://**, not https: ACA's documented internal
+  # service-to-service pattern is plain HTTP to the `.internal` endpoint — the
+  # env's Envoy terminates public TLS and forwards internally over HTTP, and this
+  # traffic never leaves the environment. Pairing it with the api ingress'
+  # allow_insecure_connections=true stops ACA from 426-ing the proxied HTTP request
+  # (with allowInsecure off, port-80 requests are redirected to 443 → the frontend
+  # nginx saw HTTP 426 "Upgrade Required" and all /api calls failed).
   env_default_domain = data.azurerm_container_app_environment.shared.default_domain
   api_fqdn           = "dataq-app-api.internal.${local.env_default_domain}"
   frontend_fqdn      = "dataq-app-frontend.${local.env_default_domain}"
-  api_internal_url   = "https://${local.api_fqdn}"
+  api_internal_url   = "http://${local.api_fqdn}"
   frontend_url       = "https://${local.frontend_fqdn}"
 }

@@ -50,9 +50,17 @@ server {
     # upstream host), which is correct for BOTH compose (`api:8000`, uvicorn
     # ignores it) and ACA (the api FQDN). proxy_ssl_server_name sends the matching
     # TLS SNI for the https (ACA) upstream; it's a no-op for the http (compose) one.
+    #
+    # proxy_http_version 1.1 is REQUIRED: nginx proxies as HTTP/1.0 by default, and
+    # Azure Container Apps' ingress rejects HTTP/1.0 with "426 Upgrade Required" —
+    # so /api + /healthz must force 1.1 (like /mcp already does). Clearing the
+    # Connection header keeps upstream keep-alive clean. (uvicorn in compose is fine
+    # with either, so this is safe for the local path too.)
     location /api/ {
         set $dataq_upstream "${DATAQ_API_UPSTREAM}";
         proxy_pass $dataq_upstream$request_uri;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
         proxy_ssl_server_name on;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -63,10 +71,12 @@ server {
     # so it stays externally reachable through the product host now that the api has
     # no public ingress (ADR 0028 §5). Exact-match so it can't shadow an SPA route;
     # without this, /healthz would fall through to the SPA index.html below. Same
-    # Host/SNI handling as /api (default Host = upstream host for ACA Envoy routing).
+    # Host/SNI + HTTP/1.1 handling as /api (ACA 426s HTTP/1.0).
     location = /healthz {
         set $dataq_upstream "${DATAQ_API_UPSTREAM}";
         proxy_pass $dataq_upstream$request_uri;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
         proxy_ssl_server_name on;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;

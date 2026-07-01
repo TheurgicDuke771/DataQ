@@ -139,10 +139,25 @@ The datasource + compute infra is stood up by the external Terraform harness
    Container Apps secrets — never literals. The user-assigned managed identity
    needs `AZURE_CLIENT_ID` set so `DefaultAzureCredential` resolves it (#408).
 4. **Frontend Container App** (`dataq-app-frontend`): the nginx image reverse-proxies
-   `/api/*` + `/mcp` to the api app same-origin (via its `DATAQ_API_UPSTREAM` env), so
-   `CORS_ALLOW_ORIGINS` stays empty. If instead you split the SPA onto a different
+   `/api/*` + `/mcp` + `/healthz` to the api app same-origin (via its `DATAQ_API_UPSTREAM`
+   env), so `CORS_ALLOW_ORIGINS` stays empty. If instead you split the SPA onto a different
    origin, set `CORS_ALLOW_ORIGINS` to it (the FastAPI CORS middleware turns on only
-   when it's non-empty).
+   when it's non-empty). The api uses **internal ingress over HTTP** with
+   `allow_insecure_connections = true` — ACA's internal service-to-service pattern; nginx
+   must proxy as **HTTP/1.1** (`proxy_http_version 1.1`) or ACA ingress returns `426`.
+   > **⚠️ One-time cutover cleanup — disable ACA EasyAuth on the api.** If the api was ever
+   > **linked as an Azure Static Web App backend** (the pre-ADR-0028 topology), Azure
+   > auto-enabled Container Apps **built-in authentication (EasyAuth)** on it with the
+   > `azureStaticWebApps` identity provider. After the SWA→Container-App cutover the SWA is
+   > destroyed but that EasyAuth config is **orphaned** and 401s *every* request at the
+   > ingress (including `/healthz` and valid Bearer tokens), because DataQ does its **own**
+   > token validation (`fastapi-azure-auth`) and doesn't use EasyAuth. Turn it off once:
+   > ```
+   > az containerapp auth update -n dataq-app-api -g dataq-rg --enabled false
+   > ```
+   > It's durable (nothing in Terraform re-enables it — the old `staticwebapp backends link`
+   > is gone). A fresh deploy that never had an SWA won't have EasyAuth, so this only applies
+   > when cutting over from the SWA topology.
 5. **Azure Monitor → ADF webhook** alert rule (Week-7 task) — targets the public
    **frontend** origin (`<frontend>/api/v1/orchestration/events/adf`, proxied to the
    internal api); configure after the first deploy. Per [ADR 0006](../docs/adr/0006-adf-webhook-authentication.md)
