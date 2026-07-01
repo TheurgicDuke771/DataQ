@@ -573,3 +573,98 @@ and did we tested - `Seed deliberate DQ issues — nulls · dupes · FK orphans 
 ---
 
 yeah run the init
+
+---
+
+For this issue shouldn't we get a freshness alert? or is that not implemented yet?
+Also for the sample records, we discuss about adding a identifier column. Did we implement that?
+
+---
+
+Start with (a). 
+For (b) - can use something similar [the example is just for PII, but can we use similar pattern for both PII and Identifier, don't use the code as is, create something with similar logic] - 
+```
+
+def classify_pii(row):
+    column_name = row['COLUMN_NAME']
+    sampled_values = row['SAMPLED_VALUES_P']
+    
+    pii_patterns = [
+    '%name%', '%email%', '%phone%', '%mobile%', '%contact%', '%address%',
+    '%street%', '%city%', '%state%', '%zip%', '%postal%', '%ssn%',
+    '%social_security%', '%credit_card%', '%ccn%', '%bank%', '%passport%',
+    '%license%', '%nid%', '%birth%', '%dob%', '%username%', '%user_id%',
+    '%login%', '%fax%']
+    
+    non_pii_patterns = [
+    '%_ts%', '%ts_%', '%time_%', '%_time%', '%_dt%', '%account%']
+
+    def is_potential_hash(input):
+        hash_lengths = {32,40,64,128}
+        hex_pattern = re.compile(r'^[a-fA-F0-9]+$')
+        if len(input) in hash_lengths and hex_pattern.match(input):
+            return True
+        else:
+            return False
+
+    def calculate_entropy(input):
+        if not input:
+            return 0
+        length = len(input)
+        char_count = {}
+        for char in input:
+            char_count[char] = char_count.get(char,0) + 1
+        entropy = sum((-count / length) * log2(count/length) for count in char_count.values())
+        return entropy
+
+    def is_base64(input):
+        base64_pattern = re.compile(r'^[A-Za-z0-9+/]+={0,2}$')
+        return bool(base64_pattern.match(input))
+
+
+    def is_hexadecimal(input):
+        hex_pattern = re.compile(r'^[a-fA-F0-9]+$')
+        return len(input) % 2 == 0 and bool(hex_pattern.match(input))
+
+    def is_encrypted(input):
+        entropy = calculate_entropy(input)
+        non_alnum_chars = bool(re.search(r'[^\w\s]', input))
+
+        return (
+            (entropy > 3.5 and non_alnum_chars and (is_base64(input) or is_hexadecimal(input)))
+            or is_potential_hash(input)
+        )
+        
+
+    is_pii_like = any(pattern.strip('%').lower() in column_name.lower() for pattern in pii_patterns)
+    is_non_pii_like = any(pattern.strip('%').lower() in column_name.lower() for pattern in non_pii_patterns)
+
+    sampled_values_list = json.loads(sampled_values)
+    
+    encrypted_count = sum(is_encrypted(str(input)) for input in sampled_values_list if input and input != 'NULL')
+    non_null_count = len([input for input in sampled_values if input])
+    valid_records_ratio = encrypted_count / non_null_count if non_null_count else 0
+
+    if valid_records_ratio >= 0.1:
+        return "Encrypted"
+    elif valid_records_ratio > 0 and valid_records_ratio < 0.1:
+        if is_pii_like and not is_non_pii_like:
+            return "Possibly Encrypted" 
+        else:
+            return "Not Encrypted"
+    elif not non_null_count:
+        if is_pii_like and not is_non_pii_like:
+            return "Possibly Encrypted" 
+        else:
+            return "Not Encrypted"
+    else:
+        return "Not Encrypted" ###########NEED REVIEW
+```
+
+---
+
+Logged in as workspace admin. Slack webhook you can take from key vault
+
+---
+
+File the flat-file-freshness issue and then kick off (b)
