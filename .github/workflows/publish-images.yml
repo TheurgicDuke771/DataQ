@@ -41,21 +41,39 @@ env:
 
 jobs:
   publish:
-    name: Build + push ${{ matrix.name }} (amd64 + arm64)
+    name: Build + push ${{ matrix.name }} ${{ matrix.variant }} (amd64 + arm64)
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
           # Backend build context is the repo ROOT (the app imports as the
-          # top-level `backend.app.*` package — see backend/Dockerfile).
+          # top-level `backend.app.*` package — see backend/Dockerfile). Its auth
+          # mode is a runtime env var, so one image serves every deployment.
           - name: backend
+            variant: standard
             dockerfile: backend/Dockerfile
             context: .
+            build_args: ""
           # Frontend build context is frontend/ (its Dockerfile COPYs from there).
+          # The SPA bakes auth mode at build time, so it ships as TWO images:
+          #   standard → :latest (+ sha / release tag): production build, no
+          #              bypass. Real-auth self-host rebuilds with their VITE_AZURE_*.
           - name: frontend
+            variant: standard
             dockerfile: frontend/Dockerfile
             context: frontend
+            build_args: ""
+          #   dev → :dev only: NODE_ENV=development (→ import.meta.env.DEV true, so
+          #         the dev-bypass auth gate activates) + VITE_AUTH_DEV_BYPASS=true.
+          #         The zero-config eval image docker-compose.ghcr.yml pulls.
+          - name: frontend
+            variant: dev
+            dockerfile: frontend/Dockerfile
+            context: frontend
+            build_args: |
+              BUILD_NODE_ENV=development
+              VITE_AUTH_DEV_BYPASS=true
     steps:
       - uses: actions/checkout@v7
 
@@ -74,30 +92,37 @@ jobs:
       - name: Compute image tags
         id: tags
         # Untrusted inputs come in via env (never interpolated into the script
-        # body) so a dispatch `tag` value can't inject shell — IMAGE_NAME is the
-        # static matrix name, INPUT_TAG the user-supplied one.
+        # body) so a dispatch `tag` value can't inject shell — IMAGE_NAME / VARIANT
+        # are static matrix values, INPUT_TAG the user-supplied one.
         env:
           IMAGE_NAME: ${{ matrix.name }}
+          VARIANT: ${{ matrix.variant }}
           INPUT_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
           image="${REGISTRY}/${OWNER}/dataq-${IMAGE_NAME}"
-          # Always: the moving stable pointer + the immutable commit SHA.
-          tags="${image}:latest"$'\n'"${image}:${GITHUB_SHA}"
-          # On a release-tag push, github.ref_name is the tag (vX.Y.Z); on a
-          # manual run, the optional `tag` input. Publish it as a third tag.
-          extra="${INPUT_TAG}"
-          if [ -z "$extra" ] && [ "${GITHUB_REF_TYPE}" = "tag" ]; then
-            extra="${GITHUB_REF_NAME}"
-          fi
-          # Validate the extra tag against Docker's tag grammar (alphanumerics +
-          # _.- , ≤128 chars, no leading separator) before it reaches the image ref.
-          if [ -n "$extra" ] && ! printf '%s' "$extra" | grep -Eq '^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$'; then
-            echo "::error::Invalid image tag '${extra}' — must match Docker's tag grammar."
-            exit 1
-          fi
-          if [ -n "$extra" ]; then
-            tags="${tags}"$'\n'"${image}:${extra}"
+          if [ "${VARIANT}" = "dev" ]; then
+            # The dev-bypass eval variant owns a single moving tag (:dev). It must
+            # NOT write :latest/:sha — those are the production build's pointers.
+            tags="${image}:dev"
+          else
+            # Standard build: the moving stable pointer + the immutable commit SHA.
+            tags="${image}:latest"$'\n'"${image}:${GITHUB_SHA}"
+            # On a release-tag push, github.ref_name is the tag (vX.Y.Z); on a
+            # manual run, the optional `tag` input. Publish it as a third tag.
+            extra="${INPUT_TAG}"
+            if [ -z "$extra" ] && [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+              extra="${GITHUB_REF_NAME}"
+            fi
+            # Validate the extra tag against Docker's tag grammar (alphanumerics +
+            # _.- , ≤128 chars, no leading separator) before it reaches the ref.
+            if [ -n "$extra" ] && ! printf '%s' "$extra" | grep -Eq '^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$'; then
+              echo "::error::Invalid image tag '${extra}' — must match Docker's tag grammar."
+              exit 1
+            fi
+            if [ -n "$extra" ]; then
+              tags="${tags}"$'\n'"${image}:${extra}"
+            fi
           fi
           echo "Publishing tags:"; echo "$tags"
           # Multi-line output for the build-push-action `tags:` list.
@@ -112,6 +137,7 @@ jobs:
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
+          build-args: ${{ matrix.build_args }}
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.tags.outputs.tags }}

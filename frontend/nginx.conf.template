@@ -1,0 +1,63 @@
+# Serve the built SPA AND reverse-proxy the API + MCP to the backend, so the
+# prebuilt UI image works same-origin without Azure Static Web App "linking"
+# (the no-clone `docker compose -f docker-compose.ghcr.yml up` path — #472).
+#
+# This is a TEMPLATE: the nginx image's entrypoint runs envsubst over
+# /etc/nginx/templates/*.template at startup, so ${DATAQ_API_UPSTREAM} is filled
+# from the env (default http://api:8000, set in frontend/Dockerfile; overridable
+# in compose). Only env vars that are actually set are substituted, so nginx's
+# own $uri / $host / $scheme runtime vars are left untouched.
+server {
+    listen 8080;
+    server_name _;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # Docker Compose's embedded DNS. Resolving the upstream through a variable
+    # (below) defers DNS to request time, so this image starts even while the api
+    # service is still coming up and survives an api container restart (new IP) —
+    # a literal proxy_pass host is resolved once at startup and would hard-crash
+    # nginx if api isn't up yet.
+    resolver 127.0.0.11 ipv6=off valid=10s;
+
+    # REST API — same-origin /api/* forwarded to the backend. proxy_pass uses a
+    # variable, so the original URI isn't auto-appended; $request_uri carries the
+    # full path + query (/api/v1/...) through unchanged.
+    location /api/ {
+        set $dataq_upstream "${DATAQ_API_UPSTREAM}";
+        proxy_pass $dataq_upstream$request_uri;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # MCP sub-app (FastMCP at /mcp). Streamable-HTTP/SSE needs HTTP/1.1 with no
+    # response buffering and no hop-by-hop Connection header, or events stall.
+    location /mcp {
+        set $dataq_upstream "${DATAQ_API_UPSTREAM}";
+        proxy_pass $dataq_upstream$request_uri;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_buffering off;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Long-cache fingerprinted assets; never cache index.html (it points at the
+    # current asset hashes).
+    location /assets/ {
+        try_files $uri =404;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+    # SPA fallback: any non-file path returns index.html so client-side routes
+    # (deep links like /results/:runId) resolve to the app.
+    location / {
+        try_files $uri $uri/ /index.html;
+        add_header Cache-Control "no-cache";
+    }
+}
