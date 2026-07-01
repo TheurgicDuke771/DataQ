@@ -4,10 +4,10 @@ import { App as AntApp, ConfigProvider } from 'antd';
 import { BrowserRouter } from 'react-router-dom';
 
 import { App } from './App';
+import { AuthProvider } from './auth/AuthProvider';
 import { CurrentUserProvider } from './auth/CurrentUserProvider';
 import { MeProvider } from './auth/MeProvider';
-import { MsalProvider } from './auth/MsalProvider';
-import { getMsalInstance } from './auth/msalInstance';
+import { completeSigninIfCallback } from './auth/authClient';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { appTheme } from './theme';
 // Self-hosted fonts (visual-fidelity pass, ADR 0022) — Inter for UI text,
@@ -31,23 +31,17 @@ if (!maybeRoot) {
 }
 const rootEl: HTMLElement = maybeRoot;
 
-// MSAL lifecycle (issue #62):
-//   1. .initialize() must complete before any MSAL API call (v5 requirement).
-//   2. .handleRedirectPromise() must resolve before React renders so the
-//      first paint reflects post-login state.
-//   3. Errors surface to the console + a static page — fail loud during dev.
+// Auth lifecycle (issue #62, generic OIDC per ADR 0028): if this load is the IdP
+// redirect back, complete the code exchange BEFORE React renders so the first
+// paint reflects post-login state. Errors surface to the console + a static page.
 async function bootstrap() {
-  const instance = getMsalInstance();
-  if (instance) {
-    await instance.initialize();
-    await instance.handleRedirectPromise();
-  }
+  await completeSigninIfCallback();
   createRoot(rootEl).render(
     <StrictMode>
       <ConfigProvider theme={appTheme}>
         <AntApp>
           <ErrorBoundary>
-            <MsalProvider>
+            <AuthProvider>
               <CurrentUserProvider>
                 <MeProvider>
                   <BrowserRouter>
@@ -55,7 +49,7 @@ async function bootstrap() {
                   </BrowserRouter>
                 </MeProvider>
               </CurrentUserProvider>
-            </MsalProvider>
+            </AuthProvider>
           </ErrorBoundary>
         </AntApp>
       </ConfigProvider>
@@ -64,7 +58,7 @@ async function bootstrap() {
 }
 
 bootstrap().catch((err) => {
-  console.error('MSAL bootstrap failed', err);
+  console.error('Auth bootstrap failed', err);
   rootEl.innerHTML =
     '<pre style="padding:24px;color:#a00">Authentication bootstrap failed. See console.</pre>';
 });

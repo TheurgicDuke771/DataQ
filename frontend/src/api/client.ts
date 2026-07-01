@@ -1,8 +1,7 @@
-import { InteractionRequiredAuthError } from '@azure/msal-browser';
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios';
 
-import { authConfig, authMode } from '../auth/config';
-import { getMsalInstance } from '../auth/msalInstance';
+import { getApiToken } from '../auth/authClient';
+import { authMode } from '../auth/config';
 
 /**
  * Shared axios instance for DataQ API calls.
@@ -10,16 +9,12 @@ import { getMsalInstance } from '../auth/msalInstance';
  * baseURL is relative (/api/v1); vite dev proxy forwards to the FastAPI
  * backend on :8000, and production same-origin deploy needs no CORS.
  *
- * Request interceptor attaches an Azure AD bearer token in real auth mode.
- * In dev_bypass / unconfigured modes the interceptor is a no-op (backend
- * dev-bypass resolves the user without a token).
- *
- * When the silent refresh can't complete without user interaction (expired
- * session / revoked consent / fresh MFA — surfaced by MSAL as
- * InteractionRequiredAuthError) the interceptor falls back to an interactive
- * redirect. That navigates the browser to Azure AD, so the in-flight request is
- * aborted (rejected) — it re-issues cleanly once MSAL completes the redirect
- * handshake on the way back.
+ * Request interceptor attaches the OIDC access token in real auth mode. In
+ * dev_bypass / unconfigured modes the interceptor is a no-op (backend dev-bypass
+ * resolves the user without a token). Silent renew and the interactive-redirect
+ * fallback (when the session needs the user again — expired / revoked consent /
+ * fresh MFA) live in getApiToken(); on that redirect the in-flight request is
+ * aborted (rejected) and re-issues cleanly after the handshake (was #168).
  *
  * Response interceptor surfaces the DataQ error envelope's human message
  * (`{ error: { code, message, detail } }`) as `error.message`, so callers'
@@ -45,23 +40,7 @@ async function attachBearerToken(
   config: InternalAxiosRequestConfig,
 ): Promise<InternalAxiosRequestConfig> {
   if (authMode !== 'real') return config;
-  const instance = getMsalInstance();
-  if (!instance) return config;
-  const account = instance.getAllAccounts()[0];
-  if (!account || !authConfig.apiScope) return config;
-
-  const scopes = [authConfig.apiScope];
-  try {
-    const result = await instance.acquireTokenSilent({ account, scopes });
-    config.headers.set('Authorization', `Bearer ${result.accessToken}`);
-    return config;
-  } catch (err) {
-    if (err instanceof InteractionRequiredAuthError) {
-      // Silent refresh can't proceed without the user — hand off to an
-      // interactive redirect (consistent with AuthGate's loginRedirect). This
-      // navigates away; reject so the in-flight request doesn't fire tokenless.
-      await instance.acquireTokenRedirect({ account, scopes });
-    }
-    throw err;
-  }
+  const token = await getApiToken();
+  if (token) config.headers.set('Authorization', `Bearer ${token}`);
+  return config;
 }
