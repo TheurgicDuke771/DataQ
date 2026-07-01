@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "9de226bd7c41",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-472-ghcr-runnable-compose",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docker-compose.ghcr.yml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/9d/e226bd7c41/0/metadata.json",
+      "transcript": "/9d/e226bd7c41/0/full.jsonl",
+      "content_hash": "/9d/e226bd7c41/0/content_hash.txt",
+      "prompt": "/9d/e226bd7c41/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2714,
+    "cache_creation_tokens": 4746,
+    "cache_read_tokens": 984100,
+    "output_tokens": 4260,
+    "api_call_count": 4
+  }
+}

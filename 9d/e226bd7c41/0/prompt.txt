@@ -1,0 +1,8 @@
+<task-notification>
+<summary>Commit security review found 3 issues: LAN-exposed API with authentication disabled in docker-compose.ghcr.yml; Unauthenticated network exposure of database (trust-auth over LAN) in docker-compose.ghcr.yml; +1 more</summary>
+</task-notification>
+<system-reminder>
+Background security review of commit — address or acknowledge the findings below, then continue with the user's original request or continue waiting for their reply: ⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+
+</system-reminder>
