@@ -27,7 +27,12 @@ from backend.app.core.auth import init_auth
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.errors import register_exception_handlers
 from backend.app.core.logging import configure_logging, get_logger, request_id_var
-from backend.app.core.tracing import configure_tracing, instrument_fastapi
+from backend.app.core.tracing import (
+    configure_tracing,
+    instrument_celery,
+    instrument_fastapi,
+    tag_request_id,
+)
 from backend.app.mcp import build_mcp_app
 
 REQUEST_ID_HEADER: Final = "X-Request-ID"
@@ -42,10 +47,6 @@ _log = get_logger(__name__)
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     configure_logging()
-    # Spans (A3): no-op unless APPLICATIONINSIGHTS_CONNECTION_STRING is set.
-    # /healthz + the secret-bearing webhook URLs are excluded (tracing.py).
-    configure_tracing(service_name="dataq-api")
-    instrument_fastapi(_app)
     logger = get_logger(__name__)
     settings = get_settings()
     logger.info(
@@ -117,6 +118,10 @@ async def request_id_middleware(
     incoming = request.headers.get(REQUEST_ID_HEADER)
     rid = incoming if incoming and _REQUEST_ID_RE.match(incoming) else uuid.uuid4().hex
     token = request_id_var.set(rid)
+    # Join key between the request's span and its structlog lines (A3). Done
+    # here, not in a server_request_hook: the OTel middleware is outermost, so
+    # at span start this middleware hasn't resolved the request_id yet.
+    tag_request_id(rid)
     # Path only — never request.url (it carries the query string, e.g. the ADF
     # webhook ?token=<secret>, ADR 0006 / #494). client host kept for audit.
     client = request.client.host if request.client else None
@@ -176,3 +181,15 @@ async def healthz() -> dict[str, str]:
 # Path "/" on the sub-app since we mount it under /mcp (fastmcp docs).
 if _mcp_app is not None:
     app.mount("/mcp", _mcp_app)
+
+
+# Spans (A3): no-op unless APPLICATIONINSIGHTS_CONNECTION_STRING is set.
+# MUST stay at module scope — Starlette builds its middleware stack on the
+# first ASGI call (the lifespan scope itself), so instrumenting from inside
+# the lifespan handler is too late and silently emits no spans (see
+# tracing.py's call-ordering note + the regression test in test_tracing.py).
+# instrument_celery() here covers the PRODUCER side (traceparent injection on
+# task publish); the worker side hooks worker_process_init in celery_app.py.
+configure_tracing(service_name="dataq-api")
+instrument_fastapi(app)
+instrument_celery()

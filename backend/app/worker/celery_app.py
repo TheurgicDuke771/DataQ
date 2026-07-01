@@ -116,12 +116,14 @@ def _configure_celery_logging(**_kwargs: Any) -> None:
 
 @worker_process_init.connect  # type: ignore[untyped-decorator]  # celery signal .connect is unannotated
 def _configure_worker_tracing(**_kwargs: Any) -> None:
-    """Per-task spans to App Insights (A3). No-op without a connection string.
+    """Per-task spans to App Insights (A3, consumer side). No-op without a
+    connection string.
 
     Hooked on ``worker_process_init`` (not module import) because the prefork
     pool forks worker processes — the BatchSpanProcessor's export thread and
     the instrumentation must be set up in each child, never inherited across
-    the fork.
+    the fork. The PRODUCER side (traceparent injection on publish, which links
+    task spans to the triggering request) is instrumented in main.py.
     """
     configure_tracing(service_name="dataq-worker")
     instrument_celery()
