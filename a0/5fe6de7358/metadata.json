@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "a05fe6de7358",
+  "strategy": "manual-commit",
+  "branch": "test/a4-akv-lazy-import-coverage",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/tests/core/test_secrets.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/a0/5fe6de7358/0/metadata.json",
+      "transcript": "/a0/5fe6de7358/0/full.jsonl",
+      "content_hash": "/a0/5fe6de7358/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1589,
+    "cache_creation_tokens": 124796,
+    "cache_read_tokens": 1365318,
+    "output_tokens": 5370,
+    "api_call_count": 12
+  }
+}
