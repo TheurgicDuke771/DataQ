@@ -13,15 +13,17 @@ export function getMsalInstance(): PublicClientApplication | null {
   if (authMode !== 'real') return null;
   if (_instance) return _instance;
 
-  const { spaClientId, tenantId } = authConfig;
-  if (!spaClientId || !tenantId) {
+  const { clientId, authority } = authConfig;
+  if (!clientId || !authority) {
     // authMode='real' guarantees both are set; defensive guard satisfies the type checker.
-    throw new Error('Real auth mode requires VITE_AZURE_SPA_CLIENT_ID + VITE_AZURE_TENANT_ID');
+    throw new Error(
+      'Real auth mode requires an authority + clientId (DATAQ_AUTH_* runtime config)',
+    );
   }
   const config: Configuration = {
     auth: {
-      clientId: spaClientId,
-      authority: `https://login.microsoftonline.com/${tenantId}`,
+      clientId,
+      authority,
       // Trailing slash to match the registered SPA redirect URI (Azure AD requires
       // a trailing slash when the URI has no path segment — see deploy/terraform/sso.tf).
       redirectUri: `${window.location.origin}/`,

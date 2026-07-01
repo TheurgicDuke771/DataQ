@@ -5,6 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>DataQ</title>
+    <!-- Runtime auth/app config (ADR 0028). A blocking classic script, so it runs
+         BEFORE the deferred module bundle and sets window.__DATAQ_CONFIG__
+         synchronously. In the container nginx serves this from DATAQ_AUTH_* env;
+         in `pnpm dev` it's the empty stub in public/config.js (SPA then falls back
+         to VITE_*). -->
+    <script src="/config.js"></script>
   </head>
   <body>
     <div id="root"></div>

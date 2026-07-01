@@ -45,7 +45,7 @@ describe('AuthGate', () => {
   it('renders the sign-in page when real mode + unauthenticated', async () => {
     vi.doMock('../../src/auth/config', () => ({
       authMode: 'real',
-      authConfig: { apiScopeUri: 'api://x/user_impersonation' },
+      authConfig: { apiScope: 'api://x/user_impersonation' },
       DEV_USER: {},
     }));
     vi.doMock('@azure/msal-react', () => ({
@@ -62,7 +62,7 @@ describe('AuthGate', () => {
     const loginRedirect = vi.fn();
     vi.doMock('../../src/auth/config', () => ({
       authMode: 'real',
-      authConfig: { apiScopeUri: 'api://x/user_impersonation' },
+      authConfig: { apiScope: 'api://x/user_impersonation' },
       DEV_USER: {},
     }));
     vi.doMock('@azure/msal-react', () => ({
@@ -83,7 +83,7 @@ describe('AuthGate', () => {
   it('shows a busy button while a redirect is in progress', async () => {
     vi.doMock('../../src/auth/config', () => ({
       authMode: 'real',
-      authConfig: { apiScopeUri: 'api://x/user_impersonation' },
+      authConfig: { apiScope: 'api://x/user_impersonation' },
       DEV_USER: {},
     }));
     vi.doMock('@azure/msal-react', () => ({
@@ -97,7 +97,7 @@ describe('AuthGate', () => {
   it('renders children when real mode + authenticated', async () => {
     vi.doMock('../../src/auth/config', () => ({
       authMode: 'real',
-      authConfig: { apiScopeUri: 'api://x/user_impersonation' },
+      authConfig: { apiScope: 'api://x/user_impersonation' },
       DEV_USER: {},
     }));
     vi.doMock('@azure/msal-react', () => ({

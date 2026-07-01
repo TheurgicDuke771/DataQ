@@ -48,9 +48,9 @@ async function attachBearerToken(
   const instance = getMsalInstance();
   if (!instance) return config;
   const account = instance.getAllAccounts()[0];
-  if (!account || !authConfig.apiScopeUri) return config;
+  if (!account || !authConfig.apiScope) return config;
 
-  const scopes = [authConfig.apiScopeUri];
+  const scopes = [authConfig.apiScope];
   try {
     const result = await instance.acquireTokenSilent({ account, scopes });
     config.headers.set('Authorization', `Bearer ${result.accessToken}`);

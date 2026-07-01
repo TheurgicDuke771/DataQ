@@ -26,7 +26,7 @@ function RealAuthGate({ children }: { children: ReactNode }) {
 
   const onSignIn = () => {
     void instance.loginRedirect({
-      scopes: authConfig.apiScopeUri ? [authConfig.apiScopeUri] : [],
+      scopes: authConfig.apiScope ? [authConfig.apiScope] : [],
     });
   };
 
@@ -48,8 +48,8 @@ function UnconfiguredBanner() {
       title="Authentication is not configured"
       description={
         <>
-          Set <code>VITE_AZURE_TENANT_ID</code> + <code>VITE_AZURE_SPA_CLIENT_ID</code>, or run a
-          DEV build with <code>VITE_AUTH_DEV_BYPASS=true</code>. See <code>.env.example</code>.
+          Set <code>DATAQ_AUTH_AUTHORITY</code> + <code>DATAQ_AUTH_CLIENT_ID</code> (real sign-in),
+          or <code>DATAQ_AUTH_MODE=bypass</code> for a local eval stack. See the deployment guide.
         </>
       }
       style={{ margin: 24 }}

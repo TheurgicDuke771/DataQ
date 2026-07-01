@@ -114,12 +114,16 @@ services:
       migrate:
         condition: service_completed_successfully
 
-  # The dev-bypass UI image (nginx). Serves the SPA and reverse-proxies /api +
+  # The UI image (nginx). One generic image (ADR 0028) — auth mode is injected at
+  # runtime: DATAQ_AUTH_MODE=bypass is the eval stack's explicit opt-in to
+  # dev-bypass (fail-closed otherwise). Serves the SPA and reverse-proxies /api +
   # /mcp to the api service (DATAQ_API_UPSTREAM defaults to http://api:8000, baked
   # into the image). Browse the whole app same-origin at http://localhost:3000.
   frontend:
-    image: "ghcr.io/theurgicduke771/dataq-frontend:${DATAQ_FRONTEND_TAG:-dev}"
+    image: "ghcr.io/theurgicduke771/dataq-frontend:${DATAQ_FRONTEND_TAG:-latest}"
     restart: unless-stopped
+    environment:
+      DATAQ_AUTH_MODE: "bypass"
     ports:
       - "127.0.0.1:3000:8080"
     depends_on:
