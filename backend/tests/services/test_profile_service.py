@@ -14,6 +14,7 @@ import pandas as pd
 import pytest
 
 from backend.app.services.profile_service import (
+    ColumnProfile,
     ProfileColumnNotFoundError,
     ProfileIdentifierInvalidError,
     ProfileTargetInvalidError,
@@ -22,6 +23,7 @@ from backend.app.services.profile_service import (
     build_aggregate_query,
     build_columns_query,
     build_top_values_query,
+    derive_column_policy,
     infer_file_format,
     list_columns,
     list_file_columns,
@@ -563,3 +565,48 @@ def test_profile_dataframe_empty_frame_null_fraction_is_zero() -> None:
     assert result.row_count == 0
     assert result.columns[0].null_fraction == 0.0
     assert result.columns[0].null_count == 0
+
+
+# ── derive_column_policy (#415) ───────────────────────────────────────────────
+
+
+def _prof(column: str, *, distinct: int = 5, top: list[Any] | None = None) -> ColumnProfile:
+    return ColumnProfile(
+        column=column,
+        null_count=0,
+        null_fraction=0.0,
+        distinct_count=distinct,
+        min_value=None,
+        max_value=None,
+        top_values=[{"value": v, "count": 1} for v in (top or [])],
+    )
+
+
+def test_derive_policy_picks_identifier_and_pii() -> None:
+    policy = derive_column_policy(
+        [
+            _prof("ORDER_NUMBER", distinct=100),
+            _prof("CUSTOMER_EMAIL", top=["a@x.com", "b@x.com"]),
+            _prof("LINE_TOTAL"),
+            _prof("CUSTOMER_ID", distinct=80),
+        ]
+    )
+    # highest-cardinality identifier wins the locator slot; PII collected; safe omitted
+    assert policy["identifier_column"] == "ORDER_NUMBER"
+    assert policy["pii_columns"] == ["CUSTOMER_EMAIL"]
+
+
+def test_derive_policy_no_identifier_when_none_look_like_one() -> None:
+    policy = derive_column_policy([_prof("LINE_TOTAL"), _prof("STATUS")])
+    assert "identifier_column" not in policy
+    assert policy["pii_columns"] == []
+
+
+def test_derive_policy_natural_key_of_emails_is_pii_not_identifier() -> None:
+    # A `user_id` column whose sampled values are emails → PII (value signal), so it is
+    # NOT chosen as the identifier.
+    policy = derive_column_policy(
+        [_prof("USER_ID", distinct=90, top=["a@x.com", "b@x.com", "c@x.com"])]
+    )
+    assert "identifier_column" not in policy
+    assert policy["pii_columns"] == ["USER_ID"]

@@ -28,6 +28,7 @@ import { Page } from '../components/layout/Page';
 import { LiveRunProgress } from '../components/runs/LiveRunProgress';
 import { ImportSuiteDrawer } from '../components/suites/ImportSuiteDrawer';
 import { NotificationsPanel } from '../components/suites/NotificationsPanel';
+import { SamplePolicyPanel } from '../components/suites/SamplePolicyPanel';
 import { SchedulesPanel } from '../components/suites/SchedulesPanel';
 import { SharePanel } from '../components/suites/SharePanel';
 import { TriggersPanel } from '../components/suites/TriggersPanel';
@@ -460,6 +461,7 @@ function SuiteDetail({
       <TriggersPanel suiteId={suite.id} canManage={canRun} />
       <SchedulesPanel suiteId={suite.id} canManage={canRun} />
       <NotificationsPanel suiteId={suite.id} canManage={canRun} />
+      <SamplePolicyPanel suite={suite} canManage={canRun} />
       <SharePanel
         open={shareOpen}
         suiteId={suite.id}

@@ -60,6 +60,11 @@ class SuiteConnectionInvalidError(DataQError):
     code = "suite_connection_invalid"
 
 
+class ColumnPolicyInvalidError(DataQError):
+    status_code = 422
+    code = "column_policy_invalid"
+
+
 def create_suite(
     session: Session,
     *,
@@ -161,6 +166,38 @@ def update_suite(
     session.commit()
     session.refresh(suite)
     log.info("suite_updated", suite_id=str(suite.id))
+    return suite
+
+
+def set_column_policy(
+    session: Session,
+    suite_id: uuid.UUID,
+    *,
+    identifier_column: str | None,
+    pii_columns: list[str],
+) -> Suite:
+    """Set the suite's failing-sample redaction policy (#415): the shown
+    ``identifier_column`` (a non-PII row locator) + the always-masked ``pii_columns``.
+
+    The identifier must not also be listed PII (that would mask the very column meant
+    to locate the row) — a 422. Stored as ``{"identifier_column"?, "pii_columns"}``;
+    the ``identifier_column`` key is omitted when ``None`` (no locator chosen). The
+    datasource-tag governance floor still overrules for masking at redaction time.
+    """
+    pii = [c for c in dict.fromkeys(pii_columns) if c]  # de-dupe, drop blanks, keep order
+    if identifier_column and identifier_column in pii:
+        raise ColumnPolicyInvalidError(
+            "identifier_column cannot also be a PII column",
+            detail={"identifier_column": identifier_column},
+        )
+    policy: dict[str, Any] = {"pii_columns": pii}
+    if identifier_column:
+        policy["identifier_column"] = identifier_column
+    suite = get_suite(session, suite_id)
+    suite.column_policy = policy
+    session.commit()
+    session.refresh(suite)
+    log.info("suite_column_policy_set", suite_id=str(suite.id))
     return suite
 
 

@@ -993,3 +993,74 @@ def test_profile_flat_file_messy_column_degrades_not_500(
     assert col["min_value"] is None and col["max_value"] is None  # uncomparable → null
     assert col["distinct_count"] == 3  # hashable → still computed
     assert col["top_values"][0] == {"value": "N/A", "count": 2}
+
+
+# ───────────────────────── column policy (#415) ────────────────────
+
+
+def _new_suite(client: TestClient, db_session: Any) -> str:
+    conn = _connection(db_session)
+    return str(client.post("/api/v1/suites", json=_payload(conn.id)).json()["id"])
+
+
+def test_column_policy_defaults_empty(client: TestClient, db_session: Any) -> None:
+    sid = _new_suite(client, db_session)
+    body = client.get(f"/api/v1/suites/{sid}/column-policy").json()
+    assert body == {"identifier_column": None, "pii_columns": []}
+
+
+def test_column_policy_put_sets_and_reads_back(client: TestClient, db_session: Any) -> None:
+    sid = _new_suite(client, db_session)
+    resp = client.put(
+        f"/api/v1/suites/{sid}/column-policy",
+        json={"identifier_column": "ORDER_NUMBER", "pii_columns": ["EMAIL", "EMAIL", ""]},
+    )
+    assert resp.status_code == 200
+    # de-duped + blanks dropped
+    assert resp.json() == {"identifier_column": "ORDER_NUMBER", "pii_columns": ["EMAIL"]}
+    # reflected on GET and on the suite read
+    assert client.get(f"/api/v1/suites/{sid}/column-policy").json()["identifier_column"] == (
+        "ORDER_NUMBER"
+    )
+    assert client.get(f"/api/v1/suites/{sid}").json()["column_policy"]["identifier_column"] == (
+        "ORDER_NUMBER"
+    )
+
+
+def test_column_policy_identifier_cannot_be_pii_422(client: TestClient, db_session: Any) -> None:
+    sid = _new_suite(client, db_session)
+    resp = client.put(
+        f"/api/v1/suites/{sid}/column-policy",
+        json={"identifier_column": "EMAIL", "pii_columns": ["EMAIL"]},
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "column_policy_invalid"
+
+
+def test_column_policy_suggest_profiles_and_classifies(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from backend.app.api.v1 import suites as suites_api
+    from backend.app.services.profile_service import ColumnProfile, ProfileResult
+
+    sid = _new_suite(client, db_session)
+    monkeypatch.setattr(
+        suites_api.profile, "list_columns", lambda *a, **k: ["ORDER_NUMBER", "EMAIL"]
+    )
+
+    def _fake_profile(*a: Any, **k: Any) -> ProfileResult:
+        return ProfileResult(
+            row_count=2,
+            columns=[
+                ColumnProfile(
+                    "ORDER_NUMBER", 0, 0.0, 2, None, None, [{"value": "O-1", "count": 1}]
+                ),
+                ColumnProfile("EMAIL", 0, 0.0, 2, None, None, [{"value": "a@x.com", "count": 1}]),
+            ],
+        )
+
+    monkeypatch.setattr(suites_api.profile, "profile_connection", _fake_profile)
+    body = client.post(
+        f"/api/v1/suites/{sid}/column-policy/suggest", json={"table": "ORDERS", "schema": "RETAIL"}
+    ).json()
+    assert body == {"identifier_column": "ORDER_NUMBER", "pii_columns": ["EMAIL"]}
