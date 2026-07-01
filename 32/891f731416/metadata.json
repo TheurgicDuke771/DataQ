@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "32891f731416",
+  "strategy": "manual-commit",
+  "branch": "docs/w7-cutover-complete",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "CLAUDE.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/32/891f731416/0/metadata.json",
+      "transcript": "/32/891f731416/0/full.jsonl",
+      "content_hash": "/32/891f731416/0/content_hash.txt",
+      "prompt": "/32/891f731416/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 53757,
+    "cache_creation_tokens": 3219144,
+    "cache_read_tokens": 174719628,
+    "output_tokens": 652766,
+    "api_call_count": 627
+  }
+}
