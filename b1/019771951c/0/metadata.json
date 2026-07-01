@@ -3,34 +3,35 @@
   "checkpoint_id": "b1019771951c",
   "session_id": "91a2ad94-53ea-4a83-ad69-33820c546636",
   "strategy": "manual-commit",
-  "created_at": "2026-07-01T06:46:47.446738Z",
+  "created_at": "2026-07-01T06:53:35.470588Z",
   "branch": "feature/504-generic-oidc-client",
   "checkpoints_count": 2,
   "files_touched": [
-    "frontend/src/auth/authClient.ts",
-    "frontend/src/auth/AuthProvider.tsx",
-    "frontend/src/api/client.ts",
-    "frontend/src/auth/CurrentUserProvider.tsx",
-    "frontend/src/auth/AuthGate.tsx",
-    "frontend/src/main.tsx",
     "frontend/src/App.tsx",
-    "frontend/tests/api/client.test.ts",
-    "frontend/tests/auth/authClient.test.ts",
+    "frontend/src/api/client.ts",
+    "frontend/src/auth/AuthGate.tsx",
+    "frontend/src/auth/AuthProvider.tsx",
+    "frontend/src/auth/CurrentUserProvider.tsx",
     "frontend/src/auth/LoginPage.tsx",
+    "frontend/src/auth/authClient.ts",
+    "frontend/src/auth/authContext.ts",
+    "frontend/src/auth/msalInstance.ts",
+    "frontend/src/main.tsx",
+    "frontend/tests/api/client.test.ts",
     "frontend/tests/auth/AuthGate.test.tsx",
-    "frontend/src/auth/authContext.ts"
+    "frontend/tests/auth/authClient.test.ts"
   ],
   "agent": "Claude Code",
   "model": "",
-  "turn_id": "31ab216b3a50",
-  "checkpoint_transcript_start": 1326,
-  "transcript_lines_at_start": 1326,
+  "turn_id": "8be4923b7d78",
+  "checkpoint_transcript_start": 1609,
+  "transcript_lines_at_start": 1609,
   "token_usage": {
-    "input_tokens": 3915,
-    "cache_creation_tokens": 513932,
-    "cache_read_tokens": 28362361,
-    "output_tokens": 53254,
-    "api_call_count": 59
+    "input_tokens": 269,
+    "cache_creation_tokens": 547309,
+    "cache_read_tokens": 6443235,
+    "output_tokens": 16786,
+    "api_call_count": 13
   },
   "skill_events_version": 1,
   "skill_events": [
@@ -45,7 +46,7 @@
         "signal": "skill_tool_use",
         "confidence": "explicit"
       },
-      "turn_id": "31ab216b3a50",
+      "turn_id": "8be4923b7d78",
       "transcript_anchor": {
         "unit": "line",
         "start": 111,
@@ -76,7 +77,7 @@
         "signal": "skill_tool_use",
         "confidence": "explicit"
       },
-      "turn_id": "31ab216b3a50",
+      "turn_id": "8be4923b7d78",
       "transcript_anchor": {
         "unit": "line",
         "start": 434,
@@ -107,7 +108,7 @@
         "signal": "skill_tool_use",
         "confidence": "explicit"
       },
-      "turn_id": "31ab216b3a50",
+      "turn_id": "8be4923b7d78",
       "transcript_anchor": {
         "unit": "line",
         "start": 650,
@@ -138,7 +139,7 @@
         "signal": "skill_tool_use",
         "confidence": "explicit"
       },
-      "turn_id": "31ab216b3a50",
+      "turn_id": "8be4923b7d78",
       "transcript_anchor": {
         "unit": "line",
         "start": 1274,
@@ -169,7 +170,7 @@
         "signal": "skill_tool_use",
         "confidence": "explicit"
       },
-      "turn_id": "31ab216b3a50",
+      "turn_id": "8be4923b7d78",
       "transcript_anchor": {
         "unit": "line",
         "start": 1610,
@@ -191,18 +192,18 @@
     }
   ],
   "session_metrics": {
-    "turn_count": 26
+    "turn_count": 28
   },
   "initial_attribution": {
-    "calculated_at": "2026-07-01T06:46:47.410619Z",
-    "agent_lines": 384,
-    "agent_removed": 235,
-    "human_added": 18,
-    "human_modified": 0,
+    "calculated_at": "2026-07-01T06:53:35.427919Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 64,
+    "human_modified": 18,
     "human_removed": 0,
-    "total_committed": 402,
-    "total_lines_changed": 730,
-    "agent_percentage": 84.79452054794521,
+    "total_committed": 64,
+    "total_lines_changed": 132,
+    "agent_percentage": 0,
     "metric_version": 2
   },
   "prompt_attributions": [

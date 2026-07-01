@@ -13,6 +13,7 @@
     "frontend/src/auth/LoginPage.tsx",
     "frontend/src/auth/authClient.ts",
     "frontend/src/auth/authContext.ts",
+    "frontend/src/auth/msalInstance.ts",
     "frontend/src/main.tsx",
     "frontend/tests/api/client.test.ts",
     "frontend/tests/auth/AuthGate.test.tsx",
@@ -27,10 +28,10 @@
     }
   ],
   "token_usage": {
-    "input_tokens": 3915,
-    "cache_creation_tokens": 513932,
-    "cache_read_tokens": 28362361,
-    "output_tokens": 53254,
-    "api_call_count": 59
+    "input_tokens": 269,
+    "cache_creation_tokens": 547309,
+    "cache_read_tokens": 6443235,
+    "output_tokens": 16786,
+    "api_call_count": 13
   }
 }
