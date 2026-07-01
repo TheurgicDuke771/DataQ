@@ -96,8 +96,14 @@ resource "azurerm_container_app" "api" {
     }
   }
 
+  # INTERNAL ingress (ADR 0028 §5): the frontend Container App is the sole public
+  # surface and reverse-proxies /api + /mcp to this app over the in-environment
+  # endpoint. Not externally reachable — direct internet calls to the api are gone,
+  # and in-env frontend->api traffic no longer hairpins out to a public FQDN.
+  # External orchestrator webhooks (ADF/Airflow) still reach the api: they POST to
+  # the public frontend (PUBLIC_BASE_URL), which proxies the path through.
   ingress {
-    external_enabled = true
+    external_enabled = false
     target_port      = 8000
     transport        = "auto"
     traffic_weight {

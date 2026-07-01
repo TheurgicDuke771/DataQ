@@ -3,7 +3,7 @@
 # Sensitive values are marked so `terraform output -raw <name>` is needed to read.
 
 output "api_url" {
-  description = "Public API base URL (the frontend nginx proxies /api + /mcp to it same-origin)."
+  description = "Internal API base URL (in-environment only, since ADR 0028 §5 — reachable from the frontend Container App, not the public internet). The public surface is frontend_url, which proxies /api + /mcp here."
   value       = "https://${azurerm_container_app.api.ingress[0].fqdn}"
 }
 

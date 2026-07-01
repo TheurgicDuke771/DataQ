@@ -101,7 +101,7 @@ Browser ─► dataq-app-frontend (Container App: nginx SPA, external ingress :8
               │  /api/* + /mcp proxied same-origin (→ no CORS) to ↓
               ▼
         Azure Container Apps
-          • dataq-app-api      (FastAPI image, external ingress :8000)
+          • dataq-app-api      (FastAPI image, INTERNAL ingress :8000 — not public)
           • dataq-app-worker   (same image, `celery -A ... worker` + beat)
           • dataq-app-migrate  (Container Apps Job: `alembic upgrade head`)
               │
@@ -143,8 +143,9 @@ The datasource + compute infra is stood up by the external Terraform harness
    `CORS_ALLOW_ORIGINS` stays empty. If instead you split the SPA onto a different
    origin, set `CORS_ALLOW_ORIGINS` to it (the FastAPI CORS middleware turns on only
    when it's non-empty).
-5. **Azure Monitor → ADF webhook** alert rule (Week-7 task) — needs the deployed
-   API URL; configure after the first deploy. Per [ADR 0006](../docs/adr/0006-adf-webhook-authentication.md)
+5. **Azure Monitor → ADF webhook** alert rule (Week-7 task) — targets the public
+   **frontend** origin (`<frontend>/api/v1/orchestration/events/adf`, proxied to the
+   internal api); configure after the first deploy. Per [ADR 0006](../docs/adr/0006-adf-webhook-authentication.md)
    the shared secret rides the URL as a `?token=` query param, so don't
    hand-assemble it (wrong host / stale token after rotation / missing `?token=`
    are easy to get wrong — #92).

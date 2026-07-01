@@ -7,8 +7,9 @@
 #
 # External ingress on 8080. The nginx conf reverse-proxies /api + /mcp to the api
 # Container App (same-origin, no CORS — the api keeps CORS_ALLOW_ORIGINS empty),
-# so this app is the single public product surface; the api stays externally
-# reachable too (Azure Monitor→ADF webhook posts to PUBLIC_BASE_URL/api/...).
+# so this app is the **single public product surface**. The api is INTERNAL-only
+# (containerapps.tf), reached over the in-environment endpoint; external
+# orchestrator webhooks POST to this frontend (PUBLIC_BASE_URL) and are proxied in.
 
 resource "azurerm_container_app" "frontend" {
   name                         = "dataq-app-frontend"
@@ -35,12 +36,13 @@ resource "azurerm_container_app" "frontend" {
       cpu    = 0.25
       memory = "0.5Gi"
 
-      # Proxy upstream — the api Container App's public FQDN (computed from the env
-      # domain to avoid a resource cycle; see local.api_public_url). nginx sends
-      # the matching Host + TLS SNI so ACA's Envoy routes it to the api.
+      # Proxy upstream — the api Container App's INTERNAL in-environment FQDN
+      # (computed from the env domain to avoid a resource cycle; see
+      # local.api_internal_url). nginx sends the matching Host + TLS SNI so ACA's
+      # Envoy routes it to the api. Internal = no public round-trip.
       env {
         name  = "DATAQ_API_UPSTREAM"
-        value = local.api_public_url
+        value = local.api_internal_url
       }
 
       # Runtime auth config (generic DATAQ_AUTH_* contract, ADR 0028). Real OIDC

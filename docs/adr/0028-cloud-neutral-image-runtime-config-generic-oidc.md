@@ -70,13 +70,18 @@ generic seams.**
 
    **As implemented (Terraform):** a *targeted* apply, not a literal teardown — Terraform
    destroys only the SWA (`azurerm_static_web_app` + its `null_resource` linked-backend) and
-   creates the frontend Container App; **api + worker update in place** (only `PUBLIC_BASE_URL`
-   changes) and the migrate job is untouched. Two mechanisms make this clean:
+   creates the frontend Container App; **api + worker update in place** and the migrate job is
+   untouched. Three mechanisms make this clean:
+   - **The frontend is the sole public surface; the api moves to INTERNAL ingress.**
+     `external_enabled=false` on the api — it's no longer reachable from the internet; the
+     frontend reaches it over the in-environment endpoint, so there's no public hairpin and no
+     way to call the api directly. External orchestrator webhooks (ADF/Airflow) still land: they
+     POST to the public frontend (`PUBLIC_BASE_URL`), which proxies the path to the api.
    - **Deterministic FQDNs break the api↔frontend cycle.** The frontend needs the api URL as
      its `/api` proxy upstream and the api needs the frontend URL (`PUBLIC_BASE_URL` + the SPA
      redirect), which as resource references would be a Terraform cycle. Both URLs are instead
-     computed as `https://<app-name>.<env-default-domain>` from the shared environment data
-     source, so neither resource references the other.
+     computed from the shared environment's default domain — `<app>.internal.<domain>` (api,
+     internal) and `<app>.<domain>` (frontend, external) — so neither resource references the other.
    - **Cloud-neutral nginx resolver.** The `/api` upstream is resolved at request time through
      a variable, which needs a `resolver`; the image detects it from `/etc/resolv.conf` at
      startup (nginx's `NGINX_ENTRYPOINT_LOCAL_RESOLVERS`) instead of a baked-in `127.0.0.11`,
