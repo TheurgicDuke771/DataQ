@@ -120,6 +120,7 @@ These are locked on Day 1 of Week 1. Do not drift.
 35. **End-of-week quick scan from Week 2 onward:** review Dependabot vuln alerts, secret scan results, OWASP top-10 spot check on any new endpoints, Key Vault access audit.
 36. **Hard security review gate before Week 7 deploy:** full pass on all of the above plus public-endpoint exposure review (especially `/api/v1/orchestration/events/*` and `/mcp`).
 37. **Security vulnerabilities are not public GitHub issues.** Report via [GitHub Security Advisories](https://github.com/TheurgicDuke771/DataQ/security/advisories/new). See [SECURITY.md](.github/SECURITY.md).
+38. **Quarterly MCP supply-chain audit:** once a quarter, for each client-side MCP server pinned in `.mcp.json` (see CLAUDE.md Appendix), verify the package hasn't been deprecated, yanked, or transferred to a new publisher (e.g. `npm view <pkg> maintainers time`), and review the changelog before bumping the pinned major version. MCP servers run with local tool access — treat a publisher change like a compromised dependency until verified.
 
 ---
 

@@ -326,3 +326,15 @@ Update this section at the end of each week with: current week, the week's exit 
 | Frontend tooling | Prettier + ESLint + Vitest + React Testing Library |
 | Secret scanning | betterleaks (pre-commit + CI) |
 | SAST | Bandit + CodeQL |
+
+### Client-side MCP servers (`.mcp.json`)
+
+Distinct from DataQ's **own** FastMCP server at `/mcp` (ADR 0008 — the 8 tools DataQ *serves* to AI clients), the repo-root **`.mcp.json`** configures MCP servers that AI assistants working in this repo *consume*:
+
+| Server | Package (pinned major) | Publisher | Purpose |
+|---|---|---|---|
+| `context7` | `@upstash/context7-mcp@1` (npx) | Upstash | Up-to-date library docs lookup while coding |
+
+- **Trust prompt:** Claude Code prompts once per machine before starting servers from a project `.mcp.json`; approve only if the list above matches what's in the file.
+- **Pin majors, not `latest`** — same rationale as the GX pin.
+- **Supply-chain cadence:** quarterly audit per CONTRIBUTING.md rule 38 (deprecated/yanked/publisher-transfer check before any bump).
