@@ -63,11 +63,30 @@ generic seams.**
 
 5. **Deployed-app cutover (amends ADR 0024).** Runtime `/config.js` is served by the nginx
    **container**, but prod serves the UI from **Static Web App** (static, no runtime
-   injection). So the frontend moves **SWA → a Container App**. Adopt via a **clean
-   rebuild**: remove the DataQ app (api + worker + migrate job + SWA) and rebuild from the
-   new images, **keeping Key Vault, App Insights / Log Analytics, the shared Postgres +
-   `dataq` DB, and Redis as-is**. The deployed app runs `DATAQ_AUTH_MODE=oidc` against the
-   real tenant. AWS/GCP deploy IaC is **post-v1** (#505).
+   injection). So the frontend moves **SWA → a Container App** (`dataq-app-frontend`),
+   **keeping Key Vault, App Insights / Log Analytics, the shared Postgres + `dataq` DB, and
+   Redis as-is**. The deployed app runs `DATAQ_AUTH_MODE=oidc` against the real tenant.
+   AWS/GCP deploy IaC is **post-v1** (#505).
+
+   **As implemented (Terraform):** a *targeted* apply, not a literal teardown — Terraform
+   destroys only the SWA (`azurerm_static_web_app` + its `null_resource` linked-backend) and
+   creates the frontend Container App; **api + worker update in place** and the migrate job is
+   untouched. Three mechanisms make this clean:
+   - **The frontend is the sole public surface; the api moves to INTERNAL ingress.**
+     `external_enabled=false` on the api — it's no longer reachable from the internet; the
+     frontend reaches it over the in-environment endpoint, so there's no public hairpin and no
+     way to call the api directly. External orchestrator webhooks (ADF/Airflow) still land: they
+     POST to the public frontend (`PUBLIC_BASE_URL`), which proxies the path to the api.
+   - **Deterministic FQDNs break the api↔frontend cycle.** The frontend needs the api URL as
+     its `/api` proxy upstream and the api needs the frontend URL (`PUBLIC_BASE_URL` + the SPA
+     redirect), which as resource references would be a Terraform cycle. Both URLs are instead
+     computed from the shared environment's default domain — `<app>.internal.<domain>` (api,
+     internal) and `<app>.<domain>` (frontend, external) — so neither resource references the other.
+   - **Cloud-neutral nginx resolver.** The `/api` upstream is resolved at request time through
+     a variable, which needs a `resolver`; the image detects it from `/etc/resolv.conf` at
+     startup (nginx's `NGINX_ENTRYPOINT_LOCAL_RESOLVERS`) instead of a baked-in `127.0.0.11`,
+     so the one image works in compose (embedded DNS) and ACA/K8s (cluster DNS). nginx forwards
+     the upstream host as `Host` (+ TLS SNI) so ACA's Envoy routes `/api` to the api app.
 
 ## Consequences
 

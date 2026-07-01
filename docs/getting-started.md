@@ -32,18 +32,21 @@ to a fixed demo user; no sign-in). API + Swagger at `http://localhost:8000/docs`
 
 ### Self-hosting with your own Azure AD
 
-The `:dev` frontend image the compose pulls is the **zero-config eval build** — auth is
-bypassed, so it's for evaluation, not a real multi-user deployment. Because Vite bakes
-auth config into the bundle at build time, a prebuilt image can't carry *your* tenant:
+The compose eval runs the frontend with `DATAQ_AUTH_MODE=bypass` — auth is bypassed, so
+it's for evaluation, not a real multi-user deployment. The frontend is **one generic
+image** whose auth config is injected at **runtime** (nginx serves `/config.js` from the
+`DATAQ_AUTH_*` env), so the same image goes from eval to real SSO with **no rebuild**
+(ADR 0028):
 
-- The published **`:latest`** frontend is a production base with **no tenant baked in**
-  (it shows an "authentication not configured" banner as-pulled). For real SSO, build the
-  frontend from source with your `VITE_AZURE_TENANT_ID` / `VITE_AZURE_SPA_CLIENT_ID` /
-  `VITE_AZURE_API_CLIENT_ID` (see [`frontend/Dockerfile`](https://github.com/TheurgicDuke771/DataQ/blob/main/frontend/Dockerfile)),
-  and run the **backend** with `AUTH_DEV_BYPASS` off + the matching `AZURE_*` settings.
-- The prebuilt UI images reverse-proxy `/api` + `/mcp` to the backend over **Docker's
-  embedded DNS** (`127.0.0.11`), so they target the Compose network; outside Compose
-  (e.g. Kubernetes) front them with your own ingress instead.
+- As-pulled with no auth env it shows an "authentication not configured" banner. For real
+  SSO, run the same image with `DATAQ_AUTH_MODE=oidc` + `DATAQ_AUTH_AUTHORITY`
+  (e.g. `https://login.microsoftonline.com/<tenant>/v2.0`) + `DATAQ_AUTH_CLIENT_ID` (your
+  SPA app registration) + `DATAQ_AUTH_API_SCOPE` (`api://<api-client-id>/<scope>`), and run
+  the **backend** with `AUTH_DEV_BYPASS` off + the matching `AZURE_*` settings.
+- The frontend reverse-proxies `/api` + `/mcp` to the backend at `DATAQ_API_UPSTREAM`,
+  resolving it via the DNS server it **detects from the container's `/etc/resolv.conf`** at
+  startup — so the one image works on Docker's embedded DNS (Compose) **and** cluster DNS
+  (Kubernetes / Container Apps) without a rebuild.
 - **MCP** (`/mcp`) is Azure-AD-protected and **fail-closed**, so it does not function in
   the dev-bypass eval stack — it needs real auth configured.
 

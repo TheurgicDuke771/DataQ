@@ -5,7 +5,8 @@
 # (it's the password for the dataq_app role provisioned out-of-band on the shared
 # Postgres server — see README "Shared Postgres").
 
-# image_tag = "v1"                 # bump per deploy (immutable tag, not "latest")
+# image_tag          = "v10"       # backend  — bump per deploy (immutable tag, not "latest")
+# frontend_image_tag = "v1"        # frontend — bump per deploy (immutable tag, not "latest")
 # shared_pg_server_name = "dataq-pg-wus3-3erlgd"   # the shared (harness) PG server
 
 # Azure AD SSO (fill once the app registrations exist; empty deploys fine with
