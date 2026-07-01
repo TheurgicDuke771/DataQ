@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "f1315b4931a1",
+  "strategy": "manual-commit",
+  "branch": "feature/504-stage4-frontend-container-app",
+  "checkpoints_count": 4,
+  "files_touched": [
+    "README.md",
+    "deploy/README.md",
+    "docs/adr/0028-cloud-neutral-image-runtime-config-generic-oidc.md",
+    "docs/getting-started.md",
+    "frontend/Dockerfile",
+    "frontend/nginx.conf.template"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f1/315b4931a1/0/metadata.json",
+      "transcript": "/f1/315b4931a1/0/full.jsonl",
+      "content_hash": "/f1/315b4931a1/0/content_hash.txt",
+      "prompt": "/f1/315b4931a1/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 46922,
+    "cache_creation_tokens": 2737438,
+    "cache_read_tokens": 116701088,
+    "output_tokens": 423268,
+    "api_call_count": 444
+  }
+}
