@@ -83,26 +83,20 @@ generates local-dev credentials on first run.
 # gen_random_uuid()/jsonb, which SQLite can't host), the rest run:
 conda run -n dataq python -m pytest backend/tests          # e.g. 652 passed, 448 skipped
 
-# Backend — FULL suite (what CI runs): point the fixtures at a Postgres + Redis. The
-# db_session fixture activates on TEST_DATABASE_URL; the notifications/suppression paths
-# need Redis. Then all ~1100 run, 0 skipped:
-docker run -d --name dq-test-pg -e POSTGRES_USER=dataq -e POSTGRES_PASSWORD=dataq \
-  -e POSTGRES_DB=dataq_test -p 55432:5432 postgres:16-alpine
-docker run -d --name dq-test-redis -p 56379:6379 redis:7-alpine
-conda run -n dataq env \
-  TEST_DATABASE_URL=postgresql+psycopg2://dataq:dataq@localhost:55432/dataq_test \
-  DATABASE_URL=postgresql+psycopg2://dataq:dataq@localhost:55432/dataq_test \
-  REDIS_URL=redis://localhost:56379/0 \
-  python -m pytest backend/tests
-# (or just `docker compose up -d postgres redis` and point at those.)
+# Backend — FULL suite (what CI runs, 0 skipped): the helper brings up the compose
+# Postgres + Redis, uses a dedicated `dataq_test` DB, and points the fixtures at them:
+scripts/test-backend.sh                    # → 1100 passed
+scripts/test-backend.sh -k notifications   # extra pytest args pass through
 
 # Frontend:
 cd frontend && pnpm test
 ```
 
 > The DB-backed skips are **by design** — a contributor without services still gets a
-> green `pytest` on the non-DB tests. CI ([ci.yml](https://github.com/TheurgicDuke771/DataQ/blob/main/.github/workflows/ci.yml))
-> spins up Postgres + Redis, so **nothing is skipped in CI**.
+> green `pytest` on the non-DB tests. `scripts/test-backend.sh` (or CI, which spins up
+> Postgres + Redis via [ci.yml](https://github.com/TheurgicDuke771/DataQ/blob/main/.github/workflows/ci.yml))
+> runs the whole suite with **nothing skipped**. The helper uses a separate `dataq_test`
+> database, so your dev DB + seed data are untouched.
 
 Before pushing, run the same gate CI does: Ruff, Black `--check`, mypy, Bandit, pytest
 (backend) and ESLint, Prettier `--check`, Vitest (frontend). See the
