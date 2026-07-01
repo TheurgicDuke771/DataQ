@@ -110,10 +110,11 @@ doesn't grant it for user-scoped packages).
 # App resources only — harness untouched:
 az resource list -g dataq-rg --query "[?tags.purpose=='dataq-app'].name" -o tsv
 
-# Frontend up (200) — the public surface. Its same-origin /api proxy reaching the
-# (internal) api returns 401 = healthy + auth-enforced. The api has NO public
-# ingress since ADR 0028 §5, so it's verified THROUGH the frontend, not directly
-# (curl on api_url from outside the env will not connect).
+# Frontend up (200) — the public surface. The api has NO public ingress since
+# ADR 0028 §5, so it's verified THROUGH the frontend, not directly (curl on
+# api_url from outside the env will not connect). /healthz (proxied) = 200 the api
+# is live; /api/v1/runs = 401 healthy + auth-enforced.
 curl -s -o /dev/null -w "%{http_code}\n" "$(terraform output -raw frontend_url)/"
+curl -s -w "\n" "$(terraform output -raw frontend_url)/healthz"
 curl -s -o /dev/null -w "%{http_code}\n" "$(terraform output -raw frontend_url)/api/v1/runs"
 ```

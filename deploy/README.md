@@ -98,7 +98,7 @@ OpenTelemetry · Identity Platform / an OIDC IdP behind `get_current_user`.
 
 ```
 Browser ─► dataq-app-frontend (Container App: nginx SPA, external ingress :8080)
-              │  /api/* + /mcp proxied same-origin (→ no CORS) to ↓
+              │  /api/* + /mcp + /healthz proxied same-origin (→ no CORS) to ↓
               ▼
         Azure Container Apps
           • dataq-app-api      (FastAPI image, INTERNAL ingress :8000 — not public)
@@ -225,7 +225,11 @@ intentionally **off**; deploys are manual `workflow_dispatch`.
 
 ## Verify
 
-- `GET /healthz` → `200 {"status":"ok"}`.
+All against the public **frontend** host (the api has no public ingress since
+ADR 0028 §5 — it's reached through the frontend's `/api` + `/healthz` + `/mcp`
+proxy; `<frontend>/api/v1/...` is the base URL for any external client too):
+
+- `GET /healthz` → `200 {"status":"ok"}` (proxied to the api).
 - `GET /api/v1/me` → **401** (auth enforced; a valid token resolves the user).
 - SPA root + a deep link → 200; sign-in via Azure AD SSO.
 - Interactive API docs (`/docs`, `/redoc`, `/openapi.json`) are **404 in prod**

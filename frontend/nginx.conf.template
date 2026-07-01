@@ -59,6 +59,20 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
+    # Liveness probe — the api's top-level /healthz (NOT under /api), proxied here
+    # so it stays externally reachable through the product host now that the api has
+    # no public ingress (ADR 0028 §5). Exact-match so it can't shadow an SPA route;
+    # without this, /healthz would fall through to the SPA index.html below. Same
+    # Host/SNI handling as /api (default Host = upstream host for ACA Envoy routing).
+    location = /healthz {
+        set $dataq_upstream "${DATAQ_API_UPSTREAM}";
+        proxy_pass $dataq_upstream$request_uri;
+        proxy_ssl_server_name on;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
     # MCP sub-app (FastMCP at /mcp). Streamable-HTTP/SSE needs HTTP/1.1 with no
     # response buffering and no hop-by-hop Connection header, or events stall.
     location /mcp {
