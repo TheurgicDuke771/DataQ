@@ -29,6 +29,15 @@ resource "azuread_application" "api" {
       user_consent_description   = "Allow the application to access the DataQ API on your behalf."
     }
   }
+
+  # The Application ID URI (api://<client_id>) is managed by the separate
+  # azuread_application_identifier_uri.api resource below. Without this, the
+  # provider treats the URI as drift on THIS resource and removes it on every
+  # apply — which strips the API's token audience and breaks SSO. Ignore it here;
+  # the dedicated resource stays the source of truth.
+  lifecycle {
+    ignore_changes = [identifier_uris]
+  }
 }
 
 # api://<client_id> identifier URI (separate resource — needs the client_id known).

@@ -70,5 +70,12 @@ resource "azurerm_container_app" "frontend" {
     }
   }
 
+  # The Deploy workflow rolls the frontend image out-of-band (`az containerapp
+  # update --image <sha>`), same as the backend apps — ignore the image so an apply
+  # never resets it to var.frontend_image_tag. The first create still uses that tag.
+  lifecycle {
+    ignore_changes = [template[0].container[0].image]
+  }
+
   tags = local.common_tags
 }

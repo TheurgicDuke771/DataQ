@@ -133,6 +133,14 @@ resource "azurerm_container_app" "api" {
     }
   }
 
+  # The Deploy workflow rolls images out-of-band (`az containerapp update
+  # --image <sha>`), so the live image is ahead of var.image_tag. Ignore the image
+  # here or every `terraform apply` would roll prod BACK to var.image_tag. The
+  # workflow is the image source of truth; Terraform owns the rest of the app.
+  lifecycle {
+    ignore_changes = [template[0].container[0].image]
+  }
+
   tags       = local.common_tags
   depends_on = [azurerm_role_assignment.kv_app_reader]
 }
@@ -179,6 +187,12 @@ resource "azurerm_container_app" "worker" {
     }
   }
 
+  # Image is workflow-managed (see the api resource) — ignore it so an apply never
+  # rolls the worker back to var.image_tag.
+  lifecycle {
+    ignore_changes = [template[0].container[0].image]
+  }
+
   tags       = local.common_tags
   depends_on = [azurerm_role_assignment.kv_app_reader]
 }
@@ -219,6 +233,12 @@ resource "azurerm_container_app_job" "migrate" {
         secret_name = "database-url"
       }
     }
+  }
+
+  # Image is workflow-managed (see the api resource) — ignore it so an apply never
+  # rolls the migrate job back to var.image_tag.
+  lifecycle {
+    ignore_changes = [template[0].container[0].image]
   }
 
   tags = local.common_tags
