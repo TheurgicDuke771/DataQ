@@ -12,7 +12,23 @@ automatically when a pipeline finishes.
 - **QA / analysts** — see what passed or failed and why.
 - **Product & stakeholders** — a health score and trend at a glance.
 
-## Quickstart (5 minutes, local)
+## Quickstart (5 minutes)
+
+### Run DataQ — prebuilt images (recommended)
+
+Evaluate or self-host with **no source checkout and no Azure tenant** — just Docker:
+
+```bash
+curl -O https://raw.githubusercontent.com/TheurgicDuke771/DataQ/main/docker-compose.ghcr.yml
+docker compose -f docker-compose.ghcr.yml up
+```
+
+Open **`http://localhost:3000`**. The stack comes up migrated and seeded with demo
+data, on **dev-bypass auth** (every request is a fixed demo user — no sign-in). API +
+Swagger at `http://localhost:8000/docs`. The GHCR images are **multi-arch** (amd64 +
+arm64, native on Apple Silicon) and all ports bind to `127.0.0.1` only.
+
+### Develop DataQ — from source
 
 ```bash
 git clone https://github.com/TheurgicDuke771/DataQ.git
@@ -26,8 +42,9 @@ docker-compose up         # Postgres + Redis + FastAPI + React + Celery worker
 - Frontend: `http://localhost:3000`.
 
 Then open the UI, add a connection, create a suite of checks, and run it. See
-**[Getting started](getting-started.md)** for the full local-dev walkthrough and
-**[Datasources & checks](datasources-checks.md)** to author your first check.
+**[Getting started](getting-started.md)** for both paths in depth (incl. self-hosting
+with your own Azure AD) and **[Datasources & checks](datasources-checks.md)** to author
+your first check.
 
 ## Where to go next
 

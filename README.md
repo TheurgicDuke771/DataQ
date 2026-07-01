@@ -18,6 +18,21 @@
 
 ## Quick start
 
+### Run DataQ — prebuilt images (recommended)
+
+Evaluate or self-host in ~5 minutes: **no source checkout, no Azure tenant.** Just Docker.
+
+```bash
+curl -O https://raw.githubusercontent.com/TheurgicDuke771/DataQ/main/docker-compose.ghcr.yml
+docker compose -f docker-compose.ghcr.yml up
+```
+
+Open **<http://localhost:3000>** — the stack comes up migrated and seeded with demo data, on **dev-bypass auth** (every request is a fixed demo user; no sign-in). API + Swagger at `http://localhost:8000/docs`. Images are pulled from GHCR and are **multi-arch** (amd64 + arm64), so Apple-Silicon runs native. Ports bind to `127.0.0.1` only. To pin a release instead of the moving tags: `DATAQ_BACKEND_TAG=vX.Y.Z DATAQ_FRONTEND_TAG=vX.Y.Z docker compose -f docker-compose.ghcr.yml up`.
+
+> Self-hosting with **your own** Azure AD? The `:dev` frontend the compose pulls is the zero-config eval image (auth bypassed). For real SSO, build the frontend from source with your `VITE_AZURE_*` values (the published `:latest` is a production base with no tenant baked in) and run the backend with `AUTH_DEV_BYPASS` off. See [Getting started](https://theurgicduke771.github.io/DataQ/getting-started/).
+
+### Develop DataQ — from source
+
 ```bash
 git clone https://github.com/TheurgicDuke771/DataQ.git
 cd DataQ

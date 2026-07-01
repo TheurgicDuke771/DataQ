@@ -1,11 +1,56 @@
-# Getting started (local dev)
+# Getting started
 
-## Prerequisites
+Two tracks, matched to why you're here:
 
-- **conda** (the backend uses a conda env — not venv/poetry), **Docker** + Docker
-  Compose, and **Node 24+ / pnpm 9+** for the frontend.
+- **Run / evaluate / self-host** → pull the prebuilt images (below). Recommended.
+- **Develop / contribute** → build from source with `scripts/setup.sh` ([further down](#develop-from-source)).
 
-## One-command setup
+## Run from prebuilt images (recommended)
+
+**Prerequisite:** Docker (Compose v2). No source checkout, no conda, no Node, no Azure
+tenant.
+
+```bash
+curl -O https://raw.githubusercontent.com/TheurgicDuke771/DataQ/main/docker-compose.ghcr.yml
+docker compose -f docker-compose.ghcr.yml up
+```
+
+This pulls the published images from GHCR and brings up Postgres + Redis + the API +
+Celery worker + the UI, runs migrations, and seeds demo data. Open
+**`http://localhost:3000`** — you're in, on **dev-bypass auth** (every request resolves
+to a fixed demo user; no sign-in). API + Swagger at `http://localhost:8000/docs`.
+
+- **Multi-arch:** the images are `linux/amd64` + `linux/arm64`, so Apple Silicon runs
+  native (not emulated).
+- **Loopback-only:** every port binds to `127.0.0.1` — the stack is reachable from your
+  own machine but never the LAN (it deliberately disables auth and runs a passwordless
+  DB, so it must not be network-exposed). **Not for production** — a real deploy uses the
+  Terraform stack (`deploy/terraform`, ADR 0024).
+- **Pin a release** instead of the moving stable tags:
+  `DATAQ_BACKEND_TAG=vX.Y.Z DATAQ_FRONTEND_TAG=vX.Y.Z docker compose -f docker-compose.ghcr.yml up`.
+- **Reset:** `docker compose -f docker-compose.ghcr.yml down -v` (drops the seeded DB).
+
+### Self-hosting with your own Azure AD
+
+The `:dev` frontend image the compose pulls is the **zero-config eval build** — auth is
+bypassed, so it's for evaluation, not a real multi-user deployment. Because Vite bakes
+auth config into the bundle at build time, a prebuilt image can't carry *your* tenant:
+
+- The published **`:latest`** frontend is a production base with **no tenant baked in**
+  (it shows an "authentication not configured" banner as-pulled). For real SSO, build the
+  frontend from source with your `VITE_AZURE_TENANT_ID` / `VITE_AZURE_SPA_CLIENT_ID` /
+  `VITE_AZURE_API_CLIENT_ID` (see [`frontend/Dockerfile`](https://github.com/TheurgicDuke771/DataQ/blob/main/frontend/Dockerfile)),
+  and run the **backend** with `AUTH_DEV_BYPASS` off + the matching `AZURE_*` settings.
+- The prebuilt UI images reverse-proxy `/api` + `/mcp` to the backend over **Docker's
+  embedded DNS** (`127.0.0.11`), so they target the Compose network; outside Compose
+  (e.g. Kubernetes) front them with your own ingress instead.
+- **MCP** (`/mcp`) is Azure-AD-protected and **fail-closed**, so it does not function in
+  the dev-bypass eval stack — it needs real auth configured.
+
+## Develop from source
+
+**Prerequisites:** **conda** (the backend uses a conda env — not venv/poetry),
+**Docker** + Docker Compose, and **Node 24+ / pnpm 9+** for the frontend.
 
 ```bash
 git clone https://github.com/TheurgicDuke771/DataQ.git
