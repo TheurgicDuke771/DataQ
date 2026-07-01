@@ -141,9 +141,10 @@ tmp/
 .azure/
 azure.json
 
-# ---- Terraform (deploy/terraform/) ----
+# ---- Terraform (deploy/terraform/<cloud>/ — azure/ today; aws/, gcp/ post-v1) ----
 # State holds the generated Postgres password + secret values — never commit it.
-# The provider lock (.terraform.lock.hcl) and *.example ARE tracked.
+# The provider lock (.terraform.lock.hcl) and *.example ARE tracked. Rules are
+# path-independent globs, so they apply under any deploy/terraform/<cloud>/ dir.
 **/.terraform/
 *.tfstate
 *.tfstate.*

@@ -167,7 +167,7 @@ jobs:
 
       # One generic image (ADR 0028) — nothing baked in. Auth config + the /api
       # proxy upstream are injected at runtime by the Container App env
-      # (DATAQ_AUTH_* / DATAQ_API_UPSTREAM in deploy/terraform/frontend.tf), so
+      # (DATAQ_AUTH_* / DATAQ_API_UPSTREAM in deploy/terraform/azure/frontend.tf), so
       # there are NO VITE_* build args here and no per-environment rebuild. amd64
       # only (ACA is amd64); the multi-arch :latest is published by
       # publish-images.yml for the BYOL/eval path.

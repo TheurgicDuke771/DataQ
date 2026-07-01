@@ -51,7 +51,7 @@ export function getUserManager(): UserManager | null {
     authority,
     client_id: clientId,
     // Trailing slash matches the registered SPA redirect URI (Azure AD requires a
-    // trailing slash when the URI has no path segment — see deploy/terraform/sso.tf).
+    // trailing slash when the URI has no path segment — see deploy/terraform/azure/sso.tf).
     redirect_uri: `${window.location.origin}/`,
     post_logout_redirect_uri: `${window.location.origin}/`,
     scope,

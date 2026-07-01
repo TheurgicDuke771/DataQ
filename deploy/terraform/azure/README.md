@@ -72,7 +72,7 @@ at runtime over the server's allow-Azure-services firewall rule.
 ## Apply
 
 ```bash
-cd deploy/terraform
+cd deploy/terraform/azure
 terraform init
 TF_VAR_app_db_password='<the dataq_app password>' terraform plan    # review
 TF_VAR_app_db_password='<the dataq_app password>' terraform apply
