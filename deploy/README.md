@@ -12,6 +12,86 @@ Azure is **one** deploy target behind the app's seams (ADR 0010/0013) — the
 manifests here are infra config, not business logic. No Azure resource names are
 hardcoded in app code; they live only as Terraform vars + workflow `vars`/`secrets`.
 
+## Before you deploy: production prerequisites
+
+Read this before a production rollout. It's the "what must change, what access you
+need, and what your cloud must provide" checklist; the [provisioning runbook](#one-time-provisioning)
+below is the how.
+
+### 1. What you must change (never ship the eval/dev defaults)
+
+The prebuilt-image quickstart ([docs/getting-started](../docs/getting-started.md)) is a
+**dev-bypass eval stack** — it disables auth, uses a passwordless DB, and binds to
+loopback. A production deployment must flip all of the following. Values live in
+[`deploy/.env.app.prod.example`](.env.app.prod.example) (app settings) +
+[`deploy/terraform/variables.tf`](terraform/variables.tf) (infra):
+
+| Setting | Eval default | Production |
+|---|---|---|
+| `AUTH_DEV_BYPASS` | `true` | **`false`** — this is the master auth switch; leaving it on means **no authentication at all**. |
+| `AZURE_TENANT_ID` / `AZURE_API_CLIENT_ID` / `AZURE_SPA_CLIENT_ID` | empty | your Azure AD tenant + the two app registrations (API + SPA). |
+| **Frontend build** | prebuilt `:dev` image (bypass baked in) | **rebuild the SPA from source with your `VITE_AZURE_*`** — Vite bakes auth config at build time, so no prebuilt image can carry your tenant (the published `:latest` has none baked and shows the "not configured" banner). See [frontend/Dockerfile](../frontend/Dockerfile). |
+| `SECRET_STORE` | `redis` (eval) | **`azure_key_vault`** + `AZURE_KEY_VAULT_URL` + the managed identity's `AZURE_CLIENT_ID` (#408). |
+| `DATABASE_URL` / `REDIS_URL` | inline, passwordless | Key Vault-backed Container Apps secrets — **never literals**; real credentials. |
+| `CORS_ALLOW_ORIGINS` | n/a (same-origin) | empty **if** the SWA links the API same-origin; else the SPA origin. |
+| `PUBLIC_BASE_URL` | n/a | the public origin (used to assemble webhook URLs). |
+| `WORKSPACE_ADMIN_EMAILS` | seeded dev user | a **minimal** real allowlist — admins can read every suite's failing-row samples (see [Operational notes](#operational-notes)). |
+| `APPLICATIONINSIGHTS_CONNECTION_STRING` | unset | your App Insights resource (observability). |
+| `key_vault_purge_protection` (Terraform) | `false` (bring-up) | **`true`** for a hardened vault (irreversible). |
+| Interactive API docs | served | **404 in prod** via the prod-docs gate (`ENVIRONMENT=prod`). |
+
+### 2. Access you need
+
+- **Azure subscription** — rights to create the resource group, Container Apps
+  environment, PostgreSQL Flexible Server, Cache for Redis, Key Vault, Application
+  Insights + Log Analytics, and the Static Web App (Contributor on the RG/subscription),
+  **plus** `User Access Administrator`/`Owner` to grant the managed identity the **Key
+  Vault Secrets User** role (an RBAC role assignment).
+- **Azure AD (Entra ID)** — `Application Administrator` (or Global Admin) to create the
+  **two app registrations** (API + SPA) and **grant admin consent** for the API scope.
+- **Subscription resource-provider registration** — the app's Terraform registers
+  `Microsoft.App`, `Microsoft.Cache`, `Microsoft.KeyVault`, `Microsoft.Web` (see
+  [rp.tf](terraform/rp.tf)); the PostgreSQL + monitoring providers
+  (`Microsoft.DBforPostgreSQL`, `Microsoft.Insights`, `Microsoft.OperationalInsights`)
+  come registered with the shared harness resources (ADR 0024). Registration needs
+  subscription-level rights.
+- **GitHub repo admin** — to set the Actions [secrets/vars](#github-config-the-workflow-reads)
+  and create the OIDC **federated credential** (subject = the repo's `production`
+  environment). The GHCR image push uses the built-in `GITHUB_TOKEN` (`packages: write`);
+  the package must be **public** so Container Apps pulls it anonymously (ADR 0023).
+- **Tooling** — Terraform + the `az` CLI, authenticated to the subscription.
+
+### 3. Cloud prerequisites
+
+DataQ is provider-agnostic by design — Azure is one target behind the app's seams
+(ADR [0010](../docs/adr/0010-provider-agnostic-infrastructure-seams.md) /
+[0013](../docs/adr/0013-marketplace-distribution-and-anti-lock-in.md)), so no cloud is
+baked into app code. Today **Azure is the supported, implemented target**; AWS and GCP
+are planned.
+
+#### Azure — supported today
+
+- An Azure **subscription** + a region with quota for **1 Container Apps environment**,
+  **1 PostgreSQL Flexible Server**, Cache for Redis, Key Vault, App Insights + Log
+  Analytics, and a Static Web App. (Free/trial tiers cap one ACA env + one Postgres
+  server per subscription, so the app **shares** the RG/env/Postgres server with the
+  harness and namespaces its own DB + role — ADR [0024](../docs/adr/0024-app-deployment-infrastructure.md).)
+- The **resource providers** and **app registrations** from §2 registered/created.
+- The **GHCR** backend package public. Then follow [One-time provisioning](#one-time-provisioning).
+
+#### AWS — planned (not yet available)
+
+Not yet implemented. The seams map to: ECS Fargate or App Runner (api + worker) · RDS
+for PostgreSQL · ElastiCache for Redis · Secrets Manager (`SecretStore` impl) · CloudWatch
++ OpenTelemetry (observability) · Cognito or an OIDC IdP behind `get_current_user`. Track
+via the anti-lock-in roadmap ([ADR 0013](../docs/adr/0013-marketplace-distribution-and-anti-lock-in.md)).
+
+#### GCP — planned (not yet available)
+
+Not yet implemented. The seams map to: Cloud Run (api + worker) · Cloud SQL for
+PostgreSQL · Memorystore for Redis · Secret Manager (`SecretStore` impl) · Cloud Logging +
+OpenTelemetry · Identity Platform / an OIDC IdP behind `get_current_user`.
+
 ## Topology
 
 ```
