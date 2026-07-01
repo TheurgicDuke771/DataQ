@@ -364,12 +364,13 @@ def test_get_run_redacts_sample_failure_values(client: TestClient, db_session: A
     body = client.get(f"/api/v1/runs/{run.id}").json()
     sample = body["results"][0]["sample_failures"]
 
-    # Counts kept; row count + column names (schema) kept; cell values masked.
+    # Counts kept; row count kept; the `id` locator surfaced (#415 column-aware), the
+    # PII `email` masked.
     assert sample["unexpected_count"] == 2
     assert sample["unexpected_percent"] == 40.0
     assert len(sample["partial_unexpected_list"]) == 2
-    assert sample["partial_unexpected_list"][0] == {"id": "<redacted>", "email": "<redacted>"}
-    # The raw values must not appear anywhere in the serialized response.
+    assert sample["partial_unexpected_list"][0] == {"id": 7, "email": "<redacted>"}
+    # The raw PII values must not appear anywhere in the serialized response.
     serialized = json.dumps(body)
     assert "alice@example.com" not in serialized
     assert "bob@example.com" not in serialized

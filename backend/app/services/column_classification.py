@@ -336,3 +336,20 @@ def classify_column(name: str, sampled_values: Sequence[object] | None = None) -
     if by_value is not None:  # IDENTIFIER
         return by_value
     return ColumnClass.PII
+
+
+def is_sensitive(name: str, sampled_values: Sequence[object] | None = None) -> bool:
+    """Whether a column is **affirmatively** PII — a person/sensitive name token or a
+    directly-sensitive value signal (emails, encoded blobs) — as opposed to the
+    conservative *default* mask.
+
+    This is the gate for a column that is otherwise shown (the **tested** column whose
+    failing values are the point of the sample, or a designated **identifier**): show
+    it *unless it is affirmatively sensitive*. Distinct from :func:`classify_column`,
+    which default-masks an unrecognised column — appropriate for *incidental* columns,
+    not for one the user deliberately checked or named.
+    """
+    return (
+        _name_signal(name) is ColumnClass.PII
+        or _value_signal(list(sampled_values or [])) is ColumnClass.PII
+    )
