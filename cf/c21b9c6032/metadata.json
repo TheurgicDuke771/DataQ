@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "cfc21b9c6032",
+  "strategy": "manual-commit",
+  "branch": "feature/a3-otel-spans",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/app/core/tracing.py",
+    "backend/app/main.py",
+    "backend/app/worker/celery_app.py",
+    "backend/tests/core/test_tracing.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/cf/c21b9c6032/0/metadata.json",
+      "transcript": "/cf/c21b9c6032/0/full.jsonl",
+      "content_hash": "/cf/c21b9c6032/0/content_hash.txt",
+      "prompt": "/cf/c21b9c6032/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2761,
+    "cache_creation_tokens": 391564,
+    "cache_read_tokens": 3207492,
+    "output_tokens": 24938,
+    "api_call_count": 18
+  }
+}
