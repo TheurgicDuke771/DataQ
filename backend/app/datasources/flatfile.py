@@ -132,7 +132,12 @@ class FlatFileCheckRunner:
         self._secret = secret
 
     def run_checks(
-        self, *, table: str, schema: str | None, checks: list[CheckSpec]
+        self,
+        *,
+        table: str,
+        schema: str | None,
+        checks: list[CheckSpec],
+        index_columns: list[str] | None = None,
     ) -> SuiteOutcome:
         df = read_dataframe(
             conn_type=self._conn_type, config=self._config, path=table, secret=self._secret
@@ -148,6 +153,7 @@ class FlatFileCheckRunner:
             checks=checks,
             name="suite-flatfile",
             batch_parameters={"dataframe": df},
+            index_columns=index_columns,
         )
 
 

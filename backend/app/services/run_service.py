@@ -90,7 +90,12 @@ _EXPECTATION_KIND = "expectation"
 
 
 def _run_outcomes(
-    runner: CheckRunner, *, table: str, schema: str | None, checks: list[Check]
+    runner: CheckRunner,
+    *,
+    table: str,
+    schema: str | None,
+    checks: list[Check],
+    index_columns: list[str] | None = None,
 ) -> list[CheckOutcome]:
     """Run a suite's checks, dispatching by `check.kind` (ADR 0012), and return one
     outcome per check in the **same order** (so they zip 1:1 onto result rows).
@@ -118,7 +123,9 @@ def _run_outcomes(
             CheckSpec(expectation_type=checks[i].expectation_type, kwargs=dict(checks[i].config))
             for i in expectation_idx
         ]
-        suite_outcome = runner.run_checks(table=table, schema=schema, checks=specs)
+        suite_outcome = runner.run_checks(
+            table=table, schema=schema, checks=specs, index_columns=index_columns
+        )
         for i, oc in zip(expectation_idx, suite_outcome.checks, strict=True):
             outcomes[i] = oc
     if monitor_idx:
@@ -160,10 +167,13 @@ def execute_run(
     runner: CheckRunner,
     table: str,
     schema: str | None = None,
+    index_columns: list[str] | None = None,
 ) -> Run:
     """Run ``checks`` against ``table`` via ``runner`` and persist the outcome.
 
     ``run`` must already be persisted (it carries the id the results link to).
+    ``index_columns`` (the suite's identifier column, #415) is requested from GX so
+    failing rows are captured with a locator; ``None`` keeps the scalar-only sample.
     Returns the same `Run`, updated to ``succeeded`` or ``failed``.
     """
     run.status = "running"
@@ -183,7 +193,9 @@ def execute_run(
     # an unrunnable check kind) would leave the run stuck in 'running' forever.
     # rollback() discards any partial result inserts before we record the failure.
     try:
-        outcomes = _run_outcomes(runner, table=table, schema=schema, checks=checks)
+        outcomes = _run_outcomes(
+            runner, table=table, schema=schema, checks=checks, index_columns=index_columns
+        )
         rows = [
             _build_result(run.id, check, check_outcome)
             for check, check_outcome in zip(checks, outcomes, strict=True)

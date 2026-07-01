@@ -153,7 +153,12 @@ class UnityCatalogCheckRunner:
             engine.dispose()
 
     def run_checks(
-        self, *, table: str, schema: str | None, checks: list[CheckSpec]
+        self,
+        *,
+        table: str,
+        schema: str | None,
+        checks: list[CheckSpec],
+        index_columns: list[str] | None = None,
     ) -> SuiteOutcome:
         df = self._read_table(table=table, schema=schema)
         context = gx.get_context(mode="ephemeral")
@@ -165,6 +170,7 @@ class UnityCatalogCheckRunner:
             checks=checks,
             name="suite-uc",
             batch_parameters={"dataframe": df},
+            index_columns=index_columns,
         )
 
     def run_monitors(

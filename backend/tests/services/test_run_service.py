@@ -66,9 +66,19 @@ class FakeRunner:
         self.called_with: dict[str, object] | None = None
 
     def run_checks(
-        self, *, table: str, schema: str | None, checks: list[CheckSpec]
+        self,
+        *,
+        table: str,
+        schema: str | None,
+        checks: list[CheckSpec],
+        index_columns: list[str] | None = None,
     ) -> SuiteOutcome:
-        self.called_with = {"table": table, "schema": schema, "checks": checks}
+        self.called_with = {
+            "table": table,
+            "schema": schema,
+            "checks": checks,
+            "index_columns": index_columns,
+        }
         if self._raises is not None:
             raise self._raises
         assert self._outcome is not None
@@ -116,7 +126,12 @@ class FakeMonitorRunner:
         self.monitors_called_with: list[object] | None = None
 
     def run_checks(
-        self, *, table: str, schema: str | None, checks: list[CheckSpec]
+        self,
+        *,
+        table: str,
+        schema: str | None,
+        checks: list[CheckSpec],
+        index_columns: list[str] | None = None,
     ) -> SuiteOutcome:
         return SuiteOutcome(success=True, checks=self._check_outcomes)
 
@@ -205,6 +220,7 @@ def test_successful_run_persists_results_and_marks_succeeded() -> None:
         "table": "ORDERS",
         "schema": "FIN",
         "checks": [CheckSpec("x", {}), CheckSpec("x", {})],
+        "index_columns": None,
     }
 
 

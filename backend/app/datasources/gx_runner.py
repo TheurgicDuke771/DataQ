@@ -23,8 +23,16 @@ import great_expectations.expectations as gxe
 from backend.app.datasources.base import CheckOutcome, CheckSpec, SuiteOutcome
 
 # GX result keys that describe failing rows — copied into CheckOutcome.sample_failures.
-# These may contain real data, so they only ever reach logs via the redactor.
-_SAMPLE_KEYS = ("partial_unexpected_list", "unexpected_count", "unexpected_percent")
+# These may contain real data, so they only ever reach logs / the read API via the
+# redactor. `unexpected_index_list` is the per-row list carrying the configured
+# identifier column(s) + the failing value — populated only when `index_columns` is
+# requested (#415); it makes a failing row *locatable*.
+_SAMPLE_KEYS = (
+    "partial_unexpected_list",
+    "unexpected_count",
+    "unexpected_percent",
+    "unexpected_index_list",
+)
 
 # GX injects internal bookkeeping keys into expectation_config.kwargs at run time
 # (e.g. batch_id); strip them so expected_value persists only the check's own
@@ -54,8 +62,24 @@ def _to_gx_expectation(spec: CheckSpec) -> Any:
     return expectation_cls(**spec.kwargs)
 
 
+def _is_identifier_index_list(value: Any) -> bool:
+    """A useful `unexpected_index_list` is a non-empty list of **row dicts** (the
+    identifier columns + failing value, from `unexpected_index_column_names`). A plain
+    COMPLETE run instead returns bare positional indices (``[1, 4, …]``) — not a
+    locator, so we drop those to keep the sample clean."""
+    return (
+        isinstance(value, list) and len(value) > 0 and all(isinstance(row, dict) for row in value)
+    )
+
+
 def _extract_sample_failures(result: dict[str, Any]) -> dict[str, Any] | None:
-    sample = {key: result[key] for key in _SAMPLE_KEYS if key in result}
+    sample: dict[str, Any] = {}
+    for key in _SAMPLE_KEYS:
+        if key not in result:
+            continue
+        if key == "unexpected_index_list" and not _is_identifier_index_list(result[key]):
+            continue
+        sample[key] = result[key]
     return sample or None
 
 
@@ -117,22 +141,17 @@ def to_suite_outcome(gx_result: Any) -> SuiteOutcome:
     return SuiteOutcome(success=bool(gx_result.success), checks=outcomes)
 
 
-def run_expectations(
+def _execute(
     context: Any,
     *,
     batch_definition: Any,
     checks: list[CheckSpec],
     name: str,
-    batch_parameters: dict[str, Any] | None = None,
+    batch_parameters: dict[str, Any] | None,
+    result_format: Any,
 ) -> SuiteOutcome:
-    """Register the suite + validation definition for `batch_definition` and run.
-
-    The shared tail of every runner: GX 1.x requires the suite and validation
-    definition to be registered on the (ephemeral, per-run) context before
-    ``run()``. `batch_parameters` carries the in-memory DataFrame for a pandas
-    asset; it stays `None` for an asset that resolves its own batch (a SQL table),
-    matching a bare ``run()``.
-    """
+    """Register the suite + validation definition (GX 1.x requires both on the
+    ephemeral per-run context before ``run()``) and map the result."""
     suite = context.suites.add(
         gx.ExpectationSuite(
             name=name,
@@ -142,5 +161,58 @@ def run_expectations(
     validation_definition = context.validation_definitions.add(
         gx.ValidationDefinition(name=f"vd-{name}", data=batch_definition, suite=suite)
     )
-    result = validation_definition.run(batch_parameters=batch_parameters, result_format="COMPLETE")
+    result = validation_definition.run(
+        batch_parameters=batch_parameters, result_format=result_format
+    )
     return to_suite_outcome(result)
+
+
+def run_expectations(
+    context: Any,
+    *,
+    batch_definition: Any,
+    checks: list[CheckSpec],
+    name: str,
+    batch_parameters: dict[str, Any] | None = None,
+    index_columns: list[str] | None = None,
+) -> SuiteOutcome:
+    """Register the suite + validation definition for `batch_definition` and run.
+
+    The shared tail of every runner. `batch_parameters` carries the in-memory
+    DataFrame for a pandas asset; it stays `None` for an asset that resolves its own
+    batch (a SQL table), matching a bare ``run()``.
+
+    ``index_columns`` (#415) requests GX's ``unexpected_index_column_names`` so each
+    failing row is returned as a dict carrying those identifier column(s) + the failing
+    value — the locator the redactor can surface. GX evaluates the index metric per
+    expectation, so a **bad/absent** identifier column errors *every* check; we detect
+    that (all checks errored, only when an index was requested) and fall back to a plain
+    run, so the checks still evaluate — just without the row identifier.
+    """
+    if not index_columns:
+        return _execute(
+            context,
+            batch_definition=batch_definition,
+            checks=checks,
+            name=name,
+            batch_parameters=batch_parameters,
+            result_format="COMPLETE",
+        )
+    outcome = _execute(
+        context,
+        batch_definition=batch_definition,
+        checks=checks,
+        name=name,
+        batch_parameters=batch_parameters,
+        result_format={"result_format": "COMPLETE", "unexpected_index_column_names": index_columns},
+    )
+    if outcome.checks and all(check.errored for check in outcome.checks):
+        return _execute(
+            context,
+            batch_definition=batch_definition,
+            checks=checks,
+            name=f"{name}-noidx",
+            batch_parameters=batch_parameters,
+            result_format="COMPLETE",
+        )
+    return outcome
