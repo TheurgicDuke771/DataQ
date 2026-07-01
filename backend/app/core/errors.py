@@ -68,7 +68,7 @@ async def _http_exception_handler(_request: Request, exc: Exception) -> JSONResp
 async def _validation_exception_handler(_request: Request, exc: Exception) -> JSONResponse:
     assert isinstance(exc, RequestValidationError)
     return JSONResponse(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         content=_envelope(
             "validation_error", "Request validation failed", {"errors": exc.errors()}
         ),

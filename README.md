@@ -4,16 +4,16 @@
 
 **📖 Documentation site: <https://theurgicduke771.github.io/DataQ/>** (MkDocs Material — quickstart, concepts, architecture, guides).
 
-**Status:** pre-v1 — Week 7 in progress (deployment, hardening & docs). Weeks 1–6 complete; v1 is **deployed to Azure** (Container Apps + Static Web App, with Key Vault, App Insights, and orchestration polling live). Live task-level progress at [docs/progress.md](docs/progress.md).
+**Status:** pre-v1 — Week 7 (deployment, hardening & docs). Weeks 1–6 complete; v1 is **deployed to Azure Container Apps** — API + worker + a runtime-configured **frontend Container App** (the sole public surface; the api runs on internal ingress behind it), with Key Vault, App Insights, and orchestration polling live. Auth is a **generic OIDC client** (validated against Azure AD; ADR [0028](docs/adr/0028-cloud-neutral-image-runtime-config-generic-oidc.md)). Live task-level progress at [docs/progress.md](docs/progress.md).
 
 ## Stack
 
 | Layer | Tech |
 |---|---|
 | Backend | FastAPI · Celery · Great Expectations · SQLAlchemy + Alembic · PostgreSQL · Redis |
-| Frontend | React · Vite · Ant Design · MSAL React |
-| Auth / secrets | Azure AD (MSAL) · Azure Key Vault |
-| Hosting | Azure Container Apps + Static Web App + Application Insights (deployed) |
+| Frontend | React · Vite · Ant Design · generic OIDC (`oidc-client-ts`) |
+| Auth / secrets | OIDC — Azure AD validated (`AUTH_*` contract, provider-neutral) · Azure Key Vault |
+| Hosting | Azure Container Apps (API · worker · frontend) + Application Insights (deployed) |
 | AI integration | FastMCP — 8 curated MCP tools at `/mcp` for Claude Desktop / Copilot / Cursor |
 
 ## Quick start

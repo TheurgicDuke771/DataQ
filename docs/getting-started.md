@@ -78,13 +78,33 @@ generates local-dev credentials on first run.
 
 ## Running tests
 
+The ~450 DB-backed tests need a real Postgres (`gen_random_uuid()`/jsonb, which SQLite
+can't host); notification tests also need Redis. There are three ways to run:
+
 ```bash
-# Backend (needs a Postgres; CI provides one — locally set TEST_DATABASE_URL):
-conda run -n dataq python -m pytest backend/tests
+# 1. One command — brings up the compose Postgres + Redis, provisions a dedicated
+#    `dataq_test` DB, runs the whole suite (this is what CI runs):
+scripts/test-backend.sh                    # → 1099 passed, 1 skipped (opt-in E2E)
+scripts/test-backend.sh -k notifications   # extra pytest args pass through
+
+# 2. Plain pytest — incl. the VS Code / PyCharm test runner. With the compose
+#    services up, conftest AUTO-DETECTS the local Postgres (from .env, on dataq_test)
+#    so the DB tests run — no env vars, no wrapper:
+docker compose up -d postgres redis
+conda run -n dataq python -m pytest backend/tests           # → 1099 passed, 1 skipped
+
+# 3. No services at all — the DB tests skip, the pure-unit suite still runs green:
+conda run -n dataq python -m pytest backend/tests           # → 652 passed, 448 skipped
 
 # Frontend:
 cd frontend && pnpm test
 ```
+
+> The auto-detect is safe: it only kicks in when `TEST_DATABASE_URL` is unset, targets a
+> **separate `dataq_test` database** (your dev DB + seed data are untouched), and is a
+> no-op in CI (which sets `TEST_DATABASE_URL` explicitly). The **one** always-skipped test
+> is the real-infra E2E (`test_probe_e2e`) — it spins up a live Celery worker + broker and
+> is deliberately opt-in via `DATABASE_URL` + `REDIS_URL`.
 
 Before pushing, run the same gate CI does: Ruff, Black `--check`, mypy, Bandit, pytest
 (backend) and ESLint, Prettier `--check`, Vitest (frontend). See the
