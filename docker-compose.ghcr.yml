@@ -8,8 +8,9 @@
 # remains the contributor path (docker-compose.yml, with source bind-mounts).
 #
 # Auth is dev-bypass (no Azure tenant needed) — every request resolves to a fixed
-# dev user. The frontend image is the dev-bypass `:dev` build; the browser hits
-# the UI and nginx reverse-proxies /api + /mcp to the api service (same-origin).
+# dev user. The frontend is the single generic image (ADR 0028) run with
+# DATAQ_AUTH_MODE=bypass; the browser hits the UI and nginx reverse-proxies
+# /api + /mcp to the api service (same-origin).
 #
 # Override the tags to pin a release instead of the moving stable pointers:
 #   DATAQ_BACKEND_TAG=v1.0.0 DATAQ_FRONTEND_TAG=v1.0.0 docker compose -f ... up
