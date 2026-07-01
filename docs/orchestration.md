@@ -16,9 +16,12 @@ not run the pipelines. Both Azure Data Factory and Apache Airflow sit behind one
 
 Azure Monitor raises an alert on pipeline events → an **Action Group webhook** POSTs to
 `/api/v1/orchestration/events/adf` (shared-secret authenticated). Succeeded runs are also
-picked up by the 10-min poll against the ADF REST API. To get the exact webhook URL to
-paste into the Action Group (host + `?token=` secret, assembled from the live deployment
-and Key Vault rather than by hand), see **One-time provisioning → step 5** in the
+picked up by the 10-min poll against the ADF REST API.
+
+**Getting the webhook URL:** a workspace admin opens **Settings → Webhooks** in the app —
+it shows the ready-to-paste inbound URL per provider (the ADF one embeds the shared
+secret behind a reveal toggle; treat it as a credential). No hand-assembly from Key
+Vault needed. Provisioning details: **One-time provisioning → step 5** in the
 [deployment guide](https://github.com/TheurgicDuke771/DataQ/blob/main/deploy/README.md).
 
 ## Airflow
