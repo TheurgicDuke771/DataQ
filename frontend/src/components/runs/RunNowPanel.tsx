@@ -51,7 +51,7 @@ export function RunNowPanel({ open, onClose }: { open: boolean; onClose: () => v
         onCancel={onClose}
         title="Run now"
         footer={null}
-        destroyOnClose
+        destroyOnHidden
         width={520}
       >
         {/* Mount the body only while open so each open refetches the suite /
@@ -104,15 +104,10 @@ function RunNowForm({
     return map;
   }, [connState]);
 
-  if (suitesState.status === 'loading') return <Spin tip="Loading suites…" />;
+  if (suitesState.status === 'loading') return <Spin description="Loading suites…" />;
   if (suitesState.status === 'error') {
     return (
-      <Alert
-        type="error"
-        showIcon
-        message="Failed to load suites"
-        description={suitesState.error}
-      />
+      <Alert type="error" showIcon title="Failed to load suites" description={suitesState.error} />
     );
   }
   if (runnable.length === 0) {
@@ -190,7 +185,7 @@ function RunNowForm({
         <Alert
           type="warning"
           showIcon
-          message="This suite has no run target"
+          title="This suite has no run target"
           description="Set a run target (edit the suite) before running it."
         />
       )}

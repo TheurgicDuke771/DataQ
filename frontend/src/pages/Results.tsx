@@ -149,9 +149,9 @@ function RunsTab() {
     [suiteMeta],
   );
 
-  if (state.status === 'loading') return <Spin tip="Loading runs…" size="large" />;
+  if (state.status === 'loading') return <Spin description="Loading runs…" size="large" />;
   if (state.status === 'error') {
-    return <Alert type="error" showIcon message="Failed to load runs" description={state.error} />;
+    return <Alert type="error" showIcon title="Failed to load runs" description={state.error} />;
   }
 
   const windowDays = dateWindow === 'all' ? null : Number(dateWindow);
@@ -225,7 +225,7 @@ function RunsTab() {
         <Alert
           type="warning"
           showIcon
-          message="Environment / datasource filters unavailable"
+          title="Environment / datasource filters unavailable"
           description="Couldn't load suites or connections, so runs can't be filtered by environment or datasource. All runs are still shown."
         />
       )}
@@ -345,15 +345,10 @@ function PipelineRunsTab({ pollMs = PIPELINE_POLL_MS }: { pollMs?: number }) {
     return map;
   }, [runsState]);
 
-  if (state.status === 'loading') return <Spin tip="Loading pipeline runs…" size="large" />;
+  if (state.status === 'loading') return <Spin description="Loading pipeline runs…" size="large" />;
   if (state.status === 'error') {
     return (
-      <Alert
-        type="error"
-        showIcon
-        message="Failed to load pipeline runs"
-        description={state.error}
-      />
+      <Alert type="error" showIcon title="Failed to load pipeline runs" description={state.error} />
     );
   }
 
@@ -432,7 +427,7 @@ function PipelineRunsTab({ pollMs = PIPELINE_POLL_MS }: { pollMs?: number }) {
         <Alert
           type="warning"
           showIcon
-          message="Triggered DQ runs unavailable"
+          title="Triggered DQ runs unavailable"
           description="Couldn't load DataQ runs, so the “DQ run” column can't show which runs each pipeline triggered. Pipeline runs below are still accurate."
         />
       )}

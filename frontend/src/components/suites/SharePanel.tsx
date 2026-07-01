@@ -1,5 +1,6 @@
 import { DeleteOutlined } from '@ant-design/icons';
-import { App, Alert, Button, Drawer, Empty, Flex, List, Select, Spin, Tag, Tooltip } from 'antd';
+import { App, Alert, Button, Drawer, Empty, Flex, Select, Spin, Tag, Tooltip } from 'antd';
+import SimpleList from '../SimpleList';
 import { useEffect, useRef, useState } from 'react';
 
 import {
@@ -47,7 +48,7 @@ export function SharePanel({
   return (
     // `destroyOnHidden` unmounts the body on close, so it (and its share-list
     // fetch) starts fresh on each open — matching the other drawers in the app.
-    <Drawer title="Share suite" open={open} onClose={onClose} width={480} destroyOnHidden>
+    <Drawer title="Share suite" open={open} onClose={onClose} size={480} destroyOnHidden>
       <SharePanelBody suiteId={suiteId} ownerId={ownerId} canManage={canManage} />
     </Drawer>
   );
@@ -71,16 +72,11 @@ function SharePanelBody({
   const currentEmail = useCurrentUser()?.username;
 
   if (state.status === 'loading') {
-    return <Spin tip="Loading collaborators…" />;
+    return <Spin description="Loading collaborators…" />;
   }
   if (state.status === 'error') {
     return (
-      <Alert
-        type="error"
-        showIcon
-        message="Failed to load collaborators"
-        description={state.error}
-      />
+      <Alert type="error" showIcon title="Failed to load collaborators" description={state.error} />
     );
   }
   const shares = state.data;
@@ -97,7 +93,7 @@ function SharePanelBody({
       {shares.length === 0 ? (
         <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Not shared with anyone yet." />
       ) : (
-        <List
+        <SimpleList
           dataSource={shares}
           renderItem={(share) => (
             <ShareRow
@@ -159,7 +155,7 @@ function ShareRow({
   };
 
   return (
-    <List.Item
+    <SimpleList.Item
       actions={
         !canManage
           ? // Read-only for anyone without manage rights — including their own row.
@@ -196,11 +192,11 @@ function ShareRow({
               ]
       }
     >
-      <List.Item.Meta
+      <SimpleList.Item.Meta
         title={share.display_name ?? share.email}
         description={share.display_name ? share.email : undefined}
       />
-    </List.Item>
+    </SimpleList.Item>
   );
 }
 

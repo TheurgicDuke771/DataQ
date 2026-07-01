@@ -71,7 +71,7 @@ export function Dashboard() {
       </Flex>
 
       {state.status === 'error' && (
-        <Alert type="error" showIcon message="Failed to load dashboard" description={state.error} />
+        <Alert type="error" showIcon title="Failed to load dashboard" description={state.error} />
       )}
 
       <Row gutter={[16, 16]}>

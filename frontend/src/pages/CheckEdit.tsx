@@ -61,7 +61,7 @@ function CheckEditView({ suiteId, checkId }: { suiteId?: string; checkId?: strin
         <Button onClick={back}>Cancel</Button>
       </Flex>
 
-      {state.status === 'loading' && <Spin tip="Loading check…" />}
+      {state.status === 'loading' && <Spin description="Loading check…" />}
       {state.status === 'error' && (
         <Alert type="error" showIcon title="Failed to load check" description={state.error} />
       )}

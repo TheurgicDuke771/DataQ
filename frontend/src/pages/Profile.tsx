@@ -23,7 +23,7 @@ export function Profile() {
   }
   if (me.status === 'error') {
     return (
-      <Alert type="error" showIcon message="Failed to load your profile" description={me.error} />
+      <Alert type="error" showIcon title="Failed to load your profile" description={me.error} />
     );
   }
 
@@ -78,7 +78,7 @@ export function Profile() {
           type="info"
           showIcon
           icon={<UserOutlined />}
-          message="DQ alerts are configured per suite"
+          title="DQ alerts are configured per suite"
           description={
             <span>
               Microsoft Teams alerts (webhook + fail / warn / always threshold) are set on each

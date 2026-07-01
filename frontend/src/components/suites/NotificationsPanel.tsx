@@ -40,12 +40,12 @@ export function NotificationsPanel({
       }
     >
       {state.status === 'loading' ? (
-        <Spin tip="Loading notifications…" />
+        <Spin description="Loading notifications…" />
       ) : state.status === 'error' ? (
         <Alert
           type="error"
           showIcon
-          message="Failed to load notifications"
+          title="Failed to load notifications"
           description={state.error}
         />
       ) : (

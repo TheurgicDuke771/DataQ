@@ -1,5 +1,6 @@
 import { PlayCircleOutlined } from '@ant-design/icons';
-import { App, Alert, Button, Card, Empty, Flex, List, Spin, Tag, Tooltip, Typography } from 'antd';
+import { App, Alert, Button, Card, Empty, Flex, Spin, Tag, Tooltip, Typography } from 'antd';
+import SimpleList from '../components/SimpleList';
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
@@ -184,7 +185,7 @@ function SuitesBody({
   onDeleted: () => void;
 }) {
   if (state.status === 'loading') {
-    return <Spin tip="Loading suites…" size="large" style={{ marginTop: 80 }} />;
+    return <Spin description="Loading suites…" size="large" style={{ marginTop: 80 }} />;
   }
   if (state.status === 'error') {
     return (
@@ -213,23 +214,27 @@ function SuitesBody({
   return (
     <Flex gap={24} align="flex-start">
       <Card size="small" style={{ width: 320, flexShrink: 0 }} styles={{ body: { padding: 0 } }}>
-        <List
+        <SimpleList
           dataSource={suites}
           renderItem={(suite) => {
             const conn = connections.find((c) => c.id === suite.connection_id);
             const isSelected = suite.id === selectedId;
             return (
-              <List.Item
+              <SimpleList.Item
                 onClick={() => onSelect(suite.id)}
                 className="dq-suite-row"
                 style={{
                   cursor: 'pointer',
-                  padding: '12px 16px',
+                  // Longhand (not the `padding` shorthand) so it overrides the
+                  // shim's own `paddingBlock` deterministically, not by style-key
+                  // serialization order.
+                  paddingBlock: 12,
+                  paddingInline: 16,
                   background: isSelected ? BRAND.selectedBg : undefined,
                 }}
               >
                 <SuiteIdentity suite={suite} conn={conn} size={34} selected={isSelected} />
-              </List.Item>
+              </SimpleList.Item>
             );
           }}
         />
@@ -506,7 +511,7 @@ function ChecksList({
   };
 
   if (state.status === 'loading') {
-    return <Spin tip="Loading checks…" />;
+    return <Spin description="Loading checks…" />;
   }
   if (state.status === 'error') {
     return <Alert type="error" showIcon title="Failed to load checks" description={state.error} />;
@@ -528,10 +533,10 @@ function ChecksList({
           description="No checks yet — add one to start."
         />
       ) : (
-        <List
+        <SimpleList
           dataSource={checks}
           renderItem={(check) => (
-            <List.Item
+            <SimpleList.Item
               actions={[
                 <Button key="edit" type="link" size="small" onClick={() => onEdit(check)}>
                   Edit
@@ -553,7 +558,7 @@ function ChecksList({
                   {check.expectation_type}
                 </Typography.Text>
               </Flex>
-            </List.Item>
+            </SimpleList.Item>
           )}
         />
       )}

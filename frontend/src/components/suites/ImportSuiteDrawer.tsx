@@ -120,7 +120,7 @@ export function ImportSuiteDrawer({
       title="Import suite"
       open={open}
       onClose={onClose}
-      width={480}
+      size={480}
       destroyOnHidden
       extra={
         <Flex gap={8}>
@@ -160,7 +160,7 @@ export function ImportSuiteDrawer({
         </Upload.Dragger>
 
         {parseError && (
-          <Alert type="error" showIcon message="Invalid document" description={parseError} />
+          <Alert type="error" showIcon title="Invalid document" description={parseError} />
         )}
 
         {doc && (

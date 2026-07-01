@@ -94,7 +94,7 @@ export function DryRunPreview({
       </Flex>
       {state.status === 'ok' && <DryRunResultView result={state.result} />}
       {state.status === 'error' && (
-        <Alert type="error" showIcon message="Dry-run failed" description={state.error} />
+        <Alert type="error" showIcon title="Dry-run failed" description={state.error} />
       )}
     </Flex>
   );

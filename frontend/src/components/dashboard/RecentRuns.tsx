@@ -82,9 +82,9 @@ export function RecentRuns() {
         <Link to="/results">View all</Link>
       </Flex>
 
-      {state.status === 'loading' && <Spin tip="Loading runs…" />}
+      {state.status === 'loading' && <Spin description="Loading runs…" />}
       {state.status === 'error' && (
-        <Alert type="error" showIcon message="Failed to load runs" description={state.error} />
+        <Alert type="error" showIcon title="Failed to load runs" description={state.error} />
       )}
       {state.status === 'ok' && (
         <Table<Run>

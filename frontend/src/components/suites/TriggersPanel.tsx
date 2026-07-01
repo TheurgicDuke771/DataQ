@@ -7,13 +7,13 @@ import {
   Empty,
   Flex,
   Input,
-  List,
   Select,
   Spin,
   Switch,
   Tag,
   Typography,
 } from 'antd';
+import SimpleList from '../SimpleList';
 import { useState } from 'react';
 
 import { CONNECTION_ENVS, type ConnectionEnv, ENV_COLORS, envLabel } from '../../api/connections';
@@ -68,11 +68,11 @@ function TriggersBody({
   onChanged: () => void;
 }) {
   if (state.status === 'loading') {
-    return <Spin tip="Loading triggers…" />;
+    return <Spin description="Loading triggers…" />;
   }
   if (state.status === 'error') {
     return (
-      <Alert type="error" showIcon message="Failed to load triggers" description={state.error} />
+      <Alert type="error" showIcon title="Failed to load triggers" description={state.error} />
     );
   }
   const bindings = state.data;
@@ -86,7 +86,7 @@ function TriggersBody({
           description="No triggers — this suite runs only on manual / scheduled runs."
         />
       ) : (
-        <List
+        <SimpleList
           dataSource={bindings}
           renderItem={(binding) => (
             <TriggerRow
@@ -141,7 +141,7 @@ function TriggerRow({
   };
 
   return (
-    <List.Item
+    <SimpleList.Item
       actions={
         canManage
           ? [
@@ -180,7 +180,7 @@ function TriggerRow({
           </Typography.Text>
         </Flex>
       </Flex>
-    </List.Item>
+    </SimpleList.Item>
   );
 }
 

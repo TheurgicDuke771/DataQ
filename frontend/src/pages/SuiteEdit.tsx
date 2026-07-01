@@ -39,7 +39,7 @@ function SuiteEditView({ suiteId }: { suiteId?: string }) {
         <Button onClick={back}>Cancel</Button>
       </Flex>
 
-      {state.status === 'loading' && <Spin tip="Loading suite…" />}
+      {state.status === 'loading' && <Spin description="Loading suite…" />}
       {state.status === 'error' && (
         <Alert type="error" showIcon title="Failed to load suite" description={state.error} />
       )}

@@ -137,7 +137,7 @@ function ConnectionsBody({
   health: Record<string, HealthState>;
 }) {
   if (state.status === 'loading') {
-    return <Spin tip="Loading connections…" size="large" style={{ marginTop: 80 }} />;
+    return <Spin description="Loading connections…" size="large" style={{ marginTop: 80 }} />;
   }
   if (state.status === 'error') {
     return (

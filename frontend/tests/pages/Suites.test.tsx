@@ -198,7 +198,9 @@ describe('Suites', () => {
     await screen.findByText('order_id not null');
 
     // The check row's own Delete (link button), scoped to its confirm dialog.
-    const checkRow = screen.getByText('order_id not null').closest('li') as HTMLElement;
+    const checkRow = screen
+      .getByText('order_id not null')
+      .closest('[role="listitem"]') as HTMLElement;
     await user.click(within(checkRow).getByRole('button', { name: 'Delete' }));
 
     const dialog = await screen.findByRole('dialog');

@@ -47,7 +47,7 @@ test.describe('Suites page', () => {
 
     // Back on the suite detail, the new check is listed.
     await expect(page).toHaveURL(/\/suites\/[0-9a-f-]+$/);
-    const row = page.locator('.ant-list-item').filter({ hasText: name });
+    const row = page.locator('[role="listitem"]').filter({ hasText: name });
     await expect(row).toBeVisible();
 
     // Clean up: the check row's Delete → confirm.
@@ -56,7 +56,7 @@ test.describe('Suites page', () => {
       .getByRole('dialog', { name: /^Delete/ })
       .getByRole('button', { name: 'Delete' })
       .click();
-    await expect(page.locator('.ant-list-item').filter({ hasText: name })).toHaveCount(0);
+    await expect(page.locator('[role="listitem"]').filter({ hasText: name })).toHaveCount(0);
   });
 
   test('create a suite, see it in the list, then delete it', async ({ page }) => {
@@ -94,6 +94,6 @@ test.describe('Suites page', () => {
     await page.getByRole('button', { name: 'Delete' }).click();
     const confirm = page.getByRole('dialog', { name: /^Delete/ });
     await confirm.getByRole('button', { name: 'Delete' }).click();
-    await expect(page.locator('.ant-list-item').filter({ hasText: name })).toHaveCount(0);
+    await expect(page.locator('[role="listitem"]').filter({ hasText: name })).toHaveCount(0);
   });
 });

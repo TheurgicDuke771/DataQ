@@ -55,9 +55,9 @@ export function RunDetail() {
         </Button>
       </div>
 
-      {state.status === 'loading' && <Spin tip="Loading run…" size="large" />}
+      {state.status === 'loading' && <Spin description="Loading run…" size="large" />}
       {state.status === 'error' && (
-        <Alert type="error" showIcon message="Failed to load run" description={state.error} />
+        <Alert type="error" showIcon title="Failed to load run" description={state.error} />
       )}
       {state.status === 'ok' && (
         <RunDetailBody
