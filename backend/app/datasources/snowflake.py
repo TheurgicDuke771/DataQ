@@ -134,6 +134,7 @@ class SnowflakeCheckRunner:
         table: str,
         schema: str | None,
         checks: list[CheckSpec],
+        index_columns: list[str] | None = None,
     ) -> SuiteOutcome:
         context = gx.get_context(mode="ephemeral")
         add_kwargs: dict[str, Any] = {}
@@ -157,7 +158,11 @@ class SnowflakeCheckRunner:
         # ephemeral context makes the fixed suite/vd names safe across runs.
         batch_definition = asset.add_batch_definition_whole_table(name="whole_table")
         return run_expectations(
-            context, batch_definition=batch_definition, checks=checks, name=f"suite-{table}"
+            context,
+            batch_definition=batch_definition,
+            checks=checks,
+            name=f"suite-{table}",
+            index_columns=index_columns,
         )
 
     def run_monitors(

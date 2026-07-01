@@ -127,8 +127,20 @@ def _run_suite(session: Session, *, run_id: uuid.UUID) -> str:
     except Exception:
         return _terminal_failed(session, run, event="run_suite_materialize_failed", run_id=run_id)
 
+    # The suite's identifier column (#415) — requested from GX so failing rows are
+    # captured with a locator. A `None`/absent policy keeps the scalar-only sample.
+    policy = suite.column_policy or {}
+    identifier = policy.get("identifier_column")
+    index_columns = [str(identifier)] if identifier else None
+
     run_service.execute_run(
-        session, run=run, checks=checks, runner=runner, table=table, schema=target.schema
+        session,
+        run=run,
+        checks=checks,
+        runner=runner,
+        table=table,
+        schema=target.schema,
+        index_columns=index_columns,
     )
     return str(run.status)
 

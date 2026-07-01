@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import uuid
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
@@ -35,6 +35,7 @@ from backend.app.datasources.base import (
 from backend.app.datasources.monitors import MONITOR_KINDS
 from backend.app.db.models import RESULT_STATUSES, RUN_STATUSES, Check, Result, Run
 from backend.app.services import run_dispatch, suite_service
+from backend.app.services.column_classification import ColumnClass, classify_column, is_sensitive
 from backend.app.services.severity import resolve_status
 
 log = get_logger(__name__)
@@ -89,7 +90,12 @@ _EXPECTATION_KIND = "expectation"
 
 
 def _run_outcomes(
-    runner: CheckRunner, *, table: str, schema: str | None, checks: list[Check]
+    runner: CheckRunner,
+    *,
+    table: str,
+    schema: str | None,
+    checks: list[Check],
+    index_columns: list[str] | None = None,
 ) -> list[CheckOutcome]:
     """Run a suite's checks, dispatching by `check.kind` (ADR 0012), and return one
     outcome per check in the **same order** (so they zip 1:1 onto result rows).
@@ -117,7 +123,9 @@ def _run_outcomes(
             CheckSpec(expectation_type=checks[i].expectation_type, kwargs=dict(checks[i].config))
             for i in expectation_idx
         ]
-        suite_outcome = runner.run_checks(table=table, schema=schema, checks=specs)
+        suite_outcome = runner.run_checks(
+            table=table, schema=schema, checks=specs, index_columns=index_columns
+        )
         for i, oc in zip(expectation_idx, suite_outcome.checks, strict=True):
             outcomes[i] = oc
     if monitor_idx:
@@ -159,10 +167,13 @@ def execute_run(
     runner: CheckRunner,
     table: str,
     schema: str | None = None,
+    index_columns: list[str] | None = None,
 ) -> Run:
     """Run ``checks`` against ``table`` via ``runner`` and persist the outcome.
 
     ``run`` must already be persisted (it carries the id the results link to).
+    ``index_columns`` (the suite's identifier column, #415) is requested from GX so
+    failing rows are captured with a locator; ``None`` keeps the scalar-only sample.
     Returns the same `Run`, updated to ``succeeded`` or ``failed``.
     """
     run.status = "running"
@@ -182,7 +193,9 @@ def execute_run(
     # an unrunnable check kind) would leave the run stuck in 'running' forever.
     # rollback() discards any partial result inserts before we record the failure.
     try:
-        outcomes = _run_outcomes(runner, table=table, schema=schema, checks=checks)
+        outcomes = _run_outcomes(
+            runner, table=table, schema=schema, checks=checks, index_columns=index_columns
+        )
         rows = [
             _build_result(run.id, check, check_outcome)
             for check, check_outcome in zip(checks, outcomes, strict=True)
@@ -456,70 +469,107 @@ def _redact_sample_value(value: Any) -> Any:
     return _REDACTED_VALUE
 
 
-# Column-name tokens that mark a column as PII for sample redaction — the
-# name-heuristic layer below datasource classification/tags (#415). A column
-# matches if its name *contains* any token (so `customer_email`, `home_address`
-# match). The authoritative layers (warehouse classification, the suite policy's
-# explicit `pii_columns`) sit above this; unclassified columns still default-mask.
-_PII_COLUMN_TOKENS = frozenset(
-    {
-        "email",
-        "phone",
-        "mobile",
-        "ssn",
-        "passport",
-        "name",
-        "address",
-        "street",
-        "city",
-        "zip",
-        "postal",
-        "dob",
-        "birth",
-        "credit",
-        "card",
-        "iban",
-        "account_number",
-    }
-)
+# Datasource-tag values that HARD-mask a column (#415 level 1 — the governance
+# floor an override can't lift). The datasource-tags layer that *populates* `tags`
+# is a later increment; today callers pass no tags, so this is dormant but wired.
+_SENSITIVE_TAG_VALUES = frozenset({"sensitive", "pii", "confidential", "restricted", "secret"})
 
 
-def _is_pii_column(column: str, policy: dict[str, Any] | None) -> bool:
-    """Whether a column must be masked in a sample: explicitly in the suite
-    policy's ``pii_columns``, or matched by the column-name heuristic."""
-    name = column.strip().lower()
-    if policy:
-        listed = {str(c).strip().lower() for c in (policy.get("pii_columns") or [])}
-        if name in listed:
-            return True
-    return any(token in name for token in _PII_COLUMN_TOKENS)
+def _tag_sensitive(column: str, tags: Mapping[str, str] | None) -> bool:
+    """Level 1 — a datasource governance tag marks the column sensitive (hard floor)."""
+    if not tags:
+        return False
+    tag = tags.get(column) or tags.get(column.strip().lower()) or ""
+    return str(tag).strip().lower() in _SENSITIVE_TAG_VALUES
 
 
-def _safe_sample_columns(tested_column: str | None, policy: dict[str, Any] | None) -> set[str]:
-    """Columns whose raw values may be surfaced in a sample: the tested column +
-    the suite policy's identifier column, each only if **not** PII (policy
-    ``pii_columns`` / name heuristic). Empty when nothing is classified → the
-    blanket mask (default-redact, so security never regresses)."""
-    safe: set[str] = set()
-    if tested_column and not _is_pii_column(tested_column, policy):
-        safe.add(tested_column)
-    identifier = (policy or {}).get("identifier_column")
-    if identifier and not _is_pii_column(str(identifier), policy):
-        safe.add(str(identifier))
-    return safe
+def _policy_pii(column: str, policy: Mapping[str, Any] | None) -> bool:
+    """Level 3 — the suite override explicitly lists the column as PII."""
+    if not policy:
+        return False
+    listed = {str(c).strip().lower() for c in (policy.get("pii_columns") or [])}
+    return column.strip().lower() in listed
 
 
-def _redact_row(row: Any, safe_columns: set[str]) -> Any:
-    """Mask a failing-row dict per-column: **default-redact** — a column's value
-    is kept only when it's in ``safe_columns`` (the identifier + tested column),
-    every other column (PII or unclassified) is masked. Non-dict rows fall back to
-    full masking."""
+def _policy_identifier(column: str, policy: Mapping[str, Any] | None) -> bool:
+    """Level 3 — the suite override names the column as the shown identifier."""
+    if not policy:
+        return False
+    ident = policy.get("identifier_column")
+    return bool(ident) and str(ident).strip().lower() == column.strip().lower()
+
+
+def _known_sensitive(
+    column: str,
+    values: Sequence[Any],
+    policy: Mapping[str, Any] | None,
+    tags: Mapping[str, str] | None,
+) -> bool:
+    """Whether a column is **known** sensitive — a governance tag (floor), an explicit
+    override, or an *affirmative* name/value PII signal (not the conservative default).
+    Gates the **tested** and **identifier** columns: those are shown *unless* known
+    sensitive (seeing the failing value / locating the row is the point)."""
+    return (
+        _tag_sensitive(column, tags) or _policy_pii(column, policy) or is_sensitive(column, values)
+    )
+
+
+def _may_show_incidental(
+    column: str,
+    values: Sequence[Any],
+    policy: Mapping[str, Any] | None,
+    tags: Mapping[str, str] | None,
+) -> bool:
+    """Whether an *incidental* column (not the tested / identifier one) may be shown:
+    only when it's affirmatively an IDENTIFIER or SAFE value — everything else
+    default-masks (#415), so security can't regress. A governance tag / override-PII
+    always masks; an override-named identifier shows **unless it is affirmatively PII**
+    (a designated locator can't un-mask a column whose name/values are direct PII —
+    e.g. an ``EMAIL`` set as identifier, or a natural key holding emails)."""
+    if _tag_sensitive(column, tags) or _policy_pii(column, policy):
+        return False
+    if _policy_identifier(column, policy):
+        return not is_sensitive(column, values)
+    return classify_column(column, list(values)) is not ColumnClass.PII
+
+
+def _values_by_column(rows: Sequence[Any]) -> dict[str, list[Any]]:
+    """Gather each column's values across the sampled failing rows, so the classifier's
+    value signal (emails, id-shape) sees the whole column, not one cell."""
+    out: dict[str, list[Any]] = defaultdict(list)
+    for row in rows:
+        if isinstance(row, dict):
+            for col, val in row.items():
+                out[str(col)].append(val)
+    return dict(out)
+
+
+def _redact_row(
+    row: Any,
+    *,
+    tested_column: str | None,
+    policy: Mapping[str, Any] | None,
+    tags: Mapping[str, str] | None,
+    values_by_column: Mapping[str, list[Any]],
+) -> Any:
+    """Mask a failing-row dict per column: the tested column shows unless *known*
+    sensitive; every other column shows only if affirmatively identifier/safe
+    (default-mask). Non-dict rows fall back to full masking."""
     if not isinstance(row, dict):
         return _redact_sample_value(row)
-    return {
-        col: (val if str(col) in safe_columns else _redact_sample_value(val))
-        for col, val in row.items()
-    }
+    # Case-insensitive tested-column match: GX returns the warehouse's column casing
+    # (Snowflake upper-cases), which need not match the check config's `column`.
+    tested = (tested_column or "").strip().lower()
+    out: dict[Any, Any] = {}
+    for col, val in row.items():
+        name = str(col)
+        vals = values_by_column.get(name, [val])
+        if tested and name.strip().lower() == tested:
+            show = not _known_sensitive(name, vals, policy, tags)
+        else:
+            show = _may_show_incidental(name, vals, policy, tags)
+        out[col] = val if show else _redact_sample_value(val)
+    return out
 
 
 def redact_sample_failures(
@@ -527,42 +577,68 @@ def redact_sample_failures(
     *,
     tested_column: str | None = None,
     policy: dict[str, Any] | None = None,
+    tags: Mapping[str, str] | None = None,
 ) -> dict[str, Any] | None:
     """Redact a result's `sample_failures` for safe surfacing on the read API.
 
-    `sample_failures` carries aggregate counts plus `partial_unexpected_list` —
-    the failing values of the **tested column** — and (when a future runner records
-    it) an `unexpected_index_list` of failing rows. Suite-level ``view`` authz lets
+    `sample_failures` carries aggregate counts plus `partial_unexpected_list` — the
+    failing values of the **tested column** — and (when the runner records it) an
+    `unexpected_index_list` of failing rows. Suite-level ``view`` authz lets
     share-recipients read a suite's results, so PII must not cross that boundary
     unredacted (CLAUDE.md PII rule; purged on the retention sweep below).
 
-    Column-aware policy (#415) — surgical, not blanket:
-    * numeric summary keys (`unexpected_count` / `unexpected_percent`) always pass;
-    * `partial_unexpected_list` (the tested column's failing values) passes when
-      ``tested_column`` is **not** PII — per the suite ``policy.pii_columns`` or the
-      name heuristic — so a non-PII breach (e.g. a bad ``LINE_TOTAL``) is finally
-      *visible*, while a PII tested column (``email``) stays masked;
-    * `unexpected_index_list` row-dicts are masked **per column** (identifier +
-      non-PII shown, PII masked);
-    * everything else default-masks (unclassified → redacted, so security can't
-      regress).
+    Column-aware policy (#415) — surgical, not blanket, over three authority layers:
+    datasource **tags** (``tags``, a governance floor — later increment), the suite
+    **override** (``policy``), and the name+value **classifier**. Rules:
 
-    With neither ``tested_column`` nor ``policy`` the legacy **blanket mask** is
-    kept (the safe default for callers that don't know the column) — only the
-    summary keys survive. ``None`` sample passes through unchanged.
+    * numeric summary keys (`unexpected_count` / `unexpected_percent`) always pass;
+    * `partial_unexpected_list` (the tested column's scalar failing values) passes when
+      the tested column is **not known sensitive** — so a non-PII breach (a bad
+      ``LINE_TOTAL``) is *visible* while a PII tested column (``email``) stays masked;
+      with **no** ``tested_column`` the list is masked (no column context → safe default);
+    * row-dicts (`unexpected_index_list`, or a dict-shaped `partial_unexpected_list`)
+      are redacted **per column** — the tested column + identifiers + safe values shown,
+      PII + unclassified masked;
+    * everything else default-masks. ``None`` sample passes through unchanged.
     """
     if not sample:
         return None
-    safe = _safe_sample_columns(tested_column, policy)
-    show_tested = tested_column is not None and tested_column in safe
+    index_rows = sample.get("unexpected_index_list")
+    index_vbc = _values_by_column(index_rows) if isinstance(index_rows, list) else {}
     out: dict[str, Any] = {}
     for key, value in sample.items():
         if _is_safe_summary(key, value):
             out[key] = value
-        elif key == "partial_unexpected_list" and show_tested:
-            out[key] = value  # the tested column's failing values — non-PII, surfaced
         elif key == "unexpected_index_list" and isinstance(value, list):
-            out[key] = [_redact_row(row, safe) for row in value]
+            out[key] = [
+                _redact_row(
+                    row,
+                    tested_column=tested_column,
+                    policy=policy,
+                    tags=tags,
+                    values_by_column=index_vbc,
+                )
+                for row in value
+            ]
+        elif key == "partial_unexpected_list" and isinstance(value, list):
+            if value and all(isinstance(v, dict) for v in value):
+                vbc = _values_by_column(value)
+                out[key] = [
+                    _redact_row(
+                        row,
+                        tested_column=tested_column,
+                        policy=policy,
+                        tags=tags,
+                        values_by_column=vbc,
+                    )
+                    for row in value
+                ]
+            elif tested_column is not None and not _known_sensitive(
+                tested_column, value, policy, tags
+            ):
+                out[key] = value  # the tested column's failing values — surfaced
+            else:
+                out[key] = _redact_sample_value(value)
         else:
             out[key] = _redact_sample_value(value)
     return out

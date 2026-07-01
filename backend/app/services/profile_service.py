@@ -56,6 +56,7 @@ from backend.app.datasources.snowflake import (
 )
 from backend.app.datasources.unity_catalog import UnityCatalogConfig, build_databricks_url
 from backend.app.db.models import Connection
+from backend.app.services.column_classification import ColumnClass, classify_column
 
 log = get_logger(__name__)
 
@@ -638,6 +639,36 @@ def profile_file(
         ) from exc
 
     return profile_dataframe(df, columns=columns, top_n=top_n, path=path, file_format=fmt)
+
+
+def derive_column_policy(columns: list[ColumnProfile]) -> dict[str, Any]:
+    """Auto-derive a failing-sample redaction policy (#415) from a column profile.
+
+    Classifies each column by name + its sampled top-values and returns the
+    ``{identifier_column, pii_columns}`` shape stored on ``Suite.column_policy``:
+
+    * ``pii_columns`` — every column the classifier flags PII (masked in samples);
+    * ``identifier_column`` — the best row locator: the highest-cardinality column
+      classified IDENTIFIER (most unique → most useful to pinpoint a failing row),
+      ties broken by name. Omitted when no column looks like an identifier.
+
+    A convenience the author reviews and can override — the *stored* policy is
+    authoritative, and the datasource-tag layer (level 1) still overrules for masking.
+    """
+    pii: list[str] = []
+    identifiers: list[tuple[int, str]] = []  # (distinct_count, name) → pick the most unique
+    for col in columns:
+        values = [tv.get("value") for tv in col.top_values]
+        cls = classify_column(col.column, values)
+        if cls is ColumnClass.PII:
+            pii.append(col.column)
+        elif cls is ColumnClass.IDENTIFIER:
+            identifiers.append((col.distinct_count or 0, col.column))
+    policy: dict[str, Any] = {"pii_columns": pii}
+    if identifiers:
+        identifiers.sort(key=lambda item: (-item[0], item[1]))
+        policy["identifier_column"] = identifiers[0][1]
+    return policy
 
 
 def profile_connection(

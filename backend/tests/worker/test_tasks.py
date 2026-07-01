@@ -70,7 +70,12 @@ class FakeRunner:
         self.table: str | None = None
 
     def run_checks(
-        self, *, table: str, schema: str | None, checks: list[CheckSpec]
+        self,
+        *,
+        table: str,
+        schema: str | None,
+        checks: list[CheckSpec],
+        index_columns: list[str] | None = None,
     ) -> SuiteOutcome:
         self.table = table
         return self._outcome

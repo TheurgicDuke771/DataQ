@@ -129,6 +129,46 @@ def test_run_checks_all_pass(monkeypatch: pytest.MonkeyPatch) -> None:
     assert outcome.checks[0].success is True
 
 
+def test_run_checks_index_columns_capture_identifier(monkeypatch: pytest.MonkeyPatch) -> None:
+    # #415: requesting index_columns makes GX return a per-row unexpected_index_list
+    # carrying the identifier column + the failing value — the row locator.
+    df = pd.DataFrame(
+        {
+            "order_number": ["ORD-1", None, "ORD-3", None],
+            "customer_id": [4471, 8823, 91, 20455],
+        }
+    )
+    runner = _runner_over(df, monkeypatch)
+    outcome = runner.run_checks(
+        table="data/orders.parquet",
+        schema=None,
+        checks=[CheckSpec("expect_column_values_to_not_be_null", {"column": "order_number"})],
+        index_columns=["customer_id"],
+    )
+    sample = outcome.checks[0].sample_failures
+    assert sample is not None
+    rows = sample["unexpected_index_list"]
+    # the two null rows, each dict carrying the identifier + the (null) tested value
+    assert {r["customer_id"] for r in rows} == {8823, 20455}
+    assert all("order_number" in r for r in rows)
+
+
+def test_run_checks_bad_index_column_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
+    # An absent identifier column errors GX's index metric on every check; the runner
+    # falls back to a plain run so the checks still evaluate (no index, not all-errored).
+    df = pd.DataFrame({"order_number": ["ORD-1", None, "ORD-3"]})
+    runner = _runner_over(df, monkeypatch)
+    outcome = runner.run_checks(
+        table="data/orders.parquet",
+        schema=None,
+        checks=[CheckSpec("expect_column_values_to_not_be_null", {"column": "order_number"})],
+        index_columns=["does_not_exist"],
+    )
+    assert outcome.checks[0].errored is False
+    assert outcome.checks[0].success is False  # the real null failure still surfaces
+    assert "unexpected_index_list" not in (outcome.checks[0].sample_failures or {})
+
+
 def test_run_checks_errored_check_flagged_without_failing_siblings(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

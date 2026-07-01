@@ -99,6 +99,7 @@ class CheckRunner(Protocol):
         table: str,
         schema: str | None,
         checks: list[CheckSpec],
+        index_columns: list[str] | None = None,
     ) -> SuiteOutcome: ...
 
 

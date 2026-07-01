@@ -86,6 +86,10 @@ class SuiteRead(BaseModel):
     description: str | None
     connection_id: uuid.UUID
     target: dict[str, Any] | None
+    # Failing-sample redaction policy (#415): {identifier_column?, pii_columns}. NULL
+    # until set — the classifier still auto-classifies incidental columns at redaction
+    # time; this stored policy pins the shown identifier + the always-masked columns.
+    column_policy: dict[str, Any] | None = None
     created_by: uuid.UUID
     # The caller's effective level on this suite (`owner`/`admin`/`edit`/`view`)
     # so the UI can gate per-suite actions — manage shares, delete — without a
@@ -431,3 +435,116 @@ def list_columns(
         secret_store=secret_store,
     )
     return ColumnsRead(columns=columns)
+
+
+# ── failing-sample redaction policy (#415) ──────────────────────────────────
+
+
+class ColumnPolicyRead(BaseModel):
+    """A suite's failing-sample redaction policy: the shown ``identifier_column``
+    (a non-PII row locator) + the always-masked ``pii_columns``."""
+
+    identifier_column: str | None = None
+    pii_columns: list[str] = Field(default_factory=list)
+
+    @classmethod
+    def of(cls, policy: dict[str, Any] | None) -> ColumnPolicyRead:
+        policy = policy or {}
+        return cls(
+            identifier_column=policy.get("identifier_column"),
+            pii_columns=list(policy.get("pii_columns") or []),
+        )
+
+
+class ColumnPolicyUpdate(BaseModel):
+    identifier_column: str | None = Field(default=None, max_length=255)
+    pii_columns: list[str] = Field(default_factory=list, max_length=200)
+
+
+class ColumnPolicySuggestRequest(BaseModel):
+    """The suite's target to profile + classify — same shape as the profiler request,
+    minus ``columns`` (all of the target's columns are classified)."""
+
+    top_n: int = Field(default=20, ge=1, le=100)
+    table: str | None = Field(default=None, max_length=255)
+    schema_: str | None = Field(default=None, alias="schema")
+    catalog: str | None = Field(default=None, max_length=255)
+    path: str | None = Field(default=None, max_length=1024)
+    file_format: Literal["csv", "parquet"] | None = None
+
+
+@router.get(
+    "/suites/{suite_id}/column-policy",
+    response_model=ColumnPolicyRead,
+    summary="Get the suite's failing-sample redaction policy (#415)",
+)
+def get_column_policy(
+    suite_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> ColumnPolicyRead:
+    suite = require_permission(db, suite_id, current_user.id, minimum="view")
+    return ColumnPolicyRead.of(suite.column_policy)
+
+
+@router.put(
+    "/suites/{suite_id}/column-policy",
+    response_model=ColumnPolicyRead,
+    summary="Set the suite's failing-sample redaction policy (#415)",
+)
+def set_column_policy(
+    suite_id: uuid.UUID,
+    payload: ColumnPolicyUpdate,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> ColumnPolicyRead:
+    require_permission(db, suite_id, current_user.id, minimum="edit")
+    suite = svc.set_column_policy(
+        db,
+        suite_id,
+        identifier_column=payload.identifier_column,
+        pii_columns=payload.pii_columns,
+    )
+    return ColumnPolicyRead.of(suite.column_policy)
+
+
+@router.post(
+    "/suites/{suite_id}/column-policy/suggest",
+    response_model=ColumnPolicyRead,
+    summary="Suggest a redaction policy by profiling + classifying the target (no save)",
+)
+def suggest_column_policy(
+    suite_id: uuid.UUID,
+    payload: ColumnPolicySuggestRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    secret_store: Annotated[SecretStore, Depends(get_secret_store)],
+) -> ColumnPolicyRead:
+    # sync def → threadpool; the datasource connect + column list/profile are blocking.
+    # Authoring aid → 'edit'. Lists the target's columns, profiles them for sample
+    # values, then classifies name+values into an {identifier, pii} suggestion the
+    # author reviews and PUTs. Not persisted here.
+    suite = require_permission(db, suite_id, current_user.id, minimum="edit")
+    connection = db.get(Connection, suite.connection_id)
+    assert connection is not None
+    columns = profile.list_columns(
+        connection,
+        table=payload.table,
+        schema=payload.schema_,
+        catalog=payload.catalog,
+        path=payload.path,
+        file_format=payload.file_format,
+        secret_store=secret_store,
+    )
+    result = profile.profile_connection(
+        connection,
+        columns=columns,
+        top_n=payload.top_n,
+        table=payload.table,
+        schema=payload.schema_,
+        catalog=payload.catalog,
+        path=payload.path,
+        file_format=payload.file_format,
+        secret_store=secret_store,
+    )
+    return ColumnPolicyRead.of(profile.derive_column_policy(result.columns))

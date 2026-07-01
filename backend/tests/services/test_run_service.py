@@ -66,9 +66,19 @@ class FakeRunner:
         self.called_with: dict[str, object] | None = None
 
     def run_checks(
-        self, *, table: str, schema: str | None, checks: list[CheckSpec]
+        self,
+        *,
+        table: str,
+        schema: str | None,
+        checks: list[CheckSpec],
+        index_columns: list[str] | None = None,
     ) -> SuiteOutcome:
-        self.called_with = {"table": table, "schema": schema, "checks": checks}
+        self.called_with = {
+            "table": table,
+            "schema": schema,
+            "checks": checks,
+            "index_columns": index_columns,
+        }
         if self._raises is not None:
             raise self._raises
         assert self._outcome is not None
@@ -116,7 +126,12 @@ class FakeMonitorRunner:
         self.monitors_called_with: list[object] | None = None
 
     def run_checks(
-        self, *, table: str, schema: str | None, checks: list[CheckSpec]
+        self,
+        *,
+        table: str,
+        schema: str | None,
+        checks: list[CheckSpec],
+        index_columns: list[str] | None = None,
     ) -> SuiteOutcome:
         return SuiteOutcome(success=True, checks=self._check_outcomes)
 
@@ -205,6 +220,7 @@ def test_successful_run_persists_results_and_marks_succeeded() -> None:
         "table": "ORDERS",
         "schema": "FIN",
         "checks": [CheckSpec("x", {}), CheckSpec("x", {})],
+        "index_columns": None,
     }
 
 
@@ -473,7 +489,9 @@ def test_redact_sample_failures_none_and_empty_pass_through() -> None:
     assert run_service.redact_sample_failures({}) is None
 
 
-def test_redact_sample_failures_keeps_counts_masks_row_dicts() -> None:
+def test_redact_sample_failures_keeps_counts_classifies_row_dicts() -> None:
+    # A dict-shaped list is redacted per column by the classifier: the `id` locator is
+    # shown, the `ssn` PII masked (counts always kept).
     out = run_service.redact_sample_failures(
         {
             "unexpected_count": 3,
@@ -484,7 +502,7 @@ def test_redact_sample_failures_keeps_counts_masks_row_dicts() -> None:
     assert out == {
         "unexpected_count": 3,
         "unexpected_percent": 12.5,
-        "partial_unexpected_list": [{"id": "<redacted>", "ssn": "<redacted>"}],
+        "partial_unexpected_list": [{"id": 1, "ssn": "<redacted>"}],
     }
 
 
@@ -563,3 +581,81 @@ def test_redact_sample_failures_masks_non_numeric_value_under_safe_key() -> None
         }
     )
     assert out == {"unexpected_count": 3, "unexpected_percent": ["<redacted>"]}
+
+
+def test_redact_shows_surrogate_person_key_by_classifier() -> None:
+    # No policy: the classifier alone shows a surrogate key (customer_id) as the row
+    # locator and masks the PII, without any explicit identifier_column.
+    out = run_service.redact_sample_failures(
+        {
+            "unexpected_index_list": [
+                {"CUSTOMER_ID": 4471, "QTY": -3, "CUSTOMER_EMAIL": "a@x.com"},
+            ]
+        },
+        tested_column="QTY",
+    )
+    assert out == {
+        "unexpected_index_list": [{"CUSTOMER_ID": 4471, "QTY": -3, "CUSTOMER_EMAIL": "<redacted>"}]
+    }
+
+
+def test_redact_masks_natural_key_holding_emails() -> None:
+    # A `user_id` whose VALUES are emails is a natural key leaking a direct identifier —
+    # the value signal overrides the id-shaped name and masks it.
+    out = run_service.redact_sample_failures(
+        {
+            "unexpected_index_list": [
+                {"USER_ID": "ada@acme.io", "STATUS": "bad"},
+                {"USER_ID": "bo@acme.io", "STATUS": "bad"},
+            ]
+        },
+    )
+    assert out == {
+        "unexpected_index_list": [
+            {"USER_ID": "<redacted>", "STATUS": "bad"},
+            {"USER_ID": "<redacted>", "STATUS": "bad"},
+        ]
+    }
+
+
+def test_redact_identifier_override_cannot_unmask_pii_column() -> None:
+    # A designated identifier that is affirmatively PII (name) must stay masked — an
+    # override picks a locator, it can't un-mask a direct identifier.
+    out = run_service.redact_sample_failures(
+        {"unexpected_index_list": [{"EMAIL": "a@x.com", "QTY": -3}]},
+        tested_column="QTY",
+        policy={"identifier_column": "EMAIL"},
+    )
+    assert out == {"unexpected_index_list": [{"EMAIL": "<redacted>", "QTY": -3}]}
+
+
+def test_redact_identifier_override_masks_natural_key_of_emails() -> None:
+    # A `user_id` designated identifier whose VALUES are emails → value floor masks it.
+    out = run_service.redact_sample_failures(
+        {"unexpected_index_list": [{"USER_ID": "a@x.com", "QTY": -3}]},
+        tested_column="QTY",
+        policy={"identifier_column": "USER_ID"},
+    )
+    assert out == {"unexpected_index_list": [{"USER_ID": "<redacted>", "QTY": -3}]}
+
+
+def test_redact_tested_column_match_is_case_insensitive() -> None:
+    # GX returns warehouse casing (Snowflake upper-cases); the check config's column may
+    # differ in case. The tested column's non-PII value must still surface.
+    out = run_service.redact_sample_failures(
+        {"unexpected_index_list": [{"LINE_TOTAL": -12.5, "EMAIL": "a@x.com"}]},
+        tested_column="line_total",
+    )
+    assert out == {"unexpected_index_list": [{"LINE_TOTAL": -12.5, "EMAIL": "<redacted>"}]}
+
+
+def test_redact_datasource_tag_is_a_floor_override_cannot_unmask() -> None:
+    # Level 1 governance tag marks a column sensitive; even an explicit identifier_column
+    # override (level 3) cannot un-mask it.
+    out = run_service.redact_sample_failures(
+        {"unexpected_index_list": [{"ACCOUNT_REF": "ACC-9", "AMOUNT": -1}]},
+        tested_column="AMOUNT",
+        policy={"identifier_column": "ACCOUNT_REF"},
+        tags={"ACCOUNT_REF": "sensitive"},
+    )
+    assert out == {"unexpected_index_list": [{"ACCOUNT_REF": "<redacted>", "AMOUNT": -1}]}

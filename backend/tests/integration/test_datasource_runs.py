@@ -180,7 +180,12 @@ class _CannedRunner:
     """Stands in for the warehouse-bound Snowflake runner (no live connect)."""
 
     def run_checks(
-        self, *, table: str, schema: str | None, checks: list[CheckSpec]
+        self,
+        *,
+        table: str,
+        schema: str | None,
+        checks: list[CheckSpec],
+        index_columns: list[str] | None = None,
     ) -> SuiteOutcome:
         return SuiteOutcome(
             success=False,
