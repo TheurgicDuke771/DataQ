@@ -20,8 +20,6 @@ from __future__ import annotations
 import math
 from typing import Any
 
-import numpy as np
-
 
 def sanitize_json(value: Any) -> Any:
     """Recursively coerce numpy scalars to native Python and replace non-finite
@@ -30,7 +28,11 @@ def sanitize_json(value: Any) -> Any:
     Containers are rebuilt (dicts/lists); tuples become lists so the result is
     JSON-native. Scalars other than numpy/non-finite-float pass through unchanged.
     """
-    if isinstance(value, np.generic):  # numpy int64/float64/bool_/… → Python scalar
+    # A numpy scalar (int64/float64/bool_/…) — duck-typed by `item`+`dtype` so `core`
+    # takes no numpy import (matching profile_service._to_native, and keeping the slim
+    # typecheck env clean). `.item()` yields the Python equivalent; a numpy float then
+    # flows into the finite check below.
+    if hasattr(value, "item") and hasattr(value, "dtype"):
         value = value.item()
     if isinstance(value, float):
         return value if math.isfinite(value) else None

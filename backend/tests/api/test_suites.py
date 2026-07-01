@@ -1052,13 +1052,13 @@ def test_column_policy_rejects_pii_identifier_422(client: TestClient, db_session
 def test_column_policy_suggest_profiles_and_classifies(
     client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from backend.app.api.v1 import suites as suites_api
+    from backend.app.services import profile_service
     from backend.app.services.profile_service import ColumnProfile, ProfileResult
 
+    # Patch the profile_service module the suites router calls (imported there as
+    # `profile`); patching the module attribute reaches the same object.
     sid = _new_suite(client, db_session)
-    monkeypatch.setattr(
-        suites_api.profile, "list_columns", lambda *a, **k: ["ORDER_NUMBER", "EMAIL"]
-    )
+    monkeypatch.setattr(profile_service, "list_columns", lambda *a, **k: ["ORDER_NUMBER", "EMAIL"])
 
     def _fake_profile(*a: Any, **k: Any) -> ProfileResult:
         return ProfileResult(
@@ -1071,7 +1071,7 @@ def test_column_policy_suggest_profiles_and_classifies(
             ],
         )
 
-    monkeypatch.setattr(suites_api.profile, "profile_connection", _fake_profile)
+    monkeypatch.setattr(profile_service, "profile_connection", _fake_profile)
     body = client.post(
         f"/api/v1/suites/{sid}/column-policy/suggest", json={"table": "ORDERS", "schema": "RETAIL"}
     ).json()
