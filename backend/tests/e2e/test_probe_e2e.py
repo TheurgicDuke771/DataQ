@@ -28,7 +28,14 @@ requires_real_infra = pytest.mark.skipif(
 
 def _fake_runner(**_kwargs: Any) -> Any:
     class _Runner:
-        def run_checks(self, *, table: str, schema: str | None, checks: list[Any]) -> SuiteOutcome:
+        def run_checks(
+            self,
+            *,
+            table: str,
+            schema: str | None,
+            checks: list[Any],
+            index_columns: list[str] | None = None,
+        ) -> SuiteOutcome:
             return SuiteOutcome(
                 success=True,
                 checks=[

@@ -682,7 +682,14 @@ class _FakeRunner:
         self._raises = raises
         self.called_with: dict[str, Any] | None = None
 
-    def run_checks(self, *, table: str, schema: str | None, checks: list[Any]) -> SuiteOutcome:
+    def run_checks(
+        self,
+        *,
+        table: str,
+        schema: str | None,
+        checks: list[Any],
+        index_columns: list[str] | None = None,
+    ) -> SuiteOutcome:
         self.called_with = {"table": table, "schema": schema, "checks": checks}
         if self._raises is not None:
             raise self._raises
