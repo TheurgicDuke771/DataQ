@@ -27,6 +27,7 @@ from backend.app.core.auth import init_auth
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.errors import register_exception_handlers
 from backend.app.core.logging import configure_logging, get_logger, request_id_var
+from backend.app.core.tracing import configure_tracing, instrument_fastapi
 from backend.app.mcp import build_mcp_app
 
 REQUEST_ID_HEADER: Final = "X-Request-ID"
@@ -41,6 +42,10 @@ _log = get_logger(__name__)
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     configure_logging()
+    # Spans (A3): no-op unless APPLICATIONINSIGHTS_CONNECTION_STRING is set.
+    # /healthz + the secret-bearing webhook URLs are excluded (tracing.py).
+    configure_tracing(service_name="dataq-api")
+    instrument_fastapi(_app)
     logger = get_logger(__name__)
     settings = get_settings()
     logger.info(

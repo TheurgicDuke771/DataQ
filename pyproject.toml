@@ -83,8 +83,10 @@ implicit_reexport = true
 # its untyped calls (e.g. ParquetFile), but it's absent from the slim CI
 # typecheck deps. follow_imports = "skip" forces it to Any in *both* envs, so the
 # code type-checks identically with or without pyarrow installed.
+# Same treatment for the OTel span stack (tracing.py, A3): typed (py.typed) but
+# absent from the slim typecheck deps.
 [[tool.mypy.overrides]]
-module = ["pyarrow", "pyarrow.*"]
+module = ["pyarrow", "pyarrow.*", "opentelemetry.*", "azure.monitor.*"]
 follow_imports = "skip"
 ignore_missing_imports = true
 
