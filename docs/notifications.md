@@ -16,8 +16,10 @@ Workspace-level channels are enabled by environment configuration
 (`TEAMS_WEBHOOK_SECRET_NAME`, `SLACK_WEBHOOK_SECRET_NAME`, `EMAIL_*` — see the
 [env-var reference](https://github.com/TheurgicDuke771/DataQ/blob/main/.env.app.example)).
 A channel with no configuration is simply skipped; configuring none disables alerting.
-Webhook URLs are validated against an allow-list of hosts (`webhook.office.com`,
-`hooks.slack.com`, …) so a typo can't exfiltrate alerts to an arbitrary endpoint.
+Webhook URLs are validated against a **per-channel** host allow-list (Teams:
+`webhook.office.com` / `logic.azure.com`; Slack: `hooks.slack.com`) so a typo can't
+exfiltrate alerts to an arbitrary endpoint. Only Teams has a per-suite override; Slack
+and email are workspace-wide.
 
 ## Per-suite configuration
 

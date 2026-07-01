@@ -11,7 +11,7 @@
 - **Checks on 4 datasources** — Snowflake, Unity Catalog (Databricks), ADLS Gen2 + S3
   flat files (CSV/Parquet, batch patterns). Four check styles: **GX expectations**,
   **custom SQL** (rows returned = failures), and **freshness / volume monitors**; plus a
-  column profiler and dry-run preview. [Feature matrix →](https://theurgicduke771.github.io/DataQ/feature-matrix/)
+  column profiler on every datasource (dry-run preview on Snowflake). [Feature matrix →](https://theurgicduke771.github.io/DataQ/feature-matrix/)
 - **Three run modes** — run now (live progress + cancel), **cron schedules**
   (timezone/DST-aware), and **pipeline triggers**: ADF + Airflow runs are monitored, and
   a successful pipeline can trigger the bound suite. [Scheduling →](https://theurgicduke771.github.io/DataQ/scheduling/) · [Orchestration →](https://theurgicduke771.github.io/DataQ/orchestration/)
