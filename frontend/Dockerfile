@@ -12,7 +12,14 @@
 # Container App (ADR 0028 §5 cutover — the Static Web App is gone; SWA couldn't
 # inject runtime config). See deploy/terraform/azure/frontend.tf.
 
-FROM node:22-alpine AS build
+# Pin the build stage to the native BUILD platform (amd64 on CI runners) even for
+# an arm64 target image: a Vite SPA compiles to architecture-independent static
+# assets, so there's no reason to run `pnpm build` under arm64 QEMU emulation — it
+# only made the multi-arch publish pathologically slow / flaky (12min good case →
+# 45min stall, #512). buildx cross-builds: this stage runs native, and only the
+# tiny per-arch nginx `serve` stage below is built for each target platform, with
+# the arch-independent dist COPYed in. $BUILDPLATFORM is a buildx-predefined arg.
+FROM --platform=$BUILDPLATFORM node:22-alpine AS build
 WORKDIR /app
 RUN corepack enable
 
