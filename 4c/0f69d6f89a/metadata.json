@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "4c0f69d6f89a",
+  "strategy": "manual-commit",
+  "branch": "test/e2e-live-smoke-lane",
+  "checkpoints_count": 2,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/4c/0f69d6f89a/0/metadata.json",
+      "transcript": "/4c/0f69d6f89a/0/full.jsonl",
+      "content_hash": "/4c/0f69d6f89a/0/content_hash.txt",
+      "prompt": "/4c/0f69d6f89a/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 78995,
+    "cache_creation_tokens": 889558,
+    "cache_read_tokens": 50514964,
+    "output_tokens": 171948,
+    "api_call_count": 203
+  }
+}
