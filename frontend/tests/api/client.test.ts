@@ -59,7 +59,7 @@ describe('api client bearer-token interceptor', () => {
   it('attaches Bearer token in real mode when account exists', async () => {
     vi.doMock('../../src/auth/config', () => ({
       authMode: 'real',
-      authConfig: { apiScopeUri: 'api://x/user_impersonation' },
+      authConfig: { apiScope: 'api://x/user_impersonation' },
     }));
     const acquireTokenSilent = vi.fn().mockResolvedValue({ accessToken: 'tok-abc' });
     vi.doMock('../../src/auth/msalInstance', () => ({
@@ -81,7 +81,7 @@ describe('api client bearer-token interceptor', () => {
   it('skips token attach in real mode when no account is signed in', async () => {
     vi.doMock('../../src/auth/config', () => ({
       authMode: 'real',
-      authConfig: { apiScopeUri: 'api://x/user_impersonation' },
+      authConfig: { apiScope: 'api://x/user_impersonation' },
     }));
     vi.doMock('../../src/auth/msalInstance', () => ({
       getMsalInstance: () => ({
@@ -97,7 +97,7 @@ describe('api client bearer-token interceptor', () => {
   it('falls back to interactive redirect when silent refresh needs interaction', async () => {
     vi.doMock('../../src/auth/config', () => ({
       authMode: 'real',
-      authConfig: { apiScopeUri: 'api://x/user_impersonation' },
+      authConfig: { apiScope: 'api://x/user_impersonation' },
     }));
     const { InteractionRequiredAuthError } = await import('@azure/msal-browser');
     const account = { homeAccountId: 'h1' };
@@ -129,7 +129,7 @@ describe('api client bearer-token interceptor', () => {
   it('re-throws non-interaction silent-refresh errors without redirecting', async () => {
     vi.doMock('../../src/auth/config', () => ({
       authMode: 'real',
-      authConfig: { apiScopeUri: 'api://x/user_impersonation' },
+      authConfig: { apiScope: 'api://x/user_impersonation' },
     }));
     const networkError = new Error('network down');
     const acquireTokenRedirect = vi.fn();

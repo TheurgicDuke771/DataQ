@@ -13,6 +13,20 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
+    # Runtime app config (ADR 0028). Rendered from DATAQ_AUTH_* env by the same
+    # startup envsubst, served BEFORE the app bundle so the SPA reads it
+    # synchronously (window.__DATAQ_CONFIG__). One generic image, nothing baked.
+    # This exact-match location wins over the static /config.js stub in the bundle.
+    # Empty values → the SPA treats auth as unconfigured (fail-closed); dev-bypass
+    # requires an explicit DATAQ_AUTH_MODE=bypass. no-cache so a restart with new
+    # env takes effect. (Auth values are URLs/ids/scopes — no single-quote/$ to
+    # break the returned string.)
+    location = /config.js {
+        default_type application/javascript;
+        add_header Cache-Control "no-cache";
+        return 200 'window.__DATAQ_CONFIG__={"auth":{"mode":"${DATAQ_AUTH_MODE}","authority":"${DATAQ_AUTH_AUTHORITY}","clientId":"${DATAQ_AUTH_CLIENT_ID}","apiScope":"${DATAQ_AUTH_API_SCOPE}"}};';
+    }
+
     # Docker Compose's embedded DNS. Resolving the upstream through a variable
     # (below) defers DNS to request time, so this image starts even while the api
     # service is still coming up and survives an api container restart (new IP) —
