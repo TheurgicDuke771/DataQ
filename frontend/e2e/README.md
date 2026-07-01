@@ -10,6 +10,25 @@ the React UI a user actually clicks: `browser → Vite proxy → api → DB`.
 > **fail-soft**; the specs assert the health/error path renders, not that a real
 > datasource is reachable.
 
+## Specs
+
+| Spec | Covers |
+|---|---|
+| `smoke.spec.ts` | dev-bypass auth, app shell, sider nav |
+| `connections.spec.ts` | seeded connections grouped by type, "Test all" health path |
+| `suites.spec.ts` | seeded suite → checks; check + suite authoring round-trips |
+| `results.spec.ts` | seeded runs, run-detail drill-down, pipeline-runs feed |
+| `schedules.spec.ts` | SchedulesPanel: add / pause / delete + invalid-cron 422 path |
+| `trigger-bindings.spec.ts` | TriggersPanel: bind pipeline / disable / remove (seeded ADF connection) |
+| `notifications.spec.ts` | NotificationsPanel: threshold routing persisted across reload; write-only webhook affordance |
+
+antd Select gotchas (learned per spec, reuse these): rc-select pre-highlights
+option 0 when nothing is selected, so `Enter` alone takes the first option and
+`ArrowDown`+`Enter` takes the **second**; option nodes live in an off-viewport
+rc-virtual-list measurement container, so `getByRole('option').click()` is
+flaky — prefer keyboard navigation with the arrow-delta computed from the
+currently rendered value (see `notifications.spec.ts`).
+
 ## Run it locally
 
 1. Bring up the stack and seed the demo data:
