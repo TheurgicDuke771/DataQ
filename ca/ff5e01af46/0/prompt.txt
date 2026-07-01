@@ -1,0 +1,872 @@
+<task-notification>
+<task-id>ae2346aacac78178b</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/83180c0d-bbe5-4c61-b9bc-5700e05669e4/tasks/ae2346aacac78178b.output</output-file>
+<status>completed</status>
+<summary>Agent "Line-by-line correctness review" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>`expired` returns `boolean | undefined`. In `getApiToken`: `if (user &amp;&amp; !user.expired)`. If `expires_at` is undefined, `expired` returns `undefined`, `!undefined` is `true` → returns the (possibly stale) access_token. That's acceptable default behavior. 
+
+I now have the concrete bugs. Let me compile the final JSON.
+
+Key findings:
+1. **`isSigninCallback` misses OAuth error responses** (`?error=...` without `code`) — silent failure, error params stuck in URL, no user feedback.
+2. **`getApiToken` calls `signinSilent` even when not signed in** (`getUser()` null) → falls to iframe path → throws `"No silent_redirect_uri configured"`, and since it's a plain `Error` not `ErrorResponse`, no redirect and unhandled rejection surfaces.
+3. **`invalid_grant` in the interaction-required set is too broad / but the concurrent-redirect + no dedup can redirect-loop** — actually let me pick the strongest. The `signinRedirect` in getApiToken doesn't `return`/await-then-reject cleanly — it awaits signinRedirect then `throw err` — navigation is async so the throw happens; fine. 
+4. **URL cleanup drops deep-link route** — `signinRedirect` doesn't preserve the pre-login location; after callback `replaceState` to `/` (pathname is always `/` since redirect_uri is `/`), so deep links are lost. This is a behavior regression vs nothing, moderate.
+
+Let me verify one concrete thing about bug 2: does the interceptor fire for unauthenticated states? The AuthGate blocks children until `user` is set, so API calls generally only fire when signed in. But `getApiToken` is also the token path; if the user's session storage was cleared in another tab, `getUser()` returns null while React still shows children (stale). Then `signinSilent` → no refresh token → iframe error. Valid edge.
+
+Let me confirm `signinRedirect` preserves nothing by default (no `url_state` set here) — confirmed, they pass no args.
+
+Here are the concrete bugs:
+
+```json
+[
+  {
+    "file": "frontend/src/auth/authClient.ts",
+    "line": 76,
+    "summary": "isSigninCallback() misses OAuth error redirects (?error=...&amp;state=... with no code), so IdP-side failures are never processed",
+    "failure_scenario": "Azure AD redirects back on a denied consent / login failure with ?error=access_denied&amp;error_description=...&amp;state=... and NO code param. isSigninCallback() requires both 'code' and 'state', so it returns false, completeSigninIfCallback() no-ops, signinRedirectCallback() is never called, the pending auth request/state is left in sessionStorage, and the error params sit in the URL with no user-visible feedback — the app just re-renders the login page. Clicking sign-in again can loop."
+  },
+  {
+    "file": "frontend/src/auth/authClient.ts",
+    "line": 108,
+    "summary": "getApiToken() calls signinSilent() even when getUser() returned null (not signed in / session cleared), hitting the iframe path that throws a non-ErrorResponse 'No silent_redirect_uri configured'",
+    "failure_scenario": "If an API request fires while there is no cached user with a refresh token (e.g. sessionStorage was cleared in another tab, or the user object exists but has no refresh_token), signinSilent() falls through the refresh-token branch into the iframe branch. No silent_redirect_uri is configured, so oidc-client-ts throws a plain Error('No silent_redirect_uri configured'). That is not an instanceof ErrorResponse, so the interaction-required branch is skipped, no redirect happens, and the raw error propagates as an unhandled rejection out of the axios interceptor instead of a clean re-login."
+  },
+  {
+    "file": "frontend/src/auth/authClient.ts",
+    "line": 91,
+    "summary": "completeSigninIfCallback scrubs the URL to window.location.pathname, and signinRedirect() stores no return location, so any deep link is lost after login",
+    "failure_scenario": "A signed-out user opens/deep-links to /suites/123. login() calls signinRedirect() with no url_state/redirect args, so the pre-login path is not remembered. Azure returns to redirect_uri origin/'/', signinRedirectCallback() succeeds, and replaceState({}, ..., window.location.pathname) leaves the user on '/'. The originally requested route is silently dropped on every post-login navigation."
+  },
+  {
+    "file": "frontend/src/auth/authClient.ts",
+    "line": 116,
+    "summary": "getApiToken() has no in-flight dedup: concurrent expired-token requests each call signinSilent and, on interaction-required, each call signinRedirect",
+    "failure_scenario": "When the access token is expired and several API calls fire at once (typical on a dashboard mount), each invocation independently runs signinSilent(). On a refresh-token failure (invalid_grant) every one of them calls mgr.signinRedirect() concurrently, firing multiple overlapping redirect navigations / duplicate authorize requests and multiple pending states written to sessionStorage before the browser actually unloads."
+  },
+  {
+    "file": "frontend/src/auth/authClient.ts",
+    "line": 8,
+    "summary": "invalid_grant in INTERACTION_REQUIRED_ERRORS conflates 'refresh token expired' (needs redirect) with client-config errors (bad code_verifier/redirect_uri) that will redirect-loop",
+    "failure_scenario": "A misconfigured redirect_uri or PKCE mismatch makes the token endpoint return error=invalid_grant. getApiToken() treats every invalid_grant as interaction-required and calls signinRedirect(), which comes back and fails the code exchange with invalid_grant again — an infinite sign-in redirect loop rather than surfacing the configuration error once."
+  },
+  {
+    "file": "frontend/src/auth/AuthProvider.tsx",
+    "line": 20,
+    "summary": "AuthProvider tracks userLoaded/userUnloaded but not silentRenewError/userSignedOut, so a failed background silent renew leaves a stale signed-in user in the tree",
+    "failure_scenario": "With automaticSilentRenew:true, the background renew fails (refresh token revoked/expired). oidc-client-ts fires accessTokenExpired/silentRenewError, but does NOT fire userUnloaded, so AuthProvider keeps the old User in context. AuthGate keeps rendering the app as authenticated while every API call's getApiToken() now bounces through failed renew → redirect, producing a confusing half-broken authenticated UI instead of a clean sign-out."
+  }
+]
+```</result>
+<usage><subagent_tokens>53596</subagent_tokens><tool_uses>12</tool_uses><duration_ms>119620</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>acc19c952a95e0870</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/83180c0d-bbe5-4c61-b9bc-5700e05669e4/tasks/acc19c952a95e0870.output</output-file>
+<status>completed</status>
+<summary>Agent "Removed-behavior + cross-file review" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I've confirmed all the concrete issues. Here are my findings.
+
+```json
+[
+  {
+    "file": "frontend/src/auth/authClient.ts",
+    "line": 101,
+    "summary": "getApiToken has no 'not signed in' short-circuit: when mgr.getUser() returns null (never signed in, or session dropped) it proceeds to signinSilent(), which fails with login_required and triggers a full-page signinRedirect() to the IdP. The MSAL code it replaces did `if (!account) return config` — returning tokenless so the request 401'd quietly.",
+    "failure_scenario": "A background/polling API call (or any request that races before AuthGate mounts, or after the session silently expires) now hijacks the browser with a full IdP redirect instead of letting the request fail with 401. The user gets yanked out of whatever they were doing / an unexpected navigation on any tokenless request."
+  },
+  {
+    "file": "frontend/src/auth/authClient.ts",
+    "line": 87,
+    "summary": "completeSigninIfCallback only handles the SUCCESS callback (isSigninCallback requires both `code` and `state`). MSAL's handleRedirectPromise() also processed IdP ERROR redirects (?error=access_denied&amp;state=... with no code) and surfaced/cleared them. Here an error redirect is a no-op: signinRedirectCallback never runs, orphaned request state accumulates in sessionStorage, and no error is surfaced.",
+    "failure_scenario": "User cancels consent/MFA at the IdP and is redirected back with ?error=access_denied&amp;state=...; the app silently drops the error, re-renders the login page as if nothing happened, and leaves stale interaction state in sessionStorage. Repeated cancels leak state entries."
+  },
+  {
+    "file": "frontend/src/auth/CurrentUserProvider.tsx",
+    "line": 29,
+    "summary": "username now derives from profile.preferred_username ?? profile.email ?? profile.sub. MSAL's account.username was always the UPN/email. If the email/profile claims are absent from the id_token, username falls back to sub (an opaque GUID). SharePanel matches share access by useCurrentUser().username against email addresses.",
+    "failure_scenario": "In any IdP/config where preferred_username and email aren't emitted in the id_token, the 'is this me / my email' comparison in SharePanel.tsx (currentEmail = useCurrentUser()?.username) compares a GUID against emails, silently breaking self-identification in the share UI. Provider-neutral goal (ADR 0028) makes this reachable on non-Azure IdPs."
+  }
+]
+```</result>
+<usage><subagent_tokens>60122</subagent_tokens><tool_uses>14</tool_uses><duration_ms>149267</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>btuj2xkld</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/83180c0d-bbe5-4c61-b9bc-5700e05669e4/tasks/btuj2xkld.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for stage-2 PR CI" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+for app resigtration use the current prod one
+
+---
+
+it is done
+
+---
+
+starts with stage four
+
+---
+
+yeah, code-review then push and open PR
+
+---
+
+<task-notification>
+<task-id>ad6a8ff636a80b061</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/83180c0d-bbe5-4c61-b9bc-5700e05669e4/tasks/ad6a8ff636a80b061.output</output-file>
+<status>completed</status>
+<summary>Agent "Conventions (CLAUDE.md) angle" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>`config.ts` is NOT in this PR's diff (0 matches in `main...HEAD`), and even so its `login.microsoftonline.com` is confined to the `pnpm dev` build-time fallback mapping legacy `VITE_AZURE_*` vars — the runtime/production path takes the injected provider-neutral `authority`. Not a violation, and out of scope regardless.
+
+The review is complete. Findings summary:
+
+- **frontend/Dockerfile &amp; nginx.conf.template**: No Azure endpoint baked in. `DATAQ_AUTH_*` ship blank (fail-closed), resolver is now runtime-detected via `NGINX_LOCAL_RESOLVERS` (explicitly no IP baked), upstream injected via env. Matches ADR 0028 cloud-neutral principle.
+- **`login.microsoftonline.com`** appears only in `deploy/terraform/frontend.tf` (Azure is the allowed default impl behind the seam) — not in the image or business logic.
+- **No committed secrets**: `terraform.tfvars.example` uses placeholder GUIDs, states the one secret (`app_db_password`) must be passed at apply time; `deploy.yml` uses `secrets.*`/`GITHUB_TOKEN` only, no literals; READMEs carry no credential values.
+- **docs/progress.md** not updated in this PR, but CONTRIBUTING/CLAUDE.md state no hard per-PR requirement (the progress ledger is updated per-PR by convention but there's no quotable rule making its absence a violation; the PR-template checkbox handles it).
+- Commit message `feat(deploy): move deployed frontend from Static Web App to a Container App (#504)` — conventional, single functionality.
+
+No CLEAR rule violations found.
+
+```json
+[]
+```</result>
+<usage><subagent_tokens>49633</subagent_tokens><tool_uses>9</tool_uses><duration_ms>46704</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a16b5f0743ab4053a</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/83180c0d-bbe5-4c61-b9bc-5700e05669e4/tasks/a16b5f0743ab4053a.output</output-file>
+<status>completed</status>
+<summary>Agent "Efficiency + Altitude angles" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Confirmed. The app names are string literals in three places (`containerapps.tf`, `frontend.tf`) and independently reconstructed as FQDN strings in `main.tf`. If someone changes `azurerm_container_app.api.name`, `local.api_fqdn` silently keeps pointing at the old name — Terraform won't error, but the proxy upstream and PUBLIC_BASE_URL will be wrong at runtime.
+
+I have everything needed. Here are the findings.
+
+```json
+[
+  {
+    "file": "deploy/terraform/frontend.tf",
+    "line": 39,
+    "summary": "In-environment /api traffic hairpins out to the api's PUBLIC ingress (local.api_public_url = https://dataq-app-api.&lt;env-domain&gt;) and back, instead of an internal call. Every browser API request from the frontend Container App does a full public round-trip: DNS to the public Envoy front door + a fresh TLS handshake to the external endpoint, even though both apps live in the same dataq-cae environment. ACA supports intra-environment addressing (an internal FQDN over plain HTTP that never leaves the env's Envoy mesh), which would drop the public egress hop and the per-request TLS cost. Concrete cost: added latency (public DNS + TLS handshake) on the hot path of every UI API call and every /mcp stream, plus needless public-ingress load and (on metered egress) traffic that could have stayed internal.",
+    "failure_scenario": "Under load, each proxied /api request pays a public-round-trip + TLS-handshake tax versus an internal env call; the frontend also can't reach the api if the api's external ingress is ever locked down (e.g. IP-restricted or made internal for hardening), because the only path it knows is the public FQDN."
+  },
+  {
+    "file": "deploy/terraform/main.tf",
+    "line": 76,
+    "summary": "The api&lt;-&gt;frontend FQDNs are hand-assembled as string concatenation ('dataq-app-api.' + env_default_domain, 'dataq-app-frontend.' + env_default_domain) with the app-name literals duplicated from the resource `name` attributes in containerapps.tf/frontend.tf. The names now live in two independent places (the resource definition and the local), coupled only by a copy-pasted string. There is no reference tying local.api_fqdn to azurerm_container_app.api.name, so a rename drifts silently. A more robust construction keeps the cycle broken while sourcing the name from the resource: interpolate `azurerm_container_app.api.name` into the FQDN (the .name attribute is known at plan time and does not depend on ingress, so it introduces no cycle), instead of retyping the literal.",
+    "failure_scenario": "Someone renames azurerm_container_app.api (or the frontend) in containerapps.tf/frontend.tf but forgets to update main.tf. Terraform plans/applies clean — the local is a pure string — but the frontend's DATAQ_API_UPSTREAM, the api's PUBLIC_BASE_URL, and the SPA redirect_uri all point at a hostname that no longer exists. The proxy 502s / the SSO redirect fails at runtime with no plan-time error."
+  },
+  {
+    "file": "frontend/nginx.conf.template",
+    "line": 56,
+    "summary": "The /api and /mcp proxies enable proxy_ssl_server_name (SNI) but set NO proxy_ssl_verify, so nginx does not validate the upstream TLS certificate on the https (ACA) leg. Given the traffic already exits to the PUBLIC internet-facing api FQDN (see the hairpin finding), an unverified TLS session is a MITM-able channel carrying bearer access tokens and API traffic. This is the security cost of combining public-FQDN routing with no cert verification. Right depth would be either an internal (non-TLS-exposed) upstream or proxy_ssl_verify on with the trust store; note it as an altitude/security observation.",
+    "failure_scenario": "An on-path attacker between the frontend Container App and the public api ingress presents any certificate; nginx accepts it (no verify), terminates the user's bearer token and request/response bodies in cleartext to the attacker, then forwards upstream — a credential/data interception with no error surfaced."
+  },
+  {
+    "file": "frontend/nginx.conf.template",
+    "line": 49,
+    "summary": "Dropping `proxy_set_header Host $host` so the upstream host (default Host = $proxy_host) is forwarded is the correct general mechanism here, not a fragile special-case: ACA's Envoy routes external ingress by the app FQDN, so the Host MUST equal the api FQDN or the request 404s. Verified safe against the backend: it derives webhook URLs from the PUBLIC_BASE_URL env (backend/app/api/v1/admin.py:111 — get_settings().public_base_url, request.base_url only as fallback), which prod sets to local.frontend_url in containerapps.tf, so the browser Host is not relied upon. Auth is bearer-token (no Host/Origin-bound cookie or redirect check in the API path) and CORS is disabled (same-origin), so nothing else consumes the original browser Host. No defect — recorded as altitude confirmation.",
+    "failure_scenario": "None for the app as written. Latent risk only: if a future change makes the backend build absolute URLs from the request Host (e.g. clears PUBLIC_BASE_URL to fall back to request.base_url), those URLs would resolve to the internal api FQDN rather than the public frontend origin, breaking generated webhook/redirect links."
+  }
+]
+```</result>
+<usage><subagent_tokens>64691</subagent_tokens><tool_uses>8</tool_uses><duration_ms>66453</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a497505f792596885</task-id>
+<tool-use-id>toolu_018W8mTMsuc5RtJdprR4VNbt</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/83180c0d-bbe5-4c61-b9bc-5700e05669e4/tasks/a497505f792596885.output</output-file>
+<status>completed</status>
+<summary>Agent "Angle C — cross-file tracer" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I traced every new symbol and changed value across the Terraform, nginx, config.ts, deploy.yml, and README files. The cross-file consistency is unusually clean. Findings:
+
+```json
+[
+  {
+    "file": "frontend/Dockerfile",
+    "line": 11,
+    "summary": "Stale NOTE comment contradicts this PR: 'the deploy workflow currently builds dist/ and uploads to Static Web App; ADR 0028 moves the deployed frontend onto this container' — but this same PR IS the cutover (deploy.yml now builds+pushes this image and does `az containerapp update`, swa.tf is deleted).",
+    "failure_scenario": "Documentation-only. No runtime impact, but a future operator reading the Dockerfile is told the SWA upload path is still current and may look for an SWA deploy that no longer exists. Should read as the completed cutover, not a pending one."
+  }
+]
+```
+
+## Summary of the trace (all verified consistent, no functional bugs)
+
+1. **Terraform locals (main.tf)** — all sound:
+   - `local.azure_tenant_id` is defined in a module-global `locals` block in containerapps.tf (line 14). Terraform locals are module-scoped, not file-scoped, so frontend.tf's reference resolves correctly.
+   - `local.api_public_url` = `https://dataq-app-api.&lt;env_default_domain&gt;`. The api resource is named `dataq-app-api` with external ingress on the shared env; `&lt;app-name&gt;.&lt;default_domain&gt;` is the Azure-documented, stable FQDN shape for external ingress, so it provably equals `azurerm_container_app.api.ingress[0].fqdn`. `outputs.tf api_url` still uses the real `ingress[0].fqdn` and resolves to the same host. **Low risk** — this is the standard ACA cycle-break pattern; the only theoretical caveat (custom domains / internal-only apps append a different shape) doesn't apply here. Well-commented in main.tf.
+   - `local.frontend_url` = `https://dataq-app-frontend.&lt;env_default_domain&gt;`, matching the `dataq-app-frontend` external-ingress resource. Used consistently for `PUBLIC_BASE_URL`, the SPA `redirect_uris` (`${local.frontend_url}/` with trailing slash matching `${origin}/`), and `outputs.tf frontend_url`.
+
+2. **Runtime auth contract** — exact match. frontend.tf sets `DATAQ_AUTH_MODE/AUTHORITY/CLIENT_ID/API_SCOPE`; nginx.conf.template's `/config.js` renders `window.__DATAQ_CONFIG__={"auth":{"mode","authority","clientId","apiScope"}}` from those exact env names; config.ts reads `window.__DATAQ_CONFIG__.auth.{mode,authority,clientId,apiScope}`. `mode="oidc"` → authClient path, bypass stays off. `DATAQ_API_UPSTREAM` is consumed by the nginx `/api/` + `/mcp` proxy_pass.
+
+3. **`vars.FRONTEND_APP_NAME`** — documented in both `deploy/terraform/README.md:92` (`gh variable set FRONTEND_APP_NAME`) and `deploy/README.md:205`, backed by the new `frontend_app_name` output. Operator instructions are complete.
+
+4. **Token audience** — fully consistent: both the frontend's requested scope (`api://&lt;api-client-id&gt;/${var.azure_api_scope}`) and the backend validator (`AZURE_API_CLIENT_ID = azuread_application.api.client_id`, `AZURE_API_SCOPE = var.azure_api_scope`) key off the same `var.azure_api_scope` and the same api client id. The identifier URI, the `oauth2_permission_scope.value`, and the SPA pre-authorization all use `var.azure_api_scope` / `random_uuid.api_scope`. No mismatch.
+
+Also confirmed clean: swa.tf fully removed with zero dangling `azurerm_static_web_app` references; github_oidc.tf adds the frontend Container App to the Contributor targets; deploy.yml's docker build context (`frontend`) matches the Dockerfile's relative COPY paths; `NGINX_LOCAL_RESOLVERS` is exported via the Dockerfile's `NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1` opt-in.</result>
+<usage><subagent_tokens>57987</subagent_tokens><tool_uses>16</tool_uses><duration_ms>108825</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a518d1ad6411d4fe8</task-id>
+<tool-use-id>toolu_01AuauYoWAzpGkoniTE4mxYV</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/83180c0d-bbe5-4c61-b9bc-5700e05669e4/tasks/a518d1ad6411d4fe8.output</output-file>
+<status>completed</status>
+<summary>Agent "Reuse + Simplification angles" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Findings compiled.
+
+```json
+[
+  {
+    "file": "deploy/terraform/main.tf",
+    "line": 54,
+    "summary": "The locals split each app URL into a bare-FQDN local plus an https-prefixed local (api_fqdn→api_public_url, frontend_fqdn→frontend_url), but api_fqdn and frontend_fqdn are each referenced exactly once — only to build the *_url they feed. The intermediate FQDN locals are derivable state that adds two extra names with no independent consumer.",
+    "failure_scenario": "Low-severity maintainability: a future reader must trace two locals to understand one URL, and any edit (e.g. changing the scheme or host format) has to be kept consistent across the pair. Collapsing to `api_public_url = \"https://dataq-app-api.${local.env_default_domain}\"` (and likewise frontend) removes the redundancy with no behavior change."
+  },
+  {
+    "file": "deploy/terraform/outputs.tf",
+    "line": 77,
+    "summary": "azure_api_client_id / azure_spa_client_id / azure_api_scope outputs are now orphaned. Their sole consumers were the `gh variable set VITE_AZURE_*` lines in the READMEs, which this PR deletes, and the frontend/api resources wire straight from the azuread_application.* / var.azure_api_scope sources — not from these outputs. They survive only as informational outputs with an explanatory comment.",
+    "failure_scenario": "Dead weight: no workflow, script, or gh-wiring command reads them anymore, so they compute + print on every apply for manual-inspection value only. If retained, that's a deliberate choice, but they could be dropped (the values are still readable via `terraform show`/the app-registration resources) to shrink the output surface."
+  },
+  {
+    "file": "deploy/terraform/frontend.tf",
+    "line": 56,
+    "summary": "frontend.tf recomputes the Azure AD v2 authority URL inline (`https://login.microsoftonline.com/${local.azure_tenant_id}/v2.0`). The backend already needs the same tenant authority (AZURE_TENANT_ID in containerapps.tf app_env) and init_auth() builds the same v2 authority server-side. The authority-URL string is now assembled in two places from the same local.azure_tenant_id.",
+    "failure_scenario": "Minor drift risk: if the authority host or version segment ever changes (e.g. a sovereign-cloud login endpoint, or v2.0→a new path), the SPA's DATAQ_AUTH_AUTHORITY and the backend's expectation could diverge and silently reject tokens. A shared `local.aad_authority` would keep the SPA and any future backend use in lockstep. Not warranted if this stays the only spot that materializes the full URL."
+  },
+  {
+    "file": "deploy/terraform/frontend.tf",
+    "line": 12,
+    "summary": "The frontend azurerm_container_app repeats the ingress block (external_enabled/target_port/transport + traffic_weight latest_revision=100%) verbatim from the api app in containerapps.tf. This is the third external-ingress ACA app with the identical ingress boilerplate. (The container/env/secret/identity blocks are genuinely different — different image, no UAMI, no shared app_secrets/app_env — so those are NOT duplication.)",
+    "failure_scenario": "Very low: ~8 lines of ingress boilerplate duplicated. A shared `local.external_ingress` or a small module could dedup it, but with only two external apps and divergent everything-else, a module would likely cost more indirection than it saves. Flagging as the only real reuse overlap; likely leave as-is."
+  }
+]
+```
+
+Summary: The diff is a clean SWA→Container-App cutover. No dead SWA/VITE code was left behind in Terraform or the workflow — swa.tf is deleted, swa_url/swa_api_token/swa_sku all removed, and the READMEs are scrubbed. The `Microsoft.Web` RP registration in rp.tf is intentionally kept with a clear comment (removing it would unregister the provider subscription-wide on the shared sub), so that is correct as-is, not a finding. The four findings above are all low-severity cleanup opportunities; the two most concrete are the orphaned SSO outputs (outputs.tf) and the split FQDN locals (main.tf). No correctness issues in scope.</result>
+<usage><subagent_tokens>56003</subagent_tokens><tool_uses>12</tool_uses><duration_ms>107235</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a5ac79071cd1048a8</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/83180c0d-bbe5-4c61-b9bc-5700e05669e4/tasks/a5ac79071cd1048a8.output</output-file>
+<status>completed</status>
+<summary>Agent "Angle B — removed-behavior audit" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Line 48 of terraform README says the prerequisite is "The GHCR backend **and** frontend images pushed + public." So docs DO note the image must be pushed before apply. The `:v1` default is just a placeholder the operator overrides — same pattern as backend. So this is acceptable and documented, not a bug. I'll downgrade this to a low-confidence note rather than a finding.
+
+I've completed a thorough audit. The PR is carefully executed. Let me compile the final findings. The genuinely concrete issues are minimal — mostly the design correctly re-establishes every invariant. Let me output the findings JSON.
+
+Based on my audit, here are the findings:
+
+```json
+[
+  {
+    "file": "frontend/Dockerfile",
+    "line": 11,
+    "summary": "Stale header comment claims the deploy workflow still uploads dist/ to Static Web App — this PR is the very change that replaces that path.",
+    "failure_scenario": "An operator reading frontend/Dockerfile lines 11-13 ('the deploy workflow currently builds dist/ and uploads to Static Web App; ADR 0028 moves the deployed frontend onto this container') concludes the SWA path is still live and looks for a non-existent SWA deploy step / AZURE_STATIC_WEB_APPS_API_TOKEN secret, wasting time. No runtime impact, but the comment now contradicts the code it ships with."
+  },
+  {
+    "file": "frontend/public/staticwebapp.config.json",
+    "line": 1,
+    "summary": "The SWA SPA-fallback config file is now dead — swa.tf and the SWA deploy step were removed, and nginx.conf.template re-implements navigationFallback via try_files. Nothing reads this file anymore.",
+    "failure_scenario": "No functional regression (nginx's `try_files $uri $uri/ /index.html` replaces navigationFallback, and the file carried no security headers). Risk is future drift: a maintainer edits staticwebapp.config.json to change deep-link routing/exclusions expecting it to take effect, but it is inert — the real SPA-fallback behavior lives only in nginx.conf.template. Dead file should be removed to avoid a false source of truth."
+  }
+]
+```
+
+## Summary
+
+I audited `git diff main...HEAD` (feature/504-stage4-frontend-container-app) against every invariant the deleted SWA hosting enforced. The PR is careful and thorough — nearly all removed invariants are correctly re-established. Findings are minor (2 doc/dead-file issues, both low severity).
+
+**Every requested audit point checked out:**
+
+- **Same-origin `/api`** — re-established. `nginx.conf.template` proxies `location /api/` (and `/mcp`, a net-new addition) to `DATAQ_API_UPSTREAM`; CORS stays empty. Host-header handling is correct (relies on nginx default `Host=$proxy_host` + `proxy_ssl_server_name on` for the ACA HTTPS upstream).
+- **Dangling terraform refs** — none. Grepped the whole `deploy/` tree: no surviving reference to `azurerm_static_web_app.app`, `null_resource.swa_linked_backend`, `var.swa_sku`, `swa_url`, or `swa_api_token`. `containerapps.tf` (PUBLIC_BASE_URL) and `sso.tf` (redirect_uri) were correctly repointed to `local.frontend_url`. The frontend↔api circular-dependency break via `local.env_default_domain` + `&lt;app-name&gt;.&lt;default_domain&gt;` is **valid** — I confirmed against Azure docs that external-ingress FQDN = `&lt;APP_NAME&gt;.&lt;ENV_UNIQUE_ID&gt;.&lt;REGION&gt;.azurecontainerapps.io`, exactly `&lt;name&gt;.&lt;default_domain&gt;`.
+- **Runtime auth delivery** — genuinely re-established, nothing dropped. `frontend/src/auth/config.ts` reads injected `window.__DATAQ_CONFIG__` (served by nginx `/config.js` from `DATAQ_AUTH_*` env), and injected config wins over build-time VITE_*. Bypass is **fail-closed** (`mode==='bypass'` only, never inferred); `frontend.tf` sets `DATAQ_AUTH_MODE=oidc`, so prod resolves to `'real'` auth, never bypass.
+- **SPA fallback / deep links** — replaced by `try_files $uri $uri/ /index.html`. `staticwebapp.config.json` carried only navigationFallback (no security headers), so nothing else lost.
+- **OIDC role assignments** — the frontend Container App **is** in the target set: `github_oidc.tf` adds `frontend = azurerm_container_app.frontend.id` to `github_deploy_targets`, and the workflow deploys it via `az containerapp update` on the OIDC principal (workflow-level `id-token: write` covers the frontend job).
+- **Repo vars/secrets** — reconciled. `FRONTEND_APP_NAME` output + README documented; `AZURE_STATIC_WEB_APPS_API_TOKEN` and `VITE_AZURE_*` removed from docs.
+
+One thing I flagged as a low-confidence note but did **not** raise as a finding: `frontend_image_tag` defaults to `v1`, a tag no pipeline auto-produces (deploy.yml pushes SHA tags; publish-images.yml pushes `:latest`+SHA). But `deploy/terraform/README.md:48` lists "frontend image pushed + public" as an apply prerequisite, mirroring the backend pattern, so it's a documented sequencing step, not a bug.</result>
+<usage><subagent_tokens>78955</subagent_tokens><tool_uses>22</tool_uses><duration_ms>199995</duration_ms></usage>
+</task-notification>
+
+---
+
+Continue the /code-review: collect the 6 finder agents' findings, dedup, run verifiers, then push the branch and open the PR for #504 stage 4.
+
+---
+
+How to get the `TF_VAR_app_db_password`?
+Address the design call before apply.
+
+---
+
+What are the pros and cons of the The design call descision we made just now?
+
+---
+
+So now how the other API clients say, curl or postman will reach DataQ?
+
+---
+
+Yep, add the health check.
+
+---
+
+Yeah check the CI then merge it
+
+---
+
+<task-notification>
+<task-id>bcvd7ubr5</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/83180c0d-bbe5-4c61-b9bc-5700e05669e4/tasks/bcvd7ubr5.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch PR checks to completion" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Okay. Now the moment of truth. Publish the first front end image. Then terraform apply. And for the DB password, you can check the harness directory. And then we'll deploy.
+
+---
+
+Check the `gh pr checks 509 --watch` background result; if all green, squash-merge PR #509 into main.
+
+---
+
+Apply the safety PR.
+
+---
+
+<task-notification>
+<task-id>bm5dh23a8</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/83180c0d-bbe5-4c61-b9bc-5700e05669e4/tasks/bm5dh23a8.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch #510 CI to completion" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+It is taking rather long time, isn't it?
+
+---
+
+<task-notification>
+<task-id>b20skokvu</task-id>
+<tool-use-id>toolu_016oSqqMMtcCrqUZxCSY2cpz</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/83180c0d-bbe5-4c61-b9bc-5700e05669e4/tasks/b20skokvu.output</output-file>
+<status>completed</status>
+<summary>Background command "Run the production terraform apply (cutover)" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Apply the fix.
+
+---
+
+Turn off the EasyAuth.
+Recently, we are fixing too much of a Azure issues. Did any codebase have the Azure related fixes, or is it just that terrsfrom files?
+
+---
+
+Yes. merge #511, and document the easyauth fix.
+
+---
+
+logged in, over to you
+
+---
+
+<task-notification>
+<task-id>bdxfjr5t4</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/83180c0d-bbe5-4c61-b9bc-5700e05669e4/tasks/bdxfjr5t4.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch #511 CI in background" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+do both. 
+And one more thing, all the terraform files we have are related to Azure. Right? If so, can we create a subdirectory called Azure and move them there? This will be a precedent for future AWS and GCP deployment. What do you think?
+
+---
+
+Go with option a. Make it a separate PR.
+
+---
+
+Yes. merge #514 once CI completes and then let's call it a day.
+
+---
+
+<task-notification>
+<task-id>bwgw8fagh</task-id>
+<tool-use-id>toolu_01QLQmxnqPzMQqgNUFVyJnzm</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/83180c0d-bbe5-4c61-b9bc-5700e05669e4/tasks/bwgw8fagh.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch #514 CI to completion" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Can we update the documentation? Most of them are in stale state. The project readme file, the progress.md file, and claude.md file, and the documentation in github pages, etc. 
+Also, can you check the unit tests? Around 450 of them are getting skipped.
+
+---
+
+So you are saying the test has skipped because there is no Postgres and Redis URL. Can we provide the local Postgres and Redis URL, the one that we pulled using Docker?
+
+---
+
+can you link that new helper file to the test itself? Because when I'm running through the Versus codes, pytest, then it's still showing skipped.
+
+---
+
+What about the 23 warnings
+
+---
+
+there are bunch of warnings in vitest also
+
+---
+
+merge #515 first then go with option b
+
+---
+
+<task-notification>
+<task-id>a7712db9f0fb42389</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/91a2ad94-53ea-4a83-ad69-33820c546636/tasks/a7712db9f0fb42389.output</output-file>
+<status>completed</status>
+<summary>Agent "Angles Reuse+Simplify+Altitude+Conventions" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>This confirms the Suites master row overrides `padding` (via `style`), which means the `paddingBlock`-from-size logic in `SimpleListItem` is silently overridden here (`...style` wins) — the size context is doubly moot for this call site. I have all findings.
+
+```json
+[
+  {
+    "file": "frontend/src/components/SimpleList.tsx",
+    "line": 20,
+    "summary": "SizeContext (createContext + Provider + useContext) exists solely to pass `size` from SimpleListRoot down to SimpleListItem, but SimpleList.Item is always a direct child inside `renderItem` — never deeply nested — and `size=\"small\"` is passed at exactly ONE of the six call sites (LiveRunProgress.tsx:185). The only thing size controls is `paddingBlock` (paddingXS vs paddingSM), which the Suites master row (Suites.tsx:228) then overrides anyway via `...style`.",
+    "failure_scenario": "A whole React context machinery (3 moving parts) is stood up to vary one padding value for one caller. A maintainer must understand the context indirection to reason about item rendering. It could be a plain optional prop threaded through `renderItem`'s wrapper, or dropped entirely and the one small-list caller given explicit padding — either removes the indirection."
+  },
+  {
+    "file": "frontend/src/components/SimpleList.tsx",
+    "line": 119,
+    "summary": "The `avatar` prop on SimpleListItemMeta (declared line 119, rendered line 128) is never passed by any call site — the only Item.Meta user is SharePanel.tsx:195 which passes only title/description. This directly contradicts the file's own doc comment: 'add only what a real call site needs, so this stays a thin shim rather than a re-implementation.'",
+    "failure_scenario": "Dead API surface that the module explicitly promised not to add. A future reader sees `avatar` supported and assumes an avatar layout is exercised/tested; it isn't. Should be deleted until a call site needs it."
+  },
+  {
+    "file": "frontend/src/components/SimpleList.tsx",
+    "line": 56,
+    "summary": "Accessibility is hand-rolled as `role=\"list\"` on the outer div (line 50) and `role=\"listitem\"` on a SEPARATE wrapper div (line 56) from the one SimpleListItem renders. The Suites test was rewritten to depend on this: `.closest('[role=\"listitem\"]')` (Suites.test.tsx:904) replacing the previous `.closest('li')`.",
+    "failure_scenario": "The listitem role lives on the shim's divider-wrapper div, not on the semantic row (SimpleListItem) the caller writes — a fragile split. Any future refactor that collapses the two divs, or a call site that renders its own wrapper, silently breaks both a11y semantics and the test's `closest('[role=\"listitem\"]')` selector, with no type-level guard. A single element carrying both the divider and the listitem role (or letting SimpleListItem own the role) would be less brittle."
+  },
+  {
+    "file": "frontend/src/components/SimpleList.tsx",
+    "line": 104,
+    "summary": "The `hasActions` branch gives SimpleListItem two structurally different render modes: with actions, children are wrapped in a `flex:1 1 auto` main region + a right-aligned Flex; without, bare children become the flex items and `space-between` spreads them. Callers must know which mode they're in — LiveRunProgress passes two bare children (label + status) relying on space-between (line 175-ff), while Suites passes one child (SuiteIdentity) into the same no-actions branch expecting left-alignment.",
+    "failure_scenario": "The layout of a row silently depends on both child count AND whether `actions` is present — an implicit contract not expressed in the type. A caller adding a second bare child to a row that today has one gets unexpected space-between spreading; a caller adding an empty `actions={[]}` array flips layout mode. This is exactly the per-call-site special-casing the shim was meant to avoid."
+  },
+  {
+    "file": "frontend/src/components/checks/CheckHistoryDrawer.tsx",
+    "line": 200,
+    "summary": "ALTITUDE — several swapped call sites render a SimpleList of exactly one visual concern that a plainer primitive already covers. CheckHistoryDrawer's VersionItem wraps a `Flex vertical` + `Descriptions` inside SimpleList.Item purely for the inter-row hairline; LiveRunProgress's list is two bare children per row (Text + status). These are `Flex vertical` with dividers, not a list abstraction.",
+    "failure_scenario": "Introducing a shared List shim across 6 sites is reasonable to kill the deprecated import in one place, but for the divider-only / two-child rows it adds an abstraction layer over what `Flex` + a bottom border would express directly. Cost is low-confidence; noting so the reviewer can decide whether the shim earns its keep at every site or only the Item.Meta/actions ones (SharePanel, TriggersPanel, Suites checks-list)."
+  }
+]
+```</result>
+<usage><subagent_tokens>62108</subagent_tokens><tool_uses>8</tool_uses><duration_ms>73776</duration_ms></usage>
+</task-notification>
+
+---
+
+Continue the code-review: collect the remaining finder agents' findings, dedup, run the verify pass, and report consolidated results.
+
+---
+
+Yes push and open the PR
+
+---
+
+merge once CI is done
+
+---
+
+We have 2 compose file in repo, are both needed?
+
+---
+
+yeah fix it
+
+---
+
+Lets check the frontend arm-64 image issue
+
+---
+
+<task-notification>
+<task-id>b1h3aonj5</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/91a2ad94-53ea-4a83-ad69-33820c546636/tasks/b1h3aonj5.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch publish-images run to completion" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Check the publish-images run 28533359829: confirm it succeeded, report the frontend build timing (should be fast now, not a 45min stall), and re-inspect the frontend :latest multi-arch manifest to confirm a fresh arm64 image was published.
+
+---
+
+yeah, update the docs
+
+---
+
+Hey, Is the file generation cron joobs are running regularly?
+and did we tested - `Seed deliberate DQ issues — nulls · dupes · FK orphans (SKU-000000/CUST-000000) · stale freshness · volume drop · schema drift · reconciliation mismatch.`?
+
+---
+
+yeah run the init
+
+---
+
+For this issue shouldn't we get a freshness alert? or is that not implemented yet?
+Also for the sample records, we discuss about adding a identifier column. Did we implement that?
+
+---
+
+Start with (a). 
+For (b) - can use something similar [the example is just for PII, but can we use similar pattern for both PII and Identifier, don't use the code as is, create something with similar logic] - 
+```
+
+def classify_pii(row):
+    column_name = row['COLUMN_NAME']
+    sampled_values = row['SAMPLED_VALUES_P']
+    
+    pii_patterns = [
+    '%name%', '%email%', '%phone%', '%mobile%', '%contact%', '%address%',
+    '%street%', '%city%', '%state%', '%zip%', '%postal%', '%ssn%',
+    '%social_security%', '%credit_card%', '%ccn%', '%bank%', '%passport%',
+    '%license%', '%nid%', '%birth%', '%dob%', '%username%', '%user_id%',
+    '%login%', '%fax%']
+    
+    non_pii_patterns = [
+    '%_ts%', '%ts_%', '%time_%', '%_time%', '%_dt%', '%account%']
+
+    def is_potential_hash(input):
+        hash_lengths = {32,40,64,128}
+        hex_pattern = re.compile(r'^[a-fA-F0-9]+$')
+        if len(input) in hash_lengths and hex_pattern.match(input):
+            return True
+        else:
+            return False
+
+    def calculate_entropy(input):
+        if not input:
+            return 0
+        length = len(input)
+        char_count = {}
+        for char in input:
+            char_count[char] = char_count.get(char,0) + 1
+        entropy = sum((-count / length) * log2(count/length) for count in char_count.values())
+        return entropy
+
+    def is_base64(input):
+        base64_pattern = re.compile(r'^[A-Za-z0-9+/]+={0,2}$')
+        return bool(base64_pattern.match(input))
+
+
+    def is_hexadecimal(input):
+        hex_pattern = re.compile(r'^[a-fA-F0-9]+$')
+        return len(input) % 2 == 0 and bool(hex_pattern.match(input))
+
+    def is_encrypted(input):
+        entropy = calculate_entropy(input)
+        non_alnum_chars = bool(re.search(r'[^\w\s]', input))
+
+        return (
+            (entropy > 3.5 and non_alnum_chars and (is_base64(input) or is_hexadecimal(input)))
+            or is_potential_hash(input)
+        )
+        
+
+    is_pii_like = any(pattern.strip('%').lower() in column_name.lower() for pattern in pii_patterns)
+    is_non_pii_like = any(pattern.strip('%').lower() in column_name.lower() for pattern in non_pii_patterns)
+
+    sampled_values_list = json.loads(sampled_values)
+    
+    encrypted_count = sum(is_encrypted(str(input)) for input in sampled_values_list if input and input != 'NULL')
+    non_null_count = len([input for input in sampled_values if input])
+    valid_records_ratio = encrypted_count / non_null_count if non_null_count else 0
+
+    if valid_records_ratio >= 0.1:
+        return "Encrypted"
+    elif valid_records_ratio > 0 and valid_records_ratio < 0.1:
+        if is_pii_like and not is_non_pii_like:
+            return "Possibly Encrypted" 
+        else:
+            return "Not Encrypted"
+    elif not non_null_count:
+        if is_pii_like and not is_non_pii_like:
+            return "Possibly Encrypted" 
+        else:
+            return "Not Encrypted"
+    else:
+        return "Not Encrypted" ###########NEED REVIEW
+```
+
+---
+
+Logged in as workspace admin. Slack webhook you can take from key vault
+
+---
+
+File the flat-file-freshness issue and then kick off (b)
+
+---
+
+customer_id, user_id these should be identifier, no? [as these are kind of surrogate key]
+correct me if I'm wrong
+
+---
+
+one point, the approach we are doing for the identifier and PII currently should be set at level two. First level is the, databases tags. Then tis approach. And the last stage would be the user override. Is my understanding correct?
+
+---
+
+1. Should a user override be allowed to un-mask a datasource-tagged sensitive column? - NO
+2. yeah, continue with the plan
+
+---
+
+continue, complete 3 & 4 in this PR
+
+---
+
+<task-notification>
+<task-id>a61ca5cbb58816d4f</task-id>
+<tool-use-id>toolu_016mc2ZoiVrBEEiy9VroHjmz</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/91a2ad94-53ea-4a83-ad69-33820c546636/tasks/a61ca5cbb58816d4f.output</output-file>
+<status>completed</status>
+<summary>Agent "Cleanup/altitude/conventions" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I have enough to finalize. The `is_sensitive` (affirmative PII) vs `classify_column` (default-mask PII) dual-predicate split is deliberate and documented — it's the tested-vs-incidental distinction the prompt named, and it's actually justified (a tested column should show unless affirmatively PII; an incidental one masks by default). Not a real finding.
+
+Let me compile the findings as JSON.
+
+```json
+[
+  {
+    "file": "backend/app/services/column_classification.py",
+    "line": 32,
+    "summary": "Module docstring references a non-existent field `Suite.sample_redaction_policy`; the actual column (already on `main`) is `Suite.column_policy`. Stale name from an earlier design, contradicting suite_service.set_column_policy / models.py which use `column_policy`.",
+    "failure_scenario": "Comment rot: a maintainer greps `sample_redaction_policy` to find the wiring, finds nothing, and mistrusts the docstring. CLAUDE.md/CONTRIBUTING 'comments must accurately reflect the code'. One-word fix."
+  },
+  {
+    "file": "backend/app/datasources/gx_runner.py",
+    "line": 298,
+    "summary": "The all-errored GX fallback (`if outcome.checks and all(check.errored ...)` → re-run without index) is a run-twice bandaid for a bad/absent identifier column. ALTITUDE: it can't distinguish 'bad index column' from 'every check legitimately errored' (e.g. a genuinely unreadable batch), so a real all-error suite is silently re-run and its errors masked as a fallback. Validating the identifier column against the batch schema up front is the correct depth.",
+    "failure_scenario": "A suite where all checks error for a real reason (bad connection surfaced per-check, unreadable asset) gets executed twice on every run — doubling GX cost — and the second pass may reshape the errors, obscuring the true failure. Fragile heuristic vs. an up-front column-exists check."
+  },
+  {
+    "file": "backend/app/services/run_service.py",
+    "line": 869,
+    "summary": "REUSE/duplication of PII-token vocabulary. The removed `run_service._PII_COLUMN_TOKENS` frozenset is replaced by column_classification's `_PERSON_TOKENS`/`_PERSON_NAME_TOKENS` etc., but `core/logging._PII_KEYS` still independently lists `email`, `phone`, `ssn`, `name`, `user_id`, `password` for log redaction. Two PII-name vocabularies now live in two modules with overlapping-but-divergent semantics (`user_id`/`name` are PII in logging, IDENTIFIER/SAFE in the classifier).",
+    "failure_scenario": "The two lists drift: a term added to one redaction path (logs) silently doesn't protect the other (samples) and vice-versa. Because the semantics deliberately differ they can't simply be merged — but the divergence is undocumented, so a future editor 'fixing' one to match the other regresses redaction. Needs at minimum a cross-reference comment noting they are intentionally separate."
+  },
+  {
+    "file": "backend/app/services/column_classification.py",
+    "line": 458,
+    "summary": "SIMPLIFICATION/ALTITUDE: five hand-maintained token frozensets (`_PERSON_TOKENS`, `_PERSON_NAME_TOKENS`, `_NON_PERSON_ENTITIES`, `_IDENTIFIER_TOKENS`, `_SAFE_TOKENS`) plus special-cased bare-`name` handling is a large pile of special cases whose correctness rests entirely on the enumerated vocabulary. `_NON_PERSON_ENTITIES` in particular (product/category/brand/…/currency/status) is a domain-specific allowlist that will silently misclassify any entity not enumerated.",
+    "failure_scenario": "A `vendor_name`-style column outside the ~20-entry `_NON_PERSON_ENTITIES` list defaults to PII and gets masked, or a novel person token outside `_PERSON_TOKENS` (e.g. `maiden`, `tin`, `nino`) leaks. The value-signal layer only catches emails/encoded blobs, so name-only PII slips. Maintenance tax + false-mask/false-show risk that grows with each new dataset."
+  },
+  {
+    "file": "backend/app/services/run_service.py",
+    "line": 871,
+    "summary": "ALTITUDE: `_SENSITIVE_TAG_VALUES` + `_tag_sensitive` + the `tags` param threaded through `_known_sensitive`/`_may_show_incidental`/`_redact_row`/`redact_sample_failures` is fully wired but dead — the comment states 'callers pass no tags, so this is dormant.' No caller passes `tags`; the datasource-tag populator is 'a later increment.' This is premature plumbing built ahead of the layer that would feed it.",
+    "failure_scenario": "Dead-but-wired code carries a maintenance + review cost with zero exercised behavior (only a synthetic test passes `tags=`). If the tag-populator increment never lands, this is permanent unused surface area threaded through 4 signatures. Weigh against YAGNI — the seam could be a single param on redact_sample_failures rather than plumbed through every helper."
+  },
+  {
+    "file": "frontend/src/components/suites/SamplePolicyPanel.tsx",
+    "line": 1796,
+    "summary": "SIMPLIFICATION/redundant state + UX gap: `options` is derived only from `known` (the columns the user has already typed), so the Select dropdowns present *no* choices until the user free-types — the component never fetches the target's column list even though the backend `list_columns` used by suggest could feed it. The `mode=\"tags\"` free-entry is a workaround for the missing column list.",
+    "failure_scenario": "A user opening the panel on a suite with no saved policy sees empty dropdowns with only a placeholder; they must hand-type exact column names (case-sensitive against redaction matching, which lower-cases — so a typo silently fails to mask). Auto-detect is the only discovery path. The `key={identifier:pii.join}` remount on reload also discards in-progress edits."
+  }
+]
+```
+
+**Summary of review (issue #415 — column classifier + sample redaction):**
+
+Six candidates, ordered by confidence. Highlights:
+
+- **Confirmed no missing migration** — `column_policy` JSONB and its Alembic migration (`c3d4e5f6a7b8_add_suite_column_policy`) already landed on `main`; this branch only adds the classifier + wiring. The four commits are cleanly split 1/n–4/n, satisfying "one functionality per commit."
+- **Stale doc reference** (`column_classification.py:32`) — docstring names `Suite.sample_redaction_policy`, but the real field is `Suite.column_policy`. Cheap, real comment-rot fix.
+- **Fragile GX fallback** (`gx_runner.py:298`) — the all-errored-→-rerun heuristic can't tell a bad identifier column from a legitimately all-errored suite; double-runs and error-masks the latter. Up-front identifier validation is the right altitude.
+- **Divergent PII vocabularies** — `core/logging._PII_KEYS` and the new classifier tokens overlap but intentionally differ (`user_id`/`name`); the divergence is undocumented and drift-prone.
+- **Large special-case token sets** + a dead-but-wired `tags` governance layer (threaded through 4 signatures, no caller) are the main altitude/YAGNI concerns.
+- **Frontend** `SamplePolicyPanel` never fetches the target column list, so dropdowns are empty until free-typed, and the `key=` remount discards edits on reload.
+
+I did not assess correctness (out of scope). The `is_sensitive` vs `classify_column` dual predicate the prompt asked about is deliberate and well-documented (tested-column-shows-unless-affirmatively-PII vs incidental-default-masks) — not flagged.</result>
+<usage><subagent_tokens>80134</subagent_tokens><tool_uses>9</tool_uses><duration_ms>100672</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a5538b9beb1ae0419</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/91a2ad94-53ea-4a83-ad69-33820c546636/tasks/a5538b9beb1ae0419.output</output-file>
+<status>completed</status>
+<summary>Agent "Angle A — line-by-line scan" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I notice a name-signal PII-leak precedence issue: consider a column like `customer_address_id` → tokens `{customer, address, id}`. `address` IS in `_PERSON_TOKENS` → PII. Good. But `shipping_id` where the id holds addresses — value signal is free text, not caught → shown as identifier. Design tradeoff.
+
+More importantly: consider `national_id`, `tax_id`, `ssn_id` → tokens include `id` (identifier) but also... `national`/`tax` not in person tokens, `ssn` is. `tax_id` → `{tax, id}`: `tax` is in `_SAFE_TOKENS`! And `id` in `_IDENTIFIER_TOKENS`. Precedence: person tokens (none) → name check (no `name`) → `_IDENTIFIER_TOKENS` (id) → **IDENTIFIER, shown**. A `tax_id` column (a national tax identifier — direct PII in many jurisdictions) would be **shown as a locator**. That's a real leak of a direct identifier. Similarly `passport` is caught (person token), but `tax_id`/`vat_id`/`national_id` are not. This is a legitimate finding.
+
+Let me confirm `national`, `tax`, `vat` are absent from person tokens (they are). This is a solid finding. Now I'll compile the final findings.
+
+Based on my analysis, here are the candidate findings:
+
+```json
+[
+  {
+    "file": "backend/app/services/run_service.py",
+    "line": 529,
+    "summary": "Explicit identifier_column override bypasses the value-based PII guard, leaking a natural key that holds direct identifiers (e.g. emails)",
+    "failure_scenario": "A suite author sets policy={'identifier_column': 'USER_ID'} where USER_ID actually contains email addresses (a natural key). set_column_policy only rejects an identifier that is in the static pii_columns list — it cannot see the values. In _may_show_incidental the `_policy_identifier(column, policy)` check returns True and `return True` short-circuits BEFORE classify_column ever runs, so every failing row's USER_ID (e.g. 'ada@acme.io') is surfaced unredacted on GET /runs/{id}, MCP get_latest_run, and Slack/Teams alerts — crossing the suite-share 'view' boundary. The natural-key-of-emails guard that the code documents (and tests for the no-policy path) is defeated whenever an identifier is explicitly chosen."
+  },
+  {
+    "file": "backend/app/services/column_classification.py",
+    "line": 225,
+    "summary": "Direct-PII national identifiers named with an id token (tax_id, national_id, vat_id) classify as IDENTIFIER and are shown, not masked",
+    "failure_scenario": "classify_column('tax_id', ['123-45-6789', ...]) → _name_signal tokenises to {tax, id}. No person token matches (tax/national/vat are absent from _PERSON_TOKENS), so precedence falls to `tokens &amp; _IDENTIFIER_TOKENS` (id) → IDENTIFIER. The value signal only catches emails/UUID/hash/encoded, not plain digit-group identifiers, so a tax/national/SSN-style ID (direct PII in most jurisdictions) is auto-derived as the shown identifier_column and surfaced raw in failing-row samples. `passport`/`ssn` are covered but the common `*_id`-suffixed national identifiers leak."
+  },
+  {
+    "file": "backend/app/services/run_service.py",
+    "line": 562,
+    "summary": "tested_column match is exact/case-sensitive while column keys and check config casing can differ, routing the tested column through the default-mask path",
+    "failure_scenario": "For a Snowflake suite, GX returns uppercase row-dict keys (e.g. 'LINE_TOTAL') in unexpected_index_list, but the check config stores column='line_total' (as authored). `name == tested_column` compares 'LINE_TOTAL' == 'line_total' → False, so the tested column is routed to _may_show_incidental instead of the tested-column branch. For a non-PII numeric breach this hides the very value the sample exists to show (functionality regression: the actionable failing value is masked). Unlike _policy_pii/_policy_identifier, this comparison is not case-normalised."
+  },
+  {
+    "file": "backend/app/services/column_classification.py",
+    "line": 306,
+    "summary": "Hashed PII (e.g. SHA-256 of SSN/email) classifies as IDENTIFIER and is shown when the column name is inconclusive",
+    "failure_scenario": "A column named opaquely (e.g. 'token', 'ext_ref') that stores per-person hashed identifiers (64-char hex SHA-256 of an email/SSN, distinct per row) hits `_looks_like_hash` → id_shaped/n &gt;= 0.8 and distinct_ratio &gt;= 0.8 → returns IDENTIFIER *before* the `encoded` sensitivity check is even reached. derive_column_policy then picks it as the shown identifier_column. Whether hashed PII is safe to surface is a policy call, but the conservative default-mask posture the module advertises is not applied to hash-shaped values."
+  },
+  {
+    "file": "backend/app/services/profile_service.py",
+    "line": 660,
+    "summary": "derive_column_policy classifies from top_values only (most-frequent N), so a high-cardinality PII column whose sampled values are all distinct/low-frequency may evade the value signal",
+    "failure_scenario": "profile top_values for a high-cardinality email/identifier column can be a sparse set of count-1 rows or truncated to top_n. For an id-NAMED column of emails, if the profiled top_values happen to contain &lt;50% parseable emails (e.g. mixed with nulls/placeholder rows that _clean_values strips unevenly), _value_signal returns None, the name IDENTIFIER wins, and the emails column is auto-suggested as identifier_column (shown). The natural-key-of-emails guard is only as good as the top_values sample the suggestion path feeds it."
+  },
+  {
+    "file": "backend/app/datasources/gx_runner.py",
+    "line": 298,
+    "summary": "Index-column fallback only triggers when ALL checks errored; a suite mixing one bad-index-triggered error with an unrelated genuine error still returns no locator, but a partial index failure is silently kept",
+    "failure_scenario": "run_expectations requests unexpected_index_column_names for the whole suite. If the identifier column is valid for some checks but GX errors the index metric on only a subset (e.g. an expectation type that doesn't support index columns), `all(check.errored ...)` is False, so no fallback runs and those checks are returned errored — the checks silently fail to evaluate rather than falling back to a plain run. The all-or-nothing fallback assumes a bad index errors every check uniformly, which isn't guaranteed across heterogeneous expectation types."
+  }
+]
+```
+
+Here are my findings from the line-by-line scan of the #415 diff:
+
+**Findings (JSON):**
+
+```json
+[
+  {
+    "file": "backend/app/services/run_service.py",
+    "line": 529,
+    "summary": "Explicit identifier_column override bypasses the value-based PII guard — leaks a natural key holding direct identifiers (e.g. emails)",
+    "failure_scenario": "Author sets policy={'identifier_column': 'USER_ID'} where USER_ID contains email addresses. set_column_policy only rejects an identifier that is in the static pii_columns list; it cannot inspect values. In _may_show_incidental, `if _policy_identifier(column, policy): return True` short-circuits BEFORE classify_column runs, so every failing row's USER_ID (e.g. 'ada@acme.io') is surfaced unredacted on GET /runs/{id}, MCP get_latest_run, and Slack/Teams alerts — crossing the suite-share 'view' boundary. The natural-key-of-emails guard the module documents and tests (no-policy path) is defeated whenever an identifier is explicitly chosen."
+  },
+  {
+    "file": "backend/app/services/column_classification.py",
+    "line": 225,
+    "summary": "Direct-PII national identifiers with an id-suffix (tax_id, national_id, vat_id) classify as IDENTIFIER and are shown, not masked",
+    "failure_scenario": "classify_column('tax_id', ['123-45-6789', ...]): _name_signal tokenises to {tax, id}; no person token matches (tax/national/vat absent from _PERSON_TOKENS), so precedence falls through to `tokens &amp; _IDENTIFIER_TOKENS` (id) → IDENTIFIER. The value signal only catches email/UUID/hash/encoded, not plain digit-group IDs, so a tax/national/SSN-style identifier (direct PII in most jurisdictions) is auto-derived as identifier_column and surfaced raw. passport/ssn are covered, but the common *_id-suffixed national identifiers leak."
+  },
+  {
+    "file": "backend/app/services/run_service.py",
+    "line": 562,
+    "summary": "tested_column match is exact/case-sensitive while GX row-dict keys vs check-config casing can differ — routes the tested column through the default-mask path",
+    "failure_scenario": "For a Snowflake suite, GX returns uppercase keys (e.g. 'LINE_TOTAL') in unexpected_index_list, but check config stores column='line_total'. `name == tested_column` is 'LINE_TOTAL' == 'line_total' → False, so the tested column routes to _may_show_incidental instead of the tested-column branch. For a non-PII numeric breach this masks the very value the sample exists to show (functionality regression). Unlike _policy_pii/_policy_identifier, this comparison isn't case-normalised."
+  },
+  {
+    "file": "backend/app/services/column_classification.py",
+    "line": 306,
+    "summary": "Hashed PII (SHA-256 of SSN/email) classifies as IDENTIFIER and is shown when the name is inconclusive",
+    "failure_scenario": "An opaquely-named column ('token','ext_ref') storing per-person hashed identifiers (64-char hex, distinct per row) hits _looks_like_hash → id_shaped/n&gt;=0.8 and distinct_ratio&gt;=0.8 → returns IDENTIFIER *before* the `encoded` sensitivity check is reached. derive_column_policy then picks it as identifier_column and it's surfaced. Whether hashed PII is safe is a policy call, but the advertised conservative default-mask posture isn't applied to hash-shaped values."
+  },
+  {
+    "file": "backend/app/services/profile_service.py",
+    "line": 660,
+    "summary": "derive_column_policy classifies from top_values (most-frequent N) only — a high-cardinality PII column with sparse/distinct sampled values can evade the value signal",
+    "failure_scenario": "top_values for a high-cardinality email column is often count-1 rows and/or truncated to top_n. For an id-NAMED emails column, if the profiled top_values contain &lt;50% parseable emails (mixed with nulls/placeholders), _value_signal returns None, the name IDENTIFIER wins, and the emails column is auto-suggested as identifier_column (shown). The natural-key guard is only as strong as the top_values sample the suggest path feeds it."
+  },
+  {
+    "file": "backend/app/datasources/gx_runner.py",
+    "line": 298,
+    "summary": "Index-column fallback only fires when ALL checks errored — a partial index-metric failure across heterogeneous expectations leaves checks silently errored",
+    "failure_scenario": "run_expectations requests unexpected_index_column_names for the whole suite. If the identifier is valid for some checks but GX errors the index metric on only a subset (an expectation type not supporting index columns), `all(check.errored ...)` is False, no fallback runs, and those checks return errored rather than falling back to a plain run — they silently fail to evaluate. The all-or-nothing fallback assumes a bad index errors every check uniformly."
+  }
+]
+```
+
+The top finding (identifier-override bypassing the value-based PII guard) is the most serious: it's a concrete PII-leak path that defeats the module's own documented natural-key guard, and the validation in `set_column_policy` (identifier not in static `pii_columns`) cannot catch it.</result>
+<usage><subagent_tokens>91269</subagent_tokens><tool_uses>17</tool_uses><duration_ms>183404</duration_ms></usage>
+</task-notification>
+
+---
+
+Continue the #415 code-review: collect the remaining finder agents' findings (A/B), dedup, run the verify pass, and report consolidated results.
+
+---
+
+push the changes open a PR and add the findings as a comment then CI and merge
