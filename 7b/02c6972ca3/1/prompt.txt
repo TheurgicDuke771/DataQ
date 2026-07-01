@@ -1,0 +1,448 @@
+Can you check what are the pending items for Week 7, and create a plan for the implementation. You can use the harness data and playwirght for the testing framework.
+
+And we need to enrich the git page with what are features dataq offers, what are different modes, how to add a test case / suit / connection, how to run suit schedule / trigger bind, notification channels, troubleshooting, and best practices for using DataQ effectively, etc. 
+
+Also can you find out list of potencial API endpoints taht can be exposed to MCP.
+
+---
+
+<task-notification>
+<task-id>afe683a39d6165116</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/a33e4939-e8b1-4b81-aaa1-168fd7fc382f/tasks/afe683a39d6165116.output</output-file>
+<status>completed</status>
+<summary>Agent "Enumerate API endpoints and MCP tools" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Excellent. Now I have all the information I need. Let me compile the comprehensive report:
+
+## COMPREHENSIVE BACKEND ENDPOINT &amp; MCP TOOLS INVENTORY
+
+### (A) COMPLETE FASTAPI ENDPOINT INVENTORY (by Router)
+
+#### **SUITES** (`backend/app/api/v1/suites.py`)
+| Method | Path | Purpose |
+|--------|------|---------|
+| POST | `/suites` | Create a suite |
+| GET | `/suites` | List suites (scoped to owned/shared) |
+| GET | `/suites/{suite_id}` | Get a suite |
+| PATCH | `/suites/{suite_id}` | Update a suite |
+| DELETE | `/suites/{suite_id}` | Delete a suite |
+| POST | `/suites/{suite_id}/run` | Trigger a run of the suite |
+| GET | `/suites/{suite_id}/export` | Export a suite as a portable document |
+| POST | `/suites/import` | Import a suite document onto a connection |
+| POST | `/suites/{suite_id}/profile` | Profile columns of a table/file (no persistence) |
+| GET | `/suites/{suite_id}/columns` | List column names of a table/file on the suite's connection |
+| GET | `/suites/{suite_id}/column-policy` | Get the suite's failing-sample redaction policy (#415) |
+| PUT | `/suites/{suite_id}/column-policy` | Set the suite's failing-sample redaction policy (#415) |
+| POST | `/suites/{suite_id}/column-policy/suggest` | Suggest a redaction policy by profiling + classifying the target |
+
+#### **CHECKS** (`backend/app/api/v1/checks.py`)
+| Method | Path | Purpose |
+|--------|------|---------|
+| POST | `/suites/{suite_id}/checks` | Create a check in a suite |
+| GET | `/suites/{suite_id}/checks` | List a suite's checks |
+| GET | `/suites/{suite_id}/checks/{check_id}` | Get a check |
+| PATCH | `/suites/{suite_id}/checks/{check_id}` | Update a check |
+| DELETE | `/suites/{suite_id}/checks/{check_id}` | Delete a check |
+| POST | `/suites/{suite_id}/checks/{check_id}/snooze` | Snooze a check's alerts for N hours |
+| DELETE | `/suites/{suite_id}/checks/{check_id}/snooze` | Clear a check's alert snooze |
+| GET | `/suites/{suite_id}/checks/{check_id}/versions` | List a check's version history (newest first) |
+| GET | `/suites/{suite_id}/checks/{check_id}/history` | A check's recent result history for the trend chart |
+| POST | `/suites/{suite_id}/checks/dryrun` | Dry-run a check against live data (no persistence) |
+
+#### **CONNECTIONS** (`backend/app/api/v1/connections.py`)
+| Method | Path | Purpose |
+|--------|------|---------|
+| POST | `/connections` | Create a connection |
+| GET | `/connections` | List connections |
+| GET | `/connections/{connection_id}` | Get a connection |
+| PATCH | `/connections/{connection_id}` | Update a connection |
+| DELETE | `/connections/{connection_id}` | Delete a connection |
+| POST | `/connections/{connection_id}/test` | Test live connectivity for a connection |
+| POST | `/connections/{connection_id}/reauth` | Rotate a connection's credential and verify it |
+| GET | `/connections/{connection_id}/versions` | List a connection's version history (newest first) |
+
+#### **RUNS** (`backend/app/api/v1/runs.py`)
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/runs` | List runs (scoped to accessible suites) |
+| GET | `/runs/{run_id}` | Get a run with its results |
+| GET | `/runs/{run_id}/progress` | Poll a run's live progress (lifecycle + per-check status) |
+| POST | `/runs/{run_id}/cancel` | Cancel a queued or running run |
+| GET | `/pipeline_runs` | List monitored orchestrator pipeline/DAG runs |
+| GET | `/orchestration/pipelines` | List monitored pipelines with their latest run status |
+
+#### **ORCHESTRATION** (`backend/app/api/v1/orchestration.py`)
+| Method | Path | Purpose |
+|--------|------|---------|
+| POST | `/orchestration/events/adf` | Receive an Azure Data Factory pipeline-run event (webhook) |
+| POST | `/orchestration/events/airflow` | Receive an Apache Airflow DAG-run callback event (webhook) |
+
+#### **SCHEDULES** (`backend/app/api/v1/schedules.py`)
+| Method | Path | Purpose |
+|--------|------|---------|
+| POST | `/schedules` | Create a suite run schedule |
+| GET | `/schedules` | List schedules on accessible suites |
+| GET | `/schedules/{schedule_id}` | Get a schedule |
+| PATCH | `/schedules/{schedule_id}` | Update a schedule (cron / timezone / enabled) |
+| DELETE | `/schedules/{schedule_id}` | Delete a schedule |
+
+#### **NOTIFICATIONS** (`backend/app/api/v1/notifications.py`)
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/suites/{suite_id}/notifications` | Get a suite's notification config |
+| PUT | `/suites/{suite_id}/notifications` | Create or update a suite's notification config |
+| DELETE | `/suites/{suite_id}/notifications` | Delete a suite's notification config (revert to defaults) |
+
+#### **SHARES** (`backend/app/api/v1/shares.py`)
+| Method | Path | Purpose |
+|--------|------|---------|
+| POST | `/suites/{suite_id}/shares` | Share a suite with a user |
+| GET | `/suites/{suite_id}/shares` | List a suite's shares |
+| PATCH | `/suites/{suite_id}/shares/{user_id}` | Change a user's permission on a suite |
+| DELETE | `/suites/{suite_id}/shares/{user_id}` | Revoke a user's share |
+
+#### **DASHBOARD** (`backend/app/api/v1/dashboard.py`)
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/dashboard/summary` | Dashboard summary — KPIs, run trend, per-suite performance |
+
+#### **ADMIN** (`backend/app/api/v1/admin.py` — workspace-admin only)
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/admin/suites` | All suites (admin) |
+| GET | `/admin/users` | All users (admin) |
+| GET | `/admin/access` | Access overview (admin) |
+| GET | `/admin/orchestration/webhooks` | Inbound orchestration webhook config (admin) |
+
+#### **AUTH / ME** (`backend/app/api/v1/me.py`)
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/me` | Get the current user |
+
+#### **USERS** (`backend/app/api/v1/users.py`)
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/users/search` | Search the user directory by email or display name |
+
+#### **TRIGGER BINDINGS** (`backend/app/api/v1/trigger_bindings.py`)
+| Method | Path | Purpose |
+|--------|------|---------|
+| POST | `/trigger-bindings` | Create a trigger binding |
+| GET | `/trigger-bindings` | List trigger bindings on accessible suites |
+| GET | `/trigger-bindings/{binding_id}` | Get a trigger binding |
+| PATCH | `/trigger-bindings/{binding_id}` | Enable or disable a trigger binding |
+| DELETE | `/trigger-bindings/{binding_id}` | Delete a trigger binding |
+
+#### **PROBE** (`backend/app/api/v1/probe.py` — demonstrator)
+| Method | Path | Purpose |
+|--------|------|---------|
+| POST | `/_probe/snowflake-suite` | Trigger the Snowflake probe suite |
+| GET | `/_probe/runs/{run_id}` | Read a probe run and its results |
+
+**Total: 73 FastAPI endpoints**
+
+---
+
+### (B) THE 8 CURRENT MCP TOOLS
+
+Exposed in `/Users/arijit/Coding/Python/DataQ/backend/app/mcp/server.py`:
+
+| Tool Name | Input | Output Type | Service Wrapper | Authz Pattern | Read/Mutating |
+|-----------|-------|-------------|-----------------|----------------|---------------|
+| **list_suites()** | none | `list[dict]` per-suite: id, name, datasource, env, check_count, last_run | `suite_service.list_suites(session, user_id)` | Per-suite: scoped to owned/shared via `suite_service.list_suites` + `accessible_suite_ids(user.id)` | **Read** |
+| **get_suite_results(suite_id)** | suite_id (str UUID) | `dict`: suite_id, run{id,status,started_at,finished_at}, checks[{name,status,metric_value,observed_value,expected_value,sample_failures}] | `require_permission(suite_id, user_id, "view")` → `run_service.list_results(run_id)` + `run_service.redact_sample_failures(...)` | Per-suite: `require_permission(..., minimum="view")` + sample redaction per ADR 0008 (#226/#415) | **Read** |
+| **get_health_score(window_days)** | window_days (int, default 7, max 90) | `dict`: window_days, health_score, pass_rate, total_runs, active_connections, trend[{day,succeeded,failed}] | `dashboard_service.dashboard_summary(session, user_id, window_days)` | Per-suite: scoped to accessible suites via `dashboard_service` user_id filter | **Read** |
+| **get_adf_pipeline_status(provider, limit)** | provider (str: "adf"/"airflow", optional), limit (int, default 20) | `list[dict]`: provider, pipeline, status, started_at, finished_at, dq_run{run_id,status} | `orchestration_service.list_pipeline_runs(session, provider, limit)` + correlate to DQ runs via `accessible_suite_ids(user.id)` filter | Authenticated-only (orchestration monitoring, not suite-scoped); DQ-run correlation checks suite accessibility | **Read** |
+| **trigger_suite_run(suite_id)** | suite_id (str UUID) | `dict`: run_id, status="queued" | `require_permission(suite_id, user_id, "edit")` → create `Run` → `run_dispatch.dispatch_or_fail(run)` | Per-suite: `require_permission(..., minimum="edit")` | **Mutating** |
+| **get_run_status(run_id)** | run_id (str UUID) | `dict`: run_id, status, total_checks, completed_checks, counts{}, checks[{name,status}] | `run_service.get_run(run_id)` + `require_permission(suite_id, user_id, "view")` + `run_service.get_run_progress(run)` | Per-suite: gates on the run's suite via `require_permission(..., minimum="view")` (404 hides run if suite inaccessible) | **Read** |
+| **create_check(suite_id, name, expectation_type, config, kind, warn/fail/critical_threshold)** | suite_id, name, expectation_type, config dict, thresholds | `dict`: id, suite_id, name, expectation_type | `require_permission(suite_id, user_id, "edit")` → `check_service.create_check(...)` | Per-suite: `require_permission(..., minimum="edit")` | **Mutating** |
+| **profile_column(suite_id, columns, table/schema/catalog/path/file_format, top_n)** | suite_id, columns[], SQL target or file path, top_n (default 10) | `dict`: row_count, table/schema/catalog (SQL) or path/file_format (file), columns[{column,null_count,null_fraction,distinct_count,min_value,max_value,top_values}] | `require_permission(suite_id, user_id, "edit")` → get connection → `profile_service.profile_connection(...)` | Per-suite: `require_permission(..., minimum="edit")` | **Read** (no persistence) |
+
+**MCP Tools Summary:**
+- **4 read tools** (list_suites, get_suite_results, get_health_score, get_adf_pipeline_status)
+- **2 read/preview tools** (get_run_status, profile_column — read data, no persistence)
+- **2 action tools** (trigger_suite_run, create_check — mutate state)
+- **All 8 as MCP tools, not resources** (per ADR 0008 — LLM invocability)
+- **Zero logic duplication** — each wraps an existing service function with the same authz as REST routers
+
+---
+
+### (C) SERVICE-LAYER REUSE &amp; AUTHZ PATTERN
+
+**Services reused by MCP tools:**
+- `suite_service.list_suites()` — read-scoped by user_id
+- `run_service.list_results()`, `run_service.redact_sample_failures()` — sample redaction per #415
+- `run_service.get_run()`, `run_service.get_run_progress()`
+- `dashboard_service.dashboard_summary()` — scoped to user's accessible suites
+- `orchestration_service.list_pipeline_runs()`
+- `check_service.create_check()` — check creation + versioning
+- `profile_service.profile_connection()` — column profiling
+
+**Authz pattern (ADR 0008 compliance):**
+1. **Per-suite authz via `require_permission(suite_id, user_id, minimum="view"|"edit"|"admin")`** — identical to REST routers
+2. **Existence-hiding** — on 404 from require_permission, return a clean ToolError (not an opaque masked exception)
+3. **Sample redaction (#415)** — `run_service.redact_sample_failures()` redacts PII from failing-row samples column-aware: tested_column + suite.column_policy drive which values surface
+4. **Workspace-admin bypass** — implicit in `suite_service.list_suites(..., include_all=True)` and `dashboard_service` — admin sees all suites
+
+**Example (from server.py line 159-191):**
+```python
+suite = require_permission(session, sid, user.id, minimum="view")
+latest = session.scalars(select(Run).where(Run.suite_id == sid)...).first()
+results = run_service.list_results(session, latest.id)
+return {
+    "checks": [
+        {
+            "sample_failures": run_service.redact_sample_failures(
+                r.sample_failures,
+                tested_column=(checks[r.check_id].config.get("column") if r.check_id in checks else None),
+                policy=policy,  # suite.column_policy
+            ),
+        }
+        for r in results
+    ],
+}
+```
+
+---
+
+### (D) ADR 0008 CRITERIA &amp; DEFERRED CANDIDATES
+
+**Stated criteria (lines 16-26):**
+1. **All 8 are MCP tools, not resources** — "Claude answers the canonical NL queries" (what failed today? / run the orders suite on DEV / why did the customer pipeline fail? / add a null check on email)
+2. **Each tool is a thin wrapper** — open session → resolve caller → call same service + same `require_permission` authz → return LLM-shaped dict
+3. **Sample redaction inherited from REST** — `run_service.redact_sample_failures` (same path as web UI)
+4. **Per-suite sharing, existence-hiding, redaction for free** — one authz + redaction implementation
+
+**Explicitly-deferred candidates (ADR 0008, Alternatives Considered):**
+- **Resources for the reads** (lines 39) — rejected: "revisit if a client surfaces resources usefully"
+- Implies: if fastmcp resource-templates become auto-callable in future clients, consider demoting `list_suites`, `get_suite_results`, `get_health_score`, `get_adf_pipeline_status` to resources
+
+**No explicit list of "future tools"** — the ADR covers the accepted 8; expansion is future work outside this ADR's scope.
+
+---
+
+### (E) ENDPOINTS NOT COVERED BY MCP TOOLS
+
+**REST endpoints with NO MCP tool equivalent:**
+
+**Suites (6 missing):**
+- `POST /suites/import` — import suite document
+- `GET /suites/{suite_id}/export` — export suite document
+- `GET /suites/{suite_id}/columns` — list columns (column picker helper)
+- `POST /suites/{suite_id}/column-policy/suggest` — suggest redaction policy
+
+**Checks (6 missing):**
+- `DELETE /suites/{suite_id}/checks/{check_id}` — delete check
+- `PATCH /suites/{suite_id}/checks/{check_id}` — update check
+- `POST /suites/{suite_id}/checks/{check_id}/snooze` — snooze alerts
+- `DELETE /suites/{suite_id}/checks/{check_id}/snooze` — clear snooze
+- `GET /suites/{suite_id}/checks/{check_id}/versions` — check history
+- `GET /suites/{suite_id}/checks/{check_id}/history` — result trend history
+- `POST /suites/{suite_id}/checks/dryrun` — dry-run a check
+
+**Connections (8 missing):**
+- All 8 connection endpoints (create, list, get, update, delete, test, reauth, version history)
+
+**Runs (2 missing):**
+- `POST /runs/{run_id}/cancel` — cancel a run
+- `GET /orchestration/pipelines` — list pipelines (vs. pipeline runs)
+
+**Orchestration (2 missing):**
+- Both webhook receiver endpoints (ADF + Airflow) — machine-to-machine, not user-facing
+
+**Schedules (5 missing):**
+- All 5 schedule endpoints (create, list, get, update, delete)
+
+**Notifications (3 missing):**
+- All 3 notification endpoints (get, put, delete)
+
+**Shares (4 missing):**
+- All 4 share endpoints (grant, list, update, revoke)
+
+**Dashboard (0 missing):**
+- ✓ Dashboard summary is **partially covered** by `get_health_score()` (KPIs + trend, but not suite_performance)
+
+**Admin (4 missing):**
+- All 4 admin endpoints (all suites, all users, access overview, webhook config)
+
+**Auth (2 missing):**
+- `GET /me` — current user profile
+- `GET /users/search` — user directory search
+
+**Trigger Bindings (5 missing):**
+- All 5 trigger-binding endpoints (create, list, get, update, delete)
+
+**Probe (2 missing):**
+- Both probe endpoints (trigger + read) — demonstrator only
+
+**Total uncovered: ~52 endpoints**
+
+The MCP surface intentionally focuses on the **core LLM queries** (ADR 0008): DQ monitoring &amp; alerts (8 tools), omitting suite/connection/user management (REST-only administrative tasks) and machine-to-machine orchestration webhooks.</result>
+<usage><subagent_tokens>54995</subagent_tokens><tool_uses>21</tool_uses><duration_ms>77453</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a3d232aa9c7350f11</task-id>
+<tool-use-id>toolu_019uFzWUpeZkJmBFZNpKZ5rC</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/a33e4939-e8b1-4b81-aaa1-168fd7fc382f/tasks/a3d232aa9c7350f11.output</output-file>
+<status>completed</status>
+<summary>Agent "Design Week 7 implementation plan" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The Write tool isn't available in this read-only context, so I'll return the complete plan directly.
+
+# DataQ — Week 7 close-out + testing/docs/MCP plan
+
+## Reality check first (the provided context was partially stale)
+
+Verified against the repo and GitHub before planning — several "open items" are already done and must NOT be re-planned:
+
+| Item | Actual state | Evidence |
+|---|---|---|
+| #92 admin webhook URL | **CLOSED** (completed) | `backend/app/api/v1/admin.py` `GET /admin/orchestration/webhooks` + PR #493 "feat(admin): inbound orchestration webhook-config surface (#490)" + docs PR #480 |
+| #168 silent-renew fallback | **CLOSED** | `frontend/src/auth/authClient.ts` — `INTERACTION_REQUIRED_ERRORS` set + `acquireApiToken()` falls back to `signinRedirect()` ("was #168"), single-flight token acquisition |
+| #382 gate frontend + SHA pin | **CLOSED** | `.github/workflows/deploy.yml` — `frontend: needs: backend` (line 150), `IMAGE` defaults to `github.sha` (line 37, comment cites #382) |
+| #397 migrate-poll burn | **CLOSED** | `deploy.yml` lines 104–126 — `unknown_max=18` consecutive-unknown abort (comment cites #397) |
+| #396 SWA null_resource | **CLOSED** (obsolete — SWA destroyed in ADR 0028 §5 cutover, PRs #509–#511) | issue closed; CLAUDE.md §13 records SWA `dataq-app-web` destroyed |
+| #288 modular docs | **CLOSED** | `docs/` has 9 published pages + MkDocs site live — but the *enrichment gaps* below are real; needs a fresh issue |
+
+**Actually remaining in-repo** (per `WEEK7_TODO.md` + verification): **#17** (open — CLAUDE.md `.mcp.json` section + quarterly supply-chain cadence), **A3** request/task spans (only the opencensus `AzureLogHandler` log path exists, `backend/app/core/logging.py:133–168`), **A4** vault lazy-import coverage (tests in `backend/tests/core/test_secrets.py:57–115` monkeypatch `_client_lazy`, so the real import branch at `backend/app/core/secrets.py:97–109` stays at 0%), Playwright expansion, docs enrichment, MCP candidate analysis. **External:** #492 (Azure Monitor→ADF alert rule), live harness smoke, Claude Desktop MCP E2E, D4 onboarding, KV purge-protection decision.
+
+---
+
+## Phase 1 — PR: `docs(mcp): CLAUDE.md .mcp.json section + supply-chain audit cadence` (Fixes #17)
+
+**Goal:** Close the last open W7 issue. Docs-only, smallest first.
+
+**Files:**
+- `/Users/arijit/Coding/Python/DataQ/CLAUDE.md` — add a short §12/§Appendix subsection: the team-shared `.mcp.json` (exists at repo root), which client-side MCP servers it configures, who publishes each, and the trust-prompt expectation. Distinguish from DataQ's *own* FastMCP server at `/mcp` (ADR 0008).
+- `/Users/arijit/Coding/Python/DataQ/CONTRIBUTING.md` — add the quarterly cadence item: verify pinned MCP server versions haven't been deprecated/transferred to a new publisher (there is currently no "quarterly" checklist anywhere in the repo — grep confirms — so anchor it here next to the existing verify-before-push rules, or in `docs/compliance-posture.md` which is repo-internal, excluded from the site).
+
+**Tests/verification:** none needed (docs); `mkdocs build --strict` if any `docs/` file is touched.
+
+## Phase 2 — PR: `test(secrets): cover the AzureKeyVaultStore lazy-import branch` (A4)
+
+**Goal:** Exercise `secrets.py:97–109` for real — the `from azure.identity import DefaultAzureCredential` / `SecretClient(vault_url=…, credential=…)` construction path, currently bypassed by every existing test (`monkeypatch.setattr(store, "_client_lazy", …)`).
+
+**Files:** `/Users/arijit/Coding/Python/DataQ/backend/tests/core/test_secrets.py` only.
+
+**Approach:** `azure-identity`/`azure-keyvault-secrets` are already prod deps, so no fakes in `sys.modules` needed — `monkeypatch.setattr` the real `azure.identity.DefaultAzureCredential` and `azure.keyvault.secrets.SecretClient` with recording stubs, then call `store._client_lazy()` (or `get`/`set` end-to-end). Assert: (1) `SecretClient` constructed with the vault URL + credential instance, (2) second call returns the cached client (no second construction), (3) `get_secret`/`set_secret` reached through the real branch. Note in a comment this discharges the WEEK7 A4 tail of the closed #169.
+
+**Verification:** `pytest --cov` shows `secrets.py` lazy-import lines covered; no network calls (stubs).
+
+## Phase 3 — PR: `feat(observability): OTel request/task spans, Azure-exported` (A3)
+
+**Goal:** Request + Celery-task spans to App Insights, OTel-neutral core (ADR 0010 seam), gated on the existing `applicationinsights_connection_string` setting (`backend/app/core/config.py:31`) — conn string unset → complete no-op, matching the logging pattern.
+
+**Recommendation:** use `opentelemetry-sdk` + `opentelemetry-instrumentation-fastapi` + `opentelemetry-instrumentation-celery` + **`azure-monitor-opentelemetry-exporter`** (exporter only) — NOT the `azure-monitor-opentelemetry` distro. Rationale: the distro auto-configures logging/metrics and would collide with the carefully hardened structlog + opencensus `AzureLogHandler` chain in `logging.py` (the #393/#405 Py3.13 lock workaround); exporter-only keeps the PR one functionality and the core vendor-neutral (swap exporter per cloud, per ADR 0028 direction). Leave the opencensus *log* handler untouched; file a follow-up issue "migrate logs opencensus→OTel" (the fix already promised in the `logging.py:153` comment — opencensus is EOL).
+
+**Files:**
+- `/Users/arijit/Coding/Python/DataQ/backend/requirements.txt` — the four pinned deps (next to line 40's `opencensus-ext-azure`).
+- New `/Users/arijit/Coding/Python/DataQ/backend/app/core/tracing.py` — `configure_tracing()`: build `TracerProvider` + `BatchSpanProcessor(AzureMonitorTraceExporter(connection_string=…))` when the setting is present; lazy-import all OTel/Azure bits (repo convention, see `secrets.py`).
+- `/Users/arijit/Coding/Python/DataQ/backend/app/main.py` — call `configure_tracing()` in the lifespan next to `configure_logging()` (line 43); `FastAPIInstrumentor.instrument_app(app)`, excluding `/healthz` and the webhook path (its `?token=` query must never land in span attributes — same concern as the #494 uvicorn.access silencing in `logging.py:121–131`).
+- `/Users/arijit/Coding/Python/DataQ/backend/app/worker/celery_app.py` — `CeleryInstrumentor().instrument()` via the `worker_process_init` signal (required: Celery forks).
+- `/Users/arijit/Coding/Python/DataQ/pyproject.toml` — mypy `ignore_missing_imports` overrides for `opentelemetry.*` / `azure.monitor.*` if needed (pattern exists at line 64 for `opencensus.*`).
+- New `/Users/arijit/Coding/Python/DataQ/backend/tests/core/test_tracing.py` — conn string unset → no provider configured / app boots unchanged; conn string set + exporter stubbed → provider installed, span emitted on a test request (in-memory exporter), webhook/healthz excluded.
+
+**Verification quick-ref (matches WEEK7 A3):** conn string unset → boots unchanged; mocked → spans emit. `pip-audit` clean after the dep add. Slow-query hook (`opentelemetry-instrumentation-sqlalchemy`) deliberately deferred to the same follow-up issue — keeps this PR small.
+
+## Phase 4 — PR: `test(e2e): suite lifecycle panels — schedules, triggers, notifications`
+
+**Goal:** Close the biggest E2E gaps using the existing green CI pattern (dev-bypass + seeded data, `frontend/playwright.config.ts`, `ci.yml` `frontend-e2e` job at line 301).
+
+**Files:**
+- New `frontend/e2e/schedules.spec.ts` — on the seeded "Orders quality" suite, drive `frontend/src/components/suites/SchedulesPanel.tsx`: create a cron schedule, assert it renders (next-run/timezone), invalid-cron validation message, delete.
+- New `frontend/e2e/trigger-bindings.spec.ts` — drive `frontend/src/components/suites/TriggersPanel.tsx`: bind a pipeline, assert listed, unbind.
+- New `frontend/e2e/notifications.spec.ts` — drive `frontend/src/components/suites/NotificationsPanel.tsx`: configure a channel + severity routing, assert persisted after reload.
+- `/Users/arijit/Coding/Python/DataQ/backend/scripts/demo_data.py` — extend the seed only where UI creation isn't possible: trigger bindings need an orchestration connection (demo_data currently seeds neither schedules nor notifications — grep confirms); seed one ADF-type connection + pipeline rows so the panel has something to bind. Follow the existing seed idempotency style.
+- `frontend/e2e/README.md` — note the new specs + any seed additions.
+
+**Approach notes:** reuse the antd interaction patterns already proven in `suites.spec.ts` (keyboard-select on `role=combobox`, dialog-anchored confirms, `Date.now()`-suffixed names, self-cleanup).
+
+**Verification:** `pnpm e2e` locally against compose + seed; CI `frontend-e2e` stays green (workers:1, retries:2 already configured).
+
+## Phase 5 — PR: `test(e2e): run-detail, dashboard, check-editor variants, admin`
+
+**Files:**
+- New `frontend/e2e/run-detail.spec.ts` — from `/results`, open a seeded run → `/results/:runId` (`frontend/src/pages/RunDetail.tsx`): per-check outcomes, redacted-sample panel, status chips.
+- New `frontend/e2e/dashboard.spec.ts` — `/dashboard` widgets render with seeded data (KPI cards, recent runs via `components/dashboard/RecentRuns.tsx`).
+- Extend `frontend/e2e/suites.spec.ts` (or new `check-editor.spec.ts`) — the wizard's other categories (the category step already shows "Freshness" per the existing spec, line 35): author a custom-SQL check, a freshness monitor, a volume monitor; assert each lands on the suite detail. Delete after.
+- New `frontend/e2e/admin.spec.ts` — `/admin` (`frontend/src/pages/Admin.tsx`): suites/users/access tables + the webhook-config surface (#493). Prereq: the dev-bypass identity must be in the workspace-admin allowlist in CI — check the `frontend-e2e` job's backend env in `.github/workflows/ci.yml` and add the admin allowlist setting if absent; if the bypass user can't be made admin cheaply, assert the 403 error page instead (still a real path).
+
+**Verification:** same as Phase 4.
+
+## Phase 6 — PR: `test(e2e): opt-in live-smoke lane (never in CI)`
+
+**Recommendation — keep browser-level live smoke minimal; lead with the API script.** Key constraint discovered: `authClient.ts` stores the OIDC user in **sessionStorage** (`WebStorageStateStore({ store: window.sessionStorage })`, line 59) — Playwright `storageState` captures cookies + localStorage only, so the "manual login → save storageState" trick does **not** work here without extra machinery.
+
+**Approach:**
+1. **Primary live gate = API-level:** `backend/scripts/e2e_smoke.py` (exists, 12/12) parameterized with `--base-url` + a real bearer token against the deployed API — wire the harness suites (`DataQ-harness/dataq_setup/setup.py` flows) into a documented run order. No repo-CI coupling.
+2. **Thin browser live-smoke (read-only), opt-in:** in `frontend/playwright.config.ts`, add a second project `live-smoke` with `testDir: './e2e-live'`, included **only when `E2E_LIVE_BASE_URL` is set** (spread-conditional in `projects`; no `webServer` for it). Auth: a `global-setup` that launches **headed**, navigates to the live URL, waits for a human to complete the real OIDC login (MFA), then serializes `sessionStorage` to a git-ignored JSON; specs inject it via `context.addInitScript`. 2–3 read-only specs: dashboard loads with harness data, suites list shows `flow_a_snowflake` etc., a run detail opens. CI never sets `E2E_LIVE_BASE_URL` → CI unchanged.
+3. Manual checklist for the rest (trigger a live run, Teams alert arrives) in `frontend/e2e/README.md` + `docs/runbook-faq.md`.
+
+**Files:** `frontend/playwright.config.ts`, new `frontend/e2e-live/` (specs + `global-setup.ts`), `frontend/.gitignore` (session-state JSON), `frontend/e2e/README.md`.
+
+## Phase 7 — PR(s): docs enrichment (file a fresh issue first — #288 is closed; reference it as the parent)
+
+Split into two PRs if large: (a) new pages, (b) enrichment of existing pages. All MkDocs-strict-safe: every new page added to `mkdocs.yml` nav, relative links only, no orphaned pages (note `validation.omitted_files: ignore` is set, but nav completeness is still the convention).
+
+**New pages in `/Users/arijit/Coding/Python/DataQ/docs/`:**
+- `notifications.md` — Teams/Slack/email channel setup, per-suite config (the NotificationsPanel walkthrough), severity routing, dedup, snooze/suppression, always-alert-on-operational-failure semantics (#413/#419/#369/#370 features — currently undocumented on the site; grep shows zero user-facing notification docs).
+- `scheduling.md` — cron syntax, timezone/DST behavior, no-backfill semantics, gap recovery, stuck-run reaper (C2).
+- `best-practices.md` — suite/check organization, severity assignment (ADR 0005/0016), redaction posture, when to use expectation vs custom-SQL vs freshness/volume.
+- `feature-matrix.md` — check kinds × datasources grid (Snowflake / UC / flat-file; note #520: freshness/volume are SQL-only), modes, orchestration providers.
+
+**Updated pages:**
+- `datasources-checks.md` — per-check-type authoring walkthroughs (expectation wizard, custom SQL per ADR 0019, freshness/volume per ADR 0012) keyed to the real routes (`/suites/:id/checks/new`).
+- `observability.md` — deepen the "Common failures" table; add the spans/App-Insights view once Phase 3 lands.
+- `orchestration.md` — cross-link the Admin webhook surface (#493) as the way to get the ADF webhook URL.
+- `mkdocs.yml` — nav: consider grouping into sections now that pages ≥13, e.g. `Guides:` (getting-started, datasources-checks, scheduling, notifications, orchestration, best-practices) / `Reference:` (feature-matrix, architecture, observability, runbook-faq, glossary, contributing).
+- `README.md` — add the new page links under `## Documentation` (line 67).
+
+**Verification:** `mkdocs build --strict` locally; docs.yml publishes on merge; click-through the live site nav.
+
+## Phase 8 — PR: `docs(roadmap): MCP tool-expansion candidate list` + GitHub issue (analysis only)
+
+**Where:** new **"Theme 13 — MCP tool expansion"** in `/Users/arijit/Coding/Python/DataQ/context/post-v1-roadmap.md` (themes 1–12 exist; add before "How this maps to GitHub") + one `gh issue create` (enhancement, post-v1 milestone) mirroring it, cross-linking ADR 0008 and open #488 (workspace-admin MCP visibility) and #461/ADR 0026 (API-key auth for headless MCP).
+
+**Proposed tiering** (all as thin service-layer wrappers + `require_permission` + redaction, per the existing 8 in `backend/app/mcp/server.py`):
+- **Tier 1 — high-value safe reads:** `list_checks`/`get_check` + check history; `list_runs` (filterable); `get_run` detail with per-check results (redacted); `list_connections` (names/types only, never config secrets); `list_schedules`; `list_trigger_bindings`; `get_notification_config`; `get_suite_performance` (dashboard endpoint); `export_suite` (redacted).
+- **Tier 2 — mutating, gated on edit permission:** `update_check`/`delete_check`; `dryrun_check`; `snooze_check`; `cancel_run`; `create_schedule`/`delete_schedule`; `create_trigger_binding`; `import_suite`; `suggest_column_policy`.
+- **Excluded + rationale:** connection create/update/reauth (credentials transiting an LLM — hard no); inbound webhooks (M2M surface); admin endpoints (workspace-admin scope, pending #488 design); probe/health internals; share mutations (permission escalation through a conversational interface).
+
+## External / live items (not PRs — coordination checklist)
+
+1. **#492 Azure Monitor→ADF alert rule** (the headline Track-A remainder): action groups + alert rules on pre-prod/prod factories → deliberate-failure smoke, DataQ UI shows the failure &lt;5 min. The webhook URL now comes from the Admin page (#493) — no hand-assembly.
+2. **Live harness smoke:** run `DataQ-harness/dataq_setup/setup.py` flows; verify DataQ-side check runs green on Flows A/B/C; then flip the 🟡 deferred-smoke rows in `docs/progress.md` + CLAUDE.md §13 (a small `docs(progress)` PR).
+3. **Claude Desktop MCP E2E** (B4 tail): 4 canonical NL queries against the live `/mcp` — validates the `JWTVerifier` audience assumption.
+4. **KV purge-protection tfvars** — external, irreversible; record the decision either way in `deploy/README.md`.
+5. **D4 team onboarding** — process, not code.
+
+## Suggested ordering
+
+Phases 1→2 (quick closes, independent) → 3 (dep add; do before Phase-6 `pip-audit` gate matters) → 4→5 (E2E, sequential to keep CI churn low) → 6 → 7 → 8. Phases 7 and 8 are independent of everything and can interleave. Each PR: conventional-commit title, `Fixes #N` where applicable, Week-7/post-v1 milestone, `/code-review` before merge, squash-merge.
+
+## Final verification gates
+
+**Local, before every push (working agreement):**
+- `black --check` · `ruff check` · `mypy` (incl. `backend/tests`, #418) · `bandit` · `pytest --cov` (hold ~91%)
+- `pip-audit` (mandatory after Phase 3's dep add) · `pnpm audit`
+- `pnpm lint` · `pnpm test` · `pnpm e2e` (compose up + `python -m backend.scripts.seed_dev` first)
+- `mkdocs build --strict` for any docs PR
+
+**Live, after merges deploy (workflow_dispatch `Deploy`; SHA-pinned images roll api→worker→frontend behind the migrate gate):**
+1. `backend/scripts/e2e_smoke.py` vs the live API (12/12).
+2. Phase-6 live-smoke lane (or manual checklist) vs `https://dataq-app-frontend.purplefield-f7322a1b.westus2.azurecontainerapps.io` with harness data.
+3. Spans visible in App Insights (request + task traces correlated by request_id) after Phase 3.
+4. #492 deliberate-failure alert &lt;5 min; Claude Desktop 4-query MCP smoke; then close the loop in `docs/progress.md`.
+
+### Critical Files for Implementation
+- /Users/arijit/Coding/Python/DataQ/backend/app/core/logging.py (spans wiring pattern + the opencensus constraint Phase 3 must not disturb)
+- /Users/arijit/Coding/Python/DataQ/backend/tests/core/test_secrets.py (Phase 2 — the only file the vault-coverage PR touches)
+- /Users/arijit/Coding/Python/DataQ/frontend/playwright.config.ts (Phases 4–6 — projects, live-smoke gating, dev-bypass env)
+- /Users/arijit/Coding/Python/DataQ/mkdocs.yml (Phase 7 — nav restructure + strict-build safety)
+- /Users/arijit/Coding/Python/DataQ/context/post-v1-roadmap.md (Phase 8 — Theme 13 MCP candidate list)</result>
+<usage><subagent_tokens>66295</subagent_tokens><tool_uses>27</tool_uses><duration_ms>335389</duration_ms></usage>
+</task-notification>
