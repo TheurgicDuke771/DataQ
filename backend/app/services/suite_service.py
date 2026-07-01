@@ -24,6 +24,7 @@ from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.db.models import ORCHESTRATION_PROVIDERS, Connection, Share, Suite
 from backend.app.services import run_target
+from backend.app.services.column_classification import is_sensitive
 
 log = get_logger(__name__)
 
@@ -188,6 +189,14 @@ def set_column_policy(
     if identifier_column and identifier_column in pii:
         raise ColumnPolicyInvalidError(
             "identifier_column cannot also be a PII column",
+            detail={"identifier_column": identifier_column},
+        )
+    # A shown locator must be non-PII: reject a name that classifies as direct PII
+    # (email / account_number / tax_id …). The redaction path also floors this, but a
+    # 422 here gives immediate feedback rather than a silently-masked "identifier".
+    if identifier_column and is_sensitive(identifier_column):
+        raise ColumnPolicyInvalidError(
+            "identifier_column looks like PII — pick a non-PII locator (e.g. an order id)",
             detail={"identifier_column": identifier_column},
         )
     policy: dict[str, Any] = {"pii_columns": pii}

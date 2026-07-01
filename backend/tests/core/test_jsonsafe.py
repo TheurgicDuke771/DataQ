@@ -62,3 +62,22 @@ def test_does_not_mutate_input() -> None:
     original = {"x": [float("nan")]}
     sanitize_json(original)
     assert math.isnan(original["x"][0])  # input untouched
+
+
+def test_numpy_scalars_are_coerced_to_native() -> None:
+    import numpy as np
+
+    # GX's pandas engine returns numpy scalars in unexpected_index_list (#415); they
+    # aren't JSON-serializable and would break the JSONB persist.
+    cleaned = sanitize_json(
+        {"unexpected_index_list": [{"order_id": np.int64(2), "qty": np.float64(-5.0)}]}
+    )
+    assert cleaned == {"unexpected_index_list": [{"order_id": 2, "qty": -5.0}]}
+    json.dumps(cleaned, allow_nan=False)  # round-trips cleanly
+    assert type(cleaned["unexpected_index_list"][0]["order_id"]) is int
+
+
+def test_numpy_nan_becomes_none() -> None:
+    import numpy as np
+
+    assert sanitize_json(np.float64("nan")) is None

@@ -1037,6 +1037,18 @@ def test_column_policy_identifier_cannot_be_pii_422(client: TestClient, db_sessi
     assert resp.json()["error"]["code"] == "column_policy_invalid"
 
 
+def test_column_policy_rejects_pii_identifier_422(client: TestClient, db_session: Any) -> None:
+    # A shown locator must be non-PII: an email/account_number identifier is rejected.
+    sid = _new_suite(client, db_session)
+    for bad in ("EMAIL", "account_number"):
+        resp = client.put(
+            f"/api/v1/suites/{sid}/column-policy",
+            json={"identifier_column": bad, "pii_columns": []},
+        )
+        assert resp.status_code == 422
+        assert resp.json()["error"]["code"] == "column_policy_invalid"
+
+
 def test_column_policy_suggest_profiles_and_classifies(
     client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:

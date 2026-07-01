@@ -29,7 +29,7 @@ Design (adapted from a name-pattern + entropy/hash value heuristic — not lifte
 
 Pure, dependency-light, DB-free — unit-testable in isolation and reused by the
 policy-derivation path (a later step wires it to auto-fill
-``Suite.sample_redaction_policy``).
+``Suite.column_policy``).
 """
 
 from __future__ import annotations
@@ -83,7 +83,23 @@ _PERSON_TOKENS: frozenset[str] = frozenset(
         "postcode",
         "iban",
         "swift",
+        "bic",
+        "cvv",
+        "cvc",
+        "aadhaar",
     }
+)
+# Financial domains whose *number* is direct PII — ``account_number`` / ``card_no`` /
+# ``routing_number``. Only the NUMBER: ``account_id`` / ``card_id`` are surrogate row
+# FKs (locators, like ``customer_id``), so the id-suffix does NOT trip these.
+_FINANCIAL_DOMAINS: frozenset[str] = frozenset(
+    {"account", "card", "credit", "debit", "cc", "routing", "sort"}
+)
+_NUMBER_TOKENS: frozenset[str] = frozenset({"number", "no", "num"})
+# Government-identifier domains where the *id itself* is the sensitive number —
+# ``tax_id`` / ``national_id`` / ``vat_number`` → PII with any id-suffix.
+_NATIONAL_ID_DOMAINS: frozenset[str] = frozenset(
+    {"tax", "vat", "national", "ssn", "sin", "tin", "nino"}
 )
 # Explicit *person-name* tokens (so bare ``name`` on product_name/file_name is spared).
 _PERSON_NAME_TOKENS: frozenset[str] = frozenset(
@@ -216,7 +232,16 @@ def _name_signal(name: str) -> ColumnClass | None:
     if "name" in tokens:
         return ColumnClass.SAFE if tokens & _NON_PERSON_ENTITIES else ColumnClass.PII
 
-    # 2. An id-suffix token → SHOW as a locator. This INCLUDES person-linking keys
+    # 2. A sensitive-domain identifier is itself direct PII → MASK, checked before the
+    #    generic id-suffix rule so ``number``/``id`` can't make it a shown locator:
+    #    a financial *number* (account_number/card_no), or a government id (tax_id).
+    #    A financial ``_id`` (account_id) is a surrogate FK, so it's excluded.
+    if (tokens & _FINANCIAL_DOMAINS) and (tokens & _NUMBER_TOKENS):
+        return ColumnClass.PII
+    if (tokens & _NATIONAL_ID_DOMAINS) and (tokens & _IDENTIFIER_TOKENS):
+        return ColumnClass.PII
+
+    # 3. An id-suffix token → SHOW as a locator. This INCLUDES person-linking keys
     #    (customer_id, user_id): a surrogate/pseudonymous key is the ideal row locator
     #    and doesn't itself leak a direct identifier — showing it is the point of an
     #    actionable sample. A natural key that IS PII (a `user_id` holding emails) is

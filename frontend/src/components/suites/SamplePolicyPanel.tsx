@@ -106,6 +106,10 @@ function SamplePolicyForm({
   };
 
   const identifierIsPii = !!identifier && pii.includes(identifier);
+  // Auto-detect profiles a concrete target. A flat-file *batch* target (a `pattern`
+  // resolved to a file only at run time) has no fixed path to profile, so suggest
+  // would 422 — gate the button instead of letting it fail.
+  const canSuggest = !!suite.target && !suite.target.pattern;
 
   return (
     <Flex vertical gap={12}>
@@ -147,7 +151,7 @@ function SamplePolicyForm({
       )}
       {canManage && (
         <Flex gap={8}>
-          <Button loading={suggesting} onClick={onSuggest} disabled={!suite.target}>
+          <Button loading={suggesting} onClick={onSuggest} disabled={!canSuggest}>
             Auto-detect
           </Button>
           <Button type="primary" loading={saving} onClick={onSave} disabled={identifierIsPii}>

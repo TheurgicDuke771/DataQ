@@ -85,6 +85,38 @@ class TestNameSignal:
         # conservative default; none should be a shown IDENTIFIER.
         assert classify_column(name) is not ColumnClass.IDENTIFIER
 
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "account_number",
+            "account_no",
+            "card_number",
+            "credit_card_number",
+            "cc_number",
+            "card_no",
+            "tax_id",
+            "national_id",
+            "vat_number",
+            "routing_number",
+            "iban",
+            "swift",
+            "cvv",
+        ],
+    )
+    def test_sensitive_domain_identifiers_are_pii(self, name: str) -> None:
+        # A financial/national identifier is direct PII — the id-suffix must NOT make it
+        # a shown locator (regression: account_number/card_number/tax_id leaked).
+        assert classify_column(name) is ColumnClass.PII
+
+    @pytest.mark.parametrize(
+        "name",
+        ["tax_amount", "account_status", "tax_rate", "account_id", "card_id"],
+    )
+    def test_sensitive_domain_non_numbers_stay_non_pii(self, name: str) -> None:
+        # A domain value/label (tax_amount, account_status) or a surrogate FK
+        # (account_id/card_id) is NOT the sensitive number → not masked as PII.
+        assert classify_column(name) is not ColumnClass.PII
+
     def test_product_name_is_not_pii(self) -> None:
         # `name` labelling a non-person entity must NOT be treated as personal.
         assert classify_column("product_name") is not ColumnClass.PII

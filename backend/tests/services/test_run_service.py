@@ -618,6 +618,37 @@ def test_redact_masks_natural_key_holding_emails() -> None:
     }
 
 
+def test_redact_identifier_override_cannot_unmask_pii_column() -> None:
+    # A designated identifier that is affirmatively PII (name) must stay masked — an
+    # override picks a locator, it can't un-mask a direct identifier.
+    out = run_service.redact_sample_failures(
+        {"unexpected_index_list": [{"EMAIL": "a@x.com", "QTY": -3}]},
+        tested_column="QTY",
+        policy={"identifier_column": "EMAIL"},
+    )
+    assert out == {"unexpected_index_list": [{"EMAIL": "<redacted>", "QTY": -3}]}
+
+
+def test_redact_identifier_override_masks_natural_key_of_emails() -> None:
+    # A `user_id` designated identifier whose VALUES are emails → value floor masks it.
+    out = run_service.redact_sample_failures(
+        {"unexpected_index_list": [{"USER_ID": "a@x.com", "QTY": -3}]},
+        tested_column="QTY",
+        policy={"identifier_column": "USER_ID"},
+    )
+    assert out == {"unexpected_index_list": [{"USER_ID": "<redacted>", "QTY": -3}]}
+
+
+def test_redact_tested_column_match_is_case_insensitive() -> None:
+    # GX returns warehouse casing (Snowflake upper-cases); the check config's column may
+    # differ in case. The tested column's non-PII value must still surface.
+    out = run_service.redact_sample_failures(
+        {"unexpected_index_list": [{"LINE_TOTAL": -12.5, "EMAIL": "a@x.com"}]},
+        tested_column="line_total",
+    )
+    assert out == {"unexpected_index_list": [{"LINE_TOTAL": -12.5, "EMAIL": "<redacted>"}]}
+
+
 def test_redact_datasource_tag_is_a_floor_override_cannot_unmask() -> None:
     # Level 1 governance tag marks a column sensitive; even an explicit identifier_column
     # override (level 3) cannot un-mask it.

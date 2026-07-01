@@ -523,11 +523,13 @@ def _may_show_incidental(
     """Whether an *incidental* column (not the tested / identifier one) may be shown:
     only when it's affirmatively an IDENTIFIER or SAFE value — everything else
     default-masks (#415), so security can't regress. A governance tag / override-PII
-    always masks; an override-named identifier always shows."""
+    always masks; an override-named identifier shows **unless it is affirmatively PII**
+    (a designated locator can't un-mask a column whose name/values are direct PII —
+    e.g. an ``EMAIL`` set as identifier, or a natural key holding emails)."""
     if _tag_sensitive(column, tags) or _policy_pii(column, policy):
         return False
     if _policy_identifier(column, policy):
-        return True
+        return not is_sensitive(column, values)
     return classify_column(column, list(values)) is not ColumnClass.PII
 
 
@@ -555,11 +557,14 @@ def _redact_row(
     (default-mask). Non-dict rows fall back to full masking."""
     if not isinstance(row, dict):
         return _redact_sample_value(row)
+    # Case-insensitive tested-column match: GX returns the warehouse's column casing
+    # (Snowflake upper-cases), which need not match the check config's `column`.
+    tested = (tested_column or "").strip().lower()
     out: dict[Any, Any] = {}
     for col, val in row.items():
         name = str(col)
         vals = values_by_column.get(name, [val])
-        if name == tested_column:
+        if tested and name.strip().lower() == tested:
             show = not _known_sensitive(name, vals, policy, tags)
         else:
             show = _may_show_incidental(name, vals, policy, tags)
