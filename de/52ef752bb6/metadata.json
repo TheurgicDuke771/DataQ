@@ -3,8 +3,13 @@
   "checkpoint_id": "de52ef752bb6",
   "strategy": "manual-commit",
   "branch": "chore/antd6-deprecation-migration",
-  "checkpoints_count": 2,
-  "files_touched": null,
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/components/SimpleList.tsx",
+    "frontend/src/components/runs/LiveRunProgress.tsx",
+    "frontend/src/pages/Profile.tsx",
+    "frontend/tests/pages/Suites.test.tsx"
+  ],
   "sessions": [
     {
       "metadata": "/de/52ef752bb6/0/metadata.json",
@@ -14,10 +19,10 @@
     }
   ],
   "token_usage": {
-    "input_tokens": 87691,
-    "cache_creation_tokens": 4628910,
-    "cache_read_tokens": 243319607,
-    "output_tokens": 832221,
-    "api_call_count": 795
+    "input_tokens": 95768,
+    "cache_creation_tokens": 4801659,
+    "cache_read_tokens": 245484345,
+    "output_tokens": 847483,
+    "api_call_count": 810
   }
 }
