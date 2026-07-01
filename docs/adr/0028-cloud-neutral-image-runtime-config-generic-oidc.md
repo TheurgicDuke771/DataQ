@@ -86,7 +86,18 @@ generic seams.**
      a variable, which needs a `resolver`; the image detects it from `/etc/resolv.conf` at
      startup (nginx's `NGINX_ENTRYPOINT_LOCAL_RESOLVERS`) instead of a baked-in `127.0.0.11`,
      so the one image works in compose (embedded DNS) and ACA/K8s (cluster DNS). nginx forwards
-     the upstream host as `Host` (+ TLS SNI) so ACA's Envoy routes `/api` to the api app.
+     the upstream host as `Host` so ACA's Envoy routes `/api` to the api app, and proxies as
+     **HTTP/1.1** (`proxy_http_version 1.1`) — ACA ingress `426`s HTTP/1.0, which is nginx's
+     proxy default. The internal api uses **HTTP + `allow_insecure_connections`** (ACA's
+     documented internal service-to-service pattern; traffic never leaves the environment).
+
+   **Two live-cutover gotchas (both fixed):** (1) nginx's default HTTP/1.0 upstream → ACA
+   `426`, fixed by `proxy_http_version 1.1` on the proxied locations. (2) When the api had
+   been **linked as an SWA backend**, Azure had auto-enabled Container Apps **EasyAuth**
+   (`azureStaticWebApps` provider) on it; destroying the SWA orphans that config, which then
+   401s every request (DataQ validates tokens itself via `fastapi-azure-auth`, so EasyAuth is
+   redundant). Disable it once post-cutover: `az containerapp auth update -n dataq-app-api -g
+   dataq-rg --enabled false` (durable — nothing re-enables it). See deploy/README.md §1.4.
 
 ## Consequences
 
