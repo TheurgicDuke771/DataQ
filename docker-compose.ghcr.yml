@@ -1,0 +1,129 @@
+# DataQ — run from prebuilt GHCR images, NO source checkout required (#472).
+#
+#   docker compose -f docker-compose.ghcr.yml up
+#
+# Brings up Postgres + Redis + the API + Celery worker + the UI, runs migrations
+# and seeds demo data, all from images published to GHCR (ADR 0023). This is the
+# "evaluate / self-host DataQ in 5 minutes" path; `git clone` + scripts/setup.sh
+# remains the contributor path (docker-compose.yml, with source bind-mounts).
+#
+# Auth is dev-bypass (no Azure tenant needed) — every request resolves to a fixed
+# dev user. The frontend image is the dev-bypass `:dev` build; the browser hits
+# the UI and nginx reverse-proxies /api + /mcp to the api service (same-origin).
+#
+# Override the tags to pin a release instead of the moving stable pointers:
+#   DATAQ_BACKEND_TAG=v1.0.0 DATAQ_FRONTEND_TAG=v1.0.0 docker compose -f ... up
+#
+# NOT for production: auth is disabled (AUTH_DEV_BYPASS), Postgres runs trust-auth
+# (no password — so no credential ships in this tracked file) and Redis has none.
+# Because of that, every published port binds to 127.0.0.1 (loopback) ONLY — the
+# stack is reachable from your own machine but NOT from the LAN, so an
+# auth-bypassed API / passwordless DB is never exposed on a shared network. A
+# real deploy uses the Terraform stack (deploy/terraform, ADR 0024).
+
+x-backend-image: &backend-image "ghcr.io/theurgicduke771/dataq-backend:${DATAQ_BACKEND_TAG:-latest}"
+
+# Shared app env for api/worker/migrate. No .env files are read on this path, so
+# every key is inline. dataq@postgres has no password (trust auth); user + db
+# names are non-secret identifiers. SECRET_STORE=redis (NOT env): api and worker
+# are separate containers, and EnvSecretStore is per-process — a credential the
+# api writes at runtime would be invisible to the worker (#86). Redis shares it.
+x-app-env: &app-env
+  DATABASE_URL: "postgresql+psycopg2://dataq@postgres:5432/dataq"
+  REDIS_URL: "redis://redis:6379/0"
+  SECRET_STORE: "redis"
+  AUTH_DEV_BYPASS: "true"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      # trust-auth: no password set or required (eval only). Keeps any credential
+      # out of this git-tracked file (CLAUDE.md). user/db are non-secret names.
+      POSTGRES_HOST_AUTH_METHOD: trust
+      POSTGRES_USER: dataq
+      POSTGRES_DB: dataq
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      # Distinct from docker-compose.yml's volume: this stack runs trust-auth, so
+      # it must never reuse a password-initialized data dir (auth config is fixed
+      # at init time) — sharing the name would collide in the same project dir.
+      - ghcr_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dataq"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # One-shot: migrate to head THEN seed the dev user + probe fixtures + demo data
+  # (seed_dev is idempotent, safe to re-run on every `up`). api/worker gate on its
+  # successful completion so the stack never serves an un-migrated/empty schema.
+  # Gets the full app env because the seed writes connection secrets via the
+  # (redis-backed) SecretStore.
+  migrate:
+    image: *backend-image
+    restart: "no"
+    command: sh -c "cd backend && alembic upgrade head && cd .. && python -m backend.scripts.seed_dev"
+    environment: *app-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  api:
+    image: *backend-image
+    restart: unless-stopped
+    command: uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment: *app-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    image: *backend-image
+    restart: unless-stopped
+    # -B runs celery-beat embedded (orchestration polling, scheduled dispatch).
+    # Fine for the single-worker eval stack; prod runs a separate beat.
+    command: celery -A backend.app.worker.celery_app worker -B --loglevel=INFO
+    environment: *app-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  # The dev-bypass UI image (nginx). Serves the SPA and reverse-proxies /api +
+  # /mcp to the api service (DATAQ_API_UPSTREAM defaults to http://api:8000, baked
+  # into the image). Browse the whole app same-origin at http://localhost:3000.
+  frontend:
+    image: "ghcr.io/theurgicduke771/dataq-frontend:${DATAQ_FRONTEND_TAG:-dev}"
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:8080"
+    depends_on:
+      - api
+
+volumes:
+  ghcr_postgres_data:
