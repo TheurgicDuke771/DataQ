@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "ca6fd595696f",
+  "strategy": "manual-commit",
+  "branch": "docs/post-cutover-refresh",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "CLAUDE.md",
+    "README.md",
+    "docs/architecture.md",
+    "docs/compliance-posture.md",
+    "docs/getting-started.md",
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ca/6fd595696f/0/metadata.json",
+      "transcript": "/ca/6fd595696f/0/full.jsonl",
+      "content_hash": "/ca/6fd595696f/0/content_hash.txt",
+      "prompt": "/ca/6fd595696f/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 59615,
+    "cache_creation_tokens": 3843772,
+    "cache_read_tokens": 212856536,
+    "output_tokens": 720197,
+    "api_call_count": 699
+  }
+}
