@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "d0dd512f9b6c",
+  "strategy": "manual-commit",
+  "branch": "chore/terraform-azure-subdir",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docker-compose.ghcr.yml",
+    "frontend/src/auth/authClient.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/d0/dd512f9b6c/0/metadata.json",
+      "transcript": "/d0/dd512f9b6c/0/full.jsonl",
+      "content_hash": "/d0/dd512f9b6c/0/content_hash.txt",
+      "prompt": "/d0/dd512f9b6c/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 54289,
+    "cache_creation_tokens": 3263006,
+    "cache_read_tokens": 185917624,
+    "output_tokens": 679000,
+    "api_call_count": 649
+  }
+}
