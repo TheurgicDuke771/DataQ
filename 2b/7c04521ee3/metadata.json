@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "2b7c04521ee3",
+  "strategy": "manual-commit",
+  "branch": "fix/aca-internal-http-426",
+  "checkpoints_count": 3,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/2b/7c04521ee3/0/metadata.json",
+      "transcript": "/2b/7c04521ee3/0/full.jsonl",
+      "content_hash": "/2b/7c04521ee3/0/content_hash.txt",
+      "prompt": "/2b/7c04521ee3/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 52539,
+    "cache_creation_tokens": 3110756,
+    "cache_read_tokens": 151173477,
+    "output_tokens": 575104,
+    "api_call_count": 573
+  }
+}
