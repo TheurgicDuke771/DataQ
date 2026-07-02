@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "fd3394a8e3af",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-540-results-check-fk-cascade",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "backend/alembic/versions/a9b0c1d2e3f4_results_check_fk_cascade.py",
+    "backend/app/db/models.py",
+    "backend/tests/api/test_suites.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/fd/3394a8e3af/0/metadata.json",
+      "transcript": "/fd/3394a8e3af/0/full.jsonl",
+      "compact_transcript": "/fd/3394a8e3af/0/transcript.jsonl",
+      "content_hash": "/fd/3394a8e3af/0/content_hash.txt",
+      "prompt": "/fd/3394a8e3af/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 129434,
+    "cache_creation_tokens": 4052588,
+    "cache_read_tokens": 161416092,
+    "output_tokens": 342347,
+    "api_call_count": 498
+  }
+}
