@@ -173,6 +173,8 @@ def _poll_orchestration_runs(
     secret_store: SecretStore,
     now: datetime | None = None,
     lookback: timedelta = _POLL_LOOKBACK,
+    provider: str | None = None,
+    resource_name: str | None = None,
 ) -> dict[str, int]:
     """Poll every orchestrator connection for recent succeeded runs (#171, ADR 0004).
 
@@ -187,13 +189,22 @@ def _poll_orchestration_runs(
     re-ingests runs missed during downtime. ``skip_updated_since`` rides the same
     window, so a run we already recorded inside it is skipped while a genuinely
     missed one (no row) is upserted.
+
+    ``provider`` / ``resource_name`` narrow the sweep for alert-triggered
+    poll-now calls (#492): an `AlertPing` names the provider (and usually the
+    factory), so only the matching connection(s) are polled — an alert storm
+    can't amplify into repeated full sweeps of every orchestrator. The match
+    rides the provider's ``resource_config_key`` seam, no provider branching.
     """
     since = (now or datetime.now(UTC)) - lookback
     summary = {"connections": 0, "recorded": 0, "triggered": 0, "skipped": 0, "errors": 0}
+    provider_filter = (
+        [provider] if provider in ORCHESTRATION_PROVIDERS else list(ORCHESTRATION_PROVIDERS)
+    )
     connections = list(
         session.scalars(
             select(Connection).where(
-                Connection.type.in_(ORCHESTRATION_PROVIDERS),
+                Connection.type.in_(provider_filter),
                 Connection.secret_ref.isnot(None),
             )
         )
@@ -203,6 +214,10 @@ def _poll_orchestration_runs(
             continue
         try:
             provider_impl = get_orchestration_provider(connection.type)
+            if resource_name is not None and (
+                connection.config.get(provider_impl.resource_config_key) != resource_name
+            ):
+                continue
             secret = secret_store.get(connection.secret_ref)
             updates = provider_impl.list_recent_runs(dict(connection.config), secret, since)
             result = orchestration_service.ingest_polled_runs(
@@ -228,23 +243,39 @@ def _poll_orchestration_runs(
     return summary
 
 
-def _run_orchestration_poll(lookback: timedelta) -> dict[str, int]:
+def _run_orchestration_poll(
+    lookback: timedelta,
+    *,
+    provider: str | None = None,
+    resource_name: str | None = None,
+) -> dict[str, int]:
     """Open a session, run the poll core over ``lookback``, always close.
 
-    Shared by both beat entry points (regular poll + gap recovery) so the session
-    lifecycle lives in one place — the only thing that varies is the window.
+    Shared by the beat entry points (regular poll + gap recovery) and the
+    alert-triggered poll-now path (#492) so the session lifecycle lives in one
+    place — what varies is the window and the optional targeting.
     """
     session = get_session()
     try:
-        return _poll_orchestration_runs(session, secret_store=get_secret_store(), lookback=lookback)
+        return _poll_orchestration_runs(
+            session,
+            secret_store=get_secret_store(),
+            lookback=lookback,
+            provider=provider,
+            resource_name=resource_name,
+        )
     finally:
         session.close()
 
 
 @celery_app.task(name="poll_orchestration_runs")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
-def poll_orchestration_runs() -> dict[str, int]:
-    """Celery-beat entry point — the 10-min orchestration polling fallback."""
-    return _run_orchestration_poll(_POLL_LOOKBACK)
+def poll_orchestration_runs(
+    provider: str | None = None, resource_name: str | None = None
+) -> dict[str, int]:
+    """The 10-min beat polling fallback; also the alert-triggered poll-now
+    (#492), where ``provider``/``resource_name`` narrow the sweep to the
+    alerting orchestrator."""
+    return _run_orchestration_poll(_POLL_LOOKBACK, provider=provider, resource_name=resource_name)
 
 
 @celery_app.task(name="recover_orchestration_gaps")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated

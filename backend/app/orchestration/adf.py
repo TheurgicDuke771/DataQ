@@ -217,12 +217,12 @@ class AdfProvider:
         them, they only enrich the ack log.
         """
         data = body.get("data")
-        essentials = data.get("essentials") if isinstance(data, dict) else None
-        if not isinstance(essentials, dict):
+        if not isinstance(data, dict) or not isinstance(data.get("essentials"), dict):
             raise MalformedEventError(
                 "common-alert-schema event has no data.essentials",
                 detail={"missing": ["data.essentials"]},
             )
+        essentials: dict[str, Any] = data["essentials"]
 
         # ".../providers/Microsoft.DataFactory/factories/<name>" (any casing).
         factory: str | None = None
@@ -232,16 +232,24 @@ class AdfProvider:
             if len(segments) >= 2 and segments[-2].lower() == "factories":
                 factory = segments[-1]
 
-        # Metric-alert dimension "Name" carries the pipeline name.
+        # Metric-alert dimension "Name" carries the pipeline name; first
+        # non-empty match wins (a later empty duplicate must not clobber it).
         pipeline: str | None = None
-        context = body["data"].get("alertContext")
+        context = data.get("alertContext")
         condition = context.get("condition") if isinstance(context, dict) else None
         all_of = condition.get("allOf") if isinstance(condition, dict) else None
         for clause in all_of if isinstance(all_of, list) else []:
             dimensions = clause.get("dimensions") if isinstance(clause, dict) else None
             for dim in dimensions if isinstance(dimensions, list) else []:
-                if isinstance(dim, dict) and str(dim.get("name", "")).lower() == "name":
-                    pipeline = str(dim.get("value")) if dim.get("value") else None
+                if (
+                    isinstance(dim, dict)
+                    and str(dim.get("name", "")).lower() == "name"
+                    and dim.get("value")
+                ):
+                    pipeline = str(dim["value"])
+                    break
+            if pipeline is not None:
+                break
 
         return AlertPing(
             monitor_condition=str(essentials.get("monitorCondition") or "fired").lower(),

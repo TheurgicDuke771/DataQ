@@ -34,7 +34,7 @@ from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretNotFoundError, SecretStore, get_secret_store
 from backend.app.db.session import get_db
-from backend.app.orchestration.base import AlertPing, RunUpdate
+from backend.app.orchestration.base import AlertPing, OrchestrationProvider, RunUpdate
 from backend.app.orchestration.registry import get_orchestration_provider
 from backend.app.services.orchestration_service import ingest_event, request_immediate_poll
 
@@ -61,7 +61,7 @@ class EventAck(BaseModel):
 async def _ack_event(
     db: Session,
     *,
-    provider_name: str,
+    provider_impl: OrchestrationProvider,
     update: RunUpdate | AlertPing,
     secret_store: SecretStore,
 ) -> EventAck:
@@ -69,26 +69,29 @@ async def _ack_event(
 
     An `AlertPing` (#492 — a run-anonymous alert, e.g. Azure Monitor's Common
     Alert Schema) has no runId to upsert, so a *fired* ping becomes an
-    immediate poll (the poll ingests the real run identities within seconds);
-    a *resolved* one is noise. Everything else is the normal `ingest_event`
-    upsert + trigger path.
+    immediate **targeted** poll (the poll ingests the real run identities
+    within seconds); a *resolved* one is noise. Everything else is the normal
+    `ingest_event` upsert + trigger path. The ack is honest: ``reconciling``
+    only when the poll actually enqueued (a broker hiccup degrades to
+    ``ignored`` — the 10-min beat recovers).
     """
-    provider = get_orchestration_provider(provider_name)
     if isinstance(update, AlertPing):
         log.info(
             "orchestration_alert_ping",
-            provider=provider_name,
+            provider=provider_impl.provider,
             monitor_condition=update.monitor_condition,
             resource_name=update.resource_name,
             pipeline=update.pipeline_or_dag_id,
         )
         if update.monitor_condition == "fired":
-            await run_in_threadpool(request_immediate_poll)
-            return EventAck(status="reconciling")
+            enqueued = await run_in_threadpool(
+                request_immediate_poll, provider_impl.provider, update.resource_name
+            )
+            return EventAck(status="reconciling" if enqueued else "ignored")
         return EventAck(status="ignored")
 
     result = await run_in_threadpool(
-        ingest_event, db, provider_impl=provider, update=update, secret_store=secret_store
+        ingest_event, db, provider_impl=provider_impl, update=update, secret_store=secret_store
     )
     return EventAck(
         status="recorded" if result.pipeline_run is not None else "ignored",
@@ -130,7 +133,7 @@ async def receive_adf_event(
     provider = get_orchestration_provider("adf")
     body = await request.body()
     update = provider.parse_event(body, request.headers)  # raises MalformedEventError → 422
-    return await _ack_event(db, provider_name="adf", update=update, secret_store=secret_store)
+    return await _ack_event(db, provider_impl=provider, update=update, secret_store=secret_store)
 
 
 _SIGNATURE_HEADER = "X-DataQ-Signature"
@@ -178,4 +181,4 @@ async def receive_airflow_event(
 
     provider = get_orchestration_provider("airflow")
     update = provider.parse_event(body, request.headers)  # raises MalformedEventError → 422
-    return await _ack_event(db, provider_name="airflow", update=update, secret_store=secret_store)
+    return await _ack_event(db, provider_impl=provider, update=update, secret_store=secret_store)

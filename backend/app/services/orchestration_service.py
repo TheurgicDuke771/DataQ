@@ -264,21 +264,30 @@ class IngestResult:
     triggered_runs: list[Run] = field(default_factory=list)
 
 
-def request_immediate_poll() -> None:
+def request_immediate_poll(provider: str, resource_name: str | None) -> bool:
     """Poll-now for run-anonymous alert webhooks (`AlertPing`, #492).
 
     A Common-Alert-Schema alert names the factory/pipeline but no runId, so it
     can't be upserted directly — instead the receiver trades the 10-min poll
-    cadence for *now*: enqueue one immediate poll sweep, which ingests the real
-    run(s) through the normal idempotent path. Best-effort — a broker hiccup
-    must not fail the webhook ack (the 10-min beat recovers on its own).
+    cadence for *now*: enqueue one **targeted** poll (this provider, and when
+    the alert named its resource, just that connection), which ingests the real
+    run(s) through the normal idempotent path. Targeting keeps an alert storm
+    (one fired webhook per pipeline dimension) from amplifying into repeated
+    full sweeps of every orchestrator. Best-effort — a broker hiccup must not
+    fail the webhook ack (the 10-min beat recovers on its own); returns whether
+    the poll was actually enqueued so the ack can be honest about it.
     """
     from backend.app.worker.celery_app import celery_app
 
     try:
-        celery_app.send_task("poll_orchestration_runs")
-    except Exception:  # pragma: no cover - defensive; ack must not depend on the broker
-        log.exception("orchestration_immediate_poll_dispatch_failed")
+        celery_app.send_task(
+            "poll_orchestration_runs",
+            kwargs={"provider": provider, "resource_name": resource_name},
+        )
+    except Exception:
+        log.exception("orchestration_immediate_poll_dispatch_failed", provider=provider)
+        return False
+    return True
 
 
 def ingest_event(
