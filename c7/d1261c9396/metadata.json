@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "c7d1261c9396",
+  "strategy": "manual-commit",
+  "branch": "test/e2e-detail-surfaces",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/scripts/demo_data.py",
+    "docker-compose.yml",
+    "frontend/e2e/README.md",
+    "frontend/e2e/admin.spec.ts",
+    "frontend/e2e/dashboard.spec.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/c7/d1261c9396/0/metadata.json",
+      "transcript": "/c7/d1261c9396/0/full.jsonl",
+      "content_hash": "/c7/d1261c9396/0/content_hash.txt",
+      "prompt": "/c7/d1261c9396/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 87180,
+    "cache_creation_tokens": 1401861,
+    "cache_read_tokens": 67284251,
+    "output_tokens": 199806,
+    "api_call_count": 265
+  }
+}
