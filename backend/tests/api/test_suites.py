@@ -257,6 +257,31 @@ def test_delete_cascades_to_checks(client: TestClient, db_session: Any) -> None:
     assert remaining == []  # cascade removed the child check
 
 
+def test_delete_succeeds_after_a_run_with_results(client: TestClient, db_session: Any) -> None:
+    """#540: results.check_id was the only FK without an ondelete, so deleting
+    a suite whose checks had RESULT rows hit fk_results_check_id_checks and
+    500'd — any suite that had ever run was undeletable. Found live (W7 smoke)."""
+    from backend.app.db.models import Result, Run
+
+    conn = _connection(db_session)
+    sid = client.post("/api/v1/suites", json=_payload(conn.id)).json()["id"]
+    check = Check(
+        suite_id=uuid.UUID(sid), name="row_count", expectation_type="expect_table_row_count"
+    )
+    db_session.add(check)
+    db_session.flush()
+    run = Run(suite_id=uuid.UUID(sid), status="succeeded", triggered_by="test:540")
+    db_session.add(run)
+    db_session.flush()
+    db_session.add(Result(run_id=run.id, check_id=check.id, status="pass"))
+    db_session.commit()
+    run_id = run.id  # capture before the cascade detaches the instance
+
+    assert client.delete(f"/api/v1/suites/{sid}").status_code == 204
+    db_session.expire_all()
+    assert db_session.scalars(select(Result).where(Result.run_id == run_id)).all() == []
+
+
 # ───────────────────────── access enforcement (PR-E2) ──────────────
 
 
