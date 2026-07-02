@@ -1,0 +1,208 @@
+<task-notification>
+<task-id>adb57914c12afa166</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/57b0cfef-599b-468b-af47-faaff05623ec/tasks/adb57914c12afa166.output</output-file>
+<status>completed</status>
+<summary>Agent "Audit branch doc changes" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Consistent frontmatter format, good.
+
+I've completed a thorough audit of this branch's diff against `main`.
+
+## Audit Report — branch `chore/claude-housekeeping`
+
+### 🔴 Hard violations
+None found.
+
+### 🟡 Concerns
+None found. Everything checked out:
+
+1. **CONTRIBUTING.md numbering (1–39 + 4a) is strictly increasing, no dupes/gaps.** Verified `/Users/arijit/Coding/Python/DataQ/CONTRIBUTING.md` lines 9–123: A(1–4+4a,5) → B(6–12) → C(13–17) → D(18–25) → E(26–29) → F(30–32, unchanged) → G(33–35, was 32–34) → H(36–39, was 35–38). No duplicate 32, no gaps.
+
+2. **Cross-references to shifted rules all resolve correctly.**
+   - `CLAUDE.md:340` "rule 39" → CONTRIBUTING.md rule 39 (quarterly MCP audit) — matches.
+   - `.claude/skills/security-scan/SKILL.md:3,11` "rule 36" → end-of-week quick scan — matches (unshifted-content, correctly renumbered).
+   - `.claude/skills/security-scan/SKILL.md:94` "rule 38" → "Security vulnerabilities are not public GitHub issues" — matches.
+   - `docs/progress.md:364` "rule 32" → still correctly means the F-section read-modify-write rule (F section did **not** shift) — confirmed this citation was correctly left untouched.
+   - `.claude/agents/migration-safety.md` was bumped from a stale `#24`/CLAUDE.md link to the correct `#30`/CONTRIBUTING.md link (rule 30 = backward-compatible migrations) — a bonus fix bundled into this housekeeping, not required by the G/H renumbering but correct.
+   - `.claude/agents/docs-consistency-guard.md:54` still mentions `working-agreement #24` — but this is illustrative example text in the guard's own "Dead working-agreement references" checklist item ("e.g., working-agreement #3, working-agreement #24"), not a live citation asserting rule content — not a defect.
+
+3. **Rule-count claims match reality.** `CONTRIBUTING.md` has exactly 39 numbered rules (+ 4a). `CLAUDE.md` (lines 132, 182, 276) and `docs/contributing.md` (line 3) all say "39 rules" — consistent. No remaining "37 rule(s)" references anywhere in the repo.
+
+4. **All new relative links resolve.** Verified from `.claude/agents/`: `../../CLAUDE.md`, `../../CONTRIBUTING.md`, `../../docs/adr/README.md`, `../../docs/progress.md`, `../../context/post-v1-roadmap.md`, `../../.github/pull_request_template.md`, `../../.github/workflows/ci.yml`, `../../backend/tests/support/adversarial.py` — all exist. `docs/TODO.md` is referenced only as descriptive text ("was never adopted"), not as a link.
+
+5. **CLAUDE.md section refs (§6, §9, §11, §13) still line up** with actual headers (checked via `grep "^## " CLAUDE.md`) — no numbering drift from this diff.
+
+6. **New files (`qa-verifier.md`, `security-scan/SKILL.md`) are self-consistent** — frontmatter format matches existing agent/skill conventions, internal rule citations (4a, 3, 36, 38) all point at correct current rule content.
+
+One cosmetic note (not a finding, no action needed): `docs-consistency-guard.md:58` says "fixed in #547" — issue #547 is currently **open** (this branch is the fix); the phrasing will become accurate once this PR merges and closes it.
+
+### Cross-reference summary
+- CONTRIBUTING.md numbered rules: 39 (1–39 + 4a) — matches all "39 rules"/"39-rule" claims repo-wide (3 in CLAUDE.md, 1 in docs/contributing.md).
+- Rule-number citations checked repo-wide (`.claude/`, `.github/`, `docs/`, `CLAUDE.md`, `docs/adr/`, `frontend/mutation/README.md`, `context/post-v1-roadmap.md`): all resolve to correct rule content post-renumbering.
+- Links checked in the diff's new/changed content: 8/8 resolve.
+
+### ✅ Verdict
+`Pass — documentation is consistent and references resolve.`
+
+Files reviewed: `/Users/arijit/Coding/Python/DataQ/CONTRIBUTING.md`, `/Users/arijit/Coding/Python/DataQ/CLAUDE.md`, `/Users/arijit/Coding/Python/DataQ/docs/contributing.md`, `/Users/arijit/Coding/Python/DataQ/docs/progress.md`, `/Users/arijit/Coding/Python/DataQ/.claude/agents/docs-consistency-guard.md`, `/Users/arijit/Coding/Python/DataQ/.claude/agents/migration-safety.md`, `/Users/arijit/Coding/Python/DataQ/.claude/agents/qa-verifier.md`, `/Users/arijit/Coding/Python/DataQ/.claude/agents/orchestration-abstraction-guard.md`, `/Users/arijit/Coding/Python/DataQ/.claude/skills/gh-issue-from-finding/SKILL.md`, `/Users/arijit/Coding/Python/DataQ/.claude/skills/security-scan/SKILL.md`, `/Users/arijit/Coding/Python/DataQ/.claude/skills/adr-create/SKILL.md`.</result>
+<usage><subagent_tokens>89602</subagent_tokens><tool_uses>26</tool_uses><duration_ms>112359</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a1a3708baf9ac88d9</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/57b0cfef-599b-468b-af47-faaff05623ec/tasks/a1a3708baf9ac88d9.output</output-file>
+<status>completed</status>
+<summary>Agent "Cleanup and altitude review" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Analysis complete. I read the full `main...HEAD` diff, the CI workflow (`.github/workflows/ci.yml`), `CONTRIBUTING.md` (rule numbering + rules 4a/13–17/36–39), and cross-checked rule-number citations across the agent/skill files. Here are the candidate findings.
+
+---
+
+## Candidate findings (code-review, instruction-file scope)
+
+### 1. security-scan step 3 re-lists CI's `pip-audit` command but drops CI's `--ignore-vuln` list → weekly false positives + drift
+- **File:** `/Users/arijit/Coding/Python/DataQ/.claude/skills/security-scan/SKILL.md:39`
+- **Summary:** The skill's `pip-audit -r backend/requirements-dev.txt` claims to be "the same commands CI runs as a merge gate," but CI's `backend-audit` job (ci.yml) pins `pip-audit==2.10.0` and passes `--ignore-vuln PYSEC-2026-36/35 CVE-2026-26007/27448/27459` (5 advisories deliberately accepted, tracked in #129). The skill omits all of them.
+- **failure_scenario:** Every weekly scan reports those 5 already-accepted advisories as fresh "🔴 findings," so the operator re-triages known noise each week and is trained to skim past pip-audit output — masking the real 6th vuln when it lands. And when CI's ignore-list changes (#129 removes them, or a new CVE is added), this hand-copied command silently diverges from the actual gate it claims to mirror. If a mirror is wanted, it should reference/inherit CI's flag set, not duplicate a subset of it.
+
+### 2. security-scan hardcodes credential expiry dates + resource-group names in a security check → false "clean" on rotation
+- **File:** `/Users/arijit/Coding/Python/DataQ/.claude/skills/security-scan/SKILL.md:71-82`
+- **Summary:** Step 7's rotation register hardcodes `ADLS account SAS — expires 2027-06-28` and `Snowflake PAT — 90-day lifetime`, and steps 6's `az` commands hardcode `--resource-group dataq-rg` — while the step itself points at a durable source ("see the connections memory / Key Vault").
+- **failure_scenario:** These are the fastest-rotting values in the whole PR. When the SAS is re-issued with a new expiry, the skill still asserts `2027-06-28`, the "expiring within 30 days" check silently never fires, and a *security* skill hands back false assurance on a live credential. If `dataq-rg` is renamed (the §13 log already shows churn toward shared/neutral naming), steps 6 both fail/skip. The durable fix is to read expiry from Key Vault, not restate it inline.
+
+### 3. qa-verifier Mode 1 gate table duplicates ci.yml and already drifts (omits the pip-audit merge gate + CodeQL)
+- **File:** `/Users/arijit/Coding/Python/DataQ/.claude/agents/qa-verifier.md:18-40`
+- **Summary:** The Backend/Frontend gate tables re-list the commands that ci.yml defines and claim to "mirror CI's required checks," but the mirror is already incomplete: ci.yml has a `backend-audit` (`pip-audit`) merge gate and a CodeQL SAST gate that the table doesn't include (the audit lives only in the separate security-scan skill).
+- **failure_scenario:** The whole point of the agent is "never use CI as the first feedback loop." A hand-maintained command mirror drifts the moment CI changes (new gate, changed env var, renamed script) — the author runs the local battery, gets all-green, and CI still fails on the un-mirrored gate, defeating the agent's reason to exist. A single-source approach (drive the same make/script targets CI invokes) would not rot.
+
+### 4. CLAUDE.md §13 breadcrumb "rule 39 (numbered 38 pre-#547)" is a bandaid at the wrong altitude
+- **File:** `/Users/arijit/Coding/Python/DataQ/CLAUDE.md:286` (the `#522` clause in the §13 narrative)
+- **Summary:** A historical log entry now carries a live rule number *plus* a parenthetical re-mapping to the pre-renumber number. A §13 narrative log records what was true at the time; embedding a self-correcting rule-number citation inside it is patching one symptom of the renumber, not the class.
+- **failure_scenario:** The next renumber turns this into "rule 40," leaving two stale numbers nested in one clause, and this breadcrumb only fixes this one citation while every other doc citing "rule 39" drifts unnoticed — giving false confidence that rule-number references are maintained. A dated log line should not cite a live rule number at all (or should link the rule by stable anchor, not ordinal).
+
+### 5. gh-issue-from-finding hardcodes milestone titles → validation halt on rename, rot at Week 8
+- **File:** `/Users/arijit/Coding/Python/DataQ/.claude/skills/gh-issue-from-finding/SKILL.md:21,92` (also example at :102)
+- **Summary:** The skill correctly *derives* the current-week milestone from CLAUDE.md §13, but hardcodes the literal `Backlog (post-v1 / testing)` title (twice) and a `Week 7 — Deployment, hardening &amp; docs` example. Step 2a then validates the resolved title against live milestones and *halts* if absent.
+- **failure_scenario:** If the post-v1 backlog milestone is ever renamed, every post-v1 issue-filing halts at 2a validation with "milestone doesn't exist" — the skill hard-stops on a value it should be resolving, not asserting. The `Week 7 —` example rots the moment Week 8 opens (today is 2026-07-02, Week 7 in progress). Deriving the post-v1 milestone the same way it derives the week (query + match "post-v1"/"Backlog") removes both liabilities.
+
+### 6. migration-safety "Why this matters" hardcodes deploy-pipeline specifics that will rot
+- **File:** `/Users/arijit/Coding/Python/DataQ/.claude/agents/migration-safety.md:14`
+- **Summary:** The rewritten rationale hardcodes `deployed to Azure production (since 2026-06-28)`, the `dataq-app-migrate` job name, and "api + worker Container Apps" ordering. This is more durable than the security-scan dates (it is ADR-0024-anchored and the mechanism is stable), so it is the most borderline of the six — surfaced per instruction to not drop borderline candidates.
+- **failure_scenario:** The migrate job name / provider are exactly what the cloud-neutral cutover work (ADR 0028, already in-flight per §13, with AWS/GCP IaC slated post-v1) will change. When the migrate step is renamed or the provider generalizes, this paragraph asserts a job/provider that no longer exists, and the agent's stated "why" contradicts the actual pipeline. Pointing at the deploy workflow / ADR for the mechanism (keeping only the invariant: "migrate runs before old images finish rolling") would not rot.
+
+---
+
+Note on things that check out (not findings): the CONTRIBUTING renumber (#547) inserted a new rule 32 in section F, so rules 13–17 are unaffected — qa-verifier's "13–17 (CI gates)" citation (line 113) and migration-safety's "#30" are both correct against the new numbering, and security-scan's "rule 36"/"rule 38" citations are internally consistent. The rule-number citations are correct *today*; findings 4 and the broader pattern are about their fragility across the next renumber.</result>
+<usage><subagent_tokens>66048</subagent_tokens><tool_uses>9</tool_uses><duration_ms>148064</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a096ece7be124a82c</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/57b0cfef-599b-468b-af47-faaff05623ec/tasks/a096ece7be124a82c.output</output-file>
+<status>completed</status>
+<summary>Agent "Trace cross-references and conventions" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I've completed the cross-file trace. The renumbering is internally consistent almost everywhere — I verified every rule-number citation lands on the right content in the new numbering, all referenced paths/scripts/milestones/labels exist, the "39 rules" claim is correct, and the CI-mirror commands in security-scan match `.github/workflows/ci.yml` exactly. Here are the candidate findings, strongest first.
+
+---
+
+**Finding 1 — `#547` is still OPEN but two changed files describe the renumber as an already-landed fix "in #547"** (medium confidence)
+- Files/lines: `.claude/agents/docs-consistency-guard.md:58` ("two rules were numbered 32, fixed in #547") and `CLAUDE.md:286` ("CONTRIBUTING rule 39 (numbered 38 pre-#547)").
+- `gh issue view 547` → state OPEN, title "docs: CONTRIBUTING.md has two rules numbered 32 — G/H sections off by one…". #547 is the *bug report* of the duplicate; the actual renumber is this unmerged `chore/claude-housekeeping` branch, not a merged PR #547.
+- failure_scenario: The docs-consistency-guard agent (or any reader) follows its own new rule "grep for rule references first", checks #547, finds it OPEN and titled "has two rules numbered 32", and concludes the duplicate was never fixed / the renumber was reverted — the opposite of reality. Also imprecise: "fixed in #547" attributes the fix to the issue number rather than the fixing PR. Fine once this PR merges and closes #547, but wrong on the branch as written.
+
+**Finding 2 — docs-consistency-guard uses `working-agreement #24` as its illustrative "reference to validate" example** (low confidence)
+- File/line: `.claude/agents/docs-consistency-guard.md:54` ('reference specific working-agreement numbers (e.g., "working-agreement #3", "working-agreement #24")').
+- In the current numbering #24 = "Frontend linter: ESLint" — an unrelated rule, and notably #24 is the exact stale number this same PR just corrected in `migration-safety.md` (#24→#30). Using it as the guard's own example is confusing.
+- failure_scenario: A maintainer reading the guard for how to spot dead references sees #24 held up as a canonical example and assumes #24 is a migration/security rule (its former neighborhood), mis-teaching the very check the file defines. Borderline — it is only an "e.g." placeholder, so arguably harmless.
+
+**Finding 3 (cleared, surfaced per instructions) — `dataq-rg` hardcoded in `security-scan/SKILL.md`** (low confidence / likely NOT a violation)
+- File/lines: `.claude/skills/security-scan/SKILL.md:79-82` (`az keyvault list --resource-group dataq-rg …`).
+- CLAUDE.md §11 (line 256) forbids "no hardcoded Azure resource names/endpoints **in business logic**" and §256 scopes it to "route/service code". A read-only ops/security checklist skill is not business logic, so this does not match the quoted rule.
+- failure_scenario: If the project later interprets §11 broadly (any git-tracked file), the `dataq-rg` literal would need parameterizing. As written the rule's "in business logic" qualifier exempts it. Flagging only because the task asked; I do not consider it a real violation.
+
+**Finding 4 (cleared) — qa-verifier Mode 1 gate order differs from CONTRIBUTING rule 13's listed order** (very low confidence)
+- File: `.claude/agents/qa-verifier.md` backend gate table (Format/black → Lint/ruff → …) vs `CONTRIBUTING.md:65` rule 13 ("Ruff → Black --check → mypy → Bandit → pytest").
+- qa-verifier lists Black before Ruff; rule 13 lists Ruff first. qa-verifier explicitly says it orders by "fail-fast cheap ones first," and these are independent gates, so correctness is unaffected. Not a genuine contradiction; noted only for completeness.
+
+---
+
+**Everything else in scope checked out clean** (no findings):
+- Every renumbered citation is correct: `security-scan` rule 36 (end-of-week scan ✓) and rule 38 (security-not-public ✓); `CLAUDE.md:340` + `:286` rule 39 (MCP audit ✓); `migration-safety.md` #30 links to CONTRIBUTING and #30 *is* "backward-compatible migrations only" ✓ (this is a fix — the old #24/CLAUDE.md link was wrong); `docs/progress.md:364` "rule 32" still correctly = read-modify-write ✓ (the renumber actually *disambiguated* it).
+- "39 rules across 8 categories" is accurate: CONTRIBUTING.md has sequential rules 1–39, no gaps/dupes, categories A–H. `CLAUDE.md` (3 spots) and `docs/contributing.md` all updated to 39.
+- Reference existence all pass: `backend/tests/support/adversarial.py`, `backend/scripts/e2e_smoke.py`, `backend/scripts/seed_dev.py`, `scripts/check-typecheck-deps.py`, `context/post-v1-roadmap.md`, `docs/progress.md`, `.github/workflows/ci.yml`, ADR 0024 all exist; frontend `package.json` has `format:check`, `lint`, `typecheck`, `test`, `e2e`; the `../../` links in `.claude/agents/*.md` resolve to repo root correctly.
+- gh-issue-from-finding: default milestone string "Week 7 — Deployment, hardening &amp; docs" and "Backlog (post-v1 / testing)" both exist as open milestones (exact match); all named labels (`bug, enhancement, documentation, refactor, test, ci, security, epic, dependencies, priority/P0–P3, week-N-carryover`) exist; #8 is CLOSED/NOT_PLANNED and #9 CLOSED/COMPLETED — both matching the skill's claims.
+- No lingering contradiction on issue titles: `.github/ISSUE_TEMPLATE/bug.md`=`fix:`, `feature.md`=`feat:`, and working-agreement #3 shows `--title "fix: &lt;desc&gt;"`, so the skill's new prefix rule is now *consistent* (it fixed a prior contradiction); no other doc still asserts plain-sentence titles.
+- No stale `docs/TODO.md` references remain anywhere after the guard's removal of that workflow (other `*TODO.md` hits are the unrelated external `HARNESS_TODO.md`).
+- security-scan's `pip-audit -r backend/requirements-dev.txt` and `pnpm audit --audit-level=high` match CI's gates verbatim.</result>
+<usage><subagent_tokens>83869</subagent_tokens><tool_uses>18</tool_uses><duration_ms>304081</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a69d5aa0141b4bd76</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/57b0cfef-599b-468b-af47-faaff05623ec/tasks/a69d5aa0141b4bd76.output</output-file>
+<status>completed</status>
+<summary>Agent "Line-scan diff for defects" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I've completed the line-by-line and removed-behavior audit, verifying embedded commands against the live repo (CI workflow, pre-commit hooks, scripts, terraform, GitHub milestones/issues, and the branch-rules API). Most of the diff checks out: the CI command mirror in `qa-verifier.md` is exact, the `betterleaks` hook / `pip-audit -r backend/requirements-dev.txt` / `pnpm audit --audit-level=high` / `python -m backend.scripts.{seed_dev,e2e_smoke}` invocations all resolve, `az … --resource-group dataq-rg` matches the terraform default, the `rules/branches/main` API fix is correct (legacy `…/branches/main/protection` really does 404), the milestone titles and issue-#8-NOT_PLANNED claim are accurate, CONTRIBUTING is now cleanly numbered 1–39, and no lingering `docs/TODO.md` references survive the deletion.
+
+Candidate findings below.
+
+---
+
+**Finding 1 — `#547` cited as a completed fix, but it is an open bug report**
+- file: `.claude/agents/docs-consistency-guard.md` line 58 (and `CLAUDE.md` line 286: "CONTRIBUTING rule 39 (numbered 38 pre-#547)")
+- summary: New Hard-violation #7 says the duplicate rule-32 was "fixed in #547", and §13 implies #547 performed the renumber — but `#547` is still **OPEN**, titled *"CONTRIBUTING.md has two rules numbered 32 — G/H sections off by one."* It's the bug report, not a merged fix (the fix is this very branch).
+- failure_scenario: The docs-consistency-guard, invoked to check rule-number drift, treats #547 as a landed fix and won't recognize that the current branch is what closes it (so it won't flag the missing `Closes #547`); anyone following the breadcrumb to "see the fix in #547" lands on an unresolved issue. Misattributes an issue number as a fix PR.
+
+**Finding 2 — milestone validation (open-only) contradicts the skill's own closed-milestone procedure**
+- file: `.claude/skills/gh-issue-from-finding/SKILL.md` line 40 (Step 2a) vs line 92 (Rules)
+- summary: Step 2a resolves `--milestone` against `gh api …/milestones` "(open milestones only)" and, if not found, "stop and tell the user … do not file." But the Rules section (line 92) documents a procedure for assigning an issue to an **already-closed** milestone via the REST API.
+- failure_scenario: A user asks to file a finding against a closed milestone (e.g. backfilling `Week 6 — Results dashboard + alerting`). Step 2a validates against open milestones only, doesn't find it, and hard-stops without filing — even though the same skill's Rules say closed-milestone assignment is supported. The two sections give opposite instructions; the agent that reads top-to-bottom refuses a request the skill claims to handle.
+
+**Finding 3 — default milestone lifted from §13 "Current week:" won't string-match the milestone title**
+- file: `.claude/skills/gh-issue-from-finding/SKILL.md` line 21 (Usage) / line 40 (Step 2a)
+- summary: Default milestone = "the current feature-week milestone from CLAUDE.md §13". But §13's literal `Current week:` text is `Week 7 of 8 — Deployment, hardening &amp; docs — IN PROGRESS…`, whereas the actual milestone title is `Week 7 — Deployment, hardening &amp; docs` (no "of 8", no status). Step 2a does an exact title match and stops on mismatch.
+- failure_scenario: An agent that derives the default by reading §13 (rather than using the parenthetical example) extracts `Week 7 of 8 — …`, fails the exact-title check in Step 2a, and — because the skill now mandates "do not file milestone-less" — files **no issue at all**, silently dropping the finding the skill exists to capture. New brittleness introduced by making milestone a hard, exact-match requirement.
+
+**Finding 4 (borderline) — stale example `working-agreement #24` now resolves to ESLint after this PR's renumber**
+- file: `.claude/agents/docs-consistency-guard.md` line 54 (Hard-violation #5; unchanged line, but its meaning is broken by this PR's CONTRIBUTING renumber)
+- summary: The "Dead working-agreement references" check uses `"working-agreement #24"` as its illustrative example of a migration-ish reference. This PR renumbered rules so `#24` is now **"Frontend linter: ESLint"** (the migration rule moved to #30 — which is exactly why `migration-safety.md` was updated #24→#30 in this same diff). The example in the guard was not updated in lockstep.
+- failure_scenario: The example is now misleading — an agent using #24 as the template for "a working-agreement reference to verify" checks the wrong rule; and because #24 still exists (as ESLint), the example no longer illustrates a *dead* reference at all, weakening the check it's meant to teach.</result>
+<usage><subagent_tokens>95764</subagent_tokens><tool_uses>15</tool_uses><duration_ms>369598</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ab12aaa95e6f0bc59</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/57b0cfef-599b-468b-af47-faaff05623ec/tasks/ab12aaa95e6f0bc59.output</output-file>
+<status>completed</status>
+<summary>Agent "Verify 6 review candidates" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I now have all the evidence needed. Here are my verdicts.
+
+**C1 — CONFIRMED.** The skill's step 3 runs bare `pip-audit -r backend/requirements-dev.txt` and claims "These are the same commands CI runs as a merge gate," but ci.yml's backend-audit job runs pip-audit with five `--ignore-vuln` flags (`PYSEC-2026-36`, `PYSEC-2026-35`, `CVE-2026-26007`, `CVE-2026-27448`, `CVE-2026-27459`) for advisories accepted under #129 — the skill omits all five, so the weekly scan re-reports those accepted advisories as findings.
+
+**C2 — CONFIRMED.** Mode 1 states "The gates below mirror CI's required checks (`.github/workflows/ci.yml`)," but the gate tables list only lint/format/typecheck/SAST/tests for each side and omit ci.yml's `backend-audit` (pip-audit), `frontend-audit` (pnpm audit), and `codeql` jobs — so an author with a green local battery can still hit a CI failure on any of those un-mirrored jobs (e.g. a newly published CVE or a `py/side-effect-in-assert` CodeQL alert).
+
+**C3 — CONFIRMED.** Genuine top-to-bottom contradiction: Step 2a validates the milestone against `gh api .../milestones` "(open milestones only)" and says "If it doesn't exist, stop... do not file milestone-less," while the Rules section documents assigning an already-closed milestone via `gh api -X PATCH ... -F milestone=&lt;num&gt;`; closed milestones exist (e.g. "Week 6 — Results dashboard + alerting | closed"), so an agent following Step 2a refuses the closed-milestone backfill the Rules claim to support.
+
+**C4 — PLAUSIBLE.** §13's literal headline is "Week 7 of 8 — Deployment, hardening &amp; docs — IN PROGRESS…" while the real open milestone title is exactly "Week 7 — Deployment, hardening &amp; docs" (`gh api` confirmed), so a literal transcription of §13 would fail Step 2a's exact-match; however the skill's own Usage line hands over the correct string inline — "the current feature-week milestone from CLAUDE.md §13 (e.g. `Week 7 — Deployment, hardening &amp; docs`)" — so the "no issue filed" outcome only occurs if the agent trusts §13's decorated headline over the skill's parenthetical, making it a realistic-but-mitigated path.
+
+**C5 — REFUTED.** Rule 24 is `Frontend linter: ESLint` (CONTRIBUTING.md:83) both before and after this PR — the renumber only touched rules 33–39, never #24 — and item 5 lists `#24` merely as an example of a reference number that must resolve to a real rule, which it does; nothing in the unchanged example asserts #24 is "dead," so the check is not mis-taught (migration-safety was corrected from #24 to #30 because #24 was always ESLint, not the migrations rule).
+
+**C6 — REFUTED.** The branch's second commit body reads "Fixes #547," so on merge #547 closes as the resolved duplicate-32 bug report; in the intended post-merge steady state a reader following #547 finds a closed/resolved issue and correctly concludes the duplicate is fixed, so the "open bug ⇒ concludes unfixed" concern exists only transiently during review.</result>
+<usage><subagent_tokens>62619</subagent_tokens><tool_uses>12</tool_uses><duration_ms>203624</duration_ms></usage>
+</task-notification>
