@@ -68,9 +68,11 @@ jobs:
         run: |
           set -euo pipefail
           source scripts/ci/retry.sh
+          # && chain, not two statements: functions called from retry's
+          # condition context have errexit suppressed inside, so a plain
+          # sequence would still push after a failed build.
           build_push() {
-            docker build -f backend/Dockerfile -t "$IMAGE" .
-            docker push "$IMAGE"
+            docker build -f backend/Dockerfile -t "$IMAGE" . && docker push "$IMAGE"
           }
           retry build_push
 
@@ -211,9 +213,9 @@ jobs:
         run: |
           set -euo pipefail
           source scripts/ci/retry.sh
+          # && chain — same errexit-suppression reasoning as the backend build.
           build_push() {
-            docker build -f frontend/Dockerfile -t "$IMAGE_FRONTEND" frontend
-            docker push "$IMAGE_FRONTEND"
+            docker build -f frontend/Dockerfile -t "$IMAGE_FRONTEND" frontend && docker push "$IMAGE_FRONTEND"
           }
           retry build_push
 
