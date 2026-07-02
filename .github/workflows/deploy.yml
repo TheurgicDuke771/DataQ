@@ -45,6 +45,23 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # Fail fast on unset repo vars (#539 post-mortem): an empty --name reaches
+      # ARM and the containerapp extension masks the 4xx as KeyError:
+      # 'properties' — four deploys failed before --debug exposed that
+      # FRONTEND_APP_NAME was simply never configured. Never let an empty var
+      # masquerade as a transient again.
+      - name: Preflight — required repo vars
+        run: |
+          set -euo pipefail
+          fail=0
+          for pair in "AZURE_RESOURCE_GROUP=${{ vars.AZURE_RESOURCE_GROUP }}" \
+                      "API_APP_NAME=${{ vars.API_APP_NAME }}" \
+                      "WORKER_APP_NAME=${{ vars.WORKER_APP_NAME }}" \
+                      "MIGRATE_JOB_NAME=${{ vars.MIGRATE_JOB_NAME }}"; do
+            [[ -n "${pair#*=}" ]] || { echo "::error::repo variable ${pair%%=*} is not set"; fail=1; }
+          done
+          exit $fail
+
       - name: Azure login (OIDC)
         uses: azure/login@v3
         with:
@@ -188,6 +205,18 @@ jobs:
     needs: backend
     steps:
       - uses: actions/checkout@v7
+
+      # Same fail-fast as the backend job (#539 post-mortem) — this is the var
+      # whose absence burned deploys #1/#2/#4.
+      - name: Preflight — required repo vars
+        run: |
+          set -euo pipefail
+          fail=0
+          for pair in "AZURE_RESOURCE_GROUP=${{ vars.AZURE_RESOURCE_GROUP }}" \
+                      "FRONTEND_APP_NAME=${{ vars.FRONTEND_APP_NAME }}"; do
+            [[ -n "${pair#*=}" ]] || { echo "::error::repo variable ${pair%%=*} is not set"; fail=1; }
+          done
+          exit $fail
 
       - name: Azure login (OIDC)
         uses: azure/login@v3
