@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "7ebb20a72c0d",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-536-traceback-locals-credential-leak",
+  "checkpoints_count": 3,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/7e/bb20a72c0d/0/metadata.json",
+      "transcript": "/7e/bb20a72c0d/0/full.jsonl",
+      "content_hash": "/7e/bb20a72c0d/0/content_hash.txt",
+      "prompt": "/7e/bb20a72c0d/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 123324,
+    "cache_creation_tokens": 2608385,
+    "cache_read_tokens": 129036113,
+    "output_tokens": 307253,
+    "api_call_count": 429
+  }
+}
