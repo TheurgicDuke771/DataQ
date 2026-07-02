@@ -85,7 +85,9 @@ services:
       SECRET_STORE: ${SECRET_STORE:-redis}
       # The dev-bypass identity is the workspace admin locally (non-secret dev
       # default; ADR 0027) so /admin + /settings are drivable in dev and E2E.
-      WORKSPACE_ADMIN_EMAILS: ${WORKSPACE_ADMIN_EMAILS:-dev-bypass@dataq.local}
+      # No-colon form: WORKSPACE_ADMIN_EMAILS="" in .env opts back OUT (to a
+      # non-admin identity, e.g. to exercise the Forbidden gate manually).
+      WORKSPACE_ADMIN_EMAILS: ${WORKSPACE_ADMIN_EMAILS-dev-bypass@dataq.local}
     volumes:
       # Bind-mount source for hot reload; the conda env in the image is untouched.
       - ./backend:/workspace/backend

@@ -468,6 +468,26 @@ def _seed_runs(session: Session, *, suite: Suite) -> int:
             finished_at=now - timedelta(minutes=4, seconds=48),
         )
         created += 1
+    else:
+        # Backfill (idempotent): DBs seeded before `sample_failures` rode the
+        # seed keep their existing run (the marker guard skips it), so attach
+        # the sample to the already-seeded fail result — the run-detail sample
+        # drill-down then works on old stacks without wiping runs first.
+        fail_check = checks.get("status in set")
+        fail_sample = next((r[5] for r in _SEED_RUN_RESULTS if r[0] == "status in set"), None)
+        if fail_check is not None and fail_sample is not None:
+            run_id = session.scalars(
+                select(Run.id).where(Run.suite_id == suite.id, Run.triggered_by == succeeded_marker)
+            ).first()
+            stale = session.scalars(
+                select(Result).where(
+                    Result.run_id == run_id,
+                    Result.check_id == fail_check.id,
+                    Result.sample_failures.is_(None),
+                )
+            ).first()
+            if stale is not None:
+                stale.sample_failures = fail_sample
 
     if mixed_marker not in existing:
         _seed_result_run(
@@ -487,12 +507,31 @@ def _seed_runs(session: Session, *, suite: Suite) -> int:
                 suite_id=suite.id,
                 status="failed",
                 triggered_by=failed_marker,
-                created_at=now - timedelta(minutes=2),
-                started_at=now - timedelta(minutes=2),
-                finished_at=now - timedelta(minutes=1, seconds=58),
+                created_at=now - timedelta(minutes=6),
+                started_at=now - timedelta(minutes=6),
+                finished_at=now - timedelta(minutes=5, seconds=58),
             )
         )
         created += 1
+
+    # Normalize seed-run timestamps on EVERY reseed (existing rows included):
+    # keeps the runs inside the dashboard's 7-day window on old stacks, and
+    # keeps the operational-failure run (no results) OLDER than the
+    # result-bearing runs — `suite_performance` reads each suite's LATEST run,
+    # so a newest run without results would blank the Suite Performance panel.
+    offsets: dict[str, tuple[timedelta, timedelta]] = {
+        failed_marker: (timedelta(minutes=6), timedelta(minutes=5, seconds=58)),
+        succeeded_marker: (timedelta(minutes=5), timedelta(minutes=4, seconds=48)),
+        mixed_marker: (timedelta(minutes=3, seconds=30), timedelta(minutes=3, seconds=18)),
+    }
+    seed_runs = session.scalars(
+        select(Run).where(Run.suite_id == suite.id, Run.triggered_by.in_(list(offsets)))
+    )
+    for run in seed_runs:
+        start_offset, finish_offset = offsets[str(run.triggered_by)]
+        run.created_at = now - start_offset
+        run.started_at = now - start_offset
+        run.finished_at = now - finish_offset
 
     return created
 

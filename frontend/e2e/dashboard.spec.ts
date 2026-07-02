@@ -21,10 +21,16 @@ test.describe('Dashboard', () => {
     await expect(totalRuns.first()).toBeVisible();
   });
 
-  test('renders trend, per-suite performance, and recent runs', async ({ page }) => {
-    await expect(page.getByText(/Quality Trends|Trends/i).first()).toBeVisible();
-    await expect(page.getByText(/Suite Performance|per-suite/i).first()).toBeVisible();
-    // The recent-runs feed resolves the seeded suite by name.
+  test('renders trend, per-suite performance, and recent runs with seeded data', async ({
+    page,
+  }) => {
+    // Card titles render unconditionally, so assert CONTENT: the seeded runs
+    // give the trend chart an svg and put 'Orders quality' in per-suite +
+    // recent-runs — these fail if the summary endpoint breaks.
+    const trendCard = page.locator('.ant-card').filter({ hasText: /Trends/i });
+    await expect(trendCard.locator('svg').first()).toBeVisible();
+    const suiteCard = page.locator('.ant-card').filter({ hasText: /Suite Performance/i });
+    await expect(suiteCard.getByText('Orders quality').first()).toBeVisible();
     await expect(page.getByText('Orders quality').first()).toBeVisible();
   });
 });

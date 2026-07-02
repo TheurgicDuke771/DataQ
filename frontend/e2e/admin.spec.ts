@@ -10,12 +10,15 @@ test.describe('Admin control centre', () => {
     await page.goto('/admin');
     await expect(page.getByRole('heading', { name: 'Admin', level: 3 })).toBeVisible();
 
+    // Scope to the content area — the sidebar nav also carries a 'Suites'
+    // link, which would satisfy an unscoped getByText even with Admin broken.
+    const main = page.getByRole('main');
     for (const section of ['Suites', 'Members', 'Access grants']) {
-      await expect(page.getByText(section, { exact: true }).first()).toBeVisible();
+      await expect(main.getByText(section, { exact: true }).first()).toBeVisible();
     }
     // Unscoped visibility: the seeded suite and the resolved admin identity.
-    await expect(page.getByText('Orders quality').first()).toBeVisible();
-    await expect(page.getByText('dev-bypass@dataq.local').first()).toBeVisible();
+    await expect(main.getByText('Orders quality').first()).toBeVisible();
+    await expect(main.getByText('dev-bypass@dataq.local').first()).toBeVisible();
   });
 
   test('settings exposes the inbound orchestration webhook config', async ({ page }) => {

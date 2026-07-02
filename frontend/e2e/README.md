@@ -52,6 +52,10 @@ The config (`playwright.config.ts`) targets `E2E_BASE_URL` (default
 `http://localhost:3000`) and **reuses** the already-running compose/`pnpm dev`
 server on :3000. Point it elsewhere with `E2E_BASE_URL=… pnpm e2e`.
 
+> On a stack that predates a compose-env or seed change, recreate + reseed
+> first — container env is a create-time snapshot: `docker compose up -d api`
+> then re-run the seed (it's idempotent and backfills what it can).
+
 ## In CI
 
 The `frontend-e2e` job in `.github/workflows/ci.yml` spins up Postgres + Redis,
