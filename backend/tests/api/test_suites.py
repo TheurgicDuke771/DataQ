@@ -277,7 +277,10 @@ def test_delete_succeeds_after_a_run_with_results(client: TestClient, db_session
     db_session.commit()
     run_id = run.id  # capture before the cascade detaches the instance
 
-    assert client.delete(f"/api/v1/suites/{sid}").status_code == 204
+    # Call hoisted out of the assert (CodeQL py/side-effect-in-assert): the
+    # delete must run unconditionally, not live inside an assert expression.
+    resp = client.delete(f"/api/v1/suites/{sid}")
+    assert resp.status_code == 204
     db_session.expire_all()
     assert db_session.scalars(select(Result).where(Result.run_id == run_id)).all() == []
 
