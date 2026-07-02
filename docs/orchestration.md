@@ -14,9 +14,11 @@ not run the pipelines. Both Azure Data Factory and Apache Airflow sit behind one
 
 ## ADF
 
-Azure Monitor raises an alert on pipeline events → an **Action Group webhook** POSTs to
-`/api/v1/orchestration/events/adf` (shared-secret authenticated). Succeeded runs are also
-picked up by the 10-min poll against the ADF REST API.
+Azure Monitor raises an alert on pipeline events → an **Action Group webhook** (with the
+**common alert schema enabled**) POSTs to `/api/v1/orchestration/events/adf`
+(shared-secret authenticated). The alert names the factory/pipeline but no run id, so a
+fired alert triggers an immediate targeted poll — the failed run lands in the pipeline
+feed within seconds. Succeeded runs are picked up by the same poll on its 10-min cadence.
 
 **Getting the webhook URL:** a workspace admin opens **Settings → Webhooks** in the app —
 it shows the ready-to-paste inbound URL per provider (the ADF one embeds the shared

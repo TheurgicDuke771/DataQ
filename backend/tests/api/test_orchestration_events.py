@@ -187,3 +187,89 @@ def test_token_in_url_not_logged_via_path(
     _seed_adf_connection(db_session)
     resp = api.post(_URL, params={"token": _SECRET}, content=json.dumps(_EVENT).encode())
     assert resp.status_code == 200
+
+
+# ── Common Alert Schema (#492): run-anonymous alert → poll-now ────────────────
+
+_COMMON_ALERT = {
+    "schemaId": "azureMonitorCommonAlertSchema",
+    "data": {
+        "essentials": {
+            "monitorCondition": "Fired",
+            "alertTargetIDs": [
+                "/subscriptions/s/resourcegroups/rg"
+                "/providers/microsoft.datafactory/factories/example-adf-preprod"
+            ],
+            "firedDateTime": "2026-07-02T03:01:00.000Z",
+        },
+        "alertContext": {
+            "condition": {
+                "allOf": [
+                    {
+                        "metricName": "PipelineFailedRuns",
+                        "dimensions": [{"name": "Name", "value": "load_finance"}],
+                    }
+                ]
+            }
+        },
+    },
+}
+
+
+def test_common_alert_fired_acks_reconciling_and_enqueues_poll(
+    client: tuple[TestClient, FakeStore], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A fired Common-Alert-Schema event has no runId: nothing is upserted; the
+    receiver enqueues an immediate poll and acks 200 (never a retry-storm 4xx)."""
+    api, _ = client
+    sent: list[tuple[str, dict[str, Any] | None]] = []
+    from backend.app.worker.celery_app import celery_app
+
+    monkeypatch.setattr(
+        celery_app, "send_task", lambda name, **kw: sent.append((name, kw.get("kwargs")))
+    )
+    resp = api.post(_URL, params={"token": _SECRET}, json=_COMMON_ALERT)
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "reconciling", "triggered": 0}
+    # The poll is TARGETED: the alerting provider + the factory from the alert.
+    assert sent == [
+        ("poll_orchestration_runs", {"provider": "adf", "resource_name": "example-adf-preprod"})
+    ]
+
+
+def test_common_alert_resolved_is_ignored_without_poll(
+    client: tuple[TestClient, FakeStore], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    api, _ = client
+    sent: list[str] = []
+    from backend.app.worker.celery_app import celery_app
+
+    monkeypatch.setattr(celery_app, "send_task", lambda name, **kw: sent.append(name))
+    event = json.loads(json.dumps(_COMMON_ALERT))
+    event["data"]["essentials"]["monitorCondition"] = "Resolved"
+    resp = api.post(_URL, params={"token": _SECRET}, json=event)
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "ignored", "triggered": 0}
+    assert sent == []
+
+
+def test_common_alert_requires_auth(client: tuple[TestClient, FakeStore]) -> None:
+    api, _ = client
+    resp = api.post(_URL, json=_COMMON_ALERT)
+    assert resp.status_code == 401
+
+
+def test_common_alert_fired_acks_ignored_when_broker_down(
+    client: tuple[TestClient, FakeStore], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Honest ack: if the poll can't be enqueued, don't claim 'reconciling'."""
+    api, _ = client
+    from backend.app.worker.celery_app import celery_app
+
+    def _boom(name: str, **kw: Any) -> None:
+        raise RuntimeError("broker down")
+
+    monkeypatch.setattr(celery_app, "send_task", _boom)
+    resp = api.post(_URL, params={"token": _SECRET}, json=_COMMON_ALERT)
+    assert resp.status_code == 200  # never a retry-storm error (ADR 0006)
+    assert resp.json() == {"status": "ignored", "triggered": 0}

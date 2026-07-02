@@ -170,9 +170,11 @@ The datasource + compute infra is stood up by the external Terraform harness
    URL (host + current `?token=` from Key Vault) and the Airflow URL. Set
    `PUBLIC_BASE_URL` so the generated host is the public origin (the deploy sets
    it to the frontend Container App host; empty falls back to the request host). Paste the ADF URL
-   into the Action Group webhook field. Note the **live ADF delivery still needs
-   the Common-Alert-Schema payload mapping (#492)** — the alert body Azure Monitor
-   sends differs from what the receiver parses today.
+   into the Action Group webhook field and turn **"Enable the common alert
+   schema" ON** — the receiver keys off `schemaId=azureMonitorCommonAlertSchema`
+   (#492): a fired alert acks `reconciling` and triggers an immediate targeted
+   poll, so the failed run (with its true runId) lands in `pipeline_runs`
+   within seconds. A legacy-format alert body would 422 instead.
 
    Or build it from the CLI (the live host + Key Vault secret):
 

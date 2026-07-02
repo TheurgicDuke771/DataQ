@@ -54,6 +54,26 @@ class RunUpdate:
     failure_reason: str | None = None
 
 
+@dataclass(frozen=True)
+class AlertPing:
+    """A webhook event that signals *something happened* without a run identity.
+
+    Azure Monitor's Common Alert Schema (#492) is the canonical case: a metric
+    alert on failed pipeline runs names the factory and (via dimensions) the
+    pipeline, but carries **no runId** — so it cannot become a `RunUpdate`
+    (whose `provider_run_id` is the upsert idempotency key). Instead the
+    receiver treats it as a poll-now signal: the regular polling path ingests
+    the real run(s) — true identity, status, timings — within seconds instead
+    of the 10-min cadence. Provider-agnostic on purpose: any provider whose
+    alerting channel is run-anonymous can return one.
+    """
+
+    monitor_condition: str  # "fired" | "resolved" (lower-cased)
+    resource_name: str | None = None  # e.g. the ADF factory name, when derivable
+    pipeline_or_dag_id: str | None = None  # alert dimension, when present
+    fired_at: datetime | None = None
+
+
 @runtime_checkable
 class OrchestrationProvider(Protocol):
     """Provider-agnostic monitoring interface — ADF reference impl, Airflow next."""
@@ -65,8 +85,9 @@ class OrchestrationProvider(Protocol):
     # layer resolve the connection without branching on the provider.
     resource_config_key: str
 
-    def parse_event(self, payload: bytes, headers: Mapping[str, str]) -> RunUpdate:
-        """Authenticated webhook body → normalised `RunUpdate`.
+    def parse_event(self, payload: bytes, headers: Mapping[str, str]) -> RunUpdate | AlertPing:
+        """Authenticated webhook body → normalised `RunUpdate`, or an
+        `AlertPing` when the event has no run identity (alert-schema channel).
 
         Raises `MalformedEventError` when required fields are absent.
         """

@@ -26,7 +26,7 @@ from typing import Any
 import httpx
 from pydantic import BaseModel, ConfigDict
 
-from backend.app.orchestration.base import MalformedEventError, RunUpdate
+from backend.app.orchestration.base import AlertPing, MalformedEventError, RunUpdate
 
 # Azure AD OAuth2 endpoint + ARM management host. The client-credentials grant
 # against this scope yields a bearer token usable for the factory GET below.
@@ -151,22 +151,28 @@ class AdfProvider:
     defaults to ``failed`` when absent because the v1 ADF webhook is the failure
     channel (success → trigger arrives via the REST polling path, ADR 0004).
 
-    NOTE: the exact Azure Monitor Common-Alert-Schema → these-fields mapping is
-    validated at the Week-7 deploy smoke test (we cannot exercise it against live
-    Azure before deployment). `fetch_run_detail` / `list_recent_runs` (REST
-    enrichment + polling fallback) land in the follow-up PR.
+    Azure Monitor's **Common Alert Schema** (#492) is handled as a distinct
+    shape: a metric alert on ``PipelineFailedRuns`` names the factory
+    (``essentials.alertTargetIDs``) and the pipeline (the ``Name`` dimension)
+    but carries **no runId**, so it cannot be a `RunUpdate` — `parse_event`
+    returns an `AlertPing` instead and the receiver kicks an immediate poll,
+    which ingests the real run(s) with their true identities within seconds.
+    The legacy flat shape (custom webhook senders / tests) keeps working.
     """
 
     provider = "adf"
     resource_config_key = "factory_name"
 
-    def parse_event(self, payload: bytes, headers: Mapping[str, str]) -> RunUpdate:
+    def parse_event(self, payload: bytes, headers: Mapping[str, str]) -> RunUpdate | AlertPing:
         try:
             body = json.loads(payload)
         except (ValueError, TypeError) as exc:
             raise MalformedEventError("event body is not valid JSON") from exc
         if not isinstance(body, dict):
             raise MalformedEventError("event body must be a JSON object")
+
+        if body.get("schemaId") == "azureMonitorCommonAlertSchema":
+            return self._parse_common_alert(body)
 
         factory = body.get("factoryName")
         pipeline = body.get("pipelineName")
@@ -198,6 +204,60 @@ class AdfProvider:
             started_at=_parse_dt(body.get("start")),
             finished_at=_parse_dt(body.get("end") or body.get("firedDateTime")),
             failure_reason=body.get("message"),
+        )
+
+    @staticmethod
+    def _parse_common_alert(body: dict[str, Any]) -> AlertPing:
+        """Azure Monitor Common Alert Schema → `AlertPing` (#492).
+
+        Shape: ``{"schemaId": "azureMonitorCommonAlertSchema", "data":
+        {"essentials": {...}, "alertContext": {...}}}``. ``essentials`` is
+        required (its absence means a broken sender, 422); the factory and
+        pipeline are best-effort — the poll the ping triggers doesn't need
+        them, they only enrich the ack log.
+        """
+        data = body.get("data")
+        if not isinstance(data, dict) or not isinstance(data.get("essentials"), dict):
+            raise MalformedEventError(
+                "common-alert-schema event has no data.essentials",
+                detail={"missing": ["data.essentials"]},
+            )
+        essentials: dict[str, Any] = data["essentials"]
+
+        # ".../providers/Microsoft.DataFactory/factories/<name>" (any casing).
+        factory: str | None = None
+        targets = essentials.get("alertTargetIDs")
+        if isinstance(targets, list) and targets and isinstance(targets[0], str):
+            segments = targets[0].rstrip("/").split("/")
+            if len(segments) >= 2 and segments[-2].lower() == "factories":
+                factory = segments[-1]
+
+        # Metric-alert dimension "Name" carries the pipeline name; first
+        # non-empty match wins (a later empty duplicate must not clobber it).
+        pipeline: str | None = None
+        context = data.get("alertContext")
+        condition = context.get("condition") if isinstance(context, dict) else None
+        all_of = condition.get("allOf") if isinstance(condition, dict) else None
+        for clause in all_of if isinstance(all_of, list) else []:
+            dimensions = clause.get("dimensions") if isinstance(clause, dict) else None
+            for dim in dimensions if isinstance(dimensions, list) else []:
+                if (
+                    isinstance(dim, dict)
+                    and str(dim.get("name", "")).lower() == "name"
+                    and dim.get("value")
+                ):
+                    pipeline = str(dim["value"])
+                    break
+            if pipeline is not None:
+                break
+
+        return AlertPing(
+            monitor_condition=str(essentials.get("monitorCondition") or "fired").lower(),
+            resource_name=factory,
+            pipeline_or_dag_id=pipeline,
+            fired_at=_parse_dt(
+                essentials.get("firedDateTime") or essentials.get("resolvedDateTime")
+            ),
         )
 
     def fetch_run_detail(
