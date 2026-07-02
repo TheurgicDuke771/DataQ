@@ -239,3 +239,43 @@ def test_app_insights_handler_redacts_foreign_record_secret(
     rendered = ai.format(record)
     assert "SUPERSECRET-1" not in rendered
     assert "token=<redacted>" in rendered
+
+
+def test_scrubs_url_userinfo_credentials() -> None:
+    """#536: a SQLAlchemy-style engine URL carries the credential in the URL
+    USERINFO (`scheme://user:secret@host`), not a query param — the #494 regex
+    missed that shape entirely."""
+    out = _redact(
+        {
+            "event": "engine url databricks://token:dapiDEADBEEF123@dbc-x.cloud.databricks.com"
+            "?http_path=/sql/1.0/warehouses/x"
+        }
+    )
+    assert "dapiDEADBEEF123" not in str(out["event"])
+    assert "databricks://token:<redacted>@dbc-x.cloud.databricks.com" in str(out["event"])
+    # Non-credential URLs are untouched.
+    out2 = _redact({"event": "see https://docs.example.com/path and postgres://host/db"})
+    assert out2["event"] == "see https://docs.example.com/path and postgres://host/db"
+
+
+def test_exception_tracebacks_drop_frame_locals_and_scrub_messages(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """#536: frame locals (which can hold anything in scope — engine URLs with
+    embedded credentials, sample rows) must NOT be serialized into the log
+    event, and the rendered exception strings pass the scrubber."""
+    configure_logging()
+    logger = std_logging.getLogger("test.locals.leak")
+    try:
+        engine_url = "databricks://token:dapiSHOULDNOTLEAK@host/x"  # the leaking local
+        raise RuntimeError(
+            f"connect failed for databricks://token:dapiALSONOT@host ({len(engine_url)})"
+        )
+    except RuntimeError:
+        logger.exception("boom")
+    line = capsys.readouterr().out
+    assert "dapiSHOULDNOTLEAK" not in line  # locals not captured at all
+    assert '"locals"' not in line
+    assert "dapiALSONOT" not in line  # exception MESSAGE passed the scrubber
+    assert "token:<redacted>@" in line
+    assert "RuntimeError" in line  # the traceback itself is still there

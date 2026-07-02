@@ -53,10 +53,15 @@ _REDACTED = "<redacted>"
 _SECRET_QS_RE = re.compile(
     r"(?i)\b(token|sig|signature|secret|api[_-]?key|access[_-]?key|password)=[^&\s\"']+"
 )
+# URL-userinfo credentials (`scheme://user:secret@host`, e.g. a SQLAlchemy engine
+# URL `databricks://token:<PAT>@host/…`) — a different shape than the query-param
+# scrub above, missed by it until #536.
+_URL_USERINFO_RE = re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://[^/\s:@\"']+):[^@/\s\"']+@")
 
 
 def _scrub_secret_strings(text: str) -> str:
-    return _SECRET_QS_RE.sub(lambda m: f"{m.group(1)}={_REDACTED}", text)
+    text = _SECRET_QS_RE.sub(lambda m: f"{m.group(1)}={_REDACTED}", text)
+    return _URL_USERINFO_RE.sub(lambda m: f"{m.group(1)}:{_REDACTED}@", text)
 
 
 def _redact_pii(_logger: Any, _name: str, event_dict: EventDict) -> EventDict:
@@ -80,6 +85,16 @@ def _add_request_id(_logger: Any, _name: str, event_dict: EventDict) -> EventDic
     return event_dict
 
 
+# Traceback → dict WITHOUT frame locals (#536): `dict_tracebacks`' default
+# transformer captures every frame's locals, which can carry anything in scope —
+# connection URLs with embedded credentials (the live-smoke leak: a SQLAlchemy
+# `…://token:<PAT>@host` engine URL), sample rows, PII — and are unredactable in
+# general. Frame files/lines/names remain; locals are debugging sugar we forgo.
+_dict_tracebacks_no_locals = structlog.processors.ExceptionRenderer(
+    structlog.tracebacks.ExceptionDictTransformer(show_locals=False)
+)
+
+
 def configure_logging() -> None:
     settings = get_settings()
     level = getattr(logging, settings.log_level)
@@ -100,7 +115,12 @@ def configure_logging() -> None:
         foreign_pre_chain=shared_processors,
         processors=[
             structlog.stdlib.ProcessorFormatter.remove_processors_meta,
-            structlog.processors.dict_tracebacks,
+            _dict_tracebacks_no_locals,
+            # Re-run the redactor AFTER the traceback is rendered to a dict —
+            # the pre-chain pass ran before the exception existed as strings, so
+            # exception messages/frames never met the scrubber (#536). Idempotent
+            # on everything else.
+            _redact_pii,
             structlog.processors.JSONRenderer(),
         ],
     )
@@ -170,7 +190,7 @@ def configure_logging() -> None:
     structlog.configure(
         processors=[
             *shared_processors,
-            structlog.processors.dict_tracebacks,
+            _dict_tracebacks_no_locals,
             structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
         ],
         wrapper_class=structlog.make_filtering_bound_logger(level),
