@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "3e0002eb4c44",
+  "strategy": "manual-commit",
+  "branch": "ci/deploy-preflight-vars",
+  "checkpoints_count": 3,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/3e/0002eb4c44/0/metadata.json",
+      "transcript": "/3e/0002eb4c44/0/full.jsonl",
+      "compact_transcript": "/3e/0002eb4c44/0/transcript.jsonl",
+      "content_hash": "/3e/0002eb4c44/0/content_hash.txt",
+      "prompt": "/3e/0002eb4c44/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 143220,
+    "cache_creation_tokens": 6555020,
+    "cache_read_tokens": 188084376,
+    "output_tokens": 388714,
+    "api_call_count": 574
+  }
+}
