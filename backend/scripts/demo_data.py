@@ -293,22 +293,47 @@ def _ensure_check(
 
 
 # A seeded run's results: (check name, status, metric_value, observed_value,
-# expected_value). `metric_value` is the unexpected-% badness scalar (ADR 0012);
-# operational statuses (`error`/`skip`) carry NO metric (no penalty weight, #122)
-# so theirs is None.
-_SeedResult = tuple[str, str, Decimal | None, dict[str, Any] | None, dict[str, Any] | None]
+# expected_value, sample_failures). `metric_value` is the unexpected-% badness
+# scalar (ADR 0012); operational statuses (`error`/`skip`) carry NO metric (no
+# penalty weight, #122) so theirs is None. `sample_failures` (usually None)
+# feeds the run-detail redacted-sample drill-down (#226/#415) — the read API
+# redacts it column-aware, the seed stores the raw runner shape.
+_SeedResult = tuple[
+    str,
+    str,
+    Decimal | None,
+    dict[str, Any] | None,
+    dict[str, Any] | None,
+    dict[str, Any] | None,
+]
 
 # Run 1 — a pass/pass/warn/fail spread so the drill-down shows the severity tiers
-# (ADR 0005/0016).
+# (ADR 0005/0016). The fail carries a failing-value sample: its tested column
+# (`status`) is not PII, so the redactor lets the values surface (#415).
 _SEED_RUN_RESULTS: list[_SeedResult] = [
-    ("order_id not null", "pass", Decimal("0"), {"unexpected_percent": 0.0}, {"min_value": None}),
-    ("order_id unique", "pass", Decimal("0"), {"unexpected_percent": 0.0}, {"min_value": None}),
+    (
+        "order_id not null",
+        "pass",
+        Decimal("0"),
+        {"unexpected_percent": 0.0},
+        {"min_value": None},
+        None,
+    ),
+    (
+        "order_id unique",
+        "pass",
+        Decimal("0"),
+        {"unexpected_percent": 0.0},
+        {"min_value": None},
+        None,
+    ),
     (
         "amount in range",
         "warn",
         Decimal("2.0"),
         {"unexpected_percent": 2.0},
         {"min_value": 0, "max_value": 100000},
+        None,
     ),
     (
         "status in set",
@@ -316,6 +341,11 @@ _SEED_RUN_RESULTS: list[_SeedResult] = [
         Decimal("6.0"),
         {"unexpected_percent": 6.0},
         {"value_set": ["new", "paid", "shipped", "cancelled"]},
+        {
+            "unexpected_count": 3,
+            "unexpected_percent": 6.0,
+            "partial_unexpected_list": ["unknwon", "REFNDED", "in transit??"],
+        },
     ),
 ]
 
@@ -324,13 +354,21 @@ _SEED_RUN_RESULTS: list[_SeedResult] = [
 # `skip` (precondition unmet, not evaluated). Gives the Results page the full
 # pass | warn | fail | critical | error | skip mix across the two runs.
 _SEED_RUN_MIXED_RESULTS: list[_SeedResult] = [
-    ("order_id not null", "pass", Decimal("0"), {"unexpected_percent": 0.0}, {"min_value": None}),
+    (
+        "order_id not null",
+        "pass",
+        Decimal("0"),
+        {"unexpected_percent": 0.0},
+        {"min_value": None},
+        None,
+    ),
     (
         "status in set",
         "critical",
         Decimal("18.0"),
         {"unexpected_percent": 18.0},
         {"value_set": ["new", "paid", "shipped", "cancelled"]},
+        None,
     ),
     (
         "amount in range",
@@ -338,8 +376,16 @@ _SEED_RUN_MIXED_RESULTS: list[_SeedResult] = [
         None,
         {"error": 'column "amount" could not be cast to NUMERIC'},
         None,
+        None,
     ),
-    ("order_id unique", "skip", None, {"reason": "upstream load incomplete — not evaluated"}, None),
+    (
+        "order_id unique",
+        "skip",
+        None,
+        {"reason": "upstream load incomplete — not evaluated"},
+        None,
+        None,
+    ),
 ]
 
 
@@ -370,7 +416,7 @@ def _seed_result_run(
     )
     session.add(run)
     session.flush()  # assign run.id for the result FKs
-    for name, status, metric, observed, expected in results:
+    for name, status, metric, observed, expected, sample in results:
         check = checks.get(name)
         if check is None:  # suite without the expected check (shouldn't happen) — skip
             continue
@@ -382,6 +428,7 @@ def _seed_result_run(
                 metric_value=metric,
                 observed_value=observed,
                 expected_value=expected,
+                sample_failures=sample,
             )
         )
 
@@ -421,6 +468,26 @@ def _seed_runs(session: Session, *, suite: Suite) -> int:
             finished_at=now - timedelta(minutes=4, seconds=48),
         )
         created += 1
+    else:
+        # Backfill (idempotent): DBs seeded before `sample_failures` rode the
+        # seed keep their existing run (the marker guard skips it), so attach
+        # the sample to the already-seeded fail result — the run-detail sample
+        # drill-down then works on old stacks without wiping runs first.
+        fail_check = checks.get("status in set")
+        fail_sample = next((r[5] for r in _SEED_RUN_RESULTS if r[0] == "status in set"), None)
+        if fail_check is not None and fail_sample is not None:
+            run_id = session.scalars(
+                select(Run.id).where(Run.suite_id == suite.id, Run.triggered_by == succeeded_marker)
+            ).first()
+            stale = session.scalars(
+                select(Result).where(
+                    Result.run_id == run_id,
+                    Result.check_id == fail_check.id,
+                    Result.sample_failures.is_(None),
+                )
+            ).first()
+            if stale is not None:
+                stale.sample_failures = fail_sample
 
     if mixed_marker not in existing:
         _seed_result_run(
@@ -440,12 +507,31 @@ def _seed_runs(session: Session, *, suite: Suite) -> int:
                 suite_id=suite.id,
                 status="failed",
                 triggered_by=failed_marker,
-                created_at=now - timedelta(minutes=2),
-                started_at=now - timedelta(minutes=2),
-                finished_at=now - timedelta(minutes=1, seconds=58),
+                created_at=now - timedelta(minutes=6),
+                started_at=now - timedelta(minutes=6),
+                finished_at=now - timedelta(minutes=5, seconds=58),
             )
         )
         created += 1
+
+    # Normalize seed-run timestamps on EVERY reseed (existing rows included):
+    # keeps the runs inside the dashboard's 7-day window on old stacks, and
+    # keeps the operational-failure run (no results) OLDER than the
+    # result-bearing runs — `suite_performance` reads each suite's LATEST run,
+    # so a newest run without results would blank the Suite Performance panel.
+    offsets: dict[str, tuple[timedelta, timedelta]] = {
+        failed_marker: (timedelta(minutes=6), timedelta(minutes=5, seconds=58)),
+        succeeded_marker: (timedelta(minutes=5), timedelta(minutes=4, seconds=48)),
+        mixed_marker: (timedelta(minutes=3, seconds=30), timedelta(minutes=3, seconds=18)),
+    }
+    seed_runs = session.scalars(
+        select(Run).where(Run.suite_id == suite.id, Run.triggered_by.in_(list(offsets)))
+    )
+    for run in seed_runs:
+        start_offset, finish_offset = offsets[str(run.triggered_by)]
+        run.created_at = now - start_offset
+        run.started_at = now - start_offset
+        run.finished_at = now - finish_offset
 
     return created
 

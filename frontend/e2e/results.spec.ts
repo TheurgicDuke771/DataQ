@@ -38,6 +38,23 @@ test.describe('Results page', () => {
     await expect(page.getByText('fail').first()).toBeVisible();
   });
 
+  test('expands the failed check to its redacted failing-value sample', async ({ page }) => {
+    await page
+      .locator('tr.ant-table-row')
+      .filter({ hasText: 'seed:run:succeeded' })
+      .first()
+      .click();
+    await expect(page).toHaveURL(/\/results\/[0-9a-f-]+$/);
+
+    // The seeded fail ("status in set") carries sample_failures; its tested
+    // column (`status`) is not PII, so the redactor surfaces the raw failing
+    // values (#226/#415/#417) instead of masking them.
+    const row = page.locator('tr.ant-table-row').filter({ hasText: 'status in set' });
+    await row.getByRole('button', { name: /expand/i }).click();
+    await expect(page.getByText('unknwon')).toBeVisible();
+    await expect(page.getByText('REFNDED')).toBeVisible();
+  });
+
   test('drills into the operational-spectrum run (critical / error / skip)', async ({ page }) => {
     // The second succeeded run carries the operational vocabulary the first
     // doesn't: a critical breach, an error (evaluation threw), and a skip.
