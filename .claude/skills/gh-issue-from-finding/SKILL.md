@@ -18,6 +18,7 @@ User invokes with a short description of the finding. Required context the skill
 - `--severity critical|high|medium|low` (defaults to `medium`; use `critical` only for production-down / data-loss; never use `critical` for security — see `--security` flag below). Maps to a `priority/*` label **and** a `**Severity:**` line in the body (see Steps 2–4).
 - `--type bug|enhancement|documentation` (defaults to `bug`; maps to GitHub label)
 - `--security` — flag for security-adjacent issues. If set, the skill SHOULD NOT proceed with `gh issue create`; instead it prints the GitHub Security Advisories URL and exits, per the security-disclosure policy (see issue [#9](https://github.com/TheurgicDuke771/DataQ/issues/9) for context).
+- `--milestone <title>` — optional override. Every issue gets a milestone (project convention). Default: the current feature-week milestone from CLAUDE.md §13 (e.g. `Week 7 — Deployment, hardening & docs`); use `Backlog (post-v1 / testing)` for post-v1 / no-target-week items.
 - `--blocker-for-week <N>` — optional, marks the issue as a Week-N blocker.
 
 ## Steps
@@ -33,19 +34,21 @@ User invokes with a short description of the finding. Required context the skill
 2. **Resolve and validate the labels.**
    - **Type label** from `--type`: `bug` → `bug`, `enhancement` → `enhancement`, `documentation` → `documentation`.
    - **Priority label** from `--severity`: `critical` → `priority/P0`, `high` → `priority/P1`, `medium` → `priority/P2`, `low` → `priority/P3`.
-   - **Validate both labels exist before filing.** Run `gh label list --json name -q '.[].name'` and confirm each resolved label is present. If a label is missing, stop and tell the user (e.g. `gh issue create` with an unknown `--label` fails with "label not found") — do not invent or create labels. The current repo labels are: `bug`, `enhancement`, `documentation`, `refactor`, `test`, `security`, `priority/P0`–`priority/P3`. A `--type` outside `bug|enhancement|documentation` (e.g. `refactor`/`test`) is allowed only if that label already exists.
+   - **Validate both labels exist before filing.** Run `gh label list --json name -q '.[].name'` and confirm each resolved label is present. If a label is missing, stop and tell the user (e.g. `gh issue create` with an unknown `--label` fails with "label not found") — do not invent or create labels. The current repo labels include: `bug`, `enhancement`, `documentation`, `refactor`, `test`, `ci`, `security`, `epic`, `dependencies`, `priority/P0`–`priority/P3` (plus GitHub defaults and `week-N-carryover`). A `--type` outside `bug|enhancement|documentation` (e.g. `refactor`/`test`/`ci`) is allowed only if that label already exists.
    - Pass both to `gh issue create` as a comma-joined `--label "$TYPE_LABEL,$PRIORITY_LABEL"`.
 
-3. **Build the issue title** as a plain descriptive sentence (not a `fix:` / `feat:` prefix — that belongs on the fixing PR). Examples:
-   - "ADR template missing Consulted field"
-   - "Architecture diagram doesn't include Apache Airflow"
+2a. **Resolve and validate the milestone.** Every issue gets a milestone. Resolve against the live list: `gh api repos/TheurgicDuke771/DataQ/milestones --jq '.[] | .title + " | " + .state'`. Default = the **open** milestone whose title starts with `Week <N> — ` for the week CLAUDE.md §13 names — match against the live titles, do NOT transcribe §13's decorated headline (it reads "Week 7 of 8 — … — IN PROGRESS", which is not the milestone title). Post-v1 / no-target-week items → the open milestone matching "Backlog (post-v1". If the user names an already-closed milestone (rare backfill): create the issue without `--milestone`, then attach it via the REST procedure in Rules. If nothing matches at all, stop and tell the user — do not create milestones and do not leave the issue milestone-less. Otherwise pass `--milestone "$MILESTONE"`.
+
+3. **Build the issue title** with the conventional-commit-style prefix matching `--type` (per working-agreement #3: `gh issue create --title "fix: <desc>"`) — `bug` → `fix:`, `enhancement` → `feat:`, `documentation` → `docs:`; an optional scope is fine. Examples of the shape used in practice:
+   - "fix(db): DELETE /suites/{id} 500s once the suite has run"
+   - "docs: architecture diagram doesn't include Apache Airflow"
 
 4. **Build the issue body** using the template below.
 
 5. **Call `gh issue create`.** The body template contains backticks, code blocks, and `$`-signs that break shell-interpolated `--body "..."` quoting. Use `--body-file` with a temp file instead:
    ```bash
    tmp=$(mktemp); printf '%s' "$BODY" > "$tmp"
-   gh issue create --title "$TITLE" --label "$TYPE_LABEL,$PRIORITY_LABEL" --body-file "$tmp"
+   gh issue create --title "$TITLE" --label "$TYPE_LABEL,$PRIORITY_LABEL" --milestone "$MILESTONE" --body-file "$tmp"
    rm "$tmp"
    ```
    Capture the returned URL.
@@ -85,7 +88,8 @@ If `--blocker-for-week N` is set, prepend a bold line to the body:
 ## Rules
 
 - **Never create a public issue when `--security` is set.** Always route to Security Advisories.
-- **Issue title is a plain descriptive sentence.** No `fix:` / `feat:` prefix on issues — those are PR-side conventional types per ADR 0002. Issue templates at `.github/ISSUE_TEMPLATE/bug.md` currently pre-fill the wrong prefix; this skill counteracts that until issue [#8](https://github.com/TheurgicDuke771/DataQ/issues/8) is resolved.
+- **Issue title carries the conventional prefix** (`fix:` / `feat:` / `docs:`, optional scope) per working-agreement #3 and the issue templates. (An earlier proposal to switch issues to plain-sentence titles — [#8](https://github.com/TheurgicDuke771/DataQ/issues/8) — was closed NOT_PLANNED; prefix-style is the settled convention.)
+- **Every issue gets a milestone** (in addition to labels). Feature-week milestone by default; `Backlog (post-v1 / testing)` for post-v1 items. Note: assigning to an already-closed milestone can't be done via `gh issue edit --milestone <title>` — use the REST API with the milestone *number* (`gh api -X PATCH repos/TheurgicDuke771/DataQ/issues/<N> -F milestone=<num>`).
 - **Backlink is the source of truth.** Always include the /review comment URL or source PR number so the issue can be cross-referenced.
 - **Fix PR must reference `Fixes #N`** to auto-close on merge (working-agreement #3 + PR template's "Linked issue" section).
 - **Do not create the fix branch from this skill.** Branch creation is a separate workflow.
@@ -95,8 +99,8 @@ If `--blocker-for-week N` is set, prepend a bold line to the body:
 Worked examples so the skill behaves consistently:
 
 1. **Standard bug from review.** `gh-issue-from-finding "double-trigger race in _trigger_suites" --from-pr 215 --severity high --type bug` →
-   validate `bug` + `priority/P1` exist; title is the plain sentence (no `fix:`); body carries `**Severity:** high`, the source-PR backlink, and `--label "bug,priority/P1"`.
-2. **Default severity.** `... --type enhancement` with no `--severity` → defaults to `medium` → `priority/P2`; body `**Severity:** medium`.
+   validate `bug` + `priority/P1` exist; title `fix: double-trigger race in _trigger_suites`; milestone defaults to the current feature week; body carries `**Severity:** high`, the source-PR backlink, and `--label "bug,priority/P1"`.
+2. **Default severity.** `... --type enhancement` with no `--severity` → defaults to `medium` → `priority/P2`; body `**Severity:** medium`; title prefix `feat:`.
 3. **Security finding.** `... --security` → does **not** call `gh issue create`; prints the Security Advisory URL and exits 0.
 4. **Unknown type label.** `... --type custom` → label validation fails (`custom` not in `gh label list`); stop and report instead of filing.
 5. **Critical / production-down.** `... --severity critical --type bug` → `priority/P0`; body `**Severity:** critical`.

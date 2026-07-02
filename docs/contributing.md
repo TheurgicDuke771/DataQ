@@ -1,6 +1,6 @@
 # Contributing
 
-The full working agreements (37 rules), commit/PR conventions, and module boundaries live
+The full working agreements (39 rules), commit/PR conventions, and module boundaries live
 in **[CONTRIBUTING.md](https://github.com/TheurgicDuke771/DataQ/blob/main/CONTRIBUTING.md)**.
 The short version:
 

@@ -109,18 +109,18 @@ These are locked on Day 1 of Week 1. Do not drift.
 
 ## G. Documentation & decision history
 
-32. **ADRs in `docs/adr/`** for every significant architecture decision. Use the `/adr-create` skill or follow the template in `docs/adr/README.md`. One short markdown per decision; keep it to 1–2 pages.
-33. **Architecture diagram in `docs/architecture.md`** (Mermaid). When a new component, datasource, or integration is added, update the diagram in the same PR as the code.
-34. **Local setup script** `scripts/setup.sh` — one command from a fresh clone to a working dev environment (conda env + pre-commit install + docker-compose up + `alembic upgrade head` + seed data).
+33. **ADRs in `docs/adr/`** for every significant architecture decision. Use the `/adr-create` skill or follow the template in `docs/adr/README.md`. One short markdown per decision; keep it to 1–2 pages.
+34. **Architecture diagram in `docs/architecture.md`** (Mermaid). When a new component, datasource, or integration is added, update the diagram in the same PR as the code.
+35. **Local setup script** `scripts/setup.sh` — one command from a fresh clone to a working dev environment (conda env + pre-commit install + docker-compose up + `alembic upgrade head` + seed data).
 
 ---
 
 ## H. Security review cadence
 
-35. **End-of-week quick scan from Week 2 onward:** review Dependabot vuln alerts, secret scan results, OWASP top-10 spot check on any new endpoints, Key Vault access audit.
-36. **Hard security review gate before Week 7 deploy:** full pass on all of the above plus public-endpoint exposure review (especially `/api/v1/orchestration/events/*` and `/mcp`).
-37. **Security vulnerabilities are not public GitHub issues.** Report via [GitHub Security Advisories](https://github.com/TheurgicDuke771/DataQ/security/advisories/new). See [SECURITY.md](.github/SECURITY.md).
-38. **Quarterly MCP supply-chain audit:** once a quarter, for each client-side MCP server pinned in `.mcp.json` (see CLAUDE.md Appendix), verify the package hasn't been deprecated, yanked, or transferred to a new publisher (e.g. `npm view <pkg> maintainers time`), and review the changelog before bumping the pinned major version. MCP servers run with local tool access — treat a publisher change like a compromised dependency until verified.
+36. **End-of-week quick scan from Week 2 onward:** review Dependabot vuln alerts, secret scan results, OWASP top-10 spot check on any new endpoints, Key Vault access audit. The `/security-scan` skill (`.claude/skills/security-scan/`) runs this checklist.
+37. **Hard security review gate before Week 7 deploy:** full pass on all of the above plus public-endpoint exposure review (especially `/api/v1/orchestration/events/*` and `/mcp`).
+38. **Security vulnerabilities are not public GitHub issues.** Report via [GitHub Security Advisories](https://github.com/TheurgicDuke771/DataQ/security/advisories/new). See [SECURITY.md](.github/SECURITY.md).
+39. **Quarterly MCP supply-chain audit:** once a quarter, for each client-side MCP server pinned in `.mcp.json` (see CLAUDE.md Appendix), verify the package hasn't been deprecated, yanked, or transferred to a new publisher (e.g. `npm view <pkg> maintainers time`), and review the changelog before bumping the pinned major version. MCP servers run with local tool access — treat a publisher change like a compromised dependency until verified.
 
 ---
 

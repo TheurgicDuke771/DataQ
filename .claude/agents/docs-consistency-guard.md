@@ -25,11 +25,11 @@ Use `gh pr diff <N>` if a PR number is provided. Otherwise read the files direct
 
 ### 🔴 Hard violations (must fix before merge)
 
-1. **CLAUDE.md §6 branch-protection claim vs actual GitHub ruleset.** Run:
+1. **CLAUDE.md §6 branch-protection claim vs actual GitHub ruleset.** Protection is a **repository ruleset** ("main protection"), not legacy branch protection — `gh api repos/.../branches/main/protection` 404s ("Branch not protected"); do not conclude the branch is unprotected from that. Query the effective rules instead:
    ```bash
-   gh api repos/TheurgicDuke771/DataQ/branches/main/protection 2>/dev/null | jq '{required_reviews: .required_pull_request_reviews.required_approving_review_count, enforce_admins: .enforce_admins.enabled, allow_force_pushes: .allow_force_pushes.enabled}'
+   gh api repos/TheurgicDuke771/DataQ/rules/branches/main --jq '[.[] | {type, parameters}]'
    ```
-   Flag any mismatch (e.g., CLAUDE.md says "≥1 review" but ruleset has 0 required approving reviews).
+   Compare against CLAUDE.md §6: PR required, passing CI (required status checks), no force-push, approving-review count 0 during solo-dev phase. Flag any mismatch (e.g., CLAUDE.md says "≥1 review" but the ruleset requires 0, or vice versa).
 
 2. **ADR index out of sync.** Every file matching `docs/adr/NNNN-*.md` must have a corresponding row in `docs/adr/README.md`. Check both directions:
    - ADR file exists but not in index → missing index entry.
@@ -43,7 +43,7 @@ Use `gh pr diff <N>` if a PR number is provided. Otherwise read the files direct
 
 ### 🟡 Yellow flags (call out, don't necessarily block)
 
-1. **CLAUDE.md §13 "current milestone" is stale.** If the documented "Current week" and "Current milestone target" describes a week that appears already completed (based on merged PRs or open issues), flag it with a suggested update.
+1. **CLAUDE.md §13 "current milestone" is stale.** If the documented "Current week:" / "Next milestone:" headline describes a week that appears already completed (based on merged PRs, open issues, or `docs/progress.md`), flag it with a suggested update.
 
 2. **"Pending" ADRs in `docs/adr/README.md` whose target week has passed.** Today's date is available via `date +%Y-%m-%d`. If an ADR listed under "Pending for Week N" still has no file and the week is past, flag it as overdue.
 
@@ -54,6 +54,10 @@ Use `gh pr diff <N>` if a PR number is provided. Otherwise read the files direct
 5. **Dead working-agreement references.** CLAUDE.md and agent/skill files reference specific working-agreement numbers (e.g., "working-agreement #3", "working-agreement #24"). If `CONTRIBUTING.md` doesn't contain those numbered rules, flag the mismatch.
 
 6. **Section numbering drift in CLAUDE.md.** Agent and skill files hard-link to CLAUDE.md sections (e.g., `CLAUDE.md §11`). If sections are renumbered, those external links go stale.
+
+7. **Duplicate or drifted rule numbers in CONTRIBUTING.md.** The numbered working agreements must be strictly increasing with no duplicates (this has happened: two rules were numbered 32, fixed in #547). Duplicates make every "working-agreement #N" reference ambiguous; flag them with a renumbering suggestion (and note that renumbering requires updating every doc/agent/skill that cites a rule by number — grep for `rule ?#?N` and `agreement ?#?N` first).
+
+8. **`docs/progress.md` headline vs CLAUDE.md §13.** progress.md is the per-PR task ledger; §13 carries only the headline. If progress.md shows a week's tasks complete but §13 still calls that week in-progress (or vice versa), flag it.
 
 ### 🟢 Acceptable patterns
 
@@ -119,10 +123,11 @@ Get today's date via `date +%Y-%m-%d`. Get GitHub handle via `gh api /user --jq 
 
 ### Update CLAUDE.md §13 milestone
 
-When the user says "update the milestone to Week N" or "mark PR 0 complete":
+When the user says "update the milestone to Week N" or "mark the week complete":
 - Read the current §13 block in CLAUDE.md.
-- Edit only the "Current week:", "Current milestone target:", and "Next milestone:" lines.
+- Edit only the §13 headline content: the "Current week:" line, the week exit-gate lines, the "Next milestone:" line, and the "Active blockers:" list.
 - Do not touch any other section.
+- Per-PR task ticks do NOT go in §13 — they belong in `docs/progress.md` (the live per-PR ledger). If asked to "mark PR N complete", update progress.md, and touch §13 only if the week's headline status changed.
 - Stage the change; do not commit.
 
 ### Add a row to the ADR index
@@ -140,37 +145,15 @@ When asked to add or update a working agreement:
 - Preserve existing numbering — do not renumber unless asked.
 - Stage the change; do not commit.
 
-### Maintain the project TODO list (`docs/TODO.md`)
+### Maintain the deferred-work registers
 
-A single `docs/TODO.md` tracks deferred work items that are not yet GitHub issues — exploratory ideas, known gaps, future-week tasks, and "decide before Week N" reminders.
+`docs/TODO.md` was never adopted. Deferred work lives in three real homes — route items to the right one:
 
-**Structure of `docs/TODO.md`:**
+1. **Concrete, actionable items** → a GitHub issue via `/gh-issue-from-finding` (working-agreement #3). This is the default.
+2. **Post-v1 / roadmap-scale items** → [context/post-v1-roadmap.md](../../context/post-v1-roadmap.md), the single post-v1 home (themes + candidate tasks; input to the week-wise task generator).
+3. **Open follow-ups by issue number** → the follow-ups register in [docs/progress.md](../../docs/progress.md) (and the "Active blockers" list in CLAUDE.md §13 if week-blocking).
 
-```markdown
-# DataQ — Project TODO
-
-> Items here are tracked informally. When an item becomes concrete enough to act on,
-> convert it to a GitHub issue via `/gh-issue-from-finding` and remove it from this list.
-
-## Week N — <milestone name>
-
-- [ ] <item> — <short context or owner>
-
-## Backlog (no target week)
-
-- [ ] <item>
-
-## Decided / done (archive — do not delete, just tick)
-
-- [x] <item>
-```
-
-When asked to add, tick, or remove a TODO item:
-- If `docs/TODO.md` doesn't exist, create it with the structure above.
-- Add new items under the correct week section (or "Backlog" if no week is specified).
-- Tick items when the user says they're done; move ticked items to the "Decided / done" section.
-- When an item is promoted to a GitHub issue, note the issue number inline: `→ #N` and tick it.
-- Stage the change; do not commit.
+When asked to "add a TODO item": file it in the most appropriate home above, cross-link (issue ↔ roadmap entry where both exist), stage, do not commit. Do not create `docs/TODO.md` unless the user explicitly asks for that file.
 
 ### Scaffold or update a README
 
@@ -211,7 +194,7 @@ When a new subsystem is planned but not yet built (e.g., `backend/app/mcp/`, `ba
 - Create the stub at the expected path (e.g., `docs/mcp-tools.md`).
 - Mark it clearly at the top: `> **Stub — to be filled in Week N.**`
 - Include the section headings the document will eventually need, left empty.
-- Add it to `docs/TODO.md` as a tracked item.
+- Track it: file a GitHub issue (or add it to `context/post-v1-roadmap.md` if post-v1).
 - Stage the change; do not commit.
 
 ---
@@ -235,4 +218,6 @@ If a finding warrants a deferred GitHub issue, say so explicitly — the enginee
 - [CLAUDE.md](../../CLAUDE.md)
 - [CONTRIBUTING.md](../../CONTRIBUTING.md)
 - [docs/adr/README.md](../../docs/adr/README.md)
+- [docs/progress.md](../../docs/progress.md) — live per-PR task ledger + follow-ups register
+- [context/post-v1-roadmap.md](../../context/post-v1-roadmap.md) — single post-v1 home
 - [.github/pull_request_template.md](../../.github/pull_request_template.md)
