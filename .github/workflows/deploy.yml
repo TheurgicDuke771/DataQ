@@ -61,10 +61,20 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Retried (#539): a registry blip on the base-image pull (Docker Hub 502,
+      # Deploy #3) or on the GHCR push shouldn't fail the deploy — a re-run hits
+      # the local layer cache, so retries are cheap.
       - name: Build + push backend image to GHCR
         run: |
-          docker build -f backend/Dockerfile -t "$IMAGE" .
-          docker push "$IMAGE"
+          set -euo pipefail
+          source scripts/ci/retry.sh
+          # && chain, not two statements: functions called from retry's
+          # condition context have errexit suppressed inside, so a plain
+          # sequence would still push after a failed build.
+          build_push() {
+            docker build -f backend/Dockerfile -t "$IMAGE" . && docker push "$IMAGE"
+          }
+          retry build_push
 
       # Migrate BEFORE rolling the app: migrations are additive/backward-compatible
       # (CLAUDE.md), so the running old code tolerates the new schema. Runs the
@@ -84,14 +94,25 @@ jobs:
           # falls back to the image's default CMD (uvicorn) and never migrates.
           # Updating the template preserves that command (mirrors the api/worker
           # `az containerapp update --image` steps below).
-          az containerapp job update \
+          # Both az calls are retried (#539): the containerapp extension crashes
+          # with KeyError: 'properties' on transient ARM errors, masking them.
+          source scripts/ci/retry.sh
+          retry az containerapp job update \
             --name "${{ vars.MIGRATE_JOB_NAME }}" \
             --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
             --image "$IMAGE"
-          exec_name=$(az containerapp job start \
-            --name "${{ vars.MIGRATE_JOB_NAME }}" \
-            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
-            --query name -o tsv)
+          exec_name=""
+          for attempt in 1 2 3; do
+            exec_name=$(az containerapp job start \
+              --name "${{ vars.MIGRATE_JOB_NAME }}" \
+              --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+              --query name -o tsv) && break
+            echo "::warning::job start failed (attempt $attempt/3) — retrying in $(( attempt * 30 ))s (#539)"
+            (( attempt < 3 )) && sleep $(( attempt * 30 ))
+          done
+          if [[ -z "$exec_name" ]]; then
+            echo "::error::could not start the migration job after 3 attempts."; exit 1
+          fi
           echo "Started migration execution: $exec_name"
           # Poll to a terminal state. Besides the 15-min wall-clock cap, bound the
           # number of *consecutive* empty/unexpected statuses: a control-plane
@@ -126,19 +147,36 @@ jobs:
           done
           echo "::error::Timed out waiting for migration to complete."; exit 1
 
+      # Both rolls are retried and then VERIFIED against the live template
+      # (#539): the extension can crash while *rendering* a response, so the
+      # step's exit code alone doesn't prove the app is on the new image.
       - name: Deploy API
         run: |
-          az containerapp update \
+          set -euo pipefail
+          source scripts/ci/retry.sh
+          retry az containerapp update \
             --name "${{ vars.API_APP_NAME }}" \
             --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
             --image "$IMAGE"
+          live=$(az containerapp show \
+            --name "${{ vars.API_APP_NAME }}" \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --query "properties.template.containers[0].image" -o tsv)
+          [[ "$live" == "$IMAGE" ]] || { echo "::error::API image mismatch after update: $live"; exit 1; }
 
       - name: Deploy worker
         run: |
-          az containerapp update \
+          set -euo pipefail
+          source scripts/ci/retry.sh
+          retry az containerapp update \
             --name "${{ vars.WORKER_APP_NAME }}" \
             --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
             --image "$IMAGE"
+          live=$(az containerapp show \
+            --name "${{ vars.WORKER_APP_NAME }}" \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --query "properties.template.containers[0].image" -o tsv)
+          [[ "$live" == "$IMAGE" ]] || { echo "::error::worker image mismatch after update: $live"; exit 1; }
 
   frontend:
     name: Frontend — build image, deploy to Container App
@@ -173,12 +211,33 @@ jobs:
       # publish-images.yml for the BYOL/eval path.
       - name: Build + push frontend image to GHCR
         run: |
-          docker build -f frontend/Dockerfile -t "$IMAGE_FRONTEND" frontend
-          docker push "$IMAGE_FRONTEND"
+          set -euo pipefail
+          source scripts/ci/retry.sh
+          # && chain — same errexit-suppression reasoning as the backend build.
+          build_push() {
+            docker build -f frontend/Dockerfile -t "$IMAGE_FRONTEND" frontend && docker push "$IMAGE_FRONTEND"
+          }
+          retry build_push
 
+      # Retried + verified like the API/worker rolls; on the third failure one
+      # last attempt runs with --debug so the ARM response the extension masks
+      # (KeyError: 'properties', #539 — Deploys #1/#2) finally lands in the log.
       - name: Deploy frontend
         run: |
-          az containerapp update \
+          set -euo pipefail
+          source scripts/ci/retry.sh
+          update() {
+            az containerapp update \
+              --name "${{ vars.FRONTEND_APP_NAME }}" \
+              --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+              --image "$IMAGE_FRONTEND" "$@"
+          }
+          if ! retry update; then
+            echo "::warning::final attempt with --debug to surface the masked ARM error (#539)"
+            update --debug
+          fi
+          live=$(az containerapp show \
             --name "${{ vars.FRONTEND_APP_NAME }}" \
             --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
-            --image "$IMAGE_FRONTEND"
+            --query "properties.template.containers[0].image" -o tsv)
+          [[ "$live" == "$IMAGE_FRONTEND" ]] || { echo "::error::frontend image mismatch after update: $live"; exit 1; }
