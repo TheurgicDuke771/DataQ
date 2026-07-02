@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "59c47d525e93",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-492-common-alert-schema",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "backend/app/api/v1/orchestration.py",
+    "backend/app/orchestration/adf.py",
+    "backend/app/services/orchestration_service.py",
+    "docs/orchestration.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/59/c47d525e93/0/metadata.json",
+      "transcript": "/59/c47d525e93/0/full.jsonl",
+      "content_hash": "/59/c47d525e93/0/content_hash.txt",
+      "prompt": "/59/c47d525e93/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 108233,
+    "cache_creation_tokens": 2548867,
+    "cache_read_tokens": 109444316,
+    "output_tokens": 280805,
+    "api_call_count": 387
+  }
+}
