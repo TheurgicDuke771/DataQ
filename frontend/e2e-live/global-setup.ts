@@ -22,11 +22,16 @@ export default async function globalSetup(): Promise<void> {
   if (!liveBaseURL) {
     throw new Error('live-smoke lane requires E2E_LIVE_BASE_URL');
   }
-  if (fs.existsSync(SESSION_FILE)) {
-    const age = Date.now() - fs.statSync(SESSION_FILE).mtimeMs;
-    if (age < MAX_AGE_MS) {
-      return; // fresh enough — reuse
-    }
+  // Stat-and-use (no exists pre-check — CodeQL js/file-system-race): a missing
+  // file just means "no capture yet".
+  let capturedAtMs = 0;
+  try {
+    capturedAtMs = fs.statSync(SESSION_FILE).mtimeMs;
+  } catch {
+    // no session captured yet
+  }
+  if (capturedAtMs && Date.now() - capturedAtMs < MAX_AGE_MS) {
+    return; // fresh enough — reuse
   }
 
   const browser = await chromium.launch({ headless: false });
@@ -37,7 +42,11 @@ export default async function globalSetup(): Promise<void> {
   await page.getByRole('heading', { name: 'Dashboard', level: 3 }).waitFor({ timeout: 300_000 });
   const session: string = await page.evaluate(() => JSON.stringify({ ...sessionStorage }));
   fs.mkdirSync(path.dirname(SESSION_FILE), { recursive: true });
-  fs.writeFileSync(SESSION_FILE, session);
+  // Temp-write + rename: atomic replace, and no write decision hangs off the
+  // earlier stat (a parallel capture just loses the rename race harmlessly).
+  const tmp = `${SESSION_FILE}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, session);
+  fs.renameSync(tmp, SESSION_FILE);
   await browser.close();
   console.log('[live-smoke] Session captured.');
 }
