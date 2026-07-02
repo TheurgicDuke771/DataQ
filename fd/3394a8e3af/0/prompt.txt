@@ -126,3 +126,72 @@ Lets run the live smoke through the new #531 lane (harness Flows A/B/C + verify 
 <status>completed</status>
 <summary>Background command "Poll UC run + pipeline_runs for the alert-driven ingest" completed (exit code 0)</summary>
 </task-notification>
+
+---
+
+<task-notification>
+<task-id>a27d95afea8d8a82f</task-id>
+<tool-use-id>toolu_01UE2iBZov7SZe8sTkvGFeBD</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/a33e4939-e8b1-4b81-aaa1-168fd7fc382f/tasks/a27d95afea8d8a82f.output</output-file>
+<status>completed</status>
+<summary>Agent "Migration safety review #540" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Migration review — `a9b0c1d2e3f4_results_check_fk_cascade.py`
+
+Branch `fix/issue-540-results-check-fk-cascade` has no commits yet (`git log main..HEAD` is empty) — everything is uncommitted working-tree state: the new migration file (untracked) plus `backend/app/db/models.py` (modified). I reviewed the working tree directly since `main...HEAD` diffs nothing.
+
+Files reviewed:
+- `/Users/arijit/Coding/Python/DataQ/backend/alembic/versions/a9b0c1d2e3f4_results_check_fk_cascade.py`
+- `/Users/arijit/Coding/Python/DataQ/backend/app/db/models.py` (diff)
+- `/Users/arijit/Coding/Python/DataQ/backend/app/db/base.py` (naming convention)
+- `/Users/arijit/Coding/Python/DataQ/backend/alembic/env.py` (transaction wrapping)
+- `/Users/arijit/Coding/Python/DataQ/backend/alembic/versions/923dab15eb8c_baseline.py` (constraint names at creation)
+- `/Users/arijit/Coding/Python/DataQ/backend/app/services/suite_service.py` (delete-suite path)
+
+### 🔴 Hard violations
+None of the enumerated hard-violation patterns apply. No column drop/rename/type-change, no nullable flip without a default, no `drop_table`/`rename_table`, no raw destructive SQL in `op.execute`, `downgrade()` is a real inverse (not `pass`), and `down_revision = "e5f6a7b8c9d0"` correctly points at the actual latest head (grep across all 17 revision files confirms nothing else claims that head — no stray merge).
+
+### 🟡 Concerns
+
+**1. Lock behavior on `results` (the item you specifically flagged) — real and worth a hard look before merge, file `a9b0c1d2e3f4_results_check_fk_cascade.py:41-42`.**
+
+`op.drop_constraint(name, table, type_="foreignkey")` followed immediately by `op.create_foreign_key(..., ondelete="CASCADE")` runs inside **one Alembic transaction** — `backend/alembic/env.py` uses the default `context.begin_transaction()` with no `transaction_per_migration=False`/autocommit block. That matters because:
+
+- `DROP CONSTRAINT` alone requires `ACCESS EXCLUSIVE` on the table, but it's fast (catalog-only, no scan).
+- `ADD CONSTRAINT ... FOREIGN KEY` in isolation only requires `SHARE ROW EXCLUSIVE` (blocks writers, not readers) — **but** it also performs a full validation scan of the referencing table by default (no `NOT VALID`), and that scan runs under whatever lock is held.
+- Postgres never *downgrades* a lock mid-transaction. Once the `DROP CONSTRAINT` statement has taken `ACCESS EXCLUSIVE` on `results`, that lock is held for the rest of the transaction — through the subsequent `ADD CONSTRAINT`'s full-table validation scan.
+
+Net effect: for the duration it takes Postgres to scan the *entire* `results` table to re-validate the FK, `results` is `ACCESS EXCLUSIVE`-locked — **blocking every read and write**, not just writes. Any in-flight API request reading `/runs/{id}` results, or a worker writing a new `Result` row, will block for that window; if it exceeds a client/API `statement_timeout`, those calls fail. Given ADR 0024's migrate-job-then-roll deploy model, this happens while the *old* code image is still live and serving traffic — the failure mode isn't "crashes on the new shape," it's "stalls/times out live traffic on the largest table for however long the scan takes."
+
+The re-validation is also somewhat wasted work: the prior `NO ACTION` constraint already guaranteed every existing `results.check_id` / `runs.suite_id` value is valid, but Postgres has no "trust me, skip the scan" flag for `ADD CONSTRAINT` — only `NOT VALID` + a separately-run `VALIDATE CONSTRAINT` gets you out from under the exclusive-scan lock.
+
+**2. Constraint-name / naming-convention check — passes, no concern.** `backend/app/db/base.py` defines `NAMING_CONVENTION["fk"] = "fk_%(table_name)s_%(column_0_N_name)s_%(referred_table_name)s"`, and `923dab15eb8c_baseline.py` literally created these constraints as `fk_results_check_id_checks` (line 292) and `fk_runs_suite_id_suites` (line 200). The migration's `_FKS` list names match exactly — no drift.
+
+**3. Model change is inert until the migration runs, and doesn't require a two-step — good.** `ForeignKey(..., ondelete="CASCADE")` in `models.py` is DDL metadata only; SQLAlchemy doesn't enforce cascade in Python. So there's no "new code needs new schema" ordering hazard either direction: old code + new schema behaves identically to old code + old schema except that a previously-failing `suite_service.delete_suite` (session.delete → ORM cascades `checks` via `delete-orphan`, but `results`/`runs` had no `ondelete`, so Postgres raised `ForeignKeyViolation` on any suite that had ever run) now **succeeds** instead of erroring — a strict widening of behavior, not a breaking change. Confirmed via `backend/app/services/suite_service.py:213-218` and `Suite.checks` cascade config (no ORM-level cascade to `Run`, so the fix is entirely DB-side).
+
+### Rollback check
+`downgrade()` is implemented (not `pass`) and correctly inverts the *schema* — drops the CASCADE constraints and recreates the original `NO ACTION` ones with matching names. It is honestly documented that it does **not** restore data: any rows cascade-deleted while the CASCADE constraint was live are gone on downgrade. The docstring calls this out explicitly and ties it to ADR 0020's accepted cascade-delete posture. This is an acceptable, well-documented limitation, not a defect — flagging for visibility only.
+
+### Suggested approach (verify with whoever runs the deploy — I don't know current `results` row count / traffic pattern)
+If `results` is still small (days of live prod data since 2026-06-28), the current single-transaction drop+add is probably fine in practice — but that's a size assumption, not something this review can confirm from the diff. The safer, deploy-agnostic shape to consider:
+
+1. `ADD CONSTRAINT ... FOREIGN KEY (...) REFERENCES ... ON DELETE CASCADE NOT VALID` (fast — catalog-only, no scan, brief `ACCESS EXCLUSIVE`), *keeping* the old constraint dropped in the same or an adjacent statement.
+2. A following statement/migration: `ALTER TABLE results VALIDATE CONSTRAINT fk_results_check_id_checks;` run **outside** the wrapped transaction (Alembic autocommit block, or its own non-transactional migration) — this only needs `SHARE UPDATE EXCLUSIVE`, which blocks other DDL but not concurrent reads/writes, while it does the same full scan in the background.
+3. Same treatment for `fk_runs_suite_id_suites` on `runs`.
+
+This can plausibly still ship as one PR/one release (unlike the drop-column two-step, there's no old-code-vs-new-schema incompatibility forcing a separate release) — just split into two statements/transactions so the validation scan doesn't ride the same lock as the drop. Confirm this against the actual `alembic upgrade head` execution path (the migrate ACA job) before deciding whether it's worth the extra complexity for current `results` volume.
+
+### ✅ Verdict
+`Conditional — 1 concern. Discuss with whoever runs the deploy.`
+
+The FK-rename/naming/downgrade/rolling-deploy-compatibility checks all pass cleanly. The one open item is the `DROP CONSTRAINT` + `ADD CONSTRAINT` (full-scan validation) bundled into a single transaction against `results` — worth a size/traffic sanity check (and possibly the `NOT VALID`/`VALIDATE CONSTRAINT` split above) before this runs against the live Azure DB, since it will hold an effective `ACCESS EXCLUSIVE` lock on `results` for the scan's duration while old-code pods are still serving traffic.</result>
+<usage><subagent_tokens>52438</subagent_tokens><tool_uses>18</tool_uses><duration_ms>192800</duration_ms></usage>
+</task-notification>
+
+---
+
+Continue: collect the migration-safety agent verdict on a9b0c1d2e3f4; address findings if any; commit + push + PR the #540 fix (fix/issue-540-results-check-fk-cascade, Fixes #540, milestone Week 7), run /code-review low, merge when green, dispatch Deploy #3 (user pre-authorized deploys this session), retry frontend az update if the #539 flake recurs, then delete the two temp suites (f63aac1c…, 8d501834…) via the captured bearer to prove the fix live, and finish with the final wrap-up summary + Claude Desktop MCP config + Databricks PAT rotation reminder.
+
+---
+
+continue..
