@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "c752c03c71bc",
+  "strategy": "manual-commit",
+  "branch": "ci/issue-539-deploy-retries",
+  "checkpoints_count": 3,
+  "files_touched": [
+    ".github/workflows/deploy.yml",
+    "scripts/ci/retry.sh"
+  ],
+  "sessions": [
+    {
+      "metadata": "/c7/52c03c71bc/0/metadata.json",
+      "transcript": "/c7/52c03c71bc/0/full.jsonl",
+      "compact_transcript": "/c7/52c03c71bc/0/transcript.jsonl",
+      "content_hash": "/c7/52c03c71bc/0/content_hash.txt",
+      "prompt": "/c7/52c03c71bc/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 134532,
+    "cache_creation_tokens": 4818029,
+    "cache_read_tokens": 178025923,
+    "output_tokens": 372657,
+    "api_call_count": 544
+  }
+}
