@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "1a94e204ef72",
+  "strategy": "manual-commit",
+  "branch": "chore/claude-housekeeping",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "CLAUDE.md",
+    "CONTRIBUTING.md",
+    "docs/contributing.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/1a/94e204ef72/0/metadata.json",
+      "transcript": "/1a/94e204ef72/0/full.jsonl",
+      "compact_transcript": "/1a/94e204ef72/0/transcript.jsonl",
+      "content_hash": "/1a/94e204ef72/0/content_hash.txt",
+      "prompt": "/1a/94e204ef72/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 18221,
+    "cache_creation_tokens": 128446,
+    "cache_read_tokens": 3229698,
+    "output_tokens": 50081,
+    "api_call_count": 33
+  }
+}
