@@ -6,6 +6,22 @@
 
 **Status:** pre-v1 — Week 7 (deployment, hardening & docs). Weeks 1–6 complete; v1 is **deployed to Azure Container Apps** — API + worker + a runtime-configured **frontend Container App** (the sole public surface; the api runs on internal ingress behind it), with Key Vault, App Insights, and orchestration polling live. Auth is a **generic OIDC client** (validated against Azure AD; ADR [0028](docs/adr/0028-cloud-neutral-image-runtime-config-generic-oidc.md)). Live task-level progress at [docs/progress.md](docs/progress.md).
 
+## What it does
+
+- **Checks on 4 datasources** — Snowflake, Unity Catalog (Databricks), ADLS Gen2 + S3
+  flat files (CSV/Parquet, batch patterns). Four check styles: **GX expectations**,
+  **custom SQL** (rows returned = failures), and **freshness / volume monitors**; plus a
+  column profiler on every datasource (dry-run preview on Snowflake). [Feature matrix →](https://theurgicduke771.github.io/DataQ/feature-matrix/)
+- **Three run modes** — run now (live progress + cancel), **cron schedules**
+  (timezone/DST-aware), and **pipeline triggers**: ADF + Airflow runs are monitored, and
+  a successful pipeline can trigger the bound suite. [Scheduling →](https://theurgicduke771.github.io/DataQ/scheduling/) · [Orchestration →](https://theurgicduke771.github.io/DataQ/orchestration/)
+- **Severity + alerting** — warn/fail/critical tiers band each check's unexpected-%;
+  alerts to **Teams / Slack / email** with severity-aware routing, first-failure dedup,
+  and per-check snooze. [Notifications →](https://theurgicduke771.github.io/DataQ/notifications/)
+- **Results you can share** — dashboard health score + trends, per-run drill-down with
+  **PII-redacted** failing-row samples, suite-level sharing (view/edit), admin control
+  centre. [Best practices →](https://theurgicduke771.github.io/DataQ/best-practices/)
+
 ## Stack
 
 | Layer | Tech |

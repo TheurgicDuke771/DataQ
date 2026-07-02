@@ -56,15 +56,21 @@ markdown_extensions:
 # and links out to the in-repo source of truth rather than duplicating it.
 nav:
   - Home: index.md
-  - Concepts: concepts.md
-  - Architecture: architecture.md
-  - Getting started: getting-started.md
-  - Datasources & checks: datasources-checks.md
-  - Orchestration: orchestration.md
-  - Observability & troubleshooting: observability.md
-  - Contributing: contributing.md
-  - Runbook & FAQ: runbook-faq.md
-  - Glossary: glossary.md
+  - Guides:
+      - Getting started: getting-started.md
+      - Concepts: concepts.md
+      - Datasources & checks: datasources-checks.md
+      - Scheduling: scheduling.md
+      - Orchestration: orchestration.md
+      - Notifications & alerting: notifications.md
+      - Best practices: best-practices.md
+  - Reference:
+      - Feature matrix: feature-matrix.md
+      - Architecture: architecture.md
+      - Observability & troubleshooting: observability.md
+      - Runbook & FAQ: runbook-faq.md
+      - Glossary: glossary.md
+      - Contributing: contributing.md
 
 # Internal planning docs stay in the repo (version-controlled) but are NOT
 # published to the public site. ADRs (decision records) ARE published.
