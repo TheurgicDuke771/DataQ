@@ -212,3 +212,19 @@ def test_run_checks_all_pass(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     assert outcome.success is True
     assert outcome.checks[0].success is True
+
+
+def test_databricks_sqlalchemy_dialect_is_installed() -> None:
+    """Dependency contract (#535): `_read_table` does
+    `create_engine('databricks://…')`, whose dialect lives in the separate
+    `databricks-sqlalchemy` package since databricks-sql-connector 4.x —
+    tests mock the runner seam, so without this check a missing dialect only
+    surfaces as a failed run in production. No network: dialect load only.
+    """
+    from sqlalchemy import create_engine
+
+    engine = create_engine(
+        "databricks://token:x@example.cloud.databricks.com"
+        "?http_path=/sql/1.0/warehouses/x&catalog=c"
+    )
+    assert engine.dialect.name == "databricks"
