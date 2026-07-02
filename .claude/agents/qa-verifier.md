@@ -40,6 +40,8 @@ Project rule (learned the hard way): **never use CI as the first feedback loop**
 
 Scope note: if the diff (`git diff main...HEAD --name-only`) touches only one side, you may skip the other side's gates — say so explicitly in the report. Playwright E2E (`pnpm e2e`) needs the full docker-compose stack; don't launch it yourself — note it as "runs in CI / run manually" unless the stack is already up.
 
+**Not in the tables but still CI merge gates:** dependency audits (`backend-audit`/`frontend-audit` — run via the `/security-scan` skill, or lift CI's exact invocations including the `--ignore-vuln` flags from ci.yml), CodeQL (CI-only), and betterleaks secret scanning (the pre-commit hook covers it locally). A green table here does NOT clear those four — say so in the report. If these tables and `.github/workflows/ci.yml` ever disagree, ci.yml wins; flag the drift as a finding.
+
 ### Known gotchas (don't repeat past mistakes)
 
 - **Ruff passing ≠ Bandit passing.** A `# noqa` that silences Ruff does nothing for Bandit (e.g. B105 hardcoded-password). Run both; never infer one from the other.

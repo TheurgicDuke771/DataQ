@@ -35,12 +35,9 @@ A 404 means the feature isn't enabled for the repo — report that as a ⚠️ f
 
 ### 3. Local dependency audit (mirror of the synchronous CI gate)
 
-```bash
-pip-audit -r backend/requirements-dev.txt
-cd frontend && pnpm audit --audit-level=high
-```
+Mirror CI **exactly**: read the current invocations from `.github/workflows/ci.yml` (`backend-audit` and `frontend-audit` jobs) and run them verbatim — including the pinned `pip-audit` version and the `--ignore-vuln` flags for already-accepted advisories (tracked in #129). A bare `pip-audit -r backend/requirements-dev.txt` re-reports the accepted advisories as noise, training the reader to skim past real ones. Frontend: `pnpm audit --audit-level=high` from `frontend/`.
 
-These are the same commands CI runs as a merge gate — running them here catches vulns published since the last PR merged.
+Running these here catches vulns published since the last PR merged. An advisory on CI's ignore list is accepted risk — mention it under "known/accepted", never as a new finding.
 
 ### 4. Secret scan sweep (full tree, not incremental)
 
@@ -77,7 +74,7 @@ Flag any principal that isn't the app's user-assigned managed identity, the depl
 
 ### 7. Credential-rotation register
 
-Check expiry/rotation status of the live credentials (see the connections memory / Key Vault):
+Check expiry/rotation status of the live credentials. The list below is a snapshot (as of 2026-07-02) — verify the **current** expiry from the Key Vault secret attributes / rotation notes each run; never report "clean" from the dates written here:
 - **Snowflake PAT** — 90-day lifetime; compute days remaining from last rotation.
 - **ADLS account SAS** — expires 2027-06-28.
 - **Databricks PAT** — rotation was REQUIRED after the #536/#538 traceback-locals leak; verify it happened.
