@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "951f0ed5a91c",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-535-databricks-sqlalchemy-dialect",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "backend/requirements.txt"
+  ],
+  "sessions": [
+    {
+      "metadata": "/95/1f0ed5a91c/0/metadata.json",
+      "transcript": "/95/1f0ed5a91c/0/full.jsonl",
+      "content_hash": "/95/1f0ed5a91c/0/content_hash.txt",
+      "prompt": "/95/1f0ed5a91c/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 117615,
+    "cache_creation_tokens": 2595759,
+    "cache_read_tokens": 124604988,
+    "output_tokens": 301122,
+    "api_call_count": 420
+  }
+}
