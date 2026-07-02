@@ -74,6 +74,8 @@ coverage/
 frontend/test-results/
 frontend/playwright-report/
 frontend/playwright/.cache/
+# live-smoke captured OIDC session (bearer material -- never commit)
+frontend/e2e-live/.auth/
 
 # ---- Environment / secrets ----
 .env

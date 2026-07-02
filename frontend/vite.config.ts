@@ -68,9 +68,10 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     setupFiles: ['./tests/setup.ts'],
-    // Playwright specs live in e2e/ and run under `pnpm e2e`, not Vitest — they
-    // import @playwright/test and drive a browser, so keep Vitest out of them.
-    exclude: [...configDefaults.exclude, 'e2e/**'],
+    // Playwright specs live in e2e/ + e2e-live/ and run under `pnpm e2e`, not
+    // Vitest — they import @playwright/test and drive a browser, so keep Vitest
+    // out of them.
+    exclude: [...configDefaults.exclude, 'e2e/**', 'e2e-live/**'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],

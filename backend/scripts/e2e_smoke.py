@@ -7,6 +7,17 @@ seeded demo dataset — and asserts the read + authoring paths work end-to-end
     python -m backend.scripts.e2e_smoke                 # http://localhost:8000
     DATAQ_API=http://localhost:8000 python -m backend.scripts.e2e_smoke
 
+Against a DEPLOYED stack (real auth), point DATAQ_API at the public frontend
+(its nginx proxies /api to the internal api) and pass a bearer token:
+
+    DATAQ_API=https://<frontend-host> DATAQ_BEARER=$(az account get-access-token \
+        --resource api://<api-app-id> --query accessToken -o tsv) \
+        python -m backend.scripts.e2e_smoke
+
+Note the authoring round-trip (create suite → check → delete) writes to — and
+cleans up from — whatever workspace the token can edit; the connection-type
+assertion expects the demo/harness connection set.
+
 What it verifies (exit 0 = all passed):
   1. the six seeded connection types are listed (secrets never returned);
   2. the demo suites + their checks are retrievable;
@@ -46,7 +57,11 @@ def check(label: str, ok: bool, detail: str = "") -> None:
 
 def main() -> int:
     # Dev-bypass: no bearer needed when AUTH_DEV_BYPASS=true + environment=dev.
-    client = httpx.Client(base_url=BASE, timeout=30.0)
+    # Deployed: DATAQ_BEARER carries the Azure AD access token (same token the
+    # web UI sends), enabling the live-smoke run per the deferred-smoke plan.
+    bearer = os.environ.get("DATAQ_BEARER")
+    headers = {"Authorization": f"Bearer {bearer}"} if bearer else {}
+    client = httpx.Client(base_url=BASE, timeout=30.0, headers=headers)
 
     # 1. Connections — six types present, no secret leaked.
     r = client.get("/connections")

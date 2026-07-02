@@ -59,3 +59,24 @@ pip-installs the backend, runs migrations, seeds the demo data, launches
 `uvicorn` on :8000, then lets Playwright start its own Vite dev server on :3000
 (`VITE_API_PROXY_TARGET=http://localhost:8000`) and run the specs. No Azure /
 real datasource credentials are involved — dev-bypass only.
+
+## Live smoke (opt-in — never in CI)
+
+Read-only specs in `e2e-live/` run against the **deployed** app with **real
+OIDC**, activated only when `E2E_LIVE_BASE_URL` is set (CI never sets it):
+
+```bash
+E2E_LIVE_BASE_URL=https://<your-dataq-frontend-host> pnpm e2e
+# optional: E2E_LIVE_SUITE="Retail Orders" (the suite the specs open)
+```
+
+First run opens a **headed** browser — complete the sign-in (MFA included);
+the session's `sessionStorage` is captured to the gitignored
+`e2e-live/.auth/session.json` and reused while fresh (~40 min; oidc-client-ts
+keeps the user in sessionStorage, which Playwright's `storageState` cannot
+capture — hence the custom setup). The specs then run headless and read-only:
+dashboard KPIs, the live suite + its checks, a run detail.
+
+Mutating live verification (trigger runs, alert delivery, MCP queries) is the
+manual checklist in the docs-site **Runbook**. The API-level counterpart is
+`backend/scripts/e2e_smoke.py` with `DATAQ_API` + `DATAQ_BEARER`.
