@@ -11,7 +11,7 @@ import httpx
 import pytest
 
 from backend.app.orchestration.adf import AdfProvider
-from backend.app.orchestration.base import MalformedEventError, RunUpdate
+from backend.app.orchestration.base import AlertPing, MalformedEventError, RunUpdate
 
 
 class _FakeResponse:
@@ -49,7 +49,87 @@ _ADF_CONFIG: dict[str, Any] = {
 
 
 def _parse(event: dict[str, Any]) -> RunUpdate:
-    return AdfProvider().parse_event(json.dumps(event).encode(), {})
+    update = AdfProvider().parse_event(json.dumps(event).encode(), {})
+    assert isinstance(update, RunUpdate)
+    return update
+
+
+def _parse_ping(event: dict[str, Any]) -> AlertPing:
+    update = AdfProvider().parse_event(json.dumps(event).encode(), {})
+    assert isinstance(update, AlertPing)
+    return update
+
+
+# Azure Monitor Common Alert Schema (#492) — the shape a metric alert on
+# PipelineFailedRuns (dimension Name=<pipeline>) actually delivers.
+_COMMON_ALERT: dict[str, Any] = {
+    "schemaId": "azureMonitorCommonAlertSchema",
+    "data": {
+        "essentials": {
+            "alertId": "/subscriptions/sub-1/providers/Microsoft.AlertsManagement/alerts/x",
+            "alertRule": "dataq-adf-failed-runs",
+            "severity": "Sev3",
+            "signalType": "Metric",
+            "monitorCondition": "Fired",
+            "monitoringService": "Platform",
+            "alertTargetIDs": [
+                "/subscriptions/sub-1/resourcegroups/dataq-harness-rg"
+                "/providers/microsoft.datafactory/factories/dataq-harness-adf"
+            ],
+            "firedDateTime": "2026-07-02T03:01:00.000Z",
+        },
+        "alertContext": {
+            "condition": {
+                "windowSize": "PT5M",
+                "allOf": [
+                    {
+                        "metricName": "PipelineFailedRuns",
+                        "metricNamespace": "Microsoft.DataFactory/factories",
+                        "dimensions": [
+                            {"name": "FailureType", "value": "UserError"},
+                            {"name": "Name", "value": "pl_flow_a_orders"},
+                        ],
+                        "operator": "GreaterThan",
+                        "threshold": "0",
+                        "timeAggregation": "Total",
+                        "metricValue": 1.0,
+                    }
+                ],
+            }
+        },
+    },
+}
+
+
+def test_common_alert_schema_returns_fired_ping_with_factory_and_pipeline() -> None:
+    ping = _parse_ping(_COMMON_ALERT)
+    assert ping.monitor_condition == "fired"
+    assert ping.resource_name == "dataq-harness-adf"
+    assert ping.pipeline_or_dag_id == "pl_flow_a_orders"
+    assert ping.fired_at is not None and ping.fired_at.year == 2026
+
+
+def test_common_alert_schema_resolved_condition() -> None:
+    event = json.loads(json.dumps(_COMMON_ALERT))
+    event["data"]["essentials"]["monitorCondition"] = "Resolved"
+    ping = _parse_ping(event)
+    assert ping.monitor_condition == "resolved"
+
+
+def test_common_alert_schema_tolerates_missing_target_and_dimensions() -> None:
+    """Factory/pipeline are enrichment only — the poll doesn't need them."""
+    event = json.loads(json.dumps(_COMMON_ALERT))
+    event["data"]["essentials"]["alertTargetIDs"] = []
+    event["data"]["alertContext"] = {}
+    ping = _parse_ping(event)
+    assert ping.monitor_condition == "fired"
+    assert ping.resource_name is None
+    assert ping.pipeline_or_dag_id is None
+
+
+def test_common_alert_schema_without_essentials_raises_malformed() -> None:
+    with pytest.raises(MalformedEventError, match="essentials"):
+        _parse({"schemaId": "azureMonitorCommonAlertSchema", "data": {}})
 
 
 def test_parse_extracts_all_fields() -> None:

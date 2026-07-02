@@ -34,8 +34,9 @@ from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretNotFoundError, SecretStore, get_secret_store
 from backend.app.db.session import get_db
+from backend.app.orchestration.base import AlertPing, RunUpdate
 from backend.app.orchestration.registry import get_orchestration_provider
-from backend.app.services.orchestration_service import ingest_event
+from backend.app.services.orchestration_service import ingest_event, request_immediate_poll
 
 log = get_logger(__name__)
 
@@ -53,8 +54,46 @@ class WebhookNotConfiguredError(DataQError):
 
 
 class EventAck(BaseModel):
-    status: str  # "recorded" | "ignored"
+    status: str  # "recorded" | "ignored" | "reconciling" (run-anonymous alert → poll-now)
     triggered: int = 0  # suite runs triggered (succeeded run matching a binding)
+
+
+async def _ack_event(
+    db: Session,
+    *,
+    provider_name: str,
+    update: RunUpdate | AlertPing,
+    secret_store: SecretStore,
+) -> EventAck:
+    """Provider-agnostic tail of both webhook routes: persist or poll-now.
+
+    An `AlertPing` (#492 — a run-anonymous alert, e.g. Azure Monitor's Common
+    Alert Schema) has no runId to upsert, so a *fired* ping becomes an
+    immediate poll (the poll ingests the real run identities within seconds);
+    a *resolved* one is noise. Everything else is the normal `ingest_event`
+    upsert + trigger path.
+    """
+    provider = get_orchestration_provider(provider_name)
+    if isinstance(update, AlertPing):
+        log.info(
+            "orchestration_alert_ping",
+            provider=provider_name,
+            monitor_condition=update.monitor_condition,
+            resource_name=update.resource_name,
+            pipeline=update.pipeline_or_dag_id,
+        )
+        if update.monitor_condition == "fired":
+            await run_in_threadpool(request_immediate_poll)
+            return EventAck(status="reconciling")
+        return EventAck(status="ignored")
+
+    result = await run_in_threadpool(
+        ingest_event, db, provider_impl=provider, update=update, secret_store=secret_store
+    )
+    return EventAck(
+        status="recorded" if result.pipeline_run is not None else "ignored",
+        triggered=len(result.triggered_runs),
+    )
 
 
 def _authenticate(token: str | None, secret_store: SecretStore) -> None:
@@ -91,14 +130,7 @@ async def receive_adf_event(
     provider = get_orchestration_provider("adf")
     body = await request.body()
     update = provider.parse_event(body, request.headers)  # raises MalformedEventError → 422
-
-    result = await run_in_threadpool(
-        ingest_event, db, provider_impl=provider, update=update, secret_store=secret_store
-    )
-    return EventAck(
-        status="recorded" if result.pipeline_run is not None else "ignored",
-        triggered=len(result.triggered_runs),
-    )
+    return await _ack_event(db, provider_name="adf", update=update, secret_store=secret_store)
 
 
 _SIGNATURE_HEADER = "X-DataQ-Signature"
@@ -146,11 +178,4 @@ async def receive_airflow_event(
 
     provider = get_orchestration_provider("airflow")
     update = provider.parse_event(body, request.headers)  # raises MalformedEventError → 422
-
-    result = await run_in_threadpool(
-        ingest_event, db, provider_impl=provider, update=update, secret_store=secret_store
-    )
-    return EventAck(
-        status="recorded" if result.pipeline_run is not None else "ignored",
-        triggered=len(result.triggered_runs),
-    )
+    return await _ack_event(db, provider_name="airflow", update=update, secret_store=secret_store)
