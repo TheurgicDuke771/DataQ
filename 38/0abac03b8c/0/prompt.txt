@@ -1,0 +1,6 @@
+Can you evaluate the skills and agents available for this repo, and see if they can be optimized or updated in anyway? also if we can add any new skill or agent [based on nature of this project and the workflow you can check your memory], there is one qa/qe agent is planned.
+
+---
+
+you can fix the @CONTRIBUTING.md , and create the security -scsn skill. 
+Also is the qa-verifier agent runs through the harness data (like creating testcases, add new suit, performing negative/edge-case testscenario, etc. Basically covering application with data testing?

@@ -1,0 +1,55 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_id": "380abac03b8c",
+  "session_id": "57b0cfef-599b-468b-af47-faaff05623ec",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-02T21:50:55.157684Z",
+  "branch": "chore/claude-housekeeping",
+  "checkpoints_count": 2,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "4fe76c5bafb0",
+  "token_usage": {
+    "input_tokens": 18219,
+    "cache_creation_tokens": 127316,
+    "cache_read_tokens": 3092052,
+    "output_tokens": 49734,
+    "api_call_count": 32
+  },
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 125,
+      "user_lines_removed": 46,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/agents/docs-consistency-guard.md": 20,
+        ".claude/agents/migration-safety.md": 3,
+        ".claude/agents/qa-verifier.md": 84,
+        ".claude/settings.local.json": 6,
+        ".claude/skills/gh-issue-from-finding/SKILL.md": 12
+      },
+      "user_removed_per_file": {
+        ".claude/agents/docs-consistency-guard.md": 35,
+        ".claude/agents/migration-safety.md": 3,
+        ".claude/skills/gh-issue-from-finding/SKILL.md": 8
+      }
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 260,
+      "agent_lines_removed": 59,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}
