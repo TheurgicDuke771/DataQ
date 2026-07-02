@@ -328,8 +328,11 @@ class Run(Base):
     )
 
     id: Mapped[uuid.UUID] = _uuid_pk()
+    # CASCADE (#540): runs (and their results, via the run_id FK) die with the
+    # suite — ADR 0020's accepted cascade posture. Without it a suite that had
+    # ever run 500'd on delete.
     suite_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("suites.id"), nullable=False
+        UUID(as_uuid=True), ForeignKey("suites.id", ondelete="CASCADE"), nullable=False
     )
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     triggered_by: Mapped[str | None] = mapped_column(String(256))
@@ -354,8 +357,11 @@ class Result(Base):
     run_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("runs.id", ondelete="CASCADE"), nullable=False
     )
+    # CASCADE (#540): was the schema's only FK without an ondelete — a suite
+    # delete cascaded checks while runs→results rows still referenced them, so
+    # any suite that had ever run 500'd on delete (ADR 0020 accepts cascade).
     check_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("checks.id"), nullable=False
+        UUID(as_uuid=True), ForeignKey("checks.id", ondelete="CASCADE"), nullable=False
     )
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     # SQL-aggregatable scalar the check measured + per-check runtime (ADR 0012).
