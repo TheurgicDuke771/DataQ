@@ -42,7 +42,7 @@ class DataQError(Exception):
         self.detail: dict[str, Any] = detail or {}
 
 
-def _envelope(code: str, message: str, detail: dict[str, Any] | None = None) -> dict[str, Any]:
+def error_envelope(code: str, message: str, detail: dict[str, Any] | None = None) -> dict[str, Any]:
     return ErrorResponse(
         error=ErrorBody(code=code, message=message, detail=detail or {})
     ).model_dump()
@@ -53,7 +53,7 @@ async def _dataq_error_handler(_request: Request, exc: Exception) -> JSONRespons
     logger.warning("dataq_error", code=exc.code, message=exc.message, status=exc.status_code)
     return JSONResponse(
         status_code=exc.status_code,
-        content=_envelope(exc.code, exc.message, exc.detail),
+        content=error_envelope(exc.code, exc.message, exc.detail),
     )
 
 
@@ -61,7 +61,7 @@ async def _http_exception_handler(_request: Request, exc: Exception) -> JSONResp
     assert isinstance(exc, StarletteHTTPException)
     return JSONResponse(
         status_code=exc.status_code,
-        content=_envelope("http_error", str(exc.detail)),
+        content=error_envelope("http_error", str(exc.detail)),
     )
 
 
@@ -83,7 +83,7 @@ async def _validation_exception_handler(_request: Request, exc: Exception) -> JS
     assert isinstance(exc, RequestValidationError)
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-        content=_envelope(
+        content=error_envelope(
             "validation_error", "Request validation failed", {"errors": _jsonable(exc.errors())}
         ),
     )
@@ -93,7 +93,7 @@ async def _unhandled_exception_handler(_request: Request, exc: Exception) -> JSO
     logger.exception("unhandled_exception", error_type=type(exc).__name__)
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content=_envelope("internal_error", "Internal server error"),
+        content=error_envelope("internal_error", "Internal server error"),
     )
 
 

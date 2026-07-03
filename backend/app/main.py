@@ -7,6 +7,7 @@ from typing import Final
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastmcp.utilities.lifespan import combine_lifespans
 
 from backend.app.api.v1 import admin as admin_router
@@ -25,7 +26,7 @@ from backend.app.api.v1 import trigger_bindings as trigger_bindings_router
 from backend.app.api.v1 import users as users_router
 from backend.app.core.auth import init_auth
 from backend.app.core.config import Settings, get_settings
-from backend.app.core.errors import register_exception_handlers
+from backend.app.core.errors import error_envelope, register_exception_handlers
 from backend.app.core.logging import configure_logging, get_logger, request_id_var
 from backend.app.core.tracing import (
     configure_tracing,
@@ -109,6 +110,29 @@ if _cors_origins:
         allow_headers=["*"],
         expose_headers=[REQUEST_ID_HEADER],
     )
+
+
+@app.middleware("http")
+async def reject_nul_in_url_middleware(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
+    """NUL (``\\x00``) in the URL — 422, same contract as `ApiModel` (#567).
+
+    `ApiModel` guards request *bodies*; a NUL smuggled into a query/path string
+    (``?status=succ%00eeded``) otherwise reaches a SQL parameter and dies as the
+    same driver ``ValueError`` → 500. `%00` is the only percent-encoding of NUL
+    (hex digits are case-free, and ``%2500`` decodes to the literal text
+    ``%00``, not the byte), so a raw-bytes scan is exact — no decode needed.
+    """
+    for raw in (request.scope.get("raw_path", b""), request.scope.get("query_string", b"")):
+        if b"%00" in raw or b"\x00" in raw:
+            return JSONResponse(
+                status_code=422,
+                content=error_envelope(
+                    "validation_error", "NUL (\\x00) characters are not allowed in the URL"
+                ),
+            )
+    return await call_next(request)
 
 
 @app.middleware("http")

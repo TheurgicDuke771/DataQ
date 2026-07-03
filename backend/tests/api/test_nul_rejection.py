@@ -147,6 +147,27 @@ def test_nul_in_update_payload_is_422(client: TestClient, db_session: Any) -> No
     _assert_422_validation(resp)
 
 
+def test_nul_in_query_param_is_422(client: TestClient, db_session: Any) -> None:
+    """ApiModel guards bodies; the URL middleware closes the query-string vector
+    (a NUL str param otherwise reaches a SQL parameter -> the same driver 500)."""
+    resp = client.get("/api/v1/runs", params={"status": "succ\x00eeded"})
+    assert resp.status_code == 422, f"expected 422, got {resp.status_code}: {resp.text}"
+    body = resp.json()
+    assert body["error"]["code"] == "validation_error"
+    assert "NUL" in body["error"]["message"]
+
+
+def test_nul_in_path_segment_is_422(client: TestClient, db_session: Any) -> None:
+    resp = client.get("/api/v1/suites/abc%00def")
+    assert resp.status_code == 422
+    assert "NUL" in resp.json()["error"]["message"]
+
+
+def test_nul_free_query_still_served(client: TestClient, db_session: Any) -> None:
+    resp = client.get("/api/v1/runs", params={"status": "succeeded"})
+    assert resp.status_code == 200
+
+
 def test_nul_free_unicode_still_accepted(client: TestClient, db_session: Any) -> None:
     """The guard rejects the NUL byte, not exotic-but-legit Unicode (control
     chars, RTL override, emoji stay accepted — 1b in the qa-verifier battery)."""
