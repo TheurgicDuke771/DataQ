@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "ff7e607f3e02",
+  "strategy": "manual-commit",
+  "branch": "chore/tf-preauthorize-azure-cli",
+  "checkpoints_count": 5,
+  "files_touched": [
+    "deploy/README.md",
+    "deploy/terraform/azure/sso.tf"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ff/7e607f3e02/0/metadata.json",
+      "transcript": "/ff/7e607f3e02/0/full.jsonl",
+      "compact_transcript": "/ff/7e607f3e02/0/transcript.jsonl",
+      "content_hash": "/ff/7e607f3e02/0/content_hash.txt",
+      "prompt": "/ff/7e607f3e02/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 73854,
+    "cache_creation_tokens": 1062530,
+    "cache_read_tokens": 98817480,
+    "output_tokens": 226400,
+    "api_call_count": 369
+  }
+}
