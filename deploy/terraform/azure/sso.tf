@@ -96,3 +96,18 @@ resource "azuread_application_pre_authorized" "spa_on_api" {
   authorized_client_id = azuread_application.spa.client_id
   permission_ids       = [random_uuid.api_scope.result]
 }
+
+# Pre-authorize the Microsoft Azure CLI (well-known first-party client id) on the
+# same scope, so operators can mint API bearers non-interactively for the live
+# smoke / MCP clients:
+#   az account get-access-token --resource api://<api-client-id>
+# Without this, the mint dies on AADSTS65001/650057 (the tenant can't dynamically
+# consent the CLI to a custom API). Mirrors the manual Graph PATCH applied
+# 2026-07-03 (W8 go-live smoke) so a future apply doesn't strip it — on first
+# apply, `terraform import` the existing grant instead of recreating it (see
+# deploy/README.md). Interim posture until ADR 0026 (DataQ-issued API keys).
+resource "azuread_application_pre_authorized" "azure_cli_on_api" {
+  application_id       = azuread_application.api.id
+  authorized_client_id = "04b07795-8ddb-461a-bbee-02f9e1bf7b46" # Microsoft Azure CLI
+  permission_ids       = [random_uuid.api_scope.result]
+}
