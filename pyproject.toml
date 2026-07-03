@@ -95,8 +95,10 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["backend/tests"]
-addopts = "--cov=backend/app --cov-report=term-missing --cov-fail-under=0"
-# cov-fail-under raised to 80 in Week 8
+# The Week-8 exit gate: the run fails if backend/app line coverage drops below
+# 80% (baseline at flip time: 96%). Applies to every pytest run, local and CI.
+# Use --no-cov for a quick single-file loop.
+addopts = "--cov=backend/app --cov-report=term-missing --cov-fail-under=80"
 markers = [
     "real_dispatch: opt out of the autouse run_dispatch stub (test dispatch_run itself)",
 ]
