@@ -88,6 +88,18 @@ class Kpis:
     pass_rate: float | None
     total_runs: int
     active_connections: int
+    # ── #352 enrichments ──
+    # Mean run duration over the window (finished runs only); None when no run
+    # in the window finished.
+    avg_duration_ms: float | None = None
+    # Period-over-period deltas vs the previous equivalent window. Score/rate
+    # deltas are in POINTS (both are already percentages); runs/duration deltas
+    # are % change. None whenever either side has no data — an honest blank,
+    # never a fabricated 0 (KPI honesty, ADR 0022/0018).
+    health_score_delta: float | None = None
+    pass_rate_delta: float | None = None
+    total_runs_delta_pct: float | None = None
+    avg_duration_delta_pct: float | None = None
 
 
 @dataclass(frozen=True)
@@ -118,15 +130,21 @@ def _window_start(window_days: int) -> datetime:
 
 
 def _status_counts(
-    session: Session, accessible: Select[tuple[uuid.UUID]], since: datetime
+    session: Session,
+    accessible: Select[tuple[uuid.UUID]],
+    since: datetime,
+    until: datetime | None = None,
 ) -> dict[str, int]:
-    """Histogram of result statuses across accessible suites since ``since``."""
+    """Histogram of result statuses across accessible suites in ``[since, until)``
+    (open-ended when ``until`` is None)."""
     stmt = (
         select(Result.status, func.count())
         .join(Run, Result.run_id == Run.id)
         .where(Run.suite_id.in_(accessible), Result.created_at >= since)
         .group_by(Result.status)
     )
+    if until is not None:
+        stmt = stmt.where(Result.created_at < until)
     counts: dict[str, int] = {}
     for status, count in session.execute(stmt):
         counts[status] = count
@@ -222,13 +240,61 @@ def _active_connections(session: Session, accessible: Select[tuple[uuid.UUID]]) 
     return session.scalar(stmt) or 0
 
 
-def _total_runs(session: Session, accessible: Select[tuple[uuid.UUID]], since: datetime) -> int:
+def _total_runs(
+    session: Session,
+    accessible: Select[tuple[uuid.UUID]],
+    since: datetime,
+    until: datetime | None = None,
+) -> int:
     stmt = (
         select(func.count())
         .select_from(Run)
         .where(Run.suite_id.in_(accessible), Run.created_at >= since)
     )
+    if until is not None:
+        stmt = stmt.where(Run.created_at < until)
     return session.scalar(stmt) or 0
+
+
+def _avg_duration_ms(
+    session: Session,
+    accessible: Select[tuple[uuid.UUID]],
+    since: datetime,
+    until: datetime | None = None,
+) -> float | None:
+    """Mean run duration (finished - started, ms) over runs created in the
+    window. Runs still in flight / never started are excluded; ``None`` when
+    nothing in the window finished (an honest blank, not 0)."""
+    duration_s = func.extract("epoch", Run.finished_at - Run.started_at)
+    stmt = (
+        select(func.avg(duration_s))
+        .select_from(Run)
+        .where(
+            Run.suite_id.in_(accessible),
+            Run.created_at >= since,
+            Run.started_at.is_not(None),
+            Run.finished_at.is_not(None),
+        )
+    )
+    if until is not None:
+        stmt = stmt.where(Run.created_at < until)
+    avg_s = session.scalar(stmt)
+    return None if avg_s is None else round(float(avg_s) * 1000.0, 1)
+
+
+def _delta_points(current: float | None, previous: float | None) -> float | None:
+    """current - previous, for metrics that are already percentages."""
+    if current is None or previous is None:
+        return None
+    return round(current - previous, 1)
+
+
+def _delta_pct(current: float | None, previous: float | None) -> float | None:
+    """% change vs the previous window; ``None`` when previous is missing/zero
+    (a delta against nothing is meaningless, not +∞)."""
+    if current is None or previous is None or previous == 0:
+        return None
+    return round((current - previous) / previous * 100.0, 1)
 
 
 def dashboard_summary(
@@ -239,13 +305,28 @@ def dashboard_summary(
     workspace-admin view, ADR 0027)."""
     accessible = suite_service.accessible_suite_ids(user_id, include_all=include_all)
     since = _window_start(window_days)
+    # Previous equivalent window, for period-over-period deltas (#352):
+    # [now-2w, now-w) against the current [now-w, now].
+    prev_since = since - timedelta(days=window_days)
 
     counts = _status_counts(session, accessible, since)
+    prev_counts = _status_counts(session, accessible, prev_since, until=since)
+    score = health_score(counts)
+    rate = pass_rate(counts)
+    total_runs = _total_runs(session, accessible, since)
+    prev_total_runs = _total_runs(session, accessible, prev_since, until=since)
+    avg_duration = _avg_duration_ms(session, accessible, since)
+    prev_avg_duration = _avg_duration_ms(session, accessible, prev_since, until=since)
     kpis = Kpis(
-        health_score=health_score(counts),
-        pass_rate=pass_rate(counts),
-        total_runs=_total_runs(session, accessible, since),
+        health_score=score,
+        pass_rate=rate,
+        total_runs=total_runs,
         active_connections=_active_connections(session, accessible),
+        avg_duration_ms=avg_duration,
+        health_score_delta=_delta_points(score, health_score(prev_counts)),
+        pass_rate_delta=_delta_points(rate, pass_rate(prev_counts)),
+        total_runs_delta_pct=_delta_pct(float(total_runs), float(prev_total_runs)),
+        avg_duration_delta_pct=_delta_pct(avg_duration, prev_avg_duration),
     )
     return DashboardSummary(
         window_days=window_days,

@@ -106,8 +106,14 @@ export function formatTimestamp(iso: string | null): string {
 export function formatDuration(startedAt: string | null, finishedAt: string | null): string {
   if (!startedAt || !finishedAt) return '—';
   const ms = new Date(finishedAt).getTime() - new Date(startedAt).getTime();
+  return formatDurationMs(ms);
+}
+
+/** A millisecond interval as the same compact human string (`—` when negative
+ *  or not a number — clock skew / no data). */
+export function formatDurationMs(ms: number): string {
   if (Number.isNaN(ms) || ms < 0) return '—';
-  if (ms < 1000) return `${ms}ms`;
+  if (ms < 1000) return `${Math.round(ms)}ms`;
   const totalSeconds = Math.round(ms / 1000);
   if (totalSeconds < 60) return `${totalSeconds}s`;
   const minutes = Math.floor(totalSeconds / 60);

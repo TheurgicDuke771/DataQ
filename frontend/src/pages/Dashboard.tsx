@@ -1,6 +1,7 @@
 import {
   ApiOutlined,
   CheckCircleOutlined,
+  FieldTimeOutlined,
   SafetyCertificateOutlined,
   ThunderboltOutlined,
 } from '@ant-design/icons';
@@ -10,6 +11,7 @@ import { useState } from 'react';
 import { getDashboardSummary } from '../api/dashboard';
 import { Page } from '../components/layout/Page';
 import { MetricCard } from '../components/dashboard/MetricCard';
+import { formatDurationMs } from '../components/results/resultsFormat';
 import { QualityTrends } from '../components/dashboard/QualityTrends';
 import { RecentRuns } from '../components/dashboard/RecentRuns';
 import { SuitePerformance } from '../components/dashboard/SuitePerformance';
@@ -74,37 +76,54 @@ export function Dashboard() {
         <Alert type="error" showIcon title="Failed to load dashboard" description={state.error} />
       )}
 
+      {/* Five equal-width tiles that wrap gracefully on narrow screens. */}
       <Row gutter={[16, 16]}>
-        <Col xs={24} sm={12} xl={6}>
+        <Col xs={24} sm={12} xl={8} xxl={4} flex="auto">
           <MetricCard
             label="Data Integrity Score"
             value={pct(kpis?.health_score ?? null)}
             unit="%"
             icon={<SafetyCertificateOutlined />}
             progress={kpis?.health_score ?? null}
+            delta={kpis?.health_score_delta}
+            deltaUnit=" pts"
             loading={loading}
           />
         </Col>
-        <Col xs={24} sm={12} xl={6}>
+        <Col xs={24} sm={12} xl={8} xxl={4} flex="auto">
           <MetricCard
             label="Pass Rate"
             value={pct(kpis?.pass_rate ?? null)}
             unit="%"
             icon={<CheckCircleOutlined />}
             progress={kpis?.pass_rate ?? null}
+            delta={kpis?.pass_rate_delta}
+            deltaUnit=" pts"
             loading={loading}
           />
         </Col>
-        <Col xs={24} sm={12} xl={6}>
+        <Col xs={24} sm={12} xl={8} xxl={4} flex="auto">
           <MetricCard
             label="Total Runs"
             value={kpis ? kpis.total_runs : null}
             icon={<ThunderboltOutlined />}
+            delta={kpis?.total_runs_delta_pct}
             footnote={`Last ${days === 1 ? '24h' : `${days} days`}`}
             loading={loading}
           />
         </Col>
-        <Col xs={24} sm={12} xl={6}>
+        <Col xs={24} sm={12} xl={12} xxl={4} flex="auto">
+          <MetricCard
+            label="Avg. Duration"
+            value={kpis?.avg_duration_ms != null ? formatDurationMs(kpis.avg_duration_ms) : null}
+            icon={<FieldTimeOutlined />}
+            delta={kpis?.avg_duration_delta_pct}
+            deltaGoodWhen="down"
+            footnote="Per run, this window"
+            loading={loading}
+          />
+        </Col>
+        <Col xs={24} sm={12} xl={12} xxl={4} flex="auto">
           <MetricCard
             label="Active Connections"
             value={kpis ? kpis.active_connections : null}

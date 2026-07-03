@@ -33,6 +33,14 @@ class KpisRead(BaseModel):
     pass_rate: float | None
     total_runs: int
     active_connections: int
+    # #352 enrichments — avg run duration + period-over-period deltas vs the
+    # previous equivalent window. Score/rate deltas are points; runs/duration
+    # deltas are % change. None = no data to compare (never a fabricated 0).
+    avg_duration_ms: float | None
+    health_score_delta: float | None
+    pass_rate_delta: float | None
+    total_runs_delta_pct: float | None
+    avg_duration_delta_pct: float | None
 
 
 class TrendPointRead(BaseModel):
@@ -78,6 +86,11 @@ def get_dashboard_summary(
             pass_rate=summary.kpis.pass_rate,
             total_runs=summary.kpis.total_runs,
             active_connections=summary.kpis.active_connections,
+            avg_duration_ms=summary.kpis.avg_duration_ms,
+            health_score_delta=summary.kpis.health_score_delta,
+            pass_rate_delta=summary.kpis.pass_rate_delta,
+            total_runs_delta_pct=summary.kpis.total_runs_delta_pct,
+            avg_duration_delta_pct=summary.kpis.avg_duration_delta_pct,
         ),
         trend=[
             TrendPointRead(day=p.day, succeeded=p.succeeded, failed=p.failed) for p in summary.trend

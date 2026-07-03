@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   formatDuration,
+  formatDurationMs,
   formatScalar,
   formatTimestamp,
   isWithinWindowDays,
@@ -119,5 +120,22 @@ describe('status colour maps', () => {
     expect(RUN_BAR_STATUS.succeeded).toBe('success');
     expect(RUN_BAR_STATUS.failed).toBe('exception');
     expect(RUN_BAR_STATUS.cancelled).toBe('exception');
+  });
+});
+
+describe('formatDurationMs', () => {
+  it('formats sub-second, seconds, and minutes', () => {
+    expect(formatDurationMs(850)).toBe('850ms');
+    expect(formatDurationMs(12_000)).toBe('12s');
+    expect(formatDurationMs(63_000)).toBe('1m 3s');
+  });
+
+  it('rounds fractional milliseconds', () => {
+    expect(formatDurationMs(850.6)).toBe('851ms');
+  });
+
+  it('em-dashes negative and NaN intervals', () => {
+    expect(formatDurationMs(-1)).toBe('—');
+    expect(formatDurationMs(Number.NaN)).toBe('—');
   });
 });

@@ -107,9 +107,13 @@ def _run_with_results(
     run_status: str,
     result_statuses: list[str],
     age_days: float = 0.0,
+    duration_s: float | None = None,
 ) -> Run:
     when = datetime.now(UTC) - timedelta(days=age_days)
     run = Run(suite_id=suite.id, status=run_status, created_at=when)
+    if duration_s is not None:
+        run.started_at = when
+        run.finished_at = when + timedelta(seconds=duration_s)
     db.add(run)
     db.flush()
     for s in result_statuses:
@@ -211,3 +215,96 @@ def test_suite_performance_uses_latest_run_worst_first(db_session: Any) -> None:
     assert perf["broken"].score == 25.0  # (1.0 + 2.0) / (2 * 2) = .75 → 25
     # Worst (lowest) first.
     assert [s.name for s in summary.suite_performance] == ["broken", "healthy"]
+
+
+# ── #352 enrichments: avg duration + period-over-period deltas ───────────────
+
+
+def test_avg_duration_over_finished_runs_only(db_session: Any) -> None:
+    alice = _user(db_session)
+    suite = _suite(db_session, alice)
+    _run_with_results(
+        db_session, suite, run_status="succeeded", result_statuses=["pass"], duration_s=1.0
+    )
+    _run_with_results(
+        db_session, suite, run_status="succeeded", result_statuses=["pass"], duration_s=3.0
+    )
+    # In flight (no finished_at) — must not drag the average toward zero.
+    _run_with_results(db_session, suite, run_status="running", result_statuses=[])
+    # Finished but outside the window — must not count either.
+    _run_with_results(
+        db_session, suite, run_status="succeeded", result_statuses=[], age_days=40, duration_s=99.0
+    )
+
+    summary = svc.dashboard_summary(db_session, user_id=alice.id, window_days=7)
+    assert summary.kpis.avg_duration_ms == 2000.0
+
+
+def test_avg_duration_none_when_nothing_finished(db_session: Any) -> None:
+    alice = _user(db_session)
+    suite = _suite(db_session, alice)
+    _run_with_results(db_session, suite, run_status="running", result_statuses=[])
+
+    summary = svc.dashboard_summary(db_session, user_id=alice.id, window_days=7)
+    assert summary.kpis.avg_duration_ms is None
+    assert summary.kpis.avg_duration_delta_pct is None
+
+
+def test_deltas_compare_against_previous_equivalent_window(db_session: Any) -> None:
+    alice = _user(db_session)
+    suite = _suite(db_session, alice)
+    # Previous window (7-14 days ago): all-fail, 1 run, 4s.
+    _run_with_results(
+        db_session,
+        suite,
+        run_status="failed",
+        result_statuses=["fail", "fail"],
+        age_days=10,
+        duration_s=4.0,
+    )
+    # Current window: all-pass, 2 runs, 2s avg.
+    _run_with_results(
+        db_session, suite, run_status="succeeded", result_statuses=["pass"], duration_s=2.0
+    )
+    _run_with_results(
+        db_session, suite, run_status="succeeded", result_statuses=["pass"], duration_s=2.0
+    )
+
+    summary = svc.dashboard_summary(db_session, user_id=alice.id, window_days=7)
+    k = summary.kpis
+    assert k.health_score == 100.0
+    assert k.health_score_delta == 50.0  # prior all-fail scored 50
+    assert k.pass_rate_delta == 100.0  # 100 now vs 0 then
+    assert k.total_runs_delta_pct == 100.0  # 2 runs vs 1
+    assert k.avg_duration_delta_pct == -50.0  # 2s vs 4s — faster, negative
+
+
+def test_deltas_none_when_previous_window_empty(db_session: Any) -> None:
+    """No prior data → honest nulls, not +∞/fabricated zeros."""
+    alice = _user(db_session)
+    suite = _suite(db_session, alice)
+    _run_with_results(
+        db_session, suite, run_status="succeeded", result_statuses=["pass"], duration_s=1.0
+    )
+
+    summary = svc.dashboard_summary(db_session, user_id=alice.id, window_days=7)
+    k = summary.kpis
+    assert k.health_score_delta is None
+    assert k.pass_rate_delta is None
+    assert k.total_runs_delta_pct is None  # prior count 0 → no meaningful % change
+    assert k.avg_duration_delta_pct is None
+
+
+def test_previous_window_does_not_leak_into_current_kpis(db_session: Any) -> None:
+    """The prior-window aggregates are bounded by `until` — a fail 10 days ago
+    must not lower the CURRENT 7d score."""
+    alice = _user(db_session)
+    suite = _suite(db_session, alice)
+    _run_with_results(
+        db_session, suite, run_status="failed", result_statuses=["critical"], age_days=10
+    )
+    _run_with_results(db_session, suite, run_status="succeeded", result_statuses=["pass"])
+
+    summary = svc.dashboard_summary(db_session, user_id=alice.id, window_days=7)
+    assert summary.kpis.health_score == 100.0
+    assert summary.kpis.total_runs == 1
