@@ -1,0 +1,70 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_id": "ea777ea62276",
+  "session_id": "2c8d359c-1386-49f9-8dc5-62a253753085",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-03T16:56:16.280327Z",
+  "branch": "feature/issue-205-catalog-gx-contract-test",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "backend/tests/datasources/test_catalog_gx_contract.py",
+    "frontend/tests/components/catalogContract.test.ts"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "c9505b8c8468",
+  "token_usage": {
+    "input_tokens": 50122,
+    "cache_creation_tokens": 426502,
+    "cache_read_tokens": 31211481,
+    "output_tokens": 114414,
+    "api_call_count": 180
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0125Sr3aDcLyFE5bgQLgwQSM",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "c9505b8c8468",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 186,
+        "end": 187,
+        "entry_ids": [
+          "f73d4838-0772-46f7-af1f-00a37bc35d5f"
+        ],
+        "tool_use_id": "toolu_0125Sr3aDcLyFE5bgQLgwQSM"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0125Sr3aDcLyFE5bgQLgwQSM"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "initial_attribution": {
+    "calculated_at": "2026-07-03T16:56:16.2235Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 197,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 197,
+    "total_lines_changed": 197,
+    "agent_percentage": 0,
+    "metric_version": 2
+  }
+}
