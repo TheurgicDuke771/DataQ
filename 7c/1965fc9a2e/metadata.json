@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "7c1965fc9a2e",
+  "strategy": "manual-commit",
+  "branch": "docs/v1-maturity-assessment",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "context/post-v1-roadmap.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/7c/1965fc9a2e/0/metadata.json",
+      "transcript": "/7c/1965fc9a2e/0/full.jsonl",
+      "compact_transcript": "/7c/1965fc9a2e/0/transcript.jsonl",
+      "content_hash": "/7c/1965fc9a2e/0/content_hash.txt",
+      "prompt": "/7c/1965fc9a2e/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 201107,
+    "cache_creation_tokens": 8111976,
+    "cache_read_tokens": 305832533,
+    "output_tokens": 665800,
+    "api_call_count": 909
+  }
+}
