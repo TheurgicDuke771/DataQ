@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "b0c1fdfe80c6",
+  "strategy": "manual-commit",
+  "branch": "chore/w8-frontend-coverage-gate",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/b0/c1fdfe80c6/0/metadata.json",
+      "transcript": "/b0/c1fdfe80c6/0/full.jsonl",
+      "compact_transcript": "/b0/c1fdfe80c6/0/transcript.jsonl",
+      "content_hash": "/b0/c1fdfe80c6/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 9993,
+    "cache_creation_tokens": 50681,
+    "cache_read_tokens": 5790137,
+    "output_tokens": 18730,
+    "api_call_count": 29
+  }
+}
