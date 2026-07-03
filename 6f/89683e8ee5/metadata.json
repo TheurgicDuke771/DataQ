@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "6f89683e8ee5",
+  "strategy": "manual-commit",
+  "branch": "chore/w8-backend-coverage-gaps",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/tests/alerting/test_slack_email_publishers.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/6f/89683e8ee5/0/metadata.json",
+      "transcript": "/6f/89683e8ee5/0/full.jsonl",
+      "compact_transcript": "/6f/89683e8ee5/0/transcript.jsonl",
+      "content_hash": "/6f/89683e8ee5/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 42300,
+    "cache_creation_tokens": 367599,
+    "cache_read_tokens": 18339807,
+    "output_tokens": 84474,
+    "api_call_count": 132
+  }
+}
