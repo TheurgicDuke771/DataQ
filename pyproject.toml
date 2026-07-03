@@ -128,7 +128,7 @@ skips = ["B101"]  # assert is fine in non-production code
 # --cov is a pytest usage error in-process). Per-spike: point `source_paths` at
 # the one module you're spiking and narrow the test selection to its tests.
 [tool.mutmut]
-source_paths = ["backend/app/services/custom_sql.py"]
+source_paths = ["backend/app/services/dashboard_service.py"]
 also_copy = ["backend", "pyproject.toml"]
-pytest_add_cli_args_test_selection = ["backend/tests/services/test_custom_sql.py"]
+pytest_add_cli_args_test_selection = ["backend/tests/services/test_dashboard_service.py"]
 pytest_add_cli_args = ["-o", "addopts="]
