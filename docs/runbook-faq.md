@@ -32,8 +32,9 @@ Manual checklist (the mutating tail):
   correlates on **Results → Pipelines**.
 - Force a failing run → the Teams/Slack/email alert arrives with the right severity;
   a repeat failure is deduped.
-- MCP: point Claude Desktop at `https://<frontend-host>/mcp` and run the 4 canonical
-  queries (what failed today / run suite X / why did pipeline Y fail / add a null check).
+- MCP: point Claude Desktop at `https://<frontend-host>/mcp/` (trailing slash — see
+  [AI assistants (MCP setup)](mcp-setup.md)) and run the 4 canonical queries
+  (what failed today / run suite X / why did pipeline Y fail / add a null check).
 
 ## Known limitations (v1)
 
@@ -56,4 +57,4 @@ docker-compose. Azure is one deployment target behind the app's seams (ADR 0010/
 after a retention window — never written to logs.
 
 **Can an AI assistant use DataQ?** Yes — 8 MCP tools at `/mcp` (Claude Desktop / Claude.ai
-/ Copilot / Cursor), Azure-AD authenticated. See the README's MCP section.
+/ Copilot / Cursor), Azure-AD authenticated. See [AI assistants (MCP setup)](mcp-setup.md).
