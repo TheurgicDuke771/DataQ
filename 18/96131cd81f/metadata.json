@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "1896131cd81f",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-352-dashboard-kpi-enrichment",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/api/v1/dashboard.py",
+    "backend/app/services/dashboard_service.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/18/96131cd81f/0/metadata.json",
+      "transcript": "/18/96131cd81f/0/full.jsonl",
+      "compact_transcript": "/18/96131cd81f/0/transcript.jsonl",
+      "content_hash": "/18/96131cd81f/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 58191,
+    "cache_creation_tokens": 467039,
+    "cache_read_tokens": 43150241,
+    "output_tokens": 136014,
+    "api_call_count": 217
+  }
+}
