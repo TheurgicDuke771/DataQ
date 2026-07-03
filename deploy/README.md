@@ -264,6 +264,11 @@ proxy; `<frontend>/api/v1/...` is the base URL for any external client too):
   destroyed** (free/trial caps one of each; shared with the harness — ADR 0024).
 - `key_vault_purge_protection` is off during bring-up (so a destroy/re-apply can
   reuse the vault name); set it **true** for a hardened prod (irreversible).
+  **Decision (2026-07-02): deliberately left off** for this deployment — the vault
+  is demo/trial-scoped and destroy/re-apply flexibility wins; every secret it holds
+  (PATs, SAS, webhook secrets) is rotatable, so accidental-delete recovery is
+  re-mint, not data loss. Revisit (flip to `true`) before any regulated or
+  production-critical use.
 - **Workspace-admins are superusers over every suite** ([ADR 0027](../docs/adr/0027-suite-permission-model-workspace-admin.md) / #482):
   anyone in `WORKSPACE_ADMIN_EMAILS` can read **all** suites' results — including
   failing-row samples (`results.sample_failures`), the one place PII/PHI lands —
