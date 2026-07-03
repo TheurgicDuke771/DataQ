@@ -240,6 +240,32 @@ def test_avg_duration_over_finished_runs_only(db_session: Any) -> None:
     assert summary.kpis.avg_duration_ms == 2000.0
 
 
+def test_avg_duration_excludes_clock_skewed_runs(db_session: Any) -> None:
+    """finished < started (clock skew / backfill) must not poison the mean —
+    and an all-skewed window is an honest None, not a negative duration."""
+    alice = _user(db_session)
+    suite = _suite(db_session, alice)
+    _run_with_results(
+        db_session, suite, run_status="succeeded", result_statuses=["pass"], duration_s=-5.0
+    )
+    _run_with_results(
+        db_session, suite, run_status="succeeded", result_statuses=["pass"], duration_s=2.0
+    )
+
+    summary = svc.dashboard_summary(db_session, user_id=alice.id, window_days=7)
+    assert summary.kpis.avg_duration_ms == 2000.0  # the skewed run is excluded
+
+    bob = _user(db_session)
+    only_skew = _suite(db_session, bob)
+    _run_with_results(
+        db_session, only_skew, run_status="succeeded", result_statuses=["pass"], duration_s=-1.0
+    )
+    assert (
+        svc.dashboard_summary(db_session, user_id=bob.id, window_days=7).kpis.avg_duration_ms
+        is None
+    )
+
+
 def test_avg_duration_none_when_nothing_finished(db_session: Any) -> None:
     alice = _user(db_session)
     suite = _suite(db_session, alice)

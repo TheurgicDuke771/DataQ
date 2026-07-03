@@ -274,6 +274,9 @@ def _avg_duration_ms(
             Run.created_at >= since,
             Run.started_at.is_not(None),
             Run.finished_at.is_not(None),
+            # Clock skew / backfill can leave finished < started; a negative
+            # interval would poison the mean (and the card renders it as junk).
+            Run.finished_at >= Run.started_at,
         )
     )
     if until is not None:

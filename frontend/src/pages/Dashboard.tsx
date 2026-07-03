@@ -76,9 +76,9 @@ export function Dashboard() {
         <Alert type="error" showIcon title="Failed to load dashboard" description={state.error} />
       )}
 
-      {/* Five equal-width tiles that wrap gracefully on narrow screens. */}
+      {/* Five tiles: stacked on phones, 2-up on small screens, 3+2 at xl+. */}
       <Row gutter={[16, 16]}>
-        <Col xs={24} sm={12} xl={8} xxl={4} flex="auto">
+        <Col xs={24} sm={12} xl={8}>
           <MetricCard
             label="Data Integrity Score"
             value={pct(kpis?.health_score ?? null)}
@@ -90,7 +90,7 @@ export function Dashboard() {
             loading={loading}
           />
         </Col>
-        <Col xs={24} sm={12} xl={8} xxl={4} flex="auto">
+        <Col xs={24} sm={12} xl={8}>
           <MetricCard
             label="Pass Rate"
             value={pct(kpis?.pass_rate ?? null)}
@@ -102,7 +102,7 @@ export function Dashboard() {
             loading={loading}
           />
         </Col>
-        <Col xs={24} sm={12} xl={8} xxl={4} flex="auto">
+        <Col xs={24} sm={12} xl={8}>
           <MetricCard
             label="Total Runs"
             value={kpis ? kpis.total_runs : null}
@@ -112,7 +112,7 @@ export function Dashboard() {
             loading={loading}
           />
         </Col>
-        <Col xs={24} sm={12} xl={12} xxl={4} flex="auto">
+        <Col xs={24} sm={12} xl={12}>
           <MetricCard
             label="Avg. Duration"
             value={kpis?.avg_duration_ms != null ? formatDurationMs(kpis.avg_duration_ms) : null}
@@ -123,7 +123,7 @@ export function Dashboard() {
             loading={loading}
           />
         </Col>
-        <Col xs={24} sm={12} xl={12} xxl={4} flex="auto">
+        <Col xs={24} sm={12} xl={12}>
           <MetricCard
             label="Active Connections"
             value={kpis ? kpis.active_connections : null}
