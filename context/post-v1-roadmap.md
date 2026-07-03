@@ -62,8 +62,8 @@ the remaining monitor kinds), *governance* (admin console, compliance controls),
 | G-d | **No incident workflow, no lineage, no ownership routing** — runs + alerts exist; "what broke downstream / who owns it / when was it resolved" doesn't. No data-access audit trail (the HIPAA gate). | This is what DQ products are bought for | **Theme 9** (results/reporting depth) + **Theme 4** / [#431](https://github.com/TheurgicDuke771/DataQ/issues/431) (audit trail); lineage/incident objects = new design doc needed |
 | G-e | **Single-tenant, config-allowlist admin, one validated IdP** — fine internally, not sellable. | Blocks multi-team/commercial use | **Theme 3** (admin/access) + ADR 0026 / [#461](https://github.com/TheurgicDuke771/DataQ/issues/461) (API keys) |
 | G-f | **Ecosystem: 4 datasources** vs the 30–50 a category product ships; no dbt integration (seam reserved); can't check the Postgres it runs on. | Adoption ceiling | **Theme 8** (datasource depth; generic-RDBMS adapter is the cheap first win) |
-| G-g | **Engine risk: GX Core pin** — the product's core capability rides a fast-moving third party with documented API drift; DQX swap-in shape exists for UC only. | Strategic dependency | **Theme 2** (engine abstraction beyond UC if GX churn continues) |
-| G-h | **Harness Databricks = Free Edition, non-commercial-only** — the UC demo leg cannot legally back a commercial demo, while ADR 0013's ambition is commercial BYOL. Trigger: before any commercial demo → paid workspace. | Licence landmine on the demo path | ADR 0021/0013 context; also in the W8 tracker (C4) |
+| G-g | **Engine risk: GX Core pin** — the product's core capability rides a fast-moving third party with documented API drift; DQX swap-in shape exists for UC only. | Strategic dependency | **Theme 2**'s engine-abstraction watch item (below) — no issue until the churn trigger fires |
+| G-h | **Harness Databricks = Free Edition, non-commercial-only** — the UC demo leg cannot legally back a commercial demo, while ADR 0013's ambition is commercial BYOL. Trigger: before any commercial demo → paid workspace. | Licence landmine on the demo path | ADR 0021/0013 context — decision due **before any commercial demo** (also flagged in the local, untracked Week-8 working tracker) |
 
 **Prioritisation signal for the post-v1 planner:** G-a and G-b are the two that change what the
 product *is* (coverage-without-authoring + scale-safe execution); G-d is what makes it *usable in
@@ -111,6 +111,12 @@ seam (schema-only, PII-redacted context).
 
 *(The built-ins / LLM / marketplace work is design-captured but not yet filed as discrete issues —
 file from the detail doc when picked up.)*
+
+**Engine-abstraction watch item (from maturity-assessment G-g):** the product's core capability
+rides a pinned GX Core with documented API drift (CLAUDE.md §11); the DQX swap-in shape exists
+for the UC runner only. If GX churn continues (or DQX/v1.1 lands), generalise that runner-level
+engine seam beyond UC so the check engine is a pluggable impl, not a hard dependency. No issue
+filed yet — file one when the trigger fires.
 
 ---
 
