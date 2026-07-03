@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "c61555acc34f",
+  "strategy": "manual-commit",
+  "branch": "chore/w8-mutation-spike",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "pyproject.toml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/c6/1555acc34f/0/metadata.json",
+      "transcript": "/c6/1555acc34f/0/full.jsonl",
+      "compact_transcript": "/c6/1555acc34f/0/transcript.jsonl",
+      "content_hash": "/c6/1555acc34f/0/content_hash.txt",
+      "prompt": "/c6/1555acc34f/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 71533,
+    "cache_creation_tokens": 923920,
+    "cache_read_tokens": 81153190,
+    "output_tokens": 199870,
+    "api_call_count": 314
+  }
+}
