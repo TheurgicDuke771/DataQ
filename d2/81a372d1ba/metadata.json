@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "d281a372d1ba",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-567-nul-byte-422",
+  "checkpoints_count": 4,
+  "files_touched": [
+    "backend/app/api/v1/dashboard.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/d2/81a372d1ba/0/metadata.json",
+      "transcript": "/d2/81a372d1ba/0/full.jsonl",
+      "compact_transcript": "/d2/81a372d1ba/0/transcript.jsonl",
+      "content_hash": "/d2/81a372d1ba/0/content_hash.txt",
+      "prompt": "/d2/81a372d1ba/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 81961,
+    "cache_creation_tokens": 1532252,
+    "cache_read_tokens": 123161021,
+    "output_tokens": 299232,
+    "api_call_count": 491
+  }
+}

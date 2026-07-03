@@ -1,0 +1,242 @@
+<task-notification>
+<task-id>ac3c4a9f3c5281dba</task-id>
+<tool-use-id>toolu_011enn24RKuKmRzzBzhrDWcH</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/2c8d359c-1386-49f9-8dc5-62a253753085/tasks/ac3c4a9f3c5281dba.output</output-file>
+<status>completed</status>
+<summary>Agent "Review PR 560 KPI enrichment" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Review complete. Verified empirically: created a detached worktree of the branch in the scratchpad (main working tree untouched, now removed), ran the backend dashboard service tests (30 passed), the API + MCP dashboard tests (18 passed), the touched frontend tests (25 passed), full frontend `tsc --noEmit` (clean), and Ruff/mypy on the changed backend files (clean) — all against the local Postgres via `TEST_DATABASE_URL`.
+
+Findings:
+
+```json
+[
+  {
+    "file": "frontend/src/pages/Dashboard.tsx",
+    "line": 81,
+    "summary": "PLAUSIBLE — `flex=\"auto\"` on the Cols is inert and the xxl layout leaves a permanent right-side gap. Confirmed from antd v6 source (node_modules/antd/es/grid/col.js + grid/style/index.js): the span classes emit `flex: 0 0 x%; max-width: x%`; the `flex` prop only sets inline `flex: 1 1 auto`, which overrides the class flex but NOT the class `max-width`. So growth is always capped at the span width and `flex=\"auto\"` never lets a tile fill leftover row space.",
+    "failure_scenario": "On a &gt;=1600px (xxl) viewport, the five xxl={4} tiles occupy 5 x 16.67% = 83.3% of the row and cannot grow past max-width 16.67% — a ~17% empty strip sits to the right of Active Connections, contradicting the added comment 'Five equal-width tiles that wrap gracefully'. Fix: either drop flex=\"auto\" (dead prop) and accept the gap, use xxl spans that sum to 24 (e.g. 5/5/5/5/4 is impossible evenly — use flex-only layout without spans), or replace the Row/Col grid with a plain Flex/CSS grid for the 5-up row."
+  },
+  {
+    "file": "frontend/src/components/dashboard/MetricCard.tsx",
+    "line": 121,
+    "summary": "PLAUSIBLE (edge) — the delta-badge guard `value !== null` doesn't suppress the badge when the value renders as the em-dash STRING. On the Avg. Duration card, Dashboard.tsx passes `value={formatDurationMs(avg_duration_ms)}`; a negative avg (clock skew: finished_at &lt; started_at is not filtered in `_avg_duration_ms`, only NULLs are) formats to '—', which is a non-null string, so a delta badge can render under an em-dash value.",
+    "failure_scenario": "One run in the window with finished_at earlier than started_at (worker clock skew / manual backfill) drives avg_duration_ms negative in both windows: card shows value '—' with a colored '+X% vs prior period' badge beneath it — a delta attached to visibly-no-data. Low severity; a `Run.finished_at &gt;= Run.started_at` filter in _avg_duration_ms (backend/app/services/dashboard_service.py:259) or a numeric-value guard would close it."
+  }
+]
+```
+
+Everything else on the hunt list checked out clean:
+
+- **(1) SQL**: `EXTRACT(epoch FROM finished_at - started_at)` + `avg()` is valid on Postgres (interval → numeric); confirmed by the passing tests against the real Postgres, including `test_avg_duration_over_finished_runs_only` (avg 2000.0 exact). **(8)** `avg` returns `Decimal`; `float(avg_s)` at dashboard_service.py:282 handles it — confirmed.
+- **(2) Window boundaries**: current = `created_at &gt;= since` (open), prev = `[since−w, since)`. A row at exactly `since` lands in current only — no double-count, no gap. (Pre-existing, unchanged: `_status_counts` windows on `Result.created_at` while `_total_runs`/`_avg_duration_ms` window on `Run.created_at`, so a run straddling the boundary can attribute its results and its run-count to different windows — consistent within each metric, not introduced by this PR.)
+- **(3) Delta semantics**: previous=0/None → None (documented, tested); current=0 with previous&gt;0 → −100% is sensible and renders (0 is not null). Score/rate deltas computed from already-rounded 1dp values — negligible.
+- **(4) DeltaBadge zero**: renders gray "0% vs prior period", no arrow, no '+'. Acceptable. There is a stray leading space when delta===0 (`{null}{' '}0%...`) but it collapses in inline rendering — not a finding. `value !== null` correctly shows the runs delta at total_runs=0.
+- **(6) MetricCard tests**: no dedicated MetricCard test file exists (grep: only Dashboard.tsx/Admin.tsx consume it); the "does not render unbacked prototype KPIs" Dashboard test still passes.
+- **(7) API shape consumers**: MCP `get_health_score` (backend/app/mcp/server.py:210) builds its own dict from the dataclass (which has defaults) — unaffected; `frontend/e2e/dashboard.spec.ts` asserts labels/regex against the live app, its `/^\d+$/` Total-Runs locator still matches the value node; `backend/scripts/e2e_smoke.py` doesn't touch the dashboard; `backend/tests/api/test_dashboard.py` asserts individual keys, not exact shape — all 18 pass. Frontend tsc confirms no other `Kpis` consumer.
+
+Note: Admin.tsx also uses MetricCard (no delta props) — unaffected, confirmed by tsc + its optional props.</result>
+<usage><subagent_tokens>74826</subagent_tokens><tool_uses>23</tool_uses><duration_ms>337441</duration_ms></usage>
+</task-notification>
+
+---
+
+merge the PRs and sync main
+
+---
+
+<task-notification>
+<task-id>byeldxnks</task-id>
+<tool-use-id>toolu_016yhznLtXbTHUuUwW38h7ho</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/2c8d359c-1386-49f9-8dc5-62a253753085/tasks/byeldxnks.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for PR 557 CI completion" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Yes
+
+---
+
+<task-notification>
+<task-id>bekxdj2zk</task-id>
+<tool-use-id>toolu_01B51D4EppbSwsKt1418UVvP</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/2c8d359c-1386-49f9-8dc5-62a253753085/tasks/bekxdj2zk.output</output-file>
+<status>completed</status>
+<summary>Background command "Note audit outcome; wait for CI on 561" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Go ahead with - #553 first (small CI PR), then the mutation spike, then the prod deploy + smoke
+
+---
+
+<task-notification>
+<task-id>b8glyun8d</task-id>
+<tool-use-id>toolu_012fBtL3pdz71sutG49kVA4c</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/2c8d359c-1386-49f9-8dc5-62a253753085/tasks/b8glyun8d.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for 564 CI then merge" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+az login done, check now
+
+---
+
+I'm gettiing - 
+```
+invalid_client: AADSTS650057: Invalid resource. The client has requested access to a resource which is not listed in the requested permissions in the client's application registration. Client app ID: 04b07795-8ddb-461a-bbee-02f9e1bf7b46(Microsoft Azure CLI). Resource value from request: api://21491115-d620-4fe8-9c66-8d567dfae601. Resource app ID: 21491115-d620-4fe8-9c66-8d567dfae601. List of valid resources from app registration: . Trace ID: 60072c82-839e-4f4a-86eb-8d52be9d5a00 Correlation ID: f5bb5434-34ef-4e04-a113-29224d8e032f Timestamp: 2026-07-03 18:43:02Z. ($error_uri)
+```
+
+---
+
+done
+
+---
+
+Done
+
+---
+
+continue...
+
+---
+
+az login done
+
+---
+
+The databricks free edition is just used for testing the dataq. It's not part of the product itself. So what is the cache here? and what is going against ADR 0026?
+
+---
+
+I believe the flow a, flow b are all just for the harness. Nothing tied to the actual product itself. But on the safe side, we need to keep a note to get rid of these harness flows and the data sources connection before we list the product in any marketplace. And for the second part, Let's defer it to post v1. But, one question, how we wanted to implement it. What do you suggest is per user personal access token or service user or, user with basic auth connection?
+
+---
+
+<task-notification>
+<task-id>bxdatgvsr</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/2c8d359c-1386-49f9-8dc5-62a253753085/tasks/bxdatgvsr.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for PR 566 CI" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Since all the ops and renewal are tied to the demo environment, do we really need a reminder? We already have an note to tear them down. And once the azure deployment and features are finalized, we are going to publish the app and remove this demo instance altogether. what are you?
+
+---
+
+Did we ran the QA/QE agent?
+
+---
+
+<task-notification>
+<task-id>a03e5d319e0225113</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/2c8d359c-1386-49f9-8dc5-62a253753085/tasks/a03e5d319e0225113.output</output-file>
+<status>completed</status>
+<summary>Agent "Go-live qa-verifier workout" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Mode 3 — Application Data Testing Report
+
+**Target:** local docker-compose stack, `http://localhost:8000`, dev-bypass auth, seeded demo data (main @ f87deac6). Read-only against seed data; all created entities were scratch (`qa-verifier-scratch-*`) and deleted before this report.
+
+### Scenario table
+
+| # | Scenario | Result | Observed |
+|---|---|---|---|
+| 1a | Oversized check name (300 chars, max 256) | ✅ | 422, `validation_error`, `string_too_long` |
+| 1b | Control chars + RTL-override + emoji in name (no NUL) | ✅ | 201 — accepted (Unicode is legitimately unrestricted; no crash) |
+| 1c | **NUL byte (`\x00`) in check name** | 🔴 **FAIL** | **HTTP 500** `internal_error` |
+| 1d | **NUL byte (`\x00`) in suite name** | 🔴 **FAIL** | **HTTP 500** `internal_error` (same root cause, broader blast radius) |
+| 1e | SQL-injection-shaped name (`x'; DROP TABLE checks;--`) | ✅ | 201, stored as inert string (parameterized, no injection) |
+| 1f | Inverted thresholds (warn=90 &gt; fail=50 &gt; critical=10) | 🟡 concern | 201 — silently accepted, no ordering validation |
+| 1g | Negative thresholds (warn=-5, fail=-1) | 🟡 concern | 201 — silently accepted |
+| 1h | Non-numeric threshold string | ✅ | 422, `decimal_parsing` |
+| 1i | Missing required `expectation_type` | ✅ | 422, `missing` field |
+| 1j | Unknown/nonexistent `expectation_type` (`expect_the_impossible_thing`) | 🟡 concern | 201 — no catalog validation at authoring time (by design per code comment — dry-run is the validation path) |
+| 1k | Wrong-typed `config` (string instead of object) | ✅ | 422, `dict_type` |
+| 1l | Empty body | ✅ | 422, two `missing` errors |
+| 2a | Multi-statement custom-SQL (`SELECT...; DROP TABLE...`) | ✅ | 422, `custom_sql_invalid` |
+| 2b | DML INSERT/UPDATE/DELETE | ✅ | 422, `custom_sql_invalid` (each) |
+| 2c | DDL DROP/CREATE | ✅ | 422, `custom_sql_invalid` (each) |
+| 2d | Comment-obfuscated multi-statement | ✅ | 422, `custom_sql_invalid` |
+| 2e | Benign block-comment SELECT (baseline) | ✅ | 201 (correctly allowed) |
+| 2f | Custom-SQL on flat-file (s3) datasource | ✅ | 422, `connection_type not in {snowflake, unity_catalog}` |
+| 3a | Ambiguous flat-file target (path + pattern) | ✅ | 422, `suite_target_invalid` |
+| 3b | Invalid regex pattern | ✅ | 422, `suite_target_invalid` |
+| 3c | `strategy=specific` without `batch` | ✅ | 422, `suite_target_invalid` |
+| 3d | `strategy=specific` with no capture group | ✅ | 422, `suite_target_invalid` |
+| 3e | Invalid strategy enum value | ✅ | 422, pydantic `literal_error` |
+| 3f | Valid batch target (baseline) | ✅ | 201 (correctly allowed, then cleaned up) |
+| 4a | GET nonexistent (well-formed UUID) suite | ✅ | 404, `suite_not_found`, no data leak |
+| 4b | GET nonexistent connection | ✅ | 404, `connection_not_found` |
+| 4c | Cross-user view-only 403 / IDOR probe | ⚠️ **BLOCKED** | Dev-bypass resolves every request to one fixed identity (`dev-bypass@dataq.local`, workspace-admin) — see `backend/app/core/auth.py` `_get_current_user_dev_bypass`. No HTTP-level impersonation path exists; can't drive a second identity's session against this stack. Not a code defect — a testing-environment limitation. |
+| 4d | Secrets in connection/suite/export payloads | ✅ | Never present — only `has_secret: true`; snowflake password, S3 access key secret, all absent |
+| 5a | GET progress for nonexistent run | ✅ | 404, `http_error` "run not found" |
+| 5b | GET nonexistent run | ✅ | 404 |
+| 5c | Cancel nonexistent run | ✅ | 404 |
+| 5d | Cancel already-terminal run | ✅ | 409, "run is already finished" |
+| 5e | Trigger run against bad/fake credentials | ✅ | Run resolves to `failed` in &lt;1s (not stuck `running`), graceful |
+| 5f | Dry-run against nonexistent table/bad creds | ✅ | 502, `dry_run_failed` (structured; connection itself is fake in this seed, so this exercises the connection-failure branch, not a live "table not found" — caveat noted) |
+| 5g | Suite creation on an orchestration (ADF) connection | ✅ | 422, `suite_connection_invalid` — rejected even earlier than dry-run |
+| 5h | Freshness monitor: SQL-injection-shaped column identifier | ✅ | 422, `check_config_invalid` |
+| 5i | Freshness monitor: no threshold set | ✅ | 422 — "silent-green footgun" guard works |
+| 5j | Freshness monitor: zero threshold | ✅ | 422 — same guard |
+| 5k | Freshness monitor: missing `column` key | ✅ | 422 |
+| 5l | Volume monitor: inverted min&gt;max range | ✅ | 422, `check_config_invalid` |
+| 5m | Volume monitor: negative bounds | ✅ | 422 |
+| 5n | Volume monitor: non-numeric bounds | ✅ | 422 |
+| 6a | `dashboard/summary?window_days=0/-5/huge/non-numeric/float` | ✅ | All 422, structured pydantic errors |
+| 6b | Bad-UUID path/query params (`runs/{id}`, `suites/{id}`, `runs?suite_id=`) | ✅ | All 422, `uuid_parsing` |
+| 6c | Path-traversal-shaped URL | ✅ | 404 (routed, not filesystem-resolved) |
+| 6d | `runs?limit=0/-1/100000` | ✅ | All 422, range-validated |
+| 7 | Delete scratch suite with checks + a completed run (cascade) | ✅ | 204; suite/run/checks/results/check_versions all confirmed 0 rows post-delete (direct DB check) |
+| 6/webhook | ADF webhook missing/wrong token; Airflow missing/wrong/non-ASCII HMAC signature | ⚠️ **BLOCKED** | All return 503 `webhook_not_configured` — this local stack has no `ADF_WEBHOOK_SECRET_NAME`/`AIRFLOW_WEBHOOK_SECRET_NAME` provisioned in its secret store, so the auth branch is unreachable via HTTP. Verified correctness by code review instead (`backend/app/api/v1/orchestration.py`): both paths use `hmac.compare_digest` on UTF-8-encoded bytes with explicit non-ASCII-safe handling (comments reference a prior 500-on-non-ASCII fix), and 401/`webhook_unauthorized` is the coded response for a bad secret. Not exercised live; not a defect finding. |
+
+**Cleanup confirmation:** final re-list of `/api/v1/suites` and `/api/v1/connections` shows zero `qa-verifier-scratch-` entries. Direct Postgres query confirms zero orphaned `checks`/`runs`/`results`/`check_versions` rows from the deleted scratch suite. Stack containers remained healthy throughout (no crash from the 500s).
+
+### 🔴 Hard findings
+
+**1. NUL byte (`\x00`) in any check/suite string field → HTTP 500, not 422.**
+Reproduced twice:
+```
+POST /api/v1/suites/{id}/checks
+{"name": "nulbyte-\u0000-test", "expectation_type": "expect_column_values_to_not_be_null", "config": {"column": "ID"}}
+→ HTTP 500 {"error":{"code":"internal_error","message":"Internal server error","detail":{}}}
+
+POST /api/v1/suites
+{"name": "qa-verifier-scratch-nulcheck\u0000", "connection_id": "dce36f51-7f23-4ded-83b9-b66f0eba2ebc"}
+→ HTTP 500 (same)
+```
+Root cause confirmed from `dataq-api-1` logs: `ValueError: A string literal cannot contain NUL (0x00) characters.` — Pydantic's `str` validator (`SuiteCreate.name` at `backend/app/api/v1/suites.py:68`, `CheckCreate.name` at `backend/app/api/v1/checks.py:34`) happily accepts a NUL byte, but the Postgres driver rejects it at INSERT time, and that `ValueError` isn't caught anywhere — it falls through to `_unhandled_exception_handler` in `backend/app/core/errors.py`. This is exactly the class of gap CONTRIBUTING rule 4a's adversarial battery targets (hostile/malformed data-ingesting input on a persisted string field, happy-path-only validation). No data corruption resulted (transaction rolled back cleanly — verified via direct DB query, zero half-committed rows), so it's an availability/error-envelope bug, not a data-integrity bug. **Fix shape:** either a Pydantic field validator stripping/rejecting `\x00` on every free-text input field (name/description/config values), or a narrow `except ValueError` around the commit path that maps a NUL-byte DB rejection to a 422. Given the number of string fields across the API (suite name/description, check name, connection name, notification config, etc.), a shared validator/sanitizer is the more scalable fix than patching each endpoint. **Recommend filing via `/gh-issue-from-finding`** — this should block v1.0.0 tagging per the "never a 500 on bad input" rule.
+
+### 🟡 Concerns
+
+1. **No threshold-ordering/sign validation on generic `expectation`-kind checks.** `derive_status` in `backend/app/services/severity.py:107` documents "thresholds are ordered (warn ≤ fail ≤ critical)" as an assumption, but `create_check`/`update_check` in `backend/app/services/check_service.py` never enforce it for plain `kind='expectation'` checks — only the `freshness`/`volume` monitor-kind path gets threshold validation (`validate_monitor_check`). Inverted (warn=90 &gt; fail=50 &gt; critical=10) and negative thresholds both round-trip as 201. Not a crash, and `derive_status`'s `&gt;=` cascade degrades gracefully with inverted values (just produces surprising severity bands, e.g. a negative-metric check would resolve differently than the author intended) rather than erroring — but it's a silent authoring footgun matching the spirit of the "freshness needs a positive threshold" guard that already exists for monitors. Consider extending that same validation to all threshold-bearing checks.
+2. **No expectation-type/config-schema validation on generic `expectation`-kind checks at authoring time.** `check_service.py`'s own docstring says this is deliberate ("per-expectation schema validation against live data is the check dry-run path... not CRUD"), and only custom-SQL + monitor kinds get pre-flight validation. A bogus `expectation_type` (`expect_the_impossible_thing`) or a syntactically-valid-but-semantically-empty `config: {}` both persist as 201. This is a documented design tradeoff, not a bug, but it means any client bypassing the frontend's catalog-driven editor (a raw API call, an MCP tool, `suites/import`) can silently create a check that will only ever resolve `error` at run time, discoverable only after a run. Worth a conscious go/no-go decision rather than an oversight — if intentional, no action needed; if not, it's a straightforward addition (validate `expectation_type` against the GX catalog + minimal arg-shape check, mirroring the monitor path).
+3. **Webhook auth hostility (item 6) and duplicate-delivery dedup (#456) could not be exercised live** — local dev stack has no ADF/Airflow webhook secret provisioned (503 `webhook_not_configured` on every call). Code review of `backend/app/api/v1/orchestration.py` shows correct `hmac.compare_digest`-based constant-time comparison with explicit non-ASCII-safe handling, but this is not a substitute for a live 401 assertion. If webhook hostility needs to be in the v1.0.0 gate, provision `ADF_WEBHOOK_SECRET_NAME`/`AIRFLOW_WEBHOOK_SECRET_NAME` in a scratch secret store first.
+4. **Cross-user authz probes (item 4: view-only 403, unshared-suite 404/403-not-leak, admin-403-for-non-admin) could not be exercised live** — dev-bypass (`backend/app/core/auth.py`) resolves every HTTP request to one fixed, workspace-admin identity regardless of the seeded `analyst@dataq.local` user. This is architecturally correct for local dev (fail-closed real-mode elsewhere), but it means true IDOR/permission-tier testing needs either a real-mode bearer token for the second demo user or a unit-level (not HTTP-level) test — out of scope for this black-box pass. What *was* verified live: random-UUID suite/connection lookups return clean 404s with no data leaked in the body, and no secret ever appears in any read-back payload.
+
+### Verdict
+
+**Block — 1 hard finding (NUL-byte 500) before tagging v1.0.0.**
+
+Everything else in the hostile-authoring, custom-SQL guardrail, flat-file batch-target, run-lifecycle, monitor-config, and dashboard/query-param batteries returned clean, correctly-coded 4xx envelopes — no other 500s, no hangs, no orphaned rows, no secret leakage, no silently-persisted invalid state. The NUL-byte gap is narrow in scope (a rare but realistic hostile-input class — e.g. any client pasting binary-contaminated text into a name field) and the fix is small (input sanitization or a caught-and-mapped exception), but it's a direct, reproducible violation of the "never a 500 on bad input" go-live bar and should be fixed and re-verified before the tag. The two 🟡 concerns (threshold ordering, expectation-type authoring gap) are pre-existing, documented-tradeoff-adjacent issues that don't need to block the tag but are worth a conscious decision + issue filing. The two ⚠️ blocked items (webhook live-auth, cross-user authz) are environment limitations of this specific local stack, not defects — they were substituted with code review where possible and should be flagged (not silently dropped) for a follow-up pass with proper secrets/second-identity provisioning.
+
+**Relevant file paths (for issue filing / follow-up):**
+- `/Users/arijit/Coding/Python/DataQ/backend/app/api/v1/suites.py` (`SuiteCreate` schema, line 68)
+- `/Users/arijit/Coding/Python/DataQ/backend/app/api/v1/checks.py` (`CheckCreate` schema, line 34)
+- `/Users/arijit/Coding/Python/DataQ/backend/app/core/errors.py` (exception handler registration — where a targeted `ValueError`/`DataError` catch could live)
+- `/Users/arijit/Coding/Python/DataQ/backend/app/services/check_service.py` (`validate_monitor_check`, `create_check`, `update_check` — threshold-ordering/catalog-validation gap)
+- `/Users/arijit/Coding/Python/DataQ/backend/app/services/severity.py` (`derive_status`, documents the warn≤fail≤critical assumption that isn't enforced upstream)
+- `/Users/arijit/Coding/Python/DataQ/backend/app/api/v1/orchestration.py` (webhook auth — reviewed, not live-tested)
+- `/Users/arijit/Coding/Python/DataQ/backend/app/core/auth.py` (dev-bypass fixed-identity limitation)</result>
+<usage><subagent_tokens>122037</subagent_tokens><tool_uses>61</tool_uses><duration_ms>565189</duration_ms></usage>
+</task-notification>
