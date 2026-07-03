@@ -30,6 +30,49 @@ the remaining monitor kinds), *governance* (admin console, compliance controls),
 
 ---
 
+## v1 maturity assessment — where the product honestly stands (2026-07-03)
+
+> A calibrated self-assessment recorded at Week-7 close so post-v1 prioritisation starts from
+> reality, not from the changelog. Verdict: **strong engineering artifact, ~4/10 as a
+> competitive DQ product today.** Confidence it does what it's configured to do: ~8/10
+> (live-verified). Confidence a data team should pick it over Soda/Elementary/GX Cloud today:
+> ~3/10. Confidence the architecture can close the gap: ~7/10 — the seams are the right ones.
+> One-liner: v1 is a well-engineered, security-conscious **"GX-as-a-service with orchestration
+> awareness"** — credible as a single-team internal tool; not yet in the conversation with
+> commercial DQ platforms.
+
+**What's genuinely strong (defend without hesitation):**
+- End-to-end **verified**, not claimed: 4 datasource run paths green against live infra;
+  orchestration-triggered checks proven (ADF failure → visible in 4m14s; trigger-on-success
+  firing off real pipeline runs). Trigger-on-pipeline-success is a real differentiator over
+  cron-only checkers.
+- The expensive-to-retrofit architecture is already right: monitor-kind seam (ADR 0012),
+  adapter/runner registries (ADR 0011), `ResultPublisher`, provider-agnostic infra (ADR 0010).
+- Security/PII posture well above v1 norm: logger-level + column-aware redaction, tested authz
+  matrix, fail-closed MCP, incident-driven hardening. Alerting has dedup/snooze/severity routing.
+- MCP integration is ahead of the market curve and tested end-to-end.
+
+**The honest gaps (each mapped to where it's tracked):**
+
+| # | Gap | Why it matters | Where tracked |
+|---|---|---|---|
+| G-a | **Monitors only what you remember to check** — hand-authored expectations; no anomaly baselines, no schema-drift, no auto-suggested checks. Category leaders' core pitch (Monte Carlo/Anomalo) is the inverse: automatic coverage. An unknown-unknown incident sails past DataQ. | Existential for "product"; the single biggest gap | **Theme 1** (remaining monitor kinds: `schema_drift`, `anomaly`) + **Theme 2** (auto-suggestion/LLM authoring) |
+| G-b | **Scale unproven; structurally weak on 2 of 4 paths** — flat-file + UC runners load the whole file/table into worker pandas; largest table ever validated is a few thousand synthetic rows. No sampling/partition/incremental strategy for checks. (Snowflake pushes down via SQL — fine.) | 100M-row table = worker OOM; blocks any serious deployment | **Theme 7** (perf & scale — add: sampling/partition-aware/incremental check execution as a named workstream) |
+| G-c | **Every "verified" is self-referential** — one operator, ~1 week live, against a harness built by the same author. Zero real-world data-pathology exposure at scale (schema churn, half-written files, encoding chaos in volume). | Unknown failure modes in the first real deployment | **Theme 10** (test-hardening) + first-real-workload milestone, post-v1 |
+| G-d | **No incident workflow, no lineage, no ownership routing** — runs + alerts exist; "what broke downstream / who owns it / when was it resolved" doesn't. No data-access audit trail (the HIPAA gate). | This is what DQ products are bought for | **Theme 9** (results/reporting depth) + **Theme 4** / [#431](https://github.com/TheurgicDuke771/DataQ/issues/431) (audit trail); lineage/incident objects = new design doc needed |
+| G-e | **Single-tenant, config-allowlist admin, one validated IdP** — fine internally, not sellable. | Blocks multi-team/commercial use | **Theme 3** (admin/access) + ADR 0026 / [#461](https://github.com/TheurgicDuke771/DataQ/issues/461) (API keys) |
+| G-f | **Ecosystem: 4 datasources** vs the 30–50 a category product ships; no dbt integration (seam reserved); can't check the Postgres it runs on. | Adoption ceiling | **Theme 8** (datasource depth; generic-RDBMS adapter is the cheap first win) |
+| G-g | **Engine risk: GX Core pin** — the product's core capability rides a fast-moving third party with documented API drift; DQX swap-in shape exists for UC only. | Strategic dependency | **Theme 2** (engine abstraction beyond UC if GX churn continues) |
+| G-h | **Harness Databricks = Free Edition, non-commercial-only** — the UC demo leg cannot legally back a commercial demo, while ADR 0013's ambition is commercial BYOL. Trigger: before any commercial demo → paid workspace. | Licence landmine on the demo path | ADR 0021/0013 context; also in the W8 tracker (C4) |
+
+**Prioritisation signal for the post-v1 planner:** G-a and G-b are the two that change what the
+product *is* (coverage-without-authoring + scale-safe execution); G-d is what makes it *usable in
+anger* (incidents/lineage); the rest are adoption/positioning. Recommended post-v1 opening
+sequence: Theme 1 `schema_drift` + `anomaly` (rides the ADR 0012 seam, no schema rewrite) →
+scale-aware execution (G-b, Theme 7) → incident/lineage design doc (G-d).
+
+---
+
 ## Theme 1 — Monitor kinds (the remaining reserved kinds)
 
 ADR [0012](../docs/adr/0012-monitor-kind-seam.md) reserved five non-expectation monitor kinds behind the
