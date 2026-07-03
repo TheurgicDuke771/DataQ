@@ -93,11 +93,10 @@ jobs:
         # Synchronous CVE gate over the entire runtime + test dependency tree
         # (single source: requirements-dev.txt) + transitive deps, against the
         # PyPI/OSV advisory DB. Complements the Dependabot alerts (full graph,
-        # async) with a fail-fast merge check.
-        #
-        # The 5 ignored advisories are cryptography + pyOpenSSL CVEs blocked by
-        # snowflake-connector-python<4 / snowflake-sqlalchemy<4 — a deliberate
-        # major datasource bump tracked in #129 (the deadline for removing these).
+        # async) with a fail-fast merge check. No ignored advisories: the five
+        # snowflake<4-era cryptography/pyOpenSSL ignores were retired in #553
+        # once #129 (ADR 0017) unblocked the upgrades — keep this list empty
+        # unless an advisory is deliberately accepted WITH a removal deadline.
         #
         # Bounded retry: pip-audit resolves the requirements file via PyPI's
         # per-package JSON endpoint, so a single transient PyPI/OSV 5xx (e.g.
@@ -106,12 +105,7 @@ jobs:
         # genuine CVE fails every attempt and still blocks (90s worst-case backoff).
         run: |
           audit() {
-            pip-audit -r backend/requirements-dev.txt \
-              --ignore-vuln PYSEC-2026-36 \
-              --ignore-vuln PYSEC-2026-35 \
-              --ignore-vuln CVE-2026-26007 \
-              --ignore-vuln CVE-2026-27448 \
-              --ignore-vuln CVE-2026-27459
+            pip-audit -r backend/requirements-dev.txt
           }
           for attempt in 1 2 3 4; do
             if audit; then
