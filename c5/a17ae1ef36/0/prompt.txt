@@ -464,3 +464,8 @@ CLAUDE.md's Next-milestone paragraph (edited by this PR) newly asserts: "*KV pur
 
 <ide_opened_file>The user opened the file /Users/arijit/Coding/Python/DataQ/.vscode/mcp.json in the IDE. This may or may not be related to the current task.</ide_opened_file>
 I've added the mcp server to the vscode workspace, can you check
+
+---
+
+Can you test the mcp server out?
+Also I think we need to update the README about the MCP format config for VSCode
