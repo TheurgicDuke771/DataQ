@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "9d6dc645b3c2",
+  "strategy": "manual-commit",
+  "branch": "chore/w8-frontend-coverage-gate",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/tests/App.test.tsx",
+    "frontend/tests/auth/CurrentUserProvider.test.tsx",
+    "frontend/vite.config.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/9d/6dc645b3c2/0/metadata.json",
+      "transcript": "/9d/6dc645b3c2/0/full.jsonl",
+      "compact_transcript": "/9d/6dc645b3c2/0/transcript.jsonl",
+      "content_hash": "/9d/6dc645b3c2/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 46603,
+    "cache_creation_tokens": 403498,
+    "cache_read_tokens": 27727198,
+    "output_tokens": 105883,
+    "api_call_count": 168
+  }
+}
