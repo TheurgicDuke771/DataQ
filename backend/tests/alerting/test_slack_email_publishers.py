@@ -283,16 +283,25 @@ def _email_publisher(store: _Store) -> EmailPublisher:
 def test_email_publish_happy_path_sends_over_starttls(
     db_session: Any, fake_smtp: list[_FakeSmtp]
 ) -> None:
-    _email_publisher(_Store({"smtp-pass": "not-a-real-password"})).publish(db_session, _report(worst="fail"))
+    _email_publisher(_Store({"smtp-pass": "not-a-real-password"})).publish(
+        db_session, _report(worst="fail")
+    )
     (smtp,) = fake_smtp
-    assert smtp.calls == ["starttls", "login:alerts@example.com:not-a-real-password", "send", "closed"]
+    assert smtp.calls == [
+        "starttls",
+        "login:alerts@example.com:not-a-real-password",
+        "send",
+        "closed",
+    ]
     assert smtp.message["To"] == "a@example.com, b@example.com"
     assert "FAIL" in smtp.message["Subject"]
 
 
 def test_email_publish_noop_below_threshold(db_session: Any, fake_smtp: list[_FakeSmtp]) -> None:
     """Clean run under the default 'warn' policy must not connect at all."""
-    _email_publisher(_Store({"smtp-pass": "not-a-real-password"})).publish(db_session, _report(worst=None))
+    _email_publisher(_Store({"smtp-pass": "not-a-real-password"})).publish(
+        db_session, _report(worst=None)
+    )
     assert fake_smtp == []
 
 
