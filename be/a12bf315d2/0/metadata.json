@@ -1,0 +1,71 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_id": "bea12bf315d2",
+  "session_id": "2c8d359c-1386-49f9-8dc5-62a253753085",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-03T16:34:31.111916Z",
+  "branch": "chore/w8-backend-coverage-gaps",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/tests/alerting/test_slack_email_publishers.py",
+    "backend/tests/core/test_auth.py"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "c9505b8c8468",
+  "checkpoint_transcript_start": 235,
+  "transcript_lines_at_start": 235,
+  "token_usage": {
+    "input_tokens": 7675,
+    "cache_creation_tokens": 57724,
+    "cache_read_tokens": 6327042,
+    "output_tokens": 29200,
+    "api_call_count": 44
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0125Sr3aDcLyFE5bgQLgwQSM",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "c9505b8c8468",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 186,
+        "end": 187,
+        "entry_ids": [
+          "f73d4838-0772-46f7-af1f-00a37bc35d5f"
+        ],
+        "tool_use_id": "toolu_0125Sr3aDcLyFE5bgQLgwQSM"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0125Sr3aDcLyFE5bgQLgwQSM"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "initial_attribution": {
+    "calculated_at": "2026-07-03T16:34:31.091763Z",
+    "agent_lines": 298,
+    "agent_removed": 1,
+    "human_added": 110,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 408,
+    "total_lines_changed": 409,
+    "agent_percentage": 73.10513447432763,
+    "metric_version": 2
+  }
+}
