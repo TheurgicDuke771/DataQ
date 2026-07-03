@@ -35,7 +35,7 @@ A 404 means the feature isn't enabled for the repo — report that as a ⚠️ f
 
 ### 3. Local dependency audit (mirror of the synchronous CI gate)
 
-Mirror CI **exactly**: read the current invocations from `.github/workflows/ci.yml` (`backend-audit` and `frontend-audit` jobs) and run them verbatim — including the pinned `pip-audit` version and the `--ignore-vuln` flags for already-accepted advisories (tracked in #129). A bare `pip-audit -r backend/requirements-dev.txt` re-reports the accepted advisories as noise, training the reader to skim past real ones. Frontend: `pnpm audit --audit-level=high` from `frontend/`.
+Mirror CI **exactly**: read the current invocations from `.github/workflows/ci.yml` (`backend-audit` and `frontend-audit` jobs) and run them verbatim — including the pinned `pip-audit` version and any `--ignore-vuln` flags present (the list is EMPTY since #553; an ignore only ever returns with a recorded acceptance + removal deadline, and running bare when CI runs bare keeps the outputs comparable). Frontend: `pnpm audit --audit-level=high` from `frontend/`.
 
 Running these here catches vulns published since the last PR merged. An advisory on CI's ignore list is accepted risk — mention it under "known/accepted", never as a new finding.
 
