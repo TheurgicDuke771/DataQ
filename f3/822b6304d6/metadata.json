@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "f3822b6304d6",
+  "strategy": "manual-commit",
+  "branch": "chore/w8-backend-coverage-gaps",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/f3/822b6304d6/0/metadata.json",
+      "transcript": "/f3/822b6304d6/0/full.jsonl",
+      "compact_transcript": "/f3/822b6304d6/0/transcript.jsonl",
+      "content_hash": "/f3/822b6304d6/0/content_hash.txt",
+      "prompt": "/f3/822b6304d6/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 64861,
+    "cache_creation_tokens": 833879,
+    "cache_read_tokens": 50971526,
+    "output_tokens": 147899,
+    "api_call_count": 240
+  }
+}
