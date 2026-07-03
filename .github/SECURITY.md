@@ -19,7 +19,7 @@ You will receive a response within **5 business days** acknowledging the report.
 
 Components in scope:
 - FastAPI backend (`/api/v1/*`, `/mcp`)
-- Azure AD authentication flow (MSAL token validation)
+- Authentication flow — OIDC sign-in (`oidc-client-ts`, Azure AD validated) + backend JWT validation (`fastapi-azure-auth`)
 - Celery worker + GX execution path
 - Key Vault secret access patterns
 
