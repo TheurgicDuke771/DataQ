@@ -599,3 +599,11 @@ what’s the biggest thing I’m missing about the situation right now. What don
 ---
 
 create a week-8/v1-go-live todo file [in repo root] with week 8 action items and the actionable details from the last 2 questions and checkmarks we must pass before we can say it is ready
+
+---
+
+Keep me very Honest - How confident are you with this tool as data quality monitoring product as of current state
+
+---
+
+can you add these details somewhere, so that we will not loose track of it
