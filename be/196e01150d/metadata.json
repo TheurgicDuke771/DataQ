@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "be196e01150d",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-553-stale-pip-audit-ignores",
+  "checkpoints_count": 2,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/be/196e01150d/0/metadata.json",
+      "transcript": "/be/196e01150d/0/full.jsonl",
+      "compact_transcript": "/be/196e01150d/0/transcript.jsonl",
+      "content_hash": "/be/196e01150d/0/content_hash.txt",
+      "prompt": "/be/196e01150d/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 70967,
+    "cache_creation_tokens": 916993,
+    "cache_read_tokens": 77527470,
+    "output_tokens": 195381,
+    "api_call_count": 306
+  }
+}
