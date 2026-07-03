@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "6636963d1e39",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-205-catalog-gx-contract-test",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/66/36963d1e39/0/metadata.json",
+      "transcript": "/66/36963d1e39/0/full.jsonl",
+      "compact_transcript": "/66/36963d1e39/0/transcript.jsonl",
+      "content_hash": "/66/36963d1e39/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 43805,
+    "cache_creation_tokens": 389683,
+    "cache_read_tokens": 23929154,
+    "output_tokens": 97309,
+    "api_call_count": 154
+  }
+}
