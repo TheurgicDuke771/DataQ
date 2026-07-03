@@ -1,0 +1,40 @@
+<task-notification>
+<task-id>ac3c4a9f3c5281dba</task-id>
+<tool-use-id>toolu_011enn24RKuKmRzzBzhrDWcH</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/2c8d359c-1386-49f9-8dc5-62a253753085/tasks/ac3c4a9f3c5281dba.output</output-file>
+<status>completed</status>
+<summary>Agent "Review PR 560 KPI enrichment" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Review complete. Verified empirically: created a detached worktree of the branch in the scratchpad (main working tree untouched, now removed), ran the backend dashboard service tests (30 passed), the API + MCP dashboard tests (18 passed), the touched frontend tests (25 passed), full frontend `tsc --noEmit` (clean), and Ruff/mypy on the changed backend files (clean) — all against the local Postgres via `TEST_DATABASE_URL`.
+
+Findings:
+
+```json
+[
+  {
+    "file": "frontend/src/pages/Dashboard.tsx",
+    "line": 81,
+    "summary": "PLAUSIBLE — `flex=\"auto\"` on the Cols is inert and the xxl layout leaves a permanent right-side gap. Confirmed from antd v6 source (node_modules/antd/es/grid/col.js + grid/style/index.js): the span classes emit `flex: 0 0 x%; max-width: x%`; the `flex` prop only sets inline `flex: 1 1 auto`, which overrides the class flex but NOT the class `max-width`. So growth is always capped at the span width and `flex=\"auto\"` never lets a tile fill leftover row space.",
+    "failure_scenario": "On a &gt;=1600px (xxl) viewport, the five xxl={4} tiles occupy 5 x 16.67% = 83.3% of the row and cannot grow past max-width 16.67% — a ~17% empty strip sits to the right of Active Connections, contradicting the added comment 'Five equal-width tiles that wrap gracefully'. Fix: either drop flex=\"auto\" (dead prop) and accept the gap, use xxl spans that sum to 24 (e.g. 5/5/5/5/4 is impossible evenly — use flex-only layout without spans), or replace the Row/Col grid with a plain Flex/CSS grid for the 5-up row."
+  },
+  {
+    "file": "frontend/src/components/dashboard/MetricCard.tsx",
+    "line": 121,
+    "summary": "PLAUSIBLE (edge) — the delta-badge guard `value !== null` doesn't suppress the badge when the value renders as the em-dash STRING. On the Avg. Duration card, Dashboard.tsx passes `value={formatDurationMs(avg_duration_ms)}`; a negative avg (clock skew: finished_at &lt; started_at is not filtered in `_avg_duration_ms`, only NULLs are) formats to '—', which is a non-null string, so a delta badge can render under an em-dash value.",
+    "failure_scenario": "One run in the window with finished_at earlier than started_at (worker clock skew / manual backfill) drives avg_duration_ms negative in both windows: card shows value '—' with a colored '+X% vs prior period' badge beneath it — a delta attached to visibly-no-data. Low severity; a `Run.finished_at &gt;= Run.started_at` filter in _avg_duration_ms (backend/app/services/dashboard_service.py:259) or a numeric-value guard would close it."
+  }
+]
+```
+
+Everything else on the hunt list checked out clean:
+
+- **(1) SQL**: `EXTRACT(epoch FROM finished_at - started_at)` + `avg()` is valid on Postgres (interval → numeric); confirmed by the passing tests against the real Postgres, including `test_avg_duration_over_finished_runs_only` (avg 2000.0 exact). **(8)** `avg` returns `Decimal`; `float(avg_s)` at dashboard_service.py:282 handles it — confirmed.
+- **(2) Window boundaries**: current = `created_at &gt;= since` (open), prev = `[since−w, since)`. A row at exactly `since` lands in current only — no double-count, no gap. (Pre-existing, unchanged: `_status_counts` windows on `Result.created_at` while `_total_runs`/`_avg_duration_ms` window on `Run.created_at`, so a run straddling the boundary can attribute its results and its run-count to different windows — consistent within each metric, not introduced by this PR.)
+- **(3) Delta semantics**: previous=0/None → None (documented, tested); current=0 with previous&gt;0 → −100% is sensible and renders (0 is not null). Score/rate deltas computed from already-rounded 1dp values — negligible.
+- **(4) DeltaBadge zero**: renders gray "0% vs prior period", no arrow, no '+'. Acceptable. There is a stray leading space when delta===0 (`{null}{' '}0%...`) but it collapses in inline rendering — not a finding. `value !== null` correctly shows the runs delta at total_runs=0.
+- **(6) MetricCard tests**: no dedicated MetricCard test file exists (grep: only Dashboard.tsx/Admin.tsx consume it); the "does not render unbacked prototype KPIs" Dashboard test still passes.
+- **(7) API shape consumers**: MCP `get_health_score` (backend/app/mcp/server.py:210) builds its own dict from the dataclass (which has defaults) — unaffected; `frontend/e2e/dashboard.spec.ts` asserts labels/regex against the live app, its `/^\d+$/` Total-Runs locator still matches the value node; `backend/scripts/e2e_smoke.py` doesn't touch the dashboard; `backend/tests/api/test_dashboard.py` asserts individual keys, not exact shape — all 18 pass. Frontend tsc confirms no other `Kpis` consumer.
+
+Note: Admin.tsx also uses MetricCard (no delta props) — unaffected, confirmed by tsc + its optional props.</result>
+<usage><subagent_tokens>74826</subagent_tokens><tool_uses>23</tool_uses><duration_ms>337441</duration_ms></usage>
+</task-notification>
