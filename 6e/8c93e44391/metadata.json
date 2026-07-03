@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "6e8c93e44391",
+  "strategy": "manual-commit",
+  "branch": "docs/adr-0026-and-harness-teardown-notes",
+  "checkpoints_count": 3,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/6e/8c93e44391/0/metadata.json",
+      "transcript": "/6e/8c93e44391/0/full.jsonl",
+      "compact_transcript": "/6e/8c93e44391/0/transcript.jsonl",
+      "content_hash": "/6e/8c93e44391/0/content_hash.txt",
+      "prompt": "/6e/8c93e44391/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 76553,
+    "cache_creation_tokens": 1270723,
+    "cache_read_tokens": 108474207,
+    "output_tokens": 264113,
+    "api_call_count": 431
+  }
+}
