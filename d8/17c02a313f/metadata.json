@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "d817c02a313f",
+  "strategy": "manual-commit",
+  "branch": "docs/w7-externals-closeout",
+  "checkpoints_count": 12,
+  "files_touched": [
+    "CLAUDE.md",
+    "deploy/README.md",
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/d8/17c02a313f/0/metadata.json",
+      "transcript": "/d8/17c02a313f/0/full.jsonl",
+      "compact_transcript": "/d8/17c02a313f/0/transcript.jsonl",
+      "content_hash": "/d8/17c02a313f/0/content_hash.txt",
+      "prompt": "/d8/17c02a313f/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 189094,
+    "cache_creation_tokens": 6824454,
+    "cache_read_tokens": 259917243,
+    "output_tokens": 514584,
+    "api_call_count": 730
+  }
+}
