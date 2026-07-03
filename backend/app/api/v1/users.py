@@ -13,9 +13,10 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel, ConfigDict
+from pydantic import ConfigDict
 from sqlalchemy.orm import Session
 
+from backend.app.api.v1._base import ApiModel
 from backend.app.core.auth import get_current_user
 from backend.app.db.models import User
 from backend.app.db.session import get_db
@@ -24,7 +25,7 @@ from backend.app.services import user_service as svc
 router = APIRouter(tags=["users"])
 
 
-class UserSummary(BaseModel):
+class UserSummary(ApiModel):
     """The public sliver of a user safe to expose in the directory picker."""
 
     model_config = ConfigDict(from_attributes=True)

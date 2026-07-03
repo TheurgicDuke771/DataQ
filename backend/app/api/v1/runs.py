@@ -20,10 +20,11 @@ from datetime import datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, ConfigDict
+from pydantic import ConfigDict
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.api.v1._base import ApiModel
 from backend.app.core.auth import get_current_user, is_workspace_admin
 from backend.app.db.models import Check, User
 from backend.app.db.session import get_db
@@ -37,7 +38,7 @@ _LIST_LIMIT_DEFAULT = 50
 _LIST_LIMIT_MAX = 200
 
 
-class RunRead(BaseModel):
+class RunRead(ApiModel):
     """A DQ suite run (execution lifecycle; `status` is execution, not pass/fail)."""
 
     model_config = ConfigDict(from_attributes=True)
@@ -57,7 +58,7 @@ class RunRead(BaseModel):
     worst_severity: str | None = None  # warn | fail | critical | None (all passed)
 
 
-class ResultRead(BaseModel):
+class ResultRead(ApiModel):
     """One check's result within a run. `metric_value` is the SQL-aggregatable
     badness scalar (ADR 0012); `observed_value`/`expected_value` are GX summary
     values (same fields the dry-run / probe already surface).
@@ -84,7 +85,7 @@ class RunDetailRead(RunRead):
     results: list[ResultRead]
 
 
-class CheckProgressRead(BaseModel):
+class CheckProgressRead(ApiModel):
     """One check's progress; `status` is null while the check is still pending."""
 
     check_id: uuid.UUID
@@ -92,7 +93,7 @@ class CheckProgressRead(BaseModel):
     status: str | None  # null = pending | pass | warn | fail | critical | skip | error
 
 
-class RunProgressRead(BaseModel):
+class RunProgressRead(ApiModel):
     """Compact live-progress view for polling: run lifecycle + per-check
     resolution + a status histogram. Lighter than the full run+results detail."""
 
@@ -107,7 +108,7 @@ class RunProgressRead(BaseModel):
     finished_at: datetime | None
 
 
-class PipelineRunRead(BaseModel):
+class PipelineRunRead(ApiModel):
     """A monitored orchestrator pipeline/DAG run (`pipeline_runs` ≠ `runs`)."""
 
     model_config = ConfigDict(from_attributes=True)

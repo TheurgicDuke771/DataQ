@@ -13,9 +13,10 @@ from decimal import Decimal
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ConfigDict, Field
 from sqlalchemy.orm import Session
 
+from backend.app.api.v1._base import ApiModel
 from backend.app.api.v1.runs import RunRead
 from backend.app.core.auth import get_current_user, is_workspace_admin
 from backend.app.core.secrets import SecretStore, get_secret_store
@@ -35,7 +36,7 @@ from backend.app.services.suite_authz import (
 router = APIRouter(tags=["suites"])
 
 
-class SuiteTarget(BaseModel):
+class SuiteTarget(ApiModel):
     """Datasource-shaped run target (#215) — which table / flat-file path / Unity
     Catalog name the suite's checks run against. Same shape as the column-profiler
     request; `run_target.resolve_target` validates the right fields per connection
@@ -65,20 +66,20 @@ class SuiteTarget(BaseModel):
         return self.model_dump(by_alias=True, exclude_none=True)
 
 
-class SuiteCreate(BaseModel):
+class SuiteCreate(ApiModel):
     name: str = Field(min_length=1, max_length=128)
     description: str | None = Field(default=None, max_length=1024)
     connection_id: uuid.UUID
     target: SuiteTarget | None = None
 
 
-class SuiteUpdate(BaseModel):
+class SuiteUpdate(ApiModel):
     name: str | None = Field(default=None, min_length=1, max_length=128)
     description: str | None = Field(default=None, max_length=1024)
     target: SuiteTarget | None = None
 
 
-class SuiteRead(BaseModel):
+class SuiteRead(ApiModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
@@ -234,7 +235,7 @@ def trigger_suite_run(
 # ───────────────────────── export / import (portable documents) ─────
 
 
-class CheckDocument(BaseModel):
+class CheckDocument(ApiModel):
     """One check inside a portable suite document — authoring fields only."""
 
     name: str = Field(min_length=1, max_length=256)
@@ -246,7 +247,7 @@ class CheckDocument(BaseModel):
     critical_threshold: Decimal | None = None
 
 
-class SuiteDocument(BaseModel):
+class SuiteDocument(ApiModel):
     """Portable suite — connection-agnostic, no DB identity. Both the export
     response and the import payload (a round-trippable document)."""
 
@@ -256,7 +257,7 @@ class SuiteDocument(BaseModel):
     checks: list[CheckDocument] = Field(default_factory=list)
 
 
-class SuiteImportRequest(BaseModel):
+class SuiteImportRequest(ApiModel):
     connection_id: uuid.UUID
     document: SuiteDocument
 
@@ -304,7 +305,7 @@ def import_suite(
 # ───────────────────────── column profiler (no persistence) ─────────
 
 
-class ColumnProfileRequest(BaseModel):
+class ColumnProfileRequest(ApiModel):
     columns: list[str] = Field(min_length=1, max_length=50)
     top_n: int = Field(default=10, ge=1, le=100, description="Most-frequent values per column")
     # SQL datasources: the target is a table (+ schema; Unity Catalog also catalog).
@@ -316,12 +317,12 @@ class ColumnProfileRequest(BaseModel):
     file_format: Literal["csv", "parquet"] | None = None
 
 
-class TopValue(BaseModel):
+class TopValue(ApiModel):
     value: Any | None
     count: int
 
 
-class ColumnProfileRead(BaseModel):
+class ColumnProfileRead(ApiModel):
     column: str
     null_count: int
     null_fraction: float
@@ -331,7 +332,7 @@ class ColumnProfileRead(BaseModel):
     top_values: list[TopValue]
 
 
-class ProfileRead(BaseModel):
+class ProfileRead(ApiModel):
     """Profile result. Identity fields are type-specific: SQL datasources fill
     `table` / `schema` (+ `catalog` for Unity Catalog), flat-file datasources fill
     `path` / `file_format`."""
@@ -397,7 +398,7 @@ def profile_columns(
     )
 
 
-class ColumnsRead(BaseModel):
+class ColumnsRead(ApiModel):
     """The column names of a suite target — feeds the check editor's column
     dropdown (#474) so authors pick instead of recalling exact names."""
 
@@ -440,7 +441,7 @@ def list_columns(
 # ── failing-sample redaction policy (#415) ──────────────────────────────────
 
 
-class ColumnPolicyRead(BaseModel):
+class ColumnPolicyRead(ApiModel):
     """A suite's failing-sample redaction policy: the shown ``identifier_column``
     (a non-PII row locator) + the always-masked ``pii_columns``."""
 
@@ -456,12 +457,12 @@ class ColumnPolicyRead(BaseModel):
         )
 
 
-class ColumnPolicyUpdate(BaseModel):
+class ColumnPolicyUpdate(ApiModel):
     identifier_column: str | None = Field(default=None, max_length=255)
     pii_columns: list[str] = Field(default_factory=list, max_length=200)
 
 
-class ColumnPolicySuggestRequest(BaseModel):
+class ColumnPolicySuggestRequest(ApiModel):
     """The suite's target to profile + classify — same shape as the profiler request,
     minus ``columns`` (all of the target's columns are classified)."""
 

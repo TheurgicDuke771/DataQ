@@ -14,9 +14,9 @@ from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from backend.app.api.v1._base import ApiModel
 from backend.app.core.auth import get_current_user, is_workspace_admin
 from backend.app.db.models import User
 from backend.app.db.session import get_db
@@ -28,7 +28,7 @@ _WINDOW_DEFAULT = 7
 _WINDOW_MAX = 90
 
 
-class KpisRead(BaseModel):
+class KpisRead(ApiModel):
     health_score: float | None
     pass_rate: float | None
     total_runs: int
@@ -43,20 +43,20 @@ class KpisRead(BaseModel):
     avg_duration_delta_pct: float | None
 
 
-class TrendPointRead(BaseModel):
+class TrendPointRead(ApiModel):
     day: date
     succeeded: int
     failed: int
 
 
-class SuitePerformanceRead(BaseModel):
+class SuitePerformanceRead(ApiModel):
     suite_id: uuid.UUID
     name: str
     score: float | None
     state: str  # optimal | stable | critical | unknown
 
 
-class DashboardSummaryRead(BaseModel):
+class DashboardSummaryRead(ApiModel):
     window_days: int
     kpis: KpisRead
     trend: list[TrendPointRead]

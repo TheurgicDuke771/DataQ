@@ -25,10 +25,10 @@ import hmac
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Request, status
-from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
+from backend.app.api.v1._base import ApiModel
 from backend.app.core.config import get_settings
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
@@ -53,7 +53,7 @@ class WebhookNotConfiguredError(DataQError):
     code = "webhook_not_configured"
 
 
-class EventAck(BaseModel):
+class EventAck(ApiModel):
     status: str  # "recorded" | "ignored" | "reconciling" (run-anonymous alert → poll-now)
     triggered: int = 0  # suite runs triggered (succeeded run matching a binding)
 

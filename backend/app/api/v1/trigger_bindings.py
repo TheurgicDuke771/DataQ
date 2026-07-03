@@ -11,9 +11,10 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, status
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ConfigDict, Field
 from sqlalchemy.orm import Session
 
+from backend.app.api.v1._base import ApiModel
 from backend.app.core.auth import get_current_user
 from backend.app.db.models import TriggerBinding, User
 from backend.app.db.session import get_db
@@ -22,7 +23,7 @@ from backend.app.services import trigger_binding_service as svc
 router = APIRouter(tags=["trigger-bindings"])
 
 
-class TriggerBindingCreate(BaseModel):
+class TriggerBindingCreate(ApiModel):
     provider: str
     pipeline_or_dag_id: str = Field(min_length=1, max_length=256)
     env: str
@@ -30,11 +31,11 @@ class TriggerBindingCreate(BaseModel):
     enabled: bool = True
 
 
-class TriggerBindingUpdate(BaseModel):
+class TriggerBindingUpdate(ApiModel):
     enabled: bool
 
 
-class TriggerBindingRead(BaseModel):
+class TriggerBindingRead(ApiModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID

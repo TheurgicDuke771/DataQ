@@ -65,12 +65,26 @@ async def _http_exception_handler(_request: Request, exc: Exception) -> JSONResp
     )
 
 
+def _jsonable(value: Any) -> Any:
+    """Coerce a Pydantic error structure to JSON-safe types. `exc.errors()` is
+    not JSON-clean: `ctx` can carry live exception objects (e.g. the ValueError
+    a model_validator raised) and `input` echoes the raw payload, which can hold
+    non-JSON scalars (#371). Stringify anything that isn't plainly serializable."""
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, dict):
+        return {str(k): _jsonable(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return [_jsonable(v) for v in value]
+    return str(value)
+
+
 async def _validation_exception_handler(_request: Request, exc: Exception) -> JSONResponse:
     assert isinstance(exc, RequestValidationError)
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         content=_envelope(
-            "validation_error", "Request validation failed", {"errors": exc.errors()}
+            "validation_error", "Request validation failed", {"errors": _jsonable(exc.errors())}
         ),
     )
 

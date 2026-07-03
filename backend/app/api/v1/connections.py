@@ -16,9 +16,10 @@ from datetime import datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, status
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ConfigDict, Field
 from sqlalchemy.orm import Session
 
+from backend.app.api.v1._base import ApiModel
 from backend.app.core.auth import get_current_user
 from backend.app.core.secrets import SecretStore, get_secret_store
 from backend.app.db.models import Connection, User
@@ -28,7 +29,7 @@ from backend.app.services import connection_service as svc
 router = APIRouter(tags=["connections"])
 
 
-class ConnectionCreate(BaseModel):
+class ConnectionCreate(ApiModel):
     name: str = Field(min_length=1, max_length=128)
     type: str
     env: str
@@ -36,13 +37,13 @@ class ConnectionCreate(BaseModel):
     secret: str | None = Field(default=None, description="Credential; write-only, never returned")
 
 
-class ConnectionUpdate(BaseModel):
+class ConnectionUpdate(ApiModel):
     name: str | None = Field(default=None, min_length=1, max_length=128)
     config: dict[str, Any] | None = None
     secret: str | None = Field(default=None, description="Rotate the credential; write-only")
 
 
-class ConnectionRead(BaseModel):
+class ConnectionRead(ApiModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
@@ -66,11 +67,11 @@ class ConnectionRead(BaseModel):
         )
 
 
-class ConnectionReauth(BaseModel):
+class ConnectionReauth(ApiModel):
     secret: str = Field(min_length=1, description="New credential; write-only, never returned")
 
 
-class ConnectionTestResult(BaseModel):
+class ConnectionTestResult(ApiModel):
     ok: bool
 
 
@@ -201,7 +202,7 @@ def reauth_connection(
 # ───────────────────────── version history ─────────────────────────
 
 
-class ConnectionVersionRead(BaseModel):
+class ConnectionVersionRead(ApiModel):
     """One snapshot in a connection's history. `changed_by_name` (the author's
     display name or email, NULL for a system actor / removed user) comes from the
     model property, resolved server-side so the client needn't join users. No

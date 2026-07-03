@@ -12,9 +12,9 @@ import uuid
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, status
-from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from backend.app.api.v1._base import ApiModel
 from backend.app.core.auth import get_current_user
 from backend.app.core.secrets import SecretStore, get_secret_store
 from backend.app.db.models import SuiteNotification, User
@@ -25,7 +25,7 @@ from backend.app.services.suite_authz import require_permission
 router = APIRouter(tags=["notifications"])
 
 
-class SuiteNotificationRead(BaseModel):
+class SuiteNotificationRead(ApiModel):
     """A suite's effective notification config. ``configured`` distinguishes a
     saved row from the defaults a suite falls back to. The webhook URL is never
     returned — only whether one is set (``has_webhook``)."""
@@ -36,7 +36,7 @@ class SuiteNotificationRead(BaseModel):
     has_webhook: bool
 
 
-class SuiteNotificationUpdate(BaseModel):
+class SuiteNotificationUpdate(ApiModel):
     enabled: bool = True
     # Default 'warn' matches the no-config fallback, so an omitted threshold
     # doesn't silently tighten delivery (a saved config keeps the prior behaviour).
