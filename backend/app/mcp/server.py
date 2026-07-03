@@ -25,6 +25,7 @@ from fastmcp.exceptions import ToolError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from backend.app.api.v1._base import contains_nul
 from backend.app.core.config import get_settings
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
@@ -88,6 +89,14 @@ def _parse_uuid(value: str, *, field: str) -> uuid.UUID:
 
 def _num(value: Decimal | float | None) -> float | None:
     return float(value) if value is not None else None
+
+
+def _reject_nul(*, name: str, expectation_type: str, kind: str, config: dict[str, Any]) -> None:
+    """NUL (\\x00) can't be stored by Postgres (text or JSONB) — reject it here
+    like the REST boundary does (`ApiModel`, #567), instead of surfacing the
+    driver's ValueError as an opaque tool failure."""
+    if contains_nul({"name": name, "expectation_type": expectation_type, "kind": kind, **config}):
+        raise ToolError("NUL (\\x00) characters are not allowed in check fields")
 
 
 @contextmanager
@@ -342,6 +351,7 @@ def create_check(
     the result severity. Requires edit access. Returns the created check's id.
     """
     sid = _parse_uuid(suite_id, field="suite_id")
+    _reject_nul(name=name, expectation_type=expectation_type, kind=kind, config=config or {})
     with _ctx() as (session, user), _service_errors():
         require_permission(session, sid, user.id, minimum="edit")
         check = check_service.create_check(

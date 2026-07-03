@@ -11,9 +11,10 @@ import uuid
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, status
-from pydantic import BaseModel, ConfigDict
+from pydantic import ConfigDict
 from sqlalchemy.orm import Session
 
+from backend.app.api.v1._base import ApiModel
 from backend.app.core.auth import get_current_user
 from backend.app.db.models import Share, User
 from backend.app.db.session import get_db
@@ -27,16 +28,16 @@ router = APIRouter(tags=["shares"])
 SharePermission = Literal["view", "edit"]
 
 
-class ShareCreate(BaseModel):
+class ShareCreate(ApiModel):
     user_id: uuid.UUID
     permission: SharePermission
 
 
-class ShareUpdate(BaseModel):
+class ShareUpdate(ApiModel):
     permission: SharePermission
 
 
-class ShareRead(BaseModel):
+class ShareRead(ApiModel):
     model_config = ConfigDict(from_attributes=True)
 
     suite_id: uuid.UUID

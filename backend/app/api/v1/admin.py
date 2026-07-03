@@ -14,9 +14,10 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request
-from pydantic import BaseModel, ConfigDict
+from pydantic import ConfigDict
 from sqlalchemy.orm import Session
 
+from backend.app.api.v1._base import ApiModel
 from backend.app.core.auth import require_workspace_admin
 from backend.app.core.config import get_settings
 from backend.app.core.secrets import SecretStore, get_secret_store
@@ -30,7 +31,7 @@ router = APIRouter(
 )
 
 
-class AdminSuiteRead(BaseModel):
+class AdminSuiteRead(ApiModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
@@ -47,7 +48,7 @@ class AdminSuiteRead(BaseModel):
     updated_at: datetime
 
 
-class AdminUserRead(BaseModel):
+class AdminUserRead(ApiModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
@@ -59,7 +60,7 @@ class AdminUserRead(BaseModel):
     shared_suite_count: int
 
 
-class AdminAccessRead(BaseModel):
+class AdminAccessRead(ApiModel):
     model_config = ConfigDict(from_attributes=True)
 
     suite_id: UUID
@@ -85,7 +86,7 @@ def all_access(db: Annotated[Session, Depends(get_db)]) -> list[svc.AdminAccessR
     return svc.list_all_access(db)
 
 
-class AdminWebhookRead(BaseModel):
+class AdminWebhookRead(ApiModel):
     model_config = ConfigDict(from_attributes=True)
 
     provider: str

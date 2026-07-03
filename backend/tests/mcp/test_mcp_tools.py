@@ -193,6 +193,30 @@ def test_create_check_persists(db_session: Any, monkeypatch: Any) -> None:
     assert persisted.config == {"column": "email"}
 
 
+def test_create_check_rejects_nul_bytes(db_session: Any, monkeypatch: Any) -> None:
+    """NUL can't reach Postgres (#567) — the MCP boundary rejects it as a clean
+    ToolError (mirroring the REST ApiModel guard), wherever it hides: the name
+    or a nested config value."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+
+    with pytest.raises(ToolError, match="NUL"):
+        server.create_check(
+            str(suite.id),
+            name="evil-\x00-check",
+            expectation_type="expect_column_values_to_not_be_null",
+            config={"column": "email"},
+        )
+    with pytest.raises(ToolError, match="NUL"):
+        server.create_check(
+            str(suite.id),
+            name="fine",
+            expectation_type="expect_column_values_to_be_in_set",
+            config={"column": "status", "value_set": ["ok", "bad\x00value"]},
+        )
+
+
 def test_create_check_requires_edit(db_session: Any, monkeypatch: Any) -> None:
     owner = _user(db_session, "owner@acme.io")
     suite = _suite(db_session, owner)

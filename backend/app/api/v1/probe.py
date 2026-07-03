@@ -12,10 +12,11 @@ import uuid
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, ConfigDict
+from pydantic import ConfigDict
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.api.v1._base import ApiModel
 from backend.app.core.auth import get_current_user
 from backend.app.core.config import get_settings
 from backend.app.db.models import Result, Run, User
@@ -26,12 +27,12 @@ from backend.app.services.probe import ensure_probe_fixtures
 router = APIRouter(tags=["probe"])
 
 
-class ProbeRunResponse(BaseModel):
+class ProbeRunResponse(ApiModel):
     run_id: uuid.UUID
     status: str
 
 
-class CheckResultResponse(BaseModel):
+class CheckResultResponse(ApiModel):
     model_config = ConfigDict(from_attributes=True)
 
     check_id: uuid.UUID
@@ -41,7 +42,7 @@ class CheckResultResponse(BaseModel):
     expected_value: dict[str, Any] | None
 
 
-class RunStatusResponse(BaseModel):
+class RunStatusResponse(ApiModel):
     run_id: uuid.UUID
     status: str
     results: list[CheckResultResponse]

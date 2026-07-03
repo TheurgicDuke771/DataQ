@@ -3,15 +3,16 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel, ConfigDict
+from pydantic import ConfigDict
 
+from backend.app.api.v1._base import ApiModel
 from backend.app.core.auth import get_current_user, is_workspace_admin
 from backend.app.db.models import User
 
 router = APIRouter(tags=["auth"])
 
 
-class MeResponse(BaseModel):
+class MeResponse(ApiModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID

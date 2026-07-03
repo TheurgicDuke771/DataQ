@@ -17,9 +17,10 @@ from decimal import Decimal
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query, status
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ConfigDict, Field
 from sqlalchemy.orm import Session
 
+from backend.app.api.v1._base import ApiModel
 from backend.app.core.auth import get_current_user
 from backend.app.core.secrets import SecretStore, get_secret_store
 from backend.app.db.models import Connection, User
@@ -31,7 +32,7 @@ from backend.app.services.suite_authz import require_permission
 router = APIRouter(tags=["checks"])
 
 
-class CheckCreate(BaseModel):
+class CheckCreate(ApiModel):
     name: str = Field(min_length=1, max_length=256)
     # v1 authors only 'expectation' (service enforces; reserved kinds 422).
     kind: str = "expectation"
@@ -42,7 +43,7 @@ class CheckCreate(BaseModel):
     critical_threshold: Decimal | None = None
 
 
-class CheckUpdate(BaseModel):
+class CheckUpdate(ApiModel):
     name: str | None = Field(default=None, min_length=1, max_length=256)
     expectation_type: str | None = Field(default=None, min_length=1, max_length=128)
     config: dict[str, Any] | None = None
@@ -51,7 +52,7 @@ class CheckUpdate(BaseModel):
     critical_threshold: Decimal | None = None
 
 
-class CheckRead(BaseModel):
+class CheckRead(ApiModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
@@ -171,7 +172,7 @@ def delete_check(
 # ───────────────────────── alert snooze (suppression) ──────────────
 
 
-class CheckSnoozeRequest(BaseModel):
+class CheckSnoozeRequest(ApiModel):
     # Cap at 30 days so a typo can't mute a check effectively forever.
     hours: float = Field(gt=0, le=720, description="Mute the check's alerts for this many hours")
 
@@ -212,7 +213,7 @@ def clear_check_snooze(
 # ───────────────────────── version history (#280) ──────────────────
 
 
-class CheckVersionRead(BaseModel):
+class CheckVersionRead(ApiModel):
     """One snapshot in a check's history. Like `CheckRead`, thresholds are coerced
     Decimal→float by Pydantic; `changed_by_name` (the author's display name or
     email, NULL for a system actor / removed user) comes from the model property,
@@ -254,7 +255,7 @@ def list_check_versions(
 # ───────────────────────── result history (trend, ADR 0022) ─────────
 
 
-class CheckResultPointRead(BaseModel):
+class CheckResultPointRead(ApiModel):
     """One past result for a check — the per-check trend datum (metric over time)."""
 
     model_config = ConfigDict(from_attributes=True)
@@ -287,7 +288,7 @@ def list_check_result_history(
 # ───────────────────────── dry-run (preview, no persistence) ────────
 
 
-class CheckDryRunRequest(BaseModel):
+class CheckDryRunRequest(ApiModel):
     kind: str = "expectation"
     expectation_type: str = Field(min_length=1, max_length=128)
     config: dict[str, Any] = Field(default_factory=dict)
@@ -298,7 +299,7 @@ class CheckDryRunRequest(BaseModel):
     schema_: str | None = Field(default=None, alias="schema")
 
 
-class CheckDryRunResult(BaseModel):
+class CheckDryRunResult(ApiModel):
     status: str  # pass | warn | fail | critical (ADR 0005) | error (#122)
     metric_value: float | None
     observed_value: dict[str, Any] | None
