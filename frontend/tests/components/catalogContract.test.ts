@@ -34,7 +34,9 @@ function contractShape() {
 describe('expectation catalog fixture (backend contract input)', () => {
   it('matches the checked-in JSON fixture', () => {
     const live = contractShape();
-    if (process.env.UPDATE_CATALOG_FIXTURE) {
+    // Strictly '1': any other value (including '0'/'false') must NOT flip the
+    // guard into self-healing write-then-compare mode.
+    if (process.env.UPDATE_CATALOG_FIXTURE === '1') {
       mkdirSync(dirname(FIXTURE_PATH), { recursive: true });
       writeFileSync(FIXTURE_PATH, `${JSON.stringify(live, null, 2)}\n`);
     }
