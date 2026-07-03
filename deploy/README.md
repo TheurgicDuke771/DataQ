@@ -123,7 +123,8 @@ eval stack (`DATAQ_AUTH_MODE=bypass`) and prod (`=oidc`).
 ## One-time provisioning
 
 The datasource + compute infra is stood up by the external Terraform harness
-(ADR 0021) — see `HARNESS_TODO.md`. Beyond that, this app needs:
+(ADR 0021) — see the harness repo's `README.md` (not git-tracked here). Beyond
+that, this app needs:
 
 1. An **ACA environment** + the three apps/job above (the backend image is on
    **GHCR**, not ACR — ADR 0023). The api/worker run `uvicorn …` / `celery …`;
