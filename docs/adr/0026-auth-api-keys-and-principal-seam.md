@@ -1,7 +1,7 @@
 # ADR 0026 — DataQ-issued API keys / service tokens behind the auth seam (REST + MCP)
 
-- **Status:** Proposed
-- **Date:** 2026-06-29
+- **Status:** Proposed — **build deferred to post-v1** (timing decision recorded 2026-07-03; see Decision record below)
+- **Date:** 2026-06-29 (timing decided 2026-07-03)
 - **Deciders:** @TheurgicDuke771
 - **Related:** ADR [0010](0010-provider-agnostic-infrastructure-seams.md) (the `get_current_user` identity seam — Azure is one impl, not the architecture), [0013](0013-marketplace-distribution-and-anti-lock-in.md) (BYOL / anti-lock-in), [0008](0008-mcp-server.md) (MCP auth via `JWTVerifier` — bring-your-own-token today), [0020](0020-history-and-audit-strategy.md) (audit), compliance posture (#436)
 - **Issue:** [#461](https://github.com/TheurgicDuke771/DataQ/issues/461)
@@ -30,6 +30,30 @@ Introduce a **DataQ-issued credential as a second authenticator behind the exist
 - Hashes live in a **new `api_keys` table** — *not* the credential SecretStore (that store is for *retrievable* connection secrets; a key hash is a verifier secret, never retrievable).
 - **Lifecycle tied to the owner**: deactivating a user kills their keys, so a PAT can't become an SSO-policy backdoor that outlives the account.
 - Never logged (prefix only) — same discipline as the compliance posture (#436).
+
+## Decision record (2026-07-03 — the go-live "now vs post-v1" call)
+
+**Deferred to post-v1 (Theme 3).** Rationale: this is a credential surface with an explicit
+do-not-half-build bar, and v1's actual programmatic needs are covered by interim mechanisms —
+the Azure CLI is pre-authorized on the API scope (#565: non-interactive
+`az account get-access-token` bearers for the live-smoke lane and local MCP clients), and
+`/mcp` accepts the same Azure token as REST (ADR 0008). Rushing a PAT store into go-live week
+buys little and risks the exact half-build this ADR warns against.
+
+**Shape confirmed** (evaluated against alternatives when the timing was decided):
+
+- **User-scoped PATs first** — as phased above. Inherits the per-suite ladder, zero new
+  authz model, revocable per-integration.
+- **Standalone service accounts later** — the real need is automation that outlives a person
+  (owner deactivated → their PATs correctly die), but first-class service principals force the
+  `users.aad_object_id` → generic-principal migration + non-user sharing; sequence after PATs.
+  Interim escape hatch: a dedicated service user (e.g. `dataq-admin`) owns automation keys.
+- **HTTP Basic auth — rejected.** DataQ has no password store (identity is delegated to OIDC);
+  Basic auth would make DataQ a password system (storage/hashing policy, lockout, reset flows,
+  credential-stuffing surface) for a *worse* credential: one secret per account (revoking one
+  integration breaks all), no scoping, no expiry, replayed on every request, and routinely
+  leaked via logs/proxies. A PAT has the same `Authorization`-header ergonomics without any
+  of that.
 
 ## Consequences (anticipated)
 

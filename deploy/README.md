@@ -270,6 +270,14 @@ proxy; `<frontend>/api/v1/...` is the base URL for any external client too):
   (PATs, SAS, webhook secrets) is rotatable, so accidental-delete recovery is
   re-mint, not data loss. Revisit (flip to `true`) before any regulated or
   production-critical use.
+- **This reference deployment carries demo/test fixtures — tear them down before any
+  commercial or marketplace use.** The live connections (Snowflake/UC/ADLS/ADF/Airflow),
+  Flows A/B/C, demo users, and the deliberately-failing "seeded breach" check are the
+  ADR 0021 test harness, not product. The harness Databricks workspace is **Free Edition
+  (non-commercial licence)** — recorded 2026-07-03: fine for demo/eval, but before any
+  commercial demo, marketplace listing, or customer-facing deployment, migrate UC to a paid
+  workspace and remove the harness flows/connections/users (post-v1 gap register G-h/G-i in
+  [post-v1-roadmap.md](../context/post-v1-roadmap.md)).
 - **Azure CLI is pre-authorized on the API scope** (`azuread_application_pre_authorized.azure_cli_on_api`
   in `terraform/azure/sso.tf`): operators mint API bearers non-interactively with
   `az account get-access-token --resource api://<api-client-id>` (live smoke,
