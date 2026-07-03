@@ -75,8 +75,15 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],
+      // Count ALL of src, not just files the tests happen to import — otherwise
+      // a new untested page silently doesn't lower the number and the threshold
+      // gates nothing. main.tsx is the one exclusion: the DOM bootstrap can't
+      // mount under the test runner (it *is* the thing that starts the app).
+      include: ['src'],
+      exclude: ['src/main.tsx'],
       thresholds: {
-        lines: 0, // raised to 80 in Week 8
+        // The Week-8 exit gate (fails `pnpm test:coverage`, wired into CI).
+        lines: 80,
       },
     },
   },

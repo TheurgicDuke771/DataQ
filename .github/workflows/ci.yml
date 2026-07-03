@@ -295,8 +295,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Vitest
-        run: pnpm test
+      - name: Vitest (80% line-coverage gate — the W8 exit gate)
+        run: pnpm test:coverage
 
   frontend-e2e:
     name: Frontend — browser E2E (Playwright)
