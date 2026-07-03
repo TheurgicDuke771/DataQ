@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "f891e587ad0d",
+  "strategy": "manual-commit",
+  "branch": "docs/progress-repo-state-audit",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "CLAUDE.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f8/91e587ad0d/0/metadata.json",
+      "transcript": "/f8/91e587ad0d/0/full.jsonl",
+      "compact_transcript": "/f8/91e587ad0d/0/transcript.jsonl",
+      "content_hash": "/f8/91e587ad0d/0/content_hash.txt",
+      "prompt": "/f8/91e587ad0d/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 199146,
+    "cache_creation_tokens": 8054134,
+    "cache_read_tokens": 291028224,
+    "output_tokens": 629655,
+    "api_call_count": 870
+  }
+}
