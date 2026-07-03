@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 
 import type { User } from '../../src/auth/authClient';
+import type { DataqAuthConfig } from '../../src/auth/config';
 
 // authMode is computed at module load, so each case injects the runtime config
 // and imports a fresh module graph (the config.test.ts pattern).
@@ -11,7 +12,7 @@ afterEach(() => {
   delete (window as { __DATAQ_CONFIG__?: unknown }).__DATAQ_CONFIG__;
 });
 
-function inject(auth: Record<string, unknown>) {
+function inject(auth: DataqAuthConfig) {
   (window as { __DATAQ_CONFIG__?: unknown }).__DATAQ_CONFIG__ = { auth };
 }
 

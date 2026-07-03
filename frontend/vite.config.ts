@@ -79,6 +79,9 @@ export default defineConfig({
       // a new untested page silently doesn't lower the number and the threshold
       // gates nothing. main.tsx is the one exclusion: the DOM bootstrap can't
       // mount under the test runner (it *is* the thing that starts the app).
+      // Consciously waived with it: the missing-#root throw and the bootstrap()
+      // catch-fallback panel (its substantive callback logic,
+      // completeSigninIfCallback, is covered in tests/auth/authClient.test.ts).
       include: ['src'],
       exclude: ['src/main.tsx'],
       thresholds: {

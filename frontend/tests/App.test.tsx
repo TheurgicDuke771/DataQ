@@ -13,6 +13,16 @@ vi.mock('../src/auth/config', () => ({ authMode: 'dev_bypass' }));
 vi.mock('../src/auth/authClient', () => ({ login: vi.fn(), logout: vi.fn() }));
 vi.mock('../src/auth/useMe', () => ({ useIsWorkspaceAdmin: vi.fn() }));
 vi.mock('../src/auth/useCurrentUser', () => ({ useCurrentUser: vi.fn() }));
+// Lazy route pages fetch on mount; a forever-pending client keeps them in
+// their loading state so shell assertions don't race real requests.
+vi.mock('../src/api/client', () => ({
+  api: {
+    get: vi.fn(() => new Promise(() => {})),
+    post: vi.fn(() => new Promise(() => {})),
+    put: vi.fn(() => new Promise(() => {})),
+    delete: vi.fn(() => new Promise(() => {})),
+  },
+}));
 
 const mockIsAdmin = vi.mocked(useIsWorkspaceAdmin);
 const mockUser = vi.mocked(useCurrentUser);
@@ -62,11 +72,23 @@ describe('App shell', () => {
     expect(await screen.findByText(/404|not found/i)).toBeInTheDocument();
   });
 
-  it('highlights the nav item at a segment boundary, not by plain prefix', async () => {
+  it('highlights the owning nav item on a sub-path', async () => {
     mockIsAdmin.mockReturnValue(false);
     mockUser.mockReturnValue(devUser);
-    renderAt('/no-such-page');
-    // Neither /suites nor any other item may be highlighted for a sibling path.
+    renderAt('/suites/123');
+    await waitFor(() => {
+      const selected = document.querySelectorAll('.ant-menu-item-selected');
+      expect(selected).toHaveLength(1);
+      expect(selected[0].textContent).toBe('Suites');
+    });
+  });
+
+  it('does not highlight by plain prefix on a sibling path', async () => {
+    mockIsAdmin.mockReturnValue(false);
+    mockUser.mockReturnValue(devUser);
+    // '/results-export' starts with '/results' but is NOT under it — plain
+    // startsWith would mis-highlight Results; segment-boundary matching must not.
+    renderAt('/results-export');
     await waitFor(() =>
       expect(document.querySelectorAll('.ant-menu-item-selected')).toHaveLength(0),
     );
