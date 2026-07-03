@@ -63,6 +63,7 @@ nav:
       - Scheduling: scheduling.md
       - Orchestration: orchestration.md
       - Notifications & alerting: notifications.md
+      - AI assistants (MCP setup): mcp-setup.md
       - Best practices: best-practices.md
   - Reference:
       - Feature matrix: feature-matrix.md

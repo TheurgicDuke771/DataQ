@@ -63,22 +63,9 @@ Backend at `http://localhost:8000` (Swagger at `/docs`), frontend at `http://loc
 
 DataQ exposes 8 curated MCP tools at `/mcp` (streamable HTTP) — `list_suites`, `get_suite_results`, `get_health_score`, `get_adf_pipeline_status`, `trigger_suite_run`, `get_run_status`, `create_check`, `profile_column`. The endpoint is **Azure AD–protected**: present the same bearer token the web UI uses (validated against the same tenant / audience / scope). Without Azure auth configured the endpoint is only mounted in local dev-bypass mode — never unauthenticated in a deployed environment (ADR [0008](docs/adr/0008-mcp-server.md)).
 
-Point any MCP client at `https://<your-dataq-host>/mcp` with an `Authorization: Bearer <token>` header.
+Point any MCP client at `https://<your-dataq-host>/mcp/` (keep the **trailing slash** — `/mcp` 307-redirects and some clients drop the `Authorization` header on redirect) with an `Authorization: Bearer <token>` header. Once configured, all 8 tools are available to natural-language queries (e.g. *"what failed in the orders suite today?"*, *"run the orders suite on DEV"*).
 
-**Claude Desktop / Claude.ai** (`claude_desktop_config.json`) — and **GitHub Copilot** (`mcp.json`):
-
-```jsonc
-{
-  "mcpServers": {
-    "dataq": {
-      "url": "https://<your-dataq-host>/mcp",
-      "headers": { "Authorization": "Bearer <AZURE_AD_ACCESS_TOKEN>" }
-    }
-  }
-}
-```
-
-**Cursor** (`~/.cursor/mcp.json`) uses the same `mcpServers` shape. Once configured, all 8 tools are available to natural-language queries (e.g. *"what failed in the orders suite today?"*, *"run the orders suite on DEV"*).
+Per-client configuration (Claude Desktop / Claude.ai, VS Code / Copilot, Cursor), how to get a token, token hygiene, and troubleshooting: **[AI assistants (MCP setup)](https://theurgicduke771.github.io/DataQ/mcp-setup/)** on the docs site.
 
 ## Documentation
 
