@@ -5,6 +5,8 @@ runs GX in-process on a pandas DataFrame — so the full run path is tested with
 canned frame; only the network `download_bytes` is the deferred-smoke seam.
 """
 
+import io
+from types import SimpleNamespace
 from typing import Any
 
 import pandas as pd
@@ -313,3 +315,111 @@ def test_flatfile_runner_survives_adversarial_frame(
     )
     assert isinstance(outcome.success, bool)
     assert outcome.checks[0].expectation_type == "expect_table_row_count_to_be_between"
+
+
+# ── live-seam wrappers: download_bytes / list_files (W8 coverage audit) ──────
+# The boto3/azure SDK clients are the transport boundary; stubs stand in for
+# them so the dispatch (s3 vs adls), FileRef mapping, and close() discipline
+# are what's under test.
+
+_S3_CONFIG = {"bucket": "raw", "region": "us-west-2", "access_key_id": "AKIAX"}
+_ADLS_CONFIG = {"account_url": "https://acct.blob.core.windows.net", "container": "raw"}
+
+
+class _S3Stub:
+    def __init__(self) -> None:
+        self.pages = [
+            {
+                "Contents": [
+                    {"Key": "orders/a.csv", "LastModified": datetime(2026, 7, 1, tzinfo=UTC)}
+                ]
+            },
+            {"Contents": [{"Key": "orders/b.csv"}]},  # store reports no mtime
+            {},  # page with no Contents at all
+        ]
+
+    def get_object(self, Bucket: str, Key: str) -> dict[str, Any]:  # noqa: N803 — boto3 kwargs
+        assert (Bucket, Key) == ("raw", "orders/a.csv")
+        return {"Body": io.BytesIO(b"col\n1\n")}
+
+    def get_paginator(self, name: str) -> Any:
+        assert name == "list_objects_v2"
+        pages = self.pages
+        return SimpleNamespace(paginate=lambda Bucket, Prefix: iter(pages))  # noqa: N803
+
+
+class _BlobStub:
+    """BlobServiceClient stand-in tracking the close() the finally owes."""
+
+    def __init__(self) -> None:
+        self.closed = False
+
+    def close(self) -> None:
+        self.closed = True
+
+    def get_blob_client(self, container: str, blob: str) -> Any:
+        assert container == "raw"
+        return SimpleNamespace(download_blob=lambda: SimpleNamespace(readall=lambda: b"bytes!"))
+
+    def get_container_client(self, container: str) -> Any:
+        assert container == "raw"
+        blobs = [
+            SimpleNamespace(name="orders/a.csv", last_modified=datetime(2026, 7, 1, tzinfo=UTC)),
+            SimpleNamespace(name="orders/b.csv", last_modified=None),
+        ]
+        return SimpleNamespace(list_blobs=lambda name_starts_with: iter(blobs))
+
+
+def test_download_bytes_s3(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(flatfile, "_s3_client", lambda cfg, secret: _S3Stub())
+    data = flatfile.download_bytes(
+        conn_type="s3", config=_S3_CONFIG, path="orders/a.csv", secret="s"
+    )
+    assert data == b"col\n1\n"
+
+
+def test_download_bytes_adls_closes_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    stub = _BlobStub()
+    monkeypatch.setattr(flatfile, "_blob_service", lambda acfg, secret: stub)
+    data = flatfile.download_bytes(
+        conn_type="adls_gen2", config=_ADLS_CONFIG, path="orders/a.csv", secret="sas"
+    )
+    assert data == b"bytes!"
+    assert stub.closed  # the finally must release the connection pool
+
+
+def test_list_files_s3_maps_pages_and_missing_mtime(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(flatfile, "_s3_client", lambda cfg, secret: _S3Stub())
+    refs = flatfile.list_files(conn_type="s3", config=_S3_CONFIG, prefix="orders/", secret="s")
+    assert [r.path for r in refs] == ["orders/a.csv", "orders/b.csv"]
+    assert refs[0].last_modified is not None and refs[1].last_modified is None
+
+
+def test_list_files_adls_maps_blobs_and_closes(monkeypatch: pytest.MonkeyPatch) -> None:
+    stub = _BlobStub()
+    monkeypatch.setattr(flatfile, "_blob_service", lambda acfg, secret: stub)
+    refs = flatfile.list_files(
+        conn_type="adls_gen2", config=_ADLS_CONFIG, prefix="orders/", secret="sas"
+    )
+    assert [r.path for r in refs] == ["orders/a.csv", "orders/b.csv"]
+    assert stub.closed
+
+
+def test_s3_client_builds_with_failfast_timeouts() -> None:
+    """Construction only — no network. Asserts the fail-fast timeout config."""
+    from backend.app.datasources.s3 import S3Config
+
+    client = flatfile._s3_client(S3Config.model_validate(_S3_CONFIG), "secret")
+    assert client.meta.config.connect_timeout == flatfile._CONNECT_TIMEOUT
+    assert client.meta.config.read_timeout == flatfile._READ_TIMEOUT
+    assert client.meta.region_name == "us-west-2"
+
+
+def test_blob_service_builds_against_account_url() -> None:
+    from backend.app.datasources.adls import AdlsConfig
+
+    client = flatfile._blob_service(AdlsConfig.model_validate(_ADLS_CONFIG), "sas-token")
+    try:
+        assert client.account_name == "acct"
+    finally:
+        client.close()
