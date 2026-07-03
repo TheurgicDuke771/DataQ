@@ -1,3 +1,4 @@
+import { FallOutlined, RiseOutlined } from '@ant-design/icons';
 import { Card, Flex, Progress, Skeleton, Typography } from 'antd';
 import type { ReactNode } from 'react';
 
@@ -5,13 +6,14 @@ import { BRAND } from '../../theme';
 
 /**
  * A single KPI tile on the dashboard (prototype `MetricCard`): a label, a large
- * value, an optional unit suffix, an optional progress bar, and an optional
- * footnote — fronted by a tinted icon chip.
+ * value, an optional unit suffix, an optional progress bar, an optional
+ * period-over-period delta, and an optional footnote — fronted by a tinted
+ * icon chip.
  *
- * The prototype also shows a period-over-period delta ("+0.4%", trend arrow);
- * we omit it deliberately — the summary endpoint has no historical comparison
- * to back it, and a fabricated delta would violate KPI honesty (ADR 0022 /
- * 0018). Add it only once a query backs it.
+ * The delta (#352) is backed by a real prior-window aggregate from the summary
+ * endpoint — `null`/omitted renders nothing rather than a fabricated 0 (KPI
+ * honesty, ADR 0022 / 0018). `deltaGoodWhen` colours it by whether the
+ * movement is an improvement ('down' for durations).
  *
  * `value === null` renders an em dash (no data for the window) rather than 0,
  * so an empty workspace reads as "nothing yet", not "scored zero".
@@ -25,8 +27,40 @@ interface MetricCardProps {
   unit?: string;
   /** 0–100 progress bar under the value; omit for plain count metrics. */
   progress?: number | null;
+  /** Period-over-period delta; `null`/omitted → not rendered. */
+  delta?: number | null;
+  /** Suffix on the delta value (e.g. "%" for %-change, " pts" for points). */
+  deltaUnit?: string;
+  /** Which direction is an improvement (default 'up'; 'down' for durations). */
+  deltaGoodWhen?: 'up' | 'down';
   footnote?: string;
   loading?: boolean;
+}
+
+const DELTA_GOOD = '#3f8600';
+const DELTA_BAD = '#cf1322';
+
+function DeltaBadge({
+  delta,
+  unit,
+  goodWhen,
+}: {
+  delta: number;
+  unit: string;
+  goodWhen: 'up' | 'down';
+}) {
+  const up = delta > 0;
+  const improved = delta === 0 ? null : up === (goodWhen === 'up');
+  const color = improved === null ? undefined : improved ? DELTA_GOOD : DELTA_BAD;
+  return (
+    <Typography.Text
+      style={{ fontSize: 12, color }}
+      type={improved === null ? 'secondary' : undefined}
+    >
+      {up ? <RiseOutlined /> : delta < 0 ? <FallOutlined /> : null}{' '}
+      {`${up ? '+' : ''}${delta}${unit} vs prior period`}
+    </Typography.Text>
+  );
 }
 
 export function MetricCard({
@@ -35,6 +69,9 @@ export function MetricCard({
   icon,
   unit,
   progress,
+  delta,
+  deltaUnit = '%',
+  deltaGoodWhen = 'up',
   footnote,
   loading = false,
 }: MetricCardProps) {
@@ -80,6 +117,9 @@ export function MetricCard({
 
         {progress != null && !loading && (
           <Progress percent={Math.round(progress)} showInfo={false} size="small" />
+        )}
+        {delta != null && !loading && value !== null && (
+          <DeltaBadge delta={delta} unit={deltaUnit} goodWhen={deltaGoodWhen} />
         )}
         {footnote && (
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>

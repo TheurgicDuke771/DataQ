@@ -12,12 +12,19 @@ import { api } from './client';
 /** Per-suite performance state band (mirrors `SuitePerformanceRead.state`). */
 export type PerformanceState = 'optimal' | 'stable' | 'critical' | 'unknown';
 
-/** Mirrors `KpisRead` — `null` when no severity results are in the window. */
+/** Mirrors `KpisRead` — `null` when no severity results are in the window.
+ *  Deltas (#352) compare against the previous equivalent window: score/rate in
+ *  points, runs/duration in % change; `null` = nothing to compare against. */
 export interface Kpis {
   health_score: number | null;
   pass_rate: number | null;
   total_runs: number;
   active_connections: number;
+  avg_duration_ms: number | null;
+  health_score_delta: number | null;
+  pass_rate_delta: number | null;
+  total_runs_delta_pct: number | null;
+  avg_duration_delta_pct: number | null;
 }
 
 /** Mirrors `TrendPointRead` — one zero-filled day of succeeded/failed run counts. */
