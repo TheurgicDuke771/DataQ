@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "edc40f00974d",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-385-cors-activation-tests",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/tests/core/test_cors.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ed/c40f00974d/0/metadata.json",
+      "transcript": "/ed/c40f00974d/0/full.jsonl",
+      "compact_transcript": "/ed/c40f00974d/0/transcript.jsonl",
+      "content_hash": "/ed/c40f00974d/0/content_hash.txt",
+      "prompt": "/ed/c40f00974d/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 12262,
+    "cache_creation_tokens": 134131,
+    "cache_read_tokens": 2401671,
+    "output_tokens": 19724,
+    "api_call_count": 34
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_id": "edc40f00974d",
+  "session_id": "2c8d359c-1386-49f9-8dc5-62a253753085",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-03T16:14:49.805718Z",
+  "branch": "fix/issue-385-cors-activation-tests",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/tests/core/test_cors.py"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "c9505b8c8468",
+  "token_usage": {
+    "input_tokens": 12262,
+    "cache_creation_tokens": 134131,
+    "cache_read_tokens": 2401671,
+    "output_tokens": 19724,
+    "api_call_count": 34
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-03T16:14:49.790681Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 102,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 102,
+    "total_lines_changed": 102,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}
