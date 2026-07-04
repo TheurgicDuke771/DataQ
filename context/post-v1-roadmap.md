@@ -59,7 +59,7 @@ the remaining monitor kinds), *governance* (admin console, compliance controls),
 | G-a | **Monitors only what you remember to check** — hand-authored expectations; no anomaly baselines, no schema-drift, no auto-suggested checks. Category leaders' core pitch (Monte Carlo/Anomalo) is the inverse: automatic coverage. An unknown-unknown incident sails past DataQ. | Existential for "product"; the single biggest gap | **Theme 1** (remaining monitor kinds: `schema_drift`, `anomaly`) + **Theme 2** (auto-suggestion/LLM authoring) |
 | G-b | **Scale unproven; structurally weak on 2 of 4 paths** — flat-file + UC runners load the whole file/table into worker pandas; largest table ever validated is a few thousand synthetic rows. No sampling/partition/incremental strategy for checks. (Snowflake pushes down via SQL — fine.) | 100M-row table = worker OOM; blocks any serious deployment | **Theme 7** (perf & scale — add: sampling/partition-aware/incremental check execution as a named workstream) |
 | G-c | **Every "verified" is self-referential** — one operator, ~1 week live, against a harness built by the same author. Zero real-world data-pathology exposure at scale (schema churn, half-written files, encoding chaos in volume). | Unknown failure modes in the first real deployment | **Theme 10** (test-hardening) + first-real-workload milestone, post-v1 |
-| G-d | **No incident workflow, no lineage, no ownership routing** — runs + alerts exist; "what broke downstream / who owns it / when was it resolved" doesn't. No data-access audit trail (the HIPAA gate). | This is what DQ products are bought for | **Theme 9** (results/reporting depth) + **Theme 4** / [#431](https://github.com/TheurgicDuke771/DataQ/issues/431) (audit trail); lineage/incident objects = new design doc needed; the incident-*narrative* half is design-captured as **Theme 2's agentic root-cause analysis** (2026-07-04); lineage may be *pulled/emitted* rather than built — **Theme 14** governance-catalog + OpenLineage capture (2026-07-04) |
+| G-d | **No incident workflow, no lineage, no ownership routing** — runs + alerts exist; "what broke downstream / who owns it / when was it resolved" doesn't. No data-access audit trail (the HIPAA gate). | This is what DQ products are bought for | **Theme 9** (results/reporting depth) + **Theme 4** / [#431](https://github.com/TheurgicDuke771/DataQ/issues/431) (audit trail); lineage/incident objects = new design doc needed; the incident-*narrative* half is design-captured as **Theme 2's agentic root-cause analysis** (2026-07-04); lineage may be *pulled/emitted* rather than built — **Theme 14** governance-catalog + OpenLineage capture (2026-07-04); incident objects anchor to the **asset entity** (Theme 3's Asset-first IA capture, phase 1 = the shared prerequisite) |
 | G-e | **Single-tenant, config-allowlist admin, one validated IdP** — fine internally, not sellable. | Blocks multi-team/commercial use | **Theme 3** (admin/access) + ADR 0026 / [#461](https://github.com/TheurgicDuke771/DataQ/issues/461) (API keys) |
 | G-f | **Ecosystem: 4 datasources** vs the 30–50 a category product ships; no dbt integration (seam reserved); can't check the Postgres it runs on. | Adoption ceiling | **Theme 8** (datasource depth; generic-RDBMS adapter is the cheap first win) |
 | G-g | **Engine risk: GX Core pin** — the product's core capability rides a fast-moving third party with documented API drift; DQX swap-in shape exists for UC only. | Strategic dependency | **Theme 2**'s engine-abstraction watch item (below) — no issue until the churn trigger fires |
@@ -164,7 +164,7 @@ trusted-team tool; the market leaders lead with checks→results→trends→aler
 | [#411](https://github.com/TheurgicDuke771/DataQ/issues/411) | Workspace-admin: workspace-wide view on Dashboard + Results (both are owned-or-shared scoped today) |
 | [#412](https://github.com/TheurgicDuke771/DataQ/issues/412) | Admin page is read-only — allow workspace-admin write actions (manage shares / suites) |
 | [#461](https://github.com/TheurgicDuke771/DataQ/issues/461) | **DataQ-issued API keys / service tokens** (REST + MCP) — see below |
-| _(no issue yet)_ | **Data-asset-centric view** — the biggest IA gap (added 2026-07-04): the UI is suite-centric but users think table-centric ("is `orders` healthy?"). A dataset page aggregating every check, result, freshness state, and trend across all suites targeting that table/file pattern. The natural UI anchor for Theme 14's lineage/governance pull and the Theme-2 RCA blast radius; category leaders are asset-first for this reason. |
+| _(no issue yet)_ | **Data-asset-centric view** — the biggest IA gap (added 2026-07-04): the UI is suite-centric but users think table-centric ("is `orders` healthy?"). A dataset page aggregating every check, result, freshness state, and trend across all suites targeting that table/file pattern. The natural UI anchor for Theme 14's lineage/governance pull and the Theme-2 RCA blast radius; category leaders are asset-first for this reason. **Phase 2 of the Asset-first IA capture below** — build the asset entity first. |
 | _(no issue yet)_ | **Global search / command palette (⌘K)** — jump to any suite/check/connection/run by name. The list APIs exist; disproportionate daily-use payoff for a small build. |
 | _(no issue yet)_ | **First-run onboarding + empty-state pass** — guided connect → suite → check → run path and designed empty states. Low value for the current solo deployment, first-touch-critical for any marketplace/BYOL evaluator (ADR 0013); cheap to retrofit now vs. embarrassing at listing time. |
 | _(no issue yet)_ | **Bulk operations on checks** — multi-select enable/disable/severity/snooze; one-at-a-time editing doesn't survive 50-check suites. |
@@ -200,6 +200,47 @@ Target: **WCAG 2.1 AA**, phased so it's cheap early instead of a retrofit crisis
 
 No issues filed yet — file items 1–4 as separate issues when picked up; item 1 can land
 independently as a Theme-10-style CI ratchet.
+
+### Asset-first IA (design-captured 2026-07-04 — the lineage-era navigation model)
+
+**When lineage lands (Theme 14), invert the navigation from suite-first to asset-first — but
+split the noun from the verb rather than replacing one with the other.** Assets become what
+users *browse and reason about* (health, lineage, incidents, blast radius); suites remain how
+checks *execute* (batching, scheduling, trigger bindings, notifications, sharing). Making assets
+primary for *everything* would fight three structural facts: authz is suite-scoped (ADR 0027)
+and re-keying permissions to assets is a painful migration for little gain; scheduling /
+triggers / notifications are genuinely batch-level operational concepts; and GX itself is
+suite-shaped, so the engine grain stays suites regardless. The products that do this well (dbt
+models-vs-jobs, Monte Carlo assets-vs-monitors) all run this two-axis model.
+
+**The enabling primitive — build once, four features consume it:** a first-class **asset
+entity**. Today "the table" exists only implicitly inside `Suite.target` and check configs.
+Lineage needs asset *nodes*; the asset page needs asset *identity*; G-d incidents need something
+to *attach to*; governance-catalog sync (Theme 14) needs an entity to *map to*. One migration
+serves all four — schedule it before any of them.
+
+**Asset identity = the OpenLineage dataset naming spec (namespace + name), adopted as the
+canonical key from day one.** It answers the hardest resolution problems (the same logical table
+via DEV vs QA connections, flat-file patterns as assets, UC three-level names) with a
+vendor-neutral convention, and makes the Theme-14 OpenLineage emission/pull interop automatic
+instead of a mapping layer.
+
+**Phases (each shippable alone):**
+1. **Asset entity + resolution** — `assets` table keyed by OpenLineage naming + the mapping of
+   checks/runs to asset IDs. The migration everything else rides.
+2. **Asset view** (the row above) as a read-only aggregation. Authz subtlety: an asset page
+   aggregates *across* suites, so it must filter to the caller's suite grants and never leak
+   the existence of unshared checks — the same 404-no-leak discipline verified live at go-live.
+3. **Lineage attach** — asset pages grow upstream/downstream + blast radius; the Theme-2 RCA
+   dossier and G-d incident objects anchor to assets.
+4. **Navigation inversion** — sidebar leads with Assets, dashboard health aggregates per asset
+   (more meaningful to data consumers than per-suite), suites demote to an "execution groups"
+   surface; suite CRUD and deep links keep working untouched. This is the step where DataQ
+   stops feeling like "GX-as-a-service" and starts feeling like a data-observability product —
+   the G-a/G-d repositioning the maturity assessment calls for.
+
+No issues filed yet — phase 1 files first when picked up (it's the dependency of the other
+three and of Theme 14's governance sync).
 
 ---
 
@@ -482,6 +523,10 @@ Two directions, one seam:
 - **Open standard first: emit OpenLineage events** from runs — one vendor-neutral event stream
   consumed by Marquez, DataHub, Purview, Atlan and the orchestrators' own lineage backends;
   cheaper and more neutral than any point integration, and the likely first slice.
+
+**Shared primitive:** this whole section keys on the **asset entity** (Theme 3's Asset-first IA
+capture, phase 1) with **OpenLineage dataset naming as the canonical identity** — build that
+first; catalog mapping, lineage nodes, and quality-facet publishing all resolve through it.
 
 ### Observability & deploy portability
 
