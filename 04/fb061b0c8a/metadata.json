@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "04fb061b0c8a",
+  "strategy": "manual-commit",
+  "branch": "docs/roadmap-ui-a11y",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "context/post-v1-roadmap.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/04/fb061b0c8a/0/metadata.json",
+      "transcript": "/04/fb061b0c8a/0/full.jsonl",
+      "compact_transcript": "/04/fb061b0c8a/0/transcript.jsonl",
+      "content_hash": "/04/fb061b0c8a/0/content_hash.txt",
+      "prompt": "/04/fb061b0c8a/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 130250,
+    "cache_creation_tokens": 3741448,
+    "cache_read_tokens": 174511185,
+    "output_tokens": 479744,
+    "api_call_count": 708
+  }
+}
