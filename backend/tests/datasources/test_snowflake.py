@@ -246,13 +246,18 @@ def test_run_checks_key_pair_uses_gx_kwargs_form(monkeypatch: pytest.MonkeyPatch
     assert der and b"-----BEGIN" not in der
 
 
-def test_run_checks_key_pair_requires_role(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_config_key_pair_requires_role() -> None:
+    # GX's key-pair form mandates a role, so a role-less key-pair config could
+    # never run a suite — rejected at validation (create/edit/test time), not
+    # at run time (#195).
     config = {k: v for k, v in _CONFIG.items() if k != "role"} | {"auth_type": "key_pair"}
-    fake_sources = _patch_gx_context(monkeypatch)
-    runner = SnowflakeCheckRunner(SnowflakeConfig.model_validate(config), _rsa_pem())
-    with pytest.raises(ValueError, match="role"):
-        runner.run_checks(table="T", schema=None, checks=[])
-    assert fake_sources.kwargs is None  # failed before any GX call
+    with pytest.raises(ValidationError, match="role"):
+        SnowflakeConfig.model_validate(config)
+
+
+def test_config_password_role_stays_optional() -> None:
+    cfg = SnowflakeConfig.model_validate({k: v for k, v in _CONFIG.items() if k != "role"})
+    assert cfg.role is None
 
 
 def test_run_checks_password_keeps_connection_string(monkeypatch: pytest.MonkeyPatch) -> None:

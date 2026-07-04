@@ -24,7 +24,7 @@ from urllib.parse import quote_plus
 
 import great_expectations as gx
 from cryptography.hazmat.primitives import serialization
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from backend.app.core.secrets import SecretStore
 from backend.app.datasources.base import CheckOutcome, CheckSpec, MonitorSpec, SuiteOutcome
@@ -76,6 +76,19 @@ class SnowflakeConfig(BaseModel):
     # payload for passphrase-protected keys (see `_parse_key_pair_secret`).
     # Both auth methods share the same SecretStore `secret_ref`.
     auth_type: Literal["password", "key_pair"] = "password"
+
+    @model_validator(mode="after")
+    def _key_pair_requires_role(self) -> SnowflakeConfig:
+        """Key-pair connections must carry a role.
+
+        GX's key-pair form (`KeyPairConnectionDetails`, #195) mandates one, so a
+        role-less key-pair connection could never run a suite. Enforcing it here
+        makes the failure a clear 422 at create/edit/test time instead of an
+        opaque failed run later. Password auth keeps role optional.
+        """
+        if self.auth_type == "key_pair" and not self.role:
+            raise ValueError("key-pair auth requires 'role' (suite runs mandate it)")
+        return self
 
 
 def _parse_key_pair_secret(secret: str) -> tuple[str, bytes | None]:
@@ -181,12 +194,8 @@ class SnowflakeCheckRunner:
             # kwargs['connect_args'] route never passed GX's datasource
             # validation for a passwordless DSN — it was broken, not just
             # deprecated (#195). Live-verified 2026-07-04: b64-DER works; a PEM
-            # string does not. `role` is required by GX in this form.
-            if not self._config.role:
-                raise ValueError(
-                    "Snowflake key-pair suite runs require 'role' in the "
-                    "connection config (GX key-pair auth mandates a role)"
-                )
+            # string does not. GX requires `role` here; SnowflakeConfig's
+            # validator guarantees key-pair configs carry one.
             datasource = context.data_sources.add_snowflake(
                 name=f"sf-{table}",
                 account=self._config.account,

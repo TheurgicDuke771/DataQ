@@ -30,6 +30,12 @@ export interface AuthOption {
    * `composeSecret`.
    */
   passphraseLabel?: string;
+  /**
+   * Config text fields (by name) that this mode makes required even though
+   * the type declares them optional (e.g. key-pair → role: the backend
+   * validates it, since GX's key-pair form mandates a role for suite runs).
+   */
+  requiredFields?: string[];
 }
 
 export interface TypeSpec {
@@ -58,6 +64,7 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
         secretLabel: 'Private key (PEM)',
         multilineSecret: true,
         passphraseLabel: 'Key passphrase',
+        requiredFields: ['role'],
       },
     ],
   },

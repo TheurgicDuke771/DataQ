@@ -11,12 +11,19 @@ import { activeAuthOption, CONNECTION_FORM_SPECS, type TextField } from './conne
 
 const requiredRule = [{ required: true }];
 
-function ConfigTextField({ field }: { field: TextField }) {
+function ConfigTextField({
+  field,
+  forceRequired = false,
+}: {
+  field: TextField;
+  forceRequired?: boolean;
+}) {
+  const optional = field.optional && !forceRequired;
   return (
     <Form.Item
       name={['config', field.name]}
-      label={field.optional ? `${field.label} (optional)` : field.label}
-      rules={field.optional ? undefined : requiredRule}
+      label={optional ? `${field.label} (optional)` : field.label}
+      rules={optional ? undefined : requiredRule}
     >
       <Input />
     </Form.Item>
@@ -78,7 +85,11 @@ export function ConnectionTypeFields({
   return (
     <>
       {spec.textFields.map((f) => (
-        <ConfigTextField key={f.name} field={f} />
+        <ConfigTextField
+          key={f.name}
+          field={f}
+          forceRequired={activeAuth?.requiredFields?.includes(f.name)}
+        />
       ))}
 
       {spec.auth && (

@@ -19,8 +19,8 @@ Snowflake supports two auth modes: **password** and **key pair (RSA)**. For key 
 paste the PEM private key; if the key is passphrase-protected (PKCS#8), fill the optional
 **Key passphrase** field — both parts are stored together as one secret and rotate
 atomically via **Re-auth**. Leave the passphrase blank for an unencrypted key.
-Key-pair connections should also set **Role**: suite runs require it (the GX key-pair
-form mandates a role; test-connection, monitors, and the profiler work without one).
+Key-pair connections also require **Role** (the GX key-pair form mandates one for suite
+runs, so it is validated when the connection is saved).
 
 ## Author a check
 
