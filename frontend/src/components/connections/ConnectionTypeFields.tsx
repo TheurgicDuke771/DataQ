@@ -35,6 +35,20 @@ function SecretField({ label, multiline = false }: { label: string; multiline?: 
   );
 }
 
+/** Optional second secret part (e.g. key-pair passphrase) — rides `composeSecret`.
+ * The form's `requiredMark="optional"` renders the (optional) marker. */
+function PassphraseField({ label }: { label: string }) {
+  return (
+    <Form.Item
+      name="secretPassphrase"
+      label={label}
+      extra="Only for passphrase-protected keys; leave blank for an unencrypted key."
+    >
+      <Input.Password autoComplete="off" />
+    </Form.Item>
+  );
+}
+
 export function ConnectionTypeFields({
   type,
   form,
@@ -65,7 +79,10 @@ export function ConnectionTypeFields({
 
       {showSecret &&
         (activeAuth ? (
-          <SecretField label={activeAuth.secretLabel} multiline={activeAuth.multilineSecret} />
+          <>
+            <SecretField label={activeAuth.secretLabel} multiline={activeAuth.multilineSecret} />
+            {activeAuth.passphraseLabel && <PassphraseField label={activeAuth.passphraseLabel} />}
+          </>
         ) : (
           spec.secretLabel && <SecretField label={spec.secretLabel} />
         ))}

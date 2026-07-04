@@ -13,13 +13,14 @@ import {
   updateConnection,
 } from '../../api/connections';
 import { ConnectionTypeFields } from './ConnectionTypeFields';
-import { initialConfigForType } from './connectionFormSpec';
+import { composeSecret, initialConfigForType } from './connectionFormSpec';
 
 interface FormValues {
   name: string;
   env: ConnectionCreate['env'];
   config?: Record<string, unknown>;
   secret?: string;
+  secretPassphrase?: string;
 }
 
 /**
@@ -74,7 +75,9 @@ export function ConnectionForm({
             type,
             env: values.env,
             config: values.config ?? {},
-            secret: values.secret || undefined,
+            secret: values.secret
+              ? composeSecret(values.secret, values.secretPassphrase)
+              : undefined,
           });
       message.success(`Connection “${values.name}” ${isEdit ? 'updated' : 'created'}`);
       onSaved(saved);

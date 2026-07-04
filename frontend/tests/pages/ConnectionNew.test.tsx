@@ -105,4 +105,69 @@ describe('ConnectionNew', () => {
     // Navigated to the list on success.
     expect(await screen.findByText('Connections list')).toBeInTheDocument();
   });
+
+  it('composes the combined key-pair payload when a passphrase is given', async () => {
+    const user = userEvent.setup();
+    mockCreate.mockResolvedValue({
+      id: 'c1',
+      name: 'sf-kp',
+      type: 'snowflake',
+      env: 'dev',
+      config: {},
+      has_secret: true,
+      created_by: 'u1',
+    });
+    renderPage();
+
+    await user.click(screen.getByText('Snowflake'));
+    await user.type(screen.getByLabelText('Name'), 'sf-kp');
+    await user.click(screen.getByLabelText('Environment'));
+    await user.click(await screen.findByText('DEV'));
+    for (const label of ['Account', 'User', 'Database', 'Schema', 'Warehouse']) {
+      await user.type(screen.getByLabelText(label), `${label.toLowerCase()}-val`);
+    }
+
+    // Switch auth to key pair → PEM textarea + optional passphrase appear.
+    await user.click(screen.getByLabelText('Auth type'));
+    await user.click(await screen.findByText('Key pair (RSA)'));
+    await user.type(screen.getByLabelText('Private key (PEM)'), 'PEM-KEY');
+    await user.type(screen.getByLabelText(/Key passphrase/), 'pp');
+
+    await user.click(screen.getByRole('button', { name: 'Create' }));
+
+    await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1));
+    expect(mockCreate.mock.calls[0][0].secret).toBe(
+      JSON.stringify({ private_key: 'PEM-KEY', passphrase: 'pp' }),
+    );
+  });
+
+  it('sends the bare PEM key when no passphrase is given', async () => {
+    const user = userEvent.setup();
+    mockCreate.mockResolvedValue({
+      id: 'c1',
+      name: 'sf-kp',
+      type: 'snowflake',
+      env: 'dev',
+      config: {},
+      has_secret: true,
+      created_by: 'u1',
+    });
+    renderPage();
+
+    await user.click(screen.getByText('Snowflake'));
+    await user.type(screen.getByLabelText('Name'), 'sf-kp');
+    await user.click(screen.getByLabelText('Environment'));
+    await user.click(await screen.findByText('DEV'));
+    for (const label of ['Account', 'User', 'Database', 'Schema', 'Warehouse']) {
+      await user.type(screen.getByLabelText(label), `${label.toLowerCase()}-val`);
+    }
+    await user.click(screen.getByLabelText('Auth type'));
+    await user.click(await screen.findByText('Key pair (RSA)'));
+    await user.type(screen.getByLabelText('Private key (PEM)'), 'PEM-KEY');
+
+    await user.click(screen.getByRole('button', { name: 'Create' }));
+
+    await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1));
+    expect(mockCreate.mock.calls[0][0].secret).toBe('PEM-KEY');
+  });
 });

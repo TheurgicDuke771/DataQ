@@ -24,6 +24,12 @@ export interface AuthOption {
   multilineSecret?: boolean;
   /** An extra config field this mode needs (e.g. Airflow basic → username). */
   extraField?: TextField;
+  /**
+   * Present → the mode takes an optional second secret part (e.g. a key-pair
+   * private key's passphrase) that rides the combined payload — see
+   * `composeSecret`.
+   */
+  passphraseLabel?: string;
 }
 
 export interface TypeSpec {
@@ -51,6 +57,7 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
         label: 'Key pair (RSA)',
         secretLabel: 'Private key (PEM)',
         multilineSecret: true,
+        passphraseLabel: 'Key passphrase',
       },
     ],
   },
@@ -104,4 +111,24 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
 export function initialConfigForType(type: ConnectionType): Record<string, unknown> {
   const auth = CONNECTION_FORM_SPECS[type].auth;
   return auth ? { auth_type: auth[0].value } : {};
+}
+
+/** The auth mode a connection's config selects (undefined for single-secret types). */
+export function activeAuthOption(
+  type: ConnectionType,
+  config: Record<string, unknown> | undefined,
+): AuthOption | undefined {
+  const auth = CONNECTION_FORM_SPECS[type].auth;
+  if (!auth) return undefined;
+  return auth.find((a) => a.value === config?.auth_type) ?? auth[0];
+}
+
+/**
+ * Compose the write-only secret payload. A passphrase rides a combined JSON
+ * payload — one SecretStore entry per connection, so rotation stays atomic
+ * (the backend Snowflake adapter parses it; #194). Without a passphrase the
+ * secret is sent as-is (bare PEM = unencrypted key, unchanged).
+ */
+export function composeSecret(secret: string, passphrase?: string): string {
+  return passphrase ? JSON.stringify({ private_key: secret, passphrase }) : secret;
 }

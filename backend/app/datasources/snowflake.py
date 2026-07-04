@@ -17,6 +17,7 @@ warehouse is a tracked follow-up.
 
 from __future__ import annotations
 
+import json
 from typing import Any, Literal
 from urllib.parse import quote_plus
 
@@ -69,19 +70,54 @@ class SnowflakeConfig(BaseModel):
     role: str | None = None
     # Auth method. 'password' (default — back-compat for existing configs that
     # carry no auth_type) puts the password in the DSN. 'key_pair' authenticates
-    # with an RSA private key: the secret is the **PEM private key** (v1: an
-    # unencrypted key) passed as `private_key` connect-arg, and the DSN carries
-    # no password. Both share the same SecretStore `secret_ref`.
+    # with an RSA private key passed as `private_key` connect-arg, and the DSN
+    # carries no password; the secret is either a bare PEM key or the JSON
+    # payload for passphrase-protected keys (see `_parse_key_pair_secret`).
+    # Both auth methods share the same SecretStore `secret_ref`.
     auth_type: Literal["password", "key_pair"] = "password"
 
 
-def _private_key_der(pem: str) -> bytes:
-    """Load a PEM RSA private key (v1: unencrypted) → DER PKCS8 bytes.
+def _parse_key_pair_secret(secret: str) -> tuple[str, bytes | None]:
+    """Split a key-pair secret payload into (PEM key, passphrase bytes or None).
+
+    Two shapes are accepted: a bare PEM string (an unencrypted key — the
+    original v1 form, unchanged) or a JSON object
+    ``{"private_key": "<PEM>", "passphrase": "<str>"}`` for passphrase-protected
+    keys. One SecretStore entry carries both parts so the connection keeps a
+    single `secret_ref` and rotation via re-auth stays atomic (#194).
+
+    Error messages never include payload content — they can carry key material.
+    """
+    if not secret.lstrip().startswith("{"):
+        return secret, None
+    try:
+        payload = json.loads(secret)
+    except json.JSONDecodeError as exc:
+        raise ValueError("key-pair secret payload is not valid JSON") from exc
+    if not isinstance(payload, dict) or not isinstance(payload.get("private_key"), str):
+        raise ValueError("key-pair secret payload must carry a 'private_key' string")
+    passphrase = payload.get("passphrase")
+    if passphrase is not None and not isinstance(passphrase, str):
+        raise ValueError("key-pair secret 'passphrase' must be a string")
+    return payload["private_key"], passphrase.encode() if passphrase else None
+
+
+def _private_key_der(secret: str) -> bytes:
+    """Load the key-pair secret → DER PKCS8 bytes.
 
     snowflake-connector's `private_key` connect-arg wants DER PKCS8, not PEM.
-    Encrypted keys (passphrase) are a follow-up — v1 key-pair uses unencrypted keys.
+    Passphrase-protected keys arrive as the JSON payload
+    (see `_parse_key_pair_secret`); bare PEM means an unencrypted key.
     """
-    key = serialization.load_pem_private_key(pem.encode(), password=None)
+    pem, passphrase = _parse_key_pair_secret(secret)
+    try:
+        key = serialization.load_pem_private_key(pem.encode(), password=passphrase)
+    except TypeError as exc:
+        # cryptography reports passphrase-presence mismatches (encrypted key
+        # without a passphrase, or a passphrase for an unencrypted key) as
+        # TypeError; normalise to ValueError so callers see one failure type.
+        # Its messages state the mismatch only — no key/passphrase material.
+        raise ValueError(str(exc)) from exc
     return key.private_bytes(
         encoding=serialization.Encoding.DER,
         format=serialization.PrivateFormat.PKCS8,

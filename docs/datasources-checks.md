@@ -15,6 +15,11 @@ In the UI, **Connections → Add connection**, pick the datasource, fill the typ
 fields, and **Test** it (a live reachability probe). Credentials are stored in the secret
 store (Azure Key Vault in production), never in the database.
 
+Snowflake supports two auth modes: **password** and **key pair (RSA)**. For key pair,
+paste the PEM private key; if the key is passphrase-protected (PKCS#8), fill the optional
+**Key passphrase** field — both parts are stored together as one secret and rotate
+atomically via **Re-auth**. Leave the passphrase blank for an unencrypted key.
+
 ## Author a check
 
 1. Create (or open) a **suite** and point it at a **target** — a table (Snowflake/UC), a

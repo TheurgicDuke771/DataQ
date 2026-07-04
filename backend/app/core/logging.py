@@ -25,6 +25,7 @@ _PII_KEYS: frozenset[str] = frozenset(
         "auth",
         "access_key",
         "private_key",
+        "passphrase",
         # Personal contact
         "email",
         "phone",

@@ -132,7 +132,7 @@ describe('Connections', () => {
 
     // Re-auth via the inline link, rotate the credential successfully.
     await user.click(screen.getByRole('button', { name: 'Re-authenticate' }));
-    await user.type(await screen.findByLabelText('New credential'), 'fresh-secret');
+    await user.type(await screen.findByLabelText('New: Password'), 'fresh-secret');
     await user.click(screen.getByRole('button', { name: 'Rotate credential' }));
 
     // The stale verdict is dropped — badge + link gone until re-tested.
