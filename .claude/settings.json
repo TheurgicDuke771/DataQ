@@ -20,7 +20,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "input=$(cat); cmd=$(printf '%s' \"$input\" | jq -r '.tool_input.command // empty'); case \"$cmd\" in *\"gh pr merge\"*) printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\",\"additionalContext\":\"PR merged - per the PR-template checkbox, update docs/progress.md now: flip the cycle-plan / carried-over rows this PR implements and refresh the Snapshot counts (open PRs/issues); touch CLAUDE.md section 13 only if the headline changed. Tooling/docs PRs that ticked the N/A checkbox need no update.\"}}';; esac"
+            "command": "input=$(cat); cmd=$(printf '%s' \"$input\" | jq -r '.tool_input.command // empty'); case \"$cmd\" in \"gh pr merge\"*|*\"&& gh pr merge\"*|*\"; gh pr merge\"*|*\"| gh pr merge\"*) printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\",\"additionalContext\":\"PR merged - per the PR-template checkbox, update docs/progress.md now: flip the cycle-plan / carried-over rows this PR implements and refresh the Snapshot counts (open PRs/issues); touch CLAUDE.md section 13 only if the headline changed. Tooling/docs PRs that ticked the N/A checkbox need no update.\"}}';; esac"
           }
         ]
       },
