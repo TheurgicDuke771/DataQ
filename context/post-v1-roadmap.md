@@ -438,6 +438,13 @@ redaction, exactly like the existing 8 (`backend/app/mcp/server.py`). Cross-cutt
 dependencies: **#488** (workspace-admin visibility in MCP tools) and **#461 / ADR 0026**
 (DataQ-issued API keys, which unblock headless MCP clients).
 
+**Filed (2026-07-04, carried from the retired `WEEK8_TODO` working tracker):**
+
+| # | Title |
+|---|---|
+| [#583](https://github.com/TheurgicDuke771/DataQ/issues/583) | `profile_column` 422s on SQL suites without explicit `table`/`schema` — default to the suite's run target (found in the #550 MCP client E2E) |
+| [#584](https://github.com/TheurgicDuke771/DataQ/issues/584) | NL tool-selection spot-check — watch a real LLM client route the 4 canonical queries (descriptions are LLM-facing, CLAUDE.md §10; the selection in #550 was author-made) |
+
 **Tier 1 — high-value safe reads:**
 
 | Candidate tool | Wraps | NL query it serves |
