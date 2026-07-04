@@ -23,8 +23,8 @@
 | | |
 |---|---|
 | **v1 baseline** | `v1.0.0` tagged 2026-07-04 — 187/189 roadmap tasks (~99%); all 8 weekly exit gates met; deployed to Azure Container Apps; retro at [retro-v1.md](retro-v1.md); full ledger at [progress-v1.md](progress-v1.md) |
-| **Current cycle** | **v1.1 — 6 weeks, 2026-07-04 → 2026-08-15** (planned 2026-07-04 from [context/post-v1-roadmap.md](../context/post-v1-roadmap.md)). Sequencing is **subscription-driven**: Weeks 1–3 extract everything that needs the expiring Snowflake (lapses within days) and Azure (~2026-07-25) subscriptions, then wind down gracefully; Weeks 4–6 run the roadmap's recommended opening sequence (Theme-1 `schema_drift` + `anomaly` → scale-aware execution G-b → incident/lineage design G-d) on cloud-independent infra. See [Cycle plan](#cycle-plan--v11-6-weeks-2026-07-04--2026-08-15) below. |
-| **Open issues** | **66** (at the 2026-07-04 backlog remap): **34 scheduled** onto the `v1.1 Week 1..6` milestones (26 from planning — #587–#596 filed then; #492 turned out already closed 2026-07-02 and moved back to its W7 milestone — plus 8 mapped from backlog at the remap) + the cycle epic [#597](https://github.com/TheurgicDuke771/DataQ/issues/597) + **31** on **`v1.1 Backlog`** (renamed from `Backlog (post-v1 / testing)` 2026-07-04) — mapped by theme in [post-v1-roadmap.md](../context/post-v1-roadmap.md), not duplicated here |
+| **Current cycle** | **v1.1 — 6 weeks + a stretch week, 2026-07-04 → 2026-08-15 (+ W7 stretch to 2026-08-22)** (planned 2026-07-04 from [context/post-v1-roadmap.md](../context/post-v1-roadmap.md)). Sequencing is **subscription-driven**: Weeks 1–3 extract everything that needs the expiring Snowflake (lapses within days) and Azure (~2026-07-25) subscriptions, then wind down gracefully; Weeks 4–6 run the roadmap's recommended opening sequence (Theme-1 `schema_drift` + `anomaly` → scale-aware execution G-b → incident/lineage design G-d) on cloud-independent infra; W7 is the stretch/burn-down buffer. See [Cycle plan](#cycle-plan--v11-6-weeks--stretch-2026-07-04--2026-08-22) below. |
+| **Open issues** | **66** (at the 2026-07-04 full backlog remap): **55 scheduled** onto `v1.1 Week 1..6` + **10** on `v1.1 Week 7 — stretch` + the cycle epic [#597](https://github.com/TheurgicDuke771/DataQ/issues/597). **`v1.1 Backlog` (renamed from `Backlog (post-v1 / testing)`) is EMPTY** — every open issue sits on a week milestone; the backlog milestone is the default for new filings. Every scheduled issue carries an **Acceptance criteria** checklist and every milestone description its **Exit gate** (both added 2026-07-04). Theme map in [post-v1-roadmap.md](../context/post-v1-roadmap.md). |
 | **Open PRs** | none |
 | **Coverage gates (CI-enforced, ≥80%)** | backend `--cov-fail-under=80` (98.4% / 1,289 tests at the tag) · frontend all-src `lines: 80` (~88% / 337 tests at the tag) — every post-v1 PR rides the same gates |
 
@@ -89,15 +89,19 @@ _The rest of the 55 are mapped by theme in [post-v1-roadmap.md](../context/post-
 
 ---
 
-## Cycle plan — v1.1 (6 weeks, 2026-07-04 → 2026-08-15)
+## Cycle plan — v1.1 (6 weeks + stretch, 2026-07-04 → 2026-08-22)
 
 > Planned 2026-07-04 from [context/post-v1-roadmap.md](../context/post-v1-roadmap.md) (the
-> generator input). GitHub mirror: milestones **`v1.1 Week 1..6`** (due Saturdays), the cycle
+> generator input). GitHub mirror: milestones **`v1.1 Week 1..7`** (due Saturdays), the cycle
 > epic [#597](https://github.com/TheurgicDuke771/DataQ/issues/597), and the **DataQ Roadmap**
-> project (all 34 scheduled issues carry the `v1.1 week` single-select + Status). Everything
-> not scheduled below stays themed on the **`v1.1 Backlog`** milestone (renamed from
-> `Backlog (post-v1 / testing)` at the 2026-07-04 remap, when 8 week-fit issues also moved
-> into W4–W6 below).
+> project (all 65 scheduled issues carry the `v1.1 week` single-select + Status).
+> **The backlog is fully mapped** (2026-07-04 remap, two waves): `Backlog (post-v1 / testing)`
+> was renamed **`v1.1 Backlog`**, 8 week-fit issues moved into W4–W6, then the remaining 31
+> were grouped and mapped — 21 into W2–W6, 10 onto the appended **W7 stretch** — leaving the
+> backlog milestone **empty** (it stays as the default for new filings). Every scheduled issue
+> carries an **Acceptance criteria** checklist; every milestone description carries its
+> **Exit gate** (mirrored per week below). Design-captured non-issue work (asset entity, PG
+> adapter, LLM seams, …) remains themed in the roadmap doc as next-cycle generator input.
 >
 > **Sequencing is subscription-driven, not theme-driven, for the first half:** the
 > **Snowflake subscription lapses within days** of planning and the **Azure subscription ends
@@ -124,7 +128,11 @@ backlog, and it must land while Azure AD is still the reference validator.
 | ⬜ | [#461](https://github.com/TheurgicDuke771/DataQ/issues/461) **PATs phase 1** (ADR 0026): second authenticator behind `get_current_user`, REST + MCP identically; breaks the Azure-AD-only auth dependency early in the Azure window. Exit: **mint 1 workspace-admin + 1 member PAT** (two-tier authz matrix for all later headless/live checks; short expiry on the admin one) | Theme 3 / G-e |
 | ⬜ | [#583](https://github.com/TheurgicDuke771/DataQ/issues/583) MCP `profile_column`: default to the suite run target on SQL suites | Theme 13 |
 
-### v1.1 W2 — Portability: OTel logs, secrets lifecycle, dry-run depth (due 2026-07-18) — 0/5
+**Exit gate:** Snowflake leg retired with zero live-verification debt (#194/#195 live-verified,
+#587 baseline recorded, #588 clean retirement) **and** PATs live — 1 admin + 1 member PAT
+minted and exercised against REST + `/mcp`.
+
+### v1.1 W2 — Portability: OTel logs, secrets lifecycle, dry-run depth (due 2026-07-18) — 0/11
 
 Land the vendor-neutral seams **while App Insights / Key Vault / live `/mcp` still exist to
 verify parity against** (ADR 0010/0013/0028 discipline). Live checks from here on run on the
@@ -137,8 +145,19 @@ W1 admin/member PATs instead of the Azure-CLI token workaround (#565).
 | ⬜ | [#372](https://github.com/TheurgicDuke771/DataQ/issues/372) `SecretStore.delete` — webhook/connection secrets orphan today; live-verify on Key Vault | Theme 6 |
 | ⬜ | [#532](https://github.com/TheurgicDuke771/DataQ/issues/532) Dry-run preview: extend Snowflake-only → Unity Catalog + flat-file (moved from W1 — cloud-independent, no deadline) | Theme 8 |
 | ⬜ | [#584](https://github.com/TheurgicDuke771/DataQ/issues/584) MCP NL tool-selection spot-check vs live `/mcp` (4 canonical queries), authenticated via the W1 PATs | Theme 13 |
+| ⬜ | [#386](https://github.com/TheurgicDuke771/DataQ/issues/386) Alerting batch (1/4): tie `dedup._RANK` to the shared severity source (mapped from backlog 2026-07-04 — one batch PR with #387/#388/#389) | Theme 5 |
+| ⬜ | [#387](https://github.com/TheurgicDuke771/DataQ/issues/387) Alerting batch (2/4): `suppression.py` early-return on operationally-failed runs | Theme 5 |
+| ⬜ | [#388](https://github.com/TheurgicDuke771/DataQ/issues/388) Alerting batch (3/4): single-source the `alert_on` literals | Theme 5 |
+| ⬜ | [#389](https://github.com/TheurgicDuke771/DataQ/issues/389) Alerting batch (4/4): channel-neutral rename of `teams_webhook_secret_name` — the W2 vendor-neutrality item | Theme 5 |
+| ⬜ | [#416](https://github.com/TheurgicDuke771/DataQ/issues/416) Enrich Slack/email alerts (deep link, expected-vs-observed, redacted sample, run metadata) — same code area as the batch (mapped 2026-07-04) | Theme 5 |
+| ⬜ | [#488](https://github.com/TheurgicDuke771/DataQ/issues/488) Workspace-admin visibility in MCP tools + schedules — rides PATs + #584 (mapped 2026-07-04) | Theme 3 |
 
-### v1.1 W3 — Azure wind-down + local-first posture (due 2026-07-25) — 0/3
+**Exit gate:** observability + secrets + alerting vendor-neutral and Azure-verified — OTel logs
+in BOTH App Insights and a local OTLP consumer; `SecretStore.delete` verified on live KV;
+dry-run covers UC + flat-file; alerting batch merged; #488/#584 pass — every live check
+authenticated by a W1 PAT.
+
+### v1.1 W3 — Azure wind-down + local-first posture (due 2026-07-25) — 0/10
 
 Azure ends ~this week's due date. Order matters: final live validation first, teardown last.
 _(Planning correction 2026-07-04: #492 — ADF webhook live delivery — was scheduled here as a
@@ -150,8 +169,19 @@ via the Action-Group metric-alert path; re-homed to its Week-7 milestone.)_
 | ⬜ | Final live-prod E2E of the W1–2 landings (OTel parity, PAT auth, secrets lifecycle) before anything is destroyed | — |
 | ⬜ | [#590](https://github.com/TheurgicDuke771/DataQ/issues/590) Azure wind-down: G-i harness teardown, `terraform destroy`, credential retirement, state disposition (harness compute already stopped 2026-07-04 — wake via `harness_window.sh`, see the #590 runbook) | ops / G-i |
 | ⬜ | [#591](https://github.com/TheurgicDuke771/DataQ/issues/591) Local-first runtime posture: docker-compose parity for secrets/auth/observability; surviving datasources = local files + S3 + Databricks Free | ops / Theme 14 |
+| ⬜ | [#197](https://github.com/TheurgicDuke771/DataQ/issues/197) Refactor batch (1/7): shared antd `selectOption` test helper (batch mapped from backlog 2026-07-04 — local code work for the ops-heavy week; lands the shared helpers before W5's UI features) | Theme 10 |
+| ⬜ | [#199](https://github.com/TheurgicDuke771/DataQ/issues/199) Refactor batch (2/7): `useAsyncAction` toast helper | Theme 10 |
+| ⬜ | [#204](https://github.com/TheurgicDuke771/DataQ/issues/204) Refactor batch (3/7): consolidate drawer/delete duplication | Theme 10 |
+| ⬜ | [#229](https://github.com/TheurgicDuke771/DataQ/issues/229) Refactor batch (4/7): shared `AsyncBody`/`AsyncTable` helper | Theme 10 |
+| ⬜ | [#236](https://github.com/TheurgicDuke771/DataQ/issues/236) Refactor batch (5/7): shared `connectionOptionLabel(c)` helper | Theme 10 |
+| ⬜ | [#237](https://github.com/TheurgicDuke771/DataQ/issues/237) Refactor batch (6/7): `ImportSuiteDrawer` unreachable empty-connections hint | Theme 10 |
+| ⬜ | [#326](https://github.com/TheurgicDuke771/DataQ/issues/326) Refactor batch (7/7): `RunNowPanel` redundant `{open && …}` guard | Theme 10 |
 
-### v1.1 W4 — `schema_drift` monitor kind (due 2026-08-01) — 0/5
+**Exit gate:** the Azure exit is deliberate and complete — final live E2E green BEFORE teardown,
+#590 done (nothing billable remains except by choice), a fresh clone reaches a green local E2E
+with zero Azure dependencies (#591), and the frontend refactor batch is merged.
+
+### v1.1 W4 — `schema_drift` monitor kind (due 2026-08-01) — 0/7
 
 Cloud-independent from here on. Engine follow-ups land first — they touch the code #592 builds on.
 
@@ -162,8 +192,14 @@ Cloud-independent from here on. Engine follow-ups land first — they touch the 
 | ⬜ | [#429](https://github.com/TheurgicDuke771/DataQ/issues/429) Fix `MonitorRunner` `isinstance`-on-Protocol gate | Theme 1 |
 | ⬜ | [#592](https://github.com/TheurgicDuke771/DataQ/issues/592) `schema_drift` end-to-end (baseline snapshot + diff engine + authoring UI, all datasource paths) — baseline persistence designed for two consumers (W5 anomaly) | Theme 1 / G-a |
 | ⬜ | [#520](https://github.com/TheurgicDuke771/DataQ/issues/520) Freshness/volume monitors: add flat-file (S3/local) support — SQL-only today (mapped from backlog 2026-07-04; same `run_monitors` engine code, and #592's flat-file path needs it) | Theme 1 |
+| ⬜ | [#476](https://github.com/TheurgicDuke771/DataQ/issues/476) Profiler identifier-casing + CSV-delimiter limitations — same flat-file introspection code #592 touches (mapped 2026-07-04) | Theme 7 |
+| ⬜ | [#124](https://github.com/TheurgicDuke771/DataQ/issues/124) DQ-dimension classification on checks — check-model/editor open this week anyway (mapped 2026-07-04) | Theme 2 |
 
-### v1.1 W5 — `anomaly` monitor kind + metric trends (due 2026-08-08) — 0/5
+**Exit gate:** `schema_drift` demoable end-to-end (author → dry-run → run → banded severity) on
+flat-file + UC + local SQL; monitor kinds no longer SQL-only (#520); engine follow-ups closed;
+baseline-persistence shape documented for W5 anomaly reuse.
+
+### v1.1 W5 — `anomaly` monitor kind + metric trends (due 2026-08-08) — 0/8
 
 | Status | Task | Theme / gap |
 |---|---|---|
@@ -172,8 +208,15 @@ Cloud-independent from here on. Engine follow-ups land first — they touch the 
 | ⬜ | [#568](https://github.com/TheurgicDuke771/DataQ/issues/568) Validate severity-threshold ordering at authoring time | Theme 1 |
 | ⬜ | [#424](https://github.com/TheurgicDuke771/DataQ/issues/424) Run-detail sample header says 'values redacted' even when non-PII values surface (mapped from backlog 2026-07-04 — results-surface week) | Theme 9 |
 | ⬜ | [#349](https://github.com/TheurgicDuke771/DataQ/issues/349) Results: dedupe the runs fetch across tabs + share date-window presets with Dashboard (mapped from backlog 2026-07-04 — same surfaces as #594) | Theme 9 |
+| ⬜ | [#345](https://github.com/TheurgicDuke771/DataQ/issues/345) Results export — PDF report of an executed run (mapped 2026-07-04 — results-surface week) | Theme 9 |
+| ⬜ | [#283](https://github.com/TheurgicDuke771/DataQ/issues/283) Check version history — restore/revert to a previous version (mapped 2026-07-04) | Theme 9 |
+| ⬜ | [#351](https://github.com/TheurgicDuke771/DataQ/issues/351) Test Connection on the New/Edit connection page (draft-connection test endpoint; mapped 2026-07-04) | Theme 8 |
 
-### v1.1 W6 — scale-aware execution + hardening + cycle close (due 2026-08-15) — 0/12
+**Exit gate:** the anomaly kind produces banded deviation scores on real `metric_value` history
+(`skip` on cold start) and the trend view renders bands + baseline overlay; threshold ordering
+validated at authoring (#568); the results/connections UX batch (#345/#283/#351/#424/#349) merged.
+
+### v1.1 W6 — scale-aware execution + hardening + cycle close (due 2026-08-15) — 0/15
 
 | Status | Task | Theme / gap |
 |---|---|---|
@@ -188,20 +231,47 @@ Cloud-independent from here on. Engine follow-ups land first — they touch the 
 | ⬜ | [#571](https://github.com/TheurgicDuke771/DataQ/issues/571) `checks_total` shows cosmetic 0 on pre-dispatch run failures (mapped from backlog 2026-07-04 — small-bug batch) | Theme 6 |
 | ⬜ | [#541](https://github.com/TheurgicDuke771/DataQ/issues/541) Audit remaining FKs without `ondelete` — delete paths may 500 like #540 (mapped from backlog 2026-07-04 — small-bug batch) | Theme 6 |
 | ⬜ | [#306](https://github.com/TheurgicDuke771/DataQ/issues/306) Validate provider/env query params on orchestration reads — silent `200 []` on typo (mapped from backlog 2026-07-04 — small-bug batch) | Theme 6 |
+| ⬜ | [#318](https://github.com/TheurgicDuke771/DataQ/issues/318) Per-check incremental run progress — natural rider on #595's partitioned execution (mapped 2026-07-04) | Theme 7 |
+| ⬜ | [#457](https://github.com/TheurgicDuke771/DataQ/issues/457) Partial-index/predicate drift guard for a 3rd OrchestrationProvider (mapped 2026-07-04 — small-bug batch) | Theme 6 |
+| ⬜ | [#310](https://github.com/TheurgicDuke771/DataQ/issues/310) History/audit strategy ADR (audit log + soft-delete decision) — pairs with the #596 design doc (mapped 2026-07-04) | Theme 6 / ADR 0020 |
 | ⬜ | Cycle retro + `v1.1.0` tag + next-cycle planning input refresh | — |
 
-### Deliberately NOT scheduled this cycle (the 31 on `v1.1 Backlog`)
+**Exit gate:** a deliberately oversized local file / UC table runs under the memory cap with
+sampled-ness recorded (vs the #587 baseline); perf + hardening/small-bug batches green; the
+G-d design doc (#596) + audit ADR (#310) merged with next-cycle phase-1 issues filed; retro
+written; `v1.1.0` tagged.
 
-Stays on **`v1.1 Backlog`** by choice: Theme 2 LLM authoring/RCA (needs the `LLMProvider` seam
-design, follows G-d), Theme 3 asset entity + asset-first IA (its phase 1 is what the #596 design
-doc files for the *next* cycle), the Theme 8 adapter expansion (PG adapter is the natural
-next-cycle opener — dogfoodable locally), Theme 4 compliance (#431–#435), the Theme 5 alerting
-nits/enrichment (#386–#389/#416), the Theme 10 frontend-refactor batch
-(#197/#199/#204/#229/#236/#237/#326), #505 AWS/GCP IaC (no target cloud subscription yet —
-becomes the re-deploy path after #590), and everything else themed in
-[post-v1-roadmap.md](../context/post-v1-roadmap.md). _(2026-07-04 remap: 8 week-fit issues —
-#520 → W4; #424/#349 → W5; #278/#322/#571/#541/#306 → W6 — moved out of this bucket into the
-week tables above.)_
+### v1.1 W7 — stretch: backlog burn-down (due 2026-08-22) — 0/10
+
+Appended at the 2026-07-04 full remap (user decision: map everything; W7 holds what didn't fit
+W1–6). Burn down after the W6 close; **anything left rolls to v1.2 at the retro — explicitly,
+never silently**.
+
+| Status | Task | Theme / gap |
+|---|---|---|
+| ⬜ | [#431](https://github.com/TheurgicDuke771/DataQ/issues/431) Compliance G1: data-access audit trail (the HIPAA gate) | Theme 4 |
+| ⬜ | [#432](https://github.com/TheurgicDuke771/DataQ/issues/432) Compliance G2: data-subject-rights machinery | Theme 4 |
+| ⬜ | [#433](https://github.com/TheurgicDuke771/DataQ/issues/433) Compliance G3: warehouse-tag PII classification (Snowflake source lapses W1 — UC tags remain) | Theme 4 |
+| ⬜ | [#434](https://github.com/TheurgicDuke771/DataQ/issues/434) Compliance G4: region/residency assertion | Theme 4 |
+| ⬜ | [#435](https://github.com/TheurgicDuke771/DataQ/issues/435) Compliance G5: encryption-at-rest in IaC + CMK (partially blocked post-#590 — no cloud IaC target) | Theme 4 |
+| ⬜ | [#529](https://github.com/TheurgicDuke771/DataQ/issues/529) MCP tool expansion — tier-1 read-only set (week-sized) | Theme 13 |
+| ⬜ | [#286](https://github.com/TheurgicDuke771/DataQ/issues/286) Apache Iceberg v2/v3 table-format support (spike first) | Theme 2 |
+| ⬜ | [#244](https://github.com/TheurgicDuke771/DataQ/issues/244) Suite-on-suite triggering | Theme 8 |
+| ⬜ | [#466](https://github.com/TheurgicDuke771/DataQ/issues/466) Interactive datasource browsing (ADLS half blocked post-Azure; S3 + UC picker remain) | Theme 8 |
+| ⬜ | [#505](https://github.com/TheurgicDuke771/DataQ/issues/505) AWS/GCP deploy IaC (blocked until a target cloud subscription exists) | Theme 14 |
+
+**Exit gate (soft — stretch):** every remaining item closed or explicitly rolled to v1.2 with a
+rationale note at the retro; nothing silently dropped.
+
+### Not scheduled (design-captured, no issues yet)
+
+**`v1.1 Backlog` is empty** — all filed issues are mapped above. What remains unscheduled is
+the design-captured, not-yet-filed work themed in
+[post-v1-roadmap.md](../context/post-v1-roadmap.md): Theme 2 LLM authoring/RCA (`LLMProvider`
+seam, follows G-d), Theme 3 asset entity + asset-first IA (phase 1 gets filed by the #596
+design doc), the Theme 8 adapter expansion (generic PG adapter is the natural v1.2 opener —
+dogfoodable locally), Theme 14 ecosystem integrations, and the Theme 3/4 privacy/a11y packs.
+These are the v1.2 generator input.
 
 ---
 
