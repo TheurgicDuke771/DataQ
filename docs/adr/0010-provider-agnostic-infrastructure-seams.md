@@ -56,4 +56,4 @@ The three infrastructure couplings differ sharply on that axis:
 - ADR 0009 — flat monorepo layout (secrets layout note) and `core/secrets.py`.
 - `core/config.py` (Azure settings), `core/logging.py` (App Insights handler), `core/auth.py`.
 - ADR 0011 — extensibility seams for deferred connectors/integrations (the feature-side counterpart to this infra-side decision).
-- v1 action items tracked in `docs/progress.md` (Week 2 auth-boundary note, Week 7 observability seam note).
+- v1 action items tracked in `docs/progress-v1.md` (Week 2 auth-boundary note, Week 7 observability seam note).

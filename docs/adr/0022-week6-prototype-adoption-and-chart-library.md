@@ -11,7 +11,7 @@ Week 6 ("Results dashboard + alerting") is also the week we adopt the **DataQ De
 
 Two problems pushed this to an ADR:
 
-1. **The Week-6 task list under-scoped the work.** `progress.md` tracked 23 tasks but the prototype's `templates/app/index.html` registers **13 screens**, and three real screens fell out of the tracking: **Profile** (still a placeholder `Home` component), **Settings** (didn't exist; had been punted to Week 7 as "backend-gated"), and the **New-Connection source-select split**. The decision now is to build the **full prototype screen set in Week 6**, not a subset.
+1. **The Week-6 task list under-scoped the work.** `progress-v1.md` tracked 23 tasks but the prototype's `templates/app/index.html` registers **13 screens**, and three real screens fell out of the tracking: **Profile** (still a placeholder `Home` component), **Settings** (didn't exist; had been punted to Week 7 as "backend-gated"), and the **New-Connection source-select split**. The decision now is to build the **full prototype screen set in Week 6**, not a subset.
 2. **The dashboard + trend charts gate on a charting library** the prototype is silent about (it fakes charts with divs). antd ships none, so this is a real dependency decision with bundle-size + `pnpm audit` consequences.
 
 ## Decision
@@ -64,7 +64,7 @@ Adopt **recharts** for the Dashboard KPI/trend charts and the per-check historic
 - recharts unblocks the Dashboard and the per-check trend without a heavy dependency; lazy-loading contains its bundle cost.
 
 **Negative / watch**
-- **Scope expansion**: pulling Settings + Admin-reconcile into Week 6 grows the week beyond the original roadmap. Tracked honestly in `progress.md` (W6 task count rises; CLAUDE.md §13 headline updated).
+- **Scope expansion**: pulling Settings + Admin-reconcile into Week 6 grows the week beyond the original roadmap. Tracked honestly in `progress-v1.md` (W6 task count rises; CLAUDE.md §13 headline updated).
 - New runtime dependency (recharts) enters the `pnpm audit` + Dependabot surface — acceptable, but it's one more thing to keep patched.
 - Removing the create/edit **drawers** touches `Connections.tsx` / `Suites.tsx` / the drawer components; must dedup with the open frontend nits ([#204](https://github.com/TheurgicDuke771/DataQ/issues/204)) and keep the extracted form specs (`connectionFormSpec.ts` / `checkForm.ts` / `suiteTarget.ts`) as the shared source for both create and edit.
 - Settings/Secrets/Admin surfaces touch sensitive config — hold the anti-lock-in line (no Azure names in logic) and the KPI-honesty line (no metric without a backing query).
