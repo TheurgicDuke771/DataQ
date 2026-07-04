@@ -1,0 +1,92 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_id": "b280970277d2",
+  "session_id": "a9be1a77-8cac-4d65-b95c-94daac919ec8",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-04T23:20:01.77242Z",
+  "branch": "feature/issue-194-encrypted-key-pair",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "backend/tests/core/test_logging.py",
+    "backend/tests/datasources/test_snowflake.py",
+    "frontend/src/components/connections/ConnectionForm.tsx",
+    "frontend/src/components/connections/ConnectionTypeFields.tsx",
+    "frontend/src/components/connections/ReauthModal.tsx",
+    "frontend/src/components/connections/connectionFormSpec.ts",
+    "frontend/tests/components/ReauthModal.test.tsx",
+    "frontend/tests/pages/ConnectionNew.test.tsx"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "9c21d72ccee4",
+  "checkpoint_transcript_start": 277,
+  "transcript_lines_at_start": 277,
+  "token_usage": {
+    "input_tokens": 17321,
+    "cache_creation_tokens": 291281,
+    "cache_read_tokens": 11803571,
+    "output_tokens": 53803,
+    "api_call_count": 61
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01KMbyiS7qpgWxfWH3b3AEi7",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "9c21d72ccee4",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 367,
+        "end": 368,
+        "entry_ids": [
+          "09a8cee6-2d46-4d67-87f6-9e5b3198bc19"
+        ],
+        "tool_use_id": "toolu_01KMbyiS7qpgWxfWH3b3AEi7"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01KMbyiS7qpgWxfWH3b3AEi7"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 3
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-04T23:20:01.73537Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 88,
+    "human_modified": 94,
+    "human_removed": 0,
+    "total_committed": 88,
+    "total_lines_changed": 182,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}

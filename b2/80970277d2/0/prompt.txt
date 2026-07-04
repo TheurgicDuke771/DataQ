@@ -1,0 +1,74 @@
+<task-notification>
+<task-id>aae5b72fd40f4899e</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/a9be1a77-8cac-4d65-b95c-94daac919ec8/tasks/aae5b72fd40f4899e.output</output-file>
+<status>completed</status>
+<summary>Agent "Angle: altitude finder" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Based on the diff plus the repo's adapter/secret contract (base.py: "each adapter owns its own pydantic config model... the adapter is the single source of truth for that type's shape"; the secret flows as a single opaque `str` end-to-end), here are the genuine altitude findings.
+
+```json
+[
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/frontend/src/components/connections/connectionFormSpec.ts",
+    "line": 132,
+    "summary": "composeSecret() bakes the Snowflake adapter's wire envelope {private_key, passphrase} into a shared frontend helper. This is the same JSON schema the backend's _parse_key_pair_secret decodes, so an adapter-private secret contract is now defined in two languages with no shared type or contract test. base.py states the adapter is the single source of truth for its secret shape; the deeper fix is a backend `secret_passphrase` field on ConnectionCreate/Update/Reauth (the API already treats `secret` as opaque, and the adapter's test(raw, secret) owns the shape), letting the backend compose the payload and keeping the UI ignorant of the envelope.",
+    "failure_scenario": "Backend renames the JSON key (e.g. private_key -&gt; key_pem, or passphrase -&gt; key_passphrase) or wraps it in a version tag. Nothing fails at build/CI time: the TS tests assert the literal JSON string they themselves produce, the Python tests build their own. Every passphrase-protected Snowflake connection created/rotated from the UI silently fails auth in production until someone notices the two halves drifted."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/frontend/src/components/connections/ReauthModal.tsx",
+    "line": 83,
+    "summary": "ReauthModal re-implements the passphrase input inline (Form.Item name=\"secretPassphrase\", Input.Password, and the exact copy \"Only for passphrase-protected keys; leave blank for an unencrypted key.\") rather than reusing the PassphraseField component just added to ConnectionTypeFields.tsx (line 40), which is byte-identical in name, widget, and extra text. Reading the label/multiline data from CONNECTION_FORM_SPECS is the right depth (reuse of the source of truth); duplicating the widget rendering + copy string is not. The field name `secretPassphrase` is now hardcoded in three places (PassphraseField, ConnectionForm.FormValues, ReauthModal).",
+    "failure_scenario": "The passphrase field grows a rule (e.g. reject a trailing newline that would corrupt the PEM, or a maxLength) or the help copy is reworded. It gets changed in ConnectionTypeFields' PassphraseField but the ReauthModal copy is missed, so create-time and rotate-time validation/UX silently diverge — a key that is accepted on create is rejected (or vice versa) on re-auth."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/backend/app/datasources/snowflake.py",
+    "line": 84,
+    "summary": "secret.lstrip().startswith('{') distinguishes a bare PEM from the JSON payload by sniffing the first non-space char. This is the backend half of the split contract in finding #1 and is a bandaid vs. an explicit signal (a backend secret_passphrase field, or a versioned/typed envelope) — the code infers structure instead of being told it. It is NOT shared infrastructure across auth types (it lives in the Snowflake key_pair path only, so it won't bite other datasources), which is why the concern is narrower than 'shared', but it does run against every key_pair secret including legacy bare-PEM ones.",
+    "failure_scenario": "The only thing keeping a legitimate PEM out of the JSON branch is the implicit invariant that PEM always begins with '-----BEGIN'. If a future Snowflake auth variant stores any secret that can legitimately begin with '{' (or a proxy/secret-store re-serializes the value as JSON), it is misrouted into json.loads and rejected as 'not valid JSON' with no path back to the raw-secret branch — a class of failure an explicit field would make structurally impossible."
+  }
+]
+```</result>
+<usage><subagent_tokens>57012</subagent_tokens><tool_uses>11</tool_uses><duration_ms>125828</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a6117bbd77a0afc23</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/a9be1a77-8cac-4d65-b95c-94daac919ec8/tasks/a6117bbd77a0afc23.output</output-file>
+<status>completed</status>
+<summary>Agent "Angle B: removed-behavior audit" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I have enough to assess. The label change ('New credential' → 'New: {secretLabel}') is fully propagated: all three test files updated and no reference in `frontend/e2e/` or `frontend/e2e-live/` (only in the built `dist/` artifact). The real risks are in the new `composeSecret`/passphrase state handling.
+
+```json
+[
+  {
+    "file": "frontend/src/components/connections/ConnectionForm.tsx",
+    "line": 79,
+    "summary": "On create, composeSecret uses values.secretPassphrase, but antd Form preserves values of unmounted fields (preserve defaults to true) and nothing clears secretPassphrase when the auth type is switched away from key_pair. The PassphraseField (ConnectionTypeFields.tsx:84) only renders for auth modes with passphraseLabel.",
+    "failure_scenario": "User adds a Snowflake connection, picks 'Key pair (RSA)', enters a PEM key AND a passphrase, then reconsiders and switches 'Auth type' back to 'Password' and enters a password. The passphrase field unmounts but its value is retained by the form store, so composeSecret(password, stalePassphrase) wraps the password as JSON {\"private_key\":\"&lt;password&gt;\",\"passphrase\":\"&lt;pp&gt;\"} and that JSON string is stored as the Snowflake password. The connection is created with a corrupted credential; there is no create-time verification, so it only surfaces later as an unexplained failing 'Test'. No test covers the toggle-back direction (ConnectionNew.test.tsx only exercises forward key_pair selection)."
+  },
+  {
+    "file": "frontend/src/components/connections/ReauthModal.tsx",
+    "line": 49,
+    "summary": "ReauthModal shares one form instance across every connection it opens for, and only calls form.resetFields() on successful rotation (line 51) — not on cancel (onCancel={onClose}). composeSecret reads secretPassphrase, whose Form.Item only renders for key_pair connections (line 83).",
+    "failure_scenario": "Open Re-auth for a key_pair Snowflake connection, type a passphrase, then Cancel (no reset). Open Re-auth for a different, password-mode connection: the passphrase field is not rendered so the user can't see or clear it, but the stale secretPassphrase value persists in the form store, so composeSecret JSON-wraps the new password. The stored rotation payload is corrupted. (Mitigated because reauth verifies against the datasource before committing, so it fails safely rather than silently — but produces a confusing 'Re-auth failed' with no visible cause.)"
+  }
+]
+```
+
+Note: candidate 2 is lower severity because the reauth backend-verify path rejects the bad value before overwriting the stored credential; candidate 1 is the higher-confidence one since the create path has no verification step.</result>
+<usage><subagent_tokens>42527</subagent_tokens><tool_uses>10</tool_uses><duration_ms>153197</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bif14i8xp</task-id>
+<summary>Monitor event: "PR 602 CI completion (non-passing checks listed)"</summary>
+<event>Frontend — tests: fail
+GitGuardian Security Checks: fail</event>
+</task-notification>

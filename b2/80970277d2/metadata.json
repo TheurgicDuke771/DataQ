@@ -1,0 +1,34 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "b280970277d2",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-194-encrypted-key-pair",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "backend/tests/core/test_logging.py",
+    "backend/tests/datasources/test_snowflake.py",
+    "frontend/src/components/connections/ConnectionForm.tsx",
+    "frontend/src/components/connections/ConnectionTypeFields.tsx",
+    "frontend/src/components/connections/ReauthModal.tsx",
+    "frontend/src/components/connections/connectionFormSpec.ts",
+    "frontend/tests/components/ReauthModal.test.tsx",
+    "frontend/tests/pages/ConnectionNew.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/b2/80970277d2/0/metadata.json",
+      "transcript": "/b2/80970277d2/0/full.jsonl",
+      "compact_transcript": "/b2/80970277d2/0/transcript.jsonl",
+      "content_hash": "/b2/80970277d2/0/content_hash.txt",
+      "prompt": "/b2/80970277d2/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 17321,
+    "cache_creation_tokens": 291281,
+    "cache_read_tokens": 11803571,
+    "output_tokens": 53803,
+    "api_call_count": 61
+  }
+}
