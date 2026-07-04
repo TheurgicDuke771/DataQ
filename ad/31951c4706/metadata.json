@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "ad31951c4706",
+  "strategy": "manual-commit",
+  "branch": "chore/progress-merge-hook",
+  "checkpoints_count": 3,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/ad/31951c4706/0/metadata.json",
+      "transcript": "/ad/31951c4706/0/full.jsonl",
+      "compact_transcript": "/ad/31951c4706/0/transcript.jsonl",
+      "content_hash": "/ad/31951c4706/0/content_hash.txt",
+      "prompt": "/ad/31951c4706/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 130106,
+    "cache_creation_tokens": 3485124,
+    "cache_read_tokens": 171854152,
+    "output_tokens": 470647,
+    "api_call_count": 697
+  }
+}
