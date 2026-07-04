@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "75a368a55032",
+  "strategy": "manual-commit",
+  "branch": "docs/v1.1-backlog-remap",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/75/a368a55032/0/metadata.json",
+      "transcript": "/75/a368a55032/0/full.jsonl",
+      "compact_transcript": "/75/a368a55032/0/transcript.jsonl",
+      "content_hash": "/75/a368a55032/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 7,
+    "cache_creation_tokens": 366756,
+    "cache_read_tokens": 1132366,
+    "output_tokens": 1283,
+    "api_call_count": 4
+  }
+}
