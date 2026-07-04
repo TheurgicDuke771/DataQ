@@ -1,5 +1,5 @@
 import { App as AntApp } from 'antd';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -109,7 +109,11 @@ describe('SchedulesPanel', () => {
     await user.click(screen.getByRole('button', { name: 'Remove 0 9 * * 1-5 (UTC)' }));
     // Destructive → gated behind a confirm modal; nothing deleted until confirmed.
     expect(mockDelete).not.toHaveBeenCalled();
-    await user.click(await screen.findByRole('button', { name: 'Delete' }));
+
+    // Ant Design renders Modal.confirm into a portal attached to document.body.
+    // Search the document body for the modal's Delete button to avoid missing it.
+    const deleteBtn = await within(document.body).findByRole('button', { name: 'Delete' });
+    await user.click(deleteBtn);
 
     await waitFor(() => expect(mockDelete).toHaveBeenCalledWith('sch1'));
   });
