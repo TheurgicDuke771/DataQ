@@ -10,6 +10,7 @@ translation, and the GX-result → DTO mapping — is covered. `to_suite_outcome
 the GX 1.17 result shape this adapter depends on (`.type`, injected `batch_id`).
 """
 
+import base64
 from types import SimpleNamespace
 from typing import Any
 
@@ -204,15 +205,21 @@ class _StopRunError(Exception):
     pass
 
 
-def _captured_add_snowflake(
-    monkeypatch: pytest.MonkeyPatch, config: dict[str, Any], secret: str
-) -> dict[str, Any]:
-    """Run run_checks against a fake GX context and return the add_snowflake kwargs."""
+def _patch_gx_context(monkeypatch: pytest.MonkeyPatch) -> _FakeDataSources:
+    """Point the runner's gx.get_context at a fake context; return its capture."""
     fake_sources = _FakeDataSources()
     fake_context = SimpleNamespace(data_sources=fake_sources)
     monkeypatch.setattr(
         "backend.app.datasources.snowflake.gx.get_context", lambda mode: fake_context
     )
+    return fake_sources
+
+
+def _captured_add_snowflake(
+    monkeypatch: pytest.MonkeyPatch, config: dict[str, Any], secret: str
+) -> dict[str, Any]:
+    """Run run_checks against a fake GX context and return the add_snowflake kwargs."""
+    fake_sources = _patch_gx_context(monkeypatch)
     runner = SnowflakeCheckRunner(SnowflakeConfig.model_validate(config), secret)
     with pytest.raises(_StopRunError):
         runner.run_checks(table="T", schema=None, checks=[])
@@ -224,8 +231,6 @@ def test_run_checks_key_pair_uses_gx_kwargs_form(monkeypatch: pytest.MonkeyPatch
     # The GX-supported key-pair form (#195): connection details as keyword args
     # with a base64-DER private_key — NOT the deprecated/broken
     # connection_string + kwargs['connect_args'] route.
-    import base64
-
     kwargs = _captured_add_snowflake(monkeypatch, {**_CONFIG, "auth_type": "key_pair"}, _rsa_pem())
     assert "connection_string" not in kwargs
     assert "kwargs" not in kwargs
@@ -243,20 +248,33 @@ def test_run_checks_key_pair_uses_gx_kwargs_form(monkeypatch: pytest.MonkeyPatch
 
 def test_run_checks_key_pair_requires_role(monkeypatch: pytest.MonkeyPatch) -> None:
     config = {k: v for k, v in _CONFIG.items() if k != "role"} | {"auth_type": "key_pair"}
-    fake_context = SimpleNamespace(data_sources=_FakeDataSources())
-    monkeypatch.setattr(
-        "backend.app.datasources.snowflake.gx.get_context", lambda mode: fake_context
-    )
+    fake_sources = _patch_gx_context(monkeypatch)
     runner = SnowflakeCheckRunner(SnowflakeConfig.model_validate(config), _rsa_pem())
     with pytest.raises(ValueError, match="role"):
         runner.run_checks(table="T", schema=None, checks=[])
-    assert fake_context.data_sources.kwargs is None  # failed before any GX call
+    assert fake_sources.kwargs is None  # failed before any GX call
 
 
 def test_run_checks_password_keeps_connection_string(monkeypatch: pytest.MonkeyPatch) -> None:
     kwargs = _captured_add_snowflake(monkeypatch, _CONFIG, "pw")
     assert set(kwargs) == {"name", "connection_string"}
     assert kwargs["connection_string"].startswith("snowflake://")
+
+
+def test_gx_accepts_the_key_pair_kwargs_shape(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Feed the EXACT kwargs run_checks passes into the real GX datasource model
+    # (pydantic validation only — no connection). Pins that GX resolves them to
+    # its key-pair form, so a GX-side tightening of the union/validators fails
+    # here in CI instead of only at a live suite run.
+    from great_expectations.datasource.fluent.snowflake_datasource import (
+        KeyPairConnectionDetails,
+        SnowflakeDatasource,
+    )
+
+    kwargs = _captured_add_snowflake(monkeypatch, {**_CONFIG, "auth_type": "key_pair"}, _rsa_pem())
+    datasource = SnowflakeDatasource(**kwargs)
+    assert isinstance(datasource.connection_string, KeyPairConnectionDetails)
+    assert datasource.connection_string.role == _CONFIG["role"]
 
 
 # ─────────────── encrypted key-pair secrets (combined payload, #194) ───────────────
