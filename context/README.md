@@ -18,7 +18,7 @@ intent, not the current contract.
 | File | Purpose |
 |---|---|
 | `DataQ_platform_roadmap.md` | The original 8-week / 100-task product roadmap. Mirrored — with execution status — in [`docs/progress-v1.md`](../docs/progress-v1.md) (the archived v1 ledger; the live post-v1 tracker is [`docs/progress.md`](../docs/progress.md)). |
-| `post-v1-roadmap.md` | The single home for **everything deferred past v1** — design themes (with pointers to the detailed design docs under [`docs/`](../docs/)) **and** the full `Backlog (post-v1 / testing)` GitHub-milestone issue list, mapped by theme. The intended **input for a post-v1 week-wise task generator**. Status lives on the GitHub milestone, not here. |
+| `post-v1-roadmap.md` | The single home for **everything deferred past v1** — design themes (with pointers to the detailed design docs under [`docs/`](../docs/)) **and** the full `v1.1 Backlog` GitHub-milestone issue list (milestone renamed 2026-07-04), mapped by theme. The intended **input for a post-v1 week-wise task generator**. Status lives on the GitHub milestone, not here. |
 
 ## Notes
 

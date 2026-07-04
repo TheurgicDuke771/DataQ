@@ -18,7 +18,7 @@ User invokes with a short description of the finding. Required context the skill
 - `--severity critical|high|medium|low` (defaults to `medium`; use `critical` only for production-down / data-loss; never use `critical` for security — see `--security` flag below). Maps to a `priority/*` label **and** a `**Severity:**` line in the body (see Steps 2–4).
 - `--type bug|enhancement|documentation` (defaults to `bug`; maps to GitHub label)
 - `--security` — flag for security-adjacent issues. If set, the skill SHOULD NOT proceed with `gh issue create`; instead it prints the GitHub Security Advisories URL and exits, per the security-disclosure policy (see issue [#9](https://github.com/TheurgicDuke771/DataQ/issues/9) for context).
-- `--milestone <title>` — optional override. Every issue gets a milestone (project convention). Default: the current feature-week milestone from CLAUDE.md §13 (e.g. `Week 7 — Deployment, hardening & docs`); use `Backlog (post-v1 / testing)` for post-v1 / no-target-week items.
+- `--milestone <title>` — optional override. Every issue gets a milestone (project convention). Default: the current feature-week milestone from CLAUDE.md §13 (e.g. `v1.1 Week 1 — Snowflake close-out + PATs`); use `v1.1 Backlog` for no-target-week items.
 - `--blocker-for-week <N>` — optional, marks the issue as a Week-N blocker.
 
 ## Steps
@@ -89,7 +89,7 @@ If `--blocker-for-week N` is set, prepend a bold line to the body:
 
 - **Never create a public issue when `--security` is set.** Always route to Security Advisories.
 - **Issue title carries the conventional prefix** (`fix:` / `feat:` / `docs:`, optional scope) per working-agreement #3 and the issue templates. (An earlier proposal to switch issues to plain-sentence titles — [#8](https://github.com/TheurgicDuke771/DataQ/issues/8) — was closed NOT_PLANNED; prefix-style is the settled convention.)
-- **Every issue gets a milestone** (in addition to labels). Feature-week milestone by default; `Backlog (post-v1 / testing)` for post-v1 items. Note: assigning to an already-closed milestone can't be done via `gh issue edit --milestone <title>` — use the REST API with the milestone *number* (`gh api -X PATCH repos/TheurgicDuke771/DataQ/issues/<N> -F milestone=<num>`).
+- **Every issue gets a milestone** (in addition to labels). Feature-week milestone by default; `v1.1 Backlog` for unscheduled items. Note: assigning to an already-closed milestone can't be done via `gh issue edit --milestone <title>` — use the REST API with the milestone *number* (`gh api -X PATCH repos/TheurgicDuke771/DataQ/issues/<N> -F milestone=<num>`).
 - **Backlink is the source of truth.** Always include the /review comment URL or source PR number so the issue can be cross-referenced.
 - **Fix PR must reference `Fixes #N`** to auto-close on merge (working-agreement #3 + PR template's "Linked issue" section).
 - **Do not create the fix branch from this skill.** Branch creation is a separate workflow.

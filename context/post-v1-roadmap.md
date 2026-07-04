@@ -2,7 +2,8 @@
 
 > **What this is:** the canonical index of everything deliberately deferred past DataQ v1 —
 > design themes (with their detailed design docs) **and** the concrete issue backlog. Every
-> issue on the GitHub **`Backlog (post-v1 / testing)`** milestone is, by definition, post-v1
+> issue on the GitHub **`v1.1 Backlog`** milestone (renamed 2026-07-04 from
+> `Backlog (post-v1 / testing)`) is, by definition, post-v1
 > and is mirrored here under the theme it belongs to.
 >
 > **What this is not:** a commitment or a schedule. v1 is the 8-week product (see
@@ -549,7 +550,7 @@ Completes the last half-open ADR 0010 seam (tracked issues previously unmapped i
 
 ## How this maps to GitHub
 
-- **Status** lives on the GitHub `Backlog (post-v1 / testing)` milestone — this doc mirrors it by theme.
+- **Status** lives on GitHub — un-scheduled issues sit on the `v1.1 Backlog` milestone; scheduled ones move to a `v1.1 Week N` milestone (see `docs/progress.md` §Cycle plan). This doc mirrors the backlog by theme.
 - When you pick up a theme, **file the design-only items** (Themes 2, 3, 4, 5, 8, 9, 11, 14 carry them) as issues on that milestone first.
-- New post-v1 work: open the issue, milestone it `Backlog (post-v1 / testing)`, and add a row to the
+- New post-v1 work: open the issue, milestone it `v1.1 Backlog` (or the target week if already scheduled), and add a row to the
   matching theme here. Keep the detailed *design* in the three linked docs, not in this index.
