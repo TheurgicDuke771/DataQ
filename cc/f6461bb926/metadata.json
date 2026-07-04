@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "ccf6461bb926",
+  "strategy": "manual-commit",
+  "branch": "docs/tracker-post-603-reconcile",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/cc/f6461bb926/0/metadata.json",
+      "transcript": "/cc/f6461bb926/0/full.jsonl",
+      "compact_transcript": "/cc/f6461bb926/0/transcript.jsonl",
+      "content_hash": "/cc/f6461bb926/0/content_hash.txt",
+      "prompt": "/cc/f6461bb926/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 67106,
+    "cache_creation_tokens": 1137267,
+    "cache_read_tokens": 42145264,
+    "output_tokens": 150920,
+    "api_call_count": 201
+  }
+}
