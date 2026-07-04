@@ -11,7 +11,16 @@
           },
           {
             "type": "command",
-            "command": "input=$(cat); fp=$(printf '%s' \"$input\" | jq -r '.tool_input.file_path // empty'); case \"$fp\" in */docs/progress.md) printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\",\"additionalContext\":\"docs/progress.md changed - if a roadmap item changed status, tick/untick the matching GitHub tracking epic (label:epic, issues #173-#177) so the epic mirror stays in sync with progress.md.\"}}';; esac"
+            "command": "input=$(cat); fp=$(printf '%s' \"$input\" | jq -r '.tool_input.file_path // empty'); case \"$fp\" in */docs/progress-v1.md) printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\",\"additionalContext\":\"docs/progress-v1.md is the FROZEN v1 archive (banner says do not update) - the live tracker is docs/progress.md. Make sure this edit is intentional archive maintenance, not a task tick that belongs in progress.md.\"}}';; */docs/progress.md) printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\",\"additionalContext\":\"docs/progress.md changed - keep the Snapshot counts (open PRs/issues) consistent with GitHub, and if a tracked cycle epic exists (label:epic), tick/untick its checklist to match. The v1 epics #173-#177 closed with v1.0.0; the v1 ledger is the frozen docs/progress-v1.md.\"}}';; esac"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "input=$(cat); cmd=$(printf '%s' \"$input\" | jq -r '.tool_input.command // empty'); case \"$cmd\" in *\"gh pr merge\"*) printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\",\"additionalContext\":\"PR merged - per the PR-template checkbox, update docs/progress.md now: flip the cycle-plan / carried-over rows this PR implements and refresh the Snapshot counts (open PRs/issues); touch CLAUDE.md section 13 only if the headline changed. Tooling/docs PRs that ticked the N/A checkbox need no update.\"}}';; esac"
           }
         ]
       },
