@@ -1,0 +1,2 @@
+Let's start planning for one dot x. Consider all the planning documents. Update the @docs/progress.md  with weak level task granularity. Let's create new milestones in GitHub. Also, try to utilize the GitHub project `DataQ roadmap`. 
+Few things to consider - The Snowflake subscription is going to end by this week. The Azure subscription is for another three weeks. We have to utilize them to the fullest before the subscription ends.
