@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "0cdff5106668",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-195-gx-keypair-kwargs",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "backend/tests/datasources/test_snowflake.py",
+    "docs/datasources-checks.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0c/dff5106668/0/metadata.json",
+      "transcript": "/0c/dff5106668/0/full.jsonl",
+      "compact_transcript": "/0c/dff5106668/0/transcript.jsonl",
+      "content_hash": "/0c/dff5106668/0/content_hash.txt",
+      "prompt": "/0c/dff5106668/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 63115,
+    "cache_creation_tokens": 1103347,
+    "cache_read_tokens": 30878426,
+    "output_tokens": 129152,
+    "api_call_count": 167
+  }
+}
