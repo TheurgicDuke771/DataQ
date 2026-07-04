@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "72842010a19d",
+  "strategy": "manual-commit",
+  "branch": "docs/roadmap-asset-first-ia",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "context/post-v1-roadmap.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/72/842010a19d/0/metadata.json",
+      "transcript": "/72/842010a19d/0/full.jsonl",
+      "compact_transcript": "/72/842010a19d/0/transcript.jsonl",
+      "content_hash": "/72/842010a19d/0/content_hash.txt",
+      "prompt": "/72/842010a19d/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 130518,
+    "cache_creation_tokens": 3756634,
+    "cache_read_tokens": 177835813,
+    "output_tokens": 490177,
+    "api_call_count": 720
+  }
+}
