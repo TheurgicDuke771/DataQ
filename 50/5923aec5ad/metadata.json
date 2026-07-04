@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "505923aec5ad",
+  "strategy": "manual-commit",
+  "branch": "docs/architecture-diagrams-and-changelog",
+  "checkpoints_count": 10,
+  "files_touched": [
+    "docs/architecture.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/50/5923aec5ad/0/metadata.json",
+      "transcript": "/50/5923aec5ad/0/full.jsonl",
+      "compact_transcript": "/50/5923aec5ad/0/transcript.jsonl",
+      "content_hash": "/50/5923aec5ad/0/content_hash.txt",
+      "prompt": "/50/5923aec5ad/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2293,
+    "cache_creation_tokens": 55832,
+    "cache_read_tokens": 8220381,
+    "output_tokens": 25202,
+    "api_call_count": 37
+  }
+}

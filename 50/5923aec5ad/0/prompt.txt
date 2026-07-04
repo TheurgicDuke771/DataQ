@@ -1,0 +1,341 @@
+<task-notification>
+<task-id>a08da3ac7fb7e1016</task-id>
+<tool-use-id>toolu_01Jw8Kttj34bVEW8AJsUA2sV</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/31e2e593-4ff7-47bb-922b-b3f240ba7743/tasks/a08da3ac7fb7e1016.output</output-file>
+<status>completed</status>
+<summary>Agent "Review: CLAUDE.md compliance" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Audit results — PR #586
+
+I checked the diff (`docs/architecture.md`, `backend/tests/db/test_architecture_er_sync.py`, `CHANGELOG.md`, `docs/runbook-faq.md`) against CLAUDE.md's described architecture, the ADR table, and the "What NOT to do" list. I cross-verified the ER diagram's table list, column enums, and cascade/singleton claims against `backend/app/db/models.py` (13 `__tablename__` declarations match the diagram's 13 entities; `CONNECTION_TYPES` matches the `connections.type` comment; the new drift-guard test passes). I also checked commit messages/branch naming against the working-agreement conventions — those are clean (conventional-commit prefixes, `docs/...` branch name, milestone set).
+
+One issue found:
+
+**File:** `docs/architecture.md` — "Data model (ER diagram)" section, `shares` entity (`string permission "view / edit / admin"`)
+
+**Description:** The ER diagram documents `shares.permission` as having three legal values including `admin`, with no annotation that `admin` is never actually grantable. This is technically the raw DB `CHECK` constraint value set (`PERMISSIONS = ("view", "edit", "admin")` in `backend/app/db/models.py:41`), but it omits that `share_service.py` restricts grants to `GRANTABLE_PERMISSIONS = ("view", "edit")` only — `admin` in the DB enum is a reserved/unused value, since workspace-admin is implicit and never stored as a share row, and `owner` isn't a `shares` permission at all (it's `suites.created_by`).
+
+**Reason flagged:** This directly contradicts how CLAUDE.md describes ADR 0027: *"workspace-admin is implicit `admin` on every suite (governance/break-glass; same powers as owner); **grantable suite-admin dropped** — normal users get `owner`/`edit`/`view` only."* As written, the diagram reads as if `admin` is one of three grantable per-suite share permissions, which is the exact thing ADR 0027 explicitly ruled out. It's also inconsistent with this same PR's own `CHANGELOG.md` entry ("**Access model:** ... suite-level sharing (`owner`/`edit`/`view`)"), which states the correct three-tier model. The "Reading notes" subsection under the ER diagram covers cascade posture, singleton constraints, and secrets-as-refs, but has no note reconciling this — worth a one-line clarification (e.g., "`admin` is schema-legal but never granted — see `share_service.GRANTABLE_PERMISSIONS`; workspace-admin is implicit, not a share row") so the diagram doesn't read as contradicting ADR 0027.
+
+No other factual issues found — the datasource/orchestration distinction, `pipeline_runs` vs `runs` (no-FK marker), `trigger_bindings` composite key, severity weights (0.5/1.0/2.0 warn/fail/critical), MCP fail-closed posture, ADR references, and PR/commit conventions all check out against CLAUDE.md and the actual model code.</result>
+<usage><subagent_tokens>76405</subagent_tokens><tool_uses>10</tool_uses><duration_ms>179840</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a914035945f63e934</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/31e2e593-4ff7-47bb-922b-b3f240ba7743/tasks/a914035945f63e934.output</output-file>
+<status>completed</status>
+<summary>Agent "Review: shallow bug scan" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All ADR links resolve, all source-file links resolve, the referenced function names exist, the ER-diagram entity set exactly matches the 13 `__tablename__` values in `backend/app/db/models.py`, and running the new test file locally passes (3 passed). I also traced the `_ENTITY_RE`/`_ER_BLOCK_RE` regex logic by hand and confirmed by execution that it correctly isolates the `erDiagram` block and does not false-match relationship lines (e.g. `users ||--o{ connections : ...`) because the regex requires the `{` to immediately follow the entity word (modulo whitespace), which relationship lines never satisfy. `parents[3]` correctly resolves to the repo root from `backend/tests/db/`.
+
+No large/obvious bugs found. Everything checked out:
+
+- Mermaid syntax (ER diagram relationship notation, sequence-diagram `alt/else/end` nesting, flowchart `subgraph/end` balance, `classDef`/`class` node-id references) is well-formed.
+- The `#35;` HTML-entity-escape workaround is applied consistently and only where the doc's own gotcha note says it's needed (sequence diagrams), and left as plain `#NNN` correctly in the flowchart/stateDiagram (which don't need it).
+- Cross-references between the new "Data model" prose, the ER diagram, and the run-lifecycle/status-derivation diagrams are internally consistent (cascade posture, singleton constraints, severity tiers vs operational statuses, `pipeline_runs` ≠ `runs` no-FK claim).
+- All referenced file paths, function names, and ADR links exist in the repo.
+- The drift-guard test passes as written against current `models.py`.
+
+No issues to report.</result>
+<usage><subagent_tokens>74118</subagent_tokens><tool_uses>7</tool_uses><duration_ms>174862</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a3f6a37d6a3d964d6</task-id>
+<tool-use-id>toolu_01HR5zQ3o5eYNZRo3AfBnKK5</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/31e2e593-4ff7-47bb-922b-b3f240ba7743/tasks/a3f6a37d6a3d964d6.output</output-file>
+<status>completed</status>
+<summary>Agent "Review: code-comment guidance" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## PR #586 Review — Doc/Diagram vs. Code-Comment Consistency Check
+
+I read the module docstrings/comments in all seven files and cross-checked every diagram claim in the PR's `docs/architecture.md` additions. Two contradictions found; everything else (health-score weight semantics, run-status lifecycle, cancel semantics, no-backfill scheduling, dedup-index predicate, `duration_ms` reserved-in-v1, poll/gap-recovery cadence, severity/threshold-override logic) checked out consistent with the code comments.
+
+### Issue 1 — Orchestration event flow diagram claims HTTP 202 for the AlertPing branch; code always returns 200
+
+- **Doc location:** `docs/architecture.md`, "Orchestration event flow" sequence diagram, the `alt AlertPing` branch:
+  ```
+  alt AlertPing — run-anonymous Azure Monitor alert (#492)
+      API-&gt;&gt;BR: enqueue targeted poll-now (provider + resource)
+      API--&gt;&gt;ORC: 202 reconciling
+  ```
+- **Contradicting code comment:** `backend/app/api/v1/orchestration.py:15-18` (module docstring):
+  &gt; "Per ADR 0006/0007 each returns **200 for every well-formed, authenticated event** — including ignored / unattributable ones — so the sender does not retry-storm; only bad auth (401) or a malformed body (422) is an error."
+
+  Confirmed by the route decorators (`status_code=status.HTTP_200_OK`, lines 122 and the Airflow route) and by `_ack_event` (line 90: `EventAck(status="reconciling" if enqueued else "ignored")`) — `"reconciling"` is a value in the JSON response body's `status` field, not an HTTP status code.
+- **Description:** The diagram depicts the fired-AlertPing path as returning HTTP `202`, but per the module's own documented contract (and the actual route decorator) the receiver always answers `200 OK`; `reconciling` only ever appears as the body's `status` string. The diagram should read `API--&gt;&gt;ORC: 200 {status: reconciling}` (or similar), not `202 reconciling`.
+
+### Issue 2 — Suite run lifecycle diagram states alert routing happens before dedup; code runs dedup before routing
+
+- **Doc location:** `docs/architecture.md`, "Suite run lifecycle" sequence diagram:
+  ```
+  W-&gt;&gt;Pub: publish_run_outcome — snooze suppression → alert_on routing → dedup → publish
+  ```
+- **Contradicting code comment/logic:** `backend/app/alerting/dispatch.py:41-57` (`publish_run_outcome`): the order is (1) `suppression.all_failures_snoozed` check, (2) `dedup.is_duplicate_alert` check (using `config.alert_on` only to decide whether to skip dedup under the `always` policy), (3) `build_run_report`, (4) `registry.get_result_publisher().publish(...)`. The actual severity-aware **routing** decision (`route_for`, which decides *whether* and *how loudly* to send based on `alert_on` threshold + worst severity) is invoked *inside* each publisher's `publish()` method — see `backend/app/alerting/routing.py:79-87` (`route_for`) and its call sites `backend/app/alerting/teams.py:55`, `backend/app/alerting/slack.py:122`, `backend/app/alerting/email.py:151` — i.e., **after** dedup, as the last step, not as a distinct step sandwiched between suppression and dedup.
+- **Description:** The diagram's step order reverses "routing" and "dedup" and treats routing as an independent pipeline stage. In the real code, dedup runs immediately after snooze-suppression (only reading `alert_on` to special-case the `always` policy), and severity-based routing is folded into the publish step itself. Correct ordering per the code: `snooze suppression → dedup → build report → publish (routing decision made here)`.
+
+No other diagram/prose claims in the PR contradicted the reviewed source comments — the ER diagram/reading-notes, run-status state diagram, result-status derivation flowchart, and trust-boundary diagram all match the docstrings in `backend/app/db/models.py`, `backend/app/services/run_service.py`, `backend/app/services/severity.py`, `backend/app/services/run_dispatch.py`, and `backend/app/worker/tasks.py`/`celery_app.py` (10-min poll / 15-min lookback / 30-min gap-recovery / 1-hour window all verified against `celery_app.py`'s `beat_schedule`).</result>
+<usage><subagent_tokens>121424</subagent_tokens><tool_uses>15</tool_uses><duration_ms>194038</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a8d43c17af916b029</task-id>
+<tool-use-id>toolu_016t4AghRqJPr41gkmhbrFh5</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/31e2e593-4ff7-47bb-922b-b3f240ba7743/tasks/a8d43c17af916b029.output</output-file>
+<status>completed</status>
+<summary>Agent "Review: prior PR comments" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Review summary — PR #586
+
+I checked PR #586's diff against merged PRs that previously touched `docs/architecture.md` (#48, #44, #498, #471, #515, #552, #355, #152), `docs/runbook-faq.md` (#550), and comparable "contract/drift-guard test" PRs (#559, which is the closest analog to `test_architecture_er_sync.py`). I also verified the changes empirically (checked out the PR into a worktree, ran `mkdocs build --strict` and the new pytest file).
+
+**Issues found: none.**
+
+What I specifically checked and ruled out, with citations:
+
+1. **Test-collection-safety pattern from #559.** That PR's review comment (`TheurgicDuke771` on #559) flagged that a contract test which parses an external artifact *at module import time* can abort the entire test session if the artifact is malformed/missing ("fixture JSON was parsed at module import... became a collection error aborting the whole backend session"). PR #586's `backend/tests/db/test_architecture_er_sync.py` reads `docs/architecture.md` lazily inside `_er_diagram_entities()`, called only from within test functions — not at import time. Verified by running the file directly: 3 passed, no collection errors.
+
+2. **Mermaid `#NNN`/`;` render-truncation gotcha.** PR #586 itself introduces this convention note in `docs/architecture.md` (the same class of defect fixed in #48/#44's mermaid-rendering fixes). Confirmed the PR's own sequence diagrams consistently use the `#35;NNN` escape (e.g. `#35;227`, `#35;215`, `#35;308`, `#35;492`) rather than bare `#NNN` — internally consistent, no regressions of the #48/#44 class.
+
+3. **Absolute vs. relative GitHub links for backend source references.** The PR body claims "`mkdocs build --strict` rejects relative links outside `docs/`." I ran `mkdocs build --strict` on both `main` and the PR branch — it passes cleanly either way, and pre-existing files like `docs/compliance-posture.md` already use relative `../backend/...` links without failing strict mode. So the stated rejection isn't actually enforced by the build, but PR #586's own links match the *majority* existing convention (absolute `blob/main` URLs, as used in `docs/runbook-faq.md`, `docs/contributing.md`, `docs/observability.md`, `docs/orchestration.md`, `docs/index.md`). Not a regression — just a pre-existing (harmless) doc/reality mismatch in the PR's own rationale, not something a past review flagged.
+
+4. **ER diagram accuracy.** Cross-checked all 13 `__tablename__` entries in `backend/app/db/models.py` against the diagram's 13 entities — exact match.
+
+5. **README "Documentation" table omission (CHANGELOG.md not listed).** Checked whether prior PRs establish a convention that every new top-level doc gets a README pointer. PR #436 (added `docs/compliance-posture.md`) did **not** touch `README.md`, and that file — along with `notifications.md`, `orchestration.md`, `best-practices.md`, `mcp-setup.md`, etc. — is still absent from README's curated Documentation table today. No precedent requires it, so `CHANGELOG.md`'s omission from that table isn't a deviation.
+
+6. **Commit granularity.** #586 ships as three commits (diagrams / drift-guard test / CHANGELOG+runbook), matching the "one functionality per commit" working agreement and the same commit-splitting pattern used in #559's fixup-commit review workflow.
+
+No file/line-level defects to report.</result>
+<usage><subagent_tokens>94897</subagent_tokens><tool_uses>27</tool_uses><duration_ms>284629</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a6d8310eb6c49727f</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/31e2e593-4ff7-47bb-922b-b3f240ba7743/tasks/a6d8310eb6c49727f.output</output-file>
+<status>completed</status>
+<summary>Agent "Review: git history context" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Issues found in PR #586
+
+**1. `docs/architecture.md` — "Reading notes" under the new ER diagram (added line, `### Reading notes` bullet 1)**
+
+&gt; "Conventions (elided from the diagram for noise): every table has a `gen_random_uuid()` UUID PK and `created_at`; mutable entities also carry `updated_at`."
+
+This claim is false for two of the tables the diagram itself documents: `runs` and `results`. Both are mutated in place after insert but neither model has an `updated_at` column:
+- `Run.status` is reassigned repeatedly through the run lifecycle (`backend/app/services/run_service.py:179,211,221,246,254,362` — `run.status = "running"/"succeeded"/"failed"/"cancelled"`), yet `Run` (models.py:310-345) only has `created_at`.
+- `Result.sample_failures`/`sample_failures_purged_at` are UPDATEd later by the retention-purge sweep (`run_service.py:699`), yet `Result` (models.py:348-376) only has `created_at`.
+
+So the "mutable entities also carry `updated_at`" convention the PR asserts is contradicted by the very schema the diagram is supposed to be the source of truth for — a reader would wrongly assume `runs`/`results` have a modification timestamp. Reason flagged: cross-checked directly against `backend/app/db/models.py` (current main, includes #542's cascade fix) and `run_service.py`'s status-mutation call sites — no historical commit ever added `updated_at` to these two tables, so the blanket claim was wrong the moment it was written, not just stale.
+
+**2. `docs/architecture.md` — new "Trust boundaries &amp; authentication" flowchart, line 406**
+
+```
+AI -- "same bearer token" --&gt; IDP
+```
+
+This edge depicts AI/MCP clients authenticating directly against the OIDC authority (parallel to the browser's `OIDC auth-code + PKCE --&gt; IDP` edge just above it), implying a live token-acquisition flow between the AI client and Azure AD. That contradicts:
+- ADR 0008 (`docs/adr/0008-mcp-server.md`): "The full OAuth `AzureProvider` was rejected — it drives an authorization-code flow and needs a client secret; **clients already hold a token**."
+- `docs/mcp-setup.md` (added by PR #550 / commit `f284403d`, predating this PR): the token is obtained by signing into the web app and manually copying `access_token` out of browser session storage — the MCP client never talks to the IDP at all.
+
+The diagram should show the AI client only ever receiving the token indirectly (e.g. via the Browser/user), not as an independent edge into `IDP`. As written it misrepresents the exact flow ADR 0008 explicitly designed against.
+
+**3. (Minor/lower-confidence) `docs/architecture.md` — ER diagram `pipeline_runs` entity**
+
+The diagram omits `pipeline_runs.last_updated_at`, even though this field is not just an audit timestamp elided by the stated convention (which only covers `created_at`/generic `updated_at`) — it's load-bearing business logic used by `orchestration_service.py:367-375` to decide whether an incoming provider update is stale and should be skipped, i.e. central to the very "Orchestration event flow" sequence diagram this same PR adds. The PR's own test docstring (`backend/tests/db/test_architecture_er_sync.py`) disclaims column-level checking as "a review concern," so this won't fail CI, but it's a real gap given the field's role in the reconciliation logic the PR is documenting.
+
+No issues found with the ER diagram's table-level completeness (verified by actually running the new `backend/tests/db/test_architecture_er_sync.py` — all 3 tests pass against current `main`), the CASCADE annotations (all match the #542 fix — `acd43a06`, "suite delete cascades runs+results"), or the issue-number references sprinkled through the sequence/state/flow diagrams (#227, #215, #122, #492, #308, #171, #309, #511 all cross-checked against their originating commits and match).</result>
+<usage><subagent_tokens>119907</subagent_tokens><tool_uses>38</tool_uses><duration_ms>449197</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a8965fd2a2aa98d91</task-id>
+<tool-use-id>toolu_01JTMLRRWLwoJcMSfPRgWoYy</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/31e2e593-4ff7-47bb-922b-b3f240ba7743/tasks/a8965fd2a2aa98d91.output</output-file>
+<status>completed</status>
+<summary>Agent "Score issue 3 (alert order)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Perfect. I can now verify the issue conclusively.
+
+**Analysis:**
+
+Reading the code flow in `dispatch.py`:
+
+1. **Line 44** — Snooze suppression check: `suppression.all_failures_snoozed()`
+2. **Lines 51–55** — Dedup check: `dedup.is_duplicate_alert()`. Critically, `alert_on` is consulted only to decide whether to *skip dedup* for the `ALWAYS` policy (line 53: `if policy != ALWAYS and dedup.is_duplicate_alert`)
+3. **Line 56** — Build report: `build_run_report()`
+4. **Line 57** — Call publisher: `registry.get_result_publisher().publish()`
+
+In `teams.py` (the publisher), routing happens **inside** the `publish()` method:
+- **Line 55**: `route = route_for(report, policy)` is called *inside* the publisher
+- Lines 56–57 then gate delivery based on the route's `should_send` flag
+
+**The diagram (line 279 of architecture.md) reads:** `snooze suppression → alert_on routing → dedup → publish`
+
+**The actual order is:** `snooze suppression → dedup → publish(routing)`
+
+The diagram reverses the order — it shows routing before dedup, when routing actually happens *inside* the publisher (after dedup is checked at the dispatch layer). This contradicts the explicit instruction at the top of `architecture.md` (line 3): "Keep these diagrams in sync with the code."
+
+SCORE: 75
+
+The issue is real and verifiable — the sequence diagram's step order contradicts the code's actual execution order, and the CLAUDE.md explicitly mandates keeping diagrams synchronized. The fix is straightforward (reorder the description), and anyone relying on the diagram to understand alert-dispatch logic will be misled about when routing decisions occur. It's not code-critical, but it's a clear documentation defect in a key reference artifact.</result>
+<usage><subagent_tokens>48611</subagent_tokens><tool_uses>6</tool_uses><duration_ms>40172</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a6f873fb51d7cba81</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/31e2e593-4ff7-47bb-922b-b3f240ba7743/tasks/a6f873fb51d7cba81.output</output-file>
+<status>completed</status>
+<summary>Agent "Score issue 4 (updated_at claim)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>SCORE: 75
+
+**Justification:** I verified that Run and Result models (backend/app/db/models.py lines 310–346 and 348–376) definitively lack `updated_at` columns, yet both are mutated in practice—Run.status transitions occur in run_service.py (lines 179, 211, 221, 362), and Result.sample_failures are purged via `purge_expired_sample_failures` (lines 658–707). The architecture.md reading note (line 233) claims "mutable entities also carry `updated_at`", which is factually incorrect for these two tables. This is a real documentation-accuracy defect that directly violates CLAUDE.md §3's mandate to "Keep these diagrams in sync with the code."</result>
+<usage><subagent_tokens>48365</subagent_tokens><tool_uses>5</tool_uses><duration_ms>39178</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ab9f8f71732927a87</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/31e2e593-4ff7-47bb-922b-b3f240ba7743/tasks/ab9f8f71732927a87.output</output-file>
+<status>completed</status>
+<summary>Agent "Score issue 1 (shares.admin)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Verification Summary
+
+I've verified the issue across three key locations:
+
+**1. The diagram (docs/architecture.md:161-166)** shows:
+```
+shares {
+    ...
+    string permission "view / edit / admin"
+}
+```
+
+**2. The database schema (backend/app/db/models.py:41)** defines:
+```python
+PERMISSIONS = ("view", "edit", "admin")
+```
+
+**3. The service layer (backend/app/services/share_service.py:48)** restricts:
+```python
+GRANTABLE_PERMISSIONS = ("view", "edit")
+```
+With explicit guards at line 54-56 rejecting 'admin' with the message: "share permission must be 'view' or 'edit' ('admin'/'owner' are not grantable)".
+
+**4. CLAUDE.md explicitly states (section 9, ADR 0027):**
+&gt; "Suite permission model = **workspace-admin is implicit `admin` on every suite**... **grantable suite-admin dropped** — normal users get `owner`/`edit`/`view` only"
+
+**Analysis:**
+
+This is a **real documentation defect**. The diagram documents the database CHECK constraint accurately (which does include 'admin'), but it reads as if 'admin' is a valid, grantable permission value. This directly contradicts:
+- CLAUDE.md's ADR 0027 principle ("grantable suite-admin dropped")
+- The service layer's actual behavior (GRANTABLE_PERMISSIONS restricts to view/edit)
+- The PR's own CHANGELOG (states sharing is "owner/edit/view")
+
+A reader unfamiliar with ADR 0027 would reasonably infer from the diagram that 'admin' is a valid permission. The suggested one-line reading note would clarify that 'admin' exists in the CHECK constraint but is never grantable by the service layer (workspace-admins get implicit admin access, not via share rows).
+
+**SCORE: 75**
+
+This is highly confident because: (1) ADR 0027 is explicitly mentioned in CLAUDE.md as a locked decision; (2) the diagram directly contradicts the stated permission model without clarification; (3) this is a documented working agreement that diagrams must "keep in sync with the code"; (4) the fix is appropriate and would prevent misunderstanding of the permission system. It's 75 rather than 100 because the database schema documentation itself is accurate—this is a clarity/contract issue, not a schema error.</result>
+<usage><subagent_tokens>56516</subagent_tokens><tool_uses>6</tool_uses><duration_ms>69430</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a8fa6ebb9beb4abda</task-id>
+<tool-use-id>toolu_013uqe8tBUYqLJvk92KDJ9L8</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/31e2e593-4ff7-47bb-922b-b3f240ba7743/tasks/a8fa6ebb9beb4abda.output</output-file>
+<status>completed</status>
+<summary>Agent "Score issue 5 (AI→IDP edge)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I'll analyze this code-review issue by examining what the documentation actually says about MCP token acquisition and what the diagram depicts.
+
+Looking at the three key sources:
+
+**From docs/architecture.md (line 406):**
+The flowchart shows:
+```
+AI -- "same bearer token" --&gt; IDP
+```
+
+**From ADR 0008 (lines 19-21):**
+&gt; "The full OAuth `AzureProvider` was rejected — it drives an authorization-code flow and needs a client secret; **clients already hold a token.**"
+
+This explicitly rejects any design where MCP clients contact the IDP to acquire tokens.
+
+**From docs/mcp-setup.md (lines 20-22):**
+&gt; "Sign in to the DataQ web app, open your browser's developer tools → **Application → Session Storage** → the `oidc.user:…` entry → copy the `access_token` value."
+
+The documented token-acquisition flow is unambiguous: sign into the web app (where the browser performs PKCE), then **copy the pre-existing token** from browser session storage into the MCP client config. **The MCP client never contacts the IDP.**
+
+**The misrepresentation:**
+
+The diagram edge `AI -- "same bearer token" --&gt; IDP` visually depicts direct communication between AI clients and the IDP, drawn as a parallel line to the browser's PKCE edge. This contradicts both ADR 0008's rejection of any IDP contact by clients ("clients already hold a token") and docs/mcp-setup.md's documented flow (copy from browser, never contact IDP).
+
+The label "same bearer token" is ambiguous — it could charitably mean "originates from the same IDP" — but in a "Trust boundaries &amp; authentication" diagram, an edge typically indicates credential flow/communication. The diagram structure misleadingly suggests MCP clients do IDP interaction.
+
+Azure CLI can legitimately acquire tokens directly (via `az account get-access-token`), but that's not the documented DataQ MCP setup path.
+
+**SCORE: 75**
+
+The diagram genuinely misrepresents the documented MCP token-acquisition flow and contradicts explicit architectural decisions in ADR 0008. It's a real clarity issue that will confuse new users about how MCP authentication works. However, it's a documentation/diagram issue rather than a code bug, and the edge label provides *some* interpretive flexibility (though the diagram's visual structure strongly undermines that defense).</result>
+<usage><subagent_tokens>47302</subagent_tokens><tool_uses>3</tool_uses><duration_ms>37939</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a9174c4b55a656e45</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/31e2e593-4ff7-47bb-922b-b3f240ba7743/tasks/a9174c4b55a656e45.output</output-file>
+<status>completed</status>
+<summary>Agent "Score issue 6 (last_updated_at)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I've now verified the claim by examining:
+
+1. **The ER diagram** (docs/architecture.md, lines 167-178): Shows `pipeline_runs` without `last_updated_at`
+2. **The actual model** (backend/app/db/models.py, line 428): Explicitly defines `last_updated_at: Mapped[datetime | None]`
+3. **The service usage** (backend/app/services/orchestration_service.py, lines 366-376): Actively queries and uses `last_updated_at` in the critical polling skip logic
+
+**The skip logic** (orchestration_service.py `ingest_polled_runs`):
+```python
+if (
+    existing is not None
+    and existing.status in _TERMINAL_PIPELINE_STATUSES
+    and existing.last_updated_at &gt;= skip_updated_since  # ← load-bearing
+):
+    skipped += 1
+    continue
+```
+
+This is the churn-optimisation that prevents re-recording terminal runs within a time window — central to the polling fallback (#171, documented in the sequence diagram at architecture.md line 322).
+
+**Against inclusion:** The diagram's reading notes (line 233) state that `created_at` is elided per convention. However, **`last_updated_at` is not** the standard `updated_at` convention column — it's a domain-specific field unique to pipeline_runs, unlike the generic `updated_at` that `TriggerBinding` and other mutable entities carry.
+
+**Real gap:** Someone reading the architecture to understand the orchestration polling flow (lines 285–326) would not understand why runs are skipped or what controls the churn optimisation without seeing this column and its logic.
+
+SCORE: 60
+
+**Justification:** This is a real omission — `last_updated_at` is load-bearing and domain-critical to the polling skip logic documented in the same file, not covered by the stated `created_at`/`updated_at` convention elision. However, it's a documentation completeness issue rather than a functionality defect; the omission doesn't break the feature or mislead someone reading the code directly, only someone relying solely on the architecture diagram to understand the flow.</result>
+<usage><subagent_tokens>51809</subagent_tokens><tool_uses>3</tool_uses><duration_ms>34303</duration_ms></usage>
+</task-notification>
