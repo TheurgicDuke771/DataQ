@@ -403,3 +403,59 @@ yeah, merge it
 Before we go with v1, I'm thinking one little restructure of docs folder. can we group all the mk docs [github pages] in one subfolder? Or is that not needed? What do you think?
 After that, run the doc-consistency agent, fact check the @docs/progress.md  [also verify the conunt and statement consistenct with in the doc it self], do the same for other docs also.  
 Then go ahead with - v1.0.0 tag + release[with proper release note as you suggested] + close-out docs (retro, ops-timers-skipped, epic #177 + Week-8 milestone close).
+
+---
+
+<task-notification>
+<task-id>a3062fbddb1d6765c</task-id>
+<tool-use-id>toolu_01HZLtukJMJLHXiA1CeRGtDF</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/2c8d359c-1386-49f9-8dc5-62a253753085/tasks/a3062fbddb1d6765c.output</output-file>
+<status>completed</status>
+<summary>Agent "Pre-v1 docs fact-check audit" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Summary
+
+I fact-checked the pre-v1.0.0 documentation against `gh` CLI ground truth (54 open issues: 1×Week-8 milestone `#177`, 53×Backlog; PRs #570/#572 merged 2026-07-04; issue #371/#567 closed by #570; #569 opened+closed same session; #568/#571/#573 newly filed) and made surgical fixes. No roadmap task status changed in any edit, so no GitHub tracking-epic checkbox sync was needed (verified epic #177's body — all rows already ✅, unaffected).
+
+### Fixes applied
+
+**`/Users/arijit/Coding/Python/DataQ/docs/progress.md`**
+- Snapshot "Open issues" row: `52 open / 2×Week8 / 50×Backlog` (stale, dated 07-03) → `54 open / 1×Week8 (#177) / 53×Backlog`; added the qa-verifier go-live blocker (#567, closed by #570, which also closed the long-open #371), the new Backlog filings (#568/#571/#573), and #569 (opened+closed same session).
+- Snapshot "Open PRs" row: `none open — latest #556–#560` → added #570 and #572 (both merged 2026-07-04).
+- Snapshot "Next milestone" row: `50 issues, themed` → `53 issues, themed`.
+- Bottom "Open issues register" heading/date, milestone breakdown (`Week 8 → 2 · Backlog → 50` → `→ 1 · → 53`), and the Week-8 sub-table: removed #563 (it had already moved from the Week-8 milestone to Backlog on 2026-07-03, before this section was last written) and added the #567/#570/#569/#568/#571/#573 detail.
+
+**`/Users/arijit/Coding/Python/DataQ/CLAUDE.md`** (§13 only, per scope)
+- "Active blockers" line: removed the now-stale "validation-handler `ctx` serialization #371" clause (closed today by #570) and added a note on the qa-verifier blocker fix + its three new Backlog spinoffs.
+- "Next milestone" line: `50 issues, themed` → `53 issues, themed`.
+
+**`/Users/arijit/Coding/Python/DataQ/README.md`**
+- The `Status:` line was stale by a full week — it still said "pre-v1 — Week 7 (deployment, hardening &amp; docs). Weeks 1–6 complete," but Week 7 *and* Week 8 have since closed (2026-07-03). Updated to "Week 8 of 8 complete (roadmap 187/189 done) — the v1 go-live checklist is in flight."
+
+**`/Users/arijit/Coding/Python/DataQ/deploy/README.md`**
+- "Interim posture until ADR 0026 ... is decided" was stale — ADR 0026's decision record (deferred to post-v1, PATs-first) was recorded 2026-07-03. Updated to reflect the decision is made, with a link to the ADR.
+
+### Checked and found consistent (no fix needed)
+- `docs/adr/README.md` vs `docs/adr/*.md`: all 27 ADR files have matching index rows; no dangling references; ADR 0026's "Proposed — deferred to post-v1" status is consistent between the ADR file and the index's Pending-section entry (0026 already has a file but sits in "Pending (to be written)" — a minor pre-existing categorization nit, not a factual error, left alone).
+- CLAUDE.md §9 ADR table: intentionally omits Proposed-status ADRs (0015, 0026) — consistent pattern, not a violation.
+- `mkdocs.yml` nav: every listed page exists on disk; `docs/index.md` and `docs/feature-matrix.md` have no stale claims.
+- Aggregate/per-week roadmap task counts (187/189, Week totals) are internal feature-tracking, unaffected by today's GitHub issue/PR activity — still self-consistent.
+- `docs/retro-v1.md`: **found but deliberately not touched** — it's untracked (`git status` shows `??`), dated 2026-07-04, and reads as a full v1.0.0 retrospective ("closing the 8-week build," referencing a `v1.0.0` tag) even though no `v1.0.0` tag exists yet and CLAUDE.md/progress.md both still list the tag as pending. This is very likely the human's own in-progress close-out narrative (matching the task's note that "the human will write the close-out narrative separately") — I did not edit it, but flag that it contains a stale "50 issues" figure and presupposes the tag/retro are done. Worth a look before it's committed.
+
+### Deliberately not fixed (out of stated scope)
+- `context/post-v1-roadmap.md` was not updated to add rows for #568/#571/#573 — the doc's own preamble explicitly says "Source of truth for status: the GitHub milestone... don't hand-maintain here," so leaving new Backlog issues un-enumerated there is by design, not a staleness bug.
+- CONTRIBUTING.md rule-numbering / working-agreement audit was out of the requested scope (tasks 1–6 didn't include it) and I found no incidental discrepancy while reading adjacent sections, so I left it untouched.
+
+### `git diff --stat`
+```
+ CLAUDE.md        |  4 ++--
+ README.md        |  2 +-
+ deploy/README.md |  3 ++-
+ docs/progress.md | 17 ++++++++---------
+ 4 files changed, 13 insertions(+), 13 deletions(-)
+```
+Plus the untracked `docs/retro-v1.md` (not created by me, not modified).
+
+No commits were made; all changes are in the working tree on `docs/v1-close-out`.</result>
+<usage><subagent_tokens>166279</subagent_tokens><tool_uses>55</tool_uses><duration_ms>420853</duration_ms></usage>
+</task-notification>
