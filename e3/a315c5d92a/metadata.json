@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "e3a315c5d92a",
+  "strategy": "manual-commit",
+  "branch": "docs/theme8-cloud-triad",
+  "checkpoints_count": 3,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/e3/a315c5d92a/0/metadata.json",
+      "transcript": "/e3/a315c5d92a/0/full.jsonl",
+      "compact_transcript": "/e3/a315c5d92a/0/transcript.jsonl",
+      "content_hash": "/e3/a315c5d92a/0/content_hash.txt",
+      "prompt": "/e3/a315c5d92a/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 126360,
+    "cache_creation_tokens": 3465347,
+    "cache_read_tokens": 169116893,
+    "output_tokens": 459814,
+    "api_call_count": 686
+  }
+}
