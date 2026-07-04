@@ -59,7 +59,7 @@ the remaining monitor kinds), *governance* (admin console, compliance controls),
 | G-a | **Monitors only what you remember to check** — hand-authored expectations; no anomaly baselines, no schema-drift, no auto-suggested checks. Category leaders' core pitch (Monte Carlo/Anomalo) is the inverse: automatic coverage. An unknown-unknown incident sails past DataQ. | Existential for "product"; the single biggest gap | **Theme 1** (remaining monitor kinds: `schema_drift`, `anomaly`) + **Theme 2** (auto-suggestion/LLM authoring) |
 | G-b | **Scale unproven; structurally weak on 2 of 4 paths** — flat-file + UC runners load the whole file/table into worker pandas; largest table ever validated is a few thousand synthetic rows. No sampling/partition/incremental strategy for checks. (Snowflake pushes down via SQL — fine.) | 100M-row table = worker OOM; blocks any serious deployment | **Theme 7** (perf & scale — add: sampling/partition-aware/incremental check execution as a named workstream) |
 | G-c | **Every "verified" is self-referential** — one operator, ~1 week live, against a harness built by the same author. Zero real-world data-pathology exposure at scale (schema churn, half-written files, encoding chaos in volume). | Unknown failure modes in the first real deployment | **Theme 10** (test-hardening) + first-real-workload milestone, post-v1 |
-| G-d | **No incident workflow, no lineage, no ownership routing** — runs + alerts exist; "what broke downstream / who owns it / when was it resolved" doesn't. No data-access audit trail (the HIPAA gate). | This is what DQ products are bought for | **Theme 9** (results/reporting depth) + **Theme 4** / [#431](https://github.com/TheurgicDuke771/DataQ/issues/431) (audit trail); lineage/incident objects = new design doc needed; the incident-*narrative* half is design-captured as **Theme 2's agentic root-cause analysis** (2026-07-04) |
+| G-d | **No incident workflow, no lineage, no ownership routing** — runs + alerts exist; "what broke downstream / who owns it / when was it resolved" doesn't. No data-access audit trail (the HIPAA gate). | This is what DQ products are bought for | **Theme 9** (results/reporting depth) + **Theme 4** / [#431](https://github.com/TheurgicDuke771/DataQ/issues/431) (audit trail); lineage/incident objects = new design doc needed; the incident-*narrative* half is design-captured as **Theme 2's agentic root-cause analysis** (2026-07-04); lineage may be *pulled/emitted* rather than built — **Theme 14** governance-catalog + OpenLineage capture (2026-07-04) |
 | G-e | **Single-tenant, config-allowlist admin, one validated IdP** — fine internally, not sellable. | Blocks multi-team/commercial use | **Theme 3** (admin/access) + ADR 0026 / [#461](https://github.com/TheurgicDuke771/DataQ/issues/461) (API keys) |
 | G-f | **Ecosystem: 4 datasources** vs the 30–50 a category product ships; no dbt integration (seam reserved); can't check the Postgres it runs on. | Adoption ceiling | **Theme 8** (datasource depth; generic-RDBMS adapter is the cheap first win) |
 | G-g | **Engine risk: GX Core pin** — the product's core capability rides a fast-moving third party with documented API drift; DQX swap-in shape exists for UC only. | Strategic dependency | **Theme 2**'s engine-abstraction watch item (below) — no issue until the churn trigger fires |
@@ -183,6 +183,25 @@ controller/processor split). These close the gaps for a credible v2.x "processor
 | [#434](https://github.com/TheurgicDuke771/DataQ/issues/434) | 🟠 **G4** region/residency assertion + enforcement | GDPR Ch. V; LLM transfer vector |
 | [#435](https://github.com/TheurgicDuke771/DataQ/issues/435) | 🟡 **G5** assert encryption-at-rest in IaC + offer CMK | — |
 
+### Privacy pack (design-captured 2026-07-04)
+
+Builds on **G3/#433** (authoritative warehouse-tag classification) and **absorbs the
+classification remainder** left open when #415 closed with #417's column-aware redaction —
+the new pieces, no issues filed yet:
+
+- **Profiler-side PII auto-detection** as an additional classification *source*: the profiler
+  already visits every column; lightweight format/regex detectors (no LLM) persist a per-column
+  classification tag, and redaction reads **tags** instead of name heuristics. Classification
+  sources compose: warehouse tags (#433) > governance-catalog pull (Theme 14) > profiler
+  heuristics, most-authoritative wins.
+- **`pii_drift` monitor kind** — "a column that looks like email addresses just appeared in a
+  table not classified as containing PII." Rides the ADR 0012 seam next to Theme 1's
+  `schema_drift`; the alert privacy teams actually fear, and one mainstream DQ tools don't fire.
+- **Zero-sample "privacy mode"** — a deployment-level switch where failing-row samples are
+  never persisted (aggregates + `metric_value` + unexpected-counts only). Mostly a write-path
+  gate; turns the existing redaction stack into a tiered posture: full → column-aware
+  redacted (#417) → zero-sample. The first question HIPAA-tier / EU deployments ask.
+
 ---
 
 ## Theme 5 — Alerting depth (beyond the v1 Teams/Slack/email seam)
@@ -193,11 +212,13 @@ These enrich and de-risk it:
 | # | Title |
 |---|---|
 | [#416](https://github.com/TheurgicDuke771/DataQ/issues/416) | Enrich Slack/email alerts: deep link to run, per-check expected-vs-observed, actionable sample, run metadata |
-| [#415](https://github.com/TheurgicDuke771/DataQ/issues/415) | Actionable failing-row samples: column-aware redaction (PII vs identifier vs safe) — *partly done in #417; classification remainder here* |
+| [#415](https://github.com/TheurgicDuke771/DataQ/issues/415) | Actionable failing-row samples: column-aware redaction (PII vs identifier vs safe) — *closed with #417; the classification remainder is design-captured in Theme 4's privacy pack (2026-07-04)* |
 | [#386](https://github.com/TheurgicDuke771/DataQ/issues/386) | Tie `dedup._RANK` to a shared severity source so it can't drift from `routing.route_for` |
 | [#387](https://github.com/TheurgicDuke771/DataQ/issues/387) | `suppression.py` should early-return `False` on `run.status == 'failed'` |
 | [#388](https://github.com/TheurgicDuke771/DataQ/issues/388) | Single-source the `alert_on` literals (model CHECK ↔ validation) to prevent drift |
 | [#389](https://github.com/TheurgicDuke771/DataQ/issues/389) | Rename `teams_webhook_secret_name` → channel-neutral before a 2nd ResultPublisher ships |
+| _(no issue yet)_ | **Generic HMAC-signed outbound-webhook `ResultPublisher`** — one publisher makes the alerting side vendor-neutral: signed JSON POST (mirroring the Airflow *ingest* signing pattern), payloads pass the same redaction rules. Prerequisite: the #389 channel-neutral rename. |
+| _(no issue yet)_ | **Per-destination payload templates + auth header** on the webhook publisher — a thin template layer gives **create-only coverage of PagerDuty (Events API v2), Opsgenie, ServiceNow (inbound REST), and Jira (Automation inbound webhooks) with zero vendor-specific code** in DataQ. Bidirectional/ITSM-grade sync is Theme 14, deliberately separate. |
 | [#492](https://github.com/TheurgicDuke771/DataQ/issues/492) | **ADF webhook live delivery (deferred from v1).** Azure Log Alerts V2 drop query rows (only dimensions; `runId` high-cardinality); ADF metric alerts are aggregate (no `runId`); v1 alerting is per-suite with **no workspace/orchestration-failure channel**. Revisit needs either a workspace alert channel + metric-alert→bound-suite attribution (failure-alert), or Log-Analytics diagnostics + a dimension-split scheduled-query rule / Logic-App reshaper (per-run). The receiver + in-app URL generator already shipped; the live all-status poll covers ADF monitoring for v1. See the #492 deferral note for full caveats |
 
 ---
@@ -241,6 +262,7 @@ Rides the harness's parameterizable volume (ADR 0021; HARNESS_TODO §6). Baselin
 | _(no issue yet)_ | **Generic PostgreSQL adapter** — `ConnectionAdapter` + thin `CheckRunner` on the shared `gx_runner` (same shape as the Snowflake path; GX supports Postgres natively via SQLAlchemy). One **engine-generic** adapter (never an Azure-branded one — ADR 0010/0013) covers Azure Database for PostgreSQL, **Azure HorizonDB** (fully PG-compatible — standard connection strings/drivers; *Preview* as of 2026-07, so support it as "it's Postgres" and don't advertise a named integration until GA), and AWS RDS / GCP Cloud SQL / self-hosted for free. Dogfoodable against the app's own Postgres, so integration tests need no new harness infra. This is the G-f "generic-RDBMS cheap first win". |
 | _(no issue yet)_ | **Generic MSSQL / T-SQL adapter** — one adapter covers **Microsoft Fabric** (Warehouse + Lakehouse SQL analytics endpoint + Fabric SQL database — all standard SQL Server TDS endpoints, port 1433, ODBC 18+ / pyodbc; GX supports mssql via SQLAlchemy), **Azure SQL Database**, Synapse dedicated pools — and, engine-generic like the PG row (ADR 0010/0013), any standard SQL Server endpoint (on-prem, AWS RDS for SQL Server). The one real design cost: Fabric endpoints want **Entra ID auth** (user or service principal; SQL auth unsupported on some Fabric items) → the adapter needs a client-credentials token flow — same KV-held secret model already used for ADF. Bonus: anything mirrored into Fabric (Cosmos DB, HorizonDB, …) becomes checkable through its mirror's SQL analytics endpoint with zero extra adapter code. |
 | _(no issue yet)_ | **OneLake flat-file spike** — OneLake speaks the ADLS Gen2 DFS API (`onelake.dfs.fabric.microsoft.com`); verify the existing ADLS flat-file adapter reaches Fabric lake files with just an endpoint override + Entra auth before promising it. Spike first, then a small extension — not a new adapter. |
+| _(no issue yet)_ | **S3-compatible `endpoint_url` override** on the existing S3 adapter — one config field unlocks MinIO, Cloudflare R2, and on-prem object stores (ADR 0010/0013 vendor-neutral; same shape as the OneLake spike). |
 
 **Recommended order** (decided 2026-07-03, sits alongside — not competing with — the Theme-1 opening
 sequence; different layer of the stack): PG adapter → MSSQL/Fabric adapter → OneLake spike.
@@ -358,9 +380,71 @@ conversational interface); `_probe` (demo-only); `/me` + `/users/search` (low va
 
 ---
 
+## Theme 14 — Ecosystem & vendor-neutral portability (added 2026-07-04)
+
+Meet users in the tools they already run — incident/ITSM, test management, data governance,
+GitOps — and keep every integration behind a seam with **open standards first** (ADR 0010/0013:
+no tool becomes architecture; each vendor is one impl). All design-captured, no issues filed yet.
+
+### Checks-as-code: `dataq.yaml` + a CI gate
+
+Formalize the existing export/import format into a **versioned declarative suite format** plus a
+CLI / GitHub Action: `dataq validate` in a data-pipeline repo's CI, `dataq apply` to sync,
+**drift detection** between repo and workspace. The market leaders (Soda, GX Cloud) lead with
+this workflow; DataQ's angle is that the format **round-trips with a full UI and the
+suite-scoped authz model** — checks-as-code tools mostly have no real UI, UI tools no real
+GitOps. Hard dependency: **ADR 0026 / #461** (PATs) — this is its killer use case, and the
+argument for scheduling PATs early in the cycle.
+
+### Incident / ITSM — tier 2, bidirectional
+
+Tier 1 (create-only PagerDuty / Opsgenie / ServiceNow / Jira via the generic signed-webhook
+publisher + payload templates) lives in **Theme 5** and needs zero vendor code. Tier 2 is the
+ITSM-grade half: DataQ incident objects (the G-d design) sync *both ways* — ack/resolve in
+PagerDuty/ServiceNow reflects in DataQ, Jira issue links attach to results — and the **Theme 2
+agentic-RCA evidence card is the incident payload**, so the ticket arrives with the diagnosis
+pre-attached. Per-vendor impls behind one `IncidentProvider`-shaped seam, only after tier 1
+proves demand.
+
+### Test-management publishing (TestRail, Xray, Zephyr)
+
+DQ artifacts map cleanly: suites → test plans, checks → cases, runs → test runs with results.
+A result-*exporter* seam (a `ResultPublisher` sibling — per-run push, not per-alert) publishes
+run outcomes into the test-management tool of record; pairs with Theme 9's PDF export (#345)
+as the "reporting into someone else's system of record" family.
+
+### Data-governance catalogs (+ OpenLineage)
+
+Two directions, one seam:
+
+- **Pull** — consume the catalog's glossary/PII classifications as an authoritative
+  classification source (feeds Theme 4's privacy pack + #433, ranked above profiler
+  heuristics), and **pull lineage** to power the RCA blast-radius (Theme 2) and gap G-d
+  instead of building a lineage graph ourselves.
+- **Push** — publish DQ results as **quality facets/assertions on catalog entities**, so data
+  consumers see check status where they shop for data. DataHub and OpenMetadata both have
+  first-class assertion/data-quality APIs — natural open-source reference impls; Microsoft
+  Purview covers the Azure story; Collibra / Atlan / Alation are commercial targets behind the
+  same seam.
+- **Open standard first: emit OpenLineage events** from runs — one vendor-neutral event stream
+  consumed by Marquez, DataHub, Purview, Atlan and the orchestrators' own lineage backends;
+  cheaper and more neutral than any point integration, and the likely first slice.
+
+### Observability & deploy portability
+
+Completes the last half-open ADR 0010 seam (tracked issues previously unmapped in this doc):
+
+| # | Title |
+|---|---|
+| [#524](https://github.com/TheurgicDuke771/DataQ/issues/524) | Migrate the log pipeline opencensus → OTel (opencensus is EOL; spans already OTel-native via #525) |
+| _(no issue yet)_ | **Generic OTLP exporter endpoint** (`OTEL_EXPORTER_OTLP_ENDPOINT`) — App Insights becomes one backend among any OTLP consumer (Grafana/Tempo, Datadog, Jaeger); the observability twin of the `DATAQ_AUTH_*` generic-OIDC cutover (ADR 0028), and a BYOL/marketplace prerequisite in spirit (ADR 0013) |
+| [#505](https://github.com/TheurgicDuke771/DataQ/issues/505) | AWS + GCP deploy IaC behind the provider-agnostic seams (ADR 0028 follow-up) |
+
+---
+
 ## How this maps to GitHub
 
 - **Status** lives on the GitHub `Backlog (post-v1 / testing)` milestone — this doc mirrors it by theme.
-- When you pick up a theme, **file the design-only items** (Themes 2, 11) as issues on that milestone first.
+- When you pick up a theme, **file the design-only items** (Themes 2, 4, 5, 8, 11, 14 carry them) as issues on that milestone first.
 - New post-v1 work: open the issue, milestone it `Backlog (post-v1 / testing)`, and add a row to the
   matching theme here. Keep the detailed *design* in the three linked docs, not in this index.
