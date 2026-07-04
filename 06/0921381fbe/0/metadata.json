@@ -1,0 +1,58 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_id": "060921381fbe",
+  "session_id": "a9be1a77-8cac-4d65-b95c-94daac919ec8",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-04T23:27:57.141031Z",
+  "branch": "fix/issue-195-gx-keypair-kwargs",
+  "checkpoints_count": 3,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "9c21d72ccee4",
+  "token_usage": {
+    "input_tokens": 60694,
+    "cache_creation_tokens": 523014,
+    "cache_read_tokens": 24319917,
+    "output_tokens": 113994,
+    "api_call_count": 143
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01KMbyiS7qpgWxfWH3b3AEi7",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "9c21d72ccee4",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 367,
+        "end": 368,
+        "entry_ids": [
+          "09a8cee6-2d46-4d67-87f6-9e5b3198bc19"
+        ],
+        "tool_use_id": "toolu_01KMbyiS7qpgWxfWH3b3AEi7"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01KMbyiS7qpgWxfWH3b3AEi7"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 3
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "060921381fbe",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-195-gx-keypair-kwargs",
+  "checkpoints_count": 3,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/06/0921381fbe/0/metadata.json",
+      "transcript": "/06/0921381fbe/0/full.jsonl",
+      "compact_transcript": "/06/0921381fbe/0/transcript.jsonl",
+      "content_hash": "/06/0921381fbe/0/content_hash.txt",
+      "prompt": "/06/0921381fbe/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 60694,
+    "cache_creation_tokens": 523014,
+    "cache_read_tokens": 24319917,
+    "output_tokens": 113994,
+    "api_call_count": 143
+  }
+}
