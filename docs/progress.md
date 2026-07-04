@@ -106,10 +106,12 @@ _The rest of the 55 are mapped by theme in [post-v1-roadmap.md](../context/post-
 > (Theme-1 `schema_drift` + `anomaly` → scale-aware execution G-b → incident/lineage design
 > G-d) on infra that survives: the local stack, S3 (AWS), and Databricks Free Edition.
 
-### v1.1 W1 — Snowflake close-out + dry-run depth (due 2026-07-11) — 0/6
+### v1.1 W1 — Snowflake close-out + PATs (due 2026-07-11) — 0/6
 
 ⚡ **The three Snowflake-live rows are day-1 work, in this order** — the subscription lapses
-within days; after it does they can no longer be live-verified.
+within days; after it does they can no longer be live-verified. **PATs (#461) start right
+behind them** (pulled forward from W2 at planning, 2026-07-04): the biggest unlocker in the
+backlog, and it must land while Azure AD is still the reference validator.
 
 | Status | Task | Theme / gap |
 |---|---|---|
@@ -117,21 +119,22 @@ within days; after it does they can no longer be live-verified.
 | ⬜ | [#195](https://github.com/TheurgicDuke771/DataQ/issues/195) Snowflake key-pair: migrate off deprecated GX `connect_args` path — **live-verify** | Theme 8 |
 | ⬜ | [#587](https://github.com/TheurgicDuke771/DataQ/issues/587) Snowflake scale/volume baseline (harness §6 volume) — the pushdown-path reference datum for W6's G-b work | Theme 7 / G-b |
 | ⬜ | [#588](https://github.com/TheurgicDuke771/DataQ/issues/588) Retire the harness Snowflake leg cleanly at lapse (schedules/bindings off, secret deleted, Flow A retired — partial G-i) | ops / G-i |
+| ⬜ | [#461](https://github.com/TheurgicDuke771/DataQ/issues/461) **PATs phase 1** (ADR 0026): second authenticator behind `get_current_user`, REST + MCP identically; breaks the Azure-AD-only auth dependency early in the Azure window. Exit: **mint 1 workspace-admin + 1 member PAT** (two-tier authz matrix for all later headless/live checks; short expiry on the admin one) | Theme 3 / G-e |
 | ⬜ | [#583](https://github.com/TheurgicDuke771/DataQ/issues/583) MCP `profile_column`: default to the suite run target on SQL suites | Theme 13 |
-| ⬜ | [#532](https://github.com/TheurgicDuke771/DataQ/issues/532) Dry-run preview: extend Snowflake-only → Unity Catalog + flat-file | Theme 8 |
 
-### v1.1 W2 — Portability: OTel logs, secrets lifecycle, PATs (due 2026-07-18) — 0/5
+### v1.1 W2 — Portability: OTel logs, secrets lifecycle, dry-run depth (due 2026-07-18) — 0/5
 
 Land the vendor-neutral seams **while App Insights / Key Vault / live `/mcp` still exist to
-verify parity against** (ADR 0010/0013/0028 discipline; retro flagged PATs for early scheduling).
+verify parity against** (ADR 0010/0013/0028 discipline). Live checks from here on run on the
+W1 admin/member PATs instead of the Azure-CLI token workaround (#565).
 
 | Status | Task | Theme / gap |
 |---|---|---|
 | ⬜ | [#524](https://github.com/TheurgicDuke771/DataQ/issues/524) opencensus → OTel log-export migration (opencensus is EOL; spans already OTel via #525) | Theme 14 |
 | ⬜ | [#589](https://github.com/TheurgicDuke771/DataQ/issues/589) Generic OTLP exporter endpoint — App Insights becomes one backend among any OTLP consumer | Theme 14 |
 | ⬜ | [#372](https://github.com/TheurgicDuke771/DataQ/issues/372) `SecretStore.delete` — webhook/connection secrets orphan today; live-verify on Key Vault | Theme 6 |
-| ⬜ | [#461](https://github.com/TheurgicDuke771/DataQ/issues/461) **PATs phase 1** (ADR 0026): second authenticator behind `get_current_user`, REST + MCP identically — the biggest W2 item; breaks the Azure-AD-only auth dependency before Azure goes away | Theme 3 / G-e |
-| ⬜ | [#584](https://github.com/TheurgicDuke771/DataQ/issues/584) MCP NL tool-selection spot-check vs live `/mcp` (4 canonical queries) | Theme 13 |
+| ⬜ | [#532](https://github.com/TheurgicDuke771/DataQ/issues/532) Dry-run preview: extend Snowflake-only → Unity Catalog + flat-file (moved from W1 — cloud-independent, no deadline) | Theme 8 |
+| ⬜ | [#584](https://github.com/TheurgicDuke771/DataQ/issues/584) MCP NL tool-selection spot-check vs live `/mcp` (4 canonical queries), authenticated via the W1 PATs | Theme 13 |
 
 ### v1.1 W3 — Azure wind-down + local-first posture (due 2026-07-25) — 0/4
 
