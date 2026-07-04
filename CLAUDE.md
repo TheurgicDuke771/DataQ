@@ -276,6 +276,7 @@ curl -X POST http://localhost:8000/api/v1/_probe/snowflake-suite
 | Working agreements (full 39-rule list) | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | Live task tracker (post-v1, per-PR status) | [docs/progress.md](docs/progress.md) — the completed v1 ledger is archived at [docs/progress-v1.md](docs/progress-v1.md) |
 | Memory (cross-session AI context) | `~/.claude/projects/-Users-arijit-Coding-Python-DataQ/memory/` |
+| **Harness ad-hoc test window script** | `~/Coding/Python/DataQ-harness/scripts/harness_window.sh` (harness-side, **not git-tracked** — ADR 0021). The harness compute is **stopped by default** since 2026-07-04 (Azure cost wind-down, #590 — ~CAD 17/day awake vs ~0 stopped); this script opens a test window: `window [--adf] [--dags]` = wake (redis→Airflow→workers→trigger + ADF triggers) → run the flows (mockdata jobs as manual executions; `--dags` REST-triggers the cron DAGs; `--adf` create-runs the Flow-A pipelines — both need live Snowflake) → sleep again, verified. `status`/`start`/`run`/`stop` also run standalone. Full-cycle validated 2026-07-04 (11.5 min, all flows green). |
 
 ---
 
