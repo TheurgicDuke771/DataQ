@@ -2,7 +2,7 @@
 
 > Internal document (excluded from the published site). Written 2026-07-04 at the
 > `v1.0.0` tag, closing the 8-week build (2026-05-24 → 2026-07-03). Companion to
-> [progress.md](progress.md) (the per-PR ledger) and
+> [progress-v1.md](progress-v1.md) (the archived v1 per-PR ledger) and
 > [post-v1-roadmap.md](../context/post-v1-roadmap.md) (what's next and the honest
 > gap register).
 
