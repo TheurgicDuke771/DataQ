@@ -77,6 +77,7 @@ nav:
 # published to the public site. ADRs (decision records) ARE published.
 exclude_docs: |
   progress.md
+  retro-v1.md
   post-v1-admin-ui-notes.md
   post-v1-dq-intelligence-notes.md
   compliance-posture.md

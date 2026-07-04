@@ -4,7 +4,7 @@
 
 **📖 Documentation site: <https://theurgicduke771.github.io/DataQ/>** (MkDocs Material — quickstart, concepts, architecture, guides).
 
-**Status:** pre-v1 — Week 7 (deployment, hardening & docs). Weeks 1–6 complete; v1 is **deployed to Azure Container Apps** — API + worker + a runtime-configured **frontend Container App** (the sole public surface; the api runs on internal ingress behind it), with Key Vault, App Insights, and orchestration polling live. Auth is a **generic OIDC client** (validated against Azure AD; ADR [0028](docs/adr/0028-cloud-neutral-image-runtime-config-generic-oidc.md)). Live task-level progress at [docs/progress.md](docs/progress.md).
+**Status:** **v1.0.0 released (2026-07-04)** — the 8-week roadmap is complete (187/189; 2 items consciously re-scoped to post-v1). v1 is **deployed to Azure Container Apps** — API + worker + a runtime-configured **frontend Container App** (the sole public surface; the api runs on internal ingress behind it), with Key Vault, App Insights, and orchestration polling live. Auth is a **generic OIDC client** (validated against Azure AD; ADR [0028](docs/adr/0028-cloud-neutral-image-runtime-config-generic-oidc.md)). Live task-level progress at [docs/progress.md](docs/progress.md).
 
 ## What it does
 

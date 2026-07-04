@@ -287,7 +287,8 @@ proxy; `<frontend>/api/v1/...` is the base URL for any external client too):
   grant was first applied manually via Graph on 2026-07-03; if your state predates
   it, `terraform import` the existing grant instead of recreating:
   `terraform import azuread_application_pre_authorized.azure_cli_on_api <api-application-object-id>/preAuthorizedApplication/04b07795-8ddb-461a-bbee-02f9e1bf7b46`.
-  Interim posture until ADR 0026 (DataQ-issued API keys) is decided.
+  Interim posture per [ADR 0026](../docs/adr/0026-auth-api-keys-and-principal-seam.md)
+  (DataQ-issued API keys) — build deferred to post-v1 (decided 2026-07-03).
 - **Workspace-admins are superusers over every suite** ([ADR 0027](../docs/adr/0027-suite-permission-model-workspace-admin.md) / #482):
   anyone in `WORKSPACE_ADMIN_EMAILS` can read **all** suites' results — including
   failing-row samples (`results.sample_failures`), the one place PII/PHI lands —
