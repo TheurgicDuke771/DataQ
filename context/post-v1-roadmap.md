@@ -59,7 +59,7 @@ the remaining monitor kinds), *governance* (admin console, compliance controls),
 | G-a | **Monitors only what you remember to check** — hand-authored expectations; no anomaly baselines, no schema-drift, no auto-suggested checks. Category leaders' core pitch (Monte Carlo/Anomalo) is the inverse: automatic coverage. An unknown-unknown incident sails past DataQ. | Existential for "product"; the single biggest gap | **Theme 1** (remaining monitor kinds: `schema_drift`, `anomaly`) + **Theme 2** (auto-suggestion/LLM authoring) |
 | G-b | **Scale unproven; structurally weak on 2 of 4 paths** — flat-file + UC runners load the whole file/table into worker pandas; largest table ever validated is a few thousand synthetic rows. No sampling/partition/incremental strategy for checks. (Snowflake pushes down via SQL — fine.) | 100M-row table = worker OOM; blocks any serious deployment | **Theme 7** (perf & scale — add: sampling/partition-aware/incremental check execution as a named workstream) |
 | G-c | **Every "verified" is self-referential** — one operator, ~1 week live, against a harness built by the same author. Zero real-world data-pathology exposure at scale (schema churn, half-written files, encoding chaos in volume). | Unknown failure modes in the first real deployment | **Theme 10** (test-hardening) + first-real-workload milestone, post-v1 |
-| G-d | **No incident workflow, no lineage, no ownership routing** — runs + alerts exist; "what broke downstream / who owns it / when was it resolved" doesn't. No data-access audit trail (the HIPAA gate). | This is what DQ products are bought for | **Theme 9** (results/reporting depth) + **Theme 4** / [#431](https://github.com/TheurgicDuke771/DataQ/issues/431) (audit trail); lineage/incident objects = new design doc needed |
+| G-d | **No incident workflow, no lineage, no ownership routing** — runs + alerts exist; "what broke downstream / who owns it / when was it resolved" doesn't. No data-access audit trail (the HIPAA gate). | This is what DQ products are bought for | **Theme 9** (results/reporting depth) + **Theme 4** / [#431](https://github.com/TheurgicDuke771/DataQ/issues/431) (audit trail); lineage/incident objects = new design doc needed; the incident-*narrative* half is design-captured as **Theme 2's agentic root-cause analysis** (2026-07-04) |
 | G-e | **Single-tenant, config-allowlist admin, one validated IdP** — fine internally, not sellable. | Blocks multi-team/commercial use | **Theme 3** (admin/access) + ADR 0026 / [#461](https://github.com/TheurgicDuke771/DataQ/issues/461) (API keys) |
 | G-f | **Ecosystem: 4 datasources** vs the 30–50 a category product ships; no dbt integration (seam reserved); can't check the Postgres it runs on. | Adoption ceiling | **Theme 8** (datasource depth; generic-RDBMS adapter is the cheap first win) |
 | G-g | **Engine risk: GX Core pin** — the product's core capability rides a fast-moving third party with documented API drift; DQX swap-in shape exists for UC only. | Strategic dependency | **Theme 2**'s engine-abstraction watch item (below) — no issue until the churn trigger fires |
@@ -118,6 +118,38 @@ rides a pinned GX Core with documented API drift (CLAUDE.md §11); the DQX swap-
 for the UC runner only. If GX churn continues (or DQX/v1.1 lands), generalise that runner-level
 engine seam beyond UC so the check engine is a pluggable impl, not a hard dependency. No issue
 filed yet — file one when the trigger fires.
+
+### Agentic root-cause analysis (design-captured 2026-07-04 — the category-leading bet)
+
+**When a check fails, DataQ investigates — it doesn't just alert.** Every DQ product today stops
+at detection ("row count dropped 40% 🔴") and a human spends the next two hours on why. DataQ's
+moat for closing that loop already exists in the v1 schema: the `triggered_by`
+`pipeline_runs` ↔ `runs` correlation (cron-only checkers structurally lack it), `metric_value` as
+a SQL-aggregatable trend scalar (ADR 0012), the column profiler, and redacted failing samples
+(#417). Two-layer, LLM-degradable design:
+
+1. **Deterministic evidence card (no LLM anywhere).** On a `fail`/`critical` result, a Celery
+   task assembles the dossier from existing data: the upstream pipeline run (status + duration/
+   delay vs. its own history), the check's `metric_value` trend ("sudden vs. slow drift"), a
+   profile-diff of the failing batch vs. the last passing one (which segment broke), sibling
+   checks on the same table, and downstream suites (blast radius). Ships as a structured card on
+   the alert via the existing `ResultPublisher` seam. Most of the triage value lives here, with
+   zero new dependencies — **build this first**.
+2. **LLM narrative + ranked causal hypothesis (optional).** Turns the dossier into a
+   three-sentence diagnosis. Rides the **same admin-configured, default-off, BYO-credential
+   `LLMProvider` seam** as the authoring work above (one seam, two features; endpoint/key in the
+   SecretStore like any connection; any OpenAI-compatible/Anthropic/Azure-OpenAI/local endpoint).
+   Context is schema-only + column-aware-redacted samples — the model sees what a non-admin user
+   would. **Fail-open:** no LLM connection configured → layer 1 still ships in full.
+
+**Zero-config interactive path:** the MCP server (Theme 13) exposes the same dossier as tools, so
+a user's *own* Claude/Copilot is the reasoning engine and DataQ never holds an LLM key — the
+push-narrative-into-the-alert version is the premium ergonomics, not a gate.
+
+This is the **incident-narrative half of gap G-d** done LLM-natively, and it compounds with
+Theme 1 (anomaly baselines sharpen the dossier) and Theme 5 (the card enriches the alert
+payload). No issues filed yet — file the two layers as separate issues when picked up (layer 1
+has no LLM dependency and can ship alone).
 
 ---
 
