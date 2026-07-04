@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "449845d82d9e",
+  "strategy": "manual-commit",
+  "branch": "docs/retire-week8-todo",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "CLAUDE.md",
+    "context/post-v1-roadmap.md",
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/44/9845d82d9e/0/metadata.json",
+      "transcript": "/44/9845d82d9e/0/full.jsonl",
+      "compact_transcript": "/44/9845d82d9e/0/transcript.jsonl",
+      "content_hash": "/44/9845d82d9e/0/content_hash.txt",
+      "prompt": "/44/9845d82d9e/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 133504,
+    "cache_creation_tokens": 4065107,
+    "cache_read_tokens": 182604055,
+    "output_tokens": 504911,
+    "api_call_count": 737
+  }
+}
