@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "8aeff8458db9",
+  "strategy": "manual-commit",
+  "branch": "docs/roadmap-ecosystem-privacy-batch",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "context/post-v1-roadmap.md",
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/8a/eff8458db9/0/metadata.json",
+      "transcript": "/8a/eff8458db9/0/full.jsonl",
+      "compact_transcript": "/8a/eff8458db9/0/transcript.jsonl",
+      "content_hash": "/8a/eff8458db9/0/content_hash.txt",
+      "prompt": "/8a/eff8458db9/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 126212,
+    "cache_creation_tokens": 3435270,
+    "cache_read_tokens": 166164424,
+    "output_tokens": 445876,
+    "api_call_count": 673
+  }
+}
