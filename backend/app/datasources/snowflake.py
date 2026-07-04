@@ -17,6 +17,7 @@ warehouse is a tracked follow-up.
 
 from __future__ import annotations
 
+import base64
 import json
 from typing import Any, Literal
 from urllib.parse import quote_plus
@@ -160,8 +161,9 @@ class SnowflakeCheckRunner:
     def __init__(self, config: SnowflakeConfig, secret: str) -> None:
         self._config = config
         self._connection_string = build_connection_string(config, secret)
-        # Key-pair auth passes the private key as a SQLAlchemy connect-arg (GX
-        # forwards `kwargs` to the engine); empty for password auth.
+        # Key-pair auth: the loaded DER private key (under 'private_key'),
+        # consumed by run_monitors' create_engine connect-args and re-encoded
+        # for the GX kwargs form in run_checks; empty for password auth.
         self._connect_args = build_connect_args(config, secret)
 
     def run_checks(
@@ -173,18 +175,33 @@ class SnowflakeCheckRunner:
         index_columns: list[str] | None = None,
     ) -> SuiteOutcome:
         context = gx.get_context(mode="ephemeral")
-        add_kwargs: dict[str, Any] = {}
-        if self._connect_args:
-            # GX 1.17 deprecates passing private_key via kwargs['connect_args'] in
-            # favour of a direct private_key= arg; this works today but should
-            # migrate during the live-Snowflake smoke (#195). The adapter test +
-            # profiler paths use create_engine directly, so they're unaffected.
-            add_kwargs["kwargs"] = {"connect_args": self._connect_args}
-        datasource = context.data_sources.add_snowflake(
-            name=f"sf-{table}",
-            connection_string=self._connection_string,
-            **add_kwargs,
-        )
+        if self._config.auth_type == "key_pair":
+            # GX 1.17's supported key-pair form (KeyPairConnectionDetails): the
+            # connection as keyword args with a base64-DER private_key. The old
+            # kwargs['connect_args'] route never passed GX's datasource
+            # validation for a passwordless DSN — it was broken, not just
+            # deprecated (#195). Live-verified 2026-07-04: b64-DER works; a PEM
+            # string does not. `role` is required by GX in this form.
+            if not self._config.role:
+                raise ValueError(
+                    "Snowflake key-pair suite runs require 'role' in the "
+                    "connection config (GX key-pair auth mandates a role)"
+                )
+            datasource = context.data_sources.add_snowflake(
+                name=f"sf-{table}",
+                account=self._config.account,
+                user=self._config.user,
+                database=self._config.database,
+                schema=self._config.schema_,
+                warehouse=self._config.warehouse,
+                role=self._config.role,
+                private_key=base64.standard_b64encode(self._connect_args["private_key"]).decode(),
+            )
+        else:
+            datasource = context.data_sources.add_snowflake(
+                name=f"sf-{table}",
+                connection_string=self._connection_string,
+            )
         asset = datasource.add_table_asset(
             name=table,
             table_name=table,

@@ -1,9 +1,11 @@
 """Tests for the Snowflake GX adapter — the GX-free, deterministic parts.
 
 `SnowflakeCheckRunner.run_checks` connects to a live warehouse at asset-build
-time, so it is not unit-tested here (deferred follow-up). Everything else —
-config parsing, connection-string building, expectation translation, and the
-GX-result → DTO mapping — is covered. `to_suite_outcome` is exercised against a
+time, so its full chain is not unit-tested here; the `add_snowflake`
+construction it performs IS pinned via a fake context (#195 — key-pair uses
+the GX kwargs form with a base64-DER private_key, password keeps the DSN).
+Everything else — config parsing, connection-string building, expectation
+translation, and the GX-result → DTO mapping — is covered. `to_suite_outcome` is exercised against a
 *real* GX validation result (pandas batch, no Snowflake) so the test also guards
 the GX 1.17 result shape this adapter depends on (`.type`, injected `batch_id`).
 """
@@ -181,6 +183,80 @@ def test_build_connect_args_rejects_malformed_key() -> None:
     cfg = SnowflakeConfig.model_validate({**_CONFIG, "auth_type": "key_pair"})
     with pytest.raises(ValueError):
         build_connect_args(cfg, "not a pem key")
+
+
+# ───────────── GX datasource construction (run_checks, #195 kwargs form) ─────────────
+
+
+class _FakeDataSources:
+    """Captures add_snowflake kwargs; the sentinel exception stops run_checks
+    before any further GX machinery runs."""
+
+    def __init__(self) -> None:
+        self.kwargs: dict[str, Any] | None = None
+
+    def add_snowflake(self, **kwargs: Any) -> Any:
+        self.kwargs = kwargs
+        raise _StopRunError
+
+
+class _StopRunError(Exception):
+    pass
+
+
+def _captured_add_snowflake(
+    monkeypatch: pytest.MonkeyPatch, config: dict[str, Any], secret: str
+) -> dict[str, Any]:
+    """Run run_checks against a fake GX context and return the add_snowflake kwargs."""
+    fake_sources = _FakeDataSources()
+    fake_context = SimpleNamespace(data_sources=fake_sources)
+    monkeypatch.setattr(
+        "backend.app.datasources.snowflake.gx.get_context", lambda mode: fake_context
+    )
+    runner = SnowflakeCheckRunner(SnowflakeConfig.model_validate(config), secret)
+    with pytest.raises(_StopRunError):
+        runner.run_checks(table="T", schema=None, checks=[])
+    assert fake_sources.kwargs is not None
+    return fake_sources.kwargs
+
+
+def test_run_checks_key_pair_uses_gx_kwargs_form(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The GX-supported key-pair form (#195): connection details as keyword args
+    # with a base64-DER private_key — NOT the deprecated/broken
+    # connection_string + kwargs['connect_args'] route.
+    import base64
+
+    kwargs = _captured_add_snowflake(monkeypatch, {**_CONFIG, "auth_type": "key_pair"}, _rsa_pem())
+    assert "connection_string" not in kwargs
+    assert "kwargs" not in kwargs
+    assert kwargs["account"] == _CONFIG["account"]
+    assert kwargs["user"] == _CONFIG["user"]
+    assert kwargs["database"] == _CONFIG["database"]
+    assert kwargs["schema"] == _CONFIG["schema"]
+    assert kwargs["warehouse"] == _CONFIG["warehouse"]
+    assert kwargs["role"] == _CONFIG["role"]
+    # base64 string decodable to the DER key bytes (what GX b64-decodes at
+    # engine build).
+    der = base64.standard_b64decode(kwargs["private_key"])
+    assert der and b"-----BEGIN" not in der
+
+
+def test_run_checks_key_pair_requires_role(monkeypatch: pytest.MonkeyPatch) -> None:
+    config = {k: v for k, v in _CONFIG.items() if k != "role"} | {"auth_type": "key_pair"}
+    fake_context = SimpleNamespace(data_sources=_FakeDataSources())
+    monkeypatch.setattr(
+        "backend.app.datasources.snowflake.gx.get_context", lambda mode: fake_context
+    )
+    runner = SnowflakeCheckRunner(SnowflakeConfig.model_validate(config), _rsa_pem())
+    with pytest.raises(ValueError, match="role"):
+        runner.run_checks(table="T", schema=None, checks=[])
+    assert fake_context.data_sources.kwargs is None  # failed before any GX call
+
+
+def test_run_checks_password_keeps_connection_string(monkeypatch: pytest.MonkeyPatch) -> None:
+    kwargs = _captured_add_snowflake(monkeypatch, _CONFIG, "pw")
+    assert set(kwargs) == {"name", "connection_string"}
+    assert kwargs["connection_string"].startswith("snowflake://")
 
 
 # ─────────────── encrypted key-pair secrets (combined payload, #194) ───────────────
