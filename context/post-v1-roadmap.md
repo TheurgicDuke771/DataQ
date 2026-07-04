@@ -185,8 +185,9 @@ controller/processor split). These close the gaps for a credible v2.x "processor
 
 ### Privacy pack (design-captured 2026-07-04)
 
-Builds on **G3/#433** (authoritative warehouse-tag classification) and **#415** (the
-classification remainder of column-aware redaction) — the new pieces, no issues filed yet:
+Builds on **G3/#433** (authoritative warehouse-tag classification) and **absorbs the
+classification remainder** left open when #415 closed with #417's column-aware redaction —
+the new pieces, no issues filed yet:
 
 - **Profiler-side PII auto-detection** as an additional classification *source*: the profiler
   already visits every column; lightweight format/regex detectors (no LLM) persist a per-column
@@ -211,7 +212,7 @@ These enrich and de-risk it:
 | # | Title |
 |---|---|
 | [#416](https://github.com/TheurgicDuke771/DataQ/issues/416) | Enrich Slack/email alerts: deep link to run, per-check expected-vs-observed, actionable sample, run metadata |
-| [#415](https://github.com/TheurgicDuke771/DataQ/issues/415) | Actionable failing-row samples: column-aware redaction (PII vs identifier vs safe) — *partly done in #417; classification remainder here* |
+| [#415](https://github.com/TheurgicDuke771/DataQ/issues/415) | Actionable failing-row samples: column-aware redaction (PII vs identifier vs safe) — *closed with #417; the classification remainder is design-captured in Theme 4's privacy pack (2026-07-04)* |
 | [#386](https://github.com/TheurgicDuke771/DataQ/issues/386) | Tie `dedup._RANK` to a shared severity source so it can't drift from `routing.route_for` |
 | [#387](https://github.com/TheurgicDuke771/DataQ/issues/387) | `suppression.py` should early-return `False` on `run.status == 'failed'` |
 | [#388](https://github.com/TheurgicDuke771/DataQ/issues/388) | Single-source the `alert_on` literals (model CHECK ↔ validation) to prevent drift |
