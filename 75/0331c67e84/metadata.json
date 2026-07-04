@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "750331c67e84",
+  "strategy": "manual-commit",
+  "branch": "docs/v1-close-out",
+  "checkpoints_count": 12,
+  "files_touched": [
+    "CLAUDE.md",
+    "deploy/README.md",
+    "docs/progress.md",
+    "docs/retro-v1.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/75/0331c67e84/0/metadata.json",
+      "transcript": "/75/0331c67e84/0/full.jsonl",
+      "compact_transcript": "/75/0331c67e84/0/transcript.jsonl",
+      "content_hash": "/75/0331c67e84/0/content_hash.txt",
+      "prompt": "/75/0331c67e84/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 108703,
+    "cache_creation_tokens": 3067103,
+    "cache_read_tokens": 149609408,
+    "output_tokens": 362547,
+    "api_call_count": 581
+  }
+}
