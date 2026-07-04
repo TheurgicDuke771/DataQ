@@ -1,0 +1,55 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_id": "933d37ea46c1",
+  "session_id": "a9be1a77-8cac-4d65-b95c-94daac919ec8",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-04T23:00:40.96637Z",
+  "branch": "feature/issue-194-encrypted-key-pair",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/core/logging.py",
+    "backend/app/datasources/snowflake.py",
+    "backend/tests/core/test_logging.py",
+    "backend/tests/datasources/test_snowflake.py",
+    "frontend/src/components/connections/ConnectionForm.tsx",
+    "frontend/src/components/connections/ConnectionTypeFields.tsx",
+    "frontend/src/components/connections/ReauthModal.tsx",
+    "frontend/src/components/connections/connectionFormSpec.ts",
+    "frontend/tests/components/ReauthModal.test.tsx",
+    "frontend/tests/pages/ConnectionNew.test.tsx"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "0230ac06c2ea",
+  "token_usage": {
+    "input_tokens": 33403,
+    "cache_creation_tokens": 196798,
+    "cache_read_tokens": 6458787,
+    "output_tokens": 41987,
+    "api_call_count": 59
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-04T23:00:40.942839Z",
+    "agent_lines": 363,
+    "agent_removed": 18,
+    "human_added": 7,
+    "human_modified": 3,
+    "human_removed": 0,
+    "total_committed": 373,
+    "total_lines_changed": 392,
+    "agent_percentage": 97.1938775510204,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}
