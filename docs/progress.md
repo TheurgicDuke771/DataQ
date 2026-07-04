@@ -23,7 +23,7 @@
 | | |
 |---|---|
 | **v1 baseline** | `v1.0.0` tagged 2026-07-04 — 187/189 roadmap tasks (~99%); all 8 weekly exit gates met; deployed to Azure Container Apps; retro at [retro-v1.md](retro-v1.md); full ledger at [progress-v1.md](progress-v1.md) |
-| **Current cycle** | **Post-v1 cycle planning — not started.** Input: [context/post-v1-roadmap.md](../context/post-v1-roadmap.md) (53 issues across 13 themes + the gap register G-a…G-i). Recommended opening sequence per that doc: Theme-1 `schema_drift` + `anomaly` monitor kinds (rides the ADR 0012 seam) → scale-aware execution (gap G-b, Theme 7) → incident/lineage design doc (G-d). |
+| **Current cycle** | **Post-v1 cycle planning — not started.** Input: [context/post-v1-roadmap.md](../context/post-v1-roadmap.md) (53 issues across 14 themes + the gap register G-a…G-i). Recommended opening sequence per that doc: Theme-1 `schema_drift` + `anomaly` monitor kinds (rides the ADR 0012 seam) → scale-aware execution (gap G-b, Theme 7) → incident/lineage design doc (G-d). |
 | **Open issues** | **53** (verified against GitHub 2026-07-04), all on the `Backlog (post-v1 / testing)` milestone — mapped by theme in [post-v1-roadmap.md](../context/post-v1-roadmap.md), not duplicated here |
 | **Open PRs** | none |
 | **Coverage gates (CI-enforced, ≥80%)** | backend `--cov-fail-under=80` (98.4% / 1,289 tests at the tag) · frontend all-src `lines: 80` (~88% / 337 tests at the tag) — every post-v1 PR rides the same gates |
