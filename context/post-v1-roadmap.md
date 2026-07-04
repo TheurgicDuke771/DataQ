@@ -263,15 +263,31 @@ Rides the harness's parameterizable volume (ADR 0021; HARNESS_TODO §6). Baselin
 | _(no issue yet)_ | **Generic MSSQL / T-SQL adapter** — one adapter covers **Microsoft Fabric** (Warehouse + Lakehouse SQL analytics endpoint + Fabric SQL database — all standard SQL Server TDS endpoints, port 1433, ODBC 18+ / pyodbc; GX supports mssql via SQLAlchemy), **Azure SQL Database**, Synapse dedicated pools — and, engine-generic like the PG row (ADR 0010/0013), any standard SQL Server endpoint (on-prem, AWS RDS for SQL Server). The one real design cost: Fabric endpoints want **Entra ID auth** (user or service principal; SQL auth unsupported on some Fabric items) → the adapter needs a client-credentials token flow — same KV-held secret model already used for ADF. Bonus: anything mirrored into Fabric (Cosmos DB, HorizonDB, …) becomes checkable through its mirror's SQL analytics endpoint with zero extra adapter code. |
 | _(no issue yet)_ | **OneLake flat-file spike** — OneLake speaks the ADLS Gen2 DFS API (`onelake.dfs.fabric.microsoft.com`); verify the existing ADLS flat-file adapter reaches Fabric lake files with just an endpoint override + Entra auth before promising it. Spike first, then a small extension — not a new adapter. |
 | _(no issue yet)_ | **S3-compatible `endpoint_url` override** on the existing S3 adapter — one config field unlocks MinIO, Cloudflare R2, and on-prem object stores (ADR 0010/0013 vendor-neutral; same shape as the OneLake spike). |
+| _(no issue yet)_ | **Google BigQuery adapter** — the single biggest warehouse omission: Snowflake/Databricks/BigQuery is the modern top-three and DataQ covers two. GX supports it via `sqlalchemy-bigquery`; same shape as the Snowflake path (dialect + connection-spec + service-account-key auth in the SecretStore). |
+| _(no issue yet)_ | **Amazon Redshift adapter** — the AWS warehouse; pairs with the existing S3 adapter (AWS shops almost always run both). `sqlalchemy-redshift` is Postgres-dialect-adjacent → a near-sibling of the generic PG adapter. |
+| _(no issue yet)_ | **Google Cloud Storage flat-file adapter** — completes the object-store trio next to ADLS Gen2 + S3 (`gcsfs`; the `FlatFileCheckRunner` + batch resolution already do the hard part). With BigQuery + Redshift this yields the ADR 0013 BYOL claim: **warehouse + object store covered on all three clouds**. |
+| _(no issue yet)_ | **MySQL / MariaDB adapter** — the other half of the open-source OLTP world; a dialect swap on the engine-generic SQLAlchemy runner once the PG adapter proves the pattern. Enormous installed base, near-zero marginal cost. |
+| _(no issue yet)_ | **Trino adapter (+ Amazon Athena)** — the G-f multiplier: one SQLAlchemy dialect inherits the user's entire Trino/Starburst connector ecosystem (Hive, Iceberg, Cassandra, Mongo, Kafka-topics-as-tables — anything their cluster federates) with no per-store adapters on our side; **Athena** rides the same dialect family for serverless AWS. The cheapest answer to "4 datasources vs the 30–50 a category product ships". |
 
-**Recommended order** (decided 2026-07-03, sits alongside — not competing with — the Theme-1 opening
-sequence; different layer of the stack): PG adapter → MSSQL/Fabric adapter → OneLake spike.
+**Recommended order** (decided 2026-07-03, extended 2026-07-04; sits alongside — not competing
+with — the Theme-1 opening sequence; different layer of the stack): PG adapter → MSSQL/Fabric
+adapter → OneLake spike; then the cloud-triad completion (BigQuery → Redshift → GCS → MySQL),
+with Trino/Athena slotted whenever federation demand shows up (it can jump the queue — it's the
+G-f multiplier).
 
 **Decided-against (2026-07-03): no native Cosmos DB adapter.** Cosmos has no SQL dialect
 SQLAlchemy/GX can drive, and the DataFrame-reader alternative (Cosmos SDK → pandas, the UC-runner
 shape) has RU-cost + scale problems that make it a bad default. Coverage path of record: **via its
 Fabric mirror** → the MSSQL adapter reads the mirror's SQL analytics endpoint. Revisit a native
 adapter only on real demand.
+
+**Demand-driven boundary (recorded 2026-07-04) — major but deliberately not default:**
+Oracle / Teradata / SAP HANA (real enterprise demand, heavy drivers + licensing — build on a
+concrete prospect, not speculatively); **MongoDB** (same no-SQL-dialect logic as Cosmos, same
+routing answer: via Trino's connector or a mirror); **Kafka / streaming** (not batch — that's the
+DQX v1.1 lane, ADR [0003](../docs/adr/0003-gx-only-for-v1.md)); **Delta / Iceberg table formats
+on raw object storage** — Iceberg is already tracked as [#286](https://github.com/TheurgicDuke771/DataQ/issues/286)
+(Theme 2); a `delta` flat-file format would slot next to the JSON row above.
 
 ---
 
