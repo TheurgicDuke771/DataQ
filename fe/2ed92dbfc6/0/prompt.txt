@@ -1,0 +1,17 @@
+I think we are missing a ER/Class diagram of our data model. Can we add one in the @docs/architecture.md ?
+
+---
+
+Anything similar we're missing from the standard or best practice point of view?
+
+---
+
+do all five. The point four i'm thinking more of for major [maybe including some minor] releases not for every PR, what say you?
+
+---
+
+Can you cross the Run lifecycle section in @docs/architecture.md once? it looks odd
+
+---
+
+yes add the note then open the PR

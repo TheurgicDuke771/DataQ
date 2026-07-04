@@ -1,0 +1,38 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_id": "fe2ed92dbfc6",
+  "session_id": "31e2e593-4ff7-47bb-922b-b3f240ba7743",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-04T17:21:43.999805Z",
+  "branch": "docs/architecture-diagrams-and-changelog",
+  "checkpoints_count": 4,
+  "save_step_count": 1,
+  "files_touched": [
+    "backend/tests/db/test_architecture_er_sync.py"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "e4abcf6cb371",
+  "token_usage": {
+    "input_tokens": 32847,
+    "cache_creation_tokens": 233601,
+    "cache_read_tokens": 10822628,
+    "output_tokens": 69321,
+    "api_call_count": 83
+  },
+  "session_metrics": {
+    "turn_count": 4
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-04T17:21:43.941294Z",
+    "agent_lines": 52,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 52,
+    "total_lines_changed": 52,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}

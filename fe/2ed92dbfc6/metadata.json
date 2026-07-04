@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "fe2ed92dbfc6",
+  "strategy": "manual-commit",
+  "branch": "docs/architecture-diagrams-and-changelog",
+  "checkpoints_count": 4,
+  "files_touched": [
+    "backend/tests/db/test_architecture_er_sync.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/fe/2ed92dbfc6/0/metadata.json",
+      "transcript": "/fe/2ed92dbfc6/0/full.jsonl",
+      "compact_transcript": "/fe/2ed92dbfc6/0/transcript.jsonl",
+      "content_hash": "/fe/2ed92dbfc6/0/content_hash.txt",
+      "prompt": "/fe/2ed92dbfc6/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 32847,
+    "cache_creation_tokens": 233601,
+    "cache_read_tokens": 10822628,
+    "output_tokens": 69321,
+    "api_call_count": 83
+  }
+}
