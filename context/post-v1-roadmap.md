@@ -164,8 +164,42 @@ trusted-team tool; the market leaders lead with checks→results→trends→aler
 | [#411](https://github.com/TheurgicDuke771/DataQ/issues/411) | Workspace-admin: workspace-wide view on Dashboard + Results (both are owned-or-shared scoped today) |
 | [#412](https://github.com/TheurgicDuke771/DataQ/issues/412) | Admin page is read-only — allow workspace-admin write actions (manage shares / suites) |
 | [#461](https://github.com/TheurgicDuke771/DataQ/issues/461) | **DataQ-issued API keys / service tokens** (REST + MCP) — see below |
+| _(no issue yet)_ | **Data-asset-centric view** — the biggest IA gap (added 2026-07-04): the UI is suite-centric but users think table-centric ("is `orders` healthy?"). A dataset page aggregating every check, result, freshness state, and trend across all suites targeting that table/file pattern. The natural UI anchor for Theme 14's lineage/governance pull and the Theme-2 RCA blast radius; category leaders are asset-first for this reason. |
+| _(no issue yet)_ | **Global search / command palette (⌘K)** — jump to any suite/check/connection/run by name. The list APIs exist; disproportionate daily-use payoff for a small build. |
+| _(no issue yet)_ | **First-run onboarding + empty-state pass** — guided connect → suite → check → run path and designed empty states. Low value for the current solo deployment, first-touch-critical for any marketplace/BYOL evaluator (ADR 0013); cheap to retrofit now vs. embarrassing at listing time. |
+| _(no issue yet)_ | **Bulk operations on checks** — multi-select enable/disable/severity/snooze; one-at-a-time editing doesn't survive 50-check suites. |
 
 **DataQ-issued API keys / service tokens (#461, ADR [0026](../docs/adr/0026-auth-api-keys-and-principal-seam.md) proposed).** Auth today is Azure-AD-only (delegated/SSO) for both REST and `/mcp` — the deepest remaining vendor lock-in (the `get_current_user` seam has one real impl; `users.aad_object_id` is Azure-shaped) and it blocks BYOL-on-AWS/GCP (ADR 0013) and headless/programmatic access (a long-lived scoped key beats a ~60-min refreshing token for CI / always-on MCP clients). The fix is a **second authenticator behind the same `get_current_user` seam** so the **REST API and MCP accept it identically** — never MCP-only — which also finally *exercises* the seam (ADR 0010). Phase it: **user-scoped PATs first** (inherit the owner's per-suite grants → zero new authz; optional read-only down-scope), defer standalone **service-account principals** (they force generalizing `aad_object_id` → a generic principal with pluggable identity bindings + non-user suite sharing). Credential bar: hashed-at-rest + show-once + prefix + expiry + revocation + audit, in a new `api_keys` table (not the retrievable-secret SecretStore), with key lifecycle tied to the owner so it can't outlive a deactivated account.
+
+### Accessibility & inclusive UI (design-captured 2026-07-04 — a genuine blind spot)
+
+Nothing in the repo mentions accessibility today — flagged in the 2026-07-04 UI review as the
+gap most likely to convert from "nice" to **procurement checkbox** the moment a commercial buyer
+with compliance requirements appears (it belongs next to Theme 4 in the "sellability" bucket).
+Target: **WCAG 2.1 AA**, phased so it's cheap early instead of a retrofit crisis:
+
+1. **Automated floor first** — wire `axe-core` into the existing Playwright E2E lane (25 specs
+   already run in CI) + `vitest-axe` for component tests; fail CI on new serious/critical
+   violations. This is the ratchet that stops regression before any manual work starts.
+2. **Non-color severity cues** — severity is communicated almost entirely by color today
+   (red/orange/green tags, chart series). Add icons/shapes/text alongside color and adopt a
+   colorblind-safe palette (also fixes the recharts dashboards, where color is the *only*
+   encoding). Highest user-impact single item — ~8% of male users can't reliably read the
+   current severity language.
+3. **Keyboard & focus audit** — full keyboard traversal of the 13-screen set; focus-trap +
+   restore on the surviving drawers/modals (Share, version history, run progress, import);
+   visible focus states; skip-to-content. antd gives a decent baseline; the custom
+   drawer/table/editor compositions are where it breaks.
+4. **Screen-reader semantics** — landmarks, table headers/captions on the results/runs tables,
+   aria-live for async run-progress updates, and **text alternatives for every chart**
+   (the dashboards are pure-visual today; a data-table fallback per chart covers both a11y and
+   the PDF-export path, #345).
+5. **Related, decide-later:** reduced-motion support (cheap, ride item 2), dark mode (already
+   Theme 12), i18n/locale externalization (defer until a non-English prospect exists — but stop
+   hard-coding user-facing strings in new code *now*, which costs nothing).
+
+No issues filed yet — file items 1–4 as separate issues when picked up; item 1 can land
+independently as a Theme-10-style CI ratchet.
 
 ---
 
@@ -299,6 +333,9 @@ on raw object storage** — Iceberg is already tracked as [#286](https://github.
 | [#283](https://github.com/TheurgicDuke771/DataQ/issues/283) | Check version history — restore/revert to a previous version |
 | [#349](https://github.com/TheurgicDuke771/DataQ/issues/349) | Results: dedupe the runs fetch across tabs + share the date-window presets with Dashboard |
 | [#424](https://github.com/TheurgicDuke771/DataQ/issues/424) | Run-detail sample header says 'values redacted' even when non-PII values surface (#417 follow-up) |
+| _(no issue yet)_ | **Per-check metric trend view** (added 2026-07-04) — a "this check over time" chart of `metric_value` with the warn/fail/critical threshold bands drawn on it. The payoff view the ADR 0016/0012 scalar-metric design was built for; one recharts component + an existing-data query. |
+| _(no issue yet)_ | **Run comparison (diff two runs)** — per-check status deltas, metric deltas, new/removed checks between any two runs of a suite ("what changed between yesterday's pass and today's fail"). Pairs with Theme 2's RCA evidence card; valuable standalone. |
+| _(no issue yet)_ | **In-app notification center** — alerts are outbound-only (Teams/Slack/email) today; a bell/feed surface with read-ack state + deep links to runs gives alerts an in-app home, and becomes the UI surface for incident state when Theme 14's ITSM tier-2 lands. |
 
 ---
 
@@ -461,6 +498,6 @@ Completes the last half-open ADR 0010 seam (tracked issues previously unmapped i
 ## How this maps to GitHub
 
 - **Status** lives on the GitHub `Backlog (post-v1 / testing)` milestone — this doc mirrors it by theme.
-- When you pick up a theme, **file the design-only items** (Themes 2, 4, 5, 8, 11, 14 carry them) as issues on that milestone first.
+- When you pick up a theme, **file the design-only items** (Themes 2, 3, 4, 5, 8, 9, 11, 14 carry them) as issues on that milestone first.
 - New post-v1 work: open the issue, milestone it `Backlog (post-v1 / testing)`, and add a row to the
   matching theme here. Keep the detailed *design* in the three linked docs, not in this index.
