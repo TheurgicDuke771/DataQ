@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "d8396e185a3e",
+  "strategy": "manual-commit",
+  "branch": "docs/theme8-azure-datasource-expansion",
+  "checkpoints_count": 4,
+  "files_touched": [
+    "context/post-v1-roadmap.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/d8/396e185a3e/0/metadata.json",
+      "transcript": "/d8/396e185a3e/0/full.jsonl",
+      "compact_transcript": "/d8/396e185a3e/0/transcript.jsonl",
+      "content_hash": "/d8/396e185a3e/0/content_hash.txt",
+      "prompt": "/d8/396e185a3e/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 124726,
+    "cache_creation_tokens": 3151359,
+    "cache_read_tokens": 154957729,
+    "output_tokens": 379318,
+    "api_call_count": 601
+  }
+}
