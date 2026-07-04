@@ -17,13 +17,14 @@ warehouse is a tracked follow-up.
 
 from __future__ import annotations
 
+import base64
 import json
 from typing import Any, Literal
 from urllib.parse import quote_plus
 
 import great_expectations as gx
 from cryptography.hazmat.primitives import serialization
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from backend.app.core.secrets import SecretStore
 from backend.app.datasources.base import CheckOutcome, CheckSpec, MonitorSpec, SuiteOutcome
@@ -75,6 +76,19 @@ class SnowflakeConfig(BaseModel):
     # payload for passphrase-protected keys (see `_parse_key_pair_secret`).
     # Both auth methods share the same SecretStore `secret_ref`.
     auth_type: Literal["password", "key_pair"] = "password"
+
+    @model_validator(mode="after")
+    def _key_pair_requires_role(self) -> SnowflakeConfig:
+        """Key-pair connections must carry a role.
+
+        GX's key-pair form (`KeyPairConnectionDetails`, #195) mandates one, so a
+        role-less key-pair connection could never run a suite. Enforcing it here
+        makes the failure a clear 422 at create/edit/test time instead of an
+        opaque failed run later. Password auth keeps role optional.
+        """
+        if self.auth_type == "key_pair" and not self.role:
+            raise ValueError("key-pair auth requires 'role' (suite runs mandate it)")
+        return self
 
 
 def _parse_key_pair_secret(secret: str) -> tuple[str, bytes | None]:
@@ -160,8 +174,9 @@ class SnowflakeCheckRunner:
     def __init__(self, config: SnowflakeConfig, secret: str) -> None:
         self._config = config
         self._connection_string = build_connection_string(config, secret)
-        # Key-pair auth passes the private key as a SQLAlchemy connect-arg (GX
-        # forwards `kwargs` to the engine); empty for password auth.
+        # Key-pair auth: the loaded DER private key (under 'private_key'),
+        # consumed by run_monitors' create_engine connect-args and re-encoded
+        # for the GX kwargs form in run_checks; empty for password auth.
         self._connect_args = build_connect_args(config, secret)
 
     def run_checks(
@@ -173,18 +188,29 @@ class SnowflakeCheckRunner:
         index_columns: list[str] | None = None,
     ) -> SuiteOutcome:
         context = gx.get_context(mode="ephemeral")
-        add_kwargs: dict[str, Any] = {}
-        if self._connect_args:
-            # GX 1.17 deprecates passing private_key via kwargs['connect_args'] in
-            # favour of a direct private_key= arg; this works today but should
-            # migrate during the live-Snowflake smoke (#195). The adapter test +
-            # profiler paths use create_engine directly, so they're unaffected.
-            add_kwargs["kwargs"] = {"connect_args": self._connect_args}
-        datasource = context.data_sources.add_snowflake(
-            name=f"sf-{table}",
-            connection_string=self._connection_string,
-            **add_kwargs,
-        )
+        if self._config.auth_type == "key_pair":
+            # GX 1.17's supported key-pair form (KeyPairConnectionDetails): the
+            # connection as keyword args with a base64-DER private_key. The old
+            # kwargs['connect_args'] route never passed GX's datasource
+            # validation for a passwordless DSN — it was broken, not just
+            # deprecated (#195). Live-verified 2026-07-04: b64-DER works; a PEM
+            # string does not. GX requires `role` here; SnowflakeConfig's
+            # validator guarantees key-pair configs carry one.
+            datasource = context.data_sources.add_snowflake(
+                name=f"sf-{table}",
+                account=self._config.account,
+                user=self._config.user,
+                database=self._config.database,
+                schema=self._config.schema_,
+                warehouse=self._config.warehouse,
+                role=self._config.role,
+                private_key=base64.standard_b64encode(self._connect_args["private_key"]).decode(),
+            )
+        else:
+            datasource = context.data_sources.add_snowflake(
+                name=f"sf-{table}",
+                connection_string=self._connection_string,
+            )
         asset = datasource.add_table_asset(
             name=table,
             table_name=table,

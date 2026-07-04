@@ -200,6 +200,7 @@ def test_engine_args_snowflake_key_pair_threads_private_key() -> None:
             "database": "d",
             "schema": "s",
             "warehouse": "wh",
+            "role": "r",  # key-pair configs require a role (#195)
             "auth_type": "key_pair",
         },
     )

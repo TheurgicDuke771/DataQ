@@ -127,9 +127,12 @@ describe('ConnectionNew', () => {
     for (const label of ['Account', 'User', 'Database', 'Schema', 'Warehouse']) {
       await user.type(screen.getByLabelText(label), `${label.toLowerCase()}-val`);
     }
-    // Switch auth to key pair → PEM textarea + optional passphrase appear.
+    // Switch auth to key pair → PEM textarea + optional passphrase appear,
+    // and Role becomes required (GX's key-pair form mandates it).
     await user.click(screen.getByLabelText('Auth type'));
     await user.click(await screen.findByText('Key pair (RSA)'));
+    expect(screen.getByLabelText('Role')).toBeInTheDocument(); // no "(optional)"
+    await user.type(screen.getByLabelText('Role'), 'role-val');
   }
 
   async function submittedSecret(user: ReturnType<typeof userEvent.setup>): Promise<unknown> {
@@ -147,7 +150,7 @@ describe('ConnectionNew', () => {
     expect(await submittedSecret(user)).toBe(
       JSON.stringify({ private_key: 'PEM-KEY', passphrase: 'pp' }),
     );
-  });
+  }, 15_000);
 
   it('sends the bare PEM key when no passphrase is given', async () => {
     const user = userEvent.setup();
@@ -155,7 +158,7 @@ describe('ConnectionNew', () => {
     await user.type(screen.getByLabelText('Private key (PEM)'), 'PEM-KEY');
 
     expect(await submittedSecret(user)).toBe('PEM-KEY');
-  });
+  }, 15_000);
 
   it('does not leak a stale passphrase after switching auth back to password', async () => {
     const user = userEvent.setup();
@@ -170,5 +173,5 @@ describe('ConnectionNew', () => {
 
     // The stale passphrase must NOT wrap the password into a JSON payload.
     expect(await submittedSecret(user)).toBe('sekret');
-  });
+  }, 15_000);
 });

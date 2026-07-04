@@ -24,7 +24,7 @@
 |---|---|
 | **v1 baseline** | `v1.0.0` tagged 2026-07-04 — 187/189 roadmap tasks (~99%); all 8 weekly exit gates met; deployed to Azure Container Apps; retro at [retro-v1.md](retro-v1.md); full ledger at [progress-v1.md](progress-v1.md) |
 | **Current cycle** | **v1.1 — 6 weeks + a stretch week, 2026-07-04 → 2026-08-15 (+ W7 stretch to 2026-08-22)** (planned 2026-07-04 from [context/post-v1-roadmap.md](../context/post-v1-roadmap.md)). Sequencing is **subscription-driven**: Weeks 1–3 extract everything that needs the expiring Snowflake (lapses within days) and Azure (~2026-07-25) subscriptions, then wind down gracefully; Weeks 4–6 run the roadmap's recommended opening sequence (Theme-1 `schema_drift` + `anomaly` → scale-aware execution G-b → incident/lineage design G-d) on cloud-independent infra; W7 is the stretch/burn-down buffer. See [Cycle plan](#cycle-plan--v11-6-weeks--stretch-2026-07-04--2026-08-22) below. |
-| **Open issues** | **66** (at the 2026-07-04 full backlog remap): **55 scheduled** onto `v1.1 Week 1..6` + **10** on `v1.1 Week 7 — stretch` + the cycle epic [#597](https://github.com/TheurgicDuke771/DataQ/issues/597). **`v1.1 Backlog` (renamed from `Backlog (post-v1 / testing)`) is EMPTY** — every open issue sits on a week milestone; the backlog milestone is the default for new filings. Every scheduled issue carries an **Acceptance criteria** checklist and every milestone description its **Exit gate** (both added 2026-07-04). Theme map in [post-v1-roadmap.md](../context/post-v1-roadmap.md). |
+| **Open issues** | **65** (W1 progress: #194/#195 closed 2026-07-04 via #602/#603; [#601](https://github.com/TheurgicDuke771/DataQ/issues/601) filed — prettierignore gap, `v1.1 Backlog`). At the 2026-07-04 full backlog remap: **55 scheduled** onto `v1.1 Week 1..6` + **10** on `v1.1 Week 7 — stretch` + the cycle epic [#597](https://github.com/TheurgicDuke771/DataQ/issues/597). **`v1.1 Backlog` (renamed from `Backlog (post-v1 / testing)`) held ONLY #601** — every other open issue sits on a week milestone; the backlog milestone is the default for new filings. Every scheduled issue carries an **Acceptance criteria** checklist and every milestone description its **Exit gate** (both added 2026-07-04). Theme map in [post-v1-roadmap.md](../context/post-v1-roadmap.md). |
 | **Open PRs** | none |
 | **Coverage gates (CI-enforced, ≥80%)** | backend `--cov-fail-under=80` (98.4% / 1,289 tests at the tag) · frontend all-src `lines: 80` (~88% / 337 tests at the tag) — every post-v1 PR rides the same gates |
 
@@ -56,8 +56,8 @@ the source of truth for issue state; this register mirrors it so nothing carried
 
 | # | Title |
 |---|---|
-| [#194](https://github.com/TheurgicDuke771/DataQ/issues/194) | Snowflake key-pair: encrypted (passphrase-protected) private keys |
-| [#195](https://github.com/TheurgicDuke771/DataQ/issues/195) | Snowflake key-pair: migrate off deprecated GX `connect_args` private_key path |
+| ~~[#194](https://github.com/TheurgicDuke771/DataQ/issues/194)~~ | ~~Snowflake key-pair: encrypted (passphrase-protected) private keys~~ — closed by [#602](https://github.com/TheurgicDuke771/DataQ/pull/602) |
+| ~~[#195](https://github.com/TheurgicDuke771/DataQ/issues/195)~~ | ~~Snowflake key-pair: migrate off deprecated GX `connect_args` private_key path~~ — closed by [#603](https://github.com/TheurgicDuke771/DataQ/pull/603) |
 | [#197](https://github.com/TheurgicDuke771/DataQ/issues/197) / [#199](https://github.com/TheurgicDuke771/DataQ/issues/199) / [#204](https://github.com/TheurgicDuke771/DataQ/issues/204) | Week-4 frontend refactor nits (shared antd-Select test helper · `useAsyncAction` toast helper · drawer/delete dedup) |
 | [#327](https://github.com/TheurgicDuke771/DataQ/issues/327) | Column profiler N+1 query batching |
 | [#349](https://github.com/TheurgicDuke771/DataQ/issues/349) / [#351](https://github.com/TheurgicDuke771/DataQ/issues/351) | Week-6 results/connection-page follow-ups |
@@ -112,7 +112,7 @@ _The rest of the 55 are mapped by theme in [post-v1-roadmap.md](../context/post-
 > (Theme-1 `schema_drift` + `anomaly` → scale-aware execution G-b → incident/lineage design
 > G-d) on infra that survives: the local stack, S3 (AWS), and Databricks Free Edition.
 
-### v1.1 W1 — Snowflake close-out + PATs (due 2026-07-11) — 0/6
+### v1.1 W1 — Snowflake close-out + PATs (due 2026-07-11) — 2/6
 
 ⚡ **The three Snowflake-live rows are day-1 work, in this order** — the subscription lapses
 within days; after it does they can no longer be live-verified. **PATs (#461) start right
@@ -121,8 +121,8 @@ backlog, and it must land while Azure AD is still the reference validator.
 
 | Status | Task | Theme / gap |
 |---|---|---|
-| ⬜ | [#194](https://github.com/TheurgicDuke771/DataQ/issues/194) Snowflake key-pair: encrypted (passphrase-protected) private keys — **live-verify** | Theme 8 |
-| ⬜ | [#195](https://github.com/TheurgicDuke771/DataQ/issues/195) Snowflake key-pair: migrate off deprecated GX `connect_args` path — **live-verify** | Theme 8 |
+| ✅ | [#194](https://github.com/TheurgicDuke771/DataQ/issues/194) Snowflake key-pair: encrypted (passphrase-protected) private keys — **live-verified** (combined `{private_key, passphrase}` secret payload, one `secret_ref`, atomic re-auth rotation; encrypted-key test-connection + GX suite run green on live Snowflake 2026-07-04) — [PR #602](https://github.com/TheurgicDuke771/DataQ/pull/602) | Theme 8 |
+| ✅ | [#195](https://github.com/TheurgicDuke771/DataQ/issues/195) Snowflake key-pair: migrate off deprecated GX `connect_args` path — **upgraded to bugfix**: the old route never passed GX 1.17 validation for key-pair suite runs; now the supported kwargs form (base64-DER `private_key`, `role` required), live-verified with zero deprecation warnings — [PR #603](https://github.com/TheurgicDuke771/DataQ/pull/603) | Theme 8 |
 | ⬜ | [#587](https://github.com/TheurgicDuke771/DataQ/issues/587) Snowflake scale/volume baseline (harness §6 volume) — the pushdown-path reference datum for W6's G-b work | Theme 7 / G-b |
 | ⬜ | [#588](https://github.com/TheurgicDuke771/DataQ/issues/588) Retire the harness Snowflake leg cleanly at lapse (schedules/bindings off, secret deleted, Flow A retired — partial G-i) | ops / G-i |
 | ⬜ | [#461](https://github.com/TheurgicDuke771/DataQ/issues/461) **PATs phase 1** (ADR 0026): second authenticator behind `get_current_user`, REST + MCP identically; breaks the Azure-AD-only auth dependency early in the Azure window. Exit: **mint 1 workspace-admin + 1 member PAT** (two-tier authz matrix for all later headless/live checks; short expiry on the admin one) | Theme 3 / G-e |
