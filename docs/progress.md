@@ -94,7 +94,7 @@ _The rest of the 55 are mapped by theme in [post-v1-roadmap.md](../context/post-
 > Planned 2026-07-04 from [context/post-v1-roadmap.md](../context/post-v1-roadmap.md) (the
 > generator input). GitHub mirror: milestones **`v1.1 Week 1..6`** (due Saturdays), the cycle
 > epic [#597](https://github.com/TheurgicDuke771/DataQ/issues/597), and the **DataQ Roadmap**
-> project (all 27 scheduled issues carry the `v1.1 week` single-select + Status). Everything
+> project (all 34 scheduled issues carry the `v1.1 week` single-select + Status). Everything
 > not scheduled below stays themed on the **`v1.1 Backlog`** milestone (renamed from
 > `Backlog (post-v1 / testing)` at the 2026-07-04 remap, when 8 week-fit issues also moved
 > into W4–W6 below).
@@ -151,7 +151,7 @@ via the Action-Group metric-alert path; re-homed to its Week-7 milestone.)_
 | ⬜ | [#590](https://github.com/TheurgicDuke771/DataQ/issues/590) Azure wind-down: G-i harness teardown, `terraform destroy`, credential retirement, state disposition (harness compute already stopped 2026-07-04 — wake via `harness_window.sh`, see the #590 runbook) | ops / G-i |
 | ⬜ | [#591](https://github.com/TheurgicDuke771/DataQ/issues/591) Local-first runtime posture: docker-compose parity for secrets/auth/observability; surviving datasources = local files + S3 + Databricks Free | ops / Theme 14 |
 
-### v1.1 W4 — `schema_drift` monitor kind (due 2026-08-01) — 0/4
+### v1.1 W4 — `schema_drift` monitor kind (due 2026-08-01) — 0/5
 
 Cloud-independent from here on. Engine follow-ups land first — they touch the code #592 builds on.
 
