@@ -23,8 +23,8 @@
 | | |
 |---|---|
 | **v1 baseline** | `v1.0.0` tagged 2026-07-04 — 187/189 roadmap tasks (~99%); all 8 weekly exit gates met; deployed to Azure Container Apps; retro at [retro-v1.md](retro-v1.md); full ledger at [progress-v1.md](progress-v1.md) |
-| **Current cycle** | **Post-v1 cycle planning — not started.** Input: [context/post-v1-roadmap.md](../context/post-v1-roadmap.md) (53 issues across 14 themes + the gap register G-a…G-i). Recommended opening sequence per that doc: Theme-1 `schema_drift` + `anomaly` monitor kinds (rides the ADR 0012 seam) → scale-aware execution (gap G-b, Theme 7) → incident/lineage design doc (G-d). |
-| **Open issues** | **53** (verified against GitHub 2026-07-04), all on the `Backlog (post-v1 / testing)` milestone — mapped by theme in [post-v1-roadmap.md](../context/post-v1-roadmap.md), not duplicated here |
+| **Current cycle** | **Post-v1 cycle planning — not started.** Input: [context/post-v1-roadmap.md](../context/post-v1-roadmap.md) (55 issues across 14 themes + the gap register G-a…G-i). Recommended opening sequence per that doc: Theme-1 `schema_drift` + `anomaly` monitor kinds (rides the ADR 0012 seam) → scale-aware execution (gap G-b, Theme 7) → incident/lineage design doc (G-d). |
+| **Open issues** | **55** (verified against GitHub 2026-07-04), all on the `Backlog (post-v1 / testing)` milestone — mapped by theme in [post-v1-roadmap.md](../context/post-v1-roadmap.md), not duplicated here (#583/#584 filed 2026-07-04 from the retired `WEEK8_TODO` carry-over) |
 | **Open PRs** | none |
 | **Coverage gates (CI-enforced, ≥80%)** | backend `--cov-fail-under=80` (98.4% / 1,289 tests at the tag) · frontend all-src `lines: 80` (~88% / 337 tests at the tag) — every post-v1 PR rides the same gates |
 
@@ -49,6 +49,8 @@ the source of truth for issue state; this register mirrors it so nothing carried
 | [#568](https://github.com/TheurgicDuke771/DataQ/issues/568) | Severity threshold ordering unvalidated (warn/fail/critical bands can be authored out of order) |
 | [#571](https://github.com/TheurgicDuke771/DataQ/issues/571) | `checks_total` shows cosmetic 0 on pre-dispatch run failures |
 | [#573](https://github.com/TheurgicDuke771/DataQ/issues/573) | Flaky `SchedulesPanel` Popconfirm test in CI |
+| [#583](https://github.com/TheurgicDuke771/DataQ/issues/583) | MCP `profile_column` 422s on SQL suites without explicit table/schema — default to the run target (WEEK8_TODO carry-over, filed at its retirement) |
+| [#584](https://github.com/TheurgicDuke771/DataQ/issues/584) | MCP NL tool-selection spot-check — the softest W7 tick (WEEK8_TODO carry-over, filed at its retirement) |
 
 ### Long-standing follow-ups (pre-go-live filings, all on Backlog)
 
@@ -66,7 +68,7 @@ the source of truth for issue state; this register mirrors it so nothing carried
 | [#505](https://github.com/TheurgicDuke771/DataQ/issues/505) | AWS/GCP deploy IaC (post-v1 per ADR 0028) |
 | [#461](https://github.com/TheurgicDuke771/DataQ/issues/461) | DataQ-issued API keys / service tokens (ADR 0026 — deferred with shape confirmed: PATs first) |
 
-_The rest of the 53 are mapped by theme in [post-v1-roadmap.md](../context/post-v1-roadmap.md) — that doc, plus the GitHub milestone, is the full register; this table only names the ones the v1 ledger and CLAUDE.md §13 called out individually._
+_The rest of the 55 are mapped by theme in [post-v1-roadmap.md](../context/post-v1-roadmap.md) — that doc, plus the GitHub milestone, is the full register; this table only names the ones the v1 ledger and CLAUDE.md §13 called out individually._
 
 ### Pending design decisions
 
@@ -83,6 +85,7 @@ _The rest of the 53 are mapped by theme in [post-v1-roadmap.md](../context/post-
 | **Pre-marketplace harness teardown** — strip Flows A/B/C, the 5 harness connections, demo users, and the seeded-breach check before any marketplace/customer-facing artifact | gap **G-i**, [post-v1-roadmap.md](../context/post-v1-roadmap.md) + `deploy/README.md` |
 | **Ops/renewal timers consciously skipped** — the Sept-2026 demo-credential cluster self-signals via #419 alerting; recovery = re-mint + KV update | [retro-v1.md](retro-v1.md) |
 | Key Vault **purge protection left off** (demo-scoped vault) | `deploy/README.md` |
+| **Recurring cadences stay manual** (weekly security scan — CONTRIBUTING r36, quarterly MCP supply-chain audit — r39 (next ~2026-10-01), Dependabot triage) — no timer infrastructure, run session-driven; extends the ops-timers-skipped decision. Revisit trigger: second contributor or production-critical use. Recorded 2026-07-04 at the `WEEK8_TODO` retirement (its C2 item) | this table (extends [retro-v1.md](retro-v1.md)'s ops-timers decision) |
 
 ---
 
