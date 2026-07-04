@@ -206,6 +206,18 @@ Rides the harness's parameterizable volume (ADR 0021; HARNESS_TODO §6). Baselin
 | [#244](https://github.com/TheurgicDuke771/DataQ/issues/244) | Suite-on-suite triggering (run a suite when another suite completes) |
 | [#466](https://github.com/TheurgicDuke771/DataQ/issues/466) | Interactive datasource browsing — container browser (ADLS/S3) + 3-level catalog→schema→table picker (UC); from the W1–6 not-started triage (run/check paths shipped via explicit targets; browsing superseded & deferred) |
 | _(no issue yet)_ | JSON flat-file support — `FlatFileCheckRunner`/profiler/run-target accept `json` alongside `csv`/`parquet` (the W2 file-asset config task listed JSON; v1 shipped CSV/Parquet only) |
+| _(no issue yet)_ | **Generic PostgreSQL adapter** — `ConnectionAdapter` + thin `CheckRunner` on the shared `gx_runner` (same shape as the Snowflake path; GX supports Postgres natively via SQLAlchemy). One **engine-generic** adapter (never an Azure-branded one — ADR 0010/0013) covers Azure Database for PostgreSQL, **Azure HorizonDB** (fully PG-compatible — standard connection strings/drivers; *Preview* as of 2026-07, so support it as "it's Postgres" and don't advertise a named integration until GA), and AWS RDS / GCP Cloud SQL / self-hosted for free. Dogfoodable against the app's own Postgres, so integration tests need no new harness infra. This is the G-f "generic-RDBMS cheap first win". |
+| _(no issue yet)_ | **Generic MSSQL / T-SQL adapter** — one adapter covers **Microsoft Fabric** (Warehouse + Lakehouse SQL analytics endpoint + Fabric SQL database — all standard SQL Server TDS endpoints, port 1433, ODBC 18+ / pyodbc; GX supports mssql via SQLAlchemy), **Azure SQL Database**, Synapse dedicated pools — and, engine-generic like the PG row (ADR 0010/0013), any standard SQL Server endpoint (on-prem, AWS RDS for SQL Server). The one real design cost: Fabric endpoints want **Entra ID auth** (user or service principal; SQL auth unsupported on some Fabric items) → the adapter needs a client-credentials token flow — same KV-held secret model already used for ADF. Bonus: anything mirrored into Fabric (Cosmos DB, HorizonDB, …) becomes checkable through its mirror's SQL analytics endpoint with zero extra adapter code. |
+| _(no issue yet)_ | **OneLake flat-file spike** — OneLake speaks the ADLS Gen2 DFS API (`onelake.dfs.fabric.microsoft.com`); verify the existing ADLS flat-file adapter reaches Fabric lake files with just an endpoint override + Entra auth before promising it. Spike first, then a small extension — not a new adapter. |
+
+**Recommended order** (decided 2026-07-03, sits alongside — not competing with — the Theme-1 opening
+sequence; different layer of the stack): PG adapter → MSSQL/Fabric adapter → OneLake spike.
+
+**Decided-against (2026-07-03): no native Cosmos DB adapter.** Cosmos has no SQL dialect
+SQLAlchemy/GX can drive, and the DataFrame-reader alternative (Cosmos SDK → pandas, the UC-runner
+shape) has RU-cost + scale problems that make it a bad default. Coverage path of record: **via its
+Fabric mirror** → the MSSQL adapter reads the mirror's SQL analytics endpoint. Revisit a native
+adapter only on real demand.
 
 ---
 
