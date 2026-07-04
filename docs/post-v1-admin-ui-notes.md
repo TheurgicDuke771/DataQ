@@ -10,7 +10,7 @@
 > else is recorded here for later.
 >
 > Related issues: **#411** (admin workspace-wide view) and **#412** (admin write
-> actions), both milestoned _Backlog (post-v1 / testing)_.
+> actions), both milestoned _v1.1 Backlog_ (the milestone formerly named _Backlog (post-v1 / testing)_).
 
 ## v1 access model (what actually ships)
 
