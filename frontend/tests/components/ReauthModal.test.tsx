@@ -39,7 +39,9 @@ describe('ReauthModal', () => {
       </AntApp>,
     );
 
-    await user.type(await screen.findByLabelText('New credential'), 'new-secret');
+    // A snowflake connection with no auth_type resolves to the default
+    // password mode, so the field is labelled after it.
+    await user.type(await screen.findByLabelText('New: Password'), 'new-secret');
     await user.click(screen.getByRole('button', { name: 'Rotate credential' }));
 
     await waitFor(() => expect(mockReauth).toHaveBeenCalledWith('c1', 'new-secret'));
@@ -57,7 +59,96 @@ describe('ReauthModal', () => {
 
     await user.click(screen.getByRole('button', { name: 'Rotate credential' }));
 
-    await waitFor(() => expect(screen.getAllByText('New credential').length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByText('New: Password').length).toBeGreaterThan(0));
     expect(mockReauth).not.toHaveBeenCalled();
+  });
+
+  it("labels the field after a single-secret type's credential", async () => {
+    render(
+      <AntApp>
+        <ReauthModal
+          connection={{ ...connection, type: 's3' }}
+          onClose={vi.fn()}
+          onDone={vi.fn()}
+        />
+      </AntApp>,
+    );
+
+    expect(await screen.findByLabelText('New: Secret access key')).toBeInTheDocument();
+  });
+
+  it('composes the combined payload when rotating a key-pair credential with a passphrase', async () => {
+    const user = userEvent.setup();
+    mockReauth.mockResolvedValue({ ok: true });
+
+    render(
+      <AntApp>
+        <ReauthModal
+          connection={{ ...connection, config: { auth_type: 'key_pair' } }}
+          onClose={vi.fn()}
+          onDone={vi.fn()}
+        />
+      </AntApp>,
+    );
+
+    await user.type(await screen.findByLabelText('New: Private key (PEM)'), 'PEM-KEY');
+    await user.type(screen.getByLabelText(/Key passphrase/), 'pp');
+    await user.click(screen.getByRole('button', { name: 'Rotate credential' }));
+
+    await waitFor(() =>
+      expect(mockReauth).toHaveBeenCalledWith(
+        'c1',
+        JSON.stringify({ private_key: 'PEM-KEY', passphrase: 'pp' }),
+      ),
+    );
+  });
+
+  it('sends the bare key when the key-pair passphrase is left blank', async () => {
+    const user = userEvent.setup();
+    mockReauth.mockResolvedValue({ ok: true });
+
+    render(
+      <AntApp>
+        <ReauthModal
+          connection={{ ...connection, config: { auth_type: 'key_pair' } }}
+          onClose={vi.fn()}
+          onDone={vi.fn()}
+        />
+      </AntApp>,
+    );
+
+    await user.type(await screen.findByLabelText('New: Private key (PEM)'), 'PEM-KEY');
+    await user.click(screen.getByRole('button', { name: 'Rotate credential' }));
+
+    await waitFor(() => expect(mockReauth).toHaveBeenCalledWith('c1', 'PEM-KEY'));
+  });
+
+  it('does not leak a cancelled passphrase into a later rotation', async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    mockReauth.mockResolvedValue({ ok: true });
+
+    const keyPairConn = { ...connection, config: { auth_type: 'key_pair' } };
+    const { rerender } = render(
+      <AntApp>
+        <ReauthModal connection={keyPairConn} onClose={onClose} onDone={vi.fn()} />
+      </AntApp>,
+    );
+
+    // Type a passphrase, then cancel — the form must reset.
+    await user.type(await screen.findByLabelText(/Key passphrase/), 'stale-pp');
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onClose).toHaveBeenCalled();
+
+    // Reopen for a password-mode connection and rotate — no JSON wrapping.
+    rerender(
+      <AntApp>
+        <ReauthModal connection={connection} onClose={onClose} onDone={vi.fn()} />
+      </AntApp>,
+    );
+    await user.type(await screen.findByLabelText('New: Password'), 'fresh-pw');
+    await user.click(screen.getByRole('button', { name: 'Rotate credential' }));
+
+    await waitFor(() => expect(mockReauth).toHaveBeenCalledWith('c1', 'fresh-pw'));
   });
 });

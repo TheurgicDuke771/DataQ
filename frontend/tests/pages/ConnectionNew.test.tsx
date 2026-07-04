@@ -105,4 +105,70 @@ describe('ConnectionNew', () => {
     // Navigated to the list on success.
     expect(await screen.findByText('Connections list')).toBeInTheDocument();
   });
+
+  // The Snowflake create-form boilerplate shared by the key-pair tests: mock the
+  // response, pick the type, fill name + env + required fields, switch to key pair.
+  async function startSnowflakeKeyPair(user: ReturnType<typeof userEvent.setup>, name: string) {
+    mockCreate.mockResolvedValue({
+      id: 'c1',
+      name,
+      type: 'snowflake',
+      env: 'dev',
+      config: {},
+      has_secret: true,
+      created_by: 'u1',
+    });
+    renderPage();
+
+    await user.click(screen.getByText('Snowflake'));
+    await user.type(screen.getByLabelText('Name'), name);
+    await user.click(screen.getByLabelText('Environment'));
+    await user.click(await screen.findByText('DEV'));
+    for (const label of ['Account', 'User', 'Database', 'Schema', 'Warehouse']) {
+      await user.type(screen.getByLabelText(label), `${label.toLowerCase()}-val`);
+    }
+    // Switch auth to key pair → PEM textarea + optional passphrase appear.
+    await user.click(screen.getByLabelText('Auth type'));
+    await user.click(await screen.findByText('Key pair (RSA)'));
+  }
+
+  async function submittedSecret(user: ReturnType<typeof userEvent.setup>): Promise<unknown> {
+    await user.click(screen.getByRole('button', { name: 'Create' }));
+    await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1));
+    return mockCreate.mock.calls[0][0].secret;
+  }
+
+  it('composes the combined key-pair payload when a passphrase is given', async () => {
+    const user = userEvent.setup();
+    await startSnowflakeKeyPair(user, 'sf-kp');
+    await user.type(screen.getByLabelText('Private key (PEM)'), 'PEM-KEY');
+    await user.type(screen.getByLabelText(/Key passphrase/), 'pp');
+
+    expect(await submittedSecret(user)).toBe(
+      JSON.stringify({ private_key: 'PEM-KEY', passphrase: 'pp' }),
+    );
+  });
+
+  it('sends the bare PEM key when no passphrase is given', async () => {
+    const user = userEvent.setup();
+    await startSnowflakeKeyPair(user, 'sf-kp');
+    await user.type(screen.getByLabelText('Private key (PEM)'), 'PEM-KEY');
+
+    expect(await submittedSecret(user)).toBe('PEM-KEY');
+  });
+
+  it('does not leak a stale passphrase after switching auth back to password', async () => {
+    const user = userEvent.setup();
+    await startSnowflakeKeyPair(user, 'sf-pw');
+    // Type a passphrase… then reconsider and go back to password auth.
+    await user.type(screen.getByLabelText(/Key passphrase/), 'stale-pp');
+    await user.click(screen.getByLabelText('Auth type'));
+    // Two 'Password' texts exist while the dropdown is open (the option + the
+    // secret label) — pick the option inside the dropdown, then the input.
+    await user.click(await screen.findByTitle('Password'));
+    await user.type(screen.getByLabelText('Password', { selector: 'input#secret' }), 'sekret');
+
+    // The stale passphrase must NOT wrap the password into a JSON payload.
+    expect(await submittedSecret(user)).toBe('sekret');
+  });
 });

@@ -24,6 +24,7 @@ def test_redacts_credentials_and_personal_contact() -> None:
             "authorization": "Bearer xyz",
             "email": "user@example.com",
             "phone": "+15551234567",
+            "passphrase": "kp-" + "x" * 8,  # any value under this key must redact
         }
     )
     assert out["password"] == "<redacted>"
@@ -32,6 +33,7 @@ def test_redacts_credentials_and_personal_contact() -> None:
     assert out["authorization"] == "<redacted>"
     assert out["email"] == "<redacted>"
     assert out["phone"] == "<redacted>"
+    assert out["passphrase"] == "<redacted>"  # key-pair passphrase (#194)
     assert out["event"] == "auth_attempt"  # safe key
 
 

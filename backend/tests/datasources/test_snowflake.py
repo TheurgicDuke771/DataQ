@@ -33,8 +33,8 @@ from backend.app.datasources.snowflake import (
 )
 
 
-def _rsa_pem() -> str:
-    """An unencrypted PEM RSA private key for key-pair auth tests."""
+def _rsa_pem(passphrase: str | None = None) -> str:
+    """A PEM (PKCS#8) RSA private key — passphrase-protected when one is given."""
     from cryptography.hazmat.primitives import serialization
     from cryptography.hazmat.primitives.asymmetric import rsa
 
@@ -42,8 +42,30 @@ def _rsa_pem() -> str:
     return key.private_bytes(
         encoding=serialization.Encoding.PEM,
         format=serialization.PrivateFormat.PKCS8,
-        encryption_algorithm=serialization.NoEncryption(),
+        encryption_algorithm=(
+            serialization.BestAvailableEncryption(passphrase.encode())
+            if passphrase
+            else serialization.NoEncryption()
+        ),
     ).decode()
+
+
+def _key_pair_payload(pem: str, passphrase: str | None = None) -> str:
+    """The combined key-pair secret payload (#194) as the frontend composes it."""
+    import json
+
+    payload: dict[str, str] = {"private_key": pem}
+    if passphrase is not None:
+        payload["passphrase"] = passphrase
+    return json.dumps(payload)
+
+
+# Runtime-generated so no passphrase-looking literal lives in the repo
+# (CLAUDE.md §11: no credentials — even mock ones — in tracked files).
+def _passphrase() -> str:
+    import secrets
+
+    return f"pp-{secrets.token_hex(8)}"
 
 
 _CONFIG = {
@@ -159,6 +181,98 @@ def test_build_connect_args_rejects_malformed_key() -> None:
     cfg = SnowflakeConfig.model_validate({**_CONFIG, "auth_type": "key_pair"})
     with pytest.raises(ValueError):
         build_connect_args(cfg, "not a pem key")
+
+
+# ─────────────── encrypted key-pair secrets (combined payload, #194) ───────────────
+
+
+_KP_CONFIG = {**_CONFIG, "auth_type": "key_pair"}
+
+
+def test_build_connect_args_encrypted_key_with_passphrase() -> None:
+    cfg = SnowflakeConfig.model_validate(_KP_CONFIG)
+    pp = _passphrase()
+    secret = _key_pair_payload(_rsa_pem(pp), pp)
+    args = build_connect_args(cfg, secret)
+    assert isinstance(args["private_key"], bytes)
+    # The connector gets a *decrypted* DER PKCS8 key, not the PEM/encrypted form.
+    assert b"-----BEGIN" not in args["private_key"]
+
+
+def test_build_connect_args_json_payload_without_passphrase() -> None:
+    # The JSON shape is valid for unencrypted keys too (passphrase omitted).
+    cfg = SnowflakeConfig.model_validate(_KP_CONFIG)
+    args = build_connect_args(cfg, _key_pair_payload(_rsa_pem()))
+    assert isinstance(args["private_key"], bytes)
+
+
+def test_build_connect_args_wrong_passphrase_raises_without_leaking_it() -> None:
+    cfg = SnowflakeConfig.model_validate(_KP_CONFIG)
+    real, wrong = _passphrase(), _passphrase()
+    secret = _key_pair_payload(_rsa_pem(real), wrong)
+    with pytest.raises(ValueError) as excinfo:
+        build_connect_args(cfg, secret)
+    assert wrong not in str(excinfo.value)
+    assert real not in str(excinfo.value)
+
+
+def test_build_connect_args_encrypted_key_missing_passphrase_raises() -> None:
+    # An encrypted key sent as bare PEM (no payload/passphrase) must fail
+    # cleanly as ValueError, not the cryptography TypeError.
+    cfg = SnowflakeConfig.model_validate(_KP_CONFIG)
+    with pytest.raises(ValueError):
+        build_connect_args(cfg, _rsa_pem(_passphrase()))
+
+
+def test_build_connect_args_passphrase_on_unencrypted_key_raises() -> None:
+    cfg = SnowflakeConfig.model_validate(_KP_CONFIG)
+    with pytest.raises(ValueError):
+        build_connect_args(cfg, _key_pair_payload(_rsa_pem(), _passphrase()))
+
+
+def test_build_connect_args_empty_passphrase_means_none() -> None:
+    # An empty passphrase (frontend field left blank inside the JSON shape)
+    # behaves like no passphrase — the unencrypted-key path.
+    cfg = SnowflakeConfig.model_validate(_KP_CONFIG)
+    args = build_connect_args(cfg, _key_pair_payload(_rsa_pem(), ""))
+    assert isinstance(args["private_key"], bytes)
+
+
+def test_key_pair_payload_malformed_json_raises() -> None:
+    cfg = SnowflakeConfig.model_validate(_KP_CONFIG)
+    with pytest.raises(ValueError, match="not valid JSON"):
+        build_connect_args(cfg, "{not json")
+
+
+def test_key_pair_payload_missing_private_key_raises() -> None:
+    cfg = SnowflakeConfig.model_validate(_KP_CONFIG)
+    with pytest.raises(ValueError, match="private_key"):
+        build_connect_args(cfg, '{"passphrase": "p"}')
+
+
+def test_key_pair_payload_non_string_passphrase_raises() -> None:
+    cfg = SnowflakeConfig.model_validate(_KP_CONFIG)
+    with pytest.raises(ValueError, match="passphrase"):
+        build_connect_args(cfg, '{"private_key": "x", "passphrase": 42}')
+
+
+def test_adapter_test_encrypted_key_pair_end_to_end(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The adapter test path threads the decrypted key into connect_args.
+    engine = _FakeEngine([])
+    captured: dict[str, object] = {}
+
+    def fake_create_engine(url: str, **kwargs: object) -> _FakeEngine:
+        captured["connect_args"] = kwargs.get("connect_args")
+        return engine
+
+    monkeypatch.setattr("sqlalchemy.create_engine", fake_create_engine)
+    pp = _passphrase()
+    secret = _key_pair_payload(_rsa_pem(pp), pp)
+    SnowflakeConnectionAdapter().test(_KP_CONFIG, secret)
+
+    connect_args = captured["connect_args"]
+    assert isinstance(connect_args, dict)
+    assert isinstance(connect_args.get("private_key"), bytes)
 
 
 # ───────────────────────── expectation translation ─────────────────

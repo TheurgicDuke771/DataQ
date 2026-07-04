@@ -1,7 +1,7 @@
 import { Form, Input, Select, type FormInstance } from 'antd';
 
 import type { ConnectionType } from '../../api/connections';
-import { CONNECTION_FORM_SPECS, type TextField } from './connectionFormSpec';
+import { activeAuthOption, CONNECTION_FORM_SPECS, type TextField } from './connectionFormSpec';
 
 /**
  * Renders the type-specific config + secret form fields from CONNECTION_FORM_SPECS.
@@ -23,14 +23,40 @@ function ConfigTextField({ field }: { field: TextField }) {
   );
 }
 
-function SecretField({ label, multiline = false }: { label: string; multiline?: boolean }) {
+/** The write-only credential input — shared by the create form and ReauthModal. */
+export function SecretField({
+  label,
+  multiline = false,
+  extra,
+}: {
+  label: string;
+  multiline?: boolean;
+  extra?: string;
+}) {
   return (
-    <Form.Item name="secret" label={label} rules={requiredRule}>
+    <Form.Item name="secret" label={label} rules={requiredRule} extra={extra}>
       {multiline ? (
         <Input.TextArea rows={4} autoComplete="off" />
       ) : (
         <Input.Password autoComplete="off" />
       )}
+    </Form.Item>
+  );
+}
+
+/** Optional second secret part (e.g. key-pair passphrase) — rides `composeSecret`.
+ * The form's `requiredMark="optional"` renders the (optional) marker.
+ * `preserve={false}` drops the value when the field unmounts (auth-mode switch,
+ * modal close) so a stale passphrase can never wrap another mode's secret. */
+export function PassphraseField({ label }: { label: string }) {
+  return (
+    <Form.Item
+      name="secretPassphrase"
+      label={label}
+      preserve={false}
+      extra="Only for passphrase-protected keys; leave blank for an unencrypted key."
+    >
+      <Input.Password autoComplete="off" />
     </Form.Item>
   );
 }
@@ -47,7 +73,7 @@ export function ConnectionTypeFields({
 }) {
   const spec = CONNECTION_FORM_SPECS[type];
   const authType = Form.useWatch(['config', 'auth_type'], form) as string | undefined;
-  const activeAuth = spec.auth?.find((a) => a.value === authType) ?? spec.auth?.[0];
+  const activeAuth = activeAuthOption(type, { auth_type: authType });
 
   return (
     <>
@@ -65,7 +91,10 @@ export function ConnectionTypeFields({
 
       {showSecret &&
         (activeAuth ? (
-          <SecretField label={activeAuth.secretLabel} multiline={activeAuth.multilineSecret} />
+          <>
+            <SecretField label={activeAuth.secretLabel} multiline={activeAuth.multilineSecret} />
+            {activeAuth.passphraseLabel && <PassphraseField label={activeAuth.passphraseLabel} />}
+          </>
         ) : (
           spec.secretLabel && <SecretField label={spec.secretLabel} />
         ))}
