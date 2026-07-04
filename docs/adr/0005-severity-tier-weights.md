@@ -115,7 +115,7 @@ with two of four tiers unused.
 
 - ADR 0012 — monitor-kind seam (`check.kind` + `metric_value` / `duration_ms`);
   **rides the same Week-3 migration** as the threshold/status columns.
-- `docs/progress.md` — Week 3 "Severity threshold tiers" tasks; Week 6 health
+- `docs/progress-v1.md` — Week 3 "Severity threshold tiers" tasks; Week 6 health
   score + severity-aware alert routing; Week 8 result-service tests.
 - `context/DataQ_platform_roadmap.md` — Week 3 severity tiers; post-v1 Theme A
   (auto-monitors emit the same tiers over `metric_value`).

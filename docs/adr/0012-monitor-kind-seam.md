@@ -143,6 +143,6 @@ monitor on Unity Catalog are the same `kind`, different `CheckRunner`.
   the SQL-aggregation discipline (`status` rollup ↔ `metric_value` trends).
 - ADR 0011 — datasource extensibility seams (`CheckRunner` by `connection.type`);
   the dispatch this composes with. `kind` ⟂ datasource.
-- `docs/progress.md` — Week 3 "Monitor abstraction & metric storage" tasks.
+- `docs/progress-v1.md` — Week 3 "Monitor abstraction & metric storage" tasks.
 - `context/DataQ_platform_roadmap.md` — post-v1 Theme A (auto-monitors).
 - CLAUDE.md §5 (monitor-kind seam), §10 (Week-3 one-shot migration).

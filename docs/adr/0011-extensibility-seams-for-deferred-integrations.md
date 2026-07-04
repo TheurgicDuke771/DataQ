@@ -59,4 +59,4 @@ None of these is in v1 scope (v1 is the four named datasources + two orchestrati
 - ADR 0004 — `OrchestrationProvider` abstraction (dbt as a third provider).
 - ADR 0010 — provider-agnostic infrastructure seams (the infra-side counterpart).
 - `datasources/base.py` (`CheckRunner`), `worker/tasks.py` (dispatch), `services/run_service.py` (completion hook point).
-- v1 action items tracked in `docs/progress.md` (Week 5 generic dispatch, Week 6 `ResultPublisher` seam).
+- v1 action items tracked in `docs/progress-v1.md` (Week 5 generic dispatch, Week 6 `ResultPublisher` seam).
