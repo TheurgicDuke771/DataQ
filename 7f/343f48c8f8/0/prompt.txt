@@ -1,0 +1,225 @@
+<task-notification>
+<task-id>aae5b72fd40f4899e</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/a9be1a77-8cac-4d65-b95c-94daac919ec8/tasks/aae5b72fd40f4899e.output</output-file>
+<status>completed</status>
+<summary>Agent "Angle: altitude finder" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Based on the diff plus the repo's adapter/secret contract (base.py: "each adapter owns its own pydantic config model... the adapter is the single source of truth for that type's shape"; the secret flows as a single opaque `str` end-to-end), here are the genuine altitude findings.
+
+```json
+[
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/frontend/src/components/connections/connectionFormSpec.ts",
+    "line": 132,
+    "summary": "composeSecret() bakes the Snowflake adapter's wire envelope {private_key, passphrase} into a shared frontend helper. This is the same JSON schema the backend's _parse_key_pair_secret decodes, so an adapter-private secret contract is now defined in two languages with no shared type or contract test. base.py states the adapter is the single source of truth for its secret shape; the deeper fix is a backend `secret_passphrase` field on ConnectionCreate/Update/Reauth (the API already treats `secret` as opaque, and the adapter's test(raw, secret) owns the shape), letting the backend compose the payload and keeping the UI ignorant of the envelope.",
+    "failure_scenario": "Backend renames the JSON key (e.g. private_key -&gt; key_pem, or passphrase -&gt; key_passphrase) or wraps it in a version tag. Nothing fails at build/CI time: the TS tests assert the literal JSON string they themselves produce, the Python tests build their own. Every passphrase-protected Snowflake connection created/rotated from the UI silently fails auth in production until someone notices the two halves drifted."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/frontend/src/components/connections/ReauthModal.tsx",
+    "line": 83,
+    "summary": "ReauthModal re-implements the passphrase input inline (Form.Item name=\"secretPassphrase\", Input.Password, and the exact copy \"Only for passphrase-protected keys; leave blank for an unencrypted key.\") rather than reusing the PassphraseField component just added to ConnectionTypeFields.tsx (line 40), which is byte-identical in name, widget, and extra text. Reading the label/multiline data from CONNECTION_FORM_SPECS is the right depth (reuse of the source of truth); duplicating the widget rendering + copy string is not. The field name `secretPassphrase` is now hardcoded in three places (PassphraseField, ConnectionForm.FormValues, ReauthModal).",
+    "failure_scenario": "The passphrase field grows a rule (e.g. reject a trailing newline that would corrupt the PEM, or a maxLength) or the help copy is reworded. It gets changed in ConnectionTypeFields' PassphraseField but the ReauthModal copy is missed, so create-time and rotate-time validation/UX silently diverge — a key that is accepted on create is rejected (or vice versa) on re-auth."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/backend/app/datasources/snowflake.py",
+    "line": 84,
+    "summary": "secret.lstrip().startswith('{') distinguishes a bare PEM from the JSON payload by sniffing the first non-space char. This is the backend half of the split contract in finding #1 and is a bandaid vs. an explicit signal (a backend secret_passphrase field, or a versioned/typed envelope) — the code infers structure instead of being told it. It is NOT shared infrastructure across auth types (it lives in the Snowflake key_pair path only, so it won't bite other datasources), which is why the concern is narrower than 'shared', but it does run against every key_pair secret including legacy bare-PEM ones.",
+    "failure_scenario": "The only thing keeping a legitimate PEM out of the JSON branch is the implicit invariant that PEM always begins with '-----BEGIN'. If a future Snowflake auth variant stores any secret that can legitimately begin with '{' (or a proxy/secret-store re-serializes the value as JSON), it is misrouted into json.loads and rejected as 'not valid JSON' with no path back to the raw-secret branch — a class of failure an explicit field would make structurally impossible."
+  }
+]
+```</result>
+<usage><subagent_tokens>57012</subagent_tokens><tool_uses>11</tool_uses><duration_ms>125828</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a6117bbd77a0afc23</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/a9be1a77-8cac-4d65-b95c-94daac919ec8/tasks/a6117bbd77a0afc23.output</output-file>
+<status>completed</status>
+<summary>Agent "Angle B: removed-behavior audit" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I have enough to assess. The label change ('New credential' → 'New: {secretLabel}') is fully propagated: all three test files updated and no reference in `frontend/e2e/` or `frontend/e2e-live/` (only in the built `dist/` artifact). The real risks are in the new `composeSecret`/passphrase state handling.
+
+```json
+[
+  {
+    "file": "frontend/src/components/connections/ConnectionForm.tsx",
+    "line": 79,
+    "summary": "On create, composeSecret uses values.secretPassphrase, but antd Form preserves values of unmounted fields (preserve defaults to true) and nothing clears secretPassphrase when the auth type is switched away from key_pair. The PassphraseField (ConnectionTypeFields.tsx:84) only renders for auth modes with passphraseLabel.",
+    "failure_scenario": "User adds a Snowflake connection, picks 'Key pair (RSA)', enters a PEM key AND a passphrase, then reconsiders and switches 'Auth type' back to 'Password' and enters a password. The passphrase field unmounts but its value is retained by the form store, so composeSecret(password, stalePassphrase) wraps the password as JSON {\"private_key\":\"&lt;password&gt;\",\"passphrase\":\"&lt;pp&gt;\"} and that JSON string is stored as the Snowflake password. The connection is created with a corrupted credential; there is no create-time verification, so it only surfaces later as an unexplained failing 'Test'. No test covers the toggle-back direction (ConnectionNew.test.tsx only exercises forward key_pair selection)."
+  },
+  {
+    "file": "frontend/src/components/connections/ReauthModal.tsx",
+    "line": 49,
+    "summary": "ReauthModal shares one form instance across every connection it opens for, and only calls form.resetFields() on successful rotation (line 51) — not on cancel (onCancel={onClose}). composeSecret reads secretPassphrase, whose Form.Item only renders for key_pair connections (line 83).",
+    "failure_scenario": "Open Re-auth for a key_pair Snowflake connection, type a passphrase, then Cancel (no reset). Open Re-auth for a different, password-mode connection: the passphrase field is not rendered so the user can't see or clear it, but the stale secretPassphrase value persists in the form store, so composeSecret JSON-wraps the new password. The stored rotation payload is corrupted. (Mitigated because reauth verifies against the datasource before committing, so it fails safely rather than silently — but produces a confusing 'Re-auth failed' with no visible cause.)"
+  }
+]
+```
+
+Note: candidate 2 is lower severity because the reauth backend-verify path rejects the bad value before overwriting the stored credential; candidate 1 is the higher-confidence one since the create path has no verification step.</result>
+<usage><subagent_tokens>42527</subagent_tokens><tool_uses>10</tool_uses><duration_ms>153197</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bif14i8xp</task-id>
+<summary>Monitor event: "PR 602 CI completion (non-passing checks listed)"</summary>
+<event>Frontend — tests: fail
+GitGuardian Security Checks: fail</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>af813a5e5f238b8e7</task-id>
+<tool-use-id>toolu_01FEE3w92JNYZcw9esweW3b6</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/a9be1a77-8cac-4d65-b95c-94daac919ec8/tasks/af813a5e5f238b8e7.output</output-file>
+<status>completed</status>
+<summary>Agent "Altitude + conventions angles" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I've reviewed the full `git diff main...HEAD`, the complete `snowflake.py`, the test file helpers, and CLAUDE.md against both axes.
+
+ALTITUDE assessment:
+- The `auth_type` branch in `run_checks` (lines 178-204) inlines Snowflake-specific GX datasource construction. This is the correct layer: it's contained within the Snowflake adapter (the `CheckRunner` seam), GX API does not leak out, and there are no other call sites that would benefit from extracting a `build_gx_datasource_args` helper. No concrete future cost — extraction would be a pure style preference. The base64 re-encode of `self._connect_args["private_key"]` (line 198) reuses the already-loaded DER from `__init__`, so there's no duplicated key-loading either.
+- The role-required check (lines 185-189) is correctly placed in `run_checks` rather than `SnowflakeConfig` validation or connection create. As the task notes, a config-level validator would break existing role-less key-pair connections whose `adapter.test` (SELECT 1) and `run_monitors` (scalar SQL) paths genuinely don't need a role — only GX's `KeyPairConnectionDetails` suite-run form mandates it. Pushing it up would be wrong-depth; keeping it at the one path that requires it is the right depth.
+
+CONVENTIONS assessment:
+- No GX version change in the diff (no `environment.yml` touch) — the "pin GX, don't drift" rule (CLAUDE.md line 263) is not triggered.
+- One-functionality-per-commit: the #195 fix plus the `progress.md` tracker update is the PR-template-mandated pattern, allowed per the task framing and CLAUDE.md §Documentation.
+- No credentials in tracked files (CLAUDE.md line 259): the tests generate keys at runtime via `_rsa_pem()` (test file line 38), not hardcoded PEM — the `grep` for `BEGIN`/`PRIVATE KEY` found only runtime-generated/assertion uses. Clean.
+- GX API confined to the datasources layer: all changes live in `backend/app/datasources/snowflake.py`; the `ValueError` that propagates carries only a plain string, not a GX object. No leak.
+
+No genuine wrong-depth problems or rule violations found.
+
+[]</result>
+<usage><subagent_tokens>49724</subagent_tokens><tool_uses>4</tool_uses><duration_ms>56192</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a9f0bb7e8c3de337c</task-id>
+<tool-use-id>toolu_01F2yJ5rJMY8ZgLhtSQydtz8</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/a9be1a77-8cac-4d65-b95c-94daac919ec8/tasks/a9f0bb7e8c3de337c.output</output-file>
+<status>completed</status>
+<summary>Agent "Cleanup angles: reuse/simplify/efficiency" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Based on my analysis of the diff, the production code (`snowflake.py`) is clean. I verified the key concerns raised:
+
+- **DER→b64 round-trip is optimal, not redundant.** `_connect_args["private_key"]` must stay raw DER because `run_monitors` (line 232) and `SnowflakeConnectionAdapter.test` (line 289) pass it straight to snowflake-connector via `create_engine`. Only the GX form needs b64-DER, so `run_checks` correctly encodes once at the use-site. Deriving b64 in the shared helper would force a second key-load or storing two forms — the current shape is the simplest.
+- **No dead code.** `self._connection_string` / `build_connection_string`'s passwordless key-pair DSN is still live: `run_monitors` (line 232) reuses it for key-pair, and `SnowflakeConnectionAdapter.test` (line 285) rebuilds it. The password branch of `run_checks` (line 203) still uses it too.
+- **Role validation is new, not redundant** — nothing else enforces `role` for the key-pair path.
+
+The only findings are minor test-side duplications:
+
+```json
+[
+  {
+    "file": "backend/tests/datasources/test_snowflake.py",
+    "line": 246,
+    "summary": "test_run_checks_key_pair_requires_role re-implements the fake-context wiring (SimpleNamespace(data_sources=_FakeDataSources()) + monkeypatch.setattr of gx.get_context + SnowflakeConfig.model_validate + runner construction) that the _captured_add_snowflake helper (lines 205-219) already encapsulates, instead of reusing a shared context-patch helper.",
+    "failure_scenario": "Low cost: the monkeypatch target string 'backend.app.datasources.snowflake.gx.get_context' is duplicated verbatim in two places (lines 214 and 248). If the module path or get_context patch signature changes, both call sites must be updated in lockstep; missing one silently leaves a test patching a stale target and exercising real gx.get_context. Extracting a one-line _patch_context(monkeypatch) helper removes the duplication."
+  },
+  {
+    "file": "backend/tests/datasources/test_snowflake.py",
+    "line": 227,
+    "summary": "`import base64` is done locally inside test_run_checks_key_pair_uses_gx_kwargs_form rather than at module top-level, while the production module already imports base64 at module scope.",
+    "failure_scenario": "Negligible cost/style only: a function-local stdlib import for a symbol only used to base64-decode one assertion; hoisting to the existing top-of-file import block matches the rest of the test module and avoids re-importing per test invocation."
+  }
+]
+```</result>
+<usage><subagent_tokens>22637</subagent_tokens><tool_uses>8</tool_uses><duration_ms>89201</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ae8c810740b066e0e</task-id>
+<tool-use-id>toolu_012M6gsTi9GzSbdbtx5nu99T</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/a9be1a77-8cac-4d65-b95c-94daac919ec8/tasks/ae8c810740b066e0e.output</output-file>
+<status>completed</status>
+<summary>Agent "Angle A+B: diff scan + removed behavior" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I have enough to report. I verified the migrated kwarg names against the installed GX 1.17 source (`KeyPairConnectionDetails` at `snowflake_datasource.py:396`): `schema` (aliased), `warehouse`, `role`, `private_key` are all valid root kwargs (the `_convert_root_connection_detail_fields` root-validator explicitly accepts `"schema"`), `role` is genuinely a required field, and GX's own encode/decode uses `base64.standard_b64*` — so the encoding choice, schema alias, and role-required assertion are all correct. The migration is largely sound. Findings below.
+
+```json
+[
+  {
+    "file": "backend/app/datasources/snowflake.py",
+    "line": 185,
+    "summary": "run_checks raises ValueError when role is missing for key_pair, but SnowflakeConfig.role is Optional (default None) and run_monitors imposes no such requirement (its DSN just omits the role query param). A key_pair connection configured without a role can pass construction and run monitors, yet every suite run hard-fails.",
+    "failure_scenario": "User creates a key_pair Snowflake connection with no role (valid per SnowflakeConfig, and monitors evaluate fine using the account's default role). Every scheduled/ad-hoc suite run then raises 'require role in the connection config' — a latent, method-specific failure never surfaced at connection creation/test-connection time. Invariant broken vs Angle B: the old connection_string path treated role as optional for BOTH run_checks and run_monitors; the new form makes it mandatory for run_checks only, so the two runner methods now diverge on the same config."
+  },
+  {
+    "file": "backend/app/datasources/snowflake.py",
+    "line": 198,
+    "summary": "private_key is base64-encoded for the KeyPairConnectionDetails (dict connection_string) form, but in GX 1.17 the base64.standard_b64decode step lives only in the connect_args branch of _build_engine_with_connect_args (snowflake_datasource.py:838-839). The dict/details path (get_engine else-branch → **connection_string with connect_args=None) does not appear to route through that decode, sending private_key onward as a base64 string. Author's inline note claims live-verification 2026-07-04, so low confidence — but the exact decode site for the details path is not visible in the GX source read.",
+    "failure_scenario": "If the live-verify only exercised test_connection (or an earlier point) rather than the full add_snowflake -&gt; add_table_asset -&gt; ValidationDefinition.run engine build, the b64 string could reach snowflake-sqlalchemy un-decoded, and real suite runs would fail authentication. Worth confirming the live check drove an actual expectation validation, not just connectivity."
+  },
+  {
+    "file": "backend/tests/datasources/test_snowflake.py",
+    "line": 195,
+    "summary": "The fake-context tests raise _StopRunError inside add_snowflake, before any GX validation runs, so they pin only the Python kwargs the adapter passes — not that GX accepts a passwordless details dict, that the union resolves to KeyPairConnectionDetails rather than ConnectionDetails, or that the b64-DER private_key actually authenticates. This gives coverage credit for behavior it cannot observe.",
+    "failure_scenario": "A future change (e.g., adding password= back, or GX tightening its root validator/union resolution) would keep these tests green while the real add_snowflake call breaks, since the sentinel exception fires before GX ever sees the kwargs. The tests guard argument shape, not GX acceptance — the exact gap the '#195 kwargs form' migration most needs pinned."
+  }
+]
+```</result>
+<usage><subagent_tokens>47350</subagent_tokens><tool_uses>14</tool_uses><duration_ms>225528</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>add369a68bfb9f8c7</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/a9be1a77-8cac-4d65-b95c-94daac919ec8/tasks/add369a68bfb9f8c7.output</output-file>
+<status>completed</status>
+<summary>Agent "Angle C: cross-file tracer" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I have traced all four questions. Verified the GX 1.17 internals empirically (built a datasource with the new kwargs form and drove `get_engine` to the point of a live auth attempt). Findings below.
+
+## Summary of trace
+
+**(3) GX 1.17 kwargs verification — PASSES, no defect.** In `great_expectations/datasource/fluent/snowflake_datasource.py`, `KeyPairConnectionDetails` (lines 396–406) declares exactly `account, user, database, schema_ (alias "schema"), warehouse, role, private_key`. So the diff's kwargs are correct: `schema=` (alias) is accepted via the `_convert_root_connection_detail_fields` root validator (which explicitly lists `"schema"`, line 578), and `role: str` is a **required** field (line 405), so the code's `ValueError` guard matches GX's own requirement. I built the datasource with a base64-DER `private_key` and called `get_engine()`: it round-tripped the key and reached Snowflake's key-pair auth network login (failing only on the fake account host, not on key parsing), with **no `DeprecationWarning`**. The diff's rationale is also accurate: `SnowflakeDsn.validate_parts` (lines 310–312) raises `_UrlPasswordError` when the DSN has no password, so the old password-less `connection_string` + `connect_args` route genuinely failed GX validation — the fix is real, not cosmetic.
+
+**(4) docs/progress.md — no factual inconsistency found.** The count math is internally consistent: 66 − 2 closed (#194/#195) + 1 filed (#601) = 65; W1 0/6 → 2/6; register strikethroughs map #194→#602, #195→#603. The "55 scheduled … at the 2026-07-04 remap" figures are framed historically, so leaving them unchanged is defensible (mild staleness, not an error).
+
+## Candidates
+
+```json
+[
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/backend/app/datasources/snowflake.py",
+    "line": 276,
+    "summary": "SnowflakeConnectionAdapter.test() (test-connection SELECT 1) uses build_connection_string + build_connect_args directly and does NOT require role for key_pair auth. So a key-pair connection saved with no role passes 'Test connection' (role is optional in the Snowflake DSN), but run_checks (lines 185-189) will raise the new ValueError on every suite run. No early signal at the point a user actually validates the connection.",
+    "failure_scenario": "User authors a key-pair Snowflake connection without a role, clicks Test connection -&gt; green. Later every suite run / dry-run against it fails. The config that the product told them was valid is unusable, with the failure deferred to run time."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/frontend/src/components/connections/connectionFormSpec.ts",
+    "line": 51,
+    "summary": "Frontend connection form marks role as optional ({ name: 'role', label: 'Role', optional: true }) with no auth_type-conditional requirement. Combined with the backend making role mandatory only inside run_checks for key_pair, the UI lets a user submit a key-pair config that is structurally guaranteed to fail suite runs, with no field-level or submit-time signal.",
+    "failure_scenario": "Key-pair connection created via UI without role; form + test-connection both succeed; suite runs fail. The earliest signal a user could get (form validation for auth_type=key_pair) is absent."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/backend/app/services/dryrun_service.py",
+    "line": 110,
+    "summary": "In dryrun_service, the role-required ValueError from run_checks is caught by the broad 'except Exception' and re-raised as DryRunFailedError (502) with a generic 'dry run could not execute against the datasource' message; the adapter message is deliberately never echoed (credential-leak guard). But this ValueError is a pure config error carrying no secrets, and semantically it is a 422-class problem (like the DryRunUnsupportedError above it), not a 502 datasource/connectivity failure.",
+    "failure_scenario": "User dry-runs a check on a role-less key-pair connection and gets an opaque 502 with a table detail but no indication that 'role' is the fix — indistinguishable from an unreachable warehouse, so they debug the wrong thing."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/backend/app/services/run_service.py",
+    "line": 214,
+    "summary": "execute_run wraps _run_outcomes (which calls run_checks) in a broad 'except Exception' that drives the run to status='failed' and log.exception's server-side only. The Run model (db/models.py:310) has no error/message column, so the 'role required' reason is never surfaced to the user — the suite run just shows 'failed' with no actionable cause.",
+    "failure_scenario": "A scheduled/manual suite run on a role-less key-pair connection lands in 'failed' with no visible reason; the user cannot tell from the UI/API that adding role fixes it, and (per candidate 1) test-connection had reported the connection healthy."
+  }
+]
+```
+
+Net: the new ValueError itself reaches a clean terminal state on both paths (dry-run 502, suite run 'failed') — no hangs, no leaks. The gap the trace surfaces is **signal timing and clarity**: role is optional at author/test time (frontend + `test()`), mandatory only at `run_checks` time, and the mandatory failure is rendered opaquely (generic 502 / reasonless 'failed'). The cleanest earlier signal would be enforcing `role` for `auth_type == "key_pair"` in `SnowflakeConfig`/`validate_config` (or in `test()`), so it fails at connection-save/test time with the explicit message instead of at every run.</result>
+<usage><subagent_tokens>62840</subagent_tokens><tool_uses>32</tool_uses><duration_ms>435123</duration_ms></usage>
+</task-notification>
