@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "bcaa3c44550f",
+  "strategy": "manual-commit",
+  "branch": "docs/harness-window-script-note",
+  "checkpoints_count": 12,
+  "files_touched": [
+    "CLAUDE.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/bc/aa3c44550f/0/metadata.json",
+      "transcript": "/bc/aa3c44550f/0/full.jsonl",
+      "compact_transcript": "/bc/aa3c44550f/0/transcript.jsonl",
+      "content_hash": "/bc/aa3c44550f/0/content_hash.txt",
+      "prompt": "/bc/aa3c44550f/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 24829,
+    "cache_creation_tokens": 206923,
+    "cache_read_tokens": 22476985,
+    "output_tokens": 79039,
+    "api_call_count": 92
+  }
+}
