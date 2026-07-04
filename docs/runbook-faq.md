@@ -3,6 +3,11 @@
 ## Release checklist (v1)
 
 - All CI gates green on `main`; no open release-blocking issues on the current milestone.
+- **CHANGELOG updated at tag time** (minor/major releases; patch only if user-visible or
+  security-relevant — see the policy in
+  [CHANGELOG.md](https://github.com/TheurgicDuke771/DataQ/blob/main/CHANGELOG.md)):
+  curate `git log v<prev>..HEAD --oneline` down to what a deployer/user acts on, and
+  mirror the entry into the GitHub Release body.
 - Backend image built + pushed to GHCR with an **immutable** tag (not `latest`).
 - DB migrations are backward-compatible; the migrate job runs `alembic upgrade head`
   **before** the app rolls.
