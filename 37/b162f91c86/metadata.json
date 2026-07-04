@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "37b162f91c86",
+  "strategy": "manual-commit",
+  "branch": "docs/roadmap-agentic-rca",
+  "checkpoints_count": 5,
+  "files_touched": [
+    "context/post-v1-roadmap.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/37/b162f91c86/0/metadata.json",
+      "transcript": "/37/b162f91c86/0/full.jsonl",
+      "compact_transcript": "/37/b162f91c86/0/transcript.jsonl",
+      "content_hash": "/37/b162f91c86/0/content_hash.txt",
+      "prompt": "/37/b162f91c86/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 125938,
+    "cache_creation_tokens": 3406527,
+    "cache_read_tokens": 163137917,
+    "output_tokens": 425413,
+    "api_call_count": 658
+  }
+}
