@@ -126,9 +126,10 @@ export function activeAuthOption(
 /**
  * Compose the write-only secret payload. A passphrase rides a combined JSON
  * payload — one SecretStore entry per connection, so rotation stays atomic
- * (the backend Snowflake adapter parses it; #194). Without a passphrase the
- * secret is sent as-is (bare PEM = unencrypted key, unchanged).
+ * (the backend Snowflake adapter parses it; #194). Without a passphrase —
+ * including a whitespace-only one, which is a stray keystroke, not a real
+ * passphrase — the secret is sent as-is (bare PEM = unencrypted key, unchanged).
  */
 export function composeSecret(secret: string, passphrase?: string): string {
-  return passphrase ? JSON.stringify({ private_key: secret, passphrase }) : secret;
+  return passphrase?.trim() ? JSON.stringify({ private_key: secret, passphrase }) : secret;
 }

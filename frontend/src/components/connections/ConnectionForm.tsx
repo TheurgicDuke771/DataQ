@@ -13,7 +13,7 @@ import {
   updateConnection,
 } from '../../api/connections';
 import { ConnectionTypeFields } from './ConnectionTypeFields';
-import { composeSecret, initialConfigForType } from './connectionFormSpec';
+import { activeAuthOption, composeSecret, initialConfigForType } from './connectionFormSpec';
 
 interface FormValues {
   name: string;
@@ -75,8 +75,16 @@ export function ConnectionForm({
             type,
             env: values.env,
             config: values.config ?? {},
+            // Only the selected auth mode's passphrase rides along — a value
+            // typed under a previously-picked mode is preserved in the form
+            // store after its field unmounts and must not wrap the secret.
             secret: values.secret
-              ? composeSecret(values.secret, values.secretPassphrase)
+              ? composeSecret(
+                  values.secret,
+                  activeAuthOption(type, values.config)?.passphraseLabel
+                    ? values.secretPassphrase
+                    : undefined,
+                )
               : undefined,
           });
       message.success(`Connection “${values.name}” ${isEdit ? 'updated' : 'created'}`);

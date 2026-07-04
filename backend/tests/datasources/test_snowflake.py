@@ -33,8 +33,8 @@ from backend.app.datasources.snowflake import (
 )
 
 
-def _rsa_pem() -> str:
-    """An unencrypted PEM RSA private key for key-pair auth tests."""
+def _rsa_pem(passphrase: str | None = None) -> str:
+    """A PEM (PKCS#8) RSA private key — passphrase-protected when one is given."""
     from cryptography.hazmat.primitives import serialization
     from cryptography.hazmat.primitives.asymmetric import rsa
 
@@ -42,20 +42,11 @@ def _rsa_pem() -> str:
     return key.private_bytes(
         encoding=serialization.Encoding.PEM,
         format=serialization.PrivateFormat.PKCS8,
-        encryption_algorithm=serialization.NoEncryption(),
-    ).decode()
-
-
-def _rsa_pem_encrypted(passphrase: str) -> str:
-    """A passphrase-protected (PKCS#8) PEM RSA private key."""
-    from cryptography.hazmat.primitives import serialization
-    from cryptography.hazmat.primitives.asymmetric import rsa
-
-    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    return key.private_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PrivateFormat.PKCS8,
-        encryption_algorithm=serialization.BestAvailableEncryption(passphrase.encode()),
+        encryption_algorithm=(
+            serialization.BestAvailableEncryption(passphrase.encode())
+            if passphrase
+            else serialization.NoEncryption()
+        ),
     ).decode()
 
 
@@ -67,6 +58,14 @@ def _key_pair_payload(pem: str, passphrase: str | None = None) -> str:
     if passphrase is not None:
         payload["passphrase"] = passphrase
     return json.dumps(payload)
+
+
+# Runtime-generated so no passphrase-looking literal lives in the repo
+# (CLAUDE.md §11: no credentials — even mock ones — in tracked files).
+def _passphrase() -> str:
+    import secrets
+
+    return f"pp-{secrets.token_hex(8)}"
 
 
 _CONFIG = {
@@ -192,7 +191,8 @@ _KP_CONFIG = {**_CONFIG, "auth_type": "key_pair"}
 
 def test_build_connect_args_encrypted_key_with_passphrase() -> None:
     cfg = SnowflakeConfig.model_validate(_KP_CONFIG)
-    secret = _key_pair_payload(_rsa_pem_encrypted("hunter2"), "hunter2")
+    pp = _passphrase()
+    secret = _key_pair_payload(_rsa_pem(pp), pp)
     args = build_connect_args(cfg, secret)
     assert isinstance(args["private_key"], bytes)
     # The connector gets a *decrypted* DER PKCS8 key, not the PEM/encrypted form.
@@ -208,11 +208,12 @@ def test_build_connect_args_json_payload_without_passphrase() -> None:
 
 def test_build_connect_args_wrong_passphrase_raises_without_leaking_it() -> None:
     cfg = SnowflakeConfig.model_validate(_KP_CONFIG)
-    secret = _key_pair_payload(_rsa_pem_encrypted("right"), "wrong")
+    real, wrong = _passphrase(), _passphrase()
+    secret = _key_pair_payload(_rsa_pem(real), wrong)
     with pytest.raises(ValueError) as excinfo:
         build_connect_args(cfg, secret)
-    assert "wrong" not in str(excinfo.value)
-    assert "right" not in str(excinfo.value)
+    assert wrong not in str(excinfo.value)
+    assert real not in str(excinfo.value)
 
 
 def test_build_connect_args_encrypted_key_missing_passphrase_raises() -> None:
@@ -220,13 +221,13 @@ def test_build_connect_args_encrypted_key_missing_passphrase_raises() -> None:
     # cleanly as ValueError, not the cryptography TypeError.
     cfg = SnowflakeConfig.model_validate(_KP_CONFIG)
     with pytest.raises(ValueError):
-        build_connect_args(cfg, _rsa_pem_encrypted("hunter2"))
+        build_connect_args(cfg, _rsa_pem(_passphrase()))
 
 
 def test_build_connect_args_passphrase_on_unencrypted_key_raises() -> None:
     cfg = SnowflakeConfig.model_validate(_KP_CONFIG)
     with pytest.raises(ValueError):
-        build_connect_args(cfg, _key_pair_payload(_rsa_pem(), "needless"))
+        build_connect_args(cfg, _key_pair_payload(_rsa_pem(), _passphrase()))
 
 
 def test_build_connect_args_empty_passphrase_means_none() -> None:
@@ -265,7 +266,8 @@ def test_adapter_test_encrypted_key_pair_end_to_end(monkeypatch: pytest.MonkeyPa
         return engine
 
     monkeypatch.setattr("sqlalchemy.create_engine", fake_create_engine)
-    secret = _key_pair_payload(_rsa_pem_encrypted("hunter2"), "hunter2")
+    pp = _passphrase()
+    secret = _key_pair_payload(_rsa_pem(pp), pp)
     SnowflakeConnectionAdapter().test(_KP_CONFIG, secret)
 
     connect_args = captured["connect_args"]

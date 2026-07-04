@@ -92,7 +92,7 @@ describe('ReauthModal', () => {
     );
 
     await user.type(await screen.findByLabelText('New: Private key (PEM)'), 'PEM-KEY');
-    await user.type(screen.getByLabelText('Key passphrase (optional)'), 'pp');
+    await user.type(screen.getByLabelText(/Key passphrase/), 'pp');
     await user.click(screen.getByRole('button', { name: 'Rotate credential' }));
 
     await waitFor(() =>
@@ -121,5 +121,34 @@ describe('ReauthModal', () => {
     await user.click(screen.getByRole('button', { name: 'Rotate credential' }));
 
     await waitFor(() => expect(mockReauth).toHaveBeenCalledWith('c1', 'PEM-KEY'));
+  });
+
+  it('does not leak a cancelled passphrase into a later rotation', async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    mockReauth.mockResolvedValue({ ok: true });
+
+    const keyPairConn = { ...connection, config: { auth_type: 'key_pair' } };
+    const { rerender } = render(
+      <AntApp>
+        <ReauthModal connection={keyPairConn} onClose={onClose} onDone={vi.fn()} />
+      </AntApp>,
+    );
+
+    // Type a passphrase, then cancel — the form must reset.
+    await user.type(await screen.findByLabelText(/Key passphrase/), 'stale-pp');
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onClose).toHaveBeenCalled();
+
+    // Reopen for a password-mode connection and rotate — no JSON wrapping.
+    rerender(
+      <AntApp>
+        <ReauthModal connection={connection} onClose={onClose} onDone={vi.fn()} />
+      </AntApp>,
+    );
+    await user.type(await screen.findByLabelText('New: Password'), 'fresh-pw');
+    await user.click(screen.getByRole('button', { name: 'Rotate credential' }));
+
+    await waitFor(() => expect(mockReauth).toHaveBeenCalledWith('c1', 'fresh-pw'));
   });
 });

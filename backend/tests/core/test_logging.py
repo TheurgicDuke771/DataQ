@@ -24,7 +24,7 @@ def test_redacts_credentials_and_personal_contact() -> None:
             "authorization": "Bearer xyz",
             "email": "user@example.com",
             "phone": "+15551234567",
-            "passphrase": "kp-pass",
+            "passphrase": "kp-" + "x" * 8,  # any value under this key must redact
         }
     )
     assert out["password"] == "<redacted>"
