@@ -162,7 +162,7 @@ erDiagram
         uuid id PK
         uuid suite_id FK
         uuid user_id FK
-        string permission "view / edit / admin"
+        string permission "view / edit (admin schema-legal, never granted)"
     }
     pipeline_runs {
         uuid id PK
@@ -175,6 +175,7 @@ erDiagram
         timestamptz started_at
         timestamptz finished_at
         string failure_reason
+        timestamptz last_updated_at "staleness guard for the polling upsert"
     }
     trigger_bindings {
         uuid id PK
@@ -230,7 +231,8 @@ erDiagram
 
 ### Reading notes
 
-- **Conventions (elided from the diagram for noise):** every table has a `gen_random_uuid()` UUID PK and `created_at`; mutable entities also carry `updated_at`. Status/type columns are `TEXT` + `CHECK` constraints, **not** native PG enums (migration ergonomics).
+- **Conventions (elided from the diagram for noise):** every table has a `gen_random_uuid()` UUID PK and `created_at`; user-editable entities also carry `updated_at` (`runs`/`results` deliberately don't — they are engine-mutated event rows whose lifecycle lives in `started_at`/`finished_at`/`sample_failures_purged_at`). Status/type columns are `TEXT` + `CHECK` constraints, **not** native PG enums (migration ergonomics).
+- **`shares.permission` grants are `view`/`edit` only.** `admin` is legal in the DB `CHECK` but never granted (`share_service.GRANTABLE_PERMISSIONS`): workspace-admin is *implicit* on every suite (config allowlist, not a share row) and `owner` is `suites.created_by`, not a share — ADR [0027](adr/0027-suite-permission-model-workspace-admin.md).
 - **Cascade posture (ADR [0020](adr/0020-history-and-audit-strategy.md)):** deleting a suite cascades its checks, runs, results, shares, trigger bindings, schedules, and notification config; deleting a connection cascades its version history. History is not retained past entity deletion — accepted. Version snapshots survive their *author* (`changed_by` is `SET NULL`), not their entity.
 - **`pipeline_runs` ≠ `runs` — no FK between them.** Orchestrator pipeline executions correlate to the DQ suite runs they trigger only via the string marker `runs.triggered_by = '<provider>:<pipeline_or_dag_id>:<provider_run_id>'` (dotted lines above); `trigger_bindings` matches pipeline runs by `(provider, pipeline_or_dag_id, env)`, also without an FK. A partial unique index on `runs (suite_id, triggered_by)` dedupes orchestration-triggered runs.
 - **Singleton constraints:** at most one orchestrator connection per `(type, env)` (partial unique index over `adf`/`airflow` only — datasources may repeat); one `suite_notifications` row per suite; one live `shares` row per `(suite, user)`.
@@ -276,7 +278,7 @@ sequenceDiagram
     W->>W: severity.resolve_status — band unexpected-% against<br/>warn/fail/critical thresholds (ADR 0005/0016)
     W->>PG: INSERT results (status, metric_value, redacted sample_failures)
     W->>PG: UPDATE runs SET status=succeeded<br/>(failed = the adapter raised)
-    W->>Pub: publish_run_outcome — snooze suppression → alert_on routing → dedup → publish
+    W->>Pub: publish_run_outcome — snooze suppression → dedup →<br/>publish (severity/alert_on routing inside the publisher)
     Note over W,Pub: best-effort — a publish failure never<br/>affects the persisted run
 ```
 
@@ -306,7 +308,7 @@ sequenceDiagram
 
     alt AlertPing — run-anonymous Azure Monitor alert (#35;492)
         API->>BR: enqueue targeted poll-now (provider + resource)
-        API-->>ORC: 202 reconciling
+        API-->>ORC: 200 (body status = reconciling)
     else RunUpdate
         API->>PG: upsert pipeline_runs ON (provider, provider_run_id)
         alt status = succeeded
@@ -316,7 +318,7 @@ sequenceDiagram
         else status = failed
             API->>API: alert the user only — failures never trigger suites
         end
-        API-->>ORC: 200 recorded
+        API-->>ORC: 200 (body status = recorded)
     end
 
     Note over W,PG: polling fallback (#35;171) — a 10-min beat sweeps every orchestrator connection<br/>via the provider REST API (list_recent_runs, 15-min lookback) into the SAME<br/>upsert + trigger path — a 30-min gap-recovery sweep (1-hour window) covers downtime
@@ -403,7 +405,7 @@ flowchart LR
     end
 
     B -- "OIDC auth-code + PKCE" --> IDP
-    AI -- "same bearer token" --> IDP
+    IDP -. "same bearer token, minted by the user's<br/>web-app sign-in and copied into the client<br/>(no client-driven flow — ADR 0008)" .-> AI
     B -- "HTTPS · bearer JWT on /api" --> FE
     AI -- "bearer JWT on /mcp" --> FE
     WH -- "ADF: shared-secret token in URL (ADR 0006)<br/>Airflow: HMAC-SHA256 body signature (ADR 0007)" --> FE
