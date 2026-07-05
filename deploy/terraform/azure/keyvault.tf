@@ -51,7 +51,7 @@ resource "azurerm_role_definition" "app_kv_secrets_rw" {
     data_actions = [
       "Microsoft.KeyVault/vaults/secrets/getSecret/action",
       "Microsoft.KeyVault/vaults/secrets/setSecret/action",
-      "Microsoft.KeyVault/vaults/secrets/deleteSecret/action",
+      "Microsoft.KeyVault/vaults/secrets/delete",
       "Microsoft.KeyVault/vaults/secrets/readMetadata/action",
     ]
   }
