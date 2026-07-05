@@ -24,7 +24,7 @@
 |---|---|
 | **v1 baseline** | `v1.0.0` tagged 2026-07-04 — 187/189 roadmap tasks (~99%); all 8 weekly exit gates met; deployed to Azure Container Apps; retro at [retro-v1.md](retro-v1.md); full ledger at [progress-v1.md](progress-v1.md) |
 | **Current cycle** | **v1.1 — 6 weeks + a stretch week, 2026-07-04 → 2026-08-15 (+ W7 stretch to 2026-08-22)** (planned 2026-07-04 from [context/post-v1-roadmap.md](../context/post-v1-roadmap.md)). Sequencing is **subscription-driven**: Weeks 1–3 extract everything that needs the expiring Snowflake (lapses within days) and Azure (~2026-07-25) subscriptions, then wind down gracefully; Weeks 4–6 run the roadmap's recommended opening sequence (Theme-1 `schema_drift` + `anomaly` → scale-aware execution G-b → incident/lineage design G-d) on cloud-independent infra; W7 is the stretch/burn-down buffer. See [Cycle plan](#cycle-plan--v11-6-weeks--stretch-2026-07-04--2026-08-22) below. |
-| **Open issues** | **66** (W1 progress 2026-07-04: #194/#195/#587 closed via #602/#603/#607; #588 rehearsed→reversed→reopened on W3; #609 filed (dbt lineage, W2) + #286 pulled W7→W2; [#604](https://github.com/TheurgicDuke771/DataQ/issues/604) — CI-flaky ConnectionNew test — filed and closed same-day by #603; filed still-open: [#601](https://github.com/TheurgicDuke771/DataQ/issues/601) prettierignore gap + [#605](https://github.com/TheurgicDuke771/DataQ/issues/605) surface run failure reasons, both `v1.1 Backlog`). At the 2026-07-04 full backlog remap: **55 scheduled** onto `v1.1 Week 1..6` + **10** on `v1.1 Week 7 — stretch` + the cycle epic [#597](https://github.com/TheurgicDuke771/DataQ/issues/597). **`v1.1 Backlog` (renamed from `Backlog (post-v1 / testing)`) holds only the new filings #601/#605** — every other open issue sits on a week milestone; the backlog milestone is the default for new filings. Every scheduled issue carries an **Acceptance criteria** checklist and every milestone description its **Exit gate** (both added 2026-07-04). Theme map in [post-v1-roadmap.md](../context/post-v1-roadmap.md). |
+| **Open issues** | **67** (W1 progress 2026-07-04: #194/#195/#587 closed via #602/#603/#607; #588 rehearsed→reversed→reopened on W3; #609 filed (dbt lineage, W2 — rescoped to self-hosted dbt Core) + #611 filed (dbt as a third `OrchestrationProvider`, W2 — split from #609) + #286 pulled W7→W2; [#604](https://github.com/TheurgicDuke771/DataQ/issues/604) — CI-flaky ConnectionNew test — filed and closed same-day by #603; filed still-open: [#601](https://github.com/TheurgicDuke771/DataQ/issues/601) prettierignore gap + [#605](https://github.com/TheurgicDuke771/DataQ/issues/605) surface run failure reasons, both `v1.1 Backlog`). At the 2026-07-04 full backlog remap: **55 scheduled** onto `v1.1 Week 1..6` + **10** on `v1.1 Week 7 — stretch` + the cycle epic [#597](https://github.com/TheurgicDuke771/DataQ/issues/597). **`v1.1 Backlog` (renamed from `Backlog (post-v1 / testing)`) holds only the new filings #601/#605** — every other open issue sits on a week milestone; the backlog milestone is the default for new filings. Every scheduled issue carries an **Acceptance criteria** checklist and every milestone description its **Exit gate** (both added 2026-07-04). Theme map in [post-v1-roadmap.md](../context/post-v1-roadmap.md). |
 | **Open PRs** | none |
 | **Coverage gates (CI-enforced, ≥80%)** | backend `--cov-fail-under=80` (98.4% / 1,289 tests at the tag) · frontend all-src `lines: 80` (~88% / 337 tests at the tag) — every post-v1 PR rides the same gates |
 
@@ -117,9 +117,14 @@ _The rest of the 55 are mapped by theme in [post-v1-roadmap.md](../context/post-
 > **Premise correction (2026-07-04, post-planning):** the Snowflake trial in fact runs to
 > **~2026-07-25** ($384 credits left) — the same window as Azure, not "within days". The
 > last-window work (#194/#195/#587) was already done and stands; #588 was rehearsed,
-> reversed, and re-homed to W3 (real lapse). The extended window adds two W2 items:
+> reversed, and re-homed to W3 (real lapse). The extended window adds three W2 items:
 > [#609](https://github.com/TheurgicDuke771/DataQ/issues/609) (dbt-modeled lineage objects
-> on Snowflake — G-d test bed) and [#286](https://github.com/TheurgicDuke771/DataQ/issues/286)
+> on Snowflake — G-d test bed; **rescoped 2026-07-04 to self-hosted dbt Core**, not
+> Airflow-hosted), [#611](https://github.com/TheurgicDuke771/DataQ/issues/611) (dbt as a
+> **third `OrchestrationProvider`** — webhook + artifact-poll, host-agnostic; split from
+> #609 — dbt Cloud free tier has no API/scheduler, and Snowflake/Databricks hosting would
+> couple the provider to the vendor's run API), and
+> [#286](https://github.com/TheurgicDuke771/DataQ/issues/286)
 > (Iceberg v2 ADLS spike, pulled forward from the W7 stretch).
 
 ⚡ **The three Snowflake-live rows are day-1 work, in this order** — the subscription lapses
