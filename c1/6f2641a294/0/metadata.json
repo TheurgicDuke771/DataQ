@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_id": "c16f2641a294",
+  "session_id": "4feb9be8-2ae1-4d50-be97-b9c4cbaead36",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-05T19:46:01.985751Z",
+  "branch": "feature/pat-management-ui",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-opus-4-8",
+  "turn_id": "5bd53a7066bc",
+  "token_usage": {
+    "input_tokens": 116348,
+    "cache_creation_tokens": 5109761,
+    "cache_read_tokens": 267066618,
+    "output_tokens": 701098,
+    "api_call_count": 760
+  },
+  "session_metrics": {
+    "turn_count": 16
+  }
+}
