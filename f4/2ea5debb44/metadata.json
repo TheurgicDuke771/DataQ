@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "f42ea5debb44",
+  "strategy": "manual-commit",
+  "branch": "feature/otel-log-pipeline-and-otlp-endpoint",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/core/config.py",
+    "deploy/README.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f4/2ea5debb44/0/metadata.json",
+      "transcript": "/f4/2ea5debb44/0/full.jsonl",
+      "compact_transcript": "/f4/2ea5debb44/0/transcript.jsonl",
+      "content_hash": "/f4/2ea5debb44/0/content_hash.txt",
+      "prompt": "/f4/2ea5debb44/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 98703,
+    "cache_creation_tokens": 4379329,
+    "cache_read_tokens": 208905780,
+    "output_tokens": 518836,
+    "api_call_count": 577
+  }
+}
