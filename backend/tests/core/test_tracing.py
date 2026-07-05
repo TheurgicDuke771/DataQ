@@ -43,7 +43,9 @@ def in_memory_exporter(monkeypatch: pytest.MonkeyPatch) -> InMemorySpanExporter:
     monkeypatch.setattr(
         tracing,
         "get_settings",
-        lambda: SimpleNamespace(applicationinsights_connection_string=_CONN),
+        lambda: SimpleNamespace(
+            applicationinsights_connection_string=_CONN, otel_exporter_otlp_endpoint=None
+        ),
     )
     return exporter
 
@@ -64,10 +66,46 @@ def test_configure_tracing_is_noop_without_connection_string(
     monkeypatch.setattr(
         tracing,
         "get_settings",
-        lambda: SimpleNamespace(applicationinsights_connection_string=None),
+        lambda: SimpleNamespace(
+            applicationinsights_connection_string=None, otel_exporter_otlp_endpoint=None
+        ),
     )
     tracing.configure_tracing(service_name="dataq-api")
     assert tracing._provider is None
+
+
+def test_configure_tracing_turns_on_with_only_otlp_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#589: tracing is gated on ANY backend now, not just App Insights — an
+    OTLP-only config (no connection string) must still stand up a provider and
+    export spans. The OTLP/HTTP exporter is swapped for an in-memory one."""
+    exporter = InMemorySpanExporter()
+    monkeypatch.setattr(
+        "opentelemetry.exporter.otlp.proto.http.trace_exporter.OTLPSpanExporter",
+        lambda *, endpoint: exporter,
+    )
+    monkeypatch.setattr(
+        tracing,
+        "get_settings",
+        lambda: SimpleNamespace(
+            applicationinsights_connection_string=None,
+            otel_exporter_otlp_endpoint="http://collector:4318",
+        ),
+    )
+    tracing.configure_tracing(service_name="dataq-api")
+    assert tracing._provider is not None
+
+    app = FastAPI()
+
+    @app.get("/api/v1/ping")
+    def ping() -> dict[str, str]:
+        return {"pong": "yes"}
+
+    tracing.instrument_fastapi(app)
+    assert TestClient(app).get("/api/v1/ping").status_code == 200
+    tracing._provider.force_flush()
+    assert any(s.kind.name == "SERVER" for s in exporter.get_finished_spans())
 
 
 def test_instrumentors_and_tagger_are_noops_when_tracing_off() -> None:

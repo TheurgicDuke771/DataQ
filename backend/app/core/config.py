@@ -30,6 +30,17 @@ class Settings(BaseSettings):
 
     applicationinsights_connection_string: str | None = None
 
+    # Generic OTLP/HTTP exporter endpoint (#589) — the standard OTel contract
+    # (OTEL_EXPORTER_OTLP_ENDPOINT). When set, spans AND logs also export to this
+    # OTLP consumer (Grafana/Tempo, Jaeger, Datadog, …) via the OTLP/HTTP exporter,
+    # with base-endpoint semantics (`/v1/traces` + `/v1/logs` appended). The Azure
+    # Monitor exporter (APPLICATIONINSIGHTS_CONNECTION_STRING) is just one backend
+    # behind the same seam (ADR 0010); both may be set at once — that's the parity
+    # check (same trace/log in App Insights AND a local collector). Neither set ⇒
+    # telemetry is off. The standard sibling env vars (OTEL_EXPORTER_OTLP_HEADERS,
+    # _TIMEOUT, …) are read by the exporter itself.
+    otel_exporter_otlp_endpoint: str | None = None
+
     sample_failures_retention_days: int = 30
 
     # Stuck-run reaper (#309): a run committed `queued` (before `send_task`) — or
