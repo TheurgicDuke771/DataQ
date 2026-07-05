@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "048337d9fe90",
+  "strategy": "manual-commit",
+  "branch": "fix/372-secretstore-delete",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/tests/api/test_orchestration_events_dbt.py",
+    "backend/tests/datasources/test_snowflake.py",
+    "backend/tests/integrations/test_dbt_callback_snippet.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/04/8337d9fe90/0/metadata.json",
+      "transcript": "/04/8337d9fe90/0/full.jsonl",
+      "compact_transcript": "/04/8337d9fe90/0/transcript.jsonl",
+      "content_hash": "/04/8337d9fe90/0/content_hash.txt",
+      "prompt": "/04/8337d9fe90/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 52896,
+    "cache_creation_tokens": 3496374,
+    "cache_read_tokens": 152655108,
+    "output_tokens": 391950,
+    "api_call_count": 441
+  }
+}

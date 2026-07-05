@@ -1,0 +1,52 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_id": "048337d9fe90",
+  "session_id": "4feb9be8-2ae1-4d50-be97-b9c4cbaead36",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-05T16:51:43.740025Z",
+  "branch": "fix/372-secretstore-delete",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "backend/tests/api/test_orchestration_events_dbt.py",
+    "backend/tests/datasources/test_snowflake.py",
+    "backend/tests/integrations/test_dbt_callback_snippet.py"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "7f90519b4025",
+  "token_usage": {
+    "input_tokens": 52896,
+    "cache_creation_tokens": 3496374,
+    "cache_read_tokens": 152655108,
+    "output_tokens": 391950,
+    "api_call_count": 441
+  },
+  "session_metrics": {
+    "turn_count": 9
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-05T16:51:43.6073Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 227,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 227,
+    "total_lines_changed": 246,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}
