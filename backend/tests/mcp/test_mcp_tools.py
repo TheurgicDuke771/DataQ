@@ -262,3 +262,123 @@ def test_bad_uuid_is_a_clean_tool_error(db_session: Any, monkeypatch: Any) -> No
     _as(monkeypatch, db_session, _user(db_session))
     with pytest.raises(ToolError):
         server.get_suite_results("not-a-uuid")
+
+
+# ── profile_column target defaulting (#583) ──────────────────────────────────
+
+
+def test_profile_column_defaults_to_the_suites_run_target(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """No explicit table/path → the suite's run target supplies them (#583)."""
+    from backend.app.services.profile_service import ProfileResult
+
+    user = _user(db_session)
+    suite = _suite(db_session, user)  # target={"table": "ORDERS"}
+    seen: dict[str, Any] = {}
+
+    def _fake_profile(connection: Any, **kwargs: Any) -> ProfileResult:
+        seen.update(kwargs)
+        return ProfileResult(
+            row_count=1,
+            table=kwargs["table"],
+            schema=kwargs["schema"],
+            catalog=None,
+            path=None,
+            file_format=None,
+            columns=[],
+        )
+
+    monkeypatch.setattr(profile_service, "profile_connection", _fake_profile)
+    _as(monkeypatch, db_session, user)
+
+    out = server.profile_column(str(suite.id), columns=["revenue"])
+    assert seen["table"] == "ORDERS"
+    assert seen["path"] is None
+    assert out["table"] == "ORDERS"
+
+
+def test_profile_column_explicit_table_still_wins(db_session: Any, monkeypatch: Any) -> None:
+    from backend.app.services.profile_service import ProfileResult
+
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    seen: dict[str, Any] = {}
+
+    def _fake_profile(connection: Any, **kwargs: Any) -> ProfileResult:
+        seen.update(kwargs)
+        return ProfileResult(
+            row_count=1,
+            table=kwargs["table"],
+            schema=None,
+            catalog=None,
+            path=None,
+            file_format=None,
+            columns=[],
+        )
+
+    monkeypatch.setattr(profile_service, "profile_connection", _fake_profile)
+    _as(monkeypatch, db_session, user)
+
+    server.profile_column(str(suite.id), columns=["x"], table="OTHER_TABLE")
+    assert seen["table"] == "OTHER_TABLE"
+
+
+def test_profile_column_no_target_anywhere_is_actionable_error(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """422 path: no explicit table/path AND a targetless suite — the error says
+    what to set instead of a bare validation failure."""
+    user = _user(db_session)
+    suite = _suite(db_session, user, with_target=False)
+    _as(monkeypatch, db_session, user)
+
+    with pytest.raises(ToolError, match="run target"):
+        server.profile_column(str(suite.id), columns=["x"])
+
+
+def test_profile_column_flatfile_target_defaults_path_and_format(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    from backend.app.services.profile_service import ProfileResult
+
+    user = _user(db_session)
+    conn = Connection(
+        name=f"adls-{uuid.uuid4().hex[:8]}",
+        type="adls_gen2",
+        env="dev",
+        config={"account_name": "acct", "container": "landing"},
+        secret_ref="kv-adls",
+        created_by=user.id,
+    )
+    db_session.add(conn)
+    db_session.flush()
+    suite = Suite(
+        name="Logistics",
+        connection_id=conn.id,
+        created_by=user.id,
+        target={"path": "logistics/tracking.csv", "file_format": "csv"},
+    )
+    db_session.add(suite)
+    db_session.commit()
+    seen: dict[str, Any] = {}
+
+    def _fake_profile(connection: Any, **kwargs: Any) -> ProfileResult:
+        seen.update(kwargs)
+        return ProfileResult(
+            row_count=1,
+            table=None,
+            schema=None,
+            catalog=None,
+            path=kwargs["path"],
+            file_format=kwargs["file_format"],
+            columns=[],
+        )
+
+    monkeypatch.setattr(profile_service, "profile_connection", _fake_profile)
+    _as(monkeypatch, db_session, user)
+
+    server.profile_column(str(suite.id), columns=["status"])
+    assert seen["path"] == "logistics/tracking.csv"
+    assert seen["file_format"] == "csv"
+    assert seen["table"] is None

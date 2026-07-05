@@ -376,6 +376,52 @@ def create_check(
         }
 
 
+def _profile_target_defaults(
+    suite: Any,
+    connection: Connection,
+    *,
+    schema: str | None,
+    catalog: str | None,
+    file_format: str | None,
+) -> tuple[str | None, str | None, str | None, str | None, str | None]:
+    """Default an unspecified profile location to the suite's run target (#583).
+
+    Same resolver the run path uses, so 'profile the AMOUNT column on the orders
+    suite' just works. Explicitly passed ``schema``/``catalog``/``file_format``
+    still win over the target's values. Returns the (table, schema, catalog,
+    path, file_format) quintuple for `profile_service.profile_connection`.
+    """
+    if not suite.target:
+        raise ToolError(
+            "no 'table' or 'path' was given and the suite has no run target — pass "
+            "'table' (+ optional 'schema'/'catalog') for a SQL datasource or 'path' "
+            "for a flat file, or set the suite's run target first"
+        )
+    resolved = run_target.resolve_target(connection.type, suite.target)
+    if resolved.batch is not None:
+        # A flat-file batch target: list the store and resolve the concrete file,
+        # exactly like a run does.
+        from backend.app.datasources import flatfile
+
+        try:
+            concrete = run_target.materialize_path(
+                connection.type,
+                dict(connection.config),
+                resolved,
+                secret_ref=connection.secret_ref,
+                secret_store=get_secret_store(),
+            )
+        except flatfile.BatchNotFoundError as exc:
+            raise ToolError(
+                f"the suite's batch target matched no file in the store yet: {exc}"
+            ) from exc
+    else:
+        concrete = resolved.table
+    if connection.type in ("adls_gen2", "s3"):
+        return None, schema, catalog, concrete, file_format or suite.target.get("file_format")
+    return concrete, schema or resolved.schema, catalog or resolved.catalog, None, file_format
+
+
 @mcp.tool
 def profile_column(
     suite_id: str,
@@ -391,9 +437,10 @@ def profile_column(
 
     Use this for 'profile the revenue column in FACT_ORDERS'. Runs the column
     profiler (no persistence) and returns, per column: null count + fraction,
-    distinct count, min/max, and the top ``top_n`` values. Give ``table`` (+
-    optional ``schema``/``catalog``) for a SQL datasource, or ``path`` (+
-    ``file_format``) for a flat file. Requires edit access to the suite.
+    distinct count, min/max, and the top ``top_n`` values. ``table`` (+
+    optional ``schema``/``catalog``) / ``path`` (+ ``file_format``) default to
+    the suite's own run target, so they only need passing to profile something
+    *other* than what the suite runs against. Requires edit access to the suite.
     """
     sid = _parse_uuid(suite_id, field="suite_id")
     with _ctx() as (session, user), _service_errors():
@@ -401,6 +448,10 @@ def profile_column(
         connection = session.get(Connection, suite.connection_id)
         if connection is None:
             raise ToolError("suite has no connection")
+        if table is None and path is None:
+            table, schema, catalog, path, file_format = _profile_target_defaults(
+                suite, connection, schema=schema, catalog=catalog, file_format=file_format
+            )
         result = profile_service.profile_connection(
             connection,
             columns=columns,
