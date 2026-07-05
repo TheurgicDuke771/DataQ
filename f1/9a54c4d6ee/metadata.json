@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "f19a54c4d6ee",
+  "strategy": "manual-commit",
+  "branch": "feature/per-suite-slack-email",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/alerting/slack.py",
+    "backend/app/services/notification_service.py",
+    "backend/tests/alerting/test_slack_email_publishers.py",
+    "backend/tests/services/test_notification_service.py",
+    "frontend/src/components/suites/NotificationsPanel.tsx",
+    "frontend/tests/components/NotificationsPanel.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f1/9a54c4d6ee/0/metadata.json",
+      "transcript": "/f1/9a54c4d6ee/0/full.jsonl",
+      "compact_transcript": "/f1/9a54c4d6ee/0/transcript.jsonl",
+      "content_hash": "/f1/9a54c4d6ee/0/content_hash.txt",
+      "prompt": "/f1/9a54c4d6ee/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 136097,
+    "cache_creation_tokens": 6997706,
+    "cache_read_tokens": 349799895,
+    "output_tokens": 835879,
+    "api_call_count": 911
+  }
+}
