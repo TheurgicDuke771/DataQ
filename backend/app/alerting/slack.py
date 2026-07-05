@@ -1,11 +1,13 @@
 """Slack ``ResultPublisher`` — posts a run's report to a Slack incoming webhook.
 
-Workspace-level: one webhook (the channel chosen when the webhook was created in
-Slack), resolved from the SecretStore by name. Delivery follows the **same**
-per-suite policy as the Teams publisher — the suite's `enabled` flag and its
-`alert_on` threshold via :func:`routing.route_for` — so only the rendering and
-destination differ. A missing / unconfigured webhook is a quiet no-op, so the
-publisher is safe to keep in the registry composite even when Slack is off.
+The webhook is resolved **per-suite first, then the workspace one** (#633) — a
+suite can override the channel (its own incoming webhook) via its notification
+config, falling back to the workspace ``SLACK_WEBHOOK_SECRET_NAME``, exactly like
+the Teams publisher. Delivery follows the same per-suite policy — the suite's
+`enabled` flag and its `alert_on` threshold via :func:`routing.route_for` — so only
+the rendering and destination differ. No webhook resolving (neither per-suite nor
+workspace) is a quiet no-op, so the publisher is safe to keep in the registry
+composite even when Slack is off.
 """
 
 from __future__ import annotations
@@ -18,7 +20,7 @@ from sqlalchemy.orm import Session
 from backend.app.alerting.base import CheckReport, RunReport
 from backend.app.alerting.routing import CRITICAL, Route, route_for
 from backend.app.core.logging import get_logger
-from backend.app.core.secrets import SecretNotFoundError, SecretStore
+from backend.app.core.secrets import SecretStore
 from backend.app.services import notification_service
 
 log = get_logger(__name__)
@@ -108,13 +110,11 @@ class SlackPublisher:
     def publish(self, session: Session, report: RunReport) -> None:
         """Deliver to Slack per the run's suite notification policy.
 
-        Quiet no-op when Slack is unconfigured, the suite disabled alerting, or
-        the run is below the suite's threshold. Raises on an HTTP error — the
-        dispatch/composite layer isolates that so a flaky webhook can't fail the
-        run or block the other channels.
+        Quiet no-op when no webhook resolves (neither per-suite nor workspace), the
+        suite disabled alerting, or the run is below the suite's threshold. Raises on
+        an HTTP error — the dispatch/composite layer isolates that so a flaky webhook
+        can't fail the run or block the other channels.
         """
-        if not self._webhook_secret_name:
-            return
         config = notification_service.get_config(session, report.suite_id)
         if config is not None and not config.enabled:
             return
@@ -122,10 +122,12 @@ class SlackPublisher:
         route = route_for(report, policy)
         if not route.should_send:
             return
-        try:
-            webhook = self._secret_store.get(self._webhook_secret_name)
-        except SecretNotFoundError:
-            log.warning("slack_webhook_unresolved", secret_name=self._webhook_secret_name)
+        webhook = notification_service.resolve_slack_webhook(
+            config,
+            secret_store=self._secret_store,
+            workspace_secret_name=self._webhook_secret_name,
+        )
+        if not webhook:
             return
         # SSRF guard at the request sink: only POST to an allowlisted Slack host.
         host = (urlparse(webhook).hostname or "").lower()

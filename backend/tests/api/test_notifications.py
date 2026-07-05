@@ -59,7 +59,14 @@ def test_get_returns_defaults_when_unconfigured(client: TestClient, db_session: 
     _as(owner)
     sid = _suite(db_session, owner)
     body = client.get(f"/api/v1/suites/{sid}/notifications").json()
-    assert body == {"configured": False, "enabled": True, "alert_on": "warn", "has_webhook": False}
+    assert body == {
+        "configured": False,
+        "enabled": True,
+        "alert_on": "warn",
+        "has_webhook": False,
+        "has_slack_webhook": False,
+        "email_recipients": None,
+    }
 
 
 def test_put_then_get_roundtrips(client: TestClient, db_session: Any) -> None:
@@ -80,6 +87,8 @@ def test_put_then_get_roundtrips(client: TestClient, db_session: Any) -> None:
         "enabled": True,
         "alert_on": "always",
         "has_webhook": True,  # URL stored in the SecretStore, only the flag returned
+        "has_slack_webhook": False,
+        "email_recipients": None,
     }
     # The webhook URL is never echoed back.
     assert "webhook" not in put.json()
@@ -93,6 +102,47 @@ def test_put_rejects_bad_policy(client: TestClient, db_session: Any) -> None:
     sid = _suite(db_session, owner)
     resp = client.put(f"/api/v1/suites/{sid}/notifications", json={"alert_on": "nope"})
     assert resp.status_code == 422
+
+
+def test_put_slack_and_email_roundtrip(client: TestClient, db_session: Any) -> None:
+    """#633: per-suite Slack webhook (write-only flag) + email recipients (returned)."""
+    owner = _user(db_session, "o@ex")
+    _as(owner)
+    sid = _suite(db_session, owner)
+    put = client.put(
+        f"/api/v1/suites/{sid}/notifications",
+        json={
+            "enabled": True,
+            "alert_on": "warn",
+            "slack_webhook": "https://hooks.slack.com/services/T/B/xyz",
+            "email_recipients": "a@x.io, b@y.io",
+        },
+    )
+    assert put.status_code == 200
+    body = put.json()
+    assert body["has_slack_webhook"] is True  # webhook stored, only the flag returned
+    assert body["email_recipients"] == "a@x.io, b@y.io"  # not a secret → echoed for prefill
+    assert "slack_webhook" not in body  # the URL is never echoed back
+
+
+def test_put_rejects_bad_slack_host_and_email(client: TestClient, db_session: Any) -> None:
+    owner = _user(db_session, "o@ex")
+    _as(owner)
+    sid = _suite(db_session, owner)
+    assert (
+        client.put(
+            f"/api/v1/suites/{sid}/notifications",
+            json={"slack_webhook": "https://evil.example.com/x"},
+        ).status_code
+        == 422
+    )
+    assert (
+        client.put(
+            f"/api/v1/suites/{sid}/notifications",
+            json={"email_recipients": "not-an-email"},
+        ).status_code
+        == 422
+    )
 
 
 def test_put_rejects_non_https_webhook(client: TestClient, db_session: Any) -> None:
