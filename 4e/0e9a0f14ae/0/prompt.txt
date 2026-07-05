@@ -1,0 +1,6 @@
+Can you optimize and update the QA verifier and UI tester agents as required.
+one of the sample bug to refer for UI tester - https://github.com/TheurgicDuke771/DataQ/issues/617 [this is just one example don't be influenced by this]
+
+---
+
+commit and merge them
