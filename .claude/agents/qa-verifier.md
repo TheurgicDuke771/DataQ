@@ -46,7 +46,7 @@ Scope note: if the diff (`git diff main...HEAD --name-only`) touches only one si
 
 - **Ruff passing ≠ Bandit passing.** A `# noqa` that silences Ruff does nothing for Bandit (e.g. B105 hardcoded-password). Run both; never infer one from the other.
 - **Secret scanning:** betterleaks runs in pre-commit + CI. If the diff adds anything credential-shaped (even mock/local values in templates, scripts, compose), flag it 🔴 — the project rule is zero credentials in git-tracked files.
-- **pytest addopts carry `--cov` AND `--cov-fail-under=80`** — a second `--cov` on the CLI is a pytest usage error (exit 4), and a targeted subset run will spuriously fail the repo-wide 80% floor. Use `--cov=<module> --cov-report=term-missing -o addopts=` when you need targeted coverage. Frontend equivalent: the `lines: 80` gate only runs under `pnpm test:coverage`, not `pnpm test`.
+- **pytest addopts carry `--cov` AND `--cov-fail-under=80`** — a second `--cov` on the CLI is a pytest usage error (exit 4), and a targeted subset run will spuriously fail the repo-wide 80% floor. Use `--cov=<module> --cov-report=term-missing -o addopts=` when you need targeted coverage.
 
 ## Mode 2 — Test-quality audit (the QE half)
 
@@ -62,7 +62,7 @@ Audit the tests in the diff (`git diff main...HEAD`, or `gh pr diff <N>` if a PR
 ### 🟡 Yellow flags
 
 1. **Coverage on changed files below the Week-8 gate (≥80%).** Measure per changed module, not repo-wide: `pytest backend/tests/ --cov=backend.app.<module> --cov-report=term-missing -o addopts=`. Report per-file % and the uncovered line ranges.
-2. **Orchestration tests covering only one provider** — parametrize over the full `ORCHESTRATION_PROVIDERS` tuple (`adf`, `airflow`, `dbt` since ADR 0029), not a hardcoded subset (single-provider fixtures mean the abstraction is rotting).
+2. **Orchestration tests covering only one provider** — parametrize over the full `ORCHESTRATION_PROVIDERS` tuple in `backend/app/db/models.py` (currently `adf`/`airflow`/`dbt` — re-derive from source, don't trust this snapshot), not a hardcoded subset (single-provider fixtures mean the abstraction is rotting).
 3. **Operational statuses untested** — run paths should exercise `error`/`skip`, not just pass/fail.
 4. **Covered-but-unasserted logic** (tests execute a branch but assert nothing about it). For critical pure modules, recommend a targeted `mutmut` spike (workflow in CONTRIBUTING rule 4a; config in `pyproject.toml [tool.mutmut]`; frontend equivalent: Stryker). Recommend only — mutation runs are manual/periodic, never something you launch.
 5. **Over-broad `except` in tests** swallowing the very failure the test should surface.
@@ -89,10 +89,10 @@ Name every scratch entity `qa-verifier-scratch-<uuid>` so leftovers are identifi
 3. **Run lifecycle** — trigger a run on a suite whose connection has bad/missing credentials: expect a graceful `error` status run, not a hung `running` row. Cancel a run mid-flight. Re-read `GET /runs/{id}/progress` for a finished run.
 4. **Dry-run negative paths** — dry-run a check against a nonexistent table/column; expect a structured failure.
 5. **Authz probes** — with a second demo user (seeded), verify: view-only user gets 403 on edit endpoints; non-shared suite invisible in lists AND 403/404 by direct id (no IDOR); admin endpoints 403 for non-admins.
-5a. **PAT surface** (ADR 0026, #613) — garbage, expired, and revoked `dq_live_…` tokens must all return a **uniform 401** (no oracle distinguishing "unknown" from "expired"); a valid PAT must carry the owner's authz scope, not more; the plaintext token must never appear in any read-back after mint (sha256-at-rest, show-once).
-6. **Webhook hostility** — POST to `/api/v1/orchestration/events/{adf,airflow,dbt}` with: missing/wrong auth (secret/HMAC per provider), valid auth + malformed JSON, valid JSON missing required fields, duplicate delivery (dedup index #456 should absorb it). Expect 401/422 envelopes and no phantom `pipeline_runs` rows. Parametrize over all three providers — don't stop at ADF.
-7. **Deletion integrity** — delete a scratch suite *after* it has runs/results; must cascade cleanly (the #540/#542 regression), leaving no orphaned rows (`runs`, `results`, shares, schedules).
-8. **Redaction spot check** — where a response carries failing-sample rows, confirm PII-configured columns come back redacted (#417) and secrets never appear in any connection read-back.
+6. **PAT surface** (ADR 0026, #613) — garbage, expired, and revoked `dq_live_…` tokens must all return a **uniform 401** (no oracle distinguishing "unknown" from "expired"); a valid PAT must carry the owner's authz scope, not more; the plaintext token must never appear in any read-back after mint (sha256-at-rest, show-once).
+7. **Webhook hostility** — POST to `/api/v1/orchestration/events/<provider>` for every provider in `ORCHESTRATION_PROVIDERS` (`backend/app/db/models.py`) with: missing/wrong auth (secret/HMAC per provider), valid auth + malformed JSON, valid JSON missing required fields, duplicate delivery (dedup index #456 should absorb it). Expect 401/422 envelopes and no phantom `pipeline_runs` rows. **Local prerequisite:** nothing seeds the per-provider webhook secrets into the local secret store — plant scratch values yourself first (write the secret names from `backend/app/core/config.py` into the local store), or run only the missing/wrong-auth sub-cases and report the valid-auth ones as prerequisite-skipped, never as failures.
+8. **Deletion integrity** — delete a scratch suite *after* it has runs/results; must cascade cleanly (the #540/#542 regression), leaving no orphaned rows (`runs`, `results`, shares, schedules).
+9. **Redaction spot check** — where a response carries failing-sample rows, confirm PII-configured columns come back redacted (#417) and secrets never appear in any connection read-back.
 
 ### Cleanup is part of the contract
 
@@ -109,7 +109,7 @@ Track every created id. After scenarios (pass or fail), delete scratch checks �
    - `Conditional — gates green, N test-quality concerns. Discuss before merge.`
    - `Block — N gate failures / hard findings. Fix before pushing.`
 
-Before reporting a finding as new, check it against open issues (`gh issue list --state open --search "<keywords>"`) — a rediscovery of a known issue is reported as `known — #N (still reproduces)`, not as a fresh finding, and doesn't count toward the verdict unless the diff was supposed to fix it. Findings that warrant deferred work should be called out for `/gh-issue-from-finding` (working-agreement #3) — never silently dropped.
+Pull the open-issue list **once** before reporting (`gh issue list --state open --json number,title --limit 200` — no label filter; known gaps are often labelled `enhancement`, not `bug`) and match every finding against it — a rediscovery of a known issue is reported as `known — #N (still reproduces)`, not as a fresh finding, and doesn't count toward the verdict unless the diff was supposed to fix it. Findings that warrant deferred work should be called out for `/gh-issue-from-finding` (working-agreement #3) — never silently dropped.
 
 ## Source documents (your authority)
 
