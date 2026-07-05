@@ -37,6 +37,9 @@ class _FakeStore:
     def set(self, name: str, value: str) -> None:
         self._secrets[name] = value
 
+    def delete(self, name: str) -> None:
+        self._secrets.pop(name, None)
+
 
 class _CapturePost:
     def __init__(self, *, status_code: int = 200) -> None:

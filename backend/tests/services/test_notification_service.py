@@ -34,6 +34,9 @@ class _FakeStore:
     def set(self, name: str, value: str) -> None:
         self.secrets[name] = value
 
+    def delete(self, name: str) -> None:
+        self.secrets.pop(name, None)
+
 
 def _suite(db: Any) -> Suite:
     owner = User(aad_object_id=uuid.uuid4().hex, email=f"u-{uuid.uuid4().hex[:6]}@x.io")
@@ -200,19 +203,49 @@ def test_upsert_rejects_non_allowlisted_host(db_session: Any) -> None:
         )
 
 
-def test_delete_config(db_session: Any) -> None:
+def test_delete_config_removes_row_and_webhook_secret(db_session: Any) -> None:
     suite = _suite(db_session)
-    svc.upsert_config(
+    store = _FakeStore()
+    config = svc.upsert_config(
         db_session,
         suite_id=suite.id,
         enabled=True,
         alert_on="fail",
-        webhook=None,
-        secret_store=_FakeStore(),
+        webhook="https://suite.webhook.office.com",
+        secret_store=store,
     )
-    assert svc.delete_config(db_session, suite.id) is True
+    ref = config.webhook_secret_ref
+    assert ref in store.secrets
+    assert svc.delete_config(db_session, suite.id, secret_store=store) is True
     assert svc.get_config(db_session, suite.id) is None
-    assert svc.delete_config(db_session, suite.id) is False  # idempotent
+    assert ref not in store.secrets  # #372: orphaned webhook secret removed
+    assert svc.delete_config(db_session, suite.id, secret_store=store) is False  # idempotent
+
+
+def test_clearing_webhook_removes_the_secret(db_session: Any) -> None:
+    suite = _suite(db_session)
+    store = _FakeStore()
+    config = svc.upsert_config(
+        db_session,
+        suite_id=suite.id,
+        enabled=True,
+        alert_on="fail",
+        webhook="https://suite.webhook.office.com",
+        secret_store=store,
+    )
+    ref = config.webhook_secret_ref
+    assert ref in store.secrets
+    # Clearing the webhook ("") nulls the ref AND removes the secret (#372).
+    updated = svc.upsert_config(
+        db_session,
+        suite_id=suite.id,
+        enabled=True,
+        alert_on="fail",
+        webhook="",
+        secret_store=store,
+    )
+    assert updated.webhook_secret_ref is None
+    assert ref not in store.secrets
 
 
 def test_resolve_webhook_prefers_suite_then_workspace(db_session: Any) -> None:

@@ -135,6 +135,9 @@ def upsert_config(
 
     if webhook is not None:
         if webhook == "":
+            # Clearing the per-suite webhook — drop the orphaned secret too (#372).
+            if config.webhook_secret_ref:
+                secret_store.delete(config.webhook_secret_ref)
             config.webhook_secret_ref = None
         else:
             secret_ref = config.webhook_secret_ref or f"suite-notif-{config.id}"
@@ -147,13 +150,17 @@ def upsert_config(
     return config
 
 
-def delete_config(session: Session, suite_id: uuid.UUID) -> bool:
+def delete_config(session: Session, suite_id: uuid.UUID, *, secret_store: SecretStore) -> bool:
     """Delete a suite's config (revert to defaults). Returns whether a row existed."""
     config = get_config(session, suite_id)
     if config is None:
         return False
+    secret_ref = config.webhook_secret_ref
     session.delete(config)
     session.commit()
+    # Best-effort remove the orphaned per-suite webhook secret (#372), fail-soft.
+    if secret_ref:
+        secret_store.delete(secret_ref)
     log.info("suite_notification_deleted", suite_id=str(suite_id))
     return True
 

@@ -193,6 +193,9 @@ class _FakeStore:
     def set(self, name: str, value: str) -> None:  # pragma: no cover - protocol completeness
         raise NotImplementedError
 
+    def delete(self, name: str) -> None:
+        raise NotImplementedError
+
 
 def _orch_connection(db_session: Any, owner: User, *, ctype: str, name: str) -> Connection:
     config = (

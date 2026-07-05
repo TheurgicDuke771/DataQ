@@ -66,6 +66,9 @@ class FakeStore:
     def set(self, name: str, value: str) -> None:
         self.data[name] = value
 
+    def delete(self, name: str) -> None:
+        self.data.pop(name, None)
+
 
 class _PassAdapter:
     def validate_config(self, raw: dict[str, Any]) -> BaseModel:
@@ -226,16 +229,20 @@ def test_update_name_collision_raises_conflict(db_session: Any) -> None:
 # ───────────────────────── delete ──────────────────────────────────
 
 
-def test_delete_removes_row(db_session: Any) -> None:
-    conn = _create(db_session, FakeStore())
-    svc.delete_connection(db_session, conn.id)
+def test_delete_removes_row_and_secret(db_session: Any) -> None:
+    store = FakeStore()
+    conn = _create(db_session, store)
+    ref = conn.secret_ref
+    assert ref in store.data  # credential was written through on create
+    svc.delete_connection(db_session, conn.id, secret_store=store)
     with pytest.raises(ConnectionNotFoundError):
         svc.get_connection(db_session, conn.id)
+    assert ref not in store.data  # #372: orphaned credential removed on delete
 
 
 def test_delete_unknown_raises_not_found(db_session: Any) -> None:
     with pytest.raises(ConnectionNotFoundError):
-        svc.delete_connection(db_session, uuid.uuid4())
+        svc.delete_connection(db_session, uuid.uuid4(), secret_store=FakeStore())
 
 
 # ───────────────────────── test connectivity ───────────────────────
@@ -433,6 +440,9 @@ class _WriteFailStore(FakeStore):
     def set(self, name: str, value: str) -> None:
         raise SecretWriteError("key vault unreachable")
 
+    def delete(self, name: str) -> None:
+        pass
+
 
 def test_create_secret_write_failure_raises_502_and_rolls_back(db_session: Any) -> None:
     with pytest.raises(ConnectionSecretWriteError) as excinfo:
@@ -557,5 +567,5 @@ def test_delete_connection_cascades_versions(db_session: Any) -> None:
     """Cascade delete is accepted policy — history is not retained past deletion."""
     conn = _create(db_session, FakeStore())
     assert len(_versions(db_session, conn.id)) == 1
-    svc.delete_connection(db_session, conn.id)
+    svc.delete_connection(db_session, conn.id, secret_store=FakeStore())
     assert _versions(db_session, conn.id) == []

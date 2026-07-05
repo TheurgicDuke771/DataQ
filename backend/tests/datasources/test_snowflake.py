@@ -94,6 +94,9 @@ class _FakeStore:
     def set(self, name: str, value: str) -> None:  # satisfies SecretStore Protocol
         self.asked = name
 
+    def delete(self, name: str) -> None:
+        pass
+
 
 # ───────────────────────── SnowflakeConfig ─────────────────────────
 

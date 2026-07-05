@@ -336,10 +336,18 @@ def list_connection_versions(session: Session, connection_id: uuid.UUID) -> list
     )
 
 
-def delete_connection(session: Session, connection_id: uuid.UUID) -> None:
+def delete_connection(
+    session: Session, connection_id: uuid.UUID, *, secret_store: SecretStore
+) -> None:
     conn = get_connection(session, connection_id)
+    secret_ref = conn.secret_ref
     session.delete(conn)
     session.commit()
+    # Best-effort remove the orphaned credential from the store (#372) — after the
+    # row is gone, and fail-soft (delete never raises), so a store hiccup can't 500
+    # a successful delete.
+    if secret_ref:
+        secret_store.delete(secret_ref)
     log.info("connection_deleted", connection_id=str(connection_id))
 
 

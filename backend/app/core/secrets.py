@@ -62,6 +62,14 @@ class SecretStore(Protocol):
 
     def set(self, name: str, value: str) -> None: ...
 
+    def delete(self, name: str) -> None:
+        """Best-effort removal of a secret (#372). Idempotent — a missing secret is a
+        clean no-op — and **fail-soft**: it never raises, since it only ever runs as
+        cleanup when the owning entity (connection / suite notification) is deleted or
+        its secret cleared, and that must not 500 on a store hiccup. Failures are
+        logged."""
+        ...
+
 
 def _env_key(name: str) -> str:
     return f"{ENV_PREFIX}{name.upper().replace('-', '_')}"
@@ -84,6 +92,10 @@ class EnvSecretStore:
         Azure tenant. Production uses AzureKeyVaultStore, which persists.
         """
         os.environ[_env_key(name)] = value
+
+    def delete(self, name: str) -> None:
+        """Remove the env var if present (#372). Idempotent; can't fail."""
+        os.environ.pop(_env_key(name), None)
 
 
 class AzureKeyVaultStore:
@@ -128,6 +140,19 @@ class AzureKeyVaultStore:
                 f"Key Vault secret {name!r} at {self._vault_url}: {exc}"
             ) from exc
 
+    def delete(self, name: str) -> None:
+        """Best-effort soft-delete (#372). A missing secret is a clean no-op; any
+        other failure is logged, never raised (orphan cleanup must not 500 the
+        entity delete). Fires the delete; doesn't block on the soft-delete poller."""
+        from azure.core.exceptions import ResourceNotFoundError
+
+        try:
+            self._client_lazy().begin_delete_secret(name)
+        except ResourceNotFoundError:
+            pass
+        except Exception as exc:
+            log.warning("secret_delete_failed", name=name, error=str(exc))
+
 
 class RedisSecretStore:
     """Resolves secrets from Redis — dev/test only, plaintext, shared across processes.
@@ -169,6 +194,13 @@ class RedisSecretStore:
             self._client_lazy().set(self._key(name), value)
         except Exception as exc:
             raise SecretWriteError(f"Redis secret {name!r}: {exc}") from exc
+
+    def delete(self, name: str) -> None:
+        """Best-effort delete (#372); a missing key is a no-op, failures are logged."""
+        try:
+            self._client_lazy().delete(self._key(name))
+        except Exception as exc:
+            log.warning("secret_delete_failed", name=name, error=str(exc))
 
 
 _store_singleton: SecretStore | None = None

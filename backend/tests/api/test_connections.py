@@ -63,6 +63,9 @@ class FakeStore:
     def set(self, name: str, value: str) -> None:
         self.data[name] = value
 
+    def delete(self, name: str) -> None:
+        self.data.pop(name, None)
+
 
 class _WriteFailStore(FakeStore):
     """SecretStore whose set() fails — simulates Key Vault unreachable (#87)."""
@@ -71,6 +74,9 @@ class _WriteFailStore(FakeStore):
         from backend.app.core.secrets import SecretWriteError
 
         raise SecretWriteError("key vault unreachable")
+
+    def delete(self, name: str) -> None:
+        pass
 
 
 class _PassAdapter:

@@ -323,3 +323,68 @@ def test_reset_secret_store_cache_rebuilds(monkeypatch: pytest.MonkeyPatch) -> N
     secrets.reset_secret_store_cache()
     second = get_secret_store()
     assert first is not second
+
+
+# ───────────────────────── delete (#372) ───────────────────────────
+
+
+def test_env_store_delete_removes_var(clean_kv_env: None) -> None:
+    store = EnvSecretStore()
+    store.set("conn-x", "v")
+    store.delete("conn-x")
+    with pytest.raises(SecretNotFoundError):
+        store.get("conn-x")
+
+
+def test_env_store_delete_missing_is_noop(clean_kv_env: None) -> None:
+    EnvSecretStore().delete("never-set")  # idempotent — must not raise
+
+
+def test_akv_store_delete_calls_begin_delete_secret(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = AzureKeyVaultStore("https://example.vault.azure.net/")
+    calls: list[str] = []
+    monkeypatch.setattr(
+        store, "_client_lazy", lambda: SimpleNamespace(begin_delete_secret=calls.append)
+    )
+    store.delete("conn-x")
+    assert calls == ["conn-x"]
+
+
+def test_akv_store_delete_swallows_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
+    from azure.core.exceptions import ResourceNotFoundError
+
+    store = AzureKeyVaultStore("https://example.vault.azure.net/")
+
+    def _gone(name: str) -> None:
+        raise ResourceNotFoundError("already deleted")
+
+    monkeypatch.setattr(store, "_client_lazy", lambda: SimpleNamespace(begin_delete_secret=_gone))
+    store.delete("conn-x")  # clean no-op — must not raise
+
+
+def test_akv_store_delete_fails_soft_on_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = AzureKeyVaultStore("https://example.vault.azure.net/")
+
+    def _boom(name: str) -> None:
+        raise RuntimeError("kv down")
+
+    monkeypatch.setattr(store, "_client_lazy", lambda: SimpleNamespace(begin_delete_secret=_boom))
+    store.delete("conn-x")  # fail-soft: logged, never raised (#372)
+
+
+def test_redis_store_delete_namespaces_the_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = RedisSecretStore("redis://localhost:6379/0")
+    calls: list[str] = []
+    monkeypatch.setattr(store, "_client_lazy", lambda: SimpleNamespace(delete=calls.append))
+    store.delete("conn-1")
+    assert calls == ["dataq:secret:conn-1"]
+
+
+def test_redis_store_delete_fails_soft(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = RedisSecretStore("redis://localhost:6379/0")
+
+    def _boom(key: str) -> None:
+        raise RuntimeError("connection refused")
+
+    monkeypatch.setattr(store, "_client_lazy", lambda: SimpleNamespace(delete=_boom))
+    store.delete("x")  # fail-soft: no raise

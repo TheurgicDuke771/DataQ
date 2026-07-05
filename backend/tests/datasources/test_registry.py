@@ -34,6 +34,9 @@ class _FakeStore:
     def set(self, name: str, value: str) -> None:  # satisfies SecretStore Protocol
         ...
 
+    def delete(self, name: str) -> None:
+        pass
+
 
 def test_dispatches_snowflake() -> None:
     runner = build_check_runner(

@@ -161,8 +161,9 @@ def delete_connection(
     connection_id: uuid.UUID,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
+    secret_store: Annotated[SecretStore, Depends(get_secret_store)],
 ) -> None:
-    svc.delete_connection(db, connection_id)
+    svc.delete_connection(db, connection_id, secret_store=secret_store)
 
 
 @router.post(
