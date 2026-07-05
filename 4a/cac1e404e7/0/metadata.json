@@ -1,0 +1,57 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_id": "4acac1e404e7",
+  "session_id": "4feb9be8-2ae1-4d50-be97-b9c4cbaead36",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-05T22:41:34.049929Z",
+  "branch": "docs/w2-ui-gap-batch",
+  "checkpoints_count": 1,
+  "save_step_count": 2,
+  "files_touched": [
+    "docs/progress.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-4-8",
+  "turn_id": "9876a69c9411",
+  "token_usage": {
+    "input_tokens": 166307,
+    "cache_creation_tokens": 7939281,
+    "cache_read_tokens": 442217512,
+    "output_tokens": 931580,
+    "api_call_count": 1031
+  },
+  "session_metrics": {
+    "turn_count": 21
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-05T22:41:33.671575Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 1,
+    "human_removed": 0,
+    "total_committed": 0,
+    "total_lines_changed": 1,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}

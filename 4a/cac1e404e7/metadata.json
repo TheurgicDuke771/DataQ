@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "4acac1e404e7",
+  "strategy": "manual-commit",
+  "branch": "docs/w2-ui-gap-batch",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/4a/cac1e404e7/0/metadata.json",
+      "transcript": "/4a/cac1e404e7/0/full.jsonl",
+      "compact_transcript": "/4a/cac1e404e7/0/transcript.jsonl",
+      "content_hash": "/4a/cac1e404e7/0/content_hash.txt",
+      "prompt": "/4a/cac1e404e7/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 166307,
+    "cache_creation_tokens": 7939281,
+    "cache_read_tokens": 442217512,
+    "output_tokens": 931580,
+    "api_call_count": 1031
+  }
+}
