@@ -1,0 +1,42 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "39f3dd4da94a",
+  "strategy": "manual-commit",
+  "branch": "feature/611-dbt-orchestration-provider",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/alembic/versions/c1d2e3f4a5b6_widen_orchestration_for_dbt.py",
+    "backend/app/api/v1/orchestration.py",
+    "backend/app/core/config.py",
+    "backend/app/datasources/registry.py",
+    "backend/app/db/models.py",
+    "backend/app/orchestration/dbt.py",
+    "backend/app/orchestration/registry.py",
+    "backend/app/services/orchestration_service.py",
+    "backend/tests/api/test_orchestration_events_dbt.py",
+    "backend/tests/datasources/test_snowflake.py",
+    "backend/tests/integrations/test_dbt_callback_snippet.py",
+    "backend/tests/orchestration/test_adf_provider.py",
+    "backend/tests/orchestration/test_dbt_provider.py",
+    "docs/adr/0029-dbt-orchestration-provider.md",
+    "integrations/dbt/README.md",
+    "integrations/dbt/dataq_dbt_callback.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/39/f3dd4da94a/0/metadata.json",
+      "transcript": "/39/f3dd4da94a/0/full.jsonl",
+      "compact_transcript": "/39/f3dd4da94a/0/transcript.jsonl",
+      "content_hash": "/39/f3dd4da94a/0/content_hash.txt",
+      "prompt": "/39/f3dd4da94a/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 15220,
+    "cache_creation_tokens": 390874,
+    "cache_read_tokens": 40660498,
+    "output_tokens": 106740,
+    "api_call_count": 124
+  }
+}

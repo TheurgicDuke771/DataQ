@@ -1,0 +1,66 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_id": "39f3dd4da94a",
+  "session_id": "4feb9be8-2ae1-4d50-be97-b9c4cbaead36",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-05T11:39:33.102164Z",
+  "branch": "feature/611-dbt-orchestration-provider",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/alembic/versions/c1d2e3f4a5b6_widen_orchestration_for_dbt.py",
+    "backend/app/api/v1/orchestration.py",
+    "backend/app/core/config.py",
+    "backend/app/datasources/registry.py",
+    "backend/app/db/models.py",
+    "backend/app/orchestration/dbt.py",
+    "backend/app/orchestration/registry.py",
+    "backend/app/services/orchestration_service.py",
+    "backend/tests/api/test_orchestration_events_dbt.py",
+    "backend/tests/datasources/test_snowflake.py",
+    "backend/tests/integrations/test_dbt_callback_snippet.py",
+    "backend/tests/orchestration/test_adf_provider.py",
+    "backend/tests/orchestration/test_dbt_provider.py",
+    "docs/adr/0029-dbt-orchestration-provider.md",
+    "integrations/dbt/README.md",
+    "integrations/dbt/dataq_dbt_callback.py"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "e90800ef7aa5",
+  "checkpoint_transcript_start": 551,
+  "transcript_lines_at_start": 551,
+  "token_usage": {
+    "input_tokens": 15220,
+    "cache_creation_tokens": 390874,
+    "cache_read_tokens": 40660498,
+    "output_tokens": 106740,
+    "api_call_count": 124
+  },
+  "session_metrics": {
+    "turn_count": 4
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-05T11:39:33.048804Z",
+    "agent_lines": 1341,
+    "agent_removed": 10,
+    "human_added": 115,
+    "human_modified": 3,
+    "human_removed": 0,
+    "total_committed": 1459,
+    "total_lines_changed": 1473,
+    "agent_percentage": 91.71758316361168,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}
