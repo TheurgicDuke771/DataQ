@@ -36,7 +36,7 @@ Project rule (learned the hard way): **never use CI as the first feedback loop**
 | Format | `pnpm format:check` |
 | Lint | `pnpm lint` |
 | Types | `pnpm typecheck` |
-| Tests | `pnpm test` |
+| Tests + coverage gate | `pnpm test:coverage` |
 
 Scope note: if the diff (`git diff main...HEAD --name-only`) touches only one side, you may skip the other side's gates — say so explicitly in the report. Playwright E2E (`pnpm e2e`) needs the full docker-compose stack; don't launch it yourself — note it as "runs in CI / run manually" unless the stack is already up.
 
@@ -46,7 +46,7 @@ Scope note: if the diff (`git diff main...HEAD --name-only`) touches only one si
 
 - **Ruff passing ≠ Bandit passing.** A `# noqa` that silences Ruff does nothing for Bandit (e.g. B105 hardcoded-password). Run both; never infer one from the other.
 - **Secret scanning:** betterleaks runs in pre-commit + CI. If the diff adds anything credential-shaped (even mock/local values in templates, scripts, compose), flag it 🔴 — the project rule is zero credentials in git-tracked files.
-- **pytest addopts carry `--cov`** — a second `--cov` on the CLI is a pytest usage error (exit 4). Use `--cov=<module> --cov-report=term-missing -o addopts=` when you need targeted coverage.
+- **pytest addopts carry `--cov` AND `--cov-fail-under=80`** — a second `--cov` on the CLI is a pytest usage error (exit 4), and a targeted subset run will spuriously fail the repo-wide 80% floor. Use `--cov=<module> --cov-report=term-missing -o addopts=` when you need targeted coverage. Frontend equivalent: the `lines: 80` gate only runs under `pnpm test:coverage`, not `pnpm test`.
 
 ## Mode 2 — Test-quality audit (the QE half)
 
@@ -62,7 +62,7 @@ Audit the tests in the diff (`git diff main...HEAD`, or `gh pr diff <N>` if a PR
 ### 🟡 Yellow flags
 
 1. **Coverage on changed files below the Week-8 gate (≥80%).** Measure per changed module, not repo-wide: `pytest backend/tests/ --cov=backend.app.<module> --cov-report=term-missing -o addopts=`. Report per-file % and the uncovered line ranges.
-2. **Orchestration tests covering only one provider** — parametrize over both `adf` and `airflow` (ADF-only fixtures mean the abstraction is rotting).
+2. **Orchestration tests covering only one provider** — parametrize over the full `ORCHESTRATION_PROVIDERS` tuple (`adf`, `airflow`, `dbt` since ADR 0029), not a hardcoded subset (single-provider fixtures mean the abstraction is rotting).
 3. **Operational statuses untested** — run paths should exercise `error`/`skip`, not just pass/fail.
 4. **Covered-but-unasserted logic** (tests execute a branch but assert nothing about it). For critical pure modules, recommend a targeted `mutmut` spike (workflow in CONTRIBUTING rule 4a; config in `pyproject.toml [tool.mutmut]`; frontend equivalent: Stryker). Recommend only — mutation runs are manual/periodic, never something you launch.
 5. **Over-broad `except` in tests** swallowing the very failure the test should surface.
@@ -84,12 +84,13 @@ Start with `python -m backend.scripts.e2e_smoke` (seeded connections list, demo 
 
 Name every scratch entity `qa-verifier-scratch-<uuid>` so leftovers are identifiable, and delete them all before reporting — even after failures. Assert every failure returns the standard error envelope (`{"error": {code, message, detail}}`) with the *right* 4xx — a 500 on bad input is always a 🔴 finding.
 
-1. **Check-authoring edge cases** — through `POST/PATCH` on suites/checks: unknown expectation type; args missing/wrong-typed; thresholds inverted (warn worse than critical) or out of range; column names with quotes/unicode/SQL metacharacters; oversized strings. Expect 422/400 envelopes, never a 500 or a silently-persisted invalid check.
+1. **Check-authoring edge cases** — through `POST/PATCH` on suites/checks: unknown expectation type; args missing/wrong-typed; thresholds inverted (warn worse than critical) or out of range; column names with quotes/unicode/SQL metacharacters/**NUL bytes and control characters** (`\x00` in a string field 500'd all of v1 until #570 — always include it); oversized strings. Cover non-`expectation` kinds too: a `freshness`/`volume` check with kind-inappropriate or missing config must 422, not persist. Expect 422/400 envelopes, never a 500 or a silently-persisted invalid check.
 2. **Custom-SQL guardrails** (ADR 0019) — submit multi-statement SQL, `UPDATE`/`DELETE`/DDL, and comment-obfuscated variants (`SELECT 1; -- \n DROP TABLE`); all must be rejected. Confirm custom-SQL is refused on non-SQL (flat-file) datasources.
 3. **Run lifecycle** — trigger a run on a suite whose connection has bad/missing credentials: expect a graceful `error` status run, not a hung `running` row. Cancel a run mid-flight. Re-read `GET /runs/{id}/progress` for a finished run.
 4. **Dry-run negative paths** — dry-run a check against a nonexistent table/column; expect a structured failure.
 5. **Authz probes** — with a second demo user (seeded), verify: view-only user gets 403 on edit endpoints; non-shared suite invisible in lists AND 403/404 by direct id (no IDOR); admin endpoints 403 for non-admins.
-6. **Webhook hostility** — POST to `/api/v1/orchestration/events/{adf,airflow}` with: missing/wrong auth (secret/HMAC), valid auth + malformed JSON, valid JSON missing required fields, duplicate delivery (dedup index #456 should absorb it). Expect 401/422 envelopes and no phantom `pipeline_runs` rows.
+5a. **PAT surface** (ADR 0026, #613) — garbage, expired, and revoked `dq_live_…` tokens must all return a **uniform 401** (no oracle distinguishing "unknown" from "expired"); a valid PAT must carry the owner's authz scope, not more; the plaintext token must never appear in any read-back after mint (sha256-at-rest, show-once).
+6. **Webhook hostility** — POST to `/api/v1/orchestration/events/{adf,airflow,dbt}` with: missing/wrong auth (secret/HMAC per provider), valid auth + malformed JSON, valid JSON missing required fields, duplicate delivery (dedup index #456 should absorb it). Expect 401/422 envelopes and no phantom `pipeline_runs` rows. Parametrize over all three providers — don't stop at ADF.
 7. **Deletion integrity** — delete a scratch suite *after* it has runs/results; must cascade cleanly (the #540/#542 regression), leaving no orphaned rows (`runs`, `results`, shares, schedules).
 8. **Redaction spot check** — where a response carries failing-sample rows, confirm PII-configured columns come back redacted (#417) and secrets never appear in any connection read-back.
 
@@ -108,7 +109,7 @@ Track every created id. After scenarios (pass or fail), delete scratch checks �
    - `Conditional — gates green, N test-quality concerns. Discuss before merge.`
    - `Block — N gate failures / hard findings. Fix before pushing.`
 
-Findings that warrant deferred work should be called out for `/gh-issue-from-finding` (working-agreement #3) — never silently dropped.
+Before reporting a finding as new, check it against open issues (`gh issue list --state open --search "<keywords>"`) — a rediscovery of a known issue is reported as `known — #N (still reproduces)`, not as a fresh finding, and doesn't count toward the verdict unless the diff was supposed to fix it. Findings that warrant deferred work should be called out for `/gh-issue-from-finding` (working-agreement #3) — never silently dropped.
 
 ## Source documents (your authority)
 
