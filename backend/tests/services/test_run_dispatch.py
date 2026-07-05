@@ -127,3 +127,23 @@ def test_dispatch_or_fail_broker_failure_marks_failed(monkeypatch: pytest.Monkey
     assert run.started_at is None
     assert run.celery_task_id is None  # never published → no stale id for revoke
     assert session.commits == 1
+
+
+def test_dispatch_auto_classify_sends_task_by_name(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[tuple[str, list[str]]] = []
+    monkeypatch.setattr(
+        celery_app, "send_task", lambda name, args: calls.append((name, args)) or SimpleNamespace()
+    )
+    sid = uuid.uuid4()
+    run_dispatch.dispatch_auto_classify(sid)
+    assert calls == [("auto_classify_columns", [str(sid)])]
+
+
+def test_dispatch_auto_classify_is_fail_soft(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A broker blip must never fail suite create/update (#634)."""
+
+    def _boom(name: str, args: list[str]) -> Any:
+        raise RuntimeError("broker down")
+
+    monkeypatch.setattr(celery_app, "send_task", _boom)
+    run_dispatch.dispatch_auto_classify(uuid.uuid4())  # must not raise

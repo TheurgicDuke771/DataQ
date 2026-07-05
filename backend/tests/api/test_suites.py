@@ -137,6 +137,30 @@ def test_create_with_target_persists_storage_shape(client: TestClient, db_sessio
     assert resp.json()["target"] == {"table": "ORDERS", "schema": "SALES"}
 
 
+def test_create_with_target_dispatches_auto_classify(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#634: creating a suite WITH a target fires the best-effort auto-classify;
+    creating one WITHOUT a target does not."""
+    from backend.app.api.v1 import suites as suites_api
+
+    calls: list[uuid.UUID] = []
+    monkeypatch.setattr(suites_api.run_dispatch, "dispatch_auto_classify", calls.append)
+
+    conn = _connection(db_session)
+    assert (
+        client.post(
+            "/api/v1/suites", json=_payload(conn.id, target={"table": "ORDERS"})
+        ).status_code
+        == 201
+    )
+    assert len(calls) == 1  # dispatched once for the targeted suite
+
+    calls.clear()
+    assert client.post("/api/v1/suites", json=_payload(conn.id)).status_code == 201
+    assert calls == []  # no target → no auto-classify
+
+
 def test_create_with_flatfile_batch_target_persists(client: TestClient, db_session: Any) -> None:
     """A flat-file batch target (pattern/strategy/prefix) round-trips through the
     API — the SuiteTarget model must carry the batch keys, else the batch run path

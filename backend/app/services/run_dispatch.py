@@ -27,6 +27,20 @@ from backend.app.worker.celery_app import celery_app
 log = get_logger(__name__)
 
 _RUN_SUITE_TASK = "run_suite"
+_AUTO_CLASSIFY_TASK = "auto_classify_columns"
+
+
+def dispatch_auto_classify(suite_id: uuid.UUID) -> None:
+    """Fire-and-forget the auto-classify task for a suite that gained a target (#634).
+
+    **Best-effort**: a broker blip must never fail suite create/update — the policy
+    just stays unset and the user can Auto-detect manually. Published by name (same
+    decoupling rationale as ``dispatch_run``), so no service→worker import edge.
+    """
+    try:
+        celery_app.send_task(_AUTO_CLASSIFY_TASK, args=[str(suite_id)])
+    except Exception:
+        log.warning("auto_classify_dispatch_failed", suite_id=str(suite_id), exc_info=True)
 
 
 def dispatch_run(run_id: uuid.UUID) -> str:
