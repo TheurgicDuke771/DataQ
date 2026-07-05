@@ -3,6 +3,7 @@ import { TeamOutlined, UserOutlined } from '@ant-design/icons';
 import { Link } from 'react-router-dom';
 
 import { useMe } from '../auth/useMe';
+import { ApiKeysPanel } from '../components/profile/ApiKeysPanel';
 import { Page } from '../components/layout/Page';
 import { BRAND } from '../theme';
 
@@ -88,6 +89,8 @@ export function Profile() {
           }
         />
       </Card>
+
+      <ApiKeysPanel />
     </Page>
   );
 }
