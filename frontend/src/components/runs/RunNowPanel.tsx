@@ -9,7 +9,6 @@ import {
   Select,
   Spin,
   Tag,
-  Tooltip,
   Typography,
 } from 'antd';
 import { useMemo, useState } from 'react';
@@ -30,14 +29,14 @@ import { LiveRunProgress } from './LiveRunProgress';
 
 /**
  * Run-now panel — a cross-suite run launcher (suite picker + env/datasource
- * readout + a Week-6 notification-target placeholder). Distinct from the
- * suite-detail Run button (which runs *one* suite in context): here the user
- * picks any suite they can run from the Results surface. On trigger it hands off
- * to the shared `LiveRunProgress` drawer, so the modal closes and the run is
- * watched check-by-check.
+ * readout). Distinct from the suite-detail Run button (which runs *one* suite in
+ * context): here the user picks any suite they can run from the Results surface.
+ * On trigger it hands off to the shared `LiveRunProgress` drawer, so the modal
+ * closes and the run is watched check-by-check. Alerting is configured per suite
+ * (Notifications panel), not per run.
  *
- * Self-contained (owns its own data fetch + progress drawer) so the Week-6 UI
- * rework can drop it onto the dedicated Execution page unchanged.
+ * Self-contained (owns its own data fetch + progress drawer) so it can drop onto
+ * a dedicated Execution page unchanged.
  */
 export function RunNowPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
   // The launcher hands the queued run to the live-progress drawer (closing the
@@ -190,17 +189,9 @@ function RunNowForm({
         />
       )}
 
-      {/* Notification target — the per-run alert destination. No notification
-          backend exists yet (Teams/ResultPublisher alert routing is Week 6), so
-          this ships as a clearly-labelled disabled placeholder rather than a
-          control that does nothing. */}
-      <Flex vertical gap={6}>
-        <Typography.Text type="secondary">Notify on completion</Typography.Text>
-        <Tooltip title="Alert routing arrives in Week 6">
-          <Select disabled placeholder="Teams channel (coming in Week 6)" />
-        </Tooltip>
-      </Flex>
-
+      {/* Alerting is configured per suite (the ResultPublisher notification config
+          + per-suite Teams/Slack/email webhooks), not per run — see a suite's
+          Notifications panel. No per-run notification control here. */}
       <Flex gap={8} justify="flex-end">
         <Button onClick={onCancel}>Cancel</Button>
         <Button
