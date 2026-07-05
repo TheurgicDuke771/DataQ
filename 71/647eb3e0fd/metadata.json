@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "71647eb3e0fd",
+  "strategy": "manual-commit",
+  "branch": "docs/w2-otel-524-589-verified",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/71/647eb3e0fd/0/metadata.json",
+      "transcript": "/71/647eb3e0fd/0/full.jsonl",
+      "compact_transcript": "/71/647eb3e0fd/0/transcript.jsonl",
+      "content_hash": "/71/647eb3e0fd/0/content_hash.txt",
+      "prompt": "/71/647eb3e0fd/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 107071,
+    "cache_creation_tokens": 4654793,
+    "cache_read_tokens": 224736855,
+    "output_tokens": 581681,
+    "api_call_count": 645
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_id": "71647eb3e0fd",
+  "session_id": "4feb9be8-2ae1-4d50-be97-b9c4cbaead36",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-05T18:42:57.355354Z",
+  "branch": "docs/w2-otel-524-589-verified",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "docs/progress.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-4-8",
+  "turn_id": "daaf4286be44",
+  "token_usage": {
+    "input_tokens": 107071,
+    "cache_creation_tokens": 4654793,
+    "cache_read_tokens": 224736855,
+    "output_tokens": 581681,
+    "api_call_count": 645
+  },
+  "session_metrics": {
+    "turn_count": 12
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-05T18:42:57.134674Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 5,
+    "human_removed": 0,
+    "total_committed": 0,
+    "total_lines_changed": 5,
+    "agent_percentage": 0,
+    "metric_version": 2
+  }
+}
