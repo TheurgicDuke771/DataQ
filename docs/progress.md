@@ -112,7 +112,7 @@ _The rest of the 55 are mapped by theme in [post-v1-roadmap.md](../context/post-
 > (Theme-1 `schema_drift` + `anomaly` → scale-aware execution G-b → incident/lineage design
 > G-d) on infra that survives: the local stack, S3 (AWS), and Databricks Free Edition.
 
-### v1.1 W1 — Snowflake close-out + PATs (due 2026-07-11) — 2/6
+### v1.1 W1 — Snowflake close-out + PATs (due 2026-07-11) — 3/6
 
 ⚡ **The three Snowflake-live rows are day-1 work, in this order** — the subscription lapses
 within days; after it does they can no longer be live-verified. **PATs (#461) start right
@@ -123,7 +123,7 @@ backlog, and it must land while Azure AD is still the reference validator.
 |---|---|---|
 | ✅ | [#194](https://github.com/TheurgicDuke771/DataQ/issues/194) Snowflake key-pair: encrypted (passphrase-protected) private keys — **live-verified** (combined `{private_key, passphrase}` secret payload, one `secret_ref`, atomic re-auth rotation; encrypted-key test-connection + GX suite run green on live Snowflake 2026-07-04) — [PR #602](https://github.com/TheurgicDuke771/DataQ/pull/602) | Theme 8 |
 | ✅ | [#195](https://github.com/TheurgicDuke771/DataQ/issues/195) Snowflake key-pair: migrate off deprecated GX `connect_args` path — **upgraded to bugfix**: the old route never passed GX 1.17 validation for key-pair suite runs; now the supported kwargs form (base64-DER `private_key`, `role` required), live-verified with zero deprecation warnings — [PR #603](https://github.com/TheurgicDuke771/DataQ/pull/603) | Theme 8 |
-| ⬜ | [#587](https://github.com/TheurgicDuke771/DataQ/issues/587) Snowflake scale/volume baseline (harness §6 volume) — the pushdown-path reference datum for W6's G-b work | Theme 7 / G-b |
+| ✅ | [#587](https://github.com/TheurgicDuke771/DataQ/issues/587) Snowflake scale/volume baseline — **captured live 2026-07-04**: 1.2M-row suite run 12.2s wall / <50MB worker delta / ~0.08 credits; recorded in [perf-baseline-snowflake.md](perf-baseline-snowflake.md) — [PR #607](https://github.com/TheurgicDuke771/DataQ/pull/607) | Theme 7 / G-b |
 | ⬜ | [#588](https://github.com/TheurgicDuke771/DataQ/issues/588) Retire the harness Snowflake leg cleanly at lapse (schedules/bindings off, secret deleted, Flow A retired — partial G-i) | ops / G-i |
 | ⬜ | [#461](https://github.com/TheurgicDuke771/DataQ/issues/461) **PATs phase 1** (ADR 0026): second authenticator behind `get_current_user`, REST + MCP identically; breaks the Azure-AD-only auth dependency early in the Azure window. Exit: **mint 1 workspace-admin + 1 member PAT** (two-tier authz matrix for all later headless/live checks; short expiry on the admin one) | Theme 3 / G-e |
 | ⬜ | [#583](https://github.com/TheurgicDuke771/DataQ/issues/583) MCP `profile_column`: default to the suite run target on SQL suites | Theme 13 |
