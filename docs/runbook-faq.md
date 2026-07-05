@@ -19,6 +19,13 @@ Full deploy steps + verification: **[deploy/README.md](https://github.com/Theurg
 
 ## Live smoke (deployed stack + harness data)
 
+> **Snowflake is RETIRED (2026-07-04, #588 — subscription lapsed).** Flow A cannot run:
+> the three `snowflake` connections are renamed "(RETIRED …)", their schedules are
+> disabled, trigger bindings deleted, KV secrets removed, and the Snowflake-side PAT
+> revoked. Historical Snowflake runs/results (incl. `metric_value` trends) remain
+> queryable. Live smoke now covers the UC/medallion + flat-file legs only; the scale
+> numbers survive in [perf-baseline-snowflake.md](perf-baseline-snowflake.md).
+
 Automated, opt-in (never CI):
 
 1. **API-level:** `DATAQ_API=https://<frontend-host> DATAQ_BEARER=<AAD token> python -m
