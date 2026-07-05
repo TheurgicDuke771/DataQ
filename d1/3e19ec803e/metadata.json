@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "d13e19ec803e",
+  "strategy": "manual-commit",
+  "branch": "feature/auto-classify-on-suite-create",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/d1/3e19ec803e/0/metadata.json",
+      "transcript": "/d1/3e19ec803e/0/full.jsonl",
+      "compact_transcript": "/d1/3e19ec803e/0/transcript.jsonl",
+      "content_hash": "/d1/3e19ec803e/0/content_hash.txt",
+      "prompt": "/d1/3e19ec803e/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 151232,
+    "cache_creation_tokens": 7093989,
+    "cache_read_tokens": 403345494,
+    "output_tokens": 896233,
+    "api_call_count": 983
+  }
+}
