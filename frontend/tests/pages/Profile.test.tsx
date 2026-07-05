@@ -1,11 +1,23 @@
+import { App as AntApp } from 'antd';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { MeResponse } from '../../src/api/me';
 import { MeContext } from '../../src/auth/meContext';
 import type { AsyncState } from '../../src/hooks/useAsyncData';
 import { Profile } from '../../src/pages/Profile';
+
+// The ApiKeysPanel on the profile fetches the user's PATs on mount; stub the
+// client so the page tests don't hit the network (its own behaviour is covered
+// in ApiKeysPanel.test.tsx).
+vi.mock('../../src/api/apiKeys', () => ({
+  listApiKeys: vi.fn().mockResolvedValue([]),
+  createApiKey: vi.fn(),
+  revokeApiKey: vi.fn(),
+  PAT_DEFAULT_EXPIRY_DAYS: 90,
+  PAT_MAX_EXPIRY_DAYS: 365,
+}));
 
 const me: AsyncState<MeResponse> = {
   status: 'ok',
@@ -22,9 +34,11 @@ const me: AsyncState<MeResponse> = {
 function renderProfile(state: AsyncState<MeResponse>) {
   return render(
     <MemoryRouter>
-      <MeContext.Provider value={state}>
-        <Profile />
-      </MeContext.Provider>
+      <AntApp>
+        <MeContext.Provider value={state}>
+          <Profile />
+        </MeContext.Provider>
+      </AntApp>
     </MemoryRouter>,
   );
 }
