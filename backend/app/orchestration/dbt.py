@@ -125,8 +125,15 @@ def _read_artifact(config: DbtConfig, job: str, secret: str) -> bytes | None:
         blob = (
             f"{prefix}/{job}/{_RUN_RESULTS_RELPATH}" if prefix else f"{job}/{_RUN_RESULTS_RELPATH}"
         )
+        # Bound socket connect/read like the ADLS datasource adapter — `test()` runs
+        # this synchronously in the request thread, so an unreachable account must
+        # fail fast, not hang. (`download_blob(timeout=)` is only the server-side op
+        # timeout, so set the client-level socket timeouts too.)
         client = BlobServiceClient(
-            account_url=f"https://{account}.blob.core.windows.net", credential=secret
+            account_url=f"https://{account}.blob.core.windows.net",
+            credential=secret,
+            connection_timeout=int(_READ_TIMEOUT_SECONDS),
+            read_timeout=int(_READ_TIMEOUT_SECONDS),
         )
         try:
             return (
@@ -139,6 +146,7 @@ def _read_artifact(config: DbtConfig, job: str, secret: str) -> bytes | None:
 
     # s3
     import boto3
+    from botocore.config import Config
     from botocore.exceptions import ClientError
 
     bucket = parsed.netloc
@@ -149,6 +157,11 @@ def _read_artifact(config: DbtConfig, job: str, secret: str) -> bytes | None:
         region_name=config.region,
         aws_access_key_id=config.access_key_id,
         aws_secret_access_key=secret,
+        # Bound connect/read like the S3 datasource adapter — `test()` runs this in
+        # the request thread; boto3's ~60s defaults would hang on a blackholed host.
+        config=Config(
+            connect_timeout=int(_READ_TIMEOUT_SECONDS), read_timeout=int(_READ_TIMEOUT_SECONDS)
+        ),
     )
     try:
         data: bytes = client.get_object(Bucket=bucket, Key=key)["Body"].read()
@@ -287,7 +300,10 @@ class DbtProvider:
             except (ValueError, TypeError, KeyError):
                 continue
             finished_at = _parse_dt(metadata.get("generated_at"))
-            if finished_at is not None and since.tzinfo and finished_at < since:
+            # `since` is always aware (UTC); only compare when generated_at parsed to
+            # an aware datetime too — a tz-naive one would TypeError and fail-soft the
+            # WHOLE connection poll (dropping every job), so include it rather than skip.
+            if finished_at is not None and finished_at.tzinfo is not None and finished_at < since:
                 continue
             updates.append(
                 RunUpdate(

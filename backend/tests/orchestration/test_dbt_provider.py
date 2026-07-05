@@ -259,7 +259,7 @@ def test_read_artifact_adls_builds_path_and_reads(monkeypatch: pytest.MonkeyPatc
             return _Downloaded()
 
     class _Service:
-        def __init__(self, account_url: str, credential: str) -> None:
+        def __init__(self, account_url: str, credential: str, **_: Any) -> None:
             seen["account_url"] = account_url
             seen["credential"] = credential
 
@@ -286,7 +286,7 @@ def test_read_artifact_adls_missing_returns_none(monkeypatch: pytest.MonkeyPatch
             raise ResourceNotFoundError("nope")
 
     class _Service:
-        def __init__(self, account_url: str, credential: str) -> None:
+        def __init__(self, account_url: str, credential: str, **_: Any) -> None:
             pass
 
         def get_blob_client(self, container: str, blob: str) -> _BlobClient:

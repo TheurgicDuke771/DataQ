@@ -1,6 +1,6 @@
-"""Orchestration event webhook receivers (ADF + Airflow).
+"""Orchestration event webhook receivers (ADF + Airflow + dbt).
 
-Two machine-to-machine channels (no Azure AD user), each authenticated per its
+Machine-to-machine channels (no Azure AD user), each authenticated per its
 provider's constraints, then funnelled through the same provider-agnostic
 ingestion (`ingest_event`): resolve provider → parse to `RunUpdate` → persist.
 
@@ -11,6 +11,9 @@ ingestion (`ingest_event`): resolve provider → parse to `RunUpdate` → persis
   HMAC-SHA256 over the **raw body** in the ``X-DataQ-Signature`` header,
   constant-time vs the Key Vault signing key (ADR 0007: we author the snippet,
   so it can sign a header).
+- `POST /orchestration/events/dbt` — our post-build callback snippet. Same
+  HMAC-SHA256 / ``X-DataQ-Signature`` scheme as Airflow, keyed on the dbt signing
+  secret (ADR 0029).
 
 Per ADR 0006/0007 each returns **200 for every well-formed, authenticated
 event** — including ignored / unattributable ones — so the sender does not
