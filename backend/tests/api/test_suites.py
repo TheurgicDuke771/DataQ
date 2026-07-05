@@ -21,7 +21,7 @@ from backend.app.core.auth import get_current_user
 from backend.app.db.models import Check, Connection, Suite, User
 from backend.app.db.session import get_db
 from backend.app.main import app
-from backend.app.services import profile_service
+from backend.app.services import profile_service, run_dispatch
 
 
 @pytest.fixture
@@ -135,6 +135,59 @@ def test_create_with_target_persists_storage_shape(client: TestClient, db_sessio
     assert resp.status_code == 201
     # Stored with the canonical `schema` key (not the `schema_` alias), no nulls.
     assert resp.json()["target"] == {"table": "ORDERS", "schema": "SALES"}
+
+
+def test_create_with_target_dispatches_auto_classify(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#634: creating a suite WITH a target fires the best-effort auto-classify;
+    creating one WITHOUT a target does not."""
+    calls: list[uuid.UUID] = []
+    monkeypatch.setattr(run_dispatch, "dispatch_auto_classify", calls.append)
+
+    conn = _connection(db_session)
+    assert (
+        client.post(
+            "/api/v1/suites", json=_payload(conn.id, target={"table": "ORDERS"})
+        ).status_code
+        == 201
+    )
+    assert len(calls) == 1  # dispatched once for the targeted suite
+
+    calls.clear()
+    assert client.post("/api/v1/suites", json=_payload(conn.id)).status_code == 201
+    assert calls == []  # no target → no auto-classify
+
+
+def test_update_setting_a_target_dispatches_auto_classify(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#634: a target-setting PATCH on a policy-less suite dispatches; a PATCH on a
+    suite that already has a policy does not (never re-derive over a choice)."""
+    calls: list[uuid.UUID] = []
+    monkeypatch.setattr(run_dispatch, "dispatch_auto_classify", calls.append)
+
+    conn = _connection(db_session)
+    # Created target-less (no dispatch), then given a target via PATCH.
+    sid = client.post("/api/v1/suites", json=_payload(conn.id)).json()["id"]
+    assert calls == []
+    assert (
+        client.patch(f"/api/v1/suites/{sid}", json={"target": {"table": "ORDERS"}}).status_code
+        == 200
+    )
+    assert calls == [uuid.UUID(sid)]  # dispatched on the target-set
+
+    # Give it a policy, then PATCH the target again — must NOT re-derive.
+    db_session.query(Suite).filter(Suite.id == uuid.UUID(sid)).update(
+        {"column_policy": {"pii_columns": ["EMAIL"]}}
+    )
+    db_session.commit()
+    calls.clear()
+    assert (
+        client.patch(f"/api/v1/suites/{sid}", json={"target": {"table": "CUSTOMERS"}}).status_code
+        == 200
+    )
+    assert calls == []  # existing policy → no re-derive
 
 
 def test_create_with_flatfile_batch_target_persists(client: TestClient, db_session: Any) -> None:

@@ -821,3 +821,46 @@ def list_columns(
     return list_file_columns(
         connection, path=path, file_format=file_format, secret_store=secret_store
     )
+
+
+def suggest_policy_for_target(
+    connection: Connection,
+    *,
+    table: str | None = None,
+    schema: str | None = None,
+    catalog: str | None = None,
+    path: str | None = None,
+    file_format: str | None = None,
+    top_n: int = 20,
+    secret_store: SecretStore,
+) -> dict[str, Any]:
+    """List → profile → classify a target's columns into a redaction-policy suggestion.
+
+    The shared engine behind both the "Auto-detect" endpoint and the auto-classify
+    task (#634): introspect the target's column names, profile them for sample
+    values, then `derive_column_policy` into ``{identifier_column?, pii_columns}``.
+    Raises the profiler's ``ProfileUnsupportedError`` / ``ProfileTargetInvalidError``
+    (422s) for an unprofilable type or a missing/invalid target — the task treats
+    those as a fail-soft no-op; the endpoint surfaces them.
+    """
+    columns = list_columns(
+        connection,
+        table=table,
+        schema=schema,
+        catalog=catalog,
+        path=path,
+        file_format=file_format,
+        secret_store=secret_store,
+    )
+    result = profile_connection(
+        connection,
+        columns=columns,
+        top_n=top_n,
+        table=table,
+        schema=schema,
+        catalog=catalog,
+        path=path,
+        file_format=file_format,
+        secret_store=secret_store,
+    )
+    return derive_column_policy(result.columns)

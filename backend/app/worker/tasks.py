@@ -38,7 +38,15 @@ from backend.app.db.models import (
 )
 from backend.app.db.session import get_session
 from backend.app.orchestration.registry import get_orchestration_provider
-from backend.app.services import cron, orchestration_service, run_dispatch, run_service, run_target
+from backend.app.services import (
+    cron,
+    orchestration_service,
+    profile_service,
+    run_dispatch,
+    run_service,
+    run_target,
+    suite_service,
+)
 from backend.app.worker.celery_app import celery_app
 
 # Polling fallback (#171): look back slightly further than the 10-min beat
@@ -163,6 +171,77 @@ def run_suite(run_id: str) -> str:
         outcome = _run_suite(session, run_id=rid)
         alert_dispatch.publish_run_outcome(session, run_id=rid)
         return outcome
+    finally:
+        session.close()
+
+
+def _auto_classify_columns(session: Session, *, suite_id: uuid.UUID) -> str:
+    """Best-effort derive + persist of a suite's failing-sample redaction policy
+    (#634) — extracted for a DB-backed unit test without the Celery envelope.
+
+    No-op (returns a reason, never raises) when the suite is gone, has no concrete
+    profilable target (a targetless / batch-`pattern` suite), already has a policy
+    (never clobber a user or earlier auto choice), or the datasource can't be
+    introspected. The value-signal PII classifier still runs at redaction time
+    regardless, so a skipped derive only costs the auto-picked identifier locator.
+    """
+    suite = session.get(Suite, suite_id)
+    if suite is None or suite.target is None or suite.column_policy is not None:
+        return "skipped"
+    target = suite.target
+    table, path = target.get("table"), target.get("path")
+    if not table and not path:  # targetless / batch-pattern → nothing to profile
+        return "skipped"
+    connection = session.get(Connection, suite.connection_id)
+    if connection is None:
+        return "skipped"
+
+    try:
+        policy = profile_service.suggest_policy_for_target(
+            connection,
+            table=table,
+            schema=target.get("schema"),
+            catalog=target.get("catalog"),
+            path=path,
+            file_format=target.get("file_format"),
+            secret_store=get_secret_store(),
+        )
+        if not policy.get("identifier_column") and not policy.get("pii_columns"):
+            return "empty"
+        # Lock the row, then confirm nothing changed under us during the
+        # (seconds-long) introspection before persisting (#642 review): a user may
+        # have set their own policy (never clobber it), or the target may have been
+        # repointed (making this derive stale — it would reference the old table's
+        # columns). The FOR UPDATE lock closes the check→write race — a concurrent
+        # `set_column_policy` blocks until our commit, then wins on its own re-read.
+        session.refresh(suite, with_for_update=True)
+        if suite.column_policy is not None or suite.target != target:
+            session.rollback()  # release the lock; don't persist a raced/stale derive
+            return "skipped_raced"
+        suite_service.set_column_policy(
+            session,
+            suite_id,
+            identifier_column=policy.get("identifier_column"),
+            pii_columns=policy.get("pii_columns", []),
+        )
+    except Exception:
+        session.rollback()
+        log.warning("auto_classify_failed", suite_id=str(suite_id), exc_info=True)
+        return "error"
+    log.info("auto_classify_applied", suite_id=str(suite_id))
+    return "classified"
+
+
+@celery_app.task(name="auto_classify_columns")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
+def auto_classify_columns(suite_id: str) -> str:
+    """Auto-derive + persist a new suite's failing-sample redaction policy (#634).
+
+    Dispatched fire-and-forget when a suite gains a concrete target (create /
+    target-set). Best-effort: never raises, never clobbers an existing policy.
+    """
+    session = get_session()
+    try:
+        return _auto_classify_columns(session, suite_id=uuid.UUID(suite_id))
     finally:
         session.close()
 

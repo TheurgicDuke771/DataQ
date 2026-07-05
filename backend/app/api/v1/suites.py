@@ -124,6 +124,11 @@ def create_suite(
         created_by=current_user.id,
         target=payload.target.to_storage() if payload.target is not None else None,
     )
+    # Best-effort: auto-derive the failing-sample redaction policy for the new
+    # suite's target so samples have a locator without manual setup (#634). A fresh
+    # suite never has a policy; fire only when it has a concrete target.
+    if suite.target is not None:
+        run_dispatch.dispatch_auto_classify(suite.id)
     # The creator is, by definition, the owner.
     return SuiteRead.of(suite, OWNER)
 
@@ -171,6 +176,11 @@ def update_suite(
         description=payload.description,
         target=payload.target.to_storage() if payload.target is not None else None,
     )
+    # A target-setting update on a policy-less suite gets the same best-effort
+    # auto-classify as create (#634) — e.g. a suite created target-less, now given
+    # one. Never re-derives once a policy exists (the task also re-checks).
+    if payload.target is not None and suite.target is not None and suite.column_policy is None:
+        run_dispatch.dispatch_auto_classify(suite.id)
     return SuiteRead.of(suite, effective_permission(db, suite, current_user.id))
 
 
@@ -528,24 +538,14 @@ def suggest_column_policy(
     suite = require_permission(db, suite_id, current_user.id, minimum="edit")
     connection = db.get(Connection, suite.connection_id)
     assert connection is not None
-    columns = profile.list_columns(
+    policy = profile.suggest_policy_for_target(
         connection,
         table=payload.table,
         schema=payload.schema_,
         catalog=payload.catalog,
         path=payload.path,
         file_format=payload.file_format,
-        secret_store=secret_store,
-    )
-    result = profile.profile_connection(
-        connection,
-        columns=columns,
         top_n=payload.top_n,
-        table=payload.table,
-        schema=payload.schema_,
-        catalog=payload.catalog,
-        path=payload.path,
-        file_format=payload.file_format,
         secret_store=secret_store,
     )
-    return ColumnPolicyRead.of(profile.derive_column_policy(result.columns))
+    return ColumnPolicyRead.of(policy)
