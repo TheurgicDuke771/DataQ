@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_id": "a12ea7f29a78",
+  "session_id": "4feb9be8-2ae1-4d50-be97-b9c4cbaead36",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-05T15:55:31.374378Z",
+  "branch": "fix/622-app-kv-write",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "42fe7d3ee6ff",
+  "token_usage": {
+    "input_tokens": 46358,
+    "cache_creation_tokens": 2863798,
+    "cache_read_tokens": 113807701,
+    "output_tokens": 333997,
+    "api_call_count": 375
+  },
+  "session_metrics": {
+    "turn_count": 8
+  }
+}
