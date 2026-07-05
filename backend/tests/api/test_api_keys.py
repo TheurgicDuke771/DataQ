@@ -51,17 +51,13 @@ def test_mint_returns_token_once_and_list_never_does(client: TestClient) -> None
 
 
 def test_expiry_bounds_are_422(client: TestClient) -> None:
-    assert (
-        client.post("/api/v1/me/api-keys", json={"name": "x", "expires_in_days": 0}).status_code
-        == 422
+    too_short = client.post("/api/v1/me/api-keys", json={"name": "x", "expires_in_days": 0})
+    assert too_short.status_code == 422
+    too_long = client.post(
+        "/api/v1/me/api-keys",
+        json={"name": "x", "expires_in_days": svc.MAX_EXPIRY_DAYS + 1},
     )
-    assert (
-        client.post(
-            "/api/v1/me/api-keys",
-            json={"name": "x", "expires_in_days": svc.MAX_EXPIRY_DAYS + 1},
-        ).status_code
-        == 422
-    )
+    assert too_long.status_code == 422
 
 
 def test_pat_authenticates_as_its_owner_not_the_bypass_user(
@@ -88,10 +84,11 @@ def test_revoked_pat_stops_authenticating_immediately(client: TestClient) -> Non
     token = body["token"]
     assert client.get("/api/v1/me", headers=_pat_header(token)).status_code == 200
 
-    assert client.delete(f"/api/v1/me/api-keys/{body['id']}").status_code == 204
+    revoke = client.delete(f"/api/v1/me/api-keys/{body['id']}")
+    assert revoke.status_code == 204
     assert client.get("/api/v1/me", headers=_pat_header(token)).status_code == 401
-    # Idempotent re-revoke.
-    assert client.delete(f"/api/v1/me/api-keys/{body['id']}").status_code == 204
+    re_revoke = client.delete(f"/api/v1/me/api-keys/{body['id']}")  # idempotent
+    assert re_revoke.status_code == 204
 
 
 def test_revoking_another_users_key_404s(client: TestClient, db_session: Any) -> None:
