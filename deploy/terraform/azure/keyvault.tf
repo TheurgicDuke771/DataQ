@@ -1,8 +1,11 @@
 # Key Vault — the app's runtime SecretStore (SECRET_STORE=azure_key_vault). It
 # holds the datasource connection credentials the app writes/reads via the API at
 # runtime, plus the pre-seeded orchestration webhook secrets. RBAC authorization
-# (not access policies): the UAMI gets Secrets User (read); the deployer gets
-# Secrets Officer (write) so Terraform can seed the webhook secrets.
+# (not access policies): the UAMI gets a custom get+list+set role so the app can
+# CREATE/rotate connection credentials at runtime (SecretStore.set) — read-only
+# would 502 every connection-create-with-secret (#622), and the built-in Officer
+# would over-grant delete/purge; the deployer gets the built-in Secrets Officer so
+# Terraform can seed the webhook secrets.
 #
 # NOTE: boot-critical config (DATABASE_URL / REDIS_URL / App Insights) is injected
 # as inline Container App secrets in containerapps.tf, NOT via KV references — that
@@ -30,11 +33,41 @@ resource "azurerm_role_assignment" "kv_deployer" {
   principal_id         = data.azurerm_client_config.current.object_id
 }
 
-# App identity -> read secrets at runtime (DefaultAzureCredential).
-resource "azurerm_role_assignment" "kv_app_reader" {
-  scope                = azurerm_key_vault.app.id
-  role_definition_name = "Key Vault Secrets User"
-  principal_id         = azurerm_user_assigned_identity.app.principal_id
+# App identity -> get/list/SET secrets at runtime (DefaultAzureCredential). It needs
+# write so the connection manager can persist/rotate credentials via the API
+# (SecretStore.set) — read-only broke connection-create-with-secret (#622).
+#
+# Least privilege: a CUSTOM role scoped to get + list + set only, NOT the built-in
+# "Key Vault Secrets Officer" (which also grants delete/purge/backup/restore the app
+# never uses). Keeps the app identity's blast radius to exactly its two operations.
+# (When #372 lands SecretStore.delete, add `.../deleteSecret/action` here.)
+resource "azurerm_role_definition" "app_kv_secrets_rw" {
+  name        = "DataQ App KV Secrets RW ${random_string.suffix.result}"
+  scope       = azurerm_key_vault.app.id
+  description = "get + list + set secrets (no delete/purge) for the DataQ app identity."
+
+  permissions {
+    data_actions = [
+      "Microsoft.KeyVault/vaults/secrets/getSecret/action",
+      "Microsoft.KeyVault/vaults/secrets/setSecret/action",
+      "Microsoft.KeyVault/vaults/secrets/readMetadata/action",
+    ]
+  }
+
+  assignable_scopes = [azurerm_key_vault.app.id]
+}
+
+resource "azurerm_role_assignment" "kv_app_secrets" {
+  scope              = azurerm_key_vault.app.id
+  role_definition_id = azurerm_role_definition.app_kv_secrets_rw.role_definition_resource_id
+  principal_id       = azurerm_user_assigned_identity.app.principal_id
+}
+
+# Renamed from kv_app_reader (was the built-in Secrets User) when the app gained
+# set for #622 — keep the state entry so the plan reads as a role change, not churn.
+moved {
+  from = azurerm_role_assignment.kv_app_reader
+  to   = azurerm_role_assignment.kv_app_secrets
 }
 
 # RBAC data-plane role assignments are eventually consistent — wait before the

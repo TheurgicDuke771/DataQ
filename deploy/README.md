@@ -46,8 +46,9 @@ loopback. A production deployment must flip all of the following. Values live in
   environment, PostgreSQL Flexible Server, Cache for Redis, Key Vault, and Application
   Insights + Log Analytics (Contributor on the RG/subscription); the frontend is a
   Container App too (no Static Web App since ADR 0028). **Plus** `User Access
-  Administrator`/`Owner` to grant the managed identity the **Key Vault Secrets User**
-  role (an RBAC role assignment).
+  Administrator`/`Owner` to grant the managed identity a **custom get+list+set Key Vault
+  role** (an RBAC role assignment — read+write so the app can persist/rotate connection
+  credentials at runtime, but not the broader built-in Secrets Officer; #622).
 - **Azure AD (Entra ID)** — `Application Administrator` (or Global Admin) to create the
   **two app registrations** (API + SPA) and **grant admin consent** for the API scope.
 - **Subscription resource-provider registration** — the app's Terraform registers
@@ -131,8 +132,11 @@ that, this app needs:
    the migrate **job** runs `alembic upgrade head`. The `deploy/terraform/azure/` stack
    provisions all of this; the GHCR package must be **public** so ACA pulls it
    anonymously.
-2. **Managed identity** on the api + worker apps with **Key Vault Secrets User**
-   on the vault (so `DefaultAzureCredential` resolves `SECRET_STORE=azure_key_vault`).
+2. **Managed identity** on the api + worker apps with a **custom get+list+set Key Vault
+   role** (read+write but not the broader built-in Secrets Officer, so
+   `DefaultAzureCredential` resolves `SECRET_STORE=azure_key_vault` for both reads and
+   the connection-credential writes the API performs; read-only breaks
+   connection-create-with-secret — #622).
 3. **App env**: set the keys on the api + worker apps. The **complete** env-var
    reference (every Settings key) is [../.env.app.example](../.env.app.example);
    the prod-specific *values* are in [deploy/.env.app.prod.example](.env.app.prod.example).

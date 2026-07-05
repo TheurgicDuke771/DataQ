@@ -149,7 +149,7 @@ resource "azurerm_container_app" "api" {
   }
 
   tags       = local.common_tags
-  depends_on = [azurerm_role_assignment.kv_app_reader]
+  depends_on = [azurerm_role_assignment.kv_app_secrets]
 }
 
 # ── Worker (Celery worker + embedded beat) ───────────────────────────────────
@@ -201,7 +201,7 @@ resource "azurerm_container_app" "worker" {
   }
 
   tags       = local.common_tags
-  depends_on = [azurerm_role_assignment.kv_app_reader]
+  depends_on = [azurerm_role_assignment.kv_app_secrets]
 }
 
 # ── Migrate Job (alembic upgrade head) ───────────────────────────────────────
