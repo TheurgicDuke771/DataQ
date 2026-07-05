@@ -47,6 +47,9 @@ class FakeStore:
     def set(self, name: str, value: str) -> None:
         self.data[name] = value
 
+    def delete(self, name: str) -> None:
+        self.data.pop(name, None)
+
 
 @pytest.fixture
 def client(db_session: Any) -> Iterator[tuple[TestClient, FakeStore]]:

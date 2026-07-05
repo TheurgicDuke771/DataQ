@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 from sqlalchemy import select
 
-from backend.app.core.secrets import SecretNotFoundError
+from backend.app.core.secrets import SecretNotFoundError, SecretWriteError
 from backend.app.db.models import Connection, Suite, SuiteNotification, User
 from backend.app.services import notification_service as svc
 from backend.app.services.notification_service import (
@@ -33,6 +33,9 @@ class _FakeStore:
 
     def set(self, name: str, value: str) -> None:
         self.secrets[name] = value
+
+    def delete(self, name: str) -> None:
+        self.secrets.pop(name, None)
 
 
 def _suite(db: Any) -> Suite:
@@ -138,7 +141,10 @@ def test_upsert_writes_webhook_through_secret_store(db_session: Any) -> None:
         webhook="https://contoso.webhook.office.com/hook",
         secret_store=store,
     )
-    assert config.webhook_secret_ref == f"suite-notif-{config.id}"
+    # Unique per-set ref (stable prefix + a fresh suffix, #372 review) — see
+    # test_clear_then_reset_webhook_does_not_reuse_soft_deleted_name for why.
+    assert config.webhook_secret_ref is not None
+    assert config.webhook_secret_ref.startswith(f"suite-notif-{config.id}-")
     # The URL lives in the store, not the DB row.
     assert store.secrets[config.webhook_secret_ref] == "https://contoso.webhook.office.com/hook"
 
@@ -200,19 +206,91 @@ def test_upsert_rejects_non_allowlisted_host(db_session: Any) -> None:
         )
 
 
-def test_delete_config(db_session: Any) -> None:
+def test_delete_config_removes_row_and_webhook_secret(db_session: Any) -> None:
     suite = _suite(db_session)
-    svc.upsert_config(
+    store = _FakeStore()
+    config = svc.upsert_config(
         db_session,
         suite_id=suite.id,
         enabled=True,
         alert_on="fail",
-        webhook=None,
-        secret_store=_FakeStore(),
+        webhook="https://suite.webhook.office.com",
+        secret_store=store,
     )
-    assert svc.delete_config(db_session, suite.id) is True
+    ref = config.webhook_secret_ref
+    assert ref in store.secrets
+    assert svc.delete_config(db_session, suite.id, secret_store=store) is True
     assert svc.get_config(db_session, suite.id) is None
-    assert svc.delete_config(db_session, suite.id) is False  # idempotent
+    assert ref not in store.secrets  # #372: orphaned webhook secret removed
+    assert svc.delete_config(db_session, suite.id, secret_store=store) is False  # idempotent
+
+
+def test_clearing_webhook_removes_the_secret(db_session: Any) -> None:
+    suite = _suite(db_session)
+    store = _FakeStore()
+    config = svc.upsert_config(
+        db_session,
+        suite_id=suite.id,
+        enabled=True,
+        alert_on="fail",
+        webhook="https://suite.webhook.office.com",
+        secret_store=store,
+    )
+    ref = config.webhook_secret_ref
+    assert ref in store.secrets
+    # Clearing the webhook ("") nulls the ref AND removes the secret (#372).
+    updated = svc.upsert_config(
+        db_session,
+        suite_id=suite.id,
+        enabled=True,
+        alert_on="fail",
+        webhook="",
+        secret_store=store,
+    )
+    assert updated.webhook_secret_ref is None
+    assert ref not in store.secrets
+
+
+class _SoftDeleteStore(_FakeStore):
+    """Simulates Azure Key Vault soft-delete: `set` of a previously-deleted name
+    raises (the 409 'deleted but recoverable' the app can't purge/recover past)."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._deleted: set[str] = set()
+
+    def set(self, name: str, value: str) -> None:
+        if name in self._deleted:
+            raise SecretWriteError(f"{name} is in a deleted but recoverable state")
+        self.secrets[name] = value
+
+    def delete(self, name: str) -> None:
+        self.secrets.pop(name, None)
+        self._deleted.add(name)
+
+
+def test_clear_then_reset_webhook_does_not_reuse_soft_deleted_name(db_session: Any) -> None:
+    # Regression (#372 review): clearing soft-deletes the secret; a re-set must mint a
+    # NEW name, not reuse the soft-deleted one (which KV refuses to set → would 500).
+    suite = _suite(db_session)
+    store = _SoftDeleteStore()
+    url = "https://suite.webhook.office.com"
+
+    def _save(webhook: str) -> Any:
+        return svc.upsert_config(
+            db_session,
+            suite_id=suite.id,
+            enabled=True,
+            alert_on="fail",
+            webhook=webhook,
+            secret_store=store,
+        )
+
+    ref1 = _save(url).webhook_secret_ref
+    _save("")  # clear → soft-delete ref1
+    ref2 = _save(url).webhook_secret_ref  # re-set — must not raise
+    assert ref2 != ref1
+    assert ref2 in store.secrets
 
 
 def test_resolve_webhook_prefers_suite_then_workspace(db_session: Any) -> None:

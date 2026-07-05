@@ -23,6 +23,9 @@ class _FakeStore:
     def set(self, name: str, value: str) -> None:  # read-only test double
         raise NotImplementedError
 
+    def delete(self, name: str) -> None:
+        raise NotImplementedError
+
 
 # ── format_from_path ──
 

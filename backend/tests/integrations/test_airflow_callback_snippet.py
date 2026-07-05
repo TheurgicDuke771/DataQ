@@ -51,6 +51,9 @@ class _FakeStore:
     def set(self, name: str, value: str) -> None:
         self.data[name] = value
 
+    def delete(self, name: str) -> None:
+        self.data.pop(name, None)
+
 
 def _store(key: str = _KEY) -> _FakeStore:
     return _FakeStore(**{get_settings().airflow_webhook_secret_name: key})

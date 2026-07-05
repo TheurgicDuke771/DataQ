@@ -111,6 +111,7 @@ def delete_notifications(
     suite_id: uuid.UUID,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
+    secret_store: Annotated[SecretStore, Depends(get_secret_store)],
 ) -> None:
     require_permission(db, suite_id, current_user.id, minimum="edit")
-    svc.delete_config(db, suite_id)
+    svc.delete_config(db, suite_id, secret_store=secret_store)

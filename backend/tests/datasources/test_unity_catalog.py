@@ -146,6 +146,9 @@ class _FakeStore:
     def set(self, name: str, value: str) -> None:  # read-only test double
         raise NotImplementedError
 
+    def delete(self, name: str) -> None:
+        raise NotImplementedError
+
 
 def test_build_databricks_url_encodes_parts() -> None:
     cfg = UnityCatalogConfig.model_validate(_UC_CONFIG)

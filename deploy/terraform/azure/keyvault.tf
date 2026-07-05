@@ -37,19 +37,21 @@ resource "azurerm_role_assignment" "kv_deployer" {
 # write so the connection manager can persist/rotate credentials via the API
 # (SecretStore.set) — read-only broke connection-create-with-secret (#622).
 #
-# Least privilege: a CUSTOM role scoped to get + list + set only, NOT the built-in
-# "Key Vault Secrets Officer" (which also grants delete/purge/backup/restore the app
-# never uses). Keeps the app identity's blast radius to exactly its two operations.
-# (When #372 lands SecretStore.delete, add `.../deleteSecret/action` here.)
+# Least privilege: a CUSTOM role scoped to get + list + set + soft-delete only, NOT
+# the built-in "Key Vault Secrets Officer" (which also grants purge/backup/restore
+# the app never uses). Keeps the app identity's blast radius to exactly its
+# operations: SecretStore.get/set (connection credentials) + delete (orphan cleanup
+# on connection/webhook delete, #372). No purge — soft-delete is enough for cleanup.
 resource "azurerm_role_definition" "app_kv_secrets_rw" {
   name        = "DataQ App KV Secrets RW ${random_string.suffix.result}"
   scope       = azurerm_key_vault.app.id
-  description = "get + list + set secrets (no delete/purge) for the DataQ app identity."
+  description = "get + list + set + soft-delete secrets (no purge) for the DataQ app identity."
 
   permissions {
     data_actions = [
       "Microsoft.KeyVault/vaults/secrets/getSecret/action",
       "Microsoft.KeyVault/vaults/secrets/setSecret/action",
+      "Microsoft.KeyVault/vaults/secrets/deleteSecret/action",
       "Microsoft.KeyVault/vaults/secrets/readMetadata/action",
     ]
   }

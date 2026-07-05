@@ -21,6 +21,9 @@ class _Store:
     def set(self, name: str, value: str) -> None:  # pragma: no cover - unused
         pass
 
+    def delete(self, name: str) -> None:
+        pass
+
 
 def _seed(db_session: Any) -> None:
     user = User(aad_object_id=uuid.uuid4().hex, email="poll@example.com")

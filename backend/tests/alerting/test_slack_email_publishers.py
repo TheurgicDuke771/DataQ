@@ -75,6 +75,9 @@ class _Store:
     def set(self, name: str, value: str) -> None:  # pragma: no cover - unused here
         self._values[name] = value
 
+    def delete(self, name: str) -> None:
+        self._values.pop(name, None)
+
 
 # ── rendering ────────────────────────────────────────────────────────────────
 

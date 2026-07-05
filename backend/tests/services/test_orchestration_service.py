@@ -139,6 +139,9 @@ class _FakeStore:
     def set(self, name: str, value: str) -> None:
         self.data[name] = value
 
+    def delete(self, name: str) -> None:
+        self.data.pop(name, None)
+
 
 class _FakeProvider:
     """Stand-in OrchestrationProvider: parse_event isn't used here; fetch_run_detail

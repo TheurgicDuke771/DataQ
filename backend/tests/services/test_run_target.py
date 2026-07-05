@@ -167,6 +167,9 @@ class _FakeStore:
     def set(self, name: str, value: str) -> None:  # pragma: no cover - protocol completeness
         raise NotImplementedError
 
+    def delete(self, name: str) -> None:
+        raise NotImplementedError
+
 
 def test_materialize_path_passthrough_for_non_batch() -> None:
     # SQL / literal flat-file targets have no batch → table returned unchanged,
