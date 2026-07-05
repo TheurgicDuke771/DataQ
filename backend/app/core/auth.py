@@ -1,17 +1,21 @@
-"""Azure AD bearer-token auth + user upsert.
+"""Bearer-token auth (Azure AD or DataQ PAT) + user upsert.
 
 Two operating modes — picked once at import time from settings:
 
 - **Real mode** — `AZURE_TENANT_ID` + `AZURE_API_CLIENT_ID` are set.
-  Tokens are validated by `fastapi-azure-auth`: issuer, audience, signature,
-  expiry, and the configured scope. The OpenID config is loaded at app
-  startup via `init_auth()` and refreshed automatically.
+  Two authenticators behind the one `get_current_user` seam (ADR 0026):
+  a **DataQ PAT** (`Authorization: Bearer dq_live_…` → hashed lookup in
+  `api_keys`, resolving to the owning user) is tried first by prefix;
+  anything else is an **Azure AD token** validated by `fastapi-azure-auth`
+  (issuer, audience, signature, expiry, scope — OpenID config loaded at app
+  startup via `init_auth()` and refreshed automatically).
 
 - **Dev bypass** — all three of:
   `ENVIRONMENT=dev`, `AUTH_DEV_BYPASS=true`, Azure vars empty.
   No token required. Resolves every request to a fixed dev user upserted
   into the `users` table. Intended for local development against a
-  Postgres in `docker-compose` without a real Azure tenant.
+  Postgres in `docker-compose` without a real Azure tenant. (PATs still
+  resolve in dev bypass when presented — the same seam order.)
 
 If neither mode is configured, `init_auth` raises at startup — fail-closed.
 """
@@ -20,7 +24,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
-from fastapi import Depends, Security
+from fastapi import Depends, Request, Security
 from fastapi_azure_auth import SingleTenantAzureAuthorizationCodeBearer
 from fastapi_azure_auth.user import User as AzureUser
 from sqlalchemy.dialects.postgresql import insert
@@ -31,6 +35,7 @@ from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.db.models import User
 from backend.app.db.session import get_db
+from backend.app.services import api_key_service
 
 log = get_logger(__name__)
 
@@ -60,7 +65,29 @@ def _build_azure_scheme(
         tenant_id=settings.azure_tenant_id,
         scopes={settings.azure_api_scope_uri: settings.azure_api_scope},
         allow_guest_users=settings.azure_allow_guest_users,
+        # auto_error=False so a failed Azure validation yields None instead of
+        # raising — get_current_user then rejects with the standard error
+        # envelope. Required for the PAT path (ADR 0026): a `dq_live_…` bearer
+        # is not a JWT and must not be force-rejected by the Azure scheme.
+        auto_error=False,
     )
+
+
+def _bearer_token(request: Request) -> str | None:
+    """The raw bearer token from the Authorization header, if any."""
+    header = request.headers.get("Authorization", "")
+    scheme, _, token = header.partition(" ")
+    if scheme.lower() == "bearer" and token.strip():
+        return token.strip()
+    return None
+
+
+def _pat_token(request: Request) -> str | None:
+    """The bearer token when it is a DataQ PAT (by prefix), else None."""
+    token = _bearer_token(request)
+    if token is not None and token.startswith(api_key_service.TOKEN_PREFIX):
+        return token
+    return None
 
 
 _settings = get_settings()
@@ -139,9 +166,23 @@ async def init_auth() -> None:
 
 
 def _get_current_user_real(
-    azure_user: Annotated[AzureUser, Security(azure_scheme)],
+    request: Request,
+    azure_user: Annotated[AzureUser | None, Security(azure_scheme)],
     db: Annotated[Session, Depends(get_db)],
 ) -> User:
+    # DataQ PAT first, by prefix (ADR 0026 — second authenticator behind the
+    # seam): a `dq_live_…` bearer is never a valid JWT, so the branches are
+    # disjoint. api_key_service raises the uniform 401 on any bad key.
+    pat = _pat_token(request)
+    if pat is not None:
+        return api_key_service.resolve_token(db, pat)
+    if azure_user is None:
+        # auto_error=False left rejection to us: no/invalid Azure token.
+        raise DataQError(
+            code="unauthenticated",
+            message="Not authenticated: a valid Azure AD token or DataQ API key is required.",
+            status_code=401,
+        )
     aad_oid, email, display_name = _extract_claims(azure_user)
     user = _upsert_user(db, aad_object_id=aad_oid, email=email, display_name=display_name)
     log.info("auth_user_resolved", mode="real", aad_oid=aad_oid, user_id=str(user.id))
@@ -149,8 +190,14 @@ def _get_current_user_real(
 
 
 def _get_current_user_dev_bypass(
+    request: Request,
     db: Annotated[Session, Depends(get_db)],
 ) -> User:
+    # PATs resolve in dev bypass too (same seam order as real mode), so the
+    # local stack can exercise the full PAT lifecycle without Azure.
+    pat = _pat_token(request)
+    if pat is not None:
+        return api_key_service.resolve_token(db, pat)
     user = _upsert_user(
         db,
         aad_object_id=DEV_BYPASS_AAD_OID,

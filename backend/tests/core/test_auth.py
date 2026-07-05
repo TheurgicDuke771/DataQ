@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
+import uuid
 from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
 from fastapi_azure_auth.user import User as AzureUser
+from starlette.requests import Request
 
 import backend.app.core.auth as auth_mod
 from backend.app.core.config import Settings
 from backend.app.core.errors import DataQError
+from backend.app.db.models import User
+from backend.app.services import api_key_service
 
 
 def _azure_settings(*, allow_guest_users: bool = False) -> Settings:
@@ -110,13 +114,82 @@ async def test_init_auth_fails_closed_when_nothing_configured(
         await auth_mod.init_auth()
 
 
+def _request(authorization: str | None = None) -> Request:
+    headers = []
+    if authorization is not None:
+        headers.append((b"authorization", authorization.encode()))
+    return Request({"type": "http", "method": "GET", "path": "/", "headers": headers})
+
+
 def test_get_current_user_real_upserts_from_claims(db_session: Any) -> None:
     user = auth_mod._get_current_user_real(
+        _request(),
         _azure_user({"oid": "11111111-2222-3333-4444-555555555555", "upn": "real@example.com"}),
         db_session,
     )
     assert user.email == "real@example.com"
     assert user.aad_object_id == "11111111-2222-3333-4444-555555555555"
+
+
+# ── PAT branch on the seam (ADR 0026, #461) ──────────────────────────────────
+
+
+def _user_with_pat(db_session: Any) -> tuple[User, str]:
+    user = User(id=uuid.uuid4(), aad_object_id=f"oid-{uuid.uuid4().hex[:8]}", email="pat@seam.io")
+    db_session.add(user)
+    db_session.commit()
+    _, token = api_key_service.create_key(db_session, user, name="seam")
+    return user, token
+
+
+def test_bearer_and_pat_token_parsing() -> None:
+    assert auth_mod._bearer_token(_request()) is None
+    assert auth_mod._bearer_token(_request("Basic dXNlcg==")) is None
+    assert auth_mod._bearer_token(_request("Bearer  ")) is None
+    assert auth_mod._bearer_token(_request("Bearer abc")) == "abc"
+    # Only the dq_live_ prefix is a PAT; a JWT-ish bearer is not.
+    assert auth_mod._pat_token(_request("Bearer eyJhbGciOi.xxx.yyy")) is None
+    pat = api_key_service.TOKEN_PREFIX + "abc"
+    assert auth_mod._pat_token(_request(f"Bearer {pat}")) == pat
+
+
+def test_get_current_user_real_pat_resolves_without_azure(db_session: Any) -> None:
+    """A valid PAT authenticates on its own — azure_user None (no JWT at all)."""
+    user, token = _user_with_pat(db_session)
+    resolved = auth_mod._get_current_user_real(_request(f"Bearer {token}"), None, db_session)
+    assert resolved.id == user.id
+
+
+def test_get_current_user_real_401_without_any_credential(db_session: Any) -> None:
+    with pytest.raises(DataQError) as excinfo:
+        auth_mod._get_current_user_real(_request(), None, db_session)
+    assert excinfo.value.status_code == 401
+    assert excinfo.value.code == "unauthenticated"
+
+
+def test_get_current_user_real_bad_pat_never_falls_through_to_azure(db_session: Any) -> None:
+    """A dq_live_ bearer is decided by the PAT branch alone — even alongside a
+    (hypothetically) valid Azure identity, a bad PAT is a uniform 401."""
+    azure_user = _azure_user({"oid": "33333333-4444-5555-6666-777777777777", "upn": "a@b.io"})
+    with pytest.raises(DataQError) as excinfo:
+        auth_mod._get_current_user_real(
+            _request(f"Bearer {api_key_service.TOKEN_PREFIX}bogus"), azure_user, db_session
+        )
+    assert excinfo.value.status_code == 401
+    assert excinfo.value.code == "invalid_api_key"
+
+
+def test_get_current_user_dev_bypass_pat_first_and_fail_closed(db_session: Any) -> None:
+    user, token = _user_with_pat(db_session)
+    # PAT wins over the bypass identity.
+    resolved = auth_mod._get_current_user_dev_bypass(_request(f"Bearer {token}"), db_session)
+    assert resolved.id == user.id
+    # A bad PAT 401s — it must not fall through to the bypass user.
+    with pytest.raises(DataQError) as excinfo:
+        auth_mod._get_current_user_dev_bypass(
+            _request(f"Bearer {api_key_service.TOKEN_PREFIX}bogus"), db_session
+        )
+    assert excinfo.value.status_code == 401
 
 
 def test_get_current_user_unconfigured_raises_503() -> None:

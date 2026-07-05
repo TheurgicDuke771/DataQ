@@ -15,17 +15,23 @@ https://<your-dataq-host>/mcp/
     `Authorization` header when following redirects — which then surfaces as a
     confusing 401. Always configure clients with the `/mcp/` form.
 
-The endpoint is **Azure AD–protected**: present the same bearer token the web UI uses (validated against the same tenant / audience / scope). Without auth configured, the endpoint is only mounted in local dev-bypass mode — never unauthenticated in a deployed environment (ADR [0008](adr/0008-mcp-server.md)).
+The endpoint accepts the **same credentials as the REST API** (ADR [0008](adr/0008-mcp-server.md) / [0026](adr/0026-auth-api-keys-and-principal-seam.md)): an Azure AD bearer token, or a **DataQ API key** (`dq_live_…`). Without auth configured, the endpoint is only mounted in local dev-bypass mode — never unauthenticated in a deployed environment.
 
 ### Getting a token
 
-Sign in to the DataQ web app, open your browser's developer tools → **Application → Session Storage** → the `oidc.user:…` entry → copy the `access_token` value.
+**Recommended — a DataQ API key (PAT):** mint one via `POST /api/v1/me/api-keys`
+(see [API keys](api-keys.md)) and use it as the bearer. It lives up to a year,
+is revocable per-integration, and runs with exactly your per-suite access —
+built for always-on MCP configs.
 
-!!! note "Tokens expire after ~1 hour"
-    The pasted token is short-lived; when the client starts getting 401s, paste a
-    fresh one and restart the MCP server/connection. Long-lived DataQ-issued API
-    keys for headless MCP configs are tracked in ADR 0026
-    ([#461](https://github.com/TheurgicDuke771/DataQ/issues/461)).
+**Quick one-off — your web session's Azure token:** sign in to the DataQ web
+app, open your browser's developer tools → **Application → Session Storage** →
+the `oidc.user:…` entry → copy the `access_token` value.
+
+!!! note "Azure tokens expire after ~1 hour"
+    The pasted browser token is short-lived; when the client starts getting
+    401s, paste a fresh one and restart the MCP server/connection — or switch
+    to an [API key](api-keys.md) and stop re-pasting.
 
 !!! danger "Never commit a config that carries a token"
     Keep token-bearing MCP config files out of version control (in the DataQ repo

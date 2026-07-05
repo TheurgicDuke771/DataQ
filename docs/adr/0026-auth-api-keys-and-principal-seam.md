@@ -1,7 +1,7 @@
 # ADR 0026 — DataQ-issued API keys / service tokens behind the auth seam (REST + MCP)
 
-- **Status:** Proposed — **build deferred to post-v1** (timing decision recorded 2026-07-03; see Decision record below)
-- **Date:** 2026-06-29 (timing decided 2026-07-03)
+- **Status:** **Accepted — phase 1 (user-scoped PATs) built 2026-07-04** ([#461](https://github.com/TheurgicDuke771/DataQ/issues/461), v1.1 W1); phase 2 (service-account principals) remains deferred (see phase-1 record below)
+- **Date:** 2026-06-29 (timing decided 2026-07-03; phase 1 built 2026-07-04)
 - **Deciders:** @TheurgicDuke771
 - **Related:** ADR [0010](0010-provider-agnostic-infrastructure-seams.md) (the `get_current_user` identity seam — Azure is one impl, not the architecture), [0013](0013-marketplace-distribution-and-anti-lock-in.md) (BYOL / anti-lock-in), [0008](0008-mcp-server.md) (MCP auth via `JWTVerifier` — bring-your-own-token today), [0020](0020-history-and-audit-strategy.md) (audit), compliance posture (#436)
 - **Issue:** [#461](https://github.com/TheurgicDuke771/DataQ/issues/461)
@@ -54,6 +54,50 @@ buys little and risks the exact half-build this ADR warns against.
   integration breaks all), no scoping, no expiry, replayed on every request, and routinely
   leaked via logs/proxies. A PAT has the same `Authorization`-header ergonomics without any
   of that.
+
+## Phase-1 decision record (2026-07-04 — the build, PR for #461)
+
+Pulled forward to v1.1 W1 at cycle planning (2026-07-04): the second authenticator must land
+while Azure AD is still live as the reference validator (the Azure window closes ~2026-07-25),
+otherwise the seam's one real impl can never be regression-checked against the new one.
+
+**As built:**
+
+- **Token format:** `dq_live_` + `secrets.token_urlsafe(32)` (~256 bits of entropy).
+- **Hash-at-rest: SHA-256 (hex), not argon2/bcrypt — a deliberate deviation** from the
+  stub's credential bar, for verifier-shaped reasons:
+  - Slow KDFs exist to protect **low-entropy human passwords** from offline brute force. A
+    PAT is machine-generated with ~256 bits of entropy — preimage-resistant under plain
+    SHA-256; a KDF adds no security margin against guessing.
+  - PATs are verified on **every request** (not once per session). An argon2/bcrypt
+    verification costs ~50–300 ms by design — a per-request tax; SHA-256 is microseconds.
+  - bcrypt-style salted hashes cannot be **looked up by index** — verification would be an
+    O(n) scan over all keys. SHA-256 gives an O(1) unique-index lookup on `key_hash`.
+  - Same trade-off GitHub and GitLab ship for their PATs.
+- **Uniform 401:** unknown, revoked, and expired keys return byte-identical
+  `invalid_api_key` errors — no oracle to probe key state. Bad keys never fall through to
+  the Azure branch (a `dq_live_…` bearer is decided by the PAT branch alone), and in local
+  dev-bypass mode a bad PAT 401s rather than degrading to the bypass identity.
+- **Seam wiring, REST:** the Azure scheme moves to `auto_error=False`; `get_current_user`
+  tries the PAT branch first (disjoint by prefix — a PAT is never a valid JWT), then Azure,
+  else a standard 401. Service/route code is untouched — the seam held (ADR 0010 validated).
+- **Seam wiring, MCP:** a composite `TokenVerifier` (PAT by prefix, else the Azure
+  `JWTVerifier`) rather than fastmcp `MultiAuth` — both credentials are bearer strategies on
+  the one `Authorization` header, so a prefix branch inside one verifier is the whole
+  composition. The PAT-resolved user id rides a DataQ-internal claim into
+  `resolve_current_user`.
+- **Expiry:** default 90 days, max 365, **no non-expiring keys**. Revocation is a soft
+  `revoked_at` mark (row kept for audit); user delete cascades keys (owner-lifecycle bar).
+- **Surface:** `POST/GET /api/v1/me/api-keys`, `DELETE /api/v1/me/api-keys/{id}` —
+  self-service, show-once, list is metadata-only. Prefix-only logging.
+- **`last_used_at`** is throttled to one write per 60 s per key — audit signal without a
+  hot-path write amplification.
+- **Not in phase 1:** key down-scoping (read-only), the management UI (API-only for now),
+  and service-account principals (phase 2, unchanged).
+
+Open questions carried: scope granularity, principal generalization, and where service
+accounts sit relative to the workspace-admin allowlist. The token-verification-cost question
+is answered by the indexed-SHA-256 design above (no caching layer needed).
 
 ## Consequences (anticipated)
 

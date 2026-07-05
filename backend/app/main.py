@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from fastmcp.utilities.lifespan import combine_lifespans
 
 from backend.app.api.v1 import admin as admin_router
+from backend.app.api.v1 import api_keys as api_keys_router
 from backend.app.api.v1 import checks as checks_router
 from backend.app.api.v1 import connections as connections_router
 from backend.app.api.v1 import dashboard as dashboard_router
@@ -181,6 +182,7 @@ register_exception_handlers(app)
 
 
 app.include_router(me_router.router, prefix="/api/v1")
+app.include_router(api_keys_router.router, prefix="/api/v1")
 app.include_router(users_router.router, prefix="/api/v1")
 app.include_router(probe_router.router, prefix="/api/v1")
 app.include_router(connections_router.router, prefix="/api/v1")
