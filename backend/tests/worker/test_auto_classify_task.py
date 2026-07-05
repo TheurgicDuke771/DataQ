@@ -108,3 +108,39 @@ def test_empty_suggestion_not_persisted(db_session: Any, monkeypatch: Any) -> No
 
 def test_missing_suite_is_a_noop(db_session: Any) -> None:
     assert tasks._auto_classify_columns(db_session, suite_id=uuid.uuid4()) == "skipped"
+
+
+def test_does_not_clobber_a_policy_set_during_introspection(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    # #642 review: a user setting their own policy DURING the (slow) profile must not
+    # be clobbered — the post-introspection locked re-check catches it.
+    suite = _suite(db_session, target={"table": "ORDERS"})
+
+    def _suggest(*a: Any, **k: Any) -> dict[str, Any]:
+        suite.column_policy = {"pii_columns": ["USER_SET"]}  # a concurrent user save
+        db_session.commit()
+        return {"identifier_column": "ORDER_NUMBER", "pii_columns": ["EMAIL"]}
+
+    monkeypatch.setattr(profile_service, "suggest_policy_for_target", _suggest)
+    assert tasks._auto_classify_columns(db_session, suite_id=suite.id) == "skipped_raced"
+    db_session.refresh(suite)
+    assert suite.column_policy == {"pii_columns": ["USER_SET"]}  # the user's choice stands
+
+
+def test_does_not_persist_a_derive_stale_from_a_target_change(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    # #642 review: if the target is repointed mid-profile, the derive (from the old
+    # table's columns) is stale — it must not land on the new target.
+    suite = _suite(db_session, target={"table": "ORDERS"})
+
+    def _suggest(*a: Any, **k: Any) -> dict[str, Any]:
+        suite.target = {"table": "CUSTOMERS"}  # repointed during the profile
+        db_session.commit()
+        return {"identifier_column": "ORDER_NUMBER", "pii_columns": ["EMAIL"]}
+
+    monkeypatch.setattr(profile_service, "suggest_policy_for_target", _suggest)
+    assert tasks._auto_classify_columns(db_session, suite_id=suite.id) == "skipped_raced"
+    db_session.refresh(suite)
+    assert suite.column_policy is None  # the stale derive was dropped

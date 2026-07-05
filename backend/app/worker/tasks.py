@@ -208,10 +208,15 @@ def _auto_classify_columns(session: Session, *, suite_id: uuid.UUID) -> str:
         )
         if not policy.get("identifier_column") and not policy.get("pii_columns"):
             return "empty"
-        # Re-check under the live session before persisting: the introspection took
-        # seconds, in which a user may have set a policy — never clobber it (#634).
-        session.refresh(suite)
-        if suite.column_policy is not None:
+        # Lock the row, then confirm nothing changed under us during the
+        # (seconds-long) introspection before persisting (#642 review): a user may
+        # have set their own policy (never clobber it), or the target may have been
+        # repointed (making this derive stale — it would reference the old table's
+        # columns). The FOR UPDATE lock closes the check→write race — a concurrent
+        # `set_column_policy` blocks until our commit, then wins on its own re-read.
+        session.refresh(suite, with_for_update=True)
+        if suite.column_policy is not None or suite.target != target:
+            session.rollback()  # release the lock; don't persist a raced/stale derive
             return "skipped_raced"
         suite_service.set_column_policy(
             session,
