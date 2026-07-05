@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "c4ff5d973092",
+  "strategy": "manual-commit",
+  "branch": "fix/372-secretstore-delete",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/core/secrets.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/c4/ff5d973092/0/metadata.json",
+      "transcript": "/c4/ff5d973092/0/full.jsonl",
+      "compact_transcript": "/c4/ff5d973092/0/transcript.jsonl",
+      "content_hash": "/c4/ff5d973092/0/content_hash.txt",
+      "prompt": "/c4/ff5d973092/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 65292,
+    "cache_creation_tokens": 4174131,
+    "cache_read_tokens": 177194159,
+    "output_tokens": 420738,
+    "api_call_count": 479
+  }
+}
