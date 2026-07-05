@@ -1,0 +1,37 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "3d58e45308bb",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-461-pats-phase1",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/alembic/versions/b0c1d2e3f4a5_add_api_keys.py",
+    "backend/app/api/v1/api_keys.py",
+    "backend/app/core/auth.py",
+    "backend/app/db/models.py",
+    "backend/app/main.py",
+    "backend/app/mcp/auth.py",
+    "backend/app/services/api_key_service.py",
+    "backend/tests/api/test_api_keys.py",
+    "backend/tests/core/test_auth.py",
+    "backend/tests/mcp/test_mcp_auth.py",
+    "backend/tests/services/test_api_key_service.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/3d/58e45308bb/0/metadata.json",
+      "transcript": "/3d/58e45308bb/0/full.jsonl",
+      "compact_transcript": "/3d/58e45308bb/0/transcript.jsonl",
+      "content_hash": "/3d/58e45308bb/0/content_hash.txt",
+      "prompt": "/3d/58e45308bb/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 117109,
+    "cache_creation_tokens": 3123825,
+    "cache_read_tokens": 125572031,
+    "output_tokens": 315391,
+    "api_call_count": 455
+  }
+}
