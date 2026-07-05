@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "e58d5d551363",
+  "strategy": "manual-commit",
+  "branch": "docs/611-dbt-provider-merged",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/e5/8d5d551363/0/metadata.json",
+      "transcript": "/e5/8d5d551363/0/full.jsonl",
+      "compact_transcript": "/e5/8d5d551363/0/transcript.jsonl",
+      "content_hash": "/e5/8d5d551363/0/content_hash.txt",
+      "prompt": "/e5/8d5d551363/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 42791,
+    "cache_creation_tokens": 1326865,
+    "cache_read_tokens": 80164992,
+    "output_tokens": 263570,
+    "api_call_count": 306
+  }
+}
