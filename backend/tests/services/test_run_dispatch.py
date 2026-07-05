@@ -131,9 +131,12 @@ def test_dispatch_or_fail_broker_failure_marks_failed(monkeypatch: pytest.Monkey
 
 def test_dispatch_auto_classify_sends_task_by_name(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[tuple[str, list[str]]] = []
-    monkeypatch.setattr(
-        celery_app, "send_task", lambda name, args: calls.append((name, args)) or SimpleNamespace()
-    )
+
+    def _send(name: str, args: list[str]) -> SimpleNamespace:
+        calls.append((name, args))
+        return SimpleNamespace()
+
+    monkeypatch.setattr(celery_app, "send_task", _send)
     sid = uuid.uuid4()
     run_dispatch.dispatch_auto_classify(sid)
     assert calls == [("auto_classify_columns", [str(sid)])]
