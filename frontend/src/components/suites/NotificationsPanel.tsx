@@ -142,12 +142,17 @@ function NotificationsForm({
   const [email, setEmail] = useState(initialEmail);
   const [saving, setSaving] = useState(false);
 
-  // Single save/clear entry point so all channels share the same error handling
-  // (a failure surfaces a toast and never silently drops).
-  const put = async (extra: Partial<SuiteNotificationUpdate>, successMsg: string) => {
+  // Shared PUT with one error path (a failure toasts, never silently drops). The
+  // caller supplies the base enabled/alert_on so a "clear" can persist the
+  // server-known values rather than piggybacking unsaved switch/threshold edits.
+  const putWith = async (
+    base: { enabled: boolean; alert_on: AlertOn },
+    extra: Partial<SuiteNotificationUpdate>,
+    successMsg: string,
+  ) => {
     setSaving(true);
     try {
-      await putNotifications(suiteId, { enabled, alert_on: alertOn, ...extra });
+      await putNotifications(suiteId, { ...base, ...extra });
       message.success(successMsg);
       onChanged();
       return true;
@@ -162,7 +167,8 @@ function NotificationsForm({
   const onSave = async () => {
     const teams = webhook.trim();
     const slack = slackWebhook.trim();
-    const ok = await put(
+    const ok = await putWith(
+      { enabled, alert_on: alertOn },
       {
         // Write-only secrets: only send when the user typed a new value.
         ...(teams ? { webhook: teams } : {}),
@@ -177,6 +183,12 @@ function NotificationsForm({
       setSlackWebhook('');
     }
   };
+
+  // Clearing a webhook is a focused action — it must NOT persist an unsaved
+  // enabled/threshold edit, so it sends the loaded (server-known) enabled/alert_on
+  // (#639 review). The remount-on-reload then re-seeds the form from the server.
+  const clearWebhook = (extra: Partial<SuiteNotificationUpdate>, successMsg: string) => () =>
+    void putWith({ enabled: initialEnabled, alert_on: initialAlertOn }, extra, successMsg);
 
   return (
     <Flex vertical gap={16}>
@@ -240,14 +252,17 @@ function NotificationsForm({
             Save
           </Button>
           {hasWebhook && (
-            <Button loading={saving} onClick={() => put({ webhook: '' }, 'Teams webhook cleared')}>
+            <Button
+              loading={saving}
+              onClick={clearWebhook({ webhook: '' }, 'Teams webhook cleared')}
+            >
               Clear Teams
             </Button>
           )}
           {hasSlackWebhook && (
             <Button
               loading={saving}
-              onClick={() => put({ slack_webhook: '' }, 'Slack webhook cleared')}
+              onClick={clearWebhook({ slack_webhook: '' }, 'Slack webhook cleared')}
             >
               Clear Slack
             </Button>

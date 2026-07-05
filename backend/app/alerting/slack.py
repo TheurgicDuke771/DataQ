@@ -129,10 +129,16 @@ class SlackPublisher:
         )
         if not webhook:
             return
-        # SSRF guard at the request sink: only POST to an allowlisted Slack host.
-        host = (urlparse(webhook).hostname or "").lower()
-        if not any(host == a or host.endswith(f".{a}") for a in self._allowed_hosts):
-            log.warning("slack_webhook_host_not_allowed", run_id=str(report.run_id))
+        # SSRF guard at the request sink: only POST to an https URL on an
+        # allowlisted Slack host. The scheme check matters for the WORKSPACE webhook
+        # too — it's never write-validated (only per-suite webhooks are), so an
+        # http:// workspace URL would otherwise be POSTed in cleartext (#639 review).
+        parsed = urlparse(webhook)
+        host = (parsed.hostname or "").lower()
+        if parsed.scheme != "https" or not any(
+            host == a or host.endswith(f".{a}") for a in self._allowed_hosts
+        ):
+            log.warning("slack_webhook_not_allowed", run_id=str(report.run_id))
             return
         response = httpx.post(
             webhook, json=render_slack_message(report, route), timeout=self._timeout

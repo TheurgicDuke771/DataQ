@@ -161,6 +161,24 @@ describe('NotificationsPanel', () => {
     );
   });
 
+  it('clearing a webhook does not persist an unsaved enabled toggle', async () => {
+    // #639 review: a "Clear" must send the server-known enabled/alert_on, not an
+    // unsaved switch edit — else it silently disables alerting for the suite.
+    mockGet.mockResolvedValue({ ...CONFIG, enabled: true, has_webhook: true });
+    mockPut.mockResolvedValue({ ...CONFIG, has_webhook: false });
+    renderPanel();
+    await screen.findByText('set');
+
+    // Toggle Enabled OFF but do NOT save, then clear the Teams webhook.
+    await userEvent.click(screen.getByLabelText('Enable notifications'));
+    await userEvent.click(screen.getByRole('button', { name: 'Clear Teams' }));
+
+    await waitFor(() =>
+      // enabled stays true (the loaded value), not the unsaved false.
+      expect(mockPut).toHaveBeenCalledWith('s1', { enabled: true, alert_on: 'fail', webhook: '' }),
+    );
+  });
+
   it('surfaces an error and does not clear typed input when save fails', async () => {
     mockGet.mockResolvedValue(CONFIG);
     mockPut.mockRejectedValue(new Error('boom'));

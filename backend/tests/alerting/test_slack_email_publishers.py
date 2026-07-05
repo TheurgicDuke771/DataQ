@@ -380,6 +380,18 @@ def test_slack_publish_blocks_non_allowlisted_webhook_host(
     assert posted == []
 
 
+def test_slack_publish_blocks_non_https_workspace_webhook(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#639 review: an http:// workspace webhook (never write-validated) must not be
+    POSTed in cleartext — the send-time re-check enforces https, not just the host."""
+    posted: list[object] = []
+    monkeypatch.setattr("backend.app.alerting.slack.httpx.post", lambda *a, **k: posted.append(a))
+    store = _Store({"wh": "http://hooks.slack.com/services/x"})  # allowlisted host, wrong scheme
+    _slack_publisher(store).publish(db_session, _report(worst="fail"))
+    assert posted == []
+
+
 def test_slack_publish_noop_when_webhook_secret_missing(
     db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:

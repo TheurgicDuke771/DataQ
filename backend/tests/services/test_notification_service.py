@@ -400,6 +400,67 @@ def test_upsert_rejects_malformed_recipients(db_session: Any) -> None:
         )
 
 
+def test_upsert_rejects_recipients_with_control_chars(db_session: Any) -> None:
+    # #639 review: a CR/LF in a recipient passes a naive @-check but breaks
+    # EmailMessage['To'] at send time (a silent per-suite email outage) — reject it.
+    suite = _suite(db_session)
+    for bad in ("a@b.com\nBcc: evil@x.io", "a@b.com\r\nx", "a@ b.com", "a@b.com\tx"):
+        with pytest.raises(InvalidRecipientsError):
+            svc.upsert_config(
+                db_session,
+                suite_id=suite.id,
+                enabled=True,
+                alert_on="fail",
+                webhook=None,
+                email_recipients=bad,
+                secret_store=_FakeStore(),
+            )
+
+
+def test_upsert_rejects_empty_recipient_list(db_session: Any) -> None:
+    # A truthy-but-empty value (just a comma) parses to no addresses.
+    suite = _suite(db_session)
+    with pytest.raises(InvalidRecipientsError):
+        svc.upsert_config(
+            db_session,
+            suite_id=suite.id,
+            enabled=True,
+            alert_on="fail",
+            webhook=None,
+            email_recipients=",",
+            secret_store=_FakeStore(),
+        )
+
+
+def test_clearing_slack_webhook_removes_the_secret(db_session: Any) -> None:
+    # #372/#633 parity with Teams: clearing the Slack webhook nulls the ref AND
+    # soft-deletes the secret.
+    suite = _suite(db_session)
+    store = _FakeStore()
+    config = svc.upsert_config(
+        db_session,
+        suite_id=suite.id,
+        enabled=True,
+        alert_on="fail",
+        webhook=None,
+        slack_webhook="https://hooks.slack.com/services/T/B/xyz",
+        secret_store=store,
+    )
+    ref = config.slack_webhook_secret_ref
+    assert ref in store.secrets
+    cleared = svc.upsert_config(
+        db_session,
+        suite_id=suite.id,
+        enabled=True,
+        alert_on="fail",
+        webhook=None,
+        slack_webhook="",
+        secret_store=store,
+    )
+    assert cleared.slack_webhook_secret_ref is None
+    assert ref not in store.secrets
+
+
 def test_resolve_slack_webhook_prefers_suite_then_workspace(db_session: Any) -> None:
     suite = _suite(db_session)
     store = _FakeStore()

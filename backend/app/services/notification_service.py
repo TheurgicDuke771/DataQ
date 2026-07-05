@@ -11,6 +11,7 @@ where credentials are involved), returns ORM models, raises ``DataQError``.
 
 from __future__ import annotations
 
+import re
 import uuid
 from urllib.parse import urlparse
 
@@ -111,20 +112,31 @@ def parse_recipients(raw: str) -> list[str]:
     return [part.strip() for part in raw.split(",") if part.strip()]
 
 
-def assert_valid_recipients(raw: str) -> None:
-    """Raise ``InvalidRecipientsError`` unless every comma-part looks like an email.
+_RECIPIENTS_MAX_LEN = 1024  # matches the suite_notifications.email_recipients column
+# Whitespace/control chars that must never reach an address: CR/LF would let a
+# stored value inject an email header (and raise at EmailMessage['To'] set time →
+# a silent, permanent per-suite email outage swallowed by the composite, #639
+# review); TAB and internal spaces are likewise never valid inside an address.
+_UNSAFE_IN_RECIPIENT = re.compile(r"[\r\n\t ]")
 
-    A deliberately light check (one ``@`` with non-empty local + domain) — the SMTP
-    server is the real validator; this just catches obvious typos before storing."""
+
+def assert_valid_recipients(raw: str) -> None:
+    """Raise ``InvalidRecipientsError`` unless every comma-part is a plausible email.
+
+    A deliberately light check — the SMTP server is the real validator — but it MUST
+    reject the two classes that pass a naive ``@``-check yet break delivery: control
+    chars / internal whitespace (CR/LF header-injection → send-time ValueError, a
+    silent outage) and an over-length list (would 500 at the column boundary). The
+    offending address rides the message so the 422 is actionable."""
+    if len(raw) > _RECIPIENTS_MAX_LEN:
+        raise InvalidRecipientsError(f"recipient list too long (max {_RECIPIENTS_MAX_LEN} chars)")
     parts = parse_recipients(raw)
     if not parts:
         raise InvalidRecipientsError("at least one recipient is required")
     for addr in parts:
         local, sep, domain = addr.partition("@")
-        if not sep or not local or "." not in domain:
-            raise InvalidRecipientsError(
-                "each recipient must be a valid email address", detail={"invalid": addr}
-            )
+        if _UNSAFE_IN_RECIPIENT.search(addr) or not sep or not local or "." not in domain:
+            raise InvalidRecipientsError(f"invalid email recipient: {addr!r}")
 
 
 def get_config(session: Session, suite_id: uuid.UUID) -> SuiteNotification | None:
