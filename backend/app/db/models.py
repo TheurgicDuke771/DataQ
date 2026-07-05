@@ -83,6 +83,35 @@ class User(Base):
     updated_at: Mapped[datetime] = _updated_at()
 
 
+class ApiKey(Base):
+    """A DataQ-issued personal access token (PAT) — ADR 0026 phase 1 (#461).
+
+    The credential is a high-entropy random token shown once at creation; only
+    its SHA-256 hex digest is stored (a verifier secret — never retrievable, so
+    deliberately NOT in the SecretStore). The key authenticates as its owning
+    user through the same `get_current_user` seam as Azure AD, inheriting the
+    owner's per-suite grants — no separate authz model. `ondelete=CASCADE` ties
+    the lifecycle to the owner: deleting the user kills their keys.
+    """
+
+    __tablename__ = "api_keys"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    # First characters of the token (e.g. `dq_live_ab12`) — safe to list/log.
+    key_prefix: Mapped[str] = mapped_column(String(16), nullable=False)
+    # SHA-256 hex of the full token; unique doubles as the O(1) auth lookup index.
+    key_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = _created_at()
+    updated_at: Mapped[datetime] = _updated_at()
+
+
 class Connection(Base):
     __tablename__ = "connections"
     __table_args__ = (

@@ -1,15 +1,16 @@
-"""Auth for the MCP server — validate the *same* Azure AD bearer token as the REST API.
+"""Auth for the MCP server — the *same* credentials the REST API accepts.
 
-MCP clients (Claude Desktop / Claude.ai / Copilot / Cursor) present the same
-Azure AD access token the web UI uses. We validate it with a fastmcp
-``JWTVerifier`` configured from the same tenant / audience / scope as
+MCP clients (Claude Desktop / Claude.ai / Copilot / Cursor) present either the
+Azure AD access token the web UI uses **or a DataQ PAT** (`dq_live_…`, ADR 0026
+— the seam is shared, never MCP-only). Azure tokens are validated with a
+fastmcp ``JWTVerifier`` configured from the same tenant / audience / scope as
 ``core.auth`` — issuer, signature (Azure JWKS), expiry, and the required API
-scope. This mirrors the REST validator without depending on fastapi-azure-auth
-internals (which are Starlette-request-bound and can't verify a raw token).
+scope; PATs by hashed lookup via ``api_key_service``, exactly like REST. The
+two are disjoint by prefix, composed in ``_PatOrJwtVerifier``.
 
 Two modes, picked from settings exactly like ``core.auth``:
 
-- **Real mode** (`azure_auth_configured`): the ``JWTVerifier`` above.
+- **Real mode** (`azure_auth_configured`): the composite verifier above.
 - **Dev bypass** (`ENVIRONMENT=dev` + `AUTH_DEV_BYPASS=true`, no Azure vars): no
   verifier — every call resolves to the fixed dev user, for local dev only.
 
@@ -22,7 +23,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi_azure_auth.utils import is_guest
-from fastmcp.server.auth import AuthProvider
+from fastmcp.server.auth import AccessToken, AuthProvider, TokenVerifier
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.server.dependencies import get_access_token
 from sqlalchemy.orm import Session
@@ -35,10 +36,16 @@ from backend.app.core.auth import (
     _upsert_user,
 )
 from backend.app.core.config import Settings, get_settings
+from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.db.models import User
+from backend.app.services import api_key_service
 
 log = get_logger(__name__)
+
+# Claim key carrying the PAT-resolved DataQ user id through fastmcp's token
+# context into `resolve_current_user` (a DataQ-internal claim, not an OIDC one).
+PAT_USER_CLAIM = "dataq_user_id"
 
 
 class McpAuthError(Exception):
@@ -55,8 +62,41 @@ def mcp_enabled(settings: Settings | None = None) -> bool:
     return s.azure_auth_configured or _dev_bypass_allowed(s)
 
 
+class _PatOrJwtVerifier(TokenVerifier):
+    """Composite verifier: DataQ PAT by prefix, else the Azure ``JWTVerifier``.
+
+    The branches are disjoint (a ``dq_live_…`` bearer is never a valid JWT).
+    A bad PAT returns ``None`` — fastmcp turns that into the standard 401 —
+    and is logged prefix-only inside ``api_key_service``.
+    """
+
+    def __init__(self, jwt_verifier: JWTVerifier) -> None:
+        super().__init__()
+        self._jwt = jwt_verifier
+
+    async def verify_token(self, token: str) -> AccessToken | None:
+        if not token.startswith(api_key_service.TOKEN_PREFIX):
+            return await self._jwt.verify_token(token)
+        from backend.app.db.session import SessionLocal
+
+        session = SessionLocal()
+        try:
+            user = api_key_service.resolve_token(session, token)
+        except DataQError:
+            return None
+        finally:
+            session.close()
+        return AccessToken(
+            token=token,
+            client_id="dataq-pat",
+            scopes=[],
+            expires_at=None,
+            claims={PAT_USER_CLAIM: str(user.id)},
+        )
+
+
 def build_auth_provider(settings: Settings | None = None) -> AuthProvider | None:
-    """The fastmcp auth provider — a JWTVerifier in real mode, ``None`` in dev bypass.
+    """The fastmcp auth provider — PAT-or-Azure-JWT in real mode, ``None`` in dev bypass.
 
     Returning ``None`` leaves the mounted server unauthenticated; callers must only
     mount in that case when ``_dev_bypass_allowed`` is true (see ``mcp_enabled``).
@@ -66,12 +106,13 @@ def build_auth_provider(settings: Settings | None = None) -> AuthProvider | None
         return None
     tenant = s.azure_tenant_id
     # Single-tenant v2 endpoint — same coordinates fastapi-azure-auth uses.
-    return JWTVerifier(
+    jwt = JWTVerifier(
         jwks_uri=f"https://login.microsoftonline.com/{tenant}/discovery/v2.0/keys",
         issuer=f"https://login.microsoftonline.com/{tenant}/v2.0",
         audience=s.azure_api_client_id,
         required_scopes=[s.azure_api_scope],
     )
+    return _PatOrJwtVerifier(jwt)
 
 
 def resolve_current_user(session: Session) -> User:
@@ -85,6 +126,14 @@ def resolve_current_user(session: Session) -> User:
     token = get_access_token()
     if token is not None:
         claims: dict[str, Any] = token.claims or {}
+        # PAT path (ADR 0026): the verifier already resolved (and last-used-
+        # stamped) the owning user; load it by id — no upsert, the user exists.
+        pat_user_id = claims.get(PAT_USER_CLAIM)
+        if pat_user_id:
+            user = session.get(User, pat_user_id)
+            if user is None:  # revoked/deleted between verify and tool call
+                raise McpAuthError("could not resolve the API key's user")
+            return user
         # Mirror the REST validator's guest policy: reject Azure AD guests (B2B /
         # external) unless explicitly allowed, so /mcp can't accept an identity the
         # REST API would 403. The JWTVerifier already validated signature / issuer /

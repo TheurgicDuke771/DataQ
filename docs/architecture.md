@@ -84,6 +84,16 @@ erDiagram
         string display_name
         timestamptz last_seen_at
     }
+    api_keys {
+        uuid id PK
+        uuid user_id FK "CASCADE"
+        string name "label, e.g. ci-smoke"
+        string key_prefix "dq_live_ + 4 — identifies without revealing"
+        string key_hash UK "sha256 hex; plaintext never stored"
+        timestamptz expires_at "mandatory expiry"
+        timestamptz revoked_at "soft revocation"
+        timestamptz last_used_at "throttled telemetry"
+    }
     connections {
         uuid id PK
         string name "unique per env"
@@ -203,6 +213,7 @@ erDiagram
         string webhook_secret_ref "per-suite Teams webhook, SecretStore key"
     }
 
+    users ||--o{ api_keys : "PATs (CASCADE — keys die with the user)"
     users ||--o{ connections : "created_by"
     users ||--o{ suites : "created_by"
     users ||--o{ schedules : "created_by"
