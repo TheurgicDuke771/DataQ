@@ -205,10 +205,10 @@ def test_registry_unknown_provider_raises() -> None:
         get_orchestration_provider,
     )
 
-    # adf + airflow are both registered now; probe a provider with no impl
-    # (dbt is the post-v1 third-provider candidate, ADR 0011).
-    with pytest.raises(UnsupportedProviderError, match="dbt"):
-        get_orchestration_provider("dbt")
+    # adf + airflow + dbt are all registered now; probe a provider with no impl
+    # (prefect is a hypothetical future OrchestrationProvider, ADR 0011).
+    with pytest.raises(UnsupportedProviderError, match="prefect"):
+        get_orchestration_provider("prefect")
 
 
 def _query_client(monkeypatch: pytest.MonkeyPatch, *, runs: list[dict[str, Any]]) -> dict[str, Any]:

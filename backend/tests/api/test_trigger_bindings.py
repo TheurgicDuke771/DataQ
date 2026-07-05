@@ -92,7 +92,7 @@ def test_create_then_get_binding(client: TestClient, db_session: Any) -> None:
 
 def test_create_rejects_unknown_provider(client: TestClient, db_session: Any) -> None:
     suite_id = _owned_suite(client, _connection(db_session).id)
-    resp = client.post("/api/v1/trigger-bindings", json=_payload(suite_id, provider="dbt"))
+    resp = client.post("/api/v1/trigger-bindings", json=_payload(suite_id, provider="prefect"))
     assert resp.status_code == 422
     assert resp.json()["error"]["code"] == "trigger_binding_invalid"
 

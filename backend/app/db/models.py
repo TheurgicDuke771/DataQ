@@ -22,7 +22,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from backend.app.db.base import Base
 
 # ── Status / type value sets (TEXT + CHECK; not native PG enums for migration ergonomics) ──
-CONNECTION_TYPES = ("snowflake", "adls_gen2", "s3", "unity_catalog", "adf", "airflow")
+CONNECTION_TYPES = ("snowflake", "adls_gen2", "s3", "unity_catalog", "adf", "airflow", "dbt")
 RUN_STATUSES = ("queued", "running", "succeeded", "failed", "cancelled")
 # Result statuses. The four severity tiers (ADR 0005) are health-score-bearing —
 # the score aggregate sums their weights over N. The two operational statuses
@@ -37,7 +37,7 @@ RESULT_STATUSES = _RESULT_SEVERITY_TIERS + _RESULT_OPERATIONAL_STATUSES
 # only ever writes 'expectation'; the rest are constraint-valid but unused.
 CHECK_KINDS = ("expectation", "freshness", "volume", "schema_drift", "anomaly", "comparison")
 PIPELINE_RUN_STATUSES = ("queued", "running", "succeeded", "failed", "cancelled")
-ORCHESTRATION_PROVIDERS = ("adf", "airflow")
+ORCHESTRATION_PROVIDERS = ("adf", "airflow", "dbt")
 PERMISSIONS = ("view", "edit", "admin")
 ENVS = ("dev", "qa", "uat", "prod")
 # Per-suite alert delivery threshold (suite_notifications.alert_on). 'fail' =
@@ -352,7 +352,10 @@ class Run(Base):
             "suite_id",
             "triggered_by",
             unique=True,
-            postgresql_where=text("triggered_by LIKE 'adf:%' OR triggered_by LIKE 'airflow:%'"),
+            postgresql_where=text(
+                "triggered_by LIKE 'adf:%' OR triggered_by LIKE 'airflow:%' "
+                "OR triggered_by LIKE 'dbt:%'"
+            ),
         ),
     )
 
