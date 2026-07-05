@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_id": "15f85460ebf5",
+  "session_id": "4feb9be8-2ae1-4d50-be97-b9c4cbaead36",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-05T11:53:12.02272Z",
+  "branch": "feature/611-dbt-orchestration-provider",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "f026ccde7e3f",
+  "token_usage": {
+    "input_tokens": 42347,
+    "cache_creation_tokens": 1313997,
+    "cache_read_tokens": 75153148,
+    "output_tokens": 254866,
+    "api_call_count": 295
+  },
+  "session_metrics": {
+    "turn_count": 5
+  }
+}
