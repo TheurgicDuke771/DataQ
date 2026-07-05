@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "34a8c545fdfb",
+  "strategy": "manual-commit",
+  "branch": "feature/611-dbt-orchestration-provider",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/alembic/versions/c1d2e3f4a5b6_widen_orchestration_for_dbt.py",
+    "backend/app/api/v1/orchestration.py",
+    "backend/app/orchestration/dbt.py",
+    "backend/tests/orchestration/test_dbt_provider.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/34/a8c545fdfb/0/metadata.json",
+      "transcript": "/34/a8c545fdfb/0/full.jsonl",
+      "compact_transcript": "/34/a8c545fdfb/0/transcript.jsonl",
+      "content_hash": "/34/a8c545fdfb/0/content_hash.txt",
+      "prompt": "/34/a8c545fdfb/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 7516,
+    "cache_creation_tokens": 431695,
+    "cache_read_tokens": 9759158,
+    "output_tokens": 19522,
+    "api_call_count": 24
+  }
+}
