@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "939e3fb314a6",
+  "strategy": "manual-commit",
+  "branch": "feature/dbt-connection-ui",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/93/9e3fb314a6/0/metadata.json",
+      "transcript": "/93/9e3fb314a6/0/full.jsonl",
+      "compact_transcript": "/93/9e3fb314a6/0/transcript.jsonl",
+      "content_hash": "/93/9e3fb314a6/0/content_hash.txt",
+      "prompt": "/93/9e3fb314a6/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 118983,
+    "cache_creation_tokens": 5154951,
+    "cache_read_tokens": 287410526,
+    "output_tokens": 726965,
+    "api_call_count": 802
+  }
+}
