@@ -1,20 +1,20 @@
 """Request/task span instrumentation (WEEK7 A3 — App Insights spans).
 
 OTel-neutral core (ADR 0010): the OpenTelemetry SDK + FastAPI/Celery
-instrumentations are vendor-neutral; Azure Monitor is one *exporter* behind
-the seam (swap the exporter per cloud, nothing else changes). Everything is
-gated on ``settings.applicationinsights_connection_string`` — unset ⇒ a
-complete no-op, matching ``configure_logging()``'s AzureLogHandler gate.
+instrumentations are vendor-neutral; the exporter backends live behind the
+shared seam in ``otel.py`` (Azure Monitor and/or generic OTLP/HTTP — #589),
+resolved from settings. Tracing is on when **any** backend resolves an exporter
+(``otel.build_span_exporters``) — none ⇒ a complete no-op, matching the log
+pipeline's gate. Spans and logs (#524) now share the same seam and Resource
+(service.name).
 
-Deliberately the **exporter-only** package (`azure-monitor-opentelemetry-
-exporter`), NOT the `azure-monitor-opentelemetry` distro: the distro
-auto-configures the logging pipeline and would collide with the hardened
-structlog + opencensus ``AzureLogHandler`` chain in ``logging.py``
-(#393/#405 Py3.13 lock fixes). Migrating the *log* pipeline opencensus→OTel
-is tracked in #524; this module owns spans only.
+Deliberately the **exporter-only** Azure package (`azure-monitor-
+opentelemetry-exporter`), NOT the `azure-monitor-opentelemetry` distro: the
+distro auto-configures the logging pipeline and would double-configure the
+structlog log bridge in ``logging.py``.
 
-All OTel/Azure imports are lazy (repo convention, see ``secrets.py``) so
-deployments without App Insights never pay the import cost.
+All exporter imports are lazy (repo convention, see ``secrets.py``) so
+deployments without telemetry never pay the import cost.
 
 Call-ordering constraint (learned the hard way in review): FastAPI
 instrumentation patches ``app.build_middleware_stack``, and Starlette builds
@@ -29,6 +29,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Final
 
+from backend.app.core import otel
 from backend.app.core.config import get_settings
 from backend.app.core.logging import get_logger
 
@@ -60,32 +61,37 @@ _provider: TracerProvider | None = None
 
 
 def configure_tracing(service_name: str) -> None:
-    """Install a TracerProvider exporting to App Insights, or no-op.
+    """Install a TracerProvider exporting to the configured backend(s), or no-op.
 
-    Idempotent per process (the global tracer provider can only be set once);
-    safe to call from both the API module scope and the Celery
+    Backends (Azure Monitor and/or generic OTLP/HTTP — #589) come from the shared
+    ``otel`` seam. Idempotent per process (the global tracer provider can only be
+    set once); safe to call from both the API module scope and the Celery
     worker-process-init signal.
     """
     global _provider
     if _provider is not None:
         return
-    conn = get_settings().applicationinsights_connection_string
-    if not conn:
-        return
+    settings = get_settings()
+    try:
+        exporters = otel.build_span_exporters(settings)
+        if not exporters:
+            return
 
-    from azure.monitor.opentelemetry.exporter import AzureMonitorTraceExporter
-    from opentelemetry import trace
-    from opentelemetry.sdk.resources import Resource
-    from opentelemetry.sdk.trace import TracerProvider
-    from opentelemetry.sdk.trace.export import BatchSpanProcessor
+        from opentelemetry import trace
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
-    provider = TracerProvider(resource=Resource.create({"service.name": service_name}))
-    provider.add_span_processor(
-        BatchSpanProcessor(AzureMonitorTraceExporter(connection_string=conn))
-    )
-    trace.set_tracer_provider(provider)
-    _provider = provider
-    log.info("tracing_configured", service_name=service_name)
+        provider = TracerProvider(resource=otel.build_resource(service_name))
+        for exporter in exporters:
+            provider.add_span_processor(BatchSpanProcessor(exporter))
+        trace.set_tracer_provider(provider)
+        _provider = provider
+        log.info("tracing_configured", service_name=service_name, exporters=len(exporters))
+    except Exception:
+        # Same posture as the log bridge: an observability misconfig (bad OTLP
+        # endpoint/headers, SDK drift) must not crash the API lifespan or the celery
+        # worker-init signal. Leave _provider None so instrument_* no-op.
+        log.warning("tracing_setup_failed", service_name=service_name, exc_info=True)
 
 
 def _scrub_query_hook(span: Span, scope: dict[str, Any]) -> None:

@@ -36,7 +36,8 @@ loopback. A production deployment must flip all of the following. Values live in
 | `CORS_ALLOW_ORIGINS` | n/a (same-origin) | empty — the frontend Container App proxies `/api` same-origin (ADR 0028); set the SPA origin only if you split them. |
 | `PUBLIC_BASE_URL` | n/a | the public origin (used to assemble webhook URLs). |
 | `WORKSPACE_ADMIN_EMAILS` | seeded dev user | a **minimal** real allowlist — admins can read every suite's failing-row samples (see [Operational notes](#operational-notes)). |
-| `APPLICATIONINSIGHTS_CONNECTION_STRING` | unset | your App Insights resource (observability). |
+| `APPLICATIONINSIGHTS_CONNECTION_STRING` | unset | Azure Monitor / App Insights backend for spans + logs (observability, OTel — ADR 0010). |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | unset | generic OTLP/HTTP backend for spans + logs (#589) — any OTLP consumer (Tempo/Jaeger/Datadog/Collector); set alongside App Insights for parity, or alone for a non-Azure deploy. |
 | `key_vault_purge_protection` (Terraform) | `false` (bring-up) | **`true`** for a hardened vault (irreversible). |
 | Interactive API docs | served | **404 in prod** via the prod-docs gate (`ENVIRONMENT=prod`). |
 

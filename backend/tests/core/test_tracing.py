@@ -17,6 +17,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
+from backend.app.core import otel as otel_mod
 from backend.app.core import tracing
 from backend.app.core.config import get_settings
 
@@ -43,7 +44,9 @@ def in_memory_exporter(monkeypatch: pytest.MonkeyPatch) -> InMemorySpanExporter:
     monkeypatch.setattr(
         tracing,
         "get_settings",
-        lambda: SimpleNamespace(applicationinsights_connection_string=_CONN),
+        lambda: SimpleNamespace(
+            applicationinsights_connection_string=_CONN, otel_exporter_otlp_endpoint=None
+        ),
     )
     return exporter
 
@@ -64,9 +67,65 @@ def test_configure_tracing_is_noop_without_connection_string(
     monkeypatch.setattr(
         tracing,
         "get_settings",
-        lambda: SimpleNamespace(applicationinsights_connection_string=None),
+        lambda: SimpleNamespace(
+            applicationinsights_connection_string=None, otel_exporter_otlp_endpoint=None
+        ),
     )
     tracing.configure_tracing(service_name="dataq-api")
+    assert tracing._provider is None
+
+
+def test_configure_tracing_turns_on_with_only_otlp_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#589: tracing is gated on ANY backend now, not just App Insights — an
+    OTLP-only config (no connection string) must still stand up a provider and
+    export spans. The OTLP/HTTP exporter is swapped for an in-memory one."""
+    exporter = InMemorySpanExporter()
+    monkeypatch.setattr(
+        "opentelemetry.exporter.otlp.proto.http.trace_exporter.OTLPSpanExporter",
+        lambda *, endpoint: exporter,
+    )
+    monkeypatch.setattr(
+        tracing,
+        "get_settings",
+        lambda: SimpleNamespace(
+            applicationinsights_connection_string=None,
+            otel_exporter_otlp_endpoint="http://collector:4318",
+        ),
+    )
+    tracing.configure_tracing(service_name="dataq-api")
+    assert tracing._provider is not None
+
+    app = FastAPI()
+
+    @app.get("/api/v1/ping")
+    def ping() -> dict[str, str]:
+        return {"pong": "yes"}
+
+    tracing.instrument_fastapi(app)
+    assert TestClient(app).get("/api/v1/ping").status_code == 200
+    tracing._provider.force_flush()
+    assert any(s.kind.name == "SERVER" for s in exporter.get_finished_spans())
+
+
+def test_configure_tracing_swallows_setup_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """#628 review (HIGH): a telemetry misconfig must not crash configure_tracing —
+    it runs in the API module scope AND the celery worker_process_init signal. On a
+    setup error it leaves _provider None (instrument_* no-op), never raises."""
+    monkeypatch.setattr(
+        tracing,
+        "get_settings",
+        lambda: SimpleNamespace(
+            applicationinsights_connection_string=_CONN, otel_exporter_otlp_endpoint=None
+        ),
+    )
+
+    def _boom(_settings: Any) -> Any:
+        raise RuntimeError("exporter boom")
+
+    monkeypatch.setattr(otel_mod, "build_span_exporters", _boom)
+    tracing.configure_tracing(service_name="dataq-api")  # must not raise
     assert tracing._provider is None
 
 

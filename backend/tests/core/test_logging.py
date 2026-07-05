@@ -2,6 +2,7 @@
 
 import logging as std_logging
 from collections.abc import Iterator
+from typing import Any
 
 import pytest
 
@@ -161,86 +162,125 @@ def _restore_root_logging() -> Iterator[None]:
     root.handlers, root.level = saved_handlers, saved_level
 
 
-class _FakeAzureLogHandler(std_logging.Handler):
-    """Stand-in for opencensus's AzureLogHandler that reproduces ONLY the bug-
-    relevant behaviour — `createLock()` nulls `self.lock` — with no network,
-    statsbeat thread, or App Insights export. Lets the test drive the real
-    `configure_logging()` code path (so it catches a revert of the fix) without
-    constructing the real, network-touching handler."""
-
-    def __init__(self, connection_string: str) -> None:
-        super().__init__()  # stdlib __init__ calls self.createLock() -> nulls it
-
-    def createLock(self) -> None:
-        self.lock = None  # mirrors opencensus's override
+# ── OTel log export bridge (#524 — replaced the opencensus AzureLogHandler) ──
 
 
-def test_azure_handler_lock_survives_createlock_recall(
-    monkeypatch: pytest.MonkeyPatch, _restore_root_logging: None
-) -> None:
-    """#405 (a #393 recurrence): Celery's embedded beat (`worker -B`) re-initialises
-    logging in its forked process and calls the AzureLogHandler's createLock() again.
-    opencensus's createLock sets `self.lock = None`; on Py3.13 that makes
-    logging.Handler.handle()'s `with self.lock` crash on the first record — killing
-    beat (and every periodic task) on its 'beat: Starting...' line. The handler must
-    keep a real lock no matter how often createLock() is called.
+def _otel_bridge_handler(root: std_logging.Logger) -> std_logging.Handler | None:
+    """The OTel LoggingHandler attached to `root` by configure_logging(), if any."""
+    from opentelemetry.sdk._logs import LoggingHandler
 
-    Uses a fake handler (above) so configure_logging()'s override is exercised
-    without real opencensus network/statsbeat behaviour."""
-    import opencensus.ext.azure.log_exporter as az_log_exporter
+    return next((h for h in root.handlers if isinstance(h, LoggingHandler)), None)
 
-    monkeypatch.setattr(az_log_exporter, "AzureLogHandler", _FakeAzureLogHandler)
-    monkeypatch.setattr(
-        get_settings(),
-        "applicationinsights_connection_string",
-        "InstrumentationKey=00000000-0000-0000-0000-000000000000",
-    )
+
+def _flush_bridge(root: std_logging.Logger) -> None:
+    """Drain the bridge handler's BatchLogRecordProcessor to its exporter."""
+    handler = _otel_bridge_handler(root)
+    assert handler is not None, "OTel log bridge was not attached"
+    handler._logger_provider.force_flush()  # type: ignore[attr-defined]
+
+
+@pytest.fixture
+def in_memory_log_exporter(monkeypatch: pytest.MonkeyPatch, _restore_root_logging: None) -> Any:
+    """Route the OTel log bridge to an in-memory exporter (no network) and stub the
+    process-global set_logger_provider so repeated configure_logging() calls across
+    the suite don't warn/leak a provider."""
+    import opentelemetry._logs as otel_logs_api
+    from opentelemetry.sdk._logs.export import InMemoryLogRecordExporter
+
+    from backend.app.core import otel as otel_mod
+
+    exporter = InMemoryLogRecordExporter()
+    monkeypatch.setattr(otel_mod, "build_log_exporters", lambda settings=None: [exporter])
+    monkeypatch.setattr(otel_logs_api, "set_logger_provider", lambda provider: None)
+    return exporter
+
+
+def test_otel_bridge_redacts_foreign_message_body(in_memory_log_exporter: Any) -> None:
+    """#494 parity on OTel: a FOREIGN (non-structlog) record whose message embeds a
+    secret is scrubbed in the exported BODY before it leaves the process — the
+    LoggingHandler renders the body through the redacting ProcessorFormatter."""
     configure_logging()
-    ai = [h for h in std_logging.getLogger().handlers if isinstance(h, _FakeAzureLogHandler)]
-    assert ai, "App Insights handler was not attached when a connection string is set"
-    handler = ai[0]
+    root = std_logging.getLogger()
+    std_logging.getLogger("uvicorn.error").info(
+        'GET /api/v1/orchestration/events/adf?token=SUPERSECRET-1 HTTP/1.1" 200'
+    )
+    _flush_bridge(root)
+    bodies = " ".join(
+        str(log.log_record.body) for log in in_memory_log_exporter.get_finished_logs()
+    )
+    assert "SUPERSECRET-1" not in bodies
+    assert "token=<redacted>" in bodies
 
-    handler.createLock()  # simulate the beat fork re-initialising logging
-    assert handler.lock is not None, "createLock() re-nulled the lock — beat would crash"
 
-    # The exact prod crash path: handle() acquires `with self.lock`. Don't export.
-    monkeypatch.setattr(handler, "emit", lambda record: None)
+def test_otel_bridge_redacts_exported_attributes(in_memory_log_exporter: Any) -> None:
+    """The OTel LoggingHandler exports every non-reserved record var as an OTel
+    attribute, BYPASSING the body formatter — so a secret in a record `extra=` must
+    be scrubbed on the ATTRIBUTE too. This is stricter than the old opencensus
+    handler, which only exported the formatted message (#494/#536)."""
+    configure_logging()
+    root = std_logging.getLogger()
+    std_logging.getLogger("some.lib").warning(
+        "sample", extra={"password": "hunter2", "order_id": "ORD-1"}
+    )
+    _flush_bridge(root)
+    attrs: dict[str, object] = {}
+    for log in in_memory_log_exporter.get_finished_logs():
+        attrs.update(dict(log.log_record.attributes or {}))
+    assert attrs.get("password") == "<redacted>"
+    assert attrs.get("order_id") == "ORD-1"  # non-secret extra preserved verbatim
+
+
+def test_otel_bridge_handler_has_working_lock_and_handles(in_memory_log_exporter: Any) -> None:
+    """#405-class fork-safety guard, ported to OTel. The opencensus crash was
+    `createLock()` nulling `self.lock` → `with self.lock` raising on the first emit,
+    killing beat (and every periodic task) on its 'beat: Starting...' line. The stdlib
+    LoggingHandler keeps a real RLock, and the SDK's BatchLogRecordProcessor re-inits
+    its export thread across fork (os.register_at_fork) — so that crash class cannot
+    recur. Assert the handler carries a lock and handling a record does not raise."""
+    configure_logging()
+    handler = _otel_bridge_handler(std_logging.getLogger())
+    assert handler is not None
+    assert handler.lock is not None, "bridge handler has no lock — emit would crash"
     record = std_logging.LogRecord(
         "celery.beat", std_logging.INFO, __file__, 1, "beat: Starting...", None, None
     )
     handler.handle(record)  # must not raise
 
 
-def test_app_insights_handler_redacts_foreign_record_secret(
+def test_no_otel_bridge_when_telemetry_off(
     monkeypatch: pytest.MonkeyPatch, _restore_root_logging: None
 ) -> None:
-    """#494: the AzureLogHandler must carry the redacting ProcessorFormatter, so a
-    FOREIGN (non-structlog) record whose message embeds a secret (e.g. a URL with
-    ?token=) is scrubbed before it reaches App Insights — not just the stdout path."""
-    import opencensus.ext.azure.log_exporter as az_log_exporter
-
-    monkeypatch.setattr(az_log_exporter, "AzureLogHandler", _FakeAzureLogHandler)
-    monkeypatch.setattr(
-        get_settings(),
-        "applicationinsights_connection_string",
-        "InstrumentationKey=00000000-0000-0000-0000-000000000000",
-    )
+    """No exporter configured (no App Insights connection string) ⇒ no OTel bridge
+    attaches; the stdout StreamHandler still carries logs."""
+    monkeypatch.setattr(get_settings(), "applicationinsights_connection_string", None)
     configure_logging()
-    ai = next(h for h in std_logging.getLogger().handlers if isinstance(h, _FakeAzureLogHandler))
-    assert ai.formatter is not None, "AI handler must use the redacting ProcessorFormatter"
+    assert _otel_bridge_handler(std_logging.getLogger()) is None
 
-    record = std_logging.LogRecord(
-        "uvicorn.error",
-        std_logging.INFO,
-        __file__,
-        1,
-        'GET /api/v1/orchestration/events/adf?token=SUPERSECRET-1 HTTP/1.1" 200',
-        None,
-        None,
-    )
-    rendered = ai.format(record)
-    assert "SUPERSECRET-1" not in rendered
-    assert "token=<redacted>" in rendered
+
+def test_otel_setup_failure_degrades_to_stdout_never_raises(
+    monkeypatch: pytest.MonkeyPatch, _restore_root_logging: None, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """#628 review (HIGH): a telemetry misconfig (bad OTLP endpoint/headers, SDK
+    drift) must NOT crash configure_logging() — which runs in the API lifespan and
+    the celery signal handlers (the #405 blast radius). It degrades to stdout-only:
+    no bridge attaches, the failure is logged, and stdout logging keeps working."""
+    from backend.app.core import otel as otel_mod
+
+    monkeypatch.setattr(otel_mod, "build_log_exporters", lambda settings=None: [object()])
+
+    def _boom(_service_name: str) -> Any:
+        raise RuntimeError("otel resource boom")
+
+    monkeypatch.setattr(otel_mod, "build_resource", _boom)
+
+    configure_logging()  # must not raise
+    root = std_logging.getLogger()
+    assert _otel_bridge_handler(root) is None  # setup failed → bridge not attached
+
+    std_logging.getLogger("still.alive").warning("post-failure line")
+    out = capsys.readouterr().out
+    assert "otel_log_export_setup_failed" in out  # the degradation was recorded
+    assert "post-failure line" in out  # stdout logging survives
 
 
 def test_scrubs_url_userinfo_credentials() -> None:

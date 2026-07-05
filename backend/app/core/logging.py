@@ -1,13 +1,13 @@
 import logging
 import re
 import sys
-import threading
 from contextvars import ContextVar
 from typing import Any
 
 import structlog
 from structlog.types import EventDict, Processor
 
+from backend.app.core import otel
 from backend.app.core.config import get_settings
 
 request_id_var: ContextVar[str | None] = ContextVar("request_id", default=None)
@@ -96,7 +96,106 @@ _dict_tracebacks_no_locals = structlog.processors.ExceptionRenderer(
 )
 
 
-def configure_logging() -> None:
+def _configure_otel_log_export(
+    root: logging.Logger,
+    level: int,
+    formatter: logging.Formatter,
+    service_name: str,
+) -> None:
+    """Bridge stdlib logging → OpenTelemetry → the configured exporter(s) (#524).
+
+    Replaces the EOL opencensus ``AzureLogHandler`` (and its Py3.13 ``createLock``
+    hardening, #393/#405). A **no-op** when no exporter is configured, matching the
+    old connection-string gate. **Fork-safe**: the SDK's ``BatchLogRecordProcessor``
+    re-inits its export thread in forked children (celery prefork) via
+    ``os.register_at_fork``, so attaching here — exactly where the old handler
+    attached — is correct in the worker as well as the API.
+
+    The lazy imports (repo convention, ``secrets.py``) keep telemetry-off
+    deployments from paying the OTel-logs import cost.
+
+    **Best-effort**: the whole setup is isolated in a try/except so an observability
+    misconfig (bad OTLP endpoint/headers, SDK drift) degrades to stdout-only logging
+    instead of crashing the API lifespan or the celery signal handlers — a telemetry
+    fault must never take the process down (the #405 blast radius). The stdout
+    handler is already attached by the time we get here.
+    """
+    settings = get_settings()
+    exporters = otel.build_log_exporters(settings=settings)
+    if not exporters:
+        return
+
+    try:
+        import warnings
+
+        from opentelemetry._logs import set_logger_provider
+        from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
+        from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
+
+        class _RedactingOTelLogHandler(LoggingHandler):  # type: ignore[misc]  # LoggingHandler is Any (follow_imports=skip)
+            """OTel bridge that redacts the EXPORTED ATTRIBUTES, not just the body.
+
+            The body is already scrubbed — ``LoggingHandler._translate`` renders it
+            through our redacting ``ProcessorFormatter`` (``if self.formatter:``).
+            But the base ``_get_attributes`` copies every non-reserved log-record var
+            into the exported OTel attributes verbatim, *bypassing the formatter* —
+            so a foreign record's ``extra=`` (or a library's custom record attribute)
+            could ship a secret / PII to the backend un-redacted. Run those
+            attributes through the same PII/secret scrubber the formatter applies to
+            the body (#494/#536). This is stricter than the old opencensus handler,
+            which only exported the formatted message."""
+
+            @staticmethod
+            def _get_attributes(record: logging.LogRecord) -> Any:
+                return _redact_pii(None, "", dict(LoggingHandler._get_attributes(record)))
+
+        provider = LoggerProvider(resource=otel.build_resource(service_name))
+        for exporter in exporters:
+            provider.add_log_record_processor(BatchLogRecordProcessor(exporter))
+        set_logger_provider(provider)
+
+        with warnings.catch_warnings():
+            # The sdk `LoggingHandler` carries a DeprecationWarning nudging toward
+            # `opentelemetry-instrumentation-logging` — which only injects trace
+            # context into records; it is NOT an export bridge. The sdk handler IS
+            # the bridge (it's what the azure-monitor distro uses under the hood).
+            # Suppress just that message so an unrelated deprecation still surfaces.
+            warnings.filterwarnings(
+                "ignore", message=r".*LoggingHandler.*", category=DeprecationWarning
+            )
+            handler = _RedactingOTelLogHandler(level=level, logger_provider=provider)
+        # Same redacting ProcessorFormatter as stdout, so records exported to the
+        # backend pass through `_redact_pii` (incl. the secret-string scrubber) — a
+        # foreign record carrying a secret in its message is scrubbed before export
+        # (#494). App-level structlog records are already redacted upstream.
+        handler.setFormatter(formatter)
+        root.addHandler(handler)
+
+        # Break the feedback loop: the SDK/exporter log their own "failed to export"
+        # warnings on these namespaces; propagated to root they re-enter THIS bridge
+        # and get re-queued for export — an amplifier that fires exactly when the
+        # backend is unreachable. Keep them off the export pipeline (a well-known
+        # OTel root-bridge footgun).
+        for noisy in ("opentelemetry", "azure.monitor.opentelemetry"):
+            logging.getLogger(noisy).propagate = False
+
+        # Positive confirmation so "my logs never reached the backend" is diagnosable
+        # (misconfig looks identical to telemetry-off otherwise). Endpoint is infra
+        # config, not a secret; the App Insights connection string is NOT logged.
+        logging.getLogger(__name__).info(
+            "otel_log_export_configured service=%s exporters=%d azure=%s otlp=%s",
+            service_name,
+            len(exporters),
+            bool(settings.applicationinsights_connection_string),
+            settings.otel_exporter_otlp_endpoint or "off",
+        )
+    except Exception:
+        # Degrade to stdout-only rather than take the process down (the #405 blast
+        # radius: orchestration polling / scheduled dispatch / gap recovery / purge).
+        logging.getLogger(__name__).exception("otel_log_export_setup_failed")
+
+
+def configure_logging(service_name: str = "dataq") -> None:
     settings = get_settings()
     level = getattr(logging, settings.log_level)
 
@@ -151,42 +250,9 @@ def configure_logging() -> None:
     access_logger.handlers = []
     access_logger.propagate = False
 
-    conn = settings.applicationinsights_connection_string
-    if conn:
-        from opencensus.ext.azure.log_exporter import AzureLogHandler
-
-        ai_handler = AzureLogHandler(connection_string=conn)
-
-        # opencensus-ext-azure (unmaintained, not tested on Python 3.13 — ADR 0017)
-        # overrides createLock() to set `self.lock = None` (it does its own
-        # queue-based thread-safety). That was fine on older Python, but 3.13's
-        # logging.Handler.handle() does `with self.lock` with no None-check, so the
-        # first emitted record crashes app startup. Assigning the lock once isn't
-        # enough: Celery's embedded beat (`worker -B`) re-initialises logging in
-        # its forked process and calls createLock() AGAIN, re-nulling the lock and
-        # killing beat on its first log line — so every periodic task (orchestration
-        # polling, scheduled dispatch, gap recovery) silently stops (#405, a #393
-        # recurrence). Replace createLock with an idempotent version that only ever
-        # CREATES a missing lock and never nulls or swaps an existing one — so no
-        # caller can re-null it, and a live lock is preserved rather than replaced
-        # (avoids losing mutual exclusion if a re-init ever raced an in-flight
-        # emit). (#393 — proper fix: migrate to azure-monitor-opentelemetry;
-        # opencensus is EOL.)
-        def _ensure_handler_lock() -> None:
-            if getattr(ai_handler, "lock", None) is None:
-                ai_handler.lock = threading.RLock()
-
-        ai_handler.createLock = _ensure_handler_lock
-        ai_handler.createLock()
-        ai_handler.setLevel(level)
-        # Use the SAME ProcessorFormatter as stdout so records sent to App Insights
-        # also pass through `_redact_pii` (incl. the secret-string scrubber). Without
-        # a formatter, AzureLogHandler ships the raw record message, so a foreign
-        # (non-structlog) record carrying a secret in its message would reach App
-        # Insights un-redacted (#494). App-level structlog records are already
-        # redacted in the wrapper chain; this closes the foreign-record path too.
-        ai_handler.setFormatter(formatter)
-        root.addHandler(ai_handler)
+    # Export logs to the configured backend(s) via OpenTelemetry (#524, replacing
+    # the EOL opencensus AzureLogHandler). No-op when telemetry is off.
+    _configure_otel_log_export(root, level, formatter, service_name)
 
     structlog.configure(
         processors=[
