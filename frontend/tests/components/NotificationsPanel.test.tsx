@@ -24,6 +24,8 @@ const CONFIG: SuiteNotification = {
   enabled: true,
   alert_on: 'fail',
   has_webhook: false,
+  has_slack_webhook: false,
+  email_recipients: null,
 };
 
 function renderPanel(props: Partial<Parameters<typeof NotificationsPanel>[0]> = {}) {
@@ -41,10 +43,11 @@ describe('NotificationsPanel', () => {
     mockGet.mockResolvedValue(CONFIG);
     renderPanel();
     expect(await screen.findByText('Send alerts for this suite')).toBeInTheDocument();
-    expect(screen.getByText('not set')).toBeInTheDocument(); // webhook status
+    // Both webhook status tags start "not set".
+    expect(screen.getAllByText('not set').length).toBe(2);
   });
 
-  it('saves the threshold without resending an unchanged webhook', async () => {
+  it('saves the threshold without resending unchanged webhooks (email is WYSIWYG)', async () => {
     mockGet.mockResolvedValue(CONFIG);
     mockPut.mockResolvedValue({ ...CONFIG, alert_on: 'always' });
     renderPanel();
@@ -53,11 +56,16 @@ describe('NotificationsPanel', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Save' }));
 
     await waitFor(() => expect(mockPut).toHaveBeenCalledTimes(1));
-    // No webhook typed → the payload omits `webhook` (leaves the stored one).
-    expect(mockPut).toHaveBeenCalledWith('s1', { enabled: true, alert_on: 'fail' });
+    // No webhook typed → the payload omits webhook/slack_webhook (leaves them); email
+    // is returned+editable so it's always sent (here empty → clears / stays null).
+    expect(mockPut).toHaveBeenCalledWith('s1', {
+      enabled: true,
+      alert_on: 'fail',
+      email_recipients: '',
+    });
   });
 
-  it('sends a typed webhook on save', async () => {
+  it('sends a typed Teams webhook on save', async () => {
     mockGet.mockResolvedValue(CONFIG);
     mockPut.mockResolvedValue({ ...CONFIG, has_webhook: true });
     renderPanel();
@@ -71,21 +79,118 @@ describe('NotificationsPanel', () => {
         enabled: true,
         alert_on: 'fail',
         webhook: 'https://teams.example/hook',
+        email_recipients: '',
       }),
     );
   });
 
-  it('clears the webhook when one is set', async () => {
+  it('sends a typed Slack webhook on save', async () => {
+    mockGet.mockResolvedValue(CONFIG);
+    mockPut.mockResolvedValue({ ...CONFIG, has_slack_webhook: true });
+    renderPanel();
+    await screen.findByText('Send alerts for this suite');
+
+    await userEvent.type(
+      screen.getByLabelText('Slack webhook URL'),
+      'https://hooks.slack.com/services/x',
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() =>
+      expect(mockPut).toHaveBeenCalledWith('s1', {
+        enabled: true,
+        alert_on: 'fail',
+        slack_webhook: 'https://hooks.slack.com/services/x',
+        email_recipients: '',
+      }),
+    );
+  });
+
+  it('sends edited email recipients on save', async () => {
+    mockGet.mockResolvedValue(CONFIG);
+    mockPut.mockResolvedValue({ ...CONFIG, email_recipients: 'a@x.io' });
+    renderPanel();
+    await screen.findByText('Send alerts for this suite');
+
+    await userEvent.type(screen.getByLabelText('Email recipients'), 'a@x.io, b@y.io');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() =>
+      expect(mockPut).toHaveBeenCalledWith('s1', {
+        enabled: true,
+        alert_on: 'fail',
+        email_recipients: 'a@x.io, b@y.io',
+      }),
+    );
+  });
+
+  it('prefills email recipients from the config', async () => {
+    mockGet.mockResolvedValue({ ...CONFIG, email_recipients: 'team@x.io' });
+    renderPanel();
+    await screen.findByText('Send alerts for this suite');
+    expect(screen.getByLabelText('Email recipients')).toHaveValue('team@x.io');
+  });
+
+  it('clears the Teams webhook when one is set', async () => {
     mockGet.mockResolvedValue({ ...CONFIG, has_webhook: true });
     mockPut.mockResolvedValue({ ...CONFIG, has_webhook: false });
     renderPanel();
-    await screen.findByText('set'); // webhook status tag
+    await screen.findByText('set'); // Teams status tag
 
-    await userEvent.click(screen.getByRole('button', { name: 'Clear webhook' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Clear Teams' }));
 
     await waitFor(() =>
       expect(mockPut).toHaveBeenCalledWith('s1', { enabled: true, alert_on: 'fail', webhook: '' }),
     );
+  });
+
+  it('clears the Slack webhook when one is set', async () => {
+    mockGet.mockResolvedValue({ ...CONFIG, has_slack_webhook: true });
+    mockPut.mockResolvedValue({ ...CONFIG, has_slack_webhook: false });
+    renderPanel();
+    await screen.findByText('set'); // Slack status tag
+
+    await userEvent.click(screen.getByRole('button', { name: 'Clear Slack' }));
+
+    await waitFor(() =>
+      expect(mockPut).toHaveBeenCalledWith('s1', {
+        enabled: true,
+        alert_on: 'fail',
+        slack_webhook: '',
+      }),
+    );
+  });
+
+  it('clearing a webhook does not persist an unsaved enabled toggle', async () => {
+    // #639 review: a "Clear" must send the server-known enabled/alert_on, not an
+    // unsaved switch edit — else it silently disables alerting for the suite.
+    mockGet.mockResolvedValue({ ...CONFIG, enabled: true, has_webhook: true });
+    mockPut.mockResolvedValue({ ...CONFIG, has_webhook: false });
+    renderPanel();
+    await screen.findByText('set');
+
+    // Toggle Enabled OFF but do NOT save, then clear the Teams webhook.
+    await userEvent.click(screen.getByLabelText('Enable notifications'));
+    await userEvent.click(screen.getByRole('button', { name: 'Clear Teams' }));
+
+    await waitFor(() =>
+      // enabled stays true (the loaded value), not the unsaved false.
+      expect(mockPut).toHaveBeenCalledWith('s1', { enabled: true, alert_on: 'fail', webhook: '' }),
+    );
+  });
+
+  it('surfaces an error and does not clear typed input when save fails', async () => {
+    mockGet.mockResolvedValue(CONFIG);
+    mockPut.mockRejectedValue(new Error('boom'));
+    renderPanel();
+    await screen.findByText('Send alerts for this suite');
+
+    await userEvent.type(screen.getByLabelText('Teams webhook URL'), 'https://teams.example/hook');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(mockPut).toHaveBeenCalled());
+    // On failure the typed webhook is kept (not reset) so the user can retry.
+    expect(screen.getByLabelText('Teams webhook URL')).toHaveValue('https://teams.example/hook');
   });
 
   it('hides the controls for a viewer', async () => {

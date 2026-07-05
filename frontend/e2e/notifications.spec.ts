@@ -70,16 +70,21 @@ test.describe('Suite notifications panel', () => {
     expect(restored.ok()).toBe(true);
   });
 
-  test('webhook is a write-only secret affordance', async ({ page }) => {
+  test('webhooks are write-only secret affordances; email is editable', async ({ page }) => {
     await openSuite(page);
     const panel = card(page);
 
-    // The field never echoes a stored URL — just a set/not-set tag + password
-    // input. (Writing one is out of scope: it lands a secret in the store.)
-    // Neither the seed nor any spec writes a webhook, so the tag is
-    // deterministically 'not set' — pin it so a has_webhook regression fails.
+    // The Teams + Slack fields never echo a stored URL — each is a set/not-set tag
+    // + password input. (Writing one is out of scope: it lands a secret in the
+    // store.) Neither the seed nor any spec writes a webhook, so both tags are
+    // deterministically 'not set' — pin them so a has_*_webhook regression fails.
     await expect(panel.getByText('Teams webhook')).toBeVisible();
     await expect(panel.getByLabel('Teams webhook URL')).toBeVisible();
-    await expect(panel.getByText('not set', { exact: true })).toBeVisible();
+    await expect(panel.getByText('Slack webhook')).toBeVisible();
+    await expect(panel.getByLabel('Slack webhook URL')).toBeVisible();
+    await expect(panel.getByText('not set', { exact: true })).toHaveCount(2); // Teams + Slack
+
+    // Email recipients is a non-secret, editable field (#633).
+    await expect(panel.getByLabel('Email recipients')).toBeVisible();
   });
 });

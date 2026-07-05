@@ -539,11 +539,17 @@ class SuiteNotification(Base):
     """Per-suite alert delivery config (one row per suite).
 
     Decides *whether* a suite's run outcomes are delivered (``enabled``), at what
-    threshold (``alert_on``), and *where* — an optional per-suite Teams webhook
-    referenced via ``webhook_secret_ref`` (the URL is token-bearing, so it lives
-    in the SecretStore, never the DB), falling back to the workspace webhook when
-    NULL. Suites with no row use the default policy (alert on warn+). The Teams
-    publisher reads this when delivering (``alerting.teams``). Cascade-deleted
+    threshold (``alert_on``), and *where* — per-channel overrides that each fall
+    back to the workspace-level config when NULL:
+
+    * ``webhook_secret_ref`` — the per-suite **Teams** webhook (URL is
+      token-bearing, so only the SecretStore ref is stored, never the DB);
+    * ``slack_webhook_secret_ref`` — the per-suite **Slack** webhook, same shape (#633);
+    * ``email_recipients`` — the per-suite **email** recipients (comma-separated
+      addresses; not a secret, so stored inline), NULL → workspace ``EMAIL_TO`` (#633).
+
+    Suites with no row use the default policy (alert on warn+). The Teams / Slack /
+    email publishers read this when delivering (``alerting.*``). Cascade-deleted
     with the suite.
     """
 
@@ -566,6 +572,12 @@ class SuiteNotification(Base):
     # SecretStore key for the per-suite Teams webhook URL (NULL → workspace webhook).
     # The URL is a secret; only the ref is stored here.
     webhook_secret_ref: Mapped[str | None] = mapped_column(String(256))
+    # SecretStore key for the per-suite Slack webhook URL (NULL → workspace Slack
+    # webhook). Same token-bearing shape as the Teams ref (#633).
+    slack_webhook_secret_ref: Mapped[str | None] = mapped_column(String(256))
+    # Per-suite email recipients — comma-separated addresses (NULL → workspace
+    # EMAIL_TO). Not a secret (addresses, not credentials), so stored inline (#633).
+    email_recipients: Mapped[str | None] = mapped_column(String(1024))
     created_at: Mapped[datetime] = _created_at()
     updated_at: Mapped[datetime] = _updated_at()
 

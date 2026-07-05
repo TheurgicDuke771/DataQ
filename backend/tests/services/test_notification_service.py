@@ -17,6 +17,7 @@ from backend.app.db.models import Connection, Suite, SuiteNotification, User
 from backend.app.services import notification_service as svc
 from backend.app.services.notification_service import (
     InvalidAlertPolicyError,
+    InvalidRecipientsError,
     InvalidWebhookError,
 )
 
@@ -319,3 +320,206 @@ def test_resolve_webhook_prefers_suite_then_workspace(db_session: Any) -> None:
 
 def test_resolve_webhook_none_when_nothing_set(db_session: Any) -> None:
     assert svc.resolve_webhook(None, secret_store=_FakeStore(), workspace_secret_name=None) is None
+
+
+# ── Per-suite Slack + email (#633) ──────────────────────────────────────────
+
+
+def test_upsert_slack_webhook_stored_under_distinct_ref(db_session: Any) -> None:
+    suite = _suite(db_session)
+    store = _FakeStore()
+    config = svc.upsert_config(
+        db_session,
+        suite_id=suite.id,
+        enabled=True,
+        alert_on="fail",
+        webhook="https://contoso.webhook.office.com/hook",
+        slack_webhook="https://hooks.slack.com/services/T/B/xyz",
+        secret_store=store,
+    )
+    # Slack rides its own ref namespace, distinct from the Teams ref.
+    assert config.slack_webhook_secret_ref is not None
+    assert config.slack_webhook_secret_ref.startswith(f"suite-notif-slack-{config.id}-")
+    assert config.slack_webhook_secret_ref != config.webhook_secret_ref
+    assert (
+        store.secrets[config.slack_webhook_secret_ref] == "https://hooks.slack.com/services/T/B/xyz"
+    )
+
+
+def test_upsert_rejects_non_slack_host(db_session: Any) -> None:
+    suite = _suite(db_session)
+    with pytest.raises(InvalidWebhookError):
+        svc.upsert_config(
+            db_session,
+            suite_id=suite.id,
+            enabled=True,
+            alert_on="fail",
+            webhook=None,
+            slack_webhook="https://evil.example.com/hook",
+            secret_store=_FakeStore(),
+        )
+
+
+def test_upsert_email_recipients_inline_and_clear(db_session: Any) -> None:
+    suite = _suite(db_session)
+    store = _FakeStore()
+    config = svc.upsert_config(
+        db_session,
+        suite_id=suite.id,
+        enabled=True,
+        alert_on="fail",
+        webhook=None,
+        email_recipients="a@x.io, b@y.io",
+        secret_store=store,
+    )
+    assert config.email_recipients == "a@x.io, b@y.io"  # inline, not a secret ref
+    # "" clears back to NULL (workspace fallback).
+    cleared = svc.upsert_config(
+        db_session,
+        suite_id=suite.id,
+        enabled=True,
+        alert_on="fail",
+        webhook=None,
+        email_recipients="",
+        secret_store=store,
+    )
+    assert cleared.email_recipients is None
+
+
+def test_upsert_rejects_malformed_recipients(db_session: Any) -> None:
+    suite = _suite(db_session)
+    with pytest.raises(InvalidRecipientsError):
+        svc.upsert_config(
+            db_session,
+            suite_id=suite.id,
+            enabled=True,
+            alert_on="fail",
+            webhook=None,
+            email_recipients="not-an-email, also-bad",
+            secret_store=_FakeStore(),
+        )
+
+
+def test_upsert_rejects_recipients_with_control_chars(db_session: Any) -> None:
+    # #639 review: a CR/LF in a recipient passes a naive @-check but breaks
+    # EmailMessage['To'] at send time (a silent per-suite email outage) — reject it.
+    suite = _suite(db_session)
+    for bad in ("a@b.com\nBcc: evil@x.io", "a@b.com\r\nx", "a@ b.com", "a@b.com\tx"):
+        with pytest.raises(InvalidRecipientsError):
+            svc.upsert_config(
+                db_session,
+                suite_id=suite.id,
+                enabled=True,
+                alert_on="fail",
+                webhook=None,
+                email_recipients=bad,
+                secret_store=_FakeStore(),
+            )
+
+
+def test_upsert_rejects_empty_recipient_list(db_session: Any) -> None:
+    # A truthy-but-empty value (just a comma) parses to no addresses.
+    suite = _suite(db_session)
+    with pytest.raises(InvalidRecipientsError):
+        svc.upsert_config(
+            db_session,
+            suite_id=suite.id,
+            enabled=True,
+            alert_on="fail",
+            webhook=None,
+            email_recipients=",",
+            secret_store=_FakeStore(),
+        )
+
+
+def test_clearing_slack_webhook_removes_the_secret(db_session: Any) -> None:
+    # #372/#633 parity with Teams: clearing the Slack webhook nulls the ref AND
+    # soft-deletes the secret.
+    suite = _suite(db_session)
+    store = _FakeStore()
+    config = svc.upsert_config(
+        db_session,
+        suite_id=suite.id,
+        enabled=True,
+        alert_on="fail",
+        webhook=None,
+        slack_webhook="https://hooks.slack.com/services/T/B/xyz",
+        secret_store=store,
+    )
+    ref = config.slack_webhook_secret_ref
+    assert ref in store.secrets
+    cleared = svc.upsert_config(
+        db_session,
+        suite_id=suite.id,
+        enabled=True,
+        alert_on="fail",
+        webhook=None,
+        slack_webhook="",
+        secret_store=store,
+    )
+    assert cleared.slack_webhook_secret_ref is None
+    assert ref not in store.secrets
+
+
+def test_resolve_slack_webhook_prefers_suite_then_workspace(db_session: Any) -> None:
+    suite = _suite(db_session)
+    store = _FakeStore()
+    store.secrets["ws-slack"] = "https://hooks.slack.com/services/WS"
+    # No config → workspace fallback.
+    assert (
+        svc.resolve_slack_webhook(None, secret_store=store, workspace_secret_name="ws-slack")
+        == "https://hooks.slack.com/services/WS"
+    )
+    config = svc.upsert_config(
+        db_session,
+        suite_id=suite.id,
+        enabled=True,
+        alert_on="fail",
+        webhook=None,
+        slack_webhook="https://hooks.slack.com/services/SUITE",
+        secret_store=store,
+    )
+    assert (
+        svc.resolve_slack_webhook(config, secret_store=store, workspace_secret_name="ws-slack")
+        == "https://hooks.slack.com/services/SUITE"
+    )
+
+
+def test_resolve_email_recipients_prefers_suite_then_workspace(db_session: Any) -> None:
+    suite = _suite(db_session)
+    store = _FakeStore()
+    ws = ("ops@x.io",)
+    # No config → workspace fallback.
+    assert svc.resolve_email_recipients(None, workspace_recipients=ws) == ws
+    config = svc.upsert_config(
+        db_session,
+        suite_id=suite.id,
+        enabled=True,
+        alert_on="fail",
+        webhook=None,
+        email_recipients="team@x.io, lead@y.io",
+        secret_store=store,
+    )
+    assert svc.resolve_email_recipients(config, workspace_recipients=ws) == (
+        "team@x.io",
+        "lead@y.io",
+    )
+
+
+def test_delete_config_removes_slack_secret_too(db_session: Any) -> None:
+    suite = _suite(db_session)
+    store = _FakeStore()
+    config = svc.upsert_config(
+        db_session,
+        suite_id=suite.id,
+        enabled=True,
+        alert_on="fail",
+        webhook="https://contoso.webhook.office.com/hook",
+        slack_webhook="https://hooks.slack.com/services/T/B/xyz",
+        secret_store=store,
+    )
+    teams_ref, slack_ref = config.webhook_secret_ref, config.slack_webhook_secret_ref
+    assert teams_ref in store.secrets and slack_ref in store.secrets
+    assert svc.delete_config(db_session, suite.id, secret_store=store) is True
+    # #372: both orphaned webhook secrets removed.
+    assert teams_ref not in store.secrets and slack_ref not in store.secrets

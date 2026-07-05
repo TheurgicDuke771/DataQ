@@ -23,6 +23,7 @@ from backend.app.alerting.email import EmailPublisher, render_subject
 from backend.app.alerting.routing import route_for
 from backend.app.alerting.slack import SlackPublisher, render_slack_message
 from backend.app.db.models import Connection, Suite, SuiteNotification, User
+from backend.app.services import notification_service as svc
 
 
 def _report(*, worst: str | None, run_status: str = "succeeded") -> RunReport:
@@ -379,6 +380,18 @@ def test_slack_publish_blocks_non_allowlisted_webhook_host(
     assert posted == []
 
 
+def test_slack_publish_blocks_non_https_workspace_webhook(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#639 review: an http:// workspace webhook (never write-validated) must not be
+    POSTed in cleartext — the send-time re-check enforces https, not just the host."""
+    posted: list[object] = []
+    monkeypatch.setattr("backend.app.alerting.slack.httpx.post", lambda *a, **k: posted.append(a))
+    store = _Store({"wh": "http://hooks.slack.com/services/x"})  # allowlisted host, wrong scheme
+    _slack_publisher(store).publish(db_session, _report(worst="fail"))
+    assert posted == []
+
+
 def test_slack_publish_noop_when_webhook_secret_missing(
     db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -399,3 +412,70 @@ def test_slack_publish_noop_when_suite_disabled_alerting(
         db_session, report
     )
     assert post.calls == []
+
+
+# ── per-suite override (#633) ────────────────────────────────────────────────
+
+
+def _suite_with_config(db: Any, store: _Store, **overrides: Any) -> Any:
+    """A real suite whose notification config carries per-suite channel overrides
+    (slack_webhook / email_recipients), written through the real service path."""
+    owner = User(aad_object_id=uuid.uuid4().hex, email=f"u-{uuid.uuid4().hex[:6]}@x.io")
+    db.add(owner)
+    db.flush()
+    conn = Connection(
+        name=f"c-{uuid.uuid4().hex[:8]}",
+        type="snowflake",
+        env="dev",
+        config={"account": "a"},
+        secret_ref="kv",
+        created_by=owner.id,
+    )
+    db.add(conn)
+    db.flush()
+    suite = Suite(
+        name="Orders QA", connection_id=conn.id, created_by=owner.id, target={"table": "T"}
+    )
+    db.add(suite)
+    db.commit()
+    svc.upsert_config(
+        db,
+        suite_id=suite.id,
+        enabled=True,
+        alert_on="warn",
+        webhook=None,
+        secret_store=store,
+        **overrides,
+    )
+    return suite
+
+
+def test_slack_publish_prefers_per_suite_webhook_over_workspace(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A suite with its own Slack webhook posts THERE, not to the workspace one (#633)."""
+    post = _CapturePost()
+    monkeypatch.setattr("backend.app.alerting.slack.httpx.post", post)
+    store = _Store({"ws": "https://hooks.slack.com/services/WORKSPACE"})
+    suite = _suite_with_config(
+        db_session, store, slack_webhook="https://hooks.slack.com/services/SUITE"
+    )
+    report = dataclasses.replace(_report(worst="fail"), suite_id=suite.id)
+    SlackPublisher(
+        secret_store=store, webhook_secret_name="ws", allowed_hosts=("hooks.slack.com",)
+    ).publish(db_session, report)
+    ((url, _payload),) = post.calls
+    assert url.endswith("/SUITE")  # the per-suite webhook won
+
+
+def test_email_publish_prefers_per_suite_recipients_over_workspace(
+    db_session: Any, fake_smtp: list[_FakeSmtp]
+) -> None:
+    """A suite with its own recipients receives there, not the workspace EMAIL_TO (#633)."""
+    store = _Store({"smtp-pass": "not-a-real-password"})
+    suite = _suite_with_config(db_session, store, email_recipients="only@suite.io, lead@suite.io")
+    report = dataclasses.replace(_report(worst="fail"), suite_id=suite.id)
+    # The publisher's workspace recipients are a@/b@ — the per-suite list overrides.
+    _email_publisher(store).publish(db_session, report)
+    (smtp,) = fake_smtp
+    assert smtp.message["To"] == "only@suite.io, lead@suite.io"

@@ -1,11 +1,13 @@
 import { api } from './client';
 
 /**
- * Per-suite alert notification config (W6). Decides whether a suite's run
- * outcomes are delivered, at what threshold (`alert_on`), and to which Teams
- * webhook. The webhook URL is **write-only** — sent on save, never returned
- * (it's a secret); the read surface exposes only `has_webhook`. Managing needs
- * `edit` on the suite (backend-gated); reading needs `view`.
+ * Per-suite alert notification config (W6; Slack + email per-suite added in #633).
+ * Decides whether a suite's run outcomes are delivered, at what threshold
+ * (`alert_on`), and per channel *where* — a per-suite Teams webhook, Slack webhook,
+ * and email recipients, each falling back to the workspace config when unset. The
+ * webhook URLs are **write-only** secrets — sent on save, never returned (the read
+ * exposes only `has_*_webhook`); email recipients aren't secret, so they ARE
+ * returned for prefill. Managing needs `edit`; reading needs `view` (backend-gated).
  */
 
 export type AlertOn = 'fail' | 'warn' | 'always';
@@ -17,13 +19,21 @@ export interface SuiteNotification {
   enabled: boolean;
   alert_on: AlertOn;
   has_webhook: boolean;
+  has_slack_webhook: boolean;
+  email_recipients: string | null;
 }
 
-/** Mirrors `SuiteNotificationUpdate`. `webhook`: omit = unchanged, "" = clear. */
+/**
+ * Mirrors `SuiteNotificationUpdate`. The webhooks are tri-state (omit = unchanged,
+ * "" = clear, value = set — they're write-only secrets). `email_recipients` is
+ * returned + editable, so the form sends the current value (WYSIWYG: "" clears).
+ */
 export interface SuiteNotificationUpdate {
   enabled: boolean;
   alert_on: AlertOn;
   webhook?: string;
+  slack_webhook?: string;
+  email_recipients?: string;
 }
 
 export async function getNotifications(suiteId: string): Promise<SuiteNotification> {

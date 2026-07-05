@@ -27,13 +27,16 @@ router = APIRouter(tags=["notifications"])
 
 class SuiteNotificationRead(ApiModel):
     """A suite's effective notification config. ``configured`` distinguishes a
-    saved row from the defaults a suite falls back to. The webhook URL is never
-    returned — only whether one is set (``has_webhook``)."""
+    saved row from the defaults a suite falls back to. The Teams/Slack webhook URLs
+    are secrets and never returned — only whether each is set (``has_*_webhook``).
+    ``email_recipients`` is not a secret (addresses), so it's returned for prefill."""
 
     configured: bool
     enabled: bool
     alert_on: str
     has_webhook: bool
+    has_slack_webhook: bool
+    email_recipients: str | None
 
 
 class SuiteNotificationUpdate(ApiModel):
@@ -41,11 +44,13 @@ class SuiteNotificationUpdate(ApiModel):
     # Default 'warn' matches the no-config fallback, so an omitted threshold
     # doesn't silently tighten delivery (a saved config keeps the prior behaviour).
     alert_on: Literal["fail", "warn", "always"] = "warn"
-    # Tri-state: omit/null = leave the stored webhook unchanged; "" = clear (use
-    # the workspace webhook); a URL = set the per-suite webhook (write-only). The
-    # https check lives in the service (a clean DataQError 422), not a Pydantic
-    # validator (whose ValueError ctx isn't JSON-serializable by our handler).
-    webhook: str | None = None
+    # Each override is tri-state: omit/null = leave the stored value unchanged;
+    # "" = clear (fall back to the workspace config); a value = set it. The https /
+    # host / email-format checks live in the service (clean DataQError 422s), not
+    # Pydantic validators (whose ValueError ctx isn't JSON-serializable here).
+    webhook: str | None = None  # per-suite Teams webhook (write-only secret)
+    slack_webhook: str | None = None  # per-suite Slack webhook (write-only secret, #633)
+    email_recipients: str | None = None  # per-suite email recipients, comma-separated (#633)
 
 
 def _read(config: SuiteNotification | None) -> SuiteNotificationRead:
@@ -55,12 +60,16 @@ def _read(config: SuiteNotification | None) -> SuiteNotificationRead:
             enabled=True,
             alert_on=svc.DEFAULT_ALERT_ON,
             has_webhook=False,
+            has_slack_webhook=False,
+            email_recipients=None,
         )
     return SuiteNotificationRead(
         configured=True,
         enabled=config.enabled,
         alert_on=config.alert_on,
         has_webhook=config.webhook_secret_ref is not None,
+        has_slack_webhook=config.slack_webhook_secret_ref is not None,
+        email_recipients=config.email_recipients,
     )
 
 
@@ -97,6 +106,8 @@ def put_notifications(
         enabled=payload.enabled,
         alert_on=payload.alert_on,
         webhook=payload.webhook,
+        slack_webhook=payload.slack_webhook,
+        email_recipients=payload.email_recipients,
         secret_store=secret_store,
     )
     return _read(config)

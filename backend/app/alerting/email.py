@@ -109,7 +109,9 @@ def _esc(value: str) -> str:
 
 
 class EmailPublisher:
-    """Sends a run's report over SMTP (STARTTLS) to a fixed recipient list."""
+    """Sends a run's report over SMTP (STARTTLS) to the per-suite recipients, else
+    the workspace ``EMAIL_TO`` (#633). The SMTP transport (host/port/credentials/
+    sender) is workspace-level and mandatory; only the recipient list is per-suite."""
 
     def __init__(
         self,
@@ -135,14 +137,13 @@ class EmailPublisher:
     def publish(self, session: Session, report: RunReport) -> None:
         """Send the email per the run's suite notification policy.
 
-        Quiet no-op when email is unconfigured, the suite disabled alerting, or
-        the run is below the suite's threshold. Raises on an SMTP error — the
-        composite layer isolates it so a flaky mailer can't fail the run or block
-        the other channels.
+        Quiet no-op when the SMTP transport is unconfigured, no recipients resolve
+        (neither per-suite nor workspace), the suite disabled alerting, or the run is
+        below the suite's threshold. Raises on an SMTP error — the composite layer
+        isolates it so a flaky mailer can't fail the run or block the other channels.
         """
-        if not (
-            self._recipients and self._username and self._password_secret_name and self._sender
-        ):
+        # The SMTP transport is workspace-level and mandatory (recipients are per-suite).
+        if not (self._username and self._password_secret_name and self._sender):
             return
         config = notification_service.get_config(session, report.suite_id)
         if config is not None and not config.enabled:
@@ -151,6 +152,11 @@ class EmailPublisher:
         route = route_for(report, policy)
         if not route.should_send:
             return
+        recipients = notification_service.resolve_email_recipients(
+            config, workspace_recipients=self._recipients
+        )
+        if not recipients:
+            return  # no per-suite override and no workspace EMAIL_TO → no-op
         try:
             password = self._secret_store.get(self._password_secret_name)
         except SecretNotFoundError:
@@ -160,7 +166,7 @@ class EmailPublisher:
         message = EmailMessage()
         message["Subject"] = render_subject(report)
         message["From"] = self._sender
-        message["To"] = ", ".join(self._recipients)
+        message["To"] = ", ".join(recipients)
         message.set_content(render_text_body(report))
         message.add_alternative(render_html_body(report), subtype="html")
 
@@ -173,6 +179,6 @@ class EmailPublisher:
             "email_alert_sent",
             run_id=str(report.run_id),
             suite=report.suite_name,
-            recipients=len(self._recipients),
+            recipients=len(recipients),
             worst_severity=report.worst_severity,
         )
