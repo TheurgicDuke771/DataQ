@@ -1,5 +1,5 @@
 import { App, Alert, Button, Card, Flex, Select, Spin, Typography } from 'antd';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 import {
   type ColumnPolicy,
@@ -7,7 +7,7 @@ import {
   setColumnPolicy,
   suggestColumnPolicy,
 } from '../../api/columnPolicy';
-import { type Suite, targetString } from '../../api/suites';
+import { type ColumnTarget, listColumns, type Suite, targetString } from '../../api/suites';
 import { useAsyncData } from '../../hooks/useAsyncData';
 
 /**
@@ -67,10 +67,46 @@ function SamplePolicyForm({
   const [saving, setSaving] = useState(false);
   const [suggesting, setSuggesting] = useState(false);
 
-  // Any column the user has named — seeds both dropdowns' options so a saved value
-  // renders even though we don't fetch the full column list here (free-tag entry).
+  // The suite's target as a column-introspection target (null for a batch/pattern
+  // target with no fixed table/file — those can't be introspected).
+  const columnTarget = useMemo<ColumnTarget | null>(() => {
+    if (suite.target?.pattern) return null;
+    const table = targetString(suite.target, 'table');
+    const path = targetString(suite.target, 'path');
+    if (!table && !path) return null;
+    return {
+      table,
+      schema: targetString(suite.target, 'schema'),
+      catalog: targetString(suite.target, 'catalog'),
+      path,
+      file_format: targetString(suite.target, 'file_format') as 'csv' | 'parquet' | undefined,
+    };
+  }, [suite.target]);
+
+  // Introspected columns (#635) — fetched lazily the first time a dropdown opens (a
+  // live warehouse round-trip, so not on mount). Degrades to free-tag entry when
+  // introspection is empty/unavailable: the Selects stay mode="tags".
+  const [cols, setCols] = useState<
+    { status: 'idle' | 'loading' | 'error' } | { status: 'loaded'; columns: string[] }
+  >({ status: 'idle' });
+
+  const loadColumns = () => {
+    if (cols.status !== 'idle' || !columnTarget) return; // fetch once
+    setCols({ status: 'loading' });
+    listColumns(suite.id, columnTarget)
+      .then((columns) => setCols({ status: 'loaded', columns }))
+      .catch(() => setCols({ status: 'error' }));
+  };
+
+  const introspected = cols.status === 'loaded' ? cols.columns : [];
+  // Union of the target's real columns + anything the user has already named, so a
+  // saved value renders even if introspection didn't return it (a view-hidden or
+  // newly-added column), and free-typing still works.
   const known = Array.from(new Set([...(identifier ? [identifier] : []), ...pii]));
-  const options = known.map((c) => ({ value: c, label: c }));
+  const options = Array.from(new Set([...introspected, ...known])).map((c) => ({
+    value: c,
+    label: c,
+  }));
 
   const onSuggest = async () => {
     setSuggesting(true);
@@ -121,10 +157,12 @@ function SamplePolicyForm({
           mode="tags"
           maxCount={1}
           allowClear
+          loading={cols.status === 'loading'}
           disabled={!canManage}
           placeholder="e.g. order_number"
           value={identifier ? [identifier] : []}
           options={options}
+          onDropdownVisibleChange={(open) => open && loadColumns()}
           onChange={(v) => setIdentifier(v[0] ?? null)}
         />
       </Flex>
@@ -135,10 +173,12 @@ function SamplePolicyForm({
         <Select
           mode="tags"
           allowClear
+          loading={cols.status === 'loading'}
           disabled={!canManage}
           placeholder="e.g. email, phone"
           value={pii}
           options={options}
+          onDropdownVisibleChange={(open) => open && loadColumns()}
           onChange={setPii}
         />
       </Flex>

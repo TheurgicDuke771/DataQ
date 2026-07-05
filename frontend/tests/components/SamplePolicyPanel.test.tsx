@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { getColumnPolicy, setColumnPolicy, suggestColumnPolicy } from '../../src/api/columnPolicy';
-import type { Suite } from '../../src/api/suites';
+import { listColumns, type Suite } from '../../src/api/suites';
 import { SamplePolicyPanel } from '../../src/components/suites/SamplePolicyPanel';
 
 vi.mock('../../src/api/columnPolicy', () => ({
@@ -13,9 +13,15 @@ vi.mock('../../src/api/columnPolicy', () => ({
   suggestColumnPolicy: vi.fn(),
 }));
 
+vi.mock('../../src/api/suites', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/api/suites')>();
+  return { ...actual, listColumns: vi.fn() }; // keep targetString real
+});
+
 const mockGet = vi.mocked(getColumnPolicy);
 const mockSet = vi.mocked(setColumnPolicy);
 const mockSuggest = vi.mocked(suggestColumnPolicy);
+const mockListColumns = vi.mocked(listColumns);
 
 const SUITE = {
   id: 's1',
@@ -75,6 +81,78 @@ describe('SamplePolicyPanel', () => {
     );
     expect(await screen.findByText('SKU')).toBeInTheDocument();
     expect(screen.getByText('PHONE')).toBeInTheDocument();
+  });
+
+  it('fetches the target columns lazily when a dropdown opens (#635)', async () => {
+    mockGet.mockResolvedValue({ identifier_column: null, pii_columns: [] });
+    mockListColumns.mockResolvedValue(['ORDER_NUMBER', 'EMAIL', 'SKU']);
+    const user = userEvent.setup();
+    renderPanel();
+    await screen.findByText(/Which column locates a failing row/);
+
+    // Not fetched on mount — only when a dropdown first opens (live round-trip).
+    expect(mockListColumns).not.toHaveBeenCalled();
+
+    await user.click(screen.getAllByRole('combobox')[0]); // open the identifier Select
+    await waitFor(() =>
+      expect(mockListColumns).toHaveBeenCalledWith('s1', {
+        table: 'ORDERS',
+        schema: 'RETAIL',
+        catalog: undefined,
+        path: undefined,
+        file_format: undefined,
+      }),
+    );
+    // An introspected column the user never typed is offered as an option.
+    expect(await screen.findByText('SKU')).toBeInTheDocument();
+  });
+
+  it('introspects at most once across repeated dropdown opens (#635 review)', async () => {
+    mockGet.mockResolvedValue({ identifier_column: null, pii_columns: [] });
+    mockListColumns.mockResolvedValue(['ORDER_NUMBER', 'SKU']);
+    const user = userEvent.setup();
+    renderPanel();
+    await screen.findByText(/Which column locates a failing row/);
+
+    const [identifierCombo, piiCombo] = screen.getAllByRole('combobox');
+    await user.click(identifierCombo); // open identifier → the one fetch
+    await waitFor(() => expect(mockListColumns).toHaveBeenCalledTimes(1));
+    await user.click(piiCombo); // opening the PII Select must not re-fetch (guarded)
+    await waitFor(() => expect(screen.getAllByText('SKU').length).toBeGreaterThan(0));
+    expect(mockListColumns).toHaveBeenCalledTimes(1);
+  });
+
+  it('stays usable as free entry when introspection fails (#635 review)', async () => {
+    mockGet.mockResolvedValue({ identifier_column: null, pii_columns: [] });
+    mockListColumns.mockRejectedValue(new Error('warehouse unreachable'));
+    const user = userEvent.setup();
+    renderPanel();
+    await screen.findByText(/Which column locates a failing row/);
+
+    await user.click(screen.getAllByRole('combobox')[0]); // open → fetch rejects
+    await waitFor(() => expect(mockListColumns).toHaveBeenCalled());
+    // Degrades to free-tag entry — the user can still type a column name.
+    await user.type(screen.getAllByRole('combobox')[0], 'CUSTOM_COL{Enter}');
+    expect(screen.getAllByText('CUSTOM_COL').length).toBeGreaterThan(0);
+  });
+
+  it('does not introspect a batch/pattern target (falls back to free entry)', async () => {
+    mockGet.mockResolvedValue({ identifier_column: null, pii_columns: [] });
+    const user = userEvent.setup();
+    render(
+      <AntApp>
+        <SamplePolicyPanel
+          suite={
+            { id: 's2', name: 'Batch', target: { pattern: 'orders_*.csv' } } as unknown as Suite
+          }
+          canManage
+        />
+      </AntApp>,
+    );
+    await screen.findByText(/Which column locates a failing row/);
+    await user.click(screen.getAllByRole('combobox')[0]);
+    // A pattern target has no fixed table/file → never introspects.
+    expect(mockListColumns).not.toHaveBeenCalled();
   });
 
   it('hides the mutation controls without manage rights', async () => {
