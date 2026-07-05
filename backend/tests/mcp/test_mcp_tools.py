@@ -9,6 +9,7 @@ TEST_DATABASE_URL.
 """
 
 import uuid
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -382,3 +383,152 @@ def test_profile_column_flatfile_target_defaults_path_and_format(
     assert seen["path"] == "logistics/tracking.csv"
     assert seen["file_format"] == "csv"
     assert seen["table"] is None
+
+
+def _flatfile_suite(db_session: Any, user: User, target: dict[str, Any]) -> Suite:
+    conn = Connection(
+        name=f"adls-{uuid.uuid4().hex[:8]}",
+        type="adls_gen2",
+        env="dev",
+        config={"account_name": "acct", "container": "landing"},
+        secret_ref="kv-adls",
+        created_by=user.id,
+    )
+    db_session.add(conn)
+    db_session.flush()
+    suite = Suite(name="Batchy", connection_id=conn.id, created_by=user.id, target=target)
+    db_session.add(suite)
+    db_session.commit()
+    return suite
+
+
+def test_profile_column_batch_target_materializes_the_concrete_file(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """A flat-file *batch* target lists the store (like a run) and profiles the
+    resolved concrete file."""
+    from backend.app.datasources import flatfile
+    from backend.app.services.profile_service import ProfileResult
+
+    user = _user(db_session)
+    suite = _flatfile_suite(
+        db_session, user, {"pattern": r"tracking_([0-9]+)\.csv", "prefix": "logistics/"}
+    )
+    monkeypatch.setattr(
+        flatfile, "resolve_batch_file", lambda **kw: "logistics/tracking_20260705.csv"
+    )
+    monkeypatch.setattr(
+        server, "get_secret_store", lambda: SimpleNamespace(get=lambda ref: "sas-token")
+    )
+    seen: dict[str, Any] = {}
+
+    def _fake_profile(connection: Any, **kwargs: Any) -> ProfileResult:
+        seen.update(kwargs)
+        return ProfileResult(
+            row_count=1,
+            table=None,
+            schema=None,
+            catalog=None,
+            path=kwargs["path"],
+            file_format=None,
+            columns=[],
+        )
+
+    monkeypatch.setattr(profile_service, "profile_connection", _fake_profile)
+    _as(monkeypatch, db_session, user)
+
+    server.profile_column(str(suite.id), columns=["status"])
+    assert seen["path"] == "logistics/tracking_20260705.csv"
+    assert seen["table"] is None
+
+
+def test_profile_column_batch_target_no_file_yet_is_actionable(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    from backend.app.datasources import flatfile
+
+    user = _user(db_session)
+    suite = _flatfile_suite(
+        db_session, user, {"pattern": r"tracking_([0-9]+)\.csv", "prefix": "logistics/"}
+    )
+
+    def _no_match(**kw: Any) -> str:
+        raise flatfile.BatchNotFoundError("no object matched pattern")
+
+    monkeypatch.setattr(flatfile, "resolve_batch_file", _no_match)
+    monkeypatch.setattr(
+        server, "get_secret_store", lambda: SimpleNamespace(get=lambda ref: "sas-token")
+    )
+    _as(monkeypatch, db_session, user)
+
+    with pytest.raises(ToolError, match="matched no file"):
+        server.profile_column(str(suite.id), columns=["status"])
+
+
+def test_profile_column_uc_target_defaults_catalog(db_session: Any, monkeypatch: Any) -> None:
+    from backend.app.services.profile_service import ProfileResult
+
+    user = _user(db_session)
+    conn = Connection(
+        name=f"uc-{uuid.uuid4().hex[:8]}",
+        type="unity_catalog",
+        env="dev",
+        config={"host": "h", "http_path": "/sql/1"},
+        secret_ref="kv-uc",
+        created_by=user.id,
+    )
+    db_session.add(conn)
+    db_session.flush()
+    suite = Suite(
+        name="UC",
+        connection_id=conn.id,
+        created_by=user.id,
+        target={"table": "orders", "schema": "gold", "catalog": "dataq_retail"},
+    )
+    db_session.add(suite)
+    db_session.commit()
+    seen: dict[str, Any] = {}
+
+    def _fake_profile(connection: Any, **kwargs: Any) -> ProfileResult:
+        seen.update(kwargs)
+        return ProfileResult(
+            row_count=1,
+            table=kwargs["table"],
+            schema=kwargs["schema"],
+            catalog=kwargs["catalog"],
+            path=None,
+            file_format=None,
+            columns=[],
+        )
+
+    monkeypatch.setattr(profile_service, "profile_connection", _fake_profile)
+    _as(monkeypatch, db_session, user)
+
+    server.profile_column(str(suite.id), columns=["amount"])
+    assert (seen["table"], seen["schema"], seen["catalog"]) == ("orders", "gold", "dataq_retail")
+
+
+def test_profile_column_explicit_path_wins_over_target(db_session: Any, monkeypatch: Any) -> None:
+    from backend.app.services.profile_service import ProfileResult
+
+    user = _user(db_session)
+    suite = _flatfile_suite(db_session, user, {"path": "logistics/saved.csv", "file_format": "csv"})
+    seen: dict[str, Any] = {}
+
+    def _fake_profile(connection: Any, **kwargs: Any) -> ProfileResult:
+        seen.update(kwargs)
+        return ProfileResult(
+            row_count=1,
+            table=None,
+            schema=None,
+            catalog=None,
+            path=kwargs["path"],
+            file_format=None,
+            columns=[],
+        )
+
+    monkeypatch.setattr(profile_service, "profile_connection", _fake_profile)
+    _as(monkeypatch, db_session, user)
+
+    server.profile_column(str(suite.id), columns=["x"], path="logistics/other.csv")
+    assert seen["path"] == "logistics/other.csv"
