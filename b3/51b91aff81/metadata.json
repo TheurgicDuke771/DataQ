@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "b351b91aff81",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-461-pats-phase1",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/adr/0026-auth-api-keys-and-principal-seam.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/b3/51b91aff81/0/metadata.json",
+      "transcript": "/b3/51b91aff81/0/full.jsonl",
+      "compact_transcript": "/b3/51b91aff81/0/transcript.jsonl",
+      "content_hash": "/b3/51b91aff81/0/content_hash.txt",
+      "prompt": "/b3/51b91aff81/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 129010,
+    "cache_creation_tokens": 3484130,
+    "cache_read_tokens": 129271831,
+    "output_tokens": 332193,
+    "api_call_count": 480
+  }
+}
