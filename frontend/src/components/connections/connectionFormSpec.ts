@@ -13,6 +13,13 @@ export interface TextField {
   name: string;
   label: string;
   optional?: boolean;
+  /**
+   * `tags` renders a free-entry multi-value input whose config value is a
+   * `string[]` (e.g. dbt's `jobs`); default `text` is a single-line string.
+   */
+  type?: 'text' | 'tags';
+  /** Helper text under the field. */
+  extra?: string;
 }
 
 export interface AuthOption {
@@ -44,6 +51,12 @@ export interface TypeSpec {
   auth?: AuthOption[];
   /** Present (and no `auth`) → a single secret field with this label. */
   secretLabel?: string;
+  /**
+   * The single secret is **optional** (some configs need no credential — e.g. a
+   * dbt connection whose artifacts live on a local `file://` path). Only meaningful
+   * with `secretLabel`.
+   */
+  optionalSecret?: boolean;
 }
 
 export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
@@ -111,6 +124,32 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
         extraField: { name: 'username', label: 'Username' },
       },
     ],
+  },
+  // dbt is an OrchestrationProvider (ADR 0029), not a datasource — it binds to
+  // dbt's universal surface (the run_results.json artifact + a post-build
+  // callback), never a host API. The connection is a dbt *project* (resolved by
+  // `project_name`); `jobs` are the trigger units polled under `artifacts_uri`.
+  // The secret is the artifacts-store read credential (SAS / S3 secret key), and
+  // it's optional — a local `file://` artifacts path needs none.
+  dbt: {
+    textFields: [
+      { name: 'project_name', label: 'Project name' },
+      {
+        name: 'artifacts_uri',
+        label: 'Artifacts URI',
+        extra: 'Base location of run_results.json — adls://…, s3://…, or file://…',
+      },
+      {
+        name: 'jobs',
+        label: 'Jobs',
+        type: 'tags',
+        extra: 'dbt job names polled under the artifacts URI. Type a name and press Enter.',
+      },
+      { name: 'region', label: 'Region (S3 only)', optional: true },
+      { name: 'access_key_id', label: 'Access key ID (S3 only)', optional: true },
+    ],
+    secretLabel: 'Artifacts read credential (ADLS SAS / S3 secret key)',
+    optionalSecret: true,
   },
 };
 

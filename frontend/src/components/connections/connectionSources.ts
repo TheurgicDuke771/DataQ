@@ -19,6 +19,7 @@ export type SourceCategory = (typeof SOURCE_CATEGORIES)[number];
 export const SOURCE_CATEGORY: Record<ConnectionType, SourceCategory> = {
   adf: 'Orchestration',
   airflow: 'Orchestration',
+  dbt: 'Orchestration',
   snowflake: 'Warehouses',
   unity_catalog: 'Lakehouses',
   adls_gen2: 'Cloud Storage',
@@ -33,6 +34,7 @@ export const CONNECTION_BLURB: Record<ConnectionType, string> = {
   s3: 'Object storage buckets',
   adf: 'Trigger & monitor pipeline runs',
   airflow: 'Monitor DAG runs',
+  dbt: 'Poll dbt run artifacts & trigger suites',
 };
 
 /** Lead-in copy shown under each category heading — what you do with that bucket
@@ -42,7 +44,7 @@ export const SOURCE_CATEGORY_NOTE: Record<SourceCategory, string> = {
   Lakehouses: 'Validate lakehouse tables governed by Unity Catalog.',
   'Cloud Storage': 'Run checks on flat files (CSV / Parquet) in object storage.',
   Orchestration:
-    'Optional — connect Azure Data Factory or Airflow to watch their pipeline runs and trigger suites on completion.',
+    'Optional — connect Azure Data Factory, Airflow or dbt to watch their pipeline / job runs and trigger suites on completion.',
 };
 
 export interface SourceGroup {

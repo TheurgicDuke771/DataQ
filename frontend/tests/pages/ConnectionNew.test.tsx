@@ -44,12 +44,46 @@ describe('ConnectionNew', () => {
     expect(labels[labels.length - 1]).toHaveTextContent('Orchestration');
     // The Orchestration note frames it as optional (cron/manual also run suites).
     expect(
-      screen.getByText(/Optional — connect Azure Data Factory or Airflow/),
+      screen.getByText(/Optional — connect Azure Data Factory, Airflow or dbt/),
     ).toBeInTheDocument();
-    // A datasource and an orchestration source are each offered.
+    // A datasource and all three orchestration sources are offered.
     expect(screen.getByText('Snowflake')).toBeInTheDocument();
     expect(screen.getByText('Azure Data Factory')).toBeInTheDocument();
+    expect(screen.getByText('dbt')).toBeInTheDocument();
   });
+
+  it('creates a dbt orchestration connection with a jobs list and no secret (file://)', async () => {
+    const user = userEvent.setup();
+    mockCreate.mockResolvedValue({
+      id: 'c9',
+      name: 'dbt-prod',
+      type: 'dbt',
+      env: 'prod',
+      config: {},
+      has_secret: false,
+      created_by: 'u1',
+    });
+    renderPage();
+
+    await user.click(screen.getByText('dbt'));
+    expect(screen.getByRole('heading', { name: /New dbt connection/ })).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText('Name'), 'dbt-prod');
+    await user.click(screen.getByLabelText('Environment'));
+    await user.click(await screen.findByText('PROD'));
+    await user.type(screen.getByLabelText('Project name'), 'analytics');
+    await user.type(screen.getByLabelText('Artifacts URI'), 'file:///data/dbt');
+    // `jobs` is a free-entry tags input (comma-separated) → config.jobs is a string[].
+    await user.type(screen.getByLabelText('Jobs'), 'nightly,hourly,');
+    // The credential is optional — a local file:// artifacts path needs none.
+    await user.click(screen.getByRole('button', { name: 'Create' }));
+
+    await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1));
+    const payload = mockCreate.mock.calls[0][0];
+    expect(payload).toMatchObject({ name: 'dbt-prod', type: 'dbt', env: 'prod' });
+    expect(payload.config.jobs).toEqual(['nightly', 'hourly']);
+    expect(payload.secret ?? '').toBe(''); // no secret required for file://
+  }, 15_000);
 
   it('does not leak name/env when re-picking a different type', async () => {
     const user = userEvent.setup();
