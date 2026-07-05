@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "400cdd373875",
+  "strategy": "manual-commit",
+  "branch": "chore/ui-tester-agent",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/40/0cdd373875/0/metadata.json",
+      "transcript": "/40/0cdd373875/0/full.jsonl",
+      "compact_transcript": "/40/0cdd373875/0/transcript.jsonl",
+      "content_hash": "/40/0cdd373875/0/content_hash.txt",
+      "prompt": "/40/0cdd373875/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 170619,
+    "cache_creation_tokens": 8797211,
+    "cache_read_tokens": 446519920,
+    "output_tokens": 944555,
+    "api_call_count": 1037
+  }
+}
