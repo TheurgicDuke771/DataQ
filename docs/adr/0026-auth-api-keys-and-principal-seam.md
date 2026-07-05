@@ -94,6 +94,11 @@ otherwise the seam's one real impl can never be regression-checked against the n
   hot-path write amplification.
 - **Not in phase 1:** key down-scoping (read-only), the management UI (API-only for now),
   and service-account principals (phase 2, unchanged).
+- **Accepted risk:** a PAT satisfies `get_current_user`, so a key can mint sibling keys —
+  a leaked PAT's holder can persist beyond that key's revocation via keys they minted.
+  Standard PAT trade-off (GitHub's PATs can mint PATs too); mitigations are the mandatory
+  expiry, per-key `last_used_at`, and list-visibility of every key on `/me/api-keys`.
+  Down-scoped (read-only) keys would remove this and stay on the phase-2 list.
 
 Open questions carried: scope granularity, principal generalization, and where service
 accounts sit relative to the workspace-admin allowlist. The token-verification-cost question
