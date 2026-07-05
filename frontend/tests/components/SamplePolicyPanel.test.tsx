@@ -107,6 +107,35 @@ describe('SamplePolicyPanel', () => {
     expect(await screen.findByText('SKU')).toBeInTheDocument();
   });
 
+  it('introspects at most once across repeated dropdown opens (#635 review)', async () => {
+    mockGet.mockResolvedValue({ identifier_column: null, pii_columns: [] });
+    mockListColumns.mockResolvedValue(['ORDER_NUMBER', 'SKU']);
+    const user = userEvent.setup();
+    renderPanel();
+    await screen.findByText(/Which column locates a failing row/);
+
+    const [identifierCombo, piiCombo] = screen.getAllByRole('combobox');
+    await user.click(identifierCombo); // open identifier → the one fetch
+    await waitFor(() => expect(mockListColumns).toHaveBeenCalledTimes(1));
+    await user.click(piiCombo); // opening the PII Select must not re-fetch (guarded)
+    await waitFor(() => expect(screen.getAllByText('SKU').length).toBeGreaterThan(0));
+    expect(mockListColumns).toHaveBeenCalledTimes(1);
+  });
+
+  it('stays usable as free entry when introspection fails (#635 review)', async () => {
+    mockGet.mockResolvedValue({ identifier_column: null, pii_columns: [] });
+    mockListColumns.mockRejectedValue(new Error('warehouse unreachable'));
+    const user = userEvent.setup();
+    renderPanel();
+    await screen.findByText(/Which column locates a failing row/);
+
+    await user.click(screen.getAllByRole('combobox')[0]); // open → fetch rejects
+    await waitFor(() => expect(mockListColumns).toHaveBeenCalled());
+    // Degrades to free-tag entry — the user can still type a column name.
+    await user.type(screen.getAllByRole('combobox')[0], 'CUSTOM_COL{Enter}');
+    expect(screen.getAllByText('CUSTOM_COL').length).toBeGreaterThan(0);
+  });
+
   it('does not introspect a batch/pattern target (falls back to free entry)', async () => {
     mockGet.mockResolvedValue({ identifier_column: null, pii_columns: [] });
     const user = userEvent.setup();
