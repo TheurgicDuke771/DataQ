@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "f44551f20eed",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-461-pats-phase1",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/alembic/versions/b0c1d2e3f4a5_add_api_keys.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f4/4551f20eed/0/metadata.json",
+      "transcript": "/f4/4551f20eed/0/full.jsonl",
+      "compact_transcript": "/f4/4551f20eed/0/transcript.jsonl",
+      "content_hash": "/f4/4551f20eed/0/content_hash.txt",
+      "prompt": "/f4/4551f20eed/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 129030,
+    "cache_creation_tokens": 3494324,
+    "cache_read_tokens": 131148648,
+    "output_tokens": 336470,
+    "api_call_count": 490
+  }
+}
