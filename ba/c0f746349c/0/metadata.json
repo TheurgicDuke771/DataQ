@@ -1,0 +1,55 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_id": "bac0f746349c",
+  "session_id": "4feb9be8-2ae1-4d50-be97-b9c4cbaead36",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-05T18:20:11.435096Z",
+  "branch": "feature/otel-log-pipeline-and-otlp-endpoint",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "backend/app/core/logging.py",
+    "backend/app/core/otel.py",
+    "backend/app/core/tracing.py",
+    "backend/tests/core/test_logging.py",
+    "backend/tests/core/test_otel.py",
+    "backend/tests/core/test_tracing.py"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-4-8",
+  "turn_id": "daaf4286be44",
+  "token_usage": {
+    "input_tokens": 104483,
+    "cache_creation_tokens": 4609736,
+    "cache_read_tokens": 214335280,
+    "output_tokens": 551713,
+    "api_call_count": 604
+  },
+  "session_metrics": {
+    "turn_count": 12
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-05T18:20:11.202423Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 67,
+    "human_modified": 70,
+    "human_removed": 0,
+    "total_committed": 67,
+    "total_lines_changed": 137,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}
