@@ -113,53 +113,86 @@ def _configure_otel_log_export(
 
     The lazy imports (repo convention, ``secrets.py``) keep telemetry-off
     deployments from paying the OTel-logs import cost.
+
+    **Best-effort**: the whole setup is isolated in a try/except so an observability
+    misconfig (bad OTLP endpoint/headers, SDK drift) degrades to stdout-only logging
+    instead of crashing the API lifespan or the celery signal handlers — a telemetry
+    fault must never take the process down (the #405 blast radius). The stdout
+    handler is already attached by the time we get here.
     """
-    exporters = otel.build_log_exporters(settings=get_settings())
+    settings = get_settings()
+    exporters = otel.build_log_exporters(settings=settings)
     if not exporters:
         return
 
-    import warnings
+    try:
+        import warnings
 
-    from opentelemetry._logs import set_logger_provider
-    from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
-    from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
+        from opentelemetry._logs import set_logger_provider
+        from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
+        from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
 
-    class _RedactingOTelLogHandler(LoggingHandler):  # type: ignore[misc]  # LoggingHandler is Any (follow_imports=skip)
-        """OTel bridge that redacts the EXPORTED ATTRIBUTES, not just the body.
+        class _RedactingOTelLogHandler(LoggingHandler):  # type: ignore[misc]  # LoggingHandler is Any (follow_imports=skip)
+            """OTel bridge that redacts the EXPORTED ATTRIBUTES, not just the body.
 
-        The body is already scrubbed — ``LoggingHandler._translate`` renders it
-        through our redacting ``ProcessorFormatter`` (``if self.formatter:``). But
-        the base ``_get_attributes`` copies every non-reserved log-record var into
-        the exported OTel attributes verbatim, *bypassing the formatter* — so a
-        foreign record's ``extra=`` (or a library's custom record attribute) could
-        ship a secret / PII to the backend un-redacted. Run those attributes
-        through the same PII/secret scrubber the formatter applies to the body
-        (#494/#536). This is stricter than the old opencensus handler, which only
-        exported the formatted message."""
+            The body is already scrubbed — ``LoggingHandler._translate`` renders it
+            through our redacting ``ProcessorFormatter`` (``if self.formatter:``).
+            But the base ``_get_attributes`` copies every non-reserved log-record var
+            into the exported OTel attributes verbatim, *bypassing the formatter* —
+            so a foreign record's ``extra=`` (or a library's custom record attribute)
+            could ship a secret / PII to the backend un-redacted. Run those
+            attributes through the same PII/secret scrubber the formatter applies to
+            the body (#494/#536). This is stricter than the old opencensus handler,
+            which only exported the formatted message."""
 
-        @staticmethod
-        def _get_attributes(record: logging.LogRecord) -> Any:
-            return _redact_pii(None, "", dict(LoggingHandler._get_attributes(record)))
+            @staticmethod
+            def _get_attributes(record: logging.LogRecord) -> Any:
+                return _redact_pii(None, "", dict(LoggingHandler._get_attributes(record)))
 
-    provider = LoggerProvider(resource=otel.build_resource(service_name))
-    for exporter in exporters:
-        provider.add_log_record_processor(BatchLogRecordProcessor(exporter))
-    set_logger_provider(provider)
+        provider = LoggerProvider(resource=otel.build_resource(service_name))
+        for exporter in exporters:
+            provider.add_log_record_processor(BatchLogRecordProcessor(exporter))
+        set_logger_provider(provider)
 
-    with warnings.catch_warnings():
-        # The sdk `LoggingHandler` carries a DeprecationWarning nudging toward
-        # `opentelemetry-instrumentation-logging` — which only injects trace
-        # context into records; it is NOT an export bridge. The sdk handler IS
-        # the bridge (it's what the azure-monitor distro uses under the hood).
-        # Suppress the nudge so it neither spams stdout nor trips `-W error`.
-        warnings.simplefilter("ignore", DeprecationWarning)
-        handler = _RedactingOTelLogHandler(level=level, logger_provider=provider)
-    # Same redacting ProcessorFormatter as stdout, so records exported to the
-    # backend pass through `_redact_pii` (incl. the secret-string scrubber) — a
-    # foreign record carrying a secret in its message is scrubbed before export
-    # (#494). App-level structlog records are already redacted upstream.
-    handler.setFormatter(formatter)
-    root.addHandler(handler)
+        with warnings.catch_warnings():
+            # The sdk `LoggingHandler` carries a DeprecationWarning nudging toward
+            # `opentelemetry-instrumentation-logging` — which only injects trace
+            # context into records; it is NOT an export bridge. The sdk handler IS
+            # the bridge (it's what the azure-monitor distro uses under the hood).
+            # Suppress just that message so an unrelated deprecation still surfaces.
+            warnings.filterwarnings(
+                "ignore", message=r".*LoggingHandler.*", category=DeprecationWarning
+            )
+            handler = _RedactingOTelLogHandler(level=level, logger_provider=provider)
+        # Same redacting ProcessorFormatter as stdout, so records exported to the
+        # backend pass through `_redact_pii` (incl. the secret-string scrubber) — a
+        # foreign record carrying a secret in its message is scrubbed before export
+        # (#494). App-level structlog records are already redacted upstream.
+        handler.setFormatter(formatter)
+        root.addHandler(handler)
+
+        # Break the feedback loop: the SDK/exporter log their own "failed to export"
+        # warnings on these namespaces; propagated to root they re-enter THIS bridge
+        # and get re-queued for export — an amplifier that fires exactly when the
+        # backend is unreachable. Keep them off the export pipeline (a well-known
+        # OTel root-bridge footgun).
+        for noisy in ("opentelemetry", "azure.monitor.opentelemetry"):
+            logging.getLogger(noisy).propagate = False
+
+        # Positive confirmation so "my logs never reached the backend" is diagnosable
+        # (misconfig looks identical to telemetry-off otherwise). Endpoint is infra
+        # config, not a secret; the App Insights connection string is NOT logged.
+        logging.getLogger(__name__).info(
+            "otel_log_export_configured service=%s exporters=%d azure=%s otlp=%s",
+            service_name,
+            len(exporters),
+            bool(settings.applicationinsights_connection_string),
+            settings.otel_exporter_otlp_endpoint or "off",
+        )
+    except Exception:
+        # Degrade to stdout-only rather than take the process down (the #405 blast
+        # radius: orchestration polling / scheduled dispatch / gap recovery / purge).
+        logging.getLogger(__name__).exception("otel_log_export_setup_failed")
 
 
 def configure_logging(service_name: str = "dataq") -> None:

@@ -47,19 +47,6 @@ def sentinel_exporters(monkeypatch: pytest.MonkeyPatch) -> None:
     return None
 
 
-@pytest.mark.parametrize(
-    ("conn", "otlp", "expected"),
-    [
-        (None, None, False),
-        (_CONN, None, True),
-        (None, "http://collector:4318", True),
-        (_CONN, "http://collector:4318", True),
-    ],
-)
-def test_telemetry_enabled(conn: str | None, otlp: str | None, expected: bool) -> None:
-    assert otel.telemetry_enabled(_settings(conn=conn, otlp=otlp)) is expected
-
-
 def test_no_exporters_when_telemetry_off(sentinel_exporters: None) -> None:
     assert otel.build_span_exporters(_settings()) == []
     assert otel.build_log_exporters(_settings()) == []

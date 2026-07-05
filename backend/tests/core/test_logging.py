@@ -257,6 +257,32 @@ def test_no_otel_bridge_when_telemetry_off(
     assert _otel_bridge_handler(std_logging.getLogger()) is None
 
 
+def test_otel_setup_failure_degrades_to_stdout_never_raises(
+    monkeypatch: pytest.MonkeyPatch, _restore_root_logging: None, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """#628 review (HIGH): a telemetry misconfig (bad OTLP endpoint/headers, SDK
+    drift) must NOT crash configure_logging() — which runs in the API lifespan and
+    the celery signal handlers (the #405 blast radius). It degrades to stdout-only:
+    no bridge attaches, the failure is logged, and stdout logging keeps working."""
+    from backend.app.core import otel as otel_mod
+
+    monkeypatch.setattr(otel_mod, "build_log_exporters", lambda settings=None: [object()])
+
+    def _boom(_service_name: str) -> Any:
+        raise RuntimeError("otel resource boom")
+
+    monkeypatch.setattr(otel_mod, "build_resource", _boom)
+
+    configure_logging()  # must not raise
+    root = std_logging.getLogger()
+    assert _otel_bridge_handler(root) is None  # setup failed → bridge not attached
+
+    std_logging.getLogger("still.alive").warning("post-failure line")
+    out = capsys.readouterr().out
+    assert "otel_log_export_setup_failed" in out  # the degradation was recorded
+    assert "post-failure line" in out  # stdout logging survives
+
+
 def test_scrubs_url_userinfo_credentials() -> None:
     """#536: a SQLAlchemy-style engine URL carries the credential in the URL
     USERINFO (`scheme://user:secret@host`), not a query param — the #494 regex

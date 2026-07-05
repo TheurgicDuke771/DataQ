@@ -3,8 +3,8 @@
 OTel-neutral core (ADR 0010): the OpenTelemetry SDK + FastAPI/Celery
 instrumentations are vendor-neutral; the exporter backends live behind the
 shared seam in ``otel.py`` (Azure Monitor and/or generic OTLP/HTTP — #589),
-resolved from settings. Tracing is on when **any** backend is configured
-(``otel.telemetry_enabled()``) — unset ⇒ a complete no-op, matching the log
+resolved from settings. Tracing is on when **any** backend resolves an exporter
+(``otel.build_span_exporters``) — none ⇒ a complete no-op, matching the log
 pipeline's gate. Spans and logs (#524) now share the same seam and Resource
 (service.name).
 
@@ -72,20 +72,26 @@ def configure_tracing(service_name: str) -> None:
     if _provider is not None:
         return
     settings = get_settings()
-    exporters = otel.build_span_exporters(settings)
-    if not exporters:
-        return
+    try:
+        exporters = otel.build_span_exporters(settings)
+        if not exporters:
+            return
 
-    from opentelemetry import trace
-    from opentelemetry.sdk.trace import TracerProvider
-    from opentelemetry.sdk.trace.export import BatchSpanProcessor
+        from opentelemetry import trace
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
-    provider = TracerProvider(resource=otel.build_resource(service_name))
-    for exporter in exporters:
-        provider.add_span_processor(BatchSpanProcessor(exporter))
-    trace.set_tracer_provider(provider)
-    _provider = provider
-    log.info("tracing_configured", service_name=service_name, exporters=len(exporters))
+        provider = TracerProvider(resource=otel.build_resource(service_name))
+        for exporter in exporters:
+            provider.add_span_processor(BatchSpanProcessor(exporter))
+        trace.set_tracer_provider(provider)
+        _provider = provider
+        log.info("tracing_configured", service_name=service_name, exporters=len(exporters))
+    except Exception:
+        # Same posture as the log bridge: an observability misconfig (bad OTLP
+        # endpoint/headers, SDK drift) must not crash the API lifespan or the celery
+        # worker-init signal. Leave _provider None so instrument_* no-op.
+        log.warning("tracing_setup_failed", service_name=service_name, exc_info=True)
 
 
 def _scrub_query_hook(span: Span, scope: dict[str, Any]) -> None:

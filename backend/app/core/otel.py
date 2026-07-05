@@ -40,12 +40,6 @@ def _otlp_base(settings: Settings) -> str | None:
     return endpoint.rstrip("/") if endpoint else None
 
 
-def telemetry_enabled(settings: Settings | None = None) -> bool:
-    """True when at least one exporter backend is configured (Azure or OTLP)."""
-    settings = settings or get_settings()
-    return bool(settings.applicationinsights_connection_string) or bool(_otlp_base(settings))
-
-
 def build_resource(service_name: str) -> Resource:
     """The OTel Resource carrying ``service.name`` (App Insights cloud role name)."""
     from opentelemetry.sdk.resources import Resource
