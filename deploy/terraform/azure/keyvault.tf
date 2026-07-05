@@ -1,8 +1,10 @@
 # Key Vault — the app's runtime SecretStore (SECRET_STORE=azure_key_vault). It
 # holds the datasource connection credentials the app writes/reads via the API at
 # runtime, plus the pre-seeded orchestration webhook secrets. RBAC authorization
-# (not access policies): the UAMI gets Secrets User (read); the deployer gets
-# Secrets Officer (write) so Terraform can seed the webhook secrets.
+# (not access policies): the UAMI gets Secrets Officer (read+write) so the app can
+# CREATE/rotate connection credentials at runtime (SecretStore.set) — read-only
+# would 502 every connection-create-with-secret (#622); the deployer also gets
+# Secrets Officer so Terraform can seed the webhook secrets.
 #
 # NOTE: boot-critical config (DATABASE_URL / REDIS_URL / App Insights) is injected
 # as inline Container App secrets in containerapps.tf, NOT via KV references — that
@@ -30,11 +32,20 @@ resource "azurerm_role_assignment" "kv_deployer" {
   principal_id         = data.azurerm_client_config.current.object_id
 }
 
-# App identity -> read secrets at runtime (DefaultAzureCredential).
-resource "azurerm_role_assignment" "kv_app_reader" {
+# App identity -> read AND write secrets at runtime (DefaultAzureCredential). Write
+# is required so the connection manager can persist/rotate credentials via the API
+# (SecretStore.set); read alone breaks connection-create-with-secret (#622).
+resource "azurerm_role_assignment" "kv_app_secrets" {
   scope                = azurerm_key_vault.app.id
-  role_definition_name = "Key Vault Secrets User"
+  role_definition_name = "Key Vault Secrets Officer"
   principal_id         = azurerm_user_assigned_identity.app.principal_id
+}
+
+# Renamed from kv_app_reader (was Secrets User) when the role widened to Officer
+# for #622 — keep the state entry so the plan is a role change, not a churn.
+moved {
+  from = azurerm_role_assignment.kv_app_reader
+  to   = azurerm_role_assignment.kv_app_secrets
 }
 
 # RBAC data-plane role assignments are eventually consistent — wait before the
