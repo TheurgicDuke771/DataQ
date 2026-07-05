@@ -500,3 +500,63 @@ This pattern pre-dates #639 (the old single `onClearWebhook` did the same), but 
 The one finding I'd gate the merge on is **Finding 1** — it's a real, reachable silent notification outage triggered by ordinary user input, dressed up as a successful save.</result>
 <usage><subagent_tokens>88208</subagent_tokens><tool_uses>17</tool_uses><duration_ms>355700</duration_ms></usage>
 </task-notification>
+
+---
+
+<task-notification>
+<task-id>a52a0ee115d115a90</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/4feb9be8-2ae1-4d50-be97-b9c4cbaead36/tasks/a52a0ee115d115a90.output</output-file>
+<status>completed</status>
+<summary>Agent "Silent-failure review #642" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Audit complete. I verified every claim against the actual diff and the surrounding code (`suite_service.set_column_policy`, `derive_column_policy`, `classify_column`/`is_sensitive`, the two dispatch sites, and the task helper).
+
+## Verdict: the fail-soft is fundamentally correct. Two real concurrency/staleness gaps and one broad-except caveat are worth flagging.
+
+The bare-except-as-best-effort design is justified here and the visibility is real: both failure paths log with `exc_info=True` (dispatch → `auto_classify_dispatch_failed`; task → `auto_classify_failed`), so nothing fails truly silently. The worker cannot crash from this path. But the "never clobber" guard is weaker than its comment claims, and the derive is bound to a snapshot of the target that can go stale.
+
+---
+
+### Finding 1 — MEDIUM: stale-target race — a policy derived from the OLD target is silently persisted onto a suite whose target has since changed
+`backend/app/worker/tasks.py`, `_auto_classify_columns` (the `target = suite.target` capture through `set_column_policy`).
+
+The task captures `target = suite.target`, introspects that target (seconds of live warehouse I/O), then before persisting only re-checks `suite.column_policy is not None` — it never re-checks that `suite.target` is still the target it profiled. `set_column_policy` writes only `column_policy`, not `target`.
+
+Scenario (inputs/state → wrong outcome): Suite created targeting `SALES.ORDERS` (policy-less) → task dispatched, begins introspecting ORDERS. While it profiles, the owner PATCHes the target to `SALES.CUSTOMERS` (update path: `column_policy is None` still true → a *second* task dispatched too, but that's benign). Task A finishes, `session.refresh(suite)` shows `column_policy is None`, and it writes an `identifier_column`/`pii_columns` derived from ORDERS onto a suite now pointing at CUSTOMERS. Result: the redaction policy references columns that may not exist in the current target — `identifier_column` silently resolves to no locator, and any ORDERS-specific PII columns are the wrong set for CUSTOMERS. The PII value-signal floor at redaction time still masks affirmatively-sensitive values, so this is a wrong-locator / mis-scoped-policy bug, not a PII leak. The guard should re-verify `suite.target == target` (or dict-equal) after `refresh`, not just the policy.
+
+---
+
+### Finding 2 — LOW/MEDIUM: the "never clobber a user policy" re-check is TOCTOU, not race-safe
+`backend/app/worker/tasks.py` — `session.refresh(suite)` + `if suite.column_policy is not None` immediately before `set_column_policy`.
+
+The comment says this makes the write race-safe. It does not. `set_column_policy` issues a plain ORM `UPDATE suite SET column_policy = …` with no `WHERE column_policy IS NULL` and no `SELECT … FOR UPDATE` row lock. Under READ COMMITTED there remains a window between the `refresh` SELECT and the `set_column_policy` COMMIT. A user who sets their own policy via the Auto-detect/set endpoint in that sub-second window has it silently overwritten by the auto-derived one. The re-check narrows the window from "seconds of introspection" to "milliseconds between refresh and commit" — a real and worthwhile mitigation — but the code and its comment overstate it as fully safe. A conditional update (`UPDATE … WHERE column_policy IS NULL` and check rowcount) or a `with_for_update` fetch would close it. Low probability, but the outcome is a user's explicit choice being clobbered by background work — exactly the class of silent override this guard exists to prevent.
+
+---
+
+### Finding 3 — LOW: target change on an already-policied suite leaves a stale policy with no signal
+`backend/app/api/v1/suites.py`, `update_suite` dispatch condition `payload.target is not None and suite.target is not None and suite.column_policy is None`.
+
+Because of the `column_policy is None` clause, PATCHing the target of a suite that already has a policy does not re-derive and emits no warning/event. Scenario: suite targets ORDERS with a derived `identifier_column="ORDER_NUMBER"`; owner repoints it to a table without that column. The stale policy persists silently; the locator just stops working. This is defensible as the intended "never re-derive once a policy exists" rule, but the staleness is invisible to the user. Worth a follow-up issue (or at least a doc note) rather than a code change in this PR.
+
+---
+
+### Finding 4 — LOW (broad-except caveat, not a defect): a genuine code bug is masked as a best-effort warning
+`backend/app/worker/tasks.py`, the task's `except Exception`.
+
+Correct for I/O/introspection failures (warehouse unreachable, bad creds, `ProfileUnsupportedError`/`ProfileTargetInvalidError` 422s) — those *should* be swallowed here. But the same catch also absorbs any programming bug in `suggest_policy_for_target` / `set_column_policy` (e.g. a future `AttributeError`/`TypeError`), reporting it as an ordinary `auto_classify_failed` warning. The feature would then silently never classify anything, distinguishable only by log volume. It is logged at `warning` with `exc_info`, not surfaced as an error/Sentry-level event, so a persistent regression could run unnoticed. Acceptable for best-effort background work, but this is the debugging cost of the broad catch — I'd note it, not block on it.
+
+---
+
+### Things the review asked about that are actually FINE (verified)
+
+- **`ColumnPolicyInvalidError` crashing the worker (Q6):** No. `DataQError(Exception)` is caught by the task's `except Exception` → rollback + warning + returns `"error"`. Worker safe. Moreover it effectively cannot fire from a *derived* policy: `derive_column_policy` only picks an `identifier_column` from columns `classify_column` returned as `IDENTIFIER`, which by construction means `_name_signal` is not PII; `set_column_policy`'s `is_sensitive(identifier_column)` (name-only, no sampled values) can only trip on a PII name signal. So the two never contradict for auto-derived input. The guard is dead-but-harmless defense.
+- **`dispatch_auto_classify` swallowing broker errors (Q3):** Correct and visible — `log.warning("auto_classify_dispatch_failed", …, exc_info=True)`. Suite create/update cannot be failed by a broker blip. Good.
+- **Suggest-endpoint refactor (Q5):** Error behavior preserved. `suggest_policy_for_target` runs the identical `list_columns → profile_connection → derive_column_policy` sequence and re-raises the same `ProfileUnsupportedError`/`ProfileTargetInvalidError` 422s the endpoint raised before; `top_n` is threaded through. The endpoint still surfaces; the task still swallows. Clean extraction.
+- **Dispatch conditions (Q4):** The target-less-then-given-a-target case *is* covered by the update path. Redundant dispatch happens only for batch-pattern/target-less-column suites on create (task no-ops to `"skipped"`) — harmless waste of one broker message.
+
+Key files: `/Users/arijit/Coding/Python/DataQ/backend/app/worker/tasks.py`, `/Users/arijit/Coding/Python/DataQ/backend/app/services/run_dispatch.py`, `/Users/arijit/Coding/Python/DataQ/backend/app/api/v1/suites.py`, `/Users/arijit/Coding/Python/DataQ/backend/app/services/suite_service.py`.
+
+The two findings I'd want addressed before merge are #1 (add a `suite.target == target` re-check alongside the policy re-check) and #2 (make the write conditional or soften the "race-safe" comment to "narrows the window"). #3 and #4 are follow-up/note-level.</result>
+<usage><subagent_tokens>69176</subagent_tokens><tool_uses>13</tool_uses><duration_ms>178229</duration_ms></usage>
+</task-notification>
