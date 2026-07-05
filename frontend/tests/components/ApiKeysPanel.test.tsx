@@ -79,6 +79,49 @@ describe('ApiKeysPanel', () => {
     // The full token is revealed once, with the copy-now warning.
     expect(await screen.findByText('dq_live_ab12THE_FULL_SECRET')).toBeInTheDocument();
     expect(screen.getByText('This token is shown only once')).toBeInTheDocument();
+
+    // Show-once invariant: after acknowledging (Done), reopening "New token"
+    // shows a fresh empty form — the plaintext is dropped from state (reset) and
+    // never re-rendered, and the list refetch carries metadata only (no `token`).
+    await user.click(screen.getByRole('button', { name: 'Done' }));
+    await user.click(await screen.findByRole('button', { name: /New token/ }));
+    expect(screen.queryByText('dq_live_ab12THE_FULL_SECRET')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Token name')).toHaveValue('');
+  });
+
+  it('does not reveal a token when creation fails', async () => {
+    mockList.mockResolvedValue([]);
+    mockCreate.mockRejectedValue(new Error('boom'));
+    const user = userEvent.setup();
+    renderPanel();
+    await screen.findByText('No tokens yet.');
+
+    await user.click(screen.getByRole('button', { name: /New token/ }));
+    await user.type(screen.getByLabelText('Token name'), 'laptop-cli');
+    await user.click(screen.getByRole('button', { name: 'Create' }));
+
+    await waitFor(() => expect(mockCreate).toHaveBeenCalled());
+    // A failed create must NOT flash the reveal; we stay on the form (its name
+    // field is still present — the token view never mounted).
+    expect(screen.queryByText('This token is shown only once')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Token name')).toBeInTheDocument();
+  });
+
+  it('keeps the token listed when revoke fails (surfaces, never silent)', async () => {
+    mockList.mockResolvedValue([KEY]);
+    mockRevoke.mockRejectedValue(new Error('boom'));
+    const user = userEvent.setup();
+    renderPanel();
+    await screen.findByText('ci-smoke');
+
+    await user.click(screen.getByRole('button', { name: 'Revoke ci-smoke' }));
+    const confirm = await within(document.body).findByRole('button', { name: 'Revoke' });
+    await user.click(confirm);
+
+    await waitFor(() => expect(mockRevoke).toHaveBeenCalledWith('k1'));
+    // Failure is non-silent and non-destructive: the key stays listed (no refetch
+    // on failure) so the user can retry.
+    expect(screen.getByText('ci-smoke')).toBeInTheDocument();
   });
 
   it('revokes a token after confirmation', async () => {

@@ -120,8 +120,11 @@ function ApiKeyTable({ keys, onChanged }: { keys: ApiKey[]; onChanged: () => voi
           message.success(`“${key.name}” revoked`);
           onChanged();
         } catch (err) {
+          // Surface the failure (never silent) and let the confirm close; the key
+          // stays listed (no refetch on failure) so the user can retry. We don't
+          // re-throw to keep the modal open — antd 6 leaves an onOk rejection
+          // unhandled, and a toast + intact list is clearer anyway.
           message.error(`Revoke failed: ${err instanceof Error ? err.message : 'unknown error'}`);
-          throw err; // keep the confirm open on failure
         } finally {
           setBusyId(null);
         }
@@ -229,7 +232,10 @@ function CreateTokenModal({
       open={open}
       title={created ? 'Copy your token now' : 'New personal access token'}
       onCancel={close}
-      maskClosable={!created} // once created, force an explicit acknowledge
+      // Unmount body on close so the revealed plaintext token leaves the DOM
+      // entirely (not just hidden) — reinforces show-once.
+      destroyOnHidden
+      mask={{ closable: !created }} // once created, force an explicit acknowledge
       footer={
         created ? (
           <Button type="primary" onClick={close}>
@@ -291,6 +297,7 @@ function CreateTokenModal({
               onChange={setExpiry}
               min={1}
               max={PAT_MAX_EXPIRY_DAYS}
+              precision={0}
               style={{ width: '100%' }}
               aria-label="Expiry in days"
             />
