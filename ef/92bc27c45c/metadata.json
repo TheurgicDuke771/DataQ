@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "ef92bc27c45c",
+  "strategy": "manual-commit",
+  "branch": "fix/622-app-kv-write",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/ef/92bc27c45c/0/metadata.json",
+      "transcript": "/ef/92bc27c45c/0/full.jsonl",
+      "compact_transcript": "/ef/92bc27c45c/0/transcript.jsonl",
+      "content_hash": "/ef/92bc27c45c/0/content_hash.txt",
+      "prompt": "/ef/92bc27c45c/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 45759,
+    "cache_creation_tokens": 2849928,
+    "cache_read_tokens": 108371713,
+    "output_tokens": 323531,
+    "api_call_count": 365
+  }
+}
