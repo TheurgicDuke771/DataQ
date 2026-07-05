@@ -149,7 +149,8 @@ class AzureKeyVaultStore:
         try:
             self._client_lazy().begin_delete_secret(name)
         except ResourceNotFoundError:
-            pass
+            # Already absent (or soft-deleted) — deletion is idempotent, nothing to do.
+            return
         except Exception as exc:
             log.warning("secret_delete_failed", name=name, error=str(exc))
 
