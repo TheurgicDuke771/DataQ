@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "273d094df50a",
+  "strategy": "manual-commit",
+  "branch": "feature/pat-management-ui",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/components/profile/ApiKeysPanel.tsx",
+    "frontend/tests/components/ApiKeysPanel.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/27/3d094df50a/0/metadata.json",
+      "transcript": "/27/3d094df50a/0/full.jsonl",
+      "compact_transcript": "/27/3d094df50a/0/transcript.jsonl",
+      "content_hash": "/27/3d094df50a/0/content_hash.txt",
+      "prompt": "/27/3d094df50a/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 115651,
+    "cache_creation_tokens": 5093076,
+    "cache_read_tokens": 262086846,
+    "output_tokens": 691394,
+    "api_call_count": 749
+  }
+}
