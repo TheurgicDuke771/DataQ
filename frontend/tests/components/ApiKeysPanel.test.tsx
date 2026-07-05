@@ -122,7 +122,8 @@ describe('ApiKeysPanel', () => {
     // Failure is non-silent and non-destructive: the key stays listed (no refetch
     // on failure) so the user can retry.
     expect(screen.getByText('ci-smoke')).toBeInTheDocument();
-  });
+    // modal.confirm's portal + antd 6 motion is slow on CI runners (cf. #573).
+  }, 15000);
 
   it('revokes a token after confirmation', async () => {
     mockList.mockResolvedValue([KEY]);
@@ -138,7 +139,7 @@ describe('ApiKeysPanel', () => {
     const confirm = await within(document.body).findByRole('button', { name: 'Revoke' });
     await user.click(confirm);
     await waitFor(() => expect(mockRevoke).toHaveBeenCalledWith('k1'));
-  });
+  }, 15000);
 
   it('offers no revoke action for an already-revoked token', async () => {
     mockList.mockResolvedValue([{ ...KEY, revoked_at: '2026-07-02T00:00:00Z' }]);
