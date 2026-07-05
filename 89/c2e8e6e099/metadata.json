@@ -4,7 +4,7 @@
   "checkpoint_id": "89c2e8e6e099",
   "strategy": "manual-commit",
   "branch": "docs/issue-588-snowflake-retirement",
-  "checkpoints_count": 3,
+  "checkpoints_count": 4,
   "files_touched": [
     "docs/runbook-faq.md"
   ],
@@ -15,13 +15,20 @@
       "compact_transcript": "/89/c2e8e6e099/0/transcript.jsonl",
       "content_hash": "/89/c2e8e6e099/0/content_hash.txt",
       "prompt": "/89/c2e8e6e099/0/prompt.txt"
+    },
+    {
+      "metadata": "/89/c2e8e6e099/1/metadata.json",
+      "transcript": "/89/c2e8e6e099/1/full.jsonl",
+      "compact_transcript": "/89/c2e8e6e099/1/transcript.jsonl",
+      "content_hash": "/89/c2e8e6e099/1/content_hash.txt",
+      "prompt": "/89/c2e8e6e099/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 35738,
-    "cache_creation_tokens": 301909,
-    "cache_read_tokens": 22821158,
-    "output_tokens": 100641,
-    "api_call_count": 135
+    "input_tokens": 113844,
+    "cache_creation_tokens": 2256682,
+    "cache_read_tokens": 106938819,
+    "output_tokens": 312084,
+    "api_call_count": 446
   }
 }
