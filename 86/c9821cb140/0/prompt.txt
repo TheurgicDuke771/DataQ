@@ -261,3 +261,9 @@ continue...
 <summary>Monitor event: "PR 610 CI completion"</summary>
 <event>ALL CHECKS PASS</event>
 </task-notification>
+
+---
+
+No. I was thinking dbt as a third orchestration layer. 
+Airflow is already tested, so no need to add anything more on airflow (or do we wanted to explore more on airflow?) 
+And for the hosting part, I see some option on hosting dbt on Snowflake or Databrick side, is that an option? Or should we go with independent cloud hosting? Which one will give us more neutral point?
