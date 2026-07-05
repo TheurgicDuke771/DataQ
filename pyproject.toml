@@ -65,6 +65,7 @@ module = [
     "snowflake.*",
     "databricks.*",
     "azure.storage.*",
+    "azure.core.*",
     "azure.identity",
     "azure.keyvault.*",
     "boto3.*",

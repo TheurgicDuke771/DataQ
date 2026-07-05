@@ -136,11 +136,12 @@ def _read_artifact(config: DbtConfig, job: str, secret: str) -> bytes | None:
             read_timeout=int(_READ_TIMEOUT_SECONDS),
         )
         try:
-            return (
+            blob_bytes: bytes = (
                 client.get_blob_client(container, blob)
                 .download_blob(timeout=int(_READ_TIMEOUT_SECONDS))
                 .readall()
             )
+            return blob_bytes
         except ResourceNotFoundError:
             return None
 
