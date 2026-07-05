@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "cfddd920963d",
+  "strategy": "manual-commit",
+  "branch": "feature/pat-management-ui",
+  "checkpoints_count": 3,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/cf/ddd920963d/0/metadata.json",
+      "transcript": "/cf/ddd920963d/0/full.jsonl",
+      "compact_transcript": "/cf/ddd920963d/0/transcript.jsonl",
+      "content_hash": "/cf/ddd920963d/0/content_hash.txt",
+      "prompt": "/cf/ddd920963d/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 114425,
+    "cache_creation_tokens": 5055792,
+    "cache_read_tokens": 251436073,
+    "output_tokens": 664276,
+    "api_call_count": 724
+  }
+}
