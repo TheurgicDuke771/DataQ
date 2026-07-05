@@ -112,7 +112,7 @@ _The rest of the 55 are mapped by theme in [post-v1-roadmap.md](../context/post-
 > (Theme-1 `schema_drift` + `anomaly` → scale-aware execution G-b → incident/lineage design
 > G-d) on infra that survives: the local stack, S3 (AWS), and Databricks Free Edition.
 
-### v1.1 W1 — Snowflake close-out + PATs (due 2026-07-11) — 5/6 (#588 re-homed W3; #461 merged, live PAT mint pending deploy)
+### v1.1 W1 — Snowflake close-out + PATs — **COMPLETE 2026-07-05** (5 ✅ + #588 re-homed W3; milestone closed; exit gate MET)
 
 > **Premise correction (2026-07-04, post-planning):** the Snowflake trial in fact runs to
 > **~2026-07-25** ($384 credits left) — the same window as Azure, not "within days". The
@@ -138,12 +138,14 @@ backlog, and it must land while Azure AD is still the reference validator.
 | ✅ | [#195](https://github.com/TheurgicDuke771/DataQ/issues/195) Snowflake key-pair: migrate off deprecated GX `connect_args` path — **upgraded to bugfix**: the old route never passed GX 1.17 validation for key-pair suite runs; now the supported kwargs form (base64-DER `private_key`, `role` required), live-verified with zero deprecation warnings — [PR #603](https://github.com/TheurgicDuke771/DataQ/pull/603) | Theme 8 |
 | ✅ | [#587](https://github.com/TheurgicDuke771/DataQ/issues/587) Snowflake scale/volume baseline — **captured live 2026-07-04**: 1.2M-row suite run 12.2s wall / <50MB worker delta / ~0.08 credits; recorded in [perf-baseline-snowflake.md](perf-baseline-snowflake.md) — [PR #607](https://github.com/TheurgicDuke771/DataQ/pull/607) | Theme 7 / G-b |
 | 🔵 | [#588](https://github.com/TheurgicDuke771/DataQ/issues/588) Retire the harness Snowflake leg — **rehearsed 2026-07-04 then REVERSED same day** (trial actually runs to ~2026-07-25): procedure proven end-to-end (incl. history-queryability check: 1,940 results, all with `metric_value`), leg re-keyed on a fresh 25-day PAT; **reopened + re-homed to W3** to run at actual lapse with #590 — [PR #608](https://github.com/TheurgicDuke771/DataQ/pull/608) + reversal notes on the issue | ops / G-i |
-| 🟡 | [#461](https://github.com/TheurgicDuke771/DataQ/issues/461) **PATs phase 1** (ADR 0026): second authenticator behind `get_current_user`, REST + MCP identically — **built** ( `api_keys` table + `dq_live_` tokens sha256-at-rest, uniform 401, show-once mint/list/revoke at `/me/api-keys`, PAT-or-JWT composite on `/mcp`; ADR 0026 flipped **Accepted (phase 1)**) — [PR #613](https://github.com/TheurgicDuke771/DataQ/pull/613); **remaining: the live exit** — mint 1 workspace-admin + 1 member PAT (two-tier authz matrix for all later headless/live checks; short expiry on the admin one), exercised vs REST + `/mcp` | Theme 3 / G-e |
+| ✅ | [#461](https://github.com/TheurgicDuke771/DataQ/issues/461) **PATs phase 1** (ADR 0026): second authenticator behind `get_current_user`, REST + MCP identically — [PR #613](https://github.com/TheurgicDuke771/DataQ/pull/613) (`api_keys` + `dq_live_` sha256-at-rest, uniform 401, show-once `/me/api-keys`, PAT-or-JWT composite on `/mcp`; ADR 0026 **Accepted, phase 1**). **Live exit MET 2026-07-05** post-deploy: admin PAT `dq_live_NNZ5…` (30d, dataq-admin — /me admin:true, 10 suites, /admin 200) + member PAT `dq_live_uTSi…` (90d, Olivia — 4 suites, /admin 403), both exercised vs prod REST + `/mcp/`; uniform-401 probes green; evidence on the issue | Theme 3 / G-e |
 | ✅ | [#583](https://github.com/TheurgicDuke771/DataQ/issues/583) MCP `profile_column`: default to the suite run target — same resolver as the run path (incl. flat-file batch materialization); explicit params still win; targetless suite → actionable error — [PR #614](https://github.com/TheurgicDuke771/DataQ/pull/614) | Theme 13 |
 
-**Exit gate:** Snowflake leg retired with zero live-verification debt (#194/#195 live-verified,
-#587 baseline recorded, #588 clean retirement) **and** PATs live — 1 admin + 1 member PAT
-minted and exercised against REST + `/mcp`.
+**Exit gate: MET 2026-07-05** (as amended by the 2026-07-04 premise correction — #588's
+retirement moved to W3 with the real trial lapse): #194/#195 live-verified + #587 baseline
+recorded, **and PATs live** — 1 workspace-admin + 1 member PAT minted and exercised against
+prod REST + `/mcp/` (two-tier authz matrix: 10-vs-4 suites, /admin 200-vs-403). The PATs
+are the standing headless credential from here (az-CLI-bearer interim #565 retired).
 
 ### v1.1 W2 — Portability: OTel logs, secrets lifecycle, dry-run depth (due 2026-07-18) — 0/11
 
