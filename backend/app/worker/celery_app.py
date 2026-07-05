@@ -111,7 +111,7 @@ def _configure_celery_logging(**_kwargs: Any) -> None:
     logging itself, so our JSON + PII-redacting processor chain stays in force
     inside the worker exactly as it is in the API.
     """
-    configure_logging()
+    configure_logging(service_name="dataq-worker")
 
 
 @worker_process_init.connect  # type: ignore[untyped-decorator]  # celery signal .connect is unannotated

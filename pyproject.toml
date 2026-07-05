@@ -61,7 +61,6 @@ plugins = ["sqlalchemy.ext.mypy.plugin", "pydantic.mypy"]
 module = [
     "great_expectations.*",
     "celery.*",
-    "opencensus.*",
     "snowflake.*",
     "databricks.*",
     "azure.storage.*",
@@ -104,12 +103,11 @@ markers = [
     "real_dispatch: opt out of the autouse run_dispatch stub (test dispatch_run itself)",
 ]
 # Silence UPSTREAM deprecations we can't fix here — scoped by message so a new warning
-# from our own code still surfaces. All resolve on a dependency upgrade (or the OTel
-# migration off opencensus, ADR 0010); none are DataQ bugs. (Our one own use of the
-# deprecated Starlette 422 constant was fixed in core/errors.py.)
+# from our own code still surfaces. All resolve on a dependency upgrade; none are DataQ
+# bugs. (Our one own use of the deprecated Starlette 422 constant was fixed in
+# core/errors.py; the two opencensus datetime/locale ignores were dropped with the
+# opencensus→OTel log migration, #524.)
 filterwarnings = [
-    "ignore:datetime.datetime.utcnow.. is deprecated:DeprecationWarning",              # opencensus
-    "ignore:'locale.getdefaultlocale' is deprecated:DeprecationWarning",               # opencensus
     "ignore:Using .httpx. with .starlette.testclient. is deprecated",                  # fastapi TestClient
     "ignore:Implicitly cleaning up <TemporaryDirectory:ResourceWarning",               # great_expectations ephemeral context
 ]

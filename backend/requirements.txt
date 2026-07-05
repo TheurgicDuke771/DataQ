@@ -37,11 +37,10 @@ great-expectations==1.17.2
 
 # ── Observability ──
 structlog==26.1.0
-opencensus-ext-azure==1.1.15      # App Insights via OpenCensus bridge (logs/exceptions; EOL — OTel migration tracked)
-opentelemetry-sdk==1.43.0                        # request/task spans (A3) — vendor-neutral core, ADR 0010
+opentelemetry-sdk==1.43.0                        # spans (A3) + logs (#524) — vendor-neutral core, ADR 0010
 opentelemetry-instrumentation-fastapi==0.64b0    # server span per request
 opentelemetry-instrumentation-celery==0.64b0     # span per task run
-azure-monitor-opentelemetry-exporter==1.0.0b54   # exporter ONLY (not the distro — it would collide with the opencensus log handler, #393/#405)
+azure-monitor-opentelemetry-exporter==1.0.0b54   # Azure backend for spans + logs (exporter ONLY, not the distro — it would double-configure the log pipeline)
 
 # ── Auth / secrets ──
 fastapi-azure-auth==5.2.0

@@ -48,7 +48,7 @@ _log = get_logger(__name__)
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-    configure_logging()
+    configure_logging(service_name="dataq-api")
     logger = get_logger(__name__)
     settings = get_settings()
     logger.info(
