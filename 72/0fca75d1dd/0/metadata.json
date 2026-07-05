@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_id": "720fca75d1dd",
+  "session_id": "4feb9be8-2ae1-4d50-be97-b9c4cbaead36",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-05T23:01:29.266959Z",
+  "branch": "docs/w2-ui-gap-batch",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-opus-4-8",
+  "turn_id": "09c997c90f31",
+  "token_usage": {
+    "input_tokens": 170989,
+    "cache_creation_tokens": 8805797,
+    "cache_read_tokens": 452638937,
+    "output_tokens": 949089,
+    "api_call_count": 1044
+  },
+  "session_metrics": {
+    "turn_count": 22
+  }
+}
