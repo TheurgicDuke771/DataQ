@@ -39,7 +39,9 @@ log = get_logger(__name__)
 # kept identical to the migration and the model's `postgresql_where`. Scopes the
 # dedup guard to orchestration markers (`<provider>:<pipeline>:<run_id>`) so the
 # repeatable manual/probe/schedule markers are unaffected.
-_ORCH_TRIGGER_PREDICATE = text("triggered_by LIKE 'adf:%' OR triggered_by LIKE 'airflow:%'")
+_ORCH_TRIGGER_PREDICATE = text(
+    "triggered_by LIKE 'adf:%' OR triggered_by LIKE 'airflow:%' OR triggered_by LIKE 'dbt:%'"
+)
 
 # Terminal pipeline-run statuses — a run in one of these won't transition again,
 # so the poll's `skip_updated_since` churn-optimisation may skip re-recording it.

@@ -94,6 +94,11 @@ class Settings(BaseSettings):
     # → KV_SECRET_AIRFLOW_WEBHOOK_SECRET in dev, KV secret `airflow-webhook-secret`
     # in prod. The signing key, not a webhook value.
     airflow_webhook_secret_name: str = "airflow-webhook-secret"  # noqa: S105 — KV key name
+    # SecretStore key holding the dbt callback HMAC signing key (ADR 0029; sibling
+    # of the Airflow key). → KV_SECRET_DBT_WEBHOOK_SECRET in dev, KV secret
+    # `dbt-webhook-secret` in prod. App-level (shared across dbt connections); the
+    # per-connection secret is the artifacts-store read credential, not this.
+    dbt_webhook_secret_name: str = "dbt-webhook-secret"  # noqa: S105 — KV key name
 
     # SecretStore key holding the workspace MS Teams incoming-webhook URL (the URL
     # carries a token, so it lives in the SecretStore, not in config). Unset →

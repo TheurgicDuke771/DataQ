@@ -1,6 +1,6 @@
-"""Orchestration event webhook receivers (ADF + Airflow).
+"""Orchestration event webhook receivers (ADF + Airflow + dbt).
 
-Two machine-to-machine channels (no Azure AD user), each authenticated per its
+Machine-to-machine channels (no Azure AD user), each authenticated per its
 provider's constraints, then funnelled through the same provider-agnostic
 ingestion (`ingest_event`): resolve provider → parse to `RunUpdate` → persist.
 
@@ -11,6 +11,9 @@ ingestion (`ingest_event`): resolve provider → parse to `RunUpdate` → persis
   HMAC-SHA256 over the **raw body** in the ``X-DataQ-Signature`` header,
   constant-time vs the Key Vault signing key (ADR 0007: we author the snippet,
   so it can sign a header).
+- `POST /orchestration/events/dbt` — our post-build callback snippet. Same
+  HMAC-SHA256 / ``X-DataQ-Signature`` scheme as Airflow, keyed on the dbt signing
+  secret (ADR 0029).
 
 Per ADR 0006/0007 each returns **200 for every well-formed, authenticated
 event** — including ignored / unattributable ones — so the sender does not
@@ -180,5 +183,47 @@ async def receive_airflow_event(
     _authenticate_airflow(body, request.headers.get(_SIGNATURE_HEADER), secret_store)
 
     provider = get_orchestration_provider("airflow")
+    update = provider.parse_event(body, request.headers)  # raises MalformedEventError → 422
+    return await _ack_event(db, provider_impl=provider, update=update, secret_store=secret_store)
+
+
+def _authenticate_dbt(body: bytes, signature: str | None, secret_store: SecretStore) -> None:
+    """Verify the HMAC-SHA256 over the raw body against the header (ADR 0029).
+
+    Identical scheme to the Airflow callback (`_authenticate_airflow`) but keyed on
+    the dbt signing secret; the signature is never logged.
+    """
+    settings = get_settings()
+    try:
+        key = secret_store.get(settings.dbt_webhook_secret_name)
+    except SecretNotFoundError as exc:
+        log.error("dbt_webhook_secret_missing", secret_name=settings.dbt_webhook_secret_name)
+        raise WebhookNotConfiguredError("dbt webhook receiver is not configured") from exc
+
+    expected = hmac.new(key.encode("utf-8"), body, hashlib.sha256).hexdigest()
+    # Compare on UTF-8 bytes (see _authenticate_airflow): a non-ASCII signature must
+    # not reach compare_digest as str, else TypeError → 500 instead of 401.
+    if not signature or not hmac.compare_digest(
+        signature.encode("utf-8"), expected.encode("utf-8")
+    ):
+        log.warning("dbt_webhook_auth_failed", signature_present=bool(signature))
+        raise WebhookAuthError("invalid or missing webhook signature")
+
+
+@router.post(
+    "/orchestration/events/dbt",
+    response_model=EventAck,
+    status_code=status.HTTP_200_OK,
+    summary="Receive a dbt build callback event",
+)
+async def receive_dbt_event(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    secret_store: Annotated[SecretStore, Depends(get_secret_store)],
+) -> EventAck:
+    body = await request.body()
+    _authenticate_dbt(body, request.headers.get(_SIGNATURE_HEADER), secret_store)
+
+    provider = get_orchestration_provider("dbt")
     update = provider.parse_event(body, request.headers)  # raises MalformedEventError → 422
     return await _ack_event(db, provider_impl=provider, update=update, secret_store=secret_store)

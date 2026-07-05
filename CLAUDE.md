@@ -6,12 +6,12 @@
 
 ## 1. Project summary
 
-**DataQ** is a single-tenant data quality monitoring platform built around Great Expectations (GX Core). It runs DQ checks across **4 datasources** and integrates with **2 orchestration providers**.
+**DataQ** is a single-tenant data quality monitoring platform built around Great Expectations (GX Core). It runs DQ checks across **4 datasources** and integrates with **3 orchestration providers**.
 
 | Layer | Components |
 |---|---|
 | **Datasources (you can write checks against)** | Snowflake (DEV/QA/UAT), ADLS Gen2, AWS S3, Unity Catalog (Databricks) |
-| **Orchestration providers (monitor + trigger only — NOT datasources)** | Azure Data Factory (ADF), Apache Airflow |
+| **Orchestration providers (monitor + trigger only — NOT datasources)** | Azure Data Factory (ADF), Apache Airflow, dbt (ADR 0029) |
 | **Backend** | FastAPI + Celery + Redis + PostgreSQL + Alembic |
 | **Frontend** | React + Vite + Ant Design + Monaco editor (generic OIDC — `oidc-client-ts`) |
 | **Auth / secrets** | OIDC (Azure AD validated; provider-neutral `AUTH_*` contract) + Azure Key Vault |
@@ -105,12 +105,13 @@ DataQ/
 2. **Detect failure** in near-real-time via provider-specific event channels (webhook for both).
 3. **Trigger suite execution on successful completion** via `trigger_bindings` (`provider`, `pipeline_or_dag_id`, `suite_id`, `env`). Failure events alert the user but do NOT trigger suite runs.
 
-Both providers implement a single `OrchestrationProvider` interface — ADF is the reference implementation, Airflow is the second. **Never hardcode ADF-only logic; always go through the abstraction.**
+All three providers implement a single `OrchestrationProvider` interface — ADF is the reference implementation, Airflow is the second, dbt (ADR 0029) is the third (artifact-poll + HMAC callback, no host REST API). **Never hardcode ADF-only logic; always go through the abstraction.**
 
 | Provider | Event channel | Auth | Polling fallback |
 |---|---|---|---|
 | ADF | Azure Monitor alert → webhook | Shared secret header (Azure Monitor's only mode) | ADF REST API, 10 min |
 | Airflow | DAG `on_*_callback` → webhook | HMAC-signed payload (signing key in Key Vault) | Airflow REST API `dagRuns`, 10 min |
+| dbt | post-build callback → webhook | HMAC-signed payload (app-level signing key) | poll `run_results.json` artifact (adls/s3/file), 10 min |
 
 Airflow callbacks require the user to add a snippet to their DAGs (we can't mutate them). Polling is the documented fallback.
 
@@ -234,6 +235,7 @@ curl -X POST http://localhost:8000/api/v1/_probe/snowflake-suite
 | DataQ-issued API keys (PATs) as a **second authenticator behind the `get_current_user` seam** — REST + `/mcp` identically; phase 1 = user-scoped PATs (`dq_live_…`, sha256-at-rest, show-once, uniform 401, mandatory expiry, owner-cascade); service-account principals = phase 2 (deferred); HTTP Basic rejected | [0026](docs/adr/0026-auth-api-keys-and-principal-seam.md) | Accepted (phase 1 built 2026-07-04, #461) |
 | Suite permission model = **workspace-admin is implicit `admin` on every suite** (governance/break-glass; same powers as owner); **grantable suite-admin dropped** — normal users get `owner`/`edit`/`view` only; workspace-admin also gets **workspace-wide visibility** (Dashboard/Suites/Results, not just `/admin`). Supersedes #411/#412; superuser-read of all samples → audit via #431 | [0027](docs/adr/0027-suite-permission-model-workspace-admin.md) | Accepted (2026-06-30) — build tracked in #482 |
 | Cloud-neutral image = **one multi-arch frontend image, nothing baked** (no cloud/secret/bypass); auth config injected at runtime (`window.__DATAQ_CONFIG__` served by nginx envsubst) behind a generic **`DATAQ_AUTH_*`** contract; **bypass fail-closed** (explicit `DATAQ_AUTH_MODE=bypass` only — the retired `:dev` image no longer ships bypass); **replace MSAL with a generic OIDC client validated against Azure** (retire MSAL if the API-scope token + silent renew are clean, else MSAL-for-Azure seam); deployed frontend **SWA→Container App** (amends 0024) via a clean app rebuild keeping KV/App-Insights/Postgres/Redis; AWS/GCP deploy IaC post-v1 (#505) | [0028](docs/adr/0028-cloud-neutral-image-runtime-config-generic-oidc.md) | Accepted (2026-06-30) — build tracked in #504 |
+| dbt as a **third `OrchestrationProvider`** (mirrors the Airflow callback model 0007, not clubbed under it) — binds to dbt's universal surface (`run_results.json` artifact + post-build callback), never a host API; HMAC webhook `POST /orchestration/events/dbt` + 10-min poll of `run_results.json` (adls/s3/file); **job-level** grain (`pipeline_or_dag_id`=job, connection resolved by `project_name`); app-level signing key + per-connection artifacts-read secret; migration widens the connection-type/provider CHECKs + orchestrator + trigger-dedup indexes for `dbt` | [0029](docs/adr/0029-dbt-orchestration-provider.md) | Accepted (2026-07-05, #611) |
 
 ---
 

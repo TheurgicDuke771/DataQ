@@ -66,6 +66,7 @@ Each ADR captures a single significant architecture decision: the context, the d
 | [0025](0025-production-image-pip-slim.md) | Production image — multi-stage `python:3.13-slim` + pip (not conda; ~2.84GB→~1GB); conda stays the local-dev tool; amends the W1 conda lock | Accepted |
 | [0027](0027-suite-permission-model-workspace-admin.md) | Suite permissions — workspace-admin is implicit `admin` on every suite (governance/break-glass); drop grantable suite-admin; normal users get owner/edit/view; workspace-admin gets workspace-wide visibility (supersedes #411/#412) | Accepted |
 | [0028](0028-cloud-neutral-image-runtime-config-generic-oidc.md) | Cloud-neutral image — one multi-arch frontend image, nothing baked; auth config injected at runtime (`window.__DATAQ_CONFIG__` via nginx envsubst) behind a generic `DATAQ_AUTH_*` contract; bypass fail-closed (explicit `DATAQ_AUTH_MODE=bypass` only); replace MSAL with a generic OIDC client validated against Azure; frontend SWA→Container App (amends 0024); AWS/GCP IaC post-v1 (#505) | Accepted |
+| [0029](0029-dbt-orchestration-provider.md) | dbt as a **third** `OrchestrationProvider` (mirrors the Airflow callback model 0007) — HMAC webhook + artifacts poll of `run_results.json` (adls/s3/file); binds to dbt's universal surface (no host API); job-level grain; migration widens the connection-type/provider/dedup value-sets (#611) | Accepted |
 
 ## Pending (to be written in their respective weeks)
 

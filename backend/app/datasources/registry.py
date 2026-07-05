@@ -23,6 +23,7 @@ from backend.app.datasources.unity_catalog import (
 )
 from backend.app.orchestration.adf import ADFConnectionAdapter
 from backend.app.orchestration.airflow import AirflowConnectionAdapter
+from backend.app.orchestration.dbt import DbtConnectionAdapter
 
 
 class UnsupportedConnectionTypeError(ValueError):
@@ -31,7 +32,7 @@ class UnsupportedConnectionTypeError(ValueError):
 
 # Datasource and orchestration-provider connection types share this one registry
 # (both implement the `ConnectionAdapter` seam); the run path keeps them apart —
-# only datasources get a `CheckRunner`. ADF and Airflow are orchestration
+# only datasources get a `CheckRunner`. ADF, Airflow, and dbt are orchestration
 # providers, so their adapters live under `orchestration/`, not `datasources/`
 # (CLAUDE.md §4).
 _ADAPTERS: dict[str, ConnectionAdapter] = {
@@ -41,6 +42,7 @@ _ADAPTERS: dict[str, ConnectionAdapter] = {
     "unity_catalog": UnityCatalogConnectionAdapter(),
     "adf": ADFConnectionAdapter(),
     "airflow": AirflowConnectionAdapter(),
+    "dbt": DbtConnectionAdapter(),
 }
 
 
