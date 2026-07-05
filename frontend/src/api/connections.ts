@@ -1,8 +1,8 @@
 import { api } from './client';
 
 /**
- * Connections API — the six configurable connection types (CLAUDE.md §4).
- * ADF + Airflow are orchestration providers, not datasources, but they are
+ * Connections API — the seven configurable connection types (CLAUDE.md §4).
+ * ADF, Airflow + dbt are orchestration providers, not datasources, but they are
  * still `connections` rows and managed through the same CRUD surface.
  */
 
@@ -13,6 +13,7 @@ export const CONNECTION_TYPES = [
   'unity_catalog',
   'adf',
   'airflow',
+  'dbt',
 ] as const;
 export type ConnectionType = (typeof CONNECTION_TYPES)[number];
 
@@ -33,6 +34,7 @@ export const CONNECTION_KIND: Record<ConnectionType, ConnectionKind> = {
   unity_catalog: 'datasource',
   adf: 'orchestration',
   airflow: 'orchestration',
+  dbt: 'orchestration',
 };
 
 export const CONNECTION_KIND_LABELS: Record<ConnectionKind, string> = {
@@ -63,6 +65,7 @@ export const DATASOURCE_CATEGORY: Record<ConnectionType, DatasourceCategory | nu
   unity_catalog: 'unity_catalog',
   adf: null,
   airflow: null,
+  dbt: null,
 };
 
 export const DATASOURCE_CATEGORY_LABELS: Record<DatasourceCategory, string> = {
@@ -114,6 +117,7 @@ export const CONNECTION_TYPE_LABELS: Record<ConnectionType, string> = {
   unity_catalog: 'Unity Catalog',
   adf: 'Azure Data Factory',
   airflow: 'Airflow',
+  dbt: 'dbt',
 };
 
 export async function listConnections(params?: {

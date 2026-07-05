@@ -24,8 +24,13 @@ function ConfigTextField({
       name={['config', field.name]}
       label={optional ? `${field.label} (optional)` : field.label}
       rules={optional ? undefined : requiredRule}
+      extra={field.extra}
     >
-      <Input />
+      {field.type === 'tags' ? (
+        <Select mode="tags" tokenSeparators={[',']} placeholder="Add one or more…" />
+      ) : (
+        <Input />
+      )}
     </Form.Item>
   );
 }
@@ -35,13 +40,21 @@ export function SecretField({
   label,
   multiline = false,
   extra,
+  optional = false,
 }: {
   label: string;
   multiline?: boolean;
   extra?: string;
+  /** The credential isn't required (e.g. a dbt connection on a local file:// path). */
+  optional?: boolean;
 }) {
   return (
-    <Form.Item name="secret" label={label} rules={requiredRule} extra={extra}>
+    <Form.Item
+      name="secret"
+      label={optional ? `${label} (optional)` : label}
+      rules={optional ? undefined : requiredRule}
+      extra={extra}
+    >
       {multiline ? (
         <Input.TextArea rows={4} autoComplete="off" />
       ) : (
@@ -107,7 +120,9 @@ export function ConnectionTypeFields({
             {activeAuth.passphraseLabel && <PassphraseField label={activeAuth.passphraseLabel} />}
           </>
         ) : (
-          spec.secretLabel && <SecretField label={spec.secretLabel} />
+          spec.secretLabel && (
+            <SecretField label={spec.secretLabel} optional={spec.optionalSecret} />
+          )
         ))}
     </>
   );
