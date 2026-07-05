@@ -1,0 +1,63 @@
+# DataQ — session handover (2026-07-05, post v1.1-W1 close)
+
+## Where we are
+- **v1.1 W1 is COMPLETE** (milestone closed, exit gate MET, tracker + CLAUDE.md §13 updated
+  via PR #616). Shipped: #194/#195 (encrypted Snowflake key-pair + GX kwargs form, live-verified),
+  #587 (scale baseline → docs/perf-baseline-snowflake.md), #461 (PATs phase 1, PR #613,
+  ADR 0026 Accepted), #583 (MCP profile_column run-target default, PR #614).
+  #588 (Snowflake leg retirement) was rehearsed, REVERSED (trial actually runs to ~2026-07-25),
+  and re-homed to W3 — do NOT retire the leg early.
+- **PATs are live and are the standing headless credential** (az-CLI bearers = minting
+  bootstrap only): KV `dataq-app-kv-aw6laj` → `dataq-pat-w1-admin` (dataq-admin, 10 suites +
+  /admin, exp 2026-08-04) and `dataq-pat-w1-member` (Olivia, 4 suites, /admin 403,
+  exp 2026-10-03). Both verified vs prod REST + /mcp/. Read from KV; never print more than
+  the `dq_live_xxxx` prefix. az CLI is signed in as **royarijit04 (deployer — has KV RBAC)**.
+- Prod is redeployed from main (run 28735277709) with PATs + #583 included.
+
+## This week: v1.1 W2 — Portability (due 2026-07-18), milestone + epic #597
+Suggested order:
+1. **#609 dbt lineage project** — RESCOPED to **self-hosted dbt Core** (container; ACA job in
+   the Azure window → local compose post-wind-down). Staging views + dynamic tables over
+   DATAQ_DB.RETAIL; artifacts retrievable; a DataQ suite green on a dynamic table.
+   Lives in the harness repo (~/Coding/Python/DataQ-harness, ADR 0021 — not app code).
+   Harness compute is STOPPED by default — wake via scripts/harness_window.sh (#590 runbook).
+2. **#611 dbt as a THIRD OrchestrationProvider** (split from #609, user decision — NOT
+   clubbed under Airflow): HMAC webhook `/orchestration/events/dbt` (Airflow-callback pattern)
+   + 10-min poll of run_results.json from a blob path. Host-agnostic by design (dbt Cloud free
+   has no API/scheduler; SF/DBX hosting couples observation to the vendor). Needs an ADR.
+   In-repo feature work; depends on #609 producing runs. Live-verify inside the Azure window.
+3. **#286 Iceberg v2 spike** — PyIceberg→ADLS parquet, foreign/external table in Snowflake
+   AND Databricks (Free Edition external-storage caveat: if blocked, test the inverse
+   UniForm/UC-REST direction).
+4. Azure-window seams: **#524/#589** (opencensus→OTel log export, verify in App Insights),
+   **#372** (SecretStore.delete), **#532** (dry-run depth UC/flat-file).
+5. **#584** (MCP NL spot-check) + **#488** (workspace-admin MCP/list visibility — the gap is
+   live-confirmed: GET /schedules + /trigger-bindings return [] for workspace-admin, writes
+   work) — both now unblocked by the PATs. Alerting batch #386–#389 + #416 (one PR).
+
+## Hard context (don't re-derive)
+- **Deadlines:** Snowflake trial AND Azure both end ~2026-07-25 (W3 = deliberate wind-down
+  #590 + local-first #591). Sequence anything needing live Azure/Snowflake before that.
+- **Deploys are manual** (`gh workflow run Deploy --ref main`) and the auto-mode classifier
+  blocks it — ask the user to approve/trigger.
+- Review discipline: agentic code-review on EVERY PR (pr-review-toolkit agents; findings
+  fixed in-PR or filed), migration-safety agent on any migration, full local gate before
+  push (Black/Ruff/mypy/Bandit/pytest; Ruff noqa ≠ Bandit nosec), squash-merge only,
+  milestone on every PR, tracker flip rides the PR (docs commit after PR number exists).
+- CodeQL: `py/weak-sensitive-data-hashing` on the PAT sha256 is dismissed won't-fix with
+  ADR 0026 rationale — don't "fix" it.
+- CI watchers: poll `gh pr checks` only after the new head's checks register (≥12 checks),
+  or you'll race the registration window.
+- Scratchpad has `pat_live_verify.py` (mint+verify script) — session-scoped, rewrite if gone.
+
+---
+
+instead of account admin, can we use DataQ_loader role?
+
+---
+
+run the first two as account admin, then switch the role to DataQ loader, and run the remaining steps. Also for step five, you can run it.
+
+---
+
+close #609 with the evidence. Also, add a one line note in the progress.md

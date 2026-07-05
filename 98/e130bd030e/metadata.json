@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "98e130bd030e",
+  "strategy": "manual-commit",
+  "branch": "docs/609-dbt-lineage-done",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/98/e130bd030e/0/metadata.json",
+      "transcript": "/98/e130bd030e/0/full.jsonl",
+      "compact_transcript": "/98/e130bd030e/0/transcript.jsonl",
+      "content_hash": "/98/e130bd030e/0/content_hash.txt",
+      "prompt": "/98/e130bd030e/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 17750,
+    "cache_creation_tokens": 479703,
+    "cache_read_tokens": 18510861,
+    "output_tokens": 119359,
+    "api_call_count": 132
+  }
+}
