@@ -133,19 +133,32 @@ def upsert_config(
         config.enabled = enabled
         config.alert_on = alert_on
 
+    cleared_secret_ref: str | None = None
     if webhook is not None:
         if webhook == "":
-            # Clearing the per-suite webhook — drop the orphaned secret too (#372).
-            if config.webhook_secret_ref:
-                secret_store.delete(config.webhook_secret_ref)
+            # Clearing the per-suite webhook — drop the orphaned secret too (#372),
+            # but only AFTER the commit (below), so a rolled-back commit can't leave
+            # the row pointing at an already-deleted secret.
+            cleared_secret_ref = config.webhook_secret_ref
             config.webhook_secret_ref = None
         else:
-            secret_ref = config.webhook_secret_ref or f"suite-notif-{config.id}"
+            # Mint a UNIQUE ref per fresh set (not a stable `suite-notif-{id}`): the
+            # clear path now soft-deletes the secret (#372), and Key Vault refuses to
+            # re-`set` a soft-deleted *name* (409 until purge/recover, which the app
+            # deliberately can't do) — so reusing the name on a clear→re-set of the
+            # same config would 500. A rotation (ref still set) reuses the live name
+            # (a new version, no conflict).
+            secret_ref = (
+                config.webhook_secret_ref or f"suite-notif-{config.id}-{uuid.uuid4().hex[:12]}"
+            )
             secret_store.set(secret_ref, webhook)
             config.webhook_secret_ref = secret_ref
 
     session.commit()
     session.refresh(config)
+    # Post-commit, fail-soft: remove the cleared webhook's now-orphaned secret (#372).
+    if cleared_secret_ref:
+        secret_store.delete(cleared_secret_ref)
     log.info("suite_notification_saved", suite_id=str(suite_id), enabled=enabled, alert_on=alert_on)
     return config
 
