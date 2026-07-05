@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "527d5bfb1fad",
+  "strategy": "manual-commit",
+  "branch": "feature/per-suite-slack-email",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/52/7d5bfb1fad/0/metadata.json",
+      "transcript": "/52/7d5bfb1fad/0/full.jsonl",
+      "compact_transcript": "/52/7d5bfb1fad/0/transcript.jsonl",
+      "content_hash": "/52/7d5bfb1fad/0/content_hash.txt",
+      "prompt": "/52/7d5bfb1fad/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 128828,
+    "cache_creation_tokens": 6965048,
+    "cache_read_tokens": 339608021,
+    "output_tokens": 817343,
+    "api_call_count": 896
+  }
+}
