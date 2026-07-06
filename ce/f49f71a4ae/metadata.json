@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "cef49f71a4ae",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-618-oidc-auth-label",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/pages/Profile.tsx",
+    "frontend/src/pages/Settings.tsx",
+    "frontend/tests/pages/Profile.test.tsx",
+    "frontend/tests/pages/Settings.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ce/f49f71a4ae/0/metadata.json",
+      "transcript": "/ce/f49f71a4ae/0/full.jsonl",
+      "compact_transcript": "/ce/f49f71a4ae/0/transcript.jsonl",
+      "content_hash": "/ce/f49f71a4ae/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1890,
+    "cache_creation_tokens": 27320,
+    "cache_read_tokens": 1851488,
+    "output_tokens": 13762,
+    "api_call_count": 19
+  }
+}
