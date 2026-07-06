@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "54e53128961d",
+  "strategy": "manual-commit",
+  "branch": "refactor/issue-655-severity-rank-single-source",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/54/e53128961d/0/metadata.json",
+      "transcript": "/54/e53128961d/0/full.jsonl",
+      "compact_transcript": "/54/e53128961d/0/transcript.jsonl",
+      "content_hash": "/54/e53128961d/0/content_hash.txt",
+      "prompt": "/54/e53128961d/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 16042,
+    "cache_creation_tokens": 254677,
+    "cache_read_tokens": 12194209,
+    "output_tokens": 83427,
+    "api_call_count": 96
+  }
+}
