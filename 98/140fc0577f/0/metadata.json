@@ -1,0 +1,47 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_id": "98140fc0577f",
+  "session_id": "74593251-a4f7-4bd8-bfce-b1f68dc047fe",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-06T23:12:33.578874Z",
+  "branch": "fix/issue-618-oidc-auth-label",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/pages/Profile.tsx",
+    "frontend/src/pages/Settings.tsx"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "9e197f746f8b",
+  "token_usage": {
+    "input_tokens": 10918,
+    "cache_creation_tokens": 120463,
+    "cache_read_tokens": 775518,
+    "output_tokens": 6561,
+    "api_call_count": 12
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-06T23:12:33.569489Z",
+    "agent_lines": 2,
+    "agent_removed": 2,
+    "human_added": 3,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 5,
+    "total_lines_changed": 8,
+    "agent_percentage": 50,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}

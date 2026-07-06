@@ -1,0 +1,30 @@
+Hey, 
+Hand-over — DataQ, end of 2026-07-05 session
+State of play
+Cycle: v1.1 Week 2 (Portability — due 2026-07-18). Prior weeks W1 done; v1.0.0 shipped 2026-07-04.
+Repo: main @ 4df1e71c, clean. No open PRs. Prod is deployed at main HEAD (api/worker/frontend on 4df1e71c).
+Open issues: 64. Harness: fully asleep (all 4 Airflow apps Stopped, both ADF triggers Stopped, all 6 jobs — mockdata ×5 + dbt-lineage — runningStatus: Suspended). Verified this session.
+What shipped this session (all merged + deployed + live-verified)
+The alerting bucket for W2 is complete:
+
+#656 — #386 (dedup severity single-source) + #387 (suppression guard on operationally-failed runs) + #388 (alert_on drift-guard). #389 closed won't-fix.
+#657 — #655: one canonical db.models.SEVERITY_RANK + FAILING_TIERS + shared worst_severity() helper (converged 3 duplicated rank maps + 2 worst-severity loops).
+#659 — #416: enriched Slack/email alerts (deep link, run metadata, expected-vs-observed) via a new shared pure alerting/render.py.
+#662 — #661: fully tabular email (run-details + failing-checks tables) + owner name across Slack/email/Teams (Teams card brought to #416 parity: metadata facts + "View run" action).
+Key operational learnings (saved to memory)
+Alerting IS configured + delivering in prod — Slack (channel-slack-webhook) + Gmail email (theurgicduke771@gmail.com, channel-email-password) + PUBLIC_BASE_URL. Teams is implemented but a no-op (no TEAMS_WEBHOOK_SECRET_NAME set).
+Why "no notifications" happened: dedup suppresses repeat/unchanged failures. To live-test, create a NEW suite (new id → not deduped) with a guaranteed-fail check (expect_table_row_count_to_be_between min 1e9 on Snowflake — Retail (DATAQ_READER) / RETAIL.ORDERS_HEADER, observed ~24960).
+Headless prod API: az account get-access-token --resource api://21491115-d620-4fe8-9c66-8d567dfae601 → Bearer vs https://dataq-app-frontend.…/api/v1 (api is internal; frontend proxies). Deploy is manual: gh workflow run Deploy --ref main.
+CI gotcha: #573 (SchedulesPanel Popconfirm) is a known flake — re-run the failed frontend job if it trips.
+Watch-outs / known live issues
+Snowflake — Orders/Payments-backed suites (Orders Header, Payments, Customers, Products) fail on every prod run in ~3s with checks_total: 0 and no reason — masked by #605 (no failure reason surfaced) + #571 (checks_total 0). Root cause (likely creds/connectivity on those two connections) is undiagnosable until #605 ships. Snowflake — Retail (DATAQ_READER) suites run fine.
+Subscription clock: Snowflake + Azure both end ~2026-07-25. W3 is the deliberate wind-down (#590/#591). Front-load anything needing live cloud.
+Suggested next steps (remaining W2, pick up any)
+#532 — dry-run preview: extend Snowflake-only → UC + flat-file.
+#584 / #488 — MCP NL tool-selection spot-check + workspace-admin visibility in MCP/schedules (need live /mcp before the Azure wind-down).
+UI-gap fixes user flagged: #617 (mobile/responsive — likely highest user impact), #618 (stale MSAL label), #652 (dbt missing from Triggers UI), #651 (check-authoring validation), #653 (snooze UI), #654 (connection history UI), #647 (dbt mislabeled as airflow).
+Correctness/UX: #605 (surface run failure reasons — unblocks the Snowflake-Orders diagnosis), #571, #643.
+Everything is committed, deployed, verified, and the harness is confirmed paused. Nothing left dangling. 
+
+
+Can you pickup the UI related items
