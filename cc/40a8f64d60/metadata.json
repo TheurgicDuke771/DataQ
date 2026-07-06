@@ -1,0 +1,34 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "cc40a8f64d60",
+  "strategy": "manual-commit",
+  "branch": "refactor/issue-655-severity-rank-single-source",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/alerting/base.py",
+    "backend/app/alerting/builder.py",
+    "backend/app/alerting/dedup.py",
+    "backend/app/db/models.py",
+    "backend/app/services/dashboard_service.py",
+    "backend/app/services/run_service.py",
+    "backend/tests/alerting/test_dedup.py",
+    "backend/tests/db/test_severity_rank.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/cc/40a8f64d60/0/metadata.json",
+      "transcript": "/cc/40a8f64d60/0/full.jsonl",
+      "compact_transcript": "/cc/40a8f64d60/0/transcript.jsonl",
+      "content_hash": "/cc/40a8f64d60/0/content_hash.txt",
+      "prompt": "/cc/40a8f64d60/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 16042,
+    "cache_creation_tokens": 254677,
+    "cache_read_tokens": 12194209,
+    "output_tokens": 83427,
+    "api_call_count": 96
+  }
+}
