@@ -16,15 +16,18 @@ from __future__ import annotations
 from sqlalchemy import select, tuple_
 from sqlalchemy.orm import Session
 
+from backend.app.alerting.base import FAILING_TIERS
 from backend.app.db.models import Result, Run
 
-# Failing severity tiers → rank (higher = worse). `pass`/`skip`/`error` aren't
-# alert-worthy and never appear here.
-_RANK = {"warn": 1, "fail": 2, "critical": 3}
+# Failing severity tiers → rank (higher = worse), derived from the single shared
+# severity order in `alerting.base.FAILING_TIERS` (#386) so dedup can't silently
+# drift from the rest of the alerting layer (routing, suppression) when a tier is
+# added or reordered. `pass`/`skip`/`error` aren't alert-worthy and never appear here.
+_RANK = {tier: rank for rank, tier in enumerate(FAILING_TIERS, start=1)}
 # An operational run failure (the adapter raised — no per-check result rows) is a
-# single suite-level failure signature, keyed by this sentinel, ranked at fail.
+# single suite-level failure signature, keyed by this sentinel, ranked at `fail`.
 _OPERATIONAL_KEY = "__run__"
-_OPERATIONAL_RANK = 2
+_OPERATIONAL_RANK = _RANK["fail"]
 
 
 def _failing_ranks(session: Session, run: Run) -> dict[str, int]:

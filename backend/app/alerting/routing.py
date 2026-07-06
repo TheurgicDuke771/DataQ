@@ -23,8 +23,12 @@ QUIET = "quiet"
 STANDARD = "standard"
 CRITICAL = "critical"
 
-# Per-suite delivery policies (mirror db.models.ALERT_ON_POLICIES). The default
-# preserves the pre-config behaviour: alert on warn+ but not on clean runs.
+# Per-suite delivery policies. The single source of the allowed values is
+# db.models.ALERT_ON_POLICIES (the SuiteNotification CHECK constraint +
+# notification_service validation); these are the same values named for
+# readability at the routing call sites, pinned to that source by a drift-guard
+# test (#388). The default preserves the pre-config behaviour: alert on warn+ but
+# not on clean runs.
 FAIL_ONLY = "fail"
 WARN_PLUS = "warn"
 ALWAYS = "always"

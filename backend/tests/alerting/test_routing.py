@@ -5,9 +5,12 @@ from __future__ import annotations
 import uuid
 
 import pytest
+from sqlalchemy import CheckConstraint
 
+from backend.app.alerting import routing
 from backend.app.alerting.base import RunReport
 from backend.app.alerting.routing import CRITICAL, QUIET, STANDARD, route_for
+from backend.app.db.models import ALERT_ON_POLICIES, SuiteNotification
 
 
 def _report(*, worst: str | None, run_status: str = "succeeded") -> RunReport:
@@ -120,3 +123,29 @@ def test_urgency_independent_of_policy() -> None:
     crit = _report(worst="critical")
     assert route_for(crit, "always").mention_channel is True
     assert route_for(crit, "fail").urgency == "critical"
+
+
+# ── alert_on single-source (drift guards, #388) ──────────────────────────────
+
+
+def test_routing_policy_constants_match_model() -> None:
+    # routing's named policy constants can't drift from the single source of the
+    # allowed alert_on values (db.models.ALERT_ON_POLICIES).
+    assert {routing.FAIL_ONLY, routing.WARN_PLUS, routing.ALWAYS} == set(ALERT_ON_POLICIES)
+    assert routing.DEFAULT_POLICY in ALERT_ON_POLICIES
+
+
+def test_alert_on_constraint_derives_from_the_shared_constant() -> None:
+    # The SuiteNotification CHECK constraint is built from ALERT_ON_POLICIES, so it
+    # can't drift from the runtime validation that uses the same tuple.
+    table = SuiteNotification.metadata.tables[SuiteNotification.__tablename__]
+    constraint = next(
+        c
+        for c in table.constraints
+        if isinstance(c, CheckConstraint) and str(c.name or "").endswith("alert_on_valid")
+    )
+    sql = str(constraint.sqltext)
+    for value in ALERT_ON_POLICIES:
+        assert f"'{value}'" in sql
+    # And exactly those values — no stale literal the constant dropped.
+    assert sql.count("'") == 2 * len(ALERT_ON_POLICIES)
