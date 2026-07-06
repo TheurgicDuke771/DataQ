@@ -76,6 +76,7 @@ class RunReport:
     started_at: datetime | None = None
     triggered_by: str | None = None
     run_url: str | None = None
+    owner: str | None = None
 
     @property
     def duration_seconds(self) -> float | None:

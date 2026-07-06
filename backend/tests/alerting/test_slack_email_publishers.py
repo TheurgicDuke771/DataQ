@@ -121,6 +121,7 @@ def _rich_report() -> RunReport:
         finished_at=datetime(2026, 7, 6, 4, 30, 12, tzinfo=UTC),
         triggered_by="adf:pl_orders:run-99",
         run_url="https://dataq.example.com/results/abc123",
+        owner="Ada Lovelace",
         checks=[
             CheckReport(
                 "order_total >= 0",
@@ -143,6 +144,7 @@ def test_slack_render_includes_view_run_button_and_metadata() -> None:
     assert button["elements"][0]["url"] == "https://dataq.example.com/results/abc123"
     text = str(blocks)
     assert "prod" in text and "ADF" in text  # env + trigger metadata fields
+    assert "Ada Lovelace" in text  # owner (#661)
     # expected-vs-observed detail on the failing check.
     assert "expected min_value=0 · observed 12 · 3.2% unexpected" in text
 
@@ -158,11 +160,16 @@ def test_email_html_has_deep_link_and_expected_observed() -> None:
     assert "https://dataq.example.com/results/abc123" in html  # View run link
     assert "expected min_value=0 · observed 12 · 3.2% unexpected" in html
     assert "prod" in html and "ADF" in html  # metadata row
+    # #661: a proper table (header row) + suite + owner surfaced.
+    assert "<thead>" in html and ">Status<" in html and ">Check<" in html and ">Details<" in html
+    assert "<b>Suite:</b>" in html and "Orders Header" in html  # suite name in the body
+    assert "Ada Lovelace" in html  # owner
 
 
 def test_email_text_has_deep_link_and_metadata() -> None:
     text = email_mod.render_text_body(_rich_report())
     assert "View run: https://dataq.example.com/results/abc123" in text
+    assert "Owner: Ada Lovelace" in text
     assert "Environment: prod" in text
     assert "Triggered by: ADF" in text
     assert "Duration: 12.0s" in text

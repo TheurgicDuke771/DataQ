@@ -68,22 +68,42 @@ def render_text_body(report: RunReport) -> str:
 def render_html_body(report: RunReport) -> str:
     """Minimal HTML body (inline-styled, email-client safe)."""
     colour = "#16a34a" if report.success else "#dc2626"
+    # Failing-checks table with a header row (Status · Check · Details).
+    th = (
+        "padding:6px 10px;text-align:left;border-bottom:2px solid #d1d5db;"
+        "font-size:13px;color:#374151;"
+    )
+    td = "padding:6px 10px;border-bottom:1px solid #eee;font-size:13px;vertical-align:top;"
     rows = "".join(
-        f"<tr><td style='padding:2px 8px;'><code>{_esc(c.status)}</code></td>"
-        f"<td style='padding:2px 8px;'>{_esc(c.check_name)}</td>"
-        f"<td style='padding:2px 8px;color:#6b7280;'>{_esc(render.check_detail(c))}</td></tr>"
+        f"<tr><td style='{td}'><code>{_esc(c.status)}</code></td>"
+        f"<td style='{td}'>{_esc(c.check_name)}</td>"
+        f"<td style='{td}color:#6b7280;'>{_esc(render.check_detail(c))}</td></tr>"
         for c in report.checks
         if c.status != "pass"
     )
     table = (
-        f"<table style='border-collapse:collapse;margin-top:8px;'>{rows}</table>" if rows else ""
+        f"<table style='border-collapse:collapse;margin-top:12px;'>"
+        f"<thead><tr><th style='{th}'>Status</th><th style='{th}'>Check</th>"
+        f"<th style='{th}'>Details</th></tr></thead><tbody>{rows}</tbody></table>"
+        if rows
+        else ""
+    )
+    # Facts line (suite + datasource + target + severity) then the run metadata
+    # (owner / env / trigger / started / duration, via the shared helper).
+    facts = " &nbsp;·&nbsp; ".join(
+        [
+            f"<b>Suite:</b> {_esc(report.suite_name)}",
+            f"<b>Datasource:</b> {_esc(report.datasource_type)}",
+            f"<b>Target:</b> {_esc(report.target_label)}",
+            f"<b>Severity:</b> {_esc(report.worst_severity or '—')}",
+        ]
     )
     meta = " &nbsp;·&nbsp; ".join(
         f"<b>{_esc(label)}:</b> {_esc(value)}" for label, value in render.run_metadata(report)
     )
     meta_line = f"<p style='margin:6px 0 0;color:#6b7280;'>{meta}</p>" if meta else ""
     button = (
-        f"<p style='margin:10px 0 0;'><a href='{_esc(report.run_url)}' "
+        f"<p style='margin:12px 0 0;'><a href='{_esc(report.run_url)}' "
         f"style='color:#2563eb;'>View run →</a></p>"
         if report.run_url
         else ""
@@ -91,10 +111,7 @@ def render_html_body(report: RunReport) -> str:
     return (
         f"<div style='font-family:system-ui,Arial,sans-serif;'>"
         f"<h2 style='color:{colour};margin:0 0 8px;'>{_esc(render_subject(report))}</h2>"
-        f"<p style='margin:0;color:#374151;'>"
-        f"<b>Datasource:</b> {_esc(report.datasource_type)} &nbsp;·&nbsp; "
-        f"<b>Target:</b> {_esc(report.target_label)} &nbsp;·&nbsp; "
-        f"<b>Severity:</b> {_esc(report.worst_severity or '—')}</p>"
+        f"<p style='margin:0;color:#374151;'>{facts}</p>"
         f"{meta_line}{table}{button}</div>"
     )
 

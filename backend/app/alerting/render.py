@@ -141,6 +141,7 @@ def run_metadata(report: RunReport) -> list[tuple[str, str]]:
     start time, duration — omitting any that aren't set. Consumed as Slack fields
     and email table rows so both channels show the same metadata."""
     pairs: list[tuple[str, str | None]] = [
+        ("Owner", report.owner),
         ("Environment", report.env),
         ("Triggered by", triggered_source(report.triggered_by)),
         ("Started", _format_timestamp(report.started_at)),

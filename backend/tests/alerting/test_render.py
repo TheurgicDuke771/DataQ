@@ -128,9 +128,16 @@ def test_run_metadata_includes_set_fields_and_omits_missing() -> None:
     finished = datetime(2026, 7, 6, 4, 32, 5, tzinfo=UTC)
     pairs = dict(
         render.run_metadata(
-            _report(env="prod", triggered_by="adf:pl:run", started_at=started, finished_at=finished)
+            _report(
+                owner="Ada Lovelace",
+                env="prod",
+                triggered_by="adf:pl:run",
+                started_at=started,
+                finished_at=finished,
+            )
         )
     )
+    assert pairs["Owner"] == "Ada Lovelace"
     assert pairs["Environment"] == "prod"
     assert pairs["Triggered by"] == "ADF"
     assert pairs["Duration"] == "2m 5s"

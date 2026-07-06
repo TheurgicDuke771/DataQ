@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from backend.app.alerting import render
 from backend.app.alerting.base import FAILING_TIERS, CheckReport, RunReport
 from backend.app.alerting.routing import QUIET, Route
 
@@ -58,12 +59,16 @@ def _adaptive_card(report: RunReport, route: Route) -> dict[str, Any]:
         overflow = len(failing) - _MAX_CHECK_ROWS
         if overflow > 0:
             body.append(_text(f"+{overflow} more", is_subtle=True))
-    return {
+    card: dict[str, Any] = {
         "type": "AdaptiveCard",
         "$schema": _ADAPTIVE_CARD_SCHEMA,
         "version": _ADAPTIVE_CARD_VERSION,
         "body": body,
     }
+    # A "View run" deep link to the run-detail page (when a public base URL is set).
+    if report.run_url:
+        card["actions"] = [{"type": "Action.OpenUrl", "title": "View run", "url": report.run_url}]
+    return card
 
 
 def _title_block(report: RunReport, route: Route) -> dict[str, Any]:
@@ -89,8 +94,9 @@ def _facts_block(report: RunReport) -> dict[str, Any]:
         {"title": "Run", "value": report.run_status},
         {"title": "Severity", "value": report.worst_severity or "—"},
     ]
-    if report.finished_at is not None:
-        facts.append({"title": "Finished", "value": report.finished_at.isoformat()})
+    # Owner / Environment / Triggered by / Started / Duration — the same shared
+    # metadata the Slack + email renderers show (#661, #416 parity).
+    facts += [{"title": label, "value": value} for label, value in render.run_metadata(report)]
     return {"type": "FactSet", "facts": facts}
 
 
