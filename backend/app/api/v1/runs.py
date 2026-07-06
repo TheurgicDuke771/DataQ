@@ -114,7 +114,7 @@ class PipelineRunRead(ApiModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
-    provider: str  # adf | airflow
+    provider: str  # one of ORCHESTRATION_PROVIDERS (db/models.py — adf | airflow | dbt)
     connection_id: uuid.UUID
     provider_run_id: str
     pipeline_or_dag_id: str

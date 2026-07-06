@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import { type AdminWebhook, listAdminWebhooks } from '../api/admin';
+import { PROVIDER_CALLBACK_NOUNS, PROVIDER_LABELS } from '../api/triggerBindings';
 import { useMe } from '../auth/useMe';
 import { Forbidden } from '../components/Forbidden';
 import { Page } from '../components/layout/Page';
@@ -110,8 +111,9 @@ function DangerTab() {
   );
 }
 
-/** Inbound orchestration-webhook URLs (#490) — copy-paste targets for ADF / Airflow
- *  to notify DataQ on pipeline completion. Admin-only (the page is already gated). */
+/** Inbound orchestration-webhook URLs (#490) — one copy-paste target per
+ *  orchestration provider (ADF / Airflow / dbt) to notify DataQ on pipeline
+ *  completion. Admin-only (the page is already gated). */
 function WebhooksTab() {
   const { state } = useAsyncData(listAdminWebhooks);
   return (
@@ -142,8 +144,6 @@ function WebhooksTab() {
   );
 }
 
-const PROVIDER_LABELS: Record<string, string> = { adf: 'Azure Data Factory', airflow: 'Airflow' };
-
 /** One provider's webhook URL. ADF embeds a secret, so it's masked behind a reveal
  *  toggle; copy always copies the real URL. */
 function WebhookRow({ webhook }: { webhook: AdminWebhook }) {
@@ -160,12 +160,8 @@ function WebhookRow({ webhook }: { webhook: AdminWebhook }) {
       type="inner"
       title={
         <Flex align="center" gap={8}>
-          <Tag color={secretBearing ? 'geekblue' : 'cyan'}>
-            {PROVIDER_LABELS[webhook.provider] ?? webhook.provider}
-          </Tag>
-          {secretBearing && !webhook.token_configured && (
-            <Tag color="error">webhook secret not set</Tag>
-          )}
+          <Tag color={secretBearing ? 'geekblue' : 'cyan'}>{PROVIDER_LABELS[webhook.provider]}</Tag>
+          {!webhook.token_configured && <Tag color="error">webhook secret not set</Tag>}
         </Flex>
       }
     >
@@ -191,7 +187,8 @@ function WebhookRow({ webhook }: { webhook: AdminWebhook }) {
           </Typography.Text>
         ) : (
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            Configured in the DAG callback snippet (HMAC); signing key in Key Vault:{' '}
+            Configured in the {PROVIDER_CALLBACK_NOUNS[webhook.provider]} callback snippet (HMAC);
+            signing key in the secret store:{' '}
             <Typography.Text code>{webhook.signing_secret_name}</Typography.Text>.
           </Typography.Text>
         )}

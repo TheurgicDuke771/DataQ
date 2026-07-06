@@ -20,6 +20,22 @@ const WEBHOOKS: AdminWebhook[] = [
     signing_secret_name: null,
     connection_names: ['prod-factory'],
   },
+  {
+    provider: 'airflow',
+    auth: 'HMAC-SHA256 signature header (X-DataQ-Signature) — ADR 0007',
+    inbound_url: 'https://dataq.example.com/api/v1/orchestration/events/airflow',
+    token_configured: true,
+    signing_secret_name: 'airflow-webhook-secret',
+    connection_names: ['airflow-prod'],
+  },
+  {
+    provider: 'dbt',
+    auth: 'HMAC-SHA256 signature header (X-DataQ-Signature) — ADR 0029',
+    inbound_url: 'https://dataq.example.com/api/v1/orchestration/events/dbt',
+    token_configured: true,
+    signing_secret_name: 'dbt-webhook-secret',
+    connection_names: ['analytics-dbt'],
+  },
 ];
 
 beforeEach(() => mockWebhooks.mockResolvedValue(WEBHOOKS));
@@ -61,6 +77,29 @@ describe('Settings', () => {
     renderSettings(adminMe);
     fireEvent.click(screen.getByRole('tab', { name: 'Webhooks' }));
     expect(await screen.findByText('Azure Data Factory')).toBeInTheDocument();
+  });
+
+  it('renders per-provider labels and callback copy — dbt is post-build, not DAG (#652/#647)', async () => {
+    renderSettings(adminMe);
+    fireEvent.click(screen.getByRole('tab', { name: 'Webhooks' }));
+    // 'Apache Airflow' differs from the raw code 'airflow', so this genuinely
+    // asserts the shared-PROVIDER_LABELS path (dbt's label equals its code).
+    expect(await screen.findByText('Apache Airflow')).toBeInTheDocument();
+    expect(screen.getByText('dbt')).toBeInTheDocument();
+    expect(screen.getByText('dbt-webhook-secret')).toBeInTheDocument();
+    // Per-provider callback noun: dbt is a post-build callback (ADR 0029),
+    // Airflow a DAG callback — dbt must not inherit the Airflow wording.
+    expect(screen.getByText(/post-build callback snippet/)).toBeInTheDocument();
+    expect(screen.getByText(/DAG callback snippet/)).toBeInTheDocument();
+  });
+
+  it('flags a webhook row whose secret is not provisioned', async () => {
+    mockWebhooks.mockResolvedValue([
+      { ...WEBHOOKS[1], token_configured: false }, // HMAC rows flag too, not just ADF
+    ]);
+    renderSettings(adminMe);
+    fireEvent.click(screen.getByRole('tab', { name: 'Webhooks' }));
+    expect(await screen.findByText('webhook secret not set')).toBeInTheDocument();
   });
 
   it('shows the Forbidden page for a non-admin (server-driven via /me)', () => {

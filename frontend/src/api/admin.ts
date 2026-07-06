@@ -1,4 +1,5 @@
 import { api } from './client';
+import type { OrchestrationProvider } from './triggerBindings';
 
 /**
  * Workspace-admin read API — the all-suites / all-users / access overview behind
@@ -60,7 +61,7 @@ export async function listAdminAccess(): Promise<AdminAccess[]> {
  *  ready to paste into the provider's webhook field; for ADF it embeds the shared
  *  secret (`?token=…`) — secret-bearing, admin-only. */
 export interface AdminWebhook {
-  provider: string;
+  provider: OrchestrationProvider;
   auth: string;
   inbound_url: string;
   token_configured: boolean;
