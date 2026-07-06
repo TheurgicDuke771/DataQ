@@ -1,0 +1,579 @@
+<task-notification>
+<task-id>ac24be7679a94619d</task-id>
+<tool-use-id>toolu_0199T6bnzt6nyBwPrH7tvaKA</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/4feb9be8-2ae1-4d50-be97-b9c4cbaead36/tasks/ac24be7679a94619d.output</output-file>
+<status>completed</status>
+<summary>Agent "Code review #611 dbt provider" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I have everything I need. Here are my findings.
+
+## Review: PR #620 — dbt as third OrchestrationProvider (`feature/611-dbt-orchestration-provider`)
+
+Reviewed `git diff main...HEAD`: the dbt provider/adapter/artifact-reader (`backend/app/orchestration/dbt.py`), the HMAC receiver (`backend/app/api/v1/orchestration.py`), the migration, config/models/registries, the integration snippet, and tests — compared against the Airflow reference (`backend/app/orchestration/airflow.py`) and the existing s3/adls datasource adapters.
+
+Overall this is a clean, faithful mirror of the Airflow pattern. HMAC auth parity is exact, the seam is respected (no dbt-specific branching leaks into `orchestration_service.py` — only the shared `_ORCH_TRIGGER_PREDICATE` string widened, matching the migration and model), the migration is additive/backward-compatible, and the `since`/idempotency design (stable `latest/` pointer + `generated_at &gt;= since` + upsert + `skip_updated_since`) is sound and won't spuriously re-trigger old builds. Two findings worth addressing, both in the artifact reader.
+
+### Important (80-89)
+
+**1. `_read_artifact` doesn't bound socket connect/read time — contradicts the stated "fail fast" intent and diverges from the existing s3/adls adapters. Confidence: 88.**
+`backend/app/orchestration/dbt.py:37` declares `_READ_TIMEOUT_SECONDS = 10.0` with the comment "Fail fast rather than hang the request/beat thread on an unreachable store," but:
+- **s3 branch** (`dbt.py` ~line 113): `boto3.client("s3", ...)` is constructed with **no** `config=Config(...)` — the timeout constant is never applied at all. The existing `backend/app/datasources/s3.py:80-82` sets `config=Config(connect_timeout=_TEST_TIMEOUT_SECONDS, read_timeout=_TEST_TIMEOUT_SECONDS)`. boto3 defaults (~60s connect + retries) mean a blackholed host hangs far past the intended 10s.
+- **adls branch** (`dbt.py` ~line 88): the timeout is passed only as `download_blob(timeout=int(...))`, which is Azure's **server-side** operation timeout — not a socket connect/read bound. The existing `backend/app/datasources/adls.py:85-86` passes `connection_timeout=` and `read_timeout=` to the `BlobServiceClient(...)` constructor; the dbt reader omits both.
+
+This matters because `DbtConnectionAdapter.test()` calls `_read_artifact` **synchronously inside the connection-test API request** (as well as the beat poll), so an unreachable store ties up the thread. Fix: mirror the two existing adapters — pass `config=Config(connect_timeout=..., read_timeout=...)` to the boto3 client and `connection_timeout=/read_timeout=` to `BlobServiceClient`.
+
+**2. Stale module docstring in `backend/app/api/v1/orchestration.py:1`. Confidence: 90.**
+The header still reads `"""Orchestration event webhook receivers (ADF + Airflow).` and the bullet list enumerates only the adf/airflow routes, but this PR adds the `/orchestration/events/dbt` receiver in the same module. CLAUDE.md treats doc accuracy as a first-class concern. Add the dbt receiver to the title and bullet list.
+
+### Minor notes (below the report threshold — listed for completeness, not blocking)
+
+- **Empty `results` → `"succeeded"`** (`_status_from_results`, and the mirrored `status_from_results` in the snippet): a `run_results.json` with zero node results derives `succeeded` and would fire `trigger_bindings`. Real dbt rarely emits an empty `results` array, so low likelihood/impact — but if you want to be strict, empty-results could be treated as non-triggering.
+- **Naive `generated_at` edge in `list_recent_runs`**: the `since.tzinfo and finished_at &lt; since` comparison would `TypeError` if an artifact ever wrote a tz-naive `generated_at` against the always-aware `since`. dbt writes `...Z` so `_parse_dt` yields aware datetimes in practice, and the per-connection `except Exception` in `worker/tasks.py:234` fails soft, so this is contained — just noting the latent asymmetry vs Airflow's server-side filter.
+- **Container-not-found reads as a green `test()`**: for adls, a mistyped container raises `ResourceNotFoundError` → returns `None` → `test()` passes (by design, `None` == "job not yet built"). A typo'd container therefore looks healthy but never polls. Matches the documented None semantics, but an operator footgun.
+
+No issues found with: HMAC parity (`_authenticate_dbt` is byte-for-byte equivalent to `_authenticate_airflow`, UTF-8 compare guard included), snippet signing (hex digest over the exact compact-JSON bytes that are POSTed), path construction for adls/s3/file prefixes, the migration's additive constraints/down-path, or seam adherence (no provider branching in service code).</result>
+<usage><subagent_tokens>80979</subagent_tokens><tool_uses>16</tool_uses><duration_ms>221876</duration_ms></usage>
+</task-notification>
+
+---
+
+Go ahead. Deploy the changes in the live prod.
+
+---
+
+Set the keyword secret.
+
+---
+
+yes take those, start with #622
+
+---
+
+Apply and test #622, then start with OTel logs and SecretStore.delete (#372)
+
+---
+
+<task-notification>
+<task-id>a6cec0ff8f41e459f</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/4feb9be8-2ae1-4d50-be97-b9c4cbaead36/tasks/a6cec0ff8f41e459f.output</output-file>
+<status>completed</status>
+<summary>Agent "Code review #372 SecretStore.delete" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Review complete. I reviewed the diff of `fix/372-secretstore-delete` against `main` (PR #625): `backend/app/core/secrets.py`, the two service call sites (`connection_service.delete_connection`, `notification_service.upsert_config`/`delete_config`), the two delete routes, `deploy/terraform/azure/keyvault.tf`, and the test additions.
+
+The fail-soft contract itself is sound — all three impls (`EnvSecretStore`, `AzureKeyVaultStore`, `RedisSecretStore`) honor the Protocol's "never raises" promise, `begin_delete_secret` is correctly fire-and-forget (the DELETE is issued eagerly; the poller only tracks soft-delete completion), `ResourceNotFoundError`→no-op is correct, and delete-after-commit ordering in the two delete paths is right. But there is one real regression.
+
+## Important (confidence ~85)
+
+**Webhook clear-then-reset on the same suite config will 500 on Azure Key Vault, and the secret name is then stuck for the full soft-delete retention window.**
+`backend/app/services/notification_service.py:137-145` and `backend/app/core/secrets.py:135-154`
+
+The per-suite webhook secret name is *deterministically derived from the config row id* and reused across the row's lifetime: `secret_ref = config.webhook_secret_ref or f"suite-notif-{config.id}"` (line 143). This PR makes the clear path (`webhook == ""`) soft-delete that named secret in KV (line 140) while the config row persists. A subsequent re-set of a webhook on the *same* suite recomputes the *same* name `suite-notif-{config.id}` and calls `secret_store.set(...)`.
+
+On Azure Key Vault, `set_secret` against a name currently in the soft-deleted state returns HTTP 409 Conflict ("Secret `&lt;name&gt;` is currently in a deleted but recoverable state" — confirmed in Microsoft Learn: soft-deleted secret names cannot be reused until purged or retention expires). `AzureKeyVaultStore.set` wraps *any* exception into `SecretWriteError` (secrets.py:135-141), and the `set` call in `upsert_config` is not guarded — so this propagates and 500s the PUT. Because the app is deliberately granted soft-delete but **not** purge or recover (keyvault.tf, and no `recover` call anywhere), there is no in-app remediation: the suite's webhook is un-settable until the ~90-day retention lapses.
+
+This is a genuine regression introduced by the PR: pre-PR, clearing left the secret live, so a re-set simply added a new version and worked. The sequence (set per-suite webhook → clear it → set it again) is a plausible user flow.
+
+Note the **connection** delete path is *not* affected — connection secret names are `conn-{conn.id}` with a fresh UUID per connection, so names are never reused after delete. Likewise `delete_config` (full row delete) is safe, since a re-created config gets a new UUID. Only the in-place clear→reset path on `upsert_config` reuses a soft-deleted name.
+
+Possible fixes: grant `recover` + recover-before-set in `AzureKeyVaultStore.set` when it hits the deleted-but-recoverable conflict; or don't reuse the name (mint a fresh ref, e.g. suffix a version/uuid, on each set); or keep the clear path from soft-deleting when the row survives (accepting a narrower orphan). The connection-vs-webhook asymmetry (UUID-per-secret vs stable-per-row name) is the crux.
+
+## Minor notes (below report threshold, flagging since you asked about these paths)
+
+- **Clear path deletes before commit** (notification_service.py:140 vs the delete-after-commit design used in `delete_connection`/`delete_config`). If the subsequent `session.commit()` (line 147) fails and rolls back, the DB row keeps its `webhook_secret_ref` pointing at a secret that was already soft-deleted — a reverse-orphan that would later fail `resolve_webhook`→`get`. Low probability (commit of a simple update failing), and it mirrors the pre-existing `set`-before-commit pattern in the same function, so it's defensible — but it compounds the issue above.
+- **Service call sites don't guard `secret_store.delete`** with try/except; they rely entirely on the Protocol's "never raises" contract. All three shipped impls honor it, so this is fine by design, but a future non-conforming store impl would 500 a delete *after* the row is already committed-gone. The docstring documents the contract, which is the right call.
+
+The Terraform change (adds `deleteSecret/action`, no purge) is correct and matches the soft-delete-only intent; the test additions cover the fail-soft contract per impl well (though none exercise the clear→reset name-reuse sequence against a soft-delete-simulating fake — worth adding a regression test once the fix lands).</result>
+<usage><subagent_tokens>74133</subagent_tokens><tool_uses>13</tool_uses><duration_ms>214080</duration_ms></usage>
+</task-notification>
+
+---
+
+Okay lets get started with OTel
+
+---
+
+<task-notification>
+<task-id>ab9fd9c9211ec1fbb</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/4feb9be8-2ae1-4d50-be97-b9c4cbaead36/tasks/ab9fd9c9211ec1fbb.output</output-file>
+<status>completed</status>
+<summary>Agent "Silent-failure review OTel PR" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I've verified all findings against the actual diff. Here's my audit.
+
+## Error-handling audit — PR #628 (opencensus→OTel log pipeline + generic OTLP)
+
+First, credit where due: this diff genuinely *improves* the redaction posture. The `_RedactingOTelLogHandler._get_attributes` override closes a real leak the old `AzureLogHandler` had (a foreign record's `extra={"password": …}` shipped verbatim as an OTel attribute, bypassing the body formatter), app-level structlog records are redacted upstream *before* `wrap_for_formatter` stores them on the record, and the exported body is rendered through the same redacting `ProcessorFormatter` with no-locals tracebacks. I could not find a path where a secret reaches an exporter un-redacted — the attribute path and the body path both route through `_redact_pii`. That part is solid and tested.
+
+The problems are all in resilience and configuration-visibility, not in the scrubber.
+
+---
+
+### HIGH — Telemetry setup is not isolated; any OTel error crashes API + every worker on startup
+
+**Location:** `backend/app/core/logging.py:99-162` (`_configure_otel_log_export`), called unguarded at `logging.py:222`; blast radius via `main.py:51` (lifespan), `main.py:219` (module scope), `celery_app.py` `setup_logging` + `worker_process_init`.
+
+**Scenario (state → outcome):** Operator sets `OTEL_EXPORTER_OTLP_ENDPOINT` and a malformed `OTEL_EXPORTER_OTLP_HEADERS` (parsed by the OTLP exporter constructor), or the pinned `opentelemetry-sdk`/`azure-monitor-*-exporter` versions drift and `LoggerProvider`/exporter/`_RedactingOTelLogHandler` construction raises. `_configure_otel_log_export` has no `try/except`, so the exception propagates out of `configure_logging`, which:
+- in the API, aborts the ASGI `lifespan` → app never serves;
+- in the worker, raises inside the `setup_logging` and `worker_process_init` signal handlers → worker/child dies → crash-loop.
+
+**Hidden errors this reintroduces:** exactly the #405 blast radius (orchestration polling, scheduled dispatch, gap recovery, purge all stop) — this time as a loud crash-loop instead of a silent stall, but still a full outage caused by a *telemetry* misconfiguration. Note the ordering: the stdout `StreamHandler` is attached at `logging.py:198` and `structlog.configure()` runs at `logging.py:224` — *after* the OTel call — so an OTel exception also skips structlog configuration entirely.
+
+**User impact:** a bad observability env var takes down the product. There is no degradation to stdout-only logging, which is the whole point of an observability sidecar being best-effort.
+
+**Recommendation:** wrap only the bridge attach in a `try/except Exception`, log via the already-attached stdout handler (`logging.getLogger(__name__).error(...)` / a structured `logForDebugging`-equivalent with an error id), and continue. The stdout handler already survives; make telemetry failure degrade to "logs still go to stdout, spans/OTLP off" rather than "process down."
+
+---
+
+### MEDIUM — Bridge attached to the root logger → OTel's own export-failure logs feed back into the pipeline
+
+**Location:** `logging.py:162` (`root.addHandler(handler)`); no exclusion of the `opentelemetry`/`azure` logger namespaces anywhere in `configure_logging`.
+
+**Scenario:** the OTLP collector or App Insights is unreachable (the common failure). The SDK's `BatchLogRecordProcessor`/exporter emits `logger.warning("Failed to export …")` on the `opentelemetry` logger. That record propagates to root → the OTel `LoggingHandler` on root → gets queued for export → the next export also fails → another "failed to export" log → … A self-referential amplification that kicks in *precisely when the backend is down*. It's bounded by the batch interval/queue-drop, so not a tight infinite loop, but it's a log/CPU amplifier and pollutes the very backend you're trying to reach once it recovers.
+
+**Recommendation:** set `logging.getLogger("opentelemetry").propagate = False` (and consider `azure.monitor`) in `configure_logging`, or attach the bridge selectively rather than to root. This is a well-known OTel root-bridge footgun.
+
+---
+
+### MEDIUM — Misconfiguration is silently indistinguishable from "telemetry off"; no positive confirmation for the log bridge
+
+**Location:** `otel.py:build_log_exporters`/`build_span_exporters` return `[]`; `_otlp_base` maps empty/whitespace-ish endpoints to `None`; `_configure_otel_log_export` returns silently at `logging.py:118-119`.
+
+**Scenario:** operator typos the var (`OTEL_EXPORTER_OTLP_ENDPONT=…`) or leaves a trailing empty value, believing telemetry is on. `build_*_exporters` returns `[]` → complete silent no-op. There is *no* log line either way for the log bridge — `tracing.py` at least logs `tracing_configured` on success, but the log pipeline logs nothing on attach and nothing on skip, and neither path logs when disabled.
+
+**User impact:** "my logs never show up in App Insights/Tempo" is undiagnosable from the app's own output — the operator can't tell intentional-off from misconfigured-off.
+
+**Recommendation:** emit one info/debug line at configure time naming the resolved backends (count and type, never the connection string/endpoint secret), and a debug line when telemetry resolves to none. The stdout handler is already attached at that point, so this is safe.
+
+---
+
+### LOW–MEDIUM — OTLP base-path append silently misroutes when a user supplies a full signal path
+
+**Location:** `otel.py` `f"{base}/v1/traces"` / `f"{base}/v1/logs"`, passing `endpoint=` explicitly.
+
+**Scenario:** a user following standard OTel docs sets `OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:4318/v1/traces` (already signal-specific) → this code produces `…/v1/traces/v1/traces`. Or they set the standard `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` env var — which this code ignores (settings only reads the base), and the explicit `endpoint=` kwarg *overrides* it. Either way the exporter posts to a wrong URL; the 404/connection error is swallowed in the background batch thread → spans/logs silently never arrive.
+
+**Recommendation:** document the base-only contract more forcefully in the `.env` example (it's noted, but the double-append case isn't), or validate/reject a `base` that already contains `/v1/`. At minimum, finding #3's confirmation log would surface the effective URL.
+
+---
+
+### LOW — `DeprecationWarning` suppression is category-wide, not message-scoped
+
+**Location:** `logging.py:149-156`.
+
+`warnings.simplefilter("ignore", DeprecationWarning)` suppresses *all* `DeprecationWarning`s during `_RedactingOTelLogHandler(...)` construction, not just the specific "use opentelemetry-instrumentation-logging" nudge. Real over-suppression risk is low — the scope is one constructor call and `catch_warnings()` restores state afterward — but any unrelated deprecation emitted inside that constructor (now or after an SDK bump) vanishes with no trace, and it's looser than the message-scoped `filterwarnings` the project uses in `pyproject.toml`. Prefer `warnings.filterwarnings("ignore", message="...LoggingHandler...", category=DeprecationWarning)`.
+
+---
+
+### LOW — Redaction override is pinned-version-fragile and mypy-blind
+
+**Location:** `logging.py:127-142` (`# type: ignore[misc]`, relying on `LoggingHandler._get_attributes` being a callable `staticmethod`).
+
+The attribute-redaction correctness depends on the SDK's `_get_attributes` staying a staticmethod with today's reserved-attr behavior. Because `LoggingHandler` is `Any` under `follow_imports=skip`, mypy can't catch a signature/kind change on an SDK bump. If a future version makes it an instance method or changes what it returns, the override could raise (→ crash per finding #1) or silently stop redacting attributes. It's correctly tested against the pin today (`test_otel_bridge_redacts_exported_attributes`), so this is a pin-discipline note, not a live defect — keep the OTel deps pinned (they are) and treat this test as the tripwire on any bump.
+
+---
+
+### Answering your specific probes
+
+- **No-op paths (`build_* → []`):** correct as "off," but *not* distinguished from misconfiguration — see MEDIUM #3.
+- **Would an OTel/provider error silently kill ALL logging including stdout?** No — it would *loudly crash* API/worker startup (stdout handler is attached first, `structlog.configure` is after and gets skipped). So not a silent stdout-kill, but not resilient either — see HIGH #1; it should degrade to stdout-only.
+- **DeprecationWarning suppression over-suppress?** Marginally — category-wide but narrowly scoped and restored — see LOW #5.
+- **Secret/PII reaching an exporter un-redacted via an error path?** I found none. Both the body and the exported-attribute paths route through `_redact_pii`; structlog records are redacted before they reach the handler; tracebacks are no-locals. This is the strongest part of the PR.
+
+**Files:** `/Users/arijit/Coding/Python/DataQ/backend/app/core/logging.py`, `/Users/arijit/Coding/Python/DataQ/backend/app/core/otel.py`, `/Users/arijit/Coding/Python/DataQ/backend/app/main.py`, `/Users/arijit/Coding/Python/DataQ/backend/app/worker/celery_app.py`.</result>
+<usage><subagent_tokens>77854</subagent_tokens><tool_uses>7</tool_uses><duration_ms>232224</duration_ms></usage>
+</task-notification>
+
+---
+
+Hey. The dbt is not available in the connection page. I didn't see it anywhere in the UI. 
+Also, the DataQ PAT, I'm not able to see in the user's profile page. 
+Are these things being added?
+
+---
+
+For the sample records, I'm not seeing the identifier columns. It's just the column that in the gx check. And for the column profiler, I'm not seeing the drop down. It's still the text box only. Can you cross check both?
+
+---
+
+for the first issue. I was thinking the auto classifier will select the identifier and PII column list first. And if it is incorrect, user will override them in the UI. So upon creating a suite, the auto classifier will detect the identifier and PII columns. And for every check that's added in the suite, those columns will automatically added as identifier and PII. 
+For the second issue both a and b, go with your suggested approach. 
+Also continue with the earlier PAT, dbt, stale RunNowPanel cleanup and  Slack/email [should be same as current teams channel] issues.
+
+---
+
+<task-notification>
+<task-id>a2a253578fab13586</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/4feb9be8-2ae1-4d50-be97-b9c4cbaead36/tasks/a2a253578fab13586.output</output-file>
+<status>completed</status>
+<summary>Agent "Review PAT UI PR #636" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I have everything I need. I verified the diff against the actual backend and supporting frontend code.
+
+## Review: PR #636 — PAT management UI (`feature/pat-management-ui`)
+
+Reviewed the full `git diff main...HEAD`: `frontend/src/api/apiKeys.ts`, `frontend/src/components/profile/ApiKeysPanel.tsx`, `frontend/src/pages/Profile.tsx`, and the three test files — cross-checked against the backend (`backend/app/api/v1/api_keys.py`, `api_key_service.py`), the reference panel (`SchedulesPanel.tsx`), `useAsyncData`, the axios client, and `formatTimestamp`.
+
+### Security verdict: token handling is correct
+
+The credential-handling core — the thing this review most needed to confirm — is sound:
+
+- **`token` never enters list data.** `ApiKey` (and backend `ApiKeyRead`) has no `token` field; only `createApiKey`'s `ApiKeyCreated` carries it. It's held solely in `CreateTokenModal`'s local `created` state and rendered only in the reveal view. `onCreated()` triggers a metadata-only refetch — the plaintext is never merged into the table's dataset.
+- **All modal close paths clear the plaintext.** `close()` calls `reset()` (sets `created = null`) before `onClose()` on every exit — Done button, the X/`onCancel`, and Escape. `maskClosable={!created}` blocks the one path (mask click) that would bypass `onCancel`. So the token is reliably dropped from state and DOM on dismissal; it is never logged or passed to `message`/callbacks.
+- **Contract is exact.** Path `/api/v1/me/api-keys` (baseURL `/api/v1` + `/me/api-keys`) matches the router. Fields `id/name/key_prefix/created_at/expires_at/revoked_at/last_used_at` (+`token` on create) match `ApiKeyRead`/`ApiKeyCreated`. Payload `{name, expires_in_days}` and the 1–365 bounds match `ApiKeyCreate` (`ge=1, le=MAX`). Frontend `PAT_DEFAULT_EXPIRY_DAYS=90`/`PAT_MAX_EXPIRY_DAYS=365` match `svc.DEFAULT_EXPIRY_DAYS`/`MAX_EXPIRY_DAYS`. `formatTimestamp(null)` renders `—`, so nullable `last_used_at`/`revoked_at` are safe. Revoke action is correctly hidden for already-revoked keys; status derivation (revoked &gt; expired &gt; active) is correct.
+
+No Critical (90-100) findings. The findings below are test-quality gaps at the Important tier.
+
+### Important (80-89)
+
+**1. The "shown exactly once" invariant is asserted only half-way — confidence 82**
+`frontend/tests/components/ApiKeysPanel.test.tsx`, test `creates a token and reveals it exactly once`.
+The test asserts the token *appears* in the reveal, but never asserts it is *gone afterward*. There is no assertion that after clicking **Done** the plaintext disappears from the DOM, and none that it never appears in the token table. For a feature whose entire security premise is show-once (and in a project that "takes credential handling seriously"), the actual once-only property — `reset()` clearing `created`, and the list never carrying `token` — is the invariant most worth pinning, and it's untested. The test name overstates what it covers.
+Fix: after clicking Done, assert `screen.queryByText('dq_live_ab12THE_FULL_SECRET')` is `null`; and in the list test assert the full secret never renders (only the `dq_live_ab12…` prefix).
+
+**2. No failure-mode tests for create or revoke — confidence 80**
+`frontend/tests/components/ApiKeysPanel.test.tsx`.
+Only happy paths are covered. Two error branches with real logic are untested:
+- `CreateTokenModal.onSubmit` catch → `message.error('Create failed: …')`, and critically that on failure `created` stays null so **no reveal is shown** (a rejected create must not flash a token view).
+- `ApiKeyTable.onRevoke` catch → `message.error` **plus `throw err`** to keep the confirm modal open on failure — the deliberate keep-open behavior is asserted nowhere.
+This runs against the project's own guidance (memory: "Test failure modes, not happy paths"; the reference `SchedulesPanel` has the same error branches). Add a `mockCreate.mockRejectedValue(...)` case asserting no reveal, and a `mockRevoke.mockRejectedValue(...)` case asserting the confirm stays open.
+
+### Minor notes (below the 80 report threshold, listed for completeness)
+
+- **`InputNumber` expiry accepts non-integer / transiently out-of-range input** (`ApiKeysPanel.tsx`, expiry field). `min={1} max={365}` clamps on blur, and the backend 422s anything invalid (surfaced via `message.error`), so it's guarded end-to-end — but adding `precision={0}` would stop a `90.5` from ever being submittable. Low impact.
+- **`Spin description=` / `Alert title=` props** are non-standard antd prop names (antd uses `tip` / `message`), but this PR copies them verbatim from the already-merged `SchedulesPanel`, so it's a pre-existing codebase convention, not introduced here. Out of scope for this PR.
+
+### Consistency
+
+Matches `SchedulesPanel` conventions well: `App.useApp()` for `message`/`modal`, `useAsyncData` + `reload`, the loading/error/empty triad, `busyId` gating, `modal.confirm` with `throw err` keep-open, `aria-label`ed icon buttons, and `formatTimestamp` for all timestamps. The two-phase (form → reveal) single-modal design is a clean, appropriate extension of the pattern.</result>
+<usage><subagent_tokens>65621</subagent_tokens><tool_uses>11</tool_uses><duration_ms>172072</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ab2ccb60557ba3dde</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/4feb9be8-2ae1-4d50-be97-b9c4cbaead36/tasks/ab2ccb60557ba3dde.output</output-file>
+<status>completed</status>
+<summary>Agent "Review dbt UI PR #637" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I've completed the review. All 7 tests pass, typecheck-relevant exhaustiveness holds, and I verified the dbt form against the backend `DbtConfig`. This is a clean, well-scoped change.
+
+## Review summary — PR #637 (dbt connection UI)
+
+Reviewed the full `git diff main...HEAD` across the 6 files, cross-checked against `backend/app/orchestration/dbt.py` (`DbtConfig`), the shared form framework, and the datasource-filtering consumers. Ran the test suite (7/7 pass) and confirmed `BuildOutlined` is a real antd export.
+
+**No findings at or above the reporting threshold (confidence ≥80). The change is safe to merge.** Details on each focus area below, plus two low-confidence notes for the author's awareness.
+
+### 1. Regression risk to the existing six types — none (verified)
+- The `type='tags'` branch in `ConfigTextField` is gated on `field.type === 'tags'` (ConnectionTypeFields.tsx:29). Only dbt's `jobs` field sets `type: 'tags'`; every other field has `type` undefined and falls through to `&lt;Input /&gt;`. Snowflake/ADLS/S3/UC/ADF/Airflow rendering is byte-for-byte unchanged.
+- The `optional` branch in `SecretField` defaults to `false` (ConnectionTypeFields.tsx:43) and is only passed `spec.optionalSecret` (line 124), which is undefined for all six existing types → `required` rule still applies. Auth-mode secrets (line 119) never pass `optional`, so key-pair/basic/token paths keep their required secret. No behavioural drift.
+
+### 2. Correctness vs backend `DbtConfig` — matches
+- `project_name`, `artifacts_uri`, `jobs`, `region`, `access_key_id` map 1:1 to the Pydantic model fields; `model_config = extra="forbid"` is satisfied (no stray keys).
+- **`jobs` produces a real `string[]`**: antd `Select mode="tags"` binds an array to `config.jobs`. Confirmed by the test asserting `payload.config.jobs` `toEqual(['nightly', 'hourly'])`. The trailing comma in the typed input is dropped, matching the backend's `_non_empty_jobs` (no empty job names).
+- Empty optional fields (`region`/`access_key_id`) are submitted as `undefined` and dropped by JSON serialization, so a `file://` connection sends only `{project_name, artifacts_uri, jobs}` — accepted by the backend (S3 validator only fires for `s3://`).
+- Optional secret correctly models `file://` needing no credential.
+
+### 3. dbt kept out of datasource contexts — correct
+- `CONNECTION_KIND.dbt = 'orchestration'` and `DATASOURCE_CATEGORY.dbt = null` (connections.ts). Every run-target / suite / check-editor gate filters via `CONNECTION_KIND[c.type] === 'datasource'` (SuiteForm.tsx:53, ImportSuiteDrawer.tsx:47, Suites.tsx:112, SuiteNew.tsx:55), so dbt is never offered as a checkable datasource. `SOURCE_CATEGORY.dbt = 'Orchestration'` places it in the correct picker bucket. Consistent with CLAUDE.md §4 / ADR 0029.
+
+### 4. Exhaustiveness — complete
+All 7 `Record&lt;ConnectionType, ...&gt;` maps carry a dbt entry: `CONNECTION_KIND`, `DATASOURCE_CATEGORY`, `CONNECTION_TYPE_LABELS`, `TYPE_VISUAL`, `CONNECTION_FORM_SPECS`, `SOURCE_CATEGORY`, `CONNECTION_BLURB`. tsc enforces these; no runtime iteration over `CONNECTION_TYPES` builds a datasource list (datasource offers come from `CONNECTION_KIND` filtering, not enumeration), so adding dbt can't wrongly surface it anywhere.
+
+### 5. Test quality — adequate
+The new test (`ConnectionNew.test.tsx:56`) asserts both required behaviours: the jobs-array shape (`toEqual(['nightly', 'hourly'])`) and the no-secret path (Create succeeds and `payload.secret ?? '' === ''`). Because a required secret would block `onFinish`, the passing `mockCreate` call genuinely exercises `optionalSecret`.
+
+### Low-confidence notes (below threshold — non-blocking, author's discretion)
+- **Optional secret is scheme-blind (confidence ~55).** The credential is marked optional for *all* dbt connections, but it's only truly optional for `file://`; for `adls://`/`s3://` the artifacts-read credential is effectively required and the form won't prompt for it. This is a guidance gap, not a correctness bug — a missing credential fails loudly at the backend connectivity `test()`, not silently. Deriving requiredness from the `artifacts_uri` scheme would need a cross-field watch, which the current spec framework doesn't express; leaving it to backend validation is a reasonable tradeoff.
+- **Test coverage gap (confidence ~40).** The test only covers the `file://` / no-secret happy path. An `s3://` variant (asserting `region`/`access_key_id` are submitted and a secret rides along) would lock in the other branch, but the backend already owns that validation and has its own tests.
+
+Relevant files: `/Users/arijit/Coding/Python/DataQ/frontend/src/components/connections/connectionFormSpec.ts`, `/Users/arijit/Coding/Python/DataQ/frontend/src/components/connections/ConnectionTypeFields.tsx`, `/Users/arijit/Coding/Python/DataQ/frontend/src/api/connections.ts`, `/Users/arijit/Coding/Python/DataQ/backend/app/orchestration/dbt.py`.</result>
+<usage><subagent_tokens>70108</subagent_tokens><tool_uses>13</tool_uses><duration_ms>144153</duration_ms></usage>
+</task-notification>
+
+---
+
+continue...
+
+---
+
+leave #638, continue on #633. Also do a silent failure check on this
+
+---
+
+<task-notification>
+<task-id>a361d73e249a60564</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/4feb9be8-2ae1-4d50-be97-b9c4cbaead36/tasks/a361d73e249a60564.output</output-file>
+<status>completed</status>
+<summary>Agent "Migration-safety review #639" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Alembic Migration Audit — PR #639 (`feature/per-suite-slack-email`)
+
+**Scope reviewed:** `git diff main...HEAD -- backend/alembic backend/app/db/models.py` (full PR diff also checked via `--stat` for context: it bundles the migration with `notification_service.py`, `alerting/slack.py`, `alerting/email.py`, `api/v1/notifications.py`, and the frontend panel — i.e., migration + consuming code land in the same PR/release).
+
+### File audited
+- `/Users/arijit/Coding/Python/DataQ/backend/alembic/versions/d2e3f4a5b6c7_per_suite_slack_email_notifications.py` (new)
+- `/Users/arijit/Coding/Python/DataQ/backend/app/db/models.py` (`SuiteNotification`, lines ~539–580)
+
+### 1. Additive/backward-compatible check — PASS
+```python
+op.add_column("suite_notifications", sa.Column("slack_webhook_secret_ref", sa.String(length=256), nullable=True))
+op.add_column("suite_notifications", sa.Column("email_recipients", sa.String(length=1024), nullable=True))
+```
+- Both columns are `nullable=True`, no `server_default`, no `NOT NULL`. No backfill required.
+- No existing row is touched; old (pre-#633) app code that never selects/writes these columns is completely unaffected during the migrate-before-roll window.
+- No `ALTER COLUMN`, no `rename_*`, no `drop_*` in `upgrade()`. This is the textbook safe "add nullable column" pattern from CLAUDE.md §6 / working-agreement #30.
+
+### 2. Downgrade correctness — PASS
+```python
+def downgrade() -&gt; None:
+    op.drop_column("suite_notifications", "email_recipients")
+    op.drop_column("suite_notifications", "slack_webhook_secret_ref")
+```
+- Cleanly inverts `upgrade()` (drops both columns, reverse order of creation — fine since they're independent).
+- Unlike `c1d2e3f4a5b6`'s narrowing (which could *fail* on rollback if disallowed data already existed), a `DROP COLUMN` on a nullable column with no dependent constraints **cannot fail** regardless of data present. The docstring correctly notes the only risk is *data loss* of per-suite overrides (rows fall back to workspace-level Slack/email config, not an error) — this is accurate and appropriately weaker than the ADR 0029 "downgrade window" warning it references, precisely because add/drop-nullable-column is safe in a way that constraint-narrowing is not. No corrective action needed here.
+- Note for the record (not a defect): this PR ships `notification_service.py`/`alerting/slack.py`/`alerting/email.py` reading these columns **unflagged**, in the same release as the migration. That's fine for the forward direction (migrate job runs before the image roll, so the new code never sees a pre-migration schema). It only matters if someone considers rolling the **app image** back to pre-#633 while leaving the schema forward — but since the columns are nullable and old code never references them, that combination is also safe. No split needed.
+
+### 3. `down_revision` chain — PASS
+Traced the full revision graph in `backend/alembic/versions/`: it is a single linear chain, no forks. `c1d2e3f4a5b6` (`widen_orchestration_for_dbt`) is the only migration nothing else points to as a parent — i.e., it is the true current head — and `d2e3f4a5b6c7.down_revision == "c1d2e3f4a5b6"` matches. No merge-conflict-induced branch/misordering.
+
+### 4. Model vs. migration parity — PASS
+```python
+slack_webhook_secret_ref: Mapped[str | None] = mapped_column(String(256))
+email_recipients: Mapped[str | None] = mapped_column(String(1024))
+```
+Types (`String(256)` / `String(1024)`) and nullability (`str | None` → nullable, matching `nullable=True` in the migration) are identical to the migration. Consistent with the existing sibling column `webhook_secret_ref: Mapped[str | None] = mapped_column(String(256))`.
+
+### 5. Lock footprint — PASS
+Both are `ADD COLUMN ... NULL` with no `server_default` on Postgres — metadata-only, no table rewrite, no full-table scan/lock, independent of `suite_notifications` row count. No index is created in this migration, so the ADR-0029-style `CONCURRENTLY` concern doesn't apply here. `suite_notifications` is also not one of the large hot tables (`runs`/`results`/`pipeline_runs`) called out in the yellow-flag heuristics, so even if an index were added here it'd be a lower-severity concern than on those tables.
+
+### 🟡 Minor observations (non-blocking)
+- No dedicated `test_migrations.py` exercises `alembic upgrade`/`downgrade` in CI for this revision — consistent with the rest of the repo (no such harness exists project-wide), so not a new gap introduced by this PR; the PR relies on the docstring's "tested up + down locally" attestation per the PR template checklist. Worth a `gh pr diff 639` skim by the reviewer to confirm the checklist box is actually ticked, since it can't be verified from the diff alone.
+- Docstring is present, describes intent, rollout, and rollback semantics in detail — exceeds the bar for working-agreement #30 and the yellow-flag "no docstring" check.
+
+### Rollback check
+`d2e3f4a5b6c7`: `downgrade()` is implemented (not `pass`) and correctly inverts `upgrade()` by dropping both columns it added. Confirmed safe under concurrent old/new code per above.
+
+### Suggested approach
+None required — no violation to stage. If the team wants extra defense-in-depth given the "unflagged" note pattern borrowed from `c1d2e3f4a5b6`, the only optional refinement (confirm with whoever owns the deploy) would be adding a one-line CI/migration smoke test that runs `alembic upgrade head` → `alembic downgrade -1` → `alembic upgrade head` against a throwaway DB, generalized for all future additive migrations — but that's a process improvement, not something this migration is missing to be safe.
+
+## Verdict
+**Pass — migration is backward-compatible.**
+
+No hard violations, no yellow flags requiring a split. The two new columns are additive, nullable, unbacked by defaults, correctly chained off the current head (`c1d2e3f4a5b6`), match the SQLAlchemy model exactly, have a correct and genuinely-safe `downgrade()`, and carry no lock-footprint risk.</result>
+<usage><subagent_tokens>47593</subagent_tokens><tool_uses>8</tool_uses><duration_ms>91865</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a25e887526fafe758</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/4feb9be8-2ae1-4d50-be97-b9c4cbaead36/tasks/a25e887526fafe758.output</output-file>
+<status>completed</status>
+<summary>Agent "Silent-failure review #639" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I have everything I need. Here is my audit.
+
+---
+
+# Silent-Failure &amp; Error-Handling Audit — PR #639 (`feature/per-suite-slack-email`)
+
+I verified every claim against the actual diff and the surrounding code, and ran two probes (the light email validator, and Python's `EmailMessage` header handling) to calibrate impact. Overall the secret-lifecycle and SSRF work is solid and the isolation is well-behaved — but there is one genuine silent-failure vector and a couple of state-persistence footguns.
+
+## Finding 1 — HIGH: Light email validation accepts recipients that permanently, silently break email delivery for a suite
+
+**Location:** `backend/app/services/notification_service.py` `assert_valid_recipients` (~lines 110–125); interacts with `backend/app/alerting/email.py:167-169` and `backend/app/alerting/composite.py:27-37`.
+
+**Issue:** The validator only checks each comma-part for one `@`, a non-empty local part, and a `.` in the domain. I confirmed by execution that it **accepts** all of these:
+
+- `a@b.com\nBcc: evil@x.com` and `a@b.com\r\nBcc: evil@x.com` (embedded CR/LF)
+- `a@ b.com` (embedded space)
+- `&lt;script&gt;@b.com`, `a@b.com;c@d.com`
+
+The security-injection angle is *contained* — Python's `EmailMessage.__setitem__` raises `ValueError("Header values may not contain linefeed or carriage return characters")` when `message["To"]` is set (I verified this), so Bcc header injection does **not** actually reach the wire. But that is precisely what makes this a silent failure:
+
+**Concrete scenario (input/state → wrong outcome):**
+1. A user with `edit` on a suite saves `email_recipients = "ops@corp.com\nfoo"` (a paste artifact / typo). Validation **passes** → API returns 200 → the UI shows **"Notifications saved"** and the "Email recipients" tag/state reflect success.
+2. On the *next* suite run, `EmailPublisher.publish` reaches `message["To"] = ", ".join(recipients)` → `ValueError`.
+3. `CompositePublisher` swallows it under `except Exception` and logs `channel_publish_failed` (composite.py:31).
+4. **Net effect:** email alerting for that suite is now permanently dead — every run silently fails to notify — with the only signal being a server log line the suite owner never sees. The user is convinced alerting is configured.
+
+The `a@ b.com` / `&lt;script&gt;@b.com` variants are worse in a subtler way: they don't raise at header-set, so `send_message` will attempt delivery to a malformed/garbage address, producing an SMTP error (again isolated/swallowed) or misrouting.
+
+**Hidden errors:** `ValueError` from the email header machinery; `smtplib.SMTPRecipientsRefused` / `SMTPDataError` from malformed addresses — all funneled into the single broad `channel_publish_failed` bucket and indistinguishable from a transient mailer outage.
+
+**User impact:** False "saved" confirmation, then a silent, ongoing notification outage. This is the exact "validation gives false confidence, downstream failure is swallowed" anti-pattern.
+
+**Recommendation:** Tighten `assert_valid_recipients` to reject control characters and internal whitespace before storing, and prefer a structural parse over the hand-rolled `partition('@')`:
+
+```python
+import re
+from email.headerregistry import Address
+
+_CTL = re.compile(r"[\r\n\t]")
+
+def assert_valid_recipients(raw: str) -&gt; None:
+    parts = parse_recipients(raw)
+    if not parts:
+        raise InvalidRecipientsError("at least one recipient is required")
+    for addr in parts:
+        if _CTL.search(addr) or " " in addr:
+            raise InvalidRecipientsError(
+                "recipient contains invalid characters", detail={"invalid": addr}
+            )
+        local, sep, domain = addr.partition("@")
+        if not sep or not local or "." not in domain:
+            raise InvalidRecipientsError(
+                "each recipient must be a valid email address", detail={"invalid": addr}
+            )
+```
+
+Separately, the `String(1024)` column has no length guard in validation — a very long paste will 500 at commit rather than 422; cap it in the validator.
+
+## Finding 2 — MEDIUM: "Clear Teams" / "Clear Slack" silently commit unsaved `enabled` / `alert_on` edits
+
+**Location:** `frontend/src/components/suites/NotificationsPanel.tsx` — the shared `put()` helper and the clear buttons (`onClick={() =&gt; put({ webhook: '' }, ...)}`).
+
+**Issue:** `put()` always sends `{ enabled, alert_on: alertOn, ...extra }` from current in-memory form state. The clear buttons therefore piggyback whatever the user has toggled but **not** yet saved.
+
+**Concrete scenario:** User flips the **Enabled** switch off (or changes the threshold from `warn` to `always`), does **not** click Save, then clicks **"Clear Teams"** because they changed their mind about the webhook. The PUT persists `enabled: false` (or the new threshold) as a side effect of clearing the webhook. The toast says only "Teams webhook cleared." The user has now silently disabled alerting for the suite.
+
+This pattern pre-dates #639 (the old single `onClearWebhook` did the same), but #639 multiplies the surface to two clear buttons and adds a third editable field, so it's worth fixing now.
+
+**Recommendation:** Have the clear buttons send only the channel field plus the *server-known* enabled/alert_on (from `initial*`, not the live edited state), or disable the clear buttons while the form is dirty and prompt the user to Save/Discard first.
+
+## Finding 3 — LOW/MEDIUM: Send-time SSRF re-check drops the `https` scheme check on the workspace webhook path
+
+**Location:** `backend/app/alerting/slack.py:133-136`.
+
+**Issue:** The send-time re-check validates only the host (`host == a or host.endswith(f".{a}")`), not the scheme. Per-suite Slack webhooks are scheme-validated at write time (`_host_allowed` requires `https`), but the **workspace** `SLACK_WEBHOOK_SECRET_NAME` is never write-validated at all. A workspace webhook stored as `http://hooks.slack.com/...` would pass the send-time host check and be POSTed over cleartext.
+
+**Impact:** Admin-controlled config only, so low exploitability — but it's an asymmetry with the write path and defeats the "defense in depth at the sink" intent. (The Teams publisher very likely has the same shape; worth checking for parity.)
+
+**Recommendation:** Re-check scheme too at the sink — reuse `notification_service._host_allowed(webhook, self._allowed_hosts)` (which already enforces `https`) instead of the inline host-only comparison, so both per-suite and workspace webhooks get the identical guard.
+
+## Finding 4 — LOW: Vault secret orphaned on a failed/partial multi-channel `set`; `SecretWriteError` surfaces as an opaque 500
+
+**Location:** `backend/app/services/notification_service.py` `_apply_secret_webhook` (called twice in `upsert_config`, ~lines 220–233); `backend/app/core/secrets.py:55` (`SecretWriteError(Exception)`).
+
+**Issue:** `secret_store.set()` runs **before** `session.commit()`. If the Slack `set` raises `SecretWriteError` after the Teams `set` already succeeded (or the later commit fails), the Teams secret is left written in the vault with no committed DB row referencing it — an orphan. And because `SecretWriteError` is a plain `Exception` (not a `DataQError`), it hits the generic handler and returns an opaque **500** rather than an actionable envelope.
+
+**Note:** This is the documented write-through pattern and pre-dates #639 for the single Teams webhook; #639 doubles the exposure. Importantly, the **clear** path is correct — refs are captured and soft-deleted only *after* commit, so no *live* secret is orphaned on clear (see the positives below).
+
+**Recommendation:** Consider wrapping `SecretWriteError` into a `DataQError` (e.g. 502/503) so a vault write blip is a clean, retryable error instead of a 500; and note the set-before-commit orphan as a known residual (a periodic reconcile of `suite-notif*` refs vs. rows would close it).
+
+## Finding 5 — LOW: Validation `detail` (which address / allowed hosts) is not surfaced to the user
+
+**Location:** `frontend/src/api/client.ts:32-34` maps only `error.message`, not `error.detail`.
+
+**Issue:** `assert_valid_recipients` returns `detail={"invalid": addr}` and `assert_allowed_slack_webhook` returns `detail={"allowed_hosts": [...]}`, but the toast shows only the generic message ("each recipient must be a valid email address"). For a multi-address list the user isn't told *which* address failed or *which* hosts are allowed.
+
+**Recommendation:** When present, append `detail.invalid` / `detail.allowed_hosts` to the surfaced message so the error is actionable.
+
+---
+
+## What's done well (verified, not silent)
+
+- **#372 secret cleanup is correct and symmetric.** `delete_config` captures **both** `webhook_secret_ref` and `slack_webhook_secret_ref` before delete and soft-deletes both post-commit; `upsert_config` clears both via `_apply_secret_webhook` and deletes the cleared refs only after `session.commit()`. Ordering guarantees a rolled-back commit can never orphan a *live* ref.
+- **Delete is genuinely fail-soft.** All three `SecretStore.delete` impls (Azure KV, Redis, Env) swallow-and-log (`ResourceNotFoundError` → no-op, everything else → `secret_delete_failed` warning, never raised), so orphan cleanup can never 500 the request.
+- **SlackPublisher's dropped gate is safe.** `if not webhook: return` correctly no-ops when neither per-suite nor workspace webhook resolves; a missing secret is caught inside `_resolve_secret_webhook` (`SecretNotFoundError` → logged by ref/name, never the value → falls through), so a missing secret can never raise out of the publisher.
+- **SSRF write-path is sound.** The only writer of per-suite Slack webhooks (`upsert_config`) always runs `assert_allowed_slack_webhook` for non-empty values, using the same setting (`slack_webhook_allowed_hosts`) as the send-time re-check; the send-time host check applies to both per-suite and workspace webhooks.
+- **Composite isolation is correct.** Broad `except Exception` here is justified (channel isolation) and logs with `log.exception` (traceback + `channel` + `run_id`) — not an empty/swallowing catch.
+- **Frontend `put()` surfaces failures.** Errors become a `message.error` toast carrying the backend envelope message (via the client interceptor), `onChanged()` is skipped on failure so the UI isn't misleadingly reloaded, and typed webhook values are cleared only when `ok` — no silent loss, no misleading cleared-field state.
+- **Migration is backward-compatible** — both columns added `nullable=True`, additive-only.
+
+**Files of interest (all absolute):**
+- `/Users/arijit/Coding/Python/DataQ/backend/app/services/notification_service.py` (Findings 1, 4)
+- `/Users/arijit/Coding/Python/DataQ/backend/app/alerting/email.py` (Finding 1)
+- `/Users/arijit/Coding/Python/DataQ/backend/app/alerting/slack.py` (Finding 3)
+- `/Users/arijit/Coding/Python/DataQ/backend/app/alerting/composite.py` (Finding 1, isolation)
+- `/Users/arijit/Coding/Python/DataQ/frontend/src/components/suites/NotificationsPanel.tsx` (Finding 2)
+- `/Users/arijit/Coding/Python/DataQ/frontend/src/api/client.ts` (Finding 5)
+
+The one finding I'd gate the merge on is **Finding 1** — it's a real, reachable silent notification outage triggered by ordinary user input, dressed up as a successful save.</result>
+<usage><subagent_tokens>88208</subagent_tokens><tool_uses>17</tool_uses><duration_ms>355700</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a52a0ee115d115a90</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/4feb9be8-2ae1-4d50-be97-b9c4cbaead36/tasks/a52a0ee115d115a90.output</output-file>
+<status>completed</status>
+<summary>Agent "Silent-failure review #642" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Audit complete. I verified every claim against the actual diff and the surrounding code (`suite_service.set_column_policy`, `derive_column_policy`, `classify_column`/`is_sensitive`, the two dispatch sites, and the task helper).
+
+## Verdict: the fail-soft is fundamentally correct. Two real concurrency/staleness gaps and one broad-except caveat are worth flagging.
+
+The bare-except-as-best-effort design is justified here and the visibility is real: both failure paths log with `exc_info=True` (dispatch → `auto_classify_dispatch_failed`; task → `auto_classify_failed`), so nothing fails truly silently. The worker cannot crash from this path. But the "never clobber" guard is weaker than its comment claims, and the derive is bound to a snapshot of the target that can go stale.
+
+---
+
+### Finding 1 — MEDIUM: stale-target race — a policy derived from the OLD target is silently persisted onto a suite whose target has since changed
+`backend/app/worker/tasks.py`, `_auto_classify_columns` (the `target = suite.target` capture through `set_column_policy`).
+
+The task captures `target = suite.target`, introspects that target (seconds of live warehouse I/O), then before persisting only re-checks `suite.column_policy is not None` — it never re-checks that `suite.target` is still the target it profiled. `set_column_policy` writes only `column_policy`, not `target`.
+
+Scenario (inputs/state → wrong outcome): Suite created targeting `SALES.ORDERS` (policy-less) → task dispatched, begins introspecting ORDERS. While it profiles, the owner PATCHes the target to `SALES.CUSTOMERS` (update path: `column_policy is None` still true → a *second* task dispatched too, but that's benign). Task A finishes, `session.refresh(suite)` shows `column_policy is None`, and it writes an `identifier_column`/`pii_columns` derived from ORDERS onto a suite now pointing at CUSTOMERS. Result: the redaction policy references columns that may not exist in the current target — `identifier_column` silently resolves to no locator, and any ORDERS-specific PII columns are the wrong set for CUSTOMERS. The PII value-signal floor at redaction time still masks affirmatively-sensitive values, so this is a wrong-locator / mis-scoped-policy bug, not a PII leak. The guard should re-verify `suite.target == target` (or dict-equal) after `refresh`, not just the policy.
+
+---
+
+### Finding 2 — LOW/MEDIUM: the "never clobber a user policy" re-check is TOCTOU, not race-safe
+`backend/app/worker/tasks.py` — `session.refresh(suite)` + `if suite.column_policy is not None` immediately before `set_column_policy`.
+
+The comment says this makes the write race-safe. It does not. `set_column_policy` issues a plain ORM `UPDATE suite SET column_policy = …` with no `WHERE column_policy IS NULL` and no `SELECT … FOR UPDATE` row lock. Under READ COMMITTED there remains a window between the `refresh` SELECT and the `set_column_policy` COMMIT. A user who sets their own policy via the Auto-detect/set endpoint in that sub-second window has it silently overwritten by the auto-derived one. The re-check narrows the window from "seconds of introspection" to "milliseconds between refresh and commit" — a real and worthwhile mitigation — but the code and its comment overstate it as fully safe. A conditional update (`UPDATE … WHERE column_policy IS NULL` and check rowcount) or a `with_for_update` fetch would close it. Low probability, but the outcome is a user's explicit choice being clobbered by background work — exactly the class of silent override this guard exists to prevent.
+
+---
+
+### Finding 3 — LOW: target change on an already-policied suite leaves a stale policy with no signal
+`backend/app/api/v1/suites.py`, `update_suite` dispatch condition `payload.target is not None and suite.target is not None and suite.column_policy is None`.
+
+Because of the `column_policy is None` clause, PATCHing the target of a suite that already has a policy does not re-derive and emits no warning/event. Scenario: suite targets ORDERS with a derived `identifier_column="ORDER_NUMBER"`; owner repoints it to a table without that column. The stale policy persists silently; the locator just stops working. This is defensible as the intended "never re-derive once a policy exists" rule, but the staleness is invisible to the user. Worth a follow-up issue (or at least a doc note) rather than a code change in this PR.
+
+---
+
+### Finding 4 — LOW (broad-except caveat, not a defect): a genuine code bug is masked as a best-effort warning
+`backend/app/worker/tasks.py`, the task's `except Exception`.
+
+Correct for I/O/introspection failures (warehouse unreachable, bad creds, `ProfileUnsupportedError`/`ProfileTargetInvalidError` 422s) — those *should* be swallowed here. But the same catch also absorbs any programming bug in `suggest_policy_for_target` / `set_column_policy` (e.g. a future `AttributeError`/`TypeError`), reporting it as an ordinary `auto_classify_failed` warning. The feature would then silently never classify anything, distinguishable only by log volume. It is logged at `warning` with `exc_info`, not surfaced as an error/Sentry-level event, so a persistent regression could run unnoticed. Acceptable for best-effort background work, but this is the debugging cost of the broad catch — I'd note it, not block on it.
+
+---
+
+### Things the review asked about that are actually FINE (verified)
+
+- **`ColumnPolicyInvalidError` crashing the worker (Q6):** No. `DataQError(Exception)` is caught by the task's `except Exception` → rollback + warning + returns `"error"`. Worker safe. Moreover it effectively cannot fire from a *derived* policy: `derive_column_policy` only picks an `identifier_column` from columns `classify_column` returned as `IDENTIFIER`, which by construction means `_name_signal` is not PII; `set_column_policy`'s `is_sensitive(identifier_column)` (name-only, no sampled values) can only trip on a PII name signal. So the two never contradict for auto-derived input. The guard is dead-but-harmless defense.
+- **`dispatch_auto_classify` swallowing broker errors (Q3):** Correct and visible — `log.warning("auto_classify_dispatch_failed", …, exc_info=True)`. Suite create/update cannot be failed by a broker blip. Good.
+- **Suggest-endpoint refactor (Q5):** Error behavior preserved. `suggest_policy_for_target` runs the identical `list_columns → profile_connection → derive_column_policy` sequence and re-raises the same `ProfileUnsupportedError`/`ProfileTargetInvalidError` 422s the endpoint raised before; `top_n` is threaded through. The endpoint still surfaces; the task still swallows. Clean extraction.
+- **Dispatch conditions (Q4):** The target-less-then-given-a-target case *is* covered by the update path. Redundant dispatch happens only for batch-pattern/target-less-column suites on create (task no-ops to `"skipped"`) — harmless waste of one broker message.
+
+Key files: `/Users/arijit/Coding/Python/DataQ/backend/app/worker/tasks.py`, `/Users/arijit/Coding/Python/DataQ/backend/app/services/run_dispatch.py`, `/Users/arijit/Coding/Python/DataQ/backend/app/api/v1/suites.py`, `/Users/arijit/Coding/Python/DataQ/backend/app/services/suite_service.py`.
+
+The two findings I'd want addressed before merge are #1 (add a `suite.target == target` re-check alongside the policy re-check) and #2 (make the write conditional or soften the "race-safe" comment to "narrows the window"). #3 and #4 are follow-up/note-level.</result>
+<usage><subagent_tokens>69176</subagent_tokens><tool_uses>13</tool_uses><duration_ms>178229</duration_ms></usage>
+</task-notification>
+
+---
+
+<ide_selection>The user selected the lines 1 to 2 from Untitled-1:
+
+can you create an UI testing agent which should test both desktop and mobile UI functionalities and rendering? Also, among other things, it should identify the gap between backend and frontend. Like, there is some feature completed in the backend, but not set in frontend and vice versa.
+
+This may or may not be related to the current task.</ide_selection>
+yeah, deploy it
+
+---
+
+CI completed
+
+---
+
+prepare an hand-over note for next session
