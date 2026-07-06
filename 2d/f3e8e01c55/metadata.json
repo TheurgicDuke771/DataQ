@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "2df3e8e01c55",
+  "strategy": "manual-commit",
+  "branch": "feature/661-alert-table-owner",
+  "checkpoints_count": 4,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/2d/f3e8e01c55/0/metadata.json",
+      "transcript": "/2d/f3e8e01c55/0/full.jsonl",
+      "compact_transcript": "/2d/f3e8e01c55/0/transcript.jsonl",
+      "content_hash": "/2d/f3e8e01c55/0/content_hash.txt",
+      "prompt": "/2d/f3e8e01c55/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 43072,
+    "cache_creation_tokens": 2236895,
+    "cache_read_tokens": 103688305,
+    "output_tokens": 283153,
+    "api_call_count": 361
+  }
+}
