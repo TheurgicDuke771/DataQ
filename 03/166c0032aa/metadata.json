@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "03166c0032aa",
+  "strategy": "manual-commit",
+  "branch": "feature/416-enrich-slack-email-alerts",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/03/166c0032aa/0/metadata.json",
+      "transcript": "/03/166c0032aa/0/full.jsonl",
+      "compact_transcript": "/03/166c0032aa/0/transcript.jsonl",
+      "content_hash": "/03/166c0032aa/0/content_hash.txt",
+      "prompt": "/03/166c0032aa/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 31846,
+    "cache_creation_tokens": 1360530,
+    "cache_read_tokens": 51171543,
+    "output_tokens": 191339,
+    "api_call_count": 240
+  }
+}
