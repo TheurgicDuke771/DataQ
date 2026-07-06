@@ -10,7 +10,7 @@ from __future__ import annotations
 import dataclasses
 import uuid
 from datetime import UTC, datetime
-from typing import Any, ClassVar
+from typing import Any, ClassVar, cast
 
 import httpx
 import pytest
@@ -108,6 +108,66 @@ def test_email_html_escapes_and_lists_failures() -> None:
     assert "order_total &gt;= 0" in html  # '>' escaped, check listed
 
 
+# ── enrichment: deep link · metadata · expected-vs-observed (#416) ────────────
+
+
+def _rich_report() -> RunReport:
+    """A failing report carrying run metadata + a deep link + a check with an
+    expected/observed detail, to exercise the #416 enrichment end-to-end."""
+    return dataclasses.replace(
+        _report(worst="fail"),
+        env="prod",
+        started_at=datetime(2026, 7, 6, 4, 30, tzinfo=UTC),
+        finished_at=datetime(2026, 7, 6, 4, 30, 12, tzinfo=UTC),
+        triggered_by="adf:pl_orders:run-99",
+        run_url="https://dataq.example.com/results/abc123",
+        checks=[
+            CheckReport(
+                "order_total >= 0",
+                "expect_column_values_to_be_between",
+                "fail",
+                None,
+                {"observed_value": 12},
+                {"min_value": 0},
+                {"unexpected_percent": 3.2},
+            ),
+        ],
+    )
+
+
+def test_slack_render_includes_view_run_button_and_metadata() -> None:
+    body = render_slack_message(_rich_report(), route_for(_report(worst="fail"), "warn"))
+    blocks = cast(list[dict[str, Any]], body["blocks"])
+    # A button block deep-links to the run.
+    button = next(b for b in blocks if b.get("type") == "actions")
+    assert button["elements"][0]["url"] == "https://dataq.example.com/results/abc123"
+    text = str(blocks)
+    assert "prod" in text and "ADF" in text  # env + trigger metadata fields
+    # expected-vs-observed detail on the failing check.
+    assert "expected min_value=0 · observed 12 · 3.2% unexpected" in text
+
+
+def test_slack_render_omits_button_without_run_url() -> None:
+    body = render_slack_message(_report(worst="fail"), route_for(_report(worst="fail"), "warn"))
+    blocks = cast(list[dict[str, Any]], body["blocks"])
+    assert not any(b.get("type") == "actions" for b in blocks)
+
+
+def test_email_html_has_deep_link_and_expected_observed() -> None:
+    html = email_mod.render_html_body(_rich_report())
+    assert "https://dataq.example.com/results/abc123" in html  # View run link
+    assert "expected min_value=0 · observed 12 · 3.2% unexpected" in html
+    assert "prod" in html and "ADF" in html  # metadata row
+
+
+def test_email_text_has_deep_link_and_metadata() -> None:
+    text = email_mod.render_text_body(_rich_report())
+    assert "View run: https://dataq.example.com/results/abc123" in text
+    assert "Environment: prod" in text
+    assert "Triggered by: ADF" in text
+    assert "Duration: 12.0s" in text
+
+
 # ── gating (quiet no-op) ─────────────────────────────────────────────────────
 
 
@@ -187,7 +247,7 @@ def test_slack_render_truncates_beyond_max_check_lines() -> None:
     body = render_slack_message(report, route_for(report, "warn"))
     text = str(body["blocks"])
     assert f"…and {25 - slack_mod._MAX_CHECK_LINES} more" in text
-    assert "(3 unexpected)" in text  # count-only sample note branch
+    assert "3 unexpected" in text  # count-only sample note branch (render.check_detail)
 
 
 def test_email_text_body_lists_failures_with_pct_note() -> None:

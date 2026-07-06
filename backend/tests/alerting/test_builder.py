@@ -9,8 +9,10 @@ Skips the DB layer without TEST_DATABASE_URL.
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
+
+import pytest
 
 from backend.app.alerting import builder
 from backend.app.alerting.base import CheckReport, RunReport
@@ -161,6 +163,62 @@ def test_build_report_maps_check_and_metric(db_session: Any) -> None:
     assert only.check_name == "not-null id"
     assert only.expectation_type == "expect_column_values_to_not_be_null"
     assert isinstance(only.metric_value, float) and only.metric_value == 12.5
+
+
+def test_build_report_populates_run_metadata(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # #416: env (from the connection), started_at + triggered_by (from the run), and
+    # a run_url deep link assembled from the configured public base URL.
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(
+        builder, "get_settings", lambda: SimpleNamespace(public_base_url="https://dq.example.com/")
+    )
+    owner = User(aad_object_id=uuid.uuid4().hex, email=f"u-{uuid.uuid4().hex[:6]}@x.io")
+    db_session.add(owner)
+    db_session.flush()
+    conn = Connection(
+        name=f"c-{uuid.uuid4().hex[:8]}",
+        type="snowflake",
+        env="uat",
+        config={"account": "a"},
+        secret_ref="kv",
+        created_by=owner.id,
+    )
+    db_session.add(conn)
+    db_session.flush()
+    suite = Suite(name="S", connection_id=conn.id, created_by=owner.id, target={"table": "T"})
+    db_session.add(suite)
+    db_session.flush()
+    started = datetime(2026, 7, 6, 4, 30, tzinfo=UTC)
+    run = Run(
+        suite_id=suite.id,
+        status="succeeded",
+        started_at=started,
+        finished_at=started + timedelta(seconds=12),
+        triggered_by="schedule:daily",
+    )
+    db_session.add(run)
+    db_session.commit()
+
+    report = builder.build_run_report(db_session, run)
+
+    assert report.env == "uat"
+    assert report.started_at == started
+    assert report.triggered_by == "schedule:daily"
+    assert report.run_url == f"https://dq.example.com/results/{run.id}"
+    assert report.duration_seconds == 12.0
+
+
+def test_build_report_run_url_none_without_base_url(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(builder, "get_settings", lambda: SimpleNamespace(public_base_url=""))
+    _suite, run = _suite_with_check(db_session, status="pass")
+    assert builder.build_run_report(db_session, run).run_url is None
 
 
 def test_build_report_surfaces_non_pii_sample_values(db_session: Any) -> None:

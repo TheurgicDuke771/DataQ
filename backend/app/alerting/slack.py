@@ -17,6 +17,7 @@ from urllib.parse import urlparse
 import httpx
 from sqlalchemy.orm import Session
 
+from backend.app.alerting import render
 from backend.app.alerting.base import CheckReport, RunReport
 from backend.app.alerting.routing import CRITICAL, Route, route_for
 from backend.app.core.logging import get_logger
@@ -49,17 +50,21 @@ def render_slack_message(report: RunReport, route: Route) -> dict[str, object]:
             f"{report.failed_checks}/{report.total_checks} checks failed"
         )
 
+    # Base facts + run metadata (env / trigger / when / duration) as section fields;
+    # Slack renders up to 10 fields, and this stays at 4 + at most 4 metadata.
+    fields = [
+        {"type": "mrkdwn", "text": f"*Datasource:*\n{report.datasource_type}"},
+        {"type": "mrkdwn", "text": f"*Target:*\n{report.target_label}"},
+        {"type": "mrkdwn", "text": f"*Severity:*\n{report.worst_severity or '—'}"},
+        {"type": "mrkdwn", "text": f"*Run:*\n{report.run_status}"},
+    ]
+    fields += [
+        {"type": "mrkdwn", "text": f"*{label}:*\n{value}"}
+        for label, value in render.run_metadata(report)
+    ]
     blocks: list[dict[str, object]] = [
         {"type": "header", "text": {"type": "plain_text", "text": headline[:150]}},
-        {
-            "type": "section",
-            "fields": [
-                {"type": "mrkdwn", "text": f"*Datasource:*\n{report.datasource_type}"},
-                {"type": "mrkdwn", "text": f"*Target:*\n{report.target_label}"},
-                {"type": "mrkdwn", "text": f"*Severity:*\n{report.worst_severity or '—'}"},
-                {"type": "mrkdwn", "text": f"*Run:*\n{report.run_status}"},
-            ],
-        },
+        {"type": "section", "fields": fields},
     ]
 
     failing = [c for c in report.checks if c.status != "pass"]
@@ -68,6 +73,22 @@ def render_slack_message(report: RunReport, route: Route) -> dict[str, object]:
         if len(failing) > _MAX_CHECK_LINES:
             lines += f"\n…and {len(failing) - _MAX_CHECK_LINES} more"
         blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": lines}})
+
+    # A "View run" button deep-links to the run-detail page (when a public base URL
+    # is configured; otherwise there's no link to offer).
+    if report.run_url:
+        blocks.append(
+            {
+                "type": "actions",
+                "elements": [
+                    {
+                        "type": "button",
+                        "text": {"type": "plain_text", "text": "View run"},
+                        "url": report.run_url,
+                    }
+                ],
+            }
+        )
 
     # `<!channel>` escalates a critical breach to everyone in the channel.
     if route.mention_channel:
@@ -79,16 +100,11 @@ def render_slack_message(report: RunReport, route: Route) -> dict[str, object]:
 
 
 def _check_line(check: CheckReport) -> str:
-    """One failing check as a Slack mrkdwn bullet (name · status · redacted sample)."""
+    """One failing check as a Slack mrkdwn bullet: name · status · expected-vs-
+    observed · redacted sample (via the shared :mod:`render` formatter)."""
     line = f"• *{check.check_name}* — `{check.status}`"
-    sample = check.sample_summary or {}
-    pct = sample.get("unexpected_percent")
-    count = sample.get("unexpected_count")
-    if pct is not None:
-        line += f" ({pct}% unexpected)"
-    elif count is not None:
-        line += f" ({count} unexpected)"
-    return line
+    detail = render.check_detail(check)
+    return f"{line} — {detail}" if detail else line
 
 
 class SlackPublisher:
