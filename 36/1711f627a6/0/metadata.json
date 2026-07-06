@@ -1,0 +1,55 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_id": "361711f627a6",
+  "session_id": "74593251-a4f7-4bd8-bfce-b1f68dc047fe",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-06T23:42:12.386638Z",
+  "branch": "fix/issue-652-dbt-frontend-parity",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "9e197f746f8b",
+  "token_usage": {
+    "input_tokens": 62998,
+    "cache_creation_tokens": 300947,
+    "cache_read_tokens": 23191778,
+    "output_tokens": 80061,
+    "api_call_count": 141
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01QvUvA1MXWjXbtJrGNrBRKB",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "9e197f746f8b",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 79,
+        "end": 80,
+        "entry_ids": [
+          "c3194dfe-52d1-474f-9544-3f181110eb23"
+        ],
+        "tool_use_id": "toolu_01QvUvA1MXWjXbtJrGNrBRKB"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01QvUvA1MXWjXbtJrGNrBRKB"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    }
+  ]
+}
