@@ -46,6 +46,7 @@ const check: Check = {
   warn_threshold: null,
   fail_threshold: null,
   critical_threshold: null,
+  alert_snoozed_until: null,
 };
 
 const runDetail: RunDetailType = {

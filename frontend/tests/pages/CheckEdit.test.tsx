@@ -66,6 +66,7 @@ const existing: Check = {
   warn_threshold: 5,
   fail_threshold: 10,
   critical_threshold: null,
+  alert_snoozed_until: null,
 };
 
 function renderPage() {

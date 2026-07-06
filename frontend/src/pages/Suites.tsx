@@ -1,5 +1,17 @@
 import { PlayCircleOutlined } from '@ant-design/icons';
-import { App, Alert, Button, Card, Empty, Flex, Spin, Tag, Tooltip, Typography } from 'antd';
+import {
+  App,
+  Alert,
+  Button,
+  Card,
+  Dropdown,
+  Empty,
+  Flex,
+  Spin,
+  Tag,
+  Tooltip,
+  Typography,
+} from 'antd';
 import SimpleList from '../components/SimpleList';
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -16,13 +28,16 @@ import {
   canManageSuite,
   canRunSuite,
   type Check,
+  clearCheckSnooze,
   deleteCheck,
   deleteSuite,
   exportSuite,
   listChecks,
   listSuites,
+  snoozeCheck,
   type Suite,
 } from '../api/suites';
+import { formatTimestamp } from '../components/results/resultsFormat';
 import { ConnectionTypeAvatar } from '../components/connections/connectionVisuals';
 import { Page } from '../components/layout/Page';
 import { LiveRunProgress } from '../components/runs/LiveRunProgress';
@@ -479,6 +494,17 @@ function SuiteDetail({
   );
 }
 
+/** Snooze duration presets — hours, capped well under the backend's 720h max. */
+const SNOOZE_PRESETS = [
+  { key: '1', label: '1 hour', hours: 1 },
+  { key: '24', label: '24 hours', hours: 24 },
+  { key: '168', label: '7 days', hours: 168 },
+] as const;
+
+/** A check is snoozed only while the timestamp is in the future (#370). */
+const isSnoozed = (check: Check): boolean =>
+  check.alert_snoozed_until !== null && new Date(check.alert_snoozed_until) > new Date();
+
 function ChecksList({
   suiteId,
   state,
@@ -512,6 +538,26 @@ function ChecksList({
     });
   };
 
+  const onSnooze = async (check: Check, hours: number, label: string) => {
+    try {
+      await snoozeCheck(suiteId, check.id, hours);
+      message.success(`${check.name}: alerts snoozed for ${label}`);
+      onChanged();
+    } catch (err) {
+      message.error(`Snooze failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+    }
+  };
+
+  const onUnsnooze = async (check: Check) => {
+    try {
+      await clearCheckSnooze(suiteId, check.id);
+      message.success(`${check.name}: alerts active again`);
+      onChanged();
+    } catch (err) {
+      message.error(`Unsnooze failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+    }
+  };
+
   if (state.status === 'loading') {
     return <Spin description="Loading checks…" />;
   }
@@ -540,6 +586,27 @@ function ChecksList({
           renderItem={(check) => (
             <SimpleList.Item
               actions={[
+                isSnoozed(check) ? (
+                  <Button key="snooze" type="link" size="small" onClick={() => onUnsnooze(check)}>
+                    Unsnooze
+                  </Button>
+                ) : (
+                  <Dropdown
+                    key="snooze"
+                    menu={{
+                      items: SNOOZE_PRESETS.map((p) => ({ key: p.key, label: p.label })),
+                      onClick: ({ key }) => {
+                        const preset = SNOOZE_PRESETS.find((p) => p.key === key);
+                        if (preset) void onSnooze(check, preset.hours, preset.label);
+                      },
+                    }}
+                    trigger={['click']}
+                  >
+                    <Button type="link" size="small">
+                      Snooze
+                    </Button>
+                  </Dropdown>
+                ),
                 <Button key="edit" type="link" size="small" onClick={() => onEdit(check)}>
                   Edit
                 </Button>,
@@ -555,7 +622,16 @@ function ChecksList({
               ]}
             >
               <Flex vertical gap={2}>
-                <Typography.Text strong>{check.name}</Typography.Text>
+                <Flex gap={8} align="center" wrap>
+                  <Typography.Text strong>{check.name}</Typography.Text>
+                  {isSnoozed(check) && (
+                    <Tooltip title="Alerts for this check are muted until then; results still record.">
+                      <Tag color="orange" style={{ marginInlineEnd: 0 }}>
+                        Snoozed until {formatTimestamp(check.alert_snoozed_until)}
+                      </Tag>
+                    </Tooltip>
+                  )}
+                </Flex>
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                   {check.expectation_type}
                 </Typography.Text>

@@ -115,6 +115,9 @@ export interface Check {
   warn_threshold: number | null;
   fail_threshold: number | null;
   critical_threshold: number | null;
+  /** Alert suppression (#370): in the future = alerts muted until then; null /
+   *  past = active. Set via the snooze endpoints, never PATCH. */
+  alert_snoozed_until: string | null;
 }
 
 export async function listChecks(suiteId: string): Promise<Check[]> {
@@ -166,6 +169,18 @@ export async function updateCheck(
 
 export async function deleteCheck(suiteId: string, checkId: string): Promise<void> {
   await api.delete(`/suites/${suiteId}/checks/${checkId}`);
+}
+
+/** Mute a noisy check's alerts for N hours (edit-gated; backend caps at 720h). */
+export async function snoozeCheck(suiteId: string, checkId: string, hours: number): Promise<Check> {
+  const { data } = await api.post<Check>(`/suites/${suiteId}/checks/${checkId}/snooze`, { hours });
+  return data;
+}
+
+/** Clear a check's alert snooze — alerts fire again immediately (edit-gated). */
+export async function clearCheckSnooze(suiteId: string, checkId: string): Promise<Check> {
+  const { data } = await api.delete<Check>(`/suites/${suiteId}/checks/${checkId}/snooze`);
+  return data;
 }
 
 /**
