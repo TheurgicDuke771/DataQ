@@ -8,14 +8,24 @@ downstream of here works on the DTO, never the DB rows.
 
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.alerting.base import CheckReport, RunReport
+from backend.app.core.config import get_settings
 from backend.app.db.models import Check, Connection, Result, Run, Suite, worst_severity
 from backend.app.services import run_service
+
+
+def _run_url(run_id: uuid.UUID) -> str | None:
+    """Deep link to the run-detail page (``/results/<id>``, App.tsx), or ``None``
+    when no public base URL is configured — the alert then omits the link rather
+    than emitting a broken relative one."""
+    base = get_settings().public_base_url.rstrip("/")
+    return f"{base}/results/{run_id}" if base else None
 
 
 def _target_label(suite: Suite | None) -> str:
@@ -89,4 +99,8 @@ def build_run_report(session: Session, run: Run) -> RunReport:
         counts=counts,
         checks=check_reports,
         finished_at=run.finished_at,
+        env=connection.env if connection is not None else None,
+        started_at=run.started_at,
+        triggered_by=run.triggered_by,
+        run_url=_run_url(run.id),
     )

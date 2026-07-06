@@ -17,6 +17,7 @@ from email.message import EmailMessage
 
 from sqlalchemy.orm import Session
 
+from backend.app.alerting import render
 from backend.app.alerting.base import CheckReport, RunReport
 from backend.app.alerting.routing import route_for
 from backend.app.core.logging import get_logger
@@ -50,8 +51,11 @@ def render_text_body(report: RunReport) -> str:
         f"Target:      {report.target_label}",
         f"Run status:  {report.run_status}",
         f"Worst severity: {report.worst_severity or '—'}",
-        "",
     ]
+    lines.extend(f"{label}: {value}" for label, value in render.run_metadata(report))
+    if report.run_url:
+        lines.append(f"View run: {report.run_url}")
+    lines.append("")
     failing = [c for c in report.checks if c.status != "pass"]
     if failing:
         lines.append("Failing checks:")
@@ -67,12 +71,22 @@ def render_html_body(report: RunReport) -> str:
     rows = "".join(
         f"<tr><td style='padding:2px 8px;'><code>{_esc(c.status)}</code></td>"
         f"<td style='padding:2px 8px;'>{_esc(c.check_name)}</td>"
-        f"<td style='padding:2px 8px;color:#6b7280;'>{_esc(_sample_note(c))}</td></tr>"
+        f"<td style='padding:2px 8px;color:#6b7280;'>{_esc(render.check_detail(c))}</td></tr>"
         for c in report.checks
         if c.status != "pass"
     )
     table = (
         f"<table style='border-collapse:collapse;margin-top:8px;'>{rows}</table>" if rows else ""
+    )
+    meta = " &nbsp;·&nbsp; ".join(
+        f"<b>{_esc(label)}:</b> {_esc(value)}" for label, value in render.run_metadata(report)
+    )
+    meta_line = f"<p style='margin:6px 0 0;color:#6b7280;'>{meta}</p>" if meta else ""
+    button = (
+        f"<p style='margin:10px 0 0;'><a href='{_esc(report.run_url)}' "
+        f"style='color:#2563eb;'>View run →</a></p>"
+        if report.run_url
+        else ""
     )
     return (
         f"<div style='font-family:system-ui,Arial,sans-serif;'>"
@@ -81,24 +95,13 @@ def render_html_body(report: RunReport) -> str:
         f"<b>Datasource:</b> {_esc(report.datasource_type)} &nbsp;·&nbsp; "
         f"<b>Target:</b> {_esc(report.target_label)} &nbsp;·&nbsp; "
         f"<b>Severity:</b> {_esc(report.worst_severity or '—')}</p>"
-        f"{table}</div>"
+        f"{meta_line}{table}{button}</div>"
     )
 
 
 def _check_line(check: CheckReport) -> str:
-    note = _sample_note(check)
-    return f"  - [{check.status}] {check.check_name}" + (f" — {note}" if note else "")
-
-
-def _sample_note(check: CheckReport) -> str:
-    sample = check.sample_summary or {}
-    pct = sample.get("unexpected_percent")
-    count = sample.get("unexpected_count")
-    if pct is not None:
-        return f"{pct}% unexpected"
-    if count is not None:
-        return f"{count} unexpected"
-    return ""
+    detail = render.check_detail(check)
+    return f"  - [{check.status}] {check.check_name}" + (f" — {detail}" if detail else "")
 
 
 def _esc(value: str) -> str:

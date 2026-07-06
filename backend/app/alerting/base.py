@@ -69,6 +69,21 @@ class RunReport:
     counts: dict[str, int]
     checks: list[CheckReport]
     finished_at: datetime | None
+    # Run metadata for actionable alerts (#416) — env, when it ran, what triggered
+    # it, and a deep link to the run-detail page. All optional/defaulted so existing
+    # constructors keep working; `run_url` is None when no public base URL is set.
+    env: str | None = None
+    started_at: datetime | None = None
+    triggered_by: str | None = None
+    run_url: str | None = None
+
+    @property
+    def duration_seconds(self) -> float | None:
+        """Wall-clock run duration in seconds, or ``None`` if either endpoint is
+        missing (e.g. a run that failed before it started)."""
+        if self.started_at is None or self.finished_at is None:
+            return None
+        return (self.finished_at - self.started_at).total_seconds()
 
     @property
     def success(self) -> bool:

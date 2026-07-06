@@ -73,10 +73,12 @@ class Settings(BaseSettings):
     #   CORS_ALLOW_ORIGINS=https://app.example.com,https://dataq.example.com
     cors_allow_origins: str = ""
 
-    # Public base URL of the deployed API (scheme+host, no trailing slash), used
-    # to assemble the inbound orchestration webhook URLs the admin webhook-config
-    # surface shows (#490). Set to the public host on deploy (e.g. the SWA origin
-    # that proxies /api). Empty → fall back to the request's own base URL.
+    # Public base URL of the deployed app (scheme+host, no trailing slash). Used to
+    # assemble the inbound orchestration webhook URLs the admin webhook-config
+    # surface shows (#490) AND the "View run" deep links in Slack/email alerts
+    # (/results/<run_id>, #416). Set to the public host on deploy (the frontend
+    # origin that proxies /api). Empty → webhook URLs fall back to the request's own
+    # base URL, and alerts omit the deep link.
     #   PUBLIC_BASE_URL=https://dataq.example.com
     public_base_url: str = ""
 
