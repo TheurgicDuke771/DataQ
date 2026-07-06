@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "e08e77e001ef",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-652-dbt-frontend-parity",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/pages/Settings.tsx",
+    "frontend/tests/pages/Settings.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/e0/8e77e001ef/0/metadata.json",
+      "transcript": "/e0/8e77e001ef/0/full.jsonl",
+      "compact_transcript": "/e0/8e77e001ef/0/transcript.jsonl",
+      "content_hash": "/e0/8e77e001ef/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 16587,
+    "cache_creation_tokens": 65672,
+    "cache_read_tokens": 9149503,
+    "output_tokens": 29400,
+    "api_call_count": 50
+  }
+}
