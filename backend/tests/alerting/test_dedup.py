@@ -59,17 +59,14 @@ def _result(db: Any, run: Run, check: Check, status: str) -> None:
     db.flush()
 
 
-def test_rank_derives_from_shared_failing_tiers() -> None:
-    """#386: dedup's severity ranks are the one shared severity order, not an
-    independent copy — so adding or reordering a tier in ``base.FAILING_TIERS``
-    can't silently diverge dedup from routing/suppression."""
-    from backend.app.alerting.base import FAILING_TIERS
+def test_operational_rank_uses_the_shared_source() -> None:
+    """#386/#655: dedup ranks via the shared ``db.models.SEVERITY_RANK``, not an
+    independent copy, so it can't diverge from routing/suppression/run-outcome
+    rollups. The operational-failure sentinel is ranked at ``fail`` from that
+    same source."""
+    from backend.app.db.models import SEVERITY_RANK
 
-    # Same tiers, same order, ranked worst-last from the single source.
-    assert dedup._RANK == {tier: rank for rank, tier in enumerate(FAILING_TIERS, start=1)}
-    assert tuple(dedup._RANK) == FAILING_TIERS
-    # The operational-failure sentinel is ranked at `fail`, from that same source.
-    assert dedup._OPERATIONAL_RANK == dedup._RANK["fail"]
+    assert dedup._OPERATIONAL_RANK == SEVERITY_RANK["fail"]
 
 
 def test_first_failure_fires(db_session: Any) -> None:

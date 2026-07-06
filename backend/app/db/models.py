@@ -1,4 +1,5 @@
 import uuid
+from collections.abc import Iterable
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
@@ -33,6 +34,33 @@ RUN_STATUSES = ("queued", "running", "succeeded", "failed", "cancelled")
 _RESULT_SEVERITY_TIERS = ("pass", "warn", "fail", "critical")
 _RESULT_OPERATIONAL_STATUSES = ("skip", "error")
 RESULT_STATUSES = _RESULT_SEVERITY_TIERS + _RESULT_OPERATIONAL_STATUSES
+# Failing severity tiers (the non-`pass` tiers) → rank, worst last. The single
+# source for the discrete "which run outcome is worse" ordering shared by alert
+# dedup, the RunReport builder, and run-outcome rollups (#655) — derived from the
+# tier vocabulary above so it can't drift. Deliberately distinct from the
+# health-penalty *weights* in dashboard_service (ADR 0005), which weight `pass`
+# too and are a separate concept.
+SEVERITY_RANK: dict[str, int] = {
+    tier: rank for rank, tier in enumerate((t for t in _RESULT_SEVERITY_TIERS if t != "pass"), 1)
+}
+# The failing-tier set (keys of SEVERITY_RANK, worst last): the tiers that count as
+# "not clean" for alerting. Lives here with the rest of the severity vocabulary so
+# the set and the rank order have one source; the alerting layer imports it.
+FAILING_TIERS: tuple[str, ...] = tuple(SEVERITY_RANK)
+
+
+def worst_severity(statuses: Iterable[str]) -> str | None:
+    """The highest failing tier present in ``statuses`` (``critical`` > ``fail`` >
+    ``warn``), or ``None`` when none breached — `pass`/`skip`/`error` never rank.
+
+    The single place the shared severity order is applied to pick a run's worst
+    outcome (#655), used by the RunReport builder and the run-outcome rollups so
+    they don't each re-implement the max-by-rank loop.
+    """
+    present = [s for s in statuses if s in FAILING_TIERS]
+    return max(present, key=lambda s: SEVERITY_RANK[s]) if present else None
+
+
 # Monitor-kind discriminator (ADR 0012; `comparison` reserved by ADR 0014). v1
 # only ever writes 'expectation'; the rest are constraint-valid but unused.
 CHECK_KINDS = ("expectation", "freshness", "volume", "schema_drift", "anomaly", "comparison")

@@ -18,14 +18,16 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
+# Failing severity tiers (worst last) — a run is alert-worthy when any check lands
+# in one of these (or the run failed to execute). `pass` is clean; `skip`/`error`
+# are operational, not data-quality severities (ADR 0005). Single-sourced with the
+# severity rank in db.models (#655); re-exported here for the alerting layer.
+from backend.app.db.models import FAILING_TIERS
+
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
-# Severity tiers that count as "not clean", worst last. A run is alert-worthy
-# when any check lands in one of these (or the run failed to execute). `pass` is
-# clean; `skip`/`error` are operational, not data-quality severities (ADR 0005),
-# so they never set `worst_severity`.
-FAILING_TIERS: tuple[str, ...] = ("warn", "fail", "critical")
+__all__ = ["FAILING_TIERS", "CheckReport", "ResultPublisher", "RunReport"]
 
 
 @dataclass(frozen=True)

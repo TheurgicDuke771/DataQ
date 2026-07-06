@@ -25,6 +25,9 @@ from backend.app.services import suite_service
 # ── health score (ADR 0005) ──────────────────────────────────────────────────
 # Fixed penalty weights; W_MAX (the critical weight) normalises into [0, 100] so
 # all-fail scores 50, not the floor — critical stays meaningfully worse than fail.
+# Deliberately separate from the shared `db.models.SEVERITY_RANK` (#655): that is a
+# discrete worst-outcome *ordering* over the failing tiers, whereas these are
+# continuous *weights* that also score `pass` (0.0) — a different concept.
 # nosec B105 — the keys are severity tiers (ADR 0005), not credentials; bandit
 # flags the "pass": 0.0 pair as a "hardcoded password" purely on the key name.
 _PENALTY: Mapping[str, float] = {

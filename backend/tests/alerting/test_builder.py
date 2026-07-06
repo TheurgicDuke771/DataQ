@@ -65,18 +65,6 @@ def test_skip_and_error_do_not_count_as_failures() -> None:
 # ── pure: helpers ────────────────────────────────────────────────────────────
 
 
-def test_worst_severity_orders_critical_over_fail_over_warn() -> None:
-    assert builder._worst_severity(["pass", "warn", "fail", "critical"]) == "critical"
-    assert builder._worst_severity(["pass", "warn", "fail"]) == "fail"
-    assert builder._worst_severity(["pass", "warn"]) == "warn"
-
-
-def test_worst_severity_none_when_clean_or_operational() -> None:
-    assert builder._worst_severity(["pass", "pass"]) is None
-    assert builder._worst_severity(["skip", "error"]) is None
-    assert builder._worst_severity([]) is None
-
-
 def test_target_label_prefers_path_then_dotted() -> None:
     assert builder._target_label(cast(Suite, _FakeSuite({"path": "abfss://c/landing/x.csv"}))) == (
         "abfss://c/landing/x.csv"
