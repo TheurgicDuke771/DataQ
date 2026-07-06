@@ -140,6 +140,19 @@ describe('ConnectionEdit', () => {
     expect(screen.getByText(/"account": "acc0"/)).toBeInTheDocument();
   });
 
+  it('surfaces a history load error inside the drawer (#654)', async () => {
+    const user = userEvent.setup();
+    mockGet.mockResolvedValue(existing);
+    mockVersions.mockRejectedValue(new Error('versions down'));
+    renderPage();
+
+    await waitFor(() => expect(screen.getByLabelText('Account')).toHaveValue('acc1'));
+    await user.click(screen.getByRole('button', { name: /History/ }));
+
+    expect(await screen.findByText('Failed to load history')).toBeInTheDocument();
+    expect(screen.getByText('versions down')).toBeInTheDocument();
+  });
+
   it('shows an empty history state for a pre-versioning connection (#654)', async () => {
     const user = userEvent.setup();
     mockGet.mockResolvedValue(existing);
