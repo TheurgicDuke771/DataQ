@@ -56,7 +56,7 @@ cryptography==49.0.0               # direct floor — transitive (snowflake/pyOp
 azure-storage-blob==12.30.0       # ADLS Gen2
 boto3==1.43.36                    # S3
 databricks-sql-connector==4.3.0   # Unity Catalog
-databricks-sqlalchemy==2.0.9      # the SQLAlchemy 'databricks' dialect — SPLIT OUT of the connector in 4.x (#535); bump the pair together
+databricks-sqlalchemy==2.0.10      # the SQLAlchemy 'databricks' dialect — SPLIT OUT of the connector in 4.x (#535); bump the pair together
 pyarrow==24.0.0                   # Parquet flat-file IO (read_parquet/profiler) — was a databricks-sql-connector transitive until its 4.x dropped it (#201)
 
 # ── MCP (Week 7) ──
