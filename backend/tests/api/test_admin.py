@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 
 from backend.app.core.auth import DEV_BYPASS_EMAIL
 from backend.app.core.config import get_settings
-from backend.app.db.models import Check, Connection, Share, Suite, User
+from backend.app.db.models import ORCHESTRATION_PROVIDERS, Check, Connection, Share, Suite, User
 from backend.app.db.session import get_db
 from backend.app.main import app
 
@@ -198,11 +198,12 @@ class _FakeStore:
 
 
 def _orch_connection(db_session: Any, owner: User, *, ctype: str, name: str) -> Connection:
-    config = (
-        {"factory_name": name}
-        if ctype == "adf"
-        else {"base_url": f"https://{name}.example.com", "auth_type": "token"}
-    )
+    configs: dict[str, dict[str, Any]] = {
+        "adf": {"factory_name": name},
+        "airflow": {"base_url": f"https://{name}.example.com", "auth_type": "token"},
+        "dbt": {"project_name": name, "artifacts_uri": f"file:///tmp/{name}", "jobs": ["nightly"]},
+    }
+    config = configs[ctype]
     conn = Connection(
         name=name, type=ctype, env="dev", config=config, secret_ref="kv", created_by=owner.id
     )
@@ -268,6 +269,45 @@ def test_admin_webhooks_airflow_carries_no_url_token(
     assert airflow["inbound_url"].endswith("/api/v1/orchestration/events/airflow")
     assert "token=" not in airflow["inbound_url"]
     assert airflow["signing_secret_name"] == "airflow-webhook-secret"
+
+
+def test_admin_webhooks_dbt_row_is_not_mislabeled_as_airflow(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # #647: the two-provider if/else dropped dbt connections into the airflow
+    # branch — wrong provider label, wrong inbound endpoint, wrong signing key.
+    owner = _user(db_session, "owner@x.io")
+    _orch_connection(db_session, owner, ctype="dbt", name="analytics-dbt")
+    db_session.commit()
+    _grant_admin(monkeypatch)
+    _with_store(client, _FakeStore())
+
+    rows = {r["provider"]: r for r in client.get("/api/v1/admin/orchestration/webhooks").json()}
+    assert set(rows) == {"dbt"}
+    dbt = rows["dbt"]
+    assert dbt["inbound_url"].endswith("/api/v1/orchestration/events/dbt")
+    assert "token=" not in dbt["inbound_url"]
+    assert dbt["signing_secret_name"] == "dbt-webhook-secret"
+    assert "ADR 0029" in dbt["auth"]
+    assert "analytics-dbt" in dbt["connection_names"]
+
+
+@pytest.mark.parametrize("ctype", ORCHESTRATION_PROVIDERS)
+def test_admin_webhooks_every_provider_yields_its_own_row(
+    ctype: str, client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Guards the next provider addition: a connection of each registered provider
+    # must surface as a row of the SAME provider with its own events endpoint —
+    # never fall through to another provider's config (#647).
+    owner = _user(db_session, "owner@x.io")
+    _orch_connection(db_session, owner, ctype=ctype, name=f"{ctype}-conn")
+    db_session.commit()
+    _grant_admin(monkeypatch)
+    _with_store(client, _FakeStore())
+
+    rows = client.get("/api/v1/admin/orchestration/webhooks").json()
+    assert [r["provider"] for r in rows] == [ctype]
+    assert f"/api/v1/orchestration/events/{ctype}" in rows[0]["inbound_url"]
 
 
 def test_admin_webhooks_marks_missing_secret(
