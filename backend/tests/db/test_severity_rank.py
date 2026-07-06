@@ -9,8 +9,7 @@ silently diverge them.
 
 from __future__ import annotations
 
-from backend.app.alerting.base import FAILING_TIERS
-from backend.app.db.models import _RESULT_SEVERITY_TIERS, SEVERITY_RANK
+from backend.app.db.models import _RESULT_SEVERITY_TIERS, FAILING_TIERS, SEVERITY_RANK
 
 
 def test_severity_rank_values() -> None:
@@ -28,7 +27,16 @@ def test_severity_rank_derives_from_the_tier_vocabulary() -> None:
 
 
 def test_failing_tiers_is_the_same_source() -> None:
-    # The alerting failing-tier set is derived from the rank map, not a 2nd copy.
+    # The failing-tier set is derived from the rank map, not a 2nd hardcoded copy.
     assert FAILING_TIERS == tuple(SEVERITY_RANK)
     assert "pass" not in FAILING_TIERS
     assert "skip" not in SEVERITY_RANK and "error" not in SEVERITY_RANK
+
+
+def test_alerting_base_reexports_the_same_object() -> None:
+    # The alerting layer imports FAILING_TIERS from its own base module (an explicit
+    # re-export of the db.models source); prove it's the same object so a consumer
+    # can't pick up a stale copy.
+    from backend.app.alerting.base import FAILING_TIERS as BASE_FAILING_TIERS
+
+    assert BASE_FAILING_TIERS is FAILING_TIERS

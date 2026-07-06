@@ -42,6 +42,10 @@ RESULT_STATUSES = _RESULT_SEVERITY_TIERS + _RESULT_OPERATIONAL_STATUSES
 SEVERITY_RANK: dict[str, int] = {
     tier: rank for rank, tier in enumerate((t for t in _RESULT_SEVERITY_TIERS if t != "pass"), 1)
 }
+# The failing-tier set (keys of SEVERITY_RANK, worst last): the tiers that count as
+# "not clean" for alerting. Lives here with the rest of the severity vocabulary so
+# the set and the rank order have one source; the alerting layer imports it.
+FAILING_TIERS: tuple[str, ...] = tuple(SEVERITY_RANK)
 # Monitor-kind discriminator (ADR 0012; `comparison` reserved by ADR 0014). v1
 # only ever writes 'expectation'; the rest are constraint-valid but unused.
 CHECK_KINDS = ("expectation", "freshness", "volume", "schema_drift", "anomaly", "comparison")
