@@ -9,12 +9,14 @@ import { api } from './client';
  * pipeline/DAG id is bound to a suite.
  */
 
-export const ORCHESTRATION_PROVIDERS = ['adf', 'airflow'] as const;
+/** Mirrors the backend `ORCHESTRATION_PROVIDERS` tuple (db/models.py — ADR 0029). */
+export const ORCHESTRATION_PROVIDERS = ['adf', 'airflow', 'dbt'] as const;
 export type OrchestrationProvider = (typeof ORCHESTRATION_PROVIDERS)[number];
 
 export const PROVIDER_LABELS: Record<OrchestrationProvider, string> = {
   adf: 'Azure Data Factory',
   airflow: 'Apache Airflow',
+  dbt: 'dbt',
 };
 
 /** Mirrors the backend `TriggerBindingRead`. */

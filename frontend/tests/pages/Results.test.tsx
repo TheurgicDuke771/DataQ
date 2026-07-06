@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { type Connection, listConnections } from '../../src/api/connections';
 import { listPipelineRuns, listRuns, type PipelineRun, type Run } from '../../src/api/runs';
+import { ORCHESTRATION_PROVIDERS, PROVIDER_LABELS } from '../../src/api/triggerBindings';
 import { type Suite, listSuites } from '../../src/api/suites';
 import { Results } from '../../src/pages/Results';
 
@@ -289,6 +290,39 @@ describe('Results page', () => {
     // Provider + status render as tags in the row.
     expect(screen.getByText('adf')).toBeInTheDocument();
     expect(screen.getByText('succeeded')).toBeInTheDocument();
+  });
+
+  it('offers every orchestration provider in the pipeline-runs filter and filters by it (#652)', async () => {
+    const dbtRun: PipelineRun = {
+      ...pipelineRun,
+      id: 'p2',
+      provider: 'dbt',
+      provider_run_id: 'inv-0001',
+      pipeline_or_dag_id: 'analytics_build',
+    };
+    mockListRuns.mockResolvedValue([]);
+    mockListSuites.mockResolvedValue([]);
+    mockListConnections.mockResolvedValue([]);
+    mockListPipelineRuns.mockResolvedValue([pipelineRun, dbtRun]);
+
+    renderResults();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('tab', { name: 'Pipeline runs' }));
+    await waitFor(() => expect(screen.getByText('analytics_build')).toBeInTheDocument());
+
+    // The provider filter must offer the full shared tuple (guards the next
+    // ADR-0029-style provider addition too).
+    await user.click(screen.getByRole('combobox', { name: 'Provider' }));
+    for (const provider of ORCHESTRATION_PROVIDERS) {
+      // findByTitle, matching pickFilter above: AntD's role=option list is a
+      // truncated a11y mirror; the real items carry the label as `title`.
+      expect(await screen.findByTitle(PROVIDER_LABELS[provider])).toBeInTheDocument();
+    }
+    await user.click(await screen.findByTitle(PROVIDER_LABELS.dbt));
+
+    // Only the dbt pipeline run remains.
+    await waitFor(() => expect(screen.queryByText('daily_orders_load')).not.toBeInTheDocument());
+    expect(screen.getByText('analytics_build')).toBeInTheDocument();
   });
 
   it('correlates a pipeline run to the DQ run it triggered', async () => {

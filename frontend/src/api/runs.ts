@@ -1,4 +1,5 @@
 import { api } from './client';
+import type { OrchestrationProvider } from './triggerBindings';
 
 /**
  * Runs / results / pipeline-runs API — the read surface behind the Results page
@@ -77,7 +78,7 @@ export interface RunProgress {
 /** Mirrors `PipelineRunRead` — a monitored orchestrator run (`pipeline_runs` ≠ `runs`). */
 export interface PipelineRun {
   id: string;
-  provider: 'adf' | 'airflow';
+  provider: OrchestrationProvider;
   connection_id: string;
   provider_run_id: string;
   pipeline_or_dag_id: string;
@@ -134,7 +135,7 @@ export async function cancelRun(runId: string): Promise<Run> {
 }
 
 export async function listPipelineRuns(params?: {
-  provider?: 'adf' | 'airflow';
+  provider?: OrchestrationProvider;
   status?: string;
   limit?: number;
 }): Promise<PipelineRun[]> {
