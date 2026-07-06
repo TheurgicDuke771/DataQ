@@ -160,10 +160,10 @@ def test_email_html_has_deep_link_and_expected_observed() -> None:
     assert "https://dataq.example.com/results/abc123" in html  # View run link
     assert "expected min_value=0 · observed 12 · 3.2% unexpected" in html
     assert "prod" in html and "ADF" in html  # metadata row
-    # #661: a proper table (header row) + suite + owner surfaced.
+    # #661: checks render a header-row table; run details are a key/value table.
     assert "<thead>" in html and ">Status<" in html and ">Check<" in html and ">Details<" in html
-    assert "<b>Suite:</b>" in html and "Orders Header" in html  # suite name in the body
-    assert "Ada Lovelace" in html  # owner
+    assert "<b>Suite</b>" in html and "Orders Header" in html  # suite in the details table
+    assert "<b>Owner</b>" in html and "Ada Lovelace" in html  # owner in the details table
 
 
 def test_email_text_has_deep_link_and_metadata() -> None:
