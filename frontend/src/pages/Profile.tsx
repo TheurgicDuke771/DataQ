@@ -2,6 +2,7 @@ import { Alert, Avatar, Card, Descriptions, Flex, Spin, Tag, Typography } from '
 import { TeamOutlined, UserOutlined } from '@ant-design/icons';
 import { Link } from 'react-router-dom';
 
+import { authMethodLabel } from '../auth/config';
 import { useMe } from '../auth/useMe';
 import { ApiKeysPanel } from '../components/profile/ApiKeysPanel';
 import { Page } from '../components/layout/Page';
@@ -59,7 +60,7 @@ export function Profile() {
 
       <Card title="Workspace" size="small">
         <Descriptions column={1} size="small">
-          <Descriptions.Item label="Authentication">OIDC (SSO)</Descriptions.Item>
+          <Descriptions.Item label="Authentication">{authMethodLabel}</Descriptions.Item>
           <Descriptions.Item label="Role">
             {is_workspace_admin ? 'Workspace admin' : 'Member'}
           </Descriptions.Item>

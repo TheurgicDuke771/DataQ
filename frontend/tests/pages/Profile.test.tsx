@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { MeResponse } from '../../src/api/me';
+import { authMethodLabel } from '../../src/auth/config';
 import { MeContext } from '../../src/auth/meContext';
 import type { AsyncState } from '../../src/hooks/useAsyncData';
 import { Profile } from '../../src/pages/Profile';
@@ -49,7 +50,9 @@ describe('Profile', () => {
     expect(screen.getByRole('heading', { name: 'Profile' })).toBeInTheDocument();
     expect(screen.getByText('Ada Lovelace')).toBeInTheDocument();
     expect(screen.getByText('ada@dataq.io')).toBeInTheDocument();
-    expect(screen.getByText('OIDC (SSO)')).toBeInTheDocument();
+    // The auth label derives from the runtime authMode (never a hardcoded
+    // provider/library name — ADR 0028; per-mode wording pinned in config.test.ts).
+    expect(screen.getByText(authMethodLabel)).toBeInTheDocument();
     expect(screen.getByText('2026-06-26T10:00:00Z')).toBeInTheDocument();
     // Member, not admin.
     expect(screen.getAllByText('Member').length).toBeGreaterThan(0);

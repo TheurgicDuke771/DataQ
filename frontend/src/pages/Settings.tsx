@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import { type AdminWebhook, listAdminWebhooks } from '../api/admin';
+import { authMethodLabel } from '../auth/config';
 import { useMe } from '../auth/useMe';
 import { Forbidden } from '../components/Forbidden';
 import { Page } from '../components/layout/Page';
@@ -64,7 +65,7 @@ function GeneralTab() {
         <Descriptions.Item label="Tenancy">
           <Tag>Single tenant</Tag>
         </Descriptions.Item>
-        <Descriptions.Item label="Authentication">OIDC (SSO)</Descriptions.Item>
+        <Descriptions.Item label="Authentication">{authMethodLabel}</Descriptions.Item>
       </Descriptions>
     </Card>
   );

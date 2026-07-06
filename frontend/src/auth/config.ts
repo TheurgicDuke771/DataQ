@@ -14,8 +14,8 @@
  * the contract.
  *
  * Mode is computed once at module load:
- * - 'real'         — `mode:'oidc'` with authority + clientId present. The auth
- *                    client (MSAL today; a generic OIDC client next — #504) drives
+ * - 'real'         — `mode:'oidc'` with authority + clientId present. The generic
+ *                    OIDC auth client (oidc-client-ts — ADR 0028/#504) drives
  *                    redirect-flow login + token acquisition.
  * - 'dev_bypass'   — ONLY when `mode:'bypass'` is explicitly set. Fail-closed:
  *                    never inferred from missing config. Renders a fixed dev user.
@@ -83,6 +83,16 @@ export const authMode: AuthMode = (() => {
   if (cfg.authority && cfg.clientId) return 'real';
   return 'unconfigured';
 })();
+
+/** Human-readable auth-method label per mode (Profile + Settings "Authentication" rows). */
+export const AUTH_METHOD_LABELS: Record<AuthMode, string> = {
+  real: 'OIDC (SSO)',
+  dev_bypass: 'Dev bypass (no IdP)',
+  unconfigured: 'Not configured',
+};
+
+/** The label for the mode this deployment is actually running in. */
+export const authMethodLabel = AUTH_METHOD_LABELS[authMode];
 
 export const DEV_USER = {
   name: 'Dev Bypass User',

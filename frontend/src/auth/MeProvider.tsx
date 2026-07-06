@@ -9,8 +9,8 @@ import { useCurrentUser } from './useCurrentUser';
  * Fetches `/me` once the user is authenticated and shares it via `MeContext`.
  *
  * The fetch is gated on `useCurrentUser()` (not done on bare mount) so that in
- * real-auth mode we wait until MSAL has an account — otherwise the request would
- * race ahead of the bearer token and 401. In dev-bypass the user is present
+ * real-auth mode we wait until the OIDC client has a signed-in user — otherwise
+ * the request would race ahead of the bearer token and 401. In dev-bypass the user is present
  * immediately. Re-runs if the signed-in identity changes.
  */
 export function MeProvider({ children }: { children: ReactNode }) {
