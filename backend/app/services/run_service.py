@@ -40,6 +40,7 @@ from backend.app.db.models import (
     Check,
     Result,
     Run,
+    worst_severity,
 )
 from backend.app.services import run_dispatch, suite_service
 from backend.app.services.column_classification import ColumnClass, classify_column, is_sensitive
@@ -329,12 +330,9 @@ def check_outcome_counts(
     out: dict[uuid.UUID, tuple[int, int, str | None]] = {}
     for run_id, by_status in by_run.items():
         passed = by_status.get("pass", 0)
-        worst, worst_rank = None, 0
-        # Worst check outcome by the single shared severity order (#655); skip/error
-        # aren't in SEVERITY_RANK, so they don't count as a failure or rank.
-        for tier, rank in SEVERITY_RANK.items():
-            if by_status.get(tier) and rank > worst_rank:
-                worst, worst_rank = tier, rank
+        # Worst check outcome via the single shared severity helper (#655); skip/error
+        # aren't failing tiers, so they never rank.
+        worst = worst_severity(by_status)
         # Evaluated checks only: pass + the three failing tiers (skip/error excluded).
         total = passed + sum(by_status.get(tier, 0) for tier in SEVERITY_RANK)
         out[run_id] = (total, passed, worst)

@@ -14,19 +14,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.alerting.base import CheckReport, RunReport
-from backend.app.db.models import SEVERITY_RANK, Check, Connection, Result, Run, Suite
+from backend.app.db.models import Check, Connection, Result, Run, Suite, worst_severity
 from backend.app.services import run_service
-
-# The discrete "which run is worse" ordering for alert routing is the single
-# shared `SEVERITY_RANK` (#655); the same warn<fail<critical order also lives as
-# health-penalty *weights* in `dashboard_service` (ADR 0005), a separate concept.
-
-
-def _worst_severity(statuses: list[str]) -> str | None:
-    """The highest failing tier among ``statuses`` (``critical`` > ``fail`` >
-    ``warn``), or ``None`` when nothing breached."""
-    present = [s for s in statuses if s in SEVERITY_RANK]
-    return max(present, key=lambda s: SEVERITY_RANK[s]) if present else None
 
 
 def _target_label(suite: Suite | None) -> str:
@@ -88,7 +77,7 @@ def build_run_report(session: Session, run: Run) -> RunReport:
             )
         )
 
-    worst = _worst_severity([r.status for r in results])
+    worst = worst_severity(r.status for r in results)
     return RunReport(
         run_id=run.id,
         suite_id=run.suite_id,

@@ -9,7 +9,12 @@ silently diverge them.
 
 from __future__ import annotations
 
-from backend.app.db.models import _RESULT_SEVERITY_TIERS, FAILING_TIERS, SEVERITY_RANK
+from backend.app.db.models import (
+    _RESULT_SEVERITY_TIERS,
+    FAILING_TIERS,
+    SEVERITY_RANK,
+    worst_severity,
+)
 
 
 def test_severity_rank_values() -> None:
@@ -31,6 +36,17 @@ def test_failing_tiers_is_the_same_source() -> None:
     assert FAILING_TIERS == tuple(SEVERITY_RANK)
     assert "pass" not in FAILING_TIERS
     assert "skip" not in SEVERITY_RANK and "error" not in SEVERITY_RANK
+
+
+def test_worst_severity_picks_the_highest_failing_tier() -> None:
+    # The shared helper both consumers now use: highest failing tier present, or
+    # None when nothing breached; pass/skip/error never rank.
+    assert worst_severity(["pass", "warn", "critical", "fail"]) == "critical"
+    assert worst_severity(["pass", "warn"]) == "warn"
+    assert worst_severity(["pass", "skip", "error"]) is None
+    assert worst_severity([]) is None
+    # Accepts any iterable of statuses (e.g. a status→count dict's keys).
+    assert worst_severity({"pass": 3, "fail": 1}) == "fail"
 
 
 def test_alerting_base_reexports_the_same_object() -> None:
