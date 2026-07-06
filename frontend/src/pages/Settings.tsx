@@ -64,7 +64,7 @@ function GeneralTab() {
         <Descriptions.Item label="Tenancy">
           <Tag>Single tenant</Tag>
         </Descriptions.Item>
-        <Descriptions.Item label="Authentication">Azure AD (MSAL)</Descriptions.Item>
+        <Descriptions.Item label="Authentication">OIDC (SSO)</Descriptions.Item>
       </Descriptions>
     </Card>
   );

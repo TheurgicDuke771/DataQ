@@ -49,7 +49,7 @@ describe('Profile', () => {
     expect(screen.getByRole('heading', { name: 'Profile' })).toBeInTheDocument();
     expect(screen.getByText('Ada Lovelace')).toBeInTheDocument();
     expect(screen.getByText('ada@dataq.io')).toBeInTheDocument();
-    expect(screen.getByText('Azure AD (MSAL)')).toBeInTheDocument();
+    expect(screen.getByText('OIDC (SSO)')).toBeInTheDocument();
     expect(screen.getByText('2026-06-26T10:00:00Z')).toBeInTheDocument();
     // Member, not admin.
     expect(screen.getAllByText('Member').length).toBeGreaterThan(0);

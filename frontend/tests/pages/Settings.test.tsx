@@ -55,6 +55,8 @@ describe('Settings', () => {
     }
     // General tab is default-active: workspace facts visible.
     expect(screen.getByText('Single tenant')).toBeInTheDocument();
+    // Provider-neutral auth label (ADR 0028 — MSAL retired for generic OIDC).
+    expect(screen.getByText('OIDC (SSO)')).toBeInTheDocument();
   });
 
   it('shows the inbound-webhooks config on the Webhooks tab', async () => {

@@ -59,7 +59,7 @@ export function Profile() {
 
       <Card title="Workspace" size="small">
         <Descriptions column={1} size="small">
-          <Descriptions.Item label="Authentication">Azure AD (MSAL)</Descriptions.Item>
+          <Descriptions.Item label="Authentication">OIDC (SSO)</Descriptions.Item>
           <Descriptions.Item label="Role">
             {is_workspace_admin ? 'Workspace admin' : 'Member'}
           </Descriptions.Item>
