@@ -18,14 +18,17 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
+from backend.app.db.models import SEVERITY_RANK
+
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
 # Severity tiers that count as "not clean", worst last. A run is alert-worthy
 # when any check lands in one of these (or the run failed to execute). `pass` is
 # clean; `skip`/`error` are operational, not data-quality severities (ADR 0005),
-# so they never set `worst_severity`.
-FAILING_TIERS: tuple[str, ...] = ("warn", "fail", "critical")
+# so they never set `worst_severity`. Derived from the shared `SEVERITY_RANK`
+# (#655) so the failing-tier set and the rank order have one source.
+FAILING_TIERS: tuple[str, ...] = tuple(SEVERITY_RANK)
 
 
 @dataclass(frozen=True)

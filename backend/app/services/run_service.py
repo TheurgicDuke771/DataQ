@@ -33,7 +33,14 @@ from backend.app.datasources.base import (
     MonitorSpec,
 )
 from backend.app.datasources.monitors import MONITOR_KINDS
-from backend.app.db.models import RESULT_STATUSES, RUN_STATUSES, Check, Result, Run
+from backend.app.db.models import (
+    RESULT_STATUSES,
+    RUN_STATUSES,
+    SEVERITY_RANK,
+    Check,
+    Result,
+    Run,
+)
 from backend.app.services import run_dispatch, suite_service
 from backend.app.services.column_classification import ColumnClass, classify_column, is_sensitive
 from backend.app.services.severity import resolve_status
@@ -294,11 +301,6 @@ def list_runs(
     return list(session.scalars(stmt))
 
 
-# Severity tiers (ADR 0005), worst last — for the "worst check outcome" a run
-# carries. Operational statuses (skip/error) aren't failures, so they don't rank.
-_SEVERITY_RANK: dict[str, int] = {"warn": 1, "fail": 2, "critical": 3}
-
-
 def check_outcome_counts(
     session: Session, run_ids: Sequence[uuid.UUID]
 ) -> dict[uuid.UUID, tuple[int, int, str | None]]:
@@ -328,11 +330,13 @@ def check_outcome_counts(
     for run_id, by_status in by_run.items():
         passed = by_status.get("pass", 0)
         worst, worst_rank = None, 0
-        for tier, rank in _SEVERITY_RANK.items():
+        # Worst check outcome by the single shared severity order (#655); skip/error
+        # aren't in SEVERITY_RANK, so they don't count as a failure or rank.
+        for tier, rank in SEVERITY_RANK.items():
             if by_status.get(tier) and rank > worst_rank:
                 worst, worst_rank = tier, rank
         # Evaluated checks only: pass + the three failing tiers (skip/error excluded).
-        total = passed + sum(by_status.get(tier, 0) for tier in _SEVERITY_RANK)
+        total = passed + sum(by_status.get(tier, 0) for tier in SEVERITY_RANK)
         out[run_id] = (total, passed, worst)
     return out
 

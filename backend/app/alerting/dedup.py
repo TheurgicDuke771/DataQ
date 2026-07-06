@@ -16,18 +16,16 @@ from __future__ import annotations
 from sqlalchemy import select, tuple_
 from sqlalchemy.orm import Session
 
-from backend.app.alerting.base import FAILING_TIERS
-from backend.app.db.models import Result, Run
+from backend.app.db.models import SEVERITY_RANK, Result, Run
 
-# Failing severity tiers → rank (higher = worse), derived from the single shared
-# severity order in `alerting.base.FAILING_TIERS` (#386) so dedup can't silently
-# drift from the rest of the alerting layer (routing, suppression) when a tier is
-# added or reordered. `pass`/`skip`/`error` aren't alert-worthy and never appear here.
-_RANK = {tier: rank for rank, tier in enumerate(FAILING_TIERS, start=1)}
+# Dedup ranks failing checks by the single shared severity order (`SEVERITY_RANK`,
+# #386/#655) so it can't drift from the rest of the alerting layer (routing,
+# suppression) or run-outcome rollups. `pass`/`skip`/`error` aren't alert-worthy
+# and never appear here.
 # An operational run failure (the adapter raised — no per-check result rows) is a
 # single suite-level failure signature, keyed by this sentinel, ranked at `fail`.
 _OPERATIONAL_KEY = "__run__"
-_OPERATIONAL_RANK = _RANK["fail"]
+_OPERATIONAL_RANK = SEVERITY_RANK["fail"]
 
 
 def _failing_ranks(session: Session, run: Run) -> dict[str, int]:
@@ -40,7 +38,9 @@ def _failing_ranks(session: Session, run: Run) -> dict[str, int]:
     rows = session.execute(
         select(Result.check_id, Result.status).where(Result.run_id == run.id)
     ).all()
-    ranks = {str(check_id): _RANK[status] for check_id, status in rows if status in _RANK}
+    ranks = {
+        str(check_id): SEVERITY_RANK[status] for check_id, status in rows if status in SEVERITY_RANK
+    }
     if not ranks and run.status == "failed":
         return {_OPERATIONAL_KEY: _OPERATIONAL_RANK}
     # A `succeeded` run with only pass/skip/error results has no signature here
