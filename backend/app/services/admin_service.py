@@ -154,9 +154,9 @@ class WebhookConfigRow:
     `inbound_url` is ready to paste into the provider's webhook field. For ADF it
     embeds the shared secret as the `?token=` query param (ADR 0006) — so this row
     is **secret-bearing**, only returned behind `require_workspace_admin`, and must
-    never be logged. Airflow carries no URL secret (HMAC header, ADR 0007); the
-    signing key lives in Key Vault under `signing_secret_name` and is configured in
-    the DAG callback snippet, not the URL.
+    never be logged. Airflow (ADR 0007) and dbt (ADR 0029) carry no URL secret
+    (HMAC signature header); the signing key lives in the secret store under
+    `signing_secret_name` and is configured in the callback snippet, not the URL.
     """
 
     provider: str
@@ -199,6 +199,13 @@ def webhook_configs(
         names_by_provider.setdefault(conn.type, []).append(conn.name)
 
     settings = get_settings()
+    # The HMAC-callback providers share a row shape; only the signing key and the
+    # ADR differ. A future provider missing here fails loudly (KeyError) instead
+    # of being silently mislabeled as another provider (#647).
+    hmac_providers: dict[str, tuple[str, str]] = {
+        "airflow": (settings.airflow_webhook_secret_name, "ADR 0007"),
+        "dbt": (settings.dbt_webhook_secret_name, "ADR 0029"),
+    }
     rows: list[WebhookConfigRow] = []
     for provider in ORCHESTRATION_PROVIDERS:
         names = names_by_provider.get(provider, [])
@@ -225,14 +232,18 @@ def webhook_configs(
                     connection_names=names,
                 )
             )
-        else:  # airflow
+        else:  # HMAC-signed callback providers (airflow, dbt)
+            signing_secret_name, adr = hmac_providers[provider]
+            # Honest configured-state: a hardcoded True here hid an unprovisioned
+            # signing key until callbacks started failing auth at the receiver.
+            signing_key = _safe_secret(secret_store, signing_secret_name)
             rows.append(
                 WebhookConfigRow(
-                    provider="airflow",
-                    auth="HMAC-SHA256 signature header (X-DataQ-Signature) — ADR 0007",
-                    inbound_url=f"{base}/api/v1/orchestration/events/airflow",
-                    token_configured=True,
-                    signing_secret_name=settings.airflow_webhook_secret_name,
+                    provider=provider,
+                    auth=f"HMAC-SHA256 signature header (X-DataQ-Signature) — {adr}",
+                    inbound_url=f"{base}/api/v1/orchestration/events/{provider}",
+                    token_configured=bool(signing_key),
+                    signing_secret_name=signing_secret_name,
                     connection_names=names,
                 )
             )
