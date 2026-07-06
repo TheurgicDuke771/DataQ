@@ -1,0 +1,10 @@
+Hey, can you update the @CLAUDE.md  §6 to reflect this high level working agreement - 
+One functionality per commit - test coverage for the functionality - docs updation [if required] - agentic code-review on each PR - fix isses in same PR - file issues if defered - full CI gate pass - squash merge to main.
+
+---
+
+yes, reconcile @CONTRIBUTING.md
+
+---
+
+One more thing - add the review findings as a PR comment.

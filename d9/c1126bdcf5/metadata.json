@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "d9c1126bdcf5",
+  "strategy": "manual-commit",
+  "branch": "docs/pr-workflow-sequence-claude-md-contributing",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "CLAUDE.md",
+    "CONTRIBUTING.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/d9/c1126bdcf5/0/metadata.json",
+      "transcript": "/d9/c1126bdcf5/0/full.jsonl",
+      "compact_transcript": "/d9/c1126bdcf5/0/transcript.jsonl",
+      "content_hash": "/d9/c1126bdcf5/0/content_hash.txt",
+      "prompt": "/d9/c1126bdcf5/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 26,
+    "cache_creation_tokens": 77437,
+    "cache_read_tokens": 1109071,
+    "output_tokens": 7127,
+    "api_call_count": 13
+  }
+}
