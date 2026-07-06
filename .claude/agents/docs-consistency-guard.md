@@ -49,7 +49,7 @@ Use `gh pr diff <N>` if a PR number is provided. Otherwise read the files direct
 
 3. **`context/DataQ_platform_roadmap.md` preamble missing or stale.** The preamble should note where the roadmap has been superseded by ADR decisions (ADF is orchestration not a datasource; Airflow was added post-roadmap; DQX deferred to v1.1). If the roadmap is modified without updating the preamble, flag it.
 
-4. **ADR status inconsistency.** If CLAUDE.md §9 says an ADR status is "Locked W1" but `docs/adr/README.md` says "Pending", flag the disagreement.
+4. **ADR status inconsistency.** `docs/adr/README.md` is the **single** ADR index — CLAUDE.md §9 only links to it. For every ADR file, the index must have a row and its status must agree with the ADR's own `Status:` line; flag missing rows and disagreements. Also flag any re-grown decision table in CLAUDE.md §9 (it was deliberately reduced to a pointer — duplication is the drift vector).
 
 5. **Dead working-agreement references.** CLAUDE.md and agent/skill files reference specific working-agreement numbers (e.g., "working-agreement #3", "working-agreement #24"). If `CONTRIBUTING.md` doesn't contain those numbered rules, flag the mismatch.
 
@@ -62,7 +62,7 @@ Use `gh pr diff <N>` if a PR number is provided. Otherwise read the files direct
 ### 🟢 Acceptable patterns
 
 - ADR in "Proposed" status with no file yet — expected before the target week.
-- Forward ADR numbers reserved in CLAUDE.md §9 as "TBD WN" — placeholders, not dangling refs.
+- Forward ADR numbers reserved in the `docs/adr/README.md` "Pending" table — placeholders, not dangling refs.
 - Preamble notes in `context/DataQ_platform_roadmap.md` listing superseding decisions.
 - CLAUDE.md §13 correctly describing current in-progress work.
 
