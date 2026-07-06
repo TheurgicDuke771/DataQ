@@ -209,6 +209,8 @@ def test_build_report_populates_run_metadata(
     assert report.triggered_by == "schedule:daily"
     assert report.run_url == f"https://dq.example.com/results/{run.id}"
     assert report.duration_seconds == 12.0
+    # Owner falls back to the email when the User has no display_name (#661).
+    assert report.owner == owner.email
 
 
 def test_build_report_run_url_none_without_base_url(

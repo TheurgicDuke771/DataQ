@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import uuid
 from datetime import UTC, datetime
 from typing import Any, cast
@@ -73,7 +74,35 @@ def test_card_carries_datasource_target_and_severity() -> None:
     assert facts["Datasource"] == "snowflake"
     assert facts["Target"] == "RETAIL.ORDERS"
     assert facts["Severity"] == "fail"
-    assert facts["Finished"] == "2026-06-26T12:00:00+00:00"
+    # Metadata (from the shared render.run_metadata) — always at least the trigger.
+    assert facts["Triggered by"] == "Manual"
+    assert "Finished" not in facts  # replaced by Started/Duration metadata (#661)
+
+
+def test_card_carries_owner_metadata_and_view_run_action() -> None:
+    # #661/#416 parity: owner + env + a "View run" deep-link action on the card.
+    report = dataclasses.replace(
+        _report(),
+        owner="Ada Lovelace",
+        env="prod",
+        run_url="https://dataq.example.com/results/abc",
+    )
+    content = _content(report)
+    factset = next(b for b in content["body"] if b["type"] == "FactSet")
+    facts = {f["title"]: f["value"] for f in factset["facts"]}
+    assert facts["Owner"] == "Ada Lovelace"
+    assert facts["Environment"] == "prod"
+    assert content["actions"] == [
+        {
+            "type": "Action.OpenUrl",
+            "title": "View run",
+            "url": "https://dataq.example.com/results/abc",
+        }
+    ]
+
+
+def test_card_omits_action_without_run_url() -> None:
+    assert "actions" not in _content(_report())
 
 
 def test_card_lists_failing_checks_with_observed_vs_expected() -> None:

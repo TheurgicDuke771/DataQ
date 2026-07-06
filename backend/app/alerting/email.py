@@ -66,36 +66,64 @@ def render_text_body(report: RunReport) -> str:
 
 
 def render_html_body(report: RunReport) -> str:
-    """Minimal HTML body (inline-styled, email-client safe)."""
+    """Minimal HTML body (inline-styled, email-client safe).
+
+    Two tables: a **run details** key/value table (suite, owner, datasource,
+    target, severity + the shared run metadata) and a **failing-checks** table
+    (Status · Check · Details). Everything the alert carries is tabular (#661)."""
     colour = "#16a34a" if report.success else "#dc2626"
+    th = (
+        "padding:6px 10px;text-align:left;border-bottom:2px solid #d1d5db;"
+        "font-size:13px;color:#374151;"
+    )
+    td = "padding:6px 10px;border-bottom:1px solid #eee;font-size:13px;vertical-align:top;"
+    label_td = f"{td}color:#6b7280;white-space:nowrap;"
+
+    # Run-details table: base facts + shared run metadata (owner/env/trigger/…),
+    # dropping any metadata value that isn't set.
+    detail_rows: list[tuple[str, str]] = [
+        ("Suite", report.suite_name),
+        ("Datasource", report.datasource_type or "—"),
+        ("Target", report.target_label),
+        ("Severity", report.worst_severity or "—"),
+        *render.run_metadata(report),
+    ]
+    details = (
+        "<table style='border-collapse:collapse;margin-top:12px;'>"
+        + "".join(
+            f"<tr><td style='{label_td}'><b>{_esc(k)}</b></td>"
+            f"<td style='{td}'>{_esc(v)}</td></tr>"
+            for k, v in detail_rows
+        )
+        + "</table>"
+    )
+
+    # Failing-checks table with a header row (Status · Check · Details).
     rows = "".join(
-        f"<tr><td style='padding:2px 8px;'><code>{_esc(c.status)}</code></td>"
-        f"<td style='padding:2px 8px;'>{_esc(c.check_name)}</td>"
-        f"<td style='padding:2px 8px;color:#6b7280;'>{_esc(render.check_detail(c))}</td></tr>"
+        f"<tr><td style='{td}'><code>{_esc(c.status)}</code></td>"
+        f"<td style='{td}'>{_esc(c.check_name)}</td>"
+        f"<td style='{td}color:#6b7280;'>{_esc(render.check_detail(c))}</td></tr>"
         for c in report.checks
         if c.status != "pass"
     )
-    table = (
-        f"<table style='border-collapse:collapse;margin-top:8px;'>{rows}</table>" if rows else ""
+    checks_table = (
+        f"<h3 style='margin:16px 0 0;font-size:14px;'>Failing checks</h3>"
+        f"<table style='border-collapse:collapse;margin-top:6px;'>"
+        f"<thead><tr><th style='{th}'>Status</th><th style='{th}'>Check</th>"
+        f"<th style='{th}'>Details</th></tr></thead><tbody>{rows}</tbody></table>"
+        if rows
+        else ""
     )
-    meta = " &nbsp;·&nbsp; ".join(
-        f"<b>{_esc(label)}:</b> {_esc(value)}" for label, value in render.run_metadata(report)
-    )
-    meta_line = f"<p style='margin:6px 0 0;color:#6b7280;'>{meta}</p>" if meta else ""
     button = (
-        f"<p style='margin:10px 0 0;'><a href='{_esc(report.run_url)}' "
+        f"<p style='margin:16px 0 0;'><a href='{_esc(report.run_url)}' "
         f"style='color:#2563eb;'>View run →</a></p>"
         if report.run_url
         else ""
     )
     return (
         f"<div style='font-family:system-ui,Arial,sans-serif;'>"
-        f"<h2 style='color:{colour};margin:0 0 8px;'>{_esc(render_subject(report))}</h2>"
-        f"<p style='margin:0;color:#374151;'>"
-        f"<b>Datasource:</b> {_esc(report.datasource_type)} &nbsp;·&nbsp; "
-        f"<b>Target:</b> {_esc(report.target_label)} &nbsp;·&nbsp; "
-        f"<b>Severity:</b> {_esc(report.worst_severity or '—')}</p>"
-        f"{meta_line}{table}{button}</div>"
+        f"<h2 style='color:{colour};margin:0 0 4px;'>{_esc(render_subject(report))}</h2>"
+        f"{details}{checks_table}{button}</div>"
     )
 
 

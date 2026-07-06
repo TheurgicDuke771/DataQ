@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.alerting.base import CheckReport, RunReport
 from backend.app.core.config import get_settings
-from backend.app.db.models import Check, Connection, Result, Run, Suite, worst_severity
+from backend.app.db.models import Check, Connection, Result, Run, Suite, User, worst_severity
 from backend.app.services import run_service
 
 
@@ -59,6 +59,7 @@ def build_run_report(session: Session, run: Run) -> RunReport:
     """
     suite = session.get(Suite, run.suite_id)
     connection = session.get(Connection, suite.connection_id) if suite is not None else None
+    owner = session.get(User, suite.created_by) if suite is not None else None
     checks = {c.id: c for c in session.scalars(select(Check).where(Check.suite_id == run.suite_id))}
     results: list[Result] = run_service.list_results(session, run.id)
 
@@ -103,4 +104,5 @@ def build_run_report(session: Session, run: Run) -> RunReport:
         started_at=run.started_at,
         triggered_by=run.triggered_by,
         run_url=_run_url(run.id),
+        owner=(owner.display_name or owner.email) if owner is not None else None,
     )
