@@ -7,9 +7,13 @@
 ## A. Commit & change discipline
 
 1. **One functionality per commit** (where possible). Each commit must be independently reviewable; do not bundle two unrelated changes.
-2. **Manually test each committed change before starting the next functionality.** Required until the unit-test suite reaches 80% coverage (Week 8 gate). "Tested" means: the affected code path was exercised locally, not just that it compiled.
-3. **Defects → GitHub issue first, never silent fixes.** Use `gh issue create --title "fix: <desc>"`. The PR that fixes it must include `Fixes #N` in the title or body.
-4. **From Week 8 onward, every new functionality ships with unit tests.** Tests live next to the code they cover (`backend/tests/`, `frontend/tests/`).
+
+   **1a. Every functionality change ships with test coverage** — unit/integration as applicable. Enforced by the ≥80% CI gate (rule 13/14) since the Week-8 flip (2026-07-03); this is no longer a "from Week 8" aspiration, it's live and blocking.
+   **1b. Update docs in the same PR if the change is user-facing or architectural** — CLAUDE.md, the relevant ADR, CONTRIBUTING.md, or user docs, whichever applies.
+   **1c. Every PR gets an agentic code review before merge.** Spawn `/code-review` (never an inline self-review only), and post its findings to the PR as inline comments (`/code-review --comment`). Fix what it finds in the same PR where feasible; anything genuinely deferred must be filed as a GitHub issue (rule 3) — never dropped silently.
+2. **Manually test each committed change before starting the next functionality**, in addition to automated coverage. "Tested" means: the affected code path was exercised locally, not just that it compiled.
+3. **Defects → GitHub issue first, never silent fixes.** Use `gh issue create --title "fix: <desc>"`. The PR that fixes it must include `Fixes #N` in the title or body. This also covers findings deferred out of a `/code-review` pass (rule 1c).
+4. **Every new functionality ships with unit tests.** Tests live next to the code they cover (`backend/tests/`, `frontend/tests/`).
 
    **4a. Test for failure modes, not just the happy path.** Lesson from the column-profiler bugs ([#145](https://github.com/TheurgicDuke771/DataQ/issues/145)/[#147](https://github.com/TheurgicDuke771/DataQ/issues/147)): the profiler sat at ~94% line coverage and still `500`d on a mixed-type column — *line coverage measures lines, not input space*. So:
    - **Adversarial inputs for data-ingesting code.** Any function that processes external data (a file, a DataFrame, a user query) gets swept with the shared hostile-input battery in [`backend/tests/support/adversarial.py`](backend/tests/support/adversarial.py) — mixed types, unhashable cells, NaN/Inf, bytes, empty, and **both numpy & pyarrow backends** (they raise different exception types). The contract: *never raise, emit plain JSON* (`assert_json_safe`).
@@ -24,12 +28,15 @@
      - **Why the config looks the way it does:** 3.x copies `source_paths` into `./mutants/`, `chdir`s in, and runs pytest there — so `also_copy` must bring the whole importable package + tests (+ `pyproject.toml`), and `pytest_add_cli_args = ["-o", "addopts="]` strips the repo's `--cov` flags (mutmut runs its own coverage plugin; a second `--cov` is a pytest *usage error* in-process, exit 4).
      - **3.13 reporting is fixed:** the [#253](https://github.com/TheurgicDuke771/DataQ/issues/253) crash was mutmut 2.5.0's pony-ORM decompiler choking on 3.13 bytecode; **3.x dropped pony**, so `mutmut results`/`show` no longer crash — no more SQLite-cache workaround. Sanity-check each survivor: a mutated **type annotation** (e.g. `| None` → `& None`) or an unasserted-detail string (e.g. a dict key) is an equivalent/uninteresting mutant, not a real gap.
    - **Frontend mutation spikes (Stryker)** are the same idea for pure TS (conversion/resolver utils — `suiteTarget.ts`, `checkForm.ts`, …): `frontend/mutation/run.sh [--mutate '<glob>']`. Like mutmut, it's **manual/periodic, not CI**; Stryker is kept **out of `frontend/package.json`** (off the `pnpm audit` gate) — the script installs it ad-hoc (pinned) and restores the manifest on exit. Config in `frontend/stryker.conf.json`; details + survivor-triage notes in [`frontend/mutation/README.md`](frontend/mutation/README.md).
-5. **Definition of Done (DoD)** per task:
-   - Code merged to `main`
-   - Manually tested locally
-   - (From Week 8) unit tests written and passing
-   - Docs / ADR updated if the change is user-facing or architectural
-   - Linked GitHub issue closed if one exists
+5. **Definition of Done (DoD)** per task, in order:
+   - One functionality per commit (rule 1)
+   - Unit/integration tests written and passing (rule 1a)
+   - Docs / ADR updated if the change is user-facing or architectural (rule 1b)
+   - Manually tested locally (rule 2)
+   - Agentic code review (`/code-review`) run on the PR; findings fixed in-PR or filed as issues (rule 1c)
+   - Linked GitHub issue closed if one exists (rule 3)
+   - Full CI gate green (rule 13–17)
+   - Squash-merged to `main` (rule 9)
 
 ---
 

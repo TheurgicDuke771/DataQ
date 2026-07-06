@@ -133,10 +133,15 @@ Airflow callbacks require the user to add a snippet to their DAGs (we can't muta
 Full list (39 rules across 8 categories) lives in [CONTRIBUTING.md](CONTRIBUTING.md). Highlights:
 
 ### Commit & change discipline
-- **One functionality per commit** (where possible).
-- **Manually test each committed change before starting the next functionality** (required until unit tests land in Week 8).
-- **Defects → GitHub issue, never silent fixes.** Use `gh issue create`. The fixing PR must include `Fixes #N`.
-- **From Week 8 onward, every new functionality ships with tests.**
+Per-functionality workflow, in order:
+1. **One functionality per commit** (where possible).
+2. **Test coverage for the functionality** (unit/integration as applicable — the ≥80% CI gate, live since Week 8, covers this).
+3. **Docs updated if required** (CLAUDE.md / ADR / CONTRIBUTING / user docs — whichever the change touches).
+4. **Agentic code-review on the PR** — spawn `/code-review` (never an inline self-review only) and post findings to the PR as inline comments (`/code-review --comment`).
+5. **Fix issues found in the same PR** where feasible.
+6. **File a GitHub issue for anything deferred** — never drop a finding silently. Use `gh issue create`; the fixing PR must include `Fixes #N`.
+7. **Full CI gate must pass** (lint/format/types/tests/security — see below).
+8. **Squash-merge to `main`.**
 
 ### Git workflow
 - **Trunk-based** with short-lived feature branches off `main`. No long-lived `develop`.
