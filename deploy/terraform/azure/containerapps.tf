@@ -61,6 +61,7 @@ locals {
     # Webhook secret KEY names (values live in Key Vault — keyvault.tf).
     { name = "ADF_WEBHOOK_SECRET_NAME", value = "adf-webhook-secret" },
     { name = "AIRFLOW_WEBHOOK_SECRET_NAME", value = "airflow-webhook-secret" },
+    { name = "DBT_WEBHOOK_SECRET_NAME", value = "dbt-webhook-secret" },
     # Alerting channels (Slack + email) behind the ResultPublisher composite.
     # Secret NAMES point at Key Vault (the webhook URL / app-password live there);
     # SMTP coordinates are non-secret. Each publisher self-no-ops until its secret

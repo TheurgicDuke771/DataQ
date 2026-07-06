@@ -234,12 +234,15 @@ def webhook_configs(
             )
         else:  # HMAC-signed callback providers (airflow, dbt)
             signing_secret_name, adr = hmac_providers[provider]
+            # Honest configured-state: a hardcoded True here hid an unprovisioned
+            # signing key until callbacks started failing auth at the receiver.
+            signing_key = _safe_secret(secret_store, signing_secret_name)
             rows.append(
                 WebhookConfigRow(
                     provider=provider,
                     auth=f"HMAC-SHA256 signature header (X-DataQ-Signature) — {adr}",
                     inbound_url=f"{base}/api/v1/orchestration/events/{provider}",
-                    token_configured=True,
+                    token_configured=bool(signing_key),
                     signing_secret_name=signing_secret_name,
                     connection_names=names,
                 )

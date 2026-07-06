@@ -269,6 +269,7 @@ def test_admin_webhooks_airflow_carries_no_url_token(
     assert airflow["inbound_url"].endswith("/api/v1/orchestration/events/airflow")
     assert "token=" not in airflow["inbound_url"]
     assert airflow["signing_secret_name"] == "airflow-webhook-secret"
+    assert airflow["token_configured"] is True  # signing key provisioned in the store
 
 
 def test_admin_webhooks_dbt_row_is_not_mislabeled_as_airflow(
@@ -308,6 +309,22 @@ def test_admin_webhooks_every_provider_yields_its_own_row(
     rows = client.get("/api/v1/admin/orchestration/webhooks").json()
     assert [r["provider"] for r in rows] == [ctype]
     assert f"/api/v1/orchestration/events/{ctype}" in rows[0]["inbound_url"]
+
+
+@pytest.mark.parametrize("ctype", ["airflow", "dbt"])
+def test_admin_webhooks_hmac_rows_mark_missing_signing_secret(
+    ctype: str, client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # token_configured must reflect the signing key's actual presence in the
+    # store — a hardcoded True hid the misconfiguration until callbacks 401'd.
+    owner = _user(db_session, "owner@x.io")
+    _orch_connection(db_session, owner, ctype=ctype, name=f"{ctype}-conn")
+    db_session.commit()
+    _grant_admin(monkeypatch)
+    _with_store(client, _FakeStore(token=None))  # signing key not provisioned
+
+    [row] = client.get("/api/v1/admin/orchestration/webhooks").json()
+    assert row["token_configured"] is False
 
 
 def test_admin_webhooks_marks_missing_secret(
