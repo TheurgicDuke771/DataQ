@@ -31,7 +31,7 @@ test.describe('Admin control centre', () => {
     // in a readonly input (getByText can't see input values), ADF's token
     // masked behind the reveal toggle.
     await expect(page.getByText('Azure Data Factory', { exact: true })).toBeVisible();
-    await expect(page.getByText('Airflow', { exact: true })).toBeVisible();
+    await expect(page.getByText('Apache Airflow', { exact: true })).toBeVisible();
     await expect(page.locator('input[readonly]').first()).toHaveValue(/orchestration\/events\//);
   });
 });

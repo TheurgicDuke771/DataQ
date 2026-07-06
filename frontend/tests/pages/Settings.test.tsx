@@ -21,6 +21,14 @@ const WEBHOOKS: AdminWebhook[] = [
     connection_names: ['prod-factory'],
   },
   {
+    provider: 'airflow',
+    auth: 'HMAC-SHA256 signature header (X-DataQ-Signature) — ADR 0007',
+    inbound_url: 'https://dataq.example.com/api/v1/orchestration/events/airflow',
+    token_configured: true,
+    signing_secret_name: 'airflow-webhook-secret',
+    connection_names: ['airflow-prod'],
+  },
+  {
     provider: 'dbt',
     auth: 'HMAC-SHA256 signature header (X-DataQ-Signature) — ADR 0029',
     inbound_url: 'https://dataq.example.com/api/v1/orchestration/events/dbt',
@@ -71,14 +79,18 @@ describe('Settings', () => {
     expect(await screen.findByText('Azure Data Factory')).toBeInTheDocument();
   });
 
-  it('renders a dbt webhook row with its own label and post-build copy (#652/#647)', async () => {
+  it('renders per-provider labels and callback copy — dbt is post-build, not DAG (#652/#647)', async () => {
     renderSettings(adminMe);
     fireEvent.click(screen.getByRole('tab', { name: 'Webhooks' }));
-    // Labeled via the shared PROVIDER_LABELS (not the raw provider fallback).
-    expect(await screen.findByText('dbt')).toBeInTheDocument();
+    // 'Apache Airflow' differs from the raw code 'airflow', so this genuinely
+    // asserts the shared-PROVIDER_LABELS path (dbt's label equals its code).
+    expect(await screen.findByText('Apache Airflow')).toBeInTheDocument();
+    expect(screen.getByText('dbt')).toBeInTheDocument();
     expect(screen.getByText('dbt-webhook-secret')).toBeInTheDocument();
-    // dbt is a post-build callback (ADR 0029), not an Airflow DAG callback.
+    // Per-provider callback noun: dbt is a post-build callback (ADR 0029),
+    // Airflow a DAG callback — dbt must not inherit the Airflow wording.
     expect(screen.getByText(/post-build callback snippet/)).toBeInTheDocument();
+    expect(screen.getByText(/DAG callback snippet/)).toBeInTheDocument();
   });
 
   it('flags a webhook row whose secret is not provisioned', async () => {

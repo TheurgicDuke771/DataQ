@@ -366,7 +366,12 @@ function PipelineRunsTab({ pollMs = PIPELINE_POLL_MS }: { pollMs?: number }) {
   });
 
   const columns: ColumnsType<PipelineRun> = [
-    { title: 'Provider', dataIndex: 'provider', width: 110, render: (p: string) => <Tag>{p}</Tag> },
+    {
+      title: 'Provider',
+      dataIndex: 'provider',
+      width: 140,
+      render: (p: OrchestrationProvider) => <Tag>{PROVIDER_LABELS[p]}</Tag>,
+    },
     { title: 'Pipeline / DAG', dataIndex: 'pipeline_or_dag_id' },
     {
       // The provider's own run id — the handle for cross-referencing this run in

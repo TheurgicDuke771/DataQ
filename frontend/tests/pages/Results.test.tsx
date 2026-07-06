@@ -287,8 +287,8 @@ describe('Results page', () => {
     await user.click(screen.getByRole('tab', { name: 'Pipeline runs' }));
 
     await waitFor(() => expect(screen.getByText('daily_orders_load')).toBeInTheDocument());
-    // Provider + status render as tags in the row.
-    expect(screen.getByText('adf')).toBeInTheDocument();
+    // Provider renders its human label (shared PROVIDER_LABELS), not the raw code.
+    expect(screen.getByText('Azure Data Factory')).toBeInTheDocument();
     expect(screen.getByText('succeeded')).toBeInTheDocument();
   });
 

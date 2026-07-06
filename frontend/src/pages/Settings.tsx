@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import { type AdminWebhook, listAdminWebhooks } from '../api/admin';
-import { PROVIDER_LABELS } from '../api/triggerBindings';
+import { PROVIDER_CALLBACK_NOUNS, PROVIDER_LABELS } from '../api/triggerBindings';
 import { useMe } from '../auth/useMe';
 import { Forbidden } from '../components/Forbidden';
 import { Page } from '../components/layout/Page';
@@ -111,8 +111,9 @@ function DangerTab() {
   );
 }
 
-/** Inbound orchestration-webhook URLs (#490) — copy-paste targets for ADF / Airflow
- *  to notify DataQ on pipeline completion. Admin-only (the page is already gated). */
+/** Inbound orchestration-webhook URLs (#490) — one copy-paste target per
+ *  orchestration provider (ADF / Airflow / dbt) to notify DataQ on pipeline
+ *  completion. Admin-only (the page is already gated). */
 function WebhooksTab() {
   const { state } = useAsyncData(listAdminWebhooks);
   return (
@@ -159,9 +160,7 @@ function WebhookRow({ webhook }: { webhook: AdminWebhook }) {
       type="inner"
       title={
         <Flex align="center" gap={8}>
-          <Tag color={secretBearing ? 'geekblue' : 'cyan'}>
-            {PROVIDER_LABELS[webhook.provider as keyof typeof PROVIDER_LABELS] ?? webhook.provider}
-          </Tag>
+          <Tag color={secretBearing ? 'geekblue' : 'cyan'}>{PROVIDER_LABELS[webhook.provider]}</Tag>
           {!webhook.token_configured && <Tag color="error">webhook secret not set</Tag>}
         </Flex>
       }
@@ -188,8 +187,8 @@ function WebhookRow({ webhook }: { webhook: AdminWebhook }) {
           </Typography.Text>
         ) : (
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            Configured in the {webhook.provider === 'dbt' ? 'post-build' : 'DAG'} callback snippet
-            (HMAC); signing key in the secret store:{' '}
+            Configured in the {PROVIDER_CALLBACK_NOUNS[webhook.provider]} callback snippet (HMAC);
+            signing key in the secret store:{' '}
             <Typography.Text code>{webhook.signing_secret_name}</Typography.Text>.
           </Typography.Text>
         )}
