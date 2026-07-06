@@ -4,16 +4,28 @@ import userEvent from '@testing-library/user-event';
 import { Link, MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { type Connection, getConnection, updateConnection } from '../../src/api/connections';
+import {
+  type Connection,
+  type ConnectionVersion,
+  getConnection,
+  listConnectionVersions,
+  updateConnection,
+} from '../../src/api/connections';
 import { ConnectionEdit } from '../../src/pages/ConnectionEdit';
 
 vi.mock('../../src/api/connections', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/api/connections')>();
-  return { ...actual, getConnection: vi.fn(), updateConnection: vi.fn() };
+  return {
+    ...actual,
+    getConnection: vi.fn(),
+    updateConnection: vi.fn(),
+    listConnectionVersions: vi.fn(),
+  };
 });
 
 const mockGet = vi.mocked(getConnection);
 const mockUpdate = vi.mocked(updateConnection);
+const mockVersions = vi.mocked(listConnectionVersions);
 
 const existing: Connection = {
   id: 'c1',
@@ -84,6 +96,62 @@ describe('ConnectionEdit', () => {
       }),
     );
     expect(await screen.findByText('Connections list')).toBeInTheDocument();
+  });
+
+  it('opens the version-history drawer from the History button (#654)', async () => {
+    const user = userEvent.setup();
+    mockGet.mockResolvedValue(existing);
+    const versions: ConnectionVersion[] = [
+      {
+        version_no: 2,
+        name: 'sf-dev',
+        type: 'snowflake',
+        env: 'dev',
+        config: { account: 'acc1' },
+        changed_by: 'u1',
+        changed_by_name: 'Ada Lovelace',
+        created_at: '2026-07-01T10:00:00Z',
+      },
+      {
+        version_no: 1,
+        name: 'sf-dev-old',
+        type: 'snowflake',
+        env: 'dev',
+        config: { account: 'acc0' },
+        changed_by: null,
+        changed_by_name: null,
+        created_at: '2026-06-01T10:00:00Z',
+      },
+    ];
+    mockVersions.mockResolvedValue(versions);
+    renderPage();
+
+    await waitFor(() => expect(screen.getByLabelText('Account')).toHaveValue('acc1'));
+    await user.click(screen.getByRole('button', { name: /History/ }));
+
+    expect(await screen.findByText('History — “sf-dev”')).toBeInTheDocument();
+    expect(mockVersions).toHaveBeenCalledWith('c1');
+    // Newest first: v2 is tagged Current; the older snapshot shows its author gap.
+    expect(screen.getByText('v2')).toBeInTheDocument();
+    expect(screen.getByText('Current')).toBeInTheDocument();
+    expect(screen.getByText('sf-dev-old')).toBeInTheDocument();
+    expect(screen.getByText(/Unknown/)).toBeInTheDocument();
+    // Snapshots are credential-free — config renders as JSON.
+    expect(screen.getByText(/"account": "acc0"/)).toBeInTheDocument();
+  });
+
+  it('shows an empty history state for a pre-versioning connection (#654)', async () => {
+    const user = userEvent.setup();
+    mockGet.mockResolvedValue(existing);
+    mockVersions.mockResolvedValue([]);
+    renderPage();
+
+    await waitFor(() => expect(screen.getByLabelText('Account')).toHaveValue('acc1'));
+    await user.click(screen.getByRole('button', { name: /History/ }));
+
+    expect(
+      await screen.findByText('No history yet — recording starts from the next save.'),
+    ).toBeInTheDocument();
   });
 
   it('surfaces a load error', async () => {

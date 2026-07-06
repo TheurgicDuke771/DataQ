@@ -175,3 +175,26 @@ export async function reauthConnection(id: string, secret: string): Promise<{ ok
   const { data } = await api.post<{ ok: boolean }>(`/connections/${id}/reauth`, { secret });
   return data;
 }
+
+/**
+ * Mirrors the backend `ConnectionVersionRead` — one immutable snapshot in a
+ * connection's edit history (#654). Only the editable, non-secret fields are
+ * versioned; no credential is ever present. `changed_by_name` is resolved
+ * server-side (null for a system actor / removed user).
+ */
+export interface ConnectionVersion {
+  version_no: number;
+  name: string;
+  type: ConnectionType;
+  env: ConnectionEnv;
+  config: Record<string, unknown>;
+  changed_by: string | null;
+  changed_by_name: string | null;
+  created_at: string;
+}
+
+/** A connection's version history, newest first. */
+export async function listConnectionVersions(id: string): Promise<ConnectionVersion[]> {
+  const { data } = await api.get<ConnectionVersion[]>(`/connections/${id}/versions`);
+  return data;
+}
