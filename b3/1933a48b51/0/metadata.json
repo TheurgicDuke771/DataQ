@@ -1,0 +1,50 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_id": "b31933a48b51",
+  "session_id": "e44df072-01be-4079-91b3-e68f3c55ddf0",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-06T03:39:19.606975Z",
+  "branch": "fix/alerting-severity-single-source",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/alerting/routing.py",
+    "backend/tests/alerting/test_routing.py"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "95c6b06ff687",
+  "token_usage": {
+    "input_tokens": 12815,
+    "cache_creation_tokens": 193178,
+    "cache_read_tokens": 4826898,
+    "output_tokens": 38432,
+    "api_call_count": 50
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-06T03:39:19.583832Z",
+    "agent_lines": 35,
+    "agent_removed": 2,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 35,
+    "total_lines_changed": 37,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}
