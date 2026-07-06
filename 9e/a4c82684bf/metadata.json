@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "9ea4c82684bf",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-647-dbt-webhook-config",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".env.app.example",
+    "backend/app/services/admin_service.py",
+    "backend/tests/api/test_admin.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/9e/a4c82684bf/0/metadata.json",
+      "transcript": "/9e/a4c82684bf/0/full.jsonl",
+      "compact_transcript": "/9e/a4c82684bf/0/transcript.jsonl",
+      "content_hash": "/9e/a4c82684bf/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 12799,
+    "cache_creation_tokens": 32013,
+    "cache_read_tokens": 3371020,
+    "output_tokens": 10807,
+    "api_call_count": 26
+  }
+}
