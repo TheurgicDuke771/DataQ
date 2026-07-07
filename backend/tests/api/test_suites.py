@@ -190,6 +190,44 @@ def test_update_setting_a_target_dispatches_auto_classify(
     assert calls == []  # existing policy → no re-derive
 
 
+def test_update_repointing_policied_suite_target_logs_possibly_stale(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#643: repointing a *policied* suite to a different target doesn't re-derive
+    (don't clobber a choice), but must emit an observable `suite_policy_possibly_
+    stale` event so the previously-invisible staleness is surfaced — and only when
+    the target actually changes."""
+    from structlog.testing import capture_logs
+
+    calls: list[uuid.UUID] = []
+    monkeypatch.setattr(run_dispatch, "dispatch_auto_classify", calls.append)
+    conn = _connection(db_session)
+    sid = client.post("/api/v1/suites", json=_payload(conn.id, target={"table": "ORDERS"})).json()[
+        "id"
+    ]
+    db_session.query(Suite).filter(Suite.id == uuid.UUID(sid)).update(
+        {"column_policy": {"pii_columns": ["EMAIL"]}}
+    )
+    db_session.commit()
+    calls.clear()
+
+    with capture_logs() as logs:
+        assert (
+            client.patch(
+                f"/api/v1/suites/{sid}", json={"target": {"table": "CUSTOMERS"}}
+            ).status_code
+            == 200
+        )
+    stale = [e for e in logs if e.get("event") == "suite_policy_possibly_stale"]
+    assert calls == []  # no re-derive over an existing policy
+    assert len(stale) == 1 and stale[0]["reason"] == "target_changed_on_policied_suite"
+
+    # Re-PATCH with the SAME target → unchanged, so no stale event this time.
+    with capture_logs() as logs2:
+        client.patch(f"/api/v1/suites/{sid}", json={"target": {"table": "CUSTOMERS"}})
+    assert [e for e in logs2 if e.get("event") == "suite_policy_possibly_stale"] == []
+
+
 def test_create_with_flatfile_batch_target_persists(client: TestClient, db_session: Any) -> None:
     """A flat-file batch target (pattern/strategy/prefix) round-trips through the
     API — the SuiteTarget model must carry the batch keys, else the batch run path
