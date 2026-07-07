@@ -178,9 +178,12 @@ def _find_oversized_string(value: Any, path: str = "config") -> str | None:
         return path if len(value) > _CONFIG_STRING_MAX_CHARS else None
     if isinstance(value, dict):
         for key, item in value.items():
+            # str() first: JSON transports only produce string keys, but a
+            # direct Python caller may not — slicing an int key would TypeError.
+            key_repr = str(key)[:_ERROR_ECHO_MAX_CHARS]
             if isinstance(key, str) and len(key) > _CONFIG_STRING_MAX_CHARS:
-                return f"{path}.{key[:_ERROR_ECHO_MAX_CHARS]}… (key)"
-            found = _find_oversized_string(item, f"{path}.{key[:_ERROR_ECHO_MAX_CHARS]}")
+                return f"{path}.{key_repr}… (key)"
+            found = _find_oversized_string(item, f"{path}.{key_repr}")
             if found:
                 return found
     if isinstance(value, list):
@@ -204,6 +207,11 @@ def validate_expectation_check(expectation_type: str, config: dict[str, Any]) ->
     """
     oversized = _find_oversized_string(config)
     if oversized is not None:
+        # Bound the WHOLE path, not just each segment: deep nesting grows the
+        # accumulated path ~200 chars per level, which would round-trip an
+        # arbitrarily large echo through the 422 envelope and the error log.
+        if len(oversized) > _ERROR_ECHO_MAX_CHARS:
+            oversized = oversized[:_ERROR_ECHO_MAX_CHARS] + "…"
         raise CheckConfigInvalidError(
             f"config value at {oversized} exceeds {_CONFIG_STRING_MAX_CHARS} characters",
             detail={"path": oversized, "max_chars": _CONFIG_STRING_MAX_CHARS},

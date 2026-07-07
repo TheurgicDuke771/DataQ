@@ -264,6 +264,40 @@ def test_oversized_string_422_does_not_echo_the_input(client: TestClient, db_ses
     assert len(nested_under_huge_key.text) < 5_000
 
 
+def test_deeply_nested_oversized_config_echo_is_bounded(
+    client: TestClient, db_session: Any
+) -> None:
+    # Per-segment truncation alone would still let the ACCUMULATED path grow
+    # ~200 chars per nesting level — 50 levels of 1k keys would echo a ~10KB
+    # path. The whole reported path is bounded, not just each segment.
+    sid = _suite_id(client, db_session)
+    nested: Any = "v" * 100_000
+    for i in range(50):
+        nested = {f"level_{i}_{'k' * 1_000}": nested}
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks", json=_payload(config={"column": "ok", "deep": nested})
+    )
+    assert resp.status_code == 422
+    assert len(resp.text) < 5_000
+
+
+def test_oversized_walk_tolerates_non_string_dict_keys() -> None:
+    # JSON transports only produce string keys, but the MCP tools / direct
+    # callers can hand the service arbitrary dicts — an int key must yield the
+    # normal 422, not a TypeError→500 from slicing the key.
+    from backend.app.services.check_service import (
+        CheckConfigInvalidError,
+        validate_expectation_check,
+    )
+
+    with pytest.raises(CheckConfigInvalidError) as exc_info:
+        validate_expectation_check(
+            "expect_column_values_to_be_in_set",
+            {"column": "x", "value_set": {1: "y" * 20_000}},
+        )
+    assert "exceeds" in str(exc_info.value)
+
+
 def test_unknown_expectation_type_echo_is_bounded() -> None:
     # REST caps expectation_type at 128 chars, but the MCP tools call the
     # service directly with no such cap — the service itself must bound what it
