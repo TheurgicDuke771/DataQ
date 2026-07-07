@@ -1,0 +1,35 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "61c152419f41",
+  "strategy": "manual-commit",
+  "branch": "feature/605-run-failure-reason",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/alembic/versions/c605d1e2f3a4_add_runs_failure_reason.py",
+    "backend/app/api/v1/runs.py",
+    "backend/app/db/models.py",
+    "backend/app/services/dryrun_service.py",
+    "backend/app/services/failure_classifier.py",
+    "backend/app/services/run_dispatch.py",
+    "backend/app/services/run_service.py",
+    "backend/tests/api/test_runs.py",
+    "frontend/tests/components/LiveRunProgress.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/61/c152419f41/0/metadata.json",
+      "transcript": "/61/c152419f41/0/full.jsonl",
+      "compact_transcript": "/61/c152419f41/0/transcript.jsonl",
+      "content_hash": "/61/c152419f41/0/content_hash.txt",
+      "prompt": "/61/c152419f41/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 55410,
+    "cache_creation_tokens": 1333357,
+    "cache_read_tokens": 74979466,
+    "output_tokens": 206768,
+    "api_call_count": 343
+  }
+}
