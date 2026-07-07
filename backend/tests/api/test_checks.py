@@ -30,11 +30,17 @@ def client(db_session: Any) -> Iterator[TestClient]:
         app.dependency_overrides.clear()
 
 
-def _suite_id(client: TestClient, db_session: Any, conn_type: str = "snowflake") -> str:
+def _suite_id(
+    client: TestClient,
+    db_session: Any,
+    conn_type: str = "snowflake",
+    target: dict[str, Any] | None = None,
+) -> str:
     """Create a connection (ORM) + suite (API) and return the suite id.
 
     `conn_type` lets a test pick the datasource (e.g. 's3' to exercise custom-SQL
-    datasource gating); defaults to Snowflake.
+    datasource gating); defaults to Snowflake. `target` sets the suite's run
+    target (needed by dry-run, which resolves the target server-side).
     """
     owner = User(aad_object_id=uuid.uuid4().hex, email="owner@example.com")
     db_session.add(owner)
@@ -49,10 +55,10 @@ def _suite_id(client: TestClient, db_session: Any, conn_type: str = "snowflake")
     )
     db_session.add(conn)
     db_session.commit()
-    resp = client.post(
-        "/api/v1/suites",
-        json={"name": "finance", "description": None, "connection_id": str(conn.id)},
-    )
+    body: dict[str, Any] = {"name": "finance", "description": None, "connection_id": str(conn.id)}
+    if target is not None:
+        body["target"] = target
+    resp = client.post("/api/v1/suites", json=body)
     return str(resp.json()["id"])
 
 
@@ -946,24 +952,37 @@ class _FakeRunner:
         return self._outcome
 
 
-def _patch_runner(monkeypatch: pytest.MonkeyPatch, runner: _FakeRunner) -> None:
-    monkeypatch.setattr(dryrun_service, "build_snowflake_runner", lambda **_kw: runner)
+def _patch_runner(
+    monkeypatch: pytest.MonkeyPatch, runner: _FakeRunner, calls: list[dict[str, Any]] | None = None
+) -> None:
+    """Patch the runner registry so dry-run gets the fake runner for any datasource.
+    When ``calls`` is given, it captures the kwargs `build_check_runner` was called
+    with (e.g. to assert the UC ``catalog`` is threaded through)."""
+
+    def _fake_build(**kw: Any) -> _FakeRunner:
+        if calls is not None:
+            calls.append(kw)
+        return runner
+
+    monkeypatch.setattr(dryrun_service, "build_check_runner", _fake_build)
 
 
 def _dryrun_body(**overrides: Any) -> dict[str, Any]:
     body: dict[str, Any] = {
         "expectation_type": "expect_column_values_to_not_be_null",
         "config": {"column": "order_id"},
-        "table": "ORDERS",
     }
     body.update(overrides)
     return body
 
 
+_SF_TARGET = {"table": "ORDERS"}
+
+
 def test_dryrun_returns_pass_preview(
     client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    sid = _suite_id(client, db_session)
+    sid = _suite_id(client, db_session, target=_SF_TARGET)
     _patch_runner(
         monkeypatch,
         _FakeRunner(
@@ -983,7 +1002,7 @@ def test_dryrun_returns_pass_preview(
 def test_dryrun_derives_tier_from_thresholds(
     client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    sid = _suite_id(client, db_session)
+    sid = _suite_id(client, db_session, target=_SF_TARGET)
     _patch_runner(
         monkeypatch,
         _FakeRunner(
@@ -1010,7 +1029,7 @@ def test_dryrun_previews_error_for_unevaluable_check(
 ) -> None:
     """A check GX can't evaluate previews as `error` — not a misleading `fail`
     tag — so the editor preview matches what a persisted run would record (#122)."""
-    sid = _suite_id(client, db_session)
+    sid = _suite_id(client, db_session, target=_SF_TARGET)
     _patch_runner(
         monkeypatch,
         _FakeRunner(
@@ -1035,7 +1054,7 @@ def test_dryrun_previews_error_for_unevaluable_check(
 def test_dryrun_sanitizes_nan_observed_value(
     client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    sid = _suite_id(client, db_session)
+    sid = _suite_id(client, db_session, target=_SF_TARGET)
     _patch_runner(
         monkeypatch,
         _FakeRunner(
@@ -1053,32 +1072,87 @@ def test_dryrun_sanitizes_nan_observed_value(
 
 
 def test_dryrun_rejects_non_expectation_kind(client: TestClient, db_session: Any) -> None:
-    sid = _suite_id(client, db_session)
+    sid = _suite_id(client, db_session, target=_SF_TARGET)
     resp = client.post(f"/api/v1/suites/{sid}/checks/dryrun", json=_dryrun_body(kind="freshness"))
     assert resp.status_code == 422
     assert resp.json()["error"]["code"] == "dry_run_unsupported"
 
 
-def test_dryrun_rejects_non_snowflake_connection(client: TestClient, db_session: Any) -> None:
-    owner = User(aad_object_id=uuid.uuid4().hex, email="o@ex")
-    db_session.add(owner)
-    db_session.flush()
-    conn = Connection(
-        name=f"s3-{uuid.uuid4().hex[:8]}",
-        type="s3",
-        env="dev",
-        config={"bucket": "b", "region": "us-east-1"},
-        created_by=owner.id,
+def _ok_runner() -> _FakeRunner:
+    return _FakeRunner(
+        SuiteOutcome(
+            success=True,
+            checks=[CheckOutcome("x", success=True, observed_value={"observed_value": 1})],
+        )
     )
-    db_session.add(conn)
-    db_session.flush()
-    suite = Suite(name="s", connection_id=conn.id, created_by=owner.id)
-    db_session.add(suite)
-    db_session.commit()
-    _as(owner)
-    resp = client.post(f"/api/v1/suites/{suite.id}/checks/dryrun", json=_dryrun_body())
+
+
+def test_dryrun_supports_flatfile_suite(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # #532: flat-file (S3/local) suites are now previewable via the runner registry.
+    sid = _suite_id(client, db_session, conn_type="s3", target={"path": "s3://b/orders.csv"})
+    runner = _ok_runner()
+    _patch_runner(monkeypatch, runner)
+    resp = client.post(f"/api/v1/suites/{sid}/checks/dryrun", json=_dryrun_body())
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "pass"
+    # The materialized flat-file path is handed to the runner as its `table`.
+    assert runner.called_with is not None
+    assert runner.called_with["table"] == "s3://b/orders.csv"
+
+
+def test_dryrun_supports_unity_catalog_suite(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # #532: Unity Catalog suites are previewable, and the suite's catalog is
+    # threaded into the runner build (as the real run path does).
+    sid = _suite_id(
+        client,
+        db_session,
+        conn_type="unity_catalog",
+        target={"table": "ORDERS", "schema": "SALES", "catalog": "MAIN"},
+    )
+    calls: list[dict[str, Any]] = []
+    _patch_runner(monkeypatch, _ok_runner(), calls=calls)
+    resp = client.post(f"/api/v1/suites/{sid}/checks/dryrun", json=_dryrun_body())
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "pass"
+    assert calls and calls[0]["catalog"] == "MAIN"
+
+
+def test_dryrun_targetless_suite_returns_422(client: TestClient, db_session: Any) -> None:
+    # No run target on the suite → a clean 422 (not a 500), resolved by run_target.
+    sid = _suite_id(client, db_session)  # no target
+    resp = client.post(f"/api/v1/suites/{sid}/checks/dryrun", json=_dryrun_body())
     assert resp.status_code == 422
-    assert resp.json()["error"]["code"] == "dry_run_unsupported"
+    assert resp.json()["error"]["code"] == "suite_target_invalid"
+
+
+def test_dryrun_flatfile_batch_not_landed_returns_422(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A batch flat-file target whose file hasn't landed is a clean 422 (no data),
+    # not a 500 or a misleading datasource failure.
+    from backend.app.datasources.flatfile import BatchNotFoundError
+    from backend.app.services import run_target
+
+    sid = _suite_id(
+        client,
+        db_session,
+        conn_type="s3",
+        target={"pattern": r"orders_(\d+)\.csv", "strategy": "latest"},
+    )
+    _patch_runner(monkeypatch, _ok_runner())
+
+    def _raise_not_found(*_a: Any, **_k: Any) -> str:
+        raise BatchNotFoundError("no file")
+
+    # dryrun_service calls `run_target.materialize_path` on this same module object.
+    monkeypatch.setattr(run_target, "materialize_path", _raise_not_found)
+    resp = client.post(f"/api/v1/suites/{sid}/checks/dryrun", json=_dryrun_body())
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "dry_run_no_data"
 
 
 def test_dryrun_rejects_non_readonly_custom_sql_before_running(
@@ -1087,7 +1161,7 @@ def test_dryrun_rejects_non_readonly_custom_sql_before_running(
     # Dry-run executes the query, so the custom-SQL guardrail must apply here too
     # (ADR 0019 review): a non-read-only query is a 422 and the runner is never
     # reached.
-    sid = _suite_id(client, db_session)
+    sid = _suite_id(client, db_session, target=_SF_TARGET)
     runner = _FakeRunner(outcome=SuiteOutcome(success=True, checks=[]))
     _patch_runner(monkeypatch, runner)
     resp = client.post(
@@ -1105,8 +1179,24 @@ def test_dryrun_rejects_non_readonly_custom_sql_before_running(
 def test_dryrun_runner_failure_returns_502(
     client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    sid = _suite_id(client, db_session)
+    sid = _suite_id(client, db_session, target=_SF_TARGET)
     _patch_runner(monkeypatch, _FakeRunner(raises=RuntimeError("warehouse unreachable")))
+    resp = client.post(f"/api/v1/suites/{sid}/checks/dryrun", json=_dryrun_body())
+    assert resp.status_code == 502
+    assert resp.json()["error"]["code"] == "dry_run_failed"
+
+
+def test_dryrun_runner_build_failure_returns_502(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The runner builders resolve the secret eagerly — a missing/unreadable
+    # credential fails at build time and must be a clean 502, not a 500.
+    sid = _suite_id(client, db_session, target=_SF_TARGET)
+
+    def _boom(**_kw: Any) -> Any:
+        raise RuntimeError("secret not found in key vault")
+
+    monkeypatch.setattr(dryrun_service, "build_check_runner", _boom)
     resp = client.post(f"/api/v1/suites/{sid}/checks/dryrun", json=_dryrun_body())
     assert resp.status_code == 502
     assert resp.json()["error"]["code"] == "dry_run_failed"

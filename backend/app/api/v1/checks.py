@@ -295,8 +295,10 @@ class CheckDryRunRequest(ApiModel):
     warn_threshold: Decimal | None = None
     fail_threshold: Decimal | None = None
     critical_threshold: Decimal | None = None
-    table: str = Field(min_length=1, description="Target table the check runs against")
-    schema_: str | None = Field(default=None, alias="schema")
+    # The target comes from the suite's own run target (#215/#532) — resolved
+    # server-side exactly like a persisted run, so the preview runs against what a
+    # saved run would (and flat-file `path` / UC `catalog` / batch resolution are
+    # handled for free). No client-supplied table.
 
 
 class CheckDryRunResult(ApiModel):
@@ -332,8 +334,7 @@ def dry_run_check(
         warn_threshold=payload.warn_threshold,
         fail_threshold=payload.fail_threshold,
         critical_threshold=payload.critical_threshold,
-        table=payload.table,
-        schema=payload.schema_,
+        target=suite.target,
         secret_store=secret_store,
     )
     return CheckDryRunResult(

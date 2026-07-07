@@ -51,6 +51,8 @@ export interface RunTarget {
   catalog?: string;
   path?: string;
   file_format?: 'csv' | 'parquet';
+  /** Flat-file *batch* selector (a literal `path` and `pattern` are mutually exclusive). */
+  pattern?: string;
 }
 
 /** Read one string field out of the untyped run-target bag, or `undefined`. */
@@ -281,15 +283,14 @@ export async function importSuite(payload: SuiteImportRequest): Promise<Suite> {
 }
 
 /** Mirrors `CheckDryRunRequest` — preview one check against live data, no persist.
- *  `table`/`schema` come from the suite's run target (#215). v1: Snowflake only. */
+ *  The target is resolved server-side from the suite's own run target (#215/#532),
+ *  so no target fields are sent; works on Snowflake, Unity Catalog, and flat files. */
 export interface CheckDryRunRequest {
   expectation_type: string;
   config: Record<string, unknown>;
   warn_threshold?: number | null;
   fail_threshold?: number | null;
   critical_threshold?: number | null;
-  table: string;
-  schema?: string | null;
 }
 
 /** Mirrors `CheckDryRunResult` — the preview outcome (severity tier + metric). */
