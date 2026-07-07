@@ -90,6 +90,10 @@ function SimpleListItem({ children, actions, onClick, className, style }: Simple
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
+        // Actions never shrink, so without wrap the content region gets
+        // `container − actions` — a char-per-line sliver on phone widths
+        // (#692). Wrapping drops the actions to their own line instead.
+        flexWrap: 'wrap',
         gap: token.padding,
         paddingBlock,
         // A caller-supplied style wins (e.g. the Suites master row overrides
@@ -103,8 +107,15 @@ function SimpleListItem({ children, actions, onClick, className, style }: Simple
           row lands its label left / status right). */}
       {hasActions ? (
         <>
-          <div style={{ flex: '1 1 auto', minWidth: 0 }}>{children}</div>
-          <Flex align="center" gap={token.paddingSM} style={{ flexShrink: 0 }}>
+          {/* The min() floor is what makes the wrap trigger: with a bare
+              minWidth:0 the content shrinks to a sliver before the actions
+              ever wrap (#692). */}
+          <div style={{ flex: '1 1 auto', minWidth: 'min(100%, 180px)' }}>{children}</div>
+          <Flex
+            align="center"
+            gap={token.paddingSM}
+            style={{ flexShrink: 0, marginInlineStart: 'auto' }}
+          >
             {actions}
           </Flex>
         </>
