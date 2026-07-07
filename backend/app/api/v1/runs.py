@@ -52,7 +52,19 @@ class RunRead(ApiModel):
     created_at: datetime
     # Data-quality outcome — distinct from `status` (execution lifecycle): a run is
     # `succeeded` even when checks fail. Lets the runs list flag failing checks
-    # without a drill-in. 0/0/None on the list until graft; the detail uses results.
+    # without a drill-in. Grafted from `check_outcome_counts` on BOTH the list and
+    # the detail endpoint (a bare `RunRead.model_validate(run)` leaves these at the
+    # 0/0/None defaults — the ORM `Run` has no such columns — so the graft is what
+    # populates them; #571).
+    #
+    # `checks_total` counts **evaluated** checks (pass + warn/fail/critical),
+    # excluding operational skip/error (#122) — it is the data-quality-outcome
+    # denominator, deliberately NOT the suite's check count. It therefore differs
+    # from `GET /runs/{id}/progress`'s `total_checks`, which is the suite's *defined*
+    # check count: a run that fails before any check executes (bad-credential
+    # connection) evaluated nothing, so `checks_total == 0` (rendered `—`, not a
+    # misleading `0/N`) while progress still reports the suite size. Both are
+    # truthful about different things (#571).
     checks_total: int = 0
     checks_passed: int = 0
     worst_severity: str | None = None  # warn | fail | critical | None (all passed)
@@ -126,6 +138,16 @@ class PipelineRunRead(ApiModel):
     created_at: datetime
 
 
+_OUTCOME_FIELDS = ("checks_total", "checks_passed", "worst_severity")
+
+
+def _outcome_update(outcome: tuple[int, int, str | None] | None) -> dict[str, object]:
+    """Map a `check_outcome_counts` tuple (or None for a run with no results) onto
+    the RunRead outcome fields — shared by the list and detail endpoints so both
+    read models graft identically (#571)."""
+    return dict(zip(_OUTCOME_FIELDS, outcome or (0, 0, None), strict=True))
+
+
 @router.get("/runs", response_model=list[RunRead], summary="List runs")
 def list_runs(
     current_user: Annotated[User, Depends(get_current_user)],
@@ -153,15 +175,7 @@ def list_runs(
     # grouped query, so the list can flag failing checks behind a `succeeded` run.
     outcomes = svc.check_outcome_counts(db, [r.id for r in runs])
     return [
-        RunRead.model_validate(r).model_copy(
-            update=dict(
-                zip(
-                    ("checks_total", "checks_passed", "worst_severity"),
-                    outcomes.get(r.id, (0, 0, None)),
-                    strict=True,
-                )
-            )
-        )
+        RunRead.model_validate(r).model_copy(update=_outcome_update(outcomes.get(r.id)))
         for r in runs
     ]
 
@@ -211,10 +225,12 @@ def get_run(
     checks = {c.id: c for c in db.scalars(select(Check).where(Check.suite_id == run.suite_id))}
     policy = suite.column_policy
     # `Run` has no `results` relationship to validate a RunDetailRead from
-    # directly, so validate the run fields (as RunRead) and graft the
-    # separately-fetched, redaction-gated results on.
+    # directly, so validate the run fields (as RunRead), graft the data-quality
+    # outcome (#571 — else checks_total/passed stay at the 0/0 default here), and
+    # attach the separately-fetched, redaction-gated results.
+    outcome = svc.check_outcome_counts(db, [run.id]).get(run.id)
     return RunDetailRead(
-        **RunRead.model_validate(run).model_dump(),
+        **RunRead.model_validate(run).model_copy(update=_outcome_update(outcome)).model_dump(),
         results=[
             _result_read(
                 r,

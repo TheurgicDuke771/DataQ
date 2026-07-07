@@ -331,6 +331,51 @@ def test_get_run_returns_results(client: TestClient, db_session: Any) -> None:
     assert res["sample_failures"] == {"rows": []}
 
 
+def test_get_run_detail_grafts_check_outcome_counts(client: TestClient, db_session: Any) -> None:
+    """The detail endpoint must graft the data-quality outcome like the list does
+    — a bare RunRead.model_validate(run) leaves checks_total/passed at 0/0 because
+    the ORM Run has no such columns (#571)."""
+    dev = _user(db_session, "dev@ex")
+    suite = _suite(db_session, dev, target={"table": "T"})
+    c1 = _check(db_session, suite, "pass-check")
+    c2 = _check(db_session, suite, "warn-check")
+    run = _run(db_session, suite, status="succeeded")
+    db_session.add_all(
+        [
+            Result(run_id=run.id, check_id=c1.id, status="pass"),
+            Result(run_id=run.id, check_id=c2.id, status="warn"),
+        ]
+    )
+    db_session.commit()
+
+    _as(dev)
+    body = client.get(f"/api/v1/runs/{run.id}").json()
+    assert (body["checks_total"], body["checks_passed"], body["worst_severity"]) == (2, 1, "warn")
+
+
+def test_pre_dispatch_failure_checks_total_consistent_across_read_models(
+    client: TestClient, db_session: Any
+) -> None:
+    """A run that fails before any check executes has no Result rows: both the list
+    and the detail report checks_total == 0 (the evaluated-outcome denominator,
+    rendered `—`), while /progress reports the suite's *defined* check count. The
+    two are truthful about different things; list and detail must agree (#571)."""
+    dev = _user(db_session, "dev@ex")
+    suite = _suite(db_session, dev, target={"table": "T"})
+    _check(db_session, suite, "a")
+    _check(db_session, suite, "b")
+    run = _run(db_session, suite, status="failed")  # failed before dispatch — no results
+    db_session.commit()
+
+    _as(dev)
+    detail = client.get(f"/api/v1/runs/{run.id}").json()
+    listed = next(r for r in client.get("/api/v1/runs").json() if r["id"] == str(run.id))
+    progress = client.get(f"/api/v1/runs/{run.id}/progress").json()
+
+    assert detail["checks_total"] == listed["checks_total"] == 0  # read models agree
+    assert progress["total_checks"] == 2  # suite size — the intentional difference
+
+
 def test_get_run_redacts_sample_failure_values(client: TestClient, db_session: Any) -> None:
     """Raw failing cell values must be masked before leaving DataQ; the numeric
     counts and the row/column shape are kept (#226)."""
