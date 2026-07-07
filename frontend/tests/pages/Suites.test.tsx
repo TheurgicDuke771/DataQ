@@ -219,7 +219,7 @@ describe('Suites', () => {
   it('snoozes a check from the detail panel and refreshes the list (#653)', async () => {
     const user = userEvent.setup();
     mockListConnections.mockResolvedValue([connection]);
-    mockListSuites.mockResolvedValue([suite()]);
+    mockListSuites.mockResolvedValue([suite({ my_permission: 'edit' })]);
     const active = check();
     const snoozed = check({ alert_snoozed_until: '2099-01-01T00:00:00Z' });
     mockListChecks.mockResolvedValueOnce([active]).mockResolvedValueOnce([snoozed]);
@@ -240,7 +240,7 @@ describe('Suites', () => {
   it('unsnoozes a snoozed check (badge + Unsnooze action) (#653)', async () => {
     const user = userEvent.setup();
     mockListConnections.mockResolvedValue([connection]);
-    mockListSuites.mockResolvedValue([suite()]);
+    mockListSuites.mockResolvedValue([suite({ my_permission: 'edit' })]);
     const snoozed = check({ alert_snoozed_until: '2099-01-01T00:00:00Z' });
     mockListChecks.mockResolvedValueOnce([snoozed]).mockResolvedValueOnce([check()]);
     mockClearSnooze.mockResolvedValue(check());
@@ -258,7 +258,7 @@ describe('Suites', () => {
   it('treats an expired snooze as active — no badge, Snooze offered (#653)', async () => {
     const user = userEvent.setup();
     mockListConnections.mockResolvedValue([connection]);
-    mockListSuites.mockResolvedValue([suite()]);
+    mockListSuites.mockResolvedValue([suite({ my_permission: 'edit' })]);
     mockListChecks.mockResolvedValue([check({ alert_snoozed_until: '2020-01-01T00:00:00Z' })]);
 
     renderPage();
@@ -267,6 +267,23 @@ describe('Suites', () => {
 
     expect(screen.queryByText(/Snoozed until/)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Snooze' })).toBeInTheDocument();
+  });
+
+  it('hides snooze controls (but keeps the badge) for a view-only user', async () => {
+    // Snooze/unsnooze are edit-gated on the backend — a viewer must not be
+    // offered a control that can only 403 (matches the sibling panels).
+    const user = userEvent.setup();
+    mockListConnections.mockResolvedValue([connection]);
+    mockListSuites.mockResolvedValue([suite({ my_permission: 'view' })]);
+    mockListChecks.mockResolvedValue([check({ alert_snoozed_until: '2099-01-01T00:00:00Z' })]);
+
+    renderPage();
+    await user.click(await screen.findByText('orders-suite'));
+    await screen.findByText('order_id not null');
+
+    expect(screen.getByText(/Snoozed until/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Snooze' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Unsnooze' })).not.toBeInTheDocument();
   });
 
   it('deletes a suite via the detail panel after confirming', async () => {

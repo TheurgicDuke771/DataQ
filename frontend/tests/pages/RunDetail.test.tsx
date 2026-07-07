@@ -112,6 +112,17 @@ describe('RunDetail page', () => {
     expect(mockGetRun).toHaveBeenCalledWith('r1');
   });
 
+  it('marks a snoozed check in the results table (#653 — triage surface)', async () => {
+    mockGetRun.mockResolvedValue(runDetail);
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([{ ...check, alert_snoozed_until: '2099-01-01T00:00:00Z' }]);
+
+    renderAt('r1');
+
+    expect(await screen.findByText('order_id not null')).toBeInTheDocument();
+    expect(screen.getByText(/Snoozed until/)).toBeInTheDocument();
+  });
+
   it('still renders when the suite name and checks fail to load', async () => {
     mockGetRun.mockResolvedValue(runDetail);
     mockGetSuite.mockRejectedValue(new Error('forbidden'));

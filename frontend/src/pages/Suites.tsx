@@ -13,7 +13,7 @@ import {
   Typography,
 } from 'antd';
 import SimpleList from '../components/SimpleList';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import {
@@ -37,7 +37,7 @@ import {
   snoozeCheck,
   type Suite,
 } from '../api/suites';
-import { formatTimestamp } from '../components/results/resultsFormat';
+import { isSnoozed, SnoozedTag } from '../components/checks/snooze';
 import { ConnectionTypeAvatar } from '../components/connections/connectionVisuals';
 import { Page } from '../components/layout/Page';
 import { LiveRunProgress } from '../components/runs/LiveRunProgress';
@@ -466,6 +466,7 @@ function SuiteDetail({
       <ChecksList
         suiteId={suite.id}
         state={state}
+        canSnooze={canRun}
         onAdd={() => navigate(`/suites/${suite.id}/checks/new`)}
         onEdit={(check) => navigate(`/suites/${suite.id}/checks/${check.id}/edit`)}
         onChanged={reload}
@@ -501,24 +502,35 @@ const SNOOZE_PRESETS = [
   { key: '168', label: '7 days', hours: 168 },
 ] as const;
 
-/** A check is snoozed only while the timestamp is in the future (#370). */
-const isSnoozed = (check: Check): boolean =>
-  check.alert_snoozed_until !== null && new Date(check.alert_snoozed_until) > new Date();
+/** How often the checks list re-evaluates snooze expiry — a lapsed snooze must
+ *  drop its badge/action without a manual refresh (minute granularity is plenty). */
+const SNOOZE_TICK_MS = 60_000;
 
 function ChecksList({
   suiteId,
   state,
+  canSnooze,
   onAdd,
   onEdit,
   onChanged,
 }: {
   suiteId: string;
   state: AsyncState<Check[]>;
+  /** Edit capability — snooze/unsnooze are edit-gated on the backend, so the
+   *  controls hide for view-only users (matching the sibling panels). */
+  canSnooze: boolean;
   onAdd: () => void;
   onEdit: (check: Check) => void;
   onChanged: () => void;
 }) {
   const { message, modal } = App.useApp();
+  // Ticks so isSnoozed() re-evaluates while the page stays open: without it an
+  // expired snooze keeps showing its badge/Unsnooze until the next refetch.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), SNOOZE_TICK_MS);
+    return () => clearInterval(id);
+  }, []);
 
   const onDelete = (check: Check) => {
     modal.confirm({
@@ -586,27 +598,38 @@ function ChecksList({
           renderItem={(check) => (
             <SimpleList.Item
               actions={[
-                isSnoozed(check) ? (
-                  <Button key="snooze" type="link" size="small" onClick={() => onUnsnooze(check)}>
-                    Unsnooze
-                  </Button>
-                ) : (
-                  <Dropdown
-                    key="snooze"
-                    menu={{
-                      items: SNOOZE_PRESETS.map((p) => ({ key: p.key, label: p.label })),
-                      onClick: ({ key }) => {
-                        const preset = SNOOZE_PRESETS.find((p) => p.key === key);
-                        if (preset) void onSnooze(check, preset.hours, preset.label);
-                      },
-                    }}
-                    trigger={['click']}
-                  >
-                    <Button type="link" size="small">
-                      Snooze
-                    </Button>
-                  </Dropdown>
-                ),
+                // Snooze/unsnooze are edit-gated (backend 403s a viewer), so the
+                // control renders only with the capability — like TriggersPanel.
+                ...(!canSnooze
+                  ? []
+                  : isSnoozed(check, now)
+                    ? [
+                        <Button
+                          key="snooze"
+                          type="link"
+                          size="small"
+                          onClick={() => onUnsnooze(check)}
+                        >
+                          Unsnooze
+                        </Button>,
+                      ]
+                    : [
+                        <Dropdown
+                          key="snooze"
+                          menu={{
+                            items: SNOOZE_PRESETS.map((p) => ({ key: p.key, label: p.label })),
+                            onClick: ({ key }) => {
+                              const preset = SNOOZE_PRESETS.find((p) => p.key === key);
+                              if (preset) void onSnooze(check, preset.hours, preset.label);
+                            },
+                          }}
+                          trigger={['click']}
+                        >
+                          <Button type="link" size="small">
+                            Snooze
+                          </Button>
+                        </Dropdown>,
+                      ]),
                 <Button key="edit" type="link" size="small" onClick={() => onEdit(check)}>
                   Edit
                 </Button>,
@@ -624,13 +647,7 @@ function ChecksList({
               <Flex vertical gap={2}>
                 <Flex gap={8} align="center" wrap>
                   <Typography.Text strong>{check.name}</Typography.Text>
-                  {isSnoozed(check) && (
-                    <Tooltip title="Alerts for this check are muted until then; results still record.">
-                      <Tag color="orange" style={{ marginInlineEnd: 0 }}>
-                        Snoozed until {formatTimestamp(check.alert_snoozed_until)}
-                      </Tag>
-                    </Tooltip>
-                  )}
+                  <SnoozedTag check={check} now={now} />
                 </Flex>
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                   {check.expectation_type}
