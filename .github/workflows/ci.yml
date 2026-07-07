@@ -378,7 +378,20 @@ jobs:
 
       - name: Install Playwright browser
         working-directory: frontend
-        run: pnpm exec playwright install --with-deps chromium
+        # Split the browser download from its OS deps (#704). The Chromium binary
+        # comes from the Playwright CDN (reliable). The `--with-deps` apt step used
+        # to fail intermittently on the runner's pre-configured
+        # packages.microsoft.com sources (azure-cli / MS-prod) — which DataQ's E2E
+        # doesn't need — so drop those sources before apt runs, then install the OS
+        # libs (from the standard Ubuntu archive) with a short retry as insurance.
+        run: |
+          pnpm exec playwright install chromium
+          sudo rm -f /etc/apt/sources.list.d/*microsoft* /etc/apt/sources.list.d/*azure* || true
+          for attempt in 1 2 3; do
+            if pnpm exec playwright install-deps chromium; then ok=1; break; fi
+            echo "playwright install-deps attempt $attempt failed; retrying in 5s…"; sleep 5
+          done
+          [ -n "${ok:-}" ] || { echo "playwright install-deps failed after 3 attempts"; exit 1; }
 
       - name: Playwright E2E
         working-directory: frontend
