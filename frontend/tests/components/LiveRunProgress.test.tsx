@@ -100,8 +100,13 @@ describe('LiveRunProgress', () => {
       .mockResolvedValue(progress('succeeded'));
     renderDrawer({ pollMs: 5 });
 
-    expect(await screen.findByText('View full results →')).toBeInTheDocument();
-    expect(screen.getByText('succeeded')).toBeInTheDocument();
+    // Wait on the terminal signal itself — the `succeeded` status tag — not the
+    // "View full results →" link, which renders unconditionally from the first
+    // (running) poll onward, so it can't tell us the run has reached terminal.
+    // (This bare getByText after the link was the CI flake — the second poll
+    // hadn't landed `succeeded` yet on slow runners. #640.)
+    expect(await screen.findByText('succeeded')).toBeInTheDocument();
+    expect(screen.getByText('View full results →')).toBeInTheDocument();
     const callsAtTerminal = mockProgress.mock.calls.length;
     // Give a couple of intervals: no further polling once terminal.
     await new Promise((r) => setTimeout(r, 30));
