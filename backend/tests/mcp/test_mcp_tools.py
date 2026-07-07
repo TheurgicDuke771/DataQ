@@ -145,6 +145,26 @@ def test_get_health_score_rejects_bad_window(db_session: Any, monkeypatch: Any) 
         server.get_health_score(window_days=0)
 
 
+def test_get_health_score_workspace_admin_aggregates_unowned_runs(
+    db_session: Any, monkeypatch: Any, make_workspace_admin: Any
+) -> None:
+    # The aggregate honours the workspace-admin view (ADR 0027): a run on a suite
+    # the caller doesn't own counts for an admin but not for a plain outsider.
+    owner = _user(db_session, "owner@acme.io")
+    suite = _suite(db_session, owner)
+    db_session.add(Run(suite_id=suite.id, status="succeeded"))
+    db_session.commit()
+
+    outsider = _user(db_session, "outsider@acme.io")
+    _as(monkeypatch, db_session, outsider)
+    assert server.get_health_score()["total_runs"] == 0
+
+    admin = _user(db_session, "admin@acme.io")
+    make_workspace_admin(admin.email)
+    _as(monkeypatch, db_session, admin)
+    assert server.get_health_score()["total_runs"] >= 1
+
+
 def test_get_adf_pipeline_status_correlates_dq_run(db_session: Any, monkeypatch: Any) -> None:
     user = _user(db_session)
     suite = _suite(db_session, user)
