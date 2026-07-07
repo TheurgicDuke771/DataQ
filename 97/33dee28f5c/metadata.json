@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "9733dee28f5c",
+  "strategy": "manual-commit",
+  "branch": "fix/mcp-host-guard-421",
+  "checkpoints_count": 7,
+  "files_touched": [
+    "backend/app/mcp/server.py",
+    "backend/tests/mcp/test_mcp_tools.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/97/33dee28f5c/0/metadata.json",
+      "transcript": "/97/33dee28f5c/0/full.jsonl",
+      "compact_transcript": "/97/33dee28f5c/0/transcript.jsonl",
+      "content_hash": "/97/33dee28f5c/0/content_hash.txt",
+      "prompt": "/97/33dee28f5c/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 70246,
+    "cache_creation_tokens": 2258451,
+    "cache_read_tokens": 125454219,
+    "output_tokens": 291089,
+    "api_call_count": 464
+  }
+}
