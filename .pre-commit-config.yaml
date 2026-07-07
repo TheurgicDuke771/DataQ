@@ -24,7 +24,7 @@ repos:
         additional_dependencies:
           - fastapi==0.138.2
           - fastapi-azure-auth==5.2.0
-          - fastmcp==3.4.2
+          - fastmcp==3.4.3
           - psycopg2-binary==2.9.12
           - pydantic==2.13.4
           - pydantic-settings==2.14.2

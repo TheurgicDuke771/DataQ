@@ -60,4 +60,4 @@ databricks-sqlalchemy==2.0.10      # the SQLAlchemy 'databricks' dialect — SPL
 pyarrow==24.0.0                   # Parquet flat-file IO (read_parquet/profiler) — was a databricks-sql-connector transitive until its 4.x dropped it (#201)
 
 # ── MCP (Week 7) ──
-fastmcp==3.4.2                    # CVE-2025-62800/62801/64340/69196, GHSA-rcfx-77hg-w2wv, CVE-2026-27124 (was 2.8.1)
+fastmcp==3.4.3                    # CVE-2025-62800/62801/64340/69196, GHSA-rcfx-77hg-w2wv, CVE-2026-27124 (was 2.8.1)
