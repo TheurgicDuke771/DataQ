@@ -1,0 +1,53 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_id": "e81c1df54e5f",
+  "session_id": "f8607eed-94ec-4cd0-9183-50907aef99c0",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-07T17:17:26.033855Z",
+  "branch": "feature/488-mcp-admin-visibility",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/app/api/v1/schedules.py",
+    "backend/app/mcp/server.py",
+    "backend/app/services/schedule_service.py",
+    "backend/tests/api/test_schedules.py",
+    "backend/tests/mcp/test_mcp_tools.py"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "1a0f6cb08bf0",
+  "token_usage": {
+    "input_tokens": 12699,
+    "cache_creation_tokens": 112119,
+    "cache_read_tokens": 5253123,
+    "output_tokens": 28712,
+    "api_call_count": 57
+  },
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-07T17:17:26.009707Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 119,
+    "human_modified": 9,
+    "human_removed": 0,
+    "total_committed": 119,
+    "total_lines_changed": 128,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}
