@@ -81,7 +81,7 @@ export function Results() {
   const [runNowOpen, setRunNowOpen] = useState(false);
   return (
     <Page>
-      <Flex justify="space-between" align="center" gap={12}>
+      <Flex justify="space-between" align="center" gap={12} wrap>
         <Typography.Title level={3} style={{ margin: 0 }}>
           Results
         </Typography.Title>
@@ -295,6 +295,7 @@ function RunsTab() {
         </Filter>
       </Flex>
       <Table<Run>
+        scroll={{ x: 'max-content' }}
         rowKey="id"
         columns={columns}
         dataSource={runs}
@@ -464,6 +465,7 @@ function PipelineRunsTab({ pollMs = PIPELINE_POLL_MS }: { pollMs?: number }) {
         </Filter>
       </Flex>
       <Table<PipelineRun>
+        scroll={{ x: 'max-content' }}
         rowKey="id"
         columns={columns}
         dataSource={rows}

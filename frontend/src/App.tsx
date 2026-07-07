@@ -5,14 +5,15 @@ import {
   DashboardOutlined,
   DownOutlined,
   LogoutOutlined,
+  MenuOutlined,
   ReadOutlined,
   SafetyOutlined,
   SettingOutlined,
   UserOutlined,
 } from '@ant-design/icons';
-import { Avatar, Dropdown, Flex, Layout, Menu, Spin, Tag, Typography } from 'antd';
+import { Avatar, Button, Dropdown, Flex, Layout, Menu, Spin, Tag, Typography } from 'antd';
 import type { MenuProps } from 'antd';
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 
 import { AuthGate } from './auth/AuthGate';
@@ -83,6 +84,12 @@ const SELECTABLE_KEYS = [...NAV_ITEMS, ...ADMIN_FOOTER_ITEMS].map((i) => i.key);
 export function App() {
   const location = useLocation();
   const isAdmin = useIsWorkspaceAdmin();
+  // Narrow-viewport nav (#617): below the `lg` breakpoint the Sider collapses to
+  // zero width. AntD's built-in zero-width trigger floats over every page's
+  // heading, so it's disabled (`trigger={null}`) and replaced by a ☰ toggle in
+  // the Header, which has reserved space.
+  const [navCollapsed, setNavCollapsed] = useState(false);
+  const [narrow, setNarrow] = useState(false);
   const footerItems = isAdmin ? [...ADMIN_FOOTER_ITEMS, DOC_ITEM] : [DOC_ITEM];
   // Highlight the nav item whose path matches the current location — exact, or a
   // sub-path at a segment boundary (so `/suites` matches `/suites/123` but not a
@@ -106,6 +113,15 @@ export function App() {
             borderBottom: `1px solid ${BRAND.border}`,
           }}
         >
+          {narrow && (
+            <Button
+              type="text"
+              icon={<MenuOutlined />}
+              aria-label="Toggle navigation"
+              onClick={() => setNavCollapsed((c) => !c)}
+              style={{ marginInlineStart: -8 }}
+            />
+          )}
           <Link to="/" aria-label="DataQ home" style={{ flex: 1 }}>
             <Flex align="center" gap={10}>
               <BrandMark />
@@ -122,6 +138,12 @@ export function App() {
             theme="light"
             breakpoint="lg"
             collapsedWidth={0}
+            trigger={null}
+            collapsed={navCollapsed}
+            onBreakpoint={(broken) => {
+              setNarrow(broken);
+              setNavCollapsed(broken);
+            }}
             style={{ borderInlineEnd: `1px solid ${BRAND.border}`, height: '100%' }}
           >
             {/* Primary nav up top, footer group (Admin · Settings · Documentation)
@@ -133,6 +155,7 @@ export function App() {
                 mode="inline"
                 selectedKeys={selectedKeys}
                 items={NAV_ITEMS}
+                onClick={() => narrow && setNavCollapsed(true)}
                 style={{
                   borderInlineEnd: 0,
                   paddingTop: 8,
@@ -145,6 +168,7 @@ export function App() {
                 mode="inline"
                 selectedKeys={selectedKeys}
                 items={footerItems}
+                onClick={() => narrow && setNavCollapsed(true)}
                 style={{
                   borderInlineEnd: 0,
                   borderTop: `1px solid ${BRAND.border}`,

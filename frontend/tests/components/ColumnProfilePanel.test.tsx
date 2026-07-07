@@ -83,7 +83,9 @@ describe('ColumnProfilePanel', () => {
     expect(await screen.findByText('5 (0.5%)')).toBeInTheDocument();
     expect(screen.getByText('990')).toBeInTheDocument();
     expect(screen.getByText('9999')).toBeInTheDocument();
-    expect(screen.getByText('Top value')).toBeInTheDocument();
+    // getAllByText: with horizontal scroll (#617) antd renders a fixed-header
+    // table structure that duplicates the header cells.
+    expect(screen.getAllByText('Top value').length).toBeGreaterThan(0);
   });
 
   it('surfaces the API error message when the profile fails', async () => {

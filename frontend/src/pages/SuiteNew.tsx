@@ -17,7 +17,7 @@ export function SuiteNew() {
 
   return (
     <Page width={'form'}>
-      <Flex justify="space-between" align="center" gap={12}>
+      <Flex justify="space-between" align="center" gap={12} wrap>
         <Flex vertical gap={2}>
           <Typography.Title level={3} style={{ margin: 0 }}>
             New suite

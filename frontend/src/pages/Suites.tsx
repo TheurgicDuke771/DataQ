@@ -7,6 +7,7 @@ import {
   Dropdown,
   Empty,
   Flex,
+  Grid,
   Spin,
   Tag,
   Tooltip,
@@ -128,7 +129,7 @@ export function Suites() {
 
   return (
     <Page>
-      <Flex justify="space-between" align="center" gap={12}>
+      <Flex justify="space-between" align="center" gap={12} wrap>
         <Typography.Title level={3} style={{ margin: 0 }}>
           Suites
         </Typography.Title>
@@ -200,6 +201,12 @@ function SuitesBody({
   onEdit: (suite: Suite) => void;
   onDeleted: () => void;
 }) {
+  // Below `md` the side-by-side master-detail leaves ~0px for the detail pane
+  // (title wraps one char per line — #617 bug 1), so it stacks vertically.
+  // `=== false` (not `!screens.md`): useBreakpoint returns {} on the first
+  // render, and desktop must not flash the stacked layout.
+  const screens = Grid.useBreakpoint();
+  const stacked = screens.md === false;
   if (state.status === 'loading') {
     return <Spin description="Loading suites…" size="large" style={{ marginTop: 80 }} />;
   }
@@ -228,8 +235,12 @@ function SuitesBody({
   }
 
   return (
-    <Flex gap={24} align="flex-start">
-      <Card size="small" style={{ width: 320, flexShrink: 0 }} styles={{ body: { padding: 0 } }}>
+    <Flex gap={24} align={stacked ? 'stretch' : 'flex-start'} vertical={stacked}>
+      <Card
+        size="small"
+        style={{ width: stacked ? '100%' : 320, flexShrink: 0 }}
+        styles={{ body: { padding: 0 } }}
+      >
         <SimpleList
           dataSource={suites}
           renderItem={(suite) => {
@@ -413,8 +424,10 @@ function SuiteDetail({
 
   return (
     <Flex vertical gap={16}>
-      <Flex justify="space-between" align="flex-start" gap={12}>
-        <Flex vertical gap={6}>
+      {/* `wrap` + minWidth: on a narrow viewport the action buttons drop to
+          their own line instead of squeezing the title to char-per-line (#617). */}
+      <Flex justify="space-between" align="flex-start" gap={12} wrap>
+        <Flex vertical gap={6} style={{ minWidth: 200 }}>
           <Typography.Title level={4} style={{ margin: 0 }}>
             {suite.name}
           </Typography.Title>
@@ -429,7 +442,7 @@ function SuiteDetail({
             <Typography.Text type="secondary">Connection {suite.connection_id}</Typography.Text>
           )}
         </Flex>
-        <Flex gap={8}>
+        <Flex gap={8} wrap>
           {canRun &&
             (suite.target ? (
               <Button

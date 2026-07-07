@@ -34,7 +34,7 @@ function ConnectionEditView({ connectionId }: { connectionId?: string }) {
 
   return (
     <Page width={'form'}>
-      <Flex justify="space-between" align="center" gap={12}>
+      <Flex justify="space-between" align="center" gap={12} wrap>
         <Typography.Title level={3} style={{ margin: 0 }}>
           {state.status === 'ok'
             ? `Edit ${CONNECTION_TYPE_LABELS[state.data.type]} connection`
