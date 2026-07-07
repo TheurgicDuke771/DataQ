@@ -28,11 +28,7 @@ export type CheckKind = 'expectation' | 'freshness' | 'volume';
  * a reserved-only category (surfaced disabled on the dedicated page).
  */
 export type ExpectationCategory =
-  | 'Column values'
-  | 'Table shape'
-  | 'Freshness'
-  | 'Volume'
-  | 'Custom SQL';
+  'Column values' | 'Table shape' | 'Freshness' | 'Volume' | 'Custom SQL';
 
 export const EXPECTATION_CATEGORIES: ExpectationCategory[] = [
   'Column values',

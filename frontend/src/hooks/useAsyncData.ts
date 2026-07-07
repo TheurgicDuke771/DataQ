@@ -2,9 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 
 /** Three-state result of an async fetch. */
 export type AsyncState<T> =
-  | { status: 'loading' }
-  | { status: 'ok'; data: T }
-  | { status: 'error'; error: string };
+  { status: 'loading' } | { status: 'ok'; data: T } | { status: 'error'; error: string };
 
 /**
  * Fetch on mount (and on `reload()`), with a cancelled-guard so a late
