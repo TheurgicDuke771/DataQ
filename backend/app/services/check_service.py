@@ -159,20 +159,28 @@ def _has_positive_threshold(fail: Decimal | None, critical: Decimal | None) -> b
     return (fail is not None and fail > 0) or (critical is not None and critical > 0)
 
 
-# Longest string allowed anywhere in an expectation config. Generous for real
-# kwargs (column names, value-set members, regexes) while blocking the
-# 100KB-column-name class of junk GX itself accepts (#651). Custom-SQL queries
-# are validated (and bounded) separately and never reach this walk.
-_CONFIG_STRING_MAX_CHARS = 1_000
+# Longest string allowed anywhere in an expectation config (keys AND values).
+# Generous for real kwargs — a long regex or value-set member runs fine on the
+# worker, so the cap must not reject anything the runner would execute — while
+# still blocking the 100KB-column-name class of junk GX itself accepts (#651).
+# Custom-SQL queries are validated (and bounded) separately, never by this walk.
+_CONFIG_STRING_MAX_CHARS = 10_000
+
+# The reported path/type in a 422 is bounded too — the error envelope is echoed
+# to the client and logged, so it must not round-trip the oversized input.
+_ERROR_ECHO_MAX_CHARS = 200
 
 
 def _find_oversized_string(value: Any, path: str = "config") -> str | None:
-    """Depth-first search for a string over the cap; returns its path, or None."""
+    """Depth-first search for a string over the cap (dict keys included);
+    returns its (bounded) path, or None."""
     if isinstance(value, str):
         return path if len(value) > _CONFIG_STRING_MAX_CHARS else None
     if isinstance(value, dict):
         for key, item in value.items():
-            found = _find_oversized_string(item, f"{path}.{key}")
+            if isinstance(key, str) and len(key) > _CONFIG_STRING_MAX_CHARS:
+                return f"{path}.{key[:_ERROR_ECHO_MAX_CHARS]}… (key)"
+            found = _find_oversized_string(item, f"{path}.{key[:_ERROR_ECHO_MAX_CHARS]}")
             if found:
                 return found
     if isinstance(value, list):
@@ -215,10 +223,13 @@ def validate_expectation_check(expectation_type: str, config: dict[str, Any]) ->
     if expectation_cls is None or not (
         isinstance(expectation_cls, type) and issubclass(expectation_cls, Expectation)
     ):
+        # Bounded echo: REST caps expectation_type at 128 chars, but the MCP
+        # tools don't — never round-trip an unbounded string through the 422
+        # envelope and the error log.
         raise CheckConfigInvalidError(
-            f"unknown expectation_type {expectation_type!r} — not a Great Expectations "
-            "expectation",
-            detail={"expectation_type": expectation_type},
+            f"unknown expectation_type {expectation_type[:_ERROR_ECHO_MAX_CHARS]!r} — "
+            "not a Great Expectations expectation",
+            detail={"expectation_type": expectation_type[:_ERROR_ECHO_MAX_CHARS]},
         )
     try:
         expectation_cls(**config)
@@ -226,8 +237,8 @@ def validate_expectation_check(expectation_type: str, config: dict[str, Any]) ->
         # pydantic ValidationError (missing/wrong-typed/extra kwargs) or a GX
         # root-validator error; the message is user-actionable, so surface it.
         raise CheckConfigInvalidError(
-            f"invalid config for {expectation_type}: {str(exc)[:500]}",
-            detail={"expectation_type": expectation_type},
+            f"invalid config for {expectation_type[:_ERROR_ECHO_MAX_CHARS]}: {str(exc)[:500]}",
+            detail={"expectation_type": expectation_type[:_ERROR_ECHO_MAX_CHARS]},
         ) from exc
 
 
@@ -389,7 +400,11 @@ def update_check(
             config=new_config,
             connection_type=_connection_type(session, suite),
         )
-    else:
+    elif expectation_type is not None or config is not None:
+        # GX-validate only when the PATCH touches the expectation itself: a
+        # rename or threshold tweak must stay possible on a pre-#651 check whose
+        # stored config today's pinned GX rejects (there is no config backfill —
+        # such a row would otherwise be un-editable until delete-and-recreate).
         validate_expectation_check(new_expectation_type, new_config)
 
     if name is not None:
