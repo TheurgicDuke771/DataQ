@@ -176,6 +176,7 @@ function ApiKeyTable({ keys, onChanged }: { keys: ApiKey[]; onChanged: () => voi
 
   return (
     <Table<ApiKey>
+      scroll={{ x: 'max-content' }}
       rowKey="id"
       size="small"
       columns={columns}

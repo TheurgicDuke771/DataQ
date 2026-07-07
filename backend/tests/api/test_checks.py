@@ -117,6 +117,132 @@ def test_create_blank_name_or_expectation_returns_422(client: TestClient, db_ses
     assert blank_type.status_code == 422
 
 
+# ───────────────────────── expectation-kind validation (#651) ──────
+
+
+def test_create_rejects_unknown_expectation_type(client: TestClient, db_session: Any) -> None:
+    # Not a GX expectation → 422, never 201 (previously persisted silently).
+    sid = _suite_id(client, db_session)
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks",
+        json=_payload(expectation_type="expect_totally_made_up_thing"),
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "check_config_invalid"
+    assert "expect_totally_made_up_thing" in resp.json()["error"]["message"]
+
+
+def test_create_rejects_missing_required_config_keys(client: TestClient, db_session: Any) -> None:
+    # expect_column_values_to_be_between with an empty config lacks the
+    # required `column` (and both bounds) — GX construction fails → 422.
+    sid = _suite_id(client, db_session)
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks",
+        json=_payload(expectation_type="expect_column_values_to_be_between", config={}),
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "check_config_invalid"
+
+
+def test_create_rejects_both_bounds_missing(client: TestClient, db_session: Any) -> None:
+    # GX's own root validator: min_value and max_value cannot both be None.
+    sid = _suite_id(client, db_session)
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks",
+        json=_payload(
+            expectation_type="expect_column_values_to_be_between", config={"column": "amount"}
+        ),
+    )
+    assert resp.status_code == 422
+
+
+def test_create_rejects_wrong_typed_config_values(client: TestClient, db_session: Any) -> None:
+    sid = _suite_id(client, db_session)
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks",
+        json=_payload(
+            expectation_type="expect_column_values_to_be_between",
+            config={"column": "amount", "min_value": "not-a-number", "max_value": []},
+        ),
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "check_config_invalid"
+
+
+def test_create_rejects_unknown_config_keys(client: TestClient, db_session: Any) -> None:
+    # GX expectations forbid extra kwargs — a typo'd key must not persist.
+    sid = _suite_id(client, db_session)
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks",
+        json=_payload(config={"column": "order_id", "colunm_typo": "x"}),
+    )
+    assert resp.status_code == 422
+
+
+def test_create_rejects_oversized_config_string(client: TestClient, db_session: Any) -> None:
+    # A 100KB "column name" previously persisted; the size cap 422s it —
+    # including when nested inside a list (value_set-style).
+    sid = _suite_id(client, db_session)
+    huge = "x" * 100_000
+    flat = client.post(f"/api/v1/suites/{sid}/checks", json=_payload(config={"column": huge}))
+    assert flat.status_code == 422
+    nested = client.post(
+        f"/api/v1/suites/{sid}/checks",
+        json=_payload(
+            expectation_type="expect_column_values_to_be_in_set",
+            config={"column": "order_id", "value_set": ["ok", huge]},
+        ),
+    )
+    assert nested.status_code == 422
+
+
+def test_update_revalidates_expectation_config(client: TestClient, db_session: Any) -> None:
+    # PATCH must apply the same gate on the post-patch state: a valid check
+    # cannot be edited into garbage, and a rejected PATCH persists nothing.
+    sid = _suite_id(client, db_session)
+    created = client.post(f"/api/v1/suites/{sid}/checks", json=_payload())
+    cid = created.json()["id"]
+
+    bad_type = client.patch(
+        f"/api/v1/suites/{sid}/checks/{cid}", json={"expectation_type": "expect_nonsense"}
+    )
+    assert bad_type.status_code == 422
+    bad_config = client.patch(
+        f"/api/v1/suites/{sid}/checks/{cid}", json={"config": {"column": "order_id", "bogus": 1}}
+    )
+    assert bad_config.status_code == 422
+    unchanged = client.get(f"/api/v1/suites/{sid}/checks/{cid}").json()
+    assert unchanged["expectation_type"] == "expect_column_values_to_not_be_null"
+    assert unchanged["config"] == {"column": "order_id"}
+
+
+def test_import_rejects_invalid_expectation_check(client: TestClient, db_session: Any) -> None:
+    # The import path must not smuggle in a check a direct POST would 422 —
+    # and it is atomic, so the bad document writes no suite at all.
+    sid = _suite_id(client, db_session)
+    suite = client.get(f"/api/v1/suites/{sid}").json()
+    document = {
+        "version": 1,
+        "name": "smuggled",
+        "description": None,
+        "checks": [
+            {
+                "name": "junk",
+                "kind": "expectation",
+                "expectation_type": "expect_totally_made_up_thing",
+                "config": {},
+            }
+        ],
+    }
+    resp = client.post(
+        "/api/v1/suites/import",
+        json={"document": document, "connection_id": suite["connection_id"]},
+    )
+    assert resp.status_code == 422
+    names = [s["name"] for s in client.get("/api/v1/suites").json()]
+    assert "smuggled" not in names
+
+
 # ───────────────────────── custom-SQL (ADR 0019) ───────────────────
 
 

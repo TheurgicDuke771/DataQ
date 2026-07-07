@@ -54,7 +54,7 @@ function CheckEditView({ suiteId, checkId }: { suiteId?: string; checkId?: strin
 
   return (
     <Page width={'form'}>
-      <Flex justify="space-between" align="center" gap={12}>
+      <Flex justify="space-between" align="center" gap={12} wrap>
         <Typography.Title level={3} style={{ margin: 0 }}>
           {state.status === 'ok' ? `Edit “${state.data.check.name}”` : 'Edit check'}
         </Typography.Title>

@@ -1,7 +1,20 @@
 import { PlayCircleOutlined } from '@ant-design/icons';
-import { App, Alert, Button, Card, Empty, Flex, Spin, Tag, Tooltip, Typography } from 'antd';
+import {
+  App,
+  Alert,
+  Button,
+  Card,
+  Dropdown,
+  Empty,
+  Flex,
+  Grid,
+  Spin,
+  Tag,
+  Tooltip,
+  Typography,
+} from 'antd';
 import SimpleList from '../components/SimpleList';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import {
@@ -16,13 +29,16 @@ import {
   canManageSuite,
   canRunSuite,
   type Check,
+  clearCheckSnooze,
   deleteCheck,
   deleteSuite,
   exportSuite,
   listChecks,
   listSuites,
+  snoozeCheck,
   type Suite,
 } from '../api/suites';
+import { isSnoozed, SnoozedTag } from '../components/checks/snooze';
 import { ConnectionTypeAvatar } from '../components/connections/connectionVisuals';
 import { Page } from '../components/layout/Page';
 import { LiveRunProgress } from '../components/runs/LiveRunProgress';
@@ -113,7 +129,7 @@ export function Suites() {
 
   return (
     <Page>
-      <Flex justify="space-between" align="center" gap={12}>
+      <Flex justify="space-between" align="center" gap={12} wrap>
         <Typography.Title level={3} style={{ margin: 0 }}>
           Suites
         </Typography.Title>
@@ -185,6 +201,12 @@ function SuitesBody({
   onEdit: (suite: Suite) => void;
   onDeleted: () => void;
 }) {
+  // Below `md` the side-by-side master-detail leaves ~0px for the detail pane
+  // (title wraps one char per line — #617 bug 1), so it stacks vertically.
+  // `=== false` (not `!screens.md`): useBreakpoint returns {} on the first
+  // render, and desktop must not flash the stacked layout.
+  const screens = Grid.useBreakpoint();
+  const stacked = screens.md === false;
   if (state.status === 'loading') {
     return <Spin description="Loading suites…" size="large" style={{ marginTop: 80 }} />;
   }
@@ -213,8 +235,12 @@ function SuitesBody({
   }
 
   return (
-    <Flex gap={24} align="flex-start">
-      <Card size="small" style={{ width: 320, flexShrink: 0 }} styles={{ body: { padding: 0 } }}>
+    <Flex gap={24} align={stacked ? 'stretch' : 'flex-start'} vertical={stacked}>
+      <Card
+        size="small"
+        style={{ width: stacked ? '100%' : 320, flexShrink: 0 }}
+        styles={{ body: { padding: 0 } }}
+      >
         <SimpleList
           dataSource={suites}
           renderItem={(suite) => {
@@ -398,8 +424,10 @@ function SuiteDetail({
 
   return (
     <Flex vertical gap={16}>
-      <Flex justify="space-between" align="flex-start" gap={12}>
-        <Flex vertical gap={6}>
+      {/* `wrap` + minWidth: on a narrow viewport the action buttons drop to
+          their own line instead of squeezing the title to char-per-line (#617). */}
+      <Flex justify="space-between" align="flex-start" gap={12} wrap>
+        <Flex vertical gap={6} style={{ minWidth: 200 }}>
           <Typography.Title level={4} style={{ margin: 0 }}>
             {suite.name}
           </Typography.Title>
@@ -414,7 +442,7 @@ function SuiteDetail({
             <Typography.Text type="secondary">Connection {suite.connection_id}</Typography.Text>
           )}
         </Flex>
-        <Flex gap={8}>
+        <Flex gap={8} wrap>
           {canRun &&
             (suite.target ? (
               <Button
@@ -451,6 +479,7 @@ function SuiteDetail({
       <ChecksList
         suiteId={suite.id}
         state={state}
+        canSnooze={canRun}
         onAdd={() => navigate(`/suites/${suite.id}/checks/new`)}
         onEdit={(check) => navigate(`/suites/${suite.id}/checks/${check.id}/edit`)}
         onChanged={reload}
@@ -479,20 +508,42 @@ function SuiteDetail({
   );
 }
 
+/** Snooze duration presets — hours, capped well under the backend's 720h max. */
+const SNOOZE_PRESETS = [
+  { key: '1', label: '1 hour', hours: 1 },
+  { key: '24', label: '24 hours', hours: 24 },
+  { key: '168', label: '7 days', hours: 168 },
+] as const;
+
+/** How often the checks list re-evaluates snooze expiry — a lapsed snooze must
+ *  drop its badge/action without a manual refresh (minute granularity is plenty). */
+const SNOOZE_TICK_MS = 60_000;
+
 function ChecksList({
   suiteId,
   state,
+  canSnooze,
   onAdd,
   onEdit,
   onChanged,
 }: {
   suiteId: string;
   state: AsyncState<Check[]>;
+  /** Edit capability — snooze/unsnooze are edit-gated on the backend, so the
+   *  controls hide for view-only users (matching the sibling panels). */
+  canSnooze: boolean;
   onAdd: () => void;
   onEdit: (check: Check) => void;
   onChanged: () => void;
 }) {
   const { message, modal } = App.useApp();
+  // Ticks so isSnoozed() re-evaluates while the page stays open: without it an
+  // expired snooze keeps showing its badge/Unsnooze until the next refetch.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), SNOOZE_TICK_MS);
+    return () => clearInterval(id);
+  }, []);
 
   const onDelete = (check: Check) => {
     modal.confirm({
@@ -510,6 +561,26 @@ function ChecksList({
         }
       },
     });
+  };
+
+  const onSnooze = async (check: Check, hours: number, label: string) => {
+    try {
+      await snoozeCheck(suiteId, check.id, hours);
+      message.success(`${check.name}: alerts snoozed for ${label}`);
+      onChanged();
+    } catch (err) {
+      message.error(`Snooze failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+    }
+  };
+
+  const onUnsnooze = async (check: Check) => {
+    try {
+      await clearCheckSnooze(suiteId, check.id);
+      message.success(`${check.name}: alerts active again`);
+      onChanged();
+    } catch (err) {
+      message.error(`Unsnooze failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+    }
   };
 
   if (state.status === 'loading') {
@@ -540,6 +611,38 @@ function ChecksList({
           renderItem={(check) => (
             <SimpleList.Item
               actions={[
+                // Snooze/unsnooze are edit-gated (backend 403s a viewer), so the
+                // control renders only with the capability — like TriggersPanel.
+                ...(!canSnooze
+                  ? []
+                  : isSnoozed(check, now)
+                    ? [
+                        <Button
+                          key="snooze"
+                          type="link"
+                          size="small"
+                          onClick={() => onUnsnooze(check)}
+                        >
+                          Unsnooze
+                        </Button>,
+                      ]
+                    : [
+                        <Dropdown
+                          key="snooze"
+                          menu={{
+                            items: SNOOZE_PRESETS.map((p) => ({ key: p.key, label: p.label })),
+                            onClick: ({ key }) => {
+                              const preset = SNOOZE_PRESETS.find((p) => p.key === key);
+                              if (preset) void onSnooze(check, preset.hours, preset.label);
+                            },
+                          }}
+                          trigger={['click']}
+                        >
+                          <Button type="link" size="small">
+                            Snooze
+                          </Button>
+                        </Dropdown>,
+                      ]),
                 <Button key="edit" type="link" size="small" onClick={() => onEdit(check)}>
                   Edit
                 </Button>,
@@ -555,7 +658,10 @@ function ChecksList({
               ]}
             >
               <Flex vertical gap={2}>
-                <Typography.Text strong>{check.name}</Typography.Text>
+                <Flex gap={8} align="center" wrap>
+                  <Typography.Text strong>{check.name}</Typography.Text>
+                  <SnoozedTag check={check} now={now} />
+                </Flex>
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                   {check.expectation_type}
                 </Typography.Text>

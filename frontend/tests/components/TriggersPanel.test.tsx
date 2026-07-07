@@ -7,6 +7,8 @@ import {
   createTriggerBinding,
   deleteTriggerBinding,
   listTriggerBindings,
+  ORCHESTRATION_PROVIDERS,
+  PROVIDER_LABELS,
   setTriggerBindingEnabled,
   type TriggerBinding,
 } from '../../src/api/triggerBindings';
@@ -64,6 +66,24 @@ describe('TriggersPanel', () => {
     expect(
       await screen.findByText('No triggers — this suite runs only on manual / scheduled runs.'),
     ).toBeInTheDocument();
+  });
+
+  it('offers every orchestration provider in the add-form dropdown (#652 — incl. dbt)', async () => {
+    // Parametrized over the shared tuple so the NEXT provider addition is caught
+    // here too, not just dbt (the ADR-0029 gap this guards against).
+    mockList.mockResolvedValue([]);
+    const user = userEvent.setup();
+    renderPanel();
+    await screen.findByText(/No triggers/);
+
+    const [providerSelect] = screen.getAllByRole('combobox');
+    await user.click(providerSelect);
+    for (const provider of ORCHESTRATION_PROVIDERS) {
+      // findByTitle: AntD's role=option list is a truncated a11y mirror; the
+      // real dropdown items carry the label as `title`.
+      expect(await screen.findByTitle(PROVIDER_LABELS[provider])).toBeInTheDocument();
+    }
+    expect(ORCHESTRATION_PROVIDERS).toContain('dbt');
   });
 
   it('adds a binding from the provider/pipeline/env form', async () => {

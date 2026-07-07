@@ -9,12 +9,27 @@ import { api } from './client';
  * pipeline/DAG id is bound to a suite.
  */
 
-export const ORCHESTRATION_PROVIDERS = ['adf', 'airflow'] as const;
+/** Mirrors the backend `ORCHESTRATION_PROVIDERS` tuple (db/models.py — ADR 0029). */
+export const ORCHESTRATION_PROVIDERS = ['adf', 'airflow', 'dbt'] as const;
 export type OrchestrationProvider = (typeof ORCHESTRATION_PROVIDERS)[number];
 
 export const PROVIDER_LABELS: Record<OrchestrationProvider, string> = {
   adf: 'Azure Data Factory',
   airflow: 'Apache Airflow',
+  dbt: 'dbt',
+};
+
+/**
+ * What each provider's DataQ callback snippet hooks into — used in setup copy
+ * ("Configured in the <noun> callback snippet"). Exhaustive over the tuple so a
+ * new provider is a compile error here, not silently inherited Airflow wording
+ * (the #647 mislabeling class, one layer up). ADF authenticates via URL token
+ * (no snippet), so its entry is only for exhaustiveness.
+ */
+export const PROVIDER_CALLBACK_NOUNS: Record<OrchestrationProvider, string> = {
+  adf: 'pipeline',
+  airflow: 'DAG',
+  dbt: 'post-build',
 };
 
 /** Mirrors the backend `TriggerBindingRead`. */

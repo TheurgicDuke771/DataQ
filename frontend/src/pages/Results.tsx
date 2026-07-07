@@ -23,6 +23,11 @@ import {
   RUN_STATUSES,
 } from '../api/runs';
 import { listSuites } from '../api/suites';
+import {
+  ORCHESTRATION_PROVIDERS,
+  type OrchestrationProvider,
+  PROVIDER_LABELS,
+} from '../api/triggerBindings';
 import { Page } from '../components/layout/Page';
 import { RunNowPanel } from '../components/runs/RunNowPanel';
 import { useAsyncData } from '../hooks/useAsyncData';
@@ -76,7 +81,7 @@ export function Results() {
   const [runNowOpen, setRunNowOpen] = useState(false);
   return (
     <Page>
-      <Flex justify="space-between" align="center" gap={12}>
+      <Flex justify="space-between" align="center" gap={12} wrap>
         <Typography.Title level={3} style={{ margin: 0 }}>
           Results
         </Typography.Title>
@@ -290,6 +295,7 @@ function RunsTab() {
         </Filter>
       </Flex>
       <Table<Run>
+        scroll={{ x: 'max-content' }}
         rowKey="id"
         columns={columns}
         dataSource={runs}
@@ -318,7 +324,7 @@ function PipelineRunsTab({ pollMs = PIPELINE_POLL_MS }: { pollMs?: number }) {
   const { state: runsState, reload: reloadRuns } = useAsyncData(() =>
     listRuns({ limit: LIST_LIMIT }),
   );
-  const [provider, setProvider] = useState<'all' | 'adf' | 'airflow'>('all');
+  const [provider, setProvider] = useState<'all' | OrchestrationProvider>('all');
   const [dateWindow, setDateWindow] = useState<DateWindow>('all');
 
   // Refresh both sources on the poll cadence; `reload` keeps the current rows
@@ -361,7 +367,12 @@ function PipelineRunsTab({ pollMs = PIPELINE_POLL_MS }: { pollMs?: number }) {
   });
 
   const columns: ColumnsType<PipelineRun> = [
-    { title: 'Provider', dataIndex: 'provider', width: 110, render: (p: string) => <Tag>{p}</Tag> },
+    {
+      title: 'Provider',
+      dataIndex: 'provider',
+      width: 140,
+      render: (p: OrchestrationProvider) => <Tag>{PROVIDER_LABELS[p]}</Tag>,
+    },
     { title: 'Pipeline / DAG', dataIndex: 'pipeline_or_dag_id' },
     {
       // The provider's own run id — the handle for cross-referencing this run in
@@ -433,14 +444,14 @@ function PipelineRunsTab({ pollMs = PIPELINE_POLL_MS }: { pollMs?: number }) {
       )}
       <Flex gap={12} align="flex-end" wrap>
         <Filter label="Provider">
-          <Select<'all' | 'adf' | 'airflow'>
+          <Select<'all' | OrchestrationProvider>
             value={provider}
             onChange={setProvider}
-            style={{ width: 160 }}
+            style={{ width: 180 }}
+            aria-label="Provider"
             options={[
               { value: 'all', label: 'All' },
-              { value: 'adf', label: 'ADF' },
-              { value: 'airflow', label: 'Airflow' },
+              ...ORCHESTRATION_PROVIDERS.map((p) => ({ value: p, label: PROVIDER_LABELS[p] })),
             ]}
           />
         </Filter>
@@ -454,6 +465,7 @@ function PipelineRunsTab({ pollMs = PIPELINE_POLL_MS }: { pollMs?: number }) {
         </Filter>
       </Flex>
       <Table<PipelineRun>
+        scroll={{ x: 'max-content' }}
         rowKey="id"
         columns={columns}
         dataSource={rows}

@@ -99,7 +99,7 @@ export function Connections() {
 
   return (
     <Page>
-      <Flex justify="space-between" align="center" gap={12}>
+      <Flex justify="space-between" align="center" gap={12} wrap>
         <Typography.Title level={3} style={{ margin: 0 }}>
           Connections
         </Typography.Title>

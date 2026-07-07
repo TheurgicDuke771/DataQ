@@ -7,6 +7,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { getRun, type Result, type ResultStatus } from '../api/runs';
 import { type Check, getSuite, listChecks } from '../api/suites';
 import { CheckTrend } from '../components/checks/CheckTrend';
+import { SnoozedTag } from '../components/checks/snooze';
 import {
   formatDuration,
   formatTimestamp,
@@ -257,6 +258,7 @@ function SampleFailures({ sample }: { sample: Record<string, unknown> | null }) 
       </Typography.Text>
       {rows.length > 0 ? (
         <Table<Record<string, unknown>>
+          scroll={{ x: 'max-content' }}
           rowKey={(_, i) => String(i)}
           size="small"
           columns={columns}
@@ -288,8 +290,18 @@ function ResultsTable({
     {
       title: 'Check',
       dataIndex: 'check_id',
-      render: (id: string) =>
-        checks.get(id)?.name ?? <Typography.Text code>{id.slice(0, 8)}</Typography.Text>,
+      render: (id: string) => {
+        const check = checks.get(id);
+        if (!check) return <Typography.Text code>{id.slice(0, 8)}</Typography.Text>;
+        return (
+          <Flex gap={8} align="center" wrap>
+            {check.name}
+            {/* Failure triage happens here — a muted check must say so, or the
+                operator wastes time asking why no alert arrived (#653). */}
+            <SnoozedTag check={check} />
+          </Flex>
+        );
+      },
     },
     {
       title: 'Expectation',
@@ -320,6 +332,7 @@ function ResultsTable({
   ];
   return (
     <Table
+      scroll={{ x: 'max-content' }}
       rowKey="id"
       size="small"
       columns={columns}

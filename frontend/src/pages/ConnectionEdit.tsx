@@ -1,9 +1,12 @@
+import { HistoryOutlined } from '@ant-design/icons';
 import { Alert, Button, Card, Flex, Spin, Typography } from 'antd';
+import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import { CONNECTION_TYPE_LABELS, getConnection } from '../api/connections';
 import { Page } from '../components/layout/Page';
 import { ConnectionForm } from '../components/connections/ConnectionForm';
+import { ConnectionHistoryDrawer } from '../components/connections/ConnectionHistoryDrawer';
 import { useAsyncData } from '../hooks/useAsyncData';
 
 /**
@@ -23,6 +26,7 @@ export function ConnectionEdit() {
 
 function ConnectionEditView({ connectionId }: { connectionId?: string }) {
   const navigate = useNavigate();
+  const [historyOpen, setHistoryOpen] = useState(false);
   const { state } = useAsyncData(() => {
     if (!connectionId) throw new Error('no connection');
     return getConnection(connectionId);
@@ -30,13 +34,20 @@ function ConnectionEditView({ connectionId }: { connectionId?: string }) {
 
   return (
     <Page width={'form'}>
-      <Flex justify="space-between" align="center" gap={12}>
+      <Flex justify="space-between" align="center" gap={12} wrap>
         <Typography.Title level={3} style={{ margin: 0 }}>
           {state.status === 'ok'
             ? `Edit ${CONNECTION_TYPE_LABELS[state.data.type]} connection`
             : 'Edit connection'}
         </Typography.Title>
-        <Button onClick={() => navigate('/connections')}>Cancel</Button>
+        <Flex gap={8}>
+          {state.status === 'ok' && (
+            <Button icon={<HistoryOutlined />} onClick={() => setHistoryOpen(true)}>
+              History
+            </Button>
+          )}
+          <Button onClick={() => navigate('/connections')}>Cancel</Button>
+        </Flex>
       </Flex>
 
       {state.status === 'loading' && <Spin description="Loading connection…" />}
@@ -53,6 +64,12 @@ function ConnectionEditView({ connectionId }: { connectionId?: string }) {
           />
         </Card>
       )}
+
+      <ConnectionHistoryDrawer
+        open={historyOpen}
+        connection={state.status === 'ok' ? state.data : null}
+        onClose={() => setHistoryOpen(false)}
+      />
     </Page>
   );
 }

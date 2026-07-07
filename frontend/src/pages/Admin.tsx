@@ -143,6 +143,7 @@ function DataTable<T extends object>({
   }
   return (
     <Table
+      scroll={{ x: 'max-content' }}
       dataSource={state.data}
       columns={columns}
       rowKey={rowKey}
