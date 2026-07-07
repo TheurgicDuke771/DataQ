@@ -125,7 +125,12 @@ export function App() {
           <Link to="/" aria-label="DataQ home" style={{ flex: 1 }}>
             <Flex align="center" gap={10}>
               <BrandMark />
-              <Typography.Text strong style={{ fontSize: 17, color: BRAND.ink }}>
+              {/* nowrap: squeezed between the hamburger and the user chip on a
+                  narrow header, the brand otherwise wraps vertically (#692). */}
+              <Typography.Text
+                strong
+                style={{ fontSize: 17, color: BRAND.ink, whiteSpace: 'nowrap' }}
+              >
                 DataQ
               </Typography.Text>
             </Flex>
