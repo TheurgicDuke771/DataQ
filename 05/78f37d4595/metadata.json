@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "0578f37d4595",
+  "strategy": "manual-commit",
+  "branch": "feature/488-mcp-admin-visibility",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/tests/mcp/test_mcp_tools.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/05/78f37d4595/0/metadata.json",
+      "transcript": "/05/78f37d4595/0/full.jsonl",
+      "compact_transcript": "/05/78f37d4595/0/transcript.jsonl",
+      "content_hash": "/05/78f37d4595/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 591,
+    "cache_creation_tokens": 13756,
+    "cache_read_tokens": 1777116,
+    "output_tokens": 7598,
+    "api_call_count": 13
+  }
+}
