@@ -26,6 +26,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.app.api.v1._base import contains_nul
+from backend.app.core.auth import is_workspace_admin
 from backend.app.core.config import get_settings
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
@@ -120,10 +121,13 @@ def list_suites() -> list[dict[str, Any]]:
     triggering a run. Returns, per suite: its id, name, the datasource it runs
     against (snowflake / adls / s3 / unity_catalog), the environment (dev / qa /
     uat), how many checks it has, and the status + time of its most recent run
-    (null if it has never run). Scoped to suites the user owns or has a share on.
+    (null if it has never run). Scoped to suites the user owns or has a share on
+    (a workspace-admin sees every suite).
     """
     with _ctx() as (session, user):
-        suites = suite_service.list_suites(session, user_id=user.id)
+        suites = suite_service.list_suites(
+            session, user_id=user.id, include_all=is_workspace_admin(user)
+        )
         out: list[dict[str, Any]] = []
         for s in suites:
             connection = session.get(Connection, s.connection_id)
@@ -211,13 +215,17 @@ def get_health_score(window_days: int = 7) -> dict[str, Any]:
     Use this for 'what's the data health this week?'. Returns the overall health
     score (0-100, severity-weighted), the pass rate, total runs and active
     connections over the trailing ``window_days`` (default 7, max 90), plus a
-    per-day trend of the score. Scoped to the suites the user can access.
+    per-day trend of the score. Scoped to the suites the user can access
+    (a workspace-admin sees the whole workspace).
     """
     if window_days < 1 or window_days > 90:
         raise ToolError("window_days must be between 1 and 90")
     with _ctx() as (session, user):
         summary = dashboard_service.dashboard_summary(
-            session, user_id=user.id, window_days=window_days
+            session,
+            user_id=user.id,
+            window_days=window_days,
+            include_all=is_workspace_admin(user),
         )
         return {
             "window_days": summary.window_days,
@@ -246,7 +254,11 @@ def get_adf_pipeline_status(provider: str | None = None, limit: int = 20) -> lis
         raise ToolError("provider must be 'adf' or 'airflow'")
     with _ctx() as (session, user):
         runs = orchestration_service.list_pipeline_runs(session, provider=provider, limit=limit)
-        accessible = set(session.scalars(suite_service.accessible_suite_ids(user.id)))
+        accessible = set(
+            session.scalars(
+                suite_service.accessible_suite_ids(user.id, include_all=is_workspace_admin(user))
+            )
+        )
         out: list[dict[str, Any]] = []
         for pr in runs:
             marker = f"{pr.provider}:{pr.pipeline_or_dag_id}:{pr.provider_run_id}"

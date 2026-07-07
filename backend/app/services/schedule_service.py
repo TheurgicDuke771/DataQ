@@ -84,14 +84,20 @@ def list_schedules(
     user_id: uuid.UUID,
     suite_id: uuid.UUID | None = None,
     enabled: bool | None = None,
+    include_all: bool = False,
 ) -> list[Schedule]:
-    """Schedules on suites the user can access (owned or shared), newest first."""
+    """Schedules on suites the user can access (owned or shared), newest first — or
+    on *every* suite when ``include_all`` (the workspace-admin view, ADR 0027)."""
     # Reuse the single source of truth for suite visibility (suite_service) — the
     # same owned-OR-shared subquery the suite + run reads use, so the authz rule
     # can't silently diverge here.
     stmt = (
         select(Schedule)
-        .where(Schedule.suite_id.in_(suite_service.accessible_suite_ids(user_id)))
+        .where(
+            Schedule.suite_id.in_(
+                suite_service.accessible_suite_ids(user_id, include_all=include_all)
+            )
+        )
         .order_by(Schedule.created_at.desc())
     )
     if suite_id is not None:

@@ -16,7 +16,7 @@ from pydantic import ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from backend.app.api.v1._base import ApiModel
-from backend.app.core.auth import get_current_user
+from backend.app.core.auth import get_current_user, is_workspace_admin
 from backend.app.db.models import Schedule, User
 from backend.app.db.session import get_db
 from backend.app.services import schedule_service as svc
@@ -85,7 +85,13 @@ def list_schedules(
     suite_id: uuid.UUID | None = None,
     enabled: bool | None = None,
 ) -> list[Schedule]:
-    return svc.list_schedules(db, user_id=current_user.id, suite_id=suite_id, enabled=enabled)
+    return svc.list_schedules(
+        db,
+        user_id=current_user.id,
+        suite_id=suite_id,
+        enabled=enabled,
+        include_all=is_workspace_admin(current_user),
+    )
 
 
 @router.get(
