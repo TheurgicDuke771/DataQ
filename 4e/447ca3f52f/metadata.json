@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "4e447ca3f52f",
+  "strategy": "manual-commit",
+  "branch": "fix/640-liverunprogress-flake",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/4e/447ca3f52f/0/metadata.json",
+      "transcript": "/4e/447ca3f52f/0/full.jsonl",
+      "compact_transcript": "/4e/447ca3f52f/0/transcript.jsonl",
+      "content_hash": "/4e/447ca3f52f/0/content_hash.txt",
+      "prompt": "/4e/447ca3f52f/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 35570,
+    "cache_creation_tokens": 917985,
+    "cache_read_tokens": 45928389,
+    "output_tokens": 150156,
+    "api_call_count": 250
+  }
+}
