@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type AdminWebhook, listAdminWebhooks } from '../../src/api/admin';
 import type { MeResponse } from '../../src/api/me';
+import { authMethodLabel } from '../../src/auth/config';
 import { MeContext } from '../../src/auth/meContext';
 import type { AsyncState } from '../../src/hooks/useAsyncData';
 import { Settings } from '../../src/pages/Settings';
@@ -71,6 +72,9 @@ describe('Settings', () => {
     }
     // General tab is default-active: workspace facts visible.
     expect(screen.getByText('Single tenant')).toBeInTheDocument();
+    // Provider-neutral auth label derived from the runtime authMode (ADR 0028 —
+    // MSAL retired for generic OIDC; per-mode wording pinned in config.test.ts).
+    expect(screen.getByText(authMethodLabel)).toBeInTheDocument();
   });
 
   it('shows the inbound-webhooks config on the Webhooks tab', async () => {

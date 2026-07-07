@@ -48,6 +48,26 @@ describe('authMode (runtime config)', () => {
   });
 });
 
+describe('authMethodLabel (#618 — derived from the runtime mode, never hardcoded)', () => {
+  it("labels real OIDC sign-in 'OIDC (SSO)' — provider-neutral, no library name", async () => {
+    inject({ mode: 'oidc', authority: 'https://issuer.example/v2.0', clientId: 'spa-1' });
+    const { authMethodLabel } = await loadConfig();
+    expect(authMethodLabel).toBe('OIDC (SSO)');
+  });
+
+  it('is honest about dev-bypass — never claims SSO when no IdP is involved', async () => {
+    inject({ mode: 'bypass' });
+    const { authMethodLabel } = await loadConfig();
+    expect(authMethodLabel).toBe('Dev bypass (no IdP)');
+  });
+
+  it("labels an unconfigured deployment 'Not configured'", async () => {
+    inject({});
+    const { authMethodLabel } = await loadConfig();
+    expect(authMethodLabel).toBe('Not configured');
+  });
+});
+
 describe('authConfig (runtime config)', () => {
   it('exposes the injected authority / clientId / apiScope', async () => {
     inject({

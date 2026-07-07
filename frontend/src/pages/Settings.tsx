@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom';
 
 import { type AdminWebhook, listAdminWebhooks } from '../api/admin';
 import { PROVIDER_CALLBACK_NOUNS, PROVIDER_LABELS } from '../api/triggerBindings';
+import { authMethodLabel } from '../auth/config';
 import { useMe } from '../auth/useMe';
 import { Forbidden } from '../components/Forbidden';
 import { Page } from '../components/layout/Page';
@@ -65,7 +66,7 @@ function GeneralTab() {
         <Descriptions.Item label="Tenancy">
           <Tag>Single tenant</Tag>
         </Descriptions.Item>
-        <Descriptions.Item label="Authentication">Azure AD (MSAL)</Descriptions.Item>
+        <Descriptions.Item label="Authentication">{authMethodLabel}</Descriptions.Item>
       </Descriptions>
     </Card>
   );

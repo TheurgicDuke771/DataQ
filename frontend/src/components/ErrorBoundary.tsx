@@ -13,8 +13,8 @@ interface State {
 /**
  * Catches render-time errors anywhere in the app subtree and shows an antd
  * fallback instead of React's blank screen. (main.tsx's bootstrap `.catch`
- * only covers the pre-render MSAL bootstrap; this covers everything after the
- * first paint.) Error boundaries must be class components — there is no hook
+ * only covers the pre-render OIDC-client bootstrap; this covers everything after
+ * the first paint.) Error boundaries must be class components — there is no hook
  * equivalent for `getDerivedStateFromError`.
  */
 export class ErrorBoundary extends Component<Props, State> {

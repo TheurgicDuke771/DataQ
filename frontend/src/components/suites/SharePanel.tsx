@@ -64,7 +64,7 @@ function SharePanelBody({
   canManage: boolean;
 }) {
   const { state, reload } = useAsyncData(() => listShares(suiteId));
-  // Best-effort UX lock on the signed-in user's own row (MSAL UPN ≈ their share
+  // Best-effort UX lock on the signed-in user's own row (OIDC UPN ≈ their share
   // `email`): a non-owner admin self-revoking/-downgrading would brick the panel
   // (every later mutation 403s). The durable guard is server-side
   // (share_service._reject_self_target) since UPN can differ from mail and the
