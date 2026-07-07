@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from backend.app.api.v1._base import ApiModel
 from backend.app.api.v1.runs import RunRead
 from backend.app.core.auth import get_current_user, is_workspace_admin
+from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore, get_secret_store
 from backend.app.db.models import Connection, Run, Suite, User
 from backend.app.db.session import get_db
@@ -34,6 +35,8 @@ from backend.app.services.suite_authz import (
 )
 
 router = APIRouter(tags=["suites"])
+
+log = get_logger(__name__)
 
 
 class SuiteTarget(ApiModel):
@@ -168,19 +171,36 @@ def update_suite(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> SuiteRead:
-    require_permission(db, suite_id, current_user.id, minimum="edit")
+    before = require_permission(db, suite_id, current_user.id, minimum="edit")
+    # Snapshot the pre-update state — `update_suite` mutates `before` in place, so
+    # capture the values (a copy of the target dict) before the call (#634/#643).
+    had_policy = before.column_policy is not None
+    old_target = dict(before.target) if before.target else None
+    new_target = payload.target.to_storage() if payload.target is not None else None
     suite = svc.update_suite(
         db,
         suite_id,
         name=payload.name,
         description=payload.description,
-        target=payload.target.to_storage() if payload.target is not None else None,
+        target=new_target,
     )
     # A target-setting update on a policy-less suite gets the same best-effort
     # auto-classify as create (#634) — e.g. a suite created target-less, now given
     # one. Never re-derives once a policy exists (the task also re-checks).
     if payload.target is not None and suite.target is not None and suite.column_policy is None:
         run_dispatch.dispatch_auto_classify(suite.id)
+    # Repointing a *policied* suite to a different target can strand the stored
+    # redaction policy — its `identifier_column`/`pii_columns` may not exist in the
+    # new target. We deliberately don't auto-re-derive (don't clobber a
+    # user/derived policy, #642), but the staleness was previously invisible. Emit
+    # an observable event so an operator (or a future UI hint) can prompt a
+    # re-run of Auto-detect (#643).
+    elif had_policy and new_target is not None and new_target != old_target:
+        log.warning(
+            "suite_policy_possibly_stale",
+            suite_id=str(suite.id),
+            reason="target_changed_on_policied_suite",
+        )
     return SuiteRead.of(suite, effective_permission(db, suite, current_user.id))
 
 

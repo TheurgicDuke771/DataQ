@@ -64,3 +64,8 @@ Failing-row samples are the one place check results can carry PII. The redactor 
 column-aware: set the suite's **column policy** (or accept the classifier's
 suggestion) so non-sensitive breaches stay debuggable while PII columns stay masked.
 Samples are purged by the retention sweep; metric trends survive.
+
+If you **repoint a suite to a different target** after a policy exists, DataQ does
+*not* auto-re-derive the policy (it won't clobber your choices) — so re-run
+**Auto-detect** on the new target to refresh the identifier / PII columns. A
+`suite_policy_possibly_stale` event is logged when this happens.
