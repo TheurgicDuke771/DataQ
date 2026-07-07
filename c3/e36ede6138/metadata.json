@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "c3e36ede6138",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-692-simplelist-wrap",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/App.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/c3/e36ede6138/0/metadata.json",
+      "transcript": "/c3/e36ede6138/0/full.jsonl",
+      "compact_transcript": "/c3/e36ede6138/0/transcript.jsonl",
+      "content_hash": "/c3/e36ede6138/0/content_hash.txt",
+      "prompt": "/c3/e36ede6138/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 164323,
+    "cache_creation_tokens": 846955,
+    "cache_read_tokens": 129857543,
+    "output_tokens": 247624,
+    "api_call_count": 466
+  }
+}
