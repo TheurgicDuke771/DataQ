@@ -517,7 +517,13 @@ def build_mcp_app() -> Any:
     # model that doesn't apply here: the api has no public ingress and every /mcp
     # request is JWT/PAT-authenticated fail-closed (`build_auth_provider`). Allow
     # the proxied hosts so the transport guard doesn't shadow the real auth gate.
+    # The same middleware also 403s a request whose browser `Origin` isn't
+    # allow-listed. DataQ authenticates every /mcp call with a Bearer token (JWT or
+    # PAT), never a cookie, so the Origin/CSRF check the guard performs is moot — an
+    # attacker page can't obtain the token. Allow all origins for the same reason we
+    # relax the host check, so a browser-based client (e.g. claude.ai) isn't 403'd.
     return mcp.http_app(
         path="/",
         allowed_hosts=["*.azurecontainerapps.io", "api", "localhost", "127.0.0.1"],
+        allowed_origins=["*"],
     )

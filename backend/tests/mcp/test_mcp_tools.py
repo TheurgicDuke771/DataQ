@@ -639,18 +639,26 @@ def test_build_mcp_app_allowlists_proxied_hosts(monkeypatch: Any) -> None:
     hosts = captured["allowed_hosts"]
     assert "*.azurecontainerapps.io" in hosts  # prod (internal api FQDN)
     assert "api" in hosts  # docker-compose upstream
+    # Origins are relaxed for the same reason (Bearer-token auth → no CSRF), so a
+    # browser client (claude.ai) isn't 403'd by the guard's separate Origin check.
+    assert captured["allowed_origins"] == ["*"]
 
 
 def test_allowed_hosts_match_prod_and_compose_upstreams() -> None:
-    """Prove the allowlist patterns actually match the real proxied Host values
-    using FastMCP's own matcher — so the mount doesn't 421 in prod (regression
-    guard for the 3.4.3 DNS-rebind guard)."""
-    from fastmcp.server.http import _host_matches
+    """Prove the allowlist patterns actually match the real proxied Host values —
+    so the mount doesn't 421 in prod (regression guard for the 3.4.3 DNS-rebind
+    guard). Uses stdlib `fnmatchcase`, exactly what FastMCP's `_host_matches` uses,
+    without coupling the test to that private helper."""
+    from fnmatch import fnmatchcase
+
+    def matches(host: str, patterns: list[str]) -> bool:
+        return any(p == "*" or fnmatchcase(host, p) for p in patterns)
 
     hosts = ["*.azurecontainerapps.io", "api", "localhost", "127.0.0.1"]
-    # The exact prod upstream nginx forwards (DATAQ_API_UPSTREAM, internal ingress).
-    assert _host_matches(
+    # The exact prod upstream nginx forwards (DATAQ_API_UPSTREAM, internal ingress);
+    # fnmatch `*` spans dots, so the wildcard matches the multi-label FQDN.
+    assert matches(
         "dataq-app-api.internal.purplefield-f7322a1b.westus2.azurecontainerapps.io", hosts
     )
-    assert _host_matches("api", hosts)  # docker-compose
-    assert not _host_matches("evil.example.com", hosts)  # still rejects the rest
+    assert matches("api", hosts)  # docker-compose
+    assert not matches("evil.example.com", hosts)  # still rejects the rest
