@@ -402,6 +402,10 @@ class Run(Base):
     celery_task_id: Mapped[str | None] = mapped_column(String(155))
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # A redaction-safe, user-facing reason for a `failed` run (#605) — a fixed
+    # category message from `failure_classifier`, never raw adapter text (which can
+    # carry DSN/credential fragments). NULL for non-failed runs and for older rows.
+    failure_reason: Mapped[str | None] = mapped_column(String(500))
     created_at: Mapped[datetime] = _created_at()
 
 

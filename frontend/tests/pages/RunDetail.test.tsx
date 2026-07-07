@@ -60,6 +60,7 @@ const runDetail: RunDetailType = {
   checks_total: 1,
   checks_passed: 0,
   worst_severity: 'warn',
+  failure_reason: null,
   results: [
     {
       id: 'res1',
@@ -110,6 +111,22 @@ describe('RunDetail page', () => {
     // Checks-passed stat: 0 of 1 passed (the one result is a warn).
     expect(screen.getByText('0 / 1')).toBeInTheDocument();
     expect(mockGetRun).toHaveBeenCalledWith('r1');
+  });
+
+  it('surfaces the failure reason for a failed run (#605)', async () => {
+    mockGetRun.mockResolvedValue({
+      ...runDetail,
+      status: 'failed',
+      failure_reason: 'The datasource rejected the credentials, or a required grant is missing.',
+      results: [],
+    });
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]);
+
+    renderAt('r1');
+
+    expect(await screen.findByText('This run failed to execute')).toBeInTheDocument();
+    expect(screen.getByText(/The datasource rejected the credentials/)).toBeInTheDocument();
   });
 
   it('marks a snoozed check in the results table (#653 — triage surface)', async () => {

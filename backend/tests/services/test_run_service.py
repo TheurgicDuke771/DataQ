@@ -276,6 +276,10 @@ def test_runner_exception_marks_failed_and_persists_no_results() -> None:
     assert result.status == "failed"
     assert run.finished_at is not None
     assert session.added == []  # no half-written results
+    # A redaction-safe reason is recorded (#605) — a fixed classified message, not
+    # the raw exception text (which could carry DSN/credential fragments).
+    assert run.failure_reason
+    assert "cannot reach warehouse" not in run.failure_reason
 
 
 def test_persistence_failure_marks_failed_not_stuck_running() -> None:

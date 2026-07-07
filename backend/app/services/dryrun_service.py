@@ -35,6 +35,7 @@ from backend.app.datasources.registry import (
 from backend.app.db.models import Connection
 from backend.app.services import run_target
 from backend.app.services.custom_sql import validate_custom_sql_check
+from backend.app.services.failure_classifier import classify_failure_reason
 from backend.app.services.severity import resolve_status
 
 log = get_logger(__name__)
@@ -131,7 +132,10 @@ def dry_run_check(
         log.warning(
             "dry_run_failed", connection_type=connection.type, error_type=type(exc).__name__
         )
-        raise DryRunFailedError("dry run could not connect to the datasource") from exc
+        raise DryRunFailedError(
+            "dry run could not connect to the datasource",
+            detail={"reason": classify_failure_reason(exc)},
+        ) from exc
 
     # Materialize a flat-file batch target to a concrete file (lists the store) —
     # a no-op for SQL / UC / literal flat-file targets. Batch-not-found is "no data
@@ -155,7 +159,10 @@ def dry_run_check(
         log.warning(
             "dry_run_failed", connection_type=connection.type, error_type=type(exc).__name__
         )
-        raise DryRunFailedError("dry run could not list the datasource store") from exc
+        raise DryRunFailedError(
+            "dry run could not list the datasource store",
+            detail={"reason": classify_failure_reason(exc)},
+        ) from exc
 
     try:
         outcome = runner.run_checks(
@@ -171,7 +178,8 @@ def dry_run_check(
             "dry_run_failed", connection_type=connection.type, error_type=type(exc).__name__
         )
         raise DryRunFailedError(
-            "dry run could not execute against the datasource", detail={"table": table}
+            "dry run could not execute against the datasource",
+            detail={"table": table, "reason": classify_failure_reason(exc)},
         ) from exc
 
     status, metric = resolve_status(

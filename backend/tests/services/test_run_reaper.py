@@ -14,7 +14,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from backend.app.db.models import Connection, Run, Suite, User
-from backend.app.services import run_service
+from backend.app.services import run_dispatch, run_service
 
 NOW = datetime(2026, 6, 29, 12, 0, tzinfo=UTC)
 
@@ -74,6 +74,7 @@ def test_reaps_queued_run_past_threshold(db_session: Any) -> None:
     assert stuck.status == "failed"
     assert stuck.finished_at == NOW
     assert stuck.started_at is None  # never started → left NULL (canonical shape)
+    assert stuck.failure_reason == run_dispatch.REAPED_REASON  # #605
 
 
 def test_reaps_running_run_stuck_past_threshold(db_session: Any) -> None:

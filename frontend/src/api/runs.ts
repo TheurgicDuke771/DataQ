@@ -30,6 +30,9 @@ export interface Run {
   checks_total: number;
   checks_passed: number;
   worst_severity: 'warn' | 'fail' | 'critical' | null;
+  /** Redaction-safe reason for a `failed` run (#605) — a fixed classified
+   *  message, never raw adapter text. Null for non-failed runs and older rows. */
+  failure_reason: string | null;
 }
 
 /** Mirrors `ResultRead`. `sample_failures` is the GX failing-row sample, redacted

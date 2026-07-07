@@ -169,6 +169,10 @@ def test_trigger_broker_failure_marks_run_failed_and_503(
     assert run is not None and run.status == "failed"
     assert run.finished_at is not None
     assert run.started_at is None
+    # A user-visible dispatch-failure reason is recorded + surfaced (#605).
+    assert run.failure_reason == run_dispatch.DISPATCH_FAILED_REASON
+    detail = client.get(f"/api/v1/runs/{run.id}").json()
+    assert detail["failure_reason"] == run_dispatch.DISPATCH_FAILED_REASON
 
 
 # ───────────────────────── GET /runs ───────────────────────────────

@@ -88,6 +88,7 @@ describe('RunNowPanel', () => {
       checks_total: 0,
       checks_passed: 0,
       worst_severity: null,
+      failure_reason: null,
     };
     mockRunSuite.mockResolvedValue(queued);
     // The handed-off progress drawer polls this once; keep it non-terminal-safe.

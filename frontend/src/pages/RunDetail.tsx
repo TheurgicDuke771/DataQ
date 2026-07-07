@@ -122,6 +122,15 @@ function RunDetailBody({
         <Stat label="Duration">{formatDuration(run.started_at, run.finished_at)}</Stat>
       </div>
 
+      {run.status === 'failed' && run.failure_reason && (
+        <Alert
+          type="error"
+          showIcon
+          title="This run failed to execute"
+          description={run.failure_reason}
+        />
+      )}
+
       <ResultsTable results={run.results} checks={checksById} suiteId={run.suite_id} />
     </Flex>
   );
