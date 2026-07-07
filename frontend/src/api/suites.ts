@@ -51,6 +51,8 @@ export interface RunTarget {
   catalog?: string;
   path?: string;
   file_format?: 'csv' | 'parquet';
+  /** Flat-file *batch* selector (a literal `path` and `pattern` are mutually exclusive). */
+  pattern?: string;
 }
 
 /** Read one string field out of the untyped run-target bag, or `undefined`. */

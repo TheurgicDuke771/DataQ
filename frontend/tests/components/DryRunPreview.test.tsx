@@ -61,6 +61,16 @@ describe('DryRunPreview', () => {
     expect(screen.getByRole('button', { name: 'Dry-run preview' })).toBeEnabled();
   });
 
+  it('is enabled for a flat-file suite whose target is a batch pattern (#532)', () => {
+    render(
+      <Harness
+        expectationType={NOT_NULL}
+        target={{ pattern: 'orders_(\\d+).csv', strategy: 'latest' }}
+      />,
+    );
+    expect(screen.getByRole('button', { name: 'Dry-run preview' })).toBeEnabled();
+  });
+
   it('runs the preview and renders the severity outcome', async () => {
     mockDryRun.mockResolvedValue({
       status: 'warn',

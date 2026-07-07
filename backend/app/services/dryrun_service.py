@@ -124,10 +124,18 @@ def dry_run_check(
             f"dry-run is not supported for {connection.type!r} connections",
             detail={"type": connection.type},
         ) from exc
+    except Exception as exc:
+        # The builders resolve the secret eagerly — a missing/unreadable
+        # credential fails here, and is a datasource-side 502 (as it was before
+        # #532, when build + run shared one guard), never an opaque 500.
+        log.warning(
+            "dry_run_failed", connection_type=connection.type, error_type=type(exc).__name__
+        )
+        raise DryRunFailedError("dry run could not connect to the datasource") from exc
 
     # Materialize a flat-file batch target to a concrete file (lists the store) —
     # a no-op for SQL / UC / literal flat-file targets. Batch-not-found is "no data
-    # yet", a clean 422, not a datasource failure.
+    # yet", a clean 422; a bad credential / unreachable store while listing is a 502.
     try:
         table = run_target.materialize_path(
             connection.type,
@@ -141,6 +149,13 @@ def dry_run_check(
             "no file has landed for the suite's batch target yet — dry-run needs live data",
             detail={"connection_type": connection.type},
         ) from exc
+    except DataQError:
+        raise  # a SuiteTargetInvalidError (422) from a malformed batch spec — keep it
+    except Exception as exc:
+        log.warning(
+            "dry_run_failed", connection_type=connection.type, error_type=type(exc).__name__
+        )
+        raise DryRunFailedError("dry run could not list the datasource store") from exc
 
     try:
         outcome = runner.run_checks(

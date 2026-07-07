@@ -50,10 +50,14 @@ export function DryRunPreview({
     setState({ status: 'idle' });
   }
 
-  // A suite is previewable once it has a run target — a SQL/UC table or a
-  // flat-file path (#532), mirroring the column profiler's gate. The concrete
-  // target (incl. UC catalog / flat-file batch) is resolved server-side.
-  const hasTarget = !!targetString(target, 'table') || !!targetString(target, 'path');
+  // A suite is previewable once it has a run target of any shape — a SQL/UC
+  // table, a literal flat-file path, or a flat-file batch pattern (#532). The
+  // concrete target (incl. UC catalog + batch file resolution) is resolved
+  // server-side; a batch whose file hasn't landed comes back as a clean 422.
+  const hasTarget =
+    !!targetString(target, 'table') ||
+    !!targetString(target, 'path') ||
+    !!targetString(target, 'pattern');
 
   const disabledReason = !expectationType
     ? 'Pick an expectation to preview it.'

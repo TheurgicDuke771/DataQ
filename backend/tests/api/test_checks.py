@@ -1186,6 +1186,22 @@ def test_dryrun_runner_failure_returns_502(
     assert resp.json()["error"]["code"] == "dry_run_failed"
 
 
+def test_dryrun_runner_build_failure_returns_502(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The runner builders resolve the secret eagerly — a missing/unreadable
+    # credential fails at build time and must be a clean 502, not a 500.
+    sid = _suite_id(client, db_session, target=_SF_TARGET)
+
+    def _boom(**_kw: Any) -> Any:
+        raise RuntimeError("secret not found in key vault")
+
+    monkeypatch.setattr(dryrun_service, "build_check_runner", _boom)
+    resp = client.post(f"/api/v1/suites/{sid}/checks/dryrun", json=_dryrun_body())
+    assert resp.status_code == 502
+    assert resp.json()["error"]["code"] == "dry_run_failed"
+
+
 def test_dryrun_requires_edit_permission(client: TestClient, db_session: Any) -> None:
     owner, b, _e, sid = _owner_b_e_suite(db_session)
     _grant(client, owner, sid, b, "view")  # viewer cannot author/dry-run
