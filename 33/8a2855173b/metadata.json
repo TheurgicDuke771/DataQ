@@ -1,0 +1,43 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "338a2855173b",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-617-mobile-responsive",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/App.tsx",
+    "frontend/src/components/checks/ColumnProfilePanel.tsx",
+    "frontend/src/components/dashboard/RecentRuns.tsx",
+    "frontend/src/components/profile/ApiKeysPanel.tsx",
+    "frontend/src/components/suites/SchedulesPanel.tsx",
+    "frontend/src/pages/Admin.tsx",
+    "frontend/src/pages/CheckEdit.tsx",
+    "frontend/src/pages/CheckNew.tsx",
+    "frontend/src/pages/ConnectionEdit.tsx",
+    "frontend/src/pages/ConnectionNew.tsx",
+    "frontend/src/pages/Connections.tsx",
+    "frontend/src/pages/Results.tsx",
+    "frontend/src/pages/RunDetail.tsx",
+    "frontend/src/pages/SuiteEdit.tsx",
+    "frontend/src/pages/SuiteNew.tsx",
+    "frontend/src/pages/Suites.tsx",
+    "frontend/tests/components/ColumnProfilePanel.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/33/8a2855173b/0/metadata.json",
+      "transcript": "/33/8a2855173b/0/full.jsonl",
+      "compact_transcript": "/33/8a2855173b/0/transcript.jsonl",
+      "content_hash": "/33/8a2855173b/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 131503,
+    "cache_creation_tokens": 532672,
+    "cache_read_tokens": 91535245,
+    "output_tokens": 179674,
+    "api_call_count": 320
+  }
+}
