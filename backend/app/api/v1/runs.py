@@ -68,6 +68,9 @@ class RunRead(ApiModel):
     checks_total: int = 0
     checks_passed: int = 0
     worst_severity: str | None = None  # warn | fail | critical | None (all passed)
+    # A redaction-safe reason for a `failed` run (#605) — a fixed classified
+    # message (never raw adapter text). NULL for non-failed runs and older rows.
+    failure_reason: str | None = None
 
 
 class ResultRead(ApiModel):

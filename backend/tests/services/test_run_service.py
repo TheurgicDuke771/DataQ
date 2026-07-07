@@ -276,6 +276,24 @@ def test_runner_exception_marks_failed_and_persists_no_results() -> None:
     assert result.status == "failed"
     assert run.finished_at is not None
     assert session.added == []  # no half-written results
+    # A redaction-safe reason is recorded (#605) — a fixed classified message, not
+    # the raw exception text (which could carry DSN/credential fragments).
+    assert run.failure_reason
+    assert "cannot reach warehouse" not in run.failure_reason
+
+
+def test_success_clears_a_stale_failure_reason() -> None:
+    """A reaped-then-completed run must not surface as succeeded-with-a-reason:
+    the success path clears any failure_reason a prior reap stamped (#605)."""
+    session = FakeSession()
+    run = _run()
+    run.failure_reason = "The run did not complete in time and was marked failed."
+    runner = FakeRunner(SuiteOutcome(success=True, checks=[CheckOutcome("x", success=True)]))
+
+    run_service.execute_run(_sess(session), run=run, checks=_checks(1), runner=runner, table="T")
+
+    assert run.status == "succeeded"
+    assert run.failure_reason is None
 
 
 def test_persistence_failure_marks_failed_not_stuck_running() -> None:

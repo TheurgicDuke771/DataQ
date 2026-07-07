@@ -39,6 +39,7 @@ const run: Run = {
   checks_total: 4,
   checks_passed: 3,
   worst_severity: 'fail',
+  failure_reason: null,
 };
 
 function RunDetailStub() {

@@ -126,6 +126,7 @@ describe('LiveRunProgress', () => {
       checks_total: 0,
       checks_passed: 0,
       worst_severity: null,
+      failure_reason: null,
     });
     const user = userEvent.setup();
     renderDrawer();
@@ -157,6 +158,7 @@ describe('LiveRunProgress', () => {
       checks_total: 0,
       checks_passed: 0,
       worst_severity: null,
+      failure_reason: null,
     });
     const user = userEvent.setup();
     renderDrawer({ pollMs: 5 });

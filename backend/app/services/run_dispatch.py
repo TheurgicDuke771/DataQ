@@ -59,7 +59,21 @@ def dispatch_run(run_id: uuid.UUID) -> str:
     return str(result.id)
 
 
-def mark_dispatch_failed(run: Run, *, at: datetime | None = None) -> None:
+#: Fixed, secret-free `failure_reason` strings (#605) for the non-runner failure
+#: paths — a broker/dispatch failure vs the stuck-run reaper. Runner-time failures
+#: use the classified `failure_classifier` messages instead.
+DISPATCH_FAILED_REASON = (
+    "The run could not be dispatched to the worker — the task broker was unreachable."
+)
+REAPED_REASON = (
+    "The run did not complete in time and was marked failed — the worker may have "
+    "stopped mid-execution."
+)
+
+
+def mark_dispatch_failed(
+    run: Run, *, at: datetime | None = None, reason: str = DISPATCH_FAILED_REASON
+) -> None:
     """The canonical terminal-failed shape for a broker/dispatch failure.
 
     One definition shared by every trigger path (probe, manual run, pipeline
@@ -68,10 +82,13 @@ def mark_dispatch_failed(run: Run, *, at: datetime | None = None) -> None:
     ``started_at`` left as-is (NULL for a run that never started — or its real
     start for one the worker died mid-execution), keeping run-history / duration
     views consistent (#227). ``at`` lets a batch caller (the reaper) stamp one
-    shared moment across many runs; defaults to now.
+    shared moment across many runs; defaults to now. ``reason`` is the
+    redaction-safe user-facing message (#605) — defaults to the dispatch-failure
+    text; the reaper passes ``REAPED_REASON``.
     """
     run.status = "failed"
     run.finished_at = at or datetime.now(UTC)
+    run.failure_reason = reason
 
 
 def dispatch_or_fail(session: Session, run: Run, **log_context: str) -> bool:

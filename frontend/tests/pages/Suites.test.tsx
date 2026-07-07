@@ -321,6 +321,7 @@ describe('Suites', () => {
       checks_total: 0,
       checks_passed: 0,
       worst_severity: null,
+      failure_reason: null,
     });
     mockGetRunProgress.mockResolvedValue({
       run_id: 'r1',

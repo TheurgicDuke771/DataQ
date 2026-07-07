@@ -74,6 +74,7 @@ const succeededRun: Run = {
   checks_total: 3,
   checks_passed: 3,
   worst_severity: null,
+  failure_reason: null,
 };
 
 const failedRun: Run = {
@@ -85,6 +86,7 @@ const failedRun: Run = {
   checks_total: 3,
   checks_passed: 1,
   worst_severity: 'fail',
+  failure_reason: null,
 };
 
 /** A run on the S3 (flat-file, prod) suite, started "now" so it falls inside the
@@ -100,6 +102,7 @@ const recentEventsRun: Run = {
   checks_total: 2,
   checks_passed: 2,
   worst_severity: null,
+  failure_reason: null,
 };
 
 const pipelineRun: PipelineRun = {

@@ -201,6 +201,10 @@ def test_run_suite_runner_build_failure_marks_failed(monkeypatch: pytest.MonkeyP
     status = tasks._run_suite(_sess(session), run_id=run.id)
     assert status == "failed"
     assert run.status == "failed"
+    # Setup failures carry a redaction-safe reason too (#605) — the raw adapter
+    # text (which may name secret_ref / credentials) never rides out on it.
+    assert run.failure_reason
+    assert "secret_ref" not in run.failure_reason
 
 
 def test_run_suite_invalid_connection_config_marks_failed() -> None:

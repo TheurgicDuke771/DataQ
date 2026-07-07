@@ -44,6 +44,7 @@ from backend.app.db.models import (
 )
 from backend.app.services import run_dispatch, suite_service
 from backend.app.services.column_classification import ColumnClass, classify_column, is_sensitive
+from backend.app.services.failure_classifier import classify_failure_reason
 from backend.app.services.severity import resolve_status
 
 log = get_logger(__name__)
@@ -218,8 +219,12 @@ def execute_run(
             return run
         run.status = "succeeded"
         run.finished_at = _now()
+        # Clear any reason a prior reap stamped: a slow-but-alive worker whose run
+        # was reaped (failed + REAPED_REASON) can still finish and commit success
+        # here — it must not surface as succeeded-with-a-failure-reason (#605).
+        run.failure_reason = None
         session.commit()
-    except Exception:
+    except Exception as exc:
         session.rollback()
         # Same cooperative check on the failure path: a run the user cancelled
         # mid-flight that *also* errored stays 'cancelled', not masked as 'failed'.
@@ -228,6 +233,10 @@ def execute_run(
             return run
         run.status = "failed"
         run.finished_at = _now()
+        # Redaction-safe reason (#605): classify the exception into a fixed
+        # message — the raw text (which can carry DSN/credential fragments) stays
+        # in the server log below, never on the persisted/surfaced reason.
+        run.failure_reason = classify_failure_reason(exc)
         session.commit()
         log.exception("run_failed", run_id=str(run.id), table=table)
         return run
@@ -764,7 +773,7 @@ def reap_stuck_runs(
     reaped_ids = [str(run.id) for run in stuck]  # capture before commit expires attrs
     for run in stuck:
         # Canonical terminal-failed shape, one shared `moment` across the batch.
-        run_dispatch.mark_dispatch_failed(run, at=moment)
+        run_dispatch.mark_dispatch_failed(run, at=moment, reason=run_dispatch.REAPED_REASON)
     if stuck:
         session.commit()
         log.warning(
