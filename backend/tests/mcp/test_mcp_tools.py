@@ -72,6 +72,30 @@ def test_list_suites_shapes_each_accessible_suite(db_session: Any, monkeypatch: 
     assert out[0]["last_run"] is None
 
 
+def test_list_suites_hides_unowned_suites_from_non_admin(db_session: Any, monkeypatch: Any) -> None:
+    # Baseline for the admin case below: an outsider who is not a workspace-admin
+    # sees none of another user's suites.
+    owner = _user(db_session, "owner@acme.io")
+    _suite(db_session, owner)
+    outsider = _user(db_session, "outsider@acme.io")
+    _as(monkeypatch, db_session, outsider)
+    assert server.list_suites() == []
+
+
+def test_list_suites_workspace_admin_sees_every_suite(
+    db_session: Any, monkeypatch: Any, make_workspace_admin: Any
+) -> None:
+    # A workspace-admin driving DataQ over MCP gets the workspace-wide view (ADR
+    # 0027), same as the REST list — even a suite they neither own nor share.
+    owner = _user(db_session, "owner@acme.io")
+    suite = _suite(db_session, owner)
+    admin = _user(db_session, "admin@acme.io")
+    make_workspace_admin(admin.email)
+    _as(monkeypatch, db_session, admin)
+    listed = {s["id"] for s in server.list_suites()}
+    assert str(suite.id) in listed
+
+
 def test_get_suite_results_returns_latest_run_per_check(db_session: Any, monkeypatch: Any) -> None:
     user = _user(db_session)
     suite = _suite(db_session, user)
@@ -121,6 +145,26 @@ def test_get_health_score_rejects_bad_window(db_session: Any, monkeypatch: Any) 
         server.get_health_score(window_days=0)
 
 
+def test_get_health_score_workspace_admin_aggregates_unowned_runs(
+    db_session: Any, monkeypatch: Any, make_workspace_admin: Any
+) -> None:
+    # The aggregate honours the workspace-admin view (ADR 0027): a run on a suite
+    # the caller doesn't own counts for an admin but not for a plain outsider.
+    owner = _user(db_session, "owner@acme.io")
+    suite = _suite(db_session, owner)
+    db_session.add(Run(suite_id=suite.id, status="succeeded"))
+    db_session.commit()
+
+    outsider = _user(db_session, "outsider@acme.io")
+    _as(monkeypatch, db_session, outsider)
+    assert server.get_health_score()["total_runs"] == 0
+
+    admin = _user(db_session, "admin@acme.io")
+    make_workspace_admin(admin.email)
+    _as(monkeypatch, db_session, admin)
+    assert server.get_health_score()["total_runs"] >= 1
+
+
 def test_get_adf_pipeline_status_correlates_dq_run(db_session: Any, monkeypatch: Any) -> None:
     user = _user(db_session)
     suite = _suite(db_session, user)
@@ -140,6 +184,51 @@ def test_get_adf_pipeline_status_correlates_dq_run(db_session: Any, monkeypatch:
 
     out = server.get_adf_pipeline_status()
     assert out[0]["pipeline"] == "load_orders"
+    assert out[0]["dq_run"]["status"] == "succeeded"
+
+
+def _adf_run_on_unowned_suite(db_session: Any) -> User:
+    """Seed a pipeline run correlated to a DQ run on a suite owned by someone
+    else, and return a fresh outsider to view it. Shared by the admin +
+    non-admin correlation-visibility tests below."""
+    owner = _user(db_session, "owner@acme.io")
+    suite = _suite(db_session, owner)
+    db_session.add(
+        PipelineRun(
+            provider="adf",
+            connection_id=suite.connection_id,
+            provider_run_id="run-1",
+            pipeline_or_dag_id="load_orders",
+            env="dev",
+            status="succeeded",
+        )
+    )
+    db_session.add(Run(suite_id=suite.id, status="succeeded", triggered_by="adf:load_orders:run-1"))
+    db_session.commit()
+    return _user(db_session, "outsider@acme.io")
+
+
+def test_get_adf_pipeline_status_hides_unowned_correlation_from_non_admin(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    # The pipeline run itself is workspace-wide, but the correlated DQ run is
+    # scoped: a non-admin outsider sees the pipeline row with dq_run == None.
+    outsider = _adf_run_on_unowned_suite(db_session)
+    _as(monkeypatch, db_session, outsider)
+    out = server.get_adf_pipeline_status()
+    assert out[0]["pipeline"] == "load_orders"
+    assert out[0]["dq_run"] is None
+
+
+def test_get_adf_pipeline_status_workspace_admin_correlates_unowned_run(
+    db_session: Any, monkeypatch: Any, make_workspace_admin: Any
+) -> None:
+    # A workspace-admin sees the correlated DQ run even on a suite they don't own
+    # (ADR 0027 parity with the REST orchestration view).
+    admin = _adf_run_on_unowned_suite(db_session)
+    make_workspace_admin(admin.email)
+    _as(monkeypatch, db_session, admin)
+    out = server.get_adf_pipeline_status()
     assert out[0]["dq_run"]["status"] == "succeeded"
 
 

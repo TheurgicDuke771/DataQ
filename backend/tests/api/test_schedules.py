@@ -15,6 +15,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
+from backend.app.core.auth import DEV_BYPASS_EMAIL
 from backend.app.db.models import Connection, Schedule, Suite, User
 from backend.app.db.session import get_db
 from backend.app.main import app
@@ -152,6 +153,31 @@ def test_list_is_scoped_to_accessible_suites(client: TestClient, db_session: Any
     listed = client.get("/api/v1/schedules")
     assert listed.status_code == 200
     assert {s["suite_id"] for s in listed.json()} == {mine}
+
+
+def test_workspace_admin_lists_schedules_workspace_wide(
+    client: TestClient, db_session: Any, make_workspace_admin: Any
+) -> None:
+    # A workspace-admin's schedules list spans every suite (ADR 0027, #488),
+    # mirroring the REST suites/runs/dashboard visibility — including a schedule
+    # on a suite they neither own nor are shared on.
+    conn = _connection(db_session)
+    theirs = _unowned_suite(db_session, conn)
+    db_session.add(
+        Schedule(
+            suite_id=theirs.id,
+            cron="0 0 * * *",
+            timezone="UTC",
+            next_run_at=datetime(2030, 1, 1, tzinfo=UTC),
+            created_by=theirs.created_by,
+        )
+    )
+    db_session.commit()
+    make_workspace_admin(DEV_BYPASS_EMAIL)
+
+    listed = client.get("/api/v1/schedules")
+    assert listed.status_code == 200
+    assert str(theirs.id) in {s["suite_id"] for s in listed.json()}
 
 
 def test_patch_cron_recomputes_next_run_at(client: TestClient, db_session: Any) -> None:
