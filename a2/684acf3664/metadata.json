@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "a2684acf3664",
+  "strategy": "manual-commit",
+  "branch": "feature/532-dryrun-all-datasources",
+  "checkpoints_count": 2,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/a2/684acf3664/0/metadata.json",
+      "transcript": "/a2/684acf3664/0/full.jsonl",
+      "compact_transcript": "/a2/684acf3664/0/transcript.jsonl",
+      "content_hash": "/a2/684acf3664/0/content_hash.txt",
+      "prompt": "/a2/684acf3664/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 18270,
+    "cache_creation_tokens": 630784,
+    "cache_read_tokens": 23286237,
+    "output_tokens": 90335,
+    "api_call_count": 156
+  }
+}
