@@ -12,14 +12,13 @@ One-page reference: what runs where. For the concepts behind the columns, see
 | Freshness monitor (hours since latest timestamp) | ✅ | ✅ | — | — |
 | Volume monitor (row count in range) | ✅ | ✅ | — | — |
 | Column profiler (nulls, distinct, min/max, top values) | ✅ | ✅ | ✅ | ✅ |
-| Dry-run preview | ✅ | — | — | — |
+| Dry-run preview | ✅ | ✅ | ✅ | ✅ |
 
 Custom SQL and the freshness/volume monitors run a SQL query, so they're **SQL-datasource
 only** (flat-file support is a tracked enhancement,
 [#520](https://github.com/TheurgicDuke771/DataQ/issues/520)). Flat-file suites target a
-file or a batch pattern (e.g. `orders_*.csv`) in CSV or Parquet. Dry-run preview is
-**Snowflake-only in v1** — extending it to Unity Catalog + flat files is tracked in
-[#532](https://github.com/TheurgicDuke771/DataQ/issues/532).
+file or a batch pattern (e.g. `orders_*.csv`) in CSV or Parquet. Dry-run preview works on
+every datasource with a runner — Snowflake, Unity Catalog, and flat files ([#532](https://github.com/TheurgicDuke771/DataQ/issues/532)).
 
 ## Ways a suite runs
 

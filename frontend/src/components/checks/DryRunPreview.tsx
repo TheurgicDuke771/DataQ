@@ -12,14 +12,14 @@ import { buildCheckPayload } from './checkForm';
  * in-progress check against the suite's live target via the dry-run API
  * (`POST /suites/{id}/checks/dryrun`) and shows the severity outcome — without
  * persisting a Run/Result. Shared by the create page (`CheckNew`) and the edit
- * page (`CheckEdit`); both pass the suite's run target (#215) so the same
- * `table`/`schema` the run would use is previewed.
+ * page (`CheckEdit`). The target is resolved server-side from the suite's own run
+ * target (#215/#532), so nothing about it is sent from here.
  *
- * v1 backend limits (surfaced as the API's error message): dry-run needs a
- * table target and a Snowflake connection. The button is disabled (with a
- * reason) until an expectation is picked and the suite has a table target;
- * everything else (no credential, unreachable warehouse, wrong datasource) comes
- * back as a clean error from the API and renders in the alert.
+ * Works on every datasource with a runner — Snowflake, Unity Catalog, and flat
+ * files (ADLS / S3 / local) (#532). The button is disabled (with a reason) until
+ * an expectation is picked and the suite has a run target; everything else (no
+ * credential, unreachable datasource, batch file not landed yet) comes back as a
+ * clean 4xx/502 from the API and renders in the alert.
  */
 export function DryRunPreview({
   suiteId,
@@ -50,17 +50,19 @@ export function DryRunPreview({
     setState({ status: 'idle' });
   }
 
-  const table = targetString(target, 'table');
-  const schema = targetString(target, 'schema') ?? null;
+  // A suite is previewable once it has a run target — a SQL/UC table or a
+  // flat-file path (#532), mirroring the column profiler's gate. The concrete
+  // target (incl. UC catalog / flat-file batch) is resolved server-side.
+  const hasTarget = !!targetString(target, 'table') || !!targetString(target, 'path');
 
   const disabledReason = !expectationType
     ? 'Pick an expectation to preview it.'
-    : !table
-      ? 'Set a table target on the suite to preview against live data.'
+    : !hasTarget
+      ? 'Set a table or file target on the suite to preview against live data.'
       : undefined;
 
   const run = async () => {
-    if (!expectationType || !table) return;
+    if (!expectationType || !hasTarget) return;
     setState({ status: 'running' });
     try {
       // Reuse the create/update payload shaping so the preview runs exactly the
@@ -75,8 +77,6 @@ export function DryRunPreview({
         warn_threshold: payload.warn_threshold,
         fail_threshold: payload.fail_threshold,
         critical_threshold: payload.critical_threshold,
-        table,
-        schema,
       });
       setState({ status: 'ok', result });
     } catch (err) {

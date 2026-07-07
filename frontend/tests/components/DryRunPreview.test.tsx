@@ -50,10 +50,15 @@ describe('DryRunPreview', () => {
     expect(screen.getByText(/Pick an expectation/)).toBeInTheDocument();
   });
 
-  it('is disabled with a reason when the suite has no table target', () => {
+  it('is disabled with a reason when the suite has no run target', () => {
     render(<Harness expectationType={NOT_NULL} target={null} />);
     expect(screen.getByRole('button', { name: 'Dry-run preview' })).toBeDisabled();
-    expect(screen.getByText(/Set a table target/)).toBeInTheDocument();
+    expect(screen.getByText(/Set a table or file target/)).toBeInTheDocument();
+  });
+
+  it('is enabled for a flat-file suite whose target is a path (#532)', () => {
+    render(<Harness expectationType={NOT_NULL} target={{ path: 's3://b/orders.csv' }} />);
+    expect(screen.getByRole('button', { name: 'Dry-run preview' })).toBeEnabled();
   });
 
   it('runs the preview and renders the severity outcome', async () => {
@@ -74,7 +79,8 @@ describe('DryRunPreview', () => {
 
     await user.click(screen.getByRole('button', { name: 'Dry-run preview' }));
 
-    // Sends the suite's table/schema + the form's config + thresholds.
+    // Sends only the form's config + thresholds; the target is resolved
+    // server-side from the suite (#532), so no table/schema is sent.
     await waitFor(() =>
       expect(mockDryRun).toHaveBeenCalledWith('s1', {
         expectation_type: NOT_NULL,
@@ -82,8 +88,6 @@ describe('DryRunPreview', () => {
         warn_threshold: 1,
         fail_threshold: null,
         critical_threshold: null,
-        table: 'ORDERS',
-        schema: 'PUBLIC',
       }),
     );
     // The outcome renders: severity tag + metric.
