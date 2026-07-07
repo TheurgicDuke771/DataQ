@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 
 from backend.app.core.auth import get_current_user
 from backend.app.datasources.base import CheckOutcome, SuiteOutcome
-from backend.app.db.models import Connection, Result, Run, Suite, User
+from backend.app.db.models import Check, Connection, Result, Run, Suite, User
 from backend.app.db.session import get_db
 from backend.app.main import app
 from backend.app.services import dryrun_service
@@ -214,6 +214,129 @@ def test_update_revalidates_expectation_config(client: TestClient, db_session: A
     unchanged = client.get(f"/api/v1/suites/{sid}/checks/{cid}").json()
     assert unchanged["expectation_type"] == "expect_column_values_to_not_be_null"
     assert unchanged["config"] == {"column": "order_id"}
+
+
+def test_create_accepts_long_but_legitimate_config_string(
+    client: TestClient, db_session: Any
+) -> None:
+    # A ~2k-char value-set member (or regex) runs fine on the worker, so the
+    # size cap must not reject it — it exists to block junk, not real kwargs
+    # (#651 follow-up: the original 1_000 cap was tighter than the runner).
+    sid = _suite_id(client, db_session)
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks",
+        json=_payload(
+            expectation_type="expect_column_values_to_be_in_set",
+            config={"column": "order_id", "value_set": ["ok", "x" * 2_000]},
+        ),
+    )
+    assert resp.status_code == 201
+
+
+def test_create_rejects_oversized_config_dict_key(client: TestClient, db_session: Any) -> None:
+    # Dict KEYS are strings too — a 100KB key is the same junk class as a 100KB
+    # value and must 422 (#651 follow-up: the walk originally skipped keys).
+    sid = _suite_id(client, db_session)
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks",
+        json=_payload(config={"column": "order_id", "k" * 100_000: "x"}),
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "check_config_invalid"
+    # The envelope must not round-trip the oversized key back to the client.
+    assert len(resp.text) < 5_000
+
+
+def test_oversized_string_422_does_not_echo_the_input(client: TestClient, db_session: Any) -> None:
+    # The 422 envelope is returned AND logged — a 100KB offending value (or a
+    # 100KB key on the path to a nested offender) must come back as a bounded
+    # path, never the input itself.
+    sid = _suite_id(client, db_session)
+    huge = "v" * 100_000
+    flat = client.post(f"/api/v1/suites/{sid}/checks", json=_payload(config={"column": huge}))
+    assert flat.status_code == 422
+    assert len(flat.text) < 5_000
+    nested_under_huge_key = client.post(
+        f"/api/v1/suites/{sid}/checks",
+        json=_payload(config={"column": "order_id", "k" * 50_000: {"inner": huge}}),
+    )
+    assert nested_under_huge_key.status_code == 422
+    assert len(nested_under_huge_key.text) < 5_000
+
+
+def test_deeply_nested_oversized_config_echo_is_bounded(
+    client: TestClient, db_session: Any
+) -> None:
+    # Per-segment truncation alone would still let the ACCUMULATED path grow
+    # ~200 chars per nesting level — 50 levels of 1k keys would echo a ~10KB
+    # path. The whole reported path is bounded, not just each segment.
+    sid = _suite_id(client, db_session)
+    nested: Any = "v" * 100_000
+    for i in range(50):
+        nested = {f"level_{i}_{'k' * 1_000}": nested}
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks", json=_payload(config={"column": "ok", "deep": nested})
+    )
+    assert resp.status_code == 422
+    assert len(resp.text) < 5_000
+
+
+def test_oversized_walk_tolerates_non_string_dict_keys() -> None:
+    # JSON transports only produce string keys, but the MCP tools / direct
+    # callers can hand the service arbitrary dicts — an int key must yield the
+    # normal 422, not a TypeError→500 from slicing the key.
+    from backend.app.services.check_service import (
+        CheckConfigInvalidError,
+        validate_expectation_check,
+    )
+
+    with pytest.raises(CheckConfigInvalidError) as exc_info:
+        validate_expectation_check(
+            "expect_column_values_to_be_in_set",
+            {"column": "x", "value_set": {1: "y" * 20_000}},
+        )
+    assert "exceeds" in str(exc_info.value)
+
+
+def test_unknown_expectation_type_echo_is_bounded() -> None:
+    # REST caps expectation_type at 128 chars, but the MCP tools call the
+    # service directly with no such cap — the service itself must bound what it
+    # echoes into the message and detail (#651 follow-up).
+    from backend.app.services.check_service import (
+        CheckConfigInvalidError,
+        validate_expectation_check,
+    )
+
+    with pytest.raises(CheckConfigInvalidError) as exc_info:
+        validate_expectation_check("expect_" + "z" * 5_000, {})
+    assert len(str(exc_info.value)) < 500
+    assert len(exc_info.value.detail["expectation_type"]) <= 200
+
+
+def test_patch_not_touching_expectation_skips_gx_validation(
+    client: TestClient, db_session: Any
+) -> None:
+    # A pre-#651 row can hold a config today's pinned GX rejects (there is no
+    # backfill). A rename or threshold tweak must still succeed — only a PATCH
+    # touching expectation_type/config re-validates (#651 follow-up: the
+    # original gate ran GX validation on every PATCH, bricking such rows).
+    sid = _suite_id(client, db_session)
+    cid = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()["id"]
+    check = db_session.get(Check, uuid.UUID(cid))
+    check.config = {"column": "order_id", "legacy_junk_key": 1}  # bypasses the API gate
+    db_session.commit()
+
+    rename = client.patch(f"/api/v1/suites/{sid}/checks/{cid}", json={"name": "renamed"})
+    assert rename.status_code == 200
+    threshold = client.patch(f"/api/v1/suites/{sid}/checks/{cid}", json={"fail_threshold": 5})
+    assert threshold.status_code == 200
+    # Touching the expectation itself still validates the merged state: the
+    # same-value expectation_type PATCH meets the stored junk config → 422.
+    touched = client.patch(
+        f"/api/v1/suites/{sid}/checks/{cid}",
+        json={"expectation_type": "expect_column_values_to_not_be_null"},
+    )
+    assert touched.status_code == 422
 
 
 def test_import_rejects_invalid_expectation_check(client: TestClient, db_session: Any) -> None:
