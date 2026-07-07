@@ -1,10 +1,11 @@
 """Check CRUD — checks are GX expectations nested under a suite.
 
 A check belongs to exactly one suite (FK + cascade). This layer validates the
-suite exists, enforces the v1 monitor-kind limit, and treats the check's
-`config` (the GX expectation kwargs) as free-form JSONB — per-expectation
-schema validation against live data is the check dry-run path (a later Week-3
-task), not CRUD.
+suite exists, enforces the v1 monitor-kind limit, and validates the check's
+`config` at author time: expectation-kind checks resolve + construct their GX
+expectation class (#651 — the same translation the runner performs, pulled
+forward so garbage 422s instead of persisting and only failing at run time);
+validation against live data remains the dry-run path, not CRUD.
 
 v1 monitor-kind limit (ADR 0012): although the schema CHECK reserves
 `freshness / volume / schema_drift / anomaly / comparison`, v1 only *runs*
@@ -158,6 +159,78 @@ def _has_positive_threshold(fail: Decimal | None, critical: Decimal | None) -> b
     return (fail is not None and fail > 0) or (critical is not None and critical > 0)
 
 
+# Longest string allowed anywhere in an expectation config. Generous for real
+# kwargs (column names, value-set members, regexes) while blocking the
+# 100KB-column-name class of junk GX itself accepts (#651). Custom-SQL queries
+# are validated (and bounded) separately and never reach this walk.
+_CONFIG_STRING_MAX_CHARS = 1_000
+
+
+def _find_oversized_string(value: Any, path: str = "config") -> str | None:
+    """Depth-first search for a string over the cap; returns its path, or None."""
+    if isinstance(value, str):
+        return path if len(value) > _CONFIG_STRING_MAX_CHARS else None
+    if isinstance(value, dict):
+        for key, item in value.items():
+            found = _find_oversized_string(item, f"{path}.{key}")
+            if found:
+                return found
+    if isinstance(value, list):
+        for i, item in enumerate(value):
+            found = _find_oversized_string(item, f"{path}[{i}]")
+            if found:
+                return found
+    return None
+
+
+def validate_expectation_check(expectation_type: str, config: dict[str, Any]) -> None:
+    """Author-time validation for `kind='expectation'` checks (#651).
+
+    Resolves and constructs the GX expectation exactly like the runner
+    (`gx_runner._to_gx_expectation`), so an unknown `expectation_type`, a
+    missing/wrong-typed/extra config key — anything that would fail on the
+    worker — 422s at create/update/import instead of persisting. GX expectation
+    classes are pydantic models, so construction IS the schema validation.
+    Custom-SQL checks (ADR 0019) have their own validator and must not be passed
+    here (their type is not a GX class).
+    """
+    oversized = _find_oversized_string(config)
+    if oversized is not None:
+        raise CheckConfigInvalidError(
+            f"config value at {oversized} exceeds {_CONFIG_STRING_MAX_CHARS} characters",
+            detail={"path": oversized, "max_chars": _CONFIG_STRING_MAX_CHARS},
+        )
+
+    # Lazy: importing great_expectations is heavy (seconds), and the API process
+    # only needs it on the authoring paths — same pattern as the vault client.
+    import great_expectations.expectations as gxe
+    from great_expectations.expectations.expectation import Expectation
+
+    from backend.app.datasources.gx_runner import _expectation_class_name
+
+    class_name = _expectation_class_name(expectation_type)
+    expectation_cls = getattr(gxe, class_name, None)
+    # The issubclass guard keeps a crafted type from resolving to a non-expectation
+    # module attribute via the title-casing getattr.
+    if expectation_cls is None or not (
+        isinstance(expectation_cls, type) and issubclass(expectation_cls, Expectation)
+    ):
+        raise CheckConfigInvalidError(
+            f"unknown expectation_type {expectation_type!r} — not a Great Expectations "
+            "expectation",
+            detail={"expectation_type": expectation_type},
+        )
+    try:
+        expectation_cls(**config)
+    except Exception as exc:
+        # pydantic ValidationError (missing/wrong-typed/extra kwargs) or a GX
+        # root-validator error; the message is user-actionable, so surface it.
+        raise CheckConfigInvalidError(
+            f"invalid config for {expectation_type}: {str(exc)[:500]}",
+            detail={"expectation_type": expectation_type},
+        ) from exc
+
+
 def record_check_version(
     session: Session, check: Check, *, actor_id: uuid.UUID | None
 ) -> CheckVersion:
@@ -226,6 +299,8 @@ def create_check(
             config=config,
             connection_type=_connection_type(session, suite),
         )
+    else:
+        validate_expectation_check(expectation_type, config)
 
     check = Check(
         suite_id=suite_id,
@@ -284,6 +359,39 @@ def update_check(
     no clear-to-NULL path for thresholds; recreate the check to drop one.
     """
     check = get_check(session, suite_id, check_id)
+    # Compute the effective post-patch values and validate them BEFORE touching
+    # the ORM object: a rejected update must leave nothing dirty in the session
+    # (mutate-then-raise would let a later commit on the same session persist
+    # the invalid state). `kind` is immutable on update, so it's read off the
+    # existing check.
+    new_expectation_type = (
+        expectation_type if expectation_type is not None else check.expectation_type
+    )
+    new_config = config if config is not None else check.config
+    new_fail = fail_threshold if fail_threshold is not None else check.fail_threshold
+    new_critical = (
+        critical_threshold if critical_threshold is not None else check.critical_threshold
+    )
+    if check.kind in MONITOR_KINDS:
+        suite = get_suite(session, suite_id)
+        validate_monitor_check(
+            check.kind,
+            new_config,
+            expectation_type=new_expectation_type,
+            connection_type=_connection_type(session, suite),
+            fail_threshold=new_fail,
+            critical_threshold=new_critical,
+        )
+    elif is_custom_sql(new_expectation_type):
+        suite = get_suite(session, suite_id)
+        validate_custom_sql_check(
+            expectation_type=new_expectation_type,
+            config=new_config,
+            connection_type=_connection_type(session, suite),
+        )
+    else:
+        validate_expectation_check(new_expectation_type, new_config)
+
     if name is not None:
         check.name = name
     if expectation_type is not None:
@@ -296,27 +404,6 @@ def update_check(
         check.fail_threshold = fail_threshold
     if critical_threshold is not None:
         check.critical_threshold = critical_threshold
-    # Re-validate against the post-patch state: a PATCH may change only the config
-    # or only a threshold, so guard the effective check before commit (a rejected
-    # update persists nothing). `kind` is immutable on update, so it's read off the
-    # existing check.
-    if check.kind in MONITOR_KINDS:
-        suite = get_suite(session, suite_id)
-        validate_monitor_check(
-            check.kind,
-            check.config,
-            expectation_type=check.expectation_type,
-            connection_type=_connection_type(session, suite),
-            fail_threshold=check.fail_threshold,
-            critical_threshold=check.critical_threshold,
-        )
-    elif is_custom_sql(check.expectation_type):
-        suite = get_suite(session, suite_id)
-        validate_custom_sql_check(
-            expectation_type=check.expectation_type,
-            config=check.config,
-            connection_type=_connection_type(session, suite),
-        )
     # Only snapshot a real change: a no-op PATCH (empty body, or fields set to
     # their current values) must not mint a duplicate version — that would fill
     # the history drawer with noise and defeat "see previous config". SQLAlchemy

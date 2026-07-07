@@ -32,10 +32,11 @@ from backend.app.datasources.monitors import MONITOR_KINDS
 from backend.app.db.models import ORCHESTRATION_PROVIDERS, Check, Connection, Suite
 from backend.app.services.check_service import (
     record_check_version,
+    validate_expectation_check,
     validate_kind,
     validate_monitor_check,
 )
-from backend.app.services.custom_sql import validate_custom_sql_check
+from backend.app.services.custom_sql import is_custom_sql, validate_custom_sql_check
 
 log = get_logger(__name__)
 
@@ -131,12 +132,16 @@ def import_suite(
                 fail_threshold=c["fail_threshold"],
                 critical_threshold=c["critical_threshold"],
             )
-        else:
+        elif is_custom_sql(c["expectation_type"]):
             validate_custom_sql_check(
                 expectation_type=c["expectation_type"],
                 config=c["config"],
                 connection_type=connection.type,
             )
+        else:
+            # Same author-time GX validation as check CRUD (#651) — an imported
+            # document must not smuggle in checks a direct POST would 422.
+            validate_expectation_check(c["expectation_type"], c["config"])
 
     suite = Suite(
         name=name,
