@@ -507,4 +507,17 @@ def build_mcp_app() -> Any:
     log.info(
         "mcp_enabled", auth="azure_ad" if get_settings().azure_auth_configured else "dev_bypass"
     )
-    return mcp.http_app(path="/")
+    # FastMCP (≥3.4.3) guards the streamable-HTTP transport with a Host allowlist
+    # for DNS-rebinding protection, defaulting to loopback only ("127.0.0.1",
+    # "localhost", "::1") — anything else gets a 421 Misdirected Request. DataQ
+    # always fronts the api with the nginx proxy (ADR 0028 §5), which forwards the
+    # *upstream* Host (the internal ACA FQDN in prod, `api` in compose) so ACA's
+    # Envoy routes correctly — none of which are loopback, so the guard 421s every
+    # proxied MCP request. DNS-rebinding protection is a browser-vs-localhost threat
+    # model that doesn't apply here: the api has no public ingress and every /mcp
+    # request is JWT/PAT-authenticated fail-closed (`build_auth_provider`). Allow
+    # the proxied hosts so the transport guard doesn't shadow the real auth gate.
+    return mcp.http_app(
+        path="/",
+        allowed_hosts=["*.azurecontainerapps.io", "api", "localhost", "127.0.0.1"],
+    )

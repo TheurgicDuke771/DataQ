@@ -621,3 +621,36 @@ def test_profile_column_explicit_path_wins_over_target(db_session: Any, monkeypa
 
     server.profile_column(str(suite.id), columns=["x"], path="logistics/other.csv")
     assert seen["path"] == "logistics/other.csv"
+
+
+# ─────────────────────── /mcp mount: DNS-rebind Host guard (#672 fastmcp bump) ──
+
+
+def test_build_mcp_app_allowlists_proxied_hosts(monkeypatch: Any) -> None:
+    """FastMCP's transport guard defaults to loopback-only hosts and 421s anything
+    else — but DataQ always fronts the api with the nginx proxy, which forwards the
+    upstream Host (the ACA FQDN in prod, `api` in compose). Assert build_mcp_app
+    passes those hosts so the guard can't shadow the real auth gate."""
+    captured: dict[str, Any] = {}
+    monkeypatch.setattr(server, "mcp_enabled", lambda: True)
+    monkeypatch.setattr(server.mcp, "http_app", lambda **kw: captured.update(kw) or "APP")
+
+    assert server.build_mcp_app() == "APP"
+    hosts = captured["allowed_hosts"]
+    assert "*.azurecontainerapps.io" in hosts  # prod (internal api FQDN)
+    assert "api" in hosts  # docker-compose upstream
+
+
+def test_allowed_hosts_match_prod_and_compose_upstreams() -> None:
+    """Prove the allowlist patterns actually match the real proxied Host values
+    using FastMCP's own matcher — so the mount doesn't 421 in prod (regression
+    guard for the 3.4.3 DNS-rebind guard)."""
+    from fastmcp.server.http import _host_matches
+
+    hosts = ["*.azurecontainerapps.io", "api", "localhost", "127.0.0.1"]
+    # The exact prod upstream nginx forwards (DATAQ_API_UPSTREAM, internal ingress).
+    assert _host_matches(
+        "dataq-app-api.internal.purplefield-f7322a1b.westus2.azurecontainerapps.io", hosts
+    )
+    assert _host_matches("api", hosts)  # docker-compose
+    assert not _host_matches("evil.example.com", hosts)  # still rejects the rest
