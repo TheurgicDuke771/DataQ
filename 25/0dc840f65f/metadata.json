@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "250dc840f65f",
+  "strategy": "manual-commit",
+  "branch": "feature/643-stale-policy-hint",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/25/0dc840f65f/0/metadata.json",
+      "transcript": "/25/0dc840f65f/0/full.jsonl",
+      "compact_transcript": "/25/0dc840f65f/0/transcript.jsonl",
+      "content_hash": "/25/0dc840f65f/0/content_hash.txt",
+      "prompt": "/25/0dc840f65f/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 40470,
+    "cache_creation_tokens": 943181,
+    "cache_read_tokens": 51884383,
+    "output_tokens": 164272,
+    "api_call_count": 272
+  }
+}
