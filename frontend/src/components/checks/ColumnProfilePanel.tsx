@@ -221,6 +221,7 @@ function ProfileView({ result }: { result: ProfileResult }) {
       />
       {col.top_values.length > 0 && (
         <Table
+          scroll={{ x: 'max-content' }}
           size="small"
           pagination={false}
           rowKey={(_, i) => String(i)}

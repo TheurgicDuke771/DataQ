@@ -88,6 +88,7 @@ export function RecentRuns() {
       )}
       {state.status === 'ok' && (
         <Table<Run>
+          scroll={{ x: 'max-content' }}
           rowKey="id"
           size="small"
           columns={columns}

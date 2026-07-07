@@ -203,7 +203,7 @@ function Header({
   backLabel: string;
 }) {
   return (
-    <Flex justify="space-between" align="center" gap={12}>
+    <Flex justify="space-between" align="center" gap={12} wrap>
       <Typography.Title level={3} style={{ margin: 0 }}>
         {title}
       </Typography.Title>

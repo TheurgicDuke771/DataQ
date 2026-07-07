@@ -258,6 +258,7 @@ function SampleFailures({ sample }: { sample: Record<string, unknown> | null }) 
       </Typography.Text>
       {rows.length > 0 ? (
         <Table<Record<string, unknown>>
+          scroll={{ x: 'max-content' }}
           rowKey={(_, i) => String(i)}
           size="small"
           columns={columns}
@@ -331,6 +332,7 @@ function ResultsTable({
   ];
   return (
     <Table
+      scroll={{ x: 'max-content' }}
       rowKey="id"
       size="small"
       columns={columns}
