@@ -352,6 +352,19 @@ def test_get_run_detail_grafts_check_outcome_counts(client: TestClient, db_sessi
     body = client.get(f"/api/v1/runs/{run.id}").json()
     assert (body["checks_total"], body["checks_passed"], body["worst_severity"]) == (2, 1, "warn")
 
+    # All-skip run (present Result rows, but every check operational): evaluated
+    # total is 0 via a present-but-zeroed tuple — the detail graft must render `—`
+    # (0/0/None), the truthy-tuple path distinct from the no-rows None path above.
+    skip_run = _run(db_session, suite, status="succeeded")
+    db_session.add(Result(run_id=skip_run.id, check_id=c1.id, status="skip"))
+    db_session.commit()
+    skip_body = client.get(f"/api/v1/runs/{skip_run.id}").json()
+    assert (
+        skip_body["checks_total"],
+        skip_body["checks_passed"],
+        skip_body["worst_severity"],
+    ) == (0, 0, None)
+
 
 def test_pre_dispatch_failure_checks_total_consistent_across_read_models(
     client: TestClient, db_session: Any
