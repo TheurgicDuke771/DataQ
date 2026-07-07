@@ -147,7 +147,7 @@ recorded, **and PATs live** — 1 workspace-admin + 1 member PAT minted and exer
 prod REST + `/mcp/` (two-tier authz matrix: 10-vs-4 suites, /admin 200-vs-403). The PATs
 are the standing headless credential from here (az-CLI-bearer interim #565 retired).
 
-### v1.1 W2 — Portability: OTel logs, secrets lifecycle, dry-run depth (due 2026-07-18) — 11/14
+### v1.1 W2 — Portability: OTel logs, secrets lifecycle, dry-run depth (due 2026-07-18) — 12/14
 
 Land the vendor-neutral seams **while App Insights / Key Vault / live `/mcp` still exist to
 verify parity against** (ADR 0010/0013/0028 discipline). Live checks from here on run on the
@@ -168,7 +168,7 @@ W1 admin/member PATs instead of the Azure-CLI token workaround (#565).
 | ✅ | [#388](https://github.com/TheurgicDuke771/DataQ/issues/388) Alerting batch (3/4): `alert_on` literals locked to `ALERT_ON_POLICIES` (model↔validation already single-sourced; routing constants + CHECK-constraint SQL drift-guarded; #656) | Theme 5 |
 | ✅ | [#389](https://github.com/TheurgicDuke771/DataQ/issues/389) Alerting batch (4/4): **closed won't-fix** — overtaken by the Slack/email publishers; `teams_webhook_secret_name` is now correctly channel-specific + symmetric with `slack_webhook_secret_name`, renaming would break that symmetry. Follow-up [#655](https://github.com/TheurgicDuke771/DataQ/issues/655) filed (converge the 3 severity-rank maps) | Theme 5 |
 | ✅ | [#416](https://github.com/TheurgicDuke771/DataQ/issues/416) Enrich Slack/email alerts — "View run" deep link (reuses `PUBLIC_BASE_URL`), run metadata (env/trigger/started/duration), per-check expected-vs-observed + redacted sample preview; shared pure `alerting/render.py` formatters ([#659](https://github.com/TheurgicDuke771/DataQ/pull/659)). Live Slack+email visual verify deferred to the smoke lane (no transport in CI) | Theme 5 |
-| ⬜ | [#488](https://github.com/TheurgicDuke771/DataQ/issues/488) Workspace-admin visibility in MCP tools + schedules — rides PATs + #584 (mapped 2026-07-04) | Theme 3 |
+| ✅ | [#488](https://github.com/TheurgicDuke771/DataQ/issues/488) Workspace-admin **workspace-wide visibility** threaded into the MCP list/aggregate tools (`list_suites`, `get_health_score`, `get_adf_pipeline_status` correlation) + `schedule_service.list_schedules` (+ `/schedules` endpoint), mirroring the ADR-0027 REST view; per-suite MCP tools already grant admin via `require_permission`. Admin+non-admin authz tests on both surfaces ([#695](https://github.com/TheurgicDuke771/DataQ/pull/695)) | Theme 3 |
 
 **Exit gate:** observability + secrets + alerting vendor-neutral and Azure-verified — OTel logs
 in BOTH App Insights and a local OTLP consumer; `SecretStore.delete` verified on live KV;
