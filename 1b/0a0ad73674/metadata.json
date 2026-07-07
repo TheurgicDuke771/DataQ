@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "1b0a0ad73674",
+  "strategy": "manual-commit",
+  "branch": "docs/progress-ui-gap-batch",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/1b/0a0ad73674/0/metadata.json",
+      "transcript": "/1b/0a0ad73674/0/full.jsonl",
+      "compact_transcript": "/1b/0a0ad73674/0/transcript.jsonl",
+      "content_hash": "/1b/0a0ad73674/0/content_hash.txt",
+      "prompt": "/1b/0a0ad73674/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 157498,
+    "cache_creation_tokens": 782624,
+    "cache_read_tokens": 106449397,
+    "output_tokens": 218169,
+    "api_call_count": 383
+  }
+}
