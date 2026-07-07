@@ -47,6 +47,7 @@ from backend.app.services import (
     run_target,
     suite_service,
 )
+from backend.app.services.failure_classifier import classify_failure_reason
 from backend.app.worker.celery_app import celery_app
 
 # Polling fallback (#171): look back slightly further than the 10-min beat
@@ -62,11 +63,20 @@ _GAP_RECOVERY_LOOKBACK = timedelta(hours=1)
 log = get_logger(__name__)
 
 
-def _terminal_failed(session: Session, run: Run, *, event: str, run_id: uuid.UUID) -> str:
-    """Drive ``run`` to terminal ``failed`` (never left ``queued``/``running``)."""
+def _terminal_failed(
+    session: Session, run: Run, *, event: str, run_id: uuid.UUID, reason: str | None = None
+) -> str:
+    """Drive ``run`` to terminal ``failed`` (never left ``queued``/``running``).
+
+    ``reason`` is the redaction-safe, classified message (#605) — setup/materialize
+    failures (bad config, unreadable secret, unreachable store) are the largest
+    class of real run failures, so they carry a user-facing reason too, not just
+    the runner-time path in ``execute_run``.
+    """
     run.status = "failed"
     run.started_at = run.started_at or datetime.now(UTC)
     run.finished_at = datetime.now(UTC)
+    run.failure_reason = reason
     session.commit()
     log.exception(event, run_id=str(run_id))
     return "failed"
@@ -115,8 +125,14 @@ def _run_suite(session: Session, *, run_id: uuid.UUID) -> str:
             secret_store=get_secret_store(),
             catalog=target.catalog,
         )
-    except Exception:
-        return _terminal_failed(session, run, event="run_suite_setup_failed", run_id=run_id)
+    except Exception as exc:
+        return _terminal_failed(
+            session,
+            run,
+            event="run_suite_setup_failed",
+            run_id=run_id,
+            reason=classify_failure_reason(exc),
+        )
 
     # Materialize the concrete path (live for a flat-file batch target). Kept
     # separate from setup so a missing batch is a skip, not a setup failure.
@@ -132,8 +148,14 @@ def _run_suite(session: Session, *, run_id: uuid.UUID) -> str:
         run_service.skip_run(session, run=run, checks=checks, reason="batch_not_found")
         log.info("run_suite_skipped_no_batch", run_id=str(run_id), suite_id=str(suite.id))
         return str(run.status)
-    except Exception:
-        return _terminal_failed(session, run, event="run_suite_materialize_failed", run_id=run_id)
+    except Exception as exc:
+        return _terminal_failed(
+            session,
+            run,
+            event="run_suite_materialize_failed",
+            run_id=run_id,
+            reason=classify_failure_reason(exc),
+        )
 
     # The suite's identifier column (#415) — requested from GX so failing rows are
     # captured with a locator. A `None`/absent policy keeps the scalar-only sample.

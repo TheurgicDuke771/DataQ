@@ -219,6 +219,10 @@ def execute_run(
             return run
         run.status = "succeeded"
         run.finished_at = _now()
+        # Clear any reason a prior reap stamped: a slow-but-alive worker whose run
+        # was reaped (failed + REAPED_REASON) can still finish and commit success
+        # here — it must not surface as succeeded-with-a-failure-reason (#605).
+        run.failure_reason = None
         session.commit()
     except Exception as exc:
         session.rollback()
