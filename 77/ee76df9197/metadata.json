@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "77ee76df9197",
+  "strategy": "manual-commit",
+  "branch": "docs/w2-followups-cleared",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "CLAUDE.md",
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/77/ee76df9197/0/metadata.json",
+      "transcript": "/77/ee76df9197/0/full.jsonl",
+      "compact_transcript": "/77/ee76df9197/0/transcript.jsonl",
+      "content_hash": "/77/ee76df9197/0/content_hash.txt",
+      "prompt": "/77/ee76df9197/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 64927,
+    "cache_creation_tokens": 1376004,
+    "cache_read_tokens": 88700468,
+    "output_tokens": 225997,
+    "api_call_count": 379
+  }
+}
