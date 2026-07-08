@@ -1,0 +1,24 @@
+Lets check #286
+
+---
+
+Leave the Snowflake/UC part. 
+Currently for parquet files we are adding ADLS/S3 as connection, how will it change if we add iceberg capability? and how the csv, parquet, and other flat file retrival will look like? will all the parquet be routed to iceberg engine?
+
+---
+
+Yes write an ADR, mention why we choose iceberg v2, why we are not checking Snoflake Iceberg tables or Databricks foreign catalog. And for Iceberg connection lets go with option A. [example scenario - there might be a situation where user added an ADLS path which has both flat file and iceberg tables, but later user choose to delete the flat file connection and only going to be use the ADLS for iceberg table going forward. In that case, it would be a cleaner approach and we also have a cascade delete on the foreign key. So that scenario might be also in play]. 
+One question will pyiceberg be able to read delta-uniform?
+
+---
+
+do the local pyiceberg proof next + file follow-ups and close the spike out.
+
+---
+
+when we are using `catalog.load_table(...).scan().to_pandas()` we are using pyarrow as engine, right?
+
+---
+
+okay in #716 keep an option b/w .to_arrow_batch_reader() and .to_arrow() and mention not directly use scan().to_pandas [or is it nor correct approach?] 
+Also move #716 to week 3.

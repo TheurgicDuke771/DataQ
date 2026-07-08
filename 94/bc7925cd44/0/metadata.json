@@ -1,0 +1,100 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_id": "94bc7925cd44",
+  "session_id": "8bb76f13-05da-451c-ab08-dc5056bf7a39",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-08T05:55:45.147899Z",
+  "branch": "docs/adr-0030-iceberg-spike",
+  "checkpoints_count": 6,
+  "save_step_count": 4,
+  "files_touched": [
+    "docs/adr/0030-iceberg-native-read-path.md",
+    "docs/adr/README.md",
+    "docs/progress.md"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "91efc577765f",
+  "token_usage": {
+    "input_tokens": 15718,
+    "cache_creation_tokens": 377413,
+    "cache_read_tokens": 6568520,
+    "output_tokens": 57038,
+    "api_call_count": 53
+  },
+  "session_metrics": {
+    "turn_count": 6
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-08T05:55:45.116337Z",
+    "agent_lines": 71,
+    "agent_removed": 2,
+    "human_added": 0,
+    "human_modified": 2,
+    "human_removed": 0,
+    "total_committed": 73,
+    "total_lines_changed": 75,
+    "agent_percentage": 97.33333333333334,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 71,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 7,
+      "user_lines_removed": 1,
+      "agent_lines_added": 75,
+      "agent_lines_removed": 4,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6,
+        "docs/adr/0030-iceberg-native-read-path.md": 1
+      },
+      "user_removed_per_file": {
+        "docs/adr/0030-iceberg-native-read-path.md": 1
+      }
+    },
+    {
+      "checkpoint_number": 4,
+      "user_lines_added": 7,
+      "user_lines_removed": 1,
+      "agent_lines_added": 75,
+      "agent_lines_removed": 4,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6,
+        "docs/adr/0030-iceberg-native-read-path.md": 1
+      },
+      "user_removed_per_file": {
+        "docs/adr/0030-iceberg-native-read-path.md": 1
+      }
+    },
+    {
+      "checkpoint_number": 5,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 75,
+      "agent_lines_removed": 4,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}
