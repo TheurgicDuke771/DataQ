@@ -10,6 +10,7 @@ flowchart LR
     subgraph orch["⚙️ Orchestration — monitor + trigger only"]
         ADF["Azure Data Factory"]
         AF["Apache Airflow"]
+        DBT["dbt"]
     end
     subgraph clients["🌐 Clients"]
         AICli["AI clients · Claude/Copilot/Cursor"]
@@ -48,7 +49,7 @@ flowchart LR
     classDef client fill:#F1EFE8,stroke:#5F5E5A,color:#444441
     class API,Worker,Infra,Frontend hub
     class SF,Files,UC src
-    class ADF,AF integ
+    class ADF,AF,DBT integ
     class Teams,Email notify
     class Web,AICli client
     style platform fill:#F4F9FE,stroke:#185FA5
@@ -66,7 +67,7 @@ The flow reads left → right: **inputs** (Clients, Orchestration) drive the **D
 | Colour | Group |
 |---|---|
 | Grey | Clients — browser web UI + AI clients (over MCP) |
-| Orange | Orchestration — ADF · Airflow (monitor + trigger only, **never** datasources) |
+| Orange | Orchestration — ADF · Airflow · dbt (monitor + trigger only, **never** datasources) |
 | Blue | DataQ platform — Frontend (nginx SPA) · FastAPI · Celery worker · PostgreSQL · Redis · Key Vault · App Insights |
 | Green | Datasources — GX checks run against these |
 | Red | Alert channels — Teams · Slack · Email (the `ResultPublisher` seam) |
@@ -246,7 +247,7 @@ erDiagram
 - **`shares.permission` grants are `view`/`edit` only.** `admin` is legal in the DB `CHECK` but never granted (`share_service.GRANTABLE_PERMISSIONS`): workspace-admin is *implicit* on every suite (config allowlist, not a share row) and `owner` is `suites.created_by`, not a share — ADR [0027](adr/0027-suite-permission-model-workspace-admin.md).
 - **Cascade posture (ADR [0020](adr/0020-history-and-audit-strategy.md)):** deleting a suite cascades its checks, runs, results, shares, trigger bindings, schedules, and notification config; deleting a connection cascades its version history. History is not retained past entity deletion — accepted. Version snapshots survive their *author* (`changed_by` is `SET NULL`), not their entity.
 - **`pipeline_runs` ≠ `runs` — no FK between them.** Orchestrator pipeline executions correlate to the DQ suite runs they trigger only via the string marker `runs.triggered_by = '<provider>:<pipeline_or_dag_id>:<provider_run_id>'` (dotted lines above); `trigger_bindings` matches pipeline runs by `(provider, pipeline_or_dag_id, env)`, also without an FK. A partial unique index on `runs (suite_id, triggered_by)` dedupes orchestration-triggered runs.
-- **Singleton constraints:** at most one orchestrator connection per `(type, env)` (partial unique index over `adf`/`airflow` only — datasources may repeat); one `suite_notifications` row per suite; one live `shares` row per `(suite, user)`.
+- **Singleton constraints:** at most one orchestrator connection per `(type, env)` (partial unique index over `adf`/`airflow`/`dbt` only — datasources may repeat); one `suite_notifications` row per suite; one live `shares` row per `(suite, user)`.
 - **Secrets are never in these tables.** `connections.secret_ref` / `suite_notifications.webhook_secret_ref` hold SecretStore *keys*; version snapshots deliberately omit credentials, so a credential rotation records no version.
 
 ## Runtime flows
@@ -297,12 +298,12 @@ Key sources: [`worker/tasks.py`](https://github.com/TheurgicDuke771/DataQ/blob/m
 
 ### Orchestration event flow
 
-How an ADF / Airflow pipeline outcome becomes (at most) a triggered suite run. Everything goes through the `OrchestrationProvider` seam (ADR [0004](adr/0004-orchestration-abstraction.md)) — no provider branching:
+How an ADF / Airflow / dbt pipeline outcome becomes (at most) a triggered suite run. Everything goes through the `OrchestrationProvider` seam (ADR [0004](adr/0004-orchestration-abstraction.md)) — no provider branching:
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant ORC as ADF / Airflow
+    participant ORC as ADF / Airflow / dbt
     participant FE as Frontend nginx (public ingress)
     participant API as FastAPI (internal)
     participant KV as SecretStore (Key Vault)
@@ -310,8 +311,8 @@ sequenceDiagram
     participant BR as Redis broker
     participant W as Celery worker
 
-    Note over ORC: pipeline / DAG run reaches a terminal state
-    ORC->>FE: POST /api/v1/orchestration/events/{provider}<br/>(ADF — Azure Monitor alert · Airflow — on_*_callback snippet)
+    Note over ORC: pipeline / DAG / dbt build reaches a terminal state
+    ORC->>FE: POST /api/v1/orchestration/events/{provider}<br/>(ADF — Azure Monitor alert · Airflow — on_*_callback · dbt — post-build callback)
     FE->>API: same-origin proxy
     API->>KV: load receiver secret
     API->>API: authenticate — ADF constant-time token query param (ADR 0006)<br/>· Airflow HMAC-SHA256 over raw body (ADR 0007)

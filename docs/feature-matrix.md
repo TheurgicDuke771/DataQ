@@ -26,7 +26,7 @@ every datasource with a runner — Snowflake, Unity Catalog, and flat files ([#5
 |---|---|---|
 | Run now | Suite detail → Run panel | Live per-check progress + cancel |
 | Cron schedule | Suite detail → Schedules | 5-field cron, IANA timezone, DST-aware, [no backfill](scheduling.md) |
-| Pipeline trigger | Suite detail → Triggers | Runs on a pipeline/DAG **success** — ADF + Airflow, see [Orchestration](orchestration.md) |
+| Pipeline trigger | Suite detail → Triggers | Runs on a pipeline/DAG/dbt-job **success** — ADF + Airflow + dbt, see [Orchestration](orchestration.md) |
 | API / MCP | `POST /suites/{id}/run` · `trigger_suite_run` MCP tool | Same authz as the UI |
 
 ## Severity & results
@@ -55,6 +55,7 @@ every datasource with a runner — Snowflake, Unity Catalog, and flat files ([#5
 |---|---|---|
 | Azure Data Factory | Azure Monitor alert → webhook (+10-min poll) | ✅ trigger bindings |
 | Apache Airflow | DAG callback → HMAC webhook (+10-min poll) | ✅ trigger bindings |
+| dbt | Post-build callback → HMAC webhook (+10-min `run_results.json` artifact poll) | ✅ trigger bindings |
 
 ## Interfaces
 

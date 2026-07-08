@@ -1,7 +1,7 @@
-# Orchestration integration (ADF & Airflow)
+# Orchestration integration (ADF, Airflow & dbt)
 
 DataQ **observes** your pipelines and can **run check suites when they finish** — it does
-not run the pipelines. Both Azure Data Factory and Apache Airflow sit behind one
+not run the pipelines. Azure Data Factory, Apache Airflow, and dbt all sit behind one
 `OrchestrationProvider` interface, so the behaviour is identical.
 
 ## What DataQ does with a pipeline
@@ -32,6 +32,27 @@ Add the provided callback snippet
 ([`integrations/airflow/`](https://github.com/TheurgicDuke771/DataQ/tree/main/integrations/airflow))
 to your DAGs — its `on_success_callback` / `on_failure_callback` HMAC-signs and POSTs to
 `/api/v1/orchestration/events/airflow`. Polling the Airflow REST API is the fallback.
+
+## dbt
+
+dbt binds to dbt's **universal surface** — the `run_results.json` build artifact plus a
+post-build callback — so it works with any dbt runner (Core, Cloud, an orchestrator step)
+with no host API dependency (ADR 0029). dbt Core has no callback hook like Airflow's, so
+you run a tiny **post-build wrapper**:
+
+- Register a **dbt connection** (Connections → dbt) with its `project_name`, the `jobs` it
+  publishes, and the `artifacts_uri` where builds land (`adls://…`, `s3://…`, or `file://…`)
+  plus the store's read credential.
+- Copy the callback snippet
+  ([`integrations/dbt/`](https://github.com/TheurgicDuke771/DataQ/tree/main/integrations/dbt))
+  and run it right after `dbt build`, pointed at that run's `run_results.json`. It HMAC-signs
+  (same scheme as Airflow) and POSTs to `/api/v1/orchestration/events/dbt`.
+- **Fallback:** DataQ polls `<artifacts_uri>/<job>/latest/run_results.json` on the 10-minute
+  cadence, so a build is still recorded even if the callback never fires. Grain is
+  **job-level** (one `pipeline_run` per dbt job build).
+
+Store the HMAC signing key as the `dbt-webhook-secret` in DataQ's secret store; the webhook
+URL is shown in **Settings → Webhooks** like the others.
 
 ## Wiring a trigger
 

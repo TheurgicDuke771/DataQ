@@ -7,10 +7,10 @@ A few terms make the rest of the docs click.
 - **Datasources** are stores you write data-quality checks *against*: **Snowflake**,
   **ADLS Gen2**, **AWS S3**, **Unity Catalog (Databricks)**.
 - **Orchestration providers** are workflow engines DataQ *observes* — **Azure Data
-  Factory (ADF)** and **Apache Airflow**. DataQ does three things with them: monitor
-  pipeline/DAG runs, detect failures in near-real-time, and **trigger a check suite when a
+  Factory (ADF)**, **Apache Airflow**, and **dbt**. DataQ does three things with them: monitor
+  pipeline/DAG/build runs, detect failures in near-real-time, and **trigger a check suite when a
   pipeline finishes successfully**. They are **not** datasources — you never write checks
-  against ADF/Airflow.
+  against ADF/Airflow/dbt.
 
 !!! note
     This split is load-bearing throughout the product. Orchestration runs live in
