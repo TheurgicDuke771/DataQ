@@ -1,7 +1,8 @@
 # Feature matrix
 
-One-page reference: what runs where. For the concepts behind the columns, see
-[Concepts](concepts.md) and [Datasources & checks](datasources-checks.md).
+One-page reference: what runs where. For the readable tour of everything DataQ offers see
+[Features](features.md); for the concepts behind the columns see [Concepts](concepts.md) and
+[Datasources & checks](datasources-checks.md).
 
 ## Check kinds × datasources
 
