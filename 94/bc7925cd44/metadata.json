@@ -4,7 +4,7 @@
   "checkpoint_id": "94bc7925cd44",
   "strategy": "manual-commit",
   "branch": "docs/adr-0030-iceberg-spike",
-  "checkpoints_count": 6,
+  "checkpoints_count": 7,
   "files_touched": [
     "docs/adr/0030-iceberg-native-read-path.md",
     "docs/adr/README.md",
@@ -17,13 +17,20 @@
       "compact_transcript": "/94/bc7925cd44/0/transcript.jsonl",
       "content_hash": "/94/bc7925cd44/0/content_hash.txt",
       "prompt": "/94/bc7925cd44/0/prompt.txt"
+    },
+    {
+      "metadata": "/94/bc7925cd44/1/metadata.json",
+      "transcript": "/94/bc7925cd44/1/full.jsonl",
+      "compact_transcript": "/94/bc7925cd44/1/transcript.jsonl",
+      "content_hash": "/94/bc7925cd44/1/content_hash.txt",
+      "prompt": ""
     }
   ],
   "token_usage": {
-    "input_tokens": 15718,
-    "cache_creation_tokens": 377413,
-    "cache_read_tokens": 6568520,
-    "output_tokens": 57038,
-    "api_call_count": 53
+    "input_tokens": 85129,
+    "cache_creation_tokens": 833571,
+    "cache_read_tokens": 17691086,
+    "output_tokens": 134258,
+    "api_call_count": 127
   }
 }
