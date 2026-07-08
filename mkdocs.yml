@@ -58,6 +58,7 @@ nav:
   - Home: index.md
   - Guides:
       - Getting started: getting-started.md
+      - Tutorial — your first suite: tutorial.md
       - Concepts: concepts.md
       - Features: features.md
       - Datasources & checks: datasources-checks.md
@@ -70,9 +71,14 @@ nav:
       - Best practices: best-practices.md
   - Reference:
       - Feature matrix: feature-matrix.md
+      - REST API: rest-api.md
       - Architecture: architecture.md
-      - Observability & troubleshooting: observability.md
+      - Security & data handling: security.md
+      - Deployment: deployment.md
+      - Observability: observability.md
+      - Troubleshooting: troubleshooting.md
       - Runbook & FAQ: runbook-faq.md
+      - Changelog: changelog.md
       - Glossary: glossary.md
       - Contributing: contributing.md
 
@@ -85,6 +91,7 @@ exclude_docs: |
   post-v1-admin-ui-notes.md
   post-v1-dq-intelligence-notes.md
   compliance-posture.md
+  perf-baseline-snowflake.md
 
 validation:
   omitted_files: ignore

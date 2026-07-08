@@ -48,10 +48,11 @@ your first check.
 
 ## Where to go next
 
+- Just want to use it? Follow the **[Tutorial — your first suite](tutorial.md)** end to end.
 - New to DataQ? Read **[Concepts](concepts.md)** (datasource vs orchestration is the one
-  distinction to internalise).
-- Want the big picture? **[Architecture](architecture.md)**.
-- Running it for real? **[Deploying](https://github.com/TheurgicDuke771/DataQ/blob/main/deploy/README.md)**
-  and **[Observability & troubleshooting](observability.md)**.
-- AI assistants (Claude / Copilot / Cursor) can drive DataQ over MCP — see the
-  [MCP section in the README](https://github.com/TheurgicDuke771/DataQ#mcp-ai-assistant-access).
+  distinction to internalise), then browse **[Features](features.md)**.
+- Setting it up the right way? **[Recommended usage](recommended-usage.md)**.
+- Want the big picture? **[Architecture](architecture.md)** · **[Security & data handling](security.md)**.
+- Running it for real? **[Deployment](deployment.md)** · **[Troubleshooting](troubleshooting.md)** · **[Observability](observability.md)**.
+- Scripting it? The **[REST API](rest-api.md)**. AI assistants (Claude / Copilot / Cursor) can
+  drive DataQ over **[MCP](mcp-setup.md)**.
