@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "38cabdb7a2ec",
+  "strategy": "manual-commit",
+  "branch": "docs/close-w2-milestone",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "CLAUDE.md",
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/38/cabdb7a2ec/0/metadata.json",
+      "transcript": "/38/cabdb7a2ec/0/full.jsonl",
+      "compact_transcript": "/38/cabdb7a2ec/0/transcript.jsonl",
+      "content_hash": "/38/cabdb7a2ec/0/content_hash.txt",
+      "prompt": "/38/cabdb7a2ec/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 274,
+    "cache_creation_tokens": 25057,
+    "cache_read_tokens": 2812478,
+    "output_tokens": 10399,
+    "api_call_count": 15
+  }
+}
