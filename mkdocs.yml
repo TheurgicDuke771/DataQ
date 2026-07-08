@@ -59,12 +59,14 @@ nav:
   - Guides:
       - Getting started: getting-started.md
       - Concepts: concepts.md
+      - Features: features.md
       - Datasources & checks: datasources-checks.md
       - Scheduling: scheduling.md
       - Orchestration: orchestration.md
       - Notifications & alerting: notifications.md
       - AI assistants (MCP setup): mcp-setup.md
       - API keys (PATs): api-keys.md
+      - Recommended usage: recommended-usage.md
       - Best practices: best-practices.md
   - Reference:
       - Feature matrix: feature-matrix.md
