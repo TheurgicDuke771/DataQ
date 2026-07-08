@@ -246,20 +246,73 @@ Use an **immutable** `image_tag` per release — ACA caches a tag at the node, s
 same-tag rebuild won't be re-pulled on a new revision. Push-on-merge is
 intentionally **off**; deploys are manual `workflow_dispatch`.
 
-## Verify
+### Pre-deploy checklist
 
-All against the public **frontend** host (the api has no public ingress since
-ADR 0028 §5 — it's reached through the frontend's `/api` + `/healthz` + `/mcp`
-proxy; `<frontend>/api/v1/...` is the base URL for any external client too):
+- [ ] **CI is green** on the exact SHA being deployed.
+- [ ] **Migration safety** — every new Alembic revision is additive/backward-compatible
+  (nullable `ADD COLUMN` / new table; no `DROP`/rename/`NOT NULL`-without-default in the
+  same PR as the code that needs it), and `upgrade` **and** `downgrade` were tested locally.
+  The migrate job runs `alembic upgrade head` **before** the apps roll, so the old code
+  never sees a missing column. (This is the automatic pre-deploy step — you don't run it by
+  hand, but confirm the revision is safe.)
+- [ ] **Busy-table DDL awareness** — a migration that `ALTER`s a hot table (`runs`,
+  `results`, `pipeline_runs`) takes a brief `ACCESS EXCLUSIVE` lock; under live worker load
+  it can **block and hang the migrate job** (seen 2026-07-07, #605). If the `Run DB
+  migrations` step sits at `migration status: Running` and times out: restart the worker to
+  drop its DB connections, then re-run the migrate job (or re-run the failed deploy jobs):
+  ```bash
+  az containerapp revision restart -n dataq-app-worker -g dataq-rg \
+    --revision "$(az containerapp revision list -n dataq-app-worker -g dataq-rg \
+      --query "[?properties.active].name | [0]" -o tsv)"
+  az containerapp job start -n dataq-app-migrate -g dataq-rg   # watch → Succeeded
+  ```
+  Prod stays safe while this happens (the apps are only rolled *after* a successful migrate).
+  Root-cause hardening (lock_timeout + retry / quiesce worker) tracked in
+  [#708](https://github.com/TheurgicDuke771/DataQ/issues/708).
+- [ ] **Immutable `image_tag`** for the release (blank → the commit SHA, which is immutable).
 
-- `GET /healthz` → `200 {"status":"ok"}` (proxied to the api).
-- `GET /api/v1/me` → **401** (auth enforced; a valid token resolves the user).
-- SPA root + a deep link → 200; sign-in via Azure AD SSO.
-- Interactive API docs (`/docs`, `/redoc`, `/openapi.json`) are **404 in prod**
-  (#170 — the prod-docs gate); the MCP server is mounted at `/mcp` (Azure-AD
-  validated; fail-closed without auth — [ADR 0008](../docs/adr/0008-mcp-server.md)).
-- Celery beat starts clean (no `NoneType` lock crash, #405/#407) and orchestration
+## Post-deploy smoke checklist
+
+Run **after every deploy**, all against the public **frontend** host (the api has no
+public ingress since ADR 0028 §5 — it's reached through the frontend's `/api` +
+`/healthz` + `/mcp` proxy; `<frontend>/api/v1/...` is the base URL for any external
+client too). Quick HTTP probes (no token needed — a `401` *is* the pass for an
+auth-gated route):
+
+```bash
+FE=https://dataq-app-frontend.purplefield-f7322a1b.westus2.azurecontainerapps.io
+curl -s -o /dev/null -w "healthz            %{http_code}\n"        $FE/healthz            # 200
+curl -s -o /dev/null -w "api (auth)         %{http_code}\n"        $FE/api/v1/me          # 401
+curl -s -o /dev/null -w "mcp GET            %{http_code}\n"        $FE/mcp/               # 401  NOT 421
+curl -s -o /dev/null -w "mcp POST           %{http_code}\n" -X POST -H "content-type: application/json" $FE/mcp/  # 401  NOT 421
+curl -s -o /dev/null -w "openapi (gated)    %{http_code}\n"        $FE/openapi.json       # 404
+```
+
+- [ ] `GET /healthz` → **200** `{"status":"ok"}` (proxied to the api).
+- [ ] `GET /api/v1/me` → **401** (auth enforced; a valid token resolves the user).
+- [ ] `GET /mcp/` **and** `POST /mcp/` → **401**, **not 421**. A `421 Misdirected Request`
+  means FastMCP's DNS-rebinding **Host guard** is rejecting the nginx-proxied Host (regressed
+  by the fastmcp 3.4.3 bump; fixed via `build_mcp_app(allowed_hosts=…)` — see
+  [#706](https://github.com/TheurgicDuke771/DataQ/issues/706)). Fail-closed without auth
+  ([ADR 0008](../docs/adr/0008-mcp-server.md)).
+- [ ] SPA root + a deep link → 200; sign-in via Azure AD SSO works.
+- [ ] `/docs`, `/redoc`, `/openapi.json` → **404** (#170 — the prod-docs gate).
+- [ ] **api + worker rolled to the deployed tag** (not left on the old image):
+  ```bash
+  az containerapp revision list -n dataq-app-api    -g dataq-rg \
+    --query "[?properties.active].properties.template.containers[0].image" -o tsv
+  az containerapp revision list -n dataq-app-worker -g dataq-rg \
+    --query "[?properties.active].properties.template.containers[0].image" -o tsv
+  # both → ghcr.io/theurgicduke771/dataq-backend:<deployed-sha>
+  ```
+- [ ] **Migration applied** — the `dataq-app-migrate` job execution for this deploy is
+  `Succeeded` (the workflow gates the roll on it), and App Insights `traces` show no
+  schema/column errors post-roll.
+- [ ] Celery beat starts clean (no `NoneType` lock crash, #405/#407) and orchestration
   polling reads Key Vault secrets (#406/#408).
+- [ ] (Optional, deeper) run the live-smoke lane — `frontend/e2e-live/` gated on
+  `E2E_LIVE_BASE_URL` + `e2e_smoke.py` `DATAQ_BEARER` mode (#531) — and the MCP 4-query
+  protocol smoke for an authenticated end-to-end pass.
 
 ## Operational notes
 
