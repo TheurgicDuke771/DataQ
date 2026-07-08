@@ -3,7 +3,7 @@
 **DataQ is a data-quality monitoring platform.** It runs automated checks against your
 data — in Snowflake, ADLS Gen2, AWS S3, and Databricks Unity Catalog — tells you when
 something is wrong (failed checks, stale tables, unexpected row counts), and alerts your
-team. It watches your Azure Data Factory and Airflow pipelines and can run checks
+team. It watches your Azure Data Factory, Airflow, and dbt pipelines and can run checks
 automatically when a pipeline finishes.
 
 ## Who it's for

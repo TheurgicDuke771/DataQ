@@ -3,7 +3,7 @@
 | Term | Meaning |
 |---|---|
 | **Datasource** | A store DataQ runs checks *against*: Snowflake, ADLS Gen2, S3, Unity Catalog. |
-| **Orchestration provider** | A workflow engine DataQ *observes* + triggers from: ADF, Airflow. Not a datasource. |
+| **Orchestration provider** | A workflow engine DataQ *observes* + triggers from: ADF, Airflow, dbt. Not a datasource. |
 | **Connection** | Stored credentials + config for one datasource or orchestration provider. |
 | **Suite** | A named set of checks that runs against one connection's target. |
 | **Check** | One data-quality rule — in v1, a Great Expectations *expectation* (or a freshness/volume monitor). |
