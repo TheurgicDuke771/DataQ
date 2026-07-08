@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "e75b1234fae6",
+  "strategy": "manual-commit",
+  "branch": "docs/fill-remaining-gaps",
+  "checkpoints_count": 2,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/e7/5b1234fae6/0/metadata.json",
+      "transcript": "/e7/5b1234fae6/0/full.jsonl",
+      "compact_transcript": "/e7/5b1234fae6/0/transcript.jsonl",
+      "content_hash": "/e7/5b1234fae6/0/content_hash.txt",
+      "prompt": "/e7/5b1234fae6/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 73788,
+    "cache_creation_tokens": 2406412,
+    "cache_read_tokens": 196857908,
+    "output_tokens": 385044,
+    "api_call_count": 589
+  }
+}
