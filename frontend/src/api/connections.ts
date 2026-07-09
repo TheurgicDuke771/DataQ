@@ -1,7 +1,7 @@
 import { api } from './client';
 
 /**
- * Connections API — the seven configurable connection types (CLAUDE.md §4).
+ * Connections API — the eight configurable connection types (CLAUDE.md §4).
  * ADF, Airflow + dbt are orchestration providers, not datasources, but they are
  * still `connections` rows and managed through the same CRUD surface.
  */
@@ -11,6 +11,7 @@ export const CONNECTION_TYPES = [
   'adls_gen2',
   's3',
   'unity_catalog',
+  'iceberg',
   'adf',
   'airflow',
   'dbt',
@@ -32,6 +33,7 @@ export const CONNECTION_KIND: Record<ConnectionType, ConnectionKind> = {
   adls_gen2: 'datasource',
   s3: 'datasource',
   unity_catalog: 'datasource',
+  iceberg: 'datasource',
   adf: 'orchestration',
   airflow: 'orchestration',
   dbt: 'orchestration',
@@ -55,7 +57,7 @@ export const ORCHESTRATION_TYPES = typesOfKind('orchestration');
  * "Flat file" choice, while Snowflake and Unity Catalog stand alone. Orchestration
  * types map to `null` — they're never queryable, so they never back a suite/run.
  */
-export const DATASOURCE_CATEGORIES = ['snowflake', 'flatfile', 'unity_catalog'] as const;
+export const DATASOURCE_CATEGORIES = ['snowflake', 'flatfile', 'unity_catalog', 'iceberg'] as const;
 export type DatasourceCategory = (typeof DATASOURCE_CATEGORIES)[number];
 
 export const DATASOURCE_CATEGORY: Record<ConnectionType, DatasourceCategory | null> = {
@@ -63,6 +65,7 @@ export const DATASOURCE_CATEGORY: Record<ConnectionType, DatasourceCategory | nu
   adls_gen2: 'flatfile',
   s3: 'flatfile',
   unity_catalog: 'unity_catalog',
+  iceberg: 'iceberg',
   adf: null,
   airflow: null,
   dbt: null,
@@ -72,6 +75,7 @@ export const DATASOURCE_CATEGORY_LABELS: Record<DatasourceCategory, string> = {
   snowflake: 'Snowflake',
   flatfile: 'Flat file',
   unity_catalog: 'Unity Catalog',
+  iceberg: 'Apache Iceberg',
 };
 
 /**
@@ -83,6 +87,18 @@ export const DATASOURCE_CATEGORY_LABELS: Record<DatasourceCategory, string> = {
 export const SQL_QUERYABLE_TYPES: ConnectionType[] = ['snowflake', 'unity_catalog'];
 
 export const isSqlQueryable = (type: ConnectionType): boolean => SQL_QUERYABLE_TYPES.includes(type);
+
+/**
+ * Datasources whose runner can evaluate freshness/volume **monitors** — the SQL
+ * datasources (in-warehouse aggregate) plus Iceberg (native `scan().count()` / a
+ * column MAX, ADR 0030). Broader than `SQL_QUERYABLE_TYPES`: Iceberg supports
+ * monitors but is **not** SQL-queryable (no custom-SQL). Mirrors the backend
+ * `check_service.MONITOR_CAPABLE_TYPES` author gate.
+ */
+export const MONITOR_CAPABLE_TYPES: ConnectionType[] = ['snowflake', 'unity_catalog', 'iceberg'];
+
+export const supportsMonitors = (type: ConnectionType): boolean =>
+  MONITOR_CAPABLE_TYPES.includes(type);
 
 export const CONNECTION_ENVS = ['dev', 'qa', 'uat', 'prod'] as const;
 export type ConnectionEnv = (typeof CONNECTION_ENVS)[number];
@@ -115,6 +131,7 @@ export const CONNECTION_TYPE_LABELS: Record<ConnectionType, string> = {
   adls_gen2: 'ADLS Gen2',
   s3: 'AWS S3',
   unity_catalog: 'Unity Catalog',
+  iceberg: 'Apache Iceberg',
   adf: 'Azure Data Factory',
   airflow: 'Airflow',
   dbt: 'dbt',

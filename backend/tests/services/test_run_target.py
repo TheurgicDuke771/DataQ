@@ -41,6 +41,22 @@ def test_unity_catalog_missing_catalog_raises() -> None:
         resolve_target("unity_catalog", {"table": "orders"})
 
 
+def test_iceberg_folds_namespace_into_identifier() -> None:
+    r = resolve_target("iceberg", {"namespace": "sales", "table": "orders"})
+    # namespace.table rides `table`; Iceberg has no SQL schema/catalog.
+    assert (r.table, r.schema, r.catalog) == ("sales.orders", None, None)
+
+
+def test_iceberg_namespace_optional() -> None:
+    r = resolve_target("iceberg", {"table": "orders"})
+    assert (r.table, r.schema, r.catalog) == ("orders", None, None)
+
+
+def test_iceberg_missing_table_raises() -> None:
+    with pytest.raises(SuiteTargetInvalidError):
+        resolve_target("iceberg", {"namespace": "sales"})
+
+
 @pytest.mark.parametrize("conn_type", ["adls_gen2", "s3"])
 def test_flatfile_path_rides_table_slot(conn_type: str) -> None:
     # The CheckRunner interface is table-shaped; the file path is the `table`.

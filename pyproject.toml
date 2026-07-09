@@ -69,6 +69,7 @@ module = [
     "azure.keyvault.*",
     "boto3.*",
     "botocore.*",
+    "pyiceberg.*",
     "pandas",
     "pandas.*",
     "croniter",

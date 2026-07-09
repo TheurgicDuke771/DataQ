@@ -120,6 +120,17 @@ def resolve_target(conn_type: str, target: dict[str, Any] | None) -> ResolvedTar
             table=table, schema=_str_or_none(target.get("schema")), catalog=catalog
         )
 
+    if conn_type == "iceberg":
+        # Iceberg addresses a table by its ``namespace.table`` identifier (the
+        # namespace may itself be multi-level, ``a.b``). Fold the optional
+        # ``namespace`` into the identifier the native runner passes to
+        # ``catalog.load_table`` — carried in ``table``; Iceberg has no separate
+        # SQL schema, so ``schema``/``catalog`` stay None (ADR 0030).
+        table = _require(target, "table", conn_type)
+        namespace = _str_or_none(target.get("namespace"))
+        identifier = f"{namespace}.{table}" if namespace else table
+        return ResolvedTarget(table=identifier, schema=None, catalog=None)
+
     raise SuiteTargetInvalidError(
         f"connection type {conn_type!r} has no run path (not a datasource)",
         detail={"connection_type": conn_type},
