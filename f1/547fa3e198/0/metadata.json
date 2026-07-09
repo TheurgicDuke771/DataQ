@@ -1,0 +1,40 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_id": "f1547fa3e198",
+  "session_id": "eec796a8-5d56-4939-9b7f-76976fea3fd9",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-09T01:05:26.128363Z",
+  "branch": "refactor/w3-theme10-frontend-cleanup",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/tests/support/antd.ts",
+    "frontend/tests/pages/Results.test.tsx",
+    "frontend/tests/components/ImportSuiteDrawer.test.tsx",
+    "frontend/tests/components/RunNowPanel.test.tsx",
+    "frontend/tests/components/TriggersPanel.test.tsx"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "2f5392bf75c3",
+  "checkpoint_transcript_start": 536,
+  "transcript_lines_at_start": 536,
+  "token_usage": {
+    "input_tokens": 2024,
+    "cache_creation_tokens": 20808,
+    "cache_read_tokens": 5994330,
+    "output_tokens": 11831,
+    "api_call_count": 26
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-09T01:05:26.105214Z",
+    "agent_lines": 39,
+    "agent_removed": 24,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 39,
+    "total_lines_changed": 63,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
