@@ -10,7 +10,6 @@ import {
   Input,
   InputNumber,
   Modal,
-  Spin,
   Table,
   Tag,
   Typography,
@@ -28,6 +27,7 @@ import {
   revokeApiKey,
 } from '../../api/apiKeys';
 import { useAsyncData } from '../../hooks/useAsyncData';
+import { AsyncBody } from '../AsyncBody';
 import { formatTimestamp } from '../results/resultsFormat';
 import { errorMessage } from '../../utils/errors';
 
@@ -72,28 +72,28 @@ function ApiKeysBody({
 }) {
   const [creating, setCreating] = useState(false);
 
-  if (state.status === 'loading') {
-    return <Spin description="Loading tokens…" />;
-  }
-  if (state.status === 'error') {
-    return <Alert type="error" showIcon title="Failed to load tokens" description={state.error} />;
-  }
-  const keys = state.data;
-
   return (
-    <Flex vertical gap={12}>
-      <Flex justify="flex-end">
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreating(true)}>
-          New token
-        </Button>
-      </Flex>
-      {keys.length === 0 ? (
-        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No tokens yet." />
-      ) : (
-        <ApiKeyTable keys={keys} onChanged={onChanged} />
+    <AsyncBody state={state} loadingText="Loading tokens…" errorTitle="Failed to load tokens">
+      {(keys) => (
+        <Flex vertical gap={12}>
+          <Flex justify="flex-end">
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreating(true)}>
+              New token
+            </Button>
+          </Flex>
+          {keys.length === 0 ? (
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No tokens yet." />
+          ) : (
+            <ApiKeyTable keys={keys} onChanged={onChanged} />
+          )}
+          <CreateTokenModal
+            open={creating}
+            onClose={() => setCreating(false)}
+            onCreated={onChanged}
+          />
+        </Flex>
       )}
-      <CreateTokenModal open={creating} onClose={() => setCreating(false)} onCreated={onChanged} />
-    </Flex>
+    </AsyncBody>
   );
 }
 

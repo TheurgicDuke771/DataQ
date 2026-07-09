@@ -1,14 +1,12 @@
 import { DeleteOutlined } from '@ant-design/icons';
 import {
   App,
-  Alert,
   Button,
   Card,
   Empty,
   Flex,
   Input,
   Select,
-  Spin,
   Switch,
   Table,
   Tag,
@@ -26,6 +24,7 @@ import {
   updateSchedule,
 } from '../../api/schedules';
 import { useAsyncData } from '../../hooks/useAsyncData';
+import { AsyncBody } from '../AsyncBody';
 import { formatTimestamp } from '../results/resultsFormat';
 import { errorMessage } from '../../utils/errors';
 
@@ -67,28 +66,22 @@ function SchedulesBody({
   canManage: boolean;
   onChanged: () => void;
 }) {
-  if (state.status === 'loading') {
-    return <Spin description="Loading schedules…" />;
-  }
-  if (state.status === 'error') {
-    return (
-      <Alert type="error" showIcon title="Failed to load schedules" description={state.error} />
-    );
-  }
-  const schedules = state.data;
-
   return (
-    <Flex vertical gap={16}>
-      {canManage && <AddSchedule suiteId={suiteId} onAdded={onChanged} />}
-      {schedules.length === 0 ? (
-        <Empty
-          image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description="No schedules — this suite runs only on manual / triggered runs."
-        />
-      ) : (
-        <ScheduleTable schedules={schedules} canManage={canManage} onChanged={onChanged} />
+    <AsyncBody state={state} loadingText="Loading schedules…" errorTitle="Failed to load schedules">
+      {(schedules) => (
+        <Flex vertical gap={16}>
+          {canManage && <AddSchedule suiteId={suiteId} onAdded={onChanged} />}
+          {schedules.length === 0 ? (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description="No schedules — this suite runs only on manual / triggered runs."
+            />
+          ) : (
+            <ScheduleTable schedules={schedules} canManage={canManage} onChanged={onChanged} />
+          )}
+        </Flex>
       )}
-    </Flex>
+    </AsyncBody>
   );
 }
 

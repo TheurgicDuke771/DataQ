@@ -1,18 +1,5 @@
 import { DeleteOutlined } from '@ant-design/icons';
-import {
-  App,
-  Alert,
-  Button,
-  Card,
-  Empty,
-  Flex,
-  Input,
-  Select,
-  Spin,
-  Switch,
-  Tag,
-  Typography,
-} from 'antd';
+import { App, Button, Card, Empty, Flex, Input, Select, Switch, Tag, Typography } from 'antd';
 import SimpleList from '../SimpleList';
 import { useState } from 'react';
 
@@ -28,6 +15,7 @@ import {
   type TriggerBinding,
 } from '../../api/triggerBindings';
 import { useAsyncData } from '../../hooks/useAsyncData';
+import { AsyncBody } from '../AsyncBody';
 import { errorMessage } from '../../utils/errors';
 
 /**
@@ -68,38 +56,32 @@ function TriggersBody({
   canManage: boolean;
   onChanged: () => void;
 }) {
-  if (state.status === 'loading') {
-    return <Spin description="Loading triggers…" />;
-  }
-  if (state.status === 'error') {
-    return (
-      <Alert type="error" showIcon title="Failed to load triggers" description={state.error} />
-    );
-  }
-  const bindings = state.data;
-
   return (
-    <Flex vertical gap={16}>
-      {canManage && <AddTrigger suiteId={suiteId} onAdded={onChanged} />}
-      {bindings.length === 0 ? (
-        <Empty
-          image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description="No triggers — this suite runs only on manual / scheduled runs."
-        />
-      ) : (
-        <SimpleList
-          dataSource={bindings}
-          renderItem={(binding) => (
-            <TriggerRow
-              key={binding.id}
-              binding={binding}
-              canManage={canManage}
-              onChanged={onChanged}
+    <AsyncBody state={state} loadingText="Loading triggers…" errorTitle="Failed to load triggers">
+      {(bindings) => (
+        <Flex vertical gap={16}>
+          {canManage && <AddTrigger suiteId={suiteId} onAdded={onChanged} />}
+          {bindings.length === 0 ? (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description="No triggers — this suite runs only on manual / scheduled runs."
+            />
+          ) : (
+            <SimpleList
+              dataSource={bindings}
+              renderItem={(binding) => (
+                <TriggerRow
+                  key={binding.id}
+                  binding={binding}
+                  canManage={canManage}
+                  onChanged={onChanged}
+                />
+              )}
             />
           )}
-        />
+        </Flex>
       )}
-    </Flex>
+    </AsyncBody>
   );
 }
 
