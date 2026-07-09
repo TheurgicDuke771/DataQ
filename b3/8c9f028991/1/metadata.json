@@ -1,0 +1,51 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_id": "b38c9f028991",
+  "session_id": "c0b670d5-58c4-41ee-bbcf-b0dd9018241d",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-09T23:57:25.537958Z",
+  "branch": "docs/adr-0031-oss-byol-licensing",
+  "checkpoints_count": 5,
+  "files_touched": [
+    "docs/adr/0031-oss-byol-distribution-licensing.md",
+    "docs/adr/README.md",
+    "docs/adr/0013-marketplace-distribution-and-anti-lock-in.md"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "ff1837e2096c",
+  "token_usage": {
+    "input_tokens": 11756,
+    "cache_creation_tokens": 248731,
+    "cache_read_tokens": 3446821,
+    "output_tokens": 51473,
+    "api_call_count": 32
+  },
+  "session_metrics": {
+    "turn_count": 5
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-09T23:57:25.475059Z",
+    "agent_lines": 53,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 53,
+    "total_lines_changed": 53,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}

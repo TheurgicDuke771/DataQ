@@ -1,0 +1,378 @@
+Hey, can you do a Architecture review of this project. 
+After that check the marketplace listing readyness and prepare a chechlist for marketplace listing pre-requisite and good to haves
+
+---
+
+<task-notification>
+<task-id>a76d5ce23536a8072</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c0b670d5-58c4-41ee-bbcf-b0dd9018241d/tasks/a76d5ce23536a8072.output</output-file>
+<status>completed</status>
+<summary>Agent "Deploy/infra/security review sweep" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I have thorough coverage. Here is my report.
+
+---
+
+# DataQ — Infrastructure / Deployment / Security Architecture Review
+
+Scope: `deploy/`, Docker/compose, `.github/workflows/`, and the backend portability seams. All paths absolute-relative to `/Users/arijit/Coding/Python/DataQ`.
+
+## 1. Terraform — `deploy/terraform/azure/`
+
+**Module structure.** A single flat root module (no submodules), one file per concern: `main.tf` (RG ensure + locals), `aca.tf`, `containerapps.tf` (api+worker+migrate job), `frontend.tf`, `redis.tf`, `postgres.tf`, `keyvault.tf`, `identity.tf`, `sso.tf`, `github_oidc.tf`, `appinsights.tf`, `logs.tf`, `rp.tf`, plus `variables.tf`/`outputs.tf`/`providers.tf`/`versions.tf`. Providers: azurerm ~&gt;4, azuread ~&gt;3, random/time/null. **Local state backend** (`versions.tf:16`), gitignored — verified not tracked (`.gitignore:151-153`, `git ls-files` returns nothing for tfstate/tfvars).
+
+**What it stands up:** 3 Container Apps (`dataq-app-api` internal ingress :8000, `dataq-app-worker`, `dataq-app-frontend` external :8080), a self-hosted `dataq-app-redis` Container App broker (`redis.tf`), a `dataq-app-migrate` Container Apps Job, Key Vault (`keyvault.tf:16`), user-assigned identity (`identity.tf`), App Insights + Log Analytics, two Azure AD app registrations (API + SPA, `sso.tf`), and a GitHub-OIDC federated deploy SP (`github_oidc.tf`).
+
+**Hardcoded / shared-harness coupling (the big portability blocker):** This stack does **not** stand up a self-contained environment — it *references* pre-existing harness resources via `data` sources:
+- `aca.tf:7` — `data "azurerm_container_app_environment" "shared"` name `dataq-cae` (must already exist; subscription capped at 1 CAE).
+- `postgres.tf:16` — `data "azurerm_postgresql_flexible_server" "shared"`, default `shared_pg_server_name = "dataq-pg-wus3-3erlgd"` (`variables.tf:29`), a hardcoded harness-specific server name. The `dataq` DB + `dataq_app` role are provisioned **out-of-band via psql** (`postgres.tf:6-11`), not by Terraform.
+- `main.tf:13-26` — RG `dataq-rg` is ensured via a `null_resource` + `local-exec az group create`, then read as a data source; never managed.
+
+Other defaults hardcode the single-tenant identity: `backend_image_repo`/`frontend_image_repo` point at `ghcr.io/theurgicduke771/...` (`variables.tf:55,61`), `github_repo = "TheurgicDuke771/DataQ"` (`variables.tf:155`), region `West US 2` (`variables.tf:21`). App/resource names (`dataq-app-*`) are string literals throughout, not parameterized.
+
+**Could a second customer `terraform apply` cleanly into their own subscription? No.** Blockers: (a) it depends on a pre-existing `dataq-cae` CAE, `dataq-pg-*` Postgres server, and `dataq-rg` created by a *separate, non-tracked harness repo* (`versions.tf:3-8` explicitly points to `~/Coding/Python/DataQ-harness/terraform`); (b) the shared Postgres DB/role must be hand-created via psql before apply; (c) GHCR image repos and the GitHub OIDC subject are hardcoded to the owner's repo; (d) `sso.tf:109` pre-authorizes a specific manual Graph patch. This is a **single-tenant, cost-optimized deployment that piggybacks the demo harness** (free-tier caps of 1 CAE / 1 Postgres per subscription — documented at `deploy/README.md` §3), not a reusable module. The IaC is well-commented and disciplined about *not* touching harness resources (scoped Contributor to 4 targets only, `github_oidc.tf:26-46`; `purpose=dataq-app` tags), but that harness coupling is baked in.
+
+**Demo/harness coupling in IaC:** explicit and pervasive — shared CAE/PG/RG by design (ADR 0024), `time_sleep` RBAC-propagation hacks (`keyvault.tf:77`), `ignore_changes` on all container images because the Deploy workflow rolls images out-of-band (`containerapps.tf:148`).
+
+## 2. Portability seams (ADR 0010/0013/0028)
+
+**SecretStore — genuinely multi-impl.** `backend/app/core/secrets.py` has three backends behind a `SecretStore` Protocol: `EnvSecretStore` (`KV_SECRET_*` env vars, `:78`), `RedisSecretStore` (`:158`, plaintext, dev/test), `AzureKeyVaultStore` (`:101`, DefaultAzureCredential). Selected by `settings.secret_store` Literal `env|redis|azure_key_vault` (`config.py:97`). Azure SDK lazy-imported. **Strong seam.** Caveat: only Key Vault is production-grade — env is per-process, redis is plaintext, so **a non-Azure production secret store (Vault/AWS SM/GCP SM) does not yet exist**; a self-hoster has no encrypted-at-rest option without Azure.
+
+**Observability — genuinely non-Azure-capable.** `backend/app/core/otel.py` resolves exporters from settings: Azure Monitor when `APPLICATIONINSIGHTS_CONNECTION_STRING` set, **generic OTLP/HTTP when `OTEL_EXPORTER_OTLP_ENDPOINT` set** (`otel.py:61-65`, `:81-85`), both may run at once, neither = no-op. Logs go through a structlog→stdlib→OTel bridge (`otel.py:6-8`, replaced EOL opencensus AzureLogHandler). **This is a real vendor-neutral logging+tracing path** — the strongest seam in the repo.
+
+**Auth — the seam is real on the frontend, Azure-AD-pinned on the backend.** This is the most important finding:
+- Frontend is genuinely generic OIDC: `DATAQ_AUTH_MODE=oidc` + `DATAQ_AUTH_AUTHORITY` (any issuer) injected at runtime (`frontend/Dockerfile:52-57`, `frontend.tf:52-69`).
+- **Backend token validation is Azure-AD-only.** `backend/app/core/auth.py:28,63` uses `fastapi_azure_auth.SingleTenantAzureAuthorizationCodeBearer` — no generic OIDC/JWKS validator. "Real mode" requires `AZURE_TENANT_ID` + `AZURE_API_CLIENT_ID` (`auth.py:5`, `config.py:193`). The only non-Azure authenticator behind the `get_current_user` seam is the **DataQ PAT** (`dq_live_`, `auth.py:173-178`). So despite ADR 0028's "generic OIDC" framing, **a customer using Okta/Auth0/Keycloak cannot validate browser tokens on the backend today** — they'd be limited to dev-bypass + PATs. This is the single biggest code-level lock-in to Azure.
+
+**Object storage — multi-impl seam exists.** `backend/app/datasources/` has `adls.py`, `s3.py` (boto3, lazy-imported, `s3.py` header), `flatfile.py`, `iceberg.py`, `unity_catalog.py`, `snowflake.py`, dispatched via `registry.py:39` `_ADAPTERS` / `:123` `_RUNNER_BUILDERS`. S3 is real (head_bucket connectivity test). Good provider-neutral adapter registry.
+
+## 3. Docker / Compose — local-first posture
+
+- `backend/Dockerfile`: multi-stage `python:3.13-slim` + venv, pip runtime-only (ADR 0025), no apt in final layer, non-Azure. Clean, slim, portable.
+- `frontend/Dockerfile`: `node:22-alpine` build → `nginx:1.27-alpine`, **one generic runtime-config image** (ADR 0028), envsubst `/config.js` from `DATAQ_AUTH_*` (`:49-57`), cloud-neutral resolver (`:43-48`). Nothing baked in.
+- `docker-compose.yml`: full local dev stack (postgres 16, redis 7, migrate one-shot with `service_completed_successfully` gating, api `--reload`, worker `-B`, vite frontend). `SECRET_STORE=redis` default, dev-bypass. Credentials via `${VAR:?}` fail-fast — no baked secrets.
+- `docker-compose.ghcr.yml`: pulls published `:latest` GHCR images for eval; **explicitly `AUTH_DEV_BYPASS=true` + `SECRET_STORE=redis` + `DATAQ_AUTH_MODE=bypass`, header comment "NOT for production" (`:18`)**.
+
+**Can a customer run fully locally/on-prem? For eval yes; for production, no clean path.** Gaps blocking a docker-compose-only *production* deployment (local-first #591):
+1. **No auth without Azure AD** — backend real-mode requires an Azure tenant; the only non-dev-bypass, non-Azure identity is PATs, which themselves require a bootstrapped user. There is no compose profile that runs authenticated without Azure.
+2. **No production secret store without Key Vault** — redis store is plaintext, env is per-process. Nothing encrypted-at-rest off-Azure.
+3. No TLS termination / reverse-proxy hardening in the compose files (fine for dev, absent for prod).
+4. `docker-compose.ghcr.yml` is hardwired to bypass auth — there's no "prod-ish" compose variant.
+
+## 4. CI/CD — `.github/workflows/`
+
+Four workflows: `ci.yml`, `deploy.yml`, `publish-images.yml`, `docs.yml`.
+
+**`ci.yml` quality gates (thorough):** backend lint (black+ruff), mypy (app *and* tests, `:166-171`), **Bandit SAST** (`:75`), **pip-audit** with bounded retry, no ignored advisories (`:106-120`), pytest with ephemeral PG16+redis, **betterleaks secret scanning** (incremental commit-range, pinned `v1.4.1` container, `:228-240`), frontend prettier/eslint/tsc, **vitest 80% coverage gate** (`:292`), Playwright E2E full-stack, **pnpm audit high+** (`:432-436`), **CodeQL** matrix python+js-ts (`:439-459`). Coverage gates: backend `--cov-fail-under=80` (`pyproject.toml:102`), frontend 80% (`frontend/vite.config.ts:88`). This is a strong, comprehensive gate set.
+
+**`deploy.yml` shape:** `workflow_dispatch`-only (push trigger commented off, `:8`), `environment: production`, **OIDC federated login (no stored client secret)**, GHCR push via `GITHUB_TOKEN`. Image tag defaults to commit SHA (immutable, `:37`). Notable discipline: preflight required-vars check (`:53`, post #539), **migrate job runs and is polled to terminal success before app rollout** (`:104-165`, fail-closed), rolls are retried + verified against live template. Frontend `needs: backend` so a failed migration blocks the UI.
+
+**`publish-images.yml`:** multi-arch (amd64+arm64) `:latest`+SHA+semver for the BYOL/eval path; validates user tag against Docker grammar (`:97`); injection-safe (untrusted inputs via env). deploy.yml builds amd64-only SHA-tagged for ACA. Clean separation.
+
+## 5. Security posture
+
+**Webhook auth (`backend/app/api/v1/orchestration.py`) — solid:**
+- ADF: shared secret in `?token=` query param, `hmac.compare_digest` on UTF-8 bytes (`:105-117`) — constant-time; query-param because Azure Monitor can't set headers (ADR 0006).
+- Airflow + dbt: **HMAC-SHA256 over raw body** in `X-DataQ-Signature`, constant-time compare (`:145-164`, `:190-206`, ADR 0007/0029). Secrets pulled from SecretStore, never logged. Bad auth → uniform 401.
+
+**PAT (`backend/app/services/api_key_service.py`) — well-designed:** `dq_live_` + 43 url-safe chars (~256-bit), **SHA-256 hex stored, plaintext shown once** (`:72,91`), prefix-branched at the auth seam, uniform 401 that doesn't distinguish unknown/revoked/expired (`:46-59`), default 90-day / max 365-day expiry, cascade-delete with user, `last_used_at` write-throttled. SHA-256 (not argon2) is justified for a high-entropy machine secret.
+
+**CORS:** off by default, enabled only when `CORS_ALLOW_ORIGINS` non-empty (`main.py:104-108`, `config.py:74`); prod uses same-origin nginx proxy so CORS stays off. Provider-neutral.
+
+**Input hardening:** NUL-in-URL rejection middleware (`main.py:116`), request-id middleware, **prod-docs gate** — `/docs`, `/redoc`, `/openapi.json` all 404 when `ENVIRONMENT=prod` (`main.py:75-97`). SSRF allowlists for Slack/Teams webhook hosts (`config.py:130,140`). DB URL password URL-encoded to avoid DSN injection (`postgres.tf:24`).
+
+**Rate limiting: NONE.** No slowapi/limiter/throttle anywhere in `backend/app` (grep clean except PAT's `_LAST_USED_WRITE_INTERVAL`, which is a DB-write throttle, not request rate limiting). **The public frontend proxies `/api` and webhook endpoints with no rate limiting** — a gap, especially for the unauthenticated-by-secret webhook receivers and the login surface.
+
+**Encryption-at-rest / leaks:**
+- Redis broker: prod is password-protected (`redis.tf:11,46`) but internal `redis://` plaintext (acceptable, internal-only, no persistence). Eval compose redis is passwordless (documented eval-only).
+- Key Vault app identity uses a **least-privilege custom role** (get+list+set+soft-delete, no purge — `keyvault.tf:45-60`) rather than built-in Secrets Officer — good.
+- `key_vault_purge_protection` defaults **false** (`variables.tf:95`) — README flags flipping to true for prod; currently off.
+- `deploy/terraform/azure/terraform.tfstate` / `.tfvars` exist on disk (contain the generated Postgres password) but are **correctly gitignored and not tracked** — verified. The committed `terraform.tfvars` I read actually contains **real PII** (personal email `theurgicduke771@gmail.com`, admin email) — but git-status shows it's the gitignored path; confirm it never gets force-added.
+
+## 6. Env-var surface
+
+The documented reference is layered: `.env.app.example` (canonical, every key) + `deploy/.env.app.prod.example` (prod values). I cross-checked `deploy/.env.app.prod.example` against `config.py` Settings — **complete and in sync**: all major fields present (DATABASE_URL, REDIS_URL, both observability backends, Azure SSO block, SECRET_STORE+KV URL, CORS, webhook secret names, Slack/email, stuck-run reaper). `config.py` uses `extra="forbid"` (`:16`) so stale keys fail fast. **Azure-required** (only in real prod): `AZURE_TENANT_ID`, `AZURE_API_CLIENT_ID`, `AZURE_SPA_CLIENT_ID`, `SECRET_STORE=azure_key_vault`+`AZURE_KEY_VAULT_URL`, `APPLICATIONINSIGHTS_CONNECTION_STRING`. **Everything else is optional/provider-neutral** (OTLP endpoint, CORS, alerting channels, webhook names, reaper). The env surface itself is well-factored for portability — it's the *implementations* behind the Azure-required keys (auth, secret store) that lack alternatives.
+
+## 7. Migration / upgrade story
+
+- **Migrate job:** dedicated `dataq-app-migrate` Container Apps Job runs `cd backend &amp;&amp; alembic upgrade head` (`containerapps.tf:238`), mirrored by the compose `migrate` service (`docker-compose.yml:47-62`) and CI (`ci.yml:352`). Deploy workflow **runs it before rolling apps and polls to terminal success, aborting on failure** (`deploy.yml:104-165`) — fail-closed, no un-migrated schema served.
+- **Backward-compat discipline:** documented as additive/backward-compatible migrations so old code tolerates new schema during rollout (`containerapps.tf:209-210`, `deploy.yml:96`).
+- **Image versioning:** immutable per-deploy tags — commit SHA in the workflow (`deploy.yml:37`), manual `vN` bumps in tfvars with a changelog embedded in the variable description (`variables.tf:71`, currently v10). ACA `latest`-caching pitfall explicitly called out. Terraform `ignore_changes` on images means the workflow is the image source of truth.
+
+---
+
+## Summary — strengths and risks
+
+**Strengths:** Observability seam is genuinely vendor-neutral (Azure + OTLP). SecretStore and datasource-adapter registries are clean multi-impl seams. CI is comprehensive (Bandit, pip-audit, pnpm audit, CodeQL, betterleaks, dual coverage gates). Deploy workflow is fail-closed with migrate-before-roll + verification. PAT and webhook auth are cryptographically sound (SHA-256, HMAC, constant-time). Least-privilege KV role and scoped CI Contributor. No secrets committed; state gitignored.
+
+**Risks / blockers for non-Azure or customer self-hosting (ordered by severity):**
+1. **Backend token validation is Azure-AD-only** (`auth.py:63`, `SingleTenantAzureAuthorizationCodeBearer`) — no generic OIDC/JWKS validator despite ADR 0028's "generic OIDC" framing. Hard lock-in; a non-Azure IdP cannot authenticate browser users.
+2. **No production-grade secret store off Azure** — only Key Vault is encrypted/persisted; env and redis stores are dev-only.
+3. **Terraform cannot be `apply`ed by a second customer** — hard dependency on a pre-existing, non-tracked harness (`dataq-cae`/`dataq-pg-*`/`dataq-rg`), out-of-band psql role creation, and owner-hardcoded GHCR/GitHub identities.
+4. **No request rate limiting anywhere** — public frontend proxy, webhook receivers, and login surface are unthrottled.
+5. **No "prod-ish" docker-compose path** — the only compose-from-image file is hardwired to dev-bypass; local-first production is not achievable today.
+6. Minor: `key_vault_purge_protection=false` default; committed (gitignored) `terraform.tfvars` carries real PII — ensure it's never force-added.</result>
+<usage><subagent_tokens>99919</subagent_tokens><tool_uses>26</tool_uses><duration_ms>182963</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a1410494cce1a5896</task-id>
+<tool-use-id>toolu_01SqsqSV27sQQ72m3w7QBPH8</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c0b670d5-58c4-41ee-bbcf-b0dd9018241d/tasks/a1410494cce1a5896.output</output-file>
+<status>completed</status>
+<summary>Agent "Backend architecture review sweep" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I have comprehensive signal across all 10 areas. Here is my architecture review.
+
+---
+
+# DataQ Backend Architecture Review
+
+Scope: `backend/app/{core,db,api,services,orchestration,datasources,mcp,worker,alerting}`. Overall this is a **notably disciplined codebase** — seams are real Protocols with registry dispatch, layering direction holds, and the design intent is documented inline at nearly every seam. Findings below lead with the risks; strengths are called out per section.
+
+## 1. Layering &amp; dependency direction
+
+**Holds cleanly.** `grep` for any `app.api` import from `services/db/datasources/orchestration/core` returns **zero hits** — no service imports a router. Direction is `api → services → {db, datasources, orchestration, core}`, with `datasources`/`orchestration` depending only on `core` + `db` primitives.
+
+- Routers are thin: no `session.add`/`commit`/`.execute` anywhere under `app/api/v1` (grep empty). Business logic lives in services.
+- "Raw SQL in services" grep hits (`run_service.py:332,703`, `dashboard_service.py`, `admin_service.py`, `check_service.py:563`) are all SQLAlchemy Core `select()` statements passed to `session.execute()`, **not** raw SQL strings — ORM-safe. The only literal-SQL sites are `orchestration_service.py:42` (`_ORCH_TRIGGER_PREDICATE = text(...)`, a partial-index predicate deliberately mirroring the model's `postgresql_where`) and `monitors.py:106/108` (validated-identifier interpolation for warehouse aggregates, with documented S608/B608 suppressions). `profile_service.py:434+` `conn.execute(...)` targets the **live customer datasource**, not the app DB — correct.
+- Registries live in the layer they dispatch (`datasources/registry.py`, `orchestration/registry.py`, `alerting/registry.py`) and import concrete impls — the intended composition root pattern, not a cycle.
+
+No layering violations found.
+
+## 2. The seams
+
+Every seam is a `runtime_checkable Protocol` (or module-level callable) with **registry/singleton dispatch** and a documented reason-for-being. Summary:
+
+| Seam | Defined | Registration | Bypass? |
+|---|---|---|---|
+| `ConnectionAdapter` | `datasources/base.py:127` | `datasources/registry.py:39` `_ADAPTERS` dict (all 8 types incl. orchestration) | none |
+| `CheckRunner` / `MonitorRunner` | `datasources/base.py:92,106` | `registry.py:123` `_RUNNER_BUILDERS` | see §4 (one `isinstance` — intentional) |
+| `OrchestrationProvider` | `orchestration/base.py:77` | `orchestration/registry.py:21` `_PROVIDERS` | none |
+| `SecretStore` | `core/secrets.py:59` | `_build_store` + cached singleton `get_secret_store` | none |
+| `ResultPublisher` | `alerting/base.py` | `alerting/registry.py` composite singleton | none |
+| `get_current_user` | `core/auth.py:220` | module-level callable bound at import by config mode | none |
+
+**Strengths:**
+- The connection registry (`registry.py:34-48`) deliberately shares one `_ADAPTERS` map for datasources *and* orchestration providers (both implement `ConnectionAdapter`), while keeping runners datasource-only — a clean two-axis dispatch (`kind` chooses monitor, `type` chooses adapter, documented at `run_service.py:119`).
+- `get_current_user` (`core/auth.py:220-226`) is bound once to `_get_current_user_real` / `_dev_bypass` / `_unconfigured` based on settings — PAT-first-by-prefix then Azure JWT (ADR 0026), disjoint branches. MCP reuses the *same* credential model via `_PatOrJwtVerifier` (`mcp/auth.py:65`) and shares `_upsert_user` so users rows can't drift.
+
+**Flagged branch-on-type sites (all legitimate, but note them):**
+- `admin_service.py:214 if provider == "adf"` — this is **display-shape** logic (ADF uses `?token=` in URL vs HMAC-signed callback for airflow/dbt), not run-path business logic. Mitigated: the `else` uses `hmac_providers[provider]` which `KeyError`s loudly on an unregistered provider (comment cites #647). Acceptable.
+- `run_target.py:95-134` — `if conn_type == "snowflake"/"unity_catalog"/"iceberg"/flatfile` chain resolving the target JSON shape. **This is the one seam-completeness gap:** target-shape resolution is a *second* dispatch-by-type site parallel to the registry, and the `ConnectionAdapter` seam does not own it. Adding a datasource means editing this function too, not just adding a registry entry — mildly contradicts the "adding a datasource is one registry entry" claim in `registry.py:6`. Low risk (falls through to a raised `SuiteTargetInvalidError`), but a candidate to fold into the adapter.
+
+No Azure-specific imports or `isinstance(provider, AdfProvider)`-style checks in service business logic.
+
+## 3. Datasource layer sharing
+
+**Well-factored, minimal duplication.** Shared machinery:
+- `gx_runner.py` (snake_case→GX-class translation, `to_suite_outcome`, sample-failure extraction, errored-vs-failed logic) is imported by **all five** runners (`snowflake.py:34`, `unity_catalog.py:32`, `iceberg.py:45`, `flatfile.py:33`).
+- `flatfile.py` is the single runner body for **both** `adls_gen2` and `s3` — `adls.py` (91 lines) and `s3.py` (86 lines) are thin: just a Pydantic config + `ConnectionAdapter` + a client-builder; `flatfile.py:build_flatfile_runner` dispatches on `conn_type` for the download step only.
+- `monitors.py` is the datasource-agnostic monitor core; SQL runners (Snowflake `snowflake.py:244`, UC `unity_catalog.py:190`) call `evaluate_monitors` (SQL aggregate path), while Iceberg (`iceberg.py:208`) reuses the lower-level `run_monitor_specs` with a **native** `scan().count()`/column-MAX scalar source. Good reuse of the banding loop with a divergent scalar source — the one intended point of variation.
+
+No divergence smells. The registry normalizes all builders to one `_RunnerBuilder` signature (`registry.py:69`) so the worker never branches.
+
+## 4. check.kind monitor seam
+
+Dispatch is in `run_service._run_outcomes` (`run_service.py:101-156`): partition checks into `expectation_idx` (kind == `expectation` → `CheckRunner.run_checks`) and `monitor_idx` (kind in `MONITOR_KINDS` → `MonitorRunner.run_monitors`), with a **single documented `isinstance(runner, MonitorRunner)` gate at line 141** to reject monitor checks on flat-file runners with a clear error. Unsupported kinds raise `NotImplementedError` (line 127).
+
+**Extensibility assessment — partial:** the kind→runner mapping is a hardcoded two-way partition, not a per-kind registry. Adding `schema_drift`/`anomaly` requires touching **three** places: `_run_outcomes` (new branch), `check_service._V1_SUPPORTED_KINDS` (`check_service.py:55`), and a new runner Protocol/method. The monitor kinds themselves (`monitors.py`) are also an `if kind == FRESHNESS / VOLUME / else raise` chain (lines 104-109, 171-176, 192-231) repeated across `build_monitor_sql`/`validate_monitor_config`/`monitor_outcome`. This is fine for 2 kinds but will accrete parallel if-chains as kinds grow — a future `MonitorKind` strategy object would localize each kind's SQL + banding. **Reserved kinds are gracefully rejected**, so forward-compat is safe, just not open/closed.
+
+## 5. Config
+
+**Exemplary.** Single `Settings(BaseSettings)` in `core/config.py` with `extra="forbid"` (catches stale keys, #209), `env_file=".env.app"`, cached via `@lru_cache get_settings()`. No hardcoded Azure endpoints or resource names in app code:
+- All `azure*` grep hits are either (a) inside the intended adapter modules (`core/secrets.py`, `core/otel.py`, `orchestration/dbt.py`, `datasources/flatfile.py`/`adls.py`) behind lazy imports, or (b) config *field names* (`applicationinsights_connection_string`, `azure_key_vault_url`).
+- Azure/Entra is deliberately abstracted out of service logic: `workspace_admin_emails` matches on the generic IdP email claim (`config.py:85-95`), not an Azure claim.
+- One host-pattern literal worth noting: `mcp/server.py:527 allowed_hosts=["*.azurecontainerapps.io", ...]` — an Azure-specific Host allowlist hardcoded in the MCP mount (FastMCP's streamable-HTTP Host guard). Not a business-logic leak but a deploy coupling that isn't config-driven; would need editing for a non-ACA deploy.
+
+`applicationinsights_connection_string` is treated as *one backend behind the OTLP seam* (`config.py:37`, `otel.py`) alongside generic `otel_exporter_otlp_endpoint` — correct abstraction, both may be set.
+
+## 6. DB models
+
+Tables (`db/models.py`): `users`, `api_keys`, `connections`, `connection_versions`, `suites`, `checks`, `check_versions`, `runs`, `results`, `shares`, `pipeline_runs`, `trigger_bindings`, `schedules`, `suite_notifications`.
+
+**`runs` vs `pipeline_runs` separation is clean and intentional:** `runs` (line 376) = DataQ *suite executions* (FK → suites, `celery_task_id`, `triggered_by`); `pipeline_runs` (line 479) = *external orchestrator* run observations (FK → connections, `provider`+`provider_run_id` unique idempotency key at line 484). Different lifecycles, correctly not conflated. `trigger_bindings` (line 505) joins the two worlds: unique on `(provider, pipeline_or_dag_id, env, suite_id)` (line 510) — an orchestrator pipeline in an env fires a suite.
+
+**FK/cascade hygiene is strong and battle-scarred** (comments cite specific incidents):
+- `results.check_id` (line 436) got a CASCADE retrofit (#540) — it was the one FK without `ondelete`, causing suite-delete 500s. Now consistent.
+- Author FKs use `SET NULL` (`connection_versions.changed_by:237`, `check_versions:362`) so history survives user deletion; content FKs use `CASCADE`.
+- `Run` has a partial unique index `uq_runs_suite_triggered_by` (line 387) as a trigger-dedup race guard, with the predicate explicitly mirroring the service's `ON CONFLICT` (line 386) — a documented dual-maintenance coupling (schema + `orchestration_service._ORCH_TRIGGER_PREDICATE`) that's a minor drift risk if one is edited without the other.
+
+No orphan-FK or missing-cascade smells remain. One thing to watch: `pipeline_runs.connection_id` (line 492) has **no `ondelete`** — deleting a connection with pipeline_runs rows would 500, same class of bug as #540. Worth confirming this is intended (connections may be soft-deleted / block on children).
+
+## 7. Error handling + logging
+
+- **Error envelope** (`core/errors.py`): uniform `{error: {code, message, detail}}` via `ErrorResponse`/`error_envelope`, four registered handlers (`DataQError`, Starlette HTTP, `RequestValidationError`, catch-all `Exception`). `DataQError` base carries `status_code`/`code` and subclasses override (e.g. `MalformedEventError` at `orchestration/base.py:29`). Validation handler defends against non-JSON `ctx`/`input` via `_jsonable` (#371) — a real bug-class fix. Catch-all logs `.exception` but returns a generic 500 message (no internal leak). Solid.
+- **PII redaction** centralized in `core/logging.py`: `_redact_pii` (line 68) key-based walk over `_PII_KEYS` + `_scrub_secret_strings` (line 63) for embedded secrets in strings (e.g. DSN tokens, #494). Notably the OTel **export** path redacts *exported attributes* too (`logging.py:136-154`), not just the rendered body — closes a real leak vector where structured attrs bypass the formatter. Redactor runs both pre- and post-traceback-render (lines 207, 223).
+- **request_id propagation** is complete and correct: `request_id_var` ContextVar (`logging.py:13`) + `_add_request_id` processor; FastAPI→Celery bridged via signals in `celery_app.py` — `before_task_publish._inject_request_id` (line 132) stuffs it into task headers, `task_prerun._restore_request_id` (line 142) rebinds it worker-side (with token save for `task_always_eager` correctness), `task_postrun` (line 159) restores prior. Also stamped onto spans via `tracing.tag_request_id` (`tracing.py:139`). This is a frequently-botched flow done right.
+
+## 8. Celery topology
+
+`create_celery_app` (`celery_app.py:38`) with `task_serializer="json"`, `task_track_started`. **Beat schedules:** `poll_orchestration_runs` (600s), a 1800s poll, `dispatch_due_schedules` (60s), `purge_sample_failures` (86400s), `reap_stuck_runs` (600s). Plus a `beat_init` one-off `_recover_gaps_on_beat_start` (line 172) so a beat restart doesn't leave the poll gap unswept (B2).
+
+**Idempotency/locking — mature patterns:**
+- `dispatch_due_schedules` uses `SELECT ... FOR UPDATE SKIP LOCKED` (`tasks.py:480`) so concurrent beats don't double-fire schedules.
+- `auto_classify_columns` uses `session.refresh(suite, with_for_update=True)` + re-read (`tasks.py:239`) to close a check→write race, rolling back to release the lock if raced.
+- `reap_stuck_runs` (line 524) janitor drives `queued`/dead-`running` rows to terminal `failed` past `stuck_run_threshold_minutes` (#309) — with the config comment explicitly warning the threshold must exceed the longest run to avoid false reaps.
+- Orchestration ingest idempotency is at the DB layer (`pipeline_runs` provider+run_id unique upsert; `runs` partial unique index).
+
+No unguarded double-dispatch found. `celery_task_id` captured on `runs` (line 411) enables revoke-on-cancel.
+
+## 9. MCP server
+
+`mcp/server.py:1` — 8 curated tools via `@mcp.tool` on a `FastMCP` instance (line 64), mounted at `/mcp` in `main.py`. Tools: `list_suites`, `get_suite_results`, `get_health_score`, `get_adf_pipeline_status`, `trigger_suite_run`, `get_run_status`, `create_check`, `profile_column`.
+
+**Reuses the service layer — no duplication.** Every tool is a thin wrapper (`server.py:3` docstring: "call the *same* service function with the *same* per-suite authz"): imports `check_service`, `dashboard_service`, `orchestration_service`, `profile_service`, `run_service`, `suite_service` and `suite_authz.require_permission`. A shared `_ctx()` contextmanager (line 70) yields `(session, user)`, `_service_errors()` (line 104) maps `DataQError`→`ToolError` so REST and MCP surface identical authz/validation. Read/action tools separated.
+
+**Auth (`mcp/auth.py`):** `_PatOrJwtVerifier` (line 65) composites DataQ PAT (by `dq_live_` prefix → `api_key_service.resolve_token`, line 84) with a fastmcp `JWTVerifier` (line 109) configured from the *same* tenant/audience/scope as `core.auth`. Guest policy mirrored (line 141). **Fail-closed:** if neither Azure nor dev-bypass is configured, `mcp_enabled` is false and `main.py` **doesn't mount** `/mcp` at all (`server.py:505`) — no unauthenticated endpoint ever goes live. This is the correct security posture. `resolve_current_user` reuses `_upsert_user` so MCP and web users are identical rows.
+
+## 10. Test architecture
+
+106 test files mirroring the source tree: `tests/{api,services,datasources,orchestration,alerting,core,db,mcp,worker,integrations,integration,e2e,support,fixtures}`. Clear unit/integration split — `tests/integration/test_datasource_runs.py` for live-ish datasource runs vs per-module unit tests.
+
+**Coupling to implementations is low by design:** the base.py docstrings explicitly call out that tests provide a **fake `CheckRunner`** and "never touch a live datasource" (`datasources/base.py:12`), and `NoopPublisher` is the explicit test double for `ResultPublisher` (`alerting/registry.py:11`). Test-only cache resets exist for every singleton (`reset_secret_store_cache`, `reset_result_publisher_cache`) — good seam hygiene enabling isolated tests. `tests/support/` + `tests/fixtures/` suggest shared harness infrastructure. `tests/integrations/` separately validates the emitted Airflow/dbt callback snippets (`test_airflow_callback_snippet.py`) — i.e. the code DataQ hands to *external* orchestrators is regression-tested.
+
+I did not open individual test bodies to characterize the adversarial harness depth; the layout and fake-based seams indicate strong testability, but "adversarial" test rigor is worth a targeted follow-up if that's a concern.
+
+---
+
+## Top risks / recommendations (ranked)
+
+1. **`run_target.py:95-134` is a second type-dispatch site** outside the `ConnectionAdapter` registry — target-shape resolution should arguably move onto the adapter so "add a datasource = one registry entry" holds fully. (Low risk, architectural cleanliness.)
+2. **`pipeline_runs.connection_id` (`models.py:492`) lacks `ondelete`** — same bug class as the #540 fix; confirm connection deletes with child pipeline_runs don't 500.
+3. **check.kind dispatch is not open/closed** — adding `schema_drift`/`anomaly` touches 3+ sites and the `if kind ==` chains in `monitors.py` repeat across 3 functions. Consider a per-kind strategy object before adding the next kind.
+4. **Dual-maintenance couplings** flagged by the code's own comments: the `runs` partial-index predicate (`models.py:392`) must stay in lockstep with `orchestration_service._ORCH_TRIGGER_PREDICATE`, and `monitor_expectation_type` pairing spans run/author/frontend. These are documented but remain drift-prone.
+5. **`mcp/server.py:527` hardcodes `*.azurecontainerapps.io`** in the Host allowlist — the one deploy-target coupling not driven by config.
+
+**Overall:** the seam discipline, layering, telemetry/PII handling, and cascade hygiene are well above typical for a codebase this size. The weaknesses are all "second dispatch site / not-yet-open-closed" refinements, not structural faults.</result>
+<usage><subagent_tokens>73306</subagent_tokens><tool_uses>29</tool_uses><duration_ms>206105</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a7ffa111fde3c9ffb</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c0b670d5-58c4-41ee-bbcf-b0dd9018241d/tasks/a7ffa111fde3c9ffb.output</output-file>
+<status>completed</status>
+<summary>Agent "Marketplace readiness evidence sweep" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I have gathered comprehensive evidence. Here is the marketplace-listing readiness report.
+
+---
+
+# DataQ — Marketplace / Distribution Readiness Evidence Report
+
+## 1. ADR 0013 — Marketplace distribution &amp; anti-lock-in
+File: `/Users/arijit/Coding/Python/DataQ/docs/adr/0013-marketplace-distribution-and-anti-lock-in.md` (Status: **Accepted**, 2026-06-01, decider @TheurgicDuke771)
+
+**Distribution model decided (Decision §1-2, lines 27-29):**
+- **Customer-deployed BYOL** ("bring your own license"), NOT vendor-hosted multi-tenant SaaS. "Each customer deploys an isolated DataQ instance into their own cloud account; we do not operate a shared multi-tenant service." Single-tenant is the unit of sale.
+- Marketplace targets: **Azure, AWS, and GCP marketplaces** (line 9), phased Azure-first.
+- **Offer type:** "Container/Managed-Application offer via Partner Center" for Azure (line 43). The portable deploy artifact is a **Helm chart** — "(build deferred)" (line 38).
+- **Explicitly post-v1**: "Marketplace listing is a post-v1 initiative. No marketplace work enters the 8-week v1 budget" (line 29).
+
+**Phasing (line 42-45):** Phase 1 = Azure Marketplace BYOL; Phase 2 = portability investment (Helm chart + published images, generic OIDC auth, OTel observability, AWS/GCP `SecretStore` impls, managed-dependency mapping); Phase 3 = AWS then GCP.
+
+**Prerequisites / not-yet-done (Consequences "Negative", line 58):** "DataQ is **not** marketplace-ready at v1 ship — Phase 2's missing implementations (OIDC `AuthProvider`, OTLP exporter, multi-cloud `SecretStore`, Helm chart) are real work." Note: two of these have since been partially closed (generic OIDC via ADR 0028, OTLP exporter now in `requirements.txt`), but the **Helm chart and multi-cloud SecretStore remain deferred**.
+
+**Commercial/legal scope explicitly deferred (Decision §5, line 47):** "licensing model + entitlement/license-key (we are not metering under BYOL), seller registration + tax/banking, EULA / privacy / DPA, defined support SLA, per-marketplace security review, and (for enterprise buyers) SOC 2 + pen test." CI scanning (Bandit, CodeQL, betterleaks, Dependabot) is called "a head start on the security reviews, not a substitute."
+
+## 2. Other distribution/commercial ADRs (index at `docs/adr/README.md`)
+One-line relevance each:
+- **0026** (`0026-auth-api-keys-and-principal-seam.md`) — DataQ-issued API keys (PATs, `dq_live_…`, sha256-at-rest, show-once) as a second authenticator behind `get_current_user`; **phase-1 built #461, but README index says "Accepted (phase 1 built 2026-07-04)" while deploy/README calls PAT build "deferred to post-v1"** — enables non-interactive/service auth needed for a self-hosted product.
+- **0027** (`0027-suite-permission-model-workspace-admin.md`) — access tiers: owner/edit/view for normal users; workspace-admin is implicit `admin` on every suite (governance/break-glass), workspace-wide visibility. Constrains a multi-team/marketplace offer (see §9).
+- **0028** (`0028-cloud-neutral-image-runtime-config-generic-oidc.md`) — cloud-neutral single frontend image, nothing baked; auth injected at runtime (`window.__DATAQ_CONFIG__`); MSAL replaced with generic OIDC validated against Azure; **directly discharges part of ADR 0013 Phase-2 portability**. AWS/GCP IaC still post-v1 (#505).
+- **0024** (`0024-app-deployment-infrastructure.md`) — in-repo Terraform app stack (ACA api+worker+migrate-job + Redis + KV + App Insights + AAD OIDC); **Azure-only reference deploy** — the thing a marketplace image must generalize.
+- **0025** (`0025-production-image-pip-slim.md`) — production image is multi-stage `python:3.13-slim` + pip (~1GB); the distributable artifact's build recipe.
+- **0023** (`0023-container-image-registry-ghcr.md`) — images on GHCR (vendor-neutral, public, anonymous pull); the public distribution channel today.
+- **0029** (`0029-dbt-orchestration-provider.md`) — dbt as a third `OrchestrationProvider`; ecosystem-breadth (addresses gap G-f), not directly distribution.
+- **0030** (`0030-iceberg-native-read-path.md`) — native pyiceberg read path + self-contained `iceberg` connection type; datasource breadth, native impl deferred (#286).
+- **0021** (`0021-demo-test-data-environment-strategy.md`) — the live test/demo harness (retail model, 3 reference flows, Terraform/mock-data/Databricks notebook) lives **outside the repo**; this is the ADR that defines the Flows A/B/C harness that G-i must strip.
+- **0010/0011** — the provider-agnostic infra seams and feature seams that ADR 0013's anti-lock-in guardrails depend on.
+
+## 3. Gap register (G-a … G-i)
+Source of record: `/Users/arijit/Coding/Python/DataQ/context/post-v1-roadmap.md` lines 60-68; also surfaced in `docs/progress.md` lines 84-85.
+
+- **G-a** (line 60) — "Monitors only what you remember to check… no anomaly baselines, no schema-drift… The single biggest gap." Existential for being a "product." → Theme 1/2.
+- **G-b** (line 61) — "Scale unproven; structurally weak on 2 of 4 paths — flat-file + UC runners load the whole file/table into worker pandas; largest table ever validated is a few thousand synthetic rows… 100M-row table = worker OOM; **blocks any serious deployment**." → Theme 7.
+- **G-c** (line 62) — "Every 'verified' is self-referential — one operator, ~1 week live, against a harness built by the same author. Zero real-world data-pathology exposure at scale."
+- **G-d** (line 63) — "No incident workflow, no lineage, no ownership routing… No data-access audit trail (the HIPAA gate). This is what DQ products are bought for."
+- **G-e** (line 64) — "**Single-tenant, config-allowlist admin, one validated IdP — fine internally, not sellable.** Blocks multi-team/commercial use." → Theme 3 + ADR 0026.
+- **G-f** (line 65) — "Ecosystem: 4 datasources vs the 30–50 a category product ships; no dbt integration… can't check the Postgres it runs on. Adoption ceiling."
+- **G-g** (line 66) — "Engine risk: GX Core pin — the product's core capability rides a fast-moving third party with documented API drift."
+- **G-h** (line 67, **licence landmine**) — "**Harness Databricks = Free Edition, non-commercial-only** — the UC demo leg cannot legally back a commercial demo, while ADR 0013's ambition is commercial BYOL. Decision recorded 2026-07-03 (go-live): acceptable while the deployment is demo/eval; trigger stands — **before any commercial demo/use → paid workspace**." Restated in `docs/progress.md:84`: "Databricks **Free Edition** = demo/eval only; paid workspace before any commercial use."
+- **G-i** (line 68, **pre-marketplace teardown**) — "**Pre-marketplace teardown: the deployed app still carries the demo harness** — Flows A/B/C, the 5 harness connections (Snowflake/UC/ADLS/ADF/Airflow), demo suites/users, and the seeded-breach check are all ADR-0021 *test* fixtures, not product. Before any marketplace listing / distributable image / customer-facing deployment (ADR 0013): remove the harness flows + datasource connections + demo users from the reference deployment, and verify nothing in the shipped artifact references harness endpoints." Risk called out: "A demo fixture shipping as if it were product surface — licence (G-h) + credibility + stale-credential risk." Restated in `docs/progress.md:85` and `deploy/README.md:335-342`.
+
+**Prioritisation signal (roadmap line 70-74):** G-a and G-b "change what the product *is*"; G-d "makes it *usable in [production]*."
+
+## 4. Licensing
+- **LICENSE file present**: `/Users/arijit/Coding/Python/DataQ/LICENSE` — **MIT License, "Copyright (c) 2026 Arijit Roy."** README line 86 confirms "MIT — see LICENSE."
+- **No per-file license/SPDX headers** anywhere in `backend/app` or `frontend/src` (grep for `SPDX-License`/`Copyright` returned nothing; `main.py`/`main.tsx` start straight with imports).
+- `frontend/package.json` has **no `license` field**, only `"private": true` — so the npm package is unpublishable-by-default (fine) but carries no declared license.
+- **Note for a commercial BYOL model:** the repo is MIT-licensed (maximally permissive — anyone can "use, copy, modify, merge, publish, distribute, sublicense, and/or sell"). ADR 0013 §5 assumes a **"licensing model + entitlement/license-key"** for BYOL revenue, which is **incompatible in spirit with the current MIT grant** — this is an unresolved commercial decision.
+- **Dependency copyleft risk surface (low):** all key runtime deps are permissive — Great Expectations (Apache-2.0), FastMCP (Apache-2.0), Ant Design `antd@^6.5.0` (MIT), `oidc-client-ts` (Apache-2.0), boto3/snowflake/databricks connectors (Apache-2.0), pyiceberg (Apache-2.0), FastAPI/SQLAlchemy/pydantic (MIT/BSD), cryptography (Apache-2.0/BSD). `psycopg2-binary` (LGPL-3.0 — dynamically linked, not a redistribution blocker but worth noting for a shipped image). **No GPL/AGPL copyleft found in `backend/requirements.txt`.** No SBOM/license-scan artifact is checked in.
+
+## 5. README.md as a landing page
+File: `/Users/arijit/Coding/Python/DataQ/README.md` (6.6KB)
+- **Explains what DataQ is:** yes — tagline (line 3), "What it does" with 4 capability bullets (lines 9-23), a Stack table (lines 26-34).
+- **Quickstart:** strong — a **prebuilt-image path** ("~5 minutes, no source checkout, no Azure tenant", lines 37-48) and a from-source path (lines 50-60), plus MCP setup (lines 62-68).
+- **Feature list / matrix:** yes, links to hosted feature matrix.
+- **Screenshots/images: NONE** — `grep "!\[" README.md` returns 0. For a marketplace/landing page this is a notable gap (no product visuals, no GIF).
+- **Status line (line 7)** foregrounds "v1.0.0 released" and internal progress ledgers — reads as a dev-log, not a customer landing page.
+- Docs table (lines 72-82) points SECURITY policy to `.github/SECURITY.md`.
+
+## 6. User-facing docs inventory (`docs/`, MkDocs Material, nav in `mkdocs.yml`)
+Present and reasonably complete for a self-hoster:
+- Guides: `getting-started.md` (111 lines), `tutorial.md`, `concepts.md`, `features.md`, `datasources-checks.md`, `scheduling.md`, `orchestration.md`, `notifications.md`, `mcp-setup.md` (102), `api-keys.md` (81), `recommended-usage.md`, `best-practices.md` (71).
+- Reference: `feature-matrix.md` (67), `rest-api.md` (104), `architecture.md`, `security.md` (76), `deployment.md` (82), `observability.md`, `troubleshooting.md` (85), `runbook-faq.md` (71), `changelog.md`, `glossary.md`, `contributing.md`, `compliance-posture.md` (151).
+- **Deployment guide + full env-var reference** live in `deploy/README.md` (24KB) + `deploy/.env.app.prod.example` + `.env.app.example`. `docs/deployment.md` is an operator overview that points to them.
+- **Assessment:** breadth is good for a paying self-hoster. **Weaknesses for a BYOL customer:** deployment is **Azure-Terraform-specific** (`docs/deployment.md:7` "Azure is the supported target today; AWS/GCP are planned"); deploy is a **manual GitHub Actions `workflow_dispatch`** tied to the repo's own CI (`deployment.md` §2), not a portable installer/Helm chart — a customer cannot deploy without adopting the repo's Actions pipeline or writing their own. No Helm chart exists yet (ADR 0013 deferred).
+
+## 7. Hardcoded demo/harness residue in tracked files
+- **Prod app URL leaks into tracked files:** `https://dataq-app-frontend.purplefield-f7322a1b.westus2.azurecontainerapps.io` appears in `deploy/README.md:304` (reachability probe). The FQDN pattern also in `deploy/terraform/azure/main.tf:70`, `deploy/terraform/azure/frontend.tf:15`, `deploy/terraform/azure/README.md:26`, and — notably — a **test hardcodes the internal host** `dataq-app-api.internal.purplefield-f7322a1b.westus2.azurecontainerapps.io` in `backend/tests/mcp/test_mcp_tools.py:661`. Also embedded in the giant `CLAUDE.md:268` status paragraph.
+- **Demo/seed data ships in the eval image:** `docker-compose.ghcr.yml:80` runs `alembic upgrade head &amp;&amp; python -m backend.scripts.seed_dev` on every `up`; README line 46 says the stack "comes up migrated and **seeded with demo data**." `backend/scripts/demo_data.py` seeds connections across all 6 types, suites, and a cross-user share; `backend/scripts/seed_dev.py` seeds the **dev-bypass user** + probe fixtures.
+- **Demo user identities hardcoded** in `backend/scripts/demo_data.py:30-32`: `ANALYST_OID="demo-analyst-oid"`, `ANALYST_EMAIL="analyst@dataq.local"`, `ANALYST_NAME="Dana Analyst"`; dev-bypass constants (`DEV_BYPASS_EMAIL` etc.) in `backend/app/core/auth.py`.
+- **Mitigations to note:** `demo_data.py` docstring states "Credentials here are **obviously-fake placeholders**" — so no live secrets in the seed script. `.betterleaks.toml` secret-scanning config is present and CI runs betterleaks/Bandit/CodeQL. The Flows A/B/C harness itself (Terraform/mock-data/Databricks notebook) is **deliberately NOT git-tracked** (ADR 0021).
+- **Flows A/B/C references** appear only in narrative/checklist text (`deploy/README.md:337`, `CLAUDE.md:268`, `docs/progress-v1.md`), not as shipped product data — but the seeded demo connections in the image are the G-i concern.
+- No obvious live secrets found in tracked files (`.env`, `.env.app` exist locally but the `.example` variants are the tracked references; `.gitignore` present).
+
+## 8. Versioning / release
+- **Tags:** only `v1.0.0` (`git tag` → single tag).
+- **CHANGELOG.md present** (`/Users/arijit/Coding/Python/DataQ/CHANGELOG.md`), Keep-a-Changelog + SemVer, one curated entry per release; `[1.0.0] — 2026-07-04` is detailed; `[Unreleased]` section exists.
+- **Image tagging scheme** (`.github/workflows/publish-images.yml`): moving `:latest` stable pointer + immutable commit-SHA + optional per-release `:vN` (e.g. `v1.0.0`). README line 46 documents pinning via `DATAQ_BACKEND_TAG`/`DATAQ_FRONTEND_TAG`.
+- **Upgrade docs:** deploy = migration-gated (`alembic upgrade head` runs as a job each deploy); release/changelog step lives in `docs/runbook-faq.md`. No dedicated customer-facing "upgrade guide" doc.
+- **Inconsistency to flag:** `.github/SECURITY.md` "Supported versions" still says **"Only the latest commit on `main` is supported. There are no versioned releases in the v1 development phase."** — stale/contradicts the shipped `v1.0.0` tag and CHANGELOG. A marketplace buyer reads this as "no supported releases."
+
+## 9. Tenancy / commercial constraints stated
+- **Single-tenant is explicit and load-bearing:** ADR 0013 lines 16-21 ("DataQ v1 is **explicitly single-tenant** (CLAUDE.md §1)"); framed as the *product unit* under BYOL, not a defect — but it forecloses vendor-hosted multi-tenant SaaS without a rebuild.
+- **G-e** (roadmap line 64): "**Single-tenant, config-allowlist admin, one validated IdP — fine internally, not sellable… Blocks multi-team/commercial use.**"
+- **`WORKSPACE_ADMIN_EMAILS` allowlist** is the entire admin model (`backend/app/core/auth.py:230`, `docs/post-v1-admin-ui-notes.md:18`) — a comma-separated env var, no in-app admin management. `deploy/README.md:354-358`: anyone in it "can read **all** suites' results — including failing-row samples… the one place PII/PHI lands… **Keep the allowlist minimal.**"
+- **Suite-level sharing** (ADR 0027): owner/edit/view tiers; no grantable suite-admin; workspace-admin is superuser everywhere — constrains delegated multi-team administration.
+- **PHI/regulated caveat** (`deploy/README.md:358-360`): for regulated deployments, the data-access audit trail (G1/#431) is called a **prerequisite** — currently deferred (ties to G-d).
+
+## 10. Support / legal scaffolding
+- **SECURITY.md: PRESENT** at `.github/SECURITY.md` — private disclosure via GitHub Security Advisories, 5-business-day ack, 30/90-day fix targets, defined scope. (But the "Supported versions" section is stale — see §8.)
+- **SUPPORT.md: ABSENT** (no `SUPPORT.md` anywhere). No defined support SLA/contact — ADR 0013 §5 flags "defined support SLA" as an unmet commercial prerequisite.
+- **CODE_OF_CONDUCT.md: ABSENT.**
+- **CONTRIBUTING.md: PRESENT** (root, 16KB); **CODEOWNERS, PR template, issue templates (bug/feature/security), dependabot.yml** all present under `.github/`.
+- **PRIVACY / telemetry / EULA / DPA: ABSENT as standalone docs.** No `PRIVACY*` file. No explicit "no telemetry / does not phone home" statement — the only "telemetry" hits are internal (`docs/observability.md` = app's own logs; `docs/architecture.md:96` = `last_used_at` field). `docs/compliance-posture.md` exists (151 lines) and covers posture, but ADR 0013 §5 lists **EULA / privacy / DPA** as still-to-do.
+
+---
+
+## Bottom line for marketplace readiness
+The project has **explicitly and thoroughly documented its own not-ready state**: ADR 0013 defers the entire marketplace initiative to post-v1 and names the missing artifacts (Helm chart, multi-cloud SecretStore); the gap register calls out the two hard blockers — **G-h** (Databricks Free-Edition non-commercial licence on the demo path) and **G-i** (harness/demo-fixture teardown before any distributable artifact) — plus **G-e** (single-tenant "not sellable" as-is) and **G-b** (unproven scale "blocks any serious deployment"). Concrete residue confirming G-i is real: the GHCR eval image seeds demo data + a demo user on every `up`, and the production app FQDN is hardcoded in tracked deploy docs and a backend test. Legal/support scaffolding is partial — LICENSE (MIT, which itself conflicts with the intended paid-BYOL entitlement model) and SECURITY.md exist, but SUPPORT.md, CODE_OF_CONDUCT.md, EULA/privacy/DPA, and a support SLA do not. README is a solid dev-facing landing page but has zero screenshots and reads as a changelog. Deployment is Azure-Terraform-and-GitHub-Actions-specific with no portable installer.</result>
+<usage><subagent_tokens>56395</subagent_tokens><tool_uses>24</tool_uses><duration_ms>182250</duration_ms></usage>
+</task-notification>
+
+---
+
+I' thinking of free [OSS] + BYOL model, please check if that will contradict with current codebase [project license, any dependent package lisence, etc.] 
+Also document and file issue from these 2 review findings
+
+---
+
+yes draft the ADR
