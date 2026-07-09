@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "534f684cef70",
+  "strategy": "manual-commit",
+  "branch": "feature/716-native-iceberg-read",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/api/connections.ts",
+    "frontend/src/components/suites/SuiteForm.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/53/4f684cef70/0/metadata.json",
+      "transcript": "/53/4f684cef70/0/full.jsonl",
+      "compact_transcript": "/53/4f684cef70/0/transcript.jsonl",
+      "content_hash": "/53/4f684cef70/0/content_hash.txt",
+      "prompt": "/53/4f684cef70/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 59602,
+    "cache_creation_tokens": 472829,
+    "cache_read_tokens": 80211411,
+    "output_tokens": 189100,
+    "api_call_count": 326
+  }
+}

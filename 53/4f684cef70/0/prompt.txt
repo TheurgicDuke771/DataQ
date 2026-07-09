@@ -1,0 +1,51 @@
+<task-notification>
+<task-id>a7767698cf2015567</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/eec796a8-5d56-4939-9b7f-76976fea3fd9/tasks/a7767698cf2015567.output</output-file>
+<status>completed</status>
+<summary>Agent "Cleanup + conventions finders" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Here are my findings from the four-angle review of PR #720.
+
+```json
+[
+  {
+    "angle": "reuse",
+    "severity": "medium",
+    "file": "frontend/src/components/runs/LiveRunProgress.tsx:104 (also frontend/src/hooks/useAsyncData.ts:31, frontend/src/auth/MeProvider.tsx:41)",
+    "summary": "Only the `: 'unknown error'` variant of the error-normalizer ternary was consolidated; the sibling `: String(err)` variant remains hand-rolled in 3 spots — including LiveRunProgress, a file this PR otherwise migrated.",
+    "cost": "`errorMessage()` hardcodes the `'unknown error'` fallback with no override param, so the three `err instanceof Error ? err.message : String(err)` sites can't adopt it without a behavior change (String(err) preserves stringified non-Error throws). Net: LiveRunProgress.tsx now mixes both idioms — line 127 uses `errorMessage(err)`, line 104 still open-codes the ternary — which is exactly the drift the helper was meant to end. The doc comment's '~25 toast/catch sites into one place' overstates the reach: the AsyncState-error sites are left out. Either give `errorMessage(err, fallback?)` a fallback arg and migrate these, or note in the comment that the `String(err)` fetch-error sites are intentionally excluded."
+  },
+  {
+    "angle": "reuse",
+    "severity": "low-medium",
+    "file": "frontend/src/components/suites/SchedulesPanel.tsx:117, frontend/src/components/profile/ApiKeysPanel.tsx:111",
+    "summary": "Two remaining `modal.confirm({ okType: 'danger', … })` delete/revoke sites were not migrated to the new `useConfirmDelete`, leaving partial adoption.",
+    "cost": "The hook centralizes the danger-confirm + toast + re-throw idiom (the diff migrated the Connections/Suite/Check delete sites), but SchedulesPanel.onRemove and ApiKeysPanel.onRevoke still open-code it. Both have a real reason the current hook API can't express: per-row `setBusyId` spinner state, plus ApiKeysPanel deliberately does NOT re-throw (comment at line 124) whereas the hook always re-throws. So this is a hook-API gap, not a clean miss — but the load-bearing `throw err` consistency the hook was created to protect (#204) still isn't enforced at these two sites. Worth either extending the hook (optional busy-id callback / `rethrow` flag) or a code comment noting why they're excluded."
+  },
+  {
+    "angle": "simplification",
+    "severity": "low",
+    "file": "frontend/src/components/AsyncBody.tsx:51",
+    "summary": "The `loading?: ReactNode` override prop is speculative — no production caller passes it; only the unit test exercises it.",
+    "cost": "All four migrated consumers (ApiKeysPanel, SchedulesPanel, SharePanel, TriggersPanel) pass only `loadingText`; `loading` is YAGNI surface area added on spec. Minor — it widens the component's contract (and its test) for a use case that doesn't yet exist. Drop it until a caller needs a custom loading node, or keep it if an inline-spinner site is imminent."
+  },
+  {
+    "angle": "simplification",
+    "severity": "low",
+    "file": "frontend/tests/pages/Results.test.tsx:141",
+    "summary": "`pickFilter` is now a one-line pass-through to `selectOption` and is arguably redundant indirection.",
+    "cost": "It survives only to reorder args (`index, optionTitle` → `selectOption(user, optionTitle, {index})`) to match the file's `FILTER = {status:0,…}` call convention, and to pin `by:'title'`. That's a thin but defensible justification (it keeps the ~5 call sites reading `pickFilter(user, FILTER.env, 'PROD')`). Borderline — could be inlined, but the local arg-order convention makes keeping it reasonable. Lowest priority; flagging only because the review brief asked."
+  }
+]
+```
+
+Notes on things I checked that are clean (not findings):
+- New util is under `frontend/src/utils/errors.ts`, not `src/lib` — the gitignored-lib rule is respected. No `src/lib` dir exists.
+- The `connectionOptionLabel` migration is complete: the only remaining `CONNECTION_TYPE_LABELS[…] · envLabel(…)` template literal is the helper's own definition; both picker sites (SuiteForm, ImportSuiteDrawer) were migrated.
+- `useAsyncAction`'s `run` `useCallback` deps `[message, errorPrefix]` are effectively stable — `errorPrefix` is always a string literal (or a value-stable `` `${isEdit?…}` ``), and strings compare by value, so no needless re-creation. The efficiency angle is clean.
+- The `return run(...)` control flow in ImportSuiteDrawer/CheckNew is harmless: `run` always resolves (errors swallowed by design, matching the prior call sites), and the returning callers feed antd `onFinish`/`onClick`, which ignore the return value. NotificationsPanel correctly was NOT migrated (it needs its `true/false` success signal).
+- The RunNowPanel Modal-guard removal is correct: antd Modal with default `forceRender=false` doesn't mount children until first open, and `destroyOnHidden` re-destroys on close, so the `{open &amp;&amp; …}` guard was genuinely redundant.
+- `Spin description=` / `Alert title=` in AsyncBody are pre-existing repo idioms (identical in the deleted hand-rolled ladders), not introduced here.</result>
+<usage><subagent_tokens>83694</subagent_tokens><tool_uses>10</tool_uses><duration_ms>167395</duration_ms></usage>
+</task-notification>
