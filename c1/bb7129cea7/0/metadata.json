@@ -1,0 +1,94 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_id": "c1bb7129cea7",
+  "session_id": "eec796a8-5d56-4939-9b7f-76976fea3fd9",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-09T02:07:43.23488Z",
+  "branch": "feature/716-native-iceberg-read",
+  "checkpoints_count": 1,
+  "save_step_count": 2,
+  "files_touched": [
+    "backend/app/datasources/iceberg.py",
+    "backend/tests/datasources/test_iceberg.py",
+    "frontend/src/api/connections.ts",
+    "frontend/src/components/suites/SuiteForm.tsx"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "96ff48ff0392",
+  "token_usage": {
+    "input_tokens": 71087,
+    "cache_creation_tokens": 997578,
+    "cache_read_tokens": 114509725,
+    "output_tokens": 236973,
+    "api_call_count": 399
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_019zTYJgMyzYoyzr8sear5C1",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "96ff48ff0392",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 649,
+        "end": 650,
+        "entry_ids": [
+          "00067c3a-c752-4635-8299-2d077fbe6cd1"
+        ],
+        "tool_use_id": "toolu_019zTYJgMyzYoyzr8sear5C1"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_019zTYJgMyzYoyzr8sear5C1"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-09T02:07:43.117256Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 170,
+    "human_modified": 34,
+    "human_removed": 0,
+    "total_committed": 170,
+    "total_lines_changed": 250,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}
