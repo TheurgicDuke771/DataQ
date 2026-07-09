@@ -1,0 +1,41 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_id": "0ecbc5a8756a",
+  "session_id": "eec796a8-5d56-4939-9b7f-76976fea3fd9",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-09T00:57:59.704611Z",
+  "branch": "refactor/w3-theme10-frontend-cleanup",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/components/AsyncBody.tsx",
+    "frontend/src/components/suites/SchedulesPanel.tsx",
+    "frontend/src/components/suites/SharePanel.tsx",
+    "frontend/src/components/suites/TriggersPanel.tsx",
+    "frontend/src/components/profile/ApiKeysPanel.tsx",
+    "frontend/tests/components/AsyncBody.test.tsx"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "2f5392bf75c3",
+  "checkpoint_transcript_start": 377,
+  "transcript_lines_at_start": 377,
+  "token_usage": {
+    "input_tokens": 6211,
+    "cache_creation_tokens": 32017,
+    "cache_read_tokens": 6438974,
+    "output_tokens": 17480,
+    "api_call_count": 33
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-09T00:57:59.685Z",
+    "agent_lines": 183,
+    "agent_removed": 118,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 183,
+    "total_lines_changed": 301,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
