@@ -1,0 +1,21 @@
+<task-notification>
+<task-id>bq49ezysp</task-id>
+<tool-use-id>toolu_018VJ3VwbEt8bPr5Nf7Tz9M8</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/8bb76f13-05da-451c-ab08-dc5056bf7a39/tasks/bq49ezysp.output</output-file>
+<status>completed</status>
+<summary>Background command "Poll until close-out PR merges" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Hey, #720 mentioned - `Closes #197, #199, #204, #229, #236, #326`, but except #197 others are still open, can you check
+
+---
+
+<task-notification>
+<task-id>b8ic5klym</task-id>
+<tool-use-id>toolu_01X6ikfjnbGJURBo8Wfidf6X</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/8bb76f13-05da-451c-ab08-dc5056bf7a39/tasks/b8ic5klym.output</output-file>
+<status>completed</status>
+<summary>Background command "Auto-merge PR 723 and watch to completion" completed (exit code 0)</summary>
+</task-notification>
