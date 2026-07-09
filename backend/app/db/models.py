@@ -23,7 +23,16 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from backend.app.db.base import Base
 
 # ── Status / type value sets (TEXT + CHECK; not native PG enums for migration ergonomics) ──
-CONNECTION_TYPES = ("snowflake", "adls_gen2", "s3", "unity_catalog", "adf", "airflow", "dbt")
+CONNECTION_TYPES = (
+    "snowflake",
+    "adls_gen2",
+    "s3",
+    "unity_catalog",
+    "iceberg",
+    "adf",
+    "airflow",
+    "dbt",
+)
 RUN_STATUSES = ("queued", "running", "succeeded", "failed", "cancelled")
 # Result statuses. The four severity tiers (ADR 0005) are health-score-bearing —
 # the score aggregate sums their weights over N. The two operational statuses

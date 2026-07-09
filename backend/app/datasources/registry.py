@@ -15,6 +15,7 @@ from backend.app.core.secrets import SecretStore
 from backend.app.datasources.adls import AdlsConnectionAdapter
 from backend.app.datasources.base import CheckRunner, ConnectionAdapter
 from backend.app.datasources.flatfile import build_flatfile_runner
+from backend.app.datasources.iceberg import IcebergConnectionAdapter, build_iceberg_runner
 from backend.app.datasources.s3 import S3ConnectionAdapter
 from backend.app.datasources.snowflake import SnowflakeConnectionAdapter, build_snowflake_runner
 from backend.app.datasources.unity_catalog import (
@@ -40,6 +41,7 @@ _ADAPTERS: dict[str, ConnectionAdapter] = {
     "adls_gen2": AdlsConnectionAdapter(),
     "s3": S3ConnectionAdapter(),
     "unity_catalog": UnityCatalogConnectionAdapter(),
+    "iceberg": IcebergConnectionAdapter(),
     "adf": ADFConnectionAdapter(),
     "airflow": AirflowConnectionAdapter(),
     "dbt": DbtConnectionAdapter(),
@@ -110,11 +112,20 @@ def _unity_catalog_runner(
     )
 
 
+def _iceberg_runner(
+    *, config: dict[str, Any], secret_ref: str | None, secret_store: SecretStore, **_: Any
+) -> CheckRunner:
+    # Iceberg reads natively by ``namespace.table`` identifier (folded into the
+    # runner's ``table`` arg upstream), so it needs no ``catalog`` param.
+    return build_iceberg_runner(config=config, secret_ref=secret_ref, secret_store=secret_store)
+
+
 _RUNNER_BUILDERS: dict[str, _RunnerBuilder] = {
     "snowflake": _snowflake_runner,
     "adls_gen2": _flatfile_runner,
     "s3": _flatfile_runner,
     "unity_catalog": _unity_catalog_runner,
+    "iceberg": _iceberg_runner,
 }
 
 
