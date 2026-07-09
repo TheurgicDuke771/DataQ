@@ -40,15 +40,18 @@ export function canRunSuite(suite: Suite): boolean {
 
 /**
  * The datasource-shaped identity carried in `Suite.target` (#215): SQL targets
- * fill `table`/`schema`/`catalog`, flat-file targets fill `path`/`file_format`.
- * The wire shape is an untyped JSONB bag (`Record<string, unknown>`); read it
- * through `targetString` so the dry-run preview and column profiler don't each
- * re-hand-roll the `typeof x === 'string'` extraction.
+ * fill `table`/`schema`/`catalog`, Iceberg fills `namespace`/`table`, flat-file
+ * targets fill `path`/`file_format`. The wire shape is an untyped JSONB bag
+ * (`Record<string, unknown>`); read it through `targetString` so the dry-run
+ * preview and column profiler don't each re-hand-roll the `typeof x === 'string'`
+ * extraction.
  */
 export interface RunTarget {
   table?: string;
   schema?: string;
   catalog?: string;
+  /** Iceberg namespace (folded to `namespace.table` by the backend resolver). */
+  namespace?: string;
   path?: string;
   file_format?: 'csv' | 'parquet';
   /** Flat-file *batch* selector (a literal `path` and `pattern` are mutually exclusive). */

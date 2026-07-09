@@ -8,10 +8,12 @@ describe('targetKind', () => {
     const cases: [ConnectionType, ReturnType<typeof targetKind>][] = [
       ['snowflake', 'sql'],
       ['unity_catalog', 'uc'],
+      ['iceberg', 'iceberg'],
       ['adls_gen2', 'flatfile'],
       ['s3', 'flatfile'],
       ['adf', null],
       ['airflow', null],
+      ['dbt', null],
     ];
     for (const [type, kind] of cases) expect(targetKind(type)).toBe(kind);
   });
@@ -23,7 +25,7 @@ describe('assembleTarget', () => {
     // missing-field error — asserting error===undefined here pins that each
     // kind's `if (all blank) return null` guard runs before the required-field
     // checks (a dropped guard would still leave target=null but set an error).
-    for (const kind of ['sql', 'uc', 'flatfile'] as const) {
+    for (const kind of ['sql', 'uc', 'flatfile', 'iceberg'] as const) {
       const { target, error } = assembleTarget(kind, {});
       expect(target).toBeNull();
       expect(error).toBeUndefined();
@@ -73,6 +75,21 @@ describe('assembleTarget', () => {
   it('flags a UC section missing catalog, then table', () => {
     expect(assembleTarget('uc', { target_table: 'orders' }).error?.field).toBe('target_catalog');
     expect(assembleTarget('uc', { target_catalog: 'main' }).error?.field).toBe('target_table');
+  });
+
+  it('builds an Iceberg target requiring table, folding an optional namespace', () => {
+    expect(assembleTarget('iceberg', { target_table: 'orders' }).target).toEqual({
+      table: 'orders',
+    });
+    expect(
+      assembleTarget('iceberg', { target_namespace: 'sales', target_table: 'orders' }).target,
+    ).toEqual({ table: 'orders', namespace: 'sales' });
+  });
+
+  it('flags an Iceberg section started (namespace only) without a table', () => {
+    const { target, error } = assembleTarget('iceberg', { target_namespace: 'sales' });
+    expect(target).toBeNull();
+    expect(error?.field).toBe('target_table');
   });
 
   it('trims whitespace and treats blank-only input as absent', () => {

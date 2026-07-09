@@ -22,6 +22,7 @@ export const SOURCE_CATEGORY: Record<ConnectionType, SourceCategory> = {
   dbt: 'Orchestration',
   snowflake: 'Warehouses',
   unity_catalog: 'Lakehouses',
+  iceberg: 'Lakehouses',
   adls_gen2: 'Cloud Storage',
   s3: 'Cloud Storage',
 };
@@ -30,6 +31,7 @@ export const SOURCE_CATEGORY: Record<ConnectionType, SourceCategory> = {
 export const CONNECTION_BLURB: Record<ConnectionType, string> = {
   snowflake: 'Cloud data warehouse',
   unity_catalog: 'Databricks governance layer',
+  iceberg: 'Apache Iceberg tables (native read)',
   adls_gen2: 'Azure Data Lake Storage',
   s3: 'Object storage buckets',
   adf: 'Trigger & monitor pipeline runs',

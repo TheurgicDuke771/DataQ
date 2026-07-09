@@ -69,6 +69,7 @@ export function SuiteForm({
         target_table: targetString(suite.target, 'table'),
         target_schema: targetString(suite.target, 'schema'),
         target_catalog: targetString(suite.target, 'catalog'),
+        target_namespace: targetString(suite.target, 'namespace'),
         target_path: targetString(suite.target, 'path'),
         target_format: asFileFormat(targetString(suite.target, 'file_format')),
       });
@@ -184,6 +185,16 @@ export function TargetFields({ kind }: { kind: TargetKind }) {
                 { value: 'parquet', label: 'Parquet' },
               ]}
             />
+          </Form.Item>
+        </>
+      ) : kind === 'iceberg' ? (
+        <>
+          {/* Iceberg addresses a table by `namespace.table` (no SQL schema). */}
+          <Form.Item name="target_namespace" label="Namespace (optional)">
+            <Input placeholder="sales" />
+          </Form.Item>
+          <Form.Item name="target_table" label="Table">
+            <Input placeholder="orders (or sales.orders)" />
           </Form.Item>
         </>
       ) : (

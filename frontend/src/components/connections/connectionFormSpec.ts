@@ -103,6 +103,36 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
     ],
     secretLabel: 'Personal access token (PAT)',
   },
+  iceberg: {
+    // Native pyiceberg read (ADR 0030). The catalog `properties` dict and a named
+    // `catalog_name` are advanced (API-settable); the form covers the common
+    // REST/SQL self-hosted cases. `catalog_uri` is required for rest/sql/hive
+    // (backend-validated), optional for glue; the single secret is injected as the
+    // `secret_property` catalog property (e.g. `token`, `s3.secret-access-key`).
+    textFields: [
+      { name: 'catalog_type', label: 'Catalog type', extra: 'rest · sql · glue · hive' },
+      {
+        name: 'catalog_uri',
+        label: 'Catalog URI',
+        optional: true,
+        extra: 'REST endpoint / SQL or metastore URI (required for rest, sql, hive)',
+      },
+      {
+        name: 'warehouse',
+        label: 'Warehouse location',
+        optional: true,
+        extra: 'Table warehouse / storage root, e.g. s3://bucket/warehouse',
+      },
+      {
+        name: 'secret_property',
+        label: 'Credential property',
+        optional: true,
+        extra: 'Catalog property the credential fills, e.g. token or s3.secret-access-key',
+      },
+    ],
+    secretLabel: 'Storage / catalog credential',
+    optionalSecret: true,
+  },
   adf: {
     textFields: [
       { name: 'subscription_id', label: 'Subscription ID' },

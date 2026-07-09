@@ -8,7 +8,7 @@ import { type RunTarget, targetString } from '../../api/suites';
  * `targetKind` collapses the six datasource types to the three input shapes the
  * editor renders; orchestration types never reach here (they can't back a suite).
  */
-export type TargetKind = 'sql' | 'uc' | 'flatfile';
+export type TargetKind = 'sql' | 'uc' | 'flatfile' | 'iceberg';
 
 export function targetKind(type: ConnectionType): TargetKind | null {
   switch (type) {
@@ -16,11 +16,13 @@ export function targetKind(type: ConnectionType): TargetKind | null {
       return 'sql';
     case 'unity_catalog':
       return 'uc';
+    case 'iceberg':
+      return 'iceberg';
     case 'adls_gen2':
     case 's3':
       return 'flatfile';
     default:
-      return null; // adf / airflow — not a datasource
+      return null; // adf / airflow / dbt — not a datasource
   }
 }
 
@@ -37,6 +39,8 @@ export function summarizeTarget(target: Record<string, unknown> | null): string 
   if (path) return path;
   const parts = [
     targetString(target, 'catalog'),
+    // Iceberg addresses `namespace.table`; namespace sits where catalog/schema do.
+    targetString(target, 'namespace'),
     targetString(target, 'schema'),
     targetString(target, 'table'),
   ].filter((p): p is string => Boolean(p));
@@ -48,6 +52,7 @@ export interface TargetFormValues {
   target_table?: string;
   target_schema?: string;
   target_catalog?: string;
+  target_namespace?: string;
   target_path?: string;
   target_format?: 'csv' | 'parquet';
 }
@@ -102,6 +107,21 @@ export function assembleTarget(kind: TargetKind, v: TargetFormValues): Assembled
       };
     }
     return { target: { table, ...(schema ? { schema } : {}) } };
+  }
+
+  if (kind === 'iceberg') {
+    // Iceberg: table required, namespace optional (folded to `namespace.table`
+    // by the backend run-target resolver, mirroring resolve_target).
+    const table = trimmed(v.target_table);
+    const namespace = trimmed(v.target_namespace);
+    if (!table && !namespace) return { target: null };
+    if (!table) {
+      return {
+        target: null,
+        error: { field: 'target_table', message: 'Table is required to run this suite.' },
+      };
+    }
+    return { target: { table, ...(namespace ? { namespace } : {}) } };
   }
 
   // Unity Catalog: catalog + table required, schema optional.
