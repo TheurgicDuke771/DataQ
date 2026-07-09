@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "22a4b43982c9",
+  "strategy": "manual-commit",
+  "branch": "refactor/w3-theme10-frontend-cleanup",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/hooks/useConfirmDelete.ts",
+    "frontend/src/pages/Connections.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/22/a4b43982c9/0/metadata.json",
+      "transcript": "/22/a4b43982c9/0/full.jsonl",
+      "compact_transcript": "/22/a4b43982c9/0/transcript.jsonl",
+      "content_hash": "/22/a4b43982c9/0/content_hash.txt",
+      "prompt": "/22/a4b43982c9/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 27035,
+    "cache_creation_tokens": 219956,
+    "cache_read_tokens": 12109028,
+    "output_tokens": 57567,
+    "api_call_count": 97
+  }
+}
