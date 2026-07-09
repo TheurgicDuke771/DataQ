@@ -6,6 +6,7 @@ import { type CheckDryRunResult, dryRunCheck, targetString } from '../../api/sui
 import { RESULT_STATUS_COLORS } from '../results/resultsFormat';
 import { ScalarValue } from '../results/ScalarValue';
 import { buildCheckPayload } from './checkForm';
+import { errorMessage } from '../../utils/errors';
 
 /**
  * Inline "preview before saving" affordance for the check editor: runs the
@@ -84,7 +85,7 @@ export function DryRunPreview({
       });
       setState({ status: 'ok', result });
     } catch (err) {
-      setState({ status: 'error', error: err instanceof Error ? err.message : 'unknown error' });
+      setState({ status: 'error', error: errorMessage(err) });
     }
   };
 

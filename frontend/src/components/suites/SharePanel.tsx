@@ -1,5 +1,5 @@
 import { DeleteOutlined } from '@ant-design/icons';
-import { App, Alert, Button, Drawer, Empty, Flex, Select, Spin, Tag, Tooltip } from 'antd';
+import { App, Button, Drawer, Empty, Flex, Select, Spin, Tag, Tooltip } from 'antd';
 import SimpleList from '../SimpleList';
 import { useEffect, useRef, useState } from 'react';
 
@@ -15,6 +15,8 @@ import {
 } from '../../api/shares';
 import { useCurrentUser } from '../../auth/useCurrentUser';
 import { useAsyncData } from '../../hooks/useAsyncData';
+import { AsyncBody } from '../AsyncBody';
+import { errorMessage } from '../../utils/errors';
 
 /** The grantable levels, in ladder order, with human labels. `admin` is the
  *  workspace-admin (implicit on every suite, never granted) and `owner` is the
@@ -71,43 +73,43 @@ function SharePanelBody({
   // API is reachable directly; this just hides the footgun in the common case. #240.
   const currentEmail = useCurrentUser()?.username;
 
-  if (state.status === 'loading') {
-    return <Spin description="Loading collaborators…" />;
-  }
-  if (state.status === 'error') {
-    return (
-      <Alert type="error" showIcon title="Failed to load collaborators" description={state.error} />
-    );
-  }
-  const shares = state.data;
-
   return (
-    <Flex vertical gap={16}>
-      {canManage && (
-        <AddCollaborator
-          suiteId={suiteId}
-          excludedIds={[ownerId, ...shares.map((s) => s.user_id)]}
-          onAdded={reload}
-        />
-      )}
-      {shares.length === 0 ? (
-        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Not shared with anyone yet." />
-      ) : (
-        <SimpleList
-          dataSource={shares}
-          renderItem={(share) => (
-            <ShareRow
-              key={share.user_id}
+    <AsyncBody
+      state={state}
+      loadingText="Loading collaborators…"
+      errorTitle="Failed to load collaborators"
+    >
+      {(shares) => (
+        <Flex vertical gap={16}>
+          {canManage && (
+            <AddCollaborator
               suiteId={suiteId}
-              share={share}
-              canManage={canManage}
-              isSelf={!!currentEmail && share.email.toLowerCase() === currentEmail.toLowerCase()}
-              onChanged={reload}
+              excludedIds={[ownerId, ...shares.map((s) => s.user_id)]}
+              onAdded={reload}
             />
           )}
-        />
+          {shares.length === 0 ? (
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Not shared with anyone yet." />
+          ) : (
+            <SimpleList
+              dataSource={shares}
+              renderItem={(share) => (
+                <ShareRow
+                  key={share.user_id}
+                  suiteId={suiteId}
+                  share={share}
+                  canManage={canManage}
+                  isSelf={
+                    !!currentEmail && share.email.toLowerCase() === currentEmail.toLowerCase()
+                  }
+                  onChanged={reload}
+                />
+              )}
+            />
+          )}
+        </Flex>
       )}
-    </Flex>
+    </AsyncBody>
   );
 }
 
@@ -135,7 +137,7 @@ function ShareRow({
       message.success(`${share.email}: ${permission}`);
       onChanged();
     } catch (err) {
-      message.error(`Update failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+      message.error(`Update failed: ${errorMessage(err)}`);
     } finally {
       setBusy(false);
     }
@@ -148,7 +150,7 @@ function ShareRow({
       message.success(`${share.email}: removed`);
       onChanged();
     } catch (err) {
-      message.error(`Remove failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+      message.error(`Remove failed: ${errorMessage(err)}`);
     } finally {
       setBusy(false);
     }
@@ -267,7 +269,7 @@ function AddCollaborator({
       setPermission('view');
       onAdded();
     } catch (err) {
-      message.error(`Share failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+      message.error(`Share failed: ${errorMessage(err)}`);
     } finally {
       setAdding(false);
     }

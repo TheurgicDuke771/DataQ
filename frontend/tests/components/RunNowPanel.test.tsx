@@ -8,6 +8,7 @@ import { type Connection, listConnections } from '../../src/api/connections';
 import { getRunProgress, type Run, type RunProgress, runSuite } from '../../src/api/runs';
 import { listSuites, type Suite } from '../../src/api/suites';
 import { RunNowPanel } from '../../src/components/runs/RunNowPanel';
+import { selectOption } from '../support/antd';
 
 vi.mock('../../src/api/connections', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/api/connections')>();
@@ -109,8 +110,7 @@ describe('RunNowPanel', () => {
 
     // The first combobox is the suite picker (the second is the disabled
     // notification placeholder).
-    await user.click((await screen.findAllByRole('combobox'))[0]);
-    await user.click(await screen.findByText('orders-suite'));
+    await selectOption(user, 'orders-suite', { index: 0, by: 'text' });
 
     // Env / datasource / target readout, derived from the suite's connection.
     expect(await screen.findByText('PROD')).toBeInTheDocument();
@@ -129,8 +129,7 @@ describe('RunNowPanel', () => {
 
     // The first combobox is the suite picker (the second is the disabled
     // notification placeholder).
-    await user.click((await screen.findAllByRole('combobox'))[0]);
-    await user.click(await screen.findByText('orders-suite'));
+    await selectOption(user, 'orders-suite', { index: 0, by: 'text' });
 
     expect(await screen.findByText(/has no run target/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Run/ })).toBeDisabled();

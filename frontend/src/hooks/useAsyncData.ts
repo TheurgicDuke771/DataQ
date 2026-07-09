@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
+import { errorMessage } from '../utils/errors';
+
 /** Three-state result of an async fetch. */
 export type AsyncState<T> =
   { status: 'loading' } | { status: 'ok'; data: T } | { status: 'error'; error: string };
@@ -28,7 +30,7 @@ export function useAsyncData<T>(fetcher: () => Promise<T>): {
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setState({ status: 'error', error: err instanceof Error ? err.message : String(err) });
+          setState({ status: 'error', error: errorMessage(err, String(err)) });
         }
       });
     return () => {

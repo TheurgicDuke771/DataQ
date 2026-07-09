@@ -1,14 +1,12 @@
 import { DeleteOutlined } from '@ant-design/icons';
 import {
   App,
-  Alert,
   Button,
   Card,
   Empty,
   Flex,
   Input,
   Select,
-  Spin,
   Switch,
   Table,
   Tag,
@@ -26,7 +24,9 @@ import {
   updateSchedule,
 } from '../../api/schedules';
 import { useAsyncData } from '../../hooks/useAsyncData';
+import { AsyncBody } from '../AsyncBody';
 import { formatTimestamp } from '../results/resultsFormat';
+import { errorMessage } from '../../utils/errors';
 
 /**
  * Suite-detail panel for cron-driven run schedules (A7). A schedule runs the
@@ -66,28 +66,22 @@ function SchedulesBody({
   canManage: boolean;
   onChanged: () => void;
 }) {
-  if (state.status === 'loading') {
-    return <Spin description="Loading schedules…" />;
-  }
-  if (state.status === 'error') {
-    return (
-      <Alert type="error" showIcon title="Failed to load schedules" description={state.error} />
-    );
-  }
-  const schedules = state.data;
-
   return (
-    <Flex vertical gap={16}>
-      {canManage && <AddSchedule suiteId={suiteId} onAdded={onChanged} />}
-      {schedules.length === 0 ? (
-        <Empty
-          image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description="No schedules — this suite runs only on manual / triggered runs."
-        />
-      ) : (
-        <ScheduleTable schedules={schedules} canManage={canManage} onChanged={onChanged} />
+    <AsyncBody state={state} loadingText="Loading schedules…" errorTitle="Failed to load schedules">
+      {(schedules) => (
+        <Flex vertical gap={16}>
+          {canManage && <AddSchedule suiteId={suiteId} onAdded={onChanged} />}
+          {schedules.length === 0 ? (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description="No schedules — this suite runs only on manual / triggered runs."
+            />
+          ) : (
+            <ScheduleTable schedules={schedules} canManage={canManage} onChanged={onChanged} />
+          )}
+        </Flex>
       )}
-    </Flex>
+    </AsyncBody>
   );
 }
 
@@ -114,12 +108,14 @@ function ScheduleTable({
       message.success(`${label(s)}: ${enabled ? 'resumed' : 'paused'}`);
       onChanged();
     } catch (err) {
-      message.error(`Update failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+      message.error(`Update failed: ${errorMessage(err)}`);
     } finally {
       setBusyId(null);
     }
   };
 
+  // Not on the shared useConfirmDelete hook: this site drives a per-row
+  // `busyId` spinner around the delete, which the hook's API doesn't express.
   const onRemove = (s: Schedule) => {
     modal.confirm({
       title: `Delete schedule ${label(s)}?`,
@@ -133,7 +129,7 @@ function ScheduleTable({
           message.success(`${label(s)}: removed`);
           onChanged();
         } catch (err) {
-          message.error(`Remove failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+          message.error(`Remove failed: ${errorMessage(err)}`);
           throw err; // keep the confirm modal open on failure
         } finally {
           setBusyId(null);
@@ -227,7 +223,7 @@ function AddSchedule({ suiteId, onAdded }: { suiteId: string; onAdded: () => voi
       setCron('');
       onAdded();
     } catch (err) {
-      message.error(`Add failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+      message.error(`Add failed: ${errorMessage(err)}`);
     } finally {
       setAdding(false);
     }

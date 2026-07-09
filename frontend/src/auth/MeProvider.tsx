@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 
 import { fetchMe, type MeResponse } from '../api/me';
 import type { AsyncState } from '../hooks/useAsyncData';
+import { errorMessage } from '../utils/errors';
 import { MeContext } from './meContext';
 import { useCurrentUser } from './useCurrentUser';
 
@@ -38,7 +39,7 @@ export function MeProvider({ children }: { children: ReactNode }) {
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setState({ status: 'error', error: err instanceof Error ? err.message : String(err) });
+          setState({ status: 'error', error: errorMessage(err, String(err)) });
         }
       });
     return () => {

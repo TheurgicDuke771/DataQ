@@ -14,6 +14,7 @@ import {
   type ExpectationCategory,
 } from '../components/checks/expectationCatalog';
 import { Page } from '../components/layout/Page';
+import { useAsyncAction } from '../hooks/useAsyncAction';
 import { useAsyncData } from '../hooks/useAsyncData';
 
 // Monitor-kind categories still reserved by ADR 0012 — surfaced (disabled) so the
@@ -34,7 +35,7 @@ export function CheckNew() {
   const [expectationType, setExpectationType] = useState<string>();
   const [form] = Form.useForm();
   const column = Form.useWatch(['config', 'column'], form) as string | undefined;
-  const [submitting, setSubmitting] = useState(false);
+  const { run, loading: submitting } = useAsyncAction('Create failed');
   // Load the suite + its connection together: the run target (#215) drives the
   // dry-run preview's table/schema, and the connection type gates the Custom-SQL
   // category (ADR 0019 — SQL datasources only).
@@ -61,21 +62,16 @@ export function CheckNew() {
     if (expectationType) form.resetFields();
   }, [expectationType, form]);
 
-  const onFinish = async (values: Record<string, unknown>) => {
+  const onFinish = (values: Record<string, unknown>) => {
     if (!suiteId || !expectationType) return;
-    setSubmitting(true);
-    try {
+    return run(async () => {
       await createCheck(
         suiteId,
         buildCheckPayload({ ...values, expectation_type: expectationType }),
       );
       message.success(`${values.name as string}: created`);
       backToSuite();
-    } catch (err) {
-      message.error(`Create failed: ${err instanceof Error ? err.message : 'unknown error'}`);
-    } finally {
-      setSubmitting(false);
-    }
+    });
   };
 
   // Step 3 — config + thresholds for the chosen expectation.

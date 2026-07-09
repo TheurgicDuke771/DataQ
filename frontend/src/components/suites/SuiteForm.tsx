@@ -1,12 +1,7 @@
 import { App, Button, Divider, Flex, Form, Input, Select, Typography } from 'antd';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 
-import {
-  CONNECTION_KIND,
-  CONNECTION_TYPE_LABELS,
-  type Connection,
-  envLabel,
-} from '../../api/connections';
+import { CONNECTION_KIND, type Connection, connectionOptionLabel } from '../../api/connections';
 import { createSuite, type Suite, targetString, updateSuite } from '../../api/suites';
 import {
   asFileFormat,
@@ -15,6 +10,7 @@ import {
   type TargetKind,
   targetKind,
 } from './suiteTarget';
+import { useAsyncAction } from '../../hooks/useAsyncAction';
 
 interface SuiteFormValues extends TargetFormValues {
   name: string;
@@ -46,7 +42,7 @@ export function SuiteForm({
 }) {
   const { message } = App.useApp();
   const [form] = Form.useForm<SuiteFormValues>();
-  const [submitting, setSubmitting] = useState(false);
+  const { run, loading: submitting } = useAsyncAction('Save failed');
   const isEdit = suite !== undefined;
   // A suite's connection is its datasource — orchestration providers (ADF/
   // Airflow) are never queryable, so they can't back a suite (CLAUDE.md §4, #242).
@@ -97,8 +93,7 @@ export function SuiteForm({
       message.error('A run target can’t be removed once set — edit it to point elsewhere instead.');
       return;
     }
-    setSubmitting(true);
-    try {
+    await run(async () => {
       const saved = isEdit
         ? await updateSuite(suite.id, {
             name: values.name,
@@ -113,11 +108,7 @@ export function SuiteForm({
           });
       message.success(`${values.name}: ${isEdit ? 'saved' : 'created'}`);
       onSaved(saved);
-    } catch (err) {
-      message.error(`Save failed: ${err instanceof Error ? err.message : 'unknown error'}`);
-    } finally {
-      setSubmitting(false);
-    }
+    });
   };
 
   return (
@@ -139,7 +130,7 @@ export function SuiteForm({
           placeholder="Select a datasource connection"
           options={datasourceConnections.map((c) => ({
             value: c.id,
-            label: `${c.name} · ${CONNECTION_TYPE_LABELS[c.type]} · ${envLabel(c.env)}`,
+            label: connectionOptionLabel(c),
           }))}
         />
       </Form.Item>

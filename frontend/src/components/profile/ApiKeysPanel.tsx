@@ -10,7 +10,6 @@ import {
   Input,
   InputNumber,
   Modal,
-  Spin,
   Table,
   Tag,
   Typography,
@@ -28,7 +27,9 @@ import {
   revokeApiKey,
 } from '../../api/apiKeys';
 import { useAsyncData } from '../../hooks/useAsyncData';
+import { AsyncBody } from '../AsyncBody';
 import { formatTimestamp } from '../results/resultsFormat';
+import { errorMessage } from '../../utils/errors';
 
 /**
  * Profile panel for the user's Personal Access Tokens (PATs, ADR 0026 phase 1,
@@ -71,28 +72,28 @@ function ApiKeysBody({
 }) {
   const [creating, setCreating] = useState(false);
 
-  if (state.status === 'loading') {
-    return <Spin description="Loading tokens…" />;
-  }
-  if (state.status === 'error') {
-    return <Alert type="error" showIcon title="Failed to load tokens" description={state.error} />;
-  }
-  const keys = state.data;
-
   return (
-    <Flex vertical gap={12}>
-      <Flex justify="flex-end">
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreating(true)}>
-          New token
-        </Button>
-      </Flex>
-      {keys.length === 0 ? (
-        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No tokens yet." />
-      ) : (
-        <ApiKeyTable keys={keys} onChanged={onChanged} />
+    <AsyncBody state={state} loadingText="Loading tokens…" errorTitle="Failed to load tokens">
+      {(keys) => (
+        <Flex vertical gap={12}>
+          <Flex justify="flex-end">
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreating(true)}>
+              New token
+            </Button>
+          </Flex>
+          {keys.length === 0 ? (
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No tokens yet." />
+          ) : (
+            <ApiKeyTable keys={keys} onChanged={onChanged} />
+          )}
+          <CreateTokenModal
+            open={creating}
+            onClose={() => setCreating(false)}
+            onCreated={onChanged}
+          />
+        </Flex>
       )}
-      <CreateTokenModal open={creating} onClose={() => setCreating(false)} onCreated={onChanged} />
-    </Flex>
+    </AsyncBody>
   );
 }
 
@@ -107,6 +108,9 @@ function ApiKeyTable({ keys, onChanged }: { keys: ApiKey[]; onChanged: () => voi
   const { message, modal } = App.useApp();
   const [busyId, setBusyId] = useState<string | null>(null);
 
+  // Not on the shared useConfirmDelete hook: this site drives a per-row `busyId`
+  // spinner and deliberately does NOT re-throw (see the onOk catch below), both
+  // of which the hook's re-throwing API doesn't express.
   const onRevoke = (key: ApiKey) => {
     modal.confirm({
       title: `Revoke token “${key.name}”?`,
@@ -124,7 +128,7 @@ function ApiKeyTable({ keys, onChanged }: { keys: ApiKey[]; onChanged: () => voi
           // stays listed (no refetch on failure) so the user can retry. We don't
           // re-throw to keep the modal open — antd 6 leaves an onOk rejection
           // unhandled, and a toast + intact list is clearer anyway.
-          message.error(`Revoke failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+          message.error(`Revoke failed: ${errorMessage(err)}`);
         } finally {
           setBusyId(null);
         }
@@ -216,7 +220,7 @@ function CreateTokenModal({
       setCreated(key); // switch to the show-once view; list refresh happens on close
       onCreated();
     } catch (err) {
-      message.error(`Create failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+      message.error(`Create failed: ${errorMessage(err)}`);
     } finally {
       setSaving(false);
     }

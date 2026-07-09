@@ -1,9 +1,9 @@
 import { App, Form, Modal } from 'antd';
-import { useState } from 'react';
 
 import { type Connection, reauthConnection } from '../../api/connections';
 import { PassphraseField, SecretField } from './ConnectionTypeFields';
 import { activeAuthOption, composeSecret, CONNECTION_FORM_SPECS } from './connectionFormSpec';
+import { useAsyncAction } from '../../hooks/useAsyncAction';
 
 /**
  * Rotate a connection's stored credential. The backend verifies the new
@@ -26,7 +26,7 @@ export function ReauthModal({
 }) {
   const { message } = App.useApp();
   const [form] = Form.useForm<{ secret: string; secretPassphrase?: string }>();
-  const [submitting, setSubmitting] = useState(false);
+  const { run, loading: submitting } = useAsyncAction('Re-auth failed');
 
   const auth = connection ? activeAuthOption(connection.type, connection.config) : undefined;
   const secretLabel =
@@ -53,8 +53,7 @@ export function ReauthModal({
     } catch {
       return;
     }
-    setSubmitting(true);
-    try {
+    await run(async () => {
       await reauthConnection(
         connection.id,
         composeSecret(secret, auth?.passphraseLabel ? secretPassphrase : undefined),
@@ -62,11 +61,7 @@ export function ReauthModal({
       message.success(`${connection.name}: credential rotated`);
       form.resetFields();
       onDone();
-    } catch (err) {
-      message.error(`Re-auth failed: ${err instanceof Error ? err.message : 'unknown error'}`);
-    } finally {
-      setSubmitting(false);
-    }
+    });
   };
 
   return (
