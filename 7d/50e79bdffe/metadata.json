@@ -4,7 +4,7 @@
   "checkpoint_id": "7d50e79bdffe",
   "strategy": "manual-commit",
   "branch": "docs/reconcile-720-closures",
-  "checkpoints_count": 1,
+  "checkpoints_count": 4,
   "files_touched": [
     "docs/progress.md"
   ],
@@ -15,13 +15,20 @@
       "compact_transcript": "/7d/50e79bdffe/0/transcript.jsonl",
       "content_hash": "/7d/50e79bdffe/0/content_hash.txt",
       "prompt": "/7d/50e79bdffe/0/prompt.txt"
+    },
+    {
+      "metadata": "/7d/50e79bdffe/1/metadata.json",
+      "transcript": "/7d/50e79bdffe/1/full.jsonl",
+      "compact_transcript": "/7d/50e79bdffe/1/transcript.jsonl",
+      "content_hash": "/7d/50e79bdffe/1/content_hash.txt",
+      "prompt": "/7d/50e79bdffe/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 19638,
-    "cache_creation_tokens": 768035,
-    "cache_read_tokens": 12618903,
-    "output_tokens": 80236,
-    "api_call_count": 87
+    "input_tokens": 98218,
+    "cache_creation_tokens": 2797933,
+    "cache_read_tokens": 134529669,
+    "output_tokens": 328068,
+    "api_call_count": 502
   }
 }

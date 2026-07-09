@@ -1,0 +1,122 @@
+<task-notification>
+<task-id>a7767698cf2015567</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/eec796a8-5d56-4939-9b7f-76976fea3fd9/tasks/a7767698cf2015567.output</output-file>
+<status>completed</status>
+<summary>Agent "Cleanup + conventions finders" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Here are my findings from the four-angle review of PR #720.
+
+```json
+[
+  {
+    "angle": "reuse",
+    "severity": "medium",
+    "file": "frontend/src/components/runs/LiveRunProgress.tsx:104 (also frontend/src/hooks/useAsyncData.ts:31, frontend/src/auth/MeProvider.tsx:41)",
+    "summary": "Only the `: 'unknown error'` variant of the error-normalizer ternary was consolidated; the sibling `: String(err)` variant remains hand-rolled in 3 spots — including LiveRunProgress, a file this PR otherwise migrated.",
+    "cost": "`errorMessage()` hardcodes the `'unknown error'` fallback with no override param, so the three `err instanceof Error ? err.message : String(err)` sites can't adopt it without a behavior change (String(err) preserves stringified non-Error throws). Net: LiveRunProgress.tsx now mixes both idioms — line 127 uses `errorMessage(err)`, line 104 still open-codes the ternary — which is exactly the drift the helper was meant to end. The doc comment's '~25 toast/catch sites into one place' overstates the reach: the AsyncState-error sites are left out. Either give `errorMessage(err, fallback?)` a fallback arg and migrate these, or note in the comment that the `String(err)` fetch-error sites are intentionally excluded."
+  },
+  {
+    "angle": "reuse",
+    "severity": "low-medium",
+    "file": "frontend/src/components/suites/SchedulesPanel.tsx:117, frontend/src/components/profile/ApiKeysPanel.tsx:111",
+    "summary": "Two remaining `modal.confirm({ okType: 'danger', … })` delete/revoke sites were not migrated to the new `useConfirmDelete`, leaving partial adoption.",
+    "cost": "The hook centralizes the danger-confirm + toast + re-throw idiom (the diff migrated the Connections/Suite/Check delete sites), but SchedulesPanel.onRemove and ApiKeysPanel.onRevoke still open-code it. Both have a real reason the current hook API can't express: per-row `setBusyId` spinner state, plus ApiKeysPanel deliberately does NOT re-throw (comment at line 124) whereas the hook always re-throws. So this is a hook-API gap, not a clean miss — but the load-bearing `throw err` consistency the hook was created to protect (#204) still isn't enforced at these two sites. Worth either extending the hook (optional busy-id callback / `rethrow` flag) or a code comment noting why they're excluded."
+  },
+  {
+    "angle": "simplification",
+    "severity": "low",
+    "file": "frontend/src/components/AsyncBody.tsx:51",
+    "summary": "The `loading?: ReactNode` override prop is speculative — no production caller passes it; only the unit test exercises it.",
+    "cost": "All four migrated consumers (ApiKeysPanel, SchedulesPanel, SharePanel, TriggersPanel) pass only `loadingText`; `loading` is YAGNI surface area added on spec. Minor — it widens the component's contract (and its test) for a use case that doesn't yet exist. Drop it until a caller needs a custom loading node, or keep it if an inline-spinner site is imminent."
+  },
+  {
+    "angle": "simplification",
+    "severity": "low",
+    "file": "frontend/tests/pages/Results.test.tsx:141",
+    "summary": "`pickFilter` is now a one-line pass-through to `selectOption` and is arguably redundant indirection.",
+    "cost": "It survives only to reorder args (`index, optionTitle` → `selectOption(user, optionTitle, {index})`) to match the file's `FILTER = {status:0,…}` call convention, and to pin `by:'title'`. That's a thin but defensible justification (it keeps the ~5 call sites reading `pickFilter(user, FILTER.env, 'PROD')`). Borderline — could be inlined, but the local arg-order convention makes keeping it reasonable. Lowest priority; flagging only because the review brief asked."
+  }
+]
+```
+
+Notes on things I checked that are clean (not findings):
+- New util is under `frontend/src/utils/errors.ts`, not `src/lib` — the gitignored-lib rule is respected. No `src/lib` dir exists.
+- The `connectionOptionLabel` migration is complete: the only remaining `CONNECTION_TYPE_LABELS[…] · envLabel(…)` template literal is the helper's own definition; both picker sites (SuiteForm, ImportSuiteDrawer) were migrated.
+- `useAsyncAction`'s `run` `useCallback` deps `[message, errorPrefix]` are effectively stable — `errorPrefix` is always a string literal (or a value-stable `` `${isEdit?…}` ``), and strings compare by value, so no needless re-creation. The efficiency angle is clean.
+- The `return run(...)` control flow in ImportSuiteDrawer/CheckNew is harmless: `run` always resolves (errors swallowed by design, matching the prior call sites), and the returning callers feed antd `onFinish`/`onClick`, which ignore the return value. NotificationsPanel correctly was NOT migrated (it needs its `true/false` success signal).
+- The RunNowPanel Modal-guard removal is correct: antd Modal with default `forceRender=false` doesn't mount children until first open, and `destroyOnHidden` re-destroys on close, so the `{open &amp;&amp; …}` guard was genuinely redundant.
+- `Spin description=` / `Alert title=` in AsyncBody are pre-existing repo idioms (identical in the deleted hand-rolled ladders), not introduced here.</result>
+<usage><subagent_tokens>83694</subagent_tokens><tool_uses>10</tool_uses><duration_ms>167395</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>abb7c05bcace6c8b9</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/eec796a8-5d56-4939-9b7f-76976fea3fd9/tasks/abb7c05bcace6c8b9.output</output-file>
+<status>completed</status>
+<summary>Agent "Correctness review of #716 Iceberg" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I have enough to report. Confirmed the migration chain (down_revision `c605d1e2f3a4` is the true head; downgrade list exactly matches the pre-existing dbt-inclusive constraint — correct and reversible), the frontend Record&lt;ConnectionType&gt; maps are all exhaustively updated, and the run_target/suiteTarget iceberg branches agree. The one substantive issue is a run-vs-author inconsistency for monitors.
+
+```json
+[
+  {
+    "angle": "B (removed/changed behavior) + A",
+    "file": "backend/app/services/check_service.py",
+    "line": "133 (_validate_monitor_check) vs backend/app/datasources/iceberg.py:195-241 (run_monitors) and backend/app/services/run_service.py:140-149",
+    "severity": "high",
+    "summary": "Iceberg freshness/volume monitors can never be authored, so IcebergCheckRunner.run_monitors (+ its ~6 tests) is unreachable dead code — the feature is half-wired.",
+    "failure_scenario": "A user creates an `iceberg` connection + suite and tries to add a freshness or volume check. create_check/update_check call `_validate_monitor_check`, whose first gate is `if connection_type not in SQL_QUERYABLE_TYPES` (= {snowflake, unity_catalog}). `iceberg` is absent, so authoring 422s with 'freshness/volume monitor checks require a SQL datasource, not iceberg'. No monitor check row can ever be persisted for an iceberg suite, so run_service never dispatches to IcebergCheckRunner.run_monitors — the whole natively-implemented monitor path (scan().count(), freshness MAX via pyarrow) and all its unit tests exercise a code path that production can never hit. Either the monitor gate must be widened to include iceberg (its monitors are native, not SQL — the gate's 'monitors run a scalar SQL aggregate' rationale is now false), or run_monitors was shipped prematurely. Symptom of the same drift: run_service.py:143-145's NotImplementedError message still claims 'freshness/volume need a SQL datasource (Snowflake / Unity Catalog)', which is now stale."
+  },
+  {
+    "angle": "B (exhaustiveness on new type)",
+    "file": "backend/app/services/profile_service.py",
+    "line": "305-310 (_PROFILERS) → 365-370 (resolve_profiler)",
+    "severity": "low-medium",
+    "summary": "No `iceberg` entry in _PROFILERS, so the catalog-driven column profiler / check-editor column dropdown 422s for every iceberg suite.",
+    "failure_scenario": "In the check editor for an iceberg-backed suite, the frontend calls the column-list/profile endpoint. `_PROFILERS.get('iceberg')` is None, so resolve_profiler raises ProfileUnsupportedError (422 'column introspection is not supported for iceberg connections in v1'). The author must hand-type every column name; the profiler panel is silently unavailable. This is acknowledged/deferred (#721), so it is a known gap rather than a regression — but it is a real UX hole shipped with the datasource, and unlike the monitor case there is no author-time guard telling the user why, they just get a failed profile request."
+  },
+  {
+    "angle": "A (line-by-line: catalog_properties merge order)",
+    "file": "backend/app/datasources/iceberg.py",
+    "line": "213-221 (catalog_properties)",
+    "severity": "low",
+    "summary": "`props.update(self.properties)` runs AFTER type/uri/warehouse, so user `properties` can silently override the validated catalog_type/uri/warehouse (only the secret is truly shadow-proof).",
+    "failure_scenario": "A connection saved with catalog_type='rest' (which passes the _uri_present validator because catalog_uri is set) but properties={'type':'sql'} will validate as a rest catalog yet load_catalog receives type='sql'. The model_validator gate reasons about `catalog_type` while the runtime connect uses the overridden value — validation and behavior diverge. The docstring claims the secret is injected 'last, so it can't be shadowed' but does not note that the fixed type/uri/warehouse keys CAN be shadowed by the freeform properties dict. Config is operator-controlled so impact is limited to confusing self-inflicted misconfig, but the invariant the validator appears to enforce (uri required for rest/sql/hive) is bypassable."
+  },
+  {
+    "angle": "A/C (namespace.table folding vs frontend)",
+    "file": "backend/app/services/run_target.py",
+    "line": "129-132 (iceberg branch) + frontend suiteTarget.ts:1067-1080 / SuiteForm placeholder 'orders (or sales.orders)'",
+    "severity": "low",
+    "summary": "namespace folding does no validation of dotted/whitespace input: namespace='sales' + table='sales.orders' yields identifier 'sales.sales.orders'; surrounding whitespace is preserved.",
+    "failure_scenario": "The frontend placeholder actively invites a dotted table ('orders (or sales.orders)'). A user who fills Namespace='sales' AND Table='sales.orders' gets `f\"{namespace}.{table}\"` = 'sales.sales.orders', which load_table cannot resolve — a run-time NoSuchTableError instead of a save-time 422. Separately, `_str_or_none`/`_require` return values unstripped, so Namespace='  sales  ' folds to '  sales  .orders'. Both are user-error footguns (and the whitespace behavior mirrors the pre-existing snowflake/UC resolvers, so not iceberg-specific), but there is no author-time guard catching the double-qualified case the UI copy encourages."
+  }
+]
+```
+
+Notes on things I checked that are correct (no finding):
+- Migration `e716a1b2c3d4`: `down_revision='c605d1e2f3a4'` is the genuine current head (no other migration points at it — no branch), the CHECK widen is additive/backward-compatible, and the downgrade's narrowed list exactly equals the pre-existing dbt-inclusive constraint set by `c1d2e3f4a5b6`. Reversible and correct.
+- All 8 frontend `Record&lt;ConnectionType&gt;`/`Record&lt;DatasourceCategory&gt;` maps have an `iceberg` (or new `iceberg` category) entry — no missing-key runtime `.get`/`[]` hole; TS exhaustiveness holds.
+- `custom_sql`/`check_service` correctly EXCLUDE iceberg from `SQL_QUERYABLE_TYPES` (no SQL engine) — right call for custom-SQL checks.
+- `run_checks`/`_read_dataframe` mirror `UnityCatalogCheckRunner` exactly (ephemeral context → add_pandas → whole_dataframe batch, Arrow-backed dtypes); `build_iceberg_runner` secret-None path is correct.
+- suiteTarget `assembleTarget` iceberg branch and backend `resolve_target` agree (table required, namespace optional, folded to `namespace.table`); `RunTarget.namespace` round-trips through `summarizeTarget` + `SuiteForm` prefill.</result>
+<usage><subagent_tokens>113921</subagent_tokens><tool_uses>20</tool_uses><duration_ms>200280</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>blv1oqsrd</task-id>
+<tool-use-id>toolu_015jmgGPmQepZQtPeHFyX5Re</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/eec796a8-5d56-4939-9b7f-76976fea3fd9/tasks/blv1oqsrd.output</output-file>
+<status>completed</status>
+<summary>Background command "Post review comment + poll CI" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+great, create a hand-over note for the next session
