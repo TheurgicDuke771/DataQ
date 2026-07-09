@@ -14,12 +14,7 @@ import {
 import type { UploadFile } from 'antd';
 import { useEffect, useRef, useState } from 'react';
 
-import {
-  CONNECTION_KIND,
-  CONNECTION_TYPE_LABELS,
-  type Connection,
-  envLabel,
-} from '../../api/connections';
+import { CONNECTION_KIND, type Connection, connectionOptionLabel } from '../../api/connections';
 import { importSuite, type Suite, type SuiteDocument } from '../../api/suites';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
 
@@ -181,7 +176,7 @@ export function ImportSuiteDrawer({
               placeholder="Select a datasource connection"
               options={datasourceConnections.map((c) => ({
                 value: c.id,
-                label: `${c.name} · ${CONNECTION_TYPE_LABELS[c.type]} · ${envLabel(c.env)}`,
+                label: connectionOptionLabel(c),
               }))}
             />
           </Form.Item>

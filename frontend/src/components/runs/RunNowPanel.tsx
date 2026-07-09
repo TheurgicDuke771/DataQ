@@ -53,17 +53,17 @@ export function RunNowPanel({ open, onClose }: { open: boolean; onClose: () => v
         destroyOnHidden
         width={520}
       >
-        {/* Mount the body only while open so each open refetches the suite /
-            connection lists — a suite created since last open shows up. */}
-        {open && (
-          <RunNowForm
-            onCancel={onClose}
-            onQueued={(run, suite) => {
-              onClose();
-              setProgress({ run, suiteName: suite.name });
-            }}
-          />
-        )}
+        {/* `destroyOnHidden` unmounts the body on close and antd defers the first
+            mount until open, so each open refetches the suite / connection lists
+            (a suite created since last open shows up) — no extra `{open && …}`
+            guard needed (#326). */}
+        <RunNowForm
+          onCancel={onClose}
+          onQueued={(run, suite) => {
+            onClose();
+            setProgress({ run, suiteName: suite.name });
+          }}
+        />
       </Modal>
       <LiveRunProgress
         runId={progress?.run.id ?? null}

@@ -120,6 +120,14 @@ export const CONNECTION_TYPE_LABELS: Record<ConnectionType, string> = {
   dbt: 'dbt',
 };
 
+/**
+ * The `name · type · ENV` label used by the connection-picker `Select` in the
+ * suite create + import drawers. One definition so the format can't drift
+ * between the two pickers.
+ */
+export const connectionOptionLabel = (c: Connection): string =>
+  `${c.name} · ${CONNECTION_TYPE_LABELS[c.type]} · ${envLabel(c.env)}`;
+
 export async function listConnections(params?: {
   type?: ConnectionType;
   env?: ConnectionEnv;
