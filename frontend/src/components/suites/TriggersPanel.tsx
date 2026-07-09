@@ -28,6 +28,7 @@ import {
   type TriggerBinding,
 } from '../../api/triggerBindings';
 import { useAsyncData } from '../../hooks/useAsyncData';
+import { errorMessage } from '../../utils/errors';
 
 /**
  * Suite-detail panel for the suite's run triggers: bind an orchestrator pipeline/
@@ -121,7 +122,7 @@ function TriggerRow({
       message.success(`${binding.pipeline_or_dag_id}: ${enabled ? 'enabled' : 'disabled'}`);
       onChanged();
     } catch (err) {
-      message.error(`Update failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+      message.error(`Update failed: ${errorMessage(err)}`);
     } finally {
       setBusy(false);
     }
@@ -134,7 +135,7 @@ function TriggerRow({
       message.success(`${binding.pipeline_or_dag_id}: removed`);
       onChanged();
     } catch (err) {
-      message.error(`Remove failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+      message.error(`Remove failed: ${errorMessage(err)}`);
     } finally {
       setBusy(false);
     }
@@ -203,7 +204,7 @@ function AddTrigger({ suiteId, onAdded }: { suiteId: string; onAdded: () => void
       setPipelineId('');
       onAdded();
     } catch (err) {
-      message.error(`Add failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+      message.error(`Add failed: ${errorMessage(err)}`);
     } finally {
       setAdding(false);
     }

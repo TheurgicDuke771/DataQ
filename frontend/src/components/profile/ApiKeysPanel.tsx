@@ -29,6 +29,7 @@ import {
 } from '../../api/apiKeys';
 import { useAsyncData } from '../../hooks/useAsyncData';
 import { formatTimestamp } from '../results/resultsFormat';
+import { errorMessage } from '../../utils/errors';
 
 /**
  * Profile panel for the user's Personal Access Tokens (PATs, ADR 0026 phase 1,
@@ -124,7 +125,7 @@ function ApiKeyTable({ keys, onChanged }: { keys: ApiKey[]; onChanged: () => voi
           // stays listed (no refetch on failure) so the user can retry. We don't
           // re-throw to keep the modal open — antd 6 leaves an onOk rejection
           // unhandled, and a toast + intact list is clearer anyway.
-          message.error(`Revoke failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+          message.error(`Revoke failed: ${errorMessage(err)}`);
         } finally {
           setBusyId(null);
         }
@@ -216,7 +217,7 @@ function CreateTokenModal({
       setCreated(key); // switch to the show-once view; list refresh happens on close
       onCreated();
     } catch (err) {
-      message.error(`Create failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+      message.error(`Create failed: ${errorMessage(err)}`);
     } finally {
       setSaving(false);
     }

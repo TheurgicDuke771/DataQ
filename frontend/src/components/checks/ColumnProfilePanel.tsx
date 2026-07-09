@@ -21,6 +21,7 @@ import {
   targetString,
 } from '../../api/suites';
 import { formatScalar } from '../results/resultsFormat';
+import { errorMessage } from '../../utils/errors';
 
 /**
  * Inline column-profiler panel for the check editor: profiles one column of the
@@ -118,7 +119,7 @@ export function ColumnProfilePanel({
       });
       setState({ status: 'ok', result });
     } catch (err) {
-      setState({ status: 'error', error: err instanceof Error ? err.message : 'unknown error' });
+      setState({ status: 'error', error: errorMessage(err) });
     }
   };
 

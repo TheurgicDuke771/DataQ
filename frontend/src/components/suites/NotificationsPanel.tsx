@@ -8,6 +8,7 @@ import {
   type SuiteNotificationUpdate,
 } from '../../api/notifications';
 import { useAsyncData } from '../../hooks/useAsyncData';
+import { errorMessage } from '../../utils/errors';
 
 const ALERT_ON_OPTIONS: { value: AlertOn; label: string }[] = [
   { value: 'fail', label: 'On fail / critical' },
@@ -157,7 +158,7 @@ function NotificationsForm({
       onChanged();
       return true;
     } catch (err) {
-      message.error(`Save failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+      message.error(`Save failed: ${errorMessage(err)}`);
       return false;
     } finally {
       setSaving(false);

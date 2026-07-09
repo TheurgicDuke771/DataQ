@@ -51,7 +51,9 @@ import { TriggersPanel } from '../components/suites/TriggersPanel';
 import { BRAND } from '../theme';
 import { downloadJson, toFilenameStem } from '../utils/download';
 import { type AsyncState, useAsyncData } from '../hooks/useAsyncData';
+import { useConfirmDelete } from '../hooks/useConfirmDelete';
 import { useRunTrigger } from '../hooks/useRunTrigger';
+import { errorMessage } from '../utils/errors';
 
 /**
  * A suite's identity block — datasource avatar + name + connection/env — shared
@@ -372,7 +374,8 @@ function SuiteDetail({
   onEdit: () => void;
   onDeleted: () => void;
 }) {
-  const { message, modal } = App.useApp();
+  const { message } = App.useApp();
+  const confirmDelete = useConfirmDelete();
   const navigate = useNavigate();
   // Remounted (keyed by suite.id) when the selection changes → checks refetch.
   const { state, reload } = useAsyncData(() => listChecks(suite.id));
@@ -397,30 +400,19 @@ function SuiteDetail({
       const doc = await exportSuite(suite.id);
       downloadJson(`${toFilenameStem(suite.name)}.json`, doc);
     } catch (err) {
-      message.error(`Export failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+      message.error(`Export failed: ${errorMessage(err)}`);
     } finally {
       setExporting(false);
     }
   };
 
-  const onDelete = () => {
-    modal.confirm({
-      title: `Delete “${suite.name}”?`,
+  const onDelete = () =>
+    confirmDelete({
+      label: suite.name,
       content: 'This removes the suite and all of its checks.',
-      okText: 'Delete',
-      okType: 'danger',
-      onOk: async () => {
-        try {
-          await deleteSuite(suite.id);
-          message.success(`${suite.name} deleted`);
-          onDeleted();
-        } catch (err) {
-          message.error(`Delete failed: ${err instanceof Error ? err.message : 'unknown error'}`);
-          throw err; // keep the confirm modal open on failure
-        }
-      },
+      onDelete: () => deleteSuite(suite.id),
+      onDone: onDeleted,
     });
-  };
 
   return (
     <Flex vertical gap={16}>
@@ -536,7 +528,8 @@ function ChecksList({
   onEdit: (check: Check) => void;
   onChanged: () => void;
 }) {
-  const { message, modal } = App.useApp();
+  const { message } = App.useApp();
+  const confirmDelete = useConfirmDelete();
   // Ticks so isSnoozed() re-evaluates while the page stays open: without it an
   // expired snooze keeps showing its badge/Unsnooze until the next refetch.
   const [now, setNow] = useState(() => Date.now());
@@ -545,23 +538,12 @@ function ChecksList({
     return () => clearInterval(id);
   }, []);
 
-  const onDelete = (check: Check) => {
-    modal.confirm({
-      title: `Delete “${check.name}”?`,
-      okText: 'Delete',
-      okType: 'danger',
-      onOk: async () => {
-        try {
-          await deleteCheck(suiteId, check.id);
-          message.success(`${check.name} deleted`);
-          onChanged();
-        } catch (err) {
-          message.error(`Delete failed: ${err instanceof Error ? err.message : 'unknown error'}`);
-          throw err; // keep the confirm modal open on failure
-        }
-      },
+  const onDelete = (check: Check) =>
+    confirmDelete({
+      label: check.name,
+      onDelete: () => deleteCheck(suiteId, check.id),
+      onDone: onChanged,
     });
-  };
 
   const onSnooze = async (check: Check, hours: number, label: string) => {
     try {
@@ -569,7 +551,7 @@ function ChecksList({
       message.success(`${check.name}: alerts snoozed for ${label}`);
       onChanged();
     } catch (err) {
-      message.error(`Snooze failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+      message.error(`Snooze failed: ${errorMessage(err)}`);
     }
   };
 
@@ -579,7 +561,7 @@ function ChecksList({
       message.success(`${check.name}: alerts active again`);
       onChanged();
     } catch (err) {
-      message.error(`Unsnooze failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+      message.error(`Unsnooze failed: ${errorMessage(err)}`);
     }
   };
 

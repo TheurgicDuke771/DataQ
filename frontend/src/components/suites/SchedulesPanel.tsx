@@ -27,6 +27,7 @@ import {
 } from '../../api/schedules';
 import { useAsyncData } from '../../hooks/useAsyncData';
 import { formatTimestamp } from '../results/resultsFormat';
+import { errorMessage } from '../../utils/errors';
 
 /**
  * Suite-detail panel for cron-driven run schedules (A7). A schedule runs the
@@ -114,7 +115,7 @@ function ScheduleTable({
       message.success(`${label(s)}: ${enabled ? 'resumed' : 'paused'}`);
       onChanged();
     } catch (err) {
-      message.error(`Update failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+      message.error(`Update failed: ${errorMessage(err)}`);
     } finally {
       setBusyId(null);
     }
@@ -133,7 +134,7 @@ function ScheduleTable({
           message.success(`${label(s)}: removed`);
           onChanged();
         } catch (err) {
-          message.error(`Remove failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+          message.error(`Remove failed: ${errorMessage(err)}`);
           throw err; // keep the confirm modal open on failure
         } finally {
           setBusyId(null);
@@ -227,7 +228,7 @@ function AddSchedule({ suiteId, onAdded }: { suiteId: string; onAdded: () => voi
       setCron('');
       onAdded();
     } catch (err) {
-      message.error(`Add failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+      message.error(`Add failed: ${errorMessage(err)}`);
     } finally {
       setAdding(false);
     }

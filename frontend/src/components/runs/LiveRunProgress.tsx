@@ -11,6 +11,7 @@ import {
   type RunStatus,
 } from '../../api/runs';
 import { RESULT_STATUS_COLORS, RUN_BAR_STATUS, RUN_STATUS_COLORS } from '../results/resultsFormat';
+import { errorMessage } from '../../utils/errors';
 
 /** Run lifecycle states past which polling stops. */
 const TERMINAL: readonly RunStatus[] = ['succeeded', 'failed', 'cancelled'];
@@ -125,7 +126,7 @@ function LiveRunProgressBody({
       setProgress((p) => (p ? { ...p, status: run.status, finished_at: run.finished_at } : p));
       message.success('Run cancelled');
     } catch (err) {
-      message.error(`Cancel failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+      message.error(`Cancel failed: ${errorMessage(err)}`);
     } finally {
       setCancelling(false);
     }

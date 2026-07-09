@@ -32,6 +32,7 @@ import { ConnectionTypeAvatar } from '../components/connections/connectionVisual
 import { ReauthModal } from '../components/connections/ReauthModal';
 import { Page } from '../components/layout/Page';
 import { type AsyncState, useAsyncData } from '../hooks/useAsyncData';
+import { useConfirmDelete } from '../hooks/useConfirmDelete';
 
 /** Live connectivity state for a card — the health-page badge. */
 type HealthState = 'idle' | 'testing' | 'ok' | 'failed';
@@ -216,27 +217,18 @@ function ConnectionCard({
   actions: ConnectionActions;
   health: HealthState;
 }) {
-  const { message, modal } = App.useApp();
+  const confirmDelete = useConfirmDelete();
 
-  const onDelete = () => {
-    modal.confirm({
-      title: `Delete “${connection.name}”?`,
+  const onDelete = () =>
+    confirmDelete({
+      label: connection.name,
       content: 'This removes the connection and its stored credential.',
-      okText: 'Delete',
-      okType: 'danger',
-      onOk: async () => {
-        try {
-          await deleteConnection(connection.id);
-          message.success(`${connection.name} deleted`);
-          actions.onClearHealth(connection.id);
-          actions.onChanged();
-        } catch (err) {
-          message.error(`Delete failed: ${err instanceof Error ? err.message : 'unknown error'}`);
-          throw err; // keep the confirm modal open on failure
-        }
+      onDelete: async () => {
+        await deleteConnection(connection.id);
+        actions.onClearHealth(connection.id);
       },
+      onDone: actions.onChanged,
     });
-  };
 
   const menuItems = [
     { key: 'edit', label: 'Edit', onClick: () => actions.onEdit(connection) },

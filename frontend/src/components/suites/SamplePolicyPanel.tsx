@@ -9,6 +9,7 @@ import {
 } from '../../api/columnPolicy';
 import { type ColumnTarget, listColumns, type Suite, targetString } from '../../api/suites';
 import { useAsyncData } from '../../hooks/useAsyncData';
+import { errorMessage } from '../../utils/errors';
 
 /**
  * Suite-detail panel for the failing-sample redaction policy (#415): which column
@@ -122,7 +123,7 @@ function SamplePolicyForm({
       setPii(suggestion.pii_columns);
       message.success('Suggested from the target — review, then Save');
     } catch (err) {
-      message.error(`Auto-detect failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+      message.error(`Auto-detect failed: ${errorMessage(err)}`);
     } finally {
       setSuggesting(false);
     }
@@ -135,7 +136,7 @@ function SamplePolicyForm({
       message.success('Sample policy saved');
       onSaved();
     } catch (err) {
-      message.error(`Save failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+      message.error(`Save failed: ${errorMessage(err)}`);
     } finally {
       setSaving(false);
     }

@@ -15,6 +15,7 @@ import {
 } from '../../api/shares';
 import { useCurrentUser } from '../../auth/useCurrentUser';
 import { useAsyncData } from '../../hooks/useAsyncData';
+import { errorMessage } from '../../utils/errors';
 
 /** The grantable levels, in ladder order, with human labels. `admin` is the
  *  workspace-admin (implicit on every suite, never granted) and `owner` is the
@@ -135,7 +136,7 @@ function ShareRow({
       message.success(`${share.email}: ${permission}`);
       onChanged();
     } catch (err) {
-      message.error(`Update failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+      message.error(`Update failed: ${errorMessage(err)}`);
     } finally {
       setBusy(false);
     }
@@ -148,7 +149,7 @@ function ShareRow({
       message.success(`${share.email}: removed`);
       onChanged();
     } catch (err) {
-      message.error(`Remove failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+      message.error(`Remove failed: ${errorMessage(err)}`);
     } finally {
       setBusy(false);
     }
@@ -267,7 +268,7 @@ function AddCollaborator({
       setPermission('view');
       onAdded();
     } catch (err) {
-      message.error(`Share failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+      message.error(`Share failed: ${errorMessage(err)}`);
     } finally {
       setAdding(false);
     }

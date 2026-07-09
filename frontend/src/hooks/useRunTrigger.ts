@@ -3,6 +3,7 @@ import { useRef, useState } from 'react';
 
 import { type Run, runSuite } from '../api/runs';
 import type { Suite } from '../api/suites';
+import { errorMessage } from '../utils/errors';
 
 /**
  * Trigger a manual run of a suite — the shared logic behind the suite-detail Run
@@ -30,7 +31,7 @@ export function useRunTrigger(onQueued: (run: Run, suite: Suite) => void): {
       message.success(`${suite.name}: run queued`);
       onQueued(queued, suite);
     } catch (err) {
-      message.error(`Run failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+      message.error(`Run failed: ${errorMessage(err)}`);
     } finally {
       runningRef.current = false;
       setRunning(false);
