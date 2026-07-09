@@ -15,6 +15,7 @@ import {
   expectationsByCategoryFor,
 } from '../components/checks/expectationCatalog';
 import { Page } from '../components/layout/Page';
+import { useAsyncAction } from '../hooks/useAsyncAction';
 import { useAsyncData } from '../hooks/useAsyncData';
 
 /**
@@ -98,7 +99,7 @@ function CheckEditForm({
 }) {
   const { message } = App.useApp();
   const [form] = Form.useForm();
-  const [submitting, setSubmitting] = useState(false);
+  const { run, loading: submitting } = useAsyncAction('Save failed');
   const [historyOpen, setHistoryOpen] = useState(false);
   const selectedType = Form.useWatch('expectation_type', form) as string | undefined;
   const column = Form.useWatch(['config', 'column'], form) as string | undefined;
@@ -126,8 +127,7 @@ function CheckEditForm({
     } catch {
       return; // inline validation errors
     }
-    setSubmitting(true);
-    try {
+    await run(async () => {
       // `kind` is immutable on update — omit it from the PATCH (don't rely on the
       // backend silently ignoring an extra field).
       const update = buildCheckPayload(values);
@@ -135,11 +135,7 @@ function CheckEditForm({
       await updateCheck(suiteId, check.id, update);
       message.success(`${values.name as string}: saved`);
       onSaved();
-    } catch (err) {
-      message.error(`Save failed: ${err instanceof Error ? err.message : 'unknown error'}`);
-    } finally {
-      setSubmitting(false);
-    }
+    });
   };
 
   return (

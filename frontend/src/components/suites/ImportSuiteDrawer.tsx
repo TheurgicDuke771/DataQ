@@ -21,6 +21,7 @@ import {
   envLabel,
 } from '../../api/connections';
 import { importSuite, type Suite, type SuiteDocument } from '../../api/suites';
+import { useAsyncAction } from '../../hooks/useAsyncAction';
 
 /**
  * Import a portable suite document (the JSON produced by "Export") onto a chosen
@@ -49,7 +50,7 @@ export function ImportSuiteDrawer({
   const [doc, setDoc] = useState<SuiteDocument | null>(null);
   const [fileName, setFileName] = useState<string>();
   const [parseError, setParseError] = useState<string>();
-  const [submitting, setSubmitting] = useState(false);
+  const { run, loading: submitting } = useAsyncAction('Import failed');
   // Monotonic token so a slow earlier file read can't overwrite a newer pick's
   // result (last-wins). Bumped on every pick and on remove; the effect below
   // bumps it on open/close so an in-flight parse from a prior open can't land in
@@ -97,18 +98,13 @@ export function ImportSuiteDrawer({
     return false;
   };
 
-  const onSubmit = async () => {
+  const onSubmit = () => {
     if (!doc || !connectionId) return;
-    setSubmitting(true);
-    try {
+    return run(async () => {
       const suite = await importSuite({ connection_id: connectionId, document: doc });
       message.success(`${suite.name}: imported`);
       onImported(suite);
-    } catch (err) {
-      message.error(`Import failed: ${err instanceof Error ? err.message : 'unknown error'}`);
-    } finally {
-      setSubmitting(false);
-    }
+    });
   };
 
   const fileList: UploadFile[] = fileName

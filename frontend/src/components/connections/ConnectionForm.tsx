@@ -1,5 +1,5 @@
 import { App, Button, Flex, Form, Input, Select, Tag, Typography } from 'antd';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 
 import {
   CONNECTION_ENVS,
@@ -14,6 +14,7 @@ import {
 } from '../../api/connections';
 import { ConnectionTypeFields } from './ConnectionTypeFields';
 import { activeAuthOption, composeSecret, initialConfigForType } from './connectionFormSpec';
+import { useAsyncAction } from '../../hooks/useAsyncAction';
 
 interface FormValues {
   name: string;
@@ -46,8 +47,8 @@ export function ConnectionForm({
 }) {
   const { message } = App.useApp();
   const [form] = Form.useForm<FormValues>();
-  const [submitting, setSubmitting] = useState(false);
   const isEdit = connection !== undefined;
+  const { run, loading: submitting } = useAsyncAction(`${isEdit ? 'Update' : 'Create'} failed`);
 
   // Seed the form: an edit prefills name + config; a create seeds the new type's
   // config defaults (e.g. the auth-type) and clears any fields left over from a
@@ -62,9 +63,8 @@ export function ConnectionForm({
     }
   }, [type, connection, form]);
 
-  const onFinish = async (values: FormValues) => {
-    setSubmitting(true);
-    try {
+  const onFinish = (values: FormValues) =>
+    run(async () => {
       const saved = isEdit
         ? await updateConnection(connection.id, {
             name: values.name,
@@ -89,14 +89,7 @@ export function ConnectionForm({
           });
       message.success(`Connection “${values.name}” ${isEdit ? 'updated' : 'created'}`);
       onSaved(saved);
-    } catch (err) {
-      message.error(
-        `${isEdit ? 'Update' : 'Create'} failed: ${err instanceof Error ? err.message : 'unknown error'}`,
-      );
-    } finally {
-      setSubmitting(false);
-    }
-  };
+    });
 
   return (
     <Form form={form} layout="vertical" onFinish={onFinish} requiredMark="optional">
