@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "421f5e336db5",
+  "strategy": "manual-commit",
+  "branch": "refactor/w3-theme10-frontend-cleanup",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/api/connections.ts",
+    "frontend/src/components/runs/RunNowPanel.tsx",
+    "frontend/src/components/suites/ImportSuiteDrawer.tsx",
+    "frontend/src/components/suites/SuiteForm.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/42/1f5e336db5/0/metadata.json",
+      "transcript": "/42/1f5e336db5/0/full.jsonl",
+      "compact_transcript": "/42/1f5e336db5/0/transcript.jsonl",
+      "content_hash": "/42/1f5e336db5/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 525,
+    "cache_creation_tokens": 8891,
+    "cache_read_tokens": 3417762,
+    "output_tokens": 5830,
+    "api_call_count": 16
+  }
+}
