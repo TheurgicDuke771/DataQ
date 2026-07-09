@@ -13,6 +13,7 @@ import {
   type TriggerBinding,
 } from '../../src/api/triggerBindings';
 import { TriggersPanel } from '../../src/components/suites/TriggersPanel';
+import { selectOption } from '../support/antd';
 
 vi.mock('../../src/api/triggerBindings', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/api/triggerBindings')>();
@@ -93,13 +94,10 @@ describe('TriggersPanel', () => {
     renderPanel();
     await screen.findByText(/No triggers/);
 
-    // Two Selects in the add form: [provider, env]; the Input is a textbox.
-    const [providerSelect, envSelect] = screen.getAllByRole('combobox');
-    await user.click(providerSelect);
-    await user.click(await screen.findByText('Azure Data Factory'));
+    // Two Selects in the add form: [0] provider, [1] env; the Input is a textbox.
+    await selectOption(user, 'Azure Data Factory', { index: 0, by: 'text' });
     await user.type(screen.getByPlaceholderText('Pipeline / DAG id'), 'nightly-load');
-    await user.click(envSelect);
-    await user.click(await screen.findByText('PROD'));
+    await selectOption(user, 'PROD', { index: 1, by: 'text' });
     await user.click(screen.getByRole('button', { name: 'Add' }));
 
     await waitFor(() =>

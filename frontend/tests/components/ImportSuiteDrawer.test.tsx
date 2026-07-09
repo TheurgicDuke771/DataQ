@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Connection } from '../../src/api/connections';
 import { importSuite, type SuiteDocument } from '../../src/api/suites';
 import { ImportSuiteDrawer } from '../../src/components/suites/ImportSuiteDrawer';
+import { selectOption } from '../support/antd';
 
 vi.mock('../../src/api/suites', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/api/suites')>();
@@ -84,12 +85,7 @@ describe('ImportSuiteDrawer', () => {
     // Preview confirms the parsed document (name + check count).
     expect(await screen.findByText('orders-suite')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('combobox'));
-    await user.click(
-      await screen.findByText('sf-dev · Snowflake · DEV', {
-        selector: '.ant-select-item-option-content',
-      }),
-    );
+    await selectOption(user, 'sf-dev · Snowflake · DEV', { by: 'text' });
     await user.click(screen.getByRole('button', { name: 'Import' }));
 
     await waitFor(() => expect(mockImport).toHaveBeenCalledTimes(1));

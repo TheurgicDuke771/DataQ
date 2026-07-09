@@ -8,6 +8,7 @@ import { listPipelineRuns, listRuns, type PipelineRun, type Run } from '../../sr
 import { ORCHESTRATION_PROVIDERS, PROVIDER_LABELS } from '../../src/api/triggerBindings';
 import { type Suite, listSuites } from '../../src/api/suites';
 import { Results } from '../../src/pages/Results';
+import { selectOption } from '../support/antd';
 
 vi.mock('../../src/api/runs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/api/runs')>();
@@ -140,14 +141,8 @@ function renderResults() {
 const FILTER = { status: 0, suite: 1, env: 2, datasource: 3, date: 4 } as const;
 
 /** Open the Nth filter Select and pick the option titled `optionTitle`. */
-async function pickFilter(
-  user: ReturnType<typeof userEvent.setup>,
-  index: number,
-  optionTitle: string,
-) {
-  await user.click(screen.getAllByRole('combobox')[index]);
-  await user.click(await screen.findByTitle(optionTitle));
-}
+const pickFilter = (user: ReturnType<typeof userEvent.setup>, index: number, optionTitle: string) =>
+  selectOption(user, optionTitle, { index });
 
 const tableRowCount = () => document.querySelectorAll('tr.ant-table-row').length;
 
