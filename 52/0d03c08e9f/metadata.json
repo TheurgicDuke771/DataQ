@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "520d03c08e9f",
+  "strategy": "manual-commit",
+  "branch": "refactor/w3-theme10-frontend-cleanup",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/components/AsyncBody.tsx",
+    "frontend/src/components/profile/ApiKeysPanel.tsx",
+    "frontend/src/components/suites/SchedulesPanel.tsx",
+    "frontend/tests/components/AsyncBody.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/52/0d03c08e9f/0/metadata.json",
+      "transcript": "/52/0d03c08e9f/0/full.jsonl",
+      "compact_transcript": "/52/0d03c08e9f/0/transcript.jsonl",
+      "content_hash": "/52/0d03c08e9f/0/content_hash.txt",
+      "prompt": "/52/0d03c08e9f/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 4287,
+    "cache_creation_tokens": 38646,
+    "cache_read_tokens": 10687151,
+    "output_tokens": 18045,
+    "api_call_count": 41
+  }
+}
