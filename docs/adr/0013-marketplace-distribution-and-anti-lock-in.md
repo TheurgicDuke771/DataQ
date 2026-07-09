@@ -69,4 +69,5 @@ The architecture is already partly portable by intent — [ADR 0010](0010-provid
 
 - [ADR 0010](0010-provider-agnostic-infrastructure-seams.md) — provider-agnostic infra seams (the per-seam discipline this distribution decision depends on).
 - [ADR 0011](0011-extensibility-seams-for-deferred-integrations.md) — feature-side extensibility seams (connectors, `ResultPublisher`, dbt-as-provider).
+- [ADR 0031](0031-oss-byol-distribution-licensing.md) — **supersedes the §5 "licensing model + entitlement/license-key" line**: distribution licensing decided as free open-source (MIT) + BYOL, no entitlement machinery; the rest of this ADR stands.
 - CLAUDE.md §1 (single-tenant scope), §9 (decision table), §11 (anti-patterns — "don't bypass the abstraction").
