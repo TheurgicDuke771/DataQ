@@ -21,16 +21,6 @@ describe('AsyncBody', () => {
     expect(screen.getByText('Loading things…')).toBeInTheDocument();
   });
 
-  it('renders a custom loading node when given one', () => {
-    const state: AsyncState<string[]> = { status: 'loading' };
-    render(
-      <AsyncBody state={state} loading={<span>spinning</span>} errorTitle="Failed">
-        {renderChild}
-      </AsyncBody>,
-    );
-    expect(screen.getByText('spinning')).toBeInTheDocument();
-  });
-
   it('renders the error title and message on failure', () => {
     const state: AsyncState<string[]> = { status: 'error', error: 'boom' };
     render(

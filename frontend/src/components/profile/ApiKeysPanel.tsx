@@ -108,6 +108,9 @@ function ApiKeyTable({ keys, onChanged }: { keys: ApiKey[]; onChanged: () => voi
   const { message, modal } = App.useApp();
   const [busyId, setBusyId] = useState<string | null>(null);
 
+  // Not on the shared useConfirmDelete hook: this site drives a per-row `busyId`
+  // spinner and deliberately does NOT re-throw (see the onOk catch below), both
+  // of which the hook's re-throwing API doesn't express.
   const onRevoke = (key: ApiKey) => {
     modal.confirm({
       title: `Revoke token “${key.name}”?`,

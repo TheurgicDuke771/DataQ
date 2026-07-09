@@ -2,9 +2,10 @@
  * Normalise an unknown thrown value to a user-facing string.
  *
  * Collapses the `instanceof Error` message-or-fallback ternary that recurred
- * across ~25 toast/catch sites into one place, so the fallback wording stays
- * consistent (and is trivially changeable).
+ * across the toast/catch sites into one place. The default `'unknown error'`
+ * fallback suits user-facing toasts; the fetch-error sites that want the raw
+ * `String(err)` for a non-Error throw pass it explicitly.
  */
-export function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : 'unknown error';
+export function errorMessage(err: unknown, fallback = 'unknown error'): string {
+  return err instanceof Error ? err.message : fallback;
 }

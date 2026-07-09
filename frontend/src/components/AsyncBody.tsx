@@ -15,19 +15,16 @@ import type { AsyncState } from '../hooks/useAsyncData';
 export function AsyncBody<T>({
   state,
   loadingText,
-  loading,
   errorTitle,
   children,
 }: {
   state: AsyncState<T>;
   /** Caption for the default spinner. */
   loadingText?: string;
-  /** Override the whole loading node (e.g. a small inline spinner). */
-  loading?: ReactNode;
   errorTitle: string;
   children: (data: T) => ReactNode;
 }): ReactNode {
-  if (state.status === 'loading') return loading ?? <Spin description={loadingText} />;
+  if (state.status === 'loading') return <Spin description={loadingText} />;
   if (state.status === 'error') {
     return <Alert type="error" showIcon title={errorTitle} description={state.error} />;
   }

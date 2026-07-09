@@ -101,7 +101,7 @@ function LiveRunProgressBody({
         }
       } catch (err) {
         if (!active || stoppedRef.current) return;
-        setError(err instanceof Error ? err.message : String(err));
+        setError(errorMessage(err, String(err)));
         // Keep polling through a transient error rather than freezing the live
         // view; the cadence is bounded by pollMs, and a terminal status / unmount
         // still stops it.

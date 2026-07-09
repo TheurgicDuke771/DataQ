@@ -114,6 +114,8 @@ function ScheduleTable({
     }
   };
 
+  // Not on the shared useConfirmDelete hook: this site drives a per-row
+  // `busyId` spinner around the delete, which the hook's API doesn't express.
   const onRemove = (s: Schedule) => {
     modal.confirm({
       title: `Delete schedule ${label(s)}?`,
