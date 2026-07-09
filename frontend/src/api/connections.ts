@@ -88,6 +88,18 @@ export const SQL_QUERYABLE_TYPES: ConnectionType[] = ['snowflake', 'unity_catalo
 
 export const isSqlQueryable = (type: ConnectionType): boolean => SQL_QUERYABLE_TYPES.includes(type);
 
+/**
+ * Datasources whose runner can evaluate freshness/volume **monitors** — the SQL
+ * datasources (in-warehouse aggregate) plus Iceberg (native `scan().count()` / a
+ * column MAX, ADR 0030). Broader than `SQL_QUERYABLE_TYPES`: Iceberg supports
+ * monitors but is **not** SQL-queryable (no custom-SQL). Mirrors the backend
+ * `check_service.MONITOR_CAPABLE_TYPES` author gate.
+ */
+export const MONITOR_CAPABLE_TYPES: ConnectionType[] = ['snowflake', 'unity_catalog', 'iceberg'];
+
+export const supportsMonitors = (type: ConnectionType): boolean =>
+  MONITOR_CAPABLE_TYPES.includes(type);
+
 export const CONNECTION_ENVS = ['dev', 'qa', 'uat', 'prod'] as const;
 export type ConnectionEnv = (typeof CONNECTION_ENVS)[number];
 

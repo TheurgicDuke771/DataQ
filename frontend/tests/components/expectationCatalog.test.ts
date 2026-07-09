@@ -32,8 +32,8 @@ describe('expectationsByCategoryFor (custom-SQL datasource gating, ADR 0019)', (
     },
   );
 
-  it.each<ConnectionType>(['s3', 'adls_gen2', 'adf', 'airflow'])(
-    'hides Custom SQL for non-SQL datasource %s',
+  it.each<ConnectionType>(['s3', 'adls_gen2', 'iceberg', 'adf', 'airflow'])(
+    'hides Custom SQL for non-SQL datasource %s (Iceberg is a native read, not SQL)',
     (type) => {
       expect(categoryNames(expectationsByCategoryFor(type))).not.toContain('Custom SQL');
     },
@@ -64,8 +64,8 @@ describe('expectationsByCategoryFor (custom-SQL datasource gating, ADR 0019)', (
 });
 
 describe('expectationsByCategoryFor (freshness/volume monitor gating, ADR 0012)', () => {
-  it.each<ConnectionType>(['snowflake', 'unity_catalog'])(
-    'offers Freshness + Volume for SQL datasource %s',
+  it.each<ConnectionType>(['snowflake', 'unity_catalog', 'iceberg'])(
+    'offers Freshness + Volume for monitor-capable datasource %s (Iceberg computes them natively)',
     (type) => {
       const names = categoryNames(expectationsByCategoryFor(type));
       expect(names).toContain('Freshness');
@@ -74,7 +74,7 @@ describe('expectationsByCategoryFor (freshness/volume monitor gating, ADR 0012)'
   );
 
   it.each<ConnectionType>(['s3', 'adls_gen2', 'adf', 'airflow'])(
-    'hides monitor categories for non-SQL datasource %s',
+    'hides monitor categories for non-monitor-capable datasource %s',
     (type) => {
       const names = categoryNames(expectationsByCategoryFor(type));
       expect(names).not.toContain('Freshness');

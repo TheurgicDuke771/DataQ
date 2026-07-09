@@ -255,6 +255,23 @@ def test_run_monitors_freshness_empty_table_errors(monkeypatch: pytest.MonkeyPat
     assert outcome.errored is True  # MAX over no rows → can't assess (#122)
 
 
+def test_run_monitors_load_failure_propagates(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A catalog/load failure is a run-level failure (not N per-monitor errors): the
+    # table loads once, before the banding loop, so the exception propagates.
+    runner = IcebergCheckRunner(config=IcebergConfig.model_validate(_REST_CONFIG), secret="tok")
+    monkeypatch.setattr(
+        runner,
+        "_load_table",
+        lambda identifier: (_ for _ in ()).throw(RuntimeError("catalog down")),
+    )
+    with pytest.raises(RuntimeError, match="catalog down"):
+        runner.run_monitors(
+            table="sales.orders",
+            schema=None,
+            monitors=[MonitorSpec("volume", {"min_rows": 1, "max_rows": 100})],
+        )
+
+
 def test_run_monitors_bad_monitor_errors_only_itself(monkeypatch: pytest.MonkeyPatch) -> None:
     runner = _runner_over(pd.DataFrame({"id": [1, 2, 3]}), monkeypatch)
     outcomes = runner.run_monitors(

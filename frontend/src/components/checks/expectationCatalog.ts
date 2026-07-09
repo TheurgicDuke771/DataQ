@@ -12,7 +12,7 @@
  * every suite regardless of its connection type.
  */
 
-import { isSqlQueryable, type ConnectionType } from '../../api/connections';
+import { isSqlQueryable, supportsMonitors, type ConnectionType } from '../../api/connections';
 import { CUSTOM_SQL_EXPECTATION_TYPE, CUSTOM_SQL_QUERY_KEY } from './customSql';
 
 export type ConfigFieldType = 'string' | 'number' | 'list' | 'sql';
@@ -216,16 +216,22 @@ export const EXPECTATIONS_BY_CATEGORY: {
   specs: EXPECTATION_CATALOG.filter((e) => e.category === category),
 }));
 
-/** The SQL-datasource-only categories — Custom SQL (ADR 0019) + the freshness/
- *  volume monitors (ADR 0012). All run a SQL query, so they're offered only on
- *  SQL-queryable connections (Snowflake / Unity Catalog). */
-const SQL_ONLY_CATEGORIES = new Set<ExpectationCategory>(['Custom SQL', ...MONITOR_CATEGORIES]);
+/** Custom SQL (ADR 0019) is offered only on SQL-queryable connections — it runs a
+ *  literal SQL query. Distinct from the monitor categories (below), which Iceberg
+ *  also supports natively despite not being SQL-queryable. */
+const CUSTOM_SQL_CATEGORY: ExpectationCategory = 'Custom SQL';
+
+/** The freshness/volume monitor categories (ADR 0012) — offered on any
+ *  monitor-capable datasource (SQL datasources + Iceberg, `supportsMonitors`),
+ *  since the aggregate need not be SQL (Iceberg computes it natively). */
+const MONITOR_CATEGORY_SET = new Set<ExpectationCategory>(MONITOR_CATEGORIES);
 
 /**
- * Grouped catalog filtered for a suite's datasource. The SQL-only categories
- * (Custom SQL + Freshness/Volume monitors) are hidden for flat-file suites — and
- * while the connection type is still loading (`undefined`) — so we never offer a
- * category the backend would 422. Every other category is datasource-agnostic.
+ * Grouped catalog filtered for a suite's datasource. Custom SQL is hidden unless
+ * the connection is SQL-queryable; the monitor categories are hidden unless it's
+ * monitor-capable — both also hidden while the connection type is still loading
+ * (`undefined`) — so we never offer a category the backend would 422. Every other
+ * category is datasource-agnostic.
  *
  * `alwaysIncludeType` keeps the group of an already-selected expectation visible
  * regardless of gating — the edit drawer passes the check's current type so a
@@ -240,10 +246,15 @@ export function expectationsByCategoryFor(
   specs: ExpectationSpec[];
 }[] {
   const sqlAllowed = connectionType !== undefined && isSqlQueryable(connectionType);
+  const monitorAllowed = connectionType !== undefined && supportsMonitors(connectionType);
   const selectedCategory = alwaysIncludeType
     ? EXPECTATION_BY_TYPE[alwaysIncludeType]?.category
     : undefined;
-  return EXPECTATIONS_BY_CATEGORY.filter(
-    (g) => !SQL_ONLY_CATEGORIES.has(g.category) || sqlAllowed || g.category === selectedCategory,
-  );
+  const allowed = (category: ExpectationCategory): boolean => {
+    if (category === selectedCategory) return true;
+    if (category === CUSTOM_SQL_CATEGORY) return sqlAllowed;
+    if (MONITOR_CATEGORY_SET.has(category)) return monitorAllowed;
+    return true; // datasource-agnostic category
+  };
+  return EXPECTATIONS_BY_CATEGORY.filter((g) => allowed(g.category));
 }

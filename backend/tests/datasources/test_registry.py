@@ -9,6 +9,7 @@ concrete runner class per type plus the error paths.
 import pytest
 
 from backend.app.datasources.flatfile import FlatFileCheckRunner
+from backend.app.datasources.iceberg import IcebergCheckRunner
 from backend.app.datasources.registry import UnsupportedConnectionTypeError, build_check_runner
 from backend.app.datasources.snowflake import SnowflakeCheckRunner
 from backend.app.datasources.unity_catalog import UnityCatalogCheckRunner
@@ -23,6 +24,11 @@ _SNOWFLAKE_CONFIG = {
 }
 _UC_CONFIG = {"workspace_url": "https://adb-1234.5.azuredatabricks.net", "warehouse_id": "abc123"}
 _S3_CONFIG = {"bucket": "data", "region": "eu-west-1"}
+_ICEBERG_CONFIG = {
+    "catalog_type": "rest",
+    "catalog_uri": "https://catalog.example.com",
+    "secret_property": "token",
+}
 
 
 class _FakeStore:
@@ -65,6 +71,16 @@ def test_dispatches_unity_catalog_with_catalog() -> None:
         catalog="main",
     )
     assert isinstance(runner, UnityCatalogCheckRunner)
+
+
+def test_dispatches_iceberg() -> None:
+    runner = build_check_runner(
+        conn_type="iceberg",
+        config=_ICEBERG_CONFIG,
+        secret_ref="iceberg-cred",
+        secret_store=_FakeStore(),
+    )
+    assert isinstance(runner, IcebergCheckRunner)
 
 
 def test_unity_catalog_without_catalog_raises() -> None:

@@ -47,8 +47,7 @@ from backend.app.datasources.monitors import (
     FRESHNESS,
     VOLUME,
     MonitorConfigError,
-    monitor_expectation_type,
-    monitor_outcome,
+    run_monitor_specs,
     validate_monitor_config,
 )
 
@@ -94,16 +93,18 @@ class IcebergConfig(BaseModel):
     def catalog_properties(self, secret: str | None) -> dict[str, str]:
         """The keyword properties handed to ``pyiceberg.catalog.load_catalog``.
 
-        Merges the fixed ``type``/``uri``/``warehouse``, the caller's extra
-        ``properties``, and — last, so it can't be shadowed — the single secret
-        under ``secret_property`` when both are present.
+        The freeform ``properties`` go in **first** so the validated
+        ``type``/``uri``/``warehouse`` overwrite (never get shadowed by) any
+        collision — otherwise a stray ``properties={'type': …}`` would diverge from
+        what the ``_uri_present`` validator reasoned about. The single secret under
+        ``secret_property`` is applied last so it can't be shadowed either.
         """
-        props: dict[str, str] = {"type": self.catalog_type}
+        props: dict[str, str] = dict(self.properties)
+        props["type"] = self.catalog_type
         if self.catalog_uri:
             props["uri"] = self.catalog_uri
         if self.warehouse:
             props["warehouse"] = self.warehouse
-        props.update(self.properties)
         if self.secret_property and secret is not None:
             props[self.secret_property] = secret
         return props
@@ -197,32 +198,18 @@ class IcebergCheckRunner:
     ) -> list[CheckOutcome]:
         """Evaluate freshness/volume monitors natively (no SQL engine).
 
-        Reuses the pure banding of ``monitors.monitor_outcome`` — only the scalar
-        source differs: volume is ``scan().count()`` (no materialisation),
+        Reuses the shared `monitors.run_monitor_specs` banding loop — only the
+        scalar source differs: volume is ``scan().count()`` (no materialisation),
         freshness scans just its timestamp column for its ``MAX``. The table is
-        loaded once and shared across monitors. A bad monitor errors only itself
-        (mirrors the SQL runners / #122); a load failure propagates."""
-        now = datetime.now(UTC)
-        outcomes: list[CheckOutcome] = []
-        loaded: Any = None
-        for spec in monitors:
-            try:
-                if loaded is None:
-                    loaded = self._load_table(table)
-                scalar = self._monitor_scalar(loaded, spec)
-                outcomes.append(
-                    monitor_outcome(spec.kind, scalar=scalar, config=spec.config, now=now)
-                )
-            except Exception as exc:  # one bad monitor errors, never its siblings
-                outcomes.append(
-                    CheckOutcome(
-                        expectation_type=monitor_expectation_type(spec.kind),
-                        success=False,
-                        errored=True,
-                        error_message=str(exc),
-                    )
-                )
-        return outcomes
+        loaded **once, before the loop**, so a catalog/load failure propagates and
+        fails the whole run (matching the SQL runners' open-connection-first
+        contract); a bad *monitor* then errors only itself (#122)."""
+        loaded = self._load_table(table)  # load failure propagates — before the loop
+        return run_monitor_specs(
+            lambda spec: self._monitor_scalar(loaded, spec),
+            monitors=monitors,
+            now=datetime.now(UTC),
+        )
 
     def _monitor_scalar(self, table: Any, spec: MonitorSpec) -> Any:
         """The scalar a monitor bands: ``COUNT(*)`` (volume) or ``MAX(column)``

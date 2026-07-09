@@ -189,12 +189,14 @@ export function TargetFields({ kind }: { kind: TargetKind }) {
         </>
       ) : kind === 'iceberg' ? (
         <>
-          {/* Iceberg addresses a table by `namespace.table` (no SQL schema). */}
+          {/* Iceberg addresses a table by `namespace.table` (no SQL schema). Put the
+              namespace in its own field — don't also dot-qualify Table, or the two
+              fold to `namespace.namespace.table`. */}
           <Form.Item name="target_namespace" label="Namespace (optional)">
             <Input placeholder="sales" />
           </Form.Item>
           <Form.Item name="target_table" label="Table">
-            <Input placeholder="orders (or sales.orders)" />
+            <Input placeholder="orders" />
           </Form.Item>
         </>
       ) : (

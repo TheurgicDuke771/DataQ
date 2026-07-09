@@ -231,6 +231,42 @@ def monitor_outcome(
     raise MonitorConfigError(f"unknown monitor kind: {kind!r}")
 
 
+def run_monitor_specs(
+    scalar_for: Callable[[MonitorSpec], Any],
+    *,
+    monitors: list[MonitorSpec],
+    now: datetime,
+) -> list[CheckOutcome]:
+    """Band a list of monitors given a per-spec scalar source, one ``CheckOutcome``
+    each, in order. ``scalar_for`` returns the monitor's scalar (``MAX(column)`` /
+    ``COUNT(*)``) — the only datasource-specific bit: a SQL runner builds+runs a
+    query (`evaluate_monitors`), the Iceberg runner computes it natively
+    (``scan().count()`` / a column ``MAX``). DB-free and unit-testable.
+
+    A monitor that can't be evaluated — bad column/range (config error) or its
+    scalar source raised (e.g. unknown column) — yields an ``errored`` outcome for
+    *that* check only; its siblings still run (mirrors `CheckRunner`'s per-check
+    `error`, #122). The scalar source must **not** swallow a datasource-establishment
+    failure (open connection / load catalog): callers do that before the loop so it
+    propagates and fails the whole run."""
+    outcomes: list[CheckOutcome] = []
+    for spec in monitors:
+        try:
+            outcomes.append(
+                monitor_outcome(spec.kind, scalar=scalar_for(spec), config=spec.config, now=now)
+            )
+        except Exception as exc:  # one bad monitor errors, never its siblings
+            outcomes.append(
+                CheckOutcome(
+                    expectation_type=monitor_expectation_type(spec.kind),
+                    success=False,
+                    errored=True,
+                    error_message=str(exc),
+                )
+            )
+    return outcomes
+
+
 def evaluate_monitors(
     fetch_scalar: Callable[[str], Any],
     *,
@@ -239,33 +275,17 @@ def evaluate_monitors(
     catalog: str | None,
     monitors: list[MonitorSpec],
 ) -> list[CheckOutcome]:
-    """Run a list of monitors over an already-open connection, one ``CheckOutcome``
-    each, in order. ``fetch_scalar`` runs a SQL string and returns its scalar result
-    — the only datasource-specific bit (the runner closes over its connection), so
-    this stays DB-free and unit-testable.
-
-    A monitor that can't be evaluated — bad column/range (config error) or its query
-    raised (e.g. unknown column) — yields an ``errored`` outcome for *that* check
-    only; its siblings still run (mirrors `CheckRunner`'s per-check `error`, #122).
-    Connection *establishment* failure is the runner's concern (it opens the
-    connection before calling this), so that propagates and fails the whole run."""
+    """Run a list of monitors over an already-open connection via `run_monitor_specs`,
+    with the scalar sourced from a SQL aggregate. ``fetch_scalar`` runs a SQL string
+    and returns its scalar — the runner closes over its connection, so this stays
+    DB-free and unit-testable. Connection *establishment* failure is the runner's
+    concern (it opens the connection before calling this)."""
     now = datetime.now(UTC)
-    outcomes: list[CheckOutcome] = []
-    for spec in monitors:
-        try:
-            sql = build_monitor_sql(
-                spec.kind, table=table, schema=schema, catalog=catalog, config=spec.config
-            )
-            outcomes.append(
-                monitor_outcome(spec.kind, scalar=fetch_scalar(sql), config=spec.config, now=now)
-            )
-        except Exception as exc:  # one bad monitor errors, never its siblings
-            outcomes.append(
-                CheckOutcome(
-                    expectation_type=f"{_EXPECTATION_PREFIX}{spec.kind}",
-                    success=False,
-                    errored=True,
-                    error_message=str(exc),
-                )
-            )
-    return outcomes
+
+    def scalar_for(spec: MonitorSpec) -> Any:
+        sql = build_monitor_sql(
+            spec.kind, table=table, schema=schema, catalog=catalog, config=spec.config
+        )
+        return fetch_scalar(sql)
+
+    return run_monitor_specs(scalar_for, monitors=monitors, now=now)

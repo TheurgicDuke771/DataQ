@@ -141,7 +141,8 @@ def _run_outcomes(
         if not isinstance(runner, MonitorRunner):
             raise NotImplementedError(
                 f"{type(runner).__name__} does not support monitor checks — "
-                "freshness/volume need a SQL datasource (Snowflake / Unity Catalog)"
+                "freshness/volume need a monitor-capable datasource (Snowflake / "
+                "Unity Catalog / Iceberg)"
             )
         monitors = [
             MonitorSpec(kind=checks[i].kind, config=dict(checks[i].config)) for i in monitor_idx

@@ -543,11 +543,40 @@ def test_create_volume_with_inverted_range_rejected(client: TestClient, db_sessi
 def test_create_monitor_on_flatfile_datasource_rejected(
     client: TestClient, db_session: Any
 ) -> None:
-    # Monitors run a scalar SQL aggregate → SQL datasources only, like custom-SQL.
+    # Flat-file runners have no run_monitors → not monitor-capable, like custom-SQL.
     sid = _suite_id(client, db_session, conn_type="s3")
     resp = client.post(f"/api/v1/suites/{sid}/checks", json=_volume_payload())
     assert resp.status_code == 422
     assert resp.json()["error"]["code"] == "check_config_invalid"
+
+
+def test_create_monitor_on_iceberg_datasource_returns_201(
+    client: TestClient, db_session: Any
+) -> None:
+    # Iceberg computes freshness/volume natively (ADR 0030) — monitor-capable even
+    # though it is NOT SQL-queryable (no custom-SQL). #716 review finding.
+    sid = _suite_id(client, db_session, conn_type="iceberg")
+    resp = client.post(f"/api/v1/suites/{sid}/checks", json=_volume_payload())
+    assert resp.status_code == 201
+    assert resp.json()["kind"] == "volume"
+
+
+def test_create_custom_sql_on_iceberg_datasource_rejected(
+    client: TestClient, db_session: Any
+) -> None:
+    # The distinction: Iceberg supports monitors but is a native DataFrame read, not
+    # SQL-queryable — a custom-SQL check must still 422.
+    sid = _suite_id(client, db_session, conn_type="iceberg")
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks",
+        json={
+            "name": "iceberg custom sql",
+            "kind": "expectation",
+            "expectation_type": "unexpected_rows_expectation",
+            "config": {"query": "SELECT * FROM t WHERE x IS NULL"},
+        },
+    )
+    assert resp.status_code == 422
 
 
 def test_update_volume_monitor_to_inverted_range_rejected(

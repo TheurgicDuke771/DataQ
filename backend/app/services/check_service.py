@@ -54,6 +54,14 @@ log = get_logger(__name__)
 # so CRUD still refuses them.
 _V1_SUPPORTED_KINDS = {"expectation", *MONITOR_KINDS}
 
+# Datasources whose runner implements `run_monitors` (a `MonitorRunner`) — the
+# author-time gate for freshness/volume checks. The SQL datasources compute the
+# aggregate in-warehouse; Iceberg computes it natively (`scan().count()` / a column
+# MAX, ADR 0030). This is broader than `SQL_QUERYABLE_TYPES` (which gates *custom
+# SQL* — Iceberg is a native DataFrame read, not SQL-queryable), so the two stay
+# distinct. Kept in sync with the run path's `isinstance(runner, MonitorRunner)`.
+MONITOR_CAPABLE_TYPES = frozenset({*SQL_QUERYABLE_TYPES, "iceberg"})
+
 
 class CheckNotFoundError(DataQError):
     status_code = 404
@@ -114,10 +122,12 @@ def validate_monitor_check(
     """Validate a freshness/volume monitor check at author time (create/update).
 
     Four gates, each a 422:
-    1. **SQL datasource only** — monitors run a scalar SQL aggregate, so they need a
-       SQL-queryable connection (Snowflake / Unity Catalog), exactly like custom-SQL.
-       A monitor on a flat-file suite would only fail at run time (the runner has no
-       `run_monitors`), so reject it up front.
+    1. **Monitor-capable datasource only** — a monitor needs a datasource whose runner
+       implements `run_monitors` (`MONITOR_CAPABLE_TYPES`: the SQL datasources compute
+       the aggregate in-warehouse; Iceberg computes it natively). A monitor on a
+       flat-file suite would only fail at run time (its runner has no `run_monitors`),
+       so reject it up front. Broader than custom-SQL's `SQL_QUERYABLE_TYPES` — Iceberg
+       supports monitors but is not SQL-queryable.
     2. **expectation_type matches the kind** — a monitor's type is the canonical
        ``monitor:<kind>``. The run path keys off `kind`, so a mismatched/junk type
        would still execute but mislabel every result row (and could smuggle a
@@ -130,10 +140,13 @@ def validate_monitor_check(
        threshold is the inverse footgun (always fail). Require a positive fail-or-
        critical threshold so a freshness check bands meaningfully.
     """
-    if connection_type not in SQL_QUERYABLE_TYPES:
+    if connection_type not in MONITOR_CAPABLE_TYPES:
         raise CheckConfigInvalidError(
-            f"{kind} monitor checks require a SQL datasource, not {connection_type!r}",
-            detail={"connection_type": connection_type, "supported": sorted(SQL_QUERYABLE_TYPES)},
+            f"{kind} monitor checks require a monitor-capable datasource, not {connection_type!r}",
+            detail={
+                "connection_type": connection_type,
+                "supported": sorted(MONITOR_CAPABLE_TYPES),
+            },
         )
     expected_type = monitor_expectation_type(kind)
     if expectation_type != expected_type:
