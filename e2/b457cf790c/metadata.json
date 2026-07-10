@@ -4,8 +4,9 @@
   "checkpoint_id": "e2b457cf790c",
   "strategy": "manual-commit",
   "branch": "docs/adr-0031-oss-byol-licensing",
-  "checkpoints_count": 3,
+  "checkpoints_count": 5,
   "files_touched": [
+    "CLAUDE.md",
     "context/post-v1-roadmap.md"
   ],
   "sessions": [
@@ -15,13 +16,20 @@
       "compact_transcript": "/e2/b457cf790c/0/transcript.jsonl",
       "content_hash": "/e2/b457cf790c/0/content_hash.txt",
       "prompt": "/e2/b457cf790c/0/prompt.txt"
+    },
+    {
+      "metadata": "/e2/b457cf790c/1/metadata.json",
+      "transcript": "/e2/b457cf790c/1/full.jsonl",
+      "compact_transcript": "/e2/b457cf790c/1/transcript.jsonl",
+      "content_hash": "/e2/b457cf790c/1/content_hash.txt",
+      "prompt": "/e2/b457cf790c/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 43458,
-    "cache_creation_tokens": 2532227,
-    "cache_read_tokens": 54578178,
-    "output_tokens": 217738,
-    "api_call_count": 232
+    "input_tokens": 63228,
+    "cache_creation_tokens": 3308667,
+    "cache_read_tokens": 68164799,
+    "output_tokens": 299551,
+    "api_call_count": 324
   }
 }
