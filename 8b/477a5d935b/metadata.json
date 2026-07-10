@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "8b477a5d935b",
+  "strategy": "manual-commit",
+  "branch": "docs/adr-0033-workspace-roles",
+  "checkpoints_count": 8,
+  "files_touched": [
+    "docs/adr/0033-workspace-roles-rbac.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/8b/477a5d935b/0/metadata.json",
+      "transcript": "/8b/477a5d935b/0/full.jsonl",
+      "compact_transcript": "/8b/477a5d935b/0/transcript.jsonl",
+      "content_hash": "/8b/477a5d935b/0/content_hash.txt",
+      "prompt": "/8b/477a5d935b/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 16357,
+    "cache_creation_tokens": 946308,
+    "cache_read_tokens": 44547765,
+    "output_tokens": 201728,
+    "api_call_count": 176
+  }
+}
