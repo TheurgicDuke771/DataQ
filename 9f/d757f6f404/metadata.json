@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "9fd757f6f404",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-749-adlfs-iceberg-fileio",
+  "checkpoints_count": 11,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/9f/d757f6f404/0/metadata.json",
+      "transcript": "/9f/d757f6f404/0/full.jsonl",
+      "compact_transcript": "/9f/d757f6f404/0/transcript.jsonl",
+      "content_hash": "/9f/d757f6f404/0/content_hash.txt",
+      "prompt": "/9f/d757f6f404/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 35126,
+    "cache_creation_tokens": 1618333,
+    "cache_read_tokens": 124162400,
+    "output_tokens": 318014,
+    "api_call_count": 334
+  }
+}
