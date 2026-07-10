@@ -22,11 +22,15 @@ non-dict payload, a missing ``metadata`` / ``parent_map`` / ``nodes`` /
 
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import dataclass
 from typing import Any
 
+from backend.app.core.artifacts import (
+    MAX_JSON_ARTIFACT_BYTES,
+    ArtifactTooLargeError,
+    load_json_artifact,
+)
 from backend.app.core.logging import get_logger
 
 log = get_logger(__name__)
@@ -34,10 +38,13 @@ log = get_logger(__name__)
 # Refuse rather than attempt the load above this — a hostile/corrupt payload must
 # not OOM the worker. Real manifests hit tens of MB at thousands of models; this
 # ceiling is generous headroom (an ijson streaming path is the future upgrade).
-_MAX_MANIFEST_BYTES = 128 * 1024 * 1024
+# Shared with `run_results.json` via `core.artifacts` (one cap for both dbt reads).
+_MAX_MANIFEST_BYTES = MAX_JSON_ARTIFACT_BYTES
 
-# `dbt_schema_version` looks like ".../dbt/manifest/v12.json"; grab the trailing NN.
-_SCHEMA_VERSION_RE = re.compile(r"/v(\d+)\.json")
+# `dbt_schema_version` looks like ".../dbt/manifest/v12.json" — but variants drop
+# the `.json` or carry a query suffix (`/v12`, `/v12.json?x=1`). Grab the NN after
+# `/v`, tolerating anything after it.
+_SCHEMA_VERSION_RE = re.compile(r"/v(\d+)")
 # v12 is stable across dbt-core 1.8->1.11 (ADR 0034). v10-v11 parse best-effort with
 # a warning; anything below v10 (or unparsable) is refused.
 _TARGET_SCHEMA_VERSION = 12
@@ -89,13 +96,12 @@ def parse_manifest(raw: bytes) -> ManifestGraph:
     """
     if not isinstance(raw, (bytes, bytearray)):
         raise ManifestParseError("manifest payload must be bytes")
-    if len(raw) > _MAX_MANIFEST_BYTES:
-        # Log-visible refusal rather than a silent OOM attempt.
-        raise ManifestParseError(
-            f"manifest is {len(raw)} bytes, above the {_MAX_MANIFEST_BYTES}-byte cap"
-        )
     try:
-        doc = json.loads(raw)
+        # Shared capped loader — refuses (log-visible) an oversized payload before
+        # `json.loads`, so a hostile/corrupt manifest never OOMs the worker.
+        doc = load_json_artifact(raw, context="dbt manifest", max_bytes=_MAX_MANIFEST_BYTES)
+    except ArtifactTooLargeError as exc:
+        raise ManifestParseError(str(exc)) from exc
     except (ValueError, TypeError, UnicodeDecodeError) as exc:
         raise ManifestParseError("manifest is not valid JSON") from exc
     if not isinstance(doc, dict):
@@ -120,19 +126,19 @@ def parse_manifest(raw: bytes) -> ManifestGraph:
     identities: dict[str, NodeIdentity] = {}
     physical: set[str] = set()
     ephemeral: set[str] = set()
-    try:
-        for uid, node in sources_raw.items():
-            if not isinstance(node, dict):
-                continue
-            identities[uid] = _identity(node, name_key="name")
-            physical.add(uid)
-        for uid, node in nodes_raw.items():
-            if not isinstance(node, dict) or node.get("resource_type") not in _NODE_RESOURCE_TYPES:
-                continue
-            identities[uid] = _identity(node, name_key="alias")
-            (ephemeral if _is_ephemeral(node) else physical).add(uid)
-    except (KeyError, TypeError, AttributeError) as exc:
-        raise ManifestParseError("manifest node/source shape is invalid") from exc
+    # Every read below is a `.get()` on an `isinstance`-guarded dict (`_identity` /
+    # `_is_ephemeral` never index or attribute-access), so no per-node try/except is
+    # needed — a malformed node is skipped by the `isinstance` guard, not caught.
+    for uid, node in sources_raw.items():
+        if not isinstance(node, dict):
+            continue
+        identities[uid] = _identity(node, name_key="name")
+        physical.add(uid)
+    for uid, node in nodes_raw.items():
+        if not isinstance(node, dict) or node.get("resource_type") not in _NODE_RESOURCE_TYPES:
+            continue
+        identities[uid] = _identity(node, name_key="alias")
+        (ephemeral if _is_ephemeral(node) else physical).add(uid)
 
     # `parent_map` is pre-flattened (dbt's own parent index) — the edge source of
     # record (never re-derive from depends_on). Keep only list-valued entries.
@@ -194,13 +200,18 @@ def _build_edges(
     — recursing through ephemeral hops — so an ephemeral middle node's children
     connect straight to its physical ancestors. Non-candidate parents (tests /
     operations) are dropped. Edges are de-duplicated, first occurrence wins.
+
+    The ephemeral→physical-ancestor resolution is **memoized** (``memo``): a shared
+    ephemeral chain (many models selecting from the same ephemeral CTE) is walked
+    once, not once per descendant.
     """
     edges: list[tuple[str, str]] = []
     seen: set[tuple[str, str]] = set()
+    memo: dict[str, list[str]] = {}
     for child, parents in parent_map.items():
         if child not in physical:
             continue
-        for ancestor in _physical_ancestors(parents, parent_map, physical, ephemeral, set()):
+        for ancestor in _physical_ancestors(parents, parent_map, physical, ephemeral, memo):
             edge = (ancestor, child)
             if edge not in seen:
                 seen.add(edge)
@@ -213,24 +224,44 @@ def _physical_ancestors(
     parent_map: dict[str, Any],
     physical: set[str],
     ephemeral: set[str],
-    visiting: set[str],
+    memo: dict[str, list[str]],
 ) -> list[str]:
-    """Resolve ``parents`` to physical ancestor uids, recursing through ephemerals.
-
-    ``visiting`` breaks cycles (a malformed manifest could self-reference).
-    """
+    """Resolve ``parents`` to physical ancestor uids, recursing through ephemerals."""
     resolved: list[str] = []
     for parent in parents:
         if parent in physical:
             resolved.append(parent)
-        elif parent in ephemeral and parent not in visiting:
-            visiting.add(parent)
-            grand = parent_map.get(parent, [])
-            if isinstance(grand, list):
-                resolved.extend(
-                    _physical_ancestors(grand, parent_map, physical, ephemeral, visiting)
-                )
+        elif parent in ephemeral:
+            resolved.extend(_ephemeral_ancestors(parent, parent_map, physical, ephemeral, memo))
     return resolved
+
+
+def _ephemeral_ancestors(
+    uid: str,
+    parent_map: dict[str, Any],
+    physical: set[str],
+    ephemeral: set[str],
+    memo: dict[str, list[str]],
+) -> list[str]:
+    """The physical ancestors reachable *through* the ephemeral node ``uid``, memoized.
+
+    Cycle-safe: ``memo[uid]`` is seeded ``[]`` *before* recursing, so a self- or
+    mutually-referential ephemeral chain (a malformed manifest) resolves to nothing
+    at the back-edge instead of recursing forever. The real result overwrites the
+    seed once the walk completes.
+    """
+    cached = memo.get(uid)
+    if cached is not None:
+        return cached
+    memo[uid] = []  # cycle guard: a back-edge to `uid` sees this empty seed
+    grand = parent_map.get(uid, [])
+    result = (
+        _physical_ancestors(grand, parent_map, physical, ephemeral, memo)
+        if isinstance(grand, list)
+        else []
+    )
+    memo[uid] = result
+    return result
 
 
 def _as_str(value: Any) -> str:

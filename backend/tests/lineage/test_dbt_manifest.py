@@ -196,6 +196,70 @@ def test_unparsable_version_raises() -> None:
         parse_manifest(_dumps(doc))
 
 
+@pytest.mark.parametrize(
+    "schema_version",
+    [
+        "https://schemas.getdbt.com/dbt/manifest/v12",  # no `.json` suffix
+        "https://schemas.getdbt.com/dbt/manifest/v12.json?cache=1",  # query suffix
+        "dbt/manifest/v12",  # bare
+    ],
+)
+def test_version_regex_tolerates_suffix_variants(schema_version: str) -> None:
+    # The gate accepts `/v<NN>` with an optional `.json` / trailing suffix (#759
+    # review) — a variant URL must not fail the otherwise-supported v12.
+    doc = _manifest(
+        sources={"source.p.s": {"database": "D", "schema": "R", "name": "s", "relation_name": "x"}},
+        parent_map={"source.p.s": []},
+    )
+    doc["metadata"]["dbt_schema_version"] = schema_version
+    graph = parse_manifest(_dumps(doc))
+    assert set(graph.nodes) == {"source.p.s"}
+
+
+def test_shared_ephemeral_chain_resolves_once() -> None:
+    # Two physical children selecting from the same ephemeral CTE: both connect to
+    # the source through the memoized ephemeral resolution (correct, and walked once).
+    doc = _manifest(
+        nodes={
+            "model.p.eph": {
+                "resource_type": "model",
+                "database": "D",
+                "schema": "S",
+                "alias": "eph",
+                "config": {"materialized": "ephemeral"},
+                "relation_name": None,
+            },
+            "model.p.a": {
+                "resource_type": "model",
+                "database": "D",
+                "schema": "S",
+                "alias": "a",
+                "config": {"materialized": "view"},
+                "relation_name": "D.S.a",
+            },
+            "model.p.b": {
+                "resource_type": "model",
+                "database": "D",
+                "schema": "S",
+                "alias": "b",
+                "config": {"materialized": "view"},
+                "relation_name": "D.S.b",
+            },
+        },
+        sources={
+            "source.p.src": {"database": "D", "schema": "RAW", "name": "src", "relation_name": "x"}
+        },
+        parent_map={
+            "model.p.eph": ["source.p.src"],
+            "model.p.a": ["model.p.eph"],
+            "model.p.b": ["model.p.eph"],
+            "source.p.src": [],
+        },
+    )
+    graph = parse_manifest(_dumps(doc))
+    assert set(graph.edges) == {("source.p.src", "model.p.a"), ("source.p.src", "model.p.b")}
+
+
 # ── adversarial battery ───────────────────────────────────────────────────────
 
 

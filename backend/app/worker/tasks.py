@@ -37,7 +37,9 @@ from backend.app.db.models import (
     Suite,
 )
 from backend.app.db.session import get_session
+from backend.app.lineage import dbt_manifest
 from backend.app.lineage import dispatch as lineage_dispatch
+from backend.app.lineage import edges as lineage_edges
 from backend.app.orchestration.registry import get_orchestration_provider
 from backend.app.services import (
     cron,
@@ -346,7 +348,6 @@ def _poll_orchestration_runs(
                 connection=connection,
                 updates=updates,
                 skip_updated_since=since,
-                secret_store=secret_store,
             )
             summary["connections"] += 1
             summary["recorded"] += len(result.pipeline_runs)
@@ -408,6 +409,78 @@ def recover_orchestration_gaps() -> dict[str, int]:
     poll (upsert + `skip_updated_since`).
     """
     return _run_orchestration_poll(_GAP_RECOVERY_LOOKBACK)
+
+
+def _refresh_dbt_lineage(
+    session: Session, *, connection_id: uuid.UUID, job: str, secret_store: SecretStore
+) -> str:
+    """Fetch + parse + refresh the dbt lineage cache for one (connection, job).
+
+    The worker-side body of `refresh_dbt_lineage`, extracted for a DB-backed unit
+    test without the Celery envelope. Runs off the webhook/poll path (dispatched by
+    `orchestration_service._dispatch_lineage_refresh` on a succeeded dbt run) so the
+    receiver never blocks on the artifact download + parse + N+M upserts.
+
+    Fully **fail-open**: every step returns a reason string rather than raising, and
+    one consistent ``dbt_lineage_refresh_*`` log family covers each outcome — a bad
+    manifest, an unreadable store, or a DB hiccup must never surface as a task error.
+    """
+    connection = session.get(Connection, connection_id)
+    if connection is None:
+        log.warning("dbt_lineage_refresh_no_connection", connection_id=str(connection_id))
+        return "no_connection"
+    provider_impl = get_orchestration_provider(connection.type)
+    reader = getattr(provider_impl, "read_manifest", None)
+    if reader is None:
+        log.warning(
+            "dbt_lineage_refresh_no_capability",
+            connection_id=str(connection_id),
+            provider=connection.type,
+        )
+        return "no_capability"
+    if not connection.secret_ref:
+        log.warning("dbt_lineage_refresh_no_secret", connection_id=str(connection_id))
+        return "no_secret"
+    try:
+        secret = secret_store.get(connection.secret_ref)
+        raw = reader(dict(connection.config), secret, job)
+        if raw is None:
+            log.info("dbt_lineage_refresh_no_manifest", connection_id=str(connection_id), job=job)
+            return "no_manifest"
+        graph = dbt_manifest.parse_manifest(raw)
+        lineage_edges.refresh_dbt_edges(session, connection=connection, graph=graph)
+    except Exception:
+        session.rollback()
+        log.warning(
+            "dbt_lineage_refresh_failed",
+            connection_id=str(connection_id),
+            job=job,
+            exc_info=True,
+        )
+        return "error"
+    log.info("dbt_lineage_refresh_done", connection_id=str(connection_id), job=job)
+    return "refreshed"
+
+
+@celery_app.task(name="refresh_dbt_lineage")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
+def refresh_dbt_lineage(connection_id: str, job: str) -> str:
+    """Async dbt-manifest lineage refresh for one (connection, job) (ADR 0034, #759).
+
+    Dispatched fire-and-forget by the orchestration ingest path when a dbt run
+    succeeds (webhook immediately, poll as the fallback). Own session + own single
+    secret fetch, so the artifact IO never blocks the webhook ACK / poll loop.
+    Best-effort: never raises (`_refresh_dbt_lineage` fails open per step).
+    """
+    session = get_session()
+    try:
+        return _refresh_dbt_lineage(
+            session,
+            connection_id=uuid.UUID(connection_id),
+            job=job,
+            secret_store=get_secret_store(),
+        )
+    finally:
+        session.close()
 
 
 # ──────────────────────── scheduled run dispatch (A7) ──────────────────────

@@ -112,6 +112,19 @@ def format_snowflake_name(database: str, schema: str, table: str) -> str:
     return ".".join(_normalize_part(part, engine="snowflake") for part in (database, schema, table))
 
 
+def format_unity_catalog_name(catalog: str, schema: str, table: str) -> str:
+    """Join a Unity Catalog ``catalog.schema.table`` into the OpenLineage ``name``.
+
+    Each part folds to the engine's unquoted case (lower) unless quote-wrapped,
+    exactly as :func:`_normalize_part` does — the one place that rule lives, reused
+    by both the suite-target resolver here and the dbt-manifest canonicalizer
+    (`lineage.edges`) for databricks/spark adapters so identifiers match byte-for-byte.
+    """
+    return ".".join(
+        _normalize_part(part, engine="unity_catalog") for part in (catalog, schema, table)
+    )
+
+
 def _resolve_snowflake(config: dict[str, Any], target: dict[str, Any]) -> AssetIdentity:
     account = _require(config, "account", "snowflake", "config")
     database = _require(config, "database", "snowflake", "config")
@@ -133,9 +146,7 @@ def _resolve_unity_catalog(config: dict[str, Any], target: dict[str, Any]) -> As
     schema = _str_or_none(target.get("schema")) or "default"
     table = _require(target, "table", "unity_catalog", "target")
     namespace = f"unitycatalog://{netloc}"
-    name = ".".join(
-        _normalize_part(part, engine="unity_catalog") for part in (catalog, schema, table)
-    )
+    name = format_unity_catalog_name(catalog, schema, table)
     return AssetIdentity(namespace=namespace, name=name)
 
 

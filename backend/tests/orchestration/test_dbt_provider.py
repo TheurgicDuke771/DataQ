@@ -153,6 +153,18 @@ def test_config_forbids_extra() -> None:
         DbtConfig.model_validate(_cfg(surprise="x"))
 
 
+def test_config_lineage_namespace_optional_and_stripped() -> None:
+    # Absent by default; set → validated non-empty and whitespace-stripped (#759).
+    assert DbtConfig.model_validate(_cfg()).lineage_namespace is None
+    cfg = DbtConfig.model_validate(_cfg(lineage_namespace="  snowflake://acct  "))
+    assert cfg.lineage_namespace == "snowflake://acct"
+
+
+def test_config_lineage_namespace_rejects_blank() -> None:
+    with pytest.raises(ValueError, match="lineage_namespace"):
+        DbtConfig.model_validate(_cfg(lineage_namespace="   "))
+
+
 # ── list_recent_runs (artifacts poll) ─────────────────────────────────────────
 
 _SINCE = datetime(2026, 7, 5, 0, 0, tzinfo=UTC)

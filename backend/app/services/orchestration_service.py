@@ -29,7 +29,6 @@ from sqlalchemy.orm import Session, aliased
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
 from backend.app.db.models import Connection, PipelineRun, Run, Suite, TriggerBinding
-from backend.app.lineage import dbt_manifest, edges
 from backend.app.orchestration.base import OrchestrationProvider, RunUpdate
 from backend.app.orchestration.registry import get_orchestration_provider
 from backend.app.services import run_dispatch
@@ -274,45 +273,38 @@ def _trigger_suites(
     return created
 
 
-def _refresh_lineage(
-    session: Session,
-    *,
-    provider_impl: OrchestrationProvider,
-    connection: Connection,
-    update: RunUpdate,
-    secret_store: SecretStore,
+def _dispatch_lineage_refresh(
+    *, provider_impl: OrchestrationProvider, connection: Connection, update: RunUpdate
 ) -> None:
-    """Best-effort dbt-manifest lineage refresh on a succeeded orchestration run.
+    """Dispatch the async dbt-manifest lineage refresh for a succeeded run.
 
     Provider-agnostic (CLAUDE.md §11): probes for the OPTIONAL ``read_manifest``
     capability via ``getattr`` — only the dbt provider has it, so ADF/Airflow are a
-    no-op with zero name branching. Fetches the manifest, parses it, and refreshes
-    the `lineage_edges` cache. The webhook path gives the immediate refresh the AC
-    demands; the 10-min poll is the fallback.
+    no-op with zero name branching. Rather than fetch+parse+refresh **inline** (the
+    webhook path runs in the request threadpool — artifact download + parse + N+M
+    upserts would block the ACK and exhaust the pool), it enqueues the
+    ``refresh_dbt_lineage`` Celery task (own session, own single secret fetch in the
+    worker); mirrors how `run_dispatch` publishes ``run_suite`` by name.
 
-    Wrapped fail-open: a lineage failure (unreadable manifest, parse error, DB
-    hiccup) must NEVER affect run ingestion or suite triggering — it logs and
-    returns. `edges.refresh_dbt_edges` is itself fail-open too (belt and braces).
+    Fail-open: a broker hiccup must NEVER affect run ingestion or suite triggering —
+    it logs and returns (the 10-min poll re-dispatches on the next success).
     """
-    reader = getattr(provider_impl, "read_manifest", None)
-    if reader is None:
+    if getattr(provider_impl, "read_manifest", None) is None:
         return
-    if not connection.secret_ref:
-        return
+    # Lazy import to avoid a service→worker import cycle (mirrors request_immediate_poll).
+    from backend.app.worker.celery_app import celery_app
+
     try:
-        secret = secret_store.get(connection.secret_ref)
-        raw = reader(dict(connection.config), secret, update.pipeline_or_dag_id)
-        if raw is None:
-            return
-        graph = dbt_manifest.parse_manifest(raw)
-        edges.refresh_dbt_edges(session, connection=connection, graph=graph)
-    except Exception as exc:
+        celery_app.send_task(
+            "refresh_dbt_lineage",
+            args=[str(connection.id), update.pipeline_or_dag_id],
+        )
+    except Exception:
         log.warning(
-            "lineage_refresh_failed",
+            "dbt_lineage_dispatch_failed",
             provider=provider_impl.provider,
             connection_id=str(connection.id),
             pipeline=update.pipeline_or_dag_id,
-            error=str(exc),
         )
 
 
@@ -384,14 +376,8 @@ def ingest_event(
             session, provider=provider, connection=connection, update=update
         )
         # Immediate manifest re-read on the webhook path (the AC's convergence
-        # channel); fail-open, never affects the ingest/trigger result above.
-        _refresh_lineage(
-            session,
-            provider_impl=provider_impl,
-            connection=connection,
-            update=update,
-            secret_store=secret_store,
-        )
+        # channel) — enqueued async; fail-open, never affects the result above.
+        _dispatch_lineage_refresh(provider_impl=provider_impl, connection=connection, update=update)
     return IngestResult(pipeline_run=pipeline_run, triggered_runs=triggered)
 
 
@@ -409,7 +395,6 @@ def ingest_polled_runs(
     connection: Connection,
     updates: list[RunUpdate],
     skip_updated_since: datetime,
-    secret_store: SecretStore | None = None,
 ) -> PollIngestResult:
     """Persist the runs a poll returned for one orchestrator connection.
 
@@ -426,14 +411,15 @@ def ingest_polled_runs(
     both the monitor update *and* the trigger. The connection is known (we polled
     it), so no resolve.
 
-    ``secret_store``, when supplied (the worker passes it), enables the fail-open
-    dbt-manifest lineage refresh on succeeded runs — the poll-path fallback to the
-    webhook's immediate re-read. It's optional so pure poll-ingestion tests need
-    not thread a store.
+    A succeeded run also enqueues the async dbt-manifest lineage refresh (the
+    poll-path fallback to the webhook's immediate re-read), **deduped per job** for
+    this batch: a poll can surface several succeeded runs of the same job, but the
+    manifest is per-job (one refresh suffices).
     """
     provider = provider_impl.provider
     pipeline_runs: list[PipelineRun] = []
     triggered: list[Run] = []
+    dispatched_jobs: set[str] = set()
     skipped = 0
     for update in updates:
         existing = session.execute(
@@ -457,14 +443,12 @@ def ingest_polled_runs(
                 _trigger_suites(session, provider=provider, connection=connection, update=update)
             )
             # Poll-path lineage refresh (the fallback to the webhook's immediate
-            # re-read); only when a secret store was supplied. Fail-open.
-            if secret_store is not None:
-                _refresh_lineage(
-                    session,
-                    provider_impl=provider_impl,
-                    connection=connection,
-                    update=update,
-                    secret_store=secret_store,
+            # re-read); async + fail-open, deduped per job for this batch.
+            job = update.pipeline_or_dag_id
+            if job not in dispatched_jobs:
+                dispatched_jobs.add(job)
+                _dispatch_lineage_refresh(
+                    provider_impl=provider_impl, connection=connection, update=update
                 )
     return PollIngestResult(pipeline_runs=pipeline_runs, triggered_runs=triggered, skipped=skipped)
 

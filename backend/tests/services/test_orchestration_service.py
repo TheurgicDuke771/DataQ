@@ -559,10 +559,33 @@ def test_polled_running_then_succeeded_is_not_skipped(
     assert stub_run_dispatch == [str(succeeded.triggered_runs[0].id)]  # handed to the broker
 
 
-# ── lineage refresh hook (#759): dbt success re-reads the manifest ────────────
+# ── lineage refresh hook (#759): dbt success dispatches an async refresh ───────
+#
+# The refresh moved OFF the webhook/poll path into the `refresh_dbt_lineage` Celery
+# task (fetch+parse+refresh in the worker, own session) — so these hook tests assert
+# the *dispatch* (send_task with the right args), not the parse/refresh itself. The
+# end-to-end task body is covered in tests/worker/test_lineage_refresh_task.py.
 
-_PARSE = "backend.app.services.orchestration_service.dbt_manifest.parse_manifest"
-_REFRESH = "backend.app.services.orchestration_service.edges.refresh_dbt_edges"
+
+class _SendTaskSpy:
+    """Captures `celery_app.send_task` calls the dispatcher makes (fail-open)."""
+
+    def __init__(self, raises: Exception | None = None) -> None:
+        self.calls: list[tuple[str, list[Any]]] = []
+        self._raises = raises
+
+    def __call__(self, name: str, *, args: list[Any] | None = None, **_: Any) -> None:
+        self.calls.append((name, args or []))
+        if self._raises is not None:
+            raise self._raises
+
+
+def _spy_send_task(monkeypatch: Any, raises: Exception | None = None) -> _SendTaskSpy:
+    from backend.app.worker import celery_app as celery_mod
+
+    spy = _SendTaskSpy(raises=raises)
+    monkeypatch.setattr(celery_mod.celery_app, "send_task", spy)
+    return spy
 
 
 class _FakeDbtProvider:
@@ -602,38 +625,34 @@ def _dbt_connection(db_session: Any, *, project: str = "dataq_lineage") -> Conne
     return conn
 
 
-def _dbt_update(status: str = "succeeded") -> RunUpdate:
+def _dbt_update(status: str = "succeeded", *, job: str = "j", run_id: str = "inv-1") -> RunUpdate:
     return RunUpdate(
-        provider_run_id="inv-1",
-        pipeline_or_dag_id="j",
+        provider_run_id=run_id,
+        pipeline_or_dag_id=job,
         resource_name="dataq_lineage",
         status=status,
     )
 
 
-def test_dbt_success_triggers_lineage_refresh(db_session: Any, monkeypatch: Any) -> None:
+def test_dbt_success_dispatches_lineage_refresh(db_session: Any, monkeypatch: Any) -> None:
     conn = _dbt_connection(db_session)
-    seen: list[Any] = []
-    monkeypatch.setattr(_PARSE, lambda raw: "GRAPH")
-    monkeypatch.setattr(
-        _REFRESH, lambda session, *, connection, graph: seen.append((connection.id, graph))
-    )
+    spy = _spy_send_task(monkeypatch)
 
     result = ingest_event(
         db_session,
         provider_impl=_FakeDbtProvider(),
-        update=_dbt_update("succeeded"),
+        update=_dbt_update("succeeded", job="j"),
         secret_store=_FakeStore(**{f"conn-{conn.id}": "sas"}),
     )
 
     assert result.pipeline_run is not None
-    assert seen == [(conn.id, "GRAPH")]  # the parsed graph reached the refresh
+    # dispatched by name with (connection_id, job) — no inline fetch/parse/refresh.
+    assert spy.calls == [("refresh_dbt_lineage", [str(conn.id), "j"])]
 
 
-def test_dbt_failure_does_not_refresh_lineage(db_session: Any, monkeypatch: Any) -> None:
+def test_dbt_failure_does_not_dispatch_lineage(db_session: Any, monkeypatch: Any) -> None:
     conn = _dbt_connection(db_session)
-    called: list[int] = []
-    monkeypatch.setattr(_REFRESH, lambda **kw: called.append(1))
+    spy = _spy_send_task(monkeypatch)
 
     ingest_event(
         db_session,
@@ -641,10 +660,10 @@ def test_dbt_failure_does_not_refresh_lineage(db_session: Any, monkeypatch: Any)
         update=_dbt_update("failed"),
         secret_store=_FakeStore(**{f"conn-{conn.id}": "sas"}),
     )
-    assert called == []  # failures alert but never refresh lineage (nor trigger)
+    assert spy.calls == []  # failures alert but never refresh lineage (nor trigger)
 
 
-def test_airflow_success_does_not_refresh_lineage(db_session: Any, monkeypatch: Any) -> None:
+def test_airflow_success_does_not_dispatch_lineage(db_session: Any, monkeypatch: Any) -> None:
     # AirflowProvider has no `read_manifest` → the hook is a no-op (no branching).
     from backend.app.orchestration.airflow import AirflowProvider
 
@@ -660,8 +679,7 @@ def test_airflow_success_does_not_refresh_lineage(db_session: Any, monkeypatch: 
     db_session.commit()
     conn.secret_ref = f"conn-{conn.id}"
     db_session.commit()
-    called: list[int] = []
-    monkeypatch.setattr(_REFRESH, lambda **kw: called.append(1))
+    spy = _spy_send_task(monkeypatch)
 
     ingest_event(
         db_session,
@@ -674,21 +692,16 @@ def test_airflow_success_does_not_refresh_lineage(db_session: Any, monkeypatch: 
         ),
         secret_store=_FakeStore(**{f"conn-{conn.id}": "token"}),
     )
-    assert called == []
+    assert spy.calls == []
 
 
-def test_lineage_refresh_failure_does_not_break_ingestion(
+def test_lineage_dispatch_failure_does_not_break_ingestion(
     db_session: Any, monkeypatch: Any
 ) -> None:
     conn = _dbt_connection(db_session)
-    monkeypatch.setattr(_PARSE, lambda raw: "GRAPH")
+    # Broker down: send_task raises — the dispatcher must swallow it (fail-open).
+    _spy_send_task(monkeypatch, raises=RuntimeError("broker unreachable"))
 
-    def _boom(**kw: Any) -> None:
-        raise RuntimeError("lineage exploded")
-
-    monkeypatch.setattr(_REFRESH, _boom)
-
-    # Fail-open: a lineage blow-up must not sink the pipeline-run ingestion.
     result = ingest_event(
         db_session,
         provider_impl=_FakeDbtProvider(),
@@ -697,3 +710,27 @@ def test_lineage_refresh_failure_does_not_break_ingestion(
     )
     assert result.pipeline_run is not None
     assert result.pipeline_run.status == "succeeded"
+
+
+def test_polled_dbt_success_dispatches_deduped_per_job(db_session: Any, monkeypatch: Any) -> None:
+    # A poll can surface several succeeded runs of the SAME job; the manifest is
+    # per-job, so only one refresh is dispatched for that job in the batch.
+    conn = _dbt_connection(db_session)
+    spy = _spy_send_task(monkeypatch)
+    since = datetime.now(UTC) - timedelta(minutes=15)
+
+    ingest_polled_runs(
+        db_session,
+        provider_impl=_FakeDbtProvider(),
+        connection=conn,
+        updates=[
+            _dbt_update("succeeded", job="j", run_id="inv-a"),
+            _dbt_update("succeeded", job="j", run_id="inv-b"),  # same job → deduped
+            _dbt_update("succeeded", job="k", run_id="inv-c"),  # different job → 2nd
+        ],
+        skip_updated_since=since,
+    )
+    assert spy.calls == [
+        ("refresh_dbt_lineage", [str(conn.id), "j"]),
+        ("refresh_dbt_lineage", [str(conn.id), "k"]),
+    ]

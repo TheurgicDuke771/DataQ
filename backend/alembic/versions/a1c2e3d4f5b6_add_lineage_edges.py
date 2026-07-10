@@ -2,14 +2,17 @@
 
 ADR 0034 slice 2: a small `lineage_edges` cache of external truth — directed
 `upstream_asset_id → downstream_asset_id` edges keyed on
-`(upstream, downstream, source)`, refreshed from the parsed dbt `manifest.json`
-(and, later, other lineage sources). Blast radius walks these edges downstream
-from a failing asset.
+`(upstream, downstream, source, connection_id)`, refreshed from the parsed dbt
+`manifest.json` (and, later, other lineage sources) by the connection whose
+refresh surfaced the edge. Blast radius walks these edges downstream from a
+failing asset.
 
 Additive & backward-compatible (CLAUDE.md migration rules): a brand-new table
-only; both endpoint FKs CASCADE-delete (an edge is meaningless without either
-asset). No existing read path changes. `source` is un-CHECKed on purpose —
-lineage sources will grow and must not each need a migration.
+only; all three FKs CASCADE-delete — both endpoint assets (an edge is meaningless
+without either asset) and the refreshing `connection_id` (provenance + prune
+scope, NOT NULL so one project's prune never touches another's edges). No existing
+read path changes. `source` is un-CHECKed on purpose — lineage sources will grow
+and must not each need a migration.
 
 Revision ID: a1c2e3d4f5b6
 Revises: f8b9c0d1e2a3
@@ -45,6 +48,7 @@ def upgrade() -> None:
         sa.Column("upstream_asset_id", UUID(as_uuid=True), nullable=False),
         sa.Column("downstream_asset_id", UUID(as_uuid=True), nullable=False),
         sa.Column("source", sa.String(length=32), nullable=False),
+        sa.Column("connection_id", UUID(as_uuid=True), nullable=False),
         sa.Column(
             "first_seen",
             sa.DateTime(timezone=True),
@@ -59,12 +63,14 @@ def upgrade() -> None:
         ),
         sa.ForeignKeyConstraint(["upstream_asset_id"], ["assets.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["downstream_asset_id"], ["assets.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["connection_id"], ["connections.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint(
             "upstream_asset_id",
             "downstream_asset_id",
             "source",
-            name="uq_lineage_edges_up_down_source",
+            "connection_id",
+            name="uq_lineage_edges_up_down_source_conn",
         ),
     )
     op.create_index("ix_lineage_edges_upstream", "lineage_edges", ["upstream_asset_id"])

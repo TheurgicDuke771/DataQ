@@ -76,7 +76,21 @@ class AlertPing:
 
 @runtime_checkable
 class OrchestrationProvider(Protocol):
-    """Provider-agnostic monitoring interface — ADF reference impl, Airflow next."""
+    """Provider-agnostic monitoring interface — ADF reference impl, Airflow next.
+
+    **Optional capabilities (discovered via ``getattr``, not on this Protocol).**
+    Some providers expose extra methods that only make sense for them; callers
+    probe for them with ``getattr(provider_impl, "<name>", None)`` and no-op when
+    absent, so the seam stays branch-free (CLAUDE.md §11) and adding one never
+    forces every provider to implement it. Current set:
+
+    - ``read_manifest(config: dict, secret: str, job: str) -> bytes | None`` — dbt
+      only (ADR 0034, #759): reads a job's ``manifest.json`` for the lineage
+      refresh. ``None`` when the manifest hasn't been published. Because the probe
+      is ``getattr``-silent, a **typo** in the method name reads as "capability
+      absent" — keep the name in sync with the caller
+      (`orchestration_service._dispatch_lineage_refresh`).
+    """
 
     provider: str
     # The `connections.config` JSONB key whose value a `RunUpdate.resource_name`

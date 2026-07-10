@@ -203,7 +203,7 @@ def test_refresh_never_raises_on_internal_error(db_session: Any, monkeypatch: An
     def _boom(*a: Any, **k: Any) -> None:
         raise RuntimeError("db exploded mid-refresh")
 
-    monkeypatch.setattr(edges_mod, "upsert_asset", _boom)
+    monkeypatch.setattr(edges_mod, "upsert_assets", _boom)
 
     # A DB hiccup after anchoring must be swallowed (returns None), not raised.
     assert refresh_dbt_edges(db_session, connection=conn, graph=_graph("v1")) is None
@@ -214,3 +214,135 @@ def test_empty_graph_returns_none(db_session: Any) -> None:
     conn = _connection(db_session, env="dev")
     empty = ManifestGraph(adapter_type="snowflake", nodes={}, edges=[])
     assert refresh_dbt_edges(db_session, connection=conn, graph=empty) is None
+
+
+# ── provenance: prune is connection-scoped, provenance is preserved ───────────
+
+
+def test_prune_is_connection_scoped_across_projects(db_session: Any) -> None:
+    """Two dbt connections sharing table names: A's refresh must NOT prune B's edge.
+
+    The review's cross-project-corruption fix — the prune is scoped by
+    `(source, connection_id)`, so a refresh of project A never deletes project B's
+    live edges even when both manifests reference the same assets.
+    """
+    # Orchestrator connections are singletons per (type, env), so the two projects
+    # live in different envs; both pin the SAME `lineage_namespace` so they resolve
+    # the same shared asset rows regardless of env.
+    conn_a = _connection(db_session, env="dev")
+    conn_b = _connection(db_session, env="qa")
+    for c in (conn_a, conn_b):
+        c.config = {**c.config, "lineage_namespace": _NS}
+    db_session.commit()
+
+    # B refreshes first and owns its edge set.
+    assert refresh_dbt_edges(db_session, connection=conn_b, graph=_graph("v1")) == 8
+    # A refreshes the SAME manifest — its own edges, B's must survive untouched.
+    assert refresh_dbt_edges(db_session, connection=conn_a, graph=_graph("v1")) == 8
+
+    b_edges = db_session.scalars(
+        select(LineageEdge).where(LineageEdge.connection_id == conn_b.id)
+    ).all()
+    a_edges = db_session.scalars(
+        select(LineageEdge).where(LineageEdge.connection_id == conn_a.id)
+    ).all()
+    assert len(b_edges) == 8  # B's edges NOT pruned by A's refresh
+    assert len(a_edges) == 8
+
+
+def test_dbt_refresh_preserves_datasource_provenance(db_session: Any) -> None:
+    """A pre-existing datasource-owned asset keeps its connection_id/env through a
+    dbt refresh (provenance-preserving upsert) — not flipped to the dbt connection.
+    """
+    # A Snowflake datasource connection that "owns" the anchor asset's provenance.
+    ds_user = User(aad_object_id=uuid.uuid4().hex, email=f"u-{uuid.uuid4().hex[:8]}@ex")
+    db_session.add(ds_user)
+    db_session.flush()
+    ds_conn = Connection(
+        name=f"sf-{uuid.uuid4().hex[:8]}",
+        type="snowflake",
+        env="dev",
+        config={"account": "acct", "database": "DATAQ_DB"},
+        created_by=ds_user.id,
+    )
+    db_session.add(ds_conn)
+    db_session.commit()
+
+    owned = Asset(namespace=_NS, name=_ORDERS_HEADER, env="dev", connection_id=ds_conn.id)
+    db_session.add(owned)
+    db_session.commit()
+
+    dbt_conn = _connection(db_session, env="dev")
+    refresh_dbt_edges(db_session, connection=dbt_conn, graph=_graph("v1"))
+
+    db_session.refresh(owned)
+    assert owned.connection_id == ds_conn.id  # NOT flipped to the dbt connection
+    assert owned.env == "dev"
+    # A manifest-only node (no prior provenance) DOES get the dbt connection.
+    stg = db_session.scalar(select(Asset).where(Asset.name == _STG_ORDERS))
+    assert stg.connection_id == dbt_conn.id
+
+
+# ── anchor hardening (#759 review): env-strict, pin, deterministic tie ─────────
+
+
+def test_no_env_match_skips(db_session: Any) -> None:
+    # Connection env=prod, only a dev-env anchor exists → NO cross-env fallback.
+    conn = _connection(db_session, env="prod")
+    _anchor(db_session, name=_ORDERS_HEADER, env="dev")
+    assert refresh_dbt_edges(db_session, connection=conn, graph=_graph("v1")) is None
+    assert db_session.scalar(select(Asset).where(Asset.name == _STG_ORDERS)) is None
+
+
+def test_null_env_asset_still_anchors(db_session: Any) -> None:
+    # An env-unknown (NULL) asset is a valid anchor for any connection env.
+    conn = _connection(db_session, env="prod")
+    db_session.add(Asset(namespace=_NS, name=_ORDERS_HEADER, env=None))
+    db_session.commit()
+    assert refresh_dbt_edges(db_session, connection=conn, graph=_graph("v1")) == 8
+
+
+def test_lineage_namespace_pin_bypasses_heuristic(db_session: Any) -> None:
+    # `lineage_namespace` on the connection config pins the anchor verbatim, even
+    # with NO existing asset to infer from (greenfield project).
+    conn = _connection(db_session, env="dev")
+    conn.config = {**conn.config, "lineage_namespace": "snowflake://pinned"}
+    db_session.commit()
+    assert refresh_dbt_edges(db_session, connection=conn, graph=_graph("v1")) == 8
+    ns = db_session.scalar(select(Asset.namespace).where(Asset.name == _STG_ORDERS))
+    assert ns == "snowflake://pinned"
+
+
+def test_anchor_tie_break_is_deterministic(db_session: Any, monkeypatch: Any) -> None:
+    # Two namespaces tie on majority AND on last_seen → lexicographically-smallest
+    # namespace wins, deterministically (never flip-flops between refreshes).
+    conn = _connection(db_session, env="dev")
+    from datetime import UTC, datetime
+
+    ts = datetime(2026, 7, 1, tzinfo=UTC)
+    for ns in ("snowflake://zzz", "snowflake://aaa"):
+        a = Asset(namespace=ns, name=_ORDERS_HEADER, env="dev")
+        db_session.add(a)
+        db_session.flush()
+        a.last_seen = ts  # identical timestamps force the lexicographic tie-break
+    db_session.commit()
+
+    refresh_dbt_edges(db_session, connection=conn, graph=_graph("v1"))
+    ns = db_session.scalar(select(Asset.namespace).where(Asset.name == _STG_ORDERS))
+    assert ns == "snowflake://aaa"  # smallest wins
+
+
+# ── adapter-aware canonicalization (shared with asset_identity) ────────────────
+
+
+def test_databricks_adapter_folds_lowercase() -> None:
+    from backend.app.lineage.dbt_manifest import NodeIdentity
+    from backend.app.lineage.edges import _canonical_name
+
+    ident = NodeIdentity(database="Main", schema="Analytics", name="Orders")
+    # databricks/spark fold to lower (matching suite-resolved UC assets), snowflake
+    # to upper, other adapters verbatim.
+    assert _canonical_name("databricks", ident) == "main.analytics.orders"
+    assert _canonical_name("spark", ident) == "main.analytics.orders"
+    assert _canonical_name("snowflake", ident) == "MAIN.ANALYTICS.ORDERS"
+    assert _canonical_name("postgres", ident) == "Main.Analytics.Orders"

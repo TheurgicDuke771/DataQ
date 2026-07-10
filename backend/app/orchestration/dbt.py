@@ -27,7 +27,11 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
+from backend.app.core.artifacts import ArtifactTooLargeError, load_json_artifact
+from backend.app.core.logging import get_logger
 from backend.app.orchestration.base import MalformedEventError, RunUpdate
+
+log = get_logger(__name__)
 
 # Fail fast rather than hang the request/beat thread on an unreachable store.
 _READ_TIMEOUT_SECONDS = 10.0
@@ -78,6 +82,12 @@ class DbtConfig(BaseModel):
     # S3-only (non-secret half of the credential).
     region: str | None = None
     access_key_id: str | None = None
+    # Optional operator override for the lineage anchor namespace (ADR 0034, #759):
+    # dbt's manifest has no namespace, so DataQ normally infers it from existing
+    # assets. Set this (the OpenLineage namespace, e.g. `snowflake://<account>`) to
+    # pin it explicitly and bypass the inference heuristic — required for a
+    # greenfield project with no suites yet, or a multi-database project.
+    lineage_namespace: str | None = None
 
     @field_validator("artifacts_uri")
     @classmethod
@@ -86,6 +96,13 @@ class DbtConfig(BaseModel):
         if scheme not in ("adls", "s3", "file"):
             raise ValueError("artifacts_uri must start with adls://, s3://, or file://")
         return value.rstrip("/")
+
+    @field_validator("lineage_namespace")
+    @classmethod
+    def _non_empty_namespace(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            raise ValueError("lineage_namespace, when set, must be a non-empty string")
+        return value.strip() if value is not None else None
 
     @field_validator("jobs")
     @classmethod
@@ -311,11 +328,16 @@ class DbtProvider:
             if raw is None:
                 continue
             try:
-                doc = json.loads(raw)
+                # Shared capped+logged loader — the poll path must not `json.loads`
+                # an unbounded artifact any more than the manifest parser does (#759).
+                doc = load_json_artifact(raw, context=f"dbt run_results job={job}")
                 metadata = doc["metadata"]
                 invocation_id = metadata["invocation_id"]
                 results = doc.get("results", [])
-            except (ValueError, TypeError, KeyError):
+            except (ArtifactTooLargeError, ValueError, TypeError, KeyError, UnicodeDecodeError):
+                # A malformed / oversized artifact for one job skips that job — but
+                # now log it (the review: the silent `continue` hid a bad payload).
+                log.warning("dbt_run_results_skipped", job=job, project=cfg.project_name)
                 continue
             finished_at = _parse_dt(metadata.get("generated_at"))
             # `since` is always aware (UTC); only compare when generated_at parsed to
