@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "553fe475c4fc",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-721-iceberg-profiler-introspection",
+  "checkpoints_count": 4,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/55/3fe475c4fc/0/metadata.json",
+      "transcript": "/55/3fe475c4fc/0/full.jsonl",
+      "compact_transcript": "/55/3fe475c4fc/0/transcript.jsonl",
+      "content_hash": "/55/3fe475c4fc/0/content_hash.txt",
+      "prompt": "/55/3fe475c4fc/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 30365,
+    "cache_creation_tokens": 1509889,
+    "cache_read_tokens": 73011732,
+    "output_tokens": 256407,
+    "api_call_count": 241
+  }
+}
