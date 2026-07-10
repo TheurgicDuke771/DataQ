@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "832b7618feeb",
+  "strategy": "manual-commit",
+  "branch": "docs/596-assets-lineage-incidents-design",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "CLAUDE.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/83/2b7618feeb/0/metadata.json",
+      "transcript": "/83/2b7618feeb/0/full.jsonl",
+      "compact_transcript": "/83/2b7618feeb/0/transcript.jsonl",
+      "content_hash": "/83/2b7618feeb/0/content_hash.txt",
+      "prompt": "/83/2b7618feeb/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 56537,
+    "cache_creation_tokens": 1690126,
+    "cache_read_tokens": 60942985,
+    "output_tokens": 181871,
+    "api_call_count": 262
+  }
+}
