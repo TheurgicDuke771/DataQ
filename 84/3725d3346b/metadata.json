@@ -1,0 +1,37 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "843725d3346b",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-721-iceberg-profiler-introspection",
+  "checkpoints_count": 8,
+  "files_touched": [
+    "backend/app/api/v1/suites.py",
+    "backend/app/datasources/iceberg.py",
+    "backend/app/services/profile_service.py",
+    "backend/app/worker/tasks.py",
+    "backend/tests/api/test_checks.py",
+    "backend/tests/api/test_suites.py",
+    "backend/tests/datasources/test_iceberg.py",
+    "backend/tests/services/test_profile_service.py",
+    "frontend/src/api/suites.ts",
+    "frontend/src/components/checks/ColumnProfilePanel.tsx",
+    "frontend/tests/components/ColumnProfilePanel.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/84/3725d3346b/0/metadata.json",
+      "transcript": "/84/3725d3346b/0/full.jsonl",
+      "compact_transcript": "/84/3725d3346b/0/transcript.jsonl",
+      "content_hash": "/84/3725d3346b/0/content_hash.txt",
+      "prompt": "/84/3725d3346b/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 25131,
+    "cache_creation_tokens": 1019832,
+    "cache_read_tokens": 65144002,
+    "output_tokens": 235209,
+    "api_call_count": 222
+  }
+}
