@@ -17,9 +17,11 @@ never raises into the run path.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from typing import Any
 
-from sqlalchemy import func
+from sqlalchemy import func, select, tuple_
+from sqlalchemy.dialects.postgresql import Insert as PgInsert
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -28,6 +30,116 @@ from backend.app.db.models import Asset, Connection
 from backend.app.services.asset_identity import resolve_asset_identity
 
 log = get_logger(__name__)
+
+
+# Assets are batched into one multi-row INSERT per this many rows (the lineage
+# refresh materializes every manifest node — thousands at real scale).
+_ASSET_CHUNK = 500
+
+
+def _conflict_set(stmt: PgInsert, *, preserve_provenance: bool) -> dict[str, Any]:
+    """The ON CONFLICT SET clause, provenance-preserving or overwriting.
+
+    Always references the *would-be-inserted* row via ``stmt.excluded`` (correct for
+    both the single- and multi-row insert). ``preserve_provenance`` (the lineage
+    caller): keep the row's existing ``env``/``connection_id`` when already set —
+    ``COALESCE(existing, new)`` — so a dbt refresh never flips a datasource-resolved
+    asset's provenance to the dbt orchestration connection. Otherwise (the
+    suite-resolution caller): overwrite with the resolving connection's values
+    (last-writer-wins, the historical behaviour).
+    """
+    if preserve_provenance:
+        return {
+            "last_seen": func.now(),
+            "env": func.coalesce(Asset.env, stmt.excluded.env),
+            "connection_id": func.coalesce(Asset.connection_id, stmt.excluded.connection_id),
+        }
+    return {
+        "last_seen": func.now(),
+        "env": stmt.excluded.env,
+        "connection_id": stmt.excluded.connection_id,
+    }
+
+
+def upsert_asset(
+    session: Session,
+    *,
+    namespace: str,
+    name: str,
+    env: str | None,
+    connection_id: uuid.UUID | None,
+    preserve_provenance: bool = False,
+) -> uuid.UUID:
+    """Insert-or-reuse an `assets` row keyed on ``(namespace, name)``; return its id.
+
+    The single-row low-level upsert `resolve_and_upsert_asset` (suite-target
+    resolution) uses, so the ON CONFLICT shape and the savepoint fail-soft posture
+    live in one place. On an existing identity it refreshes ``last_seen`` and
+    (unless ``preserve_provenance``) ``env`` / ``connection_id`` (provenance hint).
+
+    ``preserve_provenance=True`` keeps an already-set ``env``/``connection_id`` on
+    conflict (``COALESCE`` — for lineage materialization, which must not clobber a
+    datasource-resolved asset's provenance); the default overwrites (suite path).
+
+    Wrapped in a **savepoint** (nested transaction): a genuine DB error here rolls
+    back only this savepoint, leaving the outer transaction healthy so the
+    caller's commit still succeeds — the fail-soft "never blocks the save/refresh"
+    contract. The caller decides whether to catch (a bad identity) or let it
+    propagate.
+    """
+    stmt = pg_insert(Asset).values(
+        namespace=namespace, name=name, env=env, connection_id=connection_id
+    )
+    upsert = stmt.on_conflict_do_update(
+        index_elements=["namespace", "name"],
+        set_=_conflict_set(stmt, preserve_provenance=preserve_provenance),
+    ).returning(Asset.id)
+    with session.begin_nested():
+        return session.execute(upsert).scalar_one()
+
+
+def upsert_assets(
+    session: Session,
+    rows: Sequence[dict[str, Any]],
+    *,
+    preserve_provenance: bool = False,
+    chunk_size: int = _ASSET_CHUNK,
+) -> dict[tuple[str, str], uuid.UUID]:
+    """Batch insert-or-reuse `assets`; return ``{(namespace, name): id}`` for every row.
+
+    The many-row companion to :func:`upsert_asset` for `lineage.edges` (which
+    materializes an asset per manifest node — thousands at real scale). Each ``rows``
+    dict is ``{namespace, name, env, connection_id}``. Chunked into multi-row
+    ``INSERT … ON CONFLICT DO UPDATE`` statements (``chunk_size`` rows each), then the
+    id map is built from a **follow-up SELECT** on ``(namespace, name)`` rather than
+    ``RETURNING`` — Postgres does not guarantee multi-row ``RETURNING`` order matches
+    the VALUES order under ``ON CONFLICT``, so a positional zip would silently
+    mis-map ids (correctness over cleverness).
+
+    **All-or-nothing, NOT per-row savepoint-isolated** (unlike :func:`upsert_asset`):
+    a chunk is one statement, so a DB error aborts the whole refresh. That matches the
+    lineage caller's tested contract — `refresh_dbt_edges` wraps this fail-open and
+    rolls the transaction back on any error, writing nothing rather than a partial
+    graph.
+    """
+    if not rows:
+        return {}
+    for start in range(0, len(rows), chunk_size):
+        chunk = list(rows[start : start + chunk_size])
+        stmt = pg_insert(Asset).values(chunk)
+        session.execute(
+            stmt.on_conflict_do_update(
+                index_elements=["namespace", "name"],
+                set_=_conflict_set(stmt, preserve_provenance=preserve_provenance),
+            )
+        )
+    keys = list({(r["namespace"], r["name"]) for r in rows})
+    result = session.execute(
+        select(Asset.namespace, Asset.name, Asset.id).where(
+            tuple_(Asset.namespace, Asset.name).in_(keys)
+        )
+    )
+    return {(ns, name): aid for ns, name, aid in result}
 
 
 def resolve_and_upsert_asset(
@@ -54,32 +166,13 @@ def resolve_and_upsert_asset(
         )
         return None
     try:
-        stmt = (
-            pg_insert(Asset)
-            .values(
-                namespace=identity.namespace,
-                name=identity.name,
-                env=connection.env,
-                connection_id=connection.id,
-            )
-            .on_conflict_do_update(
-                index_elements=["namespace", "name"],
-                set_={
-                    "last_seen": func.now(),
-                    "env": connection.env,
-                    "connection_id": connection.id,
-                },
-            )
-            .returning(Asset.id)
+        asset_id = upsert_asset(
+            session,
+            namespace=identity.namespace,
+            name=identity.name,
+            env=connection.env,
+            connection_id=connection.id,
         )
-        # Savepoint (nested transaction): a genuine DB error (constraint / lock /
-        # connection blip) rolls back ONLY this savepoint, leaving the outer
-        # transaction healthy so the caller's `session.commit()` (create_suite /
-        # update_suite) still succeeds. Without it a failed execute aborts the
-        # whole transaction and the suite save 500s — defeating the fail-soft
-        # "never blocks a save" contract.
-        with session.begin_nested():
-            asset_id = session.execute(stmt).scalar_one()
     except Exception as exc:  # fail-soft: a DB hiccup here must not block the save
         log.warning(
             "asset_upsert_failed",

@@ -54,6 +54,27 @@ you run a tiny **post-build wrapper**:
 Store the HMAC signing key as the `dbt-webhook-secret` in DataQ's secret store; the webhook
 URL is shown in **Settings → Webhooks** like the others.
 
+### Lineage from `manifest.json` (ADR 0034)
+
+Alongside `run_results.json`, DataQ reads each job's **`manifest.json`** — the sibling artifact
+at `<artifacts_uri>/<job>/latest/manifest.json` — for **table-level lineage**. On a **succeeded**
+dbt run, the ingest path (webhook immediately, or the 10-min poll as fallback) enqueues an
+**async `refresh_dbt_lineage` worker task** — the artifact download + parse + upserts run off the
+webhook/poll thread, so ingestion never blocks. The task parses the model dependency graph and
+refreshes the `lineage_edges` cache, which powers the blast-radius view (a failing asset's
+downstream dependents). Stale edges from a previous refresh of **that connection** are pruned;
+another dbt project's edges are never touched (edges are provenance-scoped to the refreshing
+connection).
+
+dbt's manifest has no OpenLineage **namespace** (no warehouse account/host), so DataQ **infers**
+it from assets you've already resolved via suite targets for the same table names — env-strict
+(it never anchors a QA project into the PROD namespace) and majority-wins with a deterministic
+tie-break. **Skip conditions** (the refresh no-ops, fail-soft): no manifest published yet, no
+matching asset to anchor from, or an empty/too-old manifest. For a **greenfield project** with no
+suites yet — or a multi-database project — set **`lineage_namespace`** on the dbt connection
+config (the OpenLineage namespace verbatim, e.g. `snowflake://<account>`) to pin the anchor and
+bypass the inference entirely.
+
 ## Wiring a trigger
 
 In the UI, open a suite's **Triggers** and bind it to a `(provider, pipeline/DAG, env)`.

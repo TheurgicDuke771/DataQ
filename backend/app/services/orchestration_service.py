@@ -273,6 +273,41 @@ def _trigger_suites(
     return created
 
 
+def _dispatch_lineage_refresh(
+    *, provider_impl: OrchestrationProvider, connection: Connection, update: RunUpdate
+) -> None:
+    """Dispatch the async dbt-manifest lineage refresh for a succeeded run.
+
+    Provider-agnostic (CLAUDE.md §11): probes for the OPTIONAL ``read_manifest``
+    capability via ``getattr`` — only the dbt provider has it, so ADF/Airflow are a
+    no-op with zero name branching. Rather than fetch+parse+refresh **inline** (the
+    webhook path runs in the request threadpool — artifact download + parse + N+M
+    upserts would block the ACK and exhaust the pool), it enqueues the
+    ``refresh_dbt_lineage`` Celery task (own session, own single secret fetch in the
+    worker); mirrors how `run_dispatch` publishes ``run_suite`` by name.
+
+    Fail-open: a broker hiccup must NEVER affect run ingestion or suite triggering —
+    it logs and returns (the 10-min poll re-dispatches on the next success).
+    """
+    if getattr(provider_impl, "read_manifest", None) is None:
+        return
+    # Lazy import to avoid a service→worker import cycle (mirrors request_immediate_poll).
+    from backend.app.worker.celery_app import celery_app
+
+    try:
+        celery_app.send_task(
+            "refresh_dbt_lineage",
+            args=[str(connection.id), update.pipeline_or_dag_id],
+        )
+    except Exception:
+        log.warning(
+            "dbt_lineage_dispatch_failed",
+            provider=provider_impl.provider,
+            connection_id=str(connection.id),
+            pipeline=update.pipeline_or_dag_id,
+        )
+
+
 @dataclass(frozen=True)
 class IngestResult:
     pipeline_run: PipelineRun | None
@@ -335,11 +370,14 @@ def ingest_event(
     pipeline_run = _upsert_pipeline_run(
         session, provider=provider, connection=connection, update=update
     )
-    triggered = (
-        _trigger_suites(session, provider=provider, connection=connection, update=update)
-        if update.status == "succeeded"
-        else []
-    )
+    triggered: list[Run] = []
+    if update.status == "succeeded":
+        triggered = _trigger_suites(
+            session, provider=provider, connection=connection, update=update
+        )
+        # Immediate manifest re-read on the webhook path (the AC's convergence
+        # channel) — enqueued async; fail-open, never affects the result above.
+        _dispatch_lineage_refresh(provider_impl=provider_impl, connection=connection, update=update)
     return IngestResult(pipeline_run=pipeline_run, triggered_runs=triggered)
 
 
@@ -372,10 +410,16 @@ def ingest_polled_runs(
     it on time alone would drop a later ``running → succeeded`` transition — losing
     both the monitor update *and* the trigger. The connection is known (we polled
     it), so no resolve.
+
+    A succeeded run also enqueues the async dbt-manifest lineage refresh (the
+    poll-path fallback to the webhook's immediate re-read), **deduped per job** for
+    this batch: a poll can surface several succeeded runs of the same job, but the
+    manifest is per-job (one refresh suffices).
     """
     provider = provider_impl.provider
     pipeline_runs: list[PipelineRun] = []
     triggered: list[Run] = []
+    dispatched_jobs: set[str] = set()
     skipped = 0
     for update in updates:
         existing = session.execute(
@@ -398,6 +442,14 @@ def ingest_polled_runs(
             triggered.extend(
                 _trigger_suites(session, provider=provider, connection=connection, update=update)
             )
+            # Poll-path lineage refresh (the fallback to the webhook's immediate
+            # re-read); async + fail-open, deduped per job for this batch.
+            job = update.pipeline_or_dag_id
+            if job not in dispatched_jobs:
+                dispatched_jobs.add(job)
+                _dispatch_lineage_refresh(
+                    provider_impl=provider_impl, connection=connection, update=update
+                )
     return PollIngestResult(pipeline_runs=pipeline_runs, triggered_runs=triggered, skipped=skipped)
 
 

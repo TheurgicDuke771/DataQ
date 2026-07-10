@@ -557,3 +557,180 @@ def test_polled_running_then_succeeded_is_not_skipped(
     assert succeeded.pipeline_runs[0].status == "succeeded"
     assert len(succeeded.triggered_runs) == 1  # the transition fires the trigger
     assert stub_run_dispatch == [str(succeeded.triggered_runs[0].id)]  # handed to the broker
+
+
+# ── lineage refresh hook (#759): dbt success dispatches an async refresh ───────
+#
+# The refresh moved OFF the webhook/poll path into the `refresh_dbt_lineage` Celery
+# task (fetch+parse+refresh in the worker, own session) — so these hook tests assert
+# the *dispatch* (send_task with the right args), not the parse/refresh itself. The
+# end-to-end task body is covered in tests/worker/test_lineage_refresh_task.py.
+
+
+class _SendTaskSpy:
+    """Captures `celery_app.send_task` calls the dispatcher makes (fail-open)."""
+
+    def __init__(self, raises: Exception | None = None) -> None:
+        self.calls: list[tuple[str, list[Any]]] = []
+        self._raises = raises
+
+    def __call__(self, name: str, *, args: list[Any] | None = None, **_: Any) -> None:
+        self.calls.append((name, args or []))
+        if self._raises is not None:
+            raise self._raises
+
+
+def _spy_send_task(monkeypatch: Any, raises: Exception | None = None) -> _SendTaskSpy:
+    from backend.app.worker import celery_app as celery_mod
+
+    spy = _SendTaskSpy(raises=raises)
+    monkeypatch.setattr(celery_mod.celery_app, "send_task", spy)
+    return spy
+
+
+class _FakeDbtProvider:
+    """dbt-shaped provider exposing the OPTIONAL `read_manifest` capability."""
+
+    provider = "dbt"
+    resource_config_key = "project_name"
+
+    def __init__(self, manifest: bytes | None = b"{}") -> None:
+        self._manifest = manifest
+
+    def parse_event(self, payload: bytes, headers: Any) -> RunUpdate:  # pragma: no cover
+        raise NotImplementedError
+
+    def fetch_run_detail(self, config: Any, secret: str, provider_run_id: str) -> RunUpdate:
+        raise NotImplementedError  # artifacts authoritative → _maybe_enrich skips
+
+    def list_recent_runs(self, config: Any, secret: str, since: Any) -> list[RunUpdate]:
+        return []  # pragma: no cover — poll path unused in these hook tests
+
+    def read_manifest(self, config: Any, secret: str, job: str) -> bytes | None:
+        return self._manifest
+
+
+def _dbt_connection(db_session: Any, *, project: str = "dataq_lineage") -> Connection:
+    conn = Connection(
+        name=f"dbt-{project}",
+        type="dbt",
+        env="dev",
+        config={"project_name": project, "artifacts_uri": "file:///x", "jobs": ["j"]},
+        created_by=_user(db_session).id,
+    )
+    db_session.add(conn)
+    db_session.commit()
+    conn.secret_ref = f"conn-{conn.id}"
+    db_session.commit()
+    return conn
+
+
+def _dbt_update(status: str = "succeeded", *, job: str = "j", run_id: str = "inv-1") -> RunUpdate:
+    return RunUpdate(
+        provider_run_id=run_id,
+        pipeline_or_dag_id=job,
+        resource_name="dataq_lineage",
+        status=status,
+    )
+
+
+def test_dbt_success_dispatches_lineage_refresh(db_session: Any, monkeypatch: Any) -> None:
+    conn = _dbt_connection(db_session)
+    spy = _spy_send_task(monkeypatch)
+
+    result = ingest_event(
+        db_session,
+        provider_impl=_FakeDbtProvider(),
+        update=_dbt_update("succeeded", job="j"),
+        secret_store=_FakeStore(**{f"conn-{conn.id}": "sas"}),
+    )
+
+    assert result.pipeline_run is not None
+    # dispatched by name with (connection_id, job) — no inline fetch/parse/refresh.
+    assert spy.calls == [("refresh_dbt_lineage", [str(conn.id), "j"])]
+
+
+def test_dbt_failure_does_not_dispatch_lineage(db_session: Any, monkeypatch: Any) -> None:
+    conn = _dbt_connection(db_session)
+    spy = _spy_send_task(monkeypatch)
+
+    ingest_event(
+        db_session,
+        provider_impl=_FakeDbtProvider(),
+        update=_dbt_update("failed"),
+        secret_store=_FakeStore(**{f"conn-{conn.id}": "sas"}),
+    )
+    assert spy.calls == []  # failures alert but never refresh lineage (nor trigger)
+
+
+def test_airflow_success_does_not_dispatch_lineage(db_session: Any, monkeypatch: Any) -> None:
+    # AirflowProvider has no `read_manifest` → the hook is a no-op (no branching).
+    from backend.app.orchestration.airflow import AirflowProvider
+
+    user = _user(db_session)
+    conn = Connection(
+        name="airflow-dev",
+        type="airflow",
+        env="dev",
+        config={"base_url": "https://airflow.example.com", "auth_type": "token"},
+        created_by=user.id,
+    )
+    db_session.add(conn)
+    db_session.commit()
+    conn.secret_ref = f"conn-{conn.id}"
+    db_session.commit()
+    spy = _spy_send_task(monkeypatch)
+
+    ingest_event(
+        db_session,
+        provider_impl=AirflowProvider(),
+        update=RunUpdate(
+            provider_run_id="dag-run-1",
+            pipeline_or_dag_id="load_finance",
+            resource_name="https://airflow.example.com",
+            status="succeeded",
+        ),
+        secret_store=_FakeStore(**{f"conn-{conn.id}": "token"}),
+    )
+    assert spy.calls == []
+
+
+def test_lineage_dispatch_failure_does_not_break_ingestion(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    conn = _dbt_connection(db_session)
+    # Broker down: send_task raises — the dispatcher must swallow it (fail-open).
+    _spy_send_task(monkeypatch, raises=RuntimeError("broker unreachable"))
+
+    result = ingest_event(
+        db_session,
+        provider_impl=_FakeDbtProvider(),
+        update=_dbt_update("succeeded"),
+        secret_store=_FakeStore(**{f"conn-{conn.id}": "sas"}),
+    )
+    assert result.pipeline_run is not None
+    assert result.pipeline_run.status == "succeeded"
+
+
+def test_polled_dbt_success_dispatches_deduped_per_job(db_session: Any, monkeypatch: Any) -> None:
+    # A poll can surface several succeeded runs of the SAME job; the manifest is
+    # per-job, so only one refresh is dispatched for that job in the batch.
+    conn = _dbt_connection(db_session)
+    spy = _spy_send_task(monkeypatch)
+    since = datetime.now(UTC) - timedelta(minutes=15)
+
+    ingest_polled_runs(
+        db_session,
+        provider_impl=_FakeDbtProvider(),
+        connection=conn,
+        updates=[
+            _dbt_update("succeeded", job="j", run_id="inv-a"),
+            _dbt_update("succeeded", job="j", run_id="inv-b"),  # same job → deduped
+            _dbt_update("succeeded", job="k", run_id="inv-c"),  # different job → 2nd
+        ],
+        skip_updated_since=since,
+    )
+    assert spy.calls == [
+        ("refresh_dbt_lineage", [str(conn.id), "j"]),
+        ("refresh_dbt_lineage", [str(conn.id), "k"]),
+    ]

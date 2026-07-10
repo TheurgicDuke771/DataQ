@@ -687,11 +687,71 @@ class SuiteNotification(Base):
     updated_at: Mapped[datetime] = _updated_at()
 
 
+class LineageEdge(Base):
+    """A directed upstream→downstream lineage edge between two assets (ADR 0034).
+
+    A refreshed **cache of external truth**, not a graph DataQ authors: each edge
+    is (re)discovered from a lineage `source` — ``'dbt'`` first (the parsed
+    `manifest.json` dependency graph, #759) — by the `connection` whose refresh
+    surfaced it, and keyed on
+    ``(upstream_asset_id, downstream_asset_id, source, connection_id)`` so the same
+    edge from two sources — or two dbt projects sharing tables — is distinct rows (no
+    cross-source or cross-project merge). ``last_seen`` bumps on every refresh that
+    still observes the edge; a stale edge (not re-seen in the latest refresh of its
+    ``(source, connection_id)``) is pruned. Blast radius = walk these edges
+    downstream from a failing asset (`lineage.edges.downstream_assets`).
+
+    Both endpoints CASCADE-delete: an edge is meaningless without either asset.
+    ``connection_id`` also CASCADE-deletes and is NOT NULL — every edge is
+    provenance-scoped to the refreshing connection, so pruning one project's refresh
+    never touches another's edges (the review's cross-project-corruption fix). Future
+    non-connection lineage sources (an OpenLineage receipt with no DataQ connection)
+    can revisit the nullability. ``source`` is un-CHECKed on purpose — lineage
+    sources will grow (catalog pull, OpenLineage receipt) and each new one must not
+    need a migration.
+    """
+
+    __tablename__ = "lineage_edges"
+    __table_args__ = (
+        UniqueConstraint(
+            "upstream_asset_id",
+            "downstream_asset_id",
+            "source",
+            "connection_id",
+            name="uq_lineage_edges_up_down_source_conn",
+        ),
+        Index("ix_lineage_edges_upstream", "upstream_asset_id"),
+        Index("ix_lineage_edges_downstream", "downstream_asset_id"),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    upstream_asset_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("assets.id", ondelete="CASCADE"), nullable=False
+    )
+    downstream_asset_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("assets.id", ondelete="CASCADE"), nullable=False
+    )
+    # Lineage source that surfaced this edge (e.g. 'dbt'). No CHECK — sources grow.
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
+    # The connection whose refresh discovered this edge — provenance + prune scope
+    # (CASCADE: an edge is meaningless once its refreshing connection is gone).
+    connection_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("connections.id", ondelete="CASCADE"), nullable=False
+    )
+    first_seen: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    last_seen: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 __all__ = [
     "Asset",
     "Base",
     "Check",
     "Connection",
+    "LineageEdge",
     "PipelineRun",
     "Result",
     "Run",

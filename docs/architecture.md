@@ -75,7 +75,7 @@ The flow reads left → right: **inputs** (Clients, Orchestration) drive the **D
 
 ## Data model (ER diagram)
 
-> Source of truth: [`backend/app/db/models.py`](https://github.com/TheurgicDuke771/DataQ/blob/main/backend/app/db/models.py) (13 tables). Update this diagram in the same PR as any model/migration change.
+> Source of truth: [`backend/app/db/models.py`](https://github.com/TheurgicDuke771/DataQ/blob/main/backend/app/db/models.py) (16 tables). Update this diagram in the same PR as any model/migration change.
 
 ```mermaid
 erDiagram
@@ -122,6 +122,15 @@ erDiagram
         string env "metadata, not identity"
         uuid connection_id FK "provenance hint (SET NULL)"
         uuid owner_user_id FK "incident-routing hop (SET NULL)"
+        timestamptz first_seen
+        timestamptz last_seen
+    }
+    lineage_edges {
+        uuid id PK
+        uuid upstream_asset_id FK "CASCADE (ADR 0034)"
+        uuid downstream_asset_id FK "CASCADE"
+        string source "lineage source, e.g. 'dbt'"
+        uuid connection_id FK "CASCADE — refreshing conn (provenance + prune scope); (up,down,source,connection_id) unique"
         timestamptz first_seen
         timestamptz last_seen
     }
@@ -242,6 +251,9 @@ erDiagram
     users |o--o{ assets : "owner_user_id (SET NULL)"
     assets |o--o{ suites : "resolved target (SET NULL)"
     assets |o--o{ runs : "stamped at dispatch (SET NULL)"
+    assets ||--o{ lineage_edges : "upstream (CASCADE)"
+    assets ||--o{ lineage_edges : "downstream (CASCADE)"
+    connections ||--o{ lineage_edges : "refreshed by (CASCADE)"
 
     suites ||--o{ checks : "contains (CASCADE)"
     suites ||--o{ runs : "executed as (CASCADE)"
