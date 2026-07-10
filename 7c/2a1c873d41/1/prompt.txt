@@ -1,0 +1,788 @@
+Lets start with the assets and data lineage piece. How you want to do it?
+you can be orchestrator and deligate the. task to opus/sonet/haiku.
+
+---
+
+<task-notification>
+<task-id>a93e0c0cb3c108826</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/aef9f6a4-f51b-4006-84c5-e914ce549fd6/tasks/a93e0c0cb3c108826.output</output-file>
+<status>completed</status>
+<summary>Agent "Survey lineage/assets design context" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result># Assets &amp; Data Lineage — Everything Documented (as of 2026-07-10)
+
+## 1. What the project has already committed to / sketched
+
+### Origin: the pre-v1 sketch (superseded, kept for lineage of the idea)
+`context/DataQ_platform_roadmap.md:392-393`:
+&gt; **Theme G — Lineage, engines &amp; sources**
+&gt; - Table / asset lineage — visual dependency graph (ADF / Airflow → tables / files → suites → checks), React Flow; uses data already in connections + suite config; ~1 week
+
+This was a one-line, effort-estimated ("~1 week") sketch from the original v1 roadmap. It has since been superseded by a much more deliberate treatment in `context/post-v1-roadmap.md` (below) — the "~1 week, build our own graph" idea is explicitly walked back in favor of pulling lineage from external catalogs/OpenLineage.
+
+### The core gap statement — G-d
+`context/post-v1-roadmap.md:63`:
+&gt; | G-d | **No incident workflow, no lineage, no ownership routing** — runs + alerts exist; "what broke downstream / who owns it / when was it resolved" doesn't. No data-access audit trail (the HIPAA gate). | This is what DQ products are bought for | **Theme 9** (results/reporting depth) + **Theme 4** / #431 (audit trail); lineage/incident objects = new design doc needed; the incident-*narrative* half is design-captured as **Theme 2's agentic root-cause analysis** (2026-07-04); lineage may be *pulled/emitted* rather than built — **Theme 14** governance-catalog + OpenLineage capture (2026-07-04); incident objects anchor to the **asset entity** (Theme 3's Asset-first IA capture, phase 1 = the shared prerequisite) |
+
+`context/post-v1-roadmap.md:70-74` (prioritization signal):
+&gt; G-a and G-b are the two that change what the product *is* (coverage-without-authoring + scale-safe execution); **G-d is what makes it *usable in anger* (incidents/lineage)**; the rest are adoption/positioning. Recommended post-v1 opening sequence: Theme 1 `schema_drift` + `anomaly` … → scale-aware execution (G-b, Theme 7) → **incident/lineage design doc (G-d)**.
+
+### Theme 3 — Asset-first IA (the "asset" concept), design-captured 2026-07-04
+`context/post-v1-roadmap.md:205-244` — full section "Asset-first IA (design-captured 2026-07-04 — the lineage-era navigation model)":
+
+- **The inversion, deliberately partial** (`:207-215`):
+  &gt; When lineage lands (Theme 14), invert the navigation from suite-first to asset-first — but split the noun from the verb rather than replacing one with the other. Assets become what users *browse and reason about* (health, lineage, incidents, blast radius); suites remain how checks *execute* (batching, scheduling, trigger bindings, notifications, sharing). Making assets primary for *everything* would fight three structural facts: authz is suite-scoped (ADR 0027) …; scheduling / triggers / notifications are genuinely batch-level operational concepts; and GX itself is suite-shaped, so the engine grain stays suites regardless. The products that do this well (dbt models-vs-jobs, Monte Carlo assets-vs-monitors) all run this two-axis model.
+
+- **The enabling primitive** (`:217-227`):
+  &gt; a first-class **asset entity**. Today "the table" exists only implicitly inside `Suite.target` and check configs. Lineage needs asset *nodes*; the asset page needs asset *identity*; G-d incidents need something to *attach to*; governance-catalog sync (Theme 14) needs an entity to *map to*. One migration serves all four — schedule it before any of them.
+  &gt;
+  &gt; **Asset identity = the OpenLineage dataset naming spec (namespace + name), adopted as the canonical key from day one.** It answers the hardest resolution problems (the same logical table via DEV vs QA connections, flat-file patterns as assets, UC three-level names) with a vendor-neutral convention, and makes the Theme-14 OpenLineage emission/pull interop automatic instead of a mapping layer.
+
+- **Four shippable phases** (`:229-241`):
+  1. **Asset entity + resolution** — `assets` table keyed by OpenLineage naming + mapping of checks/runs to asset IDs. "The migration everything else rides."
+  2. **Asset view** — read-only aggregation across suites, with authz filtered to caller's suite grants (404-no-leak discipline).
+  3. **Lineage attach** — asset pages grow upstream/downstream + blast radius; the Theme-2 RCA dossier and G-d incident objects anchor to assets.
+  4. **Navigation inversion** — sidebar leads with Assets, suites demote to "execution groups." *"This is the step where DataQ stops feeling like 'GX-as-a-service' and starts feeling like a data-observability product."*
+
+- **Status:** `:243-244` — "No issues filed yet — phase 1 files first when picked up (it's the dependency of the other three and of Theme 14's governance sync)."
+
+- Also referenced from the Theme 3 table (`:168`):
+  &gt; | _(no issue yet)_ | **Data-asset-centric view** — the biggest IA gap (added 2026-07-04): the UI is suite-centric but users think table-centric ("is `orders` healthy?"). A dataset page aggregating every check, result, freshness state, and trend across all suites targeting that table/file pattern. … **Phase 2 of the Asset-first IA capture below** — build the asset entity first.
+
+### Theme 14 — Data-governance catalogs (+ OpenLineage) — the lineage sourcing decision
+`context/post-v1-roadmap.md:518-537`:
+
+&gt; Two directions, one seam:
+&gt; - **Pull** — consume the catalog's glossary/PII classifications as an authoritative classification source (feeds Theme 4's privacy pack + #433, ranked above profiler heuristics), and **pull lineage** to power the RCA blast-radius (Theme 2) and gap G-d **instead of building a lineage graph ourselves.**
+&gt; - **Push** — publish DQ results as **quality facets/assertions on catalog entities**, so data consumers see check status where they shop for data. DataHub and OpenMetadata both have first-class assertion/data-quality APIs — natural open-source reference impls; Microsoft Purview covers the Azure story; Collibra / Atlan / Alation are commercial targets behind the same seam.
+&gt; - **Open standard first: emit OpenLineage events** from runs — one vendor-neutral event stream consumed by Marquez, DataHub, Purview, Atlan and the orchestrators' own lineage backends; cheaper and more neutral than any point integration, and the likely first slice.
+&gt;
+&gt; **Shared primitive:** this whole section keys on the **asset entity** (Theme 3's Asset-first IA capture, phase 1) with **OpenLineage dataset naming as the canonical identity** — build that first; catalog mapping, lineage nodes, and quality-facet publishing all resolve through it.
+
+**This is the single most important scope decision:** DataQ plans to **pull/emit lineage via OpenLineage and external catalogs (Marquez/DataHub/Purview/Atlan/OpenMetadata)**, not build its own lineage graph engine.
+
+### Incident objects (paired concept)
+`context/post-v1-roadmap.md:501-509` (Theme 14, Incident/ITSM tier 2):
+&gt; Tier 1 (create-only PagerDuty/Opsgenie/ServiceNow/Jira …) lives in Theme 5 … Tier 2 is the ITSM-grade half: **DataQ incident objects (the G-d design)** sync *both ways* … and the **Theme 2 agentic-RCA evidence card is the incident payload**, so the ticket arrives with the diagnosis pre-attached. Per-vendor impls behind one `IncidentProvider`-shaped seam, only after tier 1 proves demand.
+
+Also Theme 2 agentic RCA (`:150-153`): the RCA dossier "compounds with Theme 1 (anomaly baselines sharpen the dossier)" and is explicitly called "the incident-narrative half of gap G-d."
+
+## 2. GitHub issues referenced
+
+| Issue | What it is | Status as of 2026-07-10 |
+|---|---|---|
+| **#596** | **Incident &amp; lineage design doc** — "incident objects, asset-entity anchoring, OpenLineage-first pull → files next cycle's phase-1 issues." Scheduled **v1.1 Week 6** (`docs/progress.md:250`). | ⬜ not started |
+| **#609** | "dbt-modeled lineage objects on Snowflake — G-d test bed"; **rescoped 2026-07-04 to self-hosted dbt Core** (not Airflow-hosted). Renamed in practice to "Self-hosted dbt Core lineage on Snowflake" (RETAIL→ANALYTICS_STG views→ANALYTICS dynamic tables). Unblocks #611. | ✅ **Closed 2026-07-05** (`docs/progress.md:160,121-126`) |
+| **#611** | dbt as a **third `OrchestrationProvider`** (split from #609) — ADR 0029. Webhook + artifact-poll, host-agnostic. | ✅ **Closed 2026-07-05** — deployed to prod, webhook live-verified |
+| **#431** | Compliance G1: data-access audit trail (the HIPAA gate) — tied to G-d in the gap table. | ⬜ W7 stretch |
+| **#310** | History/audit strategy ADR (audit log + soft-delete decision) — "pairs with the **#596 design doc** (mapped 2026-07-04)." Scheduled W6 alongside #596. | ⬜ not started |
+| **#461** | PATs — cited as the hard dependency enabling checks-as-code / CI gate work in Theme 14, tangential to lineage but part of the same theme. | ✅ Closed |
+| (no issue yet) | Asset entity / asset-first IA phase 1 — explicitly "no issue yet," to be filed by the #596 design doc. | design-only |
+| (no issue yet) | OpenLineage emission, catalog pull/push integrations (DataHub/OpenMetadata/Purview) | design-only |
+
+**Cycle framing** (`docs/progress.md:26,111-113`): the v1.1 cycle's Weeks 4–6 run "the roadmap's recommended opening sequence (Theme-1 `schema_drift` + `anomaly` → scale-aware execution G-b → **incident/lineage design G-d**)."
+
+## 3. Which week is #596 scheduled, and exit-gate language
+
+`docs/progress.md` — **v1.1 Week 6** (due 2026-08-15), row `:250`:
+&gt; | ⬜ | [#596] Incident &amp; lineage **design doc** (incident objects, asset-entity anchoring, OpenLineage-first pull) → files next cycle's phase-1 issues | G-d |
+
+Adjacent row `:260`:
+&gt; | ⬜ | [#310] History/audit strategy ADR (audit log + soft-delete decision) — pairs with the #596 design doc (mapped 2026-07-04) | Theme 6 / ADR 0020 |
+
+**W6 Exit gate** (`docs/progress.md:263-266`):
+&gt; a deliberately oversized local file / UC table runs under the memory cap with sampled-ness recorded (vs the #587 baseline); perf + hardening/small-bug batches green; **the G-d design doc (#596) + audit ADR (#310) merged with next-cycle phase-1 issues filed**; retro written; `v1.1.0` tagged.
+
+**"Not scheduled" / next-cycle generator input** (`docs/progress.md:290-298`):
+&gt; What remains unscheduled is the design-captured, not-yet-filed work themed in post-v1-roadmap.md: Theme 2 LLM authoring/RCA … **Theme 3 asset entity + asset-first IA (phase 1 gets filed by the #596 design doc)**, the Theme 8 adapter expansion …, Theme 14 ecosystem integrations, and the Theme 3/4 privacy/a11y packs. These are the **v1.2 generator input**.
+
+So: **#596 does not build assets/lineage itself — it is a design doc whose output is the issue list that will build phase-1 asset entity + lineage attach, filed as v1.2 work.**
+
+## 4. Inputs that already exist (the lineage "test bed")
+
+Confirmed by ADR 0029 (`docs/adr/0029-dbt-orchestration-provider.md:12`):
+&gt; What *every* dbt deployment produces, wherever it runs, is **artifacts** (`run_results.json`, `manifest.json`) and the ability to run a command after a build.
+
+But — important nuance — **only `run_results.json` is consumed today**, for orchestration/trigger purposes, not lineage:
+- ADR 0029, `:35-37`: `list_recent_runs` reads `&lt;artifacts_uri&gt;/&lt;job&gt;/latest/run_results.json` — used purely to detect success/failure and fire trigger bindings.
+- `docs/orchestration.md:36-52` and `integrations/dbt/README.md` — same: webhook + poll of `run_results.json` only. **No code currently parses `manifest.json`** (which is where dbt's model dependency graph / lineage edges actually live).
+- The artifact store already wired: **ADLS (`adls://`), S3 (`s3://`), or local (`file://`)**, via the existing ADLS/S3 auth shapes (`backend/app/datasources/adls.py`, `s3.py` reused as readers). Confirmed live-verified on Snowflake+ADLS (`docs/progress.md:160-161`, #609/#611 closed 2026-07-05, "artifacts to ADLS").
+- So the raw input (**dbt `manifest.json` in ADLS**, produced by the same self-hosted dbt Core project from #609) already exists in the harness and is reachable through the same 3-scheme artifact reader built for #611 — but nothing yet reads it for lineage; that's squarely #596/phase-3 ("Lineage attach") scope.
+
+Also noted as a Theme-14 "asset identity" input: **OpenLineage dataset naming spec (namespace + name)** is the chosen canonical key (`context/post-v1-roadmap.md:223-227`) — not dbt-specific, meant to also resolve UC three-level names, DEV/QA connection duplicates, and flat-file patterns.
+
+## 5. Explicit scope decisions / anti-goals
+
+1. **Do not build a proprietary lineage graph engine.** `context/post-v1-roadmap.md:524-525`: pull lineage from governance catalogs / OpenLineage "**instead of building a lineage graph ourselves**." This directly supersedes the earlier `DataQ_platform_roadmap.md:393` sketch ("visual dependency graph … React Flow … ~1 week"), which is no longer the plan.
+2. **Assets are a separate concept from suites, not a replacement.** Suites keep owning execution (scheduling, triggers, notifications, authz); assets own browsing/health/lineage/incidents/blast-radius (`context/post-v1-roadmap.md:207-215`). Explicitly rejected: "making assets primary for *everything*" — cited reasons: suite-scoped authz (ADR 0027) re-keying cost, scheduling/triggers being batch-level concepts, and GX's suite-shaped execution grain.
+3. **Asset identity is the OpenLineage naming spec, not an internal ID scheme** — chosen specifically to make future OpenLineage emission/pull "automatic instead of a mapping layer" (`:223-227`).
+4. **dbt orchestration seam deliberately does not couple to any host API** (Snowflake tasks, Databricks Jobs, dbt Cloud API) — ADR 0029 alternatives-considered section (`docs/adr/0029:61-65`): "dbt under the Airflow provider — rejected," "Bind to a host API — rejected: each couples observation to one vendor, violating ADR 0010/0013." This keeps the artifact-based (and eventually lineage-capable) surface vendor-neutral.
+5. **Sequencing anti-goal: incidents/lineage is explicitly not being built before its prerequisite.** "One migration serves all four [lineage, asset view, incidents, catalog sync] — schedule it before any of them" — i.e., no lineage attach work should start before the asset entity phase 1 lands (`:220-221`).
+6. **#596 itself is scoped as a design doc only**, producing next-cycle issues — not an implementation task in v1.1. Confirmed by both the roadmap doc and progress.md exit-gate wording ("design doc … merged with next-cycle phase-1 issues filed").
+7. No ADR yet exists dedicated to lineage/assets (checked `docs/adr/README.md` in full — only ADR 0029 dbt-provider and ADR 0030 Iceberg touch adjacent ground; ADR 0030 only tangentially connects by noting native Iceberg snapshot/schema history is "the natural feed for the reserved `freshness`/`schema_drift` monitor kinds," not lineage). The asset/lineage ADR is expected to originate from #596's output.
+
+## Summary for the design decision
+
+- **Committed direction:** build a first-class `assets` table (OpenLineage namespace+name identity) as phase 1, keep suites for execution, and **pull/emit lineage via OpenLineage rather than building an in-house graph**, catalog vendors (DataHub/OpenMetadata/Purview/Atlan) as pull/push targets.
+- **Immediate blocker/vehicle:** issue **#596** (v1.1 Week 6, due 2026-08-15) is a *design doc*, paired with **#310** (audit/history ADR), whose deliverable is the filed phase-1 issue set (asset entity, then asset view, then lineage attach, then nav inversion).
+- **Available data plumbing today:** dbt artifacts (`run_results.json` consumed; `manifest.json` present but unconsumed) sitting in ADLS/S3/local via the #611 `DbtProvider`'s 3-scheme artifact reader — the natural, already-live input for a future lineage-parsing step, but not yet wired to anything.
+- **Nothing is implemented yet** for assets or lineage beyond the self-hosted dbt Core test bed (#609) and the orchestration provider (#611) that observes its *runs* (not its *dependency graph*).</result>
+<usage><subagent_tokens>72259</subagent_tokens><tool_uses>19</tool_uses><duration_ms>107616</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ae406083ff1d07a8b</task-id>
+<tool-use-id>toolu_01XAmgxg1raqcqEVx8CmrxMF</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/aef9f6a4-f51b-4006-84c5-e914ce549fd6/tasks/ae406083ff1d07a8b.output</output-file>
+<status>completed</status>
+<summary>Agent "Survey backend model for lineage fit" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Now I have all the material needed for a compact structured report.
+
+# Backend Survey: Assets + Data Lineage Readiness
+
+## 1. `app/db/models.py` — full model inventory
+
+Constants (models.py:26-82): `CONNECTION_TYPES` = snowflake, adls_gen2, s3, unity_catalog, iceberg, adf, airflow, dbt; `CHECK_KINDS` = expectation, freshness, volume, schema_drift, anomaly, comparison; `ORCHESTRATION_PROVIDERS` = adf, airflow, dbt; `PERMISSIONS` = view, edit, admin; `ENVS` = dev, qa, uat, prod.
+
+| Model | Table | Key columns | Ref |
+|---|---|---|---|
+| `User` | users | id, aad_object_id, email, display_name | models.py:111-120 |
+| `ApiKey` | api_keys | user_id (FK), key_prefix, key_hash, expires_at, revoked_at | models.py:123-149 |
+| `Connection` | connections | id, name, **type** (str, one of CONNECTION_TYPES incl. orchestration providers), env, **config** (JSONB), secret_ref (SecretStore pointer), created_by; unique (name, env); partial-unique (type, env) for orchestration singletons | models.py:152-195 |
+| `ConnectionVersion` | connection_versions | connection_id, version_no, name/type/env/config snapshot, changed_by | models.py:198-248 |
+| `Suite` | suites | id, name, connection_id (FK), **target: JSONB\|None** — see below, column_policy (JSONB), created_by | models.py:251-288 |
+| `Check` | checks | id, suite_id (FK, CASCADE), name, kind, expectation_type, warn/fail/critical_threshold, config (JSONB), alert_snoozed_until | models.py:291-324 |
+| `CheckVersion` | check_versions | check_id, version_no, name/kind/expectation_type/config snapshot, changed_by | models.py:327-373 |
+| `Run` | runs | id, suite_id (FK CASCADE), status, triggered_by (e.g. `dbt:&lt;pipeline&gt;:&lt;run_id&gt;` marker), celery_task_id, started/finished_at, failure_reason; partial-unique on (suite_id, triggered_by) for orchestration markers | models.py:376-418 |
+| `Result` | results | id, run_id (FK), check_id (FK), status, metric_value, duration_ms, observed_value/expected_value (JSONB), sample_failures (JSONB) + purge timestamp | models.py:421-449 |
+| `Share` | shares | suite_id, user_id, permission (view/edit/admin); unique (suite_id,user_id) | models.py:452-476 |
+| `PipelineRun` | pipeline_runs | id, provider (adf/airflow/dbt), connection_id, provider_run_id, **pipeline_or_dag_id**, env, status, started/finished_at, failure_reason, last_updated_at; unique (provider, provider_run_id) | models.py:479-502 |
+| `TriggerBinding` | trigger_bindings | provider, pipeline_or_dag_id, env, suite_id (FK CASCADE), enabled; unique (provider, pipeline_or_dag_id, env, suite_id) | models.py:505-535 |
+| `Schedule` | schedules | suite_id (FK CASCADE), cron, timezone, enabled, next_run_at (precomputed), last_run_at, created_by | models.py:538-576 |
+| `SuiteNotification` | suite_notifications | suite_id (unique), enabled, alert_on, webhook/slack_webhook secret_refs, email_recipients | models.py:579-623ish |
+
+**How a check's target dataset is identified today (models.py:264-269):**
+`Suite.target: JSONB | None` — one field, **at the suite level, not per-check** (a suite targets exactly one table/dataset; all its checks run against that same target). Comment explicitly: *"Datasource-shaped run target (#215): the table / flat-file path / Unity Catalog 3-level name... Shaped like the column profiler request (`table`/`schema`/`catalog`/`path`/`file_format`)"*. `NULL` = targetless/not-runnable.
+
+Resolution logic lives in `app/services/run_target.py:82` `resolve_target(conn_type, target) -&gt; ResolvedTarget`:
+- flat-file types (adls_gen2/s3): `path` (literal) or `pattern` (batch), mutually exclusive — run_target.py:95-110
+- `snowflake`: requires `table`, optional `schema` — run_target.py:112-114
+- `unity_catalog`: requires `table` **and** `catalog`, optional `schema` — run_target.py:116-121
+
+So today there is no dedicated "asset" entity — the target is inline JSONB on `Suite`, one target per suite, resolved per-connection-type at run time. No table/schema/catalog is a first-class row anywhere.
+
+## 2. `app/orchestration/` — dbt provider (ADR 0029, #609/#611)
+
+`app/orchestration/dbt.py` (319 lines). Confirmed via full read + repo-wide grep for `manifest.json`/`depends_on`:
+
+- **Only reads `run_results.json`** (`_RUN_RESULTS_RELPATH = "latest/run_results.json"`, dbt.py:37, dbt.py:103). **`manifest.json` is never referenced anywhere in the codebase** (grep across `app/orchestration/` and `app/services/orchestration_service.py` returned zero hits).
+- `_status_from_results()` (dbt.py:185-190) iterates `run_results.json`'s `results[]` array purely to derive one aggregate pass/fail (`_DBT_FAILURE_STATUSES` = error/fail/runtime error) — **per-node status is read but immediately collapsed to a single overall status; individual node names/results are discarded**, not persisted.
+- `list_recent_runs()` (dbt.py:278-319) builds a `RunUpdate` per job from `doc["metadata"]` (`invocation_id`, `generated_at`, `invocation_started_at`) and `doc.get("results", [])` — no `depends_on`, no model/test node names, no `nodes`/`manifest` keys are extracted.
+- `parse_event()` (webhook path, dbt.py:230-269) consumes DataQ's own callback shape (`project_name`, `job_name`, `invocation_id`, `status`, `started_at`, `finished_at`, `error`) — also no lineage fields.
+- Both paths normalize to `RunUpdate` (orchestration/base.py:37-54): `provider_run_id, pipeline_or_dag_id, resource_name, status, started_at, finished_at, failure_reason` — this dataclass is the **only** shape that reaches persistence (`services/orchestration_service.py`, docstring at base.py:14-16), and it maps 1:1 onto `PipelineRun` columns (models.py:479-502). No node names, no `depends_on`, no lineage graph data flows in or is stored anywhere today.
+
+**Conclusion:** the dbt provider is status/timing-only. Adding lineage would require a new artifact reader for `manifest.json` (node ids, `depends_on.nodes`, resource_type, database/schema/alias per node) — no scaffolding for this exists yet, but the `_read_artifact()` scheme-dispatch helper (dbt.py:102-173, handles file/adls/s3) could be reused/generalized to also fetch `manifest.json` from the same `artifacts_uri`.
+
+## 3. `app/datasources/` — connection introspection / catalog surface
+
+- `ConnectionAdapter` protocol (`app/datasources/base.py:128-146`) only exposes `validate_config` and `test` (connectivity probe) — **no `list_tables`/`list_schemas`/`list_databases` method** in the interface at all.
+- `CheckRunner`/`MonitorRunner` protocols (base.py:93-126) only run checks/monitors against an already-known target — no catalog browsing.
+- The only "listing" surface in the whole backend is in `app/services/profile_service.py`, and it requires the table/path to already be known (used by the column-profiler / check-editor, not an inventory browser):
+  - `list_columns()` (profile_service.py:969-1000) — dispatches to `list_table_columns` (SQL/Iceberg, needs `table`+`schema`/`catalog`) or `list_file_columns` (flat-file, needs `path`). Backing helpers: `list_table_columns` (profile_service.py:896), `list_iceberg_columns` (profile_service.py:781), `list_file_columns` (profile_service.py:930).
+  - Exposed via `suites.py`: `GET .../columns` (suites.py:445, gated 'edit') and `POST /suites/{suite_id}/profile` (suites.py:387-404).
+  - `suggest_policy_for_target()` (profile_service.py:1004) derives the column_policy suggestion the same way.
+- **No "list tables in this connection/schema" endpoint exists anywhere** — you must already know the fully-qualified table name to profile/list its columns. This means an asset inventory has **no existing seed surface**; it would need a new introspection method per datasource adapter (Snowflake `INFORMATION_SCHEMA`, Unity Catalog catalog/schema/table listing API, S3/ADLS prefix listing, Iceberg namespace listing) — `app/datasources/snowflake.py`, `unity_catalog.py`, `iceberg.py`, `s3.py`, `adls.py` currently only implement connect+run-checks, not catalog browsing.
+
+## 4. `app/api/` — router inventory
+
+All mounted in `app/main.py:184-198` under prefix `/api/v1`:
+
+| Router file | Tag | One-liner |
+|---|---|---|
+| me.py | auth | current-user identity endpoint |
+| api_keys.py | auth | PAT mint/list/revoke (ADR 0026) |
+| users.py | users | user directory search (for share grants) |
+| probe.py | probe | Week-1 exit-gate health probe |
+| connections.py | connections | connection CRUD + test/reauth + version history |
+| suites.py | suites | suite CRUD + column profiler + policy suggestion endpoints |
+| checks.py | checks | check CRUD nested under a suite (GX expectations) |
+| notifications.py | notifications | per-suite alert delivery config |
+| runs.py | runs | run/result/pipeline-run read API |
+| dashboard.py | dashboard | Enhanced Monitoring Dashboard summary (ADR 0022) |
+| schedules.py | schedules | cron schedule CRUD (A7) |
+| shares.py | shares | suite share grant/revoke |
+| orchestration.py | orchestration | ADF/Airflow/dbt webhook receivers (machine-to-machine, HMAC/SP auth, no Azure AD user) |
+| trigger_bindings.py | trigger-bindings | suite-run trigger binding CRUD |
+| admin.py | (admin) | workspace-admin read endpoints (all-suites/all-users/access overview), gated by `require_workspace_admin` |
+
+A new `/assets` or `/lineage` router would slot in analogously to `suites.py`/`connections.py` — same `include_router(..., prefix="/api/v1")` pattern in main.py.
+
+**Authz scoping** (two orthogonal mechanisms):
+- **Per-suite ladder** — `app/services/suite_authz.py`: `effective_permission()` (suite_authz.py:72-85) ranks `owner` (suite.created_by) &gt; `admin` (implicit for workspace-admins, ADR 0027) &gt; share row (`edit`&gt;`view`) &gt; None. Gate function `require_permission(session, suite_id, user_id, minimum=...)` (suite_authz.py:113-137) 404s if no access (hides existence), 403s if below minimum. Any endpoint on suite-scoped resources (checks, schedules, notifications) uses this.
+- **Workspace-admin** — `app/core/auth.py:229-258`: `is_workspace_admin(user)` checks email against `WORKSPACE_ADMIN_EMAILS` config allowlist (config.py:169-185); `require_workspace_admin` is a FastAPI dependency (auth.py:244) used to gate `admin.py`'s workspace-wide endpoints (403, not 404 — existence isn't suite-scoped there).
+- For a new assets/lineage layer: if assets are connection-scoped (not suite-owned), likely needs its own authz rule (e.g., visible to anyone who can see the connection, or gated to workspace-admin) rather than reusing `suite_authz` directly, since connections have no owner/share model today (only `created_by` on `Connection`, no `ConnectionShare`).
+
+## 5. Alembic
+
+- **21 migration files** in `alembic/versions/` (confirmed via linear revision-chain walk: exactly one file has no other migration pointing `down_revision` at it → single head, no branching).
+- **Latest head revision: `e716a1b2c3d4`** — `alembic/versions/e716a1b2c3d4_widen_connection_type_for_iceberg.py:35-36` (down_revision = `c605d1e2f3a4`), message: "widen connection type-set for the native iceberg datasource".</result>
+<usage><subagent_tokens>58818</subagent_tokens><tool_uses>30</tool_uses><duration_ms>156152</duration_ms></usage>
+</task-notification>
+
+---
+
+yeah go ahead as planned
+
+---
+
+<task-notification>
+<task-id>afa5b6613d81dc039</task-id>
+<tool-use-id>toolu_01P1LRaLT1uveRLjbczms84E</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/aef9f6a4-f51b-4006-84c5-e914ce549fd6/tasks/afa5b6613d81dc039.output</output-file>
+<status>completed</status>
+<summary>Agent "Compare lineage catalog integrations" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I don't need to poll — I'll just wait for the completion notifications from the 5 background research agents (openlineage-python client, Marquez, DataHub, OpenMetadata, and Purview/Airflow/dbt) since they'll arrive automatically. I'll synthesize the full cited report once all five report back.</result>
+<usage><subagent_tokens>68600</subagent_tokens><tool_uses>7</tool_uses><duration_ms>92439</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a959555488b84f437</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/aef9f6a4-f51b-4006-84c5-e914ce549fd6/tasks/a959555488b84f437.output</output-file>
+<status>completed</status>
+<summary>Agent "Gather repo design-doc context" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I now have all the material needed. Here is the compiled repo context for drafting the design doc + ADR for issue #596 ("assets + lineage + incidents").
+
+## 1. Sibling design docs — house style to match
+
+Two files, both under `docs/` (not `context/`):
+
+- `/Users/arijit/Coding/Python/DataQ/docs/post-v1-admin-ui-notes.md` — **78 lines**
+- `/Users/arijit/Coding/Python/DataQ/docs/post-v1-dq-intelligence-notes.md` — **137 lines**
+
+**Common heading structure** (docs/post-v1-admin-ui-notes.md:1-13, docs/post-v1-dq-intelligence-notes.md:1-14):
+```
+# Post-v1 notes — &lt;Area&gt; (deferred design)
+
+&gt; **Status: deferred to post-v1.** Captured so the design intent isn't lost. &lt;why-not-v1
+&gt; paragraph, 3-5 sentences, cites market comparables / gap ID&gt;
+&gt;
+&gt; Related issues: **#NNN** (...), milestoned _..._.
+
+## &lt;Section 1 — e.g. "v1 access model (what actually ships)"&gt;
+- bullet list, **bold lead-in term:** description
+
+## Post-v1: &lt;sub-area&gt; (→ #NNN)
+- narrative bullets, some with **Intent:** / **Decision (per the strategic review):** callouts
+
+## &lt;numbered or thematic sections continue...&gt;
+## Guiding principle for the post-v1 pickup / ## Guiding principle
+&lt;closing paragraph tying it back to the v1 loop / anti-scope-creep framing&gt;
+```
+The dq-intelligence doc instead uses `## The four themes` → `### 1. ...` `### 2. ...` (numbered sub-`###` themes each with **Feasibility: High/Med · Effort: S/M/L** header line), then `## Sequencing` (ASCII diagram), `## LLM integration model (proposed — not locked)`, `## Guiding principle`.
+
+**Style notes to replicate:** heavy cross-linking to issue numbers and ADRs in prose (not just tables); bold **Decision (rejected/chosen)** callouts; a closing "Guiding principle" section; length **~80-140 lines**, terse but dense — this is the target length for the new design doc (e.g. `docs/post-v1-assets-lineage-incidents-notes.md` or similar, doc it should also get linked from `context/post-v1-roadmap.md` Theme 2/3/5/14 the way the other two are).
+
+## 2. ADR conventions
+
+`/Users/arijit/Coding/Python/DataQ/docs/adr/README.md` defines the template (lines ~9-38):
+- Filename: `NNNN-short-kebab-slug.md`
+- Frontmatter: **Status** (Proposed/Accepted/Deprecated/`Superseded by ADR-NNNN`), **Date** (`YYYY-MM-DD`), **Deciders**, optional **Consulted**/**Supersedes**/**Superseded by**/**Amends**
+- Sections: `## Context`, `## Decision`, `## Consequences`, `## Alternatives considered`, optional `## Related`
+- "Keep each ADR short — 1-2 pages. If it grows past that, the decision is probably two decisions."
+
+Recent ADR example, `0029-dbt-orchestration-provider.md:1-71` (70 lines total) — full Context/Decision(with sub-`###` + tables)/Consequences(Positive/Negative/Neutral bullets)/Alternatives considered/Related. ADR 0033 (53 lines) is a good compact template for an authz-adjacent ADR (numbered Decision list + a capability matrix table + Positive/Negative-accepted split in Consequences).
+
+**Next free ADR number: `0034`** (0033 is the last used one; 0015 is the only reserved/pending slot, listed separately in README's "Pending" table).
+
+**Index line format** — verbatim examples from `docs/adr/README.md`:
+```
+| [0027](0027-suite-permission-model-workspace-admin.md) | Suite permissions — workspace-admin is implicit `admin` on every suite (governance/break-glass); drop grantable suite-admin; normal users get owner/edit/view; workspace-admin gets workspace-wide visibility (supersedes #411/#412) | Accepted (amended by 0033 — admin source → stored `users.role`; Viewer share-cap) |
+| [0029](0029-dbt-orchestration-provider.md) | dbt as a **third** `OrchestrationProvider` (mirrors the Airflow callback model 0007) — HMAC webhook + artifacts poll of `run_results.json` (adls/s3/file); binds to dbt's universal surface (no host API); job-level grain; migration widens the connection-type/provider/dedup value-sets (#611) | Accepted |
+| [0033](0033-workspace-roles-rbac.md) | Workspace roles — **Admin / Member / Viewer** as stored `users.role` on the two-axis model (role × per-suite ladder, ladder untouched); **connection mutations Admin-only** (closes the workspace-global hole, breaking for Members); Viewer capped at `view`; `WORKSPACE_ADMIN_EMAILS` demotes to bootstrap/break-glass; in-app role management + last-admin guard; amends 0027 (admin source) + 0032 (signup default role) (#744) | Accepted |
+```
+Also a "Pending (to be written in their respective weeks)" table exists for design-captured-but-unwritten ADRs (e.g. `| 0015 | Two-connection check model ... | When reconciliation build starts (post-v1) |`) — worth adding a row there for the eventual asset/lineage/incident ADR if it's not written same-cycle as the design doc.
+
+## 3. Theme 2 — deterministic evidence card (context/post-v1-roadmap.md:123-153)
+
+Full text (context/post-v1-roadmap.md:132-138), the load-bearing paragraph:
+
+&gt; **1. Deterministic evidence card (no LLM anywhere).** On a `fail`/`critical` result, a Celery task assembles the dossier from existing data: the upstream pipeline run (status + duration/delay vs. its own history), the check's `metric_value` trend ("sudden vs. slow drift"), a profile-diff of the failing batch vs. the last passing one (which segment broke), sibling checks on the same table, and downstream suites (blast radius). Ships as a structured card on the alert via the existing `ResultPublisher` seam. Most of the triage value lives here, with zero new dependencies — **build this first**.
+
+Evidence-card fields/contents (this is the incident payload):
+- Upstream pipeline run: status + duration/delay vs. its own history (uses `triggered_by`/`pipeline_runs`↔`runs` correlation)
+- The check's `metric_value` trend — sudden-vs-slow drift classification (rides ADR 0012's numeric metric storage)
+- Profile-diff of the failing batch vs. last passing batch (which column/segment broke) — uses the column profiler
+- Sibling checks on the same table
+- Downstream suites (blast radius)
+- Delivery: a structured card riding the existing `ResultPublisher` seam
+
+Layer 2 (LLM narrative, optional, fail-open) is separate — rides the same admin-configured/default-off/BYO-credential `LLMProvider` seam as Theme 2's authoring work; context is schema-only + redacted samples; "no LLM configured → layer 1 still ships in full." The doc explicitly says (line 150-153): "This is the **incident-narrative half of gap G-d** ... it compounds with Theme 1 (anomaly baselines sharpen the dossier) and Theme 5 (the card enriches the alert payload). No issues filed yet — file the two layers as separate issues when picked up (layer 1 has no LLM dependency and can ship alone)."
+
+## 4. Theme 5 — alerting depth (context/post-v1-roadmap.md:283-298)
+
+v1 already ships: `ResultPublisher` seam with Teams+Slack+email, severity routing, **dedup**, snooze. Alert-vs-incident relationship for the new design: alerts are the existing per-result notification; an **incident** is a new higher-level object that alerts/dedup logic will feed into (the doc explicitly frames this — see #596 issue body below: "dedup relationship to alerts").
+
+Relevant rows (context/post-v1-roadmap.md:290-298):
+- `#386` — tie `dedup._RANK` to a shared severity source (dedup currently lives in alerting, not incidents)
+- `#387` — `suppression.py` early-return on `run.status == 'failed'`
+- No-issue-yet: **generic HMAC-signed outbound-webhook `ResultPublisher`** — signed JSON POST mirroring the Airflow ingest-signing pattern
+- No-issue-yet: **per-destination payload templates + auth header** on the webhook publisher — "a thin template layer gives **create-only coverage of PagerDuty (Events API v2), Opsgenie, ServiceNow (inbound REST), and Jira (Automation inbound webhooks) with zero vendor-specific code** in DataQ. Bidirectional/ITSM-grade sync is Theme 14, deliberately separate."
+
+Tier-1 vs tier-2 distinction: Theme 5's PagerDuty/ITSM item above is explicitly **create-only, tier-1** (fire-and-forget webhook). Theme 14 has a separate, deeper item — `context/post-v1-roadmap.md:501` **"Incident / ITSM — tier 2, bidirectional"** (I did not pull full text but it's the natural "tier 2" counterpart worth citing as the deferred bidirectional-sync path; recommend reading lines 501-518 directly if the ADR needs to draw that boundary precisely).
+
+## 5. Authz summaries (ADR 0027 + ADR 0033)
+
+**ADR 0027** (`docs/adr/0027-suite-permission-model-workspace-admin.md`): Redefines the per-suite ladder as `view &lt; edit &lt; admin &lt; owner`, where `owner` is the immutable creator (exactly one per suite) and `admin` is no longer a grantable peer tier — instead it's computed implicitly for **workspace-admins** (governance/break-glass superuser, sees and can act on every suite: manage shares, delete, edit, run, read — including failing-sample data). Normal users can only be granted `edit`/`view`, eliminating the admin-revokes-admin escalation edge; workspace-admins additionally get workspace-wide visibility on Dashboard/Suites/Results, not just the read-only `/admin` page (superseding #411/#412). **Asset-view authz must compose with this**: an asset page aggregates across suites, so per ADR 0027's discipline it must still filter to the caller's suite grants and use 404-existence-hiding for unshared suites' data — it can't shortcut through a separate asset-level ACL.
+
+**ADR 0033** (`docs/adr/0033-workspace-roles-rbac.md`): Adds a second, coarse axis — three stored `users.role` values (`admin | member | viewer`, server-default `member`) that compose with (never replace) the fine per-suite ladder: a Member with no share on a suite still can't see it. The normative capability matrix gates suite-creation/edit-share-eligibility at Member+, caps Viewers at `view` (belt-and-braces: rejected at grant time AND capped in `effective_permission`), and makes **connection mutations Admin-only** (closing a workspace-global hole where any authenticated user could delete/re-credential shared connections). `WORKSPACE_ADMIN_EMAILS` demotes to bootstrap/break-glass (`is_workspace_admin` = stored role OR allowlist). **Implication for the new doc**: any new asset-entity endpoints/roles must decide where they sit on this matrix — e.g. "who can see an asset" = the suite-ladder axis (unchanged), "who can manage asset metadata/ownership routing" is a new capability that should probably gate on `edit`/`admin` per composing-suite, analogous to how connection-mutation was added as a new Admin-only row rather than a new axis.
+
+## 6. docs/progress.md — Week tables
+
+**W3 row-format example** (docs/progress.md:188-201), verbatim structure:
+```
+| Status | Task | Theme / gap |
+|---|---|---|
+| ⬜ | [#590](https://github.com/TheurgicDuke771/DataQ/issues/590) Azure wind-down: G-i harness teardown, `terraform destroy`, credential retirement, state disposition (harness compute already stopped 2026-07-04 — wake via `harness_window.sh`, see the #590 runbook) | ops / G-i |
+```
+**W3 exit-gate text verbatim** (docs/progress.md:203-206):
+&gt; **Exit gate:** the Azure exit is deliberate and complete — final live E2E green BEFORE teardown, #590 done (nothing billable remains except by choice), a fresh clone reaches a green local E2E with zero Azure dependencies (#591), and the frontend refactor batch is merged. _(Refactor batch + #716 done 2026-07-08; the three wind-down rows remain, gated on the actual lapse.)_
+
+**W6 rows for #596/#310 verbatim** (docs/progress.md:250, 260):
+```
+| ⬜ | [#596](https://github.com/TheurgicDuke771/DataQ/issues/596) Incident &amp; lineage **design doc** (incident objects, asset-entity anchoring, OpenLineage-first pull) → files next cycle's phase-1 issues | G-d |
+```
+```
+| ⬜ | [#310](https://github.com/TheurgicDuke771/DataQ/issues/310) History/audit strategy ADR (audit log + soft-delete decision) — pairs with the #596 design doc (mapped 2026-07-04) | Theme 6 / ADR 0020 |
+```
+**W6 exit gate** (docs/progress.md:263-266):
+&gt; **Exit gate:** a deliberately oversized local file / UC table runs under the memory cap with sampled-ness recorded (vs the #587 baseline); perf + hardening/small-bug batches green; the G-d design doc (#596) + audit ADR (#310) merged with next-cycle phase-1 issues filed; retro written; `v1.1.0` tagged.
+
+## 7. Issue-filing conventions
+
+No explicit "every issue gets label(s)+milestone" rule text in `CONTRIBUTING.md`/`docs/contributing.md`, but `CLAUDE.md:286` states the standing convention explicitly: *"every scheduled issue carries an Acceptance-criteria checklist, every milestone its Exit gate."* CONTRIBUTING.md:15 — rule 3, defects get a GitHub issue first (`gh issue create`), PR includes `Fixes #N`.
+
+**Label set** (`gh label list`, full repo set): `bug`, `documentation`, `duplicate`, `enhancement`, `good first issue`, `help wanted`, `invalid`, `question`, `wontfix`, `security`, `priority/P0`..`P3`, `week-1-carryover`, `week-2-carryover`, `epic`, `dependencies`, `refactor`, `test`, `ci`, `ops`.
+
+Observed pattern on recent feature/design issues (each got exactly **one type label + one priority label + one milestone**, no exceptions seen):
+- `#592` (schema_drift build issue) → `enhancement` + `priority/P1`, milestone "v1.1 Week 4"
+- `#596` (this design-doc issue itself) → `documentation` + `priority/P2`, milestone "v1.1 Week 6"
+- `#310` (audit-strategy ADR issue) → `enhancement` + `priority/P3`, milestone "v1.1 Week 6"
+
+**`gh issue view 596`** full body (this is the actual scope statement for the new doc/ADR):
+&gt; Gap G-d (post-v1-roadmap): no incident workflow, no lineage, no ownership routing — "this is what DQ products are bought for". The recommended v1.1 sequence closes with the *design doc* (build is a later cycle).
+&gt;
+&gt; **Scope — a design doc (docs/ sibling of the admin-ui / dq-intelligence notes), no code:**
+&gt; - **Incident objects:** lifecycle (open→ack→resolved), dedup relationship to alerts (Theme 5), anchoring to the **asset entity** (Theme 3's Asset-first IA phase 1 — this doc should pin down that dependency and the OpenLineage dataset-naming identity).
+&gt; - **Lineage:** pull-don't-build per Theme 14 (OpenLineage emission first, catalog pull for blast radius) — decide the first slice.
+&gt; - **Ownership routing:** who gets the incident (suite owner today; asset owner later).
+&gt; - **RCA tie-in:** the Theme 2 deterministic evidence card is the incident payload (layer 1, no LLM).
+&gt; - Output: the doc + the filed phase-1 issues for the next cycle (asset entity migration first).
+&gt;
+&gt; Explicitly a thinking deliverable — timeboxed, lands as a docs PR.
+&gt;
+&gt; ## Acceptance criteria
+&gt; - [ ] Design doc merged: incident objects (lifecycle, dedup vs alerts), asset-entity anchoring (OpenLineage naming), lineage pull-first slice, ownership routing, RCA-card-as-payload
+&gt; - [ ] Phase-1 issues for the next cycle filed (asset entity migration first)
+
+## Bonus — Theme 3 Asset-first IA (context/post-v1-roadmap.md:205-244), directly load-bearing for this doc
+
+This section is the design backbone the #596 doc needs to build on:
+- **Two-axis model**: assets = what users browse/reason about (health, lineage, incidents, blast radius); suites remain the execution unit (scheduling, triggers, notifications, sharing, authz-scoping) — explicitly because "authz is suite-scoped (ADR 0027) and re-keying permissions to assets is a painful migration for little gain."
+- **Enabling primitive**: a first-class `assets` table — "Lineage needs asset *nodes*; the asset page needs asset *identity*; G-d incidents need something to *attach to*; governance-catalog sync (Theme 14) needs an entity to *map to*. One migration serves all four."
+- **Asset identity = OpenLineage dataset naming spec (namespace + name)**, adopted as the canonical key from day one — resolves DEV/QA connection duplicates, flat-file patterns, UC three-level names, and makes Theme-14 OpenLineage interop automatic.
+- **Four phases** (lines 229-241): (1) asset entity + resolution migration, (2) read-only asset view (authz: must filter to caller's suite grants, same 404-no-leak discipline), (3) lineage attach + RCA/incident anchoring, (4) navigation inversion (sidebar leads with Assets; suites demote to "execution groups"). "No issues filed yet — phase 1 files first when picked up."
+
+This directly matches and elaborates the #596 issue's "anchoring to the asset entity ... this doc should pin down that dependency and the OpenLineage dataset-naming identity" requirement.</result>
+<usage><subagent_tokens>67378</subagent_tokens><tool_uses>25</tool_uses><duration_ms>141468</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a0e1e7b81231cb132</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/aef9f6a4-f51b-4006-84c5-e914ce549fd6/tasks/a0e1e7b81231cb132.output</output-file>
+<status>completed</status>
+<summary>Agent "Research dbt manifest lineage mapping" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## PART A — dbt `manifest.json` as a lineage source
+
+### 1. Where the dependency graph lives
+
+| Key | What it holds |
+|---|---|
+| `nodes` | Dict of all **models, tests, seeds, snapshots, analyses, operations** (`on-run-start`/`on-run-end` hooks land here too), keyed by `unique_id`. Each entry carries `resource_type`, `depends_on.nodes` (+ `depends_on.macros`), `database`, `schema`, `alias`, `name`, `relation_name`, `config.materialized`, `package_name`, `path`/`original_file_path`, `checksum`, `columns`, `description`. |
+| `sources` | Dict of source-table defs, same identity shape (`database`, `schema`, `name`, `relation_name`) but no `depends_on` (sources are graph roots). |
+| `parent_map` | `unique_id → [first-order parent unique_ids]` for every node (models, tests, sources-as-keys don't appear as keys since they have no parents, but they appear as *values*). |
+| `child_map` | Inverse of `parent_map`: `unique_id → [first-order children]`. This is the fast way to walk a source or model **forward**. |
+| `disabled` | Nodes marked `enabled: false` — excluded from `nodes`/`sources` but listed here; usually irrelevant for lineage. |
+| `metadata.dbt_schema_version` | A URL, e.g. `https://schemas.getdbt.com/dbt/manifest/v12.json` — self-describing version pointer. |
+
+`parent_map`/`child_map` are the cheapest way to build a graph without re-deriving it from every node's `depends_on.nodes`, since they're already flattened and include sources.
+
+**`unique_id` format:** `&lt;resource_type&gt;.&lt;package_name&gt;.&lt;name&gt;` for models/sources (source ids are `source.&lt;package&gt;.&lt;source_name&gt;.&lt;table_name&gt;`, one dot-segment deeper), tests append a short hash suffix, e.g. `test.dataq_lineage.not_null_mart_order_revenue_order_number.7a14e08b69`. This is confirmed against our own project's manifest (below).
+
+**Physical identity** — `database` + `schema` + `alias` (the actual object name after any `alias()`/config override) together give the physical relation; `relation_name` is dbt's own precomputed `database.schema.alias` string (quoted per adapter), so in practice **`relation_name` alone is the table-level lineage node key** and you don't need to reconstruct it from the three parts yourself — except for ephemeral models, where `relation_name` is `null` (see §3).
+
+Source: [Manifest JSON — dbt Developer Hub](https://docs.getdbt.com/reference/artifacts/manifest-json), [dbt JSON Schemas](https://schemas.getdbt.com/).
+
+### 2. Schema versioning — verified against actual dbt-core source, not just docs
+
+Docs pages were vague/contradictory on the exact version↔release mapping, so I pip-downloaded the actual `dbt-core` wheels for 1.5.0 → 1.10.0 and grepped the `@schema_version("manifest", N)` decorator on the `WritableManifest` class (source of truth — this literally sets what gets written):
+
+| dbt-core version | manifest schema version |
+|---|---|
+| 1.5.x | v9 |
+| 1.6.x | v10 |
+| 1.7.x | v11 |
+| **1.8.x – 1.11.x (confirmed 1.9/1.10/1.11 all ship the identical `dbt/artifacts/schemas/manifest/v12/manifest.py`)** | **v12** |
+
+Our local test project's actual `target/manifest.json` (built with dbt-core 1.11.12) has `metadata.dbt_schema_version = "https://schemas.getdbt.com/dbt/manifest/v12.json"` — consistent.
+
+**Practical takeaway:** manifest v12 has been stable across dbt-core 1.8 through at least 1.11 (3+ years of minor releases) — a DataQ reader targeting v12 is safe for "1.8→current" without churn. Detect the version by parsing the last path segment of `metadata.dbt_schema_version` (`.../manifest/v12.json` → `12`) and gate on it (warn/best-effort-parse below v10, since `parent_map`/`child_map`/`depends_on.nodes` shapes are the same back to early versions and are extremely unlikely to change — they're load-bearing for dbt's own `--select state:modified` and docs site).
+
+**Recommended minimal stable subset to parse** (won't break across 1.7→1.11+):
+- `metadata.dbt_schema_version`, `metadata.dbt_version` (for logging/diagnostics)
+- `nodes[*].resource_type`, `.unique_id`, `.database`, `.schema`, `.alias`, `.relation_name`, `.config.materialized`, `.depends_on.nodes`
+- `sources[*].database`, `.schema`, `.name`, `.relation_name`
+- `parent_map` / `child_map` (skip re-deriving from `depends_on` — these are provided pre-flattened)
+- Do **not** depend on `compiled_code`, `raw_code`, `columns`, `description`, `docs`, `meta` — these are large, optional for lineage, and the parts most likely to shrink/move (see the size discussion below and the open dbt-core discussion to split descriptions out of manifest.json).
+
+Sources: dbt-core wheels 1.5.0–1.10.0 (`dbt/contracts/graph/manifest.py`, `dbt/artifacts/schemas/manifest/v12/manifest.py`), [Manifest JSON — dbt Developer Hub](https://docs.getdbt.com/reference/artifacts/manifest-json).
+
+### 3. Sources vs models vs tests — table-level edges, and collapsing ephemeral models
+
+- **Sources** are graph *roots* — they never appear as a `key` in `parent_map` (no parents), only as values in other nodes' parent lists, and as keys in `child_map`.
+- **Models** appear in `nodes` with `resource_type: "model"`; their `depends_on.nodes` lists immediate parents (sources and/or other models).
+- **Tests** (`resource_type: "test"`) are graph *leaves* in a lineage sense — they depend on one or more models/sources but nothing depends on them. For table-level lineage they should be filtered out entirely (they don't produce a table); they're only useful if you also want "which model has data-test coverage" for DQ purposes.
+- **`operation`** resource type appears for `on-run-start`/`on-run-end` hooks (our own project has 6 of these from the `grant ...` hooks in `dbt_project.yml`) — also filter out, not lineage-relevant.
+
+**Deriving table-level edges:** walk `parent_map` per model/source node, filtering `nodes` to `resource_type in {model, seed, snapshot}` ∪ all of `sources`, and emit `(parent.relation_name, node.relation_name)`.
+
+**Ephemeral models** — verified in dbt-core source (`dbt/contracts/graph/nodes.py`):
+```python
+@property
+def is_ephemeral(self):
+    return self.config.materialized == "ephemeral"
+```
+An ephemeral model gets **no physical relation** — it's inlined as a CTE into whatever references it, and its `relation_name` is `null`. To collapse it out of a table-level edge list: when building edges, if a parent (or the node itself) `is_ephemeral`, don't emit an edge for it — instead recurse through *its* `depends_on.nodes` (via `parent_map`) until you reach a non-ephemeral model or a source, and connect directly to that. This is exactly the same recursive-substitution dbt itself does when it inlines ephemeral CTEs at compile time.
+
+(Not an issue in our local test project — all 6 models are `view` or `dynamic_table`, none `ephemeral`.)
+
+### 4. Size / streaming concerns
+
+- Our own 6-model / 4-source / 5-test project produces a **611 KB** `manifest.json` (dominated by `compiled_code`/`raw_code` per node, not the graph metadata).
+- Real-world large projects: a GitHub issue/discussion thread reports **~3,500 models → ~75 MB** manifests, with the dbt team acknowledging the file "necessarily scales linearly with objects + lines of code," and an open discussion (dbt-core #11080) proposing splitting `description` text out of the manifest because it dominates size in well-documented large projects. Astronomer/Cosmos has filed perf issues where parsing a large manifest per-worker adds 50s+ cold-start latency.
+- **Implication for DataQ:** a lineage reader should (a) stream-parse (`ijson` or similar) rather than `json.load()` the whole file when project size is unknown/large, and (b) only pull the minimal-subset fields from §2 — never hold `compiled_code`/`raw_code`/`docs` in memory for the whole graph. dbt's own roadmap direction (Fusion / dbt "2.0") is moving toward Parquet artifacts for exactly this reason — worth a forward-looking note in the design doc, but not needed for the current v12 JSON path.
+
+Sources: [Slim down manifest.json — dbt-core #2169](https://github.com/fishtown-analytics/dbt/issues/2169), [Split descriptions from manifest.json — dbt-core discussion #11080](https://github.com/dbt-labs/dbt-core/discussions/11080).
+
+---
+
+## PART B — the concrete test bed (`~/Coding/Python/DataQ-harness/dbt/`)
+
+Project: `dataq_lineage` (`dbt_project.yml`), `require-dbt-version: ["&gt;=1.9.0","&lt;2.0.0"]`. Built target actually present at `dbt/target/manifest.json`, produced by **dbt-core 1.11.12 → schema v12** (ground truth pulled directly from the file, not inferred).
+
+Profile (`dbt/profiles.yml`): Snowflake, role `DATAQ_LOADER`, database from `SNOWFLAKE_DATABASE` env or default **`DATAQ_DB`**. Custom `generate_schema_name` macro (`dbt/macros/generate_schema_name.sql`) forces schema names to the literal upper-cased `+schema` config value (not dbt's default `target_schema_custom_schema`), which is why the layers land exactly in `ANALYTICS_STG` / `ANALYTICS` rather than something like `ANALYTICS_analytics_stg`.
+
+### Nodes
+
+**Sources** (`database.schema.table`, all `DATAQ_DB.RETAIL.*`):
+- `DATAQ_DB.RETAIL.orders_header` — loaded by ADF event pipeline
+- `DATAQ_DB.RETAIL.order_lines` — loaded by Airflow schedule
+- `DATAQ_DB.RETAIL.customers` — loaded by ADF timer pipeline
+- `DATAQ_DB.RETAIL.products` — loaded by Airflow schedule
+
+**Staging models** (`DATAQ_DB.ANALYTICS_STG.*`, materialization `view`):
+- `stg_customers`
+- `stg_order_lines`
+- `stg_orders`
+- `stg_products`
+
+**Mart models** (`DATAQ_DB.ANALYTICS.*`, materialization `dynamic_table`, `target_lag=1 hour`, warehouse `DATAQ_WH`):
+- `mart_order_revenue` — has `not_null`/`unique` tests on `order_number`, `not_null` on `order_ts`
+- `mart_customer_orders` — has `not_null`/`unique` tests on `customer_id`
+
+No ephemeral models exist in this project (all nodes are `view` or `dynamic_table`), so no collapsing is needed here — a straightforward 3-tier chain.
+
+### Edges (table-level lineage)
+
+```
+DATAQ_DB.RETAIL.customers      -&gt; DATAQ_DB.ANALYTICS_STG.stg_customers
+DATAQ_DB.RETAIL.order_lines    -&gt; DATAQ_DB.ANALYTICS_STG.stg_order_lines
+DATAQ_DB.RETAIL.orders_header  -&gt; DATAQ_DB.ANALYTICS_STG.stg_orders
+DATAQ_DB.RETAIL.products       -&gt; DATAQ_DB.ANALYTICS_STG.stg_products
+
+DATAQ_DB.ANALYTICS_STG.stg_orders      -&gt; DATAQ_DB.ANALYTICS.mart_order_revenue
+DATAQ_DB.ANALYTICS_STG.stg_order_lines -&gt; DATAQ_DB.ANALYTICS.mart_order_revenue
+
+DATAQ_DB.ANALYTICS_STG.stg_customers -&gt; DATAQ_DB.ANALYTICS.mart_customer_orders
+DATAQ_DB.ANALYTICS_STG.stg_orders    -&gt; DATAQ_DB.ANALYTICS.mart_customer_orders
+```
+
+This is confirmed both from reading the model SQL (each staging model does `select * from {{ source('retail', X) }}`; each mart does `{{ ref('stg_X') }}` joins) **and** from the real generated `manifest.json`'s `depends_on.nodes` / `parent_map` / `child_map` — they agree exactly (e.g. `child_map["source.dataq_lineage.retail.orders_header"] == ["model.dataq_lineage.stg_orders"]`, `parent_map["model.dataq_lineage.mart_order_revenue"] == ["model.dataq_lineage.stg_order_lines", "model.dataq_lineage.stg_orders"]`).
+
+`mart_order_revenue.order_ts` is explicitly commented as the freshness-monitor anchor column, and `reconciled_subtotal` vs `subtotal` is an intentional intra-order value-reconciliation exposure — both are candidate DataQ check targets referenced in the model SQL comments.
+
+### Artifact upload path
+
+`dbt/upload_artifacts.py` (invoked from `dbt/run.sh` after every `dbt build`, success or failure) uploads `manifest.json` + `run_results.json` to ADLS when `DBT_ARTIFACTS_URI` (format `adls://&lt;account&gt;/&lt;filesystem&gt;/&lt;prefix&gt;`) is set:
+- `&lt;prefix&gt;/runs/&lt;UTC-timestamp&gt;/{manifest.json,run_results.json}` — timestamped archive
+- `&lt;prefix&gt;/latest/{manifest.json,run_results.json}` — overwritten every run, the stable pointer for a poller
+
+Per CLAUDE.md/memory, the deployed prefix is `raw/dbt`, i.e. artifacts land at ADLS `raw/dbt/latest/manifest.json` — this is the file #596 (lineage ingestion) and #611 (dbt `OrchestrationProvider` poll of `run_results.json`) are designed to consume. `run.sh` uploads artifacts unconditionally regardless of the `dbt build` exit code specifically so a failed run's `run_results.json` is still visible to a failure-observing poller.
+
+### Key file paths (all under `~/Coding/Python/DataQ-harness/dbt/`)
+- `dbt_project.yml` — layering config (`+materialized`, `+schema`) and `on-run-end` grants
+- `profiles.yml` — Snowflake connection (`DATAQ_LOADER` role, `DATAQ_DB` database)
+- `models/staging/_retail__sources.yml` — the 4 source-table defs
+- `models/staging/stg_{customers,orders,order_lines,products}.sql` — staging views
+- `models/marts/_marts__models.yml` — mart tests (`not_null`/`unique`)
+- `models/marts/mart_{order_revenue,customer_orders}.sql` — dynamic-table marts
+- `macros/generate_schema_name.sql` — schema-name override macro
+- `upload_artifacts.py` / `run.sh` — artifact publish path
+- `target/manifest.json` — the actual built artifact used to verify all of the above</result>
+<usage><subagent_tokens>79603</subagent_tokens><tool_uses>34</tool_uses><duration_ms>239841</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>afa5b6613d81dc039</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/aef9f6a4-f51b-4006-84c5-e914ce549fd6/tasks/afa5b6613d81dc039.output</output-file>
+<status>completed</status>
+<summary>Agent "Compare lineage catalog integrations" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All claims verified. Here is the full report.
+
+---
+
+# Lineage integration options for DataQ — research report
+
+**Premise:** DataQ pulls lineage from external systems (for blast-radius questions like "which downstream tables are affected by this failing check?") and emits OpenLineage events (so external catalogs can display DataQ's quality results), rather than building its own lineage graph. Constraints: MIT-licensed project (no GPL/AGPL/SSPL/BUSL/Elastic/source-available deps per ADR 0031), vendor-neutral, local-first (docker-compose reference stack), small team.
+
+---
+
+## 1. OpenLineage emission from DataQ (`openlineage-python`)
+
+**License — Apache-2.0, clean.** The OpenLineage repo LICENSE is Apache-2.0 ([github.com/OpenLineage/OpenLineage/blob/main/LICENSE](https://github.com/OpenLineage/OpenLineage/blob/main/LICENSE)) and PyPI declares `Apache-2.0` for `openlineage-python`, latest **1.51.0 released 2026-07-06** — actively maintained ([pypi.org/project/openlineage-python](https://pypi.org/project/openlineage-python/)). The project is an LF AI &amp; Data **Graduate** project (since Sept 2023) ([lfaidata.foundation blog](https://lfaidata.foundation/blog/2023/09/20/lf-ai-data-foundation-announces-graduation-of-openlineage-project/)). Fully compatible with DataQ's MIT policy.
+
+**Transports.** HTTP (retry + compression), Console (the default when unconfigured), File (local or S3/GCS/Azure via the `[fsspec]` extra), Kafka (`[kafka]` extra), plus Composite, Transform, Async-HTTP, and custom transports. Config via constructor, `openlineage.yml`, or env vars — legacy `OPENLINEAGE_URL`/`OPENLINEAGE_API_KEY` or the namespaced `OPENLINEAGE__TRANSPORT__TYPE=http` style; `OPENLINEAGE_DISABLED` is the global kill switch ([openlineage.io/docs/client/python/configuration](https://openlineage.io/docs/client/python/configuration)). The Console default + `OPENLINEAGE_DISABLED` means DataQ can ship the emitter dark, off-by-default, with zero infra dependency.
+
+**Event model.** `RunEvent` = one observation of a `Run` (UUID `runId`) of a `Job` (namespace + name) with `inputs`/`outputs` `Dataset` lists; `eventType` ∈ START/RUNNING/COMPLETE/ABORT/FAIL/OTHER — the spec expects exactly one START and one terminal event per run ([openlineage.io/docs/spec/object-model](https://openlineage.io/docs/spec/object-model), schema: [spec/OpenLineage.json](https://raw.githubusercontent.com/OpenLineage/OpenLineage/main/spec/OpenLineage.json)).
+
+**Effort to emit "DQ suite run X read dataset Y" — low, verified code shape** ([openlineage.io/docs/client/python/usage](https://openlineage.io/docs/client/python/usage)):
+
+```python
+from openlineage.client import OpenLineageClient
+from openlineage.client.event_v2 import Dataset, Job, Run, RunEvent, RunState
+from openlineage.client.uuid import generate_new_uuid
+
+client = OpenLineageClient()  # config from env/openlineage.yml
+job = Job(namespace="dataq", name="suite.retail_orders")
+run = Run(runId=str(generate_new_uuid()))
+client.emit(RunEvent(eventType=RunState.START, eventTime=..., run=run, job=job, producer="dataq"))
+client.emit(RunEvent(eventType=RunState.COMPLETE, eventTime=..., run=run, job=job, producer="dataq",
+                     inputs=[Dataset(namespace="snowflake://acct", name="RETAIL.ORDERS")]))
+```
+
+This maps 1:1 onto DataQ's existing run lifecycle (`runs` table start/complete/error) — the emit hooks belong in `run_service`. The only design work is the **dataset naming convention** (OpenLineage namespace/name per datasource type, e.g. `snowflake://&lt;account&gt;` + `db.schema.table`), which the spec standardizes per platform.
+
+**Quality facet — purpose-built for DataQ's use case.** `DataQualityAssertionsDatasetFacet` (facet key `dataQualityAssertions`, schema [openlineage.io/spec/facets/1-1-0/DataQualityAssertionsDatasetFacet.json](https://openlineage.io/spec/facets/1-1-0/DataQualityAssertionsDatasetFacet.json)) attaches an `assertions[]` array to an input dataset: required `assertion` (e.g. `not_null`, `row_count`) + `success` (bool); optional `column`, `name`, `severity` (`error`|`warn` — maps directly to DataQ's severity tiers), `description`, `expected`, `actual` ([facet docs](https://openlineage.io/docs/spec/facets/dataset-facets/data_quality_assertions)). dbt tests and the Great Expectations integration (`OpenLineageValidationAction` on a GX checkpoint) already populate it ([GX integration docs](https://openlineage.io/docs/integrations/great-expectations/)) — so DataQ emitting it from its own GX results is idiomatic, not novel. The older `DataQualityMetricsInputDatasetFacet` (rowCount, per-column nullCount/distinctCount/min/max) is a natural carrier for DataQ's `metric_value` monitor-kinds (freshness/volume).
+
+## 2. Marquez (reference consumer)
+
+- **License:** Apache-2.0 ([LICENSE](https://github.com/MarquezProject/marquez/blob/main/LICENSE)). LF AI &amp; Data **Graduated** project ([lfaidata.foundation/projects/marquez](https://lfaidata.foundation/projects/marquez/)).
+- **Lineage pull API — exactly the shape DataQ needs:** `GET /api/v1/lineage?nodeId=dataset:&lt;namespace&gt;:&lt;name&gt;&amp;depth=&lt;n&gt;` (depth defaults to 20; nodeId also accepts `job:` and `datasetField:` forms) returns a `graph` of nodes (`type: JOB|DATASET`, `inEdges`, `outEdges`) — a ready-made blast-radius query ([marquezproject.ai/docs/api/get-lineage](https://marquezproject.ai/docs/api/get-lineage/), [openapi.yml](https://raw.githubusercontent.com/MarquezProject/marquez/main/spec/openapi.yml)).
+- **Ingestion:** native OpenLineage receiver — `POST /api/v1/lineage` accepts RunEvents directly; Marquez is the OpenLineage reference implementation ([record-lineage docs](https://marquezproject.ai/docs/api/record-lineage/)).
+- **Deployment weight — light by catalog standards:** two containers (Java/Dropwizard API + `postgres:14`), optional React web UI third; official [docker-compose.yml](https://github.com/MarquezProject/marquez/blob/main/docker-compose.yml) + Helm chart in-repo. No embedded/in-memory mode exists (absence-of-evidence — no doc states it, none found), so Postgres is mandatory — but DataQ's compose stack already runs Postgres.
+- **Maintenance caveat:** repo is active (commits into 2026-04, push 2026-07-06) but the **last tagged release is 0.50.0 from 2024-10-24** ([releases](https://github.com/MarquezProject/marquez/releases)) — a stalled release cadence worth noting, though as a dev-time reference consumer (not a runtime dependency) the risk is low.
+
+## 3. DataHub
+
+- **License:** core Apache-2.0 ([LICENSE](https://github.com/datahub-project/datahub/blob/master/LICENSE)); Python SDK `acryl-datahub` also Apache-2.0 ([pypi.org/project/acryl-datahub](https://pypi.org/project/acryl-datahub/)). **No licensing controversy found** despite targeted search — the one soft flag is the 2025 Acryl Data → "DataHub" corporate rebrand + "DataHub Cloud" paid product, creating OSS/vendor/product name overlap ([Series B announcement](https://datahub.com/news/series-b-announcement/), [TechCrunch on Acryl](https://techcrunch.com/2021/06/23/acryl-data-commercializing-linkedins-metadata-tool-datahub-emerges-from-stealth-with-9m-from-8vc-linkedin-and-insight/)).
+- **Lineage read:** GraphQL `dataset(urn:...)` + `lineage(input: {direction: UPSTREAM|DOWNSTREAM})`, multi-hop via `scrollAcrossLineage`; OpenAPI v3 supports lineage PATCH edits ([lineage tutorial](https://docs.datahub.com/docs/api/tutorials/lineage), [OpenAPI guide](https://docs.datahub.com/docs/api/openapi/openapi-usage-guide)).
+- **Assertions push — the strongest external-DQ model of the three catalogs:** Assertion entities with `source.type = EXTERNAL` + timeseries `AssertionRunEvent` (pass/fail + severity per run), pushed via `DatahubRestEmitter` or the `upsertCustomAssertion` GraphQL mutation ([custom-assertions tutorial](https://docs.datahub.com/docs/api/tutorials/custom-assertions), [assertion metamodel](https://docs.datahub.com/docs/generated/metamodel/entities/assertion)).
+- **OpenLineage ingestion — native HTTP receiver:** `POST &lt;GMS&gt;/openapi/openlineage/api/v1/lineage` accepts OpenLineage events directly ([docs.datahub.com/docs/lineage/openlineage](https://docs.datahub.com/docs/lineage/openlineage)) — DataQ's emitter reaches DataHub with zero extra code.
+- **Deployment weight — heavy:** quickstart deploys Kafka + Zookeeper + MySQL + OpenSearch + GMS + frontend + Actions; documented minimum 2 CPU / 8 GB RAM / 13 GB disk ([quickstart](https://docs.datahub.com/docs/quickstart)). Too heavy for DataQ's local-first compose reference stack.
+- **Maturity:** very active — v1.6.0 shipped 2026-05-21 ([releases](https://docs.datahub.com/docs/releases)).
+
+## 4. OpenMetadata
+
+- **License — the disqualifier.** The server core is Apache-2.0 ([LICENSE](https://github.com/open-metadata/OpenMetadata/blob/main/LICENSE)), **but the Python SDK/ingestion framework `openmetadata-ingestion` — the surface DataQ would actually integrate through — is under the "Collate Community License Agreement, Version 1.0"** ([pypi.org/project/openmetadata-ingestion](https://pypi.org/project/openmetadata-ingestion/), [ingestion/LICENSE](https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE)). I independently verified the license text: it contains an "Excluded Purpose" non-compete — *"'Excluded Purpose' means making available any software-as-a-service, platform-as-a-service, infrastructure-as-a-service or other similar online service that competes with Collate products or services."* That is exactly the BUSL/Elastic-style source-available category DataQ's policy prohibits (CLAUDE.md §11, ADR 0031). The UI carries the same license ([openmetadata-ui/LICENSE](https://github.com/open-metadata/OpenMetadata/blob/main/openmetadata-ui/LICENSE)). Talking to the Apache-2.0 REST API directly (no SDK dependency) would technically stay clean, but the license posture is a standing risk.
+- **APIs (for completeness):** lineage `GET /api/v1/lineage/&lt;entityType&gt;/name/&lt;fqn&gt;?upstreamDepth=&amp;downstreamDepth=` ([API reference](https://docs.open-metadata.org/v1.12.x/api-reference/lineage)); DQ push `PUT /api/v1/dataQuality/testCases/{fqn}/testCaseResult` ([custom-tests guide](https://docs.open-metadata.org/v1.12.x/how-to-guides/data-quality-observability/quality/custom-tests)) — genuinely good DQ-native APIs.
+- **OpenLineage support:** exists but **beta and Kafka/Kinesis-only** — no plain HTTP receiver; requires entities pre-registered ([OpenLineage connector docs](https://docs.open-metadata.org/v1.12.x/connectors/pipeline/openlineage)).
+- **Deployment weight — heavy:** MySQL/Postgres + Elasticsearch + bundled Airflow; stated minimum 6 GiB RAM / 4 vCPU ([local Docker deployment](https://docs.open-metadata.org/v1.12.x/quick-start/local-docker-deployment)). Active project (1.13.1, 2026-06-27; Collate-backed).
+
+## 5. Microsoft Purview (low priority — Azure wind-down)
+
+- **Lineage read:** Apache Atlas-compatible API — `GET {endpoint}/datamap/api/atlas/v2/lineage/{guid}?direction=BOTH`; Microsoft's FAQ states Atlas compatibility explicitly ([lineage REST API](https://learn.microsoft.com/purview/data-gov-api-create-lineage-relationships), [FAQ](https://learn.microsoft.com/purview/data-governance-faq)).
+- **OpenLineage status:** no general-purpose native receiver. Airflow lineage is public **preview** via a bring-your-own Event Hub + `openlineage-airflow` Kafka transport, limited Airflow versions/sources, no column lineage ([Airflow lineage preview](https://learn.microsoft.com/en-us/purview/data-map-lineage-airflow)); the Databricks path is a 2022 solution accelerator ([Purview-ADB-Lineage-Solution-Accelerator](https://github.com/microsoft/Purview-ADB-Lineage-Solution-Accelerator)). Roadmap language only, not GA.
+- **Azure-only:** Purview is an Azure/Fabric-hosted service requiring an Azure subscription ([account creation docs](https://learn.microsoft.com/purview/create-microsoft-purview-portal)). Given DataQ's Azure wind-down (~2026-07-25), this belongs behind a future adapter seam, not in v-next scope.
+
+## 6. Orchestrators as direct pull sources
+
+- **Airflow:** `apache-airflow-providers-openlineage` is the official ASF provider (in-repo since Airflow 2.7, superseding community `openlineage-airflow`), Apache-2.0, auto-emits per-task RunEvents via listener hooks; latest **2.18.1 (2026-06-22)**, 2.19.0rc1 already cut — healthy cadence ([provider docs](https://airflow.apache.org/docs/apache-airflow-providers-openlineage/stable/index.html), [PyPI](https://pypi.org/project/apache-airflow-providers-openlineage/)). Key implication: DataQ doesn't "pull from Airflow" — the user configures the provider to **push into whatever OpenLineage receiver DataQ points it at**. This mirrors DataQ's existing Airflow-callback pattern (user-deployed snippet, `integrations/airflow/`).
+- **dbt:** still wrapper-based — `dbt-ol run` (package `openlineage-dbt`, Apache-2.0, **1.51.0, 2026-07-06** — versioned with the monorepo, actively maintained) parses `manifest.json` + `run_results.json` post-run and emits events ([integration docs](https://openlineage.io/docs/integrations/dbt/), [PyPI](https://pypi.org/project/openlineage-dbt/)). **No first-party dbt Labs support has shipped**; the feature request [dbt-core#11750](https://github.com/dbt-labs/dbt-core/issues/11750) (opened 2025-06-18) is open with no maintainer commitment. Notably, DataQ's existing dbt provider (ADR 0029) already polls those same artifacts — the manifest's node graph is a lineage source DataQ already has plumbing for.
+
+---
+
+## Recommended first slice (small team, local-first, MIT-safe)
+
+### (b) Quality-facet publishing — build this FIRST
+
+1. **Emit OpenLineage RunEvents with `DataQualityAssertionsDatasetFacet` from `run_service`** using `openlineage-python` (Apache-2.0, one pip dep, zero infra). START on run dispatch; COMPLETE/FAIL with the suite's target as an input `Dataset` carrying the assertions facet (check name → `assertion`, pass/fail → `success`, DataQ severity → `severity`, observed/expected → `actual`/`expected`; `metric_value` monitors → `DataQualityMetricsInputDatasetFacet`). Config via standard `OPENLINEAGE_URL`/`OPENLINEAGE__TRANSPORT__*` env vars, console default, `OPENLINEAGE_DISABLED` honored — off-by-default, no new required service. This one emitter reaches Marquez, DataHub (native HTTP OL receiver), and Kafka consumers **without any per-catalog code**, which is the whole vendor-neutrality argument.
+2. **Add Marquez to the reference docker-compose as the demo consumer** (2 containers; reuses the Postgres pattern already in the stack). Apache-2.0, purpose-built OL receiver, and it doubles as the verification harness for slice 1.
+
+*Why first:* lowest effort (days, not weeks — the hooks map 1:1 to the existing run lifecycle), zero license risk, zero mandatory infra, and it makes DataQ a good citizen of the ecosystem before asking anything of it.
+
+### (a) Blast-radius lineage pull — build SECOND, behind a seam
+
+3. **A `LineageProvider` abstraction (mirroring `OrchestrationProvider`) with Marquez as the reference impl:** `get_lineage(dataset) → graph` backed by `GET /api/v1/lineage?nodeId=dataset:&lt;ns&gt;:&lt;name&gt;&amp;depth=N`. Local-first story: Airflow's OL provider and `dbt-ol` push into Marquez; DataQ pulls the graph back out to answer "check failed on X → what's downstream?". Note Marquez's stalled release tags (0.50.0, Oct 2024) in the ADR as an accepted risk.
+4. **A dbt-manifest lineage impl as the zero-infra fallback:** DataQ's ADR-0029 dbt provider already polls `manifest.json`/`run_results.json`; parsing the manifest's DAG gives model-level blast radius with **no lineage backend at all** — the true local-first floor.
+5. **DataHub impl of the same seam — deferred:** best-in-class external-assertion push API and a native OL HTTP receiver (so slice 1 already works against it), Apache-2.0 SDK; but the Kafka+OpenSearch+MySQL footprint (8 GB RAM minimum) disqualifies it from the compose reference stack. Add the GraphQL lineage-pull impl only when a user brings an existing DataHub.
+6. **OpenMetadata — do not integrate via SDK:** the `openmetadata-ingestion` package's Collate Community License (source-available, non-compete) violates DataQ's ADR-0031 policy. If ever needed, use the Apache-2.0 server REST API directly and record the decision in an ADR.
+7. **Purview — park it:** Atlas-API read is feasible later behind the same `LineageProvider` seam, but preview-grade OL support + Azure-only hosting + DataQ's Azure wind-down make it last.
+
+**Bottom line:** the emitter-plus-facet slice (openlineage-python → any receiver) is the highest-leverage, license-cleanest first move; Marquez is the right local-first reference consumer despite its slow release tagging; DataHub is the "bring your own catalog" target that works with the same emitter; OpenMetadata is blocked at the SDK layer by a source-available license; Purview is a deferred Azure-only adapter.</result>
+<usage><subagent_tokens>81989</subagent_tokens><tool_uses>21</tool_uses><duration_ms>298745</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a258b75bc1c7fd17c</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/aef9f6a4-f51b-4006-84c5-e914ce549fd6/tasks/a258b75bc1c7fd17c.output</output-file>
+<status>completed</status>
+<summary>Agent "Research OpenLineage naming spec" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result># OpenLineage Dataset Naming Specification — Research Report
+
+**Primary source note:** the canonical naming spec lives at `website/docs/spec/naming.md` in the OpenLineage repo, rendered at **https://openlineage.io/docs/spec/naming**. The old `spec/Naming.md` file you pointed at is explicitly marked obsolete — I fetched it directly and its entire content is now just a pointer:
+
+&gt; "This document is obsolete, please look at the [OpenLineage Naming Conventions](https://openlineage.io/docs/spec/naming)"
+&gt; — https://github.com/OpenLineage/OpenLineage/blob/main/spec/Naming.md
+
+All namespace/name templates below are taken verbatim from the current spec table, then cross-checked against the actual reference implementations (`client/python/src/openlineage/client/naming/dataset.py` and `client/java/.../dataset/Naming.java`), which are attr/Builder classes whose `get_namespace()`/`get_name()` implementations are byte-identical to the spec table — i.e., these two files *are* the spec, expressed as code.
+
+---
+
+## 1–2. Per-datasource namespace + name construction, with case/quoting/defaults notes
+
+| Datasource | Namespace template | Name template | Concrete example |
+|---|---|---|---|
+| **Snowflake** | `snowflake://{organization_name}-{account_name}` (preferred, orgname-account format) **or** `snowflake://{account_locator}(.{region}).{cloud}` (legacy locator format) | `{database}.{schema}.{table}` | `snowflake://myorg-myaccount` / `MYDB.PUBLIC.ORDERS` — legacy form: `snowflake://xy12345.us-east-2.aws` / `MYDB.PUBLIC.ORDERS` |
+| **Databricks Unity Catalog** | `unitycatalog://{host}` or `unitycatalog://{host}:{port}` | `{catalog}.{schema}.{table}` | `unitycatalog://adb-123456789.0.azuredatabricks.net` / `main.sales.orders` |
+| **ADLS Gen2 (abfss://)** | `abfss://{container_name}@{service_name}.dfs.core.windows.net` | `{path}` | `abfss://raw@mydatalake.dfs.core.windows.net` / `retail/orders/2026/07/10/` |
+| **AWS S3** | `s3://{bucket_name}` | `{object_key}` | `s3://dataq-lake` / `retail/purchase_orders/part-00000.parquet` |
+| **Apache Iceberg — generic REST catalog** | the catalog's raw REST URI, taken verbatim from `catalog.uri` config (no `iceberg://` prefix; whatever scheme+host the REST endpoint has) | `{iceberg_namespace}.{table}` (Iceberg's own multi-level namespace, dot-joined, exactly as Spark's `Identifier.toString()` renders it) | `https://iceberg-rest.example.com:8181` / `retail.purchase_orders` |
+| **Apache Iceberg — Snowflake-hosted Iceberg REST catalog** (special-cased) | `snowflake://{account_identifier}` — reuses the Snowflake namespace rule above, not a generic REST namespace | `{warehouse}.{table}` where `warehouse` = the Iceberg `CatalogProperties.WAREHOUSE_LOCATION` conf, and the whole name is **upper-cased** | `snowflake://myorg-myaccount` / `RETAIL_WH.PURCHASE_ORDERS` |
+| **dbt on Snowflake (openlineage-dbt / dbt-ol)** | `snowflake://{fix_account_name(profiles.yml "account")}` — identical normalization function to the spec's account-identifier rule | `{database}.{schema}.{table_or_alias}` (dot-join of non-empty parts, using dbt manifest's own casing) | `snowflake://myorg-myaccount` / `ANALYTICS.MARTS.FCT_ORDERS` |
+
+Sources: spec table — https://github.com/OpenLineage/OpenLineage/blob/main/website/docs/spec/naming.md (rendered: https://openlineage.io/docs/spec/naming) · Python reference impl — https://github.com/OpenLineage/OpenLineage/blob/main/client/python/src/openlineage/client/naming/dataset.py · Java reference impl — https://github.com/OpenLineage/OpenLineage/blob/main/client/java/src/main/java/io/openlineage/client/dataset/Naming.java · Snowflake account normalization — https://github.com/OpenLineage/OpenLineage/blob/main/client/java/src/main/java/io/openlineage/client/utils/SnowflakeUtils.java and https://github.com/OpenLineage/OpenLineage/blob/main/integration/common/src/openlineage/common/provider/snowflake.py · Unity Catalog Spark handler + its unit test (asserts scheme dropped, path dropped, host:port kept, http/https collapse to the same namespace) — https://github.com/OpenLineage/OpenLineage/blob/main/integration/spark/spark40/src/main/java/io/openlineage/spark40/agent/lifecycle/plan/catalog/UnityCatalogHandler.java and https://github.com/OpenLineage/OpenLineage/blob/main/integration/spark/spark40/src/test/java/io/openlineage/spark40/agent/lifecycle/plan/catalog/UnityCatalogHandlerNamingTest.java · Iceberg catalog-type handlers — https://github.com/OpenLineage/OpenLineage/blob/main/integration/spark/spark3/src/main/java/io/openlineage/spark3/agent/lifecycle/plan/catalog/iceberg/RestCatalogTypeHandler.java , .../BaseCatalogTypeHandler.java , and .../SnowflakeCatalogTypeHandler.java · dbt namespace/name derivation — https://github.com/OpenLineage/OpenLineage/blob/main/integration/common/src/openlineage/common/provider/dbt/processor.py (methods `extract_namespace` and `_format_dataset_name`) · dbt integration overview — https://openlineage.io/docs/integrations/dbt/
+
+**For reference, the other datasource types in the same spec table** (useful context, not asked for directly but confirms the pattern family): BigQuery `bigquery` / `{project}.{dataset}.{table}`; Redshift `redshift://{cluster}.{region}:{port}` / `{database}.{schema}.{table}`; Postgres/MSSQL/Oracle/DB2/CrateDB same 3-part shape; MySQL/Hive/Teradata/OceanBase drop schema entirely (`{database}.{table}` — these engines have no schema level); Trino `trino://{host}:{port}` / `{catalog}.{schema}.{table}`; GCS `gs://{bucket}` / `{object_key}`; HDFS `hdfs://{namenode_host}:{namenode_port}` / `{path}`; local filesystem `file` / `{path}`; remote filesystem `file://{host}` / `{path}`; Kafka `kafka://{bootstrap_host}:{port}` / `{topic}`; PubSub `pubsub` / `topic:{projectId}:{topicId}`.
+
+### Case sensitivity, quoting, and default-schema omission
+
+- **No spec-level case-folding rule exists.** The name components are simply whatever the source system reports (e.g., dbt's `manifest.json` `database`/`schema`/`alias` fields, taken as-is). Practically, this means Snowflake-backed datasets will render **upper-case** unless the underlying objects were created with quoted mixed/lower-case identifiers, because Snowflake itself upper-cases unquoted identifiers — the OpenLineage layer does not re-case anything.
+- **Quoting is stripped, not preserved.** `SnowflakeUtils.stripQuotes()` explicitly removes surrounding double-quotes from identifiers before they go into a dataset name/namespace, with the documented rationale: *"double quotes are used as delimiters to preserve case sensitivity or allow special characters in identifiers... quotes are not part of the actual identifier name and should be removed for normalized dataset and column names."* (https://github.com/OpenLineage/OpenLineage/blob/main/client/java/src/main/java/io/openlineage/client/utils/SnowflakeUtils.java)
+- **Schema/database omission is engine-driven, not a generic spec default.** The spec doesn't have a universal "default schema" rule — instead, each per-engine name template is fixed at either 2 or 3 segments matching that engine's actual object hierarchy (MySQL/Hive/Teradata have no schema concept, so their template is literally 2-segment). Where a value legitimately can be missing (Snowflake account locator's region/cloud), the account-normalization function inserts an explicit default rather than omitting the segment: bare locator `xy12345` → `xy12345.us-west-1.aws` (defaults to AWS US-West Oregon); `xy12345.us-east-1` → `xy12345.us-east-1.aws` (defaults cloud to `aws`). Source: docstrings in `SnowflakeUtils.parseAccountIdentifier` / `fix_account_name` (both links above).
+
+---
+
+## 3. Gotchas — cross-environment ambiguity
+
+**Yes — different Snowflake accounts (DEV vs QA) are, by design, distinct namespaces, hence distinct dataset identities.** This isn't just an inference; it's explicit in the spec text itself:
+
+&gt; "Snowflake is a special case where we don't have a single standardized namespace, due to its account identifier model... If you switch formats later, existing lineage nodes won't connect to new ones."
+&gt; — https://github.com/OpenLineage/OpenLineage/blob/main/website/docs/spec/naming.md
+
+The maintainer's design rationale (from a live GitHub discussion questioning exactly this kind of ambiguity) draws the line explicitly on **physical/tenant isolation**:
+
+&gt; BigQuery gets a single global namespace (`bigquery`, no project ID) because *"you can query other projects from your project: `SELECT ... FROM project.dataset.table`"* — projects are tenants inside one addressable system. AWS Glue and Spanner *do* fold the account/project ID into the namespace because they're *"physically separate systems"* with regional/instance-level isolation.
+&gt; — https://github.com/OpenLineage/OpenLineage/discussions/4251 (maintainer `mobuchowski`)
+
+A DEV Snowflake account and a QA Snowflake account are exactly this second case — physically separate authentication/compute realms reachable at different hostnames — so under the spec's own logic they are *correctly* distinct namespaces (`snowflake://dev-org-account` vs `snowflake://qa-org-account`), not a modeling bug.
+
+**What practitioners do to group "the same logical asset" across environments — the spec deliberately does not solve this at the identifier level:**
+- **`SymlinksDatasetFacet`** — the one first-party mechanism for "this is also known as X" — but its documented use case is engine-level aliasing (Hive table addressed by file path vs metastore name; the same dataset seen via FQDN vs short hostname), *not* cross-environment/cross-tenant grouping. Schema: `identifiers: [{namespace, name, type}]`. Source: https://github.com/OpenLineage/OpenLineage/blob/main/spec/facets/SymlinksDatasetFacet.json (rendered: https://openlineage.io/docs/spec/facets/dataset-facets/symlinks/)
+- **Custom/consumer-side facets or tags** — the discussion thread's maintainer endorses solving analogous ambiguity (MySQL across multiple hosts/datacenters) via either (a) folding a discriminator into the host-naming strategy itself, or (b) a facet-based extension, calling both "valid" — i.e., there's no canonical spec answer, it's pushed to the implementer.
+- **Downstream lineage/catalog tools do the grouping**, not OpenLineage identifiers themselves — e.g., matching same `{schema}.{table}` name across differing namespaces under one business-glossary/logical-asset entity, or tagging datasets with an `environment` custom facet/tag that a UI groups on. This is consistent with `TagsDatasetFacet` existing as a generic escape hatch (https://github.com/OpenLineage/OpenLineage/blob/main/spec/facets/TagsDatasetFacet.json) but there is no spec-blessed "environment" or "logical-asset-id" facet as of this research.
+
+**Design-doc implication for DataQ:** if DataQ wants "flag the same suite/check across DEV/QA/UAT Snowflake" to read as one logical asset in any OpenLineage-facing surface, that grouping needs to live in DataQ's own domain model (e.g., a `logical_asset` tag/facet DataQ attaches), not in the OpenLineage namespace/name — the namespace will correctly and unavoidably differ per account.
+
+---
+
+## 4. File-pattern datasets (directories, daily-partitioned CSVs, globs)
+
+The spec itself only goes as far as: for every blob/file-store backend (S3, GCS, ABFSS, HDFS, local, remote filesystem, WASBS), **name = `{path}`**, full stop — there is no spec-level notion of a glob or partition wildcard in the name template. Confirmed by re-checking every storage row in the canonical table (https://github.com/OpenLineage/OpenLineage/blob/main/website/docs/spec/naming.md) and by grepping the full facets registry (`spec/facets/*.json`, https://github.com/OpenLineage/OpenLineage/tree/main/spec/facets) — there is **no `PartitionDatasetFacet`** in the first-party facet set.
+
+The convention that fills this gap comes from how the reference Spark integration actually resolves a dataset identifier for a partitioned/pattern read: it uses the relation's/table's base **`location`** (the directory root Spark/Hive resolved the partitioned table or file-source read against), not per-partition-file paths — I confirmed this by reading `PathUtils.java` (https://github.com/OpenLineage/OpenLineage/blob/main/integration/spark/shared/src/main/java/io/openlineage/spark/agent/util/PathUtils.java), which contains no partition- or glob-splitting logic at all; the base directory is what gets passed in as `path` for the `S3`/`HDFS`/`GCS`/`ABFSS` naming classes shown above. So the practitioner/implementation convention is exactly what you hypothesized:
+
+- **Dataset = the directory/prefix** (e.g. `s3://dataq-lake` / `retail/purchase_orders/` — not `retail/purchase_orders/dt=2026-07-10/part-00000.csv`).
+- **Partition structure is not modeled as separate datasets.** The two facets available to describe *how* that directory is physically laid out are:
+  - `StorageDatasetFacet` — `storageLayer` (`iceberg`/`delta`) + `fileFormat` (`parquet`/`orc`/`avro`/`json`/`csv`/`text`/`xml`) — https://github.com/OpenLineage/OpenLineage/blob/main/spec/facets/StorageDatasetFacet.json
+  - `SchemaDatasetFacet` — partition *columns* (e.g. a Hive-style `dt` column) show up here as ordinary schema fields, not as a separate partition concept.
+- There is no first-party facet for "list of partition values covered by this run" — teams that need that level of granularity either encode it in a custom facet or in `OutputStatisticsOutputDatasetFacet`/row-count-style facets, outside the core naming spec.
+
+---
+
+## 5. dbt ↔ OpenLineage (openlineage-dbt / dbt-ol) — exact naming behavior for Snowflake, verified against source
+
+I read the actual method bodies in `integration/common/src/openlineage/common/provider/dbt/processor.py` (the shared processor both `dbt-ol` and the Airflow dbt-Cloud/Core operators build on) rather than relying on docs, since the docs page (https://openlineage.io/docs/integrations/dbt/) doesn't spell this out.
+
+**Namespace** — `DbtArtifactProcessor.extract_namespace(profile)`:
+```python
+if self.adapter_type == Adapter.SNOWFLAKE:
+    return f"snowflake://{fix_account_name(profile['account'])}"
+```
+`profile['account']` is read straight out of the user's `profiles.yml` target block (dbt's own `account:` key), and `fix_account_name` (https://github.com/OpenLineage/OpenLineage/blob/main/integration/common/src/openlineage/common/provider/snowflake.py) is the **identical** normalization routine used by the core Snowflake naming spec: if the account string contains a hyphen it's treated as already being `orgname-accountname` and passed through unchanged; otherwise it's treated as a legacy locator and gets `.us-west-1.aws` appended (bare locator) or `.aws` appended (locator+region only). This is exactly the same defaulting behavior documented on the canonical Snowflake namespace row.
+
+**Name** — `DbtArtifactProcessor._format_dataset_name(database, schema, table)`:
+```python
+def _format_dataset_name(self, database, schema, table):
+    return ".".join(list(filter(None, [database, schema, table])))
+```
+called with `node.metadata_node["database"]`, `["schema"]`, and (for models) `["alias"]` or (for sources) `["name"]` — i.e. taken verbatim, in whatever case, from dbt's own `manifest.json`. No re-casing, no quote-stripping happens on the dbt side (unlike the Java `SnowflakeUtils.stripQuotes` used elsewhere in the client).
+
+**Practical implication for matching byte-for-byte:** for DataQ's Snowflake connector to emit dataset identifiers that line up with what `dbt-ol` would emit for the *same* physical tables, it must (a) run the identical account-string normalization (hyphenated org-account passthrough vs. legacy-locator defaulting to `us-west-1`/`aws`), and (b) use the database/schema/table names exactly as Snowflake's catalog returns them unquoted (which will be upper-case for the overwhelming majority of real warehouses) rather than lower-casing or otherwise normalizing them.
+
+Sources: https://github.com/OpenLineage/OpenLineage/blob/main/integration/common/src/openlineage/common/provider/dbt/processor.py · https://github.com/OpenLineage/OpenLineage/blob/main/integration/common/src/openlineage/common/provider/snowflake.py · https://openlineage.io/docs/integrations/dbt/ (env-var config surface, e.g. `OPENLINEAGE_NAMESPACE` for job namespace, `OPENLINEAGE_DBT_USE_EXTENDED_JOB_NAME` for job *name* — neither affects dataset namespace/name, which is always profile/manifest-derived per the above).
+
+---
+
+### Full list of primary sources cited above
+- https://openlineage.io/docs/spec/naming
+- https://github.com/OpenLineage/OpenLineage/blob/main/website/docs/spec/naming.md
+- https://github.com/OpenLineage/OpenLineage/blob/main/spec/Naming.md (obsolete redirect)
+- https://github.com/OpenLineage/OpenLineage/blob/main/client/python/src/openlineage/client/naming/dataset.py
+- https://github.com/OpenLineage/OpenLineage/blob/main/client/java/src/main/java/io/openlineage/client/dataset/Naming.java
+- https://github.com/OpenLineage/OpenLineage/blob/main/client/java/src/main/java/io/openlineage/client/utils/SnowflakeUtils.java
+- https://github.com/OpenLineage/OpenLineage/blob/main/integration/common/src/openlineage/common/provider/snowflake.py
+- https://github.com/OpenLineage/OpenLineage/blob/main/integration/common/src/openlineage/common/provider/dbt/processor.py
+- https://github.com/OpenLineage/OpenLineage/blob/main/integration/common/src/openlineage/common/provider/dbt/local.py
+- https://openlineage.io/docs/integrations/dbt/
+- https://github.com/OpenLineage/OpenLineage/blob/main/integration/spark/spark40/src/main/java/io/openlineage/spark40/agent/lifecycle/plan/catalog/UnityCatalogHandler.java
+- https://github.com/OpenLineage/OpenLineage/blob/main/integration/spark/spark40/src/test/java/io/openlineage/spark40/agent/lifecycle/plan/catalog/UnityCatalogHandlerNamingTest.java
+- https://github.com/OpenLineage/OpenLineage/blob/main/integration/spark/spark3/src/main/java/io/openlineage/spark3/agent/lifecycle/plan/catalog/iceberg/RestCatalogTypeHandler.java
+- https://github.com/OpenLineage/OpenLineage/blob/main/integration/spark/spark3/src/main/java/io/openlineage/spark3/agent/lifecycle/plan/catalog/iceberg/BaseCatalogTypeHandler.java
+- https://github.com/OpenLineage/OpenLineage/blob/main/integration/spark/spark3/src/main/java/io/openlineage/spark3/agent/lifecycle/plan/catalog/iceberg/SnowflakeCatalogTypeHandler.java
+- https://github.com/OpenLineage/OpenLineage/blob/main/integration/spark/shared/src/main/java/io/openlineage/spark/agent/util/PathUtils.java
+- https://github.com/OpenLineage/OpenLineage/blob/main/spec/facets/SymlinksDatasetFacet.json
+- https://github.com/OpenLineage/OpenLineage/blob/main/spec/facets/StorageDatasetFacet.json
+- https://github.com/OpenLineage/OpenLineage/discussions/4251
+- https://openlineage.io/blog/whats-in-a-namespace/</result>
+<usage><subagent_tokens>136948</subagent_tokens><tool_uses>43</tool_uses><duration_ms>424472</duration_ms></usage>
+</task-notification>

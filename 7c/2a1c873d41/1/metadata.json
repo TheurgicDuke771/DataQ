@@ -1,0 +1,52 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_id": "7c2a1c873d41",
+  "session_id": "aef9f6a4-f51b-4006-84c5-e914ce549fd6",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-10T13:45:03.230636Z",
+  "branch": "docs/596-assets-lineage-incidents-design",
+  "checkpoints_count": 8,
+  "files_touched": [
+    "context/post-v1-roadmap.md",
+    "docs/adr/0034-asset-entity-openlineage-identity-lineage-pull.md",
+    "docs/adr/README.md",
+    "docs/post-v1-assets-lineage-incidents-notes.md"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "b28cc7c6e391",
+  "token_usage": {
+    "input_tokens": 12626,
+    "cache_creation_tokens": 235241,
+    "cache_read_tokens": 5199161,
+    "output_tokens": 48759,
+    "api_call_count": 42
+  },
+  "session_metrics": {
+    "turn_count": 8
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-10T13:45:03.122217Z",
+    "agent_lines": 203,
+    "agent_removed": 3,
+    "human_added": 4,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 207,
+    "total_lines_changed": 210,
+    "agent_percentage": 98.09523809523809,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}
