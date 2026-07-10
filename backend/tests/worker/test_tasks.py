@@ -368,3 +368,30 @@ def test_run_suite_brackets_run_with_lineage_hooks(monkeypatch: pytest.MonkeyPat
     assert tasks.run_suite(str(run.id)) == "succeeded"
     # START fires before the terminal (which fires after the run executed).
     assert calls == ["start", "terminal"]
+
+
+def test_run_suite_crash_still_emits_terminal(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Review finding on #765: if _run_suite raises before driving the run to a
+    # terminal status, the START must still be closed with a terminal event
+    # (mapped to FAIL by the builder) before the exception propagates.
+    run, suite, connection, checks = _graph(1)
+    session = FakeSession(run=run, suite=suite, connection=connection, checks=checks)
+    monkeypatch.setattr(tasks, "get_session", lambda: session)
+    calls: list[str] = []
+    monkeypatch.setattr(
+        lineage_dispatch, "emit_run_lineage_start", lambda *_a, **_k: calls.append("start")
+    )
+    monkeypatch.setattr(
+        lineage_dispatch, "emit_run_lineage_terminal", lambda *_a, **_k: calls.append("terminal")
+    )
+
+    def _boom(*_a: object, **_k: object) -> str:
+        raise RuntimeError("db hiccup before _run_suite's own handling engaged")
+
+    monkeypatch.setattr(tasks, "_run_suite", _boom)
+
+    with pytest.raises(RuntimeError, match="db hiccup"):
+        tasks.run_suite(str(run.id))
+    # The pair is intact even on the crash path, and the session still closed.
+    assert calls == ["start", "terminal"]
+    assert session.closed is True

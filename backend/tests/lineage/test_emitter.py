@@ -15,8 +15,16 @@ from typing import Any
 
 import pytest
 
-from backend.app.db.models import Asset, Check, Result, Run, Suite
+from backend.app.core.config import get_settings
+from backend.app.db.models import FAILING_TIERS, Asset, Check, Result, Run, Suite
 from backend.app.lineage import emitter
+
+
+def _reconfigure() -> None:
+    """Make a mid-test env change visible: drop the cached Settings + client."""
+    get_settings.cache_clear()
+    emitter.reset_openlineage_client_cache()
+
 
 # ─────────────────────────────── model factories ───────────────────────────────
 
@@ -86,9 +94,10 @@ def test_unconfigured_is_dark(monkeypatch: pytest.MonkeyPatch) -> None:
     assert emitter.get_openlineage_client() is None
 
 
-@pytest.mark.parametrize("var", list(emitter._TRANSPORT_ENV_VARS))
+@pytest.mark.parametrize("var", ["OPENLINEAGE_URL", *emitter._ADVANCED_TRANSPORT_ENV_VARS])
 def test_any_transport_var_configures(monkeypatch: pytest.MonkeyPatch, var: str) -> None:
     monkeypatch.setenv(var, "http://localhost:5000" if var == "OPENLINEAGE_URL" else "console")
+    _reconfigure()
     assert emitter.is_emission_configured() is True
 
 
@@ -96,6 +105,7 @@ def test_any_transport_var_configures(monkeypatch: pytest.MonkeyPatch, var: str)
 def test_disabled_forces_dark_even_with_url(monkeypatch: pytest.MonkeyPatch, disabled: str) -> None:
     monkeypatch.setenv("OPENLINEAGE_URL", "http://localhost:5000")
     monkeypatch.setenv("OPENLINEAGE_DISABLED", disabled)
+    _reconfigure()
     assert emitter.is_emission_configured() is False
     assert emitter.get_openlineage_client() is None
 
@@ -103,6 +113,7 @@ def test_disabled_forces_dark_even_with_url(monkeypatch: pytest.MonkeyPatch, dis
 def test_url_constructs_a_client(monkeypatch: pytest.MonkeyPatch) -> None:
     # A dead URL is fine — construction never connects (emit would).
     monkeypatch.setenv("OPENLINEAGE_URL", "http://127.0.0.1:1")
+    _reconfigure()
     client = emitter.get_openlineage_client()
     assert client is not None
     # Cached: the same instance comes back without re-reading the env.
@@ -112,15 +123,47 @@ def test_url_constructs_a_client(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_client_cache_reset(monkeypatch: pytest.MonkeyPatch) -> None:
     assert emitter.get_openlineage_client() is None  # cached None (unconfigured)
     monkeypatch.setenv("OPENLINEAGE_URL", "http://127.0.0.1:1")
+    get_settings.cache_clear()
     assert emitter.get_openlineage_client() is None  # still cached None until reset
     emitter.reset_openlineage_client_cache()
     assert emitter.get_openlineage_client() is not None
 
 
 def test_bad_transport_config_fails_open(monkeypatch: pytest.MonkeyPatch) -> None:
-    # A structurally-invalid transport type must cache None, never raise.
+    # A structurally-invalid transport type must return None, never raise.
     monkeypatch.setenv("OPENLINEAGE__TRANSPORT__TYPE", "not-a-real-transport")
+    _reconfigure()
     assert emitter.get_openlineage_client() is None
+
+
+def test_construction_failure_does_not_latch(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A transient construction failure must self-heal on the next call (review
+    # finding: latching None went dark for the process lifetime).
+    monkeypatch.setenv("OPENLINEAGE_URL", "http://127.0.0.1:1")
+    _reconfigure()
+    calls = {"n": 0}
+    real_build = emitter._build_client
+
+    def _flaky() -> Any:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("transient transport failure")
+        return real_build()
+
+    monkeypatch.setattr(emitter, "_build_client", _flaky)
+    assert emitter.get_openlineage_client() is None  # first call fails open...
+    assert emitter.get_openlineage_client() is not None  # ...and retries, no reset
+    assert calls["n"] == 2
+
+
+def test_severity_map_covers_every_failing_tier() -> None:
+    # Derived from the #657 single source: a future tier must map, warn stays warn,
+    # everything else is an error; non-failing statuses carry no severity.
+    assert set(emitter._SEVERITY_MAP) == set(FAILING_TIERS)
+    assert emitter._SEVERITY_MAP["warn"] == "warn"
+    assert all(v == "error" for k, v in emitter._SEVERITY_MAP.items() if k != "warn")
+    for status in ("pass", "skip", "error"):
+        assert status not in emitter._SEVERITY_MAP
 
 
 # ───────────────────────────────── build: START ────────────────────────────────
@@ -138,7 +181,10 @@ def test_start_event_shape() -> None:
     assert event.producer == "https://github.com/TheurgicDuke771/DataQ"
     assert event.run.runId == str(run.id)
     assert event.job.namespace == "dataq"
-    assert event.job.name == "Retail Orders"
+    # Stable job identity: the suite id (names are renameable + not unique); the
+    # human-readable name rides the documentation facet for consumer display.
+    assert event.job.name == f"suite.{suite.id}"
+    assert event.job.facets["documentation"].description == "Retail Orders"
     assert event.eventTime == "2026-07-10T12:00:00+00:00"
     # Bare input dataset (no facets yet at START).
     assert len(event.inputs) == 1
@@ -207,6 +253,18 @@ def test_terminal_event_type_mapping(status: str, state: str) -> None:
     assert event.eventType == getattr(RunState, state)
 
 
+@pytest.mark.parametrize("status", ["queued", "running"])
+def test_nonterminal_status_maps_to_fail(status: str) -> None:
+    # A crashed/reaped run that emitted START but never reached a terminal DB
+    # status must still close as FAIL — a START is never left dangling.
+    from openlineage.client.event_v2 import RunState
+
+    asset = _asset()
+    run = _run(status=status, asset_id=asset.id)
+    event = emitter.build_terminal_event(run, _suite(), asset, [], [])
+    assert event.eventType == RunState.FAIL
+
+
 def test_assertions_facet_maps_check_result_pairs() -> None:
     asset = _asset()
     run = _run(status="failed", asset_id=asset.id)
@@ -226,9 +284,13 @@ def test_assertions_facet_maps_check_result_pairs() -> None:
     event = emitter.build_terminal_event(run, _suite(), asset, checks, results)
     facet = event.inputs[0].inputFacets["dataQualityAssertions"]
 
-    # Skip is omitted; the other four map through.
-    assert len(facet.assertions) == 4
+    # skip AND operational error are omitted (neither is a DQ verdict — an errored
+    # check as success=False would read downstream as "the data failed this check");
+    # the three evaluated outcomes map through.
+    assert len(facet.assertions) == 3
     by_assertion = {a.assertion: a for a in facet.assertions}
+    assert "expect_range" not in by_assertion
+    assert "expect_present" not in by_assertion
     assert by_assertion["expect_not_null"].success is True
     assert by_assertion["expect_not_null"].column == "EMAIL"
     assert by_assertion["expect_not_null"].severity is None
@@ -236,9 +298,6 @@ def test_assertions_facet_maps_check_result_pairs() -> None:
     assert by_assertion["expect_unique"].severity == "warn"
     assert by_assertion["expect_in_set"].success is False
     assert by_assertion["expect_in_set"].severity == "error"
-    # Operational error → not a pass, no severity tier.
-    assert by_assertion["expect_range"].success is False
-    assert by_assertion["expect_range"].severity is None
 
 
 def test_assertions_facet_absent_when_all_skipped() -> None:

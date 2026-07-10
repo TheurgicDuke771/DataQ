@@ -11,6 +11,7 @@ from collections.abc import Iterator
 
 import pytest
 
+from backend.app.core.config import get_settings
 from backend.app.lineage import emitter
 
 _OL_ENV_VARS = (
@@ -25,6 +26,9 @@ _OL_ENV_VARS = (
 def _clean_openlineage_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     for var in _OL_ENV_VARS:
         monkeypatch.delenv(var, raising=False)
+    # The gate reads typed Settings (lru_cache'd) — drop any instance built before
+    # the delenv so this test starts genuinely dark. The client cache mirrors it.
+    get_settings.cache_clear()
     emitter.reset_openlineage_client_cache()
     yield
     emitter.reset_openlineage_client_cache()

@@ -41,6 +41,18 @@ class Settings(BaseSettings):
     # _TIMEOUT, …) are read by the exporter itself.
     otel_exporter_otlp_endpoint: str | None = None
 
+    # OpenLineage emission (ADR 0034, #758) — dark by default. When
+    # OPENLINEAGE_URL is set (and OPENLINEAGE_DISABLED is not truthy) the run
+    # lifecycle emits START/COMPLETE/FAIL/ABORT RunEvents (with DQ facets) to that
+    # HTTP receiver (Marquez, an OpenLineage collector, …). Typed here — not read
+    # from raw os.environ — so a value in `.env.app` (which the process env never
+    # sees) still activates emission. The library-owned advanced transports
+    # (OPENLINEAGE__TRANSPORT__* / OPENLINEAGE_CONFIG) stay in raw env, read by the
+    # client itself; those are the only OpenLineage vars NOT surfaced here.
+    #   OPENLINEAGE_URL=http://marquez:5000
+    openlineage_url: str | None = None
+    openlineage_disabled: bool = False
+
     sample_failures_retention_days: int = 30
 
     # Stuck-run reaper (#309): a run committed `queued` (before `send_task`) — or
