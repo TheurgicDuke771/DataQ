@@ -7,6 +7,12 @@
 - **Related:** ADR [0010](0010-provider-agnostic-infrastructure-seams.md) (provider-agnostic seams — Azure is one impl), [0013](0013-marketplace-distribution-and-anti-lock-in.md) (BYOL / anti-lock-in), [0023](0023-container-image-registry-ghcr.md) (GHCR), [0025](0025-production-image-pip-slim.md) (slim image), [0008](0008-mcp-server.md) (MCP token validation), [0026](0026-auth-api-keys-and-principal-seam.md) (DataQ-issued credentials — the backend identity seam)
 - **Issue:** [#504](https://github.com/TheurgicDuke771/DataQ/issues/504); post-v1 AWS/GCP IaC → [#505](https://github.com/TheurgicDuke771/DataQ/issues/505). Follows the prebuilt-image work in [#472](https://github.com/TheurgicDuke771/DataQ/issues/472).
 
+> **Amendment (2026-07-09, [ADR 0032](0032-email-otp-signin.md)):** the runtime auth
+> contract gains a third mode — `DATAQ_AUTH_MODE` becomes `bypass | otp | oidc` —
+> and the SPA gains an HttpOnly-cookie session credential (`dq_sess_`) beside the
+> OIDC bearer flow (ADR 0032 Decisions 2–3). The fail-closed rule is unchanged:
+> unknown/incomplete config never silently bypasses.
+
 ## Context
 
 The prebuilt-image distribution (#472) shipped, but exposed three coupling/complexity

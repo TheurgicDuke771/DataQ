@@ -1,11 +1,11 @@
 # ADR 0032 — Email OTP sign-in: a passwordless third authenticator behind the `get_current_user` seam
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-07-09
 - **Deciders:** @TheurgicDuke771
-- **Amends (on acceptance):** ADR [0026](0026-auth-api-keys-and-principal-seam.md) — Decision 6 answers its deferred phase-2 question "migration path for `users.aad_object_id` → generic principal" for the email slice; ADR [0028](0028-cloud-neutral-image-runtime-config-generic-oidc.md) — the frontend `DATAQ_AUTH_MODE` enum gains `otp` and the SPA gains a cookie credential beside the OIDC bearer flow. The inline amendment blockquotes land in 0026/0028 when this ADR flips to Accepted.
+- **Amends:** ADR [0026](0026-auth-api-keys-and-principal-seam.md) — Decision 6 answers its deferred phase-2 question "migration path for `users.aad_object_id` → generic principal" for the email slice; ADR [0028](0028-cloud-neutral-image-runtime-config-generic-oidc.md) — the frontend `DATAQ_AUTH_MODE` enum gains `otp` and the SPA gains a cookie credential beside the OIDC bearer flow.
 - **Related:** ADR 0026 (PATs — the verifier-secret and seam pattern this copies; Basic auth rejected there stays rejected), [0010](0010-provider-agnostic-infrastructure-seams.md)/[0013](0013-marketplace-distribution-and-anti-lock-in.md) (portability guardrails)
-- **Issue:** umbrella [#738](https://github.com/TheurgicDuke771/DataQ/issues/738) → slices #734 (backend) · #735 (identity) · #736 (frontend) · #737 (SMTP pre-flight); hard prerequisite #725 (rate limiting, auth slice). **Slices are blocked on this ADR's ratification** (Proposed → Accepted).
+- **Issue:** umbrella [#738](https://github.com/TheurgicDuke771/DataQ/issues/738) → slices #734 (backend) · #735 (identity) · #736 (frontend) · #737 (SMTP pre-flight); hard prerequisite #725 (rate limiting, auth slice). Ratified 2026-07-09 — slices unblocked.
 
 ## Context
 
