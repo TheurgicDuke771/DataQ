@@ -25,10 +25,17 @@ def test_snowflake_bare_locator_gets_default_region_and_cloud() -> None:
     assert normalize_snowflake_account("abc123") == "abc123.us-west-1.aws"
 
 
-def test_snowflake_locator_plus_region_gets_cloud() -> None:
-    # No hyphen anywhere in this locator+region form, so it takes the
-    # dot-segment path rather than the org-account passthrough.
-    assert normalize_snowflake_account("abc123.uswest1") == "abc123.uswest1.aws"
+def test_snowflake_locator_plus_hyphenated_region_gets_cloud() -> None:
+    # The region legitimately contains hyphens (`us-east-1`); the hyphen check is
+    # scoped to parts[0] (the locator), so this takes the dot-segment path and gets
+    # `.aws` appended — NOT the org-account passthrough (the fixed OL semantics).
+    assert normalize_snowflake_account("xy12345.us-east-1") == "xy12345.us-east-1.aws"
+
+
+def test_snowflake_org_account_with_dot_returns_first_segment_only() -> None:
+    # Org-account form (hyphen in parts[0]) returns ONLY the first dot-segment,
+    # dropping anything after a dot — openlineage's `fix_account_name` behavior.
+    assert normalize_snowflake_account("myorg-myacct.extra") == "myorg-myacct"
 
 
 def test_snowflake_full_three_part_unchanged() -> None:
@@ -122,6 +129,17 @@ def test_unity_catalog_namespace_keeps_port() -> None:
     assert identity.namespace == "unitycatalog://localhost:8443"
 
 
+def test_unity_catalog_scheme_less_workspace_url_uses_path_host() -> None:
+    # A valid but scheme-less workspace_url parses to netloc="" (host lands in path);
+    # fall back to the first path segment as the host so the suite still resolves.
+    identity = resolve_asset_identity(
+        "unity_catalog",
+        {"workspace_url": "adb-1234.azuredatabricks.net"},
+        {"catalog": "main", "schema": "sales", "table": "orders"},
+    )
+    assert identity.namespace == "unitycatalog://adb-1234.azuredatabricks.net"
+
+
 def test_unity_catalog_default_schema() -> None:
     identity = resolve_asset_identity(
         "unity_catalog",
@@ -161,23 +179,22 @@ def test_unity_catalog_missing_catalog_raises() -> None:
 # ───────────────────────── adls_gen2 ─────────────────────────
 
 
-def test_adls_account_from_blob_url() -> None:
+@pytest.mark.parametrize(
+    "account_url",
+    [
+        "https://mylake.blob.core.windows.net",  # blob endpoint
+        "https://mylake.dfs.core.windows.net",  # dfs endpoint
+        "mylake.dfs.core.windows.net",  # scheme-less → path-segment host fallback
+    ],
+)
+def test_adls_account_from_url(account_url: str) -> None:
     identity = resolve_asset_identity(
         "adls_gen2",
-        {"account_url": "https://mylake.blob.core.windows.net", "container": "raw"},
+        {"account_url": account_url, "container": "raw"},
         {"path": "retail/orders.csv"},
     )
     assert identity.namespace == "abfss://raw@mylake.dfs.core.windows.net"
     assert identity.name == "retail/orders.csv"
-
-
-def test_adls_account_from_dfs_url() -> None:
-    identity = resolve_asset_identity(
-        "adls_gen2",
-        {"account_url": "https://mylake.dfs.core.windows.net", "container": "raw"},
-        {"path": "retail/orders.csv"},
-    )
-    assert identity.namespace == "abfss://raw@mylake.dfs.core.windows.net"
 
 
 def test_adls_path_strips_single_leading_slash() -> None:
@@ -203,22 +220,41 @@ def test_s3_bucket_namespace() -> None:
     assert identity.name == "retail/orders.csv"
 
 
-def test_s3_pattern_glob_mid_filename_yields_parent_dir() -> None:
+def test_s3_pattern_metachar_mid_filename_yields_parent_dir() -> None:
+    # `pattern` is a regex: the literal prefix before the first metachar (`*`) is
+    # `retail/orders/2026-`, truncated at the last `/` → the directory.
     identity = resolve_asset_identity(
         "s3", {"bucket": "my-bucket"}, {"pattern": "retail/orders/2026-*.csv"}
     )
     assert identity.name == "retail/orders/"
 
 
-def test_s3_pattern_glob_in_first_segment_falls_back_to_whole_pattern() -> None:
-    identity = resolve_asset_identity("s3", {"bucket": "my-bucket"}, {"pattern": "2026-*.csv"})
-    assert identity.name == "2026-*.csv"
+def test_s3_regex_pattern_capture_group_uses_literal_prefix() -> None:
+    # A routine batch regex: first metachar is `(`; literal prefix `orders_` has no
+    # `/`, so it is used as-is (NOT the whole pattern with regex syntax inside).
+    identity = resolve_asset_identity(
+        "s3", {"bucket": "my-bucket"}, {"pattern": r"orders_(\d{4}-\d{2}-\d{2})\.csv"}
+    )
+    assert identity.name == "orders_"
 
 
-def test_s3_pattern_plain_path_no_glob_still_base_prefixes() -> None:
-    # No glob metachar at all: still base-prefixed to its directory — a
-    # pattern-shaped target is always a directory-scoped asset (Spark
-    # convention), never the literal per-file match.
+def test_s3_regex_pattern_with_dir_truncates_to_directory() -> None:
+    identity = resolve_asset_identity(
+        "s3", {"bucket": "my-bucket"}, {"pattern": r"retail/orders_(\d+)\.csv"}
+    )
+    assert identity.name == "retail/"
+
+
+def test_s3_pattern_leading_metachar_falls_back_to_whole_pattern() -> None:
+    # An empty literal prefix (a metachar leads the pattern) → whole pattern verbatim.
+    identity = resolve_asset_identity("s3", {"bucket": "my-bucket"}, {"pattern": r"(\d+)\.csv"})
+    assert identity.name == r"(\d+)\.csv"
+
+
+def test_s3_pattern_plain_path_with_dot_still_base_prefixes() -> None:
+    # `.` is a regex metachar, so `retail/orders/fixed.csv` cuts at the `.` in
+    # `fixed.csv` and truncates to the directory — a pattern-shaped target is always
+    # a directory-scoped asset (Spark convention), never the literal per-file match.
     identity = resolve_asset_identity(
         "s3", {"bucket": "my-bucket"}, {"pattern": "retail/orders/fixed.csv"}
     )
@@ -329,6 +365,17 @@ def test_nul_byte_in_snowflake_table_uppercases_without_crash() -> None:
         {"table": "ord\x00ers"},
     )
     assert identity.name == "RETAIL.SALES.ORD\x00ERS"
+
+
+def test_quoted_empty_identifier_raises() -> None:
+    # A quoted-empty table (`""`) has a non-empty raw value (passes _require) but
+    # normalizes to an empty dotted segment — reject rather than key `DB.SCHEMA.`.
+    with pytest.raises(ValueError):
+        resolve_asset_identity(
+            "snowflake",
+            {"account": "abc123", "database": "retail", "schema": "sales"},
+            {"table": '""'},
+        )
 
 
 def test_non_string_target_field_raises_cleanly() -> None:

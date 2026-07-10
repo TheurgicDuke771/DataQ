@@ -449,12 +449,7 @@ def _fire_schedule(session: Session, schedule: Schedule, *, now: datetime) -> st
         )
         return "skipped_target"
 
-    run = Run(
-        suite_id=suite.id,
-        asset_id=suite.asset_id,
-        status="queued",
-        triggered_by=f"schedule:{schedule.id}",
-    )
+    run = run_dispatch.new_queued_run(suite, triggered_by=f"schedule:{schedule.id}")
     session.add(run)
     session.commit()
     session.refresh(run)

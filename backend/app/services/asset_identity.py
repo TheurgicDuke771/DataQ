@@ -40,7 +40,10 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
 
-_GLOB_METACHARS = re.compile(r"[*?\[]")
+# `pattern` is a **regex** (flatfile.py `re.compile`s it, first capture group =
+# batch key), not a glob — so the asset's directory prefix is the literal text
+# before the first regex metacharacter.
+_REGEX_METACHARS = re.compile(r"[\\.^$*+?{}\[\]|()]")
 
 
 @dataclass(frozen=True)
@@ -74,48 +77,50 @@ def resolve_asset_identity(
 
 
 def normalize_snowflake_account(account: str) -> str:
-    """Normalize a Snowflake account identifier (mirrors `openlineage-common.fix_account_name`).
+    """Normalize a Snowflake account identifier (openlineage's ``fix_account_name``).
 
-    An org-account identifier (contains a ``-``) is already fully qualified
-    and passes through unchanged. A legacy locator (no ``-``) is dot-segmented
-    and defaulted: one segment (bare locator) gets ``.us-west-1.aws``
-    appended; two segments (locator + region) get ``.aws`` appended; three or
-    more segments (locator + region + cloud) are already complete and pass
-    through unchanged.
+    Byte-compatible with openlineage-common (ADR 0034 decision 2). The hyphen
+    check is scoped to the **first dot-segment** only: an org-account form
+    (``{org}-{account}``) returns *just that first segment*, dropping anything
+    after a dot. Otherwise the locator is dot-segmented and defaulted — one
+    segment (bare locator) gets ``.us-west-1.aws`` appended; two segments
+    (locator + region — the region legitimately contains hyphens like
+    ``us-east-1``) get ``.aws`` appended; three or more segments are already
+    complete and pass through unchanged.
     """
     account = account.strip()
     if not account:
         raise ValueError("snowflake account must be non-empty")
-    if "-" in account:
-        return account
-    segments = account.split(".")
-    if len(segments) == 1:
-        return f"{account}.us-west-1.aws"
-    if len(segments) == 2:
-        return f"{account}.aws"
+    parts = account.split(".")
+    if "-" in parts[0]:
+        return parts[0]
+    if len(parts) == 1:
+        return f"{parts[0]}.us-west-1.aws"
+    if len(parts) == 2:
+        return f"{parts[0]}.{parts[1]}.aws"
     return account
 
 
 def _resolve_snowflake(config: dict[str, Any], target: dict[str, Any]) -> AssetIdentity:
-    account = _require_config(config, "account", "snowflake")
-    database = _require_config(config, "database", "snowflake")
+    account = _require(config, "account", "snowflake", "config")
+    database = _require(config, "database", "snowflake", "config")
     schema = _str_or_none(target.get("schema")) or _str_or_none(config.get("schema"))
     if not schema:
         raise ValueError("snowflake asset identity requires a 'schema' (target or config)")
-    table = _require_target(target, "table", "snowflake")
+    table = _require(target, "table", "snowflake", "target")
     namespace = f"snowflake://{normalize_snowflake_account(account)}"
     name = ".".join(_normalize_part(part, engine="snowflake") for part in (database, schema, table))
     return AssetIdentity(namespace=namespace, name=name)
 
 
 def _resolve_unity_catalog(config: dict[str, Any], target: dict[str, Any]) -> AssetIdentity:
-    workspace_url = _require_config(config, "workspace_url", "unity_catalog")
-    netloc = urlparse(workspace_url).netloc
+    workspace_url = _require(config, "workspace_url", "unity_catalog", "config")
+    netloc = _url_host(workspace_url)
     if not netloc:
         raise ValueError("unity_catalog asset identity requires a valid 'workspace_url'")
-    catalog = _require_target(target, "catalog", "unity_catalog")
+    catalog = _require(target, "catalog", "unity_catalog", "target")
     schema = _str_or_none(target.get("schema")) or "default"
-    table = _require_target(target, "table", "unity_catalog")
+    table = _require(target, "table", "unity_catalog", "target")
     namespace = f"unitycatalog://{netloc}"
     name = ".".join(
         _normalize_part(part, engine="unity_catalog") for part in (catalog, schema, table)
@@ -124,10 +129,10 @@ def _resolve_unity_catalog(config: dict[str, Any], target: dict[str, Any]) -> As
 
 
 def _resolve_adls_gen2(config: dict[str, Any], target: dict[str, Any]) -> AssetIdentity:
-    container = _require_config(config, "container", "adls_gen2")
-    account_url = _require_config(config, "account_url", "adls_gen2")
-    netloc = urlparse(account_url).netloc
-    account = netloc.split(".")[0] if netloc else ""
+    container = _require(config, "container", "adls_gen2", "config")
+    account_url = _require(config, "account_url", "adls_gen2", "config")
+    host = _url_host(account_url)
+    account = host.split(".")[0] if host else ""
     if not account:
         raise ValueError("adls_gen2 asset identity requires a valid 'account_url'")
     namespace = f"abfss://{container}@{account}.dfs.core.windows.net"
@@ -136,7 +141,7 @@ def _resolve_adls_gen2(config: dict[str, Any], target: dict[str, Any]) -> AssetI
 
 
 def _resolve_s3(config: dict[str, Any], target: dict[str, Any]) -> AssetIdentity:
-    bucket = _require_config(config, "bucket", "s3")
+    bucket = _require(config, "bucket", "s3", "config")
     namespace = f"s3://{bucket}"
     name = _flatfile_name(target, "s3")
     return AssetIdentity(namespace=namespace, name=name)
@@ -147,7 +152,7 @@ def _resolve_iceberg(config: dict[str, Any], target: dict[str, Any]) -> AssetIde
     namespace = (
         catalog_uri.strip() if isinstance(catalog_uri, str) and catalog_uri.strip() else "file"
     )
-    table = _require_target(target, "table", "iceberg")
+    table = _require(target, "table", "iceberg", "target")
     ns_part = _str_or_none(target.get("namespace"))
     name = f"{ns_part}.{table}" if ns_part else table
     return AssetIdentity(namespace=namespace, name=name)
@@ -164,20 +169,25 @@ def _flatfile_name(target: dict[str, Any], conn_type: str) -> str:
 
 
 def _pattern_base_prefix(pattern: str) -> str:
-    """The literal directory prefix in front of the first glob metacharacter.
+    """The literal directory prefix in front of the first regex metacharacter.
 
-    Cuts ``pattern`` at the first ``*``/``?``/``[`` and truncates to the last
-    ``/`` before it (the Spark flat-file-dataset convention: the asset is the
-    directory, not the per-file match). A pattern with no ``/`` before its
-    first metacharacter has no directory prefix to fall back to, so the whole
-    pattern is used verbatim rather than yielding an empty name.
+    ``pattern`` is a **regex** (flatfile.py `re.compile`s it, first capture group
+    = batch key), so cut at the first regex metacharacter and keep the literal
+    text before it (the Spark flat-file-dataset convention: the asset is the
+    directory, not the per-file match). If that literal prefix contains a ``/``,
+    truncate to just after the last one (the directory); if it has no ``/`` but
+    is non-empty, use it as-is; if it is empty (a metacharacter leads the
+    pattern), fall back to the whole pattern verbatim rather than an empty name.
     """
-    match = _GLOB_METACHARS.search(pattern)
+    match = _REGEX_METACHARS.search(pattern)
     prefix = pattern[: match.start()] if match else pattern
-    last_slash = prefix.rfind("/")
-    if last_slash == -1:
-        return pattern.lstrip("/")
-    return prefix[: last_slash + 1].lstrip("/")
+    if "/" in prefix:
+        base = prefix[: prefix.rfind("/") + 1]
+    elif prefix:
+        base = prefix
+    else:
+        base = pattern
+    return base.lstrip("/")
 
 
 def _normalize_part(part: str, *, engine: str) -> str:
@@ -192,21 +202,32 @@ def _normalize_part(part: str, *, engine: str) -> str:
     quote_chars = ('"',) if engine == "snowflake" else ('"', "`")
     for quote in quote_chars:
         if len(part) >= 2 and part.startswith(quote) and part.endswith(quote):
-            return part[1:-1]
+            inner = part[1:-1]
+            if not inner:
+                # A quoted-empty identifier (`""`) slips past _require (the raw
+                # value is non-empty) but yields an empty dotted segment — reject
+                # it rather than key an asset on a malformed name like `DB.SCHEMA.`.
+                raise ValueError("identifier part is empty after stripping quotes")
+            return inner
     return part.upper() if engine == "snowflake" else part.lower()
 
 
-def _require_config(config: dict[str, Any], field: str, conn_type: str) -> str:
-    value = config.get(field)
-    if not isinstance(value, str) or not value.strip():
-        raise ValueError(f"{conn_type} asset identity requires a non-empty config {field!r}")
-    return value
+def _url_host(url: str) -> str:
+    """The host of ``url``, tolerating a scheme-less value.
+
+    ``urlparse`` puts a scheme-less host (``adb-1234.azuredatabricks.net``) in
+    ``path``, not ``netloc``; fall back to the first ``/``-segment of ``path`` so
+    a valid-but-scheme-less workspace/account URL still resolves a host.
+    """
+    parsed = urlparse(url)
+    return parsed.netloc or parsed.path.split("/", 1)[0]
 
 
-def _require_target(target: dict[str, Any], field: str, conn_type: str) -> str:
-    value = target.get(field)
+def _require(d: dict[str, Any], field: str, conn_type: str, kind: str) -> str:
+    """Require a non-empty string ``field`` on config/target dict ``d`` (``kind``)."""
+    value = d.get(field)
     if not isinstance(value, str) or not value.strip():
-        raise ValueError(f"{conn_type} asset identity requires a non-empty target {field!r}")
+        raise ValueError(f"{conn_type} asset identity requires a non-empty {kind} {field!r}")
     return value
 
 

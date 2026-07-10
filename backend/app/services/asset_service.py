@@ -72,7 +72,14 @@ def resolve_and_upsert_asset(
             )
             .returning(Asset.id)
         )
-        asset_id = session.execute(stmt).scalar_one()
+        # Savepoint (nested transaction): a genuine DB error (constraint / lock /
+        # connection blip) rolls back ONLY this savepoint, leaving the outer
+        # transaction healthy so the caller's `session.commit()` (create_suite /
+        # update_suite) still succeeds. Without it a failed execute aborts the
+        # whole transaction and the suite save 500s — defeating the fail-soft
+        # "never blocks a save" contract.
+        with session.begin_nested():
+            asset_id = session.execute(stmt).scalar_one()
     except Exception as exc:  # fail-soft: a DB hiccup here must not block the save
         log.warning(
             "asset_upsert_failed",

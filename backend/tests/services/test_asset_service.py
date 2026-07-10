@@ -15,6 +15,8 @@ import pytest
 from sqlalchemy import func, select, update
 
 from backend.app.db.models import Asset, Connection, User
+from backend.app.services import asset_service
+from backend.app.services.asset_identity import AssetIdentity
 from backend.app.services.asset_service import resolve_and_upsert_asset
 
 _SF_CONFIG = {
@@ -59,7 +61,7 @@ def test_upsert_creates_row_and_returns_id(db_session: Any) -> None:
     assert asset_id is not None
     asset = db_session.get(Asset, asset_id)
     assert asset is not None
-    assert asset.namespace == "snowflake://ab12345.eu-west-1"  # hyphen → OL passthrough
+    assert asset.namespace == "snowflake://ab12345.eu-west-1.aws"  # locator.region → OL +.aws
     assert asset.name == "ANALYTICS.SALES.ORDERS"  # db config + target schema + table, uppercased
     assert asset.env == "dev"
     assert asset.connection_id == conn.id
@@ -133,23 +135,33 @@ def test_unresolvable_orchestration_connection_returns_none_no_raise(db_session:
     assert db_session.scalar(select(func.count()).select_from(Asset)) == 0
 
 
-def test_upsert_db_error_returns_none_no_raise(
+def test_upsert_db_error_returns_none_and_keeps_session_usable(
     db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A DB hiccup during the upsert (identity resolved fine) is still fail-soft:
-    the save must not 500 on it."""
+    """A GENUINE DB failure in the upsert is fail-soft AND rolls back only the
+    savepoint: the call returns None and a *subsequent* write+commit on the same
+    session still succeeds — proving the outer transaction wasn't left aborted (the
+    bug the old `db_session.execute` monkeypatch couldn't catch, since mocking the
+    seam never put the real DBAPI connection into a failed-transaction state)."""
     conn = _connection(db_session)  # resolvable identity
-    # Touch the attributes the resolver reads so they're loaded before we break
-    # execute (post-commit they're expired; a lazy refresh would also hit _boom).
-    _ = (conn.type, conn.config, conn.id, conn.env)
 
-    def _boom(*_a: Any, **_k: Any) -> Any:
-        raise RuntimeError("db down")
+    # Force a resolved identity with a NULL namespace so the real INSERT trips the
+    # assets.namespace NOT NULL constraint *inside* the savepoint. AssetIdentity is
+    # a frozen dataclass with no runtime validation → build one bypassing __init__.
+    bad = AssetIdentity.__new__(AssetIdentity)
+    object.__setattr__(bad, "namespace", None)
+    object.__setattr__(bad, "name", "x")
+    monkeypatch.setattr(asset_service, "resolve_asset_identity", lambda *_a, **_k: bad)
 
-    monkeypatch.setattr(db_session, "execute", _boom)
     assert (
         resolve_and_upsert_asset(db_session, conn, {"table": "orders", "schema": "sales"}) is None
     )
+
+    # Savepoint proof: the outer transaction is still healthy — a normal write commits.
+    marker = User(aad_object_id=uuid.uuid4().hex, email=f"ok-{uuid.uuid4().hex[:8]}@ex")
+    db_session.add(marker)
+    db_session.commit()
+    assert db_session.get(User, marker.id) is not None
 
 
 def test_garbage_config_returns_none_no_raise(db_session: Any) -> None:

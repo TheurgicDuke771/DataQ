@@ -33,8 +33,19 @@ def client(db_session: Any) -> Iterator[TestClient]:
         app.dependency_overrides.clear()
 
 
-def _connection(db_session: Any) -> Connection:
-    """Insert a connection (with its own owner) for suites to bind to."""
+# A snowflake config that only carries `account` — no database/schema, so a
+# target does NOT resolve to an asset identity (the fail-soft NULL-asset path).
+_PARTIAL_SF_CONFIG = {"account": "ab12345.eu-west-1"}
+# A fully-configured snowflake config whose target resolves to an asset identity.
+_FULL_SF_CONFIG = {"account": "ab12345.eu-west-1", "database": "ANALYTICS", "schema": "PUBLIC"}
+
+
+def _connection(db_session: Any, *, config: dict[str, Any] | None = None) -> Connection:
+    """Insert a snowflake connection (with its own owner) for suites to bind to.
+
+    ``config`` defaults to the partial (`account`-only) config, which omits
+    database/schema on purpose so a target fails to resolve an asset (fail-soft NULL
+    path); pass ``_FULL_SF_CONFIG`` for the fully-resolvable case."""
     owner = User(aad_object_id=uuid.uuid4().hex, email="owner@example.com")
     db_session.add(owner)
     db_session.flush()
@@ -42,7 +53,7 @@ def _connection(db_session: Any) -> Connection:
         name=f"sf-{uuid.uuid4().hex[:8]}",
         type="snowflake",
         env="dev",
-        config={"account": "ab12345.eu-west-1"},
+        config=_PARTIAL_SF_CONFIG if config is None else config,
         secret_ref="kv-sf",
         created_by=owner.id,
     )
@@ -282,27 +293,8 @@ def test_patch_sets_target(client: TestClient, db_session: Any) -> None:
 # ───────────────────────── asset resolution (ADR 0034, #757) ─────────
 
 
-def _full_snowflake_connection(db_session: Any) -> Connection:
-    """A fully-configured snowflake connection whose target actually resolves to an
-    asset identity (the `_connection` helper omits database/schema on purpose)."""
-    owner = User(aad_object_id=uuid.uuid4().hex, email=f"ao-{uuid.uuid4().hex[:8]}@ex")
-    db_session.add(owner)
-    db_session.flush()
-    conn = Connection(
-        name=f"sf-{uuid.uuid4().hex[:8]}",
-        type="snowflake",
-        env="dev",
-        config={"account": "ab12345.eu-west-1", "database": "ANALYTICS", "schema": "PUBLIC"},
-        secret_ref="kv-sf",
-        created_by=owner.id,
-    )
-    db_session.add(conn)
-    db_session.commit()
-    return conn
-
-
 def test_create_with_target_resolves_and_links_asset(client: TestClient, db_session: Any) -> None:
-    conn = _full_snowflake_connection(db_session)
+    conn = _connection(db_session, config=_FULL_SF_CONFIG)
     sid = client.post(
         "/api/v1/suites", json=_payload(conn.id, target={"table": "orders", "schema": "sales"})
     ).json()["id"]
@@ -310,13 +302,14 @@ def test_create_with_target_resolves_and_links_asset(client: TestClient, db_sess
     suite = db_session.get(Suite, uuid.UUID(sid))
     assert suite.asset_id is not None
     asset = db_session.get(Asset, suite.asset_id)
-    assert asset.namespace == "snowflake://ab12345.eu-west-1"
+    # locator.region → OL appends `.aws` (region legitimately hyphenated)
+    assert asset.namespace == "snowflake://ab12345.eu-west-1.aws"
     assert asset.name == "ANALYTICS.SALES.ORDERS"
     assert asset.env == "dev"
 
 
 def test_update_target_repoints_to_new_asset(client: TestClient, db_session: Any) -> None:
-    conn = _full_snowflake_connection(db_session)
+    conn = _connection(db_session, config=_FULL_SF_CONFIG)
     sid = client.post(
         "/api/v1/suites", json=_payload(conn.id, target={"table": "orders", "schema": "sales"})
     ).json()["id"]

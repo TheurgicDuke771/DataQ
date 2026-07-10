@@ -230,10 +230,12 @@ def _trigger_suites(
             pg_insert(Run)
             .values(
                 suite_id=binding.suite_id,
-                # Stamp the suite's asset at dispatch (ADR 0034) inline, so an
-                # orchestration-triggered run records its asset like every other
-                # run path. Scalar subquery keeps it a single INSERT; NULL when
-                # the suite never resolved an asset (fail-soft).
+                # Bespoke Run construction (atomic dedup needs pg_insert) — the
+                # ORM sibling is `run_dispatch.new_queued_run`; a new stamped run
+                # field must land in BOTH. Stamp the suite's asset at dispatch (ADR
+                # 0034) inline, so an orchestration-triggered run records its asset
+                # like every other run path. Scalar subquery keeps it a single
+                # INSERT; NULL when the suite never resolved an asset (fail-soft).
                 asset_id=select(Suite.asset_id)
                 .where(Suite.id == binding.suite_id)
                 .scalar_subquery(),

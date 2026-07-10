@@ -53,20 +53,24 @@ depends_on: str | Sequence[str] | None = None
 
 
 # ── Frozen copy of asset_identity.resolve_asset_identity (see module docstring) ──
-_GLOB_METACHARS = re.compile(r"[*?\[]")
+# `pattern` is a regex (flatfile.py `re.compile`s it), not a glob.
+_REGEX_METACHARS = re.compile(r"[\\.^$*+?{}\[\]|()]")
 
 
 def _normalize_snowflake_account(account: str) -> str:
+    # openlineage `fix_account_name`: hyphen check scoped to the first dot-segment
+    # (org-account form returns only that segment); locator regions legitimately
+    # contain hyphens (`us-east-1`) so must still get `.aws` appended.
     account = account.strip()
     if not account:
         raise ValueError("empty account")
-    if "-" in account:
-        return account
-    segments = account.split(".")
-    if len(segments) == 1:
-        return f"{account}.us-west-1.aws"
-    if len(segments) == 2:
-        return f"{account}.aws"
+    parts = account.split(".")
+    if "-" in parts[0]:
+        return parts[0]
+    if len(parts) == 1:
+        return f"{parts[0]}.us-west-1.aws"
+    if len(parts) == 2:
+        return f"{parts[0]}.{parts[1]}.aws"
     return account
 
 
@@ -74,28 +78,39 @@ def _str_or_none(value: Any) -> str | None:
     return value if isinstance(value, str) and value.strip() else None
 
 
-def _require(d: dict[str, Any], field: str) -> str:
+def _require(d: dict[str, Any], field: str, conn_type: str, kind: str) -> str:
     value = d.get(field)
     if not isinstance(value, str) or not value.strip():
-        raise ValueError(f"missing {field!r}")
+        raise ValueError(f"{conn_type} missing {kind} {field!r}")
     return value
+
+
+def _url_host(url: str) -> str:
+    parsed = urlparse(url)
+    return parsed.netloc or parsed.path.split("/", 1)[0]
 
 
 def _normalize_part(part: str, *, engine: str) -> str:
     quote_chars = ('"',) if engine == "snowflake" else ('"', "`")
     for quote in quote_chars:
         if len(part) >= 2 and part.startswith(quote) and part.endswith(quote):
-            return part[1:-1]
+            inner = part[1:-1]
+            if not inner:
+                raise ValueError("empty quoted identifier part")
+            return inner
     return part.upper() if engine == "snowflake" else part.lower()
 
 
 def _pattern_base_prefix(pattern: str) -> str:
-    match = _GLOB_METACHARS.search(pattern)
+    match = _REGEX_METACHARS.search(pattern)
     prefix = pattern[: match.start()] if match else pattern
-    last_slash = prefix.rfind("/")
-    if last_slash == -1:
-        return pattern.lstrip("/")
-    return prefix[: last_slash + 1].lstrip("/")
+    if "/" in prefix:
+        base = prefix[: prefix.rfind("/") + 1]
+    elif prefix:
+        base = prefix
+    else:
+        base = pattern
+    return base.lstrip("/")
 
 
 def _flatfile_name(target: dict[str, Any]) -> str:
@@ -114,45 +129,45 @@ def _resolve_identity(
     """Return ``(namespace, name)`` or raise ``ValueError`` — frozen copy of
     `asset_identity.resolve_asset_identity` as of this revision."""
     if conn_type == "snowflake":
-        account = _require(config, "account")
-        database = _require(config, "database")
+        account = _require(config, "account", "snowflake", "config")
+        database = _require(config, "database", "snowflake", "config")
         schema = _str_or_none(target.get("schema")) or _str_or_none(config.get("schema"))
         if not schema:
             raise ValueError("snowflake requires a schema")
-        table = _require(target, "table")
+        table = _require(target, "table", "snowflake", "target")
         namespace = f"snowflake://{_normalize_snowflake_account(account)}"
         name = ".".join(_normalize_part(p, engine="snowflake") for p in (database, schema, table))
         return namespace, name
     if conn_type == "unity_catalog":
-        workspace_url = _require(config, "workspace_url")
-        netloc = urlparse(workspace_url).netloc
+        workspace_url = _require(config, "workspace_url", "unity_catalog", "config")
+        netloc = _url_host(workspace_url)
         if not netloc:
             raise ValueError("unity_catalog requires a valid workspace_url")
-        catalog = _require(target, "catalog")
+        catalog = _require(target, "catalog", "unity_catalog", "target")
         schema = _str_or_none(target.get("schema")) or "default"
-        table = _require(target, "table")
+        table = _require(target, "table", "unity_catalog", "target")
         namespace = f"unitycatalog://{netloc}"
         name = ".".join(
             _normalize_part(p, engine="unity_catalog") for p in (catalog, schema, table)
         )
         return namespace, name
     if conn_type == "adls_gen2":
-        container = _require(config, "container")
-        account_url = _require(config, "account_url")
-        netloc = urlparse(account_url).netloc
-        account = netloc.split(".")[0] if netloc else ""
+        container = _require(config, "container", "adls_gen2", "config")
+        account_url = _require(config, "account_url", "adls_gen2", "config")
+        host = _url_host(account_url)
+        account = host.split(".")[0] if host else ""
         if not account:
             raise ValueError("adls_gen2 requires a valid account_url")
         return f"abfss://{container}@{account}.dfs.core.windows.net", _flatfile_name(target)
     if conn_type == "s3":
-        bucket = _require(config, "bucket")
+        bucket = _require(config, "bucket", "s3", "config")
         return f"s3://{bucket}", _flatfile_name(target)
     if conn_type == "iceberg":
         catalog_uri = config.get("catalog_uri")
         namespace = (
             catalog_uri.strip() if isinstance(catalog_uri, str) and catalog_uri.strip() else "file"
         )
-        table = _require(target, "table")
+        table = _require(target, "table", "iceberg", "target")
         ns_part = _str_or_none(target.get("namespace"))
         name = f"{ns_part}.{table}" if ns_part else table
         return namespace, name

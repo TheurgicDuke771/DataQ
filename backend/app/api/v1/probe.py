@@ -65,12 +65,7 @@ def trigger_snowflake_probe(
     settings = get_settings()
     _, suite, _ = ensure_probe_fixtures(db, user=current_user, settings=settings)
 
-    run = Run(
-        suite_id=suite.id,
-        asset_id=suite.asset_id,
-        status="queued",
-        triggered_by=f"probe:{current_user.id}",
-    )
+    run = run_dispatch.new_queued_run(suite, triggered_by=f"probe:{current_user.id}")
     db.add(run)
     db.commit()
     db.refresh(run)

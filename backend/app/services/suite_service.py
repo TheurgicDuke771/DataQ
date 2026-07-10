@@ -168,10 +168,14 @@ def update_suite(
         connection = session.get(Connection, suite.connection_id)
         assert connection is not None  # FK is RESTRICT; a suite always has its connection
         run_target.validate_target(connection.type, target)
+        # Skip the re-resolve + upsert on a no-op PATCH (target re-sent unchanged and
+        # already linked) — the identity hasn't moved, so it's a wasted DB write.
+        is_noop = target == suite.target and suite.asset_id is not None
         suite.target = target
-        # Re-point the suite at the asset its new target resolves to (ADR 0034).
-        # Fail-soft: an unresolvable target leaves asset_id NULL, never 500s.
-        suite.asset_id = resolve_and_upsert_asset(session, connection, target)
+        if not is_noop:
+            # Re-point the suite at the asset its new target resolves to (ADR 0034).
+            # Fail-soft: an unresolvable target leaves asset_id NULL, never 500s.
+            suite.asset_id = resolve_and_upsert_asset(session, connection, target)
     session.commit()
     session.refresh(suite)
     log.info("suite_updated", suite_id=str(suite.id))

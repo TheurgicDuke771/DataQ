@@ -303,12 +303,7 @@ def trigger_suite_run(suite_id: str) -> dict[str, Any]:
             raise ToolError("suite has no connection")
         # Raises SuiteTargetInvalidError (→ ToolError) for a targetless/wrong target.
         run_target.resolve_target(connection.type, suite.target)
-        run = Run(
-            suite_id=suite.id,
-            asset_id=suite.asset_id,
-            status="queued",
-            triggered_by=f"mcp:{user.id}",
-        )
+        run = run_dispatch.new_queued_run(suite, triggered_by=f"mcp:{user.id}")
         session.add(run)
         session.commit()
         session.refresh(run)
