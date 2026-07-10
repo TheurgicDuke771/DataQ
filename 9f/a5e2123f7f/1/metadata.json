@@ -1,0 +1,133 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_id": "9fa5e2123f7f",
+  "session_id": "aef9f6a4-f51b-4006-84c5-e914ce549fd6",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-10T14:50:17.374361Z",
+  "branch": "feature/757-asset-entity",
+  "checkpoints_count": 6,
+  "save_step_count": 2,
+  "files_touched": [
+    "backend/app/services/asset_identity.py",
+    "backend/tests/services/test_asset_identity.py"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "1ace57f7e5cd",
+  "checkpoint_transcript_start": 460,
+  "transcript_lines_at_start": 460,
+  "token_usage": {
+    "input_tokens": 2382,
+    "cache_creation_tokens": 514728,
+    "cache_read_tokens": 8430772,
+    "output_tokens": 30222,
+    "api_call_count": 34
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01RNmFM9FtY5xPR2DobCs6t1",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "1ace57f7e5cd",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 274,
+        "end": 275,
+        "entry_ids": [
+          "76d036f2-a8be-449c-b063-e4262ef549fb"
+        ],
+        "tool_use_id": "toolu_01RNmFM9FtY5xPR2DobCs6t1"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01RNmFM9FtY5xPR2DobCs6t1"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 23
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-10T14:50:17.337319Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 0,
+    "total_lines_changed": 0,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 1035,
+      "user_lines_removed": 6,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6,
+        "backend/alembic/versions/f8b9c0d1e2a3_add_assets_entity.py": 270,
+        "backend/app/api/v1/probe.py": 6,
+        "backend/app/api/v1/suites.py": 6,
+        "backend/app/db/models.py": 65,
+        "backend/app/mcp/server.py": 6,
+        "backend/app/services/asset_identity.py": 214,
+        "backend/app/services/asset_service.py": 90,
+        "backend/app/services/orchestration_service.py": 13,
+        "backend/app/services/suite_service.py": 8,
+        "backend/app/worker/tasks.py": 6,
+        "backend/tests/services/test_asset_identity.py": 345
+      },
+      "user_removed_per_file": {
+        "backend/app/api/v1/probe.py": 1,
+        "backend/app/api/v1/suites.py": 1,
+        "backend/app/mcp/server.py": 1,
+        "backend/app/services/orchestration_service.py": 2,
+        "backend/app/worker/tasks.py": 1
+      }
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 270,
+      "user_lines_removed": 3,
+      "agent_lines_added": 1029,
+      "agent_lines_removed": 6,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6,
+        "backend/alembic/versions/f8b9c0d1e2a3_add_assets_entity.py": 7,
+        "backend/tests/api/test_runs.py": 23,
+        "backend/tests/api/test_suites.py": 73,
+        "backend/tests/services/test_asset_service.py": 161
+      },
+      "user_removed_per_file": {
+        "backend/alembic/versions/f8b9c0d1e2a3_add_assets_entity.py": 2,
+        "backend/tests/api/test_suites.py": 1
+      }
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1291,
+      "agent_lines_removed": 7,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}
