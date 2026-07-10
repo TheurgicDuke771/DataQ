@@ -37,6 +37,7 @@ from backend.app.db.models import (
     Suite,
 )
 from backend.app.db.session import get_session
+from backend.app.lineage import dispatch as lineage_dispatch
 from backend.app.orchestration.registry import get_orchestration_provider
 from backend.app.services import (
     cron,
@@ -190,7 +191,14 @@ def run_suite(run_id: str) -> str:
     rid = uuid.UUID(run_id)
     session = get_session()
     try:
+        # OpenLineage START/terminal emission (ADR 0034, #758) brackets the run.
+        # Both calls are fail-open and dark-by-default (no-op with zero queries when
+        # unconfigured), so they never fail or slow the task — the single choke
+        # point covering execute/skip/early-fail with a guaranteed START+terminal
+        # pair per run id. Sits next to the alert-dispatch hook (same contract).
+        lineage_dispatch.emit_run_lineage_start(session, run_id=rid)
         outcome = _run_suite(session, run_id=rid)
+        lineage_dispatch.emit_run_lineage_terminal(session, run_id=rid)
         alert_dispatch.publish_run_outcome(session, run_id=rid)
         return outcome
     finally:
