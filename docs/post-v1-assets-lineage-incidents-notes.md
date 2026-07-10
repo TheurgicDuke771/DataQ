@@ -127,12 +127,16 @@ into:
 - **Asset metadata mutations** (assign owner, description): **workspace-Admin-only**
   at first — the cheap, safe row on the 0033 matrix; widen to composing-suite `edit`
   later if it chafes.
-- **UI phasing:** (2) read-only Assets list + asset page (health across suites) →
+- **UI phasing** (phase 1 — the asset entity — has no UI): (2) read-only Assets list + asset page (health across suites) →
   (3) lineage panel + incident list on the asset page → (4) navigation inversion
   (sidebar leads with Assets; suites demote to "execution groups"). Phase 4 is where
   DataQ stops feeling like GX-as-a-service — and it is deliberately last.
 
-## Filed phase-1 issues (build order)
+## Filed build issues (order)
+
+_("Phase-1" in the #596 sense — the first filed set. Within them, "phase 1–4" below
+and in §1–§4 means the four build phases: #757 = phase 1, #760 = phase 2, #759/#761
+= phase 3, navigation inversion = phase 4.)_
 
 1. **#757** — asset entity + resolution migration + backfill (the prerequisite of everything).
 2. **#758** — OpenLineage emission from `run_service` (assertions + metrics facets, dark by default).

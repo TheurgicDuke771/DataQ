@@ -540,7 +540,7 @@ Two directions, one seam:
 **Shared primitive:** this whole section keys on the **asset entity** (Theme 3's Asset-first IA
 capture, phase 1) with **OpenLineage dataset naming as the canonical identity** — build that
 first; catalog mapping, lineage nodes, and quality-facet publishing all resolve through it.
-_Design pinned 2026-07-10 (ADR 0034 + the #596 doc): asset entity = #757; OL emission w/
+_Design pinned 2026-07-10 (ADR 0034 + the [#596 doc](../docs/post-v1-assets-lineage-incidents-notes.md)): asset entity = #757; OL emission w/
 quality facets = #758; catalog pull behind a `LineageProvider` seam, Marquez reference = #762
 (DataHub deferred to bring-your-own; **OpenMetadata SDK is license-blocked** — Collate
 source-available, ADR 0031 — REST-only if ever; Purview parked with the Azure wind-down)._
