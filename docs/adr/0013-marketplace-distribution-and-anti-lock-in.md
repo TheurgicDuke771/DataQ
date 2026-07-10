@@ -4,6 +4,16 @@
 - **Date:** 2026-06-01
 - **Deciders:** @TheurgicDuke771
 
+> **Amendment (2026-07-09, [ADR 0031](0031-oss-byol-distribution-licensing.md)):**
+> the licensing model is decided as **free open-source (MIT) — there is no license
+> revenue**. This supersedes §5's "licensing model + entitlement/license-key" open
+> item and this ADR's licensed-revenue framing of BYOL (the comparison table's
+> "billed outside the meter", the Consequences' "revenue is licensed outside the
+> meter", the Alternatives' "approximate with BYOL licensing"). The distribution
+> model (customer-deployed BYOL), the phasing, and the anti-lock-in guardrails
+> below are unchanged; §5's remaining commercial/legal items carry per-item
+> dispositions in issue #732.
+
 ## Context
 
 We are evaluating listing DataQ on the **Azure, AWS, and GCP marketplaces**. Two questions follow: is it viable given the current architecture, and what must change to keep the option open without derailing the 8-week v1.
@@ -69,4 +79,5 @@ The architecture is already partly portable by intent — [ADR 0010](0010-provid
 
 - [ADR 0010](0010-provider-agnostic-infrastructure-seams.md) — provider-agnostic infra seams (the per-seam discipline this distribution decision depends on).
 - [ADR 0011](0011-extensibility-seams-for-deferred-integrations.md) — feature-side extensibility seams (connectors, `ResultPublisher`, dbt-as-provider).
+- [ADR 0031](0031-oss-byol-distribution-licensing.md) — **supersedes the §5 "licensing model + entitlement/license-key" line**: distribution licensing decided as free open-source (MIT) + BYOL, no entitlement machinery; the rest of this ADR stands.
 - CLAUDE.md §1 (single-tenant scope), §9 (decision table), §11 (anti-patterns — "don't bypass the abstraction").
