@@ -21,13 +21,29 @@ from datetime import UTC, datetime
 from sqlalchemy.orm import Session
 
 from backend.app.core.logging import get_logger
-from backend.app.db.models import Run
+from backend.app.db.models import Run, Suite
 from backend.app.worker.celery_app import celery_app
 
 log = get_logger(__name__)
 
 _RUN_SUITE_TASK = "run_suite"
 _AUTO_CLASSIFY_TASK = "auto_classify_columns"
+
+
+def new_queued_run(suite: Suite, *, triggered_by: str) -> Run:
+    """A fresh ``queued`` `Run` for ``suite``, asset stamped at dispatch (ADR 0034).
+
+    The one ORM construction shared by every non-orchestration trigger path (manual /
+    probe / MCP / schedule) so the next field to stamp on a run lands in one place, not
+    four. `orchestration_service` builds its Run via `pg_insert` (atomic dedup) with a
+    matching inline ``asset_id`` subquery — keep the two in sync.
+    """
+    return Run(
+        suite_id=suite.id,
+        asset_id=suite.asset_id,
+        status="queued",
+        triggered_by=triggered_by,
+    )
 
 
 def dispatch_auto_classify(suite_id: uuid.UUID) -> None:

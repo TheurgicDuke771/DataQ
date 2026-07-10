@@ -20,6 +20,7 @@ from sqlalchemy import select
 
 from backend.app.core.auth import get_current_user
 from backend.app.db.models import (
+    Asset,
     Check,
     Connection,
     PipelineRun,
@@ -109,6 +110,28 @@ def test_trigger_creates_queued_run_and_dispatches(
     run = db_session.get(Run, uuid.UUID(body["id"]))
     assert run is not None and run.status == "queued"
     assert stub_run_dispatch == [body["id"]]
+
+
+def test_trigger_stamps_suite_asset_id_on_run(
+    client: TestClient, db_session: Any, stub_run_dispatch: list[str]
+) -> None:
+    """A manually-triggered run records the suite's resolved asset (ADR 0034):
+    run.asset_id == suite.asset_id at dispatch."""
+    dev = _user(db_session, "dev@ex")
+    _as(dev)
+    suite = _suite(db_session, dev, target={"table": "ORDERS"})
+    # Attach a resolved asset to the suite (as the save hook would have).
+    asset = Asset(namespace="snowflake://acct", name="DB.SCHEMA.ORDERS", env="dev")
+    db_session.add(asset)
+    db_session.flush()
+    suite.asset_id = asset.id
+    db_session.commit()
+
+    resp = client.post(f"/api/v1/suites/{suite.id}/run")
+
+    assert resp.status_code == 202
+    run = db_session.get(Run, uuid.UUID(resp.json()["id"]))
+    assert run.asset_id == asset.id
 
 
 def test_trigger_targetless_suite_returns_422_and_creates_no_run(

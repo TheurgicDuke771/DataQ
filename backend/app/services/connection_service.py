@@ -28,7 +28,8 @@ from backend.app.datasources.registry import (
     UnsupportedConnectionTypeError,
     get_connection_adapter,
 )
-from backend.app.db.models import ENVS, Connection, ConnectionVersion
+from backend.app.db.models import ENVS, Connection, ConnectionVersion, Suite
+from backend.app.services.asset_service import resolve_and_upsert_asset
 
 log = get_logger(__name__)
 
@@ -276,8 +277,37 @@ def update_connection(
         session.rollback()
         raise _conflict_from_integrity_error(exc, conn_type=conn_type, env=conn_env) from exc
     session.refresh(conn)
+    if config is not None:
+        _reresolve_suite_assets(session, conn)
     log.info("connection_updated", connection_id=str(conn.id))
     return conn
+
+
+def _reresolve_suite_assets(session: Session, conn: Connection) -> None:
+    """Re-point every targeted suite on `conn` at the asset its target now resolves to.
+
+    A config change (account / database / workspace_url / container / bucket — every
+    field the OpenLineage identity keys on) moves the asset identity, so a suite bound
+    to `conn` would otherwise keep a **stale, confidently-wrong** `asset_id` that every
+    later run stamps (worse than NULL for lineage/incidents — ADR 0034). Fail-soft:
+    `resolve_and_upsert_asset` never raises; an unresolvable target leaves `asset_id`
+    NULL and the update still succeeds.
+    """
+    suites = list(
+        session.scalars(
+            select(Suite).where(Suite.connection_id == conn.id, Suite.target.isnot(None))
+        )
+    )
+    if not suites:
+        return
+    for suite in suites:
+        suite.asset_id = resolve_and_upsert_asset(session, conn, suite.target)
+    session.commit()
+    log.info(
+        "connection_suite_assets_reresolved",
+        connection_id=str(conn.id),
+        count=len(suites),
+    )
 
 
 def reauth_connection(

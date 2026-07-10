@@ -21,7 +21,7 @@ from backend.app.api.v1.runs import RunRead
 from backend.app.core.auth import get_current_user, is_workspace_admin
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore, get_secret_store
-from backend.app.db.models import Connection, Run, Suite, User
+from backend.app.db.models import Connection, Suite, User
 from backend.app.db.session import get_db
 from backend.app.services import profile_service as profile
 from backend.app.services import run_dispatch, run_target
@@ -248,7 +248,7 @@ def trigger_suite_run(
     # Raises SuiteTargetInvalidError (422) for a targetless / wrong-datasource target.
     run_target.resolve_target(connection.type, suite.target)
 
-    run = Run(suite_id=suite.id, status="queued", triggered_by=f"manual:{current_user.id}")
+    run = run_dispatch.new_queued_run(suite, triggered_by=f"manual:{current_user.id}")
     db.add(run)
     db.commit()
     db.refresh(run)

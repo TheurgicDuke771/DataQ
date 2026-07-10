@@ -24,6 +24,7 @@ from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.db.models import ORCHESTRATION_PROVIDERS, Connection, Share, Suite
 from backend.app.services import run_target
+from backend.app.services.asset_service import resolve_and_upsert_asset
 from backend.app.services.column_classification import is_sensitive
 
 log = get_logger(__name__)
@@ -99,12 +100,16 @@ def create_suite(
         )
     if target is not None:
         run_target.validate_target(connection.type, target)
+    # Resolve the target to a first-class asset (ADR 0034). Fail-soft — a NULL
+    # asset_id never blocks the save (resolve_and_upsert_asset never raises).
+    asset_id = resolve_and_upsert_asset(session, connection, target)
     suite = Suite(
         name=name,
         description=description,
         connection_id=connection_id,
         created_by=created_by,
         target=target,
+        asset_id=asset_id,
     )
     session.add(suite)
     session.commit()
@@ -163,7 +168,14 @@ def update_suite(
         connection = session.get(Connection, suite.connection_id)
         assert connection is not None  # FK is RESTRICT; a suite always has its connection
         run_target.validate_target(connection.type, target)
+        # Skip the re-resolve + upsert on a no-op PATCH (target re-sent unchanged and
+        # already linked) — the identity hasn't moved, so it's a wasted DB write.
+        is_noop = target == suite.target and suite.asset_id is not None
         suite.target = target
+        if not is_noop:
+            # Re-point the suite at the asset its new target resolves to (ADR 0034).
+            # Fail-soft: an unresolvable target leaves asset_id NULL, never 500s.
+            suite.asset_id = resolve_and_upsert_asset(session, connection, target)
     session.commit()
     session.refresh(suite)
     log.info("suite_updated", suite_id=str(suite.id))

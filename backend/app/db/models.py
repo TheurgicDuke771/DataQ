@@ -13,6 +13,7 @@ from sqlalchemy import (
     Integer,
     Numeric,
     String,
+    Text,
     UniqueConstraint,
     func,
     text,
@@ -149,6 +150,51 @@ class ApiKey(Base):
     updated_at: Mapped[datetime] = _updated_at()
 
 
+class Asset(Base):
+    """A first-class data asset — the browse/reason grain (ADR 0034, gap G-d).
+
+    Today "the table" exists only implicitly inside `Suite.target` JSONB. This
+    table promotes it to a shared primitive that lineage edges, incidents, and a
+    future catalog sync can all reference. Suites remain the execution/authz grain
+    (ADR 0027 untouched); assets are what users reason about. Two axes, like dbt
+    models-vs-jobs.
+
+    **Identity = the OpenLineage dataset naming spec** — `(namespace, name)` unique
+    together, adopted verbatim (including its quote-strip / engine-case / Snowflake
+    account normalization rules) so our identifiers match `openlineage-dbt` / Spark
+    emissions byte-for-byte, making future emission/pull interop a join, not a
+    mapping layer. Consequence accepted: DEV/QA accounts are *distinct* assets —
+    cross-env grouping is a UI concern over `env`, never an identity merge.
+
+    `connection_id` is a **provenance hint, not identity** (SET NULL on connection
+    delete — the asset outlives the connection that first surfaced it).
+    `owner_user_id` is the later incident-routing hop (§4). `first_seen`/`last_seen`
+    bound the accrete-not-delete cleanup posture.
+    """
+
+    __tablename__ = "assets"
+    __table_args__ = (UniqueConstraint("namespace", "name", name="uq_assets_namespace_name"),)
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    namespace: Mapped[str] = mapped_column(Text, nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    # From the resolving connection (the OL spec keys namespace on tenant/physical
+    # isolation, so env is metadata, not identity — see class docstring).
+    env: Mapped[str | None] = mapped_column(String(16))
+    connection_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("connections.id", ondelete="SET NULL")
+    )
+    owner_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    first_seen: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    last_seen: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class Connection(Base):
     __tablename__ = "connections"
     __table_args__ = (
@@ -253,6 +299,7 @@ class Suite(Base):
     __table_args__ = (
         Index("ix_suites_connection_id", "connection_id"),
         Index("ix_suites_created_by", "created_by"),
+        Index("ix_suites_asset_id", "asset_id"),
     )
 
     id: Mapped[uuid.UUID] = _uuid_pk()
@@ -267,6 +314,15 @@ class Suite(Base):
     # resolved per connection type to the runner's (table, schema, catalog) by
     # `services.run_target.resolve_target`. NULL = targetless = not yet runnable.
     target: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    # The asset this suite's target resolves to (ADR 0034, gap G-d). Resolved from
+    # `target` + the connection config on save via OpenLineage identity naming.
+    # Nullable because resolution is fail-soft: a targetless or unresolvable suite
+    # keeps this NULL rather than blocking the save. `connection_id` provenance
+    # aside, this is the browse/reason link; SET NULL so an asset sweep never
+    # deletes a suite.
+    asset_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("assets.id", ondelete="SET NULL")
+    )
     # Column-redaction policy for failing-row samples (#415): which columns may be
     # shown vs masked when surfacing `Result.sample_failures`. Shape:
     # `{"identifier_column": str, "pii_columns": [str]}` — the identifier is always
@@ -379,6 +435,7 @@ class Run(Base):
         _in_check("status", RUN_STATUSES, "status_valid"),
         Index("ix_runs_suite_id", "suite_id"),
         Index("ix_runs_status", "status"),
+        Index("ix_runs_asset_id", "asset_id"),
         # Trigger-dedup race guard (#308): one suite run per orchestration
         # pipeline-run event. Partial — orchestration markers only
         # (`<provider>:<pipeline>:<run_id>`); manual/probe/schedule markers
@@ -402,6 +459,13 @@ class Run(Base):
     # ever run 500'd on delete.
     suite_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("suites.id", ondelete="CASCADE"), nullable=False
+    )
+    # The asset resolved from the suite's target, **stamped at dispatch** (ADR
+    # 0034): run history records the asset a run actually ran against, so it never
+    # rewrites when a suite's target later changes. Nullable — fail-soft, mirrors
+    # `Suite.asset_id`, and SET NULL so an asset sweep never deletes a run.
+    asset_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("assets.id", ondelete="SET NULL")
     )
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     triggered_by: Mapped[str | None] = mapped_column(String(256))
@@ -624,6 +688,7 @@ class SuiteNotification(Base):
 
 
 __all__ = [
+    "Asset",
     "Base",
     "Check",
     "Connection",

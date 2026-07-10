@@ -115,11 +115,22 @@ erDiagram
         jsonb config
         uuid changed_by FK "SET NULL"
     }
+    assets {
+        uuid id PK
+        string namespace "OpenLineage dataset namespace (ADR 0034)"
+        string name "OpenLineage dataset name — (namespace,name) unique"
+        string env "metadata, not identity"
+        uuid connection_id FK "provenance hint (SET NULL)"
+        uuid owner_user_id FK "incident-routing hop (SET NULL)"
+        timestamptz first_seen
+        timestamptz last_seen
+    }
     suites {
         uuid id PK
         string name
         string description
         uuid connection_id FK
+        uuid asset_id FK "resolved target asset (SET NULL, fail-soft)"
         jsonb target "table / path / UC name the checks run against"
         jsonb column_policy "failing-sample redaction policy"
         uuid created_by FK
@@ -226,6 +237,11 @@ erDiagram
     connections ||--o{ connection_versions : "config history (CASCADE)"
     connections ||--o{ suites : "datasource for"
     connections ||--o{ pipeline_runs : "orchestrator connection"
+    connections |o--o{ assets : "provenance hint (SET NULL)"
+
+    users |o--o{ assets : "owner_user_id (SET NULL)"
+    assets |o--o{ suites : "resolved target (SET NULL)"
+    assets |o--o{ runs : "stamped at dispatch (SET NULL)"
 
     suites ||--o{ checks : "contains (CASCADE)"
     suites ||--o{ runs : "executed as (CASCADE)"

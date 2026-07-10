@@ -13,8 +13,9 @@ from pydantic import BaseModel
 from sqlalchemy import select
 
 from backend.app.core.secrets import SecretNotFoundError, SecretWriteError
-from backend.app.db.models import Connection, ConnectionVersion, User
+from backend.app.db.models import Asset, Connection, ConnectionVersion, Suite, User
 from backend.app.services import connection_service as svc
+from backend.app.services import suite_service
 from backend.app.services.connection_service import (
     ConnectionConfigInvalidError,
     ConnectionConflictError,
@@ -199,6 +200,34 @@ def test_update_changes_name_and_config(db_session: Any) -> None:
     )
     assert updated.name == "renamed"
     assert updated.config["warehouse"] == "WH_BIG"
+
+
+def test_update_config_reresolves_bound_suite_assets(db_session: Any) -> None:
+    """A config change that moves the OpenLineage identity re-points every targeted
+    suite on the connection at the new asset (ADR 0034) — never a stale asset_id."""
+    conn = _create(db_session, FakeStore())  # _SF_CONFIG: database=ANALYTICS
+    suite = suite_service.create_suite(
+        db_session,
+        name="orders-suite",
+        description=None,
+        connection_id=conn.id,
+        created_by=_user(db_session).id,
+        target={"table": "orders", "schema": "sales"},
+    )
+    assert suite.asset_id is not None
+    assert db_session.get(Asset, suite.asset_id).name == "ANALYTICS.SALES.ORDERS"
+
+    svc.update_connection(
+        db_session,
+        conn.id,
+        config={**_SF_CONFIG, "database": "WAREHOUSE"},
+        secret_store=FakeStore(),
+    )
+
+    db_session.expire_all()
+    refreshed = db_session.get(Suite, suite.id)
+    assert refreshed.asset_id is not None
+    assert db_session.get(Asset, refreshed.asset_id).name == "WAREHOUSE.SALES.ORDERS"
 
 
 def test_update_rotates_secret(db_session: Any) -> None:
