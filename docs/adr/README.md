@@ -12,6 +12,7 @@ Each ADR captures a single significant architecture decision: the context, the d
   - **Consulted** *(optional)* — stakeholders whose sign-off the decision needed (e.g. product owner for ADR 0005). Omit when none.
   - **Supersedes** *(optional)* — `ADR-NNNN` this decision replaces. Omit when none.
   - **Superseded by** *(optional)* — `ADR-NNNN` that later replaced this one. Add when the status flips to `Superseded by`.
+  - **Amends** *(optional)* — `ADR-NNNN` this decision partially overrides (whole-ADR replacement uses `Supersedes` instead). Pair it with an inline `> **Amendment (date, ADR-NNNN):** …` blockquote at the top of the amended ADR and an "(amended by NNNN — …)" note on its index Status, so the override is visible where readers actually look. Precedents: ADR 0028 (amends 0024), ADR 0012's amendment blockquote, ADR 0031 (amends 0013).
 - Sections: Context, Decision, Consequences, Alternatives considered, Related (optional)
 - Keep each ADR short — 1–2 pages. If it grows past that, the decision is probably two decisions.
 
@@ -52,7 +53,7 @@ Each ADR captures a single significant architecture decision: the context, the d
 | [0010](0010-provider-agnostic-infrastructure-seams.md) | Provider-agnostic infrastructure seams (Azure is the default, not the architecture) | Accepted |
 | [0011](0011-extensibility-seams-for-deferred-integrations.md) | Extensibility seams for deferred connectors and integrations | Accepted |
 | [0012](0012-monitor-kind-seam.md) | Monitor-kind seam (`check.kind` discriminator + numeric metric storage) | Accepted |
-| [0013](0013-marketplace-distribution-and-anti-lock-in.md) | Marketplace distribution (customer-deployed BYOL) and anti-vendor-lock-in guardrails | Accepted |
+| [0013](0013-marketplace-distribution-and-anti-lock-in.md) | Marketplace distribution (customer-deployed BYOL) and anti-vendor-lock-in guardrails | Accepted (amended by 0031 — §5 licensing line + licensed-revenue framing) |
 | [0014](0014-reconciliation-comparison-check-kind.md) | Cross-dataset reconciliation as a `comparison` check kind (reuse FastAPI_DataComparison engine) | Accepted |
 | [0016](0016-severity-derivation-semantics.md) | Severity derivation semantics (band the unexpected-%, thresholds override GX success) | Accepted |
 | [0017](0017-python-313-runtime-upgrade.md) | Upgrade Python runtime 3.11 → 3.13 (3.14 deferred — GX-capped); bundled with the Snowflake 3→4 CVE refresh | Accepted |
@@ -69,7 +70,7 @@ Each ADR captures a single significant architecture decision: the context, the d
 | [0028](0028-cloud-neutral-image-runtime-config-generic-oidc.md) | Cloud-neutral image — one multi-arch frontend image, nothing baked; auth config injected at runtime (`window.__DATAQ_CONFIG__` via nginx envsubst) behind a generic `DATAQ_AUTH_*` contract; bypass fail-closed (explicit `DATAQ_AUTH_MODE=bypass` only); replace MSAL with a generic OIDC client validated against Azure; frontend SWA→Container App (amends 0024); AWS/GCP IaC post-v1 (#505) | Accepted |
 | [0029](0029-dbt-orchestration-provider.md) | dbt as a **third** `OrchestrationProvider` (mirrors the Airflow callback model 0007) — HMAC webhook + artifacts poll of `run_results.json` (adls/s3/file); binds to dbt's universal surface (no host API); job-level grain; migration widens the connection-type/provider/dedup value-sets (#611) | Accepted |
 | [0030](0030-iceberg-native-read-path.md) | Apache Iceberg — engine-level read (Snowflake/UC iceberg tables) is free & zero-code; the only new build is a **native `pyiceberg` read** (v2 baseline, v3 deferred) behind a thin `IcebergCheckRunner` (scan → DataFrame → `gx_runner`); new **self-contained** `iceberg` connection type (Option A: own catalog + storage credential — independent lifecycle, cascade-safe), Option B two-connection ref deferred to 0015; reads Delta UniForm too; native impl deferred (#286) | Accepted (spike; native impl deferred) |
-| [0031](0031-oss-byol-distribution-licensing.md) | Distribution licensing — **free open-source (MIT) + customer-deployed BYOL**; no entitlement/license-key (supersedes the 0013 §5 licensing-model line); marketplace listings are free offers of the OSS artifacts; THIRD-PARTY-NOTICES/SBOM in images + releases; standing no-strong-copyleft dependency guardrail | Accepted |
+| [0031](0031-oss-byol-distribution-licensing.md) | Distribution licensing — **free open-source (MIT) + customer-deployed BYOL**; no entitlement/license-key (amends 0013: supersedes its §5 licensing-model line + licensed-revenue framing); marketplace listings are free offers of the OSS artifacts; THIRD-PARTY-NOTICES/SBOM in images + releases; standing no-strong-copyleft dependency guardrail (CONTRIBUTING rule 40) | Accepted |
 
 ## Pending (to be written in their respective weeks)
 

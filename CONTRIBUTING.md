@@ -128,6 +128,7 @@ These are locked on Day 1 of Week 1. Do not drift.
 37. **Hard security review gate before Week 7 deploy:** full pass on all of the above plus public-endpoint exposure review (especially `/api/v1/orchestration/events/*` and `/mcp`).
 38. **Security vulnerabilities are not public GitHub issues.** Report via [GitHub Security Advisories](https://github.com/TheurgicDuke771/DataQ/security/advisories/new). See [SECURITY.md](.github/SECURITY.md).
 39. **Quarterly MCP supply-chain audit:** once a quarter, for each client-side MCP server pinned in `.mcp.json` (see CLAUDE.md Appendix), verify the package hasn't been deprecated, yanked, or transferred to a new publisher (e.g. `npm view <pkg> maintainers time`), and review the changelog before bumping the pinned major version. MCP servers run with local tool access — treat a publisher change like a compromised dependency until verified.
+40. **Dependency license guardrail ([ADR 0031](docs/adr/0031-oss-byol-distribution-licensing.md)):** DataQ ships MIT — the dependency tree stays free of strong-copyleft and source-available licenses (GPL, AGPL, SSPL, BUSL/Elastic, Commons-Clause). Weak copyleft (LGPL/MPL/EPL) is acceptable with notice preservation. Adding a dependency that violates this needs an explicit ADR-level exception. Run the license sweep (backend: installed-env metadata; frontend: lockfile/`node_modules` license fields) alongside the rule-39 quarterly audit and before any release/image publish.
 
 ---
 
