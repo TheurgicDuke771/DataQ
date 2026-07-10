@@ -1010,3 +1010,11 @@ Hey, marquez 0.50.0 is ~250MB, why it is too long
 <summary>Monitor event: "Docker engine recovery → stack → marquez pull"</summary>
 <event>[Monitor timed out — re-arm if needed.]</event>
 </task-notification>
+
+---
+
+<task-notification>
+<task-id>bf42ilhnh</task-id>
+<summary>Monitor event: "alpine probe on restarted engine"</summary>
+<event>[Monitor timed out — re-arm if needed.]</event>
+</task-notification>
