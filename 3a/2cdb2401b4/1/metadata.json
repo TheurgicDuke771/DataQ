@@ -1,0 +1,84 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_id": "3a2cdb2401b4",
+  "session_id": "aef9f6a4-f51b-4006-84c5-e914ce549fd6",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-10T14:50:21.688252Z",
+  "branch": "feature/757-asset-entity",
+  "checkpoints_count": 6,
+  "save_step_count": 1,
+  "files_touched": [
+    "backend/alembic/versions/f8b9c0d1e2a3_add_assets_entity.py",
+    "backend/app/api/v1/probe.py",
+    "backend/app/api/v1/suites.py",
+    "backend/app/db/models.py",
+    "backend/app/mcp/server.py",
+    "backend/app/services/asset_service.py",
+    "backend/app/services/orchestration_service.py",
+    "backend/app/services/suite_service.py",
+    "backend/app/worker/tasks.py",
+    "backend/tests/api/test_runs.py",
+    "backend/tests/api/test_suites.py",
+    "backend/tests/services/test_asset_service.py",
+    "docs/progress.md"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "1ace57f7e5cd",
+  "token_usage": {
+    "input_tokens": 16492,
+    "cache_creation_tokens": 1201209,
+    "cache_read_tokens": 19829966,
+    "output_tokens": 105548,
+    "api_call_count": 106
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01RNmFM9FtY5xPR2DobCs6t1",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "1ace57f7e5cd",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 274,
+        "end": 275,
+        "entry_ids": [
+          "76d036f2-a8be-449c-b063-e4262ef549fb"
+        ],
+        "tool_use_id": "toolu_01RNmFM9FtY5xPR2DobCs6t1"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01RNmFM9FtY5xPR2DobCs6t1"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 23
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-10T14:50:21.624756Z",
+    "agent_lines": 735,
+    "agent_removed": 9,
+    "human_added": 16,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 751,
+    "total_lines_changed": 760,
+    "agent_percentage": 97.89473684210527,
+    "metric_version": 2
+  }
+}
