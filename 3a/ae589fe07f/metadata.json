@@ -4,8 +4,10 @@
   "checkpoint_id": "3aae589fe07f",
   "strategy": "manual-commit",
   "branch": "feature/758-openlineage-emission",
-  "checkpoints_count": 3,
-  "files_touched": null,
+  "checkpoints_count": 18,
+  "files_touched": [
+    "docs/progress.md"
+  ],
   "sessions": [
     {
       "metadata": "/3a/ae589fe07f/0/metadata.json",
@@ -13,13 +15,20 @@
       "compact_transcript": "/3a/ae589fe07f/0/transcript.jsonl",
       "content_hash": "/3a/ae589fe07f/0/content_hash.txt",
       "prompt": "/3a/ae589fe07f/0/prompt.txt"
+    },
+    {
+      "metadata": "/3a/ae589fe07f/1/metadata.json",
+      "transcript": "/3a/ae589fe07f/1/full.jsonl",
+      "compact_transcript": "/3a/ae589fe07f/1/transcript.jsonl",
+      "content_hash": "/3a/ae589fe07f/1/content_hash.txt",
+      "prompt": "/3a/ae589fe07f/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 56537,
-    "cache_creation_tokens": 1690126,
-    "cache_read_tokens": 60942985,
-    "output_tokens": 181871,
-    "api_call_count": 262
+    "input_tokens": 56819,
+    "cache_creation_tokens": 1694111,
+    "cache_read_tokens": 62254533,
+    "output_tokens": 185039,
+    "api_call_count": 265
   }
 }
