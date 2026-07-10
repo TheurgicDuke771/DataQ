@@ -28,7 +28,7 @@ from sqlalchemy.orm import Session, aliased
 
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
-from backend.app.db.models import Connection, PipelineRun, Run, TriggerBinding
+from backend.app.db.models import Connection, PipelineRun, Run, Suite, TriggerBinding
 from backend.app.orchestration.base import OrchestrationProvider, RunUpdate
 from backend.app.orchestration.registry import get_orchestration_provider
 from backend.app.services import run_dispatch
@@ -228,7 +228,18 @@ def _trigger_suites(
         # row comes back only for the winner; the loser/replay returns nothing.
         run = session.scalars(
             pg_insert(Run)
-            .values(suite_id=binding.suite_id, status="queued", triggered_by=marker)
+            .values(
+                suite_id=binding.suite_id,
+                # Stamp the suite's asset at dispatch (ADR 0034) inline, so an
+                # orchestration-triggered run records its asset like every other
+                # run path. Scalar subquery keeps it a single INSERT; NULL when
+                # the suite never resolved an asset (fail-soft).
+                asset_id=select(Suite.asset_id)
+                .where(Suite.id == binding.suite_id)
+                .scalar_subquery(),
+                status="queued",
+                triggered_by=marker,
+            )
             .on_conflict_do_nothing(
                 index_elements=["suite_id", "triggered_by"],
                 index_where=_ORCH_TRIGGER_PREDICATE,

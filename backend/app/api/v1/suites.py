@@ -248,7 +248,12 @@ def trigger_suite_run(
     # Raises SuiteTargetInvalidError (422) for a targetless / wrong-datasource target.
     run_target.resolve_target(connection.type, suite.target)
 
-    run = Run(suite_id=suite.id, status="queued", triggered_by=f"manual:{current_user.id}")
+    run = Run(
+        suite_id=suite.id,
+        asset_id=suite.asset_id,
+        status="queued",
+        triggered_by=f"manual:{current_user.id}",
+    )
     db.add(run)
     db.commit()
     db.refresh(run)

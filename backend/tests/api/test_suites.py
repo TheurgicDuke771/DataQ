@@ -18,7 +18,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
 from backend.app.core.auth import get_current_user
-from backend.app.db.models import Check, Connection, Suite, User
+from backend.app.db.models import Asset, Check, Connection, Suite, User
 from backend.app.db.session import get_db
 from backend.app.main import app
 from backend.app.services import profile_service, run_dispatch
@@ -277,6 +277,78 @@ def test_patch_sets_target(client: TestClient, db_session: Any) -> None:
     resp = client.patch(f"/api/v1/suites/{sid}", json={"target": {"table": "T2"}})
     assert resp.status_code == 200
     assert resp.json()["target"] == {"table": "T2"}
+
+
+# ───────────────────────── asset resolution (ADR 0034, #757) ─────────
+
+
+def _full_snowflake_connection(db_session: Any) -> Connection:
+    """A fully-configured snowflake connection whose target actually resolves to an
+    asset identity (the `_connection` helper omits database/schema on purpose)."""
+    owner = User(aad_object_id=uuid.uuid4().hex, email=f"ao-{uuid.uuid4().hex[:8]}@ex")
+    db_session.add(owner)
+    db_session.flush()
+    conn = Connection(
+        name=f"sf-{uuid.uuid4().hex[:8]}",
+        type="snowflake",
+        env="dev",
+        config={"account": "ab12345.eu-west-1", "database": "ANALYTICS", "schema": "PUBLIC"},
+        secret_ref="kv-sf",
+        created_by=owner.id,
+    )
+    db_session.add(conn)
+    db_session.commit()
+    return conn
+
+
+def test_create_with_target_resolves_and_links_asset(client: TestClient, db_session: Any) -> None:
+    conn = _full_snowflake_connection(db_session)
+    sid = client.post(
+        "/api/v1/suites", json=_payload(conn.id, target={"table": "orders", "schema": "sales"})
+    ).json()["id"]
+
+    suite = db_session.get(Suite, uuid.UUID(sid))
+    assert suite.asset_id is not None
+    asset = db_session.get(Asset, suite.asset_id)
+    assert asset.namespace == "snowflake://ab12345.eu-west-1"
+    assert asset.name == "ANALYTICS.SALES.ORDERS"
+    assert asset.env == "dev"
+
+
+def test_update_target_repoints_to_new_asset(client: TestClient, db_session: Any) -> None:
+    conn = _full_snowflake_connection(db_session)
+    sid = client.post(
+        "/api/v1/suites", json=_payload(conn.id, target={"table": "orders", "schema": "sales"})
+    ).json()["id"]
+    first_asset = db_session.get(Suite, uuid.UUID(sid)).asset_id
+    assert first_asset is not None
+
+    assert (
+        client.patch(
+            f"/api/v1/suites/{sid}", json={"target": {"table": "customers", "schema": "sales"}}
+        ).status_code
+        == 200
+    )
+    db_session.expire_all()
+    second_asset = db_session.get(Suite, uuid.UUID(sid)).asset_id
+    assert second_asset is not None and second_asset != first_asset
+    assert db_session.get(Asset, second_asset).name == "ANALYTICS.SALES.CUSTOMERS"
+
+
+def test_create_with_unresolvable_config_succeeds_asset_null(
+    client: TestClient, db_session: Any
+) -> None:
+    """Fail-soft: a suite whose connection config lacks the keys the resolver needs
+    still saves (201) — the asset link is simply left NULL, never a 500."""
+    conn = _connection(db_session)  # config has `account` only — no database/schema
+    resp = client.post(
+        "/api/v1/suites", json=_payload(conn.id, target={"table": "orders", "schema": "sales"})
+    )
+    assert resp.status_code == 201
+    suite = db_session.get(Suite, uuid.UUID(resp.json()["id"]))
+    assert suite.target is not None  # the target still persisted
+    assert suite.asset_id is None  # but resolution failed soft
+    assert db_session.scalar(select(func.count()).select_from(Asset)) == 0
 
 
 # ───────────────────────── read / list ─────────────────────────────
