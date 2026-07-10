@@ -6,6 +6,13 @@
 - **Related:** ADR [0010](0010-provider-agnostic-infrastructure-seams.md) (the `get_current_user` identity seam — Azure is one impl, not the architecture), [0013](0013-marketplace-distribution-and-anti-lock-in.md) (BYOL / anti-lock-in), [0008](0008-mcp-server.md) (MCP auth via `JWTVerifier` — bring-your-own-token today), [0020](0020-history-and-audit-strategy.md) (audit), compliance posture (#436)
 - **Issue:** [#461](https://github.com/TheurgicDuke771/DataQ/issues/461)
 
+> **Amendment (2026-07-09, [ADR 0032](0032-email-otp-signin.md)):** the phase-2 open
+> question "migration path for `users.aad_object_id` → generic principal without
+> breaking existing ownership/shares" is **answered for the email slice**:
+> `aad_object_id` becomes nullable with a unique `lower(email)` key — one user row
+> per normalized email across authenticators (ADR 0032 Decision 6, #735).
+> Service-account principals remain deferred phase-2 scope.
+
 > **Stub — Proposed, not yet designed in full.** Captures the direction while it's fresh; to be fleshed out when Theme 3 (access/identity) is picked up post-v1.
 
 ## Context
