@@ -34,6 +34,12 @@ def sanitize_json(value: Any) -> Any:
     # flows into the finite check below.
     if hasattr(value, "item") and hasattr(value, "dtype"):
         value = value.item()
+    # pandas' missing-value sentinels: Arrow-backed frames (the iceberg native read,
+    # #716) surface null cells to GX payloads as `pd.NA` / `pd.NaT`, neither of which
+    # is JSON-serializable (#751). Duck-typed by type name — same no-pandas-import
+    # stance as the numpy branch above; both are singletons of these exact types.
+    if type(value).__name__ in ("NAType", "NaTType"):
+        return None
     if isinstance(value, float):
         return value if math.isfinite(value) else None
     if isinstance(value, dict):

@@ -81,3 +81,14 @@ def test_numpy_nan_becomes_none() -> None:
     import numpy as np
 
     assert sanitize_json(np.float64("nan")) is None
+
+
+def test_pandas_na_and_nat_become_none() -> None:
+    import pandas as pd
+
+    # Arrow-backed frames (the iceberg native read, #716) surface null cells to GX
+    # payloads as pd.NA / pd.NaT — neither is JSON-serializable and either would
+    # break the results JSONB insert (#751, hit live on the first Flow-D run).
+    cleaned = sanitize_json({"partial_unexpected_list": [pd.NA, "SUP-0001"], "last_seen": pd.NaT})
+    assert cleaned == {"partial_unexpected_list": [None, "SUP-0001"], "last_seen": None}
+    json.dumps(cleaned, allow_nan=False)  # round-trips cleanly

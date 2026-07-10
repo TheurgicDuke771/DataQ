@@ -419,3 +419,26 @@ def test_list_iceberg_columns_returns_schema_names_without_scanning(
     _patch_load(monkeypatch, table)
     cols = list_iceberg_columns(_cfg(), "tok", "sales.orders")
     assert cols == ["id", "amount", "city"]
+
+
+def test_run_checks_null_sample_payload_json_serializes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Live-crash regression (#751): a null cell in an Arrow-backed frame reaches the
+    failing-check sample payload as ``pd.NA``, and result persistence JSON-serializes
+    that payload — the full outcome must round-trip through ``sanitize_json``."""
+    import json
+
+    from backend.app.core.jsonsafe import sanitize_json
+
+    df = pd.DataFrame({"supplier_id": ["SUP-0001", None, "SUP-0002"], "qty": [1, 2, 3]})
+    runner = _runner_over(df, monkeypatch)
+    outcome = runner.run_checks(
+        table="retail.purchase_orders",
+        schema=None,
+        checks=[CheckSpec("expect_column_values_to_not_be_null", {"column": "supplier_id"})],
+    )
+    assert outcome.success is False
+    for check in outcome.checks:
+        json.dumps(sanitize_json(check.observed_value), allow_nan=False)
+        json.dumps(sanitize_json(check.sample_failures), allow_nan=False)
