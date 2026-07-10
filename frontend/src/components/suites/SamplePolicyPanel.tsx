@@ -79,6 +79,8 @@ function SamplePolicyForm({
       table,
       schema: targetString(suite.target, 'schema'),
       catalog: targetString(suite.target, 'catalog'),
+      // Iceberg addresses `namespace.table`; the namespace rides alongside table.
+      namespace: targetString(suite.target, 'namespace'),
       path,
       file_format: targetString(suite.target, 'file_format') as 'csv' | 'parquet' | undefined,
     };
@@ -116,6 +118,8 @@ function SamplePolicyForm({
         table: targetString(suite.target, 'table'),
         schema: targetString(suite.target, 'schema'),
         catalog: targetString(suite.target, 'catalog'),
+        // Iceberg addresses `namespace.table`; the namespace rides alongside table.
+        namespace: targetString(suite.target, 'namespace'),
         path: targetString(suite.target, 'path'),
         file_format: targetString(suite.target, 'file_format') as 'csv' | 'parquet' | undefined,
       });

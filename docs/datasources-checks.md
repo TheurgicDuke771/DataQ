@@ -8,6 +8,7 @@
 | ADLS Gen2 (flat files) | account URL + container, SAS | ✅ | ✅ |
 | AWS S3 (flat files) | bucket + region, access key | ✅ | ✅ |
 | Unity Catalog (Databricks) | workspace URL + warehouse + PAT | ✅ | ✅ |
+| Apache Iceberg | catalog URI + catalog type (REST/SQL/Glue/Hive) + optional storage credential | ✅ | ✅ |
 
 ## Add a connection
 
@@ -25,7 +26,7 @@ runs, so it is validated when the connection is saved).
 ## Author a check
 
 1. Create (or open) a **suite** and point it at a **target** — a table (Snowflake/UC), a
-   file/path or batch pattern (ADLS/S3).
+   file/path or batch pattern (ADLS/S3), or an Iceberg `namespace.table`.
 2. **Add check** opens a dedicated page (`/suites/<id>/checks/new`): pick a **category**,
    then the check type, then fill its config. The four authoring paths:
 
@@ -42,13 +43,13 @@ A read-only SQL rule in the Monaco editor: **any rows returned are failures**. U
 (`SELECT * FROM {batch} WHERE amount < 0`). Single read-only statement enforced
 server-side.
 
-### Freshness monitor (SQL datasources — ADR 0012)
+### Freshness monitor (SQL datasources + Iceberg — ADR 0012/0030)
 
 *How stale is the table?* Point it at the load/updated **timestamp column**; the check
 measures hours since `MAX(column)` and bands that age with the thresholds. A **fail or
 critical threshold is required** — without one, a freshness check could never fail.
 
-### Volume monitor (SQL datasources — ADR 0012)
+### Volume monitor (SQL datasources + Iceberg — ADR 0012/0030)
 
 *Did the load deliver?* Set the expected **min/max row count**; thresholds optionally
 band the % by which the count falls outside the range (a spike can exceed 100%), or

@@ -82,6 +82,25 @@ def test_target_label_prefers_path_then_dotted() -> None:
     assert builder._target_label(None) == "(no target)"
 
 
+def test_target_label_includes_iceberg_namespace() -> None:
+    # An Iceberg target has no catalog/schema — namespace must still render, else
+    # an alert card silently drops the table's identity down to the bare table.
+    assert (
+        builder._target_label(cast(Suite, _FakeSuite({"namespace": "sales", "table": "orders"})))
+        == "sales.orders"
+    )
+    # A whitespace-only/empty namespace is not a real namespace — folds away,
+    # mirroring `run_target.resolve_target`'s `_str_or_none`.
+    assert (
+        builder._target_label(cast(Suite, _FakeSuite({"namespace": "  ", "table": "orders"})))
+        == "orders"
+    )
+    assert (
+        builder._target_label(cast(Suite, _FakeSuite({"namespace": "", "table": "orders"})))
+        == "orders"
+    )
+
+
 class _FakeSuite:
     def __init__(self, target: dict[str, Any] | None) -> None:
         self.target = target

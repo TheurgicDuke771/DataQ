@@ -17,12 +17,15 @@ import pyarrow as pa
 import pytest
 from pydantic import ValidationError
 
+from backend.app.datasources import iceberg as iceberg_mod
 from backend.app.datasources.base import CheckSpec, MonitorSpec
 from backend.app.datasources.iceberg import (
     IcebergCheckRunner,
     IcebergConfig,
     IcebergConnectionAdapter,
     build_iceberg_runner,
+    list_iceberg_columns,
+    read_iceberg_dataframe,
 )
 
 _REST_CONFIG = {
@@ -307,3 +310,112 @@ def test_build_iceberg_runner_allows_credential_less_catalog() -> None:
         secret_store=_FakeStore(),
     )
     assert runner._secret is None
+
+
+# ─── shared read/list helpers used by the column profiler (#721) ─────
+
+
+class _SchemaField:
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+
+class _FakeSchema:
+    def __init__(self, names: list[str]) -> None:
+        self.fields = [_SchemaField(n) for n in names]
+
+
+class _ProjectingScan:
+    """Applies ``selected_fields`` projection + ``limit`` sampling to a real Arrow
+    table, so the helper's projection/limit levers are exercised for real."""
+
+    def __init__(self, arrow: pa.Table, selected: tuple[str, ...], limit: int | None) -> None:
+        self._arrow = arrow
+        self._selected = selected
+        self._limit = limit
+
+    def to_arrow(self) -> pa.Table:
+        arrow = self._arrow
+        if self._selected != ("*",):
+            arrow = arrow.select(list(self._selected))
+        if self._limit is not None:
+            arrow = arrow.slice(0, self._limit)
+        return arrow
+
+
+class _SchemaTable:
+    """A fake ``pyiceberg`` Table exposing ``schema()`` (for the no-scan lister)
+    and a projecting/limiting ``scan()`` (for the sampled read)."""
+
+    def __init__(self, df: pd.DataFrame) -> None:
+        self._arrow = pa.Table.from_pandas(df, preserve_index=False)
+
+    def schema(self) -> _FakeSchema:
+        return _FakeSchema(list(self._arrow.column_names))
+
+    def scan(
+        self, *, selected_fields: tuple[str, ...] = ("*",), limit: int | None = None
+    ) -> _ProjectingScan:
+        return _ProjectingScan(self._arrow, selected_fields, limit)
+
+
+def _cfg() -> IcebergConfig:
+    return IcebergConfig.model_validate(_REST_CONFIG)
+
+
+def _patch_load(monkeypatch: pytest.MonkeyPatch, table: Any) -> None:
+    monkeypatch.setattr(iceberg_mod, "load_iceberg_table", lambda config, secret, identifier: table)
+
+
+def test_read_iceberg_dataframe_projects_and_limits(monkeypatch: pytest.MonkeyPatch) -> None:
+    df = pd.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6], "c": [7, 8, 9]})
+    _patch_load(monkeypatch, _SchemaTable(df))
+    out = read_iceberg_dataframe(_cfg(), "tok", "sales.orders", columns=["a", "c"], limit=2)
+    assert list(out.columns) == ["a", "c"]  # 'b' never materialised
+    assert len(out) == 2  # limit applied
+    assert isinstance(out.dtypes["a"], pd.ArrowDtype)  # Arrow-backed parity
+
+
+def test_read_iceberg_dataframe_full_read_when_no_projection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    df = pd.DataFrame({"a": [1, 2], "b": [3, 4]})
+    _patch_load(monkeypatch, _SchemaTable(df))
+    out = read_iceberg_dataframe(_cfg(), None, "ns.t")  # credential-less
+    assert set(out.columns) == {"a", "b"} and len(out) == 2
+
+
+def test_read_iceberg_dataframe_unknown_column_not_projected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A requested column absent from the schema is simply not selected (the caller
+    # reports genuinely-missing columns as a clean 422 — never a scan crash).
+    df = pd.DataFrame({"a": [1, 2]})
+    _patch_load(monkeypatch, _SchemaTable(df))
+    out = read_iceberg_dataframe(_cfg(), None, "ns.t", columns=["a", "ghost"])
+    assert list(out.columns) == ["a"]
+
+
+def test_read_iceberg_dataframe_all_unknown_columns_reads_all(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # No requested column exists → fall back to a full scan so the frame still
+    # carries the real columns for the profiler to report the requested ones missing.
+    df = pd.DataFrame({"a": [1, 2]})
+    _patch_load(monkeypatch, _SchemaTable(df))
+    out = read_iceberg_dataframe(_cfg(), None, "ns.t", columns=["ghost"])
+    assert list(out.columns) == ["a"]
+
+
+def test_list_iceberg_columns_returns_schema_names_without_scanning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    table = _SchemaTable(pd.DataFrame({"id": [1], "amount": [2], "city": ["x"]}))
+
+    def _no_scan(**_: Any) -> Any:
+        raise AssertionError("column listing must not scan table data")
+
+    monkeypatch.setattr(table, "scan", _no_scan)  # guard: names come from schema()
+    _patch_load(monkeypatch, table)
+    cols = list_iceberg_columns(_cfg(), "tok", "sales.orders")
+    assert cols == ["id", "amount", "city"]

@@ -17,6 +17,8 @@ export interface ColumnPolicySuggestTarget {
   table?: string;
   schema?: string;
   catalog?: string;
+  /** Iceberg namespace (folded to `namespace.table` by the backend resolver). */
+  namespace?: string;
   path?: string;
   file_format?: 'csv' | 'parquet';
 }

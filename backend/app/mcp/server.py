@@ -441,6 +441,7 @@ def profile_column(
     table: str | None = None,
     schema: str | None = None,
     catalog: str | None = None,
+    namespace: str | None = None,
     path: str | None = None,
     file_format: str | None = None,
     top_n: int = 10,
@@ -452,7 +453,11 @@ def profile_column(
     distinct count, min/max, and the top ``top_n`` values. ``table`` (+
     optional ``schema``/``catalog``) / ``path`` (+ ``file_format``) default to
     the suite's own run target, so they only need passing to profile something
-    *other* than what the suite runs against. Requires edit access to the suite.
+    *other* than what the suite runs against. ``namespace`` is only meaningful
+    for an Iceberg table when passing an explicit ``table`` (Iceberg addresses
+    ``namespace.table``); it defaults to the suite target's namespace when no
+    explicit ``table``/``path`` is given, so it only needs passing alongside
+    your own ``table``. Requires edit access to the suite.
     """
     sid = _parse_uuid(suite_id, field="suite_id")
     with _ctx() as (session, user), _service_errors():
@@ -461,9 +466,13 @@ def profile_column(
         if connection is None:
             raise ToolError("suite has no connection")
         if table is None and path is None:
+            # `_profile_target_defaults` -> `run_target.resolve_target` already
+            # folds the suite target's namespace into `table` for Iceberg — don't
+            # fold it a second time here.
             table, schema, catalog, path, file_format = _profile_target_defaults(
                 suite, connection, schema=schema, catalog=catalog, file_format=file_format
             )
+            namespace = None
         result = profile_service.profile_connection(
             connection,
             columns=columns,
@@ -471,6 +480,7 @@ def profile_column(
             table=table,
             schema=schema,
             catalog=catalog,
+            namespace=namespace,
             path=path,
             file_format=file_format,
             secret_store=get_secret_store(),

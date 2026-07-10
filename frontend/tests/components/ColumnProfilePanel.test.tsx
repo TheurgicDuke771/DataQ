@@ -3,15 +3,16 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { profileColumns } from '../../src/api/suites';
+import { listColumns, profileColumns } from '../../src/api/suites';
 import { ColumnProfilePanel } from '../../src/components/checks/ColumnProfilePanel';
 
 vi.mock('../../src/api/suites', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/api/suites')>();
-  return { ...actual, profileColumns: vi.fn() };
+  return { ...actual, profileColumns: vi.fn(), listColumns: vi.fn().mockResolvedValue([]) };
 });
 
 const mockProfile = vi.mocked(profileColumns);
+const mockListColumns = vi.mocked(listColumns);
 
 const TARGET = { table: 'ORDERS', schema: 'PUBLIC' };
 
@@ -86,6 +87,45 @@ describe('ColumnProfilePanel', () => {
     // getAllByText: with horizontal scroll (#617) antd renders a fixed-header
     // table structure that duplicates the header cells.
     expect(screen.getAllByText('Top value').length).toBeGreaterThan(0);
+  });
+
+  it('flows an iceberg namespace into the listColumns and profile requests', async () => {
+    // Iceberg targets store `{table, namespace?}`; the namespace must ride along
+    // into both the column-introspection lookup and the profile request (#721).
+    mockListColumns.mockResolvedValue(['loaded_at']);
+    mockProfile.mockResolvedValue({
+      row_count: 3,
+      columns: [
+        {
+          column: 'loaded_at',
+          null_count: 0,
+          null_fraction: 0,
+          distinct_count: 3,
+          min_value: 'x',
+          max_value: 'y',
+          top_values: [],
+        },
+      ],
+      table: 'sales.orders',
+    });
+    render(<Harness target={{ table: 'orders', namespace: 'sales' }} column="loaded_at" />);
+    const user = userEvent.setup();
+    await user.click(screen.getByText('Column profiler')); // expand → loadColumns
+
+    await waitFor(() =>
+      expect(mockListColumns).toHaveBeenCalledWith(
+        's1',
+        expect.objectContaining({ table: 'orders', namespace: 'sales' }),
+      ),
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Profile' }));
+    await waitFor(() =>
+      expect(mockProfile).toHaveBeenCalledWith(
+        's1',
+        expect.objectContaining({ columns: ['loaded_at'], table: 'orders', namespace: 'sales' }),
+      ),
+    );
   });
 
   it('surfaces the API error message when the profile fails', async () => {

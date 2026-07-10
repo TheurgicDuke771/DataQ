@@ -414,6 +414,78 @@ def test_profile_column_explicit_table_still_wins(db_session: Any, monkeypatch: 
     assert seen["table"] == "OTHER_TABLE"
 
 
+def _iceberg_suite(db_session: Any, owner: User, *, target: dict[str, Any] | None = None) -> Suite:
+    conn = Connection(
+        name=f"ice-{uuid.uuid4().hex[:8]}",
+        type="iceberg",
+        env="dev",
+        config={"catalog_type": "sql", "catalog_uri": "sqlite:///w"},
+        secret_ref=None,
+        created_by=owner.id,
+    )
+    db_session.add(conn)
+    db_session.flush()
+    suite = Suite(
+        name="Iceberg Orders",
+        connection_id=conn.id,
+        created_by=owner.id,
+        target=target if target is not None else {"table": "orders", "namespace": "sales"},
+    )
+    db_session.add(suite)
+    db_session.commit()
+    return suite
+
+
+def test_profile_column_iceberg_default_profiles_the_folded_namespace_identifier(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """No explicit table/path on an Iceberg suite → the run target's already-folded
+    `namespace.table` identifier is used, and `namespace` is NOT passed a second
+    time — `run_target.resolve_target` folded it into `table` already, so passing
+    it again would double-fold (#721 code review)."""
+    from backend.app.services.profile_service import ProfileResult
+
+    user = _user(db_session)
+    suite = _iceberg_suite(db_session, user)  # target={"table": "orders", "namespace": "sales"}
+    seen: dict[str, Any] = {}
+
+    def _fake_profile(connection: Any, **kwargs: Any) -> ProfileResult:
+        seen.update(kwargs)
+        return ProfileResult(row_count=1, table=kwargs["table"], columns=[])
+
+    monkeypatch.setattr(profile_service, "profile_connection", _fake_profile)
+    _as(monkeypatch, db_session, user)
+
+    out = server.profile_column(str(suite.id), columns=["loaded_at"])
+    assert seen["table"] == "sales.orders"  # already folded by resolve_target
+    assert seen["namespace"] is None  # not re-passed — would double-fold
+    assert out["table"] == "sales.orders"
+
+
+def test_profile_column_iceberg_explicit_table_and_namespace_override(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """An explicit `table` + `namespace` (profiling something other than the
+    suite's own target) is passed straight through to the profiler, which does
+    its own fold (#721 code review)."""
+    from backend.app.services.profile_service import ProfileResult
+
+    user = _user(db_session)
+    suite = _iceberg_suite(db_session, user)
+    seen: dict[str, Any] = {}
+
+    def _fake_profile(connection: Any, **kwargs: Any) -> ProfileResult:
+        seen.update(kwargs)
+        return ProfileResult(row_count=1, table=kwargs["table"], columns=[])
+
+    monkeypatch.setattr(profile_service, "profile_connection", _fake_profile)
+    _as(monkeypatch, db_session, user)
+
+    server.profile_column(str(suite.id), columns=["x"], table="other_table", namespace="other_ns")
+    assert seen["table"] == "other_table"
+    assert seen["namespace"] == "other_ns"
+
+
 def test_profile_column_no_target_anywhere_is_actionable_error(
     db_session: Any, monkeypatch: Any
 ) -> None:

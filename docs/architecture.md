@@ -30,6 +30,7 @@ flowchart LR
         SF["Snowflake · DEV/QA/UAT"]
         Files["ADLS Gen2 · S3 · flat files"]
         UC["Unity Catalog · Databricks"]
+        Iceberg["Apache Iceberg · native pyiceberg read<br/>object storage + catalog"]
     end
 
     Web -->|HTTPS| Frontend
@@ -48,7 +49,7 @@ flowchart LR
     classDef notify fill:#FAECE7,stroke:#993C1D,color:#712B13
     classDef client fill:#F1EFE8,stroke:#5F5E5A,color:#444441
     class API,Worker,Infra,Frontend hub
-    class SF,Files,UC src
+    class SF,Files,UC,Iceberg src
     class ADF,AF,DBT integ
     class Teams,Email notify
     class Web,AICli client
@@ -98,7 +99,7 @@ erDiagram
     connections {
         uuid id PK
         string name "unique per env"
-        string type "snowflake / adls_gen2 / s3 / unity_catalog / adf / airflow"
+        string type "snowflake / adls_gen2 / s3 / unity_catalog / iceberg / adf / airflow / dbt"
         string env "dev / qa / uat / prod"
         jsonb config "non-secret datasource config"
         string secret_ref "SecretStore key, never the credential"
@@ -411,7 +412,7 @@ flowchart LR
         APPI["App Insights (PII-redacted logs + traces)"]
     end
     subgraph egress["🌐 Outbound — credentials fetched from Key Vault per use"]
-        DS["Datasources — Snowflake · ADLS · S3 · Unity Catalog"]
+        DS["Datasources — Snowflake · ADLS · S3 · Unity Catalog · Iceberg"]
         AL["Teams / Slack webhooks · SMTP"]
         OAPI["ADF / Airflow REST APIs (polling)"]
     end

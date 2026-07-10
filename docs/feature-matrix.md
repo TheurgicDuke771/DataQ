@@ -6,20 +6,24 @@ One-page reference: what runs where. For the readable tour of everything DataQ o
 
 ## Check kinds × datasources
 
-| Check kind | Snowflake | Unity Catalog | ADLS Gen2 (files) | S3 (files) |
-|---|:-:|:-:|:-:|:-:|
-| GX expectations (column / table shape) | ✅ | ✅ | ✅ | ✅ |
-| Custom SQL (rows returned = failures) | ✅ | ✅ | — | — |
-| Freshness monitor (hours since latest timestamp) | ✅ | ✅ | — | — |
-| Volume monitor (row count in range) | ✅ | ✅ | — | — |
-| Column profiler (nulls, distinct, min/max, top values) | ✅ | ✅ | ✅ | ✅ |
-| Dry-run preview | ✅ | ✅ | ✅ | ✅ |
+| Check kind | Snowflake | Unity Catalog | ADLS Gen2 (files) | S3 (files) | Iceberg |
+|---|:-:|:-:|:-:|:-:|:-:|
+| GX expectations (column / table shape) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Custom SQL (rows returned = failures) | ✅ | ✅ | — | — | — |
+| Freshness monitor (hours since latest timestamp) | ✅ | ✅ | — | — | ✅ |
+| Volume monitor (row count in range) | ✅ | ✅ | — | — | ✅ |
+| Column profiler (nulls, distinct, min/max, top values) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Dry-run preview | ✅ | ✅ | ✅ | ✅ | ✅ |
 
-Custom SQL and the freshness/volume monitors run a SQL query, so they're **SQL-datasource
-only** (flat-file support is a tracked enhancement,
-[#520](https://github.com/TheurgicDuke771/DataQ/issues/520)). Flat-file suites target a
-file or a batch pattern (e.g. `orders_*.csv`) in CSV or Parquet. Dry-run preview works on
-every datasource with a runner — Snowflake, Unity Catalog, and flat files ([#532](https://github.com/TheurgicDuke771/DataQ/issues/532)).
+Custom SQL runs a SQL query, so it's **SQL-datasource only** (Snowflake, Unity Catalog;
+flat-file support is a tracked enhancement, [#520](https://github.com/TheurgicDuke771/DataQ/issues/520);
+Iceberg is not SQL-queryable — reads go through `pyiceberg` scans, not a query engine).
+The freshness/volume monitors run on **monitor-capable datasources** — the SQL
+datasources plus Apache Iceberg — computed natively (Iceberg's are `pyiceberg` scans, not
+SQL; ADR 0012/0030). Flat-file suites target a file or a batch pattern (e.g.
+`orders_*.csv`) in CSV or Parquet; Iceberg suites target a `namespace.table`. Dry-run
+preview works on every datasource with a runner — Snowflake, Unity Catalog, flat files,
+and Iceberg ([#532](https://github.com/TheurgicDuke771/DataQ/issues/532)).
 
 ## Ways a suite runs
 

@@ -179,7 +179,10 @@ export function ColumnProfilePanel({
  *  profilable target is set (the backend needs a `table` or a `path`). */
 function extractProfileTarget(
   target: Record<string, unknown> | null,
-): Pick<ColumnProfileRequest, 'table' | 'schema' | 'catalog' | 'path' | 'file_format'> | null {
+): Pick<
+  ColumnProfileRequest,
+  'table' | 'schema' | 'catalog' | 'namespace' | 'path' | 'file_format'
+> | null {
   const table = targetString(target, 'table');
   const path = targetString(target, 'path');
   if (!table && !path) return null;
@@ -187,6 +190,8 @@ function extractProfileTarget(
     table,
     schema: targetString(target, 'schema'),
     catalog: targetString(target, 'catalog'),
+    // Iceberg addresses `namespace.table`; the namespace rides alongside table.
+    namespace: targetString(target, 'namespace'),
     path,
     file_format: targetString(target, 'file_format') as 'csv' | 'parquet' | undefined,
   };

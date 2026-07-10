@@ -75,6 +75,7 @@ describe('SamplePolicyPanel', () => {
         table: 'ORDERS',
         schema: 'RETAIL',
         catalog: undefined,
+        namespace: undefined,
         path: undefined,
         file_format: undefined,
       }),
@@ -99,6 +100,7 @@ describe('SamplePolicyPanel', () => {
         table: 'ORDERS',
         schema: 'RETAIL',
         catalog: undefined,
+        namespace: undefined,
         path: undefined,
         file_format: undefined,
       }),
@@ -160,5 +162,54 @@ describe('SamplePolicyPanel', () => {
     renderPanel(false);
     await screen.findByText(/Which column locates a failing row/);
     expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
+  });
+
+  it('flows an iceberg namespace into both the column-introspection and suggest requests (#721)', async () => {
+    // Iceberg targets store `{table, namespace?}` — the namespace must ride along
+    // into listColumns (dropdown introspection) and the Auto-detect suggestion,
+    // mirroring ColumnProfilePanel's extractProfileTarget handling.
+    mockGet.mockResolvedValue({ identifier_column: null, pii_columns: [] });
+    mockListColumns.mockResolvedValue(['loaded_at']);
+    mockSuggest.mockResolvedValue({ identifier_column: null, pii_columns: [] });
+    const user = userEvent.setup();
+    render(
+      <AntApp>
+        <SamplePolicyPanel
+          suite={
+            {
+              id: 's3',
+              name: 'Iceberg Orders',
+              target: { table: 'orders', namespace: 'sales' },
+            } as unknown as Suite
+          }
+          canManage
+        />
+      </AntApp>,
+    );
+    await screen.findByText(/Which column locates a failing row/);
+
+    await user.click(screen.getAllByRole('combobox')[0]); // open the identifier Select
+    await waitFor(() =>
+      expect(mockListColumns).toHaveBeenCalledWith('s3', {
+        table: 'orders',
+        schema: undefined,
+        catalog: undefined,
+        namespace: 'sales',
+        path: undefined,
+        file_format: undefined,
+      }),
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Auto-detect' }));
+    await waitFor(() =>
+      expect(mockSuggest).toHaveBeenCalledWith('s3', {
+        table: 'orders',
+        schema: undefined,
+        catalog: undefined,
+        namespace: 'sales',
+        path: undefined,
+        file_format: undefined,
+      }),
+    );
   });
 });

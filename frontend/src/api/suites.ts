@@ -322,6 +322,8 @@ export interface ColumnProfileRequest {
   table?: string | null;
   schema?: string | null;
   catalog?: string | null;
+  /** Iceberg: the table's optional namespace (addressed as `namespace.table`). */
+  namespace?: string | null;
   path?: string | null;
   file_format?: 'csv' | 'parquet' | null;
 }
@@ -367,7 +369,7 @@ export async function profileColumns(
 /** The target-identity subset that names a table/file (no `columns`/`top_n`). */
 export type ColumnTarget = Pick<
   ColumnProfileRequest,
-  'table' | 'schema' | 'catalog' | 'path' | 'file_format'
+  'table' | 'schema' | 'catalog' | 'namespace' | 'path' | 'file_format'
 >;
 
 /** Mirrors the backend `GET /suites/{id}/columns` — the column names of the
@@ -378,6 +380,7 @@ export async function listColumns(suiteId: string, target: ColumnTarget): Promis
   if (target.table) params.table = target.table;
   if (target.schema) params.schema = target.schema;
   if (target.catalog) params.catalog = target.catalog;
+  if (target.namespace) params.namespace = target.namespace;
   if (target.path) params.path = target.path;
   if (target.file_format) params.file_format = target.file_format;
   const { data } = await api.get<{ columns: string[] }>(`/suites/${suiteId}/columns`, { params });

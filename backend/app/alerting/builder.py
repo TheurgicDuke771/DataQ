@@ -34,7 +34,8 @@ def _target_label(suite: Suite | None) -> str:
     Reads the datasource-shaped ``Suite.target`` (#215) directly rather than
     ``run_target.resolve_target`` (which can raise on a malformed target — a
     report must never fail to build). Flat-file targets show their ``path``;
-    SQL targets show the dotted ``catalog.schema.table``.
+    SQL targets show the dotted ``catalog.schema.table``; Iceberg targets show
+    ``namespace.table`` (namespace sits where catalog/schema do).
 
     Mirrors the frontend ``summarizeTarget`` (``suiteTarget.ts``) precedence so
     a card labels a target the way the UI does — a new target field needs a
@@ -44,7 +45,11 @@ def _target_label(suite: Suite | None) -> str:
     path = target.get("path")
     if path:
         return str(path)
-    parts = [target.get("catalog"), target.get("schema"), target.get("table")]
+    # Empty/whitespace-only namespace folds to absent, mirroring
+    # `run_target.resolve_target`'s `_str_or_none` — not a real namespace.
+    namespace = target.get("namespace")
+    namespace = namespace if isinstance(namespace, str) and namespace.strip() else None
+    parts = [target.get("catalog"), namespace, target.get("schema"), target.get("table")]
     dotted = ".".join(str(p) for p in parts if p)
     return dotted or "(no target)"
 
