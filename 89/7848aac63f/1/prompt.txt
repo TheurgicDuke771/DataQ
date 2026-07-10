@@ -1301,3 +1301,11 @@ what happened to marquez?
 <status>completed</status>
 <summary>Background command "Daemon health check + tiny-image pull probe" completed (exit code 0)</summary>
 </task-notification>
+
+---
+
+<task-notification>
+<task-id>bn94cnvbk</task-id>
+<summary>Monitor event: "Marquez API readiness (images now local)"</summary>
+<event>MARQUEZ API READY</event>
+</task-notification>
