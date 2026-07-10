@@ -4,8 +4,21 @@
   "checkpoint_id": "897848aac63f",
   "strategy": "manual-commit",
   "branch": "feature/758-openlineage-emission",
-  "checkpoints_count": 3,
-  "files_touched": null,
+  "checkpoints_count": 14,
+  "files_touched": [
+    "backend/app/core/config.py",
+    "backend/app/lineage/dispatch.py",
+    "backend/app/lineage/emitter.py",
+    "backend/app/services/run_service.py",
+    "backend/app/worker/tasks.py",
+    "backend/tests/lineage/conftest.py",
+    "backend/tests/lineage/test_emitter.py",
+    "backend/tests/services/test_run_reaper.py",
+    "backend/tests/worker/test_tasks.py",
+    "deploy/.env.app.prod.example",
+    "deploy/README.md",
+    "docs/progress.md"
+  ],
   "sessions": [
     {
       "metadata": "/89/7848aac63f/0/metadata.json",
@@ -13,13 +26,20 @@
       "compact_transcript": "/89/7848aac63f/0/transcript.jsonl",
       "content_hash": "/89/7848aac63f/0/content_hash.txt",
       "prompt": "/89/7848aac63f/0/prompt.txt"
+    },
+    {
+      "metadata": "/89/7848aac63f/1/metadata.json",
+      "transcript": "/89/7848aac63f/1/full.jsonl",
+      "compact_transcript": "/89/7848aac63f/1/transcript.jsonl",
+      "content_hash": "/89/7848aac63f/1/content_hash.txt",
+      "prompt": "/89/7848aac63f/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 56537,
-    "cache_creation_tokens": 1690126,
-    "cache_read_tokens": 60942985,
-    "output_tokens": 181871,
-    "api_call_count": 262
+    "input_tokens": 65341,
+    "cache_creation_tokens": 3181760,
+    "cache_read_tokens": 83908420,
+    "output_tokens": 223567,
+    "api_call_count": 312
   }
 }
