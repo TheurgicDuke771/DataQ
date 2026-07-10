@@ -4,8 +4,26 @@
   "checkpoint_id": "9056afd108e5",
   "strategy": "manual-commit",
   "branch": "feature/759-dbt-manifest-lineage",
-  "checkpoints_count": 3,
-  "files_touched": null,
+  "checkpoints_count": 8,
+  "files_touched": [
+    "backend/alembic/versions/a1c2e3d4f5b6_add_lineage_edges.py",
+    "backend/app/db/models.py",
+    "backend/app/lineage/dbt_manifest.py",
+    "backend/app/lineage/edges.py",
+    "backend/app/orchestration/dbt.py",
+    "backend/app/services/asset_identity.py",
+    "backend/app/services/asset_service.py",
+    "backend/app/services/orchestration_service.py",
+    "backend/app/worker/tasks.py",
+    "backend/tests/fixtures/dbt_manifest_v1.json",
+    "backend/tests/fixtures/dbt_manifest_v2.json",
+    "backend/tests/lineage/test_dbt_manifest.py",
+    "backend/tests/lineage/test_edges.py",
+    "backend/tests/orchestration/test_dbt_provider.py",
+    "backend/tests/services/test_orchestration_service.py",
+    "docs/architecture.md",
+    "docs/progress.md"
+  ],
   "sessions": [
     {
       "metadata": "/90/56afd108e5/0/metadata.json",
@@ -13,13 +31,20 @@
       "compact_transcript": "/90/56afd108e5/0/transcript.jsonl",
       "content_hash": "/90/56afd108e5/0/content_hash.txt",
       "prompt": "/90/56afd108e5/0/prompt.txt"
+    },
+    {
+      "metadata": "/90/56afd108e5/1/metadata.json",
+      "transcript": "/90/56afd108e5/1/full.jsonl",
+      "compact_transcript": "/90/56afd108e5/1/transcript.jsonl",
+      "content_hash": "/90/56afd108e5/1/content_hash.txt",
+      "prompt": "/90/56afd108e5/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 56537,
-    "cache_creation_tokens": 1690126,
-    "cache_read_tokens": 60942985,
-    "output_tokens": 181871,
-    "api_call_count": 262
+    "input_tokens": 75818,
+    "cache_creation_tokens": 2283224,
+    "cache_read_tokens": 74254374,
+    "output_tokens": 204483,
+    "api_call_count": 287
   }
 }
