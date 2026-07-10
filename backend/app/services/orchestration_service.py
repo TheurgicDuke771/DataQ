@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session, aliased
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
 from backend.app.db.models import Connection, PipelineRun, Run, Suite, TriggerBinding
+from backend.app.lineage import dbt_manifest, edges
 from backend.app.orchestration.base import OrchestrationProvider, RunUpdate
 from backend.app.orchestration.registry import get_orchestration_provider
 from backend.app.services import run_dispatch
@@ -273,6 +274,48 @@ def _trigger_suites(
     return created
 
 
+def _refresh_lineage(
+    session: Session,
+    *,
+    provider_impl: OrchestrationProvider,
+    connection: Connection,
+    update: RunUpdate,
+    secret_store: SecretStore,
+) -> None:
+    """Best-effort dbt-manifest lineage refresh on a succeeded orchestration run.
+
+    Provider-agnostic (CLAUDE.md §11): probes for the OPTIONAL ``read_manifest``
+    capability via ``getattr`` — only the dbt provider has it, so ADF/Airflow are a
+    no-op with zero name branching. Fetches the manifest, parses it, and refreshes
+    the `lineage_edges` cache. The webhook path gives the immediate refresh the AC
+    demands; the 10-min poll is the fallback.
+
+    Wrapped fail-open: a lineage failure (unreadable manifest, parse error, DB
+    hiccup) must NEVER affect run ingestion or suite triggering — it logs and
+    returns. `edges.refresh_dbt_edges` is itself fail-open too (belt and braces).
+    """
+    reader = getattr(provider_impl, "read_manifest", None)
+    if reader is None:
+        return
+    if not connection.secret_ref:
+        return
+    try:
+        secret = secret_store.get(connection.secret_ref)
+        raw = reader(dict(connection.config), secret, update.pipeline_or_dag_id)
+        if raw is None:
+            return
+        graph = dbt_manifest.parse_manifest(raw)
+        edges.refresh_dbt_edges(session, connection=connection, graph=graph)
+    except Exception as exc:
+        log.warning(
+            "lineage_refresh_failed",
+            provider=provider_impl.provider,
+            connection_id=str(connection.id),
+            pipeline=update.pipeline_or_dag_id,
+            error=str(exc),
+        )
+
+
 @dataclass(frozen=True)
 class IngestResult:
     pipeline_run: PipelineRun | None
@@ -335,11 +378,20 @@ def ingest_event(
     pipeline_run = _upsert_pipeline_run(
         session, provider=provider, connection=connection, update=update
     )
-    triggered = (
-        _trigger_suites(session, provider=provider, connection=connection, update=update)
-        if update.status == "succeeded"
-        else []
-    )
+    triggered: list[Run] = []
+    if update.status == "succeeded":
+        triggered = _trigger_suites(
+            session, provider=provider, connection=connection, update=update
+        )
+        # Immediate manifest re-read on the webhook path (the AC's convergence
+        # channel); fail-open, never affects the ingest/trigger result above.
+        _refresh_lineage(
+            session,
+            provider_impl=provider_impl,
+            connection=connection,
+            update=update,
+            secret_store=secret_store,
+        )
     return IngestResult(pipeline_run=pipeline_run, triggered_runs=triggered)
 
 
@@ -357,6 +409,7 @@ def ingest_polled_runs(
     connection: Connection,
     updates: list[RunUpdate],
     skip_updated_since: datetime,
+    secret_store: SecretStore | None = None,
 ) -> PollIngestResult:
     """Persist the runs a poll returned for one orchestrator connection.
 
@@ -372,6 +425,11 @@ def ingest_polled_runs(
     it on time alone would drop a later ``running → succeeded`` transition — losing
     both the monitor update *and* the trigger. The connection is known (we polled
     it), so no resolve.
+
+    ``secret_store``, when supplied (the worker passes it), enables the fail-open
+    dbt-manifest lineage refresh on succeeded runs — the poll-path fallback to the
+    webhook's immediate re-read. It's optional so pure poll-ingestion tests need
+    not thread a store.
     """
     provider = provider_impl.provider
     pipeline_runs: list[PipelineRun] = []
@@ -398,6 +456,16 @@ def ingest_polled_runs(
             triggered.extend(
                 _trigger_suites(session, provider=provider, connection=connection, update=update)
             )
+            # Poll-path lineage refresh (the fallback to the webhook's immediate
+            # re-read); only when a secret store was supplied. Fail-open.
+            if secret_store is not None:
+                _refresh_lineage(
+                    session,
+                    provider_impl=provider_impl,
+                    connection=connection,
+                    update=update,
+                    secret_store=secret_store,
+                )
     return PollIngestResult(pipeline_runs=pipeline_runs, triggered_runs=triggered, skipped=skipped)
 
 

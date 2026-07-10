@@ -30,6 +30,41 @@ from backend.app.services.asset_identity import resolve_asset_identity
 log = get_logger(__name__)
 
 
+def upsert_asset(
+    session: Session,
+    *,
+    namespace: str,
+    name: str,
+    env: str | None,
+    connection_id: uuid.UUID | None,
+) -> uuid.UUID:
+    """Insert-or-reuse an `assets` row keyed on ``(namespace, name)``; return its id.
+
+    The low-level upsert both `resolve_and_upsert_asset` (suite-target resolution)
+    and `lineage.edges` (dbt-manifest node materialization) share, so the
+    ON CONFLICT shape and the savepoint fail-soft posture live in one place. On an
+    existing identity it refreshes ``last_seen`` / ``env`` / ``connection_id``
+    (provenance hint).
+
+    Wrapped in a **savepoint** (nested transaction): a genuine DB error here rolls
+    back only this savepoint, leaving the outer transaction healthy so the
+    caller's commit still succeeds — the fail-soft "never blocks the save/refresh"
+    contract. The caller decides whether to catch (a bad identity) or let it
+    propagate.
+    """
+    stmt = (
+        pg_insert(Asset)
+        .values(namespace=namespace, name=name, env=env, connection_id=connection_id)
+        .on_conflict_do_update(
+            index_elements=["namespace", "name"],
+            set_={"last_seen": func.now(), "env": env, "connection_id": connection_id},
+        )
+        .returning(Asset.id)
+    )
+    with session.begin_nested():
+        return session.execute(stmt).scalar_one()
+
+
 def resolve_and_upsert_asset(
     session: Session, connection: Connection, target: dict[str, Any] | None
 ) -> uuid.UUID | None:
@@ -54,32 +89,13 @@ def resolve_and_upsert_asset(
         )
         return None
     try:
-        stmt = (
-            pg_insert(Asset)
-            .values(
-                namespace=identity.namespace,
-                name=identity.name,
-                env=connection.env,
-                connection_id=connection.id,
-            )
-            .on_conflict_do_update(
-                index_elements=["namespace", "name"],
-                set_={
-                    "last_seen": func.now(),
-                    "env": connection.env,
-                    "connection_id": connection.id,
-                },
-            )
-            .returning(Asset.id)
+        asset_id = upsert_asset(
+            session,
+            namespace=identity.namespace,
+            name=identity.name,
+            env=connection.env,
+            connection_id=connection.id,
         )
-        # Savepoint (nested transaction): a genuine DB error (constraint / lock /
-        # connection blip) rolls back ONLY this savepoint, leaving the outer
-        # transaction healthy so the caller's `session.commit()` (create_suite /
-        # update_suite) still succeeds. Without it a failed execute aborts the
-        # whole transaction and the suite save 500s — defeating the fail-soft
-        # "never blocks a save" contract.
-        with session.begin_nested():
-            asset_id = session.execute(stmt).scalar_one()
     except Exception as exc:  # fail-soft: a DB hiccup here must not block the save
         log.warning(
             "asset_upsert_failed",

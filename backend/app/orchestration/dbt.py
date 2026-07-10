@@ -32,9 +32,11 @@ from backend.app.orchestration.base import MalformedEventError, RunUpdate
 # Fail fast rather than hang the request/beat thread on an unreachable store.
 _READ_TIMEOUT_SECONDS = 10.0
 
-# The stable per-job artifact pointer the producer (upload_artifacts.py) overwrites
+# The stable per-job artifact pointers the producer (upload_artifacts.py) overwrites
 # every build; `runs/<UTC-ts>/` copies are retained alongside for audit/#596.
 _RUN_RESULTS_RELPATH = "latest/run_results.json"
+# The sibling model dependency graph, read for lineage (ADR 0034 slice 2, #759).
+_MANIFEST_RELPATH = "latest/manifest.json"
 
 # dbt node result statuses that mean the build failed (models: 'error';
 # tests: 'fail'/'error'; any: 'runtime error'). Everything else — 'success',
@@ -99,10 +101,14 @@ class DbtConfig(BaseModel):
         return self
 
 
-def _read_artifact(config: DbtConfig, job: str, secret: str) -> bytes | None:
-    """Read ``<artifacts_uri>/<job>/latest/run_results.json``; None if absent.
+def _read_artifact(
+    config: DbtConfig, job: str, secret: str, relpath: str = _RUN_RESULTS_RELPATH
+) -> bytes | None:
+    """Read ``<artifacts_uri>/<job>/<relpath>``; None if absent.
 
-    Dispatches on the ``artifacts_uri`` scheme. Cloud SDKs are imported lazily (per
+    ``relpath`` selects the per-job artifact — ``latest/run_results.json`` (the
+    poll default) or ``latest/manifest.json`` (lineage, #759). Dispatches on the
+    ``artifacts_uri`` scheme. Cloud SDKs are imported lazily (per
     ``core/secrets.py``) so the module — and its unit tests, which patch this
     function — never require azure/boto3. Transport/auth errors propagate (the poll
     task fails soft per connection).
@@ -113,7 +119,7 @@ def _read_artifact(config: DbtConfig, job: str, secret: str) -> bytes | None:
     if scheme == "file":
         from pathlib import Path
 
-        path = Path(parsed.path) / job / _RUN_RESULTS_RELPATH
+        path = Path(parsed.path) / job / relpath
         return path.read_bytes() if path.exists() else None
 
     if scheme == "adls":
@@ -122,9 +128,7 @@ def _read_artifact(config: DbtConfig, job: str, secret: str) -> bytes | None:
 
         account = parsed.netloc
         container, _, prefix = parsed.path.lstrip("/").partition("/")
-        blob = (
-            f"{prefix}/{job}/{_RUN_RESULTS_RELPATH}" if prefix else f"{job}/{_RUN_RESULTS_RELPATH}"
-        )
+        blob = f"{prefix}/{job}/{relpath}" if prefix else f"{job}/{relpath}"
         # Bound socket connect/read like the ADLS datasource adapter — `test()` runs
         # this synchronously in the request thread, so an unreachable account must
         # fail fast, not hang. (`download_blob(timeout=)` is only the server-side op
@@ -152,7 +156,7 @@ def _read_artifact(config: DbtConfig, job: str, secret: str) -> bytes | None:
 
     bucket = parsed.netloc
     prefix = parsed.path.lstrip("/")
-    key = f"{prefix}/{job}/{_RUN_RESULTS_RELPATH}" if prefix else f"{job}/{_RUN_RESULTS_RELPATH}"
+    key = f"{prefix}/{job}/{relpath}" if prefix else f"{job}/{relpath}"
     client = boto3.client(
         "s3",
         region_name=config.region,
@@ -274,6 +278,19 @@ class DbtProvider:
         # The signed callback / artifact is authoritative; nothing to enrich. The
         # persistence layer treats NotImplementedError as "skip enrichment".
         raise NotImplementedError("dbt artifacts are authoritative; no REST enrichment")
+
+    def read_manifest(self, config: dict[str, Any], secret: str, job: str) -> bytes | None:
+        """Read a job's ``latest/manifest.json`` for lineage (ADR 0034, #759).
+
+        The **optional** lineage capability the orchestration_service refresh hook
+        probes for via ``getattr`` — other providers (ADF / Airflow) don't have it,
+        so the hook stays provider-agnostic (CLAUDE.md §11). Reads the sibling of
+        ``run_results.json`` at the same per-job artifacts pointer; ``None`` when
+        the manifest hasn't been published. Transport/auth errors propagate to the
+        fail-open caller.
+        """
+        cfg = DbtConfig.model_validate(dict(config))
+        return _read_artifact(cfg, job, secret, _MANIFEST_RELPATH)
 
     def list_recent_runs(
         self, config: Mapping[str, Any], secret: str, since: datetime

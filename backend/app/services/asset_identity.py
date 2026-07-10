@@ -101,6 +101,17 @@ def normalize_snowflake_account(account: str) -> str:
     return account
 
 
+def format_snowflake_name(database: str, schema: str, table: str) -> str:
+    """Join a Snowflake ``DB.SCHEMA.TABLE`` into the OpenLineage ``name`` string.
+
+    Each part is folded to the engine's unquoted case (upper) unless double-quote
+    wrapped, exactly as :func:`_normalize_part` does — the one place that rule
+    lives, reused by both the suite-target resolver here and the dbt-manifest
+    canonicalizer (`lineage.edges`) so their identifiers match byte-for-byte.
+    """
+    return ".".join(_normalize_part(part, engine="snowflake") for part in (database, schema, table))
+
+
 def _resolve_snowflake(config: dict[str, Any], target: dict[str, Any]) -> AssetIdentity:
     account = _require(config, "account", "snowflake", "config")
     database = _require(config, "database", "snowflake", "config")
@@ -109,7 +120,7 @@ def _resolve_snowflake(config: dict[str, Any], target: dict[str, Any]) -> AssetI
         raise ValueError("snowflake asset identity requires a 'schema' (target or config)")
     table = _require(target, "table", "snowflake", "target")
     namespace = f"snowflake://{normalize_snowflake_account(account)}"
-    name = ".".join(_normalize_part(part, engine="snowflake") for part in (database, schema, table))
+    name = format_snowflake_name(database, schema, table)
     return AssetIdentity(namespace=namespace, name=name)
 
 

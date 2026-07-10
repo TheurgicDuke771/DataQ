@@ -557,3 +557,143 @@ def test_polled_running_then_succeeded_is_not_skipped(
     assert succeeded.pipeline_runs[0].status == "succeeded"
     assert len(succeeded.triggered_runs) == 1  # the transition fires the trigger
     assert stub_run_dispatch == [str(succeeded.triggered_runs[0].id)]  # handed to the broker
+
+
+# ── lineage refresh hook (#759): dbt success re-reads the manifest ────────────
+
+_PARSE = "backend.app.services.orchestration_service.dbt_manifest.parse_manifest"
+_REFRESH = "backend.app.services.orchestration_service.edges.refresh_dbt_edges"
+
+
+class _FakeDbtProvider:
+    """dbt-shaped provider exposing the OPTIONAL `read_manifest` capability."""
+
+    provider = "dbt"
+    resource_config_key = "project_name"
+
+    def __init__(self, manifest: bytes | None = b"{}") -> None:
+        self._manifest = manifest
+
+    def parse_event(self, payload: bytes, headers: Any) -> RunUpdate:  # pragma: no cover
+        raise NotImplementedError
+
+    def fetch_run_detail(self, config: Any, secret: str, provider_run_id: str) -> RunUpdate:
+        raise NotImplementedError  # artifacts authoritative → _maybe_enrich skips
+
+    def list_recent_runs(self, config: Any, secret: str, since: Any) -> list[RunUpdate]:
+        return []  # pragma: no cover — poll path unused in these hook tests
+
+    def read_manifest(self, config: Any, secret: str, job: str) -> bytes | None:
+        return self._manifest
+
+
+def _dbt_connection(db_session: Any, *, project: str = "dataq_lineage") -> Connection:
+    conn = Connection(
+        name=f"dbt-{project}",
+        type="dbt",
+        env="dev",
+        config={"project_name": project, "artifacts_uri": "file:///x", "jobs": ["j"]},
+        created_by=_user(db_session).id,
+    )
+    db_session.add(conn)
+    db_session.commit()
+    conn.secret_ref = f"conn-{conn.id}"
+    db_session.commit()
+    return conn
+
+
+def _dbt_update(status: str = "succeeded") -> RunUpdate:
+    return RunUpdate(
+        provider_run_id="inv-1",
+        pipeline_or_dag_id="j",
+        resource_name="dataq_lineage",
+        status=status,
+    )
+
+
+def test_dbt_success_triggers_lineage_refresh(db_session: Any, monkeypatch: Any) -> None:
+    conn = _dbt_connection(db_session)
+    seen: list[Any] = []
+    monkeypatch.setattr(_PARSE, lambda raw: "GRAPH")
+    monkeypatch.setattr(
+        _REFRESH, lambda session, *, connection, graph: seen.append((connection.id, graph))
+    )
+
+    result = ingest_event(
+        db_session,
+        provider_impl=_FakeDbtProvider(),
+        update=_dbt_update("succeeded"),
+        secret_store=_FakeStore(**{f"conn-{conn.id}": "sas"}),
+    )
+
+    assert result.pipeline_run is not None
+    assert seen == [(conn.id, "GRAPH")]  # the parsed graph reached the refresh
+
+
+def test_dbt_failure_does_not_refresh_lineage(db_session: Any, monkeypatch: Any) -> None:
+    conn = _dbt_connection(db_session)
+    called: list[int] = []
+    monkeypatch.setattr(_REFRESH, lambda **kw: called.append(1))
+
+    ingest_event(
+        db_session,
+        provider_impl=_FakeDbtProvider(),
+        update=_dbt_update("failed"),
+        secret_store=_FakeStore(**{f"conn-{conn.id}": "sas"}),
+    )
+    assert called == []  # failures alert but never refresh lineage (nor trigger)
+
+
+def test_airflow_success_does_not_refresh_lineage(db_session: Any, monkeypatch: Any) -> None:
+    # AirflowProvider has no `read_manifest` → the hook is a no-op (no branching).
+    from backend.app.orchestration.airflow import AirflowProvider
+
+    user = _user(db_session)
+    conn = Connection(
+        name="airflow-dev",
+        type="airflow",
+        env="dev",
+        config={"base_url": "https://airflow.example.com", "auth_type": "token"},
+        created_by=user.id,
+    )
+    db_session.add(conn)
+    db_session.commit()
+    conn.secret_ref = f"conn-{conn.id}"
+    db_session.commit()
+    called: list[int] = []
+    monkeypatch.setattr(_REFRESH, lambda **kw: called.append(1))
+
+    ingest_event(
+        db_session,
+        provider_impl=AirflowProvider(),
+        update=RunUpdate(
+            provider_run_id="dag-run-1",
+            pipeline_or_dag_id="load_finance",
+            resource_name="https://airflow.example.com",
+            status="succeeded",
+        ),
+        secret_store=_FakeStore(**{f"conn-{conn.id}": "token"}),
+    )
+    assert called == []
+
+
+def test_lineage_refresh_failure_does_not_break_ingestion(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    conn = _dbt_connection(db_session)
+    monkeypatch.setattr(_PARSE, lambda raw: "GRAPH")
+
+    def _boom(**kw: Any) -> None:
+        raise RuntimeError("lineage exploded")
+
+    monkeypatch.setattr(_REFRESH, _boom)
+
+    # Fail-open: a lineage blow-up must not sink the pipeline-run ingestion.
+    result = ingest_event(
+        db_session,
+        provider_impl=_FakeDbtProvider(),
+        update=_dbt_update("succeeded"),
+        secret_store=_FakeStore(**{f"conn-{conn.id}": "sas"}),
+    )
+    assert result.pipeline_run is not None
+    assert result.pipeline_run.status == "succeeded"

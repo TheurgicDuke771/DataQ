@@ -332,3 +332,54 @@ def test_read_artifact_s3_missing_returns_none(monkeypatch: pytest.MonkeyPatch) 
         _cfg(artifacts_uri="s3://bucket/dbt", access_key_id="AK", region="us-east-1")
     )
     assert dbt_mod._read_artifact(cfg, "job", "secret") is None
+
+
+# ── read_manifest (the optional lineage capability, #759) ─────────────────────
+
+
+def test_read_artifact_relpath_selects_the_artifact(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: dict[str, Any] = {}
+
+    class _Downloaded:
+        def readall(self) -> bytes:
+            return b"{}"
+
+    class _BlobClient:
+        def download_blob(self, **_: Any) -> _Downloaded:
+            return _Downloaded()
+
+    class _Service:
+        def __init__(self, account_url: str, credential: str, **_: Any) -> None:
+            pass
+
+        def get_blob_client(self, container: str, blob: str) -> _BlobClient:
+            seen["blob"] = blob
+            return _BlobClient()
+
+    monkeypatch.setattr("azure.storage.blob.BlobServiceClient", _Service)
+    cfg = DbtConfig.model_validate(_cfg(artifacts_uri="adls://acct/raw/dbt"))
+    dbt_mod._read_artifact(cfg, "lineage_build", "sas", dbt_mod._MANIFEST_RELPATH)
+    assert seen["blob"] == "dbt/lineage_build/latest/manifest.json"
+
+
+def test_read_manifest_file_scheme_round_trip(tmp_path: Any) -> None:
+    latest = tmp_path / "lineage_build" / "latest"
+    latest.mkdir(parents=True)
+    (latest / "manifest.json").write_bytes(b'{"metadata": {}}')
+    cfg = _cfg(artifacts_uri=f"file://{tmp_path}")
+    raw = DbtProvider().read_manifest(cfg, "", "lineage_build")
+    assert raw == b'{"metadata": {}}'
+
+
+def test_read_manifest_missing_returns_none(tmp_path: Any) -> None:
+    cfg = _cfg(artifacts_uri=f"file://{tmp_path}")
+    assert DbtProvider().read_manifest(cfg, "", "nope") is None
+
+
+def test_other_providers_have_no_read_manifest() -> None:
+    # The refresh hook probes `read_manifest` via getattr — only dbt exposes it, so
+    # ADF / Airflow stay lineage-free with no provider branching (CLAUDE.md §11).
+    from backend.app.orchestration.airflow import AirflowProvider
+
+    assert getattr(AirflowProvider(), "read_manifest", None) is None
+    assert getattr(DbtProvider(), "read_manifest", None) is not None

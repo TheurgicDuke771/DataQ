@@ -125,6 +125,14 @@ erDiagram
         timestamptz first_seen
         timestamptz last_seen
     }
+    lineage_edges {
+        uuid id PK
+        uuid upstream_asset_id FK "CASCADE (ADR 0034)"
+        uuid downstream_asset_id FK "CASCADE"
+        string source "lineage source, e.g. 'dbt' — (up,down,source) unique"
+        timestamptz first_seen
+        timestamptz last_seen
+    }
     suites {
         uuid id PK
         string name
@@ -242,6 +250,8 @@ erDiagram
     users |o--o{ assets : "owner_user_id (SET NULL)"
     assets |o--o{ suites : "resolved target (SET NULL)"
     assets |o--o{ runs : "stamped at dispatch (SET NULL)"
+    assets ||--o{ lineage_edges : "upstream (CASCADE)"
+    assets ||--o{ lineage_edges : "downstream (CASCADE)"
 
     suites ||--o{ checks : "contains (CASCADE)"
     suites ||--o{ runs : "executed as (CASCADE)"

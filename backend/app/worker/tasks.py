@@ -346,6 +346,7 @@ def _poll_orchestration_runs(
                 connection=connection,
                 updates=updates,
                 skip_updated_since=since,
+                secret_store=secret_store,
             )
             summary["connections"] += 1
             summary["recorded"] += len(result.pipeline_runs)
