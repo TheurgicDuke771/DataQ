@@ -1,6 +1,6 @@
 # DataQ
 
-> Data quality monitoring platform built around Great Expectations — Snowflake (DEV/QA/UAT), ADLS Gen2, S3, Unity Catalog (Databricks), with ADF + Airflow orchestration integrations.
+> Data quality monitoring platform built around Great Expectations — Snowflake (DEV/QA/UAT), ADLS Gen2, S3, Unity Catalog (Databricks), Apache Iceberg (native read), with ADF + Airflow + dbt orchestration integrations.
 
 **📖 Documentation site: <https://theurgicduke771.github.io/DataQ/>** (MkDocs Material — quickstart, concepts, architecture, guides).
 
@@ -8,10 +8,11 @@
 
 ## What it does
 
-- **Checks on 4 datasources** — Snowflake, Unity Catalog (Databricks), ADLS Gen2 + S3
-  flat files (CSV/Parquet, batch patterns). Four check styles: **GX expectations**,
-  **custom SQL** (rows returned = failures), and **freshness / volume monitors**; plus a
-  column profiler on every datasource (dry-run preview on Snowflake). [Feature matrix →](https://theurgicduke771.github.io/DataQ/feature-matrix/)
+- **Checks on 5 datasources** — Snowflake, Unity Catalog (Databricks), ADLS Gen2 + S3
+  flat files (CSV/Parquet, batch patterns), and Apache Iceberg (native `pyiceberg` read).
+  Four check styles: **GX expectations**, **custom SQL** (rows returned = failures), and
+  **freshness / volume monitors**; plus a column profiler and dry-run preview on every
+  datasource. [Feature matrix →](https://theurgicduke771.github.io/DataQ/feature-matrix/)
 - **Three run modes** — run now (live progress + cancel), **cron schedules**
   (timezone/DST-aware), and **pipeline triggers**: ADF + Airflow runs are monitored, and
   a successful pipeline can trigger the bound suite. [Scheduling →](https://theurgicduke771.github.io/DataQ/scheduling/) · [Orchestration →](https://theurgicduke771.github.io/DataQ/orchestration/)

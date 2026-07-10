@@ -15,8 +15,8 @@ Open the app URL and sign in through your identity provider (SSO). You land on t
 ## 1. Connect a datasource
 
 1. Go to **Connections → Add connection**.
-2. Pick your datasource type (Snowflake, Unity Catalog, ADLS Gen2, or S3). The form is
-   spec-driven — it asks only for what that type needs.
+2. Pick your datasource type (Snowflake, Unity Catalog, ADLS Gen2, S3, or Apache
+   Iceberg). The form is spec-driven — it asks only for what that type needs.
 3. Fill it in with a **read-only** credential (for Snowflake, key-pair auth is recommended),
    then click **Test**. A green result means DataQ can reach it.
 

@@ -9,8 +9,11 @@ Portability, auto-monitors, and polish on top of v1:
 
 - **dbt as a third orchestration provider** — observe dbt builds and trigger suites on
   success, via a post-build HMAC callback + a `run_results.json` artifact poll (ADR 0029).
+- **Apache Iceberg as a fifth datasource** — native `pyiceberg` read (v2 baseline; ADR
+  0030, #716/#722), with natively-computed freshness/volume monitors, a column profiler +
+  column listing, and dry-run preview (#721).
 - **Freshness & volume monitors** — the first auto-monitor kinds (is the data stale? did the
-  load land whole?) on SQL datasources.
+  load land whole?) on SQL datasources plus Iceberg.
 - **Vendor-neutral observability** — OpenTelemetry logs + traces, exportable to Application
   Insights and/or a generic OTLP endpoint.
 - **Personal access tokens (PATs)** — `dq_live_` tokens for headless / AI-client use, on REST

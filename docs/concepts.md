@@ -5,7 +5,7 @@ A few terms make the rest of the docs click.
 ## The one distinction: datasource vs orchestration
 
 - **Datasources** are stores you write data-quality checks *against*: **Snowflake**,
-  **ADLS Gen2**, **AWS S3**, **Unity Catalog (Databricks)**.
+  **ADLS Gen2**, **AWS S3**, **Unity Catalog (Databricks)**, **Apache Iceberg** (native read).
 - **Orchestration providers** are workflow engines DataQ *observes* — **Azure Data
   Factory (ADF)**, **Apache Airflow**, and **dbt**. DataQ does three things with them: monitor
   pipeline/DAG/build runs, detect failures in near-real-time, and **trigger a check suite when a
@@ -20,7 +20,7 @@ A few terms make the rest of the docs click.
 
 - **Connection** — credentials + config for one datasource or orchestration provider.
 - **Suite** — a named collection of checks that runs against one connection's target
-  (a table, a file/path, or a Unity Catalog table).
+  (a table, a file/path, a Unity Catalog table, or an Iceberg `namespace.table`).
 - **Check** — a single data-quality rule. In v1 every check is a **Great Expectations
   expectation** (e.g. "this column is never null", or a custom SQL rule). Freshness and
   volume **monitors** are also supported.
