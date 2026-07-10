@@ -110,6 +110,69 @@ class IcebergConfig(BaseModel):
         return props
 
 
+def load_iceberg_table(config: IcebergConfig, secret: str | None, identifier: str) -> Any:
+    """Load an Iceberg table by its ``namespace.table`` identifier (the live seam).
+
+    The single catalog-load + ``load_table`` round-trip shared by the check/monitor
+    runner and the column profiler (#721), so the two can't drift on how a
+    connection's config + optional secret map to a ``pyiceberg`` catalog.
+    ``pyiceberg`` is imported lazily (per this module's idiom) so the dependency
+    only loads on a live Iceberg path.
+    """
+    from pyiceberg.catalog import load_catalog
+
+    catalog: Any = load_catalog(config.catalog_name, **config.catalog_properties(secret))
+    return catalog.load_table(identifier)
+
+
+def _to_arrow_backed_pandas(arrow: Any) -> Any:
+    """Materialise an Arrow table as Arrow-backed pandas (``pd.ArrowDtype``).
+
+    The one conversion that keeps Iceberg's DataFrame dtypes consistent with the
+    flat-file/UC paths (``dtype_backend="pyarrow"``) — reused by both the runner's
+    whole-table read and the profiler's sampled read (#721)."""
+    import pandas as pd
+
+    return arrow.to_pandas(types_mapper=pd.ArrowDtype)
+
+
+def read_iceberg_dataframe(
+    config: IcebergConfig,
+    secret: str | None,
+    identifier: str,
+    *,
+    columns: list[str] | None = None,
+    limit: int | None = None,
+) -> Any:
+    """Materialise an Iceberg table as an Arrow-backed pandas DataFrame (#721).
+
+    The column profiler's read seam: like the runner it goes through
+    ``scan().to_arrow()`` → Arrow-backed pandas, but adds the two "load less data"
+    levers the flat-file profiler uses — column **projection** (``selected_fields``,
+    restricted to columns that actually exist so a stray name doesn't fail the
+    scan — the caller reports genuinely-missing columns as a clean 422) and a row
+    **limit** (sampling). ``columns=None`` reads every column; ``limit=None`` reads
+    every row (the runner's whole-table contract)."""
+    table = load_iceberg_table(config, secret, identifier)
+    if columns:
+        available = {field.name for field in table.schema().fields}
+        selected = tuple(c for c in columns if c in available) or ("*",)
+    else:
+        selected = ("*",)
+    arrow = table.scan(selected_fields=selected, limit=limit).to_arrow()
+    return _to_arrow_backed_pandas(arrow)
+
+
+def list_iceberg_columns(config: IcebergConfig, secret: str | None, identifier: str) -> list[str]:
+    """Column (field) names of an Iceberg table from its schema — **no data scan**.
+
+    Reads the table's ``schema()`` field names (a metadata-only lookup, like the
+    flat-file lister's Parquet-footer read), so the check editor's column dropdown
+    (#474) never scans table data to populate itself (#721)."""
+    table = load_iceberg_table(config, secret, identifier)
+    return [field.name for field in table.schema().fields]
+
+
 class IcebergConnectionAdapter:
     """`ConnectionAdapter` for Iceberg — config validation + a metadata probe."""
 
@@ -150,27 +213,20 @@ class IcebergCheckRunner:
 
     def _load_table(self, identifier: str) -> Any:
         """Load the Iceberg table by ``namespace.table`` identifier (live seam)."""
-        from pyiceberg.catalog import load_catalog
-
-        catalog: Any = load_catalog(
-            self._config.catalog_name, **self._config.catalog_properties(self._secret)
-        )
-        return catalog.load_table(identifier)
+        return load_iceberg_table(self._config, self._secret, identifier)
 
     def _read_dataframe(self, identifier: str) -> Any:
         """Materialise the whole current snapshot as Arrow-backed pandas.
 
-        ``.to_arrow()`` (not the bare ``.to_pandas()`` shortcut) + an explicit
-        ``types_mapper=pd.ArrowDtype`` keeps Iceberg's GX behaviour consistent with
-        the flat-file/UC DataFrame paths. GX expectations are exact and need the
-        whole frame, so this materialises the full table (ADR 0030 — G-b scale
-        ceiling).
+        ``.to_arrow()`` (not the bare ``.to_pandas()`` shortcut) + Arrow-backed
+        pandas dtypes keep Iceberg's GX behaviour consistent with the flat-file/UC
+        DataFrame paths (via the shared ``_to_arrow_backed_pandas``). GX
+        expectations are exact and need the whole frame, so this materialises the
+        full table (ADR 0030 — G-b scale ceiling). Goes through ``self._load_table``
+        (not the module helper directly) so tests can patch the load seam.
         """
-        import pandas as pd
-
         table = self._load_table(identifier)
-        arrow = table.scan().to_arrow()
-        return arrow.to_pandas(types_mapper=pd.ArrowDtype)
+        return _to_arrow_backed_pandas(table.scan().to_arrow())
 
     def run_checks(
         self,

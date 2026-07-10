@@ -1114,6 +1114,122 @@ def test_profile_flat_file_messy_column_degrades_not_500(
     assert col["top_values"][0] == {"value": "N/A", "count": 2}
 
 
+# ── Iceberg (native pyiceberg read) profiling (#721) ──
+
+
+def _iceberg_suite(
+    client: TestClient, db_session: Any, *, secret_ref: str | None = "kv-test"
+) -> str:
+    conn = _typed_connection(
+        db_session,
+        "iceberg",
+        {"catalog_type": "sql", "catalog_uri": "sqlite:///w"},
+        secret_ref=secret_ref,
+    )
+    return str(
+        client.post("/api/v1/suites", json=_payload(conn.id, name="iceberg-suite")).json()["id"]
+    )
+
+
+def _patch_iceberg_read(
+    monkeypatch: pytest.MonkeyPatch, frame: pd.DataFrame, captured: dict[str, Any] | None = None
+) -> None:
+    # Patch the profile-service read seam (which resolves config+secret), mirroring
+    # the flat-file `_read_dataframe` patch — so the test never touches a live store.
+    def fake(
+        connection: Any, *, identifier: str, columns: list[str], secret_store: Any
+    ) -> pd.DataFrame:
+        if captured is not None:
+            captured["identifier"] = identifier
+        return frame
+
+    monkeypatch.setattr(profile_service, "_read_iceberg_dataframe", fake)
+
+
+def test_profile_iceberg_returns_stats(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sid = _iceberg_suite(client, db_session)
+    captured: dict[str, Any] = {}
+    _patch_iceberg_read(
+        monkeypatch,
+        pd.DataFrame({"amount": [10, 20, 20, 20], "city": ["x", "x", "y", None]}),
+        captured,
+    )
+    resp = client.post(
+        f"/api/v1/suites/{sid}/profile",
+        json={"table": "orders", "namespace": "sales", "columns": ["amount", "city"], "top_n": 5},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    # identity is the folded namespace.table; SQL/flat-file identity absent
+    assert body["table"] == "sales.orders"
+    assert body["path"] is None and body["catalog"] is None and body["schema"] is None
+    assert body["row_count"] == 4
+    assert captured["identifier"] == "sales.orders"  # namespace round-trips to the read seam
+    amount = next(c for c in body["columns"] if c["column"] == "amount")
+    assert amount["distinct_count"] == 2 and amount["top_values"][0] == {"value": 20, "count": 3}
+    city = next(c for c in body["columns"] if c["column"] == "city")
+    assert city["null_count"] == 1 and city["null_fraction"] == 0.25
+
+
+def test_profile_iceberg_missing_table_returns_422(client: TestClient, db_session: Any) -> None:
+    sid = _iceberg_suite(client, db_session)
+    resp = client.post(f"/api/v1/suites/{sid}/profile", json={"columns": ["a"]})
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "profile_target_invalid"
+
+
+def test_profile_iceberg_credential_less_connection_profiles(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # ACCEPTANCE (#721): an iceberg connection with NO stored credential profiles
+    # successfully (no 422) — the secret-less guard that 422s every other type is
+    # relaxed for iceberg, mirroring build_iceberg_runner's optional credential.
+    sid = _iceberg_suite(client, db_session, secret_ref=None)
+    _patch_iceberg_read(monkeypatch, pd.DataFrame({"amount": [1, 2, 3]}))
+    resp = client.post(
+        f"/api/v1/suites/{sid}/profile", json={"table": "orders", "columns": ["amount"]}
+    )
+    # No 422 despite the missing credential — resolve_profiler exempts iceberg.
+    assert resp.status_code == 200
+    assert resp.json()["table"] == "orders" and resp.json()["row_count"] == 3
+
+
+def test_profile_iceberg_read_failure_returns_502(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sid = _iceberg_suite(client, db_session)
+
+    def boom(connection: Any, *, identifier: str, columns: list[str], secret_store: Any) -> Any:
+        raise RuntimeError("catalog credentials rejected")
+
+    monkeypatch.setattr(profile_service, "_read_iceberg_dataframe", boom)
+    resp = client.post(f"/api/v1/suites/{sid}/profile", json={"table": "orders", "columns": ["a"]})
+    assert resp.status_code == 502
+    assert resp.json()["error"]["code"] == "profile_failed"
+    assert "catalog credentials rejected" not in resp.text  # adapter exception not echoed
+
+
+def test_list_columns_iceberg_returns_schema_names(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sid = _iceberg_suite(client, db_session)
+    captured: dict[str, Any] = {}
+
+    def fake(connection: Any, *, identifier: str, secret_store: Any) -> list[str]:
+        captured["identifier"] = identifier
+        return ["id", "amount", "city"]
+
+    monkeypatch.setattr(profile_service, "_list_iceberg_columns", fake)
+    resp = client.get(
+        f"/api/v1/suites/{sid}/columns", params={"table": "orders", "namespace": "sales"}
+    )
+    assert resp.status_code == 200
+    assert resp.json()["columns"] == ["id", "amount", "city"]
+    assert captured["identifier"] == "sales.orders"  # namespace round-trips
+
+
 # ───────────────────────── column policy (#415) ────────────────────
 
 

@@ -1150,6 +1150,24 @@ def test_dryrun_supports_unity_catalog_suite(
     assert calls and calls[0]["catalog"] == "MAIN"
 
 
+def test_dryrun_supports_iceberg_suite(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # #721: Iceberg suites are previewable via the runner registry; the suite's
+    # optional namespace folds into the `namespace.table` identifier the runner
+    # receives as its `table` (as the real run path does — run_target.resolve_target).
+    sid = _suite_id(
+        client, db_session, conn_type="iceberg", target={"table": "ORDERS", "namespace": "sales"}
+    )
+    runner = _ok_runner()
+    _patch_runner(monkeypatch, runner)
+    resp = client.post(f"/api/v1/suites/{sid}/checks/dryrun", json=_dryrun_body())
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "pass"
+    assert runner.called_with is not None
+    assert runner.called_with["table"] == "sales.ORDERS"
+
+
 def test_dryrun_targetless_suite_returns_422(client: TestClient, db_session: Any) -> None:
     # No run target on the suite → a clean 422 (not a 500), resolved by run_target.
     sid = _suite_id(client, db_session)  # no target

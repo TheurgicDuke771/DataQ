@@ -224,6 +224,7 @@ def _auto_classify_columns(session: Session, *, suite_id: uuid.UUID) -> str:
             table=table,
             schema=target.get("schema"),
             catalog=target.get("catalog"),
+            namespace=target.get("namespace"),
             path=path,
             file_format=target.get("file_format"),
             secret_store=get_secret_store(),

@@ -56,6 +56,8 @@ class SuiteTarget(ApiModel):
     table: str | None = Field(default=None, max_length=255)
     schema_: str | None = Field(default=None, alias="schema", max_length=255)
     catalog: str | None = Field(default=None, max_length=255)
+    # Iceberg addresses a table by ``namespace.table``; run_target folds it in.
+    namespace: str | None = Field(default=None, max_length=255)
     path: str | None = Field(default=None, max_length=1024)
     file_format: Literal["csv", "parquet"] | None = None
     # Flat-file batch selection (A4); validated in run_target, not here.
@@ -339,9 +341,13 @@ class ColumnProfileRequest(ApiModel):
     columns: list[str] = Field(min_length=1, max_length=50)
     top_n: int = Field(default=10, ge=1, le=100, description="Most-frequent values per column")
     # SQL datasources: the target is a table (+ schema; Unity Catalog also catalog).
-    table: str | None = Field(default=None, max_length=255, description="SQL table to profile")
+    table: str | None = Field(
+        default=None, max_length=255, description="SQL/Iceberg table to profile"
+    )
     schema_: str | None = Field(default=None, alias="schema")
     catalog: str | None = Field(default=None, max_length=255, description="Unity Catalog catalog")
+    # Iceberg: the table is addressed by an optional namespace (namespace.table).
+    namespace: str | None = Field(default=None, max_length=255, description="Iceberg namespace")
     # Flat-file datasources (ADLS Gen2 / S3): the target is a file path.
     path: str | None = Field(default=None, max_length=1024, description="Flat-file path to profile")
     file_format: Literal["csv", "parquet"] | None = None
@@ -402,6 +408,7 @@ def profile_columns(
         table=payload.table,
         schema=payload.schema_,
         catalog=payload.catalog,
+        namespace=payload.namespace,
         path=payload.path,
         file_format=payload.file_format,
         secret_store=secret_store,
@@ -448,6 +455,7 @@ def list_columns(
     table: Annotated[str | None, Query(max_length=255)] = None,
     schema_: Annotated[str | None, Query(alias="schema", max_length=255)] = None,
     catalog: Annotated[str | None, Query(max_length=255)] = None,
+    namespace: Annotated[str | None, Query(max_length=255)] = None,
     path: Annotated[str | None, Query(max_length=1024)] = None,
     file_format: Annotated[Literal["csv", "parquet"] | None, Query()] = None,
 ) -> ColumnsRead:
@@ -461,6 +469,7 @@ def list_columns(
         table=table,
         schema=schema_,
         catalog=catalog,
+        namespace=namespace,
         path=path,
         file_format=file_format,
         secret_store=secret_store,
@@ -500,6 +509,7 @@ class ColumnPolicySuggestRequest(ApiModel):
     table: str | None = Field(default=None, max_length=255)
     schema_: str | None = Field(default=None, alias="schema")
     catalog: str | None = Field(default=None, max_length=255)
+    namespace: str | None = Field(default=None, max_length=255)
     path: str | None = Field(default=None, max_length=1024)
     file_format: Literal["csv", "parquet"] | None = None
 
@@ -563,6 +573,7 @@ def suggest_column_policy(
         table=payload.table,
         schema=payload.schema_,
         catalog=payload.catalog,
+        namespace=payload.namespace,
         path=payload.path,
         file_format=payload.file_format,
         top_n=payload.top_n,

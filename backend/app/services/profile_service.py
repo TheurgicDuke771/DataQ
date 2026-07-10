@@ -49,6 +49,8 @@ from backend.app.core.jsonsafe import sanitize_json
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
 from backend.app.datasources.flatfile import download_bytes, format_from_path
+from backend.app.datasources.iceberg import IcebergConfig, read_iceberg_dataframe
+from backend.app.datasources.iceberg import list_iceberg_columns as iceberg_column_names
 from backend.app.datasources.snowflake import (
     SnowflakeConfig,
     build_connect_args,
@@ -300,13 +302,26 @@ class _FileProfiler:
     """Flat-file profiling strategy: sample into pandas (backend handled by flatfile)."""
 
 
-_Profiler = _SqlProfiler | _FileProfiler
+@dataclass(frozen=True)
+class _IcebergProfiler:
+    """Iceberg profiling strategy: native ``pyiceberg`` read into pandas (ADR 0030).
+
+    NOT a `_SqlProfiler`: the Iceberg identifier is ``namespace.table`` (dotted),
+    which the SQL path's `validate_identifier` rejects, and there is no SQL engine —
+    the table is materialised and profiled in-pandas like the flat-file path. The
+    credential is **optional** (a local warehouse / vended-credentials REST catalog
+    has none), so this type is exempt from the `secret_ref` guard in
+    `resolve_profiler`, mirroring `build_iceberg_runner`."""
+
+
+_Profiler = _SqlProfiler | _FileProfiler | _IcebergProfiler
 
 _PROFILERS: dict[str, _Profiler] = {
     "snowflake": _SqlProfiler(_snowflake_engine_args),
     "unity_catalog": _SqlProfiler(_unity_catalog_engine_args, requires_catalog=True),
     "s3": _FileProfiler(),
     "adls_gen2": _FileProfiler(),
+    "iceberg": _IcebergProfiler(),
 }
 
 
@@ -368,11 +383,20 @@ def resolve_profiler(
             f"column introspection is not supported for {connection.type!r} connections in v1",
             detail={"type": connection.type, "supported": sorted(_PROFILERS)},
         )
-    if not connection.secret_ref:
+    # Iceberg is credential-optional (like `build_iceberg_runner` / the ADLS/S3
+    # adapters) — a local warehouse or vended-credentials REST catalog has no
+    # secret. Every other type still requires a stored credential, surfaced as a
+    # clean 422 rather than a bare ValueError the connect guard would relabel 502.
+    if not isinstance(profiler, _IcebergProfiler) and not connection.secret_ref:
         raise ProfileTargetInvalidError(
             "connection has no stored credential (secret_ref)", detail={"type": connection.type}
         )
-    if isinstance(profiler, _SqlProfiler):
+    if isinstance(profiler, _IcebergProfiler):
+        if not table:
+            raise ProfileTargetInvalidError(
+                "table is required for an Iceberg table", detail={"type": connection.type}
+            )
+    elif isinstance(profiler, _SqlProfiler):
         if not table:
             raise ProfileTargetInvalidError(
                 "table is required for a SQL datasource", detail={"type": connection.type}
@@ -498,6 +522,27 @@ def _to_native(value: Any) -> Any:
     return str(value)
 
 
+def _profile_columns(df: Any, *, columns: list[str], top_n: int) -> tuple[int, list[ColumnProfile]]:
+    """Row count + per-column stats for `columns` of an in-memory dataframe.
+
+    The datasource-neutral core of the pandas profiling path, shared by the
+    flat-file (`profile_dataframe`) and Iceberg (`profile_iceberg`) profilers so
+    they can't drift on the stats contract — only the `ProfileResult` identity
+    fields (`path`/`file_format` vs `table`) differ per datasource. Raises
+    `ProfileColumnNotFoundError` (422) if a requested column isn't in the frame —
+    a clean error instead of a KeyError 500.
+    """
+    missing = [c for c in columns if c not in df.columns]
+    if missing:
+        raise ProfileColumnNotFoundError(
+            "requested column(s) not in the target",
+            detail={"missing": missing, "available": [str(c) for c in df.columns][:50]},
+        )
+    row_count = len(df)
+    profiles = [_profile_series(col, df[col], row_count=row_count, top_n=top_n) for col in columns]
+    return row_count, profiles
+
+
 def profile_dataframe(
     df: Any, *, columns: list[str], top_n: int, path: str, file_format: str
 ) -> ProfileResult:
@@ -506,14 +551,7 @@ def profile_dataframe(
     Raises `ProfileColumnNotFoundError` (422) if a requested column isn't in the
     frame — a clean error instead of a KeyError 500.
     """
-    missing = [c for c in columns if c not in df.columns]
-    if missing:
-        raise ProfileColumnNotFoundError(
-            "requested column(s) not in the file",
-            detail={"missing": missing, "available": [str(c) for c in df.columns][:50]},
-        )
-    row_count = len(df)
-    profiles = [_profile_series(col, df[col], row_count=row_count, top_n=top_n) for col in columns]
+    row_count, profiles = _profile_columns(df, columns=columns, top_n=top_n)
     return ProfileResult(path=path, file_format=file_format, row_count=row_count, columns=profiles)
 
 
@@ -641,6 +679,99 @@ def profile_file(
     return profile_dataframe(df, columns=columns, top_n=top_n, path=path, file_format=fmt)
 
 
+# ───────────────────────── Iceberg profiling (native read) ─────────
+
+
+def _iceberg_identifier(table: str, namespace: str | None) -> str:
+    """Fold the optional `namespace` into the ``namespace.table`` identifier
+    ``pyiceberg`` addresses a table by — mirroring `run_target.resolve_target`'s
+    Iceberg branch, so the profiler and the run path resolve the same table."""
+    return f"{namespace}.{table}" if namespace else table
+
+
+def _read_iceberg_dataframe(
+    connection: Connection, *, identifier: str, columns: list[str], secret_store: SecretStore
+) -> Any:
+    """Resolve an Iceberg connection's config + optional secret (exactly as
+    `build_iceberg_runner` does — the credential is optional) and materialise the
+    target as a projected, sampled DataFrame.
+
+    The live I/O seam (catalog load + scan), monkeypatched in tests — the
+    Iceberg analogue of the flat-file profiler's `_read_dataframe`."""
+    config = IcebergConfig.model_validate(connection.config)
+    secret = secret_store.get(connection.secret_ref) if connection.secret_ref else None
+    return read_iceberg_dataframe(config, secret, identifier, columns=columns, limit=_SAMPLE_ROWS)
+
+
+def _list_iceberg_columns(
+    connection: Connection, *, identifier: str, secret_store: SecretStore
+) -> list[str]:
+    """Resolve config + optional secret and list the target's schema field names
+    (metadata only, no data scan) — the Iceberg column-listing I/O seam."""
+    config = IcebergConfig.model_validate(connection.config)
+    secret = secret_store.get(connection.secret_ref) if connection.secret_ref else None
+    return iceberg_column_names(config, secret, identifier)
+
+
+def profile_iceberg(
+    connection: Connection,
+    *,
+    table: str,
+    namespace: str | None,
+    columns: list[str],
+    top_n: int,
+    secret_store: SecretStore,
+) -> ProfileResult:
+    """Profile `columns` of a natively-read Iceberg `table` on `connection` (#721).
+
+    Materialises a projected, sampled DataFrame via ``pyiceberg`` and reuses the
+    shared pandas profiling core — the Iceberg identifier is ``namespace.table``,
+    which the SQL path can't handle, so this never routes through `profile_table`.
+    Raises `ProfileColumnNotFoundError` (422) for a missing column and
+    `ProfileFailedError` (502) if the table can't be read — the underlying
+    exception is never echoed (it can carry catalog/credential fragments).
+    """
+    identifier = _iceberg_identifier(table, namespace)
+    try:
+        df = _read_iceberg_dataframe(
+            connection, identifier=identifier, columns=columns, secret_store=secret_store
+        )
+    except Exception as exc:
+        log.warning(
+            "column_profile_failed", connection_type=connection.type, error_type=type(exc).__name__
+        )
+        raise ProfileFailedError(
+            "column profile could not read the Iceberg table", detail={"table": identifier}
+        ) from exc
+
+    row_count, profiles = _profile_columns(df, columns=columns, top_n=top_n)
+    return ProfileResult(table=identifier, row_count=row_count, columns=profiles)
+
+
+def list_iceberg_columns(
+    connection: Connection,
+    *,
+    table: str,
+    namespace: str | None,
+    secret_store: SecretStore,
+) -> list[str]:
+    """Column (field) names of an Iceberg `table` on `connection` — no data scan.
+
+    Reads the table's schema field names (metadata only). Raises
+    `ProfileFailedError` (502) if the table can't be read (exception not echoed).
+    """
+    identifier = _iceberg_identifier(table, namespace)
+    try:
+        return _list_iceberg_columns(connection, identifier=identifier, secret_store=secret_store)
+    except Exception as exc:
+        log.warning(
+            "column_list_failed", connection_type=connection.type, error_type=type(exc).__name__
+        )
+        raise ProfileFailedError(
+            "columns could not be listed from the Iceberg table", detail={"table": identifier}
+        ) from exc
+
+
 def derive_column_policy(columns: list[ColumnProfile]) -> dict[str, Any]:
     """Auto-derive a failing-sample redaction policy (#415) from a column profile.
 
@@ -679,18 +810,29 @@ def profile_connection(
     table: str | None = None,
     schema: str | None = None,
     catalog: str | None = None,
+    namespace: str | None = None,
     path: str | None = None,
     file_format: str | None = None,
     secret_store: SecretStore,
 ) -> ProfileResult:
-    """Dispatch to the SQL or flat-file profiler based on the connection type.
+    """Dispatch to the SQL, flat-file, or Iceberg profiler based on the type.
 
     Raises `ProfileUnsupportedError` (422) for a type with no profiler, and
     `ProfileTargetInvalidError` (422) if the target for that type is missing
-    (a SQL type needs `table`; Unity Catalog also needs `catalog`; a flat-file
-    type needs `path`) or the connection has no stored credential.
+    (a SQL/Iceberg type needs `table`; Unity Catalog also needs `catalog`; a
+    flat-file type needs `path`) or a credential-requiring connection has none.
     """
     profiler = resolve_profiler(connection, table=table, catalog=catalog, path=path)
+    if isinstance(profiler, _IcebergProfiler):
+        assert table is not None  # resolve_profiler enforced this for Iceberg
+        return profile_iceberg(
+            connection,
+            table=table,
+            namespace=namespace,
+            columns=columns,
+            top_n=top_n,
+            secret_store=secret_store,
+        )
     if isinstance(profiler, _SqlProfiler):
         assert table is not None  # resolve_profiler enforced this for SQL types
         return profile_table(
@@ -800,18 +942,24 @@ def list_columns(
     table: str | None = None,
     schema: str | None = None,
     catalog: str | None = None,
+    namespace: str | None = None,
     path: str | None = None,
     file_format: str | None = None,
     secret_store: SecretStore,
 ) -> list[str]:
     """List a target's column names, dispatching on the connection type.
 
-    Same target rules as `profile_connection` (a SQL type needs `table`; Unity
-    Catalog also needs `catalog`; a flat-file type needs `path`). Raises
+    Same target rules as `profile_connection` (a SQL/Iceberg type needs `table`;
+    Unity Catalog also needs `catalog`; a flat-file type needs `path`). Raises
     `ProfileUnsupportedError` (422) for a type with no profiler and
     `ProfileTargetInvalidError` (422) for a missing target/credential.
     """
     profiler = resolve_profiler(connection, table=table, catalog=catalog, path=path)
+    if isinstance(profiler, _IcebergProfiler):
+        assert table is not None  # resolve_profiler enforced this for Iceberg
+        return list_iceberg_columns(
+            connection, table=table, namespace=namespace, secret_store=secret_store
+        )
     if isinstance(profiler, _SqlProfiler):
         assert table is not None  # resolve_profiler enforced this for SQL types
         return list_table_columns(
@@ -829,6 +977,7 @@ def suggest_policy_for_target(
     table: str | None = None,
     schema: str | None = None,
     catalog: str | None = None,
+    namespace: str | None = None,
     path: str | None = None,
     file_format: str | None = None,
     top_n: int = 20,
@@ -848,6 +997,7 @@ def suggest_policy_for_target(
         table=table,
         schema=schema,
         catalog=catalog,
+        namespace=namespace,
         path=path,
         file_format=file_format,
         secret_store=secret_store,
@@ -859,6 +1009,7 @@ def suggest_policy_for_target(
         table=table,
         schema=schema,
         catalog=catalog,
+        namespace=namespace,
         path=path,
         file_format=file_format,
         secret_store=secret_store,

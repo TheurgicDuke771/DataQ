@@ -614,3 +614,187 @@ def test_derive_policy_natural_key_of_emails_is_pii_not_identifier() -> None:
     )
     assert "identifier_column" not in policy
     assert policy["pii_columns"] == ["USER_ID"]
+
+
+# ── Iceberg profiler + list-columns (native read, #721) ──
+#
+# The iceberg read/list seams (`read_iceberg_dataframe` / `iceberg_column_names`)
+# are monkeypatched — never live pyiceberg. Iceberg is credential-optional and its
+# identifier is `namespace.table`, so these assert the dispatch, the identifier
+# fold, and the no-422-without-credential acceptance criterion.
+
+
+def _iceberg_conn(*, secret_ref: str | None = "ref") -> Any:
+    return _conn(
+        conn_type="iceberg",
+        config={"catalog_type": "sql", "catalog_uri": "sqlite:///w"},
+        secret_ref=secret_ref,
+    )
+
+
+def test_profile_iceberg_computes_stats(monkeypatch: pytest.MonkeyPatch) -> None:
+    from backend.app.services import profile_service as svc
+
+    monkeypatch.setattr(
+        svc,
+        "read_iceberg_dataframe",
+        lambda config, secret, identifier, **k: pd.DataFrame(
+            {"amount": [10, 20, 20, 20], "city": ["x", "x", "y", None]}
+        ),
+    )
+    result = svc.profile_connection(
+        _iceberg_conn(),
+        columns=["amount", "city"],
+        top_n=5,
+        table="orders",
+        namespace="sales",
+        secret_store=_FakeStore(),
+    )
+    # identity is the folded namespace.table (SQL/flat-file identity absent)
+    assert result.table == "sales.orders"
+    assert result.path is None and result.schema is None and result.catalog is None
+    assert result.row_count == 4
+    amount = result.columns[0]
+    assert amount.null_count == 0 and amount.distinct_count == 2
+    assert amount.top_values[0] == {"value": 20, "count": 3}
+    city = result.columns[1]
+    assert city.null_count == 1 and city.null_fraction == 0.25
+
+
+def test_profile_iceberg_bare_table_without_namespace(monkeypatch: pytest.MonkeyPatch) -> None:
+    from backend.app.services import profile_service as svc
+
+    captured: dict[str, Any] = {}
+
+    def fake(config: Any, secret: Any, identifier: str, **k: Any) -> pd.DataFrame:
+        captured["identifier"] = identifier
+        return pd.DataFrame({"a": [1]})
+
+    monkeypatch.setattr(svc, "read_iceberg_dataframe", fake)
+    result = svc.profile_connection(
+        _iceberg_conn(), columns=["a"], top_n=5, table="orders", secret_store=_FakeStore()
+    )
+    assert captured["identifier"] == "orders"  # no namespace → bare table
+    assert result.table == "orders"
+
+
+def test_profile_iceberg_folds_multilevel_namespace(monkeypatch: pytest.MonkeyPatch) -> None:
+    from backend.app.services import profile_service as svc
+
+    captured: dict[str, Any] = {}
+
+    def fake(config: Any, secret: Any, identifier: str, **k: Any) -> pd.DataFrame:
+        captured["identifier"] = identifier
+        return pd.DataFrame({"a": [1]})
+
+    monkeypatch.setattr(svc, "read_iceberg_dataframe", fake)
+    svc.profile_connection(
+        _iceberg_conn(),
+        columns=["a"],
+        top_n=5,
+        table="orders",
+        namespace="db.sales",
+        secret_store=_FakeStore(),
+    )
+    assert captured["identifier"] == "db.sales.orders"
+
+
+def test_profile_iceberg_credential_less_connection_does_not_422(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The acceptance criterion: an iceberg connection with NO stored credential must
+    # profile (not 422) — unlike every other type. The resolved secret is None.
+    from backend.app.services import profile_service as svc
+
+    captured: dict[str, Any] = {}
+
+    def fake(config: Any, secret: Any, identifier: str, **k: Any) -> pd.DataFrame:
+        captured["secret"] = secret
+        return pd.DataFrame({"a": [1, 2]})
+
+    monkeypatch.setattr(svc, "read_iceberg_dataframe", fake)
+    result = svc.profile_connection(
+        _iceberg_conn(secret_ref=None),
+        columns=["a"],
+        top_n=5,
+        table="orders",
+        secret_store=_FakeStore(),
+    )
+    assert captured["secret"] is None  # no secret_ref → no credential resolved
+    assert result.row_count == 2
+
+
+def test_profile_iceberg_missing_table_returns_422() -> None:
+    from backend.app.services import profile_service as svc
+
+    with pytest.raises(ProfileTargetInvalidError):
+        svc.profile_connection(_iceberg_conn(), columns=["a"], top_n=5, secret_store=_FakeStore())
+
+
+def test_profile_iceberg_missing_column_returns_422(monkeypatch: pytest.MonkeyPatch) -> None:
+    from backend.app.services import profile_service as svc
+
+    monkeypatch.setattr(
+        svc,
+        "read_iceberg_dataframe",
+        lambda config, secret, identifier, **k: pd.DataFrame({"a": [1]}),
+    )
+    with pytest.raises(ProfileColumnNotFoundError):
+        svc.profile_connection(
+            _iceberg_conn(), columns=["missing"], top_n=5, table="orders", secret_store=_FakeStore()
+        )
+
+
+def test_profile_iceberg_read_failure_returns_502(monkeypatch: pytest.MonkeyPatch) -> None:
+    from backend.app.services import profile_service as svc
+
+    def boom(config: Any, secret: Any, identifier: str, **k: Any) -> Any:
+        raise RuntimeError("catalog unreachable")
+
+    monkeypatch.setattr(svc, "read_iceberg_dataframe", boom)
+    with pytest.raises(svc.ProfileFailedError) as exc:
+        svc.profile_connection(
+            _iceberg_conn(),
+            columns=["a"],
+            top_n=5,
+            table="orders",
+            namespace="sales",
+            secret_store=_FakeStore(),
+        )
+    # the identifier (not the adapter exception) is what surfaces in the detail
+    assert exc.value.detail == {"table": "sales.orders"}
+
+
+def test_list_columns_iceberg_returns_schema_names(monkeypatch: pytest.MonkeyPatch) -> None:
+    from backend.app.services import profile_service as svc
+
+    captured: dict[str, Any] = {}
+
+    def fake(config: Any, secret: Any, identifier: str) -> list[str]:
+        captured["identifier"] = identifier
+        return ["id", "amount", "city"]
+
+    monkeypatch.setattr(svc, "iceberg_column_names", fake)
+    cols = svc.list_columns(
+        _iceberg_conn(), table="orders", namespace="sales", secret_store=_FakeStore()
+    )
+    assert cols == ["id", "amount", "city"]
+    assert captured["identifier"] == "sales.orders"
+
+
+def test_list_columns_iceberg_without_table_returns_422() -> None:
+    from backend.app.services import profile_service as svc
+
+    with pytest.raises(ProfileTargetInvalidError):
+        svc.list_columns(_iceberg_conn(), secret_store=_FakeStore())
+
+
+def test_list_columns_iceberg_read_failure_returns_502(monkeypatch: pytest.MonkeyPatch) -> None:
+    from backend.app.services import profile_service as svc
+
+    def boom(config: Any, secret: Any, identifier: str) -> Any:
+        raise RuntimeError("catalog unreachable")
+
+    monkeypatch.setattr(svc, "iceberg_column_names", boom)
+    with pytest.raises(svc.ProfileFailedError):
+        svc.list_columns(_iceberg_conn(), table="orders", secret_store=_FakeStore())
