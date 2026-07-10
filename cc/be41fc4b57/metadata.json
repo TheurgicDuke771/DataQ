@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "ccbe41fc4b57",
+  "strategy": "manual-commit",
+  "branch": "docs/adr-0033-workspace-roles",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/adr/0032-email-otp-signin.md",
+    "docs/adr/README.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/cc/be41fc4b57/0/metadata.json",
+      "transcript": "/cc/be41fc4b57/0/full.jsonl",
+      "compact_transcript": "/cc/be41fc4b57/0/transcript.jsonl",
+      "content_hash": "/cc/be41fc4b57/0/content_hash.txt",
+      "prompt": "/cc/be41fc4b57/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 16621,
+    "cache_creation_tokens": 956970,
+    "cache_read_tokens": 48752935,
+    "output_tokens": 209953,
+    "api_call_count": 186
+  }
+}
