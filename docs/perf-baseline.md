@@ -15,7 +15,7 @@
 | **Flat file CSV** (ADLS) | full load into worker pandas | 2M rows (~121 MB CSV) | **2M → 5M** | prefork child SIGKILL |
 | **Flat file Parquet** (ADLS) | full load into worker pandas | 5M rows (~131 MB parquet) | **5M → 10M** | 5M+: child SIGKILL; 10M killed the whole container |
 | **Unity Catalog** | full load via SQL-warehouse `read_sql_table` | 1M rows | **1M → 2M** | child SIGKILL |
-| **Apache Iceberg** (native, ADR 0030) | full snapshot via `pyiceberg` → Arrow | 2M rows | **2M → 5M** | **prod worker replica killed + recreated** |
+| **Apache Iceberg** (native, ADR 0030) | full snapshot via `pyiceberg` → Arrow | 2M rows | **2M → 5M** | worker replica OOM-killed + recreated |
 | **AWS S3** | same code as ADLS (`flatfile.py` is shared) | not run live (no S3 credentials remain) | expect ≡ ADLS | ≡ ADLS |
 
 Two sentences of conclusion:
@@ -34,8 +34,8 @@ Two sentences of conclusion:
 | | |
 |---|---|
 | App code | `main` @ `e6b63fe1` (v1.1 W3) |
-| Measurement rig | local docker-compose stack pinned to **prod parity**: worker at 1 CPU / 2 GiB / `celery --concurrency=4` (matched to the live ACA worker's startup banner), driven through the real REST API (dev-bypass) |
-| Iceberg leg | run against **prod** (the local worker can't reach the SQL catalog's Postgres; the ACA worker can) — wall via REST, memory via ACA `WorkingSetBytes` |
+| Measurement rig | docker-compose stack pinned to **production parity**: worker at 1 CPU / 2 GiB / `celery --concurrency=4` (matched to the deployed worker), driven through the real REST API |
+| Iceberg leg | run against the deployed stack (the native catalog wasn't reachable from the local rig) — wall via REST, worker memory via the platform metric |
 | Worker memory sampling | `docker stats` at 1 Hz (local); 1-min max metric (prod) |
 | Checks per rung | 5 expectations (not-null ×2, between ×2, unique ×1) + volume & freshness monitors where the type supports them (SQL/UC/Iceberg — flat files reject monitor kinds by design) |
 | Data shape | 6-col order-lines (`line_id`, `order_id`, `sku_id`, `qty`, `unit_price`, `line_ts`) — same shape as #587 |
@@ -46,7 +46,7 @@ Data generation (all regenerable in seconds — nothing needs to be archived):
   — 50M in 10.6s, 100M in 17s, 200M in 28.6s on XSMALL. `DATAQ_DB.PERF.ORDER_LINES_50M` is kept; the 100M/200M tables were dropped after the run.
 - **UC**: `CREATE TABLE dataq_retail.perf.order_lines_1m AS SELECT … FROM range(1000000)` via the SQL Statements API (schema dropped after).
 - **Flat files**: numpy → CSV + Parquet at 1/2/5/10M rows, uploaded to `landing/perf/` (deleted after).
-- **Iceberg**: 1M-row Arrow batches appended to a dedicated `perf.order_lines` by the harness `iceberg-writer` ACA job with a command override (namespace dropped after; job re-suspended).
+- **Iceberg**: 1M-row Arrow batches appended to a dedicated `perf.order_lines` namespace via `pyiceberg` (namespace dropped after the run).
 
 The whole campaign — including generating 350M+ Snowflake rows — burned
 **~0.46 Snowflake credits** and roughly nothing anywhere else.
@@ -72,12 +72,12 @@ Column profiler, 4 columns (`COUNT/nulls/distinct/min/max/top-10`):
 ~2.5s of fixed overhead.)
 
 Wall time is dominated by GX orchestration + connection setup exactly as #587
-predicted: 165× more rows bought ~4s of extra wall. Cost scales with the
-*warehouse*, not the worker — the 2 Gi replica never noticed 200M rows.
+predicted: ~167× more rows (1.2M → 200M) bought ~4s of extra wall. Cost scales
+with the *warehouse*, not the worker — the 2 Gi replica never noticed 200M rows.
 
 ## Full-load runners — ramp to failure
 
-All numbers from the prod-parity local rig except Iceberg (prod). "Fresh" =
+All numbers from the prod-parity rig except Iceberg (deployed stack). "Fresh" =
 freshly restarted worker (baseline ~750–870 MiB); "warm" = worker that had
 already executed runs (see the creep finding below).
 
@@ -94,9 +94,9 @@ already executed runs (see the creep finding below).
 | Parquet 10M (263 MB), fresh | **container killed** | — | worker replica restarted mid-run |
 | UC 1M | pass | 30.3 s | 1681 MiB |
 | UC 2M | **child OOM** | — | killed seconds in |
-| Iceberg 1M (prod) | pass | 6.8 s | 1218 MiB (ACA metric) |
-| Iceberg 2M (prod) | pass | 12.5 s | 1408 MiB |
-| Iceberg 5M (prod) | **container killed** | — | **prod worker replica killed + recreated at 07:37:58Z** |
+| Iceberg 1M (deployed) | pass | 6.8 s | 1218 MiB (platform metric) |
+| Iceberg 2M (deployed) | pass | 12.5 s | 1408 MiB |
+| Iceberg 5M (deployed) | **container killed** | — | worker replica OOM-killed + recreated |
 
 Reading the table:
 
@@ -109,29 +109,27 @@ Reading the table:
   its monitors (volume = `scan().count()`, freshness = single-column scan) stayed
   cheap and passed at every size tested.
 
-## Findings (filed)
+## Known limitations at the ceiling
 
-1. **[#755](https://github.com/TheurgicDuke771/DataQ/issues/755) — OOM is a silent
-   failure (P1, W6 with #595).** Child SIGKILL → `WorkerLostError` is never
-   translated to the run: the run stays `running` until the stuck-run reaper's
-   60-minute threshold, with no memory-attributed reason. Container-level OOM is
-   worse: locally it produced a sustained crash loop (beat re-sending periodic
-   tasks + redelivery into the same OOM, 25 restarts until the queue was purged);
-   on prod it killed the shared worker replica (which also runs beat — polling,
-   schedules and alerting all blink).
-2. **Worker memory baseline creeps run-over-run** (956 → 1188 → 1666 MiB across
-   three flat-file runs): prefork children never return pandas allocations, so
-   the *effective* ceiling degrades with worker uptime — the same file that
-   passes on a fresh worker OOMs on a warm one. `worker_max_memory_per_child`
-   would recycle children (folded into #755).
-3. **[#753](https://github.com/TheurgicDuke771/DataQ/issues/753) — deleting a
-   connection with dependent suites 500s** (unhandled FK `IntegrityError`;
-   connection-side sibling of #540).
-4. **[#754](https://github.com/TheurgicDuke771/DataQ/issues/754) — Iceberg
-   connection leaks the SQL-catalog credential (P1, security).** Option A's single
-   secret slot forces the catalog DB password into non-secret `config.catalog_uri`,
-   which `GET /connections` returns in plaintext to any user with connection read
-   access. Includes the ops action to rotate the harness PG password.
+Two performance characteristics of the full-load path, both tracked for the
+scale-aware execution work ([#595](https://github.com/TheurgicDuke771/DataQ/issues/595)):
+
+1. **An out-of-memory run is not reported promptly.** When a full-load run
+   exceeds worker memory the worker process is killed; the run currently stays
+   `running` until the stuck-run reaper fails it (default threshold 60 min),
+   with no memory-attributed reason. Tracked in
+   [#755](https://github.com/TheurgicDuke771/DataQ/issues/755) — the fix maps the
+   worker loss straight to a run `error`, ahead of the #595 size-cap guardrail.
+2. **The effective ceiling degrades with worker uptime.** The prefork worker's
+   memory baseline creeps run-over-run (measured start-of-run: 956 → 1188 → 1666
+   MiB across three flat-file runs) because children don't release pandas
+   allocations — so a file that passes on a freshly-started worker can OOM on a
+   long-lived one. Recycling children per N runs removes the creep (folded into
+   #755).
+
+Two non-performance defects were also found and filed while measuring
+([#753](https://github.com/TheurgicDuke771/DataQ/issues/753),
+[#754](https://github.com/TheurgicDuke771/DataQ/issues/754)); see the tracker.
 
 ## What this means for #595
 
@@ -174,3 +172,10 @@ column; every other expectation aggregate ≤ 15 ms, monitor scalars sub-10 ms.
 Per-check `duration_ms` stays NULL in v1 by design (`run_service.py` — per-check
 timing is a deferred datum). Gaps found then and since tracked: #571
 (`checks_total` cosmetic 0), #605 (failure reasons — since shipped).
+
+Reproducing the historical datum (generator `python -m mockdata backfill --tier
+PERF --seed 587 --no-issues`, harness repo per ADR 0021): load via pandas
+`write_pandas` with **`use_logical_type=True`** — without it, `datetime64`
+columns land as epoch `NUMBER` and freshness monitors error with "not a
+date/timestamp". Credits/timing were read from
+`INFORMATION_SCHEMA.WAREHOUSE_METERING_HISTORY` / `QUERY_HISTORY`.
