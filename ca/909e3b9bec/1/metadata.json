@@ -1,0 +1,215 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_id": "ca909e3b9bec",
+  "session_id": "aef9f6a4-f51b-4006-84c5-e914ce549fd6",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-10T21:08:16.449585Z",
+  "branch": "feature/759-dbt-manifest-lineage",
+  "checkpoints_count": 9,
+  "files_touched": [
+    "docs/architecture.md"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "ee2504dcfa50",
+  "checkpoint_transcript_start": 1623,
+  "transcript_lines_at_start": 1623,
+  "token_usage": {
+    "input_tokens": 1546,
+    "cache_creation_tokens": 51149,
+    "cache_read_tokens": 11053332,
+    "output_tokens": 22460,
+    "api_call_count": 18
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01RNmFM9FtY5xPR2DobCs6t1",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "ee2504dcfa50",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 274,
+        "end": 275,
+        "entry_ids": [
+          "76d036f2-a8be-449c-b063-e4262ef549fb"
+        ],
+        "tool_use_id": "toolu_01RNmFM9FtY5xPR2DobCs6t1"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01RNmFM9FtY5xPR2DobCs6t1"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01TDkxnWoenGz1Y6ZvUbMhKq",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "ee2504dcfa50",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 651,
+        "end": 652,
+        "entry_ids": [
+          "692e443a-625a-43ad-ba42-00871d2afd80"
+        ],
+        "tool_use_id": "toolu_01TDkxnWoenGz1Y6ZvUbMhKq"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01TDkxnWoenGz1Y6ZvUbMhKq"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_013eM5GtuiRN6gAsGdYLUZz7",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "ee2504dcfa50",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 1166,
+        "end": 1167,
+        "entry_ids": [
+          "747db2ec-d506-463a-b003-7c3a09c0d8bc"
+        ],
+        "tool_use_id": "toolu_013eM5GtuiRN6gAsGdYLUZz7"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_013eM5GtuiRN6gAsGdYLUZz7"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01Cvreh6oJAGskSymbe5435C",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "ee2504dcfa50",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 1628,
+        "end": 1629,
+        "entry_ids": [
+          "5b30ad2c-80f3-41d5-81cc-53eb3694a836"
+        ],
+        "tool_use_id": "toolu_01Cvreh6oJAGskSymbe5435C"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01Cvreh6oJAGskSymbe5435C"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 70
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-10T21:08:16.269646Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 4,
+    "human_removed": 18713,
+    "total_committed": 0,
+    "total_lines_changed": 37430,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 998,
+      "user_lines_removed": 18724,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6,
+        "backend/alembic/versions/a1c2e3d4f5b6_add_lineage_edges.py": 13,
+        "backend/app/core/artifacts.py": 46,
+        "backend/app/db/models.py": 22,
+        "backend/app/lineage/dbt_manifest.py": 67,
+        "backend/app/lineage/edges.py": 133,
+        "backend/app/orchestration/base.py": 15,
+        "backend/app/orchestration/dbt.py": 24,
+        "backend/app/services/asset_identity.py": 14,
+        "backend/app/services/asset_service.py": 92,
+        "backend/app/services/orchestration_service.py": 33,
+        "backend/app/worker/tasks.py": 74,
+        "backend/tests/fixtures/dbt_manifest_v1.json": 1,
+        "backend/tests/fixtures/dbt_manifest_v2.json": 1,
+        "backend/tests/lineage/test_dbt_manifest.py": 64,
+        "backend/tests/lineage/test_edges.py": 133,
+        "backend/tests/orchestration/test_dbt_provider.py": 12,
+        "backend/tests/services/test_orchestration_service.py": 67,
+        "backend/tests/worker/test_lineage_refresh_task.py": 156,
+        "docs/architecture.md": 4,
+        "docs/orchestration.md": 21
+      },
+      "user_removed_per_file": {
+        "backend/alembic/versions/a1c2e3d4f5b6_add_lineage_edges.py": 7,
+        "backend/app/db/models.py": 9,
+        "backend/app/lineage/dbt_manifest.py": 36,
+        "backend/app/lineage/edges.py": 74,
+        "backend/app/orchestration/base.py": 1,
+        "backend/app/orchestration/dbt.py": 2,
+        "backend/app/services/asset_identity.py": 3,
+        "backend/app/services/asset_service.py": 15,
+        "backend/app/services/orchestration_service.py": 49,
+        "backend/app/worker/tasks.py": 1,
+        "backend/tests/fixtures/dbt_manifest_v1.json": 1,
+        "backend/tests/fixtures/dbt_manifest_v2.json": 18493,
+        "backend/tests/lineage/test_edges.py": 1,
+        "backend/tests/services/test_orchestration_service.py": 30,
+        "docs/architecture.md": 2
+      }
+    }
+  ]
+}

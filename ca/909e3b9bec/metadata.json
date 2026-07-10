@@ -4,8 +4,10 @@
   "checkpoint_id": "ca909e3b9bec",
   "strategy": "manual-commit",
   "branch": "feature/759-dbt-manifest-lineage",
-  "checkpoints_count": 3,
-  "files_touched": null,
+  "checkpoints_count": 12,
+  "files_touched": [
+    "docs/architecture.md"
+  ],
   "sessions": [
     {
       "metadata": "/ca/909e3b9bec/0/metadata.json",
@@ -13,13 +15,20 @@
       "compact_transcript": "/ca/909e3b9bec/0/transcript.jsonl",
       "content_hash": "/ca/909e3b9bec/0/content_hash.txt",
       "prompt": "/ca/909e3b9bec/0/prompt.txt"
+    },
+    {
+      "metadata": "/ca/909e3b9bec/1/metadata.json",
+      "transcript": "/ca/909e3b9bec/1/full.jsonl",
+      "compact_transcript": "/ca/909e3b9bec/1/transcript.jsonl",
+      "content_hash": "/ca/909e3b9bec/1/content_hash.txt",
+      "prompt": "/ca/909e3b9bec/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 56537,
-    "cache_creation_tokens": 1690126,
-    "cache_read_tokens": 60942985,
-    "output_tokens": 181871,
-    "api_call_count": 262
+    "input_tokens": 58083,
+    "cache_creation_tokens": 1741275,
+    "cache_read_tokens": 71996317,
+    "output_tokens": 204331,
+    "api_call_count": 280
   }
 }
