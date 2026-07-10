@@ -7,6 +7,14 @@
 - **Related:** ADR 0026 (PATs — the verifier-secret and seam pattern this copies; Basic auth rejected there stays rejected), [0010](0010-provider-agnostic-infrastructure-seams.md)/[0013](0013-marketplace-distribution-and-anti-lock-in.md) (portability guardrails)
 - **Issue:** umbrella [#738](https://github.com/TheurgicDuke771/DataQ/issues/738) → slices #734 (backend) · #735 (identity) · #736 (frontend) · #737 (SMTP pre-flight); hard prerequisite #725 (rate limiting, auth slice). Ratified 2026-07-09 — slices unblocked.
 
+> **Amendment (2026-07-09, [ADR 0033](0033-workspace-roles-rbac.md)):** the OTP
+> signup contract gains **`AUTH_OTP_DEFAULT_ROLE`** (default `member`) — the
+> workspace role assigned at self-signup; the `WORKSPACE_ADMIN_EMAILS`
+> write-through **wins over the default** for bootstrap admins. Decision 6's trust
+> statement also widens: with in-app-promotable stored admins, mailbox compromise
+> of **any admin-role holder** is admin compromise — not only allowlisted
+> addresses.
+
 ## Context
 
 Human sign-in today has exactly one real path: Azure AD (`fastapi-azure-auth` on the backend, generic OIDC against Azure on the frontend). PATs (ADR 0026) are headless-only and need an existing user to mint them; dev-bypass is single-user local eval. So a BYOL customer on a non-Azure cloud, and the post-wind-down local-first posture (#591), have **no way to log a human in**. ADR 0026 rejected HTTP Basic because it would make DataQ a password system (storage/hashing policy, lockout, reset flows). Email OTP is passwordless — proof of mailbox ownership is the credential — so it closes the gap without reopening that rejection. It **complements, not replaces**, the generic OIDC/JWKS backend validator (ADR 0013 Phase 2, tracked in #732): generic OIDC serves customers with an IdP; OTP serves small teams without one.

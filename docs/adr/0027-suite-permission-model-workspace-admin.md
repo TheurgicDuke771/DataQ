@@ -7,6 +7,15 @@
 - **Related:** ADR [0010](0010-provider-agnostic-infrastructure-seams.md) (the generic `get_current_user` identity seam — Azure is one impl), [0020](0020-history-and-audit-strategy.md) (audit), [0026](0026-auth-api-keys-and-principal-seam.md) (principal/identity seam), compliance posture (#431 data-access audit)
 - **Issue:** [#482](https://github.com/TheurgicDuke771/DataQ/issues/482) (supersedes [#411](https://github.com/TheurgicDuke771/DataQ/issues/411), [#412](https://github.com/TheurgicDuke771/DataQ/issues/412))
 
+> **Amendment (2026-07-09, [ADR 0033](0033-workspace-roles-rbac.md)):** the
+> workspace-admin **source** moves from the `WORKSPACE_ADMIN_EMAILS` allowlist to a
+> stored `users.role` (`admin | member | viewer`); the allowlist demotes to
+> bootstrap + break-glass (`is_workspace_admin` = stored role OR allowlist). This
+> stales this ADR's "resolved from the allowlist at the `/me`/API layer"
+> implementation line and the Related ADR-0010 "off a config allowlist" pointer.
+> The implicit-suite-admin rule below is **unchanged**; the grant model gains one
+> rule — no `edit` shares to Viewers (their effective level caps at `view`).
+
 ## Context
 
 Suite authorization (`backend/app/services/suite_authz.py`) ranks four tiers —
