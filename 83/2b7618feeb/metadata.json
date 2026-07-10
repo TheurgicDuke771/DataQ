@@ -4,9 +4,13 @@
   "checkpoint_id": "832b7618feeb",
   "strategy": "manual-commit",
   "branch": "docs/596-assets-lineage-incidents-design",
-  "checkpoints_count": 3,
+  "checkpoints_count": 12,
   "files_touched": [
-    "CLAUDE.md"
+    "CLAUDE.md",
+    "context/post-v1-roadmap.md",
+    "docs/adr/0034-asset-entity-openlineage-identity-lineage-pull.md",
+    "docs/post-v1-assets-lineage-incidents-notes.md",
+    "docs/progress.md"
   ],
   "sessions": [
     {
@@ -15,13 +19,20 @@
       "compact_transcript": "/83/2b7618feeb/0/transcript.jsonl",
       "content_hash": "/83/2b7618feeb/0/content_hash.txt",
       "prompt": "/83/2b7618feeb/0/prompt.txt"
+    },
+    {
+      "metadata": "/83/2b7618feeb/1/metadata.json",
+      "transcript": "/83/2b7618feeb/1/full.jsonl",
+      "compact_transcript": "/83/2b7618feeb/1/transcript.jsonl",
+      "content_hash": "/83/2b7618feeb/1/content_hash.txt",
+      "prompt": "/83/2b7618feeb/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 56537,
-    "cache_creation_tokens": 1690126,
-    "cache_read_tokens": 60942985,
-    "output_tokens": 181871,
-    "api_call_count": 262
+    "input_tokens": 57642,
+    "cache_creation_tokens": 2137261,
+    "cache_read_tokens": 65420737,
+    "output_tokens": 206483,
+    "api_call_count": 285
   }
 }

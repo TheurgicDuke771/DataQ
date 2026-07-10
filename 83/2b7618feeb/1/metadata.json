@@ -1,0 +1,76 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_id": "832b7618feeb",
+  "session_id": "aef9f6a4-f51b-4006-84c5-e914ce549fd6",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-10T13:57:21.810798Z",
+  "branch": "docs/596-assets-lineage-incidents-design",
+  "checkpoints_count": 9,
+  "files_touched": [
+    "context/post-v1-roadmap.md",
+    "docs/adr/0034-asset-entity-openlineage-identity-lineage-pull.md",
+    "docs/post-v1-assets-lineage-incidents-notes.md",
+    "docs/progress.md"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "70585e1e9f91",
+  "checkpoint_transcript_start": 267,
+  "transcript_lines_at_start": 267,
+  "token_usage": {
+    "input_tokens": 1105,
+    "cache_creation_tokens": 447135,
+    "cache_read_tokens": 4477752,
+    "output_tokens": 24612,
+    "api_call_count": 23
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01RNmFM9FtY5xPR2DobCs6t1",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "70585e1e9f91",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 274,
+        "end": 275,
+        "entry_ids": [
+          "76d036f2-a8be-449c-b063-e4262ef549fb"
+        ],
+        "tool_use_id": "toolu_01RNmFM9FtY5xPR2DobCs6t1"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01RNmFM9FtY5xPR2DobCs6t1"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 17
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}

@@ -1,0 +1,309 @@
+<task-notification>
+<task-id>ab4322b964e5657a5</task-id>
+<tool-use-id>toolu_014p5AxEd5uzJ56YBua3GmzW</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/aef9f6a4-f51b-4006-84c5-e914ce549fd6/tasks/ab4322b964e5657a5.output</output-file>
+<status>completed</status>
+<summary>Agent "Finder: conventions angle" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>[]</result>
+<usage><subagent_tokens>101638</subagent_tokens><tool_uses>16</tool_uses><duration_ms>90555</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ad6df77a7b293cee8</task-id>
+<tool-use-id>toolu_01LKktL6hUPtRf8kRUovhKGk</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/aef9f6a4-f51b-4006-84c5-e914ce549fd6/tasks/ad6df77a7b293cee8.output</output-file>
+<status>completed</status>
+<summary>Agent "Finder B: removed-behavior audit" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I have enough verified detail. Here is the final output.
+
+```json
+[
+  {
+    "file": "docs/progress.md",
+    "line": 27,
+    "summary": "The rewritten 'Open issues' snapshot cell now says the #757–#762 phase-1 build set was 'filed to `v1.1 Backlog`', but the same cell still ends with the untouched clause '`v1.1 Backlog` (renamed from `Backlog (post-v1 / testing)`) holds only the new filings #601/#605' — a self-contradiction within one sentence.",
+    "failure_scenario": "A reader trusts the cell's own closing claim ('holds only #601/#605') and concludes the backlog milestone has just two issues, missing that six new issues (#757–#762) were just filed there — undercounting backlog scope and contradicting the sentence two clauses earlier in the same cell."
+  },
+  {
+    "file": "docs/progress.md",
+    "line": 101,
+    "summary": "The Cycle-plan blockquote (unchanged by this diff) states the 2026-07-04 backlog remap left 'the backlog milestone **empty**'. This claim was true before this PR but is now stale: the PR's own 'Not scheduled' section rewrite (line 293) says '`v1.1 Backlog` holds the G-d build set' (#757–#762), and the Open-issues cell (line 27) confirms those six issues were filed to `v1.1 Backlog`.",
+    "failure_scenario": "Someone reading only the Cycle-plan section (a common entry point for onboarding/planning) is told the backlog is empty and treats it as the default bucket with nothing in it, then is surprised to find #757–#762 sitting there — or double-files new backlog issues assuming zero collisions with existing content."
+  },
+  {
+    "file": "docs/progress.md",
+    "line": 58,
+    "summary": "W3 header row count changed from '9/12' to '10/13' concurrent with adding a new ✅ #596 row to the W3 table. Verified by counting: table now has 13 rows (3 ⬜: live-E2E, #590, #591; 10 ✅: #716,#197,#199,#204,#229,#236,#237,#326,#596,perf-baseline) — matches 10/13 exactly, so this edit is correct, not a defect.",
+    "failure_scenario": "N/A — verified consistent; flagged only because it was a named candidate to check. No fix needed."
+  },
+  {
+    "file": "docs/progress.md",
+    "line": 75,
+    "summary": "W6 header row count changed from '0/15' to '0/14' after deleting the #596 row from the W6 table. Verified by counting the post-diff table: exactly 14 ⬜ rows remain — matches 0/14 exactly, so this edit is correct, not a defect.",
+    "failure_scenario": "N/A — verified consistent; flagged only because it was a named candidate to check. No fix needed."
+  },
+  {
+    "file": "context/post-v1-roadmap.md",
+    "line": 18,
+    "summary": "Deleted sentence 'No issues filed yet — phase 1 files first when picked up (it's the dependency of the other three and of Theme 14's governance sync)' dropped the explicit fact that asset-entity phase 1 blocks Theme 14's governance-catalog sync specifically. The replacement text lists the filed issues but only says phase 1 is 'the prerequisite' without naming what it's a prerequisite *for*.",
+    "failure_scenario": "A reader sequencing post-v1 work no longer sees the explicit Theme-14-governance-sync dependency called out at this location; they'd need to cross-reference the 'Phases' paragraph above (items 1–4) to reconstruct why #757 gates #758/#759/#762 — a minor loss of an explicit fact, though the substance is recoverable a few lines up in the same file."
+  },
+  {
+    "file": "docs/progress.md",
+    "line": 291,
+    "summary": "Section heading/content changed from '### Not scheduled (design-captured, no issues yet)' + '`v1.1 Backlog` is empty' to '### Not scheduled (design-captured) + `v1.1 Backlog` (v1.2 generator input)' + '`v1.1 Backlog` holds the G-d build set'. This rewrite is internally correct and consistent with the new #757–#762 filings, but it is the third place in the file describing backlog contents, and it now disagrees with the two untouched mentions (lines 27 and 101) that still claim the backlog is empty / holds only #601+#605 — the underlying inconsistency is introduced by what this section changed to while the other two were left stale.",
+    "failure_scenario": "Same root cause as the two candidates above (lines 27 and 101): three descriptions of `v1.1 Backlog` contents now disagree within one file, so which one a reader trusts depends on which section they land on first."
+  }
+]
+```</result>
+<usage><subagent_tokens>98649</subagent_tokens><tool_uses>15</tool_uses><duration_ms>134604</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>afb5e62b568b3526a</task-id>
+<tool-use-id>toolu_01XmF82tFWJqkRzfheBmwtwZ</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/aef9f6a4-f51b-4006-84c5-e914ce549fd6/tasks/afb5e62b568b3526a.output</output-file>
+<status>completed</status>
+<summary>Agent "Finder: efficiency angle" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>```json
+[
+  {
+    "file": "docs/post-v1-roadmap.md",
+    "line": 34,
+    "summary": "Callout references 'the #596 doc' without a link; same doc is linked 10+ lines earlier in the section",
+    "failure_scenario": "Reader encountering the `_Design pinned 2026-07-10 (ADR 0034 + the #596 doc)_` footnote cannot click through to the design doc; must scroll back to line ~21 to find the link"
+  }
+]
+```</result>
+<usage><subagent_tokens>55884</subagent_tokens><tool_uses>2</tool_uses><duration_ms>118383</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a7acabe92e583fa51</task-id>
+<tool-use-id>toolu_013353Mo725GvrR2v9ZKjQsL</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/aef9f6a4-f51b-4006-84c5-e914ce549fd6/tasks/a7acabe92e583fa51.output</output-file>
+<status>completed</status>
+<summary>Agent "Finder C: cross-file tracer" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>```json
+[
+  {
+    "file": "docs/progress.md",
+    "line": 26,
+    "summary": "The 'Current cycle' snapshot row says the G-d incident/lineage design doc runs in 'Weeks 4-6' of the cycle plan, but the very same file's 'Open issues' row (line 27) and the W3 table (line ~201, added by this PR) mark #596 as done in W3, pulled forward from W6.",
+    "failure_scenario": "A reader skimming the Snapshot table at the top of progress.md (the first thing anyone reads) comes away believing the G-d design doc is still pending work scheduled for W4-6, when the rest of this same PR's diff says it already shipped in W3 on 2026-07-10 — the file contradicts itself within ~175 lines and the PR didn't touch the stale sentence."
+  },
+  {
+    "file": "docs/post-v1-assets-lineage-incidents-notes.md",
+    "line": 144,
+    "summary": "The doc states '#761 needs #757 (richer with #759/#760)', but issue #761's actual GitHub body only says 'evidence card richer with #759 (blast radius) + the Theme-2 layer-1 dossier task' — it never mentions #760 as an enriching dependency.",
+    "failure_scenario": "A future contributor picking up #761 reads the issue body (not the design doc) and doesn't realize the asset-view work (#760) was intended to enrich the incident evidence card, producing a thinner incident payload than the design doc envisioned; conversely, someone reading only the design doc believes #761's issue already documents the #760 dependency when it doesn't."
+  },
+  {
+    "file": "CLAUDE.md",
+    "line": 286,
+    "summary": "CLAUDE.md (not touched by this PR) still lists 'the G-d incident/lineage design doc #596' as part of the W4-6 cloud-independent sequence, alongside #592 (schema_drift) and #593 (anomaly) which are genuinely still pending — now stale since #596 was pulled forward to W3 and completed 2026-07-10.",
+    "failure_scenario": "CLAUDE.md is the AI-assistant single-source-of-truth read before any change; an assistant or new contributor trusting this line would think the G-d design doc is future work bundled with W4-6 anomaly/schema_drift, potentially re-doing or mis-scoping the already-shipped #596 deliverable."
+  },
+  {
+    "file": "docs/progress.md",
+    "line": 293,
+    "summary": "The line '`v1.1 Backlog` holds the G-d build set — the #596 design doc ... filed the Theme 3/14 phase-1 issues into it' reads as if v1.1 Backlog now exclusively contains the six G-d issues, but `gh issue list --milestone \"v1.1 Backlog\"` shows ~36 open issues there (RBAC #740-744, auth #734-738, ops #724/#725/#748, refactors #682/#727, etc.) — most predate and are unrelated to #596.",
+    "failure_scenario": "A reader combines this line with CLAUDE.md's older claim that 'the backlog milestone is empty/default-for-new-filings' and undercounts how much unrelated work already sits in v1.1 Backlog, or assumes the milestone is a clean 6-item G-d queue when triaging it for the next cycle's generator input."
+  },
+  {
+    "file": "docs/adr/0034-asset-entity-openlineage-identity-lineage-pull.md",
+    "line": 7,
+    "summary": "ADR 0034's header cites 'Related: ADR 0029 (the artifact reader the manifest parser extends)' — verified 0029 exists and is the dbt provider ADR, and issue #759 body correctly says 'Extends the ADR-0029 dbt provider'; all Related-ADR filenames (0012/0027/0029/0031/0033) resolve correctly in docs/adr/ — no broken link found here, listed for completeness of the cross-file link audit rather than as a defect.",
+    "failure_scenario": "N/A — included as a verified-clean check, not a finding; if a future ADR renumbering ever shifts 0029/0031/0033's filenames, this header would silently break since it's a relative markdown link with no CI link-checker."
+  }
+]
+```</result>
+<usage><subagent_tokens>126201</subagent_tokens><tool_uses>24</tool_uses><duration_ms>183918</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a3a67cd97449a5806</task-id>
+<tool-use-id>toolu_01Bjwj8FodvRDZFUx9xvbLHv</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/aef9f6a4-f51b-4006-84c5-e914ce549fd6/tasks/a3a67cd97449a5806.output</output-file>
+<status>completed</status>
+<summary>Agent "Finder: altitude angle" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>```json
+[
+  {
+    "file": "docs/adr/0034-asset-entity-openlineage-identity-lineage-pull.md",
+    "line": 19,
+    "summary": "ADR says the dbt-manifest parser must never read `compiled_code`; the design doc's parallel bullet (docs/post-v1-assets-lineage-incidents-notes.md line 70) says never `compiled_code`/`raw_code`. Same normative rule, restated with different (narrower) scope in the ADR.",
+    "failure_scenario": "An implementer of build issue #759 who reads only the ADR (the decision-of-record) sees no prohibition on `raw_code` and includes it in the parsed field subset, defeating the design doc's stated reason for excluding it (manifests hitting tens of MB per model) and creating a real drift between 'the decision' and 'the design' on the same rule."
+  },
+  {
+    "file": "docs/post-v1-assets-lineage-incidents-notes.md",
+    "line": 100,
+    "summary": "The design doc states a specific incident-lifecycle rule — \"Reopen = new incident linked to the old one\" — that has no counterpart in ADR 0034 §Decision item 4, which only lists `open → acknowledged → resolved` plus dedup/auto-resolve/routing and is silent on what happens when a resolved incident's check fails again.",
+    "failure_scenario": "A reader who treats the ADR as the normative record of the incident model (per docs/adr/README.md's role for ADRs) will not know reopen creates a new linked incident rather than un-resolving the existing row; issue #761's implementer or a future auditor consulting only the ADR could build the opposite (mutate the resolved row back to open), which changes dedup/occurrence-count semantics silently."
+  },
+  {
+    "file": "docs/adr/0034-asset-entity-openlineage-identity-lineage-pull.md",
+    "line": 19,
+    "summary": "The ADR's dbt-manifest bullet embeds implementation-level detail (exact cache column names, the specific fields kept/dropped, the schema-version pin and its supported dbt-core range, stream-parsing rationale) that duplicates the design doc's §2 slice-2 content almost verbatim rather than referencing it. Per docs/adr/README.md's template guidance ('Keep each ADR short — 1–2 pages... if it grows past that, the decision is probably two decisions'), this is design detail, not decision.",
+    "failure_scenario": "When issue #759 lands and the parser's field subset or version gate changes (e.g. a new dbt schema version becomes stable), there are now two documents describing the same implementation specifics that must be kept in sync — the ADR (meant to be an immutable decision record) and the design doc (meant to evolve). Whichever gets updated first becomes the one that's 'right', and the other silently goes stale."
+  },
+  {
+    "file": "docs/post-v1-assets-lineage-incidents-notes.md",
+    "line": 113,
+    "summary": "The design doc decides incidents are delivered via the existing `ResultPublisher` seam ('the ticket/webhook arrives with the diagnosis attached') — i.e., no new delivery mechanism is built for incidents. ADR 0034's Decision item 4 covers lifecycle, dedup, payload content, and routing, but never states the delivery channel.",
+    "failure_scenario": "A reader relying on the ADR as the source of truth for what #761 must build could conclude a new incident-delivery path is in scope (since none is ruled out), duplicating the alerting seam instead of reusing it — the opposite of the design doc's stated intent to get Theme-5 create-only targets 'for free'."
+  },
+  {
+    "file": "docs/progress.md",
+    "line": 27,
+    "summary": "The Snapshot 'Open issues' cell (meant to be a quick current-state summary per the doc's own header: 'Source of truth for what's done vs. what's left') now carries the same build-issue detail — design doc + ADR 0034 landed, phase-1 set #757-#762 filed to v1.1 Backlog as v1.2 generator input — that is separately and more appropriately recorded in the W3 Cycle-plan task-table row for #596 a few dozen lines below.",
+    "failure_scenario": "Future edits to the #596/#757-762 story only update one of the two copies (as the file's own history shows happening repeatedly — e.g. #596 already drifted between the W3 and W6 tables in this same diff), so the Snapshot cell and the week table can silently disagree about which issues are filed/open, and a reader skimming only the Snapshot (its intended fast-path) gets stale or conflicting info without visiting the week table to reconcile."
+  },
+  {
+    "file": "docs/post-v1-assets-lineage-incidents-notes.md",
+    "line": 89,
+    "summary": "The design doc defines the actual blast-radius computation ('walk `lineage_edges` downstream from the failing asset, join back to assets that have suites/checks') — this is the operative definition of the 'zero-infra blast-radius floor' the ADR claims slice 2 delivers, but the ADR never states how blast radius is computed, only that the cache exists.",
+    "failure_scenario": "A reader auditing ADR 0034 alone cannot verify what 'blast radius' means or how #759/#760 should query it; if the design doc is later revised (e.g. to also join through incident state) without a corresponding ADR touch, the ADR's claim of delivering a 'blast-radius floor' becomes unfalsifiable from the ADR text alone."
+  }
+]
+```</result>
+<usage><subagent_tokens>100537</subagent_tokens><tool_uses>10</tool_uses><duration_ms>168557</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a08c4584ed146788a</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/aef9f6a4-f51b-4006-84c5-e914ce549fd6/tasks/a08c4584ed146788a.output</output-file>
+<status>completed</status>
+<summary>Agent "Finder: reuse angle" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>```json
+[
+  {
+    "file": "docs/progress.md",
+    "line": 27,
+    "summary": "The Snapshot table's 'Open issues' cell restates the #596 design-doc landing (same doc link, same ADR 0034 link, same '#757–#762 filed to v1.1 Backlog' fact, same 'pulled forward from W6' framing) that the W3 weekly table row at line 201 already states in full, in the same file.",
+    "failure_scenario": "The two sentences already diverge in phrasing (Snapshot omits the 'incidents anchored to assets w/ evidence-card payload' detail the W3 row has); a future editor updating one (e.g. if #757-762 get re-scoped, renumbered, or one is closed) has no pointer telling them the other copy exists, so the Snapshot and the W3 row silently drift apart the way CLAUDE.md §9 says the old duplicated ADR index once did."
+  },
+  {
+    "file": "docs/post-v1-assets-lineage-incidents-notes.md",
+    "line": 135,
+    "summary": "The design doc's canonical 'Filed phase-1 issues (build order)' list (#757 asset entity → #758 OL emission → #759 dbt-manifest → #760 asset view → #761 incidents → #762 LineageProvider/Marquez) is independently re-stated with per-issue one-liners in docs/progress.md lines 293-301 ('Not scheduled' section) and again in context/post-v1-roadmap.md lines 246-249 (Theme 3 'Filed:' list) — the same 6-issue → description mapping typed out three separate times.",
+    "failure_scenario": "If a phase-1 issue's scope changes (e.g. #759 gets split, or the build order in the doc's own dependency note changes), only the doc that was hand-edited updates; the other two copies keep advertising the old scope/order, and a reader following progress.md or the roadmap gets a stale build plan instead of being pointed at the one canonical list."
+  },
+  {
+    "file": "docs/post-v1-assets-lineage-incidents-notes.md",
+    "line": 82,
+    "summary": "The DataHub/OpenMetadata/Purview rejection rationale (DataHub needs 8GB RAM so deferred to bring-your-own; OpenMetadata's SDK is Collate source-available/non-compete so blocked by ADR 0031, REST-only if ever; Purview parked as Azure-only) is written out with the same specifics in three places: this doc (lines 82-87), ADR 0034's Alternatives section (docs/adr/0034-asset-entity-openlineage-identity-lineage-pull.md lines 35-37), and context/post-v1-roadmap.md's Theme 14 addendum (lines 543-546).",
+    "failure_scenario": "This is a licensing/vendor decision that can change externally (e.g. OpenMetadata relicenses, or a user does bring DataHub) — with the reasoning duplicated three times, an update to one place (say the ADR, which is supposed to be the decision record) is easy to miss updating in the design doc and the roadmap, leaving contradictory rationale for the same call."
+  },
+  {
+    "file": "docs/progress.md",
+    "line": 260,
+    "summary": "The W6 table row for #310 and the W6 Exit-gate paragraph three lines later (line 265-266) both separately append the same parenthetical fact — '#596 itself pulled forward to W3, done 2026-07-10' / 'the #596 half was pulled forward and done in W3, 2026-07-10' — to explain why #596 no longer appears in the W6 list.",
+    "failure_scenario": "A low-value but real double-maintenance point: if the pulled-forward date or destination week is ever corrected (e.g. #596 slips to W4 instead), both the table-row parenthetical and the exit-gate sentence need the same edit, and it's easy to fix only the more visible exit-gate prose while the table-row aside goes stale."
+  }
+]
+```</result>
+<usage><subagent_tokens>95323</subagent_tokens><tool_uses>16</tool_uses><duration_ms>193182</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a53f92425312f0b5c</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/aef9f6a4-f51b-4006-84c5-e914ce549fd6/tasks/a53f92425312f0b5c.output</output-file>
+<status>completed</status>
+<summary>Agent "Finder: simplification angle" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Now I have precise line numbers for all findings.
+
+```json
+[
+  {
+    "file": "docs/progress.md",
+    "line": 27,
+    "summary": "The 'Open issues' cell says the #757–#762 phase-1 issues were 'filed to `v1.1 Backlog`', but later in the very same run-on paragraph it still asserts '`v1.1 Backlog` (renamed from `Backlog (post-v1 / testing)`) holds only the new filings #601/#605' — a direct, self-contradicting claim about the same milestone within one cell.",
+    "failure_scenario": "A reader (or the next PR author updating issue counts) trusts the 'holds only #601/#605' sentence, since it's phrased as the authoritative statement, and files or reports against v1.1 Backlog assuming only 2 issues live there — missing that 6 more (#757-762) were just added to it two sentences earlier in the same line."
+  },
+  {
+    "file": "docs/progress.md",
+    "line": 291,
+    "summary": "Section renamed to 'Not scheduled (design-captured) + `v1.1 Backlog` (v1.2 generator input)', and the first bullet under it (line 293) says 'v1.1 Backlog holds the G-d build set' (#757-762, already filed) — contradicting the unchanged 'Open issues' summary line (27) which says the backlog 'holds only the new filings #601/#605'. The header itself also conflates 'not scheduled' work with issues that ARE filed/scheduled (just to a backlog milestone, not a week).",
+    "failure_scenario": "Someone auditing v1.1 Backlog contents for the v1.2 planning generator gets two different answers depending on which part of progress.md they read (2 issues vs 8 issues), and may under- or double-count backlog scope when seeding the next cycle's plan."
+  },
+  {
+    "file": "docs/progress.md",
+    "line": 265,
+    "summary": "The W6 exit gate still lists 'the G-d design doc (#596) + audit ADR (#310) merged with next-cycle phase-1 issues filed' as a W6 gating condition, then bolts on a parenthetical '(the #596 half was pulled forward and done in W3, 2026-07-10 — #310 remains here)' rather than simply dropping #596 from the sentence (it was already removed from the W6 task table above). The parenthetical embeds a hand-maintained date inside a gate description meant to be checked off weeks later.",
+    "failure_scenario": "Whoever closes out W6 re-reads the exit gate, sees '#596 ... merged' listed as required, and has to parse a dated aside to figure out it's irrelevant to W6 — busywork that a straight edit (removing #596 from the sentence) would have avoided; the embedded '2026-07-10' will look like stale leftover copy by the time W6 actually closes in August."
+  },
+  {
+    "file": "docs/post-v1-assets-lineage-incidents-notes.md",
+    "line": 130,
+    "summary": "'UI phasing' lists '(2) read-only Assets list... → (3) lineage panel... → (4) navigation inversion', starting at (2) with no '(1)' ever defined in that same bullet list. It also collides with a different phase-numbering scheme used for the same issue set in context/post-v1-roadmap.md (line 543 area / ADR README), where '#757 = phase 1' and '#760 = phase 2' individually — while this doc's own 'Filed phase-1 issues' section heading (line ~236) groups ALL SIX issues (#757–#762) under one collective 'phase-1' label.",
+    "failure_scenario": "A reader trying to map 'phase 2' in the UI-phasing bullet to a filed issue can't tell if it means #760 (roadmap's individual 'phase 2' label) or something else, and never learns what '(1)' refers to in this list (the asset entity itself, never stated) — two overlapping 'phase' vocabularies for build-order vs. UI-rollout order across the two new docs invite miscounting which issue unlocks which UI milestone."
+  }
+]
+```</result>
+<usage><subagent_tokens>99190</subagent_tokens><tool_uses>13</tool_uses><duration_ms>197048</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ace2986aac7dfbe94</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/aef9f6a4-f51b-4006-84c5-e914ce549fd6/tasks/ace2986aac7dfbe94.output</output-file>
+<status>completed</status>
+<summary>Agent "Finder A: line-by-line scan" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>```json
+[
+  {
+    "file": "docs/post-v1-assets-lineage-incidents-notes.md",
+    "line": 30,
+    "summary": "Unity Catalog namespace scheme `unitycatalog://{workspace_host}` is not part of the OpenLineage naming spec (which documents `dbfs://{workspace}` for Databricks and has no UC-table scheme) — it's invented, not adopted verbatim as claimed.",
+    "failure_scenario": "The doc's own header (line 35) promises 'byte-compatibility with openlineage-dbt/Spark' so identity is 'a join instead of a mapping layer' (ADR 0034 decision 2). When #757/#758 are built to this table, UC asset namespaces will use a scheme no real OL emitter (dbt-databricks, Spark, Marquez) produces, so lineage/catalog joins against Unity Catalog assets silently fail to match — defeating the stated zero-mapping-layer benefit for one of the two datasources (UC) this design explicitly targets."
+  },
+  {
+    "file": "docs/post-v1-assets-lineage-incidents-notes.md",
+    "line": 135,
+    "summary": "Section header 'Filed phase-1 issues' groups #757–#762 as all phase-1, but #760 is explicitly labeled 'phase 2' both in context/post-v1-roadmap.md line 247 and in this same doc's §4 UI-phasing (which calls the asset view '(2)' and lineage/incidents '(3)').",
+    "failure_scenario": "Whoever scopes 'phase 1' of the v1.2 build next cycle will read this header and file/ship #760 (read-only asset view) as phase-1 work, then hit the contradicting phase-2 label elsewhere and have to guess which is authoritative — risking either over-scoping phase 1 (pulling in UI work meant to wait) or a scope dispute mid-cycle."
+  }
+]
+```</result>
+<usage><subagent_tokens>108655</subagent_tokens><tool_uses>16</tool_uses><duration_ms>389191</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a3e3c0baa27862aef</task-id>
+<tool-use-id>toolu_01V4JhNtnpXfwwJ2WjoLrVQa</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/aef9f6a4-f51b-4006-84c5-e914ce549fd6/tasks/a3e3c0baa27862aef.output</output-file>
+<status>completed</status>
+<summary>Agent "Verify UC namespace spec claim" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>**Verdict: REFUTED**
+
+The DataQ doc's line 30 (`unity_catalog` → namespace `unitycatalog://{workspace_host}`, name `catalog.schema.table`) matches the current canonical OpenLineage naming spec exactly. Fetching the live spec at https://raw.githubusercontent.com/OpenLineage/OpenLineage/main/website/docs/spec/naming.md shows a dedicated "Unity Catalog" row under the Catalog type category specifying `Namespace: unitycatalog://{host}` (or `unitycatalog://{host}:{port}`) with name format `{catalog}.{schema}.{table}` — this is distinct from the separate "Databricks File System (DBFS)" row (`dbfs://{workspace name}`), which the candidate finding wrongly claims is the only Databricks entry. This is corroborated by the reference Spark integration source at https://raw.githubusercontent.com/OpenLineage/OpenLineage/main/integration/spark/spark40/src/main/java/io/openlineage/spark40/agent/lifecycle/plan/catalog/UnityCatalogHandler.java, whose `unityCatalogNamespace()` method literally constructs `"unitycatalog://" + authority`, with an inline comment explaining the scheme/path are dropped "to maintain consistency with the other warehouse namespaces in the OpenLineage naming spec." The candidate finding's premise — that the spec documents only `dbfs://{workspace}` for Databricks and that `unitycatalog://` is an invented scheme — is factually wrong on both the spec table and the reference implementation.</result>
+<usage><subagent_tokens>51129</subagent_tokens><tool_uses>4</tool_uses><duration_ms>28774</duration_ms></usage>
+</task-notification>
