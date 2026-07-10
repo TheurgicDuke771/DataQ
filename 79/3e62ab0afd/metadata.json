@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "793e62ab0afd",
+  "strategy": "manual-commit",
+  "branch": "docs/adr-0032-email-otp-signin",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/adr/README.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/79/3e62ab0afd/0/metadata.json",
+      "transcript": "/79/3e62ab0afd/0/full.jsonl",
+      "compact_transcript": "/79/3e62ab0afd/0/transcript.jsonl",
+      "content_hash": "/79/3e62ab0afd/0/content_hash.txt",
+      "prompt": "/79/3e62ab0afd/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 15413,
+    "cache_creation_tokens": 868893,
+    "cache_read_tokens": 27830735,
+    "output_tokens": 156796,
+    "api_call_count": 131
+  }
+}
