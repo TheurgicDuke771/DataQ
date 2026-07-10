@@ -1,0 +1,1629 @@
+<task-notification>
+<task-id>bdl84fptd</task-id>
+<tool-use-id>toolu_01UeyE8djrogJmyJBt1c8uYp</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c0b670d5-58c4-41ee-bbcf-b0dd9018241d/tasks/bdl84fptd.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for PR 733 CI checks to finish, then report" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Merge it. 
+After that can you check this - 
+
+## Summary: Email+OTP Signin Discussion
+
+**Starting question:** Could email+OTP replace Basic auth for local/non-Azure-AD users, given DataQ already rejected Basic auth (ADR 0026) because it would make DataQ a password system?
+
+**Recommendation:** Yes, worth pursuing — OTP is passwordless (avoids the exact problem Basic auth was rejected for) and it closes a real gap: BYOL customers on non-Azure clouds currently have *no* way to sign in (Azure AD is the only human-auth path today; PATs need an existing user to mint them). Proposed as a third authenticator behind the existing `get_current_user` seam (`backend/app/core/auth.py`), alongside Azure AD JWTs and PATs — scoped as its own small ADR rather than folded into 0026.
+
+**1. Session/token design**
+- Reuse the PAT *mechanism* (opaque, prefixed token — e.g. `dq_sess_…` — SHA-256 hash-at-rest, indexed lookup) rather than have DataQ self-issue JWTs, to avoid owning a signing-key/rotation story.
+- Don't store it in the `api_keys` table though — different lifecycle/visibility than user-managed PATs. Give it its own `sessions` table.
+- Short, fixed expiry (e.g. 12–24h), no refresh-token pair — since re-running OTP is low-friction, expiry just means "log in again."
+- Open item this forces: `users.aad_object_id` needs to become nullable with `email` as an alternate key, since OTP users have no AAD identity (a small preview of ADR 0026's deferred "generic principal" work).
+
+**2. Email delivery**
+- The existing alert mailer (`backend/app/alerting/email.py`) is a bad direct fit — it's a best-effort, silently-no-op background publisher; OTP is on the auth critical path and needs real errors surfaced, not swallowed.
+- Recommendation: reuse the SMTP+STARTTLS *code shape* (provider-neutral, per ADR 0010) but give OTP its own config block (`AUTH_EMAIL_*`, separate from alerting's `EMAIL_*`) so a misconfigured/rate-limited alert mailer can never block sign-in, and vice versa.
+- Flagged: OTP "resend code" is a new abuse vector (mail-bombing, account enumeration) — needs its own per-email/per-IP rate limiting regardless of transport.
+- Send synchronously (not via Celery) — SMTP submission is normally sub-second and the endpoint is already rate-limited.
+
+**3. Secret storage**
+- SMTP password → same pattern as connection credentials and the alert mailer: a config-driven secret *name*, resolved via the existing `SecretStore` protocol at send time. No new mechanism needed.
+- OTP code + session token → **not** `SecretStore` (that's for retrievable secrets). These are verifier secrets, same category as PAT hashes (ADR 0026) — hashed, stored in their own DB table(s), never retrievable.
+- Called out a deliberate deviation from the PAT precedent: PATs skip a slow KDF because they have ~256 bits of entropy; a 6-digit OTP code has only ~20 bits, so hashing algorithm choice barely matters — the real protection has to be a hard attempt cap + short TTL on the verify endpoint.
+
+**4. Side finding (pre-existing gap, not OTP-specific):** `SecretStore` is only provider-agnostic *in shape* — Azure Key Vault is the only production-grade backend. `EnvSecretStore` and `RedisSecretStore` are both explicitly dev/test-only (plaintext, not persisted). So a non-Azure production deployment currently has nowhere safe to put *any* secret, including the new SMTP password — same gap connection credentials already have. Flagged as a decision point: bundle a real non-Azure backend (e.g. Vault, AWS Secrets Manager) into this effort, or explicitly defer it as a known, separate gap.
+
+**Status:** Nothing implemented yet — all open design discussion, no ADR drafted, no code changed.
+
+---
+
+what do you think of the feasibility? 
+And what is our mailbox situation?
+
+---
+
+But, how will this approach looks like on a fresh deployment? there will not be a mailbox right?
+
+---
+
+got it, switching the topic a bit, how the RBAC works in the cuurent state for DataQ?
+
+---
+
+Okay, first draft the OTP login ADR, and file the issues if needed (mode ladder, fail-closed startup, signup gating, identity linking, #725 dependency, SMTP pre-flight). 
+Then we will discuss RBAC
+
+---
+
+<task-notification>
+<task-id>aaef5168ed4b521fc</task-id>
+<tool-use-id>toolu_01Xw1VRFYorJPEm3f8tPCjuB</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c0b670d5-58c4-41ee-bbcf-b0dd9018241d/tasks/aaef5168ed4b521fc.output</output-file>
+<status>completed</status>
+<summary>Agent "Finder: efficiency angle" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Looking at the diff and verifying the codebase:
+
+**Confirmed:** The diff is purely documentation-only:
+- **New file**: `docs/adr/0032-email-otp-signin.md` — a markdown ADR document (39 lines)
+- **Updated file**: `docs/adr/README.md` — one row added to the index table
+
+**CI/tooling consumption verification:**
+- The `.github/workflows/docs.yml` triggers on `docs/**` changes and runs `mkdocs build --strict`
+- The `mkdocs.yml` explicitly excludes internal planning docs but includes the `docs/adr/` directory as part of the published reference material
+- The ADRs are consumed by standard markdown processing (no scripts, no dynamic code generation, no CI/consumed configuration files modified)
+
+**Efficiency assessment:**
+The changes are minimal and follow the established pattern: adding a new ADR document and updating its README index. This is standard practice for a decision-record system and is not wasteful. The mkdocs build will include these files naturally as part of its normal documentation build process.
+
+```json
+[]
+```</result>
+<usage><subagent_tokens>17457</subagent_tokens><tool_uses>5</tool_uses><duration_ms>20774</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a5607b87e2b6ac17c</task-id>
+<tool-use-id>toolu_01C6LN6F56oj5nvr7UztxRXr</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c0b670d5-58c4-41ee-bbcf-b0dd9018241d/tasks/a5607b87e2b6ac17c.output</output-file>
+<status>completed</status>
+<summary>Agent "Finder: simplification angle" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Based on my analysis of the new ADR 0032, here are the concrete redundancy findings:
+
+```json
+[
+  {
+    "file": "docs/adr/0032-email-otp-signin.md",
+    "line": "13, 30",
+    "summary": "Mailbox-as-prerequisite constraint stated identically in Context and Consequences. Line 13: 'OTP swaps \"bring an IdP\" for **\"bring a mailbox\"** — an org SMTP relay is an install prerequisite'. Line 30: 'a mailbox becomes an install prerequisite of `otp` mode (mitigated: ...). The core constraint is duplicated; mitigations belong in Consequences but the constraint itself should appear once.",
+    "failure_scenario": "Reader encounters the same requirement statement in two sections and cannot tell if the second is a restatement or a new consequence."
+  },
+  {
+    "file": "docs/adr/0032-email-otp-signin.md",
+    "line": "22",
+    "summary": "Decision 6 states 'email is the root of trust' three ways in one bullet: 'One user row per normalized email (identity linking)' → 'An OTP sign-in whose email matches...resolves to **that row**' → 'email is the root of trust — mailbox compromise is account compromise'. Same constraint buried across three explanations.",
+    "failure_scenario": "The core identity-linking decision is fragmented into three retellings. Readers must reassemble the actual constraint: identity is keyed to normalized email address."
+  },
+  {
+    "file": "docs/adr/0032-email-otp-signin.md",
+    "line": "11, 38",
+    "summary": "Line 11 (Context): 'It **complements, not replaces**, the generic OIDC/JWKS backend validator'. Line 38 (Alternatives): 'Bundle the generic OIDC validator instead — rejected as *instead* (different audience...)'. The same decision stated twice—once as fact, once as alternative rejection, suggesting either the alternative wasn't seriously considered or the boundary is unclear.",
+    "failure_scenario": "If OIDC is so obviously a different audience (IdP-owning orgs), why is it listed as a considered alternative rather than dismissed at the start as out-of-scope?"
+  },
+  {
+    "file": "docs/adr/0032-email-otp-signin.md",
+    "line": "20",
+    "summary": "Decision 4 enumerates implementation parameters that belong in the spec, not the ADR: '10-min TTL, single-use, max 5 verify attempts, re-request invalidates prior codes, constant-time compare, SHA-256 at rest'. The ADR should state the principle ('protected by rate limiting and cryptographic caps sized to OTP entropy') and let the issue/implementation decide constants.",
+    "failure_scenario": "During development, OTP timeout or attempt limits may need tuning. If the ADR hardcodes values, readers must decide whether to update the ADR (historical record) or leave it stale."
+  },
+  {
+    "file": "docs/adr/0032-email-otp-signin.md",
+    "line": "24",
+    "summary": "Decision 8 includes an implementation detail: '`otp/request` is the app's first unauthenticated mail-sending endpoint'. Endpoint names are implementation surface that may be renamed during dev (e.g., to `/auth/otp/request`). The ADR should say 'the OTP request endpoint is the first...' to make the rate-limiting prerequisite point without baking an API path.",
+    "failure_scenario": "Endpoint path changes during implementation; ADR now contradicts the live API, causing confusion about whether the prerequisite was actually addressed."
+  },
+  {
+    "file": "docs/adr/0032-email-otp-signin.md",
+    "line": "20, 24, 30",
+    "summary": "Rate limiting / cryptographic protection mentioned three times with different scope: Decision 4 (line 20) lists specific OTP parameters ('10-min TTL, single-use, max 5 verify attempts'); Decision 8 (line 24) adds 'per-email and per-IP rate limits'; Consequences (line 30) summarizes as 'mitigated by caps + gating + #725'. Core protective mechanism is fragmented across sections, making it hard to see the complete defense-in-depth picture.",
+    "failure_scenario": "Implementation team develops OTP flow but misses that line 20 (OTP entropy caps) and line 24 (auth endpoint rate limiting) are *two separate layers*—the confusion leads to gaps in rate-limit deployment."
+  }
+]
+```
+
+All findings are quotable and concrete. The ADR is within the 1–2-page target (39 lines). The redundancies are real but not severe—this is a mature spec with strong rigor. The primary simplification opportunity is factoring out the duplicated mailbox-prerequisite constraint and clarifying which rate-limit layer belongs in which decision.</result>
+<usage><subagent_tokens>22889</subagent_tokens><tool_uses>4</tool_uses><duration_ms>70525</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>af5085a62105c1885</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c0b670d5-58c4-41ee-bbcf-b0dd9018241d/tasks/af5085a62105c1885.output</output-file>
+<status>completed</status>
+<summary>Agent "Finder: reuse/duplication angle" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Based on my analysis of the ADR and related issues, here are the drift-prone specifics that appear in both the ADR and issues #734-#738:
+
+```json
+[
+  {
+    "file": "docs/adr/0032-email-otp-signin.md",
+    "line": 20,
+    "summary": "6-digit OTP code (~20 bits entropy) and 10-min TTL duplicated in issue #734. Line 20 states '10-min TTL, ... max 5 verify attempts'; issue #734 repeats '10-min TTL, single-use, max 5 verify attempts per code'. These are load-bearing security caps tied to rate limiting (#725).",
+    "failure_scenario": "If #725 work adjusts TTL to 5 or 15 min based on rate-limiting analysis, or changes attempt cap per IP vs per email, the ADR becomes stale. Security review during implementation might require different caps, creating silent inconsistency between design doc and issue tracker."
+  },
+  {
+    "file": "docs/adr/0032-email-otp-signin.md",
+    "line": 19,
+    "summary": "Default session expiry 'default 24 h' duplicated in issue #734 ('default 24h, no refresh pair'). Both specify the same value but it's implementation-driving from #734.",
+    "failure_scenario": "Operational requirements (e.g., shorter timeouts for high-security deployments) may force change in #734 implementation. ADR will document stale default, confusing operators and code reviewers."
+  },
+  {
+    "file": "docs/adr/0032-email-otp-signin.md",
+    "line": 23,
+    "summary": "SMTP timeout '~5 s timeout' duplicated in issue #734 ('SMTP timeout ~5s'). Line 23 specifies 'synchronous (~5 s timeout)'; issue #734 restates same value.",
+    "failure_scenario": "Slow SMTP infrastructure (Gmail, Exchange) may require timeout increase during #734 testing. If issue is updated but ADR is not, documentation becomes stale and operators may tune timeouts incorrectly."
+  },
+  {
+    "file": "docs/adr/0032-email-otp-signin.md",
+    "line": 23,
+    "summary": "`AUTH_EMAIL_*` config var names duplicated in issue #734: ADR lists 'host/port/username/from/password-secret-name' abstractly; #734 names concrete vars 'AUTH_EMAIL_SMTP_HOST/PORT/USERNAME/FROM/PASSWORD_SECRET_NAME'.",
+    "failure_scenario": "Backend implementation in #734 may adjust var names (e.g., AUTH_EMAIL_SMTP_PASSWORD instead of AUTH_EMAIL_PASSWORD_SECRET_NAME) for consistency. ADR's abstract version won't reflect actual config, confusing operators."
+  },
+  {
+    "file": "docs/adr/0032-email-otp-signin.md",
+    "line": 21,
+    "summary": "`AUTH_OTP_ALLOWED_EMAILS` and `AUTH_OTP_ALLOWED_DOMAINS` gating logic duplicated in issue #735. Both state 'requires `AUTH_OTP_ALLOWED_EMAILS` and/or `AUTH_OTP_ALLOWED_DOMAINS`'; #735 adds acceptance criteria 'empty allowlist → boot refusal'.",
+    "failure_scenario": "If #735 identity work refines gating rules (e.g., adds domain-suffix matching, regex patterns, or external allowlist URLs), ADR's simplified statement will lag behind actual implementation capability."
+  },
+  {
+    "file": "docs/adr/0032-email-otp-signin.md",
+    "line": 22,
+    "summary": "Identity linking rule 'one user row per normalized email' and 'email is the root of trust' duplicated in issue #735. ADR line 22 states 'An OTP sign-in whose email matches an existing AAD-provisioned row resolves to **that row**'; #735 restates same rule plus acceptance criteria for migration.",
+    "failure_scenario": "If #735 migration uncovers edge cases (e.g., mixed-case email collisions, international domain normalization), the linking rule may be refined. ADR's definitive language ('resolves to that row') will not capture implementation nuance, leaving ops without correct mental model."
+  }
+]
+```
+
+**Canonical homes for each:**
+- **6-digit code, TTL, attempt caps** → Issue #734 &amp; #725 (both are implementation slices; ADR should reference, not restate)
+- **Session expiry defaults** → Issue #734 (backend implementation will set and evolve)
+- **SMTP timeout** → Issue #734 (backend implementation, will need tuning post-deployment)
+- **Config var names** → Issue #734 (backend drives the actual env-var schema)
+- **Signup gating logic** → Issue #735 (identity implementation, most likely to discover edge cases)
+- **Identity linking &amp; email-as-root-of-trust** → Issue #735 (security model implementation; ADR captures the *why*, #735 captures the *how* that will drift)</result>
+<usage><subagent_tokens>23359</subagent_tokens><tool_uses>4</tool_uses><duration_ms>81171</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>afe0fdd0a2c22727a</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c0b670d5-58c4-41ee-bbcf-b0dd9018241d/tasks/afe0fdd0a2c22727a.output</output-file>
+<status>completed</status>
+<summary>Agent "Finder: conventions angle" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I've read the governing conventions (docs/adr/README.md Format section + Index, CLAUDE.md §Documentation/§9/§11) and the new ADR plus comparable ADRs (0026, 0027, 0028, 0030, 0031) for precedent. Here's my check against each rule:
+
+**File name** — `0032-email-otp-signin.md` matches `NNNN-short-kebab-slug.md`. OK.
+
+**Frontmatter required fields** — Status (`Proposed`), Date (`2026-07-09`, YYYY-MM-DD), Deciders (`@TheurgicDuke771`) all present. OK.
+
+**Status value** — README line 9: "one of `Proposed`, `Accepted`, `Deprecated`, `Superseded by ADR-NNNN` (title-case)". Both the ADR (line 3) and the index row (README line 74) use `Proposed` — legal. No other Proposed ADR exists in the index, but `Proposed` is explicitly in the allowed set, so absence of precedent is not a violation.
+
+**`Related` in frontmatter (not a section)** — README lists `Related` only under Sections (line 16), not frontmatter. But frontmatter `Related` is the dominant precedent (0008, 0018, 0020, 0022, 0026, 0027, 0028, 0030 all do it; 0026 has frontmatter `Related` and no `## Related` section). 0032 follows precedent. Not a violation.
+
+**`Issues:` standalone frontmatter field** — not listed in the format, and other ADRs fold issue links into the `Related` line (0030: "Issue #286"; 0020: "issues #310..."). This is the one deviation, but the frontmatter list is not declared exhaustive (and `Related` — also unlisted — is universal), so no quotable rule prohibits it. Not a clear violation.
+
+**Required sections** — Context, Decision, Consequences, Alternatives considered all present (lines 9/15/26/32). `Related` optional. OK.
+
+**Length** — 39 lines, ~1–2 pages. OK.
+
+**Index / §9 single-source-of-truth** — row added at README line 74. Correctly NOT placed in the "Pending (to be written)" table (that table is for unwritten ADRs; 0032 is written). OK.
+
+**§11 anti-patterns / Azure lock-in** — the ADR reinforces the guardrails rather than contradicting them: it depends on the generic `get_current_user` seam (Decision 1), cites ADR 0010/0013 portability guardrails, and adds no Azure resource names or Entra-claim-reading in business logic. The one AAD reference (Decision 6, "the email claim is tenant-controlled") is identity-linking rationale, not claim-reading in route/service code. No contradiction. OK.
+
+No clear, quotable rule violations found. The items the task flagged as possible traps (frontmatter `Related` vs section, `Proposed` status, Pending-table placement) all resolve in the ADR's favor via explicit rule text or established precedent.
+
+```json
+[]
+```</result>
+<usage><subagent_tokens>37930</subagent_tokens><tool_uses>8</tool_uses><duration_ms>82272</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a533289224779eca7</task-id>
+<tool-use-id>toolu_01XtTMYiXf1zR9MfUPJaU5W8</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c0b670d5-58c4-41ee-bbcf-b0dd9018241d/tasks/a533289224779eca7.output</output-file>
+<status>completed</status>
+<summary>Agent "Finder A: line-by-line ADR scan" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I've verified every added line against the codebase, the four cross-linked ADRs, and the six referenced GitHub issues. The ADR is unusually accurate. Confirmed clean:
+
+- All four relative links (0026, 0028, 0010, 0013) and the README index link resolve to real files.
+- Codebase claims all check out: `fastapi-azure-auth` in `backend/app/core/auth.py`; PATs headless-only resolving to an owning user; dev-bypass = single fixed user; today's seam order is PAT-by-prefix then Azure (`_get_current_user_real`, lines 168-189); `User.aad_object_id` is `nullable=False, unique=True` and `email` has no unique constraint (`models.py:115-116`); frontend `mode?: 'bypass' | 'oidc'` in `config.ts`.
+- All six issues exist and match their described roles (738 umbrella, 734 backend, 735 identity, 736 frontend, 737 SMTP pre-flight, 725 rate limiting); #732/#591/#732 also consistent; ADR 0013 Phase 2 does list "generic OIDC auth"; ADR 0028 §5 does cover the same-origin nginx proxy.
+- Security statements hold: 10^6 ≈ 2^19.9 ("~20 bits"); SameSite=Lax does block cross-site POST; single-tenant email claim is tenant-controlled; mail-scanner URL prefetch is a real magic-link failure mode.
+- ADR 0026 genuinely rejects Basic with the exact "password system (storage/hashing policy, lockout, reset flows)" wording and defers service-account principals to phase 2.
+
+Two minor imprecisions remain (both low-confidence reviewer nits, not hard errors):
+
+```json
+[
+  {
+    "file": "docs/adr/0032-email-otp-signin.md",
+    "line": 23,
+    "summary": "Characterizes the existing alert mailer as \"a best-effort quiet no-op by design,\" contrasting it with OTP that \"surfaces real errors, and never silently drops.\" Per backend/app/alerting/email.py, EmailPublisher.publish is a quiet no-op ONLY when unconfigured / no recipients / suite disabled / below threshold; on an actual SMTP send failure it RAISES (docstring: \"Raises on an SMTP error — the composite layer isolates it\"). So the alert mailer does surface real send errors; it is the composite layer, not the mailer, that swallows them.",
+    "failure_scenario": "A reader concludes the alert mailer silently drops SMTP send failures and models OTP as behaviorally different at the mailer layer, when in fact both mailers raise on send errors and the difference is only where the exception is isolated (composite publisher for alerts vs surfaced to the request for OTP)."
+  },
+  {
+    "file": "docs/adr/0032-email-otp-signin.md",
+    "line": 18,
+    "summary": "Says \"`DATAQ_AUTH_MODE` gains `otp`\" and ties it to \"the `init_auth` contract,\" implying the backend today keys its auth ladder off a DATAQ_AUTH_MODE var with values bypass|oidc. DATAQ_AUTH_MODE is a frontend-only runtime-config concept (frontend/src/auth/config.ts / rendered into /config.js). The backend init_auth (backend/app/core/auth.py:138) has no such variable — it infers mode from azure_auth_configured (AZURE_TENANT_ID + AZURE_API_CLIENT_ID) and auth_dev_bypass (AUTH_DEV_BYPASS + ENVIRONMENT); config.py has no auth_mode field.",
+    "failure_scenario": "An implementer reads the ADR as if a single DATAQ_AUTH_MODE=bypass|oidc already drives backend init_auth and just needs an `otp` value added, and is surprised to find the backend has no mode env var at all and must introduce one (or replicate the frontend contract) to realize the described fail-closed otp startup."
+  }
+]
+```</result>
+<usage><subagent_tokens>41764</subagent_tokens><tool_uses>14</tool_uses><duration_ms>170852</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a35d62298e4a6a188</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c0b670d5-58c4-41ee-bbcf-b0dd9018241d/tasks/a35d62298e4a6a188.output</output-file>
+<status>completed</status>
+<summary>Agent "Finder: altitude angle" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Based on my review of the diff against the repo's ADR conventions (README amendment rules, CLAUDE.md §9 distillation contract) and the two ADRs 0032 claims kinship with (0026, 0028), here are the findings.
+
+```json
+[
+  {
+    "file": "docs/adr/0032-email-otp-signin.md",
+    "line": 22,
+    "summary": "Decision 6 makes `users.aad_object_id` nullable + unique `lower(email)` index and asserts \"Grants, shares, and PATs never fragment across authenticators\" — this is precisely the migration ADR 0026 explicitly DEFERRED to its phase-2 (\"generalize `users.aad_object_id` into a generic principal with pluggable identity bindings\") and named as an open question (\"Migration path for `users.aad_object_id` → generic principal without breaking existing ownership/shares\"). 0032 answers that phase-2 question but lists 0026 only under **Related**, not **Amends** — despite the README convention that a decision partially overriding another 'pair[s] it with an inline blockquote at the top of the amended ADR and an \"(amended by NNNN)\" note on its index Status.'",
+    "failure_scenario": "0026's index row and open-questions list still say the aad_object_id generalization is deferred to an un-started phase 2, while 0032 has already fixed the schema shape and identity-linking semantics. A future implementer picking up 0026 phase 2 (generic principals / non-user sharing) re-litigates or contradicts the `lower(email)` unique-index + AAD-row-join decision already baked into #735, because nothing in 0026 points forward to where its migration was actually decided."
+  },
+  {
+    "file": "docs/adr/0032-email-otp-signin.md",
+    "line": 19,
+    "summary": "Decision 2 extends the frontend `DATAQ_AUTH_MODE` enum (0028 defined it as `bypass` | `oidc`) with a third value `otp`, and Decision 3 introduces an HttpOnly cookie session as a new SPA credential model — 0032 itself concedes in Consequences that this 'add[s] a second browser credential model (cookie) beside the OIDC bearer flow.' That frontend auth contract is ADR 0028's scope (its generic `DATAQ_AUTH_*` contract + 'the SPA never holds the token' reasoning), yet 0028 appears only under **Related** with no Amends/extends note, and the ADR 0028 §5 citation in Decision 3 points at the deploy cutover (SWA→Container App), not at any auth-contract clause that sanctions cookies.",
+    "failure_scenario": "0028's contract (`mode: bypass|oidc`, bearer-token SPA) remains the documented frontend auth model with no forward pointer, so a reader treats cookie sessions as out-of-contract. The CSRF posture ('Lax blocks cross-site POST CSRF') is asserted inside 0032 but never reconciled with 0028's originally CSRF-immune bearer design, so the new cookie CSRF surface has no home ADR that owns it if a same-site bypass is later found."
+  },
+  {
+    "file": "docs/adr/0032-email-otp-signin.md",
+    "line": 3,
+    "summary": "Status is `Proposed`, yet the ADR is fully designed (8 concrete decisions) and already scheduled: an umbrella issue #738 with milestoned slices #734–#737 plus a self-declared 'hard prerequisite' ordering against #725. The repo's closest analog, ADR 0026 (also an added authenticator behind the same seam), stayed `Proposed` only as an explicit 'Stub — not yet designed in full' with NO milestoned slices; every repo ADR that reached scoped-and-scheduled implementation is `Accepted` (0026 phase-1 built, 0029 #611, 0030 spike). A fully-specced, milestoned ADR labelled `Proposed` is an ambiguous lifecycle state versus those precedents.",
+    "failure_scenario": "Work on #734–#737 begins and merges against a decision the index still marks `Proposed` (i.e. not ratified). If review of the Proposed ADR later rejects or reshapes a decision (e.g. cookie sessions, or email-as-root-of-trust), the already-built slices must be unwound, and the index gives contributors no reliable signal about whether 0032 is safe to build on."
+  }
+]
+```
+
+Note on the distillation check (question 1): no flag. For a `Proposed` ADR with nothing built, deferring distillation into CONTRIBUTING/CLAUDE §4–6/10/11 is the correct altitude, and nothing in 0032 is presented as a standing PR-binding rule that is in force now — the one discipline it does invoke (two-step migration, Decision 6) is already a standing rule in CLAUDE.md §6 (Database: 'Backward-compatible migrations only… Two-step deploys'), so it creates no new rule needing distillation.</result>
+<usage><subagent_tokens>41472</subagent_tokens><tool_uses>10</tool_uses><duration_ms>135069</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>af885c75d09b54255</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c0b670d5-58c4-41ee-bbcf-b0dd9018241d/tasks/af885c75d09b54255.output</output-file>
+<status>completed</status>
+<summary>Agent "Finder B: dropped-obligation audit" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Based on `git diff main...HEAD` (docs-only: new `docs/adr/0032-email-otp-signin.md` + one index row) cross-referenced against issues #738/#737/#736/#735/#734, here is the dropped-obligation / mismatch audit.
+
+Coverage is genuinely strong — most Decision-1..8 commitments are homed: seam order + `/mcp` rejects `dq_sess_` + dev-bypass interplay + fail-closed startup + anti-enumeration (#734); mandatory allowlist boot-refusal, stated identically in both #734 and #735 (no softening — your point 3 checks out clean); identity linking + `docs/security.md` trust model (#735); cookie policy + getting-started mode ladder (#736); SMTP pre-flight (#737). TTLs and config var names match the ADR exactly (10-min OTP TTL, 24h session, 5 attempts, `AUTH_EMAIL_*`, `AUTH_OTP_ALLOWED_*`) — no contradictions found for your point 2.
+
+The genuine candidates:
+
+```json
+[
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/docs/adr/0032-email-otp-signin.md",
+    "line": 3,
+    "summary": "ADR is 'Status: Proposed', but the five delivery issues (#734-#737, umbrella #738) are already filed as scheduled v1.1-Backlog work with full acceptance criteria and language treating the design as final ('Identity linking rule (decided in ADR 0032)' in #735; 'Design decisions live in ADR 0032' in #738). Work is greenlit and slice-sequenced before the decision is Accepted.",
+    "failure_scenario": "The ADR review lands a change to a decision (e.g. TTL, cookie policy, or the linking rule), but slices have already been picked up against the 'decided' wording; implementation diverges from the amended ADR, or the ADR is treated as immutable because issues cite it as settled — defeating the point of the Proposed status gate."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/docs/adr/0032-email-otp-signin.md",
+    "line": 19,
+    "summary": "Session-lifecycle *enforcement* is decided (fixed 24h expiry, no refresh, revoke-on-logout via revoked_at) but no issue's acceptance criteria verify that an expired or revoked dq_sess_ cookie is rejected at the seam. #734 tracks only the table columns + logout endpoint; its adversarial battery covers OTP codes (bad/expired/reused), not sessions. #736 E2E lists 'expired-code' but not expired/revoked-session redirect.",
+    "failure_scenario": "The sessions table stores expiry and revoked_at, but get_current_user never checks them (or checks only on logout-cleared cookies). A copied/stolen dq_sess_ cookie keeps authenticating past 24h or after logout, because no test in any slice exercises seam-level session invalidation — the ADR's 'trivially revocable' and 'fixed expiry' claims go unverified."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/docs/adr/0032-email-otp-signin.md",
+    "line": 19,
+    "summary": "The entire CSRF stance rests on the single assertion 'Lax blocks cross-site POST CSRF'. Issues home the mechanism (SameSite=Lax cookie in #734/#736) but no issue carries an obligation to confirm all cookie-authenticated mutations are POST (a GET mutation slips past Lax), nor to defend the unauthenticated otp/verify + logout endpoints against login-CSRF. The word 'CSRF' appears in no issue.",
+    "failure_scenario": "A state-changing endpoint reachable by GET (or a permissive method) is exercised cross-site while the Lax session cookie rides along, or a login-CSRF forces a victim's browser into an attacker-chosen OTP session — neither is tested because the ADR delegated all CSRF defense to a cookie attribute and no slice owns verifying that delegation actually holds."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/docs/adr/0032-email-otp-signin.md",
+    "line": 23,
+    "summary": "Decision 7 promises isolation in both directions — 'A misconfigured alert channel can never block sign-in, and vice versa.' #734 homes only the alert-to-signin direction ('a misconfigured alert mailer must never block sign-in'). The vice-versa (a synchronous, error-surfacing OTP send on the request path must not stall/degrade the alerting mailer) is not tracked in any issue.",
+    "failure_scenario": "The OTP mailer and alert mailer share SMTP code shape; a change or a slow AUTH_EMAIL_ host (~5s synchronous timeout on the request path) is later coupled to the alert publisher, and OTP-send load or failures degrade alert delivery — the ADR promised this can't happen, but no slice verifies the reverse-direction isolation."
+  }
+]
+```
+
+Note: candidates 3 and 4 are lower-confidence (the ADR arguably discharges its own CSRF/isolation obligation by decision text, so whether these are "dropped" vs "adequately delegated" is a judgment call). Candidates 1 and 2 are the solid findings. Your point-3 concern (issues softening the mandatory allowlist) and point-2 (contradicting TTLs/var names/cookie policy) turned up nothing — the issues are faithful to the ADR on those.</result>
+<usage><subagent_tokens>35125</subagent_tokens><tool_uses>4</tool_uses><duration_ms>187444</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a360c4759fb40d3d1</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c0b670d5-58c4-41ee-bbcf-b0dd9018241d/tasks/a360c4759fb40d3d1.output</output-file>
+<status>completed</status>
+<summary>Agent "Finder C: cross-doc contradiction trace" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I have traced the cross-file picture. Findings below.
+
+Summary of what I verified:
+- The PR is docs-only: adds `docs/adr/0032-email-otp-signin.md` (39 lines, within the 1-2 page rule) + one index row in `docs/adr/README.md`.
+- Item 3 (the #732 / generic-OIDC citation) is **consistent** — `gh issue view 732` body line 30-31 explicitly lists "Generic OIDC/JWKS backend token validation behind `get_current_user` (ADR 0013 Phase 2)", so 0032's "complements... the generic OIDC/JWKS backend validator (ADR 0013 Phase 2, tracked in #732)" matches both #732 and ADR 0013 §Phase 2. No contradiction.
+- Item 4: the pending table (0015) is untouched and correct.
+- Item 5: `mkdocs.yml` has an explicit `nav:` that lists no ADRs and uses no glob/literate-nav plugin, so adding an ADR + index row cannot break nav. Confirmed safe. 31 ADR files = 31 index rows.
+- The `AUTH_EMAIL_*` vs alerting `EMAIL_*` separation claim is consistent with `backend/app/core/config.py` (alerting uses `email_*`).
+- core/auth.py's "Two authenticators" docstring and the two-value `DATAQ_AUTH_MODE` docs describe today's state and are correctly left as-is (0032 is Proposed) — not flagged per your note.
+
+[
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/docs/adr/0032-email-otp-signin.md",
+    "line": 18,
+    "summary": "Decision §2 presents `DATAQ_AUTH_MODE` as a backend auth-mode ladder (bypass/otp/oidc) enforced at boot by `init_auth`. But `DATAQ_AUTH_MODE` is a FRONTEND-only runtime variable owned by ADR 0028: it is interpolated into nginx's config.js (frontend/nginx.conf.template:27), documented as 'Frontend auth config' in deploy/README.md:33, and never read by the backend. The backend's `init_auth` (backend/app/core/auth.py:138) selects mode from `AUTH_DEV_BYPASS` + `AZURE_*` vars, not `DATAQ_AUTH_MODE`. 0032 lists 0028 under Related only as 'frontend runtime auth config' and does not reconcile that it is re-scoping a frontend variable to govern backend boot.",
+    "failure_scenario": "An implementer building the #734 backend slice searches for where `init_auth`/the backend reads `DATAQ_AUTH_MODE` to add the `otp` branch, finds nothing (backend keys off `AUTH_DEV_BYPASS`/`AZURE_*`), and either wires a brand-new backend env var while the frontend still keys off `DATAQ_AUTH_MODE` — producing two divergent mode selectors — or mistakenly makes the backend read the frontend's config-injection variable. The ADR's single 'auth-mode ladder' abstraction hides that mode ownership is split across two components today."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/docs/adr/0032-email-otp-signin.md",
+    "line": 7,
+    "summary": "Frontmatter uses `Issues:` (plural). The precedent set by ADR 0026 and ADR 0028 is the singular `Issue:` field. Additionally, neither `Related` nor `Issue(s)` appears in the README Format section's enumerated frontmatter fields (docs/adr/README.md:8-15, which lists only Status/Date/Deciders/Consulted/Supersedes/Superseded by/Amends), though `Related` does have precedent in 0026/0028. Minor convention drift, not a semantic error.",
+    "failure_scenario": "Low impact: a future doc-lint or a contributor grepping for the conventional `Issue:` field name (or validating frontmatter against the README Format list) misses 0032's issue links, or the inconsistent pluralization propagates as the copy-paste template for later ADRs. The README Format field list also remains silently incomplete re: Related/Issue, but that gap is pre-existing and not introduced by this PR."
+  }
+]</result>
+<usage><subagent_tokens>60718</subagent_tokens><tool_uses>21</tool_uses><duration_ms>207022</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bb9navbm6</task-id>
+<tool-use-id>toolu_018DBU8JBC3Mv6pPuuXiDPA4</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c0b670d5-58c4-41ee-bbcf-b0dd9018241d/tasks/bb9navbm6.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for PR 739 CI to start and finish, then summarize check states" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+merge #739 [it is blocked for conersation review] and make the ADR accepted.
+
+---
+
+<task-notification>
+<task-id>b62n1g5cq</task-id>
+<tool-use-id>toolu_01JFZSAAeNXJXiQ5Hb53FXYh</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c0b670d5-58c4-41ee-bbcf-b0dd9018241d/tasks/b62n1g5cq.output</output-file>
+<status>failed</status>
+<summary>Background command "Wait until PR 739 merges or a check fails, then report state" failed with exit code 1</summary>
+</task-notification>
+
+---
+
+```
+The model: two axes, one enforcement primitive
+There are no stored roles. A user row carries no role column and there's no roles table — authorization is derived at request time from two sources:
+
+Axis 1 — workspace-admin (global, config-driven). WORKSPACE_ADMIN_EMAILS is a comma-separated env allowlist, matched case-insensitively against the IdP-supplied email (auth.py:229-241). It's deliberately a generic identity attribute (no Entra claim read, per ADR 0010/0013). Being on the list grants: the /admin read endpoints via require_workspace_admin (403 otherwise), implicit admin on every suite, and workspace-wide visibility (extended to the MCP tools and schedules in #488/#695). There is no in-app management of this — changing admins means changing the env var and restarting.
+
+Axis 2 — suite-level sharing (the only resource-level RBAC). Defined entirely in suite_authz.py, with a strict capability ladder view(1) < edit(2) < admin(3) < owner(4):
+
+Level	How you get it	What it allows
+view	a shares row	read the suite, its checks, its results
+edit	a shares row	+ create/update/delete checks, update the suite, trigger runs
+admin	being a workspace-admin — implicit on every suite, not grantable (ADR 0027)	+ manage shares, delete the suite
+owner	being suite.created_by — immutable, can't be revoked or re-granted	same as admin
+The shares table (models.py:452) is unique on (suite_id, user_id), cascade-deleted with either side, and its check constraint only permits view/edit for new grants — grantable suite-admin was dropped by ADR 0027 (legacy pre-#482 admin share rows still resolve until the downgrade migration).
+
+Enforcement
+Everything funnels through one primitive: require_permission(session, suite_id, user_id, minimum=…) (suite_authz.py:113). Two properties worth knowing:
+
+Existence hiding: no access at all → 404, indistinguishable from "doesn't exist"; some access but below the required level → 403 with have/need in the detail.
+Same gate everywhere: the suites/checks/runs/notifications routers and all 8 MCP tools call the identical service-layer check, so REST and MCP can't drift. List endpoints use the batched effective_permissions (single IN query, no N+1) to stamp each suite with the caller's level, which is what the frontend uses to show/hide per-suite actions — the UI only mirrors, the server decides.
+What is not permission-scoped (by design, but know it)
+Connections are workspace-global. Any authenticated user can list, create, edit, re-auth, delete, and test any connection — created_by is recorded for display only, with no ownership gate (connection_service.py:199-219). The workspace is the trust boundary; a view-only user on every suite can still delete the Snowflake connection everything runs on.
+Credentials are never readable through any tier — secrets go to the SecretStore and only resolve server-side at use time.
+PATs inherit the owner wholesale (ADR 0026 phase 1) — a token is exactly as powerful as its user; there are no scoped-down or read-only tokens yet.
+Known limitations (all recorded, mostly as gap G-e)
+No groups/teams, no custom roles, no per-connection ACLs, admin manageable only via env restart, and no data-access audit trail (G-d/#431 — flagged as the prerequisite for regulated deployments). The roadmap's own verdict on this model is "fine internally, not sellable" for multi-team commercial use — it's the single-tenant, high-trust-workspace design working as intended, with Theme 3 / ADR 0026 phase 2 (service accounts, richer principals) as the evolution path.
+```
+
+So, based on this currently there no RBAC, How do you think we can enable RBAC, what would be the correct approach?
+I'm thinking of 3 roles Admin, Member & Guest [correct me If I'm wrong]
+
+---
+
+Yes, do the ADR + File issues then PR+review flow, with the capability matrix and the 0027 amendment.
+
+---
+
+<task-notification>
+<task-id>aed00558538aa6f42</task-id>
+<tool-use-id>toolu_01KGJP9i1x6EbNNCXPGMPhnw</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c0b670d5-58c4-41ee-bbcf-b0dd9018241d/tasks/aed00558538aa6f42.output</output-file>
+<status>completed</status>
+<summary>Agent "Finder: efficiency angle" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>**Analysis complete.** This diff is purely documentation:
+- ✓ Only docs/adr/0033-workspace-roles-rbac.md (new) and docs/adr/README.md (index row) touched
+- ✓ No executable or CI-consumed files modified beyond what mkdocs reads
+- ✓ All 4 relative ADR links well-formed and point to existing files
+  - `0027-suite-permission-model-workspace-admin.md` ✓
+  - `0026-auth-api-keys-and-principal-seam.md` ✓
+  - `0032-email-otp-signin.md` ✓
+  - `0010-provider-agnostic-infrastructure-seams.md` ✓
+- ✓ README index link to new ADR well-formed and valid
+- ✓ Markdown syntax valid (matched brackets, tables, code blocks)
+
+**Result:**
+
+```json
+[]
+```</result>
+<usage><subagent_tokens>25823</subagent_tokens><tool_uses>17</tool_uses><duration_ms>79424</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a5f641cf80de93aeb</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c0b670d5-58c4-41ee-bbcf-b0dd9018241d/tasks/a5f641cf80de93aeb.output</output-file>
+<status>completed</status>
+<summary>Agent "Finder: reuse/drift angle" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Based on my cell-by-cell analysis of both matrices, here are the code-review candidates for the ADR. The matrices diverge in key places and #744 has ambiguous wording that could lead to wrong enforcement:
+
+```json
+[
+  {
+    "file": "docs/adr/0033-workspace-roles-rbac.md",
+    "line": 25,
+    "summary": "Row 2 capability includes 'import' keyword ('Create/import suites'), but #744 umbrella matrix omits it ('Create suites'). #741 enforcement slice references 'the import path' as in scope, confirming divergence is real.",
+    "failure_scenario": "Implementer reading only #744 enforces suite-create Member+ rule but forgets to apply it to the import endpoint, leaving import unprotected. Two people maintain the same rule in two places with different wording—classic sync hazard."
+  },
+  {
+    "file": "docs/adr/0033-workspace-roles-rbac.md",
+    "line": 29,
+    "summary": "Row 6 lists 'Connections: test' as a separate, explicit capability with Viewer=❌. But #744 merges it into row 5 as 'list/reference; test_connection' with Viewer='list only'—ambiguous phrasing that could be misread as Viewer *can* test.",
+    "failure_scenario": "Implementer scanning #744 misinterprets 'list only' to mean 'only list' (implying test is okay), and fails to add test_connection rejection for Viewer role. Enforcement bug: Viewer can test connections, leaking reachability info."
+  },
+  {
+    "file": "docs/adr/0033-workspace-roles-rbac.md",
+    "line": 20,
+    "summary": "ADR header claims 'the normative table' but omits an explicit sync-governance statement. #744 gate caveat says 'the capability matrix... may still change in review'—creating future uncertainty about whether ADR or #744 is source-of-truth if they drift post-merge.",
+    "failure_scenario": "In review or later, #744 matrix is tweaked without ADR update (or vice versa). Slices #740–#743 implementers read different matrices depending on which doc they consult first. Subtle enforcement differences leak in production."
+  },
+  {
+    "file": "docs/adr/0033-workspace-roles-rbac.md",
+    "line": 25,
+    "summary": "Row 2 Viewer cell shows ❌, but ADR text does not explicitly cross-reference #741's acceptance criterion 'Suite-create/import 403 for viewer' to prove the matrix and enforcement spec are coupled and in sync.",
+    "failure_scenario": "Reviewer or implementer updates matrix capability row without checking whether #741 enforcement criteria are still satisfied. Matrix row and enforcement spec drift in scope."
+  }
+]
+```
+
+**Canonical-document status:** Both agree ADR is canonical—#744 explicitly says "decided in ADR 0033". However, #744's gate caveat (**"may still change in review"**) on the `test_connection` placement directly creates the dual-maintenance hazard in findings #2 and #3.</result>
+<usage><subagent_tokens>27008</subagent_tokens><tool_uses>6</tool_uses><duration_ms>107637</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a2f44538c7e0344bf</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c0b670d5-58c4-41ee-bbcf-b0dd9018241d/tasks/a2f44538c7e0344bf.output</output-file>
+<status>completed</status>
+<summary>Agent "Finder B: obligation homing audit" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I have enough to report. Confirmed: `AUTH_OTP_DEFAULT_ROLE` appears only in the ADR — not in any slice issue, not in code, not in any env/security doc.
+
+```json
+[
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/docs/adr/0033-workspace-roles-rbac.md",
+    "line": 38,
+    "summary": "Decision 8 introduces a new env var AUTH_OTP_DEFAULT_ROLE (default `member`) wiring the OTP signup path to the role model, but no slice homes it. #740 covers users.role + WORKSPACE_ADMIN_EMAILS bootstrap only; #741/#742/#743 never touch signup. Grep confirms the var exists nowhere but this ADR — no implementation issue and no env-reference doc slice carries it.",
+    "failure_scenario": "ADR ratifies, all four slices ship and close, and OTP self-signups still land on the hard-coded default (or crash on the unread var). A deployment that set AUTH_OTP_DEFAULT_ROLE=viewer for a cautious domain-wide allowlist silently gets every signup as `member` with connection-list + suite-create + edit-share reach — the exact over-provisioning Decision 8 was written to prevent, with no test or doc catching it."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/docs/adr/0033-workspace-roles-rbac.md",
+    "line": 29,
+    "summary": "The ADR matrix decides `test_connection` as normative Member+ (Viewer ❌, its own matrix row). But delivery #741 still frames it as open ('Decide test_connection explicitly (proposal: member+)') and umbrella #744's gate says the placement 'may still change in review' and bundles test_connection into the 'list only' Viewer row. The ratification artifact presents as settled what the implementing issue presents as undecided.",
+    "failure_scenario": "#741 is implemented against its own text, treating test_connection as an open design question, and a reviewer or implementer resolves it differently (e.g. viewer-inclusive because #744 lumps it under the 'list only' row) than the ADR's explicit Viewer-❌ row. The normative matrix and shipped behavior diverge, and the 'load-bearing' connection-capability table stops being the single source of truth."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/docs/adr/0033-workspace-roles-rbac.md",
+    "line": 6,
+    "summary": "The header promises 'The inline amendment blockquote lands in 0027 when this ADR flips to Accepted' — a concrete edit to ADR 0027 recording that the workspace-admin source moved env→stored role and that grants gain the no-edit-to-Viewers rule. No slice (#740-#743) or umbrella checklist item owns this doc edit; it is tied only to a status flip with no assignee.",
+    "failure_scenario": "ADR 0033 flips to Accepted, slices proceed, but ADR 0027 is never amended. A future reader of 0027 (still the canonical suite-permission ADR) sees WORKSPACE_ADMIN_EMAILS described as *the* admin source and no Viewer edit-cap rule, and builds or reviews against stale, now-contradicted invariants."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/docs/adr/0033-workspace-roles-rbac.md",
+    "line": 44,
+    "summary": "The negative-consequences section asserts the break-glass risk ('an env-level actor can always mint an admin') is 'now documented,' but no slice homes a security-doc update. #740 only re-documents WORKSPACE_ADMIN_EMAILS in the env reference as bootstrap/break-glass; docs/security.md and docs/compliance-posture.md (which exist and currently mention the allowlist) get no update obligation in any issue.",
+    "failure_scenario": "The ADR claims a security posture is documented that in fact lives only inside the ADR. Security/compliance docs continue to describe the old binary allowlist admin model, so an operator reading security.md never learns the env allowlist is now a permanent admin-mint backdoor retained deliberately — the caveat the ADR explicitly wanted surfaced stays invisible where auditors actually look."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/docs/adr/0033-workspace-roles-rbac.md",
+    "line": 42,
+    "summary": "The ADR leans on 'enforcement stays in the existing seams so REST/MCP can't drift' for all new role gates. But MCP parity is asserted for only two of them: #740 covers require_role parity generically and #741 verifies no MCP tool mutates connections. The suite-create Member+ gate and the Viewer share-cap (grant-time rejection) have no MCP-parity check in any slice, even though suite creation and sharing are suite-scoped surfaces the MCP layer exposes.",
+    "failure_scenario": "REST enforces suite-create=Member+ and Viewer-edit-share rejection, but the MCP tool path (create/import suite, share grant) is gated only by the old suite ladder and never re-checked for the new coarse role. A Viewer with a PAT drives the MCP surface to create suites or receive edit shares — the REST/MCP drift the ADR's shared-seam claim promised couldn't happen."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/docs/adr/0033-workspace-roles-rbac.md",
+    "line": 37,
+    "summary": "Decision 7 states the last-admin guard rejects demoting/deleting the final admin, and Decision 6 defines is_workspace_admin = stored role OR allowlist — but the ADR never resolves how the guard counts across those two sources. #742 tries to fill the gap and contradicts itself: 'counting *stored* roles' yet 'an allowlist-resolved admin counts.' The guard semantics for allowlist-admin interplay are left undecided by the ADR and self-contradictory in the slice that inherits them.",
+    "failure_scenario": "Two implementers read it two ways. One counts stored roles only and blocks demoting the last stored admin even when an allowlist admin exists (guard can never be satisfied → admins can't reorganize). The other counts allowlist admins and lets the last *stored* admin be demoted, so a workspace whose allowlist entry is later removed from env is left with zero admins and no in-app recovery — the exact lockout the guard exists to prevent."
+  }
+]
+```</result>
+<usage><subagent_tokens>25318</subagent_tokens><tool_uses>6</tool_uses><duration_ms>127204</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a26901e59a95b006d</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c0b670d5-58c4-41ee-bbcf-b0dd9018241d/tasks/a26901e59a95b006d.output</output-file>
+<status>completed</status>
+<summary>Agent "Finder: altitude angle" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I have enough to report. Here are the concrete findings, keyed to the four concerns.
+
+**Non-findings (checked, no issue):**
+- Concern 1(a): ADR 0011 governs *connector/integration extensibility seams* (datasource types, `ResultPublisher`, dbt-as-orchestration-provider) — not connection access-control. Decision 4's connection-mutation gate does not touch 0011's territory. No amendment owed.
+- Concern 3: repo precedent for an authz breaking change is ADR 0027 (`shares.permission='admin'` → `edit`, two-step deploy + comms), a hard-cut migration with no config escape-hatch flag. 0033's hard-cut + promote-first + release-note obligation matches that norm; a compat flag would be the deviation, not the omission.
+
+```json
+[
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/docs/adr/0033-workspace-roles-rbac.md",
+    "line": 37,
+    "summary": "Decision 7's role-change audit line (\"actor, target, old\u2192new\") is structurally ADR 0020's deferred cross-entity CHANGE audit log (Decision 6: \"actor, entity, action, before/after, ts\", tracked in #310), but 0033 routes the durable table to \"G-d/#431\" \u2014 which context/post-v1-roadmap.md:256 defines as the data-access READ audit (\"who read which result/sample\", HIPAA \u00a7164.312(b)). Wrong audit lineage: a mutation-event belongs to #310 (the ADR-0020 audit-log remainder, roadmap:309), not #431. ADR 0020 is also absent from 0033's Related/Amends despite Decision 7 landing squarely in 0020's owned deferred scope.",
+    "failure_scenario": "When the durable audit log is built, role-change events get designed against #431's read-access schema (subject = result/sample read) instead of #310's before/after change schema, or fall between the two issues and ship in neither; a reader of ADR 0020 never learns a new class of change-audit event (role mutations) was committed against its deferred design."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/docs/adr/0033-workspace-roles-rbac.md",
+    "line": 38,
+    "summary": "Decision 8 adds a new env var AUTH_OTP_DEFAULT_ROLE and new behavior (role assignment) to ADR 0032's OTP signup path, but the header (line 6) declares only \"Amends (on acceptance): ADR 0027\" and files 0032 under \"Related\" (line 7). By 0032's own precedent \u2014 0032 declared formal amendments to 0026 and 0028 for touching their contracts (the DATAQ_AUTH_MODE enum gaining `otp`, a cookie credential) \u2014 extending 0032's signup contract with a new config var warrants an amendment declaration, and (per 0027's pattern at line 6) an inline amendment blockquote landing in 0032 on acceptance. 0032 is already Accepted, so its contract is being changed after ratification.",
+    "failure_scenario": "0032 stays silent that OTP signup now assigns a workspace role; a maintainer reading 0032 for the complete OTP-signup contract misses AUTH_OTP_DEFAULT_ROLE, and the amendment trail that 0032 itself models (0026/0028 blockquotes) is not applied, so the two ADRs silently fork on what OTP signup does."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/docs/adr/0033-workspace-roles-rbac.md",
+    "line": 24,
+    "summary": "Decision 1 pins the role to a `users.role` column, but ADR 0026 phase-2 (0026-...md:57 and its Open Questions) explicitly carries \"where service-account principals sit relative to the workspace-admin allowlist\" and the aad_object_id\u2192generic-principal migration. By moving the admin SOURCE from the allowlist onto users.role (Decision 6, line 36), 0033 changes the surface of that open question yet says nothing about how a non-user principal (phase-2 service account, which has no users row) would carry admin/member/viewer. The Positive block (line 42) claims groups/custom-roles/ACLs \"layer on later without schema rewrite\" but does not extend that claim to principal generalization \u2014 the one 0026-owned axis a role-on-users column most directly pre-empts.",
+    "failure_scenario": "When 0026 phase-2 generalizes users\u2192principal, service-account principals have nowhere to hang a role (it lives on users.role); the workspace-admin-source decision must be re-opened and the role column migrated onto the principal table \u2014 exactly the schema rewrite line 42 promises is avoided."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/docs/adr/0033-workspace-roles-rbac.md",
+    "line": 4,
+    "summary": "The ADR is dated 2026-07-10 while today is 2026-07-09 and the immediately-preceding ADR 0032 is dated 2026-07-09 \u2014 i.e. 0033 is stamped one day in the future. The Proposed-status + ratification-gate wiring itself is coherent with the 0032 precedent (issue #744 carries the \"No slice starts until Accepted\" gate, matching #738's ratification-unblocks-slices note in 0032), so this is only a date-hygiene nit, not a coherence break.",
+    "failure_scenario": "Minor: a future-dated ADR misorders against 0032 in any date-sorted view and reads as pre-dated/back-filled; no functional impact."
+  }
+]
+```</result>
+<usage><subagent_tokens>44644</subagent_tokens><tool_uses>12</tool_uses><duration_ms>132831</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a7da38afb5ad75a5f</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c0b670d5-58c4-41ee-bbcf-b0dd9018241d/tasks/a7da38afb5ad75a5f.output</output-file>
+<status>completed</status>
+<summary>Agent "Finder: conventions angle" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I have everything I need. Let me give my honest assessment against each rule.
+
+## Findings
+
+I checked every rule the task named against `git show HEAD:docs/adr/0033-workspace-roles-rbac.md`, the `docs/adr/README.md` Format section, and CLAUDE.md §6/§9/§11. Most checks came back clean; one quotable deviation stands out.
+
+**Cleared (no violation):**
+- **File name / required frontmatter / status:** `0033-workspace-roles-rbac.md` matches `NNNN-short-kebab-slug.md`; Status/Date/Deciders all present; `Proposed` is a legal, title-case status value.
+- **Required sections:** Context, Decision, Consequences, Alternatives considered all present (Related lives in frontmatter, same as 0032).
+- **Length (1–2 pages):** Honest count — 0033 is 1008 words / 53 lines; 0032 is 1255 words / 40 lines; Accepted 0031 is 988 words / 52 lines. By word count 0033 is *smaller* than 0032; the extra lines are the 9-row capability matrix, not prose bloat. It sits squarely inside the size envelope of its Accepted peers. The "probably two decisions" clause does not bite: Decision explicitly scopes to the coarse workspace-role axis and lists what it is *not* (ladder untouched, no groups/custom-roles/per-connection ACLs). Not a violation.
+- **Index row (README §9):** Row is in the main Index table with status `Proposed`, in correct sequence after 0032, and is *not* in the Pending table. Correct.
+- **§11 Azure lock-in:** The ADR stores roles in a `users.role` column and states explicitly "roles are DataQ-stored, no IdP claims read"; `AZURE_ALLOW_GUEST_USERS` is referenced only to justify the "Viewer not Guest" naming, not to read a claim. Compliant.
+- **§6 Database rules:** "one additive migration, no roles table" with server-default + CHECK; enforcement split into a separate slice (#741) from the model/migration slice (#740). Consistent with backward-compatible / new-column-in-a-separate-PR rules.
+- **Amends pairing deferral:** The missing "(amended by 0033)" note on 0027's index row and the missing blockquote in 0027 are *correctly* deferred — the ADR states the blockquote lands "when this ADR flips to Accepted." Applying amendment artifacts while 0033 is only Proposed would be wrong, so this is compliant, not a gap.
+
+**The one quotable deviation:**
+
+```json
+[
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/docs/adr/0033-workspace-roles-rbac.md",
+    "line": 6,
+    "summary": "Frontmatter uses the field label \"**Amends (on acceptance):**\" but docs/adr/README.md Format section documents the field as \"**Amends** *(optional)*\", and every precedent (0031, 0028, and 0032 — which this ADR cites as its amends model) uses the bare label \"**Amends:**\". The \"(on acceptance)\" qualifier is 0033's own invention, not a convention 0032 set (0032 was Accepted-at-creation so its amends took effect immediately with the plain label).",
+    "failure_scenario": "Anything keying off the documented \"Amends\" field name — a frontmatter parser, a docs-lint check, or the README's own convention that pairs the Amends field with an inline blockquote + index 'amended by' note — won't match 'Amends (on acceptance)'. It also fragments the ADR corpus: readers/tools now see two spellings of the same optional field, defeating the single-label convention the Format section and prior ADRs established."
+  }
+]
+```
+
+Confidence on this one is low-to-medium: it is a genuine deviation from the documented field name and from all three precedents, but it is a self-explanatory human-readable label, so a reviewer may accept it as an intentional "not yet in effect" annotation rather than an error. Everything else the task flagged as a potential concern checked out as compliant.</result>
+<usage><subagent_tokens>35671</subagent_tokens><tool_uses>8</tool_uses><duration_ms>130612</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a3747887a1504b916</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c0b670d5-58c4-41ee-bbcf-b0dd9018241d/tasks/a3747887a1504b916.output</output-file>
+<status>completed</status>
+<summary>Agent "Finder: simplification angle" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Here are 6 concrete, quotable findings on ADR scope and redundancy:
+
+```json
+[
+  {
+    "file": "docs/adr/0033-workspace-roles-rbac.md",
+    "line": "12, 34, 42, 51",
+    "summary": "Workspace-global connections problem stated 4 times: Context ('largest unscoped hole — connections are workspace-global'), Decision 4 ('load-bearing row'), Consequences Positive ('connection-deletion hole closes'), Alternatives ('closes the actual hole'). Same constraint across four frames.",
+    "failure_scenario": "Reader must synthesize the problem from multiple sections; decision is buried among context restatements; unclear whether problem description or solution is the primary decision artifact."
+  },
+  {
+    "file": "docs/adr/0033-workspace-roles-rbac.md",
+    "line": "34, 44",
+    "summary": "Breaking change for Members stated twice: Decision 4 ('release-notes obligation in #741') and Consequences ('migration note + promote-first guidance in #741'). Release-notes action mixed into architectural decision.",
+    "failure_scenario": "Decision-consequence boundary blurred; #741 issue author doesn't see obligation stated there; unclear if breaking change is the decision itself or just a consequence that needs mitigation elsewhere."
+  },
+  {
+    "file": "docs/adr/0033-workspace-roles-rbac.md",
+    "line": "38",
+    "summary": "Decision point 8 records a consequence of ADR 0032, not a decision within this ADR. 'ADR 0032 interplay: OTP signups get `AUTH_OTP_DEFAULT_ROLE`' is 0032's constraint leaking in, not 0033's decision.",
+    "failure_scenario": "Decision count inflates; 'one decision or two' boundary violation; developer doesn't know whether to implement OTP role defaults here or assume they're set in 0032; ADR scope unclear."
+  },
+  {
+    "file": "docs/adr/0033-workspace-roles-rbac.md",
+    "line": "35, 36",
+    "summary": "Implementation details embedded in architectural decisions: 'legacy rows and demote-after-grant' (Decision 5, line 35), 'write-through' (Decision 6, line 36). These are DB/cache concerns, not architectural constraints.",
+    "failure_scenario": "Developers scanning ADR for constraints find migration and caching details; issues #740–743 lack explicit recording that these are already decided; implementation gets re-discussed or contradicted in PR review."
+  },
+  {
+    "file": "docs/adr/0033-workspace-roles-rbac.md",
+    "line": "37",
+    "summary": "Audit logging scope boundary muddled in parenthetical: 'every role change emits a structured audit log line (actor, target, old→new; the durable audit *table* remains G-d/#431 scope)'. What IS in scope is conflated with what ISN'T via a single parenthetical.",
+    "failure_scenario": "Developer implements audit logging but doesn't know if audit-table schema is already constrained or fully deferred; discovers hidden assumptions during review; scope decision not extractable as a single quotable line."
+  },
+  {
+    "file": "docs/adr/0033-workspace-roles-rbac.md",
+    "line": "44",
+    "summary": "Consequences section conflates real impacts with deferred scope: 'Members lose connection-write (breaking)' is outcome; 'a fixed three-role enum won't satisfy enterprises' (also in Alternatives line 48) and 'audit table remains G-d' (also in Decision 7) are scope boundaries, not consequences.",
+    "failure_scenario": "Consequences section obscures true impacts by mixing them with design boundaries; reader must cross-reference Alternatives and Decision sections to understand what's deferred vs broken; positive/negative framing doesn't isolate outcome clearly."
+  }
+]
+```</result>
+<usage><subagent_tokens>27971</subagent_tokens><tool_uses>2</tool_uses><duration_ms>149773</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ac554a2024e669094</task-id>
+<tool-use-id>toolu_01R5po7Vo5AHfVkE2xPZPgx5</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c0b670d5-58c4-41ee-bbcf-b0dd9018241d/tasks/ac554a2024e669094.output</output-file>
+<status>completed</status>
+<summary>Agent "Finder A: line-by-line ADR scan" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I ran a full line-by-line factual verification of the added ADR 0033 and the index row against the codebase, the four linked ADRs, and the five GitHub issues. Everything load-bearing checks out:
+
+- **Relative links**: `0026`, `0027`, `0032`, `0010` all exist in `docs/adr/`; the index-row link `0033-workspace-roles-rbac.md` resolves.
+- **Connection hole**: confirmed. `backend/app/api/v1/connections.py` create/patch/delete/test/reauth (lines 84–197) gate only on `get_current_user` — no permission/role check; `created_by` is used only in the read response (`from_model`, line 66). `connection_service.py` takes `created_by` purely for storage/version author (lines 151/169/179), no ownership gate.
+- **`AZURE_ALLOW_GUEST_USERS`**: exists as `azure_allow_guest_users: bool = False` (`config.py:65`), commented "Allow guest (B2B / external) identities" — the "Entra B2B guests" characterization is accurate; used in both REST (`core/auth.py:67`) and MCP (`mcp/auth.py:141`).
+- **`require_permission` REST+MCP identically**: confirmed — both `mcp/server.py` (lines 172/300/334/368/459) and REST `api/v1/suites.py` (163/174/217/243…) call the same `suite_authz.require_permission`.
+- **`suite_authz` ladder + 404 existence-hiding**: `_RANK = {"view":1,"edit":2,admin:3,owner:4}` (`suite_authz.py:50`); `require_permission` 404s hidden suites, 403s insufficient level (docstring 122–123). Matches ADR's `view &lt; edit &lt; admin &lt; owner`.
+- **Shares CHECK constraint**: `PERMISSIONS = ("view","edit","admin")` with `_in_check("permission", PERMISSIONS, "permission_valid")` (`models.py:78/455`) — the constraint DOES still allow `admin`. The ADR does **not** claim the constraint only permits view/edit (its Context explicitly lists `admin` in the ladder), so there is no contradiction here.
+- **`is_workspace_admin`**: currently allowlist-only (`core/auth.py:229`, returns `get_settings().is_admin_email(...)`). The ADR's "stored role OR allowlist" is stated as the proposed target (Decision 6), not as current behavior — correctly framed.
+- **Issues**: #744 umbrella, #740 role model, #741 enforcement, #742 management, #743 frontend — all OPEN and titles match the ADR's slice descriptions.
+- **ADR 0027 characterization**: title/decisions confirm it establishes workspace-admin as implicit suite-admin and drops grantable suite-admin ("A normal user can no longer be made `admin` of a suite", lines 51–56).
+- **ADR 0026**: phase 2 (service-account/"richer" principals) is deferred; PAT-inherits-user is stated ("inherits that user's per-suite grants → no new authz model", Decision 1). Matches.
+- **ADR 0032**: mandatory signup allowlist (`AUTH_OTP_ALLOWED_EMAILS`/`_DOMAINS`, Decision 5) — a default-role var extending it is consistent.
+- **Capability matrix vs prose**: internally consistent (Viewer list-only + ❌ test aligns with Decisions 4/5; suite-create Member+; PAT row aligns with 0026 inherit-user).
+- **G-e quote**: `context/post-v1-roadmap.md:64` reads "Single-tenant, config-allowlist admin, one validated IdP — fine internally, not sellable"; the ADR's partial quote is accurate.
+
+The only trivial non-code nit (not a factual/code claim): the frontmatter Date is `2026-07-10`, one day after the stated current date on a Proposed ADR — almost certainly the intended-acceptance date and not reportable.
+
+No substantive factual defects found.
+
+```json
+[]
+```</result>
+<usage><subagent_tokens>37130</subagent_tokens><tool_uses>15</tool_uses><duration_ms>177514</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ab45622edf03cc12e</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c0b670d5-58c4-41ee-bbcf-b0dd9018241d/tasks/ab45622edf03cc12e.output</output-file>
+<status>completed</status>
+<summary>Agent "Finder C: cross-doc contradiction trace" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I traced the new ADR 0033 against ADR 0027, ADR 0032, ADR 0010, the ADR index/README conventions, and the docs corpus (security.md, features.md, feature-matrix.md, recommended-usage.md, compliance-posture.md, deploy env examples). Verified the `AZURE_ALLOW_GUEST_USERS` justification is factually correct (exists in `deploy/.env.app.prod.example` + terraform). The connection-hole premise is a code claim with no contradicting doc. Findings below.
+
+```json
+[
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/docs/adr/0033-workspace-roles-rbac.md",
+    "line": 4,
+    "summary": "ADR 0033 is dated 2026-07-10, one day in the FUTURE relative to the repo's current date (2026-07-09) and ahead of the two most recent accepted ADRs 0031/0032, both dated 2026-07-09 (0032 explicitly 'Ratified 2026-07-09'). Nothing else in the PR or progress.md places work on 2026-07-10 (progress.md still reads 'W3 in progress 2026-07-08'). Compounding it, the Negative section (line 44) says the break-glass is 'unchanged from today, now documented' — a 'today' reference inside a doc dated tomorrow.",
+    "failure_scenario": "A reader ordering ADRs by date, or an auditor reconciling the ratification timeline, sees a Proposed ADR chronologically after every Accepted one and dated after the repo's 'today'. If 2026-07-10 was a typo for 2026-07-09 (the actual authoring day) it silently misstates when the decision was proposed; if intentional it implies a future-dated decision, which the ADR conventions (Date = YYYY-MM-DD authoring date) don't sanction."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/docs/adr/0033-workspace-roles-rbac.md",
+    "line": 44,
+    "summary": "0033 introduces a stored, in-app-promotable `admin` role but only reconciles the ALLOWLIST half of ADR 0032's threat model. ADR 0032 Decision 6 (0032:23) states the load-bearing security fact: 'email is the root of trust — mailbox compromise is account compromise (and admin compromise if that address is on WORKSPACE_ADMIN_EMAILS).' Under 0033 an admin can now exist purely as a stored `users.role` (via PATCH /admin/users/{id}/role, no allowlist entry), so mailbox-compromise = admin-compromise for any in-app-promoted admin too. 0033's Negative paragraph re-states only the allowlist break-glass ('an env-level actor can always mint an admin') and never widens 0032's mailbox-compromise statement to cover stored admins.",
+    "failure_scenario": "Someone planning security controls trusts 0032's scoped statement ('only if on WORKSPACE_ADMIN_EMAILS') and hardens/monitors only allowlisted mailboxes, missing that OTP sign-in to an in-app-promoted admin's mailbox is now an equivalent admin-takeover path. On acceptance, 0032's Decision 6 needs an amendment note that 0033 does not schedule (0032 is not in 0033's on-acceptance edit list — only 0027 is)."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/docs/adr/0033-workspace-roles-rbac.md",
+    "line": 6,
+    "summary": "The 'Amends (on acceptance)' scoping vs ADR 0027 is directionally accurate (it re-sources workspace-admin, doesn't touch the implicit-suite-admin rule) but under-enumerates what the deferred blockquote must fix. 0027 hard-codes the allowlist as THE source in two specific places the summary glosses: the implementation-shape line 'the flag is resolved from the allowlist at the /me/API layer' (0027:97-98) and the Related pointer 'ADR 0010 — workspace-admin is derived from the generic identity seam (is_workspace_admin off a config allowlist)' (0027:127-128). Under 0033 the source is 'stored role OR allowlist', so both lines become stale, not just the top-level 'source' framing.",
+    "failure_scenario": "When 0033 flips to Accepted, whoever writes the inline amendment blockquote uses only the one-line 'source moves to users.role' scope from 0033:6 and leaves 0027:97-98 and 0027:127-128 asserting the allowlist is the sole/derived source, so a maintainer reading 0027 post-amendment still believes workspace-admin is resolved purely from config."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/docs/adr/0033-workspace-roles-rbac.md",
+    "line": 38,
+    "summary": "Precedence between 0033 Decision 6 (allowlisted email 'resolves to admin (write-through)' on upsert) and Decision 8 (OTP signups get AUTH_OTP_DEFAULT_ROLE, default `member`) is unspecified for exactly the actor ADR 0032 Decision 5 (0032:22) describes: the first-admin operator who is on BOTH the OTP signup allowlist AND WORKSPACE_ADMIN_EMAILS. If the OTP default-role assignment runs at/after upsert it seeds their stored role as `member` while the allowlist write-through wants `admin`. The `is_workspace_admin() = stored role OR allowlist` safety net (0033:36) keeps them effectively admin, but the stored `users.role` and the effective role can diverge, and 0033 never states which write wins.",
+    "failure_scenario": "First-admin bootstrap under otp mode: operator signs in, stored role lands as `member` (from AUTH_OTP_DEFAULT_ROLE) yet they act as admin via the allowlist OR. If they later remove themselves from WORKSPACE_ADMIN_EMAILS believing the stored role now carries admin (the whole point of 'source moves to users.role'), they silently lose admin — and the last-admin guard (0033:7), which keys on stored role, may not even see them as the final admin."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/docs/adr/README.md",
+    "line": 75,
+    "summary": "Index conventions check: status 'Proposed' is legal (README:11 legend lists it) and the untouched Pending table + unchanged 0027 index row are both CORRECT pre-acceptance — README's Amends convention (README:16) adds the '(amended by NNNN — …)' note to the amended ADR's Status only 'when the status flips'. The one real deviation is the frontmatter field name: the documented field is `Amends` (README:16), but 0033 uses a non-standard `Amends (on acceptance):` label (0033:6).",
+    "failure_scenario": "Low severity. Any tooling or grep that keys on the exact `**Amends:**` frontmatter field (per the documented format) misses 0033's amendment relationship to 0027, and a reader scanning for the standard field sees none. Cosmetic/convention drift, not a correctness bug — included for completeness of the index-convention pass."
+  }
+]
+```</result>
+<usage><subagent_tokens>54964</subagent_tokens><tool_uses>14</tool_uses><duration_ms>201103</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>boyk3boex</task-id>
+<tool-use-id>toolu_018N8LPqyXLrHAbvRqerv1EZ</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c0b670d5-58c4-41ee-bbcf-b0dd9018241d/tasks/boyk3boex.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for PR 745 CI on the fixup commit, then summarize outcomes" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+ADR looks good. go ahead
+
+---
+
+<task-notification>
+<task-id>b6i5bl50z</task-id>
+<tool-use-id>toolu_0122TA3tXBAmfmoX1fi6MDHj</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c0b670d5-58c4-41ee-bbcf-b0dd9018241d/tasks/b6i5bl50z.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait until PR 745 merges or a check fails" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Now some coding ... 
+* Column list + column profile + dry run capability for iceberg tables
+* Docs updation [ex. - readme doesn't have iceberg details]
+* Deploy the latest changes
+
+You can be the orchestrator and delegate the tasks to opus or sonet as needed.
+
+---
+
+<task-notification>
+<task-id>a366b8f3134fdfff4</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c0b670d5-58c4-41ee-bbcf-b0dd9018241d/tasks/a366b8f3134fdfff4.output</output-file>
+<status>completed</status>
+<summary>Agent "Scout iceberg introspection gaps" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I have a complete picture. Here is the implementation map.
+
+---
+
+# Implementation Map — Issue #721 (Iceberg profiler + column listing; verify Iceberg dry-run)
+
+## Headline findings
+
+1. **Iceberg dry-run already works today** — no functional change needed, only a test is missing.
+2. **Iceberg column profiler + column listing are genuinely missing** — `iceberg` is absent from `_PROFILERS`, so `resolve_profiler` 422s it. This is the real work.
+3. **The credential guard must be relaxed for Iceberg** — `resolve_profiler` unconditionally 422s a connection with no `secret_ref`, but Iceberg supports credential-less catalogs.
+4. **Frontend keys off backend capability generically for the profiler/dry-run** — but there is one real frontend gap: the profile/columns request path drops the Iceberg `namespace`.
+
+---
+
+## 1. `backend/app/services/profile_service.py` — structure &amp; required changes
+
+Registry / strategy shapes:
+- `_SqlProfiler` dataclass — `profile_service.py:290-295` (`engine_args` callable + `requires_catalog: bool`).
+- `_FileProfiler` dataclass — `:298-300` (empty; backend dispatched inside `flatfile`).
+- `_Profiler = _SqlProfiler | _FileProfiler` union — `:303`.
+- `_PROFILERS` registry — `:305-310` (`snowflake`, `unity_catalog`, `s3`, `adls_gen2`). **No `iceberg`.**
+- Engine-arg builders `_snowflake_engine_args` / `_unity_catalog_engine_args` — `:273-287`.
+
+Dispatch / orchestration:
+- `resolve_profiler` — `:347-388`. Validates type is profilable + target well-formed. **The credential guard is `:371-374`** — `if not connection.secret_ref: raise ProfileTargetInvalidError(...)` (code `profile_target_invalid`, 422). SQL branch requires `table` (+ `catalog` for UC); else flat-file requires `path`.
+- `profile_connection` — `:674-713`. Dispatches: `_SqlProfiler → profile_table`; else `profile_file`. Type-branches on `isinstance(profiler, _SqlProfiler)`.
+- `profile_table` (SQL) — `:403-461`; `profile_file` (flat) — `:612-641`; pure `profile_dataframe` — `:501-517` (sets `path`/`file_format` on `ProfileResult`, not `table`).
+- I/O seams: `_open_connection` — `:327-341` (raises `ValueError` if no `secret_ref`, `:332-333`); `_read_dataframe` — `:562-609` (flat-file download+parse; `secret_ref` guard `:588-589`).
+
+Column listing (SQL-only today):
+- `list_columns` dispatcher — `:797-823`. Same `isinstance(_SqlProfiler)` branch: `list_table_columns` vs `list_file_columns`.
+- `list_table_columns` — `:724-755`: `SELECT * ... LIMIT 0` via `build_columns_query` (`:217-228`), returns `list(result.keys())`. UC/Snowflake both go here; UC gets 3-level namespace via `_table` (`:166-180`).
+- `list_file_columns` — `:758-794`: CSV header / Parquet footer schema names.
+- `ProfileResult` dataclass — `:118-129` (has `table`/`schema`/`catalog`/`path`/`file_format` — already has a `table` field an Iceberg result can fill).
+
+Blocking constraint for Iceberg: the SQL path is unusable — `validate_identifier` (`:151-163`, regex `_IDENTIFIER = ^[A-Za-z_][A-Za-z0-9_$]*$`, `:75`) **rejects dots**, but the Iceberg identifier is `namespace.table`. So Iceberg must NOT reuse the SQL builders/`validate_identifier`; it needs a materialize-then-`profile_dataframe` strategy like the flat-file path.
+
+What must change here:
+- Add an `_IcebergProfiler` strategy dataclass (parallel to `_FileProfiler`, `:298-300`) and register `"iceberg": _IcebergProfiler()` in `_PROFILERS` (`:305-310`).
+- Extend the union `_Profiler` (`:303`).
+- `resolve_profiler` (`:347-388`): (a) add an Iceberg branch requiring `table` (namespace optional); (b) **relax the `secret_ref` guard at `:371-374` so Iceberg is exempt** (credential-optional) — keep the 422 for SQL/flat types so `test_profile_secret_less_connection_returns_422` still passes.
+- `profile_connection` (`:674-713`) and `list_columns` (`:797-823`): add an Iceberg branch. Thread a new `namespace: str | None` param through both (and through `suggest_policy_for_target`, `:826-866`).
+- New functions `profile_iceberg(...)` and `list_iceberg_columns(...)`: load the table via `pyiceberg`, materialize (scan → arrow → pandas), then reuse `profile_dataframe` logic (but assemble a `ProfileResult` with `table=` set, not `path=`). List columns from the table schema without a data scan.
+
+Reuse decision: the cleanest reuse is `build_iceberg_runner` + the runner's read path (see §2). `profile_dataframe` (`:501-517`) hard-codes `path`/`file_format` in its result, so factor the per-column loop out (or add an Iceberg-specific assembler) rather than calling it verbatim.
+
+The 422 #721 references (acceptance): `ProfileTargetInvalidError` (code `profile_target_invalid`) — class `:87-89`, raised `:371`. `ProfileUnsupportedError` (code `profile_unsupported`) `:82-84`.
+
+---
+
+## 2. `backend/app/datasources/iceberg.py` — the pyiceberg seam (reuse source)
+
+- `IcebergConfig` — `iceberg.py:66-110`. `catalog_properties(secret)` (`:93-110`) builds `load_catalog` kwargs; secret is optional and applied last.
+- `IcebergCheckRunner._load_table(identifier)` — `:151-158`: `load_catalog(...).load_table(identifier)`. The live seam, monkeypatched in tests.
+- `IcebergCheckRunner._read_dataframe(identifier)` — `:160-173`: `table.scan().to_arrow().to_pandas(types_mapper=pd.ArrowDtype)`. **Whole-table materialize, no projection/limit** — reusable but expensive for an authoring-time profiler.
+- Identifier handling: `table` arg IS the `namespace.table` identifier already folded upstream by `run_target.resolve_target` (`run_target.py:123-132`).
+- `build_iceberg_runner(*, config, secret_ref, secret_store, **_)` — `:231-243`: validates config, resolves secret (or `None`), returns runner. **Secret is optional** (`:242`) — the credential-less contract the profiler needs.
+- No column-listing helper exists — the profiler must read `table.schema()` field names itself (add a helper here or inline in the profiler). Scan supports projection/limit (`scan(selected_fields=...)` is already used at `:224`), so a sampled/projected profiler read is straightforward.
+
+Recommendation: the profiler can call `build_iceberg_runner(config=connection.config, secret_ref=connection.secret_ref, secret_store=secret_store)` and reuse `_load_table` / a scan, keeping the pyiceberg import lazy and out of `profile_service`. Optionally extract a small `read_iceberg_dataframe(config, secret, identifier, columns=None, limit=None)` helper into `iceberg.py` and have both the runner and the profiler call it.
+
+---
+
+## 3. Dry-run — definitively works for Iceberg today
+
+Path traced in `backend/app/services/dryrun_service.py`:
+- `dry_run_check` — `dryrun_service.py:69-202`. **Generic dispatch, no type-branch**: `run_target.resolve_target(connection.type, target)` (`:103`) → `build_check_runner(...)` (`:114-120`) → `materialize_path(...)` (`:144-150`) → `runner.run_checks(...)` (`:168`).
+- `build_check_runner` registry includes `"iceberg": _iceberg_runner` — `registry.py:128` (and `:115-120`).
+- `run_target.resolve_target` handles `iceberg` — `run_target.py:123-132` (folds `namespace.table` into `table`).
+- `materialize_path` — `run_target.py:150-167`: `resolved.batch is None` for Iceberg → returns `resolved.table` unchanged (no-op, no network).
+- `IcebergCheckRunner.run_checks` exists — `iceberg.py:175-194`.
+
+Conclusion: **Iceberg dry-run is fully functional now.** The module docstring (`:12-14`) even claims all-datasource support (#532). The only gap is coverage — there is no `test_dryrun_supports_iceberg_suite`.
+
+---
+
+## 4. Frontend — mostly generic; one real gap (namespace)
+
+Capability sets in `frontend/src/api/connections.ts`:
+- `SQL_QUERYABLE_TYPES = ['snowflake','unity_catalog']` — `connections.ts:87` (gates Custom-SQL only; Iceberg correctly excluded).
+- `MONITOR_CAPABLE_TYPES = ['snowflake','unity_catalog','iceberg']` — `:98` (Iceberg already here).
+- **No `supportsProfiler` / `supportsColumns` capability set exists** — the profiler/columns/dry-run UI does NOT gate on connection type.
+
+Generic gating (no per-type change needed):
+- `ColumnProfilePanel.tsx` — `extractProfileTarget` (`:180-193`) keys off presence of `table` or `path` (`:184-186`), not type. Column dropdown loads via `listColumns` (`:94`); profiles via `profileColumns` (`:116`). Iceberg targets carry `table`, so the panel lights up generically.
+- `DryRunPreview.tsx` — disabled only on missing `expectationType` (`:63`, `:95`); no type gate.
+
+The real frontend gap — Iceberg `namespace` is dropped:
+- Iceberg suite target stores `{ table, namespace? }` — `suiteTarget.ts:112-125`; type `SuiteTarget.namespace?` — `api/suites.ts:53-54`.
+- But `extractProfileTarget` (`ColumnProfilePanel.tsx:180-193`) picks only `table/schema/catalog/path/file_format` — **not `namespace`**.
+- `ColumnProfileRequest` interface (`api/suites.ts:319-326`) and `ColumnTarget` pick (`:367-371`) and `listColumns` param assembly (`:376-383`) have **no `namespace`**.
+
+So to profile an Iceberg table that lives under a namespace, add `namespace` to: `ColumnProfileRequest` (`api/suites.ts:319`), the `listColumns` params (`:376-383`), `extractProfileTarget` (`ColumnProfilePanel.tsx:187-192`), and the backend request/query schemas (see §6). (A namespace-less table would work without this, but any real catalog uses namespaces.)
+
+---
+
+## 5. Existing tests to mirror
+
+Backend:
+- Profiler unit tests: `backend/tests/services/test_profile_service.py` — flat-file/dataframe path `:298-563`; `list_columns` dispatch (unsupported type, missing target, no-credential) `:432-461`; `list_file_columns` `:408-429`.
+- Profiler + column-listing API tests: `backend/tests/api/test_suites.py` — SQL `test_profile_returns_column_stats` `:751`, UC `test_profile_unity_catalog_returns_stats` `:996`, flat-file `:928`, `test_list_columns_returns_target_columns` `:879`, `test_profile_secret_less_connection_returns_422` `:1086` (the guard that must stay green for non-Iceberg), unsupported-type `:801`. These monkeypatch `profile_service._open_connection` (`:720`) / `_read_dataframe` (`:748`) — for Iceberg you'll monkeypatch the new load/read seam instead.
+- Iceberg adapter/runner tests: `backend/tests/datasources/test_iceberg.py` — fake `scan().to_arrow()` pattern `:128-173`, `_runner_over` helper `:156-158`, `build_iceberg_runner` `:293-298`, credential-less `test_catalog_properties_omits_secret_when_absent` `:58`.
+- Dry-run tests: `backend/tests/api/test_checks.py` — `_patch_runner` helper `:985-996`, `test_dryrun_supports_unity_catalog_suite` `:1134-1151`, `test_dryrun_supports_flatfile_suite` `:1119`. **Add `test_dryrun_supports_iceberg_suite` mirroring these.** `_suite_id(..., conn_type=, target=)` helper `:33-60`; Iceberg monitor/custom-SQL suites already created at `:553-573`.
+- Run-target Iceberg tests: `backend/tests/services/test_run_target.py:44-57` (namespace folding — confirms dry-run target path).
+
+Frontend:
+- `frontend/tests/components/ColumnProfilePanel.test.tsx`, `frontend/tests/components/DryRunPreview.test.tsx`, `frontend/tests/pages/Profile.test.tsx`.
+
+---
+
+## 6. Files that must change
+
+Backend:
+- `backend/app/services/profile_service.py` — add `_IcebergProfiler` + registry entry; relax `secret_ref` guard for Iceberg (`:371-374`); Iceberg branches + `namespace` param in `resolve_profiler`, `profile_connection`, `list_columns`, `suggest_policy_for_target`; new `profile_iceberg` / `list_iceberg_columns`.
+- `backend/app/datasources/iceberg.py` — (recommended) extract a reusable read/list-columns helper the profiler can call, keeping pyiceberg import lazy.
+- `backend/app/api/v1/suites.py` — add `namespace` to `ColumnProfileRequest` (`:338-347`) and pass to `profile_connection` (`:398-408`); add `namespace` query param to `list_columns` endpoint (`:443-467`); optionally surface `table` in `ProfileRead` for Iceberg (field already exists).
+- Dry-run: **no code change** — already works.
+
+Frontend:
+- `frontend/src/api/suites.ts` — add `namespace` to `ColumnProfileRequest` (`:319`) and `listColumns` params (`:376-383`).
+- `frontend/src/components/checks/ColumnProfilePanel.tsx` — add `namespace` to `extractProfileTarget` (`:180-193`).
+
+Tests:
+- `backend/tests/services/test_profile_service.py` — Iceberg profiler + column-listing unit tests.
+- `backend/tests/api/test_suites.py` — Iceberg profile/columns API tests, incl. a credential-less-succeeds case (mirror of the secret-less 422 but asserting success for Iceberg).
+- `backend/tests/api/test_checks.py` — `test_dryrun_supports_iceberg_suite`.
+- `backend/tests/datasources/test_iceberg.py` — if a read/list helper is extracted there.
+- Frontend `ColumnProfilePanel.test.tsx` — namespace-carrying Iceberg target case.</result>
+<usage><subagent_tokens>68077</subagent_tokens><tool_uses>23</tool_uses><duration_ms>201430</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>aae9d9604d51d2475</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c0b670d5-58c4-41ee-bbcf-b0dd9018241d/tasks/aae9d9604d51d2475.output</output-file>
+<status>completed</status>
+<summary>Agent "Update docs for iceberg" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All 11 target files touched, nothing under `backend/` or `frontend/` modified, and no other doc files touched.
+
+## Summary
+
+Files changed (all paths under repo root `/Users/arijit/Coding/Python/DataQ`):
+
+1. **README.md** — tagline (line 3) now lists Apache Iceberg + adds dbt to orchestration; "Checks on 4 datasources" → 5, added Iceberg; profiler/dry-run line fixed to claim both work on every datasource (removed "dry-run preview on Snowflake" staleness).
+2. **docs/index.md** — added Apache Iceberg to the datastore enumeration in the opening paragraph.
+3. **docs/concepts.md** — added Apache Iceberg to the datasource bullet list; Suite definition now mentions Iceberg `namespace.table` targets.
+4. **docs/glossary.md** — added Apache Iceberg to the Datasource glossary row.
+5. **docs/features.md** — new Apache Iceberg datasource bullet (native pyiceberg read, `namespace.table`, REST/SQL/Glue/Hive catalogs, credential-less, Delta UniForm, ADR 0030); fixed the monitor-capability line (SQL datasources + Iceberg, computed natively) and the dry-run line (added Iceberg to the runner list).
+6. **docs/feature-matrix.md** — added an **Iceberg** column to the check-kind table (expectations ✅, custom SQL —, freshness ✅, volume ✅, profiler ✅, dry-run ✅); rewrote the explanatory paragraph to correctly scope custom-SQL as SQL-only, monitors as SQL+Iceberg (native), and dry-run as covering Iceberg too.
+7. **docs/datasources-checks.md** — added an Iceberg row to the supported-datasources table; target-authoring step now mentions Iceberg `namespace.table`; freshness/volume section headings updated to "(SQL datasources + Iceberg — ADR 0012/0030)".
+8. **docs/architecture.md** — added an `Iceberg` node to the `ds` Mermaid subgraph (native pyiceberg read; object storage + catalog) + classDef wiring; ER diagram `connections.type` comment updated to the full stale-free enum including `iceberg` and `dbt`; egress-subgraph datasource list now includes Iceberg. Re-validated the edited flowchart via the Mermaid MCP renderer (`valid: true`); the ER/egress edits only appended text inside existing quoted string literals in the same punctuation style already used, so no new syntax risk.
+9. **docs/tutorial.md** — added Apache Iceberg to the pick-your-datasource-type enumeration.
+10. **docs/changelog.md** — added an Iceberg bullet to the "Unreleased — v1.1" section (native pyiceberg read, ADR 0030, #716/#722, natively-computed monitors + profiler/column-listing/dry-run, #721); left the v1.0.0 section untouched (see below).
+11. **docs/adr/README.md** — ADR 0030 row status changed from "Accepted (spike; native impl deferred)" to "Accepted (native read shipped #722; introspection #721)"; rest of the row text preserved verbatim.
+
+Self-check: grep for "4 datasources"/"four datasources" across README.md + docs/ found exactly one hit — `docs/changelog.md:32`, inside the `## v1.0.0 — 2026-07-04` historical section, which is correctly on the do-not-touch list (it's a point-in-time release note, accurate as of that date) and was left alone.
+
+Deliberately skipped/left as-is per instructions: `docs/features.md:27` (custom-SQL wording — correctly excludes Iceberg already), `docs/datasources-checks.md:38` (custom-SQL heading), `docs/datasources-checks.md:57-58` (profiler note needed no caveat, already generic), and all of `docs/progress*.md`, `docs/retro-v1.md`, root `CHANGELOG.md`, ADR body files, `.env` examples, and `deploy/` — none were touched. Nothing under `backend/` or `frontend/` was opened.</result>
+<usage><subagent_tokens>96781</subagent_tokens><tool_uses>41</tool_uses><duration_ms>143282</duration_ms></usage>
+</task-notification>
+
+---
+
+After the deployment, can we have harness jobs set up for iceberg?
+Also run the adhoc harness script to check if all other prod Jobs working as expected. And add iceberg to the script once done. 
+same pattern you orchestrate and deligate the task to opus/sonnet/haiku as needed.
+
+---
+
+<task-notification>
+<task-id>a74f122209dadc90e</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c0b670d5-58c4-41ee-bbcf-b0dd9018241d/tasks/a74f122209dadc90e.output</output-file>
+<status>completed</status>
+<summary>Agent "Scout harness repo for iceberg leg" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result># Scout report: `~/Coding/Python/DataQ-harness/` — designing an Iceberg harness leg
+
+## 1. Repo layout
+
+Top level (`~/Coding/Python/DataQ-harness/`):
+```
+Dockerfile                    # mockdata image (repo-root build context)
+.dockerignore, .gitignore     # secrets.sh / terraform / out / state excluded
+secrets.sh                    # chmod 600, exports ARM_*/SNOWFLAKE_*/DATABRICKS_* — never committed
+README.md                     # architecture diagram, runbook, gotchas (11k)
+DATABRICKS_MIGRATION_TODO.md
+airflow-metadata-backup.dump  # pg_dump of Airflow metadata (used across server recreates)
+airflow/                      # dags/ (flow_a_*, flow_b_*), Dockerfile
+databricks/                   # UC setup + backup-2026-07-02/
+dataq_setup/                  # DataQ-side connections/suites/bindings scaffold (README.md + setup.py)
+dbt/                          # dbt Core lineage project (#609), logs/ macros/ models/ target/
+eventgrid_receiver/           # Event Grid → Airflow REST push adapter (Flow A payments)
+mockdata/                     # the mock-data generator package (this is where an iceberg writer job's code would live)
+scripts/                      # harness_window.sh (only file)
+terraform/                    # all infra (28 files incl. .terraform/)
+```
+
+There is **no HARNESS_TODO.md inside DataQ-harness** — the tracker lives in the main repo: `~/Coding/Python/DataQ/HARNESS_TODO.md` (256 lines; §0 prereqs, §1 terraform, §2/§2a mockdata, §3 reference flows a/b/c, §4 QA agent, §5 Vault spike, §6 perf). It has no Iceberg section — confirms this would be new ground, not a continuation of a tracked item. `grep -rn "iceberg"` in the harness repo returns **nothing** — zero existing precedent there.
+
+README.md (`~/Coding/Python/DataQ-harness/README.md:1-90`) documents the deployed architecture (ADLS + ACA + Airflow/Celery/Redis + ADF + Snowflake + Databricks/UC + Postgres Flexible Server), the orchestration matrix (ADF/Airflow × event/timer), and the operational runbook (build/push images, secrets-from-KV, seed+run, teardown).
+
+## 2. `scripts/harness_window.sh` — full structure
+
+224 lines, `~/Coding/Python/DataQ-harness/scripts/harness_window.sh`. Subcommands (`case` at line 217-224): `status`, `start`, `run [--adf] [--dags] [--dbt]`, `stop`, `window [--adf] [--dags] [--dbt]` (= start→run→stop).
+
+Key arrays (lines 48-56):
+```
+DAGS=(flow_a_snowflake_load flow_a_uc_reference flow_b_medallion)
+APPS_START=(dataq-harness-redis dataq-harness-airflow dataq-harness-airflow-worker dataq-harness-airflow-trigger)
+APPS_STOP=(reverse of above)
+TRIGGERS=(tr_customers_daily tr_orders_landed)
+JOBS=(mockdata-orders mockdata-inventory mockdata-tracking mockdata-feedback mockdata-supply)
+DBT_JOB=dbt-lineage
+ALL_JOBS=("${JOBS[@]}" "$DBT_JOB")
+```
+- `cmd_status` (71-80): lists ACA app running states, ADF trigger states, and per-job last execution (loops `ALL_JOBS`).
+- `cmd_start` (82-100): wakes ACA apps in broker→scheduler→worker→trigger order, polls `/health`, starts the 2 ADF triggers. mockdata/dbt jobs stay suspended.
+- `cmd_dags` (102-124): unpauses + REST-triggers the 3 cron DAGs via Airflow API, polls state.
+- `cmd_run` (126-198): **the pattern a new leg follows** — resume job → start execution → poll → re-suspend, for each of the 5 mockdata jobs (parallel start, then wait-loop, then re-suspend loop at 154-160). Then conditionally `--dags` (162), `--adf` (163-176, ADF `create-run` + poll), `--dbt` (177-196, same resume/start/poll/suspend shape as mockdata jobs but gated behind a flag because it needs live Snowflake, and **runs last** so it refreshes from the same-window load).
+- `cmd_stop` (200-214): reverse order — ADF triggers off, **all** jobs (`ALL_JOBS`) suspended, apps stopped.
+
+**Where `--iceberg` would slot in**: exactly like `--dbt` — a new `ICEBERG_JOB=iceberg-writer` var added to `ALL_JOBS` (so `status`/`stop` cover it for free), a `with_iceberg` flag parsed in `cmd_run`'s arg loop (128-132), and a resume/start/poll/re-suspend block placed **after the mockdata jobs but independent of `--adf`/`--dags`/`--dbt`** (it doesn't need Snowflake) — could run in the main parallel block alongside the 5 `JOBS`, or as its own gated block like `--dbt` if you want it decoupled/optional. Given it only needs ADLS + the harness Postgres (no Snowflake dependency), the closest-fit insertion point is actually **beside `JOBS`** (unconditional, like mockdata) rather than behind a flag — but gating it behind `--iceberg` (mirroring `--dbt`'s flag pattern) is safer/cheaper by default and keeps `run`'s baseline fast. Recommend: gate it behind `--iceberg`, block placed after the `--dags` block and before `--adf`/`--dbt` (no Snowflake ordering dependency either way).
+
+Verification per leg today: ACA job execution `status` field (`Succeeded`/`Failed`) via `az rest .../executions/$e` (line 148); ADF via `pipeline-run show --query status` (170); Airflow DAG via `dagRuns/$rid` state (117-119). An iceberg leg's "green" check would be the same job-execution-status poll, **plus** (recommended) a post-write pyiceberg sanity check — e.g. the job logs its own row-count/snapshot-id, and `cmd_status` gains an `az rest` call analogous to the job-status lookup, no new verification primitive needed.
+
+## 3. `mockdata/` — generator shape, deps, storage, template fit
+
+`~/Coding/Python/DataQ-harness/mockdata/`: `__main__.py` (CLI: `backfill`/`init`/`tick`), `config.py` (tiers + `ROUTES` map dataset→flow/subdir/format), `generate.py`, `increment.py` (tick/cadence logic), `emit.py`, `storage.py` (the `Store` seam), `pools.py`, `rng.py`, `state.py`, `dq_issues.py`, `requirements.txt`.
+
+- **Storage seam** (`mockdata/storage.py:17-113`): `Store` ABC → `LocalStore` / `AdlsStore`. `AdlsStore.__init__` (60-86) uses `DataLakeServiceClient`, auth via `AZURE_STORAGE_CONNECTION_STRING` env (set from a Job secret) or `DefaultAzureCredential`. `make_store(uri)` (101-112) dispatches on `adls://&lt;account&gt;/&lt;filesystem&gt;/&lt;prefix&gt;` vs local path. **This is the seam a pyiceberg writer job would either reuse (for any raw-bytes side files) or bypass entirely** — pyiceberg's own `FileIO` would do the actual Parquet/manifest writes to ADLS, not `Store`.
+- **Deps** (`mockdata/requirements.txt`): `pandas&gt;=2.2`, `pyarrow==19.0.0` (pinned — gotcha #10 in README, must match the Airflow image's pyarrow to avoid `Repetition level histogram size mismatch`), `azure-storage-file-datalake&gt;=12.14`, `azure-identity&gt;=1.17`. **pyiceberg is not currently a mockdata dependency** — adding it means adding `pyiceberg[pyarrow]` (pin to match DataQ backend's `0.11.1` for parity) plus, for ADLS-backed writes, `adlfs` (fsspec Azure backend) since pyiceberg's native `PyArrowFileIO` doesn't speak `abfss://` — you'd select `py-io-impl=pyiceberg.io.fsspec.FsspecFileIO` and let `adlfs` handle the Azure calls, or keep the pyarrow==19 pin and confirm pyiceberg 0.11.1's pyarrow floor is compatible (verify before pinning — it's currently unpinned/untested here).
+- **Route map** (`mockdata/config.py:88-123`): every existing dataset routes to `A-snowflake` / `A-uc` / `B-medallion` / `C-flatfile`. An Iceberg dataset would need a 5th flow tag, e.g. `D-iceberg`, and a route like `Route("D-iceberg", "iceberg/inventory_snapshot_iceberg", "iceberg")` (format is really "table", not a file format — the `Route.fmt` field would need either a new sentinel or the iceberg writer bypassing `emit.py`'s file-format branch entirely).
+- **Best template**: `mockdata/config.py`'s `inventory_snapshot` (Route C-flatfile, Parquet, already has freshness/volume/schema-drift DQ issues seeded — `README.md` "Reserved-monitor-kind shaping" section) is the closest existing dataset conceptually (append-style periodic batches with a `load_ts`), but the **job/Dockerfile template to copy is `dbt-lineage`**, not the mockdata Jobs: it's the one existing leg that (a) needs a durable *database* credential (Snowflake) beyond the plain storage-conn secret, (b) is a run-to-completion batch job with its own runner script (`/app/dbt/run.sh`), and (c) is explicitly gated behind `--dbt` in `harness_window.sh` rather than always-on like the 5 feeds — the same shape an "iceberg table writer" needs (its own runner, plus a Postgres credential secret in addition to storage-conn).
+
+## 4. `terraform/` — how jobs/storage/Postgres are declared; what an iceberg leg needs
+
+Files: `mockdata_job.tf`, `dbt_job.tf`, `adls.tf`, `postgres.tf`, `keyvault.tf`, `container_apps.tf`, `snowflake.tf`, `unity_catalog.tf`, `airflow.tf`/`airflow_worker.tf`, `eventgrid.tf`, `variables.tf`, `outputs.tf`.
+
+- **`azurerm_container_app_job.mockdata`** (`terraform/mockdata_job.tf:18-70`, `for_each = var.feed_crons`): cron `schedule_trigger_config`, ACR registry block + `acr-password` secret, `storage-conn` secret (`azurerm_storage_account.landing.primary_connection_string`), container `cpu=0.5/memory=1Gi`, `command=["python","-m","mockdata"]`, `args=["tick","--feed",each.key,"--out",local.adls_root,"--state",local.adls_state]`, env `AZURE_STORAGE_CONNECTION_STRING` from the secret.
+- **`azurerm_container_app_job.dbt_lineage`** (`terraform/dbt_job.tf:18-101`) — **the direct template**: same ACA-Job shape, but adds a `snowflake-password` secret sourced from Key Vault (`data.azurerm_key_vault_secret.snowflake_password`, from `keyvault.tf:23-26`), plus non-secret env vars for account/user/warehouse/database/role, and a `DBT_ARTIFACTS_URI` pointing at `adls://…/raw/dbt`. `command=["/app/dbt/run.sh"]`.
+- **ADLS** (`terraform/adls.tf:1-21`): one `azurerm_storage_account.landing` (HNS-enabled Gen2), filesystems from `var.adls_filesystems` (default `["landing","raw"]`, `terraform/variables.tf:36-40`) via `azurerm_storage_data_lake_gen2_filesystem.zones`. An iceberg leg's warehouse path would most naturally be a **new filesystem** (`"iceberg"`) added to that list, or a prefix under the existing `raw` container (which already hosts `dbt` artifacts) — a dedicated container is cleaner given Iceberg's manifest/metadata/data-file layout under one warehouse root.
+- **Postgres** (`terraform/postgres.tf:1-47`): **one** `azurerm_postgresql_flexible_server.airflow` (name `dataq-pg-wus3-*`, subscription capped at ONE Flexible Server per README gotcha #2), hosting the `airflow` database (34-39) **and, per the file's own header comment, a separate `dataq` database created by the DataQ app stack** (line 1-7) — i.e. this server is already explicitly shared/multi-tenant by design (`purpose = "dataq-shared"` tag, line 31). **This is the candidate host for a pyiceberg SQL catalog**: add a third `azurerm_postgresql_flexible_server_database` (e.g. `iceberg_catalog`) on the same server — no new server needed, fits the existing 1-server-cap pattern and the "shared, neutral-named" precedent.
+- **Key Vault** (`terraform/keyvault.tf:1-40`): `dataq-app-kv-aw6laj`, three `-harness` secrets read at apply time (`databricks-token-harness`, `snowflake-password-harness`, `airflow-oauth-client-secret-harness`) plus the shared `airflow-webhook-secret`. A new Postgres-catalog-user password (if not just the server's own `random_password.pg`) would follow the same pattern — either reuse `random_password.pg` (already the server admin password, resource `postgres.tf:12-15`) or, cleaner, create a distinct low-priv Postgres role for the iceberg catalog and store its password as a new `-harness` KV secret.
+
+**What an iceberg leg needs declared**, concretely:
+1. `azurerm_postgresql_flexible_server_database.iceberg_catalog` (postgres.tf) — the SQL catalog's backing DB.
+2. A new ADLS filesystem entry (`var.adls_filesystems` += `"iceberg"`, or a `raw/iceberg` prefix) — the warehouse storage root.
+3. A new `azurerm_container_app_job.iceberg_writer` (mirroring `dbt_job.tf`'s shape): secrets `acr-password`, `storage-conn` (reuse `azurerm_storage_account.landing.primary_connection_string`), and a new `postgres-catalog-uri`/`postgres-catalog-password` secret; env vars for the Postgres host/db/user + ADLS warehouse URI; `command`/`args` invoking the new writer entrypoint on its own cron (a new `var.iceberg_cron`, analogous to `var.dbt_cron`).
+4. `outputs.tf` additions mirroring `postgres_fqdn`/`adls_storage_account` so the coordinates can be copied into `secrets.sh`/DataQ connection config (non-secret only, per that file's existing "no passwords" convention).
+
+## 5. Existing Flows A/B/C — end to end
+
+Per `dataq_setup/README.md:16-53` (the authoritative flow→DataQ mapping) and `mockdata/README.md`'s route table:
+
+- **Flow A — Snowflake** (`flow_a_snowflake_load` Airflow DAG + `pl_flow_a_orders`/`pl_flow_a_customers` ADF pipelines): mockdata writes `snowflake/*` CSVs (products, customers, orders_header, order_lines, payments, refunds, returns, settlements, purchase_orders, order_fulfillment, discounts, cancellations) → Airflow/ADF load into Snowflake `DATAQ_DB.RETAIL` → DataQ connection `snowflake` (`DATAQ_READER`) + suite `flow_a_snowflake` (column checks + custom-SQL reconciliation) bound to both the DAG and the ADF pipeline.
+- **Flow A — Unity Catalog reference** (`flow_a_uc_reference` DAG): mockdata writes `unity_catalog/*` Parquet (locations, channels, promotions, categories, suppliers, fulfillment_nodes, date_dim, exchange_rates) → plain UC load → DataQ `unity_catalog` connection + suite `flow_a_uc_reference`.
+- **Flow B — medallion** (`flow_b_medallion` DAG): mockdata writes NDJSON bronze sources (sales_events, feedback) → Databricks notebook bronze→silver→gold (+ AI sentiment) → DataQ suites `flow_b_silver`/`flow_b_gold` on UC, bound to the DAG.
+- **Flow C — flat-file in place**: mockdata writes CSV/Parquet directly to ADLS (`adls_flatfile/logistics_tracking`, `adls_flatfile/inventory_snapshot`) with **no orchestrator** — DataQ's own `adls` connection with a batch-pattern regex + `latest` strategy, run on a DataQ **schedule**, not a trigger-binding.
+
+**The iceberg leg is structurally closest to Flow C**: no Airflow DAG, no ADF pipeline — a mockdata-style Container Apps Job writes/commits directly to the target (there, files; here, an Iceberg snapshot), and DataQ discovers it via its own connection + schedule rather than a trigger-binding. That argues for calling it **"Flow D — Iceberg (native read, no orchestrator)"** and *not* wiring an Airflow DAG for it — consistent with ADR 0030's framing that native Iceberg reads bypass the query-engine/orchestrator layer entirely.
+
+## 6. DataQ-side wiring precedent
+
+`dataq_setup/README.md` + `dataq_setup/setup.py` (`~/Coding/Python/DataQ-harness/dataq_setup/`) are the **exact precedent** for how the 5 connections were/would be created: it's a two-phase, **manual-then-scripted** process against a deployed DataQ, not Terraform:
+1. Phase 1 (manual, spec-verified): connections/suites/checks are hand-crafted JSON payloads, verified against the live OpenAPI (`$DATAQ_BASE_URL/docs`) because "payloads are spec-driven and version-specific" (README.md:11-14), then POSTed (`/connections`, `/suites`, etc. — not actually automated in `setup.py`, just documented).
+2. Phase 2 (scripted): `setup.py`'s `BINDINGS` list (30-35) + `create_bindings()` (62-81) creates `POST /trigger_bindings` for each `(provider, dag_id, suite_name)` tuple — this part *is* idempotent-ish (skips on 409) and stdlib-only, auth via `DATAQ_BASE_URL`/`DATAQ_TOKEN` env vars.
+
+An iceberg leg following this precedent: add a **Connection** spec of `type: "iceberg"` (already supported — see §7 below) to the README's flow list, a **Suite** `flow_d_iceberg` with column/freshness/volume checks, and — since there's no DAG/pipeline to bind — **no trigger-binding entry**, just a DataQ **schedule** (mirroring Flow C's "no trigger-binding... run via a DataQ schedule" note).
+
+**Secrets**: KV `dataq-app-kv-aw6laj`, `-harness`-suffixed secrets (`keyvault.tf:18-31`) for infra-level (Terraform-injected Container App secrets); DataQ's own connection secrets (the `secret_ref`) live in DataQ's own `SecretStore`, set at connection-creation time via the `dataq_setup` API calls — a separate secret plane from the harness's KV.
+
+## 7. Wake/sleep state, cost posture, dbt leg state
+
+`scripts/harness_window.sh:1-6` states the harness was **stopped 2026-07-04** (cost wind-down, DataQ #590): ~CAD 17/day (~0.70/hr) awake, ~0 stopped; `cmd_stop`'s final log (line 213) says "burn back to ~CAD 4.5/day, app only" once stopped (so even "stopped" still costs ~4.5/day for the always-on app resources; the harness's own compute goes to ~0). README's ADR 0030 discussion (line 50) separately notes both the Snowflake trial and the Azure subscription end **~2026-07-25** — relevant runway for planning when an iceberg leg would actually get exercised.
+
+The **dbt leg** (`#609`) is fully built and wired: `dbt_job.tf`'s `dbt-lineage` ACA Job, gated behind `--dbt` in `harness_window.sh` (needs live Snowflake), runs last in a window so marts refresh off the same-window Flow-A/Airflow load, and publishes `manifest.json`/`run_results.json` to `adls://…/raw/dbt` for the deferred **#611** DataQ dbt-provider poller. It's currently suspended/dormant like everything else pending a `start`/`window` invocation — no evidence it's been run since the 2026-07-04 stop.
+
+**Critically**: `~/Coding/Python/DataQ/backend/app/datasources/iceberg.py` shows the **DataQ side already has a complete, merged `iceberg` connection type** — `IcebergConnectionAdapter`, `IcebergCheckRunner`, `IcebergConfig` (catalog_type `rest`/`sql`/`glue`/`hive`), plus alembic migration `e716a1b2c3d4` widening `ck_connections_type_valid` to include `'iceberg'`, and `pyiceberg[pyarrow]==0.11.1` pinned in `backend/requirements.txt:61`. So despite ADR 0030 reading "native impl deferred," the code is live — the harness leg's job is purely to **produce a real Iceberg table for that already-built runner to point at**, not to build any new DataQ capability.
+
+---
+
+## Recommended shape for the iceberg leg
+
+**Catalog**: `catalog_type: "sql"` (pyiceberg `SqlCatalog` via SQLAlchemy) pointed at a **new database on the existing shared Postgres Flexible Server** (`azurerm_postgresql_flexible_server.airflow`, `terraform/postgres.tf`) — not a new server (sub is capped at one), not REST (no catalog service to run/maintain), not Glue/Hive (wrong cloud). DataQ's backend already ships `sqlalchemy`+`psycopg2-binary` (`backend/requirements.txt:27,29`), so the DataQ side needs **zero new dependencies** to talk to this catalog.
+
+**Connection config shape** (`IcebergConfig`, `backend/app/datasources/iceberg.py:66-110`):
+- `catalog_type: "sql"`, `catalog_name: "harness"`
+- `catalog_uri`: the Postgres DSN (`postgresql+psycopg2://&lt;user&gt;@dataq-pg-wus3-*.postgres.database.azure.com:5432/iceberg_catalog?sslmode=require`) — can hold a placeholder/low-sensitivity value in `Connection.config` if you route the real credential through `secret_property: "uri"` (the code applies the secret **last**, so it fully overwrites the placeholder — see `catalog_properties()` docstring, lines 93-110), or simply accept a plaintext DSN in config given the harness's stated "key-based auth... accepted for a disposable harness" posture (README security section) — simpler, and consistent with how the mockdata/dbt jobs already handle credentials.
+- `warehouse`: `abfss://iceberg@&lt;adls-account&gt;.dfs.core.windows.net/warehouse` (new dedicated ADLS filesystem, not reusing `landing`/`raw`, so table storage doesn't collide with flat-file/dbt-artifact prefixes).
+- `secret_property`: `"adls.account-key"` (the docstring at `iceberg.py:73` already uses `"adls.account-name"` as its properties example — `adls.account-key` is the natural secret counterpart pyiceberg's Azure fsspec/adlfs FileIO expects) — this is the credential that actually needs protecting (data-file access), while the Postgres catalog DB can sit behind the existing "allow-Azure-services" firewall + a scoped low-priv role.
+
+**Storage/writer job (Terraform + mockdata)**:
+- Copy `terraform/dbt_job.tf` (not `mockdata_job.tf`) as the template — it's the one existing job with a *second* credential (Snowflake) beyond `storage-conn`, matching the new job's need for a Postgres catalog credential. New `azurerm_container_app_job.iceberg_writer` with secrets `acr-password`, `storage-conn`, and a new `postgres-catalog-conn`; own cron `var.iceberg_cron`.
+- New Python module in `mockdata/` (e.g. `mockdata/iceberg_writer.py`, invoked as a new `python -m mockdata iceberg-tick` subcommand or a standalone entrypoint in the same image) that: creates the namespace/table on first run (`CREATE TABLE IF NOT EXISTS` via pyiceberg, schema mirroring `inventory_snapshot` — it already has the freshness/volume/schema-drift DQ-issue shaping this ADR-0012 monitor work wants), then appends new rows as a new snapshot each tick (`table.append(arrow_batch)`), reusing `mockdata/pools.py`/`rng.py` for referentially-consistent data and `mockdata/dq_issues.py` for seeded issues.
+- Add `pyiceberg[pyarrow]==0.11.1` (pin matching DataQ backend) + `adlfs` to `mockdata/requirements.txt`; verify pyiceberg 0.11.1's pyarrow floor against the pinned `pyarrow==19.0.0` (gotcha #10 — version skew already bit this repo once) before locking it in.
+
+**`harness_window.sh` insertion** (mirroring the `--dbt` pattern at lines 177-196):
+- Add `ICEBERG_JOB=iceberg-writer` and fold it into `ALL_JOBS` (line 56) so `status`/`stop` cover it automatically.
+- In `cmd_run`, parse `--iceberg` alongside `--adf`/`--dags`/`--dbt` (128-132), and add a resume→start→poll→suspend block after the `--dags` block (~line 176) — it has no Snowflake dependency so it doesn't need `--adf`/`--dbt`'s ordering constraints, but keep it flag-gated (not unconditional like the 5 `JOBS`) since it's a new/unproven leg.
+- Verification: same job-execution-status poll (`az rest .../executions/$e`) as every other leg; optionally log the resulting Iceberg `snapshot-id`/row-count from inside the job so `cmd_status` can be extended with a lightweight `pyiceberg` metadata read (or just eyeball the job's stdout in Log Analytics) as the "green" signal.
+
+**DataQ-side wiring**: add a `Connection` (`type: iceberg`) + `Suite flow_d_iceberg` entry to `dataq_setup/README.md` and `dataq_setup/setup.py` following the exact Flow-C precedent — **no trigger-binding** (nothing orchestrates it), run via a DataQ schedule instead, since this leg — like Flow C — has no Airflow DAG or ADF pipeline in the loop.</result>
+<usage><subagent_tokens>83372</subagent_tokens><tool_uses>36</tool_uses><duration_ms>276554</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a41e022ee85da4ac5</task-id>
+<tool-use-id>toolu_01FbkhUE3EXL4qm3v8BE6h1t</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c0b670d5-58c4-41ee-bbcf-b0dd9018241d/tasks/a41e022ee85da4ac5.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement #721 iceberg introspection" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All checks green. The README.md/docs/ changes in the status are from the concurrent docs agent — I did not touch them. My changes are confined to the code/test files.
+
+## Summary
+
+Implemented GitHub issue #721 — Iceberg column profiler, column listing, and dry-run regression test.
+
+### Backend
+- **`backend/app/datasources/iceberg.py`** — Extracted three reusable module-level seams from the runner: `load_iceberg_table` (catalog-load + `load_table`), `read_iceberg_dataframe` (projected + row-limited scan → Arrow-backed pandas), and `list_iceberg_columns` (schema field names, no data scan). Refactored `IcebergCheckRunner._load_table`/`_read_dataframe` to delegate to these (keeping `_load_table` a patchable method) and shared the Arrow→pandas conversion via `_to_arrow_backed_pandas`. Projection restricts `selected_fields` to columns that exist, so a stray name never crashes the scan.
+- **`backend/app/services/profile_service.py`** — Added `_IcebergProfiler` strategy + `"iceberg"` registry entry + union member. Relaxed the `secret_ref` 422 guard in `resolve_profiler` to exempt iceberg (credential-optional), with an iceberg target branch requiring `table`. Factored the per-column loop into `_profile_columns` (shared by flat-file + iceberg; message made datasource-neutral). Added `profile_iceberg`, `list_iceberg_columns`, `_iceberg_identifier` (namespace fold), and the I/O wrappers `_read_iceberg_dataframe`/`_list_iceberg_columns` (resolve config+secret, mirroring flat-file's `_read_dataframe`). Threaded `namespace` through `profile_connection`, `list_columns`, and `suggest_policy_for_target`. Iceberg profiling never routes through the SQL path (`namespace.table` has a dot `validate_identifier` rejects).
+- **`backend/app/api/v1/suites.py`** — Added `namespace` to `ColumnProfileRequest`, `ColumnPolicySuggestRequest`, the `list_columns` query params, and threaded it into all three service calls.
+- **`backend/app/worker/tasks.py`** — Auto-classify task now passes `target.get("namespace")`.
+
+### Deviation from the scout map (required)
+- **Added `namespace` to the `SuiteTarget` model** (`suites.py`). It was absent, so `ApiModel`'s `extra="ignore"` silently dropped `namespace` on suite save — meaning stored iceberg targets never carried it and the dry-run/profiler namespace flow was dead on arrival (`run_target.resolve_target` and the auto-classify task both read `target.get("namespace")`). This one-line field addition makes iceberg targets round-trip; without it the feature can't work end-to-end.
+
+### Frontend
+- **`frontend/src/api/suites.ts`** — Added `namespace` to `ColumnProfileRequest`, the `ColumnTarget` pick, and the `listColumns` params assembly.
+- **`frontend/src/components/checks/ColumnProfilePanel.tsx`** — `extractProfileTarget` now pulls `namespace` (flows into both listColumns and profile requests, which spread the target).
+
+### Tests (all mirroring existing patterns, failure-modes included)
+- `test_iceberg.py`: 6 tests for the extracted helpers (projection+limit, full read, unknown-column fallback, credential-less, no-scan listing).
+- `test_profile_service.py`: 10 iceberg unit tests (stats, namespace fold incl. bare/multi-level, credential-less no-422, missing-column 422, read/list failure 502 with identifier-only detail, dispatch).
+- `test_suites.py`: 5 API tests — stats + namespace round-trip, missing-table 422, **credential-less profiles successfully (no 422)**, read-failure 502 (exception not echoed), list-columns namespace round-trip.
+- `test_checks.py`: `test_dryrun_supports_iceberg_suite` — asserts the namespace folds to `sales.ORDERS` on the runner.
+- `ColumnProfilePanel.test.tsx`: iceberg-namespace-flows-into-requests test (+ mocked `listColumns`).
+
+### Verification (all passed)
+- `black backend --check` — clean
+- `ruff check backend` — clean
+- `mypy backend/app/` (CI command) + `mypy` on the 4 changed test files — no issues
+- `bandit -c pyproject.toml -r backend/app` — exit 0
+- `pytest` on the 4 target files — 268 passed; **full backend suite — 1561 passed, 1 skipped, coverage 98.27% (≥80 gate holds)**; iceberg.py 95%, profile_service.py 94%, suites.py 100%
+- Frontend `ColumnProfilePanel.test.tsx` — 5 passed; `pnpm lint`/`typecheck`/`prettier --check` — clean
+
+Note: the task's frontend test command used `--pm-on-fail=ignore`, which this pnpm version rejects; I ran the equivalent `pnpm test -- --run tests/components/ColumnProfilePanel.test.tsx`. No commits made — left for the orchestrator.</result>
+<usage><subagent_tokens>205681</subagent_tokens><tool_uses>94</tool_uses><duration_ms>1181664</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b9vzgllyq</task-id>
+<tool-use-id>toolu_014KRxCcmKruqduPd3TK2Y8F</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c0b670d5-58c4-41ee-bbcf-b0dd9018241d/tasks/b9vzgllyq.output</output-file>
+<status>completed</status>
+<summary>Background command "Run full backend test suite with coverage gate" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+continue...
+
+---
+
+<task-notification>
+<task-id>a93e9ee38ec8bcc04</task-id>
+<tool-use-id>toolu_014N4nsu8xugnjxynUSGQC4R</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c0b670d5-58c4-41ee-bbcf-b0dd9018241d/tasks/a93e9ee38ec8bcc04.output</output-file>
+<status>completed</status>
+<summary>Agent "Finder B: removed-behavior audit" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All four test files show zero deleted lines (`grep -c "^-[^-]"` = 0) — purely additive test diffs across the whole PR.
+
+Summary of the analysis (answering each numbered question) followed by the JSON verdict:
+
+**1. `resolve_profiler` secret_ref guard.**
+Old: `if not connection.secret_ref: raise ProfileTargetInvalidError(...)` (applied unconditionally to every connection type that reached this point).
+New: `if not isinstance(profiler, _IcebergProfiler) and not connection.secret_ref: raise ProfileTargetInvalidError(...)`.
+The exemption is gated on `isinstance(profiler, _IcebergProfiler)`, and `profiler` is looked up from `_PROFILERS[connection.type]`, where only `"iceberg"` maps to `_IcebergProfiler()`. `_open_connection` (SQL path, raises `ValueError` on no secret_ref) is only invoked from `profile_table`/`list_table_columns`, which are only reached when `isinstance(profiler, _SqlProfiler)` — a disjoint branch. `_read_dataframe` (flat-file path, also raises `ValueError`) is only invoked from `profile_file`, reached only for `_FileProfiler`. Both `profile_connection` and `list_columns` dispatch with early `return`s per `isinstance` check (no fallthrough). So no snowflake/unity_catalog/s3/adls_gen2 connection can reach either raw seam with `secret_ref=None` — the relaxation is correctly scoped to Iceberg only. No finding here.
+
+**2. `IcebergCheckRunner._load_table`/`_read_dataframe` refactor.**
+`_load_table` now delegates to the new `load_iceberg_table` module helper — byte-identical logic (catalog load + `load_table`). `_read_dataframe` still calls `table.scan().to_arrow()` with **no** `selected_fields` and **no** `limit` — identical to before the refactor (verbatim full-table, full-column scan), just piping through the shared `_to_arrow_backed_pandas` helper for the dtype-mapping step. The new column-projection/fallback logic (`selected_fields` restricted to existing fields, falling back to `("*",)` when none match) lives only in `read_iceberg_dataframe`, which is used exclusively by the new `profile_iceberg`/`list_iceberg_columns` profiler paths — the runner (`run_checks`/`run_monitors`) never calls it. So run-path semantics for a check referencing a nonexistent column are unchanged: the full frame is still materialized and GX still fails/raises as before. No run-path behavior change shipped.
+
+**3. `profile_dataframe` → `_profile_columns` factoring.**
+Pure extract-method: same missing-column check order, same `row_count = len(df)`, same list-comprehension over `columns` in caller-supplied order (no reordering), same `_profile_series` call signature (top_n, dtype handling untouched). The only observable delta is the error message text: `"requested column(s) not in the file"` → `"requested column(s) not in the target"` (made datasource-neutral for reuse by Iceberg). Grepped the whole repo (backend tests, frontend src/tests) for `"not in the file"` — zero references anywhere; nothing depends on the old wording.
+
+**4. Deleted/weakened tests.**
+Checked all four touched test files (`test_checks.py`, `test_suites.py`, `test_iceberg.py`, `test_profile_service.py`) — each has 0 deleted lines in the diff (`git diff ... | grep -c "^-[^-]"` = 0 for all). The diff is purely additive (new Iceberg profiler/runner test cases); nothing was removed or weakened.
+
+No findings — the guard relaxation is correctly and narrowly scoped via `isinstance`, the runner's scan/projection semantics are unchanged, the shared profiling core is a faithful refactor with only a cosmetic (unreferenced) message-text change, and no tests were deleted or weakened.
+
+```json
+[]
+```</result>
+<usage><subagent_tokens>48277</subagent_tokens><tool_uses>15</tool_uses><duration_ms>76879</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a7f06f73949145301</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c0b670d5-58c4-41ee-bbcf-b0dd9018241d/tasks/a7f06f73949145301.output</output-file>
+<status>completed</status>
+<summary>Agent "Finder A: line-by-line + efficiency" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>```json
+[
+  {
+    "file": "backend/app/services/profile_service.py:685-689",
+    "line": 689,
+    "summary": "`_iceberg_identifier` folds `namespace` with a bare truthiness check (`if namespace else table`), unlike `run_target.resolve_target`'s Iceberg branch (run_target.py:130-131) which passes namespace through `_str_or_none` (strips whitespace, empty→None) before the same fold. The profiler also never runs `namespace`/`table` through `validate_identifier` the way every SQL path does before querying.",
+    "failure_scenario": "A suite target (or a raw `/profile`/`/columns` request) with `namespace=\" \"` (single space, e.g. a stray keystroke in a form field) is treated as falsy by `_str_or_none` in the run path → identifier resolves to `\"orders\"`, but `_iceberg_identifier(\"orders\", \" \")` returns `\" .orders\"` since a non-empty whitespace string is truthy in Python. The column profiler now addresses a different (and likely nonexistent) Iceberg identifier than the one `IcebergCheckRunner`/`resolve_target` actually runs checks against — profiling silently targets/reports on the wrong table, or 502s on a load failure that the run path wouldn't hit at all."
+  },
+  {
+    "file": "backend/app/datasources/iceberg.py:156-163",
+    "line": 159,
+    "summary": "`read_iceberg_dataframe` falls back to `selected_fields=(\"*\",)` (a full-column scan) whenever *none* of the requested `columns` exist in the table schema, and the profiler's missing-column 422 (`_profile_columns`, profile_service.py:535-540) is only raised after this scan completes — there is no pre-scan validation of column names for Iceberg (contrast the SQL path's `validate_identifier`, which 422s before any query is built).",
+    "failure_scenario": "A check-editor request to profile `columns=[\"amout\", \"citty\"]` (typos, or stale names after a schema change) against a wide Iceberg table causes `table.scan(selected_fields=(\"*\",), limit=100_000).to_arrow()` to materialise **every** column (up to 100k rows) before `_profile_columns` discovers none of the requested names are present and raises `ProfileColumnNotFoundError` — the exact wasteful full-width read the projection lever was built to avoid, triggered by the same bad input it's supposed to protect against."
+  },
+  {
+    "file": "backend/tests/services/test_profile_service.py:626-645 (and backend/tests/api/test_suites.py test_profile_iceberg_returns_stats)",
+    "line": 626,
+    "summary": "Every Iceberg profiling test monkeypatches `read_iceberg_dataframe`/`_read_iceberg_dataframe` to return a plain numpy-backed `pd.DataFrame` (e.g. `pd.DataFrame({\"amount\": [10, 20, 20, 20], \"city\": [...]})`), never a `pd.ArrowDtype`-backed frame. `_profile_columns`/`_profile_series` (the stats loop actually exercised by these tests) is therefore never run against Arrow-backed dtypes end-to-end — only the lower-level `read_iceberg_dataframe_projects_and_limits` test in test_iceberg.py checks the dtype, without feeding it through `_profile_series`.",
+    "failure_scenario": "If `value_counts`/`nunique`/`min`/`max`/`_to_native` ever mis-handle a `pd.ArrowDtype` column (e.g. a string/list/decimal Arrow column raising or returning a different shape than the numpy equivalent), CI would not catch it — every profiling test in both files uses numpy frames, so a live Iceberg profile could 500 or silently mis-report stats in production despite full test coverage of the fold/dispatch logic."
+  },
+  {
+    "file": "backend/app/services/profile_service.py:995-1016 (suggest_policy_for_target)",
+    "line": 995,
+    "summary": "`suggest_policy_for_target` (reused unchanged for Iceberg via worker/tasks.py's new `namespace=target.get(\"namespace\")`) calls `list_columns(...)` then `profile_connection(...)` sequentially; both independently call `_iceberg_identifier` → `load_iceberg_table` → `load_catalog(...).load_table(...)`, so one auto-classify/auto-detect request performs two full, independent Iceberg catalog bootstraps + table loads (REST/SQL/Glue/Hive handshake each time) instead of one.",
+    "failure_scenario": "Triggering `/suites/{id}/policy/suggest` (or the `_auto_classify_columns` Celery task) on an Iceberg suite pays for `load_catalog` + `catalog.load_table` twice per request — for a REST catalog with slow auth (e.g. vended credentials, OAuth token exchange) this doubles request latency/catalog load compared to a single combined list+profile round trip."
+  }
+]
+```</result>
+<usage><subagent_tokens>82997</subagent_tokens><tool_uses>22</tool_uses><duration_ms>177714</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ad7e719a96be6cd45</task-id>
+<tool-use-id>toolu_01UiPZXsRnZnv9eUyLWGsPZr</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c0b670d5-58c4-41ee-bbcf-b0dd9018241d/tasks/ad7e719a96be6cd45.output</output-file>
+<status>completed</status>
+<summary>Agent "Finder C: cross-file + altitude" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Findings
+
+```json
+[
+  {
+    "file": "backend/app/mcp/server.py",
+    "line": 438,
+    "summary": "The `profile_column` MCP tool (and its helper `_profile_target_defaults`, line 391) has no `namespace` parameter and never passes `namespace=` to `profile_service.profile_connection` (zero occurrences of 'namespace' in this file), unlike every other caller updated in this diff (REST `/profile`, `/columns`, `/column-policy/suggest`, and `worker/tasks.py`'s `_auto_classify_columns`).",
+    "failure_scenario": "Defaulting to the suite's own run target happens to work by luck, because `run_target.resolve_target`'s iceberg branch (run_target.py:123-132) pre-folds `namespace.table` into `ResolvedTarget.table` before `profile_column` ever sees it. But if an MCP caller explicitly passes `table=\"orders\"` for a namespaced iceberg suite (the same override path exercised by `test_profile_column_explicit_table_still_wins`), there is no way to supply the namespace, so `resolve_profiler`/`profile_iceberg` build the identifier from the bare table name only — silently profiling/404-ing on the wrong (or missing) namespaced table. No test in backend/tests/mcp/test_mcp_tools.py exercises an iceberg connection at all."
+  },
+  {
+    "file": "backend/app/alerting/builder.py",
+    "line": 31,
+    "summary": "`_target_label` (used by Slack/email/Teams/card alert publishers) builds its dotted label from `catalog`/`schema`/`table` only — `namespace` was never added, even though its own docstring says 'a new target field needs a matching edit here, there [frontend summarizeTarget], and in run_target.resolve_target', and the frontend `suiteTarget.ts summarizeTarget` (already updated in this diff, line ~43) explicitly includes namespace.",
+    "failure_scenario": "An alert (Slack card, email, Teams message) for a namespaced iceberg suite renders just the bare table name (e.g. 'orders') instead of 'sales.orders', so two suites/tables sharing a name in different namespaces are indistinguishable in notifications — while the run-detail UI (RunNowPanel via summarizeTarget) correctly shows the full namespaced identifier, producing an inconsistent target label between alert and UI for the same suite. backend/tests/alerting/test_builder.py's `_target_label` tests have no iceberg/namespace case."
+  },
+  {
+    "file": "frontend/src/components/suites/SamplePolicyPanel.tsx",
+    "line": 73,
+    "summary": "`columnTarget` (feeds `listColumns` for the identifier/PII column dropdowns) and the `onSuggest` payload to `suggestColumnPolicy` (line 112-121) are both hand-built and omit `namespace`, unlike `ColumnProfilePanel.tsx`'s `extractProfileTarget` which was updated in this same diff to include it.",
+    "failure_scenario": "For a suite whose connection is a namespaced Iceberg table, opening the identifier/PII column Select (loadColumns→listColumns) or clicking 'Auto-detect' (suggestColumnPolicy) sends `table` without `namespace`, so the backend resolves a bare (wrong or nonexistent) identifier — the dropdown silently returns no/wrong columns, or the request 502s instead of profiling the intended namespaced table."
+  },
+  {
+    "file": "frontend/src/api/columnPolicy.ts",
+    "line": 16,
+    "summary": "`ColumnPolicySuggestTarget` (the request-shape type for `suggestColumnPolicy`) has no `namespace` field, even though the backend `ColumnPolicySuggestRequest` (backend/app/api/v1/suites.py:349-350) added one in this diff, and the sibling `ColumnTarget`/`ColumnProfileRequest` types in `frontend/src/api/suites.ts` were updated to include it.",
+    "failure_scenario": "Any future/other caller of `suggestColumnPolicy` that types its payload against `ColumnPolicySuggestTarget` gets no compile-time signal that `namespace` exists or is needed for iceberg targets, making it easy to silently drop the namespace when building the policy-suggest request (as SamplePolicyPanel.tsx currently does)."
+  }
+]
+```
+
+### Notes on things checked but not flagged
+- **Import discipline (item 3):** clean — `profile_service.py` imports `IcebergConfig`/`read_iceberg_dataframe`/`list_iceberg_columns` from `backend/app/datasources/iceberg.py` at module level (consistent with how it already imports `snowflake`), but `iceberg.py` itself keeps `pyiceberg` lazy: `from pyiceberg.catalog import load_catalog` appears only inside `load_iceberg_table` (line 122) and `IcebergConnectionAdapter.test` (line 189), not at module top. No import-cycle risk (`iceberg.py` doesn't import `profile_service`).
+- **Suite export/import (item 2):** `SuiteDocument`/`suite_io_service.export_suite`/`import_suite` never carry `target` at all (pre-existing, connection-specific scope) — namespace isn't a regression here, it's out of scope by design.
+- **Per-type target validation / snowflake carrying namespace (item 2):** confirmed possible but low-severity — `SuiteTarget.namespace` is a top-level optional field usable on any connection type, and `run_target.resolve_target`'s snowflake/UC branches don't reject unknown keys, so a snowflake target could carry a stray `namespace` value that's silently accepted and simply ignored (dead data, not a crash). Didn't include as a top candidate since it's inert rather than a failure mode.
+- **docs/rest-api.md (item 4):** not stale — it's a one-line-per-endpoint table with no per-parameter enumeration for any endpoint (SQL or otherwise), so there was nothing to update.
+- **Altitude/dispatch pattern (item 6):** `_IcebergProfiler` added as a third `_Profiler` variant, matched via `isinstance()` exactly like the existing `_SqlProfiler`/`_FileProfiler` checks in `resolve_profiler`/`profile_connection`/`list_columns`; the `type != "iceberg"` credential exemption is likewise an `isinstance(profiler, _IcebergProfiler)` check colocated with the existing `requires_catalog` logic. This is consistent with, not materially worse than, the pre-existing branch style — not flagged as a candidate.</result>
+<usage><subagent_tokens>57059</subagent_tokens><tool_uses>40</tool_uses><duration_ms>177733</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a5225cd303b446d33</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c0b670d5-58c4-41ee-bbcf-b0dd9018241d/tasks/a5225cd303b446d33.output</output-file>
+<status>completed</status>
+<summary>Agent "Apply review fixes to #747" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All ten files match exactly the six findings' scope — no branch switches, no commits made, working tree left as-is per instructions.
+
+## Summary
+
+All six verified findings applied surgically on `fix/issue-721-iceberg-profiler-introspection` (no commit/push, as instructed).
+
+**1. `_iceberg_identifier` fold semantics** (`backend/app/services/profile_service.py`) — now folds `None`/empty/whitespace-only `namespace` to no namespace, matching `run_target.resolve_target`'s `_str_or_none`. Added parametrized whitespace/empty-string tests in `backend/tests/services/test_profile_service.py`.
+
+**2. Pre-scan column validation + single table load** — `read_iceberg_dataframe` (`backend/app/datasources/iceberg.py`) gained an optional `table:` param (skip the internal `load_iceberg_table` call when the caller already has one loaded — fully backward compatible, default `None`). `profile_service._read_iceberg_dataframe` now: loads the table once → validates `columns` against `table.schema()` field names, raising `ProfileColumnNotFoundError` with the same message/detail shape as the post-scan check → scans only the validated projection via `read_iceberg_dataframe(..., table=table)`. `profile_iceberg`'s except block now re-raises `ProfileColumnNotFoundError` before the generic `except Exception` (so it surfaces as 422, not 502). `_profile_columns`'s post-scan check is untouched (defense-in-depth). Rewrote the Iceberg test block with a `_FakeIcebergTable`/`_FakeIcebergScan` fake (tracking `.scan()` calls) so the missing-column test now asserts `table.scan_calls == []`, plus new tests for partial-invalid columns, load-once/scan-projection, and the `columns=None` full-read path on the low-level function.
+
+**3. Arrow-dtype coverage** — added `test_profile_iceberg_arrow_backed_frame_matches_numpy_stats`, feeding a `.convert_dtypes(dtype_backend="pyarrow")` frame through `profile_iceberg`. No stat-helper fix was needed — `_profile_series`/`_to_native` already handled Arrow dtypes correctly (there's prior Parquet-path coverage of the same contract); the new test just closes the Iceberg-path gap.
+
+**4. MCP `profile_column` tool** (`backend/app/mcp/server.py`) — added `namespace: str | None = None`, documented, passed to `profile_connection(namespace=...)`. When falling back to `_profile_target_defaults`, `namespace` is explicitly reset to `None` to avoid double-folding (since `resolve_target` already folded it into `table`). Added two MCP tests with a new `_iceberg_suite` fixture: default-path fold and explicit `table`+`namespace` override.
+
+**5. `alerting/builder.py` `_target_label`** — now includes namespace (folded with the same empty/whitespace semantics) in the dotted label, positioned where catalog/schema sit. Added a namespace test case (incl. whitespace/empty) to `test_builder.py`.
+
+**6. Frontend namespace parity** — `ColumnPolicySuggestTarget` gained `namespace?: string`; `SamplePolicyPanel.tsx`'s `columnTarget` and `onSuggest` payload now include `namespace` from the suite target, mirroring `ColumnProfilePanel`'s `extractProfileTarget`. Updated the two existing exact-match assertions in `SamplePolicyPanel.test.tsx` (new `namespace` key) and added a namespaced-iceberg test asserting namespace flows into both `listColumns` and `suggestColumnPolicy` calls.
+
+**Verification — all green:**
+- `black backend --check` — all done, unchanged
+- `ruff check backend` — all checks passed
+- `mypy backend/app/` — success, 97 files
+- `mypy backend/tests/` — success, 106 files (one attr-defined error fixed by importing `read_iceberg_dataframe` directly instead of via `svc.` in one new test)
+- `bandit -c pyproject.toml -r backend/app -q` — clean (exit 0; pre-existing nosec warnings unrelated)
+- `pytest backend/tests -q` — 1571 passed, 1 skipped, 98.28% coverage
+- `pnpm lint` — clean
+- `pnpm typecheck` — clean
+- `pnpm test -- --run` — 401 passed (59 files)</result>
+<usage><subagent_tokens>192607</subagent_tokens><tool_uses>72</tool_uses><duration_ms>838510</duration_ms></usage>
+</task-notification>
+
+---
+
+...
+
+---
+
+<task-notification>
+<task-id>btywul31f</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c0b670d5-58c4-41ee-bbcf-b0dd9018241d/tasks/btywul31f.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait until PR 747 merges or CI fails, then report" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+It seems like it is stuck at - `migration status: Running (unknown streak: 0)` can you check
+
+---
+
+<task-notification>
+<task-id>bks8scz4o</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c0b670d5-58c4-41ee-bbcf-b0dd9018241d/tasks/bks8scz4o.output</output-file>
+<status>completed</status>
+<summary>Background command "Poll the new migrate execution to terminal state" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+restart the PG server
+
+---
+
+<task-notification>
+<task-id>bzv9em2sv</task-id>
+<tool-use-id>toolu_014KLKemd8BCERhushA4eFHs</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c0b670d5-58c4-41ee-bbcf-b0dd9018241d/tasks/bzv9em2sv.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch the deploy re-run to completion" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bm9nq67m0</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c0b670d5-58c4-41ee-bbcf-b0dd9018241d/tasks/bm9nq67m0.output</output-file>
+<status>completed</status>
+<summary>Background command "Wake the harness (redis, airflow, workers, ADF triggers)" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Which orchestrator will run the iceberg load? and what data are we planning to put in iceberg? [I'm thinking PO data, what do you think?]
+
+---
+
+<task-notification>
+<task-id>bxutgzdpx</task-id>
+<tool-use-id>toolu_017EZ6rT7dRGUPEQShnPmy7d</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c0b670d5-58c4-41ee-bbcf-b0dd9018241d/tasks/bxutgzdpx.output</output-file>
+<status>completed</status>
+<summary>Background command "Run all harness legs (mockdata, DAGs, ADF, dbt)" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+can you add the suit for Olivia or share it with Olivia [if already created with another user]
+
+---
+
+<task-notification>
+<task-id>aa068e4b76d6f154a</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c0b670d5-58c4-41ee-bbcf-b0dd9018241d/tasks/aa068e4b76d6f154a.output</output-file>
+<status>completed</status>
+<summary>Agent "Build iceberg harness leg code" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All deliverables authored and validated. Here is the report.
+
+## Flow D (Apache Iceberg) — complete
+
+All work is in `~/Coding/Python/DataQ-harness/` only. No `terraform apply`, `az` mutations, docker builds, or commits were run.
+
+### Files created/changed
+- **`terraform/iceberg.tf`** (new) — standalone ADLS filesystem `iceberg`, `iceberg_catalog` Postgres DB on the existing shared server, `iceberg-writer` Container Apps Job (suspended cron, mockdata image, `python -m mockdata iceberg-tick`), catalog-DSN + abfss-warehouse locals.
+- **`terraform/variables.tf`** — added `iceberg_cron` (default `0 3 * * *`).
+- **`terraform/outputs.tf`** — 4 non-secret outputs (catalog DB, warehouse URI, filesystem, job→schedule); no secrets.
+- **`mockdata/iceberg_writer.py`** (new) — SqlCatalog+adlfs wiring, Iceberg/pyarrow schema, seeded batch generator, `run_tick`.
+- **`mockdata/__main__.py`** — `iceberg-tick` subcommand + `_run_iceberg_tick` dispatch (bypasses `_common`/state).
+- **`mockdata/requirements.txt`** — `pyiceberg[pyarrow,sql-postgres]==0.11.1` + `adlfs&gt;=2024.7.0`.
+- **`mockdata/README.md`** — Flow D subcommand note (fixed stale "Three subcommands").
+- **`scripts/harness_window.sh`** — `ICEBERG_JOB` var, folded into `ALL_JOBS`, `--iceberg` parse + gated resume→start→poll→re-suspend block (after `--dags`, before `--adf`; no Snowflake dep), usage/help + `head -41` bump.
+- **`dataq_setup/README.md`** — Flow D section (exact `iceberg` connection payload + `flow_d_iceberg` suite + schedule) and no-binding note.
+- **`dataq_setup/setup.py`** — comment: Flow D is schedule-driven, no `BINDINGS` change.
+
+### pyiceberg/pyarrow/adlfs resolution
+Gate passed in a scratch venv: **`pyarrow==19.0.0` resolves cleanly alongside `pyiceberg[pyarrow,sql-postgres]==0.11.1`** (no pyarrow bump needed — pin stays matching the Airflow image, README gotcha #10). The `sql-postgres` extra is correct (pulls SQLAlchemy + psycopg2-binary). `from pyiceberg.catalog.sql import SqlCatalog; import adlfs` imports OK. adlfs resolved to 2026.5.0.
+
+### Local sqlite-catalog smoke (real writer code paths, no Azure)
+Two ticks via a `sqlite://` catalog + `file://` warehouse: tick0 = 251 rows (snapshot_id `4782006531605297284`), tick1 = 301 rows (snapshot_id `884626360800375810`), total grew 251→552, snapshot ids differ. Seeded issues confirmed present: negative `order_qty`, null `supplier_id`, duplicate `(po_id, po_line)`. Ruff + Black both clean.
+
+### terraform validate/fmt
+`terraform fmt -check` CLEAN; `terraform validate` → Success (init `-backend=false`). `bash -n harness_window.sh` OK.
+
+### Deviations (all within the design's stated latitude), with reasons
+1. **Single connection secret = the ADLS account key** (`secret_property: "adls.account-key"`); the Postgres SQL-catalog DSN rides in `catalog_uri` (config). DataQ's `IcebergConfig` has only one secret slot but SQL+ADLS needs two credentials, so one must live in config — I put the most sensitive one (storage-account key = full account access) in the secret and the disposable metadata-DB DSN in config. This is the "account key" option the design offered.
+2. **`unit_cost` = `double`** (design allowed decimal-or-double) — round-trips through pyarrow cleanly, avoiding decimal128 scale friction on `table.append`.
+3. **`--rows`/default = final line-row count** (~200-500), not PO headers — headers fan out 1-4 lines then trim to exactly `rows`, honoring "~200-500 rows/tick".
+4. **`adlfs&gt;=2024.7.0`** floor pin (matches the existing azure libs' `&gt;=` style).
+5. **`iceberg_cron` default `0 3 * * *`** (after the dbt job's 02:00; suspended anyway).
+6. **Standalone `azurerm_storage_data_lake_gen2_filesystem.iceberg`** (not appended to `var.adls_filesystems`) — keeps the live `zones` `for_each` state addresses untouched (per the design's preferred low-blast-radius option).
+
+One operational note for the orchestrator (already in the `iceberg.tf` header comment): the mockdata ACR image must be **rebuilt + pushed** with the new deps before the first `iceberg-writer` run, or `iceberg-tick` will ImportError on pyiceberg.</result>
+<usage><subagent_tokens>158334</subagent_tokens><tool_uses>75</tool_uses><duration_ms>827325</duration_ms></usage>
+</task-notification>
+
+---
+
+do we need to add similar package for s3 also?
+
+---
+
+<task-notification>
+<task-id>a59df47d6f2ba48a2</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c0b670d5-58c4-41ee-bbcf-b0dd9018241d/tasks/a59df47d6f2ba48a2.output</output-file>
+<status>completed</status>
+<summary>Agent "Review the adlfs dep PR" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Summary
+
+I did an exhaustive pass across all 6 angles. Findings below, then the requested JSON.
+
+**1. Hub inheritance (requirements-dev.txt / -typecheck.txt / -tooling.txt / environment.yml):** No change needed, and the PR correctly doesn't touch them.
+- `backend/requirements-dev.txt` (`-r requirements.txt` + `-r requirements-typecheck.txt` + `-r requirements-tooling.txt`) and `environment.yml` (`-r backend/requirements-dev.txt`) transitively pick up any line added to `requirements.txt` automatically — confirmed by reading their header comments.
+- `requirements-typecheck.txt` only needs a package if `backend/app` imports it directly (its header explicitly says "the minimal *typed* subset mypy must import to check `backend/app/`"). Verified with `grep -rln "adlfs" --include="*.py"` across the repo: **zero hits**. Only `pyiceberg` is imported directly; `pyiceberg` itself is already in `pyproject.toml`'s `[[tool.mypy.overrides]]` ignore-list (`ignore_missing_imports = true`), so mypy never even attempts to resolve `pyiceberg`'s lazy `adlfs` import. The `typecheck-deps-sync` script (`scripts/check-typecheck-deps.py`) only diffs `requirements-typecheck.txt` against `.pre-commit-config.yaml`'s mypy hook deps — adlfs correctly belongs in neither. **Not a gap.**
+- There's also a `backend/requirements-mutation.txt` (deliberately standalone per its header, not `-r`'d anywhere) — irrelevant here.
+
+**2. Pin style / comment idiom:** Matches file convention (`pkg==X.Y.Z  # why + issue + license`, same column alignment as neighboring lines). Verified BSD-3 claim directly from the installed package: `adlfs-2026.5.0.dist-info/licenses/LICENSE.txt` contains the classic 3-clause text (copyright + redistribution + the "neither the name... endorse or promote" clause + no-warranty), and `METADATA` classifies it `License :: OSI Approved :: BSD License`. **BSD-3 is accurate, not a gap.**
+
+**3. Dockerfile:** Confirmed via `backend/Dockerfile` — it does `COPY backend/requirements*.txt ./backend/` then `RUN pip install -r backend/requirements.txt`, so the image picks up `adlfs` with zero Dockerfile changes needed. **Not a gap.**
+
+**4. Version sanity:** In the `dataq` conda env: `adlfs 2026.5.0`, `fsspec 2026.6.0` (adlfs requires `fsspec&gt;=2023.12.0`, pyiceberg requires `fsspec&gt;=2023.1.0` — both satisfied). `conda run -n dataq pip check` → `No broken requirements found`. Also spot-checked the `azure-storage-blob[aio]` transitive requirement adlfs needs (`adlfs` imports `azure.storage.blob.aio`) — `aiohttp` is present and resolves cleanly against the repo's pinned `azure-storage-blob==12.30.0`/`azure-core`/`azure-identity==1.25.3`. **Not a gap.**
+
+**5. Issue #749 scope:** `gh issue view 749` confirms the fix is exactly "add `adlfs` ... and redeploy," with the connection-test-exercising-a-metadata-read idea explicitly labeled "Follow-up consideration." `git diff main...HEAD --stat` shows only the one line changed in `backend/requirements.txt` — no test changes bundled in. **Correctly left out, not a gap.**
+
+**6. Harness skew:** `DataQ-harness/mockdata/requirements.txt` pins `pyiceberg[pyarrow,sql-postgres]==0.11.1` (matches backend's `0.11.1`) plus a floating `adlfs&gt;=2024.7.0`, versus backend's exact `adlfs==2026.5.0`. This is the one soft spot — the harness's own comment block explicitly calls out cross-file version alignment elsewhere in that same file (`pyarrow stays pinned ==19.0.0 above (must match the Airflow image — README gotcha #10)`), establishing a house convention of flagging cross-repo pin coupling when it matters, but nothing equivalent exists for adlfs on either side.
+
+```json
+[
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ-harness/mockdata/requirements.txt",
+    "line": 10,
+    "summary": "Harness pins adlfs&gt;=2024.7.0 (floating) while backend/requirements.txt now pins adlfs==2026.5.0 (exact); no comment on either side cross-references the pairing, unlike the existing pyarrow==19.0.0 'must match the Airflow image' note in this same file.",
+    "failure_scenario": "Harness writes Iceberg tables to an ADLS warehouse using whatever adlfs version its floating &gt;= constraint resolves to at build time (could be anywhere from 2024.7.0 up); backend reads those tables with adlfs==2026.5.0. If a future adlfs release changes ADLS auth/retry/block-size behavior, a table the harness wrote and validated locally could hit different I/O behavior when profiled by the pinned backend, with no comment anywhere flagging that these two independently-resolved pins should be checked together on future bumps. Low severity (adlfs is just the transport, not the Iceberg format) — worth a one-line comment, not a blocker."
+  }
+]
+```
+
+Everything else — the actual `backend/requirements.txt` line itself, the typecheck-subset boundary, the Dockerfile, and the PR's scope relative to #749 — checks out with no gaps found.</result>
+<usage><subagent_tokens>46515</subagent_tokens><tool_uses>23</tool_uses><duration_ms>218429</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bf8tn283z</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c0b670d5-58c4-41ee-bbcf-b0dd9018241d/tasks/bf8tn283z.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch the adlfs deploy to completion" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ad535e4275233bfc7</task-id>
+<tool-use-id>toolu_01PLUZ99wBeWfKxWo1bN1sqv</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c0b670d5-58c4-41ee-bbcf-b0dd9018241d/tasks/ad535e4275233bfc7.output</output-file>
+<status>completed</status>
+<summary>Agent "Review the NAType fix PR" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I have enough to give a confident, evidence-backed report.
+
+Findings summary (verified by executing the actual code, not just reading it):
+
+- The new duck-typing (`type(value).__name__ in ("NAType", "NaTType")`) correctly narrows to pandas' two singleton sentinel types — no other library ships classes with those exact names, so no false-positive risk there.
+- `sanitize_json` is the single choke point for persisted GX payloads: `run_service.py`, `dryrun_service.py`, and `profile_service.py` all route through it, and `alerting/*` only reads already-persisted (already-sanitized) `Result` rows from the DB — no bypass found.
+- Ordering is fine for the NaT case: `np.datetime64("NaT").item()` already returns `None` (verified), so a numpy NaT can't slip past `.item()` unserializable.
+- However, the fix is genuinely incomplete: Arrow-backed frames (`dtype_backend="pyarrow"`, used by both `flatfile.py` and `iceberg.py` per #716) yield `pd.Timestamp` scalars for non-null datetime cells. `pd.Timestamp` has neither `.item()`/`.dtype` (so the numpy branch doesn't touch it) nor a type name of `NAType`/`NaTType` (so the new branch doesn't touch it either) — it passes straight through and `json.dumps` crashes. I reproduced this live: running `expect_column_values_to_be_in_set` on an Arrow-backed timestamp column with a failing value produces `sample_failures = {'partial_unexpected_list': [Timestamp('2099-01-01 00:00:00')], ...}`, `sanitize_json` leaves the `Timestamp` untouched, and `json.dumps(...)` raises `TypeError: Object of type Timestamp is not JSON serializable` — the exact JSONB-insert crash this PR is meant to fix, just for a sibling pandas type. Notably, the sibling module `profile_service._to_native` already special-cases this (`hasattr(value, "isoformat")` → `.isoformat()`) — the very function this PR's comment cites as its "matching" precedent — but `sanitize_json` wasn't given the equivalent branch.
+- Separately, `run_service.py:93` calls `sanitize_json(outcome.expected_value)` unconditionally, even on the `errored` branch. I reproduced a case where a between-style expectation over a date/timestamp column coerces `min_value`/`max_value` into `datetime.date` in `expected_value`, which also isn't handled by `sanitize_json` and crashes `json.dumps` independent of the pd.NA/NaT fix.
+- Test coverage: the new tests (`test_pandas_na_and_nat_become_none`, `test_run_checks_null_sample_payload_json_serializes`) are good, real regression tests for the null-cell case (not overfit — they exercise the actual runner), but they only cover null cells, so they don't catch the `pd.Timestamp`/`datetime.date` gap above.
+
+```json
+[
+  {
+    "file": "backend/app/core/jsonsafe.py",
+    "line": 41,
+    "summary": "Duck-typing only matches NAType/NaTType; pd.Timestamp (and datetime.date/datetime from GX kwarg coercion) has neither .item()/.dtype nor that type name, so it passes through unsanitized.",
+    "failure_scenario": "Any expectation with a failing value on an Arrow-backed timestamp column (iceberg native read or flat-file pyarrow dtype_backend) puts a pd.Timestamp in partial_unexpected_list; reproduced live: expect_column_values_to_be_in_set on a datetime column yields sample_failures={'partial_unexpected_list': [Timestamp(...)], ...}, and json.dumps(sanitize_json(sample)) raises 'Object of type Timestamp is not JSON serializable' — the same JSONB-insert crash this PR targets, just for datetimes instead of NA/NaT."
+  },
+  {
+    "file": "backend/app/services/run_service.py",
+    "line": 93,
+    "summary": "expected_value is sanitize_json'd unconditionally, including on the errored branch, but sanitize_json still can't handle datetime.date/datetime that GX coerces expectation kwargs into for date/timestamp columns.",
+    "failure_scenario": "A between-style expectation on a date/timestamp column with string min/max bounds gets its kwargs coerced by GX into datetime.date; reproduced live: expected_value={'column': 'event_ts', 'min_value': date(2019,1,1), 'max_value': date(2030,1,1)} survives sanitize_json unchanged and json.dumps raises 'Object of type date is not JSON serializable', crashing persistence even when the check errored (not just on success)."
+  },
+  {
+    "file": "backend/tests/core/test_jsonsafe.py",
+    "line": 92,
+    "summary": "New tests only exercise the null-cell (pd.NA/pd.NaT) path; no case with a non-null pd.Timestamp or GX-coerced datetime.date value, so the gap above ships without a red test.",
+    "failure_scenario": "A future regression or the still-open Timestamp gap on a datetime-column check would not be caught by this suite, since every fixture uses null cells only (supplier_id None) rather than a failing (non-null) timestamp value."
+  }
+]
+```</result>
+<usage><subagent_tokens>47306</subagent_tokens><tool_uses>27</tool_uses><duration_ms>178710</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>by1oer45f</task-id>
+<tool-use-id>toolu_01GccqGQ9pEZbvpmrYp4MSJ1</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c0b670d5-58c4-41ee-bbcf-b0dd9018241d/tasks/by1oer45f.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for PR 752 to merge or CI to fail" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bbu84pssl</task-id>
+<tool-use-id>toolu_011oF7bfv4gTF1wGiKb9TG2B</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c0b670d5-58c4-41ee-bbcf-b0dd9018241d/tasks/bbu84pssl.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch deploy #3 to completion" completed (exit code 0)</summary>
+</task-notification>
