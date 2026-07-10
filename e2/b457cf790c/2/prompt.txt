@@ -1,0 +1,340 @@
+<task-notification>
+<task-id>a87ee57d7e7ced11a</task-id>
+<tool-use-id>toolu_01MKxaosAXbiMF6NfwsAFeoc</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c0b670d5-58c4-41ee-bbcf-b0dd9018241d/tasks/a87ee57d7e7ced11a.output</output-file>
+<status>completed</status>
+<summary>Agent "Finder: simplification angle" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Based on my analysis of the new ADR 0031 against the stated guideline ("Keep each ADR short — 1–2 pages"), here are the concrete redundancy and verbosity issues:
+
+```json
+[
+  {
+    "file": "docs/adr/0031-oss-byol-distribution-licensing.md",
+    "line": 20,
+    "summary": "\"There is no paid license, no entitlement check, and no license-key machinery\" + \"no marketplace metering or entitlement integration is needed\" — three formulations of the same constraint within a single decision point",
+    "failure_scenario": "Reader must parse multiple negative restatements to extract one architectural constraint; unclear which formulation is authoritative. The decision becomes verbose when one clear statement suffices."
+  },
+  {
+    "file": "docs/adr/0031-oss-byol-distribution-licensing.md",
+    "line": "13-15",
+    "summary": "Detailed audit listing (239 backend packages, 643 frontend, with license breakdown) does not justify the decision — the actual justification is simply line 9: \"the repository is already published under the MIT license\"",
+    "failure_scenario": "Reader wades through 3 lines of dependency metadata that add no decision logic. The audit result (line 16: 'no copyleft constraint') is the relevant output, not the full enumeration."
+  },
+  {
+    "file": "docs/adr/0031-oss-byol-distribution-licensing.md",
+    "line": 16,
+    "summary": "\"So the only distribution-compliance obligation is notice preservation\" is a *conclusion from the audit*, not context *for* the decision. This sentence belongs in Consequences, not Context, because it states an outcome of the decision, not input to it",
+    "failure_scenario": "Reader must infer the logical chain: audit → compliance obligation → why that justifies the decision. The consequence is embedded in context, breaking the narrative."
+  },
+  {
+    "file": "docs/adr/0031-oss-byol-distribution-licensing.md",
+    "line": "21-24",
+    "summary": "Decision points 2–5 (marketplace listings are free, notices in release path, dependency guardrail, monetization model) are consequences or implementations of point 1 (free MIT, no entitlement), not independent decisions",
+    "failure_scenario": "Reader cannot distinguish architectural choices from deductive consequences. The list implies 5 decisions when there is 1; points 2–5 follow deductively from point 1 and could be condensed into Consequences."
+  },
+  {
+    "file": "docs/adr/0031-oss-byol-distribution-licensing.md",
+    "line": 9,
+    "summary": "\"which grants everyone the right to use, copy, modify, distribute, and *sell* the software\" is a verbose 5-item enumeration; MIT's substance for this decision is simply \"permits full rights including commercial use\"",
+    "failure_scenario": "Reader must parse a list (use, copy, modify, distribute, sell) to extract the decision-relevant fact: commercial use is already permitted, making paid entitlements impossible."
+  },
+  {
+    "file": "docs/adr/0031-oss-byol-distribution-licensing.md",
+    "line": 20,
+    "summary": "Line 20 end: \"bring your own (free, MIT) license\" followed by \"the customer deploys the OSS into their own account, and no marketplace metering or entitlement integration is needed\" restates the first sentence's core point; the clarification adds redundancy within the same decision paragraph",
+    "failure_scenario": "Same constraint (no marketplace metering, no entitlement machinery, free MIT) appears 3+ times in lines 9–20. Reader cannot identify which restatement is the decision vs. elaboration vs. consequence."
+  }
+]
+```</result>
+<usage><subagent_tokens>18738</subagent_tokens><tool_uses>2</tool_uses><duration_ms>61170</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ae462fa595ec7e6cc</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c0b670d5-58c4-41ee-bbcf-b0dd9018241d/tasks/ae462fa595ec7e6cc.output</output-file>
+<status>completed</status>
+<summary>Agent "Finder B: removed behavior" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I have the full picture. Let me verify nothing in #732 or ADR 0031 quietly re-homes the other §5 items by cross-checking the two documents against ADR 0013 §5's enumerated list.
+
+Both new documents are careful to scope the supersession to only the "licensing model + entitlement/license-key" line, and ADR 0031 states "the rest of ADR 0013 stands unchanged." So §5's other obligations nominally survive inside ADR 0013. The real gap is that issue #732 — the *operational* marketplace-readiness checklist that ADR 0031 points to as the tracking home — carries only some of §5's items. Mapping §5's list against ADR 0031 + #732:
+
+- licensing model + entitlement/license-key → re-homed (MIT, no key). Clean.
+- seller registration → carried (ADR 0031 Decision #2; #732 prerequisites).
+- privacy → carried (#732 "privacy posture stated").
+- support SLA → carried, with explicit rationale ("SLA only if a paid tier appears").
+- per-marketplace security review → carried (ADR 0031 "certification"; #732 "per-marketplace review").
+- **tax/banking, EULA, DPA, SOC 2, pen test → not carried in either ADR 0031 or #732.**
+
+Findings:
+
+```json
+[
+  {
+    "file": "docs/adr/0031-oss-byol-distribution-licensing.md",
+    "line": "Decision #1 / Related section (\"§5 licensing-model line is superseded... the rest stands\")",
+    "summary": "ADR 0013 §5 explicitly flagged 'SOC 2 + pen test (for enterprise buyers)' as a commercial obligation. Neither ADR 0031 nor issue #732 (the live marketplace-readiness checklist ADR 0031 designates as the tracking home) mentions SOC 2 or a pen test anywhere. Being free-OSS/BYOL does not remove enterprise-procurement trust demands, and no 'no longer needed because X' rationale is given.",
+    "failure_scenario": "An enterprise buyer evaluating the marketplace listing requires SOC 2 (or a pen-test report) during procurement. The item was documented in §5 but fell off #732, so no one scheduled it; the deal stalls with no owner and no recorded decision that it was intentionally dropped."
+  },
+  {
+    "file": "docs/adr/0031-oss-byol-distribution-licensing.md",
+    "line": "Decision #2 (\"Listings still require seller registration and per-marketplace certification, but not commerce integration\")",
+    "summary": "§5 listed 'EULA / privacy / DPA'. ADR 0031 re-homes privacy (via #732's 'phones nothing home' statement) but is silent on the EULA and DPA. It asserts MIT is the license but never states that MIT substitutes for the marketplace-required end-user terms/EULA, and #732 omits both EULA and DPA.",
+    "failure_scenario": "Azure Partner Center certification blocks the listing pending an end-user license agreement / terms document that a free OSS offer still must attach. Because ADR 0031 conflated 'MIT license' with 'marketplace EULA' and #732 never listed it, the requirement surfaces late with no owner."
+  },
+  {
+    "file": "docs/adr/0031-oss-byol-distribution-licensing.md",
+    "line": "Decision #2 / #732 prerequisites",
+    "summary": "§5 listed 'seller registration + tax/banking'. ADR 0031 and #732 both carry 'seller registration' but drop 'tax/banking'. The 'not commerce integration' phrasing is a plausible implicit rationale (a free offer needs no payout account), but no explicit 'tax/banking not needed because the offer is free' statement is recorded.",
+    "failure_scenario": "A future paid/services tier (explicitly kept open by ADR 0031 Decision #5) reintroduces the payout/tax setup that was silently dropped; there is no ADR trace that tax/banking was ever considered, so it is rediscovered from scratch."
+  },
+  {
+    "file": "docs/adr/0031-oss-byol-distribution-licensing.md",
+    "line": "Consequences → Positive, first bullet (\"the last commercial-machinery item ADR 0013 carried disappears\")",
+    "summary": "This bullet plus 'the marketplace path reduces to packaging + certification' understates the surviving §5 commercial/legal surface (EULA, DPA, SOC 2, pen test, tax/banking). 'Commercial-machinery' is arguably narrow to build-work, but a reader can take 'last item disappears / reduces to packaging + certification' as 'the commercial/legal track is essentially closed,' which contradicts §5 still standing.",
+    "failure_scenario": "A planner reads ADR 0031 as declaring the commercial/legal work done ('reduces to packaging + certification') and de-scopes the remaining §5 legal items, so EULA/DPA/SOC 2 get no owner despite §5 nominally still standing."
+  }
+]
+```
+
+Note on calibration: the diff itself is textually careful — it scopes the supersession narrowly and says "the rest of ADR 0013 stands," so strictly nothing is *deleted*. The exposure is that ADR 0031 redirects tracking to issue #732, and #732 silently omits five §5 items (tax/banking, EULA, DPA, SOC 2, pen test). Candidates 1-2 are the strongest (enterprise-facing obligations with no stated home or rationale); 3-4 are softer (plausible implicit rationale, or a framing/overstatement risk rather than a hard drop).</result>
+<usage><subagent_tokens>22475</subagent_tokens><tool_uses>3</tool_uses><duration_ms>105758</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a2bd1ec34c51fd6fa</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c0b670d5-58c4-41ee-bbcf-b0dd9018241d/tasks/a2bd1ec34c51fd6fa.output</output-file>
+<status>completed</status>
+<summary>Agent "Finder: conventions angle" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Based on the governing convention docs (`docs/adr/README.md` Format section + CLAUDE.md §9/§Documentation; no `~/.claude/CLAUDE.md` exists) checked field-by-field against the diff, here are the candidates.
+
+```json
+[
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/docs/adr/0013-marketplace-distribution-and-anti-lock-in.md",
+    "line": 72,
+    "summary": "ADR 0013 is superseded (its §5 licensing-model line) but its Status stays 'Accepted' (line 3, unchanged) and the supersession is recorded only as a new Related bullet: '[ADR 0031] — **supersedes the §5 \"licensing model + entitlement/license-key\" line**'. docs/adr/README.md line 3 states the convention unconditionally: 'New ADRs are append-only — supersede an old decision by adding a new ADR and marking the old one's status as `Superseded by ADR-NNNN`.' Both ADR 0031's own text ('is **superseded by this ADR**') and this bullet use the word 'supersedes', which triggers the status-flip rule, yet 0013's status field is never flipped and no 'Superseded by: ADR-0031' frontmatter field (README line 14) is added.",
+    "failure_scenario": "A reader scanning the ADR index / 0013's frontmatter sees Status: Accepted with no Superseded-by marker and treats the entire §5 licensing/entitlement decision as still live, missing that ADR 0031 reversed it — the exact drift the append-only status-flip rule exists to prevent. (Genuine tension: 0013 is only partially superseded, so a full status flip would over-state it — but the stated rule admits no partial-supersession exception, so the Related-bullet workaround stretches/breaks the letter of README line 3.)"
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/docs/adr/0031-oss-byol-distribution-licensing.md",
+    "line": 5,
+    "summary": "ADR 0031's frontmatter (lines 3-5: Status/Date/Deciders) carries no 'Supersedes:' field, yet the ADR explicitly declares a supersession — Decision item 1: 'the \"licensing model + entitlement/license-key\" line of ADR 0013 §5 is **superseded by this ADR**', and the Related bullet: 'its §5 licensing-model line is superseded here'. docs/adr/README.md line 13 defines the field: '**Supersedes** *(optional)* — `ADR-NNNN` this decision replaces. Omit when none.' Here there is a supersession (not 'none'), so the field should read 'Supersedes: ADR-0013'; omitting it leaves the structured frontmatter contradicting the prose.",
+    "failure_scenario": "Tooling or a reviewer relying on the machine-readable frontmatter (the convention's intended structured signal) finds no Supersedes/Superseded-by link between 0013 and 0031, so the supersession relationship is invisible except in free-text prose — undermining the frontmatter-as-source-of-truth intent. Whether the field truly applies is arguable given the supersession is only one line of 0013, which is the same partial-supersession ambiguity the convention doesn't address."
+  }
+]
+```
+
+Notes on things that do comply (checked, not flagged): file name `0031-oss-byol-distribution-licensing.md` matches `NNNN-short-kebab-slug.md`; Status `Accepted` is a valid title-case value; Date `2026-07-09` is `YYYY-MM-DD`; Deciders present; all required sections present (Context, Decision, Consequences, Alternatives considered) plus optional Related; length ~51 lines is within the 1-2 page rule; and the ADR index in `docs/adr/README.md` was updated with the 0031 row, satisfying CLAUDE.md §9's "single source of truth" requirement. The two candidates above both reduce to one root issue — the partial supersession of 0013 is recorded only in prose/Related bullets, not via the status flip (README line 3) or the Supersedes/Superseded-by frontmatter fields (README lines 13-14).</result>
+<usage><subagent_tokens>45042</subagent_tokens><tool_uses>5</tool_uses><duration_ms>73148</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a1b26d9ded3025468</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c0b670d5-58c4-41ee-bbcf-b0dd9018241d/tasks/a1b26d9ded3025468.output</output-file>
+<status>completed</status>
+<summary>Agent "Finder A: line-by-line scan" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I read every added line across the three changed files and verified each factual claim against the repo. Summary of checks: all five relative ADR links (0010, 0011, 0013, 0023, 0031) resolve to real files; the §5 quote in ADR 0013 ("licensing model + entitlement/license-key (we are not metering under BYOL)") is reproduced verbatim; ADR 0023 genuinely decides public GHCR images; issue #732 exists and matches; LICENSE is MIT © 2026 Arijit Roy; the @fontsource/inter+jetbrains-mono and psycopg2-binary deps exist in the manifests, and the certifi/pathspec/dompurify/lightningcss claims are framed as installed-tree (transitive) findings so they aren't manifest inconsistencies. The document is highly accurate. Two candidates:
+
+```json
+[
+  {
+    "file": "docs/adr/0031-oss-byol-distribution-licensing.md",
+    "line": 23,
+    "summary": "Decision #4 attaches the new dependency-license guardrail to \"the quarterly supply-chain audit cadence (CONTRIBUTING rule 39)\", but CONTRIBUTING.md rule 39 is titled \"Quarterly MCP supply-chain audit\" and is scoped strictly to client-side MCP servers pinned in .mcp.json (checking for deprecated/yanked/transferred publishers) — not a general dependency or license audit.",
+    "failure_scenario": "A maintainer following the pointer to run the license guardrail lands on a rule about MCP-server publisher integrity, not dependency licensing; the ADR mischaracterizes an MCP-specific cadence as a general supply-chain audit, so the guardrail has no actual existing process to 'join' and readers are misled about what rule 39 covers."
+  },
+  {
+    "file": "docs/adr/0031-oss-byol-distribution-licensing.md",
+    "line": 21,
+    "summary": "Decision #2 and the Related list (line 50) cite \"the public GHCR images — ADR 0023\" (plural), but ADR 0023's decision explicitly scopes GHCR to \"the container registry for the backend image\" only (pushes ghcr.io/theurgicduke771/dataq-backend). The frontend image is covered by ADR 0028, not 0023, and 0023 makes no claim about where the frontend image is published.",
+    "failure_scenario": "Reader is led to believe ADR 0023 establishes a set of public GHCR images (frontend + backend) as the distribution artifacts, overstating 0023's single-backend-image scope; low severity but an imprecise cross-reference for a document whose whole point is a coherent artifact/license story."
+  }
+]
+```</result>
+<usage><subagent_tokens>33676</subagent_tokens><tool_uses>10</tool_uses><duration_ms>118299</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a41d789a14fc7eb89</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c0b670d5-58c4-41ee-bbcf-b0dd9018241d/tasks/a41d789a14fc7eb89.output</output-file>
+<status>completed</status>
+<summary>Agent "Finder C: cross-file tracer" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Based on my trace, here are the findings. First, two things I verified as NON-issues so the parent doesn't re-investigate:
+
+- **mkdocs.yml nav (lines 57-83):** `nav:` is an explicit list of Guides + Reference pages only — NO ADR is individually listed (not 0013, not 0030, none). ADRs are built/published as reachable pages (comment line 11/86; `validation.omitted_files: ignore`) but never appear in the nav menu. So ADR 0031 needs no nav entry; the PR is consistent with how all 30 prior ADRs are handled. Not a defect.
+- **Pending table (README.md lines 74+):** 0015 is still the only Pending ADR; ADR 0031 doesn't touch reconciliation/two-connection scope, so the pending table correctly needs no change.
+- **LICENSE:** ADR 0031's description ("MIT… use, copy, modify, distribute, and sell") accurately matches LICENSE (grants use/copy/modify/merge/publish/distribute/sublicense/sell). No misdescription.
+
+Candidates the PR creates or fails to fix:
+
+```json
+[
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/docs/adr/0013-marketplace-distribution-and-anti-lock-in.md",
+    "line": 60,
+    "summary": "0013's Consequences line 'BYOL forgoes marketplace-metered usage billing; revenue is licensed outside the meter' — plus the Billing table row (line 17: 'bring your own license, billed outside the meter') and the Alternatives line (line 64: 'a revenue model (metered SaaS) we can approximate with BYOL licensing') — all frame BYOL as a PAID licensed-revenue model. ADR 0031 redefines BYOL as 'bring your own (free, MIT) license' with 'No direct license revenue.' The PR's new Related bullet claims only §5's entitlement line is superseded and 'the rest of this ADR stands unchanged' — but these revenue lines directly contradict 0031 and were left untouched.",
+    "failure_scenario": "A reader of 0013's Consequences/Alternatives/table concludes BYOL is a paid-licensing revenue play (revenue billed outside the meter), the exact position ADR 0031 reverses. The two ADRs now assert opposite commercial models, and 0031's 'the rest stands unchanged' disclaimer is false for at least three lines."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/docs/adr/0013-marketplace-distribution-and-anti-lock-in.md",
+    "line": 47,
+    "summary": "The actual §5 body text ('licensing model + entitlement/license-key (we are not metering under BYOL), seller registration…') was NOT annotated. The supersession is only recorded in a new bullet at the bottom of the Related section (line 72). Nothing inline at §5 flags that its first open item is now dead.",
+    "failure_scenario": "A reader scanning §5 top-to-bottom sees 'entitlement/license-key' still listed as a live open post-v1 item and plans/schedules that work, never reaching the Related footer that reverses it."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/docs/adr/README.md",
+    "line": 55,
+    "summary": "The 0013 index row still reads status 'Accepted' with its original one-line summary and no amendment/supersession marker. The README's own convention (line 3) says to 'supersede an old decision… marking the old one's status as `Superseded by ADR-NNNN`'. This is a PARTIAL supersession, which the convention doesn't cover, and the PR left 0013's status and summary unchanged — so the index gives zero signal that §5 changed.",
+    "failure_scenario": "A reader scanning the ADR index table (the primary discovery surface) sees 0013 as fully 'Accepted' as-written and never learns its §5 licensing/entitlement decision was overridden by 0031; they act on the superseded position."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/docs/adr/README.md",
+    "line": 3,
+    "summary": "Convention text mandates full-status supersession ('marking the old one's status as `Superseded by ADR-NNNN`'), and the template (lines 13-14, 27-28) provides Supersedes/Superseded-by front-matter fields. ADR 0031 uses neither: it has no 'Supersedes' field, and 0013 gets no 'Superseded by' field/status. The PR invents an ad-hoc partial-supersession-via-Related-note mechanism the documented convention has no slot for.",
+    "failure_scenario": "Tooling or a contributor relying on the documented Supersedes/Superseded-by fields to build a supersession graph misses the 0013↔0031 relationship entirely, since it exists only as prose in a Related bullet."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/context/post-v1-roadmap.md",
+    "line": 67,
+    "summary": "Roadmap gate G-h states 'ADR 0013's ambition is commercial BYOL' and frames a 'Licence landmine on the demo path… before any commercial demo/use → paid workspace.' This restates the old paid-commercial-licensing framing of BYOL. ADR 0031 reframes BYOL as free OSS (MIT) with monetization only 'built beside the OSS, not into it.' The PR adds no pointer from this roadmap gate to ADR 0031, leaving the roadmap asserting the pre-0031 commercial-BYOL position.",
+    "failure_scenario": "The person executing the marketplace/go-live checklist reads G-h, treats DataQ's distribution as a commercial-license product, and provisions/blocks on paid-license machinery that ADR 0031 explicitly abolished — the roadmap and the governing ADR now disagree on whether the product is commercial or free OSS."
+  }
+]
+```</result>
+<usage><subagent_tokens>29921</subagent_tokens><tool_uses>12</tool_uses><duration_ms>112099</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ad992f26d65d13dee</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c0b670d5-58c4-41ee-bbcf-b0dd9018241d/tasks/ad992f26d65d13dee.output</output-file>
+<status>completed</status>
+<summary>Agent "Finder: reuse angle" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Based on my analysis of the new ADR 0031, the git diff, and issue #732, I've identified content that duplicates canonical records elsewhere and creates drift/maintenance risk:
+
+```json
+[
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/docs/adr/0031-oss-byol-distribution-licensing.md",
+    "line": 16,
+    "summary": "Backend dependency audit restates exact package count (239), core-stack list, and license details already in issue #732 Context section",
+    "failure_scenario": "When dependencies are upgraded (version bumps, add/remove), these numbers become stale unless both the ADR and issue #732 are updated. CI audit regeneration updates #732; developers then must manually sync the ADR or inconsistency spreads"
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/docs/adr/0031-oss-byol-distribution-licensing.md",
+    "line": 17,
+    "summary": "Frontend dependency audit restates package count (643), weak-copyleft packages (dompurify, lightningcss, @fontsource) and OFL-1.1 detail already in issue #732 with additional metadata (MIT 526 / Apache-2.0 42 / ISC 33 / BSD 18)",
+    "failure_scenario": "Frontend dependency updates (pnpm bump/audit) will change the count and license distribution; the canonical 643 number and breakdown lives in #732's audit record. ADR numbers drift without parallel update, creating version skew between architecture decision doc and actual audit state"
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/docs/adr/0031-oss-byol-distribution-licensing.md",
+    "line": 23,
+    "summary": "References 'CONTRIBUTING rule 39' for the dependency license guardrail (no strong-copyleft check), but CONTRIBUTING.md rule 39 is 'Quarterly MCP supply-chain audit' (MCP servers only in .mcp.json)",
+    "failure_scenario": "Rule numbering is brittle; if CONTRIBUTING.md rules reorder, reference breaks. Worse, semantically wrong now—developers reading rule 39 find MCP procedure, not the dependency-license compliance rule. When the actual 'no-strong-copyleft-on-PRs' rule is formalized in CONTRIBUTING, confusion over which rule applies"
+  }
+]
+```
+
+**Canonical homes:**
+- **Audit details (package counts, versions, license audit records):** Issue #732 "License audit result" section — this is the source of truth, regenerated quarterly and when dependencies change.
+- **Dependency license guardrail process rule:** Should exist in CONTRIBUTING.md (currently missing or misreferenced). Rule 17 covers vulnerability scanning (Dependabot); rule 39 covers MCP audits. A new rule should specify: dependency-license-check PRs, ADR-exception process, audit cadence tie-in.
+
+**Recommendation:** Summarize audit findings in ADR Context (e.g., "The audit confirmed zero strong-copyleft…") and link to #732 for audit details instead of restating volatile numbers.</result>
+<usage><subagent_tokens>41605</subagent_tokens><tool_uses>11</tool_uses><duration_ms>155735</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a14812c3e60222fda</task-id>
+<tool-use-id>toolu_01QXkf2beuiV3Xd3ciZLub1c</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c0b670d5-58c4-41ee-bbcf-b0dd9018241d/tasks/a14812c3e60222fda.output</output-file>
+<status>completed</status>
+<summary>Agent "Finder: altitude angle" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I have enough to report. Here are the findings, grounded in the repo's existing patterns.
+
+```json
+[
+  {
+    "file": "docs/adr/0031-oss-byol-distribution-licensing.md",
+    "line": 23,
+    "summary": "Decision #4 is declared \"standing, binding on future PRs\" but lives only in the ADR. The repo's established pattern is that standing PR-binding rules from ADRs are distilled into CONTRIBUTING.md numbered working agreements and/or CLAUDE.md §11 (ADR 0002 conventional-commits -&gt; CONTRIBUTING rule 10; ADR 0013 anti-lock-in guardrail #3 -&gt; CLAUDE.md §11 line 236). CLAUDE.md §9 (line 215) states outright that the operating rules ADRs distill into \"are already captured in §4-§6, §10 and §11.\" The license guardrail appears in neither CONTRIBUTING nor CLAUDE, so it is binding only inside an ADR no reviewer is required to re-read.",
+    "failure_scenario": "A contributor adds a GPL/AGPL/SSPL dependency. pip-audit (rule 17) is CVE-only and does not classify licenses; nothing in CONTRIBUTING/CLAUDE flags it; CI passes and the PR merges. The MIT-coherence violation surfaces only if someone happens to re-read ADR 0031, defeating the point of a 'binding on future PRs' rule."
+  },
+  {
+    "file": "docs/adr/0031-oss-byol-distribution-licensing.md",
+    "line": 23,
+    "summary": "Decision #4 asserts the license check \"joins the quarterly supply-chain audit cadence (CONTRIBUTING rule 39),\" but rule 39 (CONTRIBUTING.md line 130) is scoped to MCP-server publisher integrity for packages pinned in .mcp.json (deprecation/yank/publisher-transfer of MCP servers) and says nothing about dependency-license classification. The PR points enforcement at an existing rule that does not actually cover it, and does not amend rule 39 to add license auditing.",
+    "failure_scenario": "The quarterly audit is performed per rule 39's real checklist (checking MCP server publishers), the dependency-license sweep is never run because it was never written into the rule, and the guardrail is silently orphaned while everyone believes it is on a cadence."
+  },
+  {
+    "file": "docs/adr/0013-marketplace-distribution-and-anti-lock-in.md",
+    "line": 72,
+    "summary": "Partial supersession is handled with a bespoke prose mechanism. docs/adr/README.md line 3 defines supersession as whole-ADR only (flip the old ADR's Status to `Superseded by ADR-NNNN`, with the `Superseded by` frontmatter field). The repo's actual mechanism for a partial change is \"Amend\": ADR 0028 carries an `Amends: ADR-0024` frontmatter field, and ADR 0012 got an inline `&gt; **Amendment (date):**` blockquote. ADR 0031 uses none of these — no `Amends: ADR-0013`/`Supersedes: ADR-0013` in its frontmatter (lines 3-5), no amendment blockquote in 0013 — and instead overloads the word \"supersedes\" for a partial change inside a bolded Related bullet. 0013's Status stays \"Accepted\" and the index Status column stays \"Accepted,\" so nothing machine-readable signals the override.",
+    "failure_scenario": "A reader consulting ADR 0013 §5 sees Status 'Accepted' and the index row 'Accepted,' takes the 'licensing model + entitlement/license-key' open item at face value, and scopes/builds entitlement-key machinery — exactly the incoherent work 0031 exists to kill — because the override is buried in a Related bullet rather than in the frontmatter/status the append-only convention says to check."
+  },
+  {
+    "file": "docs/adr/README.md",
+    "line": 8,
+    "summary": "The Format section documents `Supersedes` and `Superseded by` frontmatter but omits the `Amends:` field already in live use (ADR 0028 line 6). This ADR — the second partial-override case in the log — is the natural point to formalize an amend/partial-supersession convention (an `Amended by`/`Amends` field with an index signal), but the PR instead invents a one-off prose form, leaving the format gap open and the amend precedent undocumented.",
+    "failure_scenario": "Each future partial override reinvents its own prose mechanism (blockquote vs Related bullet vs frontmatter), the index Status column keeps saying 'Accepted' for ADRs whose key clauses are dead, and the append-only 'single source of truth' index drifts from the real decision state."
+  }
+]
+```
+
+Notes on what I verified: the MIT claim is accurate (`/Users/arijit/Coding/Python/DataQ/LICENSE` is MIT, "Copyright (c) 2026 Arijit Roy"). CONTRIBUTING rule 39 is confirmed MCP-only (line 130). The propagation precedent is confirmed real: ADR 0002 -&gt; CONTRIBUTING rules 7/10, ADR 0013 guardrail -&gt; CLAUDE.md §11 line 236, and CLAUDE.md §9 line 215 states the distillation contract explicitly. The `Amends:` frontmatter precedent is real (ADR 0028 line 6) and the inline-amendment precedent is real (ADR 0012 line 7), yet neither is documented in the README Format section.</result>
+<usage><subagent_tokens>55060</subagent_tokens><tool_uses>10</tool_uses><duration_ms>148906</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a24778d082658c969</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c0b670d5-58c4-41ee-bbcf-b0dd9018241d/tasks/a24778d082658c969.output</output-file>
+<status>completed</status>
+<summary>Agent "Verify G-h stale framing" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>PLAUSIBLE — G-h's substantive trigger (Databricks Free-Edition terms forbid commercial use of the harness workspace) is untouched by ADR 0031 and remains fully valid, since that's about Databricks' own license, not DataQ's; so the finding is not a fabricated contradiction. But the aside "ADR 0013's ambition is commercial BYOL" is genuinely stale — ADR 0031 explicitly supersedes ADR 0013 §5's entitlement/licensing-revenue line and states there is "no direct license revenue," and this PR indeed doesn't touch post-v1-roadmap.md to add a pointer to ADR 0031. That said, the claimed reader-confusion risk is overstated: G-h/G-i are clearly about the Databricks harness's own licence terms and a paid Databricks workspace, not about DataQ's licensing model, so a careful reader is unlikely to conclude DataQ itself is commercially licensed — making this a real but minor cross-reference/staleness gap rather than a severe misleading defect.</result>
+<usage><subagent_tokens>25659</subagent_tokens><tool_uses>5</tool_uses><duration_ms>37526</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>af374b3658a2e3ed5</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c0b670d5-58c4-41ee-bbcf-b0dd9018241d/tasks/af374b3658a2e3ed5.output</output-file>
+<status>completed</status>
+<summary>Agent "Verify EULA/SOC2 checklist gap" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>**CONFIRMED**
+
+Verified via `docs/adr/0013-marketplace-distribution-and-anti-lock-in.md` §5 and `docs/adr/0031-oss-byol-distribution-licensing.md` (both present, 0031 is the tip commit) plus `gh issue view 732`:
+
+- **(a) Omissions are real.** ADR 0013 §5 lists six obligation classes: licensing/entitlement, seller registration + tax/banking, EULA/privacy/DPA, support SLA, per-marketplace security review, and SOC2+pen-test for enterprise buyers. Issue #732's checklist covers licensing (via the ADR-amend item), a generic "privacy posture" statement, SUPPORT.md, and "seller registration + per-marketplace review" (partially covering registration/review, and arguably implicitly bundling tax/banking under registration) — but it contains no line item for EULA, DPA, SOC2, or pen-test anywhere in its Prerequisites or Good-to-haves sections. Those are genuinely absent from the tracking issue.
+- **(b) Free-offer license-terms requirement** is standard, well-documented Partner Center behavior (Azure Marketplace certification requires a Legal/terms tab — either the Standard Contract or custom terms of use — even for $0 offers), consistent with general marketplace-certification practice; the repo doesn't contradict this and #732 itself notes "free offers still go through certification" without spelling out what that certification legally requires.
+- **(c) "Rest of 0013 stands" is a textual, not operational, safeguard.** ADR 0031's Decision explicitly limits its supersession to the "licensing model + entitlement/license-key" line and states the rest of 0013 (including §5's other obligations) is unchanged — so the obligations aren't erased on paper. But ADR 0031's own Consequences bullet ("the marketplace path reduces to packaging + certification") and its designation of #732 as the tracking checklist do overstate the simplification in practice, since the operational artifact meant to carry this work forward (#732) doesn't itemize EULA/DPA/SOC2/pen-test/tax-banking. That's a real, accurately-described gap between documented intent and the actionable checklist, not a factual error in the candidate's claim.</result>
+<usage><subagent_tokens>25507</subagent_tokens><tool_uses>6</tool_uses><duration_ms>52734</duration_ms></usage>
+</task-notification>
