@@ -1,11 +1,11 @@
 # ADR 0033 — Workspace roles: Admin / Member / Viewer RBAC on the two-axis model
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-07-09
 - **Deciders:** @TheurgicDuke771
-- **Amends:** ADR [0027](0027-suite-permission-model-workspace-admin.md) — the workspace-admin *source* moves from the `WORKSPACE_ADMIN_EMAILS` env allowlist to a stored `users.role` (this stales 0027's "/me-layer resolved from the allowlist" implementation line and its Related ADR-0010 "off a config allowlist" pointer, not just the top-level framing); the implicit-suite-admin rule is unchanged; the grant model gains one rule (no `edit` shares to Viewers). ADR [0032](0032-email-otp-signin.md) — its OTP signup contract gains `AUTH_OTP_DEFAULT_ROLE`, and its Decision-6 trust statement widens: mailbox compromise of **any stored-role admin** (not only allowlisted addresses) is admin compromise. The inline amendment blockquotes land in 0027/0032 when this ADR flips to Accepted (owned as a #744 checklist item).
+- **Amends:** ADR [0027](0027-suite-permission-model-workspace-admin.md) — the workspace-admin *source* moves from the `WORKSPACE_ADMIN_EMAILS` env allowlist to a stored `users.role` (this stales 0027's "/me-layer resolved from the allowlist" implementation line and its Related ADR-0010 "off a config allowlist" pointer, not just the top-level framing); the implicit-suite-admin rule is unchanged; the grant model gains one rule (no `edit` shares to Viewers). ADR [0032](0032-email-otp-signin.md) — its OTP signup contract gains `AUTH_OTP_DEFAULT_ROLE`, and its Decision-6 trust statement widens: mailbox compromise of **any stored-role admin** (not only allowlisted addresses) is admin compromise. The inline amendment blockquotes landed in 0027/0032 with ratification (2026-07-09).
 - **Related:** ADR [0026](0026-auth-api-keys-and-principal-seam.md) (richer-principals direction; PAT-inherits-user preserved), [0020](0020-history-and-audit-strategy.md) (change-audit lineage for role mutations — #310), [0010](0010-provider-agnostic-infrastructure-seams.md) (generic identity attributes only — roles are DataQ-stored, no IdP claims read)
-- **Issue:** umbrella [#744](https://github.com/TheurgicDuke771/DataQ/issues/744) → slices #740 (role model) · #741 (enforcement) · #742 (management) · #743 (frontend). **Slices are blocked on this ADR's ratification** (Proposed → Accepted).
+- **Issue:** umbrella [#744](https://github.com/TheurgicDuke771/DataQ/issues/744) → slices #740 (role model) · #741 (enforcement) · #742 (management) · #743 (frontend). Ratified 2026-07-09 — slices unblocked.
 
 ## Context
 
