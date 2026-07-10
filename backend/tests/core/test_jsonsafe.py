@@ -92,3 +92,29 @@ def test_pandas_na_and_nat_become_none() -> None:
     cleaned = sanitize_json({"partial_unexpected_list": [pd.NA, "SUP-0001"], "last_seen": pd.NaT})
     assert cleaned == {"partial_unexpected_list": [None, "SUP-0001"], "last_seen": None}
     json.dumps(cleaned, allow_nan=False)  # round-trips cleanly
+
+
+def test_timestamps_and_dates_become_isoformat() -> None:
+    import datetime
+
+    import pandas as pd
+
+    # Arrow-backed frames yield pd.Timestamp sample values, and GX coerces
+    # between-style kwargs into datetime.date in expected_value — JSON has no
+    # native form for either (#751 review, both reproduced live). NaT keeps
+    # mapping to None (sentinel branch wins over its .isoformat()).
+    cleaned = sanitize_json(
+        {
+            "partial_unexpected_list": [pd.Timestamp("2099-01-01 00:00:00")],
+            "min_value": datetime.date(2019, 1, 1),
+            "seen": datetime.datetime(2026, 7, 10, 6, 30, 0),
+            "missing": pd.NaT,
+        }
+    )
+    assert cleaned == {
+        "partial_unexpected_list": ["2099-01-01T00:00:00"],
+        "min_value": "2019-01-01",
+        "seen": "2026-07-10T06:30:00",
+        "missing": None,
+    }
+    json.dumps(cleaned, allow_nan=False)

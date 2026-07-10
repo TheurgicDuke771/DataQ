@@ -442,3 +442,32 @@ def test_run_checks_null_sample_payload_json_serializes(
     for check in outcome.checks:
         json.dumps(sanitize_json(check.observed_value), allow_nan=False)
         json.dumps(sanitize_json(check.sample_failures), allow_nan=False)
+
+
+def test_run_checks_timestamp_sample_payload_json_serializes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#751-review sibling gap: a failing NON-null value on an Arrow-backed timestamp
+    column reaches the sample payload as ``pd.Timestamp`` — that must also survive
+    ``sanitize_json`` → ``json.dumps``, not just the null-sentinel case."""
+    import json
+
+    from backend.app.core.jsonsafe import sanitize_json
+
+    df = pd.DataFrame({"ordered_at": pd.to_datetime(["2026-07-01", "2099-01-01"])})
+    runner = _runner_over(df, monkeypatch)
+    outcome = runner.run_checks(
+        table="retail.purchase_orders",
+        schema=None,
+        checks=[
+            CheckSpec(
+                "expect_column_values_to_be_between",
+                {"column": "ordered_at", "max_value": "2027-01-01"},
+            )
+        ],
+    )
+    assert outcome.success is False
+    for check in outcome.checks:
+        json.dumps(sanitize_json(check.observed_value), allow_nan=False)
+        json.dumps(sanitize_json(check.sample_failures), allow_nan=False)
+        json.dumps(sanitize_json(check.expected_value), allow_nan=False)

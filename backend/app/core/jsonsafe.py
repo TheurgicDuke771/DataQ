@@ -38,8 +38,15 @@ def sanitize_json(value: Any) -> Any:
     # #716) surface null cells to GX payloads as `pd.NA` / `pd.NaT`, neither of which
     # is JSON-serializable (#751). Duck-typed by type name — same no-pandas-import
     # stance as the numpy branch above; both are singletons of these exact types.
+    # MUST precede the isoformat branch: NaT has .isoformat() but must become null.
     if type(value).__name__ in ("NAType", "NaTType"):
         return None
+    # Dates/datetimes: GX coerces between-style kwargs to `datetime.date` in
+    # `expected_value`, and Arrow-backed frames yield `pd.Timestamp` sample values —
+    # JSON has no native form for either. `.isoformat()` mirrors
+    # profile_service._to_native (found live in the #751 review).
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
     if isinstance(value, float):
         return value if math.isfinite(value) else None
     if isinstance(value, dict):
