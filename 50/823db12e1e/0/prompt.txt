@@ -1,0 +1,1 @@
+Can you do the perf testing for all the data sources now, as azure and sf both are avialable. [I'm thinking ~50M records for higher end, what do you think?]
