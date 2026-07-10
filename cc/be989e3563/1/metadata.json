@@ -1,0 +1,135 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_id": "ccbe989e3563",
+  "session_id": "aef9f6a4-f51b-4006-84c5-e914ce549fd6",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-10T15:18:11.289869Z",
+  "branch": "feature/757-asset-entity",
+  "checkpoints_count": 7,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "858c6ffa4744",
+  "checkpoint_transcript_start": 644,
+  "transcript_lines_at_start": 644,
+  "token_usage": {
+    "input_tokens": 9287,
+    "cache_creation_tokens": 346858,
+    "cache_read_tokens": 6967820,
+    "output_tokens": 26411,
+    "api_call_count": 22
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01RNmFM9FtY5xPR2DobCs6t1",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "858c6ffa4744",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 274,
+        "end": 275,
+        "entry_ids": [
+          "76d036f2-a8be-449c-b063-e4262ef549fb"
+        ],
+        "tool_use_id": "toolu_01RNmFM9FtY5xPR2DobCs6t1"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01RNmFM9FtY5xPR2DobCs6t1"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01TDkxnWoenGz1Y6ZvUbMhKq",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "858c6ffa4744",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 651,
+        "end": 652,
+        "entry_ids": [
+          "692e443a-625a-43ad-ba42-00871d2afd80"
+        ],
+        "tool_use_id": "toolu_01TDkxnWoenGz1Y6ZvUbMhKq"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01TDkxnWoenGz1Y6ZvUbMhKq"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 30
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 464,
+      "user_lines_removed": 171,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6,
+        "backend/alembic/versions/f8b9c0d1e2a3_add_assets_entity.py": 44,
+        "backend/app/api/v1/probe.py": 1,
+        "backend/app/api/v1/suites.py": 2,
+        "backend/app/mcp/server.py": 1,
+        "backend/app/services/asset_identity.py": 69,
+        "backend/app/services/asset_service.py": 8,
+        "backend/app/services/connection_service.py": 31,
+        "backend/app/services/orchestration_service.py": 6,
+        "backend/app/services/run_dispatch.py": 17,
+        "backend/app/services/suite_service.py": 7,
+        "backend/app/worker/tasks.py": 1,
+        "backend/tests/api/test_suites.py": 18,
+        "backend/tests/services/test_asset_identity.py": 70,
+        "backend/tests/services/test_asset_identity_migration_parity.py": 131,
+        "backend/tests/services/test_asset_service.py": 22,
+        "backend/tests/services/test_connection_service.py": 30
+      },
+      "user_removed_per_file": {
+        "backend/alembic/versions/f8b9c0d1e2a3_add_assets_entity.py": 29,
+        "backend/app/api/v1/probe.py": 6,
+        "backend/app/api/v1/suites.py": 7,
+        "backend/app/mcp/server.py": 6,
+        "backend/app/services/asset_identity.py": 48,
+        "backend/app/services/asset_service.py": 1,
+        "backend/app/services/connection_service.py": 1,
+        "backend/app/services/orchestration_service.py": 4,
+        "backend/app/services/run_dispatch.py": 1,
+        "backend/app/services/suite_service.py": 3,
+        "backend/app/worker/tasks.py": 6,
+        "backend/tests/api/test_suites.py": 25,
+        "backend/tests/services/test_asset_identity.py": 23,
+        "backend/tests/services/test_asset_service.py": 10,
+        "backend/tests/services/test_connection_service.py": 1
+      }
+    }
+  ]
+}
