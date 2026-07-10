@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "f57b5964f228",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-751-natype-jsonsafe",
+  "checkpoints_count": 3,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/f5/7b5964f228/0/metadata.json",
+      "transcript": "/f5/7b5964f228/0/full.jsonl",
+      "compact_transcript": "/f5/7b5964f228/0/transcript.jsonl",
+      "content_hash": "/f5/7b5964f228/0/content_hash.txt",
+      "prompt": "/f5/7b5964f228/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 36892,
+    "cache_creation_tokens": 2235437,
+    "cache_read_tokens": 142778973,
+    "output_tokens": 337671,
+    "api_call_count": 365
+  }
+}
