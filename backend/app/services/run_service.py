@@ -772,6 +772,11 @@ def reap_stuck_runs(
         )
     )
     reaped_ids = [str(run.id) for run in stuck]  # capture before commit expires attrs
+    # A `running` run emitted an OpenLineage START (the worker got that far before
+    # dying); a `queued` one never did. Capture the started set before the flip so
+    # the post-commit terminal emit only fires for runs that actually opened a run
+    # in Marquez — a queued reap gets none (there's no dangling START to close).
+    started_ids = [run.id for run in stuck if run.status == "running"]
     for run in stuck:
         # Canonical terminal-failed shape, one shared `moment` across the batch.
         run_dispatch.mark_dispatch_failed(run, at=moment, reason=run_dispatch.REAPED_REASON)
@@ -784,4 +789,13 @@ def reap_stuck_runs(
             cutoff=cutoff.isoformat(),
             run_ids=reaped_ids,
         )
+        # Close the dangling START for each reaped-`running` run with a terminal FAIL
+        # (ADR 0034, #758) — a worker death otherwise leaves a permanently-RUNNING run
+        # in Marquez. Emitted per-run after the status flip commits (so the event maps
+        # to FAIL). Lazy import breaks the lineage↔run_service cycle; dark-by-default +
+        # fail-open (dispatch never raises), so this is a no-op when emission is off.
+        from backend.app.lineage import dispatch as lineage_dispatch
+
+        for run_id in started_ids:
+            lineage_dispatch.emit_run_lineage_terminal(session, run_id=run_id)
     return stuck

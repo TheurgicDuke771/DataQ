@@ -61,5 +61,8 @@ pyarrow==24.0.0                   # Parquet flat-file IO (read_parquet/profiler)
 pyiceberg[pyarrow]==0.11.1        # native Iceberg read (ADR 0030, #716) — v2 baseline; spike-verified compatible with pyarrow 24 + GX 1.17.2 (#286); its rich<15/cachetools<7 transitives were unpinned, CVE-clean per pip-audit
 adlfs==2026.5.0                   # pyiceberg FileIO for abfss:// (ADLS) warehouses — [pyarrow] covers S3 natively but resolves ADLS via fsspec/adlfs; without it any ADLS-warehouse iceberg table load dies ModuleNotFoundError (#749). BSD-3 (rule 40)
 
+# ── Lineage (OpenLineage emission — ADR 0034 / #758) ──
+openlineage-python==1.51.0        # Apache-2.0 (rule 40); emits DQ RunEvents, dark by default. Core deps only (attrs/requests/httpx/pyyaml/python-dateutil/packaging) — no kafka/gcp extras
+
 # ── MCP (Week 7) ──
 fastmcp==3.4.3                    # CVE-2025-62800/62801/64340/69196, GHSA-rcfx-77hg-w2wv, CVE-2026-27124 (was 2.8.1)

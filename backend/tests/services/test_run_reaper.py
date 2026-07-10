@@ -127,3 +127,27 @@ def test_disabled_when_threshold_non_positive(db_session: Any) -> None:
     assert run_service.reap_stuck_runs(db_session, threshold_minutes=-1, now=NOW) == []
     db_session.refresh(stuck)
     assert stuck.status == "queued"  # untouched
+
+
+def test_reap_emits_terminal_lineage_only_for_started_runs(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """Review finding on #765: a reaped `running` run emitted an OpenLineage START
+    (the worker got that far), so the reaper must close it with a terminal event —
+    while a reaped `queued` run never emitted a START and must get none."""
+    from backend.app.lineage import dispatch as lineage_dispatch
+
+    emitted: list[uuid.UUID] = []
+    monkeypatch.setattr(
+        lineage_dispatch,
+        "emit_run_lineage_terminal",
+        lambda _s, *, run_id: emitted.append(run_id),
+    )
+    was_running = _run(db_session, status="running", created_min_ago=120, started_min_ago=90)
+    was_queued = _run(db_session, status="queued", created_min_ago=90)
+
+    reaped = _reap(db_session)
+
+    assert {r.id for r in reaped} == {was_running.id, was_queued.id}
+    # Only the run that had actually started (→ had a START) gets the closing FAIL.
+    assert emitted == [was_running.id]

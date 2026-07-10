@@ -37,6 +37,7 @@ from backend.app.db.models import (
     Suite,
 )
 from backend.app.db.session import get_session
+from backend.app.lineage import dispatch as lineage_dispatch
 from backend.app.orchestration.registry import get_orchestration_provider
 from backend.app.services import (
     cron,
@@ -190,7 +191,24 @@ def run_suite(run_id: str) -> str:
     rid = uuid.UUID(run_id)
     session = get_session()
     try:
-        outcome = _run_suite(session, run_id=rid)
+        # OpenLineage START/terminal emission (ADR 0034, #758) brackets the run.
+        # Both calls are fail-open and dark-by-default (no-op with zero queries when
+        # unconfigured), so they never fail or slow the task — the single choke
+        # point covering execute/skip/early-fail. Sits next to the alert-dispatch
+        # hook (same contract). Guarantee: any run that emitted a START gets exactly
+        # one terminal event. `_run_suite` itself drives every failure it handles to
+        # a terminal status, but should it raise before doing so (a DB hiccup, an
+        # unforeseen error), the except-branch still closes the START with a terminal
+        # (the run is non-terminal → mapped to FAIL) before re-raising. (A cancel
+        # while still queued — or a successful revoke that drops the task — produces
+        # zero lineage events by design: no START ever fired.)
+        lineage_dispatch.emit_run_lineage_start(session, run_id=rid)
+        try:
+            outcome = _run_suite(session, run_id=rid)
+        except BaseException:
+            lineage_dispatch.emit_run_lineage_terminal(session, run_id=rid)
+            raise
+        lineage_dispatch.emit_run_lineage_terminal(session, run_id=rid)
         alert_dispatch.publish_run_outcome(session, run_id=rid)
         return outcome
     finally:

@@ -38,6 +38,7 @@ loopback. A production deployment must flip all of the following. Values live in
 | `WORKSPACE_ADMIN_EMAILS` | seeded dev user | a **minimal** real allowlist — admins can read every suite's failing-row samples (see [Operational notes](#operational-notes)). |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | unset | Azure Monitor / App Insights backend for spans + logs (observability, OTel — ADR 0010). |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | unset | generic OTLP/HTTP backend for spans + logs (#589) — any OTLP consumer (Tempo/Jaeger/Datadog/Collector); set alongside App Insights for parity, or alone for a non-Azure deploy. |
+| `OPENLINEAGE_URL` | unset | OpenLineage emission (ADR 0034, #758) — **dark by default**: unset ⇒ zero emission. Point at an OL receiver (Marquez, DataHub's OL endpoint) and every suite run emits START + terminal RunEvents with DQ facets (5s emit timeout, fail-open, no sample rows ever). Advanced transports via the library-owned `OPENLINEAGE__TRANSPORT__*` / `OPENLINEAGE_CONFIG`; `OPENLINEAGE_DISABLED=true` forces dark. |
 | `key_vault_purge_protection` (Terraform) | `false` (bring-up) | **`true`** for a hardened vault (irreversible). |
 | Interactive API docs | served | **404 in prod** via the prod-docs gate (`ENVIRONMENT=prod`). |
 
