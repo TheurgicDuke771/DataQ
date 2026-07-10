@@ -23,7 +23,7 @@ Full deploy steps + verification: **[deploy/README.md](https://github.com/Theurg
 > Azure). The #588 retirement was rehearsed and reversed the same day — the leg is live
 > again on a fresh 25-day PAT (schedules/bindings restore pending, see #588); the real
 > retirement re-runs at actual lapse alongside the #590 wind-down. Scale numbers are in
-> [perf-baseline-snowflake.md](perf-baseline-snowflake.md).
+> [perf-baseline.md](perf-baseline.md) (all-datasource baseline, 2026-07-10).
 
 Automated, opt-in (never CI):
 

@@ -76,6 +76,7 @@ nav:
       - Security & data handling: security.md
       - Deployment: deployment.md
       - Observability: observability.md
+      - Performance baseline: perf-baseline.md
       - Troubleshooting: troubleshooting.md
       - Runbook & FAQ: runbook-faq.md
       - Changelog: changelog.md
@@ -91,7 +92,6 @@ exclude_docs: |
   post-v1-admin-ui-notes.md
   post-v1-dq-intelligence-notes.md
   compliance-posture.md
-  perf-baseline-snowflake.md
 
 validation:
   omitted_files: ignore
