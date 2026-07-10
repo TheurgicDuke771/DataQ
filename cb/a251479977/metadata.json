@@ -1,0 +1,37 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "cba251479977",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-721-iceberg-profiler-introspection",
+  "checkpoints_count": 8,
+  "files_touched": [
+    "README.md",
+    "docs/adr/README.md",
+    "docs/architecture.md",
+    "docs/changelog.md",
+    "docs/concepts.md",
+    "docs/datasources-checks.md",
+    "docs/feature-matrix.md",
+    "docs/features.md",
+    "docs/glossary.md",
+    "docs/index.md",
+    "docs/tutorial.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/cb/a251479977/0/metadata.json",
+      "transcript": "/cb/a251479977/0/full.jsonl",
+      "compact_transcript": "/cb/a251479977/0/transcript.jsonl",
+      "content_hash": "/cb/a251479977/0/content_hash.txt",
+      "prompt": "/cb/a251479977/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 25131,
+    "cache_creation_tokens": 1019832,
+    "cache_read_tokens": 65144002,
+    "output_tokens": 235209,
+    "api_call_count": 222
+  }
+}
