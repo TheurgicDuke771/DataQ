@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "1d82e498ce1a",
+  "strategy": "manual-commit",
+  "branch": "feature/758-openlineage-emission",
+  "checkpoints_count": 3,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/1d/82e498ce1a/0/metadata.json",
+      "transcript": "/1d/82e498ce1a/0/full.jsonl",
+      "compact_transcript": "/1d/82e498ce1a/0/transcript.jsonl",
+      "content_hash": "/1d/82e498ce1a/0/content_hash.txt",
+      "prompt": "/1d/82e498ce1a/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 56537,
+    "cache_creation_tokens": 1690126,
+    "cache_read_tokens": 60942985,
+    "output_tokens": 181871,
+    "api_call_count": 262
+  }
+}
