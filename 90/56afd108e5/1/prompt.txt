@@ -1578,3 +1578,51 @@ for connection in connections:
 `get_orchestration_provider` (`/Users/arijit/Coding/Python/DataQ/backend/app/orchestration/registry.py:20-32`) is a flat dict lookup of **stateless singletons** (`_PROVIDERS = {"adf": AdfProvider(), "airflow": AirflowProvider(), "dbt": DbtProvider()}`, registry.py:20-24) — the same `DbtProvider()` instance serves every dbt connection; per-connection state (`config`, `secret`) is passed as plain arguments into `list_recent_runs`/`fetch_run_detail`, never held on the provider object.</result>
 <usage><subagent_tokens>86929</subagent_tokens><tool_uses>49</tool_uses><duration_ms>295675</duration_ms></usage>
 </task-notification>
+
+---
+
+<task-notification>
+<task-id>aa52f65da3e0ec34a</task-id>
+<tool-use-id>toolu_01Y57yXX65g4tavwQFHg9ysv</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/aef9f6a4-f51b-4006-84c5-e914ce549fd6/tasks/aa52f65da3e0ec34a.output</output-file>
+<status>completed</status>
+<summary>Agent "Build dbt-manifest lineage for #759" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Everything is complete and green. Here's my final report.
+
+## Summary
+
+Implemented issue #759 (dbt `manifest.json` → `lineage_edges` cache + blast-radius query) on branch `feature/759-dbt-manifest-lineage`. All work is in the working tree, uncommitted.
+
+### Files created
+- `backend/app/lineage/dbt_manifest.py` — pure parser: `parse_manifest(bytes) -&gt; ManifestGraph` (frozen dataclass with `adapter_type`, `nodes: dict[uid, NodeIdentity]`, `edges: list[tuple[parent_uid, child_uid]]`), `ManifestParseError`. Version-gated on `dbt_schema_version`, ephemeral collapse via `parent_map`, tests/operations filtered, 128 MiB size guard, fully defensive.
+- `backend/app/lineage/edges.py` — `refresh_dbt_edges` (fail-open, never raises), `downstream_assets`/`upstream_assets` (depth-capped BFS), namespace anchoring, staleness prune.
+- `backend/alembic/versions/a1c2e3d4f5b6_add_lineage_edges.py` — revision `a1c2e3d4f5b6`, down_revision `f8b9c0d1e2a3` (verified single head), additive; downgrade drops the table.
+- `backend/tests/lineage/test_dbt_manifest.py`, `backend/tests/lineage/test_edges.py`, `backend/tests/fixtures/dbt_manifest_v2.json`.
+
+### Files changed
+- `backend/app/db/models.py` — `LineageEdge` model (CASCADE both endpoints, `uq_lineage_edges_up_down_source`, two indexes, un-CHECKed `source`), added to `__all__`.
+- `backend/app/orchestration/dbt.py` — `_read_artifact` gained `relpath` param; added `_MANIFEST_RELPATH` + `DbtProvider.read_manifest` (the optional capability).
+- `backend/app/services/asset_identity.py` — new public `format_snowflake_name`, reused by `_resolve_snowflake`.
+- `backend/app/services/asset_service.py` — factored shared `upsert_asset`; `resolve_and_upsert_asset` now delegates (savepoint fail-soft preserved).
+- `backend/app/services/orchestration_service.py` — `_refresh_lineage` helper (provider-agnostic `getattr` probe, fully fail-open) wired at both success seams; `ingest_polled_runs` gained optional `secret_store`.
+- `backend/app/worker/tasks.py` — passes `secret_store` to `ingest_polled_runs`.
+- `backend/tests/orchestration/test_dbt_provider.py`, `backend/tests/services/test_orchestration_service.py` — extended.
+- `docs/architecture.md` — ER diagram gained `lineage_edges` (required by the ER-sync test).
+
+### Per-AC status — all met
+- **Model + migration**: done; up/down/up verified clean on a throwaway DB (columns + all indexes present after re-upgrade).
+- **Parser**: pinned graph numbers — **v1 = 10 physical nodes / 8 edges**, **v2 = 11 nodes / 10 edges**. Version gate, ephemeral collapse, adversarial battery all covered.
+- **Provider capability**: `read_manifest` added; ADF/Airflow verified to have no such attr.
+- **Mapping/refresh + prune + BFS**: done.
+- **Hook**: both seams wired; tests prove dbt-success refreshes, failure doesn't, airflow-success doesn't, and a refresh blow-up doesn't break ingestion.
+- **Refresh-propagation AC (v1→v2)**: verified — new edges (`stg_products→mart_order_revenue`, new mart + its 2 edges) appear; removed edge (`stg_order_lines→mart_order_revenue`) is pruned and gone from `downstream_assets`.
+
+### Verification (conda `dataq`, all green)
+`black --check` clean · `ruff` clean · `mypy backend/app/` + `mypy backend/tests/` clean · `bandit` clean (only pre-existing nosec warnings) · `check-typecheck-deps.py` clean · **full `pytest`: 1741 passed, 1 skipped, coverage 98.14%** (≥80 gate met). New-module coverage: `dbt_manifest.py` 97%, `edges.py` 93%.
+
+### Deviations (2, both reported per instruction)
+1. **Timestamp clock for the prune**: used `clock_timestamp()` (wall clock, advances within a transaction) for edge `last_seen` and `refresh_started_at`, instead of `now()`/`transaction_timestamp()`. **Reason**: the test harness's `db_session` uses `join_transaction_mode="create_savepoint"`, so both refreshes in the AC test share one outer transaction where `now()` is constant — the prune's strict `&lt;` would never fire. `clock_timestamp()` makes pruning correct regardless of transaction boundaries (strictly more robust; production separate-transactions would also work with `now()`). Documented inline.
+2. **Fixture v2 formatting**: generated deterministically from v1 with only the three intended graph edits, but reserialized (`indent=2, sort_keys=True`) so whitespace/key-order differs from v1 rather than being byte-identical. Semantic content is otherwise unchanged; the parser and tests are formatting-independent. The generator was an inline script, no scratch file left.</result>
+<usage><subagent_tokens>211513</subagent_tokens><tool_uses>98</tool_uses><duration_ms>1365722</duration_ms></usage>
+</task-notification>
