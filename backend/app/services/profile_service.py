@@ -49,7 +49,11 @@ from backend.app.core.jsonsafe import sanitize_json
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
 from backend.app.datasources.flatfile import download_bytes, format_from_path
-from backend.app.datasources.iceberg import IcebergConfig, read_iceberg_dataframe
+from backend.app.datasources.iceberg import (
+    IcebergConfig,
+    load_iceberg_table,
+    read_iceberg_dataframe,
+)
 from backend.app.datasources.iceberg import list_iceberg_columns as iceberg_column_names
 from backend.app.datasources.snowflake import (
     SnowflakeConfig,
@@ -685,22 +689,46 @@ def profile_file(
 def _iceberg_identifier(table: str, namespace: str | None) -> str:
     """Fold the optional `namespace` into the ``namespace.table`` identifier
     ``pyiceberg`` addresses a table by — mirroring `run_target.resolve_target`'s
-    Iceberg branch, so the profiler and the run path resolve the same table."""
-    return f"{namespace}.{table}" if namespace else table
+    Iceberg branch, so the profiler and the run path resolve the same table.
+
+    Also mirrors that branch's `_str_or_none` fold: a `None`, empty, or
+    whitespace-only `namespace` is not a real namespace and folds to the bare
+    `table` — otherwise ``namespace=" "`` would yield `" .orders"` here while the
+    run path resolves the bare `"orders"` for the same input (#721 code review)."""
+    folded = namespace if isinstance(namespace, str) and namespace.strip() else None
+    return f"{folded}.{table}" if folded else table
 
 
 def _read_iceberg_dataframe(
     connection: Connection, *, identifier: str, columns: list[str], secret_store: SecretStore
 ) -> Any:
     """Resolve an Iceberg connection's config + optional secret (exactly as
-    `build_iceberg_runner` does — the credential is optional) and materialise the
-    target as a projected, sampled DataFrame.
+    `build_iceberg_runner` does — the credential is optional), load the table
+    ONCE, validate the requested `columns` against its schema *before any scan*
+    (raising the same `ProfileColumnNotFoundError` the post-scan defence-in-depth
+    check in `_profile_columns` raises — same message/detail shape — so an
+    all-or-partially-invalid column list 422s without ever reading data), then
+    materialise the already-loaded table as a projected, sampled DataFrame.
 
     The live I/O seam (catalog load + scan), monkeypatched in tests — the
-    Iceberg analogue of the flat-file profiler's `_read_dataframe`."""
+    Iceberg analogue of the flat-file profiler's `_read_dataframe`. Before this
+    fold, an all-invalid column list fell through to `read_iceberg_dataframe`'s
+    ``selected_fields=("*",)`` fallback, scanning every column before the 422
+    (#721 code review); that fallback now only fires for the `columns=None`
+    (list-every-column) case, never reachable from here."""
     config = IcebergConfig.model_validate(connection.config)
     secret = secret_store.get(connection.secret_ref) if connection.secret_ref else None
-    return read_iceberg_dataframe(config, secret, identifier, columns=columns, limit=_SAMPLE_ROWS)
+    table = load_iceberg_table(config, secret, identifier)
+    available = [field.name for field in table.schema().fields]
+    missing = [c for c in columns if c not in available]
+    if missing:
+        raise ProfileColumnNotFoundError(
+            "requested column(s) not in the target",
+            detail={"missing": missing, "available": available[:50]},
+        )
+    return read_iceberg_dataframe(
+        config, secret, identifier, columns=columns, limit=_SAMPLE_ROWS, table=table
+    )
 
 
 def _list_iceberg_columns(
@@ -736,6 +764,8 @@ def profile_iceberg(
         df = _read_iceberg_dataframe(
             connection, identifier=identifier, columns=columns, secret_store=secret_store
         )
+    except ProfileColumnNotFoundError:
+        raise  # the pre-scan column-validation 422 — not an adapter failure
     except Exception as exc:
         log.warning(
             "column_profile_failed", connection_type=connection.type, error_type=type(exc).__name__

@@ -143,6 +143,7 @@ def read_iceberg_dataframe(
     *,
     columns: list[str] | None = None,
     limit: int | None = None,
+    table: Any = None,
 ) -> Any:
     """Materialise an Iceberg table as an Arrow-backed pandas DataFrame (#721).
 
@@ -152,8 +153,15 @@ def read_iceberg_dataframe(
     restricted to columns that actually exist so a stray name doesn't fail the
     scan — the caller reports genuinely-missing columns as a clean 422) and a row
     **limit** (sampling). ``columns=None`` reads every column; ``limit=None`` reads
-    every row (the runner's whole-table contract)."""
-    table = load_iceberg_table(config, secret, identifier)
+    every row (the runner's whole-table contract).
+
+    Pass an already-loaded ``table`` to scan it directly instead of loading it
+    again — the profiler's pre-scan column validation (`profile_service`) loads
+    the table once (for `table.schema()`) and reuses it here, so a request is
+    never charged a second catalog round-trip for the scan (#721 code review).
+    ``table=None`` (every other caller) loads it here, unchanged."""
+    if table is None:
+        table = load_iceberg_table(config, secret, identifier)
     if columns:
         available = {field.name for field in table.schema().fields}
         selected = tuple(c for c in columns if c in available) or ("*",)
