@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "3a2cdb2401b4",
+  "strategy": "manual-commit",
+  "branch": "feature/757-asset-entity",
+  "checkpoints_count": 3,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/3a/2cdb2401b4/0/metadata.json",
+      "transcript": "/3a/2cdb2401b4/0/full.jsonl",
+      "compact_transcript": "/3a/2cdb2401b4/0/transcript.jsonl",
+      "content_hash": "/3a/2cdb2401b4/0/content_hash.txt",
+      "prompt": "/3a/2cdb2401b4/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 56537,
+    "cache_creation_tokens": 1690126,
+    "cache_read_tokens": 60942985,
+    "output_tokens": 181871,
+    "api_call_count": 262
+  }
+}
