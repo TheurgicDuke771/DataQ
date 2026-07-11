@@ -3,7 +3,7 @@
   "checkpoint_id": "eb1eee7b4de2",
   "strategy": "manual-commit",
   "branch": "docs/adr-0015-comparison-check-model",
-  "checkpoints_count": 1,
+  "checkpoints_count": 24,
   "files_touched": [
     "docs/adr/0014-reconciliation-comparison-check-kind.md",
     "docs/adr/0015-two-connection-comparison-check-model.md",
@@ -18,13 +18,20 @@
       "compact_transcript": "/eb/1eee7b4de2/0/transcript.jsonl",
       "content_hash": "/eb/1eee7b4de2/0/content_hash.txt",
       "prompt": "/eb/1eee7b4de2/0/prompt.txt"
+    },
+    {
+      "metadata": "/eb/1eee7b4de2/1/metadata.json",
+      "transcript": "/eb/1eee7b4de2/1/full.jsonl",
+      "compact_transcript": "/eb/1eee7b4de2/1/transcript.jsonl",
+      "content_hash": "/eb/1eee7b4de2/1/content_hash.txt",
+      "prompt": "/eb/1eee7b4de2/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 58,
-    "cache_creation_tokens": 129259,
-    "cache_read_tokens": 3314020,
-    "output_tokens": 38419,
-    "api_call_count": 31
+    "input_tokens": 118410,
+    "cache_creation_tokens": 8128422,
+    "cache_read_tokens": 247356572,
+    "output_tokens": 728473,
+    "api_call_count": 835
   }
 }
