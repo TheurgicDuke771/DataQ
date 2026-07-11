@@ -12,7 +12,12 @@
  * every suite regardless of its connection type.
  */
 
-import { isSqlQueryable, supportsMonitors, type ConnectionType } from '../../api/connections';
+import {
+  DATASOURCE_CATEGORY,
+  isSqlQueryable,
+  supportsMonitors,
+  type ConnectionType,
+} from '../../api/connections';
 import { CUSTOM_SQL_EXPECTATION_TYPE, CUSTOM_SQL_QUERY_KEY } from './customSql';
 
 export type ConfigFieldType = 'string' | 'number' | 'list' | 'sql';
@@ -79,6 +84,48 @@ export interface ExpectationSpec {
 
 const COLUMN: ConfigField = { name: 'column', label: 'Column', type: 'string' };
 
+/**
+ * `type_` config-field name for `expect_column_values_to_be_of_type` — GX's own
+ * kwarg (trailing underscore to dodge shadowing the Python builtin), reused as
+ * the marker `ConfigFieldItem` checks for to swap in `typeFieldHint` (issue #768).
+ */
+export const TYPE_FIELD_NAME = 'type_';
+
+const TYPE_FIELD_DEFAULT_HELP =
+  'The exact type string GX compares against — it depends on the datasource’s execution engine (SQL dialect type vs pandas dtype), not the connection’s advertised column type. Pick a suite with a known connection to see a tailored hint.';
+
+// GX's `expect_column_values_to_be_of_type` validates against a *different* type
+// vocabulary depending on which execution engine the runner builds its GX batch
+// on — verified against each `*CheckRunner.run_checks` (issue #768), not guessed:
+//   - Snowflake is the only SQL-backed batch (`add_table_asset` /
+//     `SqlAlchemyExecutionEngine`) — `type_` must be the dialect's fully-qualified
+//     type string (a `NUMBER` column reports `DECIMAL(38, 0)`).
+//   - Unity Catalog, ADLS/S3 flat files, and Iceberg all read the table into a
+//     pandas DataFrame first (`add_dataframe_asset` / `PandasExecutionEngine`) —
+//     `type_` must be the Python value type name GX compares element-wise
+//     (`int64`, `str`, …), not the pandas Series dtype and not the source
+//     column's SQL/Spark type. (Unity Catalog also supports a literal Custom-SQL
+//     check, but that runs a *different* expectation — `UnexpectedRowsExpectation`
+//     — and never changes this runner's DataFrame execution engine.)
+const SQL_ENGINE_TYPE_HINT =
+  'Use the engine’s fully-qualified type exactly as the dialect reports it — e.g. Snowflake NUMBER is `DECIMAL(38, 0)`. Run a dry-run: the failing result’s observed_value shows the exact expected string.';
+
+const DATAFRAME_ENGINE_TYPE_HINT =
+  'Compares Python value type names, not the source column type — e.g. `int64` for integers, `str` for strings (not `object`). Parquet/Iceberg columns are Arrow-backed and may report a different name — run a dry-run: the failing result’s observed_value shows the exact string.';
+
+/**
+ * Datasource-tailored help for the `type_` field (issue #768 — a bare "NUMBER" or
+ * "DECIMAL" for a Snowflake `NUMBER` column reads naturally but always fails: GX
+ * string-compares the fully-qualified dialect type). Falls back to the generic
+ * `TYPE_FIELD_DEFAULT_HELP` while the connection type hasn't loaded yet, or for a
+ * non-datasource connection (never expected — checks only exist on datasource
+ * suites — but fail safe rather than assert).
+ */
+export function typeFieldHint(connectionType: ConnectionType | undefined): string {
+  if (!connectionType || !DATASOURCE_CATEGORY[connectionType]) return TYPE_FIELD_DEFAULT_HELP;
+  return connectionType === 'snowflake' ? SQL_ENGINE_TYPE_HINT : DATAFRAME_ENGINE_TYPE_HINT;
+}
+
 export const EXPECTATION_CATALOG: ExpectationSpec[] = [
   {
     type: 'expect_column_values_to_not_be_null',
@@ -137,6 +184,21 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
     description: 'Every value matches the given regular expression.',
     category: 'Column values',
     fields: [COLUMN, { name: 'regex', label: 'Regex', type: 'string' }],
+  },
+  {
+    type: 'expect_column_values_to_be_of_type',
+    label: 'Column values are of type',
+    description: 'Every value in the column matches the given data type.',
+    category: 'Column values',
+    fields: [
+      COLUMN,
+      {
+        name: TYPE_FIELD_NAME,
+        label: 'Type',
+        type: 'string',
+        help: TYPE_FIELD_DEFAULT_HELP,
+      },
+    ],
   },
   {
     type: 'expect_table_row_count_to_be_between',

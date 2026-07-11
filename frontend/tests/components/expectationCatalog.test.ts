@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import type { ConnectionType } from '../../src/api/connections';
 import {
+  EXPECTATION_BY_TYPE,
   EXPECTATION_CATALOG,
   EXPECTATIONS_BY_CATEGORY,
   expectationsByCategoryFor,
+  typeFieldHint,
 } from '../../src/components/checks/expectationCatalog';
 
 const categoryNames = (groups: { category: string; specs: unknown[] }[]): string[] =>
@@ -102,5 +104,43 @@ describe('expectationsByCategoryFor (freshness/volume monitor gating, ADR 0012)'
     expect(byType['monitor:volume'].kind).toBe('volume');
     // No max bound — a volume spike's deviation-% is unbounded (can exceed 100).
     expect(byType['monitor:volume'].thresholds?.max).toBeUndefined();
+  });
+});
+
+describe('expect_column_values_to_be_of_type catalog entry (issue #768)', () => {
+  it('is offered as a datasource-agnostic Column values expectation with a type_ field', () => {
+    const spec = EXPECTATION_BY_TYPE['expect_column_values_to_be_of_type'];
+    expect(spec).toBeDefined();
+    expect(spec.category).toBe('Column values');
+    expect(spec.fields.map((f) => f.name)).toEqual(['column', 'type_']);
+  });
+});
+
+describe('typeFieldHint (issue #768 — Snowflake NUMBER ≠ "NUMBER")', () => {
+  it('tells Snowflake authors to use the fully-qualified dialect type', () => {
+    const hint = typeFieldHint('snowflake');
+    expect(hint).toMatch(/DECIMAL\(38, 0\)/);
+    expect(hint).toMatch(/dry-run/i);
+  });
+
+  it.each<ConnectionType>(['unity_catalog', 's3', 'adls_gen2', 'iceberg'])(
+    'tells %s authors it compares Python value type names, not the source column type',
+    (type) => {
+      const hint = typeFieldHint(type);
+      expect(hint).toMatch(/int64/);
+      expect(hint).toMatch(/str/);
+      expect(hint).not.toMatch(/dialect/i); // sanity: not the Snowflake/SQL wording
+    },
+  );
+
+  it('falls back to the generic help while the connection type is unknown', () => {
+    const hint = typeFieldHint(undefined);
+    expect(hint).toMatch(/execution engine/i);
+  });
+
+  it('falls back to the generic help for a non-datasource (orchestration) connection', () => {
+    for (const type of ['adf', 'airflow', 'dbt'] as ConnectionType[]) {
+      expect(typeFieldHint(type)).toMatch(/execution engine/i);
+    }
   });
 });

@@ -4,15 +4,42 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { type Check, createCheck } from '../../src/api/suites';
+import { type Connection, getConnection } from '../../src/api/connections';
+import { type Check, createCheck, getSuite, type Suite } from '../../src/api/suites';
 import { CheckNew } from '../../src/pages/CheckNew';
+
+vi.mock('../../src/api/connections', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/api/connections')>();
+  return { ...actual, getConnection: vi.fn() };
+});
 
 vi.mock('../../src/api/suites', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/api/suites')>();
-  return { ...actual, createCheck: vi.fn() };
+  return { ...actual, createCheck: vi.fn(), getSuite: vi.fn() };
 });
 
 const mockCreate = vi.mocked(createCheck);
+const mockGetSuite = vi.mocked(getSuite);
+const mockGetConnection = vi.mocked(getConnection);
+
+const suite: Suite = {
+  id: 's1',
+  name: 'orders-suite',
+  description: null,
+  connection_id: 'conn1',
+  target: { table: 'ORDERS' },
+  created_by: 'u1',
+};
+
+const snowflakeConnection: Connection = {
+  id: 'conn1',
+  name: 'sf-dev',
+  type: 'snowflake',
+  env: 'dev',
+  config: {},
+  has_secret: true,
+  created_by: 'u1',
+};
 
 // Render the page at /suites/s1/checks/new with a stub suite-detail route so the
 // post-create navigation has somewhere to land.
@@ -87,5 +114,67 @@ describe('CheckNew', () => {
 
     expect(await screen.findByText('Enter at least one value')).toBeInTheDocument();
     expect(mockCreate).not.toHaveBeenCalled();
+  });
+});
+
+// Issue #768 — expect_column_values_to_be_of_type's `type_` field needs a
+// datasource-tailored hint (GX compares against different type vocabularies per
+// execution engine): the dialect's fully-qualified type on SQL-backed Snowflake,
+// vs the Python value type name on every pandas-backed runner (UC, flat files,
+// Iceberg).
+describe('CheckNew — type_ hint (issue #768)', () => {
+  const pickTypeExpectation = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(screen.getByText('Column values'));
+    await user.click(await screen.findByText('Column values are of type'));
+  };
+
+  it('shows the SQL-dialect hint for a Snowflake suite and creates with type_', async () => {
+    const user = userEvent.setup();
+    mockGetSuite.mockResolvedValue(suite);
+    mockGetConnection.mockResolvedValue(snowflakeConnection);
+    mockCreate.mockResolvedValue({} as Check);
+    renderPage();
+
+    await pickTypeExpectation(user);
+    expect(await screen.findByText(/dialect/i)).toBeInTheDocument();
+    expect(screen.getByText(/DECIMAL\(38, 0\)/)).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText('Name'), 'amount is decimal');
+    await user.type(screen.getByLabelText('Column'), 'amount');
+    await user.type(screen.getByLabelText('Type'), 'DECIMAL(38, 0)');
+    await user.click(screen.getByRole('button', { name: 'Create check' }));
+
+    await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1));
+    expect(mockCreate).toHaveBeenCalledWith('s1', {
+      name: 'amount is decimal',
+      kind: 'expectation',
+      expectation_type: 'expect_column_values_to_be_of_type',
+      config: { column: 'amount', type_: 'DECIMAL(38, 0)' },
+      warn_threshold: null,
+      fail_threshold: null,
+      critical_threshold: null,
+    });
+  });
+
+  it('shows the pandas-dtype hint for a flat-file (S3) suite', async () => {
+    const user = userEvent.setup();
+    mockGetSuite.mockResolvedValue(suite);
+    mockGetConnection.mockResolvedValue({ ...snowflakeConnection, type: 's3' });
+    renderPage();
+
+    await pickTypeExpectation(user);
+    expect(await screen.findByText(/int64/)).toBeInTheDocument();
+    expect(screen.getByText(/not `object`/)).toBeInTheDocument();
+  });
+
+  it('shows the generic fallback hint before the connection has loaded', async () => {
+    const user = userEvent.setup();
+    // getSuite/getConnection never resolve within the test, so the hint renders
+    // from the catalog's static default the whole time.
+    mockGetSuite.mockReturnValue(new Promise(() => {}));
+    renderPage();
+
+    await pickTypeExpectation(user);
+    expect(await screen.findByText(/execution engine/i)).toBeInTheDocument();
   });
 });

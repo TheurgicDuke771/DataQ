@@ -153,3 +153,53 @@ describe('CheckEdit', () => {
     await waitFor(() => expect(screen.getByLabelText('Column')).toHaveValue('amount'));
   });
 });
+
+// Issue #768 — expect_column_values_to_be_of_type's `type_` field needs a
+// datasource-tailored hint (GX compares against different type vocabularies per
+// execution engine), rendered only for this expectation.
+describe('CheckEdit — type_ hint (issue #768)', () => {
+  const typeCheck: Check = {
+    id: 'chk2',
+    suite_id: 's1',
+    name: 'amount is decimal',
+    kind: 'expectation',
+    expectation_type: 'expect_column_values_to_be_of_type',
+    config: { column: 'amount', type_: 'DECIMAL(38, 0)' },
+    warn_threshold: null,
+    fail_threshold: null,
+    critical_threshold: null,
+    alert_snoozed_until: null,
+  };
+
+  it('shows the SQL-dialect hint for a Snowflake suite', async () => {
+    mockGetSuite.mockResolvedValue(suite);
+    mockGetCheck.mockResolvedValue(typeCheck);
+    mockGetConnection.mockResolvedValue(connection); // type: 'snowflake'
+    renderPage();
+
+    await waitFor(() => expect(screen.getByLabelText('Type')).toHaveValue('DECIMAL(38, 0)'));
+    expect(screen.getByText(/DECIMAL\(38, 0\)/)).toBeInTheDocument();
+    expect(screen.getByText(/observed_value shows the exact/i)).toBeInTheDocument();
+  });
+
+  it('shows the pandas-dtype hint for a Unity Catalog suite', async () => {
+    mockGetSuite.mockResolvedValue(suite);
+    mockGetCheck.mockResolvedValue(typeCheck);
+    mockGetConnection.mockResolvedValue({ ...connection, type: 'unity_catalog' });
+    renderPage();
+
+    await waitFor(() => expect(screen.getByLabelText('Type')).toHaveValue('DECIMAL(38, 0)'));
+    expect(screen.getByText(/int64/)).toBeInTheDocument();
+    expect(screen.getByText(/not `object`/)).toBeInTheDocument();
+  });
+
+  it('does not render the type_ hint for other expectations', async () => {
+    mockGetSuite.mockResolvedValue(suite);
+    mockGetCheck.mockResolvedValue(existing); // expect_column_values_to_be_between
+    mockGetConnection.mockResolvedValue(connection);
+    renderPage();
+
+    await waitFor(() => expect(screen.getByLabelText('Column')).toHaveValue('amount'));
+    expect(screen.queryByLabelText('Type')).not.toBeInTheDocument();
+  });
+});

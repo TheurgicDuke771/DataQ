@@ -55,6 +55,38 @@ critical threshold is required** — without one, a freshness check could never 
 band the % by which the count falls outside the range (a spike can exceed 100%), or
 leave them blank for binary in-range pass/fail.
 
+### Type names for `expect_column_values_to_be_of_type`
+
+The **Column values are of type** expectation's `type_` field is the one place the
+check editor's "obvious" answer is usually wrong. GX validates it against a
+*different* type vocabulary depending on which engine actually runs the check — not
+the type your warehouse/catalog shows you:
+
+- **Snowflake** builds a real SQL batch (`SqlAlchemyExecutionEngine`) and string-compares
+  `type_` against the **fully-qualified dialect type**, not the short column type. A
+  `NUMBER` column reports as `DECIMAL(38, 0)`; `VARCHAR` reports as `VARCHAR(16777216)`.
+  Plugging in `NUMBER` or `DECIMAL` alone fails every time.
+- **Unity Catalog, ADLS Gen2 / S3, and Apache Iceberg** all read the target into a
+  pandas DataFrame first (`PandasExecutionEngine`) and compare **Python value type
+  names**, not the Spark/SQL column type and not the pandas dtype string — e.g. a
+  Databricks `BIGINT` column reports `int64`, a `STRING` column reports `str` (never
+  `object`, even though `object` is the pandas dtype). Parquet and Iceberg reads are
+  Arrow-backed, so the exact string can differ again from a CSV read of the same
+  logical type.
+
+| Datasource | Engine | `type_` example |
+|---|---|---|
+| Snowflake | SQL (dialect-native) | `DECIMAL(38, 0)` for `NUMBER`, `VARCHAR(16777216)` for `VARCHAR` |
+| Unity Catalog | pandas DataFrame | `int64` for `BIGINT`, `str` for `STRING` |
+| ADLS Gen2 / S3 (CSV) | pandas DataFrame | `int64`, `str`, `float64`, `bool` |
+| ADLS Gen2 / S3 (Parquet) / Iceberg | pandas DataFrame (Arrow-backed) | usually `int64`/`str`-shaped, but confirm — Arrow backing can rename a dtype |
+
+**Calibration tip:** don't guess — **dry-run first**. Save the check with any
+placeholder `type_`, run the dry-run preview (or a real run) against live data, and
+read the failing result's `observed_value`: it carries the *exact* string GX expected.
+Copy that into `type_` and re-run to confirm green. The check editor's help text under
+the field repeats this per the suite's connection type.
+
 Before saving any of them: **Dry-run** previews pass/fail against live data, and the
 **column profiler** (nulls, distinct count, min/max, top values) helps place thresholds.
 
