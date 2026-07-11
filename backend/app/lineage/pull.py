@@ -37,7 +37,12 @@ from backend.app.core.config import get_settings
 from backend.app.core.logging import get_logger
 from backend.app.db.models import Asset, LineageEdge
 from backend.app.lineage.marquez import MarquezLineageProvider
-from backend.app.lineage.provider import LineageGraph, LineageNodeKind, LineageProvider
+from backend.app.lineage.provider import (
+    LineageGraph,
+    LineageNodeKind,
+    LineageProvider,
+    LineageUnavailableError,
+)
 from backend.app.services.asset_service import upsert_assets
 
 log = get_logger(__name__)
@@ -100,11 +105,24 @@ def _refresh_pulled_edges(session: Session, *, provider: LineageProvider, depth:
         log.info("lineage_pull_no_seed_assets")
         return None
 
-    name_pairs = _collect_dataset_edges(provider, seeds, depth=depth)
-    if not name_pairs:
+    name_pairs, unavailable = _collect_dataset_edges(provider, seeds, depth=depth)
+    if unavailable:
+        # The catalog couldn't be (fully) consulted — we learned nothing about the
+        # missing seeds, so DO NOT prune: wiping the cache on an outage is the failure
+        # mode this branch exists to prevent. Upsert whatever WAS fetched (still
+        # fresher than nothing) and leave the rest untouched until a clean refresh.
+        log.warning(
+            "lineage_pull_partial_unavailable",
+            provider=provider.provider,
+            seeds=len(seeds),
+            unavailable=unavailable,
+            fetched_pairs=len(name_pairs),
+        )
+        if not name_pairs:
+            return None
+    if not name_pairs and not unavailable:
         log.info("lineage_pull_no_edges", provider=provider.provider, seeds=len(seeds))
-        # Still prune: a source that returned nothing this refresh means its previously
-        # cached edges are now stale.
+        # Genuinely-empty observation → previously cached edges are now stale.
         refresh_started_at = _clock(session)
         _prune_stale(session, refresh_started_at=refresh_started_at)
         session.commit()
@@ -127,7 +145,11 @@ def _refresh_pulled_edges(session: Session, *, provider: LineageProvider, depth:
 
     edge_rows = _edge_rows(name_pairs, id_by_name)
     _upsert_edges(session, edge_rows)
-    _prune_stale(session, refresh_started_at=refresh_started_at)
+    if not unavailable:
+        # Prune only on a CLEAN refresh — with any seed unavailable, an absent edge is
+        # indistinguishable from an unconsulted one, so stale rows wait for the next
+        # clean pass instead of being wiped by an outage.
+        _prune_stale(session, refresh_started_at=refresh_started_at)
     live = session.execute(
         select(func.count())
         .select_from(LineageEdge)
@@ -139,6 +161,7 @@ def _refresh_pulled_edges(session: Session, *, provider: LineageProvider, depth:
         provider=provider.provider,
         seeds=len(seeds),
         edges=int(live),
+        unavailable_seeds=unavailable,
     )
     return int(live)
 
@@ -149,21 +172,28 @@ def _clock(session: Session) -> datetime:
 
 def _collect_dataset_edges(
     provider: LineageProvider, seeds: Sequence[Any], *, depth: int
-) -> set[tuple[tuple[str, str], tuple[str, str]]]:
+) -> tuple[set[tuple[tuple[str, str], tuple[str, str]]], int]:
     """Pull each seed's graph, merge, and collapse to dataset→dataset OL-name pairs.
 
-    Returns a set of ``((up_ns, up_name), (down_ns, down_name))`` — deduped across
-    seeds. Job (and any non-dataset) nodes are collapsed through, so only dataset
-    endpoints — the only kind with an `assets` identity today — reach the cache.
+    Returns ``(pairs, unavailable)``: a deduped set of
+    ``((up_ns, up_name), (down_ns, down_name))`` plus the count of seeds whose pull
+    raised :class:`LineageUnavailableError` — the caller's no-prune-on-outage signal.
+    Job (and any non-dataset) nodes are collapsed through, so only dataset endpoints —
+    the only kind with an `assets` identity today — reach the cache.
     """
     nodes: dict[str, Any] = {}
     edges: set[tuple[str, str]] = set()
+    unavailable = 0
     for namespace, name in seeds:
-        graph = provider.get_lineage(namespace=namespace, name=name, depth=depth)
+        try:
+            graph = provider.get_lineage(namespace=namespace, name=name, depth=depth)
+        except LineageUnavailableError:
+            unavailable += 1
+            continue
         for node_id, node in graph.nodes.items():
             nodes[node_id] = node
         edges.update(graph.edges)
-    return _collapse_to_datasets(LineageGraph(nodes=nodes, edges=tuple(edges)))
+    return _collapse_to_datasets(LineageGraph(nodes=nodes, edges=tuple(edges))), unavailable
 
 
 def _collapse_to_datasets(
@@ -189,11 +219,15 @@ def _collapse_to_datasets(
         in_adj[down].add(up)
 
     pairs: set[tuple[tuple[str, str], tuple[str, str]]] = set()
-    for node_id in graph.nodes:
+    for node_id, node in graph.nodes.items():
         if node_id in datasets:
             for down in out_adj.get(node_id, ()):
                 if down in datasets:
                     pairs.add((datasets[node_id], datasets[down]))
+            continue
+        if node.kind is LineageNodeKind.DATASET:
+            # An identity-less DATASET node is dropped, NOT bridged through — treating
+            # it as a hop would synthesize a direct edge that skips a real dataset.
             continue
         # Non-dataset node (job / unknown): join its dataset upstreams to downstreams.
         ups = [s for s in in_adj.get(node_id, ()) if s in datasets]

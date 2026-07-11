@@ -104,8 +104,18 @@ class LineageGraph:
 
     @classmethod
     def empty(cls) -> LineageGraph:
-        """The empty graph — a fail-soft provider returns this, never raises."""
+        """The empty graph — a *successful* pull that found nothing."""
         return cls(nodes={}, edges=())
+
+
+class LineageUnavailableError(RuntimeError):
+    """The catalog could not be consulted (transport error, non-2xx, garbage body).
+
+    Distinct from :meth:`LineageGraph.empty` on purpose: an *empty* graph is a true
+    observation ("this dataset has no known lineage") that the refresh may act on by
+    pruning stale cached edges, while *unavailable* means we learned nothing — the
+    refresh must keep the cache untouched rather than wipe it on an outage.
+    """
 
 
 @runtime_checkable
@@ -123,8 +133,10 @@ class LineageProvider(Protocol):
         """Pull the lineage graph around the dataset ``namespace``/``name`` out to
         ``depth`` hops, normalized to a :class:`LineageGraph`.
 
-        **Fail-soft, never raises**: a dead/slow catalog, a garbage payload, or a
-        node with no identity yields :meth:`LineageGraph.empty` (or drops the bad
-        node), logged — pull is a browse/reason convenience, never a liveness path.
+        Raises :class:`LineageUnavailableError` when the catalog cannot be consulted
+        (dead/slow endpoint, non-2xx, undecodable body) — the caller skips pruning on
+        that signal. Within a *successful* response the impl stays tolerant: a
+        malformed node is dropped, never raised, and no-lineage yields
+        :meth:`LineageGraph.empty`.
         """
         ...

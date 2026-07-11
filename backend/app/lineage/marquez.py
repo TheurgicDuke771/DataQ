@@ -40,7 +40,12 @@ from typing import Any
 import httpx
 
 from backend.app.core.logging import get_logger
-from backend.app.lineage.provider import LineageGraph, LineageNode, LineageNodeKind
+from backend.app.lineage.provider import (
+    LineageGraph,
+    LineageNode,
+    LineageNodeKind,
+    LineageUnavailableError,
+)
 
 log = get_logger(__name__)
 
@@ -71,8 +76,9 @@ class MarquezLineageProvider:
     def get_lineage(self, *, namespace: str, name: str, depth: int) -> LineageGraph:
         """Pull + normalize the lineage graph around ``dataset:{namespace}:{name}``.
 
-        Never raises: any transport/HTTP/parse failure logs a warning and returns
-        :meth:`LineageGraph.empty`.
+        Transport/HTTP/decode failure raises :class:`LineageUnavailableError` (the
+        caller must not prune on an outage — provider contract); within a successful
+        response the parse stays tolerant and per-node failures are dropped.
         """
         node_id = f"dataset:{namespace}:{name}"
         params: dict[str, str | int] = {"nodeId": node_id, "depth": _clamp_depth(depth)}
@@ -84,7 +90,7 @@ class MarquezLineageProvider:
             payload = response.json()
         except (httpx.HTTPError, ValueError) as exc:
             log.warning("marquez_lineage_pull_failed", node_id=node_id, error=str(exc))
-            return LineageGraph.empty()
+            raise LineageUnavailableError(f"marquez pull failed for {node_id}: {exc}") from exc
         return _parse_graph(payload, seed_node_id=node_id)
 
 
@@ -168,8 +174,11 @@ def _dataset_identity(data: Any) -> tuple[str | None, str | None]:
     name = data.get("name")
     nested = data.get("id")
     if isinstance(nested, dict):
-        namespace = namespace if isinstance(namespace, str) else nested.get("namespace")
-        name = name if isinstance(name, str) else nested.get("name")
+        # An empty string is "missing" too — it must not shadow a valid nested id.
+        namespace = (
+            namespace if isinstance(namespace, str) and namespace else nested.get("namespace")
+        )
+        name = name if isinstance(name, str) and name else nested.get("name")
     ns = namespace if isinstance(namespace, str) and namespace else None
     nm = name if isinstance(name, str) and name else None
     return ns, nm

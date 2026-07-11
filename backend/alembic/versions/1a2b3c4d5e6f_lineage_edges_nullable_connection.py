@@ -20,8 +20,14 @@ Additive & backward-compatible (CLAUDE.md migration rules): relaxing NOT NULL an
 adding an index never breaks existing readers/writers; the dbt refresh path is
 untouched (it always sets connection_id).
 
+Lock note: the partial index is created WITHOUT ``CONCURRENTLY`` (plain CREATE INDEX
+takes a SHARE lock blocking writes for the build) — accepted deliberately because
+`lineage_edges` is tiny, so the build is sub-second; the realistic residual is the
+#748 class (an unrelated long-lived lock holder stalling the migrate job), covered
+by the pre-deploy checklist.
+
 Revision ID: 1a2b3c4d5e6f
-Revises: f0a1b2c3d4e5
+Revises: c4e5a6b7d8f9
 Create Date: 2026-07-11 00:00:00.000000+00:00
 
 """

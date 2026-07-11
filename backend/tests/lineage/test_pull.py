@@ -79,6 +79,21 @@ def _asset_id(db_session: Any, name: str, *, namespace: str = _NS) -> uuid.UUID:
     return cast(uuid.UUID, aid)
 
 
+def _seed_pulled_edge(db_session: Any) -> uuid.UUID:
+    """Two assets + one pre-existing marquez (NULL-connection) edge; returns edge id."""
+    up = _seed_asset(db_session, name="pre-up", namespace="mz://pre")
+    down = _seed_asset(db_session, name="pre-down", namespace="mz://pre")
+    edge = LineageEdge(
+        upstream_asset_id=up.id,
+        downstream_asset_id=down.id,
+        source="marquez",
+        connection_id=None,
+    )
+    db_session.add(edge)
+    db_session.commit()
+    return edge.id
+
+
 def _marquez_edges(db_session: Any) -> list[LineageEdge]:
     return list(
         db_session.scalars(
@@ -263,3 +278,77 @@ def _reset_settings(
     else:
         monkeypatch.setenv("MARQUEZ_URL", url)
     get_settings.cache_clear()
+
+
+def test_provider_outage_never_prunes_cache(db_session: Any) -> None:
+    """A dead catalog must NOT wipe previously pulled edges (review finding, #776)."""
+    from backend.app.lineage.provider import LineageUnavailableError
+
+    seeded = _seed_pulled_edge(db_session)
+
+    class _DeadProvider:
+        provider = "marquez"
+
+        def get_lineage(self, *, namespace: str, name: str, depth: int) -> Any:
+            raise LineageUnavailableError("catalog down")
+
+    result = refresh_pulled_edges(db_session, provider=_DeadProvider())
+    assert result is None
+    assert db_session.get(LineageEdge, seeded) is not None  # cache untouched
+
+
+def test_partial_outage_upserts_but_skips_prune(db_session: Any) -> None:
+    """Some seeds unavailable → fetched edges upsert, but nothing is pruned."""
+    from backend.app.lineage.provider import (
+        LineageGraph,
+        LineageNode,
+        LineageNodeKind,
+        LineageUnavailableError,
+    )
+
+    stale = _seed_pulled_edge(db_session)  # would be pruned by a clean refresh
+
+    class _FlakyProvider:
+        provider = "marquez"
+        calls = 0
+
+        def get_lineage(self, *, namespace: str, name: str, depth: int) -> LineageGraph:
+            type(self).calls += 1
+            if type(self).calls == 1:
+                raise LineageUnavailableError("first seed down")
+            return LineageGraph(
+                nodes={
+                    "dataset:mz://p:U": LineageNode(
+                        node_id="dataset:mz://p:U",
+                        kind=LineageNodeKind.DATASET,
+                        namespace="mz://p",
+                        name="U",
+                    ),
+                    "dataset:mz://p:V": LineageNode(
+                        node_id="dataset:mz://p:V",
+                        kind=LineageNodeKind.DATASET,
+                        namespace="mz://p",
+                        name="V",
+                    ),
+                },
+                edges=(("dataset:mz://p:U", "dataset:mz://p:V"),),
+            )
+
+    live = refresh_pulled_edges(db_session, provider=_FlakyProvider())
+    # The new edge landed AND the stale one survived (no prune under partial outage).
+    assert live is not None and live >= 2
+    assert db_session.get(LineageEdge, stale) is not None
+
+
+def test_identityless_dataset_node_is_not_bridged() -> None:
+    """An identity-less DATASET hop is dropped, not contracted into a synthetic edge."""
+    from backend.app.lineage.provider import LineageGraph, LineageNode, LineageNodeKind
+
+    a = LineageNode(node_id="d:a", kind=LineageNodeKind.DATASET, namespace="mz://p", name="A")
+    ghost = LineageNode(node_id="d:ghost", kind=LineageNodeKind.DATASET, namespace="", name="")
+    b = LineageNode(node_id="d:b", kind=LineageNodeKind.DATASET, namespace="mz://p", name="B")
+    graph = LineageGraph(
+        nodes={"d:a": a, "d:ghost": ghost, "d:b": b},
+        edges=(("d:a", "d:ghost"), ("d:ghost", "d:b")),
+    )
+    assert pull_mod._collapse_to_datasets(graph) == set()  # A→B is NOT synthesized

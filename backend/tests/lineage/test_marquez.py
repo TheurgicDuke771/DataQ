@@ -16,7 +16,7 @@ import pytest
 
 from backend.app.lineage import marquez as marquez_mod
 from backend.app.lineage.marquez import MarquezLineageProvider
-from backend.app.lineage.provider import LineageNodeKind
+from backend.app.lineage.provider import LineageNodeKind, LineageUnavailableError
 
 # A monitored dataset whose OpenLineage namespace itself contains ':' — proves the
 # parser reads identity from `data`, never by splitting the node-id string.
@@ -138,22 +138,46 @@ def test_depth_is_clamped(monkeypatch: pytest.MonkeyPatch, requested: int, expec
 # ───────────────────────────── adversarial battery ─────────────────────────
 
 
-def test_transport_error_returns_empty(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_transport_error_raises_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Outage ≠ empty graph: unavailable must NOT look like "no lineage", or the
+    # refresh would prune the whole cache on a dead catalog (review finding, #776).
     def boom(url: str, **kwargs: Any) -> _FakeResponse:
         raise httpx.ConnectError("refused")
 
     monkeypatch.setattr(httpx, "get", boom)
-    assert _provider().get_lineage(namespace=_NS, name=_SEED, depth=3).nodes == {}
+    with pytest.raises(LineageUnavailableError):
+        _provider().get_lineage(namespace=_NS, name=_SEED, depth=3)
 
 
-def test_non_200_returns_empty(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_non_200_raises_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_get(monkeypatch, _FakeResponse(status_code=503))
-    assert _provider().get_lineage(namespace=_NS, name=_SEED, depth=3).edges == ()
+    with pytest.raises(LineageUnavailableError):
+        _provider().get_lineage(namespace=_NS, name=_SEED, depth=3)
 
 
-def test_garbage_json_returns_empty(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_garbage_json_raises_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_get(monkeypatch, _FakeResponse(json_error=True))
-    assert _provider().get_lineage(namespace=_NS, name=_SEED, depth=3).nodes == {}
+    with pytest.raises(LineageUnavailableError):
+        _provider().get_lineage(namespace=_NS, name=_SEED, depth=3)
+
+
+def test_empty_string_identity_falls_back_to_nested_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    # An empty top-level namespace/name must not shadow the nested data.id fallback.
+    payload = {
+        "graph": [
+            {
+                "id": "dataset:mz://x:A",
+                "type": "DATASET",
+                "data": {"namespace": "", "name": "", "id": {"namespace": "mz://x", "name": "A"}},
+                "inEdges": [],
+                "outEdges": [],
+            }
+        ]
+    }
+    _patch_get(monkeypatch, _FakeResponse(json_body=payload))
+    graph = _provider().get_lineage(namespace=_NS, name=_SEED, depth=3)
+    node = graph.nodes["dataset:mz://x:A"]
+    assert (node.namespace, node.name) == ("mz://x", "A")
 
 
 @pytest.mark.parametrize("payload", [[], "nope", 42, None, {"graph": "not-a-list"}, {}])
