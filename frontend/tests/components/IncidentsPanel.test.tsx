@@ -122,17 +122,23 @@ describe('IncidentsPanel', () => {
     mockResolve.mockResolvedValue(detail({ status: 'resolved' }));
     renderPanel({ s1: 'owner' });
     await userEvent.click(await screen.findByRole('button', { name: 'Resolve' }));
-    // Popconfirm — click the confirming "Resolve".
-    const confirms = await screen.findAllByRole('button', { name: 'Resolve' });
+    // Popconfirm — WAIT for the confirming "Resolve" to render before clicking:
+    // findAll resolves on the first match (the trigger), and clicking the trigger
+    // again toggles the popover closed — the CI-speed flake this guards against.
+    await waitFor(() =>
+      expect(screen.getAllByRole('button', { name: 'Resolve' }).length).toBeGreaterThan(1),
+    );
+    const confirms = screen.getAllByRole('button', { name: 'Resolve' });
     await userEvent.click(confirms[confirms.length - 1]);
     await waitFor(() => expect(mockResolve).toHaveBeenCalledWith('inc-1'));
-  });
+  }, 15000);
 
   it('surfaces a failed acknowledge, resets busy, and does not reload', async () => {
     mockList.mockResolvedValue([incident()]);
     mockAck.mockRejectedValue(new Error('forbidden'));
     renderPanel({ s1: 'edit' });
     await userEvent.click(await screen.findByRole('button', { name: 'Acknowledge' }));
+    await waitFor(() => expect(mockAck).toHaveBeenCalled());
     // The error surfaces to the user…
     expect(await screen.findByText(/Action failed: forbidden/)).toBeInTheDocument();
     // …the list is NOT reloaded (initial fetch only)…
@@ -144,18 +150,21 @@ describe('IncidentsPanel', () => {
     const ackButton = await screen.findByRole('button', { name: /Acknowledge/ });
     expect(ackButton).toBeEnabled();
     expect(ackButton).not.toHaveClass('ant-btn-loading');
-  });
+  }, 15000);
 
   it('surfaces a failed resolve without reloading', async () => {
     mockList.mockResolvedValue([incident()]);
     mockResolve.mockRejectedValue(new Error('nope'));
     renderPanel({ s1: 'owner' });
     await userEvent.click(await screen.findByRole('button', { name: 'Resolve' }));
-    const confirms = await screen.findAllByRole('button', { name: 'Resolve' });
+    await waitFor(() =>
+      expect(screen.getAllByRole('button', { name: 'Resolve' }).length).toBeGreaterThan(1),
+    );
+    const confirms = screen.getAllByRole('button', { name: 'Resolve' });
     await userEvent.click(confirms[confirms.length - 1]);
     expect(await screen.findByText(/Action failed: nope/)).toBeInTheDocument();
     expect(mockList).toHaveBeenCalledTimes(1);
-  });
+  }, 15000);
 
   it('surfaces a load error', async () => {
     mockList.mockRejectedValue(new Error('boom'));
