@@ -714,21 +714,29 @@ class LineageEdge(Base):
 
     A refreshed **cache of external truth**, not a graph DataQ authors: each edge
     is (re)discovered from a lineage `source` — ``'dbt'`` first (the parsed
-    `manifest.json` dependency graph, #759) — by the `connection` whose refresh
-    surfaced it, and keyed on
-    ``(upstream_asset_id, downstream_asset_id, source, connection_id)`` so the same
-    edge from two sources — or two dbt projects sharing tables — is distinct rows (no
-    cross-source or cross-project merge). ``last_seen`` bumps on every refresh that
-    still observes the edge; a stale edge (not re-seen in the latest refresh of its
-    ``(source, connection_id)``) is pruned. Blast radius = walk these edges
-    downstream from a failing asset (`lineage.edges.downstream_assets`).
+    `manifest.json` dependency graph, #759), ``'marquez'`` for catalog pull (#762) —
+    and keyed by provenance so the same edge from two sources — or two dbt projects
+    sharing tables — is distinct rows (no cross-source or cross-project merge).
+    ``last_seen`` bumps on every refresh that still observes the edge; a stale edge
+    (not re-seen in the latest refresh of its source) is pruned. Blast radius = walk
+    these edges downstream from a failing asset (`lineage.edges.downstream_assets`).
+
+    **Two provenance regimes, two dedup keys:**
+
+    - **Connection-scoped sources** (dbt) always carry a ``connection_id`` and key on
+      the full unique constraint ``(upstream, downstream, source, connection_id)`` —
+      so pruning one project's refresh never touches another's edges (the review's
+      cross-project-corruption fix).
+    - **Connection-less sources** (a catalog pull — a Marquez query has no DataQ
+      connection, #762) carry ``connection_id = NULL`` and key on the **partial**
+      unique index ``(upstream, downstream, source) WHERE connection_id IS NULL``
+      (Postgres treats NULLs as distinct in a plain unique constraint, so the full
+      constraint would never dedupe a NULL-connection row). Their prune is scoped to
+      ``(source, connection_id IS NULL)`` — it can never touch a dbt row.
 
     Both endpoints CASCADE-delete: an edge is meaningless without either asset.
-    ``connection_id`` also CASCADE-deletes and is NOT NULL — every edge is
-    provenance-scoped to the refreshing connection, so pruning one project's refresh
-    never touches another's edges (the review's cross-project-corruption fix). Future
-    non-connection lineage sources (an OpenLineage receipt with no DataQ connection)
-    can revisit the nullability. ``source`` is un-CHECKed on purpose — lineage
+    ``connection_id`` CASCADE-deletes and is **nullable** (nullable since #762 for the
+    connection-less pull sources above). ``source`` is un-CHECKed on purpose — lineage
     sources will grow (catalog pull, OpenLineage receipt) and each new one must not
     need a migration.
     """
@@ -741,6 +749,18 @@ class LineageEdge(Base):
             "source",
             "connection_id",
             name="uq_lineage_edges_up_down_source_conn",
+        ),
+        # Dedup key for connection-less sources (catalog pull, #762): a plain unique
+        # constraint treats each NULL connection_id as distinct, so pulled edges need a
+        # partial unique index on the (up, down, source) triple where connection_id is
+        # NULL — see migration 1a2b3c4d5e6f.
+        Index(
+            "uq_lineage_edges_up_down_source_nullconn",
+            "upstream_asset_id",
+            "downstream_asset_id",
+            "source",
+            unique=True,
+            postgresql_where=text("connection_id IS NULL"),
         ),
         Index("ix_lineage_edges_upstream", "upstream_asset_id"),
         Index("ix_lineage_edges_downstream", "downstream_asset_id"),
@@ -757,8 +777,10 @@ class LineageEdge(Base):
     source: Mapped[str] = mapped_column(String(32), nullable=False)
     # The connection whose refresh discovered this edge — provenance + prune scope
     # (CASCADE: an edge is meaningless once its refreshing connection is gone).
-    connection_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("connections.id", ondelete="CASCADE"), nullable=False
+    # NULL for connection-less sources (a catalog pull — Marquez, #762 — has no DataQ
+    # connection); those dedupe via the partial unique index above.
+    connection_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("connections.id", ondelete="CASCADE")
     )
     first_seen: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

@@ -19,6 +19,10 @@ _OL_ENV_VARS = (
     "OPENLINEAGE__TRANSPORT__TYPE",
     "OPENLINEAGE_CONFIG",
     "OPENLINEAGE_DISABLED",
+    # Lineage catalog-pull gate (#762) — cleared too so a stray LINEAGE_PROVIDER /
+    # MARQUEZ_URL can't flip the pull-provider factory out of the dark path mid-suite.
+    "LINEAGE_PROVIDER",
+    "MARQUEZ_URL",
 )
 
 
