@@ -12,21 +12,27 @@ targetless suite, an orchestration-type connection with no asset identity),
 logs a structlog warning, and returns ``None`` so the caller leaves
 ``asset_id`` NULL and carries on. Precedent: `alerting.builder` deliberately
 never raises into the run path.
+
+Also hosts the orphan-asset sweep (#770) — the periodic-janitor counterpart to
+the resolution/upsert path above: assets accrete (ADR 0034's "last_seen + a
+sweep, not deletes" posture), so `sweep_orphan_assets` is what actually retires
+a row once nothing references it any more.
 """
 
 from __future__ import annotations
 
 import uuid
 from collections.abc import Sequence
-from typing import Any
+from datetime import UTC, datetime, timedelta
+from typing import Any, cast
 
-from sqlalchemy import func, select, tuple_
+from sqlalchemy import CursorResult, delete, exists, func, select, tuple_
 from sqlalchemy.dialects.postgresql import Insert as PgInsert
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from backend.app.core.logging import get_logger
-from backend.app.db.models import Asset, Connection
+from backend.app.db.models import Asset, Connection, LineageEdge, Run, Suite
 from backend.app.services.asset_identity import resolve_asset_identity
 
 log = get_logger(__name__)
@@ -35,6 +41,15 @@ log = get_logger(__name__)
 # Assets are batched into one multi-row INSERT per this many rows (the lineage
 # refresh materializes every manifest node — thousands at real scale).
 _ASSET_CHUNK = 500
+
+# Orphan-sweep deletes are batched into one DELETE per this many candidate ids —
+# mirrors _ASSET_CHUNK so a single sweep tick can't hold one giant transaction
+# open over an assets table that has grown large.
+_ORPHAN_SWEEP_CHUNK = 500
+
+
+def _now() -> datetime:
+    return datetime.now(UTC)
 
 
 def _conflict_set(stmt: PgInsert, *, preserve_provenance: bool) -> dict[str, Any]:
@@ -188,3 +203,94 @@ def resolve_and_upsert_asset(
         name=identity.name,
     )
     return asset_id
+
+
+def sweep_orphan_assets(
+    session: Session,
+    *,
+    retention_days: int,
+    now: datetime | None = None,
+    chunk_size: int = _ORPHAN_SWEEP_CHUNK,
+) -> int:
+    """Delete `assets` rows past `retention_days` that nothing still references (#770).
+
+    ADR 0034's accepted cleanup posture: asset rows accrete (a suite retargets
+    away, a dbt model is dropped from the manifest, ...) and are never deleted on
+    the write path — `last_seen` simply stops advancing. This sweep is what
+    eventually retires them. A row is a sweep candidate only when BOTH hold:
+
+    - ``last_seen`` is older than ``retention_days`` (the frozen-timestamp signal
+      that nothing resolves/refreshes it any more);
+    - it is **unreferenced** — see the guard list below.
+
+    ``retention_days`` must be generous: it has to comfortably outlive the
+    slowest suite schedule and the lineage-refresh poll cadence, or a
+    legitimately-live asset would be swept and immediately re-created on the next
+    refresh (default 30 via ``ASSET_ORPHAN_RETENTION_DAYS``).
+    ``retention_days <= 0`` disables the sweep (returns 0 without touching the
+    DB) — a clean off-switch, mirroring the other beat janitors
+    (``reap_stuck_runs`` / ``purge_expired_sample_failures``).
+
+    **Reference guard — an explicit checklist, not a derived query.** `Suite.
+    asset_id` / `Run.asset_id` are ``ON DELETE SET NULL`` (see their model
+    docstrings), so the schema alone would happily let a referenced asset be
+    deleted; the guard below is what actually protects them, enforced in the
+    service, not by the FK. Every table that can hold an `assets.id` reference
+    needs its own line here:
+
+    - `suites.asset_id`
+    - `runs.asset_id`
+    - `lineage_edges.upstream_asset_id` / `lineage_edges.downstream_asset_id`
+    - (**forward-compat, #761**) `incidents.asset_id`, once the incidents table
+      lands — add ``~exists().where(Incident.asset_id == Asset.id)`` to the
+      ``where(...)`` clause below. A missing guard here is a silent over-delete,
+      not a constraint violation, so treat this list as a checklist on every PR
+      that adds a new `assets.id` foreign key.
+
+    Selects candidate ids first, then deletes them in ``chunk_size`` batches (a
+    large sweep — e.g. after a bulk lineage-source removal — never holds one
+    giant DELETE open). A candidate referenced by a brand-new row between the
+    select and its chunk's delete is a benign, vanishingly-rare race: the next
+    tick simply won't re-select it once the reference exists at that point in
+    time; there is no window where a *currently*-referenced asset is removed,
+    since a delete only ever removes ids captured in an already-unreferenced
+    snapshot. Returns the number of assets actually swept.
+    """
+    if retention_days <= 0:
+        return 0
+    moment = now or _now()
+    cutoff = moment - timedelta(days=retention_days)
+
+    candidate_ids = list(
+        session.scalars(
+            select(Asset.id).where(
+                Asset.last_seen < cutoff,
+                ~exists().where(Suite.asset_id == Asset.id),
+                ~exists().where(Run.asset_id == Asset.id),
+                ~exists().where(LineageEdge.upstream_asset_id == Asset.id),
+                ~exists().where(LineageEdge.downstream_asset_id == Asset.id),
+                # (#761 forward-compat) add here once `incidents` lands:
+                #   ~exists().where(Incident.asset_id == Asset.id),
+            )
+        )
+    )
+
+    swept = 0
+    for start in range(0, len(candidate_ids), chunk_size):
+        chunk = candidate_ids[start : start + chunk_size]
+        # session.execute(<DML>) returns a CursorResult; the typed overload widens
+        # it to Result (no rowcount), so cast to read the affected-row count —
+        # same pattern as `run_service.purge_expired_sample_failures`.
+        result = cast(
+            CursorResult[Any],
+            session.execute(delete(Asset).where(Asset.id.in_(chunk))),
+        )
+        swept += result.rowcount or 0
+    session.commit()
+    log.info(
+        "orphan_assets_swept",
+        count=swept,
+        retention_days=retention_days,
+        cutoff=cutoff.isoformat(),
+    )
+    return swept

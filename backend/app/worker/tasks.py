@@ -42,6 +42,7 @@ from backend.app.lineage import dispatch as lineage_dispatch
 from backend.app.lineage import edges as lineage_edges
 from backend.app.orchestration.registry import get_orchestration_provider
 from backend.app.services import (
+    asset_service,
     cron,
     orchestration_service,
     profile_service,
@@ -631,5 +632,37 @@ def reap_stuck_runs() -> int:
     try:
         threshold = get_settings().stuck_run_threshold_minutes
         return len(run_service.reap_stuck_runs(session, threshold_minutes=threshold))
+    finally:
+        session.close()
+
+
+# ──────────────────────── orphan-asset sweep (#770) ──────────────────────────
+
+
+@celery_app.task(name="sweep_orphan_assets")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
+def sweep_orphan_assets() -> int:
+    """Celery-beat entry point — delete unreferenced, stale `assets` rows (#770).
+
+    ADR 0034's accepted cleanup posture ("asset rows accrete; last_seen + a
+    sweep, not deletes"): a suite retargeting away or a dbt model dropping out of
+    the manifest leaves its `assets` row behind with a frozen ``last_seen`` and
+    no reference into it — see ``asset_service.sweep_orphan_assets`` for the full
+    reference-guard checklist. Returns the count swept.
+
+    Unlike its sibling janitors above, this wraps the service call in its own
+    try/except: the guard list is new and hand-maintained (a future referencing
+    table — #761 `incidents` — landing without its guard line is exactly the
+    failure mode to be defensive about), so a DB-level surprise here is logged
+    and swallowed rather than surfaced as a failed Celery task — it must never
+    take down the beat tick for the janitors scheduled after it.
+    """
+    session = get_session()
+    try:
+        retention_days = get_settings().asset_orphan_retention_days
+        return asset_service.sweep_orphan_assets(session, retention_days=retention_days)
+    except Exception:
+        session.rollback()
+        log.warning("orphan_asset_sweep_failed", exc_info=True)
+        return 0
     finally:
         session.close()

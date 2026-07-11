@@ -63,6 +63,15 @@ class Settings(BaseSettings):
     # real outcome, but would emit a spurious alert).
     stuck_run_threshold_minutes: int = 60
 
+    # Orphan-asset sweep (#770, ADR 0034 — "asset rows accrete; last_seen + a
+    # sweep, not deletes, is the cleanup posture"). An asset whose `last_seen`
+    # hasn't advanced in this many days AND that no suite/run/lineage_edge (and,
+    # once #761 lands, incident) still references is deleted by the beat janitor.
+    # Deliberately generous — must comfortably outlive the slowest suite schedule
+    # and the lineage-refresh poll cadence, or a legitimately-live asset would be
+    # swept and immediately re-created on the next refresh. <=0 disables the sweep.
+    asset_orphan_retention_days: int = 30
+
     azure_tenant_id: str | None = None
     azure_api_client_id: str | None = None
     azure_spa_client_id: str | None = None
