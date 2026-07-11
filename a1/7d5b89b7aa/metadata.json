@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "a17d5b89b7aa",
+  "strategy": "manual-commit",
+  "branch": "docs/asset-lineage-matrix",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/a1/7d5b89b7aa/0/metadata.json",
+      "transcript": "/a1/7d5b89b7aa/0/full.jsonl",
+      "compact_transcript": "/a1/7d5b89b7aa/0/transcript.jsonl",
+      "content_hash": "/a1/7d5b89b7aa/0/content_hash.txt",
+      "prompt": "/a1/7d5b89b7aa/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 117841,
+    "cache_creation_tokens": 6838192,
+    "cache_read_tokens": 210741699,
+    "output_tokens": 508751,
+    "api_call_count": 622
+  }
+}
