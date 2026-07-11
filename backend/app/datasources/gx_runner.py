@@ -20,7 +20,10 @@ from typing import Any
 import great_expectations as gx
 import great_expectations.expectations as gxe
 
+from backend.app.core.logging import get_logger
 from backend.app.datasources.base import CheckOutcome, CheckSpec, SuiteOutcome
+
+log = get_logger(__name__)
 
 # GX result keys that describe failing rows — copied into CheckOutcome.sample_failures.
 # These may contain real data, so they only ever reach logs / the read API via the
@@ -78,7 +81,12 @@ def _to_gx_expectation(spec: CheckSpec, index: int | None = None) -> Any:
     if index is None:
         return expectation_cls(**spec.kwargs)
     kwargs = dict(spec.kwargs)
-    meta = dict(kwargs.get("meta") or {})
+    caller_meta = kwargs.get("meta")
+    if caller_meta is not None and not isinstance(caller_meta, dict):
+        # A malformed stored `meta` (legacy row) must surface GX's own validation
+        # error, not a bare dict() ValueError from the marker merge.
+        return expectation_cls(**kwargs)
+    meta = dict(caller_meta or {})
     meta[_INDEX_META_KEY] = index
     kwargs["meta"] = meta
     return expectation_cls(**kwargs)
@@ -158,11 +166,24 @@ def _in_submission_order(results: list[Any]) -> list[Any]:
     legacy no-marker path is unchanged.
     """
     indexed: list[tuple[int, Any]] = []
+    unmarked = 0
     for result in results:
         index = _submission_index(result)
         if index is None:
-            return results
-        indexed.append((index, result))
+            unmarked += 1
+        else:
+            indexed.append((index, result))
+    if unmarked:
+        if indexed:
+            # Every production expectation is stamped, so a *partial* marker loss is
+            # anomalous — falling back silently would resurrect the #767 cross-wiring
+            # without a trace. Keep the fallback (never guess an order) but say so.
+            log.warning(
+                "gx_results_partially_unmarked",
+                unmarked=unmarked,
+                marked=len(indexed),
+            )
+        return results
     indexed.sort(key=lambda pair: pair[0])
     return [result for _, result in indexed]
 

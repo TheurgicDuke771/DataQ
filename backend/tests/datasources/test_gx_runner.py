@@ -118,3 +118,42 @@ def test_to_suite_outcome_without_markers_falls_back_to_gx_order() -> None:
     )
     outcome = to_suite_outcome(gx_result)
     assert [c.expectation_type for c in outcome.checks] == ["expect_x", "expect_y"]
+
+
+def test_to_suite_outcome_partial_markers_falls_back_and_warns() -> None:
+    # A *partial* marker loss is anomalous (every production expectation is stamped):
+    # keep GX's order — never guess — but emit a warning so the fallback is visible
+    # instead of silently resurrecting the #767 cross-wiring.
+    from structlog.testing import capture_logs
+
+    gx_result = SimpleNamespace(
+        success=True,
+        results=[
+            _marked_result(index=1, type_="expect_x", kwargs={}),
+            _marked_result(index=None, type_="expect_y", kwargs={}),
+        ],
+    )
+    with capture_logs() as logs:
+        outcome = to_suite_outcome(gx_result)
+    assert [c.expectation_type for c in outcome.checks] == ["expect_x", "expect_y"]
+    assert any(entry["event"] == "gx_results_partially_unmarked" for entry in logs)
+
+
+def test_to_gx_expectation_non_dict_meta_surfaces_gx_error() -> None:
+    # A malformed stored `meta` (legacy row) must produce GX's own validation error,
+    # not a bare ValueError from the marker merge (dict("garbage")).
+    import pytest
+
+    from backend.app.datasources.base import CheckSpec
+    from backend.app.datasources.gx_runner import _to_gx_expectation
+
+    spec = CheckSpec(
+        expectation_type="expect_column_values_to_not_be_null",
+        kwargs={"column": "id", "meta": "garbage"},
+    )
+    with pytest.raises(Exception) as excinfo:
+        _to_gx_expectation(spec, index=0)
+    assert (
+        not isinstance(excinfo.value, (ValueError, TypeError))
+        or "validation" in str(excinfo.value).lower()
+    ), f"expected GX's validation error, got bare {excinfo.value!r}"
