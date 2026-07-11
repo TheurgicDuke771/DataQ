@@ -91,7 +91,7 @@ export function CheckNew() {
             <Input placeholder="e.g. order_id not null" />
           </Form.Item>
           {spec.fields.map((field) => (
-            <ConfigFieldItem key={field.name} field={field} />
+            <ConfigFieldItem key={field.name} field={field} connectionType={connectionType} />
           ))}
           <SeverityThresholdFields monitor={spec.thresholds} />
           {suiteId && (

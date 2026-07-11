@@ -48,6 +48,14 @@
     ]
   },
   {
+    "type": "expect_column_values_to_be_of_type",
+    "kind": "expectation",
+    "fields": [
+      "column",
+      "type_"
+    ]
+  },
+  {
     "type": "expect_table_row_count_to_be_between",
     "kind": "expectation",
     "fields": [

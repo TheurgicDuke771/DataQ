@@ -172,7 +172,7 @@ function CheckEditForm({
               {spec.description}
             </Typography.Paragraph>
             {spec.fields.map((field) => (
-              <ConfigFieldItem key={field.name} field={field} />
+              <ConfigFieldItem key={field.name} field={field} connectionType={connectionType} />
             ))}
           </>
         )}

@@ -101,6 +101,7 @@ def test_catalog_entry_constructs_with_representative_kwargs(entry: dict[str, An
         "max_value": 10,
         "value_set": ["a", "b"],
         "regex": r"^\d+$",
+        "type_": "int64",
         QUERY_KEY: "SELECT * FROM {batch} WHERE amount < 0",
     }
     missing = [name for name in entry["fields"] if name not in samples]

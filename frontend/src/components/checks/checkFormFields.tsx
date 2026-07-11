@@ -2,9 +2,15 @@ import { Divider, Flex, Form, Input, InputNumber, Skeleton, Typography } from 'a
 import type { Rule } from 'antd/es/form';
 import { lazy, Suspense } from 'react';
 
+import type { ConnectionType } from '../../api/connections';
 import { parseList } from './checkForm';
 import { validateCustomSqlQuery } from './customSql';
-import type { ConfigField, MonitorThresholdSpec } from './expectationCatalog';
+import {
+  TYPE_FIELD_NAME,
+  typeFieldHint,
+  type ConfigField,
+  type MonitorThresholdSpec,
+} from './expectationCatalog';
 
 /**
  * Shared check-form field components, used by both the edit page (`CheckEdit`)
@@ -31,9 +37,22 @@ function SqlEditorControl({
   );
 }
 
-export function ConfigFieldItem({ field }: { field: ConfigField }) {
+export function ConfigFieldItem({
+  field,
+  connectionType,
+}: {
+  field: ConfigField;
+  /** Suite's connection type — drives the `type_` field's datasource-tailored
+   *  help (issue #768). Every other field ignores it. */
+  connectionType?: ConnectionType;
+}) {
   const label = field.optional ? `${field.label} (optional)` : field.label;
   const rules: Rule[] = field.optional ? [] : [{ required: true }];
+  // `expect_column_values_to_be_of_type`'s `type_` field: GX compares against a
+  // different type vocabulary per execution engine (SQL dialect type vs pandas
+  // dtype) — swap in the datasource-tailored hint over the catalog's generic
+  // fallback help.
+  const help = field.name === TYPE_FIELD_NAME ? typeFieldHint(connectionType) : field.help;
   // A required list of only delimiters ("," / " , ") is non-empty (so it passes
   // `required`) but parses to zero items — reject it inline rather than letting
   // the check save with an empty value_set that only fails later at GX run time.
@@ -68,7 +87,7 @@ export function ConfigFieldItem({ field }: { field: ConfigField }) {
     );
   }
   return (
-    <Form.Item name={['config', field.name]} label={label} rules={rules} extra={field.help}>
+    <Form.Item name={['config', field.name]} label={label} rules={rules} extra={help}>
       {field.type === 'number' ? (
         <InputNumber style={{ width: '100%' }} />
       ) : (

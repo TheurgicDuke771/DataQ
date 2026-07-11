@@ -55,6 +55,49 @@ critical threshold is required** — without one, a freshness check could never 
 band the % by which the count falls outside the range (a spike can exceed 100%), or
 leave them blank for binary in-range pass/fail.
 
+### Type names for `expect_column_values_to_be_of_type`
+
+The **Column values are of type** expectation's `type_` field is the one place the
+check editor's "obvious" answer is usually wrong. GX validates it against a
+*different* type vocabulary depending on which engine actually runs the check — not
+the type your warehouse/catalog shows you:
+
+- **Snowflake** builds a real SQL batch (`SqlAlchemyExecutionEngine`) and string-compares
+  `type_` against the **fully-qualified dialect type**, not the short column type. A
+  `NUMBER` column reports as `DECIMAL(38, 0)`; `VARCHAR` reports as `VARCHAR(16777216)`.
+  Plugging in `NUMBER` or `DECIMAL` alone fails every time.
+- **Unity Catalog, ADLS Gen2 / S3, and Apache Iceberg** all read the target into a
+  pandas DataFrame first (`PandasExecutionEngine`). GX first tries an **exact dtype
+  match**; only when the column's dtype is `object` and `type_` isn't
+  `object`/`object_`/`O` does it fall back to a **row-wise Python value-type compare**.
+  In practice:
+  - Numeric columns report numpy dtypes — `int64`, `float64`, `bool`. **Caveat:** an
+    integer column containing *any* NULL is upcast to `float64` by the read
+    (`pd.read_sql_table` / `pd.read_csv`), so a nullable `BIGINT` reports `float64`,
+    not `int64`.
+  - String columns on **Unity Catalog and CSV** reads are plain pandas `object` dtype
+    (these reads are *not* Arrow-backed). Both `type_: object` (exact dtype match) and
+    `type_: str` (row-wise value-type match) pass — pick either.
+  - **Parquet and Iceberg** reads *are* Arrow-backed and can report Arrow-flavored
+    dtype names — calibrate from a dry-run rather than assuming the CSV/UC names.
+
+| Datasource | Engine | `type_` guidance |
+|---|---|---|
+| Snowflake | SQL (dialect-native) | `DECIMAL(38, 0)` for `NUMBER`, `VARCHAR(16777216)` for `VARCHAR` |
+| Unity Catalog | pandas DataFrame (not Arrow-backed) | `int64` for non-nullable `BIGINT` (**`float64` if the column contains NULLs**); `object` or `str` for `STRING` |
+| ADLS Gen2 / S3 (CSV) | pandas DataFrame (not Arrow-backed) | `int64`/`float64`/`bool` for numerics (**NULLs upcast integers to `float64`**); `object` or `str` for strings |
+| ADLS Gen2 / S3 (Parquet) / Iceberg | pandas DataFrame (Arrow-backed) | Arrow-flavored dtype names — confirm via a dry-run's `observed_value` |
+
+**Calibration tip:** don't guess — **dry-run first**, but know where the trail runs
+out. On **Snowflake and the Arrow-backed sources** (Parquet/Iceberg), a failing
+result's `observed_value` carries the *exact* string GX expected — copy it into
+`type_` and re-run to confirm green. On **Unity Catalog / CSV**, a wrong value-type
+guess (e.g. `int64` against a string column) falls to GX's row-wise compare, which
+fails with **no observed value at all** — the dry-run preview renders Observed as
+"—". If you see that, don't hunt for a magic string: the column is `object` dtype, so
+enter `object` or the Python value type name (`str`). The check editor's help text
+under the field repeats this per the suite's connection type.
+
 Before saving any of them: **Dry-run** previews pass/fail against live data, and the
 **column profiler** (nulls, distinct count, min/max, top values) helps place thresholds.
 
