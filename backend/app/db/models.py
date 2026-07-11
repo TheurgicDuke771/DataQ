@@ -187,6 +187,10 @@ class Asset(Base):
     owner_user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
     )
+    # Free-text asset description (ADR 0034 §4, #760). Set only via the
+    # workspace-Admin-only `PATCH /assets/{id}` — the cheap, safe row on the 0033
+    # matrix; widened to composing-suite `edit` later if it chafes. Nullable.
+    description: Mapped[str | None] = mapped_column(Text)
     first_seen: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
