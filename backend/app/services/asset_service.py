@@ -32,7 +32,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from backend.app.core.logging import get_logger
-from backend.app.db.models import Asset, Connection, LineageEdge, Run, Suite
+from backend.app.db.models import Asset, Connection
 from backend.app.services.asset_identity import resolve_asset_identity
 
 log = get_logger(__name__)
@@ -46,6 +46,27 @@ _ASSET_CHUNK = 500
 # mirrors _ASSET_CHUNK so a single sweep tick can't hold one giant transaction
 # open over an assets table that has grown large.
 _ORPHAN_SWEEP_CHUNK = 500
+
+# Reference guards for the orphan sweep (#770): every FK into ``assets.id`` must
+# have a ``(table, column)`` row here. This registry drives BOTH the sweep's
+# NOT-EXISTS predicate and the schema-introspection test
+# (`test_asset_sweep.py::test_every_asset_fk_has_a_sweep_guard`), so a new FK —
+# e.g. #761 ``incidents.asset_id`` — fails the build until its guard is added.
+_SWEEP_REFERENCE_GUARDS: tuple[tuple[str, str], ...] = (
+    ("suites", "asset_id"),
+    ("runs", "asset_id"),
+    ("lineage_edges", "upstream_asset_id"),
+    ("lineage_edges", "downstream_asset_id"),
+)
+
+
+def _sweep_guard_clauses() -> list[Any]:
+    """NOT-EXISTS clause per registered reference guard, built from metadata."""
+    tables = Asset.metadata.tables
+    return [
+        ~exists().where(tables[table_name].c[column_name] == Asset.id)
+        for table_name, column_name in _SWEEP_REFERENCE_GUARDS
+    ]
 
 
 def _now() -> datetime:
@@ -231,62 +252,52 @@ def sweep_orphan_assets(
     DB) — a clean off-switch, mirroring the other beat janitors
     (``reap_stuck_runs`` / ``purge_expired_sample_failures``).
 
-    **Reference guard — an explicit checklist, not a derived query.** `Suite.
-    asset_id` / `Run.asset_id` are ``ON DELETE SET NULL`` (see their model
-    docstrings), so the schema alone would happily let a referenced asset be
-    deleted; the guard below is what actually protects them, enforced in the
-    service, not by the FK. Every table that can hold an `assets.id` reference
-    needs its own line here:
+    **Reference guard — an enforced registry, not a checklist.** `Suite.
+    asset_id` / `Run.asset_id` are ``ON DELETE SET NULL`` and the lineage-edge
+    FKs are ``ON DELETE CASCADE``, so the schema alone would happily let a
+    referenced asset be deleted (or its edges be cascade-wiped); the
+    ``_SWEEP_REFERENCE_GUARDS`` registry is what actually protects them. Every
+    FK into ``assets.id`` needs a registry row — the schema-introspection test
+    (``test_every_asset_fk_has_a_sweep_guard``) fails the build when a new FK
+    (e.g. #761 ``incidents.asset_id``) lands without one, so a silent
+    over-delete cannot ship unnoticed.
 
-    - `suites.asset_id`
-    - `runs.asset_id`
-    - `lineage_edges.upstream_asset_id` / `lineage_edges.downstream_asset_id`
-    - (**forward-compat, #761**) `incidents.asset_id`, once the incidents table
-      lands — add ``~exists().where(Incident.asset_id == Asset.id)`` to the
-      ``where(...)`` clause below. A missing guard here is a silent over-delete,
-      not a constraint violation, so treat this list as a checklist on every PR
-      that adds a new `assets.id` foreign key.
-
-    Selects candidate ids first, then deletes them in ``chunk_size`` batches (a
-    large sweep — e.g. after a bulk lineage-source removal — never holds one
-    giant DELETE open). A candidate referenced by a brand-new row between the
-    select and its chunk's delete is a benign, vanishingly-rare race: the next
-    tick simply won't re-select it once the reference exists at that point in
-    time; there is no window where a *currently*-referenced asset is removed,
-    since a delete only ever removes ids captured in an already-unreferenced
-    snapshot. Returns the number of assets actually swept.
+    Deletes run as chunked ``DELETE … WHERE id IN (SELECT … LIMIT n)``
+    statements that carry the FULL predicate (staleness + every guard), each
+    committed before the next — a large sweep (e.g. after a bulk lineage-source
+    removal) never holds one giant DELETE or a sweep-long transaction open, and
+    a candidate that gains a reference mid-sweep is re-checked by its own chunk's
+    subquery rather than deleted from a stale snapshot. The residual race is a
+    single statement wide (a reference committed in the same instant a ≥30-day
+    stale asset's chunk deletes it); its blast radius is bounded — suites/runs
+    go ``SET NULL`` and the next save/refresh re-creates the asset row via the
+    normal upsert path. Returns the number of assets actually swept.
     """
     if retention_days <= 0:
         return 0
     moment = now or _now()
     cutoff = moment - timedelta(days=retention_days)
 
-    candidate_ids = list(
-        session.scalars(
-            select(Asset.id).where(
-                Asset.last_seen < cutoff,
-                ~exists().where(Suite.asset_id == Asset.id),
-                ~exists().where(Run.asset_id == Asset.id),
-                ~exists().where(LineageEdge.upstream_asset_id == Asset.id),
-                ~exists().where(LineageEdge.downstream_asset_id == Asset.id),
-                # (#761 forward-compat) add here once `incidents` lands:
-                #   ~exists().where(Incident.asset_id == Asset.id),
-            )
-        )
-    )
-
     swept = 0
-    for start in range(0, len(candidate_ids), chunk_size):
-        chunk = candidate_ids[start : start + chunk_size]
+    while True:
+        candidate_chunk = (
+            select(Asset.id)
+            .where(Asset.last_seen < cutoff, *_sweep_guard_clauses())
+            .limit(chunk_size)
+            .scalar_subquery()
+        )
         # session.execute(<DML>) returns a CursorResult; the typed overload widens
         # it to Result (no rowcount), so cast to read the affected-row count —
         # same pattern as `run_service.purge_expired_sample_failures`.
         result = cast(
             CursorResult[Any],
-            session.execute(delete(Asset).where(Asset.id.in_(chunk))),
+            session.execute(delete(Asset).where(Asset.id.in_(candidate_chunk))),
         )
-        swept += result.rowcount or 0
-    session.commit()
+        deleted = result.rowcount or 0
+        session.commit()
+        swept += deleted
+        if deleted < chunk_size:
+            break
     log.info(
         "orphan_assets_swept",
         count=swept,

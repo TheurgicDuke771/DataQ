@@ -255,3 +255,22 @@ def test_chunking_does_not_touch_referenced_assets_mixed_in(db_session: Any) -> 
     assert _exists(db_session, keep_id)
     for orphan_id in orphan_ids:
         assert not _exists(db_session, orphan_id)
+
+
+def test_every_asset_fk_has_a_sweep_guard() -> None:
+    """Schema-introspection enforcement of `_SWEEP_REFERENCE_GUARDS` (#770).
+
+    Any FK into ``assets.id`` (e.g. #761's ``incidents.asset_id``) must carry a
+    sweep guard, or the janitor silently over-deletes referenced assets. This
+    test turns that from a code-comment checklist into a build failure.
+    """
+    from backend.app.db.models import Asset
+    from backend.app.services.asset_service import _SWEEP_REFERENCE_GUARDS
+
+    fk_refs = {
+        (fk.parent.table.name, fk.parent.name)
+        for table in Asset.metadata.tables.values()
+        for fk in table.foreign_keys
+        if fk.column.table.name == "assets" and fk.column.name == "id"
+    }
+    assert fk_refs == set(_SWEEP_REFERENCE_GUARDS)
