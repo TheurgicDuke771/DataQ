@@ -1,0 +1,3 @@
+Hey, lets explore the missing piece ADR-0015. 
+Explore the details, plan out how best we can incorporate it, and write the actual ADR
+Then we can satrt the implementation.
