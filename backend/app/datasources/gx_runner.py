@@ -20,7 +20,10 @@ from typing import Any
 import great_expectations as gx
 import great_expectations.expectations as gxe
 
+from backend.app.core.logging import get_logger
 from backend.app.datasources.base import CheckOutcome, CheckSpec, SuiteOutcome
+
+log = get_logger(__name__)
 
 # GX result keys that describe failing rows — copied into CheckOutcome.sample_failures.
 # These may contain real data, so they only ever reach logs / the read API via the
@@ -39,6 +42,15 @@ _SAMPLE_KEYS = (
 # parameters.
 _GX_INTERNAL_KWARGS = frozenset({"batch_id"})
 
+# The submission-position marker stamped into each expectation's `meta` so a result
+# can be re-keyed to the `CheckSpec` it came from — GX 1.17 `graph_validate` returns
+# results in a DIFFERENT order once any expectation errors (errored ones are appended
+# first, then the rest in submission order), so the run-service's positional zip onto
+# `checks` would otherwise cross-wire result rows to the wrong `check_id` (#767). GX
+# carries `expectation_config.meta` through verbatim to every result, so it survives
+# the reorder; it lives in `meta` (not `kwargs`), so it never leaks into `expected_value`.
+_INDEX_META_KEY = "dataq_index"
+
 
 class UnknownExpectationError(ValueError):
     """Raised when a check's expectation_type has no matching GX expectation."""
@@ -52,14 +64,32 @@ def _expectation_class_name(expectation_type: str) -> str:
     return "".join(part.title() for part in expectation_type.split("_"))
 
 
-def _to_gx_expectation(spec: CheckSpec) -> Any:
+def _to_gx_expectation(spec: CheckSpec, index: int | None = None) -> Any:
+    """Build the concrete GX expectation for `spec`.
+
+    When ``index`` is given, stamp the check's submission position into the
+    expectation's ``meta`` (``dataq_index``) so `to_suite_outcome` can re-key the
+    result back to its spec regardless of the order GX returns results in (#767).
+    Merged with any caller-supplied ``meta`` in ``kwargs``.
+    """
     class_name = _expectation_class_name(spec.expectation_type)
     expectation_cls = getattr(gxe, class_name, None)
     if expectation_cls is None:
         raise UnknownExpectationError(
             f"Unknown expectation_type {spec.expectation_type!r} (no gx class {class_name!r})"
         )
-    return expectation_cls(**spec.kwargs)
+    if index is None:
+        return expectation_cls(**spec.kwargs)
+    kwargs = dict(spec.kwargs)
+    caller_meta = kwargs.get("meta")
+    if caller_meta is not None and not isinstance(caller_meta, dict):
+        # A malformed stored `meta` (legacy row) must surface GX's own validation
+        # error, not a bare dict() ValueError from the marker merge.
+        return expectation_cls(**kwargs)
+    meta = dict(caller_meta or {})
+    meta[_INDEX_META_KEY] = index
+    kwargs["meta"] = meta
+    return expectation_cls(**kwargs)
 
 
 def _is_identifier_index_list(value: Any) -> bool:
@@ -113,14 +143,63 @@ def _expected_value(kwargs: Any) -> dict[str, Any] | None:
     return cleaned or None
 
 
+def _submission_index(check_result: Any) -> int | None:
+    """The ``dataq_index`` marker stamped into this result's expectation `meta`, or
+    ``None`` when absent (a manually-constructed / legacy result carrying no marker)."""
+    config = getattr(check_result, "expectation_config", None)
+    meta = getattr(config, "meta", None)
+    if isinstance(meta, dict):
+        index = meta.get(_INDEX_META_KEY)
+        if isinstance(index, int) and not isinstance(index, bool):
+            return index
+    return None
+
+
+def _in_submission_order(results: list[Any]) -> list[Any]:
+    """Re-key GX results back to submission order via the `dataq_index` marker (#767).
+
+    GX 1.17 `graph_validate` returns results in submission order *only* while nothing
+    errors; once any expectation errors it appends the errored ones first, so trusting
+    list order cross-wires results to the wrong check. Sorting by the stamped index
+    restores the 1:1 positional contract the run-service relies on. Falls back to GX's
+    order if *any* result lacks the marker (constructed results in unit tests), so the
+    legacy no-marker path is unchanged.
+    """
+    indexed: list[tuple[int, Any]] = []
+    unmarked = 0
+    for result in results:
+        index = _submission_index(result)
+        if index is None:
+            unmarked += 1
+        else:
+            indexed.append((index, result))
+    if unmarked:
+        if indexed:
+            # Every production expectation is stamped, so a *partial* marker loss is
+            # anomalous — falling back silently would resurrect the #767 cross-wiring
+            # without a trace. Keep the fallback (never guess an order) but say so.
+            log.warning(
+                "gx_results_partially_unmarked",
+                unmarked=unmarked,
+                marked=len(indexed),
+            )
+        return results
+    indexed.sort(key=lambda pair: pair[0])
+    return [result for _, result in indexed]
+
+
 def to_suite_outcome(gx_result: Any) -> SuiteOutcome:
     """Map a GX ExpectationSuiteValidationResult onto our GX-agnostic DTO.
+
+    Results are re-keyed to submission order via the `dataq_index` marker (#767)
+    before mapping, so the outcome list stays 1:1 with the submitted `CheckSpec`s
+    even when GX reorders errored expectations to the front.
 
     Kept GX-translation-only (no datasource specifics) so it is unit-testable
     with a constructed GX result, no live datasource required.
     """
     outcomes: list[CheckOutcome] = []
-    for check_result in gx_result.results:
+    for check_result in _in_submission_order(list(gx_result.results)):
         config = check_result.expectation_config
         detail: dict[str, Any] = check_result.result or {}
         observed = (
@@ -155,7 +234,7 @@ def _execute(
     suite = context.suites.add(
         gx.ExpectationSuite(
             name=name,
-            expectations=[_to_gx_expectation(check) for check in checks],
+            expectations=[_to_gx_expectation(check, index=i) for i, check in enumerate(checks)],
         )
     )
     validation_definition = context.validation_definitions.add(
