@@ -14,6 +14,13 @@ collection at 2x the window. Counting is one round-trip (INCR + EXPIRE pipeline)
 
 Fail-open: any store error → the request is allowed (a Redis outage disables
 limiting, logged once per window — never a hard-down on the whole API).
+
+The `default` (bearer) class carries a dual-key ceiling: besides the per-token
+bucket it also increments a per-IP `ipall` bucket counting ALL bearer traffic
+from one IP, so an attacker rotating a fresh random `Bearer <nonce>` per request
+(which would otherwise mint a fresh `tok:` bucket every time and never 429) is
+still capped by `rate_limit_ip_per_minute`. Both counters move in one pipelined
+round trip.
 """
 
 from __future__ import annotations
@@ -22,7 +29,7 @@ import hashlib
 import ipaddress
 import re
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from typing import TYPE_CHECKING, Any, Final, Protocol
 
 from fastapi import Request, Response
@@ -42,7 +49,9 @@ WINDOW_SECONDS: Final = 60
 _GC_SECONDS: Final = WINDOW_SECONDS * 2  # EXPIRE horizon — pure GC, never the limit boundary
 
 # Exempt surfaces. /healthz is hardcoded (not config) — the liveness probe must
-# never be throttleable. OPTIONS is handled in the middleware (CORS preflight).
+# never be throttleable. A genuine CORS preflight (OPTIONS carrying Origin +
+# Access-Control-Request-Method) is exempted in the middleware; a bare OPTIONS is
+# counted like any other request.
 _EXEMPT_PATHS: Final = frozenset({"/healthz"})
 _WEBHOOK_PREFIX: Final = "/api/v1/orchestration/events/"
 
@@ -52,10 +61,12 @@ _IPV4_PORT_RE: Final = re.compile(r"^(\d{1,3}(?:\.\d{1,3}){3}):\d+$")
 
 
 class RateLimitStore(Protocol):
-    async def incr_window(self, key: str) -> int | None:
-        """Increment the counter for `key` in its window and return the new count.
+    async def incr_windows(self, keys: Sequence[str]) -> list[int] | None:
+        """Increment every key in `keys` and return the new counts, aligned to
+        `keys` order, in ONE round trip.
 
-        `None` signals the store is unavailable → the middleware fails open.
+        `None` signals the store is unavailable → the middleware fails open for
+        the whole batch (a single fail-open signal, never a partial result).
         """
         ...
 
@@ -86,13 +97,16 @@ class RedisStore:
     fail-open signal — a Redis hiccup must never 500 or block the request.
     """
 
-    async def incr_window(self, key: str) -> int | None:
+    async def incr_windows(self, keys: Sequence[str]) -> list[int] | None:
         try:
             pipe = _get_redis_client().pipeline(transaction=True)
-            pipe.incr(key)
-            pipe.expire(key, _GC_SECONDS)  # unconditional GC; the window is in the key
+            for key in keys:
+                pipe.incr(key)
+                pipe.expire(key, _GC_SECONDS)  # unconditional GC; the window is in the key
             results = await pipe.execute()
-            return int(results[0])
+            # Results interleave INCR, EXPIRE per key → the even-indexed entries
+            # are the INCR counts, aligned to `keys`.
+            return [int(results[i]) for i in range(0, len(results), 2)]
         except Exception:
             return None
 
@@ -109,16 +123,19 @@ class InMemoryStore:
         self._clock = clock or time.time
         self._counts: dict[str, tuple[int, float]] = {}
 
-    async def incr_window(self, key: str) -> int | None:
+    async def incr_windows(self, keys: Sequence[str]) -> list[int] | None:
         now = self._clock()
         # Prune on write: drop entries older than the GC horizon so the dict can't
         # grow unbounded across windows.
         stale = [k for k, (_, ts) in self._counts.items() if now - ts > _GC_SECONDS]
         for k in stale:
             del self._counts[k]
-        count = self._counts.get(key, (0, now))[0] + 1
-        self._counts[key] = (count, now)
-        return count
+        counts: list[int] = []
+        for key in keys:
+            count = self._counts.get(key, (0, now))[0] + 1
+            self._counts[key] = (count, now)
+            counts.append(count)
+        return counts
 
 
 # ── Store selection + test/reset hooks ───────────────────────────────────────
@@ -166,20 +183,30 @@ def _is_ip(value: str) -> bool:
         return False
 
 
-def _client_ip(request: Request) -> str:
+def _client_ip(request: Request, trusted_hops: int) -> str:
     """The client IP for per-IP buckets.
 
-    Trust the LAST (rightmost) X-Forwarded-For hop: our nginx appends the real
-    peer via `$proxy_add_x_forwarded_for`, so the rightmost entry is
-    proxy-added and unspoofable (a client-supplied XFF only pollutes the *left*).
-    Whitespace is tolerated and an IPv4 `:port` suffix stripped; an empty/garbage
-    last hop falls back to the socket peer, else `"unknown"`.
+    X-Forwarded-For is a comma-separated chain — each trusted proxy appends the
+    peer it saw. Exactly `trusted_hops` proxies are trusted to append (config
+    `RATE_LIMIT_XFF_TRUSTED_HOPS`), so the real client is the entry
+    `trusted_hops` from the right (`entries[len - hops]`). Picking a fixed depth
+    from the right is what survives a multi-proxy chain: a single-proxy compose
+    setup uses hops=1 (rightmost), while the ACA public-envoy→nginx→internal-
+    envoy chain uses hops=3.
+
+    If the chain is SHORTER than `trusted_hops`, the request did not traverse the
+    expected proxy stack, so the whole XFF header is untrustworthy → fall back to
+    the socket peer (never `entries[0]`, the most spoofable position). Whitespace
+    is tolerated and an IPv4 `:port` suffix stripped; a garbage candidate or a
+    missing peer falls back to `"unknown"`.
     """
     xff = request.headers.get("x-forwarded-for")
-    if xff:
-        candidate = _strip_ipv4_port(xff.split(",")[-1].strip())
-        if candidate and _is_ip(candidate):
-            return candidate
+    if xff and trusted_hops >= 1:
+        entries = [e.strip() for e in xff.split(",")]
+        if len(entries) >= trusted_hops:
+            candidate = _strip_ipv4_port(entries[len(entries) - trusted_hops])
+            if candidate and _is_ip(candidate):
+                return candidate
     client = request.client
     if client is not None and client.host:
         return client.host
@@ -226,27 +253,47 @@ async def rate_limit_middleware(
     settings = get_settings()
     if not settings.rate_limit_enabled:
         return await call_next(request)
-    # CORS preflight carries no credentials and must not be throttled.
-    if request.method == "OPTIONS":
+    # Only a GENUINE CORS preflight is exempt — OPTIONS carrying both Origin and
+    # Access-Control-Request-Method. A bare OPTIONS is counted like any request.
+    if (
+        request.method == "OPTIONS"
+        and "origin" in request.headers
+        and "access-control-request-method" in request.headers
+    ):
         return await call_next(request)
     path = request.url.path
     if path in _EXEMPT_PATHS:
         return await call_next(request)
 
     bearer = _bearer_token(request)
-    ip = _client_ip(request)
+    ip = _client_ip(request, settings.rate_limit_xff_trusted_hops)
     cls, limit, key = _resolve_policy(path, bearer, ip, settings)
 
     now = int(_now())
     window = now // WINDOW_SECONDS
-    count = await _active_store().incr_window(f"rl:{cls}:{key}:{window}")
 
-    if count is None:
+    # The `default` (bearer) class gets a SECOND per-IP `ipall` bucket that counts
+    # all bearer traffic from one IP, closing the rotated-token bypass (a fresh
+    # random bearer mints a fresh tok bucket but shares the ipall ceiling). The
+    # webhook/unauth classes are already per-IP on their own single bucket.
+    keys = [f"rl:{cls}:{key}:{window}"]
+    if cls == "default":
+        keys.append(f"rl:default:ipall:{ip}:{window}")
+    counts = await _active_store().incr_windows(keys)
+
+    if counts is None:
         # Fail-open: store unavailable → allow, warn once per window.
         _warn_store_unavailable_once(window, path=path, cls=cls, key=key)
         return await call_next(request)
 
-    if count > limit:
+    # Token bucket checked first so it wins the reported limit when both exceed.
+    exceeded_limit: int | None = None
+    if counts[0] > limit:
+        exceeded_limit = limit
+    elif cls == "default" and counts[1] > settings.rate_limit_ip_per_minute:
+        exceeded_limit = settings.rate_limit_ip_per_minute
+
+    if exceeded_limit is not None:
         retry_after = max(1, (window + 1) * WINDOW_SECONDS - now)
         return JSONResponse(
             status_code=429,
@@ -257,7 +304,7 @@ async def rate_limit_middleware(
             ),
             headers={
                 "Retry-After": str(retry_after),
-                "X-RateLimit-Limit": str(limit),
+                "X-RateLimit-Limit": str(exceeded_limit),
                 "X-RateLimit-Remaining": "0",
             },
         )

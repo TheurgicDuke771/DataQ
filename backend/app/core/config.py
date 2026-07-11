@@ -123,7 +123,13 @@ class Settings(BaseSettings):
     rate_limit_enabled: bool = True
     rate_limit_authenticated_per_minute: int = 300  # per sha256(bearer) bucket
     rate_limit_unauthenticated_per_minute: int = 120  # per client-IP bucket
-    rate_limit_webhook_per_minute: int = 30  # per client-IP, /api/v1/orchestration/events/*
+    rate_limit_webhook_per_minute: int = 120  # per client-IP, /api/v1/orchestration/events/*
+    rate_limit_ip_per_minute: int = (
+        1200  # per-IP ceiling across all bearer buckets (rotated-token backstop)
+    )
+    rate_limit_xff_trusted_hops: int = (
+        1  # count of trusted proxies appending XFF; pick entry hops-from-right
+    )
 
     # Workspace-admin allowlist — emails permitted to use the /admin read
     # endpoints (all-suites / all-users / access overview). Single-tenant, so this

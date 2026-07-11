@@ -49,6 +49,12 @@ locals {
     # off, the token validator rejects guests with 403 "Guest users not allowed".
     { name = "AZURE_ALLOW_GUEST_USERS", value = var.azure_allow_guest_users ? "true" : "false" },
     { name = "WORKSPACE_ADMIN_EMAILS", value = var.workspace_admin_emails },
+    # Rate-limit per-IP keying (ADR 0035). The measured prod ingress chain is
+    # public-envoy + nginx + internal-envoy = 3 XFF appends, so the real client
+    # is the 3rd entry from the right; the default of 1 (rightmost) would collapse
+    # every client into the shared nginx-pod IP. Confirm the exact depth against
+    # one logged live XFF post-deploy.
+    { name = "RATE_LIMIT_XFF_TRUSTED_HOPS", value = "3" },
     # Empty: the frontend Container App proxies /api same-origin (nginx), so the
     # FastAPI CORS middleware stays off (README §4 / ADR 0018 / ADR 0028).
     { name = "CORS_ALLOW_ORIGINS", value = "" },

@@ -53,12 +53,26 @@ on the parent FastAPI app as the **innermost** user middleware.
 
   | Class | Matches | Key | Default |
   |---|---|---|---|
-  | `webhook` | `/api/v1/orchestration/events/*` | per client-IP (**even with a bearer** — machine path) | 30 |
-  | `default` | any request with a bearer | per `sha256(token)[:32]` | 300 |
+  | `webhook` | `/api/v1/orchestration/events/*` | per client-IP (**even with a bearer** — machine path) | 120 |
+  | `default` | any request with a bearer | per `sha256(token)[:32]` **plus** a per-IP `ipall` ceiling | 300 (token) / 1200 (`ipall`) |
   | `unauth` | everything else | per client-IP | 120 |
 
   The raw token is never a key input — only its hash — so it is never logged or
-  stored. `/healthz` and `OPTIONS` (preflight) are exempt. The class table is the
+  stored. `/healthz` and a **genuine CORS preflight** (an `OPTIONS` carrying both
+  `Origin` and `Access-Control-Request-Method`) are exempt; a bare `OPTIONS`
+  is counted like any other request.
+
+  - **Per-IP ceiling on the `default` class (`rate_limit_ip_per_minute`, default
+    1200)** — the rotated-token backstop. The middleware runs *before* auth, so a
+    bearer is unvalidated: an attacker cycling a fresh random `Bearer <nonce>` per
+    request would otherwise mint a brand-new `tok:` bucket every time (count = 1,
+    never a 429) and never be capped. The `default` class therefore increments a
+    SECOND `rl:default:ipall:{ip}:{window}` bucket counting ALL bearer traffic
+    from one IP; a request is throttled when the token bucket OR the `ipall`
+    ceiling is exceeded (both counters move in one pipelined round trip; when both
+    exceed, the 429 reports the token limit). The `webhook`/`unauth` classes stay
+    single-key — each is already IP-capped on its own bucket, and dropping the
+    bearer only demotes an attacker to the lower `unauth` per-IP cap. The class table is the
   **extension point** for ADR 0032's future per-email OTP class (a fourth row,
   keyed on the normalized email). **`/mcp` shares the `default` class** — it is a
   bearer-authenticated surface like the REST API, so per-token buckets apply
@@ -73,13 +87,19 @@ on the parent FastAPI app as the **innermost** user middleware.
 
 ### Threat model — the client-IP rule
 
-Per-IP buckets trust the **rightmost** `X-Forwarded-For` hop: our nginx appends
-the real peer via `$proxy_add_x_forwarded_for`, so the last entry is
-proxy-added and unspoofable (a client-supplied XFF only pollutes the *left*).
-**ACA double-ingress caveat:** behind two ingress hops the rightmost entry can be
-an internal load-balancer IP, collapsing many clients into one per-IP bucket.
-Accepted: token traffic (the `default` class, per-hash) dominates real usage, the
-per-IP classes are a coarse backstop, and Azure is winding down anyway.
+Per-IP buckets pick the client from `X-Forwarded-For` at a **configurable trusted
+depth** (`RATE_LIMIT_XFF_TRUSTED_HOPS`, default 1). XFF is a chain — each trusted
+proxy appends the peer it saw — so the genuine client is the entry
+`trusted_hops` from the right; a client-supplied XFF only pollutes the *left*,
+beyond the trusted depth. A single-proxy compose setup uses hops=1 (rightmost);
+the **ACA ingress chain measures three appends** — public-envoy → nginx →
+internal-envoy — so the deployment sets hops=3, restoring per-IP class integrity
+(hops=1 would collapse every client into the shared nginx-pod IP). **Direct-hit
+caveat:** XFF is trusted only for the *exact* configured depth — a chain shorter
+than `trusted_hops` means the request did not traverse the expected proxy stack,
+so XFF is untrustworthy and we fall back to the socket peer (never the leftmost,
+most-spoofable entry). Confirm the exact prod depth against one logged live XFF
+post-deploy.
 
 ## Consequences
 
@@ -88,15 +108,23 @@ portable seam; the OTP prereq (#738) is unblocked; no new dependency, no license
 review; fail-open means a Redis blip never takes the API down.
 
 **Accepted residual risks** —
-- **Bearer rotation mints fresh token buckets:** a rotating attacker gets a new
-  `tok:` bucket per token, but each bad token still costs one hashed 401; the
-  per-IP `unauth`/`webhook` classes and a future network-layer backstop cover
-  the volumetric case.
+- **Bearer rotation is now bounded by the per-IP ceiling:** a rotating attacker
+  still mints a fresh `tok:` bucket per token, but every one of those requests
+  also increments the `default` class's `rl:default:ipall:{ip}` bucket, so a
+  single IP is capped at `rate_limit_ip_per_minute` (1200) regardless of how many
+  tokens it cycles. A genuinely distributed rotation (many IPs) still needs a
+  network-layer backstop, but the single-IP bypass is closed.
 - **Fixed-window 2× boundary burst:** a client can send up to 2× the limit across
   a window boundary. Acceptable for abuse-prevention (vs the complexity of a
   sliding-log / token-bucket).
 - **Fail-open disables limiting during a Redis outage** — a deliberate
   availability-over-enforcement trade, logged once per window.
+
+**Follow-ups (filed from the #783 review round):** [#784](https://github.com/TheurgicDuke771/DataQ/issues/784)
+(a circuit breaker for a slow-but-alive Redis, so a laggy store isn't paid per
+request) and [#785](https://github.com/TheurgicDuke771/DataQ/issues/785) (key the
+webhook bucket per-provider-path, not bare per-IP, so one noisy orchestrator
+can't throttle another).
 
 ## Alternatives considered
 

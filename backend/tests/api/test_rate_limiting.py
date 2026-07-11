@@ -10,7 +10,7 @@ so a window boundary can't flake the counts.
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 
 import pytest
 from fastapi.testclient import TestClient
@@ -45,6 +45,65 @@ def limiter(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     set_store_for_testing(InMemoryStore(clock=lambda: _FROZEN))
     with TestClient(app) as c:
         yield c
+
+
+@pytest.fixture
+def ip_ceiling_limiter(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
+    """Low per-IP bearer ceiling, high token cap — exercises the rotated-token
+    backstop (`rate_limit_ip_per_minute`) without the per-token bucket firing."""
+    monkeypatch.setenv("RATE_LIMIT_ENABLED", "true")
+    monkeypatch.setenv("RATE_LIMIT_AUTHENTICATED_PER_MINUTE", "100")  # token cap out of the way
+    monkeypatch.setenv("RATE_LIMIT_IP_PER_MINUTE", "4")  # per-IP ceiling across all tokens
+    monkeypatch.setenv("RATE_LIMIT_WEBHOOK_PER_MINUTE", "50")
+    get_settings.cache_clear()
+    monkeypatch.setattr(rate_limit, "_now", lambda: _FROZEN)
+    set_store_for_testing(InMemoryStore(clock=lambda: _FROZEN))
+    with TestClient(app) as c:
+        yield c
+
+
+def test_rotating_bearer_hits_ip_ceiling(ip_ceiling_limiter: TestClient) -> None:
+    # A fresh random bearer each request → a fresh tok bucket every time, so the
+    # per-token cap never fires; the per-IP ipall ceiling (4) closes the bypass.
+    for i in range(4):
+        h = {"Authorization": f"Bearer rotate-{i}"}
+        assert ip_ceiling_limiter.get(PROBE, headers=h).status_code != 429
+    resp = ip_ceiling_limiter.get(PROBE, headers={"Authorization": "Bearer rotate-final"})
+    assert resp.status_code == 429
+    assert resp.headers["X-RateLimit-Limit"] == "4"  # the IP ceiling, reported
+
+
+def test_two_distinct_tokens_share_ip_ceiling(ip_ceiling_limiter: TestClient) -> None:
+    ha = {"Authorization": "Bearer token-AAA"}
+    hb = {"Authorization": "Bearer token-BBB"}
+    assert ip_ceiling_limiter.get(PROBE, headers=ha).status_code != 429
+    assert ip_ceiling_limiter.get(PROBE, headers=hb).status_code != 429
+    assert ip_ceiling_limiter.get(PROBE, headers=ha).status_code != 429
+    assert ip_ceiling_limiter.get(PROBE, headers=hb).status_code != 429  # 4 total, at ceiling
+    # 5th bearer request from the same IP (either token) → ipall ceiling 429.
+    assert ip_ceiling_limiter.get(PROBE, headers=ha).status_code == 429
+
+
+def test_webhook_with_bearer_not_counted_against_ip_ceiling(ip_ceiling_limiter: TestClient) -> None:
+    path = "/api/v1/orchestration/events/adf"
+    h = {"Authorization": "Bearer token-AAA"}
+    # 6 webhook posts > the ipall ceiling (4); they stay in the webhook class
+    # (cap 50) and never touch ipall, so none are throttled.
+    for _ in range(6):
+        assert ip_ceiling_limiter.post(path, headers=h).status_code != 429
+    # And a subsequent bearer request is ipall #1, not #7 → still allowed.
+    assert ip_ceiling_limiter.get(PROBE, headers=h).status_code != 429
+
+
+def test_single_token_still_capped_at_authenticated_limit(limiter: TestClient) -> None:
+    # Default `limiter`: AUTH cap 5, IP ceiling default 1200 (out of the way).
+    # The per-token bucket stays intact and independent of the higher ceiling.
+    h = {"Authorization": "Bearer solo-token"}
+    for _ in range(5):
+        assert limiter.get(PROBE, headers=h).status_code != 429
+    resp = limiter.get(PROBE, headers=h)
+    assert resp.status_code == 429
+    assert resp.headers["X-RateLimit-Limit"] == "5"  # the token limit, not the ceiling
 
 
 def _structlog_events(records: list[logging.LogRecord]) -> list[dict[str, object]]:
@@ -117,8 +176,18 @@ def test_healthz_is_exempt(limiter: TestClient) -> None:
 
 
 def test_options_preflight_is_exempt(limiter: TestClient) -> None:
+    # A GENUINE preflight carries Origin + Access-Control-Request-Method.
+    preflight = {"Origin": "https://app.example.com", "Access-Control-Request-Method": "GET"}
     for _ in range(10):  # well past UNAUTH limit = 3
+        assert limiter.options(PROBE, headers=preflight).status_code != 429
+
+
+def test_bare_options_is_counted(limiter: TestClient) -> None:
+    # OPTIONS without the preflight headers is NOT a CORS preflight → counted
+    # in the normal (unauth) class and throttleable at limit 3.
+    for _ in range(3):
         assert limiter.options(PROBE).status_code != 429
+    assert limiter.options(PROBE).status_code == 429
 
 
 # ───────────────────────── 6. /mcp covered ─────────────────────────
@@ -147,7 +216,7 @@ def test_disabled_flag_never_throttles(client: TestClient) -> None:
 class _NoneStore:
     """A store that is always 'unavailable' → the middleware must fail open."""
 
-    async def incr_window(self, key: str) -> int | None:
+    async def incr_windows(self, keys: Sequence[str]) -> list[int] | None:
         return None
 
 
