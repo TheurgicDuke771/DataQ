@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "06ef91fbaddf",
+  "strategy": "manual-commit",
+  "branch": "docs/dbt-artifacts-uri-note",
+  "checkpoints_count": 3,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/06/ef91fbaddf/0/metadata.json",
+      "transcript": "/06/ef91fbaddf/0/full.jsonl",
+      "compact_transcript": "/06/ef91fbaddf/0/transcript.jsonl",
+      "content_hash": "/06/ef91fbaddf/0/content_hash.txt",
+      "prompt": "/06/ef91fbaddf/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 56537,
+    "cache_creation_tokens": 1690126,
+    "cache_read_tokens": 60942985,
+    "output_tokens": 181871,
+    "api_call_count": 262
+  }
+}
