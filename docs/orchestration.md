@@ -95,8 +95,10 @@ capable catalog (Purview/DataHub) lands behind the seam, with no schema or query
 
 - **Reference implementation: Marquez** (Apache-2.0). Pull = `GET {MARQUEZ_URL}/api/v1/lineage?
   nodeId=dataset:{namespace}:{name}&depth=N`; identity matches DataQ assets byte-for-byte because
-  both use the OpenLineage naming spec. Fail-soft (5 s timeout, node cap, depth clamp) — a dead
-  catalog yields an empty graph, never an error.
+  both use the OpenLineage naming spec. Fail-soft (5 s timeout, node cap, depth clamp) — and a
+  dead catalog is treated as **unavailable**, not as empty lineage: the refresh skips pruning for
+  that pass (an outage can never wipe the cached graph), never surfaces an error, and stale edges
+  wait for the next clean pull.
 - **Deferred behind the same seam** (do not build): **DataHub** (8 GB-RAM footprint — bring your
   own; our emitter already feeds its OL receiver), **OpenMetadata** (SDK is source-available,
   blocked by ADR 0031; REST-only would need its own ADR), **Purview** (Azure-only, parked).
