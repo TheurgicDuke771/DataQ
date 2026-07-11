@@ -65,8 +65,12 @@ Four ways a suite runs (all the same authz — [feature matrix](feature-matrix.m
 
 ## Results, dashboard & history
 
-- **Monitoring dashboard** — a severity-weighted **health score**, pass rate, run counts,
-  average duration, per-day trends, and per-suite performance.
+- **Monitoring dashboard** — **leads with asset-level health** (how many assets are
+  monitored, need attention, or have a run in flight — click through to an asset or the
+  full [Assets](feature-matrix.md#assets-lineage-datasources) view), then a
+  severity-weighted **health score**, pass rate, run counts, average duration, per-day
+  trends, and per-suite performance. Assets are the primary lens (ADR 0034 nav inversion):
+  the sidebar leads with **Assets** above Suites, and every suite/run links back to its asset.
 - **Results page** — every run with its per-check outcomes; drill into a run for
   observed-vs-expected values and **redacted failing-row samples**.
 - **Severity + operational statuses** — warn / fail / critical for data outcomes, plus

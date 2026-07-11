@@ -38,6 +38,7 @@ import {
   snoozeCheck,
   type Suite,
 } from '../api/suites';
+import { AssetLink } from '../components/assets/AssetLink';
 import { isSnoozed, SnoozedTag } from '../components/checks/snooze';
 import { ConnectionTypeAvatar } from '../components/connections/connectionVisuals';
 import { Page } from '../components/layout/Page';
@@ -424,11 +425,13 @@ function SuiteDetail({
             {suite.name}
           </Typography.Title>
           {connection ? (
-            <Flex gap={8} align="center">
+            <Flex gap={8} align="center" wrap>
               <Typography.Text type="secondary">
                 {connection.name} · {CONNECTION_TYPE_LABELS[connection.type]}
               </Typography.Text>
               <Tag color={ENV_COLORS[connection.env]}>{envLabel(connection.env)}</Tag>
+              {/* Links back to the asset this suite's target resolves to (#773). */}
+              <AssetLink assetId={suite.asset_id} />
             </Flex>
           ) : (
             <Typography.Text type="secondary">Connection {suite.connection_id}</Typography.Text>

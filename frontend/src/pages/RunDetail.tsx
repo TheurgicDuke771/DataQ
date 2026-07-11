@@ -6,6 +6,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 
 import { getRun, type Result, type ResultStatus } from '../api/runs';
 import { type Check, getSuite, listChecks } from '../api/suites';
+import { AssetLink } from '../components/assets/AssetLink';
 import { CheckTrend } from '../components/checks/CheckTrend';
 import { SnoozedTag } from '../components/checks/snooze';
 import {
@@ -96,9 +97,13 @@ function RunDetailBody({
   return (
     <Flex vertical gap={16}>
       <Flex justify="space-between" align="center" gap={12} wrap>
-        <Typography.Title level={3} style={{ margin: 0 }}>
-          {suiteName ?? `Run ${run.suite_id.slice(0, 8)}`}
-        </Typography.Title>
+        <Flex align="center" gap={10} wrap style={{ minWidth: 0 }}>
+          <Typography.Title level={3} style={{ margin: 0 }}>
+            {suiteName ?? `Run ${run.suite_id.slice(0, 8)}`}
+          </Typography.Title>
+          {/* Links back to the asset this run executed against (#773). */}
+          <AssetLink assetId={run.asset_id} />
+        </Flex>
         <DownloadMenu run={run} suiteName={suiteName} checks={checksById} />
       </Flex>
 

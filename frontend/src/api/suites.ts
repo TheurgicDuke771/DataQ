@@ -14,6 +14,9 @@ export interface Suite {
   connection_id: string;
   /** Datasource-shaped run target (#215); null = not yet runnable. */
   target: Record<string, unknown> | null;
+  /** The asset this suite's target resolves to (ADR 0034, #760); null for a
+   *  targetless/unresolvable suite. Links the suite back to its asset (#773). */
+  asset_id?: string | null;
   created_by: string;
   /** The caller's effective level — gates per-suite actions (share, delete).
    *  `owner`/`admin`/`edit`/`view`; absent on older payloads. */

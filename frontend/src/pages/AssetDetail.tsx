@@ -1,9 +1,15 @@
-import { ApartmentOutlined, ArrowLeftOutlined, EditOutlined } from '@ant-design/icons';
-import { App, Button, Card, Empty, Flex, Input, Modal, Table, Tag, Typography } from 'antd';
+import {
+  ApartmentOutlined,
+  ArrowLeftOutlined,
+  EditOutlined,
+  UserOutlined,
+} from '@ant-design/icons';
+import { App, Button, Card, Empty, Flex, Input, Modal, Select, Table, Tag, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
+import { type AdminUser, listAdminUsers } from '../api/admin';
 import {
   type AssetDetail as AssetDetailData,
   type ComposingSuite,
@@ -101,6 +107,20 @@ function AssetDetailBody({
         onChanged={onChanged}
       />
 
+      {/* Mount-gated (not closure-gated) on adminness: useAsyncData only re-runs
+          its fetcher on [nonce], so a fetcher that closed over a still-false
+          `isAdmin` would never re-fire once /me resolves (admin deep-link/refresh
+          race). Mounting the block only when adminness is KNOWN true means its
+          on-mount fetch always runs with the right identity — and a non-admin
+          structurally never hits the admin-only endpoint. */}
+      {isAdmin && (
+        <OwnerBlock
+          assetId={summary.id}
+          ownerUserId={summary.owner_user_id}
+          onChanged={onChanged}
+        />
+      )}
+
       <SuitesSection
         suites={asset.suites}
         onOpenSuite={(id) => navigate(`/suites/${id}`)}
@@ -132,9 +152,7 @@ function AssetDetailBody({
 
 /**
  * The asset description + the workspace-Admin-only inline edit (#760). Owner
- * reassignment (`owner_user_id`) is deliberately NOT surfaced yet — it needs a
- * user picker and only matters once incident routing consumes asset owners
- * (ADR 0034 §3); the API already supports it for when that lands.
+ * reassignment lives in its own `OwnerBlock` below (#773).
  */
 function DescriptionBlock({
   assetId,
@@ -204,6 +222,115 @@ function DescriptionBlock({
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           placeholder="What is this asset, and who should care when it breaks?"
+        />
+      </Modal>
+    </>
+  );
+}
+
+/**
+ * Asset owner + the workspace-Admin-only reassignment (#773). Asset owners feed
+ * ADR 0034 §3 incident routing, so keeping them assignable matters. The picker is
+ * sourced from `GET /admin/users` (itself admin-only — a clean fit, since the
+ * whole control is admin-gated); the current owner renders as a display
+ * name/email, never a bare UUID, once the user list resolves.
+ *
+ * **Mounted only for admins** (the parent gates on `isAdmin`) — so the on-mount
+ * user-list fetch always runs with adminness known, and a non-admin structurally
+ * never calls the admin-only endpoint. This gate is nav convenience — the PATCH's
+ * `require_workspace_admin` 403 is the security boundary.
+ */
+function OwnerBlock({
+  assetId,
+  ownerUserId,
+  onChanged,
+}: {
+  assetId: string;
+  ownerUserId: string | null;
+  onChanged: () => void;
+}) {
+  const { message } = App.useApp();
+  // Fetches on mount — safe because this component only mounts for admins.
+  const { state } = useAsyncData(listAdminUsers);
+  const [editing, setEditing] = useState(false);
+  // Controlled select value: `undefined` = unassigned (renders the placeholder).
+  const [draft, setDraft] = useState<string | undefined>(undefined);
+  const [saving, setSaving] = useState(false);
+
+  const loadFailed = state.status === 'error';
+  const users: AdminUser[] = state.status === 'ok' ? state.data : [];
+  const label = (u: AdminUser) => u.display_name || u.email;
+  const owner = users.find((u) => u.id === ownerUserId);
+  // Prefer the resolved name/email; fall back to the raw id only if the list
+  // hasn't loaded or the owner is somehow not in it (never leave a blank).
+  const ownerText = ownerUserId === null ? 'Unassigned' : owner ? label(owner) : ownerUserId;
+
+  const openEditor = () => {
+    setDraft(ownerUserId ?? undefined);
+    setEditing(true);
+  };
+
+  const onSave = async () => {
+    setSaving(true);
+    try {
+      // `undefined` draft → explicit null (unassign); otherwise the chosen id.
+      await updateAsset(assetId, { owner_user_id: draft ?? null });
+      message.success('Owner updated');
+      setEditing(false);
+      onChanged();
+    } catch (err) {
+      message.error(`Update failed: ${errorMessage(err)}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <>
+      <Flex gap={8} align="center" wrap>
+        <UserOutlined style={{ color: '#8c8c8c' }} />
+        <Typography.Text type="secondary">Owner:</Typography.Text>
+        {ownerUserId === null ? (
+          <Typography.Text type="secondary">{ownerText}</Typography.Text>
+        ) : (
+          <Typography.Text>{ownerText}</Typography.Text>
+        )}
+        <Button
+          type="link"
+          size="small"
+          icon={<EditOutlined />}
+          onClick={openEditor}
+          disabled={loadFailed}
+        >
+          Reassign owner
+        </Button>
+        {/* A failed /admin/users read must not degrade to a silently-empty
+            picker — say so (mirrors the AssetHealthLead unavailable state). */}
+        {loadFailed && (
+          <Typography.Text type="secondary">
+            The user list is unavailable right now.
+          </Typography.Text>
+        )}
+      </Flex>
+      <Modal
+        title="Reassign asset owner"
+        open={editing}
+        onOk={() => void onSave()}
+        okText="Save"
+        confirmLoading={saving}
+        onCancel={() => setEditing(false)}
+        destroyOnHidden
+      >
+        <Select<string>
+          style={{ width: '100%' }}
+          placeholder="Unassigned"
+          allowClear
+          showSearch
+          loading={state.status === 'loading'}
+          value={draft}
+          onChange={(value) => setDraft(value)}
+          optionFilterProp="label"
+          options={users.map((u) => ({ value: u.id, label: label(u) }))}
         />
       </Modal>
     </>

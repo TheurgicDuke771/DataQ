@@ -86,6 +86,7 @@ function renderAt(runId: string) {
       <Routes>
         <Route path="/results/:runId" element={<RunDetail />} />
         <Route path="/results" element={<div>results-list</div>} />
+        <Route path="/assets/:assetId" element={<div>asset page</div>} />
       </Routes>
     </MemoryRouter>,
   );
@@ -111,6 +112,26 @@ describe('RunDetail page', () => {
     // Checks-passed stat: 0 of 1 passed (the one result is a warn).
     expect(screen.getByText('0 / 1')).toBeInTheDocument();
     expect(mockGetRun).toHaveBeenCalledWith('r1');
+  });
+
+  it('surfaces an Asset link that navigates to the asset (#773)', async () => {
+    mockGetRun.mockResolvedValue({ ...runDetail, asset_id: 'asset-9' });
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]);
+    renderAt('r1');
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByText('Asset'));
+    expect(await screen.findByText('asset page')).toBeInTheDocument();
+  });
+
+  it('omits the Asset link when the run has no resolved asset (#773)', async () => {
+    mockGetRun.mockResolvedValue({ ...runDetail, asset_id: null });
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]);
+    renderAt('r1');
+    await screen.findByText('Orders quality');
+    expect(screen.queryByText('Asset')).not.toBeInTheDocument();
   });
 
   it('surfaces the failure reason for a failed run (#605)', async () => {
