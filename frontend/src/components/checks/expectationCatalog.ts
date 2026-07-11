@@ -96,22 +96,35 @@ const TYPE_FIELD_DEFAULT_HELP =
 
 // GX's `expect_column_values_to_be_of_type` validates against a *different* type
 // vocabulary depending on which execution engine the runner builds its GX batch
-// on — verified against each `*CheckRunner.run_checks` (issue #768), not guessed:
+// on — verified against each `*CheckRunner.run_checks` AND live GX 1.17.2 runs
+// (issue #768 + the PR-#781 adversarial review), not guessed:
 //   - Snowflake is the only SQL-backed batch (`add_table_asset` /
 //     `SqlAlchemyExecutionEngine`) — `type_` must be the dialect's fully-qualified
 //     type string (a `NUMBER` column reports `DECIMAL(38, 0)`).
 //   - Unity Catalog, ADLS/S3 flat files, and Iceberg all read the table into a
-//     pandas DataFrame first (`add_dataframe_asset` / `PandasExecutionEngine`) —
-//     `type_` must be the Python value type name GX compares element-wise
-//     (`int64`, `str`, …), not the pandas Series dtype and not the source
-//     column's SQL/Spark type. (Unity Catalog also supports a literal Custom-SQL
-//     check, but that runs a *different* expectation — `UnexpectedRowsExpectation`
-//     — and never changes this runner's DataFrame execution engine.)
+//     pandas DataFrame first (`add_dataframe_asset` / `PandasExecutionEngine`).
+//     GX first tries an exact **dtype** match, and only when the column's dtype is
+//     `object` and `type_` isn't `object`/`object_`/`O` does it fall back to a
+//     row-wise Python value-type compare. Consequences (all verified live):
+//       * numerics report numpy dtypes (`int64`, `float64`, `bool`) — but an
+//         integer column containing ANY NULL is upcast to `float64` by
+//         `read_sql_table`/`read_csv`;
+//       * UC (`pd.read_sql_table`) and CSV (`pd.read_csv`) reads are NOT
+//         Arrow-backed, so string columns land as plain `object` dtype — both
+//         `type_='object'` (dtype match) and `type_='str'` (row-wise) pass;
+//       * Parquet/Iceberg reads ARE Arrow-backed and can report Arrow-flavored
+//         dtype names — calibrate from a dry-run there;
+//       * a wrong guess that hits the row-wise path (e.g. `int64` on an `object`
+//         string column) fails with NO observed_value at all — the dry-run's
+//         Observed renders "—" — so the calibration tip must be qualified.
+//     (Unity Catalog also supports a literal Custom-SQL check, but that runs a
+//     *different* expectation — `UnexpectedRowsExpectation` — and never changes
+//     this runner's DataFrame execution engine.)
 const SQL_ENGINE_TYPE_HINT =
   'Use the engine’s fully-qualified type exactly as the dialect reports it — e.g. Snowflake NUMBER is `DECIMAL(38, 0)`. Run a dry-run: the failing result’s observed_value shows the exact expected string.';
 
 const DATAFRAME_ENGINE_TYPE_HINT =
-  'Compares Python value type names, not the source column type — e.g. `int64` for integers, `str` for strings (not `object`). Parquet/Iceberg columns are Arrow-backed and may report a different name — run a dry-run: the failing result’s observed_value shows the exact string.';
+  'Compares pandas dtypes or Python value type names — numerics report `int64`/`float64` (integer columns containing NULLs report `float64`); string columns on Unity Catalog and CSV reads are `object` dtype, so `object` or `str` both pass, while Parquet/Iceberg reads are Arrow-backed and can report different names. Dry-run to calibrate: a failing result’s observed_value shows the expected dtype — but if Observed shows “—”, your guess fell to GX’s row-wise compare; use `object` or a Python value type name (full cheat-sheet in the check-authoring docs).';
 
 /**
  * Datasource-tailored help for the `type_` field (issue #768 — a bare "NUMBER" or

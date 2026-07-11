@@ -124,11 +124,17 @@ describe('typeFieldHint (issue #768 — Snowflake NUMBER ≠ "NUMBER")', () => {
   });
 
   it.each<ConnectionType>(['unity_catalog', 's3', 'adls_gen2', 'iceberg'])(
-    'tells %s authors it compares Python value type names, not the source column type',
+    'tells %s authors about pandas dtypes, the object-dtype string case, and the NULL upcast',
     (type) => {
       const hint = typeFieldHint(type);
       expect(hint).toMatch(/int64/);
-      expect(hint).toMatch(/str/);
+      // UC/CSV string columns are plain pandas object dtype — object or str both
+      // pass (verified live on GX 1.17.2; PR-#781 review finding 1).
+      expect(hint).toMatch(/`object` or `str` both pass/);
+      // Nullable-integer upcast caveat: any NULL → float64 (finding 2).
+      expect(hint).toMatch(/NULLs report `float64`/);
+      // Row-wise dead-end: a wrong value-type guess fails with no observed_value.
+      expect(hint).toMatch(/row-wise/);
       expect(hint).not.toMatch(/dialect/i); // sanity: not the Snowflake/SQL wording
     },
   );

@@ -164,7 +164,11 @@ describe('CheckNew — type_ hint (issue #768)', () => {
 
     await pickTypeExpectation(user);
     expect(await screen.findByText(/int64/)).toBeInTheDocument();
-    expect(screen.getByText(/not `object`/)).toBeInTheDocument();
+    // Stable substring of the pandas-path wording (PR-#781 review: UC/CSV string
+    // columns are object dtype — object or str both pass).
+    expect(screen.getByText(/`object` or `str` both pass/)).toBeInTheDocument();
+    // Nullable-integer upcast caveat is present too.
+    expect(screen.getByText(/NULLs report `float64`/)).toBeInTheDocument();
   });
 
   it('shows the generic fallback hint before the connection has loaded', async () => {

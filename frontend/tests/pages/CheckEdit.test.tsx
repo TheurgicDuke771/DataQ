@@ -190,7 +190,9 @@ describe('CheckEdit — type_ hint (issue #768)', () => {
 
     await waitFor(() => expect(screen.getByLabelText('Type')).toHaveValue('DECIMAL(38, 0)'));
     expect(screen.getByText(/int64/)).toBeInTheDocument();
-    expect(screen.getByText(/not `object`/)).toBeInTheDocument();
+    // Stable substring of the pandas-path wording (PR-#781 review: UC/CSV string
+    // columns are object dtype — object or str both pass).
+    expect(screen.getByText(/`object` or `str` both pass/)).toBeInTheDocument();
   });
 
   it('does not render the type_ hint for other expectations', async () => {
