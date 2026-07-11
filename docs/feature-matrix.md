@@ -25,6 +25,45 @@ SQL; ADR 0012/0030). Flat-file suites target a file or a batch pattern (e.g.
 preview works on every datasource with a runner — Snowflake, Unity Catalog, flat files,
 and Iceberg ([#532](https://github.com/TheurgicDuke771/DataQ/issues/532)).
 
+## Assets & lineage × datasources
+
+Every datasource gets a first-class **asset** (identity = the OpenLineage dataset naming
+spec, ADR 0034); lineage edges are **observed, never inferred**, and can arrive through
+four mechanisms:
+
+1. **Run-stamping** — every suite run (and suite save) resolves its target to an asset row
+   and stamps `last_seen`. Works on all datasources; unreferenced stale rows are retired by
+   the daily orphan sweep.
+2. **dbt `manifest.json`** — table-level model lineage cached into `lineage_edges` on every
+   successful dbt build ([details](orchestration.md#lineage-from-manifestjson-adr-0034)).
+   dbt models warehouse tables, so raw flat files don't appear here.
+3. **OpenLineage emission** (outbound) — DataQ broadcasts RunEvents + DQ facets per run to
+   any OL-compatible receiver (`OPENLINEAGE_URL`, dark by default).
+4. **Catalog pull** — the `LineageProvider` seam pulls a governance catalog's graph back in
+   as `source='marquez'` edges (daily beat, dark by default;
+   [details](orchestration.md#lineage-from-a-catalog--the-lineageprovider-seam-adr-0034-762)).
+
+| Datasource | Asset entity | ① Run-stamping | ② dbt manifest | ③ OL emission | ④ Catalog pull |
+|---|---|:-:|:-:|:-:|:-:|
+| Snowflake | `snowflake://{org}-{account}` / `DB.SCHEMA.TABLE` | ✅ | ✅ (live-verified) | ✅ | ✅ |
+| Unity Catalog | `unitycatalog://{host}` / `catalog.schema.table` | ✅ | ✅ (adapter-aware) | ✅ | ✅ |
+| ADLS Gen2 (files) | pattern **base-prefix** asset | ✅ | — | ✅ | ✅ |
+| S3 (files) | `s3://{bucket}` / base prefix | ✅ | — | ✅ | ✅ |
+| Iceberg | `{catalog_uri}` / `namespace.table` | ✅ | —¹ | ✅ | ✅ |
+| BI reports / dashboards | not yet materialized² | — | — | — | reserved² |
+
+¹ dbt-managed Iceberg tables surface through the warehouse adapter (Snowflake/UC rows);
+native `pyiceberg` connections have no dbt slice of their own.
+² The lineage graph's node-kind contract reserves `bi_report`/`dashboard` — a BI node
+(e.g. a Power BI report downstream of a mart) becomes representable the moment a capable
+catalog (Purview/DataHub) lands behind the seam plus an `assets.kind` column; no schema or
+query rewrite needed.
+
+Orchestration providers contribute **no lineage of their own** — ADF and Airflow are
+observed for pipeline runs only; dbt is the one orchestration provider that doubles as a
+lineage source (mechanism ②). Flat-file and Iceberg edges therefore depend on an external
+catalog knowing about them (mechanism ④).
+
 ## Ways a suite runs
 
 | Mode | Where | Notes |
