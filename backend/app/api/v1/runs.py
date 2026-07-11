@@ -45,6 +45,10 @@ class RunRead(ApiModel):
 
     id: uuid.UUID
     suite_id: uuid.UUID
+    # The asset resolved from the suite's target, stamped at dispatch (ADR 0034,
+    # #760) — run history records the asset it actually ran against. NULL for
+    # older rows / a targetless suite. Deferred to #760 by the #764 review.
+    asset_id: uuid.UUID | None = None
     status: str  # queued | running | succeeded | failed | cancelled
     triggered_by: str | None
     started_at: datetime | None

@@ -164,6 +164,26 @@ _SUITES: list[tuple[str, str, str, str, list[tuple[str, str, dict[str, Any], Any
         ],
     ),
     (
+        # A SECOND suite on the SAME connection + target as "Orders quality" so it
+        # resolves to the SAME asset (ADR 0034) — the Assets page then renders
+        # health across ≥2 composing suites of one asset (the #760 acceptance
+        # criterion). Deliberately a different check angle (volume) on ORDERS.
+        "Orders volume",
+        "snowflake-analytics",
+        "dev",
+        "Row-volume monitoring on the ANALYTICS.ORDERS table (shares the asset).",
+        [
+            (
+                "row count sane",
+                "expect_table_row_count_to_be_between",
+                {"min_value": 1, "max_value": 10000000},
+                None,
+                None,
+                None,
+            ),
+        ],
+    ),
+    (
         "Customer files",
         "s3-datalake",
         "prod",
@@ -240,6 +260,8 @@ def _get_or_create_connection(
 # files, table+catalog for Unity Catalog), validated by `run_target` on set.
 _SUITE_TARGETS: dict[str, dict[str, Any]] = {
     "Orders quality": {"table": "ORDERS", "schema": "PUBLIC"},
+    # Same target as "Orders quality" → same resolved asset (ADR 0034, #760).
+    "Orders volume": {"table": "ORDERS", "schema": "PUBLIC"},
     "Customer files": {"path": "customers/2026-06-01.csv", "file_format": "csv"},
     "Lakehouse events": {"table": "events", "schema": "telemetry", "catalog": "main"},
 }
@@ -536,6 +558,40 @@ def _seed_runs(session: Session, *, suite: Suite) -> int:
     return created
 
 
+def _seed_second_suite_run(session: Session, *, suite: Suite) -> int:
+    """Seed one passing run on a second suite that shares an asset (#760).
+
+    Gives the shared-asset detail page real health rolled up across TWO composing
+    suites (the acceptance criterion), not just the first. Idempotent on the marker."""
+    marker = "seed:run:orders-volume"
+    existing = session.scalar(
+        select(Run.id).where(Run.suite_id == suite.id, Run.triggered_by == marker)
+    )
+    if existing is not None:
+        return 0
+    now = datetime.now(UTC)
+    checks = {c.name: c for c in session.scalars(select(Check).where(Check.suite_id == suite.id))}
+    _seed_result_run(
+        session,
+        suite=suite,
+        checks=checks,
+        marker=marker,
+        results=[
+            (
+                "row count sane",
+                "pass",
+                Decimal("0"),
+                {"observed_value": 42315},
+                {"min_value": 1},
+                None,
+            )
+        ],
+        started_at=now - timedelta(minutes=4),
+        finished_at=now - timedelta(minutes=3, seconds=52),
+    )
+    return 1
+
+
 # Monitored orchestrator runs (`pipeline_runs` ≠ `runs`) for the monitoring feed:
 # (provider, (connection name, env), provider_run_id, pipeline/dag id, status,
 # failure_reason). provider_run_id is fixed so the upsert key dedupes re-runs.
@@ -647,6 +703,16 @@ def seed_demo_data(session: Session, *, owner: User, secret_store: SecretStore) 
     # Runs + results on the first suite (the Results page surface) and a couple
     # of monitored pipeline-runs for the orchestration feed.
     run_count = _seed_runs(session, suite=first_suite) if first_suite is not None else 0
+    # A second suite ("Orders volume") shares the ORDERS asset — seed a passing run
+    # on it so the Assets page shows health across ≥2 composing suites (#760).
+    volume_suite = session.scalar(
+        select(Suite).where(
+            Suite.name == "Orders volume",
+            Suite.connection_id == connections[("snowflake-analytics", "dev")].id,
+        )
+    )
+    if volume_suite is not None:
+        run_count += _seed_second_suite_run(session, suite=volume_suite)
     pipeline_run_count = _seed_pipeline_runs(session, connections=connections)
 
     session.commit()
