@@ -3,7 +3,7 @@
 - **Status:** Accepted (spike decision, 2026-07-07; native impl deferred — see Consequences)
 - **Date:** 2026-07-07
 - **Deciders:** @TheurgicDuke771
-- **Related:** [0003](0003-gx-only-for-v1.md) (GX-only; DQX swap seam), [0011](0011-extensibility-seams-for-deferred-integrations.md) (second-impl-deferred seams — `CheckRunner`/`ConnectionAdapter`), [0012](0012-monitor-kind-seam.md) (freshness/schema-drift monitor kinds this feeds), [0010](0010-provider-agnostic-infrastructure-seams.md)/[0013](0013-marketplace-distribution-and-anti-lock-in.md) (anti-lock-in), [0015](README.md) (pending two-connection model — the Option B evolution). Issue [#286](https://github.com/TheurgicDuke771/DataQ/issues/286).
+- **Related:** [0003](0003-gx-only-for-v1.md) (GX-only; DQX swap seam), [0011](0011-extensibility-seams-for-deferred-integrations.md) (second-impl-deferred seams — `CheckRunner`/`ConnectionAdapter`), [0012](0012-monitor-kind-seam.md) (freshness/schema-drift monitor kinds this feeds), [0010](0010-provider-agnostic-infrastructure-seams.md)/[0013](0013-marketplace-distribution-and-anti-lock-in.md) (anti-lock-in), [0015](0015-two-connection-comparison-check-model.md) (two-connection model — settled 2026-07-11 at the *check* grain only; Option B's connection→connection ref stays deferred, see its §6). Issue [#286](https://github.com/TheurgicDuke771/DataQ/issues/286).
 
 ## Context
 
@@ -67,4 +67,4 @@ Deliberately skipped. The SQL runners are **format-transparent by construction**
 
 - Issue [#286](https://github.com/TheurgicDuke771/DataQ/issues/286) (this spike + the deferred native build).
 - ADR 0012 (freshness/schema-drift monitor kinds — Iceberg snapshot metadata is their ideal source).
-- ADR 0015 (pending — the two-connection model that would enable Option B).
+- [ADR 0015](0015-two-connection-comparison-check-model.md) — written 2026-07-11; settled the two-connection question at the *check* grain (comparison source ref) and explicitly did **not** generalize to connection→connection refs, so Option B remains deferred to its own future ADR.

@@ -57,6 +57,6 @@ Three facts shape how it can integrate:
 - [ADR 0012](0012-monitor-kind-seam.md) — monitor-kind seam; `comparison` joins its reserved `check.kind` CHECK set and reuses `metric_value`.
 - [ADR 0011](0011-extensibility-seams-for-deferred-integrations.md) — `ResultPublisher` + post-v1 RDBMS `ConnectionAdapter`s the comparison datasources need.
 - [ADR 0003](0003-gx-only-for-v1.md) — GX-only for v1 (why reconciliation is a separate kind, not a GX expectation).
-- **ADR 0015 (pending)** — two-connection check model (how a `comparison` check carries source + target connection refs).
+- **[ADR 0015](0015-two-connection-comparison-check-model.md)** (written 2026-07-11) — two-connection check model: the suite supplies the target side; the check adds a single `source_connection_id` ref.
 - Source engine: `github.com/TheurgicDuke771/FastAPI_DataComparison` (MIT) — `data_comparison/{column_comparison,record_comparison,get_dataset}.py`.
 - CLAUDE.md §4 (datasource vs orchestration distinction), §5 (monitor-kind seam reserved kinds).
