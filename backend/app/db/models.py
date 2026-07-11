@@ -82,6 +82,16 @@ ENVS = ("dev", "qa", "uat", "prod")
 # fail/critical only, 'warn' = warn+, 'always' = every terminal run.
 ALERT_ON_POLICIES = ("fail", "warn", "always")
 
+# Incident lifecycle (ADR 0034 decision 4, #761). `open → acknowledged → resolved`;
+# a resolved row is never mutated back to open (reopen = a NEW incident linked via
+# `prior_incident_id`). The two non-resolved states are the "active" set the dedup
+# guarantee keys on: at most one active incident per (asset_id, check_id).
+INCIDENT_STATUSES = ("open", "acknowledged", "resolved")
+INCIDENT_ACTIVE_STATUSES = ("open", "acknowledged")
+# Who resolved an incident — a user (manual ack/resolve) or the engine (first
+# passing result for the pair, per-suite configurable). NULL until resolved.
+INCIDENT_RESOLVED_BY = ("user", "auto")
+
 
 def _uuid_pk() -> Mapped[uuid.UUID]:
     return mapped_column(
@@ -687,6 +697,14 @@ class SuiteNotification(Base):
     # Per-suite email recipients — comma-separated addresses (NULL → workspace
     # EMAIL_TO). Not a secret (addresses, not credentials), so stored inline (#633).
     email_recipients: Mapped[str | None] = mapped_column(String(1024))
+    # Auto-resolve an active incident on the first passing result for its
+    # (asset, check) pair (ADR 0034 decision 4, #761). On by default; a suite opts
+    # out to keep incidents open until a human resolves them. A suite with no
+    # notification row uses the default (auto-resolve on) —
+    # `incident_service.auto_resolve_enabled`.
+    auto_resolve_incidents: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("true")
+    )
     created_at: Mapped[datetime] = _created_at()
     updated_at: Mapped[datetime] = _updated_at()
 
@@ -750,11 +768,114 @@ class LineageEdge(Base):
     )
 
 
+class Incident(Base):
+    """A stateful, deduped, evidence-carrying incident (ADR 0034 decision 4, #761).
+
+    An **alert** is a per-result notification (fire-and-forget — severity routing,
+    dedup, snooze; already shipped). An **incident** is the durable object those
+    signals roll up into, anchored to ``(asset_id, check_id)``: a failing result
+    opens one, repeat failures attach as *occurrences* (``occurrence_count`` +
+    ``last_seen_at``) rather than piling up new rows, and the first passing result
+    for the pair auto-resolves it (per-suite configurable). Alerts keep firing per
+    their own rules and reference the open incident.
+
+    **Dedup guarantee — at most one *active* incident per ``(asset_id, check_id)``.**
+    "Active" = ``status IN ('open', 'acknowledged')``; enforced by the partial
+    unique index ``uq_incidents_active_asset_check``, which the lifecycle engine's
+    ``INSERT … ON CONFLICT DO NOTHING`` targets so a concurrent second failing
+    result attaches an occurrence instead of racing in a duplicate (the #420
+    upsert-race discipline, one level up from alert dedup).
+
+    **Lifecycle** ``open → acknowledged → resolved`` with actor + timestamp per
+    transition (open = ``created_at``; ack = ``acknowledged_at``/``acknowledged_by``;
+    resolve = ``resolved_at``/``resolved_by``/``resolved_by_user_id``). A resolved
+    row is **never** mutated back to open — a resolved pair's next failure opens a
+    NEW incident linked to the prior one via ``prior_incident_id`` (the reopen
+    chain). ``suite_id`` is denormalized from the check's suite so visibility can
+    derive from suite grants (ADR 0027, same rule as the asset view #760) and
+    routing can reach the suite owner without a join.
+
+    ``evidence`` is the Theme-2 deterministic evidence card (layer 1, no LLM),
+    snapshotted at open and refreshed per occurrence — assembled from existing data
+    only and **never** carrying ``sample_failures`` content (PII rule).
+
+    Both ``asset_id`` and ``check_id`` CASCADE-delete (an incident is meaningless
+    without its anchor — the same posture as ``results``); ``suite_id`` CASCADEs
+    too. Actor FKs (``acknowledged_by``/``resolved_by_user_id``) SET NULL so an
+    incident outlives the user who acted on it; ``prior_incident_id`` SET NULLs so
+    pruning an old resolved incident never deletes its successor.
+    """
+
+    __tablename__ = "incidents"
+    __table_args__ = (
+        _in_check("status", INCIDENT_STATUSES, "incident_status_valid"),
+        CheckConstraint(
+            "resolved_by IS NULL OR resolved_by IN ('user', 'auto')",
+            name="incident_resolved_by_valid",
+        ),
+        Index("ix_incidents_asset_id", "asset_id"),
+        Index("ix_incidents_check_id", "check_id"),
+        Index("ix_incidents_suite_id", "suite_id"),
+        Index("ix_incidents_status", "status"),
+        # At most one ACTIVE (open|acknowledged) incident per (asset, check) — the
+        # dedup guarantee. Partial unique index; the engine's ON CONFLICT DO NOTHING
+        # targets it (index_where mirrors this predicate — keep the two in sync).
+        Index(
+            "uq_incidents_active_asset_check",
+            "asset_id",
+            "check_id",
+            unique=True,
+            postgresql_where=text(
+                "status IN (" + ", ".join(f"'{s}'" for s in INCIDENT_ACTIVE_STATUSES) + ")"
+            ),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    asset_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("assets.id", ondelete="CASCADE"), nullable=False
+    )
+    check_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("checks.id", ondelete="CASCADE"), nullable=False
+    )
+    suite_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("suites.id", ondelete="CASCADE"), nullable=False
+    )
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default=text("'open'"))
+    # Who resolved it ('user' | 'auto'); NULL until resolved.
+    resolved_by: Mapped[str | None] = mapped_column(String(16))
+    occurrence_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
+    # Latest failing occurrence (bumps on every attach); open time = created_at.
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    acknowledged_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    acknowledge_note: Mapped[str | None] = mapped_column(Text)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    resolved_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    resolution_note: Mapped[str | None] = mapped_column(Text)
+    # Reopen chain: the prior (resolved) incident this one succeeds, or NULL for a
+    # first-ever incident on the pair. SET NULL so pruning an old one never orphans.
+    prior_incident_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("incidents.id", ondelete="SET NULL")
+    )
+    # Deterministic evidence card (layer 1) snapshot; never sample_failures content.
+    evidence: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = _created_at()
+    updated_at: Mapped[datetime] = _updated_at()
+
+
 __all__ = [
     "Asset",
     "Base",
     "Check",
     "Connection",
+    "Incident",
     "LineageEdge",
     "PipelineRun",
     "Result",
