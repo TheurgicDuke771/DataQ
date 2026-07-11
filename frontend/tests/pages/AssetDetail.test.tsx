@@ -185,12 +185,13 @@ describe('AssetDetail page', () => {
     expect(screen.getByText('Monitored')).toBeInTheDocument();
   });
 
+  // CI module-import cost + userEvent on antd eats the 5s default (#778) — 15s budgets.
   it('links a composing suite to its suite page', async () => {
     mockGet.mockResolvedValue(DETAIL);
     renderPage();
     await userEvent.click(await screen.findByRole('button', { name: 'Orders quality' }));
     expect(await screen.findByText('suite page')).toBeInTheDocument();
-  });
+  }, 15000);
 
   it('links the latest run to its run page', async () => {
     mockGet.mockResolvedValue(DETAIL);
@@ -198,7 +199,7 @@ describe('AssetDetail page', () => {
     await screen.findByText('Orders quality');
     await userEvent.click(screen.getByRole('button', { name: /2026/ }));
     expect(await screen.findByText('run page')).toBeInTheDocument();
-  });
+  }, 15000);
 
   it('renders empty lineage panels when there are none', async () => {
     mockGet.mockResolvedValue({ ...DETAIL, upstream: [], downstream: [] });
