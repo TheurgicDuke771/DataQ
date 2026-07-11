@@ -44,6 +44,7 @@ from backend.app.orchestration.registry import get_orchestration_provider
 from backend.app.services import (
     asset_service,
     cron,
+    incident_service,
     orchestration_service,
     profile_service,
     run_dispatch,
@@ -212,6 +213,11 @@ def run_suite(run_id: str) -> str:
             lineage_dispatch.emit_run_lineage_terminal(session, run_id=rid)
             raise
         lineage_dispatch.emit_run_lineage_terminal(session, run_id=rid)
+        # Roll the run's per-check results up into incidents (open/attach/auto-
+        # resolve) BEFORE alert dispatch, so the published report can reference the
+        # open incident (ADR 0034 #761). Fail-soft like the two hooks around it —
+        # an incident-engine bug must never fail the already-persisted run.
+        incident_service.sync_incidents_for_run(session, run_id=rid)
         alert_dispatch.publish_run_outcome(session, run_id=rid)
         return outcome
     finally:

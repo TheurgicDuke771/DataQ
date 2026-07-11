@@ -13,6 +13,7 @@ import {
 } from '../api/assets';
 import { useIsWorkspaceAdmin } from '../auth/useMe';
 import { AssetHealthTag } from '../components/assets/AssetHealthTag';
+import { IncidentsPanel } from '../components/assets/IncidentsPanel';
 import { runHealth } from '../components/assets/health';
 import { AsyncBody } from '../components/AsyncBody';
 import { Page } from '../components/layout/Page';
@@ -104,6 +105,13 @@ function AssetDetailBody({
         suites={asset.suites}
         onOpenSuite={(id) => navigate(`/suites/${id}`)}
         onOpenRun={onOpenRun}
+      />
+
+      <IncidentsPanel
+        assetId={summary.id}
+        permissionBySuite={Object.fromEntries(
+          asset.suites.map((s) => [s.suite_id, s.my_permission]),
+        )}
       />
 
       <Flex gap={16} wrap align="stretch">

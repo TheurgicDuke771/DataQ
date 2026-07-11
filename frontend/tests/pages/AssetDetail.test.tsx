@@ -11,6 +11,13 @@ import type { AsyncState } from '../../src/hooks/useAsyncData';
 import { AssetDetail } from '../../src/pages/AssetDetail';
 
 vi.mock('../../src/api/assets', () => ({ getAsset: vi.fn(), updateAsset: vi.fn() }));
+// The AssetDetail now renders the IncidentsPanel, which fetches incidents on
+// mount — stub it out here (its own behaviour is covered in IncidentsPanel.test).
+vi.mock('../../src/api/incidents', () => ({
+  listIncidents: vi.fn().mockResolvedValue([]),
+  acknowledgeIncident: vi.fn(),
+  resolveIncident: vi.fn(),
+}));
 const mockGet = vi.mocked(getAsset);
 const mockUpdate = vi.mocked(updateAsset);
 

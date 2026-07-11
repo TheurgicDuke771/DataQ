@@ -14,7 +14,7 @@ same discipline as the ``CheckRunner`` / ``OrchestrationProvider`` seams.
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
@@ -27,7 +27,29 @@ from backend.app.db.models import FAILING_TIERS
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
-__all__ = ["FAILING_TIERS", "CheckReport", "ResultPublisher", "RunReport"]
+__all__ = ["FAILING_TIERS", "CheckReport", "IncidentCard", "ResultPublisher", "RunReport"]
+
+
+@dataclass(frozen=True)
+class IncidentCard:
+    """The stateful-incident reference a publisher carries alongside the per-result
+    report (ADR 0034 #761). The alert stays per-result (its own dedup/snooze); this
+    is the durable object it *references* so a ticket/webhook links to the open
+    incident and arrives with the deterministic evidence card attached.
+
+    ``is_new`` distinguishes a freshly-opened incident from an occurrence attached
+    to an already-open one (``occurrence_count`` > 1). ``evidence`` is the
+    already-redacted layer-1 card (no ``sample_failures`` content) as snapshotted
+    on the incident — passed through opaque; a publisher renders what it needs.
+    """
+
+    incident_id: uuid.UUID
+    check_id: uuid.UUID
+    check_name: str
+    status: str
+    occurrence_count: int
+    is_new: bool
+    evidence: dict[str, Any] | None
 
 
 @dataclass(frozen=True)
@@ -77,6 +99,11 @@ class RunReport:
     triggered_by: str | None = None
     run_url: str | None = None
     owner: str | None = None
+    # The stateful incidents this run's failing checks reference (ADR 0034 #761) —
+    # one per breaching check that has an active incident, each carrying its
+    # deterministic evidence card. Empty when the run is clean or its asset never
+    # resolved (no anchor). Defaulted so existing constructors keep working.
+    incidents: list[IncidentCard] = field(default_factory=list)
 
     @property
     def duration_seconds(self) -> float | None:

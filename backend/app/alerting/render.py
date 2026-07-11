@@ -13,7 +13,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from backend.app.alerting.base import CheckReport, RunReport
+from backend.app.alerting.base import CheckReport, IncidentCard, RunReport
 
 # Longer scalars (a big value_set, a stringified row) are truncated so one check
 # can't blow up a card; the full detail lives on the linked run-detail page.
@@ -109,6 +109,20 @@ def check_detail(check: CheckReport) -> str:
     if values:
         parts.append(values)
     return " · ".join(parts)
+
+
+def incident_line(card: IncidentCard) -> str:
+    """A minimal one-line incident reference for an alert (ADR 0034 #761) —
+    ``"Incident 1a2b3c4d (not-null id) — open, new"`` / ``"…, occurrence 3"``.
+
+    Deliberately minimal: the alert stays a per-result notification that
+    *references* the stateful incident; rich incident formatting (evidence-card
+    excerpts, ack/resolve actions) defers to the #773 navigation-inversion phase.
+    Shared by the Slack + email renderers (and summarized into one Teams fact) so
+    the channels can't drift.
+    """
+    marker = "new" if card.is_new else f"occurrence {card.occurrence_count}"
+    return f"Incident {card.incident_id.hex[:8]} ({card.check_name}) — {card.status}, {marker}"
 
 
 def triggered_source(triggered_by: str | None) -> str:

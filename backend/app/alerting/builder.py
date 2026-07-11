@@ -14,10 +14,19 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.alerting.base import CheckReport, RunReport
+from backend.app.alerting.base import CheckReport, IncidentCard, RunReport
 from backend.app.core.config import get_settings
-from backend.app.db.models import Check, Connection, Result, Run, Suite, User, worst_severity
-from backend.app.services import run_service
+from backend.app.db.models import (
+    FAILING_TIERS,
+    Check,
+    Connection,
+    Result,
+    Run,
+    Suite,
+    User,
+    worst_severity,
+)
+from backend.app.services import incident_service, run_service
 
 
 def _run_url(run_id: uuid.UUID) -> str | None:
@@ -94,6 +103,7 @@ def build_run_report(session: Session, run: Run) -> RunReport:
         )
 
     worst = worst_severity(r.status for r in results)
+    incidents = _incident_cards(session, run, results, checks)
     return RunReport(
         run_id=run.id,
         suite_id=run.suite_id,
@@ -110,4 +120,48 @@ def build_run_report(session: Session, run: Run) -> RunReport:
         triggered_by=run.triggered_by,
         run_url=_run_url(run.id),
         owner=(owner.display_name or owner.email) if owner is not None else None,
+        incidents=incidents,
     )
+
+
+def _incident_cards(
+    session: Session,
+    run: Run,
+    results: list[Result],
+    checks: dict[uuid.UUID, Check],
+) -> list[IncidentCard]:
+    """The active incidents this run's *breaching* checks reference (ADR 0034 #761).
+
+    The incident engine has already run (worker order), so the active incidents on
+    this run's asset are current. One card per failing check that has an active
+    incident. ``is_new`` derives from the engine's **timestamp contract** (see
+    ``incident_service.open_or_attach_incident``): an open stamps ``last_seen_at``
+    == ``created_at`` (same transaction ``now()``), an attach strictly bumps it
+    (``clock_timestamp()``) — so a freshly-opened incident reads new even when a
+    concurrent attach lands between the sync and this build (which would already
+    have bumped ``occurrence_count`` and mislabeled the count-based derivation).
+    The evidence is passed through opaque — it was redacted at snapshot time.
+    """
+    active = incident_service.active_incidents_for_run(session, run)
+    if not active:
+        return []
+    cards: list[IncidentCard] = []
+    for result in results:
+        if result.status not in FAILING_TIERS:
+            continue
+        incident = active.get(result.check_id)
+        if incident is None:
+            continue
+        check = checks.get(result.check_id)
+        cards.append(
+            IncidentCard(
+                incident_id=incident.id,
+                check_id=result.check_id,
+                check_name=check.name if check is not None else "(deleted check)",
+                status=result.status,
+                occurrence_count=incident.occurrence_count,
+                is_new=incident.created_at == incident.last_seen_at,
+                evidence=incident.evidence,
+            )
+        )
+    return cards

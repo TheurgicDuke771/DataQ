@@ -16,6 +16,7 @@ from backend.app.api.v1 import assets as assets_router
 from backend.app.api.v1 import checks as checks_router
 from backend.app.api.v1 import connections as connections_router
 from backend.app.api.v1 import dashboard as dashboard_router
+from backend.app.api.v1 import incidents as incidents_router
 from backend.app.api.v1 import me as me_router
 from backend.app.api.v1 import notifications as notifications_router
 from backend.app.api.v1 import orchestration as orchestration_router
@@ -198,6 +199,7 @@ app.include_router(orchestration_router.router, prefix="/api/v1")
 app.include_router(trigger_bindings_router.router, prefix="/api/v1")
 app.include_router(admin_router.router, prefix="/api/v1")
 app.include_router(assets_router.router, prefix="/api/v1")
+app.include_router(incidents_router.router, prefix="/api/v1")
 
 
 @app.get("/healthz")

@@ -21,13 +21,19 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.app.core.auth import _upsert_user
 from backend.app.core.secrets import SecretStore
-from backend.app.db.models import Check, Connection, PipelineRun, Result, Run, Suite, User
-from backend.app.services import check_service, connection_service, share_service, suite_service
+from backend.app.db.models import Check, Connection, Incident, PipelineRun, Result, Run, Suite, User
+from backend.app.services import (
+    check_service,
+    connection_service,
+    incident_service,
+    share_service,
+    suite_service,
+)
 
 # A second collaborator so the sharing surface isn't empty.
 ANALYST_OID = "demo-analyst-oid"
@@ -429,6 +435,8 @@ def _seed_result_run(
         suite_id=suite.id,
         status="succeeded",
         triggered_by=marker,
+        # The asset stamped at dispatch (ADR 0034) — also the incident anchor.
+        asset_id=suite.asset_id,
         # created_at tracks started_at so the Results list (ordered created_at
         # desc) is deterministic across seeds — runs share one transaction, so
         # the server-default now() would tie.
@@ -643,6 +651,35 @@ def _seed_pipeline_runs(session: Session, *, connections: dict[tuple[str, str], 
     return created
 
 
+def _seed_incidents(session: Session, *, suite: Suite) -> int:
+    """Roll the suite's seeded failing runs up into incidents through the REAL
+    lifecycle engine (`sync_incidents_for_run`) so a fresh stack's AssetDetail
+    shows a populated Incidents panel (#761) — not a hand-inserted row.
+
+    Idempotent: skipped once the suite has any incident (a re-run of the seed must
+    not attach spurious occurrences to the same runs). Chronological order so the
+    severity-spread run opens and the mixed run attaches, like real runs would.
+    """
+    if session.scalar(select(Incident.id).where(Incident.suite_id == suite.id)) is not None:
+        return 0
+    runs = list(
+        session.scalars(
+            select(Run)
+            .where(Run.suite_id == suite.id, Run.status == "succeeded")
+            .order_by(Run.created_at)
+        )
+    )
+    session.commit()  # sync reads committed state; flush the seeded rows first
+    for run in runs:
+        incident_service.sync_incidents_for_run(session, run_id=run.id)
+    return int(
+        session.scalar(
+            select(func.count()).select_from(Incident).where(Incident.suite_id == suite.id)
+        )
+        or 0
+    )
+
+
 def seed_demo_data(session: Session, *, owner: User, secret_store: SecretStore) -> dict[str, int]:
     """Seed the representative dataset. Returns a count summary. Idempotent."""
     analyst = _upsert_user(
@@ -714,6 +751,7 @@ def seed_demo_data(session: Session, *, owner: User, secret_store: SecretStore) 
     if volume_suite is not None:
         run_count += _seed_second_suite_run(session, suite=volume_suite)
     pipeline_run_count = _seed_pipeline_runs(session, connections=connections)
+    incident_count = _seed_incidents(session, suite=first_suite) if first_suite else 0
 
     session.commit()
     return {
@@ -723,4 +761,5 @@ def seed_demo_data(session: Session, *, owner: User, secret_store: SecretStore) 
         "shares": 1,
         "runs": run_count,
         "pipeline_runs": pipeline_run_count,
+        "incidents": incident_count,
     }
