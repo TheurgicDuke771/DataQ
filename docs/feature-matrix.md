@@ -47,7 +47,7 @@ four mechanisms:
 |---|---|:-:|:-:|:-:|:-:|
 | Snowflake | `snowflake://{org}-{account}` / `DB.SCHEMA.TABLE` | ✅ | ✅ (live-verified) | ✅ | ✅ |
 | Unity Catalog | `unitycatalog://{host}` / `catalog.schema.table` | ✅ | ✅ (adapter-aware) | ✅ | ✅ |
-| ADLS Gen2 (files) | pattern **base-prefix** asset | ✅ | — | ✅ | ✅ |
+| ADLS Gen2 (files) | `abfss://{container}@{account}.dfs.core.windows.net` / pattern **base prefix** | ✅ | — | ✅ | ✅ |
 | S3 (files) | `s3://{bucket}` / base prefix | ✅ | — | ✅ | ✅ |
 | Iceberg | `{catalog_uri}` / `namespace.table` | ✅ | —¹ | ✅ | ✅ |
 | BI reports / dashboards | not yet materialized² | — | — | — | reserved² |
