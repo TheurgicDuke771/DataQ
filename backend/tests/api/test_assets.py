@@ -244,14 +244,18 @@ def test_404_no_leak_bodies_identical(client: TestClient, world: dict[str, Any])
     unknown = client.get(f"/api/v1/assets/{unknown_id}")
     assert existing.status_code == unknown.status_code == 404
 
-    def normalized(resp: Any, probed_id: uuid.UUID) -> dict[str, Any]:
+    def normalized(resp: Any) -> tuple[str, dict[str, Any]]:
         body: dict[str, Any] = resp.json()
-        # The echoed id must be exactly the probed one (no other id leaks) …
-        assert body["error"]["detail"].pop("asset_id") == str(probed_id)
-        # … and everything else must be byte-identical between the two cases.
-        return body
+        echoed: str = body["error"]["detail"].pop("asset_id")
+        return echoed, body
 
-    assert normalized(existing, world["asset_x"]) == normalized(unknown, unknown_id)
+    existing_echo, existing_body = normalized(existing)
+    unknown_echo, unknown_body = normalized(unknown)
+    # The echoed id must be exactly the probed one (no other id leaks) …
+    assert existing_echo == str(world["asset_x"])
+    assert unknown_echo == str(unknown_id)
+    # … and everything else must be byte-identical between the two cases.
+    assert existing_body == unknown_body
 
 
 def test_garbage_uuid_is_422_not_500(client: TestClient, world: dict[str, Any]) -> None:

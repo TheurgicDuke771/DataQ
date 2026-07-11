@@ -38,8 +38,9 @@ test.describe('Assets page', () => {
     await expect(page.getByRole('button', { name: 'Orders volume' })).toBeVisible();
 
     // Lineage sections render (empty or populated depending on dbt-manifest data).
-    await expect(page.getByText('Upstream')).toBeVisible();
-    await expect(page.getByText('Downstream')).toBeVisible();
+    // exact: substring matching would also hit the "No known upstream sources." empty-state.
+    await expect(page.getByText('Upstream', { exact: true })).toBeVisible();
+    await expect(page.getByText('Downstream', { exact: true })).toBeVisible();
 
     // A composing suite links back to its suite page.
     await page.getByRole('button', { name: 'Orders quality' }).click();
