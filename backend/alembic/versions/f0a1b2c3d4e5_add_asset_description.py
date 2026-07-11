@@ -9,7 +9,7 @@ Additive & backward-compatible (CLAUDE.md migration rules): a single **nullable*
 Text column, no default, no backfill. Nothing reads it until the #760 code ships,
 so this migration is safe to deploy on its own (two-step discipline).
 
-Revision ID: b2c3d4e5f6a7
+Revision ID: f0a1b2c3d4e5
 Revises: a1c2e3d4f5b6
 Create Date: 2026-07-10 00:00:00.000000+00:00
 
@@ -24,7 +24,7 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "b2c3d4e5f6a7"
+revision: str = "f0a1b2c3d4e5"
 down_revision: str | None = "a1c2e3d4f5b6"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None

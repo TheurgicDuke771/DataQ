@@ -15,7 +15,13 @@ describe('assets client', () => {
     const rows = [{ id: 'a1' }];
     mockGet.mockResolvedValueOnce({ data: rows });
     await expect(listAssets()).resolves.toBe(rows);
-    expect(mockGet).toHaveBeenCalledWith('/assets');
+    expect(mockGet).toHaveBeenCalledWith('/assets', { params: undefined });
+  });
+
+  it('passes pagination params through', async () => {
+    mockGet.mockResolvedValueOnce({ data: [] });
+    await listAssets({ limit: 50, offset: 100 });
+    expect(mockGet).toHaveBeenCalledWith('/assets', { params: { limit: 50, offset: 100 } });
   });
 
   it('gets one asset', async () => {

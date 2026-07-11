@@ -22,6 +22,8 @@ const ASSET: AssetSummary = {
   checks_total: 8,
   checks_passed: 6,
   last_run_at: '2026-07-01T09:00:00Z',
+  has_failed_run: false,
+  has_active_run: false,
 };
 
 afterEach(() => vi.clearAllMocks());

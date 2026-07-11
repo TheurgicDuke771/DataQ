@@ -1,6 +1,7 @@
-import { ApartmentOutlined, ArrowLeftOutlined } from '@ant-design/icons';
-import { Button, Card, Empty, Flex, List, Table, Tag, Typography } from 'antd';
+import { ApartmentOutlined, ArrowLeftOutlined, EditOutlined } from '@ant-design/icons';
+import { App, Button, Card, Empty, Flex, Input, Modal, Table, Tag, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
+import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import {
@@ -8,24 +9,29 @@ import {
   type ComposingSuite,
   type LineageNode,
   getAsset,
+  updateAsset,
 } from '../api/assets';
+import { useIsWorkspaceAdmin } from '../auth/useMe';
 import { AssetHealthTag } from '../components/assets/AssetHealthTag';
 import { runHealth } from '../components/assets/health';
 import { AsyncBody } from '../components/AsyncBody';
 import { Page } from '../components/layout/Page';
 import { formatTimestamp } from '../components/results/resultsFormat';
+import SimpleList from '../components/SimpleList';
 import { useAsyncData } from '../hooks/useAsyncData';
+import { errorMessage } from '../utils/errors';
 
 /**
  * Asset detail (`/assets/:assetId`, #760) — identity header, health across the
  * composing suites (the acceptance criterion: renders ≥2 suites on a shared
  * asset), and upstream/downstream lineage lists. Links out to each suite and its
- * latest run. Read-only; no navigation inversion (phase 4).
+ * latest run. Read-only apart from the workspace-Admin-only description edit
+ * (ADR 0034 §4); no navigation inversion (phase 4).
  */
 export function AssetDetail() {
   const navigate = useNavigate();
   const { assetId } = useParams<{ assetId: string }>();
-  const { state } = useAsyncData(() => {
+  const { state, reload } = useAsyncData(() => {
     if (!assetId) throw new Error('no asset');
     return getAsset(assetId);
   });
@@ -44,7 +50,11 @@ export function AssetDetail() {
       </div>
       <AsyncBody state={state} loadingText="Loading asset…" errorTitle="Failed to load asset">
         {(asset) => (
-          <AssetDetailBody asset={asset} onOpenRun={(id) => navigate(`/results/${id}`)} />
+          <AssetDetailBody
+            asset={asset}
+            onOpenRun={(id) => navigate(`/results/${id}`)}
+            onChanged={reload}
+          />
         )}
       </AsyncBody>
     </Page>
@@ -54,12 +64,18 @@ export function AssetDetail() {
 function AssetDetailBody({
   asset,
   onOpenRun,
+  onChanged,
 }: {
   asset: AssetDetailData;
   onOpenRun: (runId: string) => void;
+  onChanged: () => void;
 }) {
   const { summary } = asset;
   const navigate = useNavigate();
+  // Asset-metadata mutation is workspace-Admin-only (ADR 0034 §4; backend 403s
+  // everyone else) — the edit affordance renders only for admins. This gate is
+  // nav convenience, not the security boundary (that's the PATCH's 403).
+  const isAdmin = useIsWorkspaceAdmin();
   return (
     <Flex vertical gap={20}>
       <Flex justify="space-between" align="flex-start" gap={12} wrap>
@@ -77,7 +93,12 @@ function AssetDetailBody({
         </Flex>
       </Flex>
 
-      {summary.description && <Typography.Paragraph>{summary.description}</Typography.Paragraph>}
+      <DescriptionBlock
+        assetId={summary.id}
+        description={summary.description}
+        canEdit={isAdmin}
+        onChanged={onChanged}
+      />
 
       <SuitesSection
         suites={asset.suites}
@@ -98,6 +119,86 @@ function AssetDetailBody({
         />
       </Flex>
     </Flex>
+  );
+}
+
+/**
+ * The asset description + the workspace-Admin-only inline edit (#760). Owner
+ * reassignment (`owner_user_id`) is deliberately NOT surfaced yet — it needs a
+ * user picker and only matters once incident routing consumes asset owners
+ * (ADR 0034 §3); the API already supports it for when that lands.
+ */
+function DescriptionBlock({
+  assetId,
+  description,
+  canEdit,
+  onChanged,
+}: {
+  assetId: string;
+  description: string | null;
+  canEdit: boolean;
+  onChanged: () => void;
+}) {
+  const { message } = App.useApp();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const openEditor = () => {
+    setDraft(description ?? '');
+    setEditing(true);
+  };
+
+  const onSave = async () => {
+    setSaving(true);
+    try {
+      // Empty draft clears the description (explicit null — the PATCH's
+      // omitted-vs-null semantics make that an intentional unset).
+      await updateAsset(assetId, { description: draft.trim() || null });
+      message.success('Description updated');
+      setEditing(false);
+      onChanged();
+    } catch (err) {
+      message.error(`Update failed: ${errorMessage(err)}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!description && !canEdit) return null;
+  return (
+    <>
+      <Flex gap={8} align="baseline" wrap>
+        {description ? (
+          <Typography.Paragraph style={{ margin: 0 }}>{description}</Typography.Paragraph>
+        ) : (
+          <Typography.Text type="secondary">No description yet.</Typography.Text>
+        )}
+        {canEdit && (
+          <Button type="link" size="small" icon={<EditOutlined />} onClick={openEditor}>
+            Edit
+          </Button>
+        )}
+      </Flex>
+      <Modal
+        title="Edit asset description"
+        open={editing}
+        onOk={() => void onSave()}
+        okText="Save"
+        confirmLoading={saving}
+        onCancel={() => setEditing(false)}
+        destroyOnHidden
+      >
+        <Input.TextArea
+          rows={3}
+          maxLength={1024}
+          showCount
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="What is this asset, and who should care when it breaks?"
+        />
+      </Modal>
+    </>
   );
 }
 
@@ -207,11 +308,13 @@ function LineagePanel({
       {nodes.length === 0 ? (
         <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={emptyHint} />
       ) : (
-        <List<LineageNode>
+        // SimpleList (the #516 antd-List shim) — antd's List is deprecated in v6.
+        <SimpleList<LineageNode>
           size="small"
           dataSource={nodes}
+          rowKey="id"
           renderItem={(node) => (
-            <List.Item>
+            <SimpleList.Item>
               <Flex vertical gap={2} style={{ minWidth: 0, flex: 1 }}>
                 <Flex gap={8} align="center" wrap>
                   <Typography.Text strong ellipsis>
@@ -223,7 +326,7 @@ function LineagePanel({
                   {node.namespace}
                 </Typography.Text>
               </Flex>
-            </List.Item>
+            </SimpleList.Item>
           )}
         />
       )}

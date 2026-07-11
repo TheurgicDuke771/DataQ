@@ -233,6 +233,109 @@ def test_unknown_asset_404(client: TestClient, world: dict[str, Any]) -> None:
     assert resp.status_code == 404
 
 
+def test_404_no_leak_bodies_identical(client: TestClient, world: dict[str, Any]) -> None:
+    """No-leak means indistinguishable: an existing-but-ungranted asset and a
+    truly unknown id must return the same status AND the same body shape — the
+    only permitted variation is the probed id echoed back in the detail."""
+    outsider = _user(client_db(client), "outsider3@example.com")
+    _as(outsider)
+    unknown_id = uuid.uuid4()
+    existing = client.get(f"/api/v1/assets/{world['asset_x']}")
+    unknown = client.get(f"/api/v1/assets/{unknown_id}")
+    assert existing.status_code == unknown.status_code == 404
+
+    def normalized(resp: Any, probed_id: uuid.UUID) -> dict[str, Any]:
+        body: dict[str, Any] = resp.json()
+        # The echoed id must be exactly the probed one (no other id leaks) …
+        assert body["error"]["detail"].pop("asset_id") == str(probed_id)
+        # … and everything else must be byte-identical between the two cases.
+        return body
+
+    assert normalized(existing, world["asset_x"]) == normalized(unknown, unknown_id)
+
+
+def test_garbage_uuid_is_422_not_500(client: TestClient, world: dict[str, Any]) -> None:
+    """Malformed path/query input is a validation error, never a 500 (#570 class)."""
+    _as(world["owner"])
+    assert client.get("/api/v1/assets/not-a-uuid").status_code == 422
+    assert client.get("/api/v1/assets/%00").status_code == 422
+    assert client.patch("/api/v1/assets/definitely-garbage", json={}).status_code in (403, 422)
+    # List query params validate too: limit/offset outside their bounds.
+    assert client.get("/api/v1/assets", params={"limit": "abc"}).status_code == 422
+    assert client.get("/api/v1/assets", params={"limit": 0}).status_code == 422
+    assert client.get("/api/v1/assets", params={"limit": 201}).status_code == 422
+    assert client.get("/api/v1/assets", params={"offset": -1}).status_code == 422
+
+
+def test_list_pagination_stable_slices(client: TestClient, world: dict[str, Any]) -> None:
+    """limit/offset slice the stable (namespace, name) ordering deterministically."""
+    _as(world["owner"])
+    full = client.get("/api/v1/assets").json()
+    assert len(full) == 2
+    page1 = client.get("/api/v1/assets", params={"limit": 1, "offset": 0}).json()
+    page2 = client.get("/api/v1/assets", params={"limit": 1, "offset": 1}).json()
+    assert len(page1) == 1 and len(page2) == 1
+    assert [a["id"] for a in full] == [page1[0]["id"], page2[0]["id"]]
+    # Past the end → empty page, not an error.
+    assert client.get("/api/v1/assets", params={"offset": 5}).json() == []
+
+
+def test_summary_flags_failed_and_active_runs(client: TestClient, world: dict[str, Any]) -> None:
+    """An operationally-failed latest run (no results → no severity) and an
+    in-flight run surface as summary flags so the UI never rolls them up green."""
+    db = client_db(client)
+    db.add(
+        Run(
+            suite_id=world["s2"].id,
+            status="failed",
+            triggered_by="t-failed",
+            asset_id=world["s2"].asset_id,
+        )
+    )
+    db.add(
+        Run(
+            suite_id=world["s3"].id,
+            status="queued",
+            triggered_by="t-queued",
+            asset_id=world["s3"].asset_id,
+        )
+    )
+    db.commit()
+    _as(world["owner"])
+    by_id = {a["id"]: a for a in client.get("/api/v1/assets").json()}
+    asset_x = by_id[str(world["asset_x"])]
+    assert asset_x["has_failed_run"] is True  # s2's latest run failed
+    asset_y = by_id[str(world["asset_y"])]
+    assert asset_y["has_active_run"] is True  # s3's latest run is queued
+    assert asset_y["has_failed_run"] is False
+
+
+def test_orphan_asset_after_composing_suite_deleted(
+    client: TestClient, world: dict[str, Any], make_workspace_admin: Any
+) -> None:
+    """Deleting an asset's only composing suite (after it ran) orphans the asset:
+    non-admins lose it everywhere (list + 404 detail); a workspace-admin still
+    reaches the detail, with an empty suites list (finding: admin orphan access)."""
+    db = client_db(client)
+    _seed_run(db, world["s3"], status="pass")  # the suite has run history
+    suite_service.delete_suite(db, world["s3"].id)  # cascades runs/results (#540)
+
+    _as(world["owner"])
+    listed = {a["id"] for a in client.get("/api/v1/assets").json()}
+    assert str(world["asset_y"]) not in listed
+    assert client.get(f"/api/v1/assets/{world['asset_y']}").status_code == 404
+
+    admin = _user(db, _ADMIN_EMAIL)
+    make_workspace_admin(_ADMIN_EMAIL)
+    _as(admin)
+    resp = client.get(f"/api/v1/assets/{world['asset_y']}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["suites"] == []
+    assert body["summary"]["suite_count"] == 0
+    assert body["summary"]["last_run_at"] is None  # run history died with the suite
+
+
 # ── lineage in detail ────────────────────────────────────────────────────────
 
 
@@ -272,6 +375,49 @@ def test_detail_includes_lineage_nodes(client: TestClient, world: dict[str, Any]
     )
 
 
+def _edge(db: Any, up: uuid.UUID, down: uuid.UUID, conn_id: uuid.UUID) -> LineageEdge:
+    return LineageEdge(
+        upstream_asset_id=up, downstream_asset_id=down, source="dbt", connection_id=conn_id
+    )
+
+
+def test_lineage_cycle_terminates_and_dedupes(client: TestClient, world: dict[str, Any]) -> None:
+    """A cycle in `lineage_edges` (X → Y → X) must not hang the BFS; the peer
+    node appears exactly once per direction (reachable BOTH upstream and
+    downstream), and the start asset never lists itself."""
+    db = client_db(client)
+    conn_id = world["conn"].id
+    db.add(_edge(db, world["asset_x"], world["asset_y"], conn_id))
+    db.add(_edge(db, world["asset_y"], world["asset_x"], conn_id))
+    db.commit()
+    _as(world["owner"])
+    resp = client.get(f"/api/v1/assets/{world['asset_x']}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert [n["id"] for n in body["upstream"]] == [str(world["asset_y"])]
+    assert [n["id"] for n in body["downstream"]] == [str(world["asset_y"])]
+
+
+def test_lineage_depth_cap_respected(client: TestClient, world: dict[str, Any]) -> None:
+    """A 12-hop downstream chain is cut at the BFS depth cap (10 hops)."""
+    db = client_db(client)
+    conn_id = world["conn"].id
+    chain: list[uuid.UUID] = [world["asset_x"]]
+    for i in range(12):
+        node = Asset(namespace="snowflake://ab12345.eu-west-1.aws", name=f"CHAIN.N{i:02d}")
+        db.add(node)
+        db.flush()
+        db.add(_edge(db, chain[-1], node.id, conn_id))
+        chain.append(node.id)
+    db.commit()
+    _as(world["owner"])
+    body = client.get(f"/api/v1/assets/{world['asset_x']}").json()
+    down_ids = [n["id"] for n in body["downstream"]]
+    # 10 hops reachable; hops 11 and 12 are beyond the cap.
+    assert down_ids == [str(a) for a in chain[1:11]]
+    assert str(chain[11]) not in down_ids and str(chain[12]) not in down_ids
+
+
 # ── PATCH metadata: workspace-admin-only ─────────────────────────────────────
 
 
@@ -308,6 +454,76 @@ def test_patch_metadata_unknown_asset_404(
     _as(admin)
     resp = client.patch(f"/api/v1/assets/{uuid.uuid4()}", json={"description": "x"})
     assert resp.status_code == 404
+
+
+def test_patch_null_vs_omitted_field_semantics(
+    client: TestClient, world: dict[str, Any], make_workspace_admin: Any
+) -> None:
+    """Through the real route: an OMITTED field is left untouched, an explicit
+    `null` clears it (`model_fields_set` discrimination)."""
+    admin = _user(client_db(client), _ADMIN_EMAIL)
+    make_workspace_admin(_ADMIN_EMAIL)
+    _as(admin)
+    url = f"/api/v1/assets/{world['asset_x']}"
+    seeded = client.patch(url, json={"description": "d1", "owner_user_id": str(admin.id)})
+    assert seeded.status_code == 200
+
+    # Omit description, null the owner: description survives, owner clears.
+    resp = client.patch(url, json={"owner_user_id": None})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["description"] == "d1"
+    assert body["owner_user_id"] is None
+
+    # Explicit null description clears it; omitted owner stays cleared.
+    resp = client.patch(url, json={"description": None})
+    assert resp.status_code == 200
+    assert resp.json()["description"] is None
+
+    # Empty body = touch nothing.
+    resp = client.patch(url, json={})
+    assert resp.status_code == 200
+    assert resp.json()["description"] is None
+
+
+def test_patch_unknown_field_rejected(
+    client: TestClient, world: dict[str, Any], make_workspace_admin: Any
+) -> None:
+    """`extra="forbid"`: a typo'd field must 422, not silently no-op — with
+    omitted-vs-null semantics a swallowed typo would read as 'leave unchanged'."""
+    admin = _user(client_db(client), _ADMIN_EMAIL)
+    make_workspace_admin(_ADMIN_EMAIL)
+    _as(admin)
+    resp = client.patch(f"/api/v1/assets/{world['asset_x']}", json={"descripton": "typo"})
+    assert resp.status_code == 422
+
+
+def test_patch_owner_must_exist(
+    client: TestClient, world: dict[str, Any], make_workspace_admin: Any
+) -> None:
+    """A non-existent owner_user_id is a clean 422 (FK pre-check), never a 500."""
+    admin = _user(client_db(client), _ADMIN_EMAIL)
+    make_workspace_admin(_ADMIN_EMAIL)
+    _as(admin)
+    resp = client.patch(
+        f"/api/v1/assets/{world['asset_x']}", json={"owner_user_id": str(uuid.uuid4())}
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "asset_owner_invalid"
+
+
+def test_patch_nul_byte_and_oversized_description_422(
+    client: TestClient, world: dict[str, Any], make_workspace_admin: Any
+) -> None:
+    """The #570 guard class: NUL bytes and over-cap strings are 422s, never 500s."""
+    admin = _user(client_db(client), _ADMIN_EMAIL)
+    make_workspace_admin(_ADMIN_EMAIL)
+    _as(admin)
+    url = f"/api/v1/assets/{world['asset_x']}"
+    assert client.patch(url, json={"description": "bad\x00value"}).status_code == 422
+    assert client.patch(url, json={"description": "x" * 1025}).status_code == 422
+    # The cap boundary itself is accepted.
+    assert client.patch(url, json={"description": "x" * 1024}).status_code == 200
 
 
 # ── asset_id exposed on SuiteRead / RunRead (deferred to #760 by #764) ───────

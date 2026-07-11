@@ -33,7 +33,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
-from backend.app.db.models import Asset, Run, Suite, worst_severity
+from backend.app.db.models import Asset, Run, Suite, User, worst_severity
 from backend.app.lineage.edges import downstream_assets, upstream_assets
 from backend.app.services.run_service import check_outcome_counts
 from backend.app.services.suite_authz import effective_permissions
@@ -48,6 +48,15 @@ class AssetNotFoundError(DataQError):
 
     status_code = 404
     code = "asset_not_found"
+
+
+class AssetOwnerInvalidError(DataQError):
+    """The `owner_user_id` on a metadata update names no existing user — checked
+    up front (the share-grant FK-precheck idiom, `share_service.grant_share`) so a
+    bad id is a clean 422, never a raw FK IntegrityError surfacing as 500."""
+
+    status_code = 422
+    code = "asset_owner_invalid"
 
 
 @dataclass(frozen=True)
@@ -94,6 +103,12 @@ class AssetSummary:
     checks_total: int
     checks_passed: int
     last_run_at: datetime | None
+    # Latest-run *execution* states (distinct from check severity — a run can fail
+    # operationally and write no results, so severity alone would read green):
+    # any latest run `failed` / any latest run still `queued`/`running`. The UI
+    # health badge consumes these so an operational failure is never shown passing.
+    has_failed_run: bool = False
+    has_active_run: bool = False
 
 
 @dataclass(frozen=True)
@@ -118,22 +133,6 @@ class AssetDetail:
 
 
 # ── internals ────────────────────────────────────────────────────────────────
-
-
-def _accessible_asset_suites(
-    session: Session, *, user_id: uuid.UUID, include_all: bool
-) -> list[Suite]:
-    """The caller-visible suites that target *some* asset (``asset_id`` non-NULL).
-
-    One query, scoped by the shared `accessible_suite_ids` subquery so the
-    owned-or-shared (or admin-sees-all) rule is applied exactly once."""
-    accessible = accessible_suite_ids(user_id, include_all=include_all)
-    stmt = (
-        select(Suite)
-        .where(Suite.asset_id.is_not(None), Suite.id.in_(accessible))
-        .order_by(Suite.name)
-    )
-    return list(session.scalars(stmt))
 
 
 def _latest_run_per_suite(session: Session, suite_ids: list[uuid.UUID]) -> dict[uuid.UUID, Run]:
@@ -195,10 +194,18 @@ def _roll_up(asset: Asset, composing: list[ComposingSuite]) -> AssetSummary:
     statuses: list[str] = []
     checks_total = checks_passed = 0
     last_run_at: datetime | None = None
+    has_failed_run = has_active_run = False
     for suite in composing:
         run = suite.latest_run
         if run.worst_severity is not None:
             statuses.append(run.worst_severity)
+        # Execution state, distinct from check severity (see AssetSummary): a
+        # `failed` run wrote no results and must not roll up green; an active run
+        # hasn't concluded yet.
+        if run.status == "failed":
+            has_failed_run = True
+        elif run.status in ("queued", "running"):
+            has_active_run = True
         checks_total += run.checks_total
         checks_passed += run.checks_passed
         ts = run.finished_at or run.created_at
@@ -217,6 +224,8 @@ def _roll_up(asset: Asset, composing: list[ComposingSuite]) -> AssetSummary:
         checks_total=checks_total,
         checks_passed=checks_passed,
         last_run_at=last_run_at,
+        has_failed_run=has_failed_run,
+        has_active_run=has_active_run,
     )
 
 
@@ -224,16 +233,44 @@ def _roll_up(asset: Asset, composing: list[ComposingSuite]) -> AssetSummary:
 
 
 def list_visible_assets(
-    session: Session, *, user_id: uuid.UUID, include_all: bool = False
+    session: Session,
+    *,
+    user_id: uuid.UUID,
+    include_all: bool = False,
+    limit: int = 200,
+    offset: int = 0,
 ) -> list[AssetSummary]:
-    """Assets the caller can see (via ≥1 accessible composing suite), name-sorted.
+    """Assets the caller can see (via ≥1 accessible composing suite), sorted by
+    ``(namespace, name)`` and paginated with ``limit``/``offset``.
 
-    Aggregation is filtered to the caller's grants: a partial-grant caller sees the
-    asset but only the suites/runs they can view roll up into its health."""
-    suites = _accessible_asset_suites(session, user_id=user_id, include_all=include_all)
-    if not suites:
+    Pagination is applied at the SQL level over the *asset* page (not the suite
+    rows), so a page is a stable, deterministic slice regardless of how many
+    suites compose each asset. Aggregation is filtered to the caller's grants: a
+    partial-grant caller sees the asset but only the suites/runs they can view
+    roll up into its health."""
+    accessible = accessible_suite_ids(user_id, include_all=include_all)
+    visible_asset_ids = select(Suite.asset_id).where(
+        Suite.asset_id.is_not(None), Suite.id.in_(accessible)
+    )
+    assets = list(
+        session.scalars(
+            select(Asset)
+            .where(Asset.id.in_(visible_asset_ids))
+            .order_by(Asset.namespace, Asset.name)
+            .limit(limit)
+            .offset(offset)
+        )
+    )
+    if not assets:
         return []
 
+    suites = list(
+        session.scalars(
+            select(Suite)
+            .where(Suite.asset_id.in_([a.id for a in assets]), Suite.id.in_(accessible))
+            .order_by(Suite.name)
+        )
+    )
     levels = effective_permissions(session, suites, user_id)
     latest_runs = _latest_run_per_suite(session, [s.id for s in suites])
     outcomes = check_outcome_counts(session, [r.id for r in latest_runs.values()])
@@ -243,18 +280,13 @@ def list_visible_assets(
         assert suite.asset_id is not None  # filtered in the query
         suites_by_asset[suite.asset_id].append(suite)
 
-    assets = {
-        a.id: a for a in session.scalars(select(Asset).where(Asset.id.in_(suites_by_asset.keys())))
-    }
-    summaries: list[AssetSummary] = []
-    for asset_id, asset_suites in suites_by_asset.items():
-        asset = assets.get(asset_id)
-        if asset is None:  # asset row swept out from under a live suite — skip
-            continue
-        composing = _composing_suites(asset_suites, levels, latest_runs, outcomes)
-        summaries.append(_roll_up(asset, composing))
-    summaries.sort(key=lambda s: (s.namespace, s.name))
-    return summaries
+    return [
+        _roll_up(
+            asset,
+            _composing_suites(suites_by_asset.get(asset.id, []), levels, latest_runs, outcomes),
+        )
+        for asset in assets
+    ]
 
 
 def get_visible_asset(
@@ -263,7 +295,10 @@ def get_visible_asset(
     """One asset's detail (aggregation + per-suite breakdown + lineage).
 
     Raises `AssetNotFoundError` (404) if the asset does not exist or the caller can
-    view no suite targeting it — the two are indistinguishable (no-leak)."""
+    view no suite targeting it — the two are indistinguishable (no-leak). A
+    workspace-admin (``include_all``) sees every asset, **including suite-less
+    orphans** (e.g. a lineage-only node, or an asset whose last composing suite was
+    deleted) — for them only a truly unknown id 404s."""
     asset = session.get(Asset, asset_id)
     accessible = accessible_suite_ids(user_id, include_all=include_all)
     suites = list(
@@ -273,8 +308,10 @@ def get_visible_asset(
             .order_by(Suite.name)
         )
     )
-    # No-leak: an unknown id and an id the caller can see no suite for both 404.
-    if asset is None or not suites:
+    # No-leak: for a non-admin, an unknown id and an id they can see no suite for
+    # both 404. An admin's visibility is workspace-wide (ADR 0027), so a suite-less
+    # asset is still returned (with an empty suites list) rather than hidden.
+    if asset is None or (not suites and not include_all):
         raise AssetNotFoundError("asset not found", detail={"asset_id": str(asset_id)})
 
     levels = effective_permissions(session, suites, user_id)
@@ -352,11 +389,16 @@ def update_asset_metadata(
     field can be explicitly cleared to ``None`` versus left untouched (mirrors the
     suite PATCH's None-means-leave-alone problem, made explicit). Raises
     `AssetNotFoundError` (404) for an unknown id — no authz derivation here, since a
-    workspace-admin sees every asset (ADR 0027)."""
+    workspace-admin sees every asset (ADR 0027) — and `AssetOwnerInvalidError` (422)
+    when ``owner_user_id`` names no existing user (FK pre-check, never a raw 500)."""
     asset = session.get(Asset, asset_id)
     if asset is None:
         raise AssetNotFoundError("asset not found", detail={"asset_id": str(asset_id)})
     if set_owner:
+        if owner_user_id is not None and session.get(User, owner_user_id) is None:
+            raise AssetOwnerInvalidError(
+                "owner user does not exist", detail={"owner_user_id": str(owner_user_id)}
+            )
         asset.owner_user_id = owner_user_id
     if set_description:
         asset.description = description

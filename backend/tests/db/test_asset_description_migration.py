@@ -1,4 +1,4 @@
-"""Up/down test for the `b2c3d4e5f6a7_add_asset_description` migration.
+"""Up/down test for the `f0a1b2c3d4e5_add_asset_description` migration.
 
 The migration adds a single nullable `assets.description` column. This binds the
 migration module's own `upgrade()` / `downgrade()` to a live connection via an
@@ -22,7 +22,7 @@ _MIGRATION_PATH = (
     Path(__file__).resolve().parents[2]
     / "alembic"
     / "versions"
-    / "b2c3d4e5f6a7_add_asset_description.py"
+    / "f0a1b2c3d4e5_add_asset_description.py"
 )
 
 
@@ -40,7 +40,7 @@ def _has_description(connection: Any) -> bool:
 
 def test_revision_chain() -> None:
     module = _load_migration()
-    assert module.revision == "b2c3d4e5f6a7"
+    assert module.revision == "f0a1b2c3d4e5"
     assert module.down_revision == "a1c2e3d4f5b6"
 
 

@@ -46,6 +46,11 @@ export interface AssetSummary {
   checks_total: number;
   checks_passed: number;
   last_run_at: string | null;
+  /** Latest-run execution states (distinct from check severity): any composing
+   *  suite's latest run `failed` / still `queued`/`running` — an operationally
+   *  failed run must never render as green health. */
+  has_failed_run: boolean;
+  has_active_run: boolean;
 }
 
 /** A lineage neighbour — mirrors `LineageNodeRead`. Render-only (no run data). */
@@ -72,8 +77,11 @@ export interface AssetMetadataUpdate {
   description?: string | null;
 }
 
-export async function listAssets(): Promise<AssetSummary[]> {
-  const { data } = await api.get<AssetSummary[]>('/assets');
+export async function listAssets(params?: {
+  limit?: number;
+  offset?: number;
+}): Promise<AssetSummary[]> {
+  const { data } = await api.get<AssetSummary[]>('/assets', { params });
   return data;
 }
 

@@ -1,13 +1,18 @@
-import { render, screen } from '@testing-library/react';
+import { App as AntApp } from 'antd';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { type AssetDetail as AssetDetailData, getAsset } from '../../src/api/assets';
+import { type AssetDetail as AssetDetailData, getAsset, updateAsset } from '../../src/api/assets';
+import type { MeResponse } from '../../src/api/me';
+import { MeContext } from '../../src/auth/meContext';
+import type { AsyncState } from '../../src/hooks/useAsyncData';
 import { AssetDetail } from '../../src/pages/AssetDetail';
 
-vi.mock('../../src/api/assets', () => ({ getAsset: vi.fn() }));
+vi.mock('../../src/api/assets', () => ({ getAsset: vi.fn(), updateAsset: vi.fn() }));
 const mockGet = vi.mocked(getAsset);
+const mockUpdate = vi.mocked(updateAsset);
 
 const DETAIL: AssetDetailData = {
   summary: {
@@ -23,6 +28,8 @@ const DETAIL: AssetDetailData = {
     checks_total: 8,
     checks_passed: 6,
     last_run_at: '2026-07-01T09:00:00Z',
+    has_failed_run: false,
+    has_active_run: false,
   },
   suites: [
     {
@@ -74,18 +81,36 @@ const DETAIL: AssetDetailData = {
   ],
 };
 
+function meState(isAdmin: boolean): AsyncState<MeResponse> {
+  return {
+    status: 'ok',
+    data: {
+      id: 'u-1',
+      aad_object_id: 'oid-1',
+      email: 'user@dataq.io',
+      display_name: 'User',
+      last_seen_at: null,
+      is_workspace_admin: isAdmin,
+    },
+  };
+}
+
 afterEach(() => vi.clearAllMocks());
 
-function renderPage() {
+function renderPage({ isAdmin = false }: { isAdmin?: boolean } = {}) {
   return render(
-    <MemoryRouter initialEntries={['/assets/a1']}>
-      <Routes>
-        <Route path="/assets/:assetId" element={<AssetDetail />} />
-        <Route path="/assets" element={<div>assets list</div>} />
-        <Route path="/suites/:suiteId" element={<div>suite page</div>} />
-        <Route path="/results/:runId" element={<div>run page</div>} />
-      </Routes>
-    </MemoryRouter>,
+    <MeContext.Provider value={meState(isAdmin)}>
+      <AntApp>
+        <MemoryRouter initialEntries={['/assets/a1']}>
+          <Routes>
+            <Route path="/assets/:assetId" element={<AssetDetail />} />
+            <Route path="/assets" element={<div>assets list</div>} />
+            <Route path="/suites/:suiteId" element={<div>suite page</div>} />
+            <Route path="/results/:runId" element={<div>run page</div>} />
+          </Routes>
+        </MemoryRouter>
+      </AntApp>
+    </MeContext.Provider>,
   );
 }
 
@@ -142,5 +167,60 @@ describe('AssetDetail page', () => {
     mockGet.mockRejectedValue(new Error('nope'));
     renderPage();
     expect(await screen.findByText('Failed to load asset')).toBeInTheDocument();
+  });
+
+  // ── admin-only description edit (#760; backend PATCH is the security gate) ──
+
+  it('hides the description edit from non-admins', async () => {
+    mockGet.mockResolvedValue(DETAIL);
+    renderPage({ isAdmin: false });
+    await screen.findByText('The canonical orders table');
+    expect(screen.queryByRole('button', { name: /Edit/ })).not.toBeInTheDocument();
+  });
+
+  it('lets a workspace admin edit the description', async () => {
+    mockGet.mockResolvedValue(DETAIL);
+    mockUpdate.mockResolvedValue({ ...DETAIL.summary, description: 'Updated text' });
+    renderPage({ isAdmin: true });
+    await userEvent.click(await screen.findByRole('button', { name: /Edit/ }));
+    const box = await screen.findByPlaceholderText(/What is this asset/);
+    await userEvent.clear(box);
+    await userEvent.type(box, 'Updated text');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() =>
+      expect(mockUpdate).toHaveBeenCalledWith('a1', { description: 'Updated text' }),
+    );
+    // Saving reloads the detail.
+    expect(mockGet.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('clears the description with an explicit null when saved empty', async () => {
+    mockGet.mockResolvedValue(DETAIL);
+    mockUpdate.mockResolvedValue({ ...DETAIL.summary, description: null });
+    renderPage({ isAdmin: true });
+    await userEvent.click(await screen.findByRole('button', { name: /Edit/ }));
+    await userEvent.clear(await screen.findByPlaceholderText(/What is this asset/));
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith('a1', { description: null }));
+  });
+
+  it('offers the edit affordance to an admin even with no description yet', async () => {
+    mockGet.mockResolvedValue({
+      ...DETAIL,
+      summary: { ...DETAIL.summary, description: null },
+    });
+    renderPage({ isAdmin: true });
+    expect(await screen.findByText('No description yet.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Edit/ })).toBeInTheDocument();
+  });
+
+  it('surfaces a failed metadata update', async () => {
+    mockGet.mockResolvedValue(DETAIL);
+    mockUpdate.mockRejectedValue(new Error('forbidden'));
+    renderPage({ isAdmin: true });
+    await userEvent.click(await screen.findByRole('button', { name: /Edit/ }));
+    await screen.findByPlaceholderText(/What is this asset/);
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(await screen.findByText(/Update failed: forbidden/)).toBeInTheDocument();
   });
 });

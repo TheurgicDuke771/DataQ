@@ -21,8 +21,8 @@ import uuid
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
-from pydantic import ConfigDict
+from fastapi import APIRouter, Depends, Query
+from pydantic import ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from backend.app.api.v1._base import ApiModel
@@ -78,6 +78,11 @@ class AssetSummaryRead(ApiModel):
     checks_total: int
     checks_passed: int
     last_run_at: datetime | None
+    # Latest-run execution states (distinct from check severity): any composing
+    # suite's latest run `failed` / still `queued`/`running`. The UI health badge
+    # reads these so an operationally-failed run never renders green.
+    has_failed_run: bool
+    has_active_run: bool
 
 
 class LineageNodeRead(ApiModel):
@@ -108,21 +113,38 @@ class AssetMetadataUpdate(ApiModel):
     """Partial metadata update (workspace-Admin-only). Each field is optional; an
     explicit `null` clears it, an omitted field leaves it unchanged — the two are
     distinguished via `model_fields_set` at the route so `owner_user_id: null`
-    means "unassign" rather than "leave as is"."""
+    means "unassign" rather than "leave as is".
+
+    `extra="forbid"`: because omitted-vs-null is semantically load-bearing here, a
+    typo'd field name (`descripton`) must be a 422, not a silently-ignored no-op."""
+
+    model_config = ConfigDict(extra="forbid")
 
     owner_user_id: uuid.UUID | None = None
-    description: str | None = None
+    # Same cap as suite descriptions (SuiteCreate).
+    description: str | None = Field(default=None, max_length=1024)
+
+
+_LIST_LIMIT_DEFAULT = 200
+_LIST_LIMIT_MAX = 200
 
 
 @router.get("/assets", response_model=list[AssetSummaryRead], summary="List visible assets")
 def list_assets(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
+    limit: int = Query(default=_LIST_LIMIT_DEFAULT, ge=1, le=_LIST_LIMIT_MAX),
+    offset: int = Query(default=0, ge=0),
 ) -> list[svc.AssetSummary]:
     # Visibility derived from suite grants — a workspace-admin sees every asset
-    # (ADR 0027), everyone else only assets with a suite they can view.
+    # (ADR 0027), everyone else only assets with a suite they can view. Pages are
+    # a stable (namespace, name) ordering sliced by limit/offset.
     return svc.list_visible_assets(
-        db, user_id=current_user.id, include_all=is_workspace_admin(current_user)
+        db,
+        user_id=current_user.id,
+        include_all=is_workspace_admin(current_user),
+        limit=limit,
+        offset=offset,
     )
 
 
