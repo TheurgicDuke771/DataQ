@@ -107,12 +107,19 @@ function AssetDetailBody({
         onChanged={onChanged}
       />
 
-      <OwnerBlock
-        assetId={summary.id}
-        ownerUserId={summary.owner_user_id}
-        canEdit={isAdmin}
-        onChanged={onChanged}
-      />
+      {/* Mount-gated (not closure-gated) on adminness: useAsyncData only re-runs
+          its fetcher on [nonce], so a fetcher that closed over a still-false
+          `isAdmin` would never re-fire once /me resolves (admin deep-link/refresh
+          race). Mounting the block only when adminness is KNOWN true means its
+          on-mount fetch always runs with the right identity — and a non-admin
+          structurally never hits the admin-only endpoint. */}
+      {isAdmin && (
+        <OwnerBlock
+          assetId={summary.id}
+          ownerUserId={summary.owner_user_id}
+          onChanged={onChanged}
+        />
+      )}
 
       <SuitesSection
         suites={asset.suites}
@@ -226,35 +233,31 @@ function DescriptionBlock({
  * ADR 0034 §3 incident routing, so keeping them assignable matters. The picker is
  * sourced from `GET /admin/users` (itself admin-only — a clean fit, since the
  * whole control is admin-gated); the current owner renders as a display
- * name/email, never a bare UUID, once the user list resolves. This gate is nav
- * convenience — the PATCH's `require_workspace_admin` 403 is the security boundary.
+ * name/email, never a bare UUID, once the user list resolves.
+ *
+ * **Mounted only for admins** (the parent gates on `isAdmin`) — so the on-mount
+ * user-list fetch always runs with adminness known, and a non-admin structurally
+ * never calls the admin-only endpoint. This gate is nav convenience — the PATCH's
+ * `require_workspace_admin` 403 is the security boundary.
  */
 function OwnerBlock({
   assetId,
   ownerUserId,
-  canEdit,
   onChanged,
 }: {
   assetId: string;
   ownerUserId: string | null;
-  canEdit: boolean;
   onChanged: () => void;
 }) {
   const { message } = App.useApp();
-  // Only admins can call /admin/users AND only admins can reassign — so the whole
-  // block (resolution + control) is admin-only. Gate the fetch on `canEdit` so a
-  // non-admin never even hits the admin-only endpoint (the block also renders
-  // nothing for them below).
-  const { state } = useAsyncData(() =>
-    canEdit ? listAdminUsers() : Promise.resolve<AdminUser[]>([]),
-  );
+  // Fetches on mount — safe because this component only mounts for admins.
+  const { state } = useAsyncData(listAdminUsers);
   const [editing, setEditing] = useState(false);
   // Controlled select value: `undefined` = unassigned (renders the placeholder).
   const [draft, setDraft] = useState<string | undefined>(undefined);
   const [saving, setSaving] = useState(false);
 
-  if (!canEdit) return null;
-
+  const loadFailed = state.status === 'error';
   const users: AdminUser[] = state.status === 'ok' ? state.data : [];
   const label = (u: AdminUser) => u.display_name || u.email;
   const owner = users.find((u) => u.id === ownerUserId);
@@ -292,9 +295,22 @@ function OwnerBlock({
         ) : (
           <Typography.Text>{ownerText}</Typography.Text>
         )}
-        <Button type="link" size="small" icon={<EditOutlined />} onClick={openEditor}>
+        <Button
+          type="link"
+          size="small"
+          icon={<EditOutlined />}
+          onClick={openEditor}
+          disabled={loadFailed}
+        >
           Reassign owner
         </Button>
+        {/* A failed /admin/users read must not degrade to a silently-empty
+            picker — say so (mirrors the AssetHealthLead unavailable state). */}
+        {loadFailed && (
+          <Typography.Text type="secondary">
+            The user list is unavailable right now.
+          </Typography.Text>
+        )}
       </Flex>
       <Modal
         title="Reassign asset owner"

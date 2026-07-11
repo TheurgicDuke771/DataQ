@@ -127,13 +127,18 @@ function meState(isAdmin: boolean): AsyncState<MeResponse> {
   };
 }
 
-// The OwnerBlock always fetches the user list when an admin renders — default it
-// to a resolved array so `users.find(...)` never sees `undefined`.
-beforeEach(() => mockAdminUsers.mockResolvedValue(ADMIN_USERS));
+// Clear in beforeEach (not only afterEach) so any call recorded between tests
+// by a late-flushing effect can never bleed into the next test's counts, THEN
+// default the user list to a resolved array so `users.find(...)` never sees
+// `undefined` (the OwnerBlock fetches it whenever an admin renders).
+beforeEach(() => {
+  vi.clearAllMocks();
+  mockAdminUsers.mockResolvedValue(ADMIN_USERS);
+});
 afterEach(() => vi.clearAllMocks());
 
-function renderPage({ isAdmin = false }: { isAdmin?: boolean } = {}) {
-  return render(
+function pageTree(isAdmin: boolean) {
+  return (
     <MeContext.Provider value={meState(isAdmin)}>
       <AntApp>
         <MemoryRouter initialEntries={['/assets/a1']}>
@@ -145,8 +150,12 @@ function renderPage({ isAdmin = false }: { isAdmin?: boolean } = {}) {
           </Routes>
         </MemoryRouter>
       </AntApp>
-    </MeContext.Provider>,
+    </MeContext.Provider>
   );
+}
+
+function renderPage({ isAdmin = false }: { isAdmin?: boolean } = {}) {
+  return render(pageTree(isAdmin));
 }
 
 describe('AssetDetail page', () => {
@@ -267,8 +276,33 @@ describe('AssetDetail page', () => {
     await screen.findByText('The canonical orders table');
     expect(screen.queryByText('Owner:')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Reassign owner/ })).not.toBeInTheDocument();
-    // (The block also gates its /admin/users fetch on canEdit — verified by the
-    // component; asserting it here is fragile across the shared module mock.)
+    // Structural with the mount gate: OwnerBlock never mounts for a non-admin,
+    // so the admin-only /admin/users endpoint is never called.
+    expect(mockAdminUsers).not.toHaveBeenCalled();
+  });
+
+  it('fetches the user list once adminness resolves after mount (/me race)', async () => {
+    // AuthGate renders children before /me resolves, so an admin deep-linking
+    // into an asset first renders as non-admin. The OwnerBlock is MOUNT-gated on
+    // adminness: when /me flips is_workspace_admin to true, the block mounts and
+    // its on-mount fetch fires — no reload or full remount needed.
+    mockGet.mockResolvedValue(DETAIL);
+    const { rerender } = render(pageTree(false));
+    await screen.findByText('The canonical orders table');
+    expect(mockAdminUsers).not.toHaveBeenCalled();
+
+    rerender(pageTree(true));
+    expect(await screen.findByText('Owner:')).toBeInTheDocument();
+    await waitFor(() => expect(mockAdminUsers).toHaveBeenCalledTimes(1));
+  });
+
+  it('surfaces a failed user-list load instead of a silently-empty picker', async () => {
+    mockGet.mockResolvedValue(DETAIL);
+    mockAdminUsers.mockRejectedValue(new Error('boom'));
+    renderPage({ isAdmin: true });
+    expect(await screen.findByText('The user list is unavailable right now.')).toBeInTheDocument();
+    // Reassignment is disabled — there is nothing valid to pick.
+    expect(screen.getByRole('button', { name: /Reassign owner/ })).toBeDisabled();
   });
 
   it('shows an unassigned owner and the reassign affordance to an admin', async () => {
