@@ -3,6 +3,7 @@ import {
   BarChartOutlined,
   ContainerOutlined,
   DashboardOutlined,
+  DatabaseOutlined,
   DownOutlined,
   LogoutOutlined,
   MenuOutlined,
@@ -41,6 +42,10 @@ const SuiteNew = lazy(() => import('./pages/SuiteNew').then((m) => ({ default: m
 const SuiteEdit = lazy(() => import('./pages/SuiteEdit').then((m) => ({ default: m.SuiteEdit })));
 const CheckNew = lazy(() => import('./pages/CheckNew').then((m) => ({ default: m.CheckNew })));
 const CheckEdit = lazy(() => import('./pages/CheckEdit').then((m) => ({ default: m.CheckEdit })));
+const Assets = lazy(() => import('./pages/Assets').then((m) => ({ default: m.Assets })));
+const AssetDetail = lazy(() =>
+  import('./pages/AssetDetail').then((m) => ({ default: m.AssetDetail })),
+);
 const Results = lazy(() => import('./pages/Results').then((m) => ({ default: m.Results })));
 const RunDetail = lazy(() => import('./pages/RunDetail').then((m) => ({ default: m.RunDetail })));
 const Profile = lazy(() => import('./pages/Profile').then((m) => ({ default: m.Profile })));
@@ -55,6 +60,7 @@ const NAV_ITEMS = [
   { key: '/dashboard', icon: <DashboardOutlined />, label: <Link to="/dashboard">Dashboard</Link> },
   { key: '/connections', icon: <ApiOutlined />, label: <Link to="/connections">Connections</Link> },
   { key: '/suites', icon: <ContainerOutlined />, label: <Link to="/suites">Suites</Link> },
+  { key: '/assets', icon: <DatabaseOutlined />, label: <Link to="/assets">Assets</Link> },
   { key: '/results', icon: <BarChartOutlined />, label: <Link to="/results">Results</Link> },
   { key: '/profile', icon: <UserOutlined />, label: <Link to="/profile">Profile</Link> },
 ];
@@ -199,6 +205,8 @@ export function App() {
                   <Route path="/suites/:suiteId/edit" element={<SuiteEdit />} />
                   <Route path="/suites/:suiteId/checks/new" element={<CheckNew />} />
                   <Route path="/suites/:suiteId/checks/:checkId/edit" element={<CheckEdit />} />
+                  <Route path="/assets" element={<Assets />} />
+                  <Route path="/assets/:assetId" element={<AssetDetail />} />
                   <Route path="/results" element={<Results />} />
                   <Route path="/results/:runId" element={<RunDetail />} />
                   <Route path="/profile" element={<Profile />} />

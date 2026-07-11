@@ -92,6 +92,10 @@ class SuiteRead(ApiModel):
     description: str | None
     connection_id: uuid.UUID
     target: dict[str, Any] | None
+    # The asset this suite's target resolves to (ADR 0034, #760) — the browse/reason
+    # link the Assets view groups suites by. NULL for a targetless/unresolvable
+    # suite (resolution is fail-soft). Deferred to #760 by the #764 review.
+    asset_id: uuid.UUID | None = None
     # Failing-sample redaction policy (#415): {identifier_column?, pii_columns}. NULL
     # until set — the classifier still auto-classifies incidental columns at redaction
     # time; this stored policy pins the shown identifier + the always-masked columns.
