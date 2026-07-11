@@ -57,6 +57,9 @@ _SWEEP_REFERENCE_GUARDS: tuple[tuple[str, str], ...] = (
     ("runs", "asset_id"),
     ("lineage_edges", "upstream_asset_id"),
     ("lineage_edges", "downstream_asset_id"),
+    # #761: incidents CASCADE from their asset — an asset with incident history
+    # (open or resolved) is never swept, or that history would be silently wiped.
+    ("incidents", "asset_id"),
 )
 
 

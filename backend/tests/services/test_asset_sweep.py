@@ -274,3 +274,36 @@ def test_every_asset_fk_has_a_sweep_guard() -> None:
         if fk.column.table.name == "assets" and fk.column.name == "id"
     }
     assert fk_refs == set(_SWEEP_REFERENCE_GUARDS)
+
+
+def test_referenced_by_incident_never_swept(db_session: Any) -> None:
+    """#761: incident history (any state) pins its asset — the FK is CASCADE, so
+    sweeping here would silently wipe incidents."""
+    from backend.app.db.models import Check, Incident
+
+    kept = _asset(db_session, last_seen=_stale(), tag="incident-ref")
+    conn_id, user_id = _connection(db_session)
+    suite_id = _suite(db_session, conn_id, user_id)
+    check = Check(
+        suite_id=suite_id,
+        name="incident-anchor",
+        kind="expectation",
+        expectation_type="expect_column_values_to_not_be_null",
+        config={"column": "id"},
+    )
+    db_session.add(check)
+    db_session.flush()
+    db_session.add(
+        Incident(
+            asset_id=kept,
+            check_id=check.id,
+            suite_id=suite_id,
+            status="resolved",
+            resolved_by="user",
+        )
+    )
+    db_session.commit()
+
+    swept = _sweep(db_session)
+    assert swept == 0
+    assert db_session.get(Asset, kept) is not None

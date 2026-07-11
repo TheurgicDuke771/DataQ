@@ -26,11 +26,10 @@ Visibility derives from suite grants (same rule as the asset view, #760 / ADR
 0027): an incident is visible iff the caller can ``view`` its suite; a
 workspace-admin sees all; anything outside the caller's grants is 404-no-leak.
 
-TODO(#770): the orphan-asset sweep (in flight) must NOT retire an asset that has a
-non-resolved incident referencing it — add an ``EXISTS (open|acknowledged
-incidents)`` guard to its retirement predicate when that code lands on main. (Its
-FK is ``ON DELETE CASCADE``, so an un-guarded sweep would silently drop live
-incidents.)
+The orphan-asset sweep (#770) never retires an asset with incident history:
+``incidents.asset_id`` is registered in ``asset_service._SWEEP_REFERENCE_GUARDS``
+(schema-introspection-enforced), because the FK is ``ON DELETE CASCADE`` and an
+un-guarded sweep would silently drop incidents.
 """
 
 from __future__ import annotations
