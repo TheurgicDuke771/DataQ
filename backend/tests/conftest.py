@@ -8,11 +8,15 @@ from collections.abc import Callable, Iterator
 # TestClient lifespan would raise 'Auth not configured'.
 os.environ.setdefault("ENVIRONMENT", "dev")
 os.environ.setdefault("AUTH_DEV_BYPASS", "true")
+# Rate limiting off by default in the suite (#725): otherwise the whole test
+# battery self-429s through the shared `ip:testclient` bucket when a compose
+# Redis is up. The dedicated rate-limit tests opt back in per-test.
+os.environ.setdefault("RATE_LIMIT_ENABLED", "false")
 
 import pytest
 
 from backend.app.alerting.registry import reset_result_publisher_cache
-from backend.app.core import secrets
+from backend.app.core import rate_limit, secrets
 from backend.app.core.config import get_settings
 
 
@@ -23,10 +27,12 @@ def _reset_caches() -> Iterator[None]:
     get_settings.cache_clear()
     secrets.reset_secret_store_cache()
     reset_result_publisher_cache()
+    rate_limit.reset_rate_limit_state()
     yield
     get_settings.cache_clear()
     secrets.reset_secret_store_cache()
     reset_result_publisher_cache()
+    rate_limit.reset_rate_limit_state()
 
 
 @pytest.fixture
