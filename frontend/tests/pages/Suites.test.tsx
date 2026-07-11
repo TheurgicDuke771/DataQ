@@ -130,6 +130,39 @@ describe('Suites', () => {
     expect(mockListChecks).toHaveBeenCalledWith('s1');
   });
 
+  it('surfaces an Asset link on the detail panel and navigates to the asset (#773)', async () => {
+    const user = userEvent.setup();
+    mockListConnections.mockResolvedValue([connection]);
+    mockListSuites.mockResolvedValue([suite({ asset_id: 'asset-9' })]);
+    mockListChecks.mockResolvedValue([check()]);
+
+    render(
+      <MemoryRouter initialEntries={['/suites/s1']}>
+        <AntApp>
+          <Routes>
+            <Route path="/suites/:suiteId" element={<Suites />} />
+            <Route path="/assets/:assetId" element={<div>asset page</div>} />
+          </Routes>
+        </AntApp>
+      </MemoryRouter>,
+    );
+
+    await user.click(await screen.findByText('Asset'));
+    expect(await screen.findByText('asset page')).toBeInTheDocument();
+  });
+
+  it('omits the Asset link when the suite has no resolved asset (#773)', async () => {
+    mockListConnections.mockResolvedValue([connection]);
+    mockListSuites.mockResolvedValue([suite({ asset_id: null })]);
+    mockListChecks.mockResolvedValue([check()]);
+    renderPage();
+    await screen.findByText('orders-suite');
+    // No selection yet → grid view; select to reach the detail panel.
+    await userEvent.click(screen.getByText('orders-suite'));
+    await screen.findByText('order_id not null');
+    expect(screen.queryByText('Asset')).not.toBeInTheDocument();
+  });
+
   it('deep-links to a suite via the route param (no click needed)', async () => {
     mockListConnections.mockResolvedValue([connection]);
     mockListSuites.mockResolvedValue([suite()]);

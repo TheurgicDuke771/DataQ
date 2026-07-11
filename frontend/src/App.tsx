@@ -55,12 +55,15 @@ const NotFound = lazy(() => import('./pages/NotFound').then((m) => ({ default: m
 
 const { Header, Sider, Content } = Layout;
 
-// Primary nav (top of the sider).
+// Primary nav (top of the sider). Assets lead as the first-class browse lens
+// (ADR 0034 navigation inversion, #773) — right after Dashboard, above Suites;
+// suites stay available but secondary (the execution grain reached through the
+// asset). Pure presentation: the ADR 0027 authz semantics are untouched.
 const NAV_ITEMS = [
   { key: '/dashboard', icon: <DashboardOutlined />, label: <Link to="/dashboard">Dashboard</Link> },
+  { key: '/assets', icon: <DatabaseOutlined />, label: <Link to="/assets">Assets</Link> },
   { key: '/connections', icon: <ApiOutlined />, label: <Link to="/connections">Connections</Link> },
   { key: '/suites', icon: <ContainerOutlined />, label: <Link to="/suites">Suites</Link> },
-  { key: '/assets', icon: <DatabaseOutlined />, label: <Link to="/assets">Assets</Link> },
   { key: '/results', icon: <BarChartOutlined />, label: <Link to="/results">Results</Link> },
   { key: '/profile', icon: <UserOutlined />, label: <Link to="/profile">Profile</Link> },
 ];

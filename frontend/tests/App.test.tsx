@@ -49,12 +49,26 @@ describe('App shell', () => {
     mockIsAdmin.mockReturnValue(false);
     mockUser.mockReturnValue(devUser);
     renderAt('/no-such-page');
-    for (const item of ['Dashboard', 'Connections', 'Suites', 'Results', 'Profile']) {
+    for (const item of ['Dashboard', 'Assets', 'Connections', 'Suites', 'Results', 'Profile']) {
       expect(screen.getByRole('link', { name: item })).toBeInTheDocument();
     }
     expect(screen.getByRole('link', { name: 'Documentation' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Admin' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Settings' })).not.toBeInTheDocument();
+  });
+
+  it('leads the primary nav with Assets, right after Dashboard (nav inversion, #773)', () => {
+    mockIsAdmin.mockReturnValue(false);
+    mockUser.mockReturnValue(devUser);
+    renderAt('/no-such-page');
+    // The primary nav order is Dashboard → Assets → Connections → Suites → …:
+    // Assets is the first-class lens (above Suites), suites stay secondary.
+    const primary = screen.getAllByRole('link').map((l) => l.textContent);
+    const dashboardIdx = primary.indexOf('Dashboard');
+    const assetsIdx = primary.indexOf('Assets');
+    const suitesIdx = primary.indexOf('Suites');
+    expect(assetsIdx).toBe(dashboardIdx + 1);
+    expect(assetsIdx).toBeLessThan(suitesIdx);
   });
 
   it('shows the Admin/Settings footer nav to workspace admins', () => {

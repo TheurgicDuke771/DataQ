@@ -105,6 +105,6 @@ catalog knowing about them (mechanism ④).
 
 | Surface | What |
 |---|---|
-| Web UI | Dashboard · Connections · Suites · Results · Profile · Admin · Settings |
+| Web UI | Dashboard · Assets · Connections · Suites · Results · Profile · Admin · Settings (Assets lead as the primary lens — ADR 0034 nav inversion; the Dashboard opens with an asset-health strip, and suites/runs link back to their asset) |
 | REST API | Versioned `/api/v1` (Swagger in non-prod) |
 | MCP | 8 curated tools at `/mcp` for AI assistants (ADR 0008) |

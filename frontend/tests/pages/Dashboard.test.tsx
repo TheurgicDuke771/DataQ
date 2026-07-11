@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { listAssets } from '../../src/api/assets';
 import { type DashboardSummary, getDashboardSummary } from '../../src/api/dashboard';
 import { listRuns } from '../../src/api/runs';
 import { listSuites } from '../../src/api/suites';
@@ -23,10 +24,17 @@ vi.mock('../../src/api/suites', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/api/suites')>();
   return { ...actual, listSuites: vi.fn() };
 });
+// The Asset-health lead (#773) fetches its own /assets slice; stub it so these
+// tests stay focused on the KPI row / range behaviour.
+vi.mock('../../src/api/assets', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/api/assets')>();
+  return { ...actual, listAssets: vi.fn() };
+});
 
 const mockGet = vi.mocked(getDashboardSummary);
 vi.mocked(listRuns).mockResolvedValue([]);
 vi.mocked(listSuites).mockResolvedValue([]);
+vi.mocked(listAssets).mockResolvedValue([]);
 
 const summary: DashboardSummary = {
   window_days: 7,

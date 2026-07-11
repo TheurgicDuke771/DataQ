@@ -20,6 +20,10 @@ export type ResultStatus = 'pass' | 'warn' | 'fail' | 'critical' | 'skip' | 'err
 export interface Run {
   id: string;
   suite_id: string;
+  /** The asset resolved from the suite's target, stamped at dispatch (ADR 0034,
+   *  #760); null for older rows / a targetless suite. Links the run back to its
+   *  asset (#773). */
+  asset_id?: string | null;
   status: RunStatus;
   triggered_by: string | null;
   started_at: string | null;
