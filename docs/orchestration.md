@@ -43,6 +43,12 @@ you run a tiny **post-build wrapper**:
 - Register a **dbt connection** (Connections → dbt) with its `project_name`, the `jobs` it
   publishes, and the `artifacts_uri` where builds land (`adls://…`, `s3://…`, or `file://…`)
   plus the store's read credential.
+  > **`artifacts_uri` is the base prefix, not the full published path** — DataQ appends
+  > `/<job>/latest/…` itself. If your publisher writes
+  > `adls://<account>/<container>/<prefix>/dbt/latest/run_results.json`, register
+  > `artifacts_uri: adls://<account>/<container>/<prefix>` with `jobs: ["dbt"]`. Pasting the
+  > publisher's own output variable verbatim usually double-counts the job segment (the poll
+  > then looks in `<prefix>/dbt/dbt/latest/` and finds nothing).
 - Copy the callback snippet
   ([`integrations/dbt/`](https://github.com/TheurgicDuke771/DataQ/tree/main/integrations/dbt))
   and run it right after `dbt build`, pointed at that run's `run_results.json`. It HMAC-signs
