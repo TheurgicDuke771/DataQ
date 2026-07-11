@@ -200,6 +200,62 @@ def test_run_checks_errored_check_flagged_without_failing_siblings(
     assert outcome.checks[1].success is True
 
 
+def test_run_checks_errored_check_maps_to_its_own_spec_despite_gx_reorder(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#767: GX 1.17 `graph_validate` returns errored expectations FIRST, so the
+    outcome list order ≠ submission order once anything errors. The errored check
+    here is submitted **last** (so the reorder actively moves it to the front) — the
+    outcome must still land 1:1 with the submitted specs, keyed by `dataq_index`, or
+    the run-service's positional zip stamps result content onto the wrong `check_id`.
+
+    Pre-fix (verbatim GX order), `outcome.checks[2]` would be the *not-null-on-id*
+    result, not the errored one — the live cross-wiring."""
+    df = pd.DataFrame({"id": [1, 2, 3], "amt": [10, 20, 30]})
+    runner = _runner_over(df, monkeypatch)
+    submitted = [
+        CheckSpec("expect_table_row_count_to_be_between", {"min_value": 1, "max_value": 10}),
+        CheckSpec("expect_column_values_to_not_be_null", {"column": "id"}),
+        CheckSpec(
+            "expect_column_values_to_be_between", {"column": "does_not_exist", "min_value": 0}
+        ),
+    ]
+    outcome = runner.run_checks(table="data/orders.csv", schema=None, checks=submitted)
+    # Positional 1:1 with what was submitted — this is the contract run_service zips on.
+    assert [c.expectation_type for c in outcome.checks] == [s.expectation_type for s in submitted]
+    row_count, not_null_id, bad_col = outcome.checks
+    assert row_count.errored is False and row_count.success is True
+    assert not_null_id.errored is False and not_null_id.success is True
+    assert not_null_id.expected_value == {"column": "id"}
+    # the errored check keeps ITS identity: the missing-column error, not a sibling's
+    assert bad_col.errored is True
+    assert bad_col.error_message and "does_not_exist" in bad_col.error_message
+    assert bad_col.expected_value == {"column": "does_not_exist", "min_value": 0}
+
+
+def test_run_checks_duplicate_identical_expectations_stay_distinct(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#767 duplicate-safety: two checks with the *same* type+kwargs are ambiguous to
+    match by (type, kwargs), but the positional `dataq_index` marker keeps them 1:1
+    with submission order even when one errors and GX reorders."""
+    df = pd.DataFrame({"id": [1, 2, 3]})
+    runner = _runner_over(df, monkeypatch)
+    outcome = runner.run_checks(
+        table="data/orders.csv",
+        schema=None,
+        checks=[
+            CheckSpec("expect_column_values_to_not_be_null", {"column": "id"}),
+            CheckSpec("expect_column_values_to_not_be_null", {"column": "nope"}),  # errors
+            CheckSpec("expect_column_values_to_not_be_null", {"column": "id"}),
+        ],
+    )
+    assert len(outcome.checks) == 3
+    assert outcome.checks[0].errored is False and outcome.checks[0].success is True
+    assert outcome.checks[1].errored is True  # the middle (errored) one stays in the middle
+    assert outcome.checks[2].errored is False and outcome.checks[2].success is True
+
+
 # ── batch resolution (pure resolve_batch + mocked list orchestrator) ──
 
 from datetime import UTC, datetime  # noqa: E402
