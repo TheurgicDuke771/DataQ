@@ -233,6 +233,21 @@ erDiagram
         bool enabled
         string alert_on "fail / warn / always"
         string webhook_secret_ref "per-suite Teams webhook, SecretStore key"
+        bool auto_resolve_incidents "auto-resolve on pass (default true, ADR 0034)"
+    }
+    incidents {
+        uuid id PK
+        uuid asset_id FK "CASCADE (ADR 0034)"
+        uuid check_id FK "CASCADE — (asset,check) anchor; ≤1 active per pair (partial unique index)"
+        uuid suite_id FK "CASCADE — authz + routing"
+        string status "open / acknowledged / resolved"
+        string resolved_by "user / auto (NULL until resolved)"
+        int occurrence_count "repeat failures attach, not duplicate"
+        timestamptz last_seen_at
+        uuid acknowledged_by FK "SET NULL"
+        uuid resolved_by_user_id FK "SET NULL"
+        uuid prior_incident_id FK "SET NULL — reopen chain"
+        jsonb evidence "deterministic layer-1 card (no sample rows — PII)"
     }
 
     users ||--o{ api_keys : "PATs (CASCADE — keys die with the user)"
@@ -265,6 +280,11 @@ erDiagram
     checks ||--o{ check_versions : "config history (CASCADE)"
     checks ||--o{ results : "evaluated as (CASCADE)"
     runs ||--o{ results : "produces (CASCADE)"
+
+    assets ||--o{ incidents : "anchored to (CASCADE, ADR 0034)"
+    checks ||--o{ incidents : "anchored to (CASCADE)"
+    suites ||--o{ incidents : "authz + routing (CASCADE)"
+    incidents |o--o| incidents : "reopen chain — prior_incident_id (SET NULL)"
 
     pipeline_runs ||..o{ runs : "triggered_by marker (no FK)"
     trigger_bindings }o..o{ pipeline_runs : "(provider, pipeline, env) match (no FK)"
