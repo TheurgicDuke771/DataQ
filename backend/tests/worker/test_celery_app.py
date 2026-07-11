@@ -62,6 +62,15 @@ def test_beat_schedule_registers_poll_and_gap_recovery() -> None:
     assert schedule["recover-orchestration-gaps"]["schedule"] == 1800.0
 
 
+def test_beat_schedule_registers_orphan_asset_sweep() -> None:
+    """The orphan-asset sweep (#770) is wired daily, same cadence as the
+    sample-failures retention sweep — guards against a dropped entry silently
+    disabling the janitor."""
+    schedule = create_celery_app().conf.beat_schedule
+    assert schedule["sweep-orphan-assets"]["task"] == "sweep_orphan_assets"
+    assert schedule["sweep-orphan-assets"]["schedule"] == 86400.0
+
+
 # ───────────────────────── inject (publisher side) ─────────────────
 
 

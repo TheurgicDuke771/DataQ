@@ -93,6 +93,15 @@ def create_celery_app() -> Celery:
                 "task": "reap_stuck_runs",
                 "schedule": 600.0,  # 10 minutes
             },
+            # Orphan-asset sweep (#770, ADR 0034): once a day (same cadence as the
+            # sample-failures retention sweep — this is a low-urgency accretion
+            # cleanup, not a liveness janitor), delete `assets` rows whose
+            # last_seen is frozen past `asset_orphan_retention_days` AND that no
+            # suite/run/lineage_edge still references.
+            "sweep-orphan-assets": {
+                "task": "sweep_orphan_assets",
+                "schedule": 86400.0,  # 24 hours
+            },
         },
     )
     # Register task modules on worker boot (looks for backend.app.worker.tasks).
