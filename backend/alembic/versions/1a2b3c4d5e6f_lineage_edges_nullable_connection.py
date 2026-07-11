@@ -39,7 +39,7 @@ revision: str = "1a2b3c4d5e6f"
 # NOTE: chained off the current head at build time (f0a1b2c3d4e5, "add_asset_description").
 # If the incidents migration (#775, c4e5a6b7d8f9) merges to main first, re-chain this
 # down_revision onto that head before merge (single-head invariant — verify `alembic heads`).
-down_revision: str | None = "f0a1b2c3d4e5"
+down_revision: str | None = "c4e5a6b7d8f9"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

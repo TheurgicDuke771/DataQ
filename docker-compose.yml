@@ -202,12 +202,15 @@ services:
       POSTGRES_DB: marquez
       POSTGRES_USER: marquez
       # Unused (marquez-db runs trust auth) — kept only because Marquez's JDBC config
-      # requires the var. Env-substituted (never a committed literal); the default is a
-      # non-secret placeholder for the trust-auth dev DB.
-      POSTGRES_PASSWORD: "${MARQUEZ_DB_PASSWORD:-marquez-dev-unused}"
+      # requires the var to exist. Ships BLANK per the no-credentials-in-tracked-files
+      # rule (CLAUDE.md §11); set MARQUEZ_DB_PASSWORD in .env only if you point this at
+      # a real password-auth Postgres.
+      POSTGRES_PASSWORD: "${MARQUEZ_DB_PASSWORD:-}"
     ports:
-      - "5000:5000"
-      - "5001:5001"
+      # Host 5002/5003: macOS binds 5000 (AirPlay Receiver) by default. In-network the
+      # app still reaches http://marquez:5000; only host-side browsing uses 5002/5003.
+      - "5002:5000"
+      - "5003:5001"
     depends_on:
       marquez-db:
         condition: service_healthy
