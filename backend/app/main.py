@@ -31,6 +31,7 @@ from backend.app.core.auth import init_auth
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.errors import error_envelope, register_exception_handlers
 from backend.app.core.logging import configure_logging, get_logger, request_id_var
+from backend.app.core.rate_limit import rate_limit_middleware
 from backend.app.core.tracing import (
     configure_tracing,
     instrument_celery,
@@ -98,6 +99,13 @@ app = FastAPI(
     redoc_url=_docs["redoc_url"],
     openapi_url=_docs["openapi_url"],
 )
+
+# Rate limiting (#725, ADR 0035). Registered FIRST → the INNERMOST user
+# middleware, so a 429 still exits through CORSMiddleware (cross-origin browsers
+# see the 429, not an opaque CORS error) and through request_id_middleware (429s
+# get X-Request-ID + the structured request log). On the PARENT app so it also
+# covers the mounted FastMCP sub-app at /mcp — a route dependency would not.
+app.middleware("http")(rate_limit_middleware)
 
 # Cross-origin access for the prod Static-Web-App ↔ Container-Apps split. Added
 # only when origins are configured (empty in dev — the Vite proxy keeps it

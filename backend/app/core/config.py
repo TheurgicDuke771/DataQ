@@ -114,6 +114,23 @@ class Settings(BaseSettings):
     #   PUBLIC_BASE_URL=https://dataq.example.com
     public_base_url: str = ""
 
+    # ── Rate limiting (#725, ADR 0035) ───────────────────────────────────────
+    # Fixed-window (60s) request throttle on every public surface — REST, the
+    # orchestration webhooks, and the mounted /mcp app — keyed per sha256(bearer)
+    # for authenticated traffic and per client-IP otherwise. Fail-open (a Redis
+    # outage disables limiting, logged). Defaults are generous; tighten
+    # RATE_LIMIT_WEBHOOK_PER_MINUTE to your orchestrator's callback cadence.
+    rate_limit_enabled: bool = True
+    rate_limit_authenticated_per_minute: int = 300  # per sha256(bearer) bucket
+    rate_limit_unauthenticated_per_minute: int = 120  # per client-IP bucket
+    rate_limit_webhook_per_minute: int = 120  # per client-IP, /api/v1/orchestration/events/*
+    rate_limit_ip_per_minute: int = (
+        1200  # per-IP ceiling across all bearer buckets (rotated-token backstop)
+    )
+    rate_limit_xff_trusted_hops: int = (
+        1  # count of trusted proxies appending XFF; pick entry hops-from-right
+    )
+
     # Workspace-admin allowlist — emails permitted to use the /admin read
     # endpoints (all-suites / all-users / access overview). Single-tenant, so this
     # is the whole-workspace admin set, distinct from the per-suite

@@ -31,7 +31,11 @@ in production, #170 — this page is the reference.)
 - **Versioning:** all endpoints are under `/api/v1`.
 - **Errors:** a JSON envelope — `{"error": {"code": "...", "message": "...", "detail": {...}}}` —
   with a conventional HTTP status (`401` auth, `403` forbidden, `404` not found / hidden,
-  `422` validation, `409` conflict, `502` datasource unreachable).
+  `422` validation, `409` conflict, `429` rate limited, `502` datasource unreachable).
+- **Rate limiting (ADR 0035):** every surface is throttled per minute — authenticated
+  requests per API key, unauthenticated per client-IP. Over the limit returns `429` with
+  `code: "rate_limited"`, `detail.retry_after_seconds` (1–60), and a matching `Retry-After`
+  header (plus `X-RateLimit-Limit` / `X-RateLimit-Remaining`). Back off for that many seconds.
 - **IDs** are UUIDs. Timestamps are ISO-8601 UTC.
 
 ## Endpoints
