@@ -40,6 +40,7 @@ from backend.app.db.session import get_session
 from backend.app.lineage import dbt_manifest
 from backend.app.lineage import dispatch as lineage_dispatch
 from backend.app.lineage import edges as lineage_edges
+from backend.app.lineage import pull as lineage_pull
 from backend.app.orchestration.registry import get_orchestration_provider
 from backend.app.services import (
     asset_service,
@@ -670,5 +671,32 @@ def sweep_orphan_assets() -> int:
         session.rollback()
         log.warning("orphan_asset_sweep_failed", exc_info=True)
         return 0
+    finally:
+        session.close()
+
+
+# ─────────────────────── catalog lineage pull (#762) ─────────────────────────
+
+
+@celery_app.task(name="refresh_lineage_pull")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
+def refresh_lineage_pull() -> int:
+    """Celery-beat entry point — pull catalog lineage into `lineage_edges` (#762).
+
+    **Dark by default** (ADR 0034's "pulled, never built" posture): when no
+    `LineageProvider` is configured (`LINEAGE_PROVIDER` unset) the task no-ops with
+    zero queries — the same gate shape the OpenLineage emitter uses. A daily cadence
+    (not a liveness interval): a catalog's lineage moves on the artifact/build cadence,
+    not per-run, and the pull is a *cache refresh of external truth*, so freshness is
+    deliberately bounded (ADR 0034 accepted "freshness bounded by poll cadence") — same
+    low-urgency daily tick as the sample-failures and orphan-asset sweeps. Callable
+    on-demand too (`refresh_lineage_pull.delay()`). Returns the live pulled-edge count
+    (0 when unconfigured or nothing pulled); `refresh_pulled_edges` fails open per step.
+    """
+    provider = lineage_pull.get_lineage_provider()
+    if provider is None:
+        return 0
+    session = get_session()
+    try:
+        return lineage_pull.refresh_pulled_edges(session, provider=provider) or 0
     finally:
         session.close()

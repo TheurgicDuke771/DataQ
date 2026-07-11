@@ -53,6 +53,17 @@ class Settings(BaseSettings):
     openlineage_url: str | None = None
     openlineage_disabled: bool = False
 
+    # Lineage catalog pull (ADR 0034, #762) — dark by default. The `LineageProvider`
+    # seam pulls a lineage graph from a governance catalog and caches it into
+    # `lineage_edges` (source='marquez'). Unset `lineage_provider` → no pull (the beat
+    # task no-ops). Only `marquez` is implemented; DataHub/OpenMetadata/Purview are
+    # deferred behind the same seam. Typed here (not raw os.environ) so a `.env.app`
+    # value activates it. `marquez_url` is the reference server's base URL.
+    #   LINEAGE_PROVIDER=marquez
+    #   MARQUEZ_URL=http://marquez:5000
+    lineage_provider: str = ""
+    marquez_url: str | None = None
+
     sample_failures_retention_days: int = 30
 
     # Stuck-run reaper (#309): a run committed `queued` (before `send_task`) — or

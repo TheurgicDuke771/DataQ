@@ -102,6 +102,15 @@ def create_celery_app() -> Celery:
                 "task": "sweep_orphan_assets",
                 "schedule": 86400.0,  # 24 hours
             },
+            # Catalog lineage pull (#762, ADR 0034): once a day, pull lineage from the
+            # configured `LineageProvider` (Marquez) into the `lineage_edges` cache.
+            # Dark by default — the task no-ops (zero queries) unless LINEAGE_PROVIDER
+            # is set. Daily, not a liveness interval: a cache refresh of external truth
+            # whose freshness is deliberately bounded by the catalog's own cadence.
+            "refresh-lineage-pull": {
+                "task": "refresh_lineage_pull",
+                "schedule": 86400.0,  # 24 hours
+            },
         },
     )
     # Register task modules on worker boot (looks for backend.app.worker.tasks).

@@ -156,6 +156,66 @@ services:
     depends_on:
       - api
 
+  # ─────────────────────────── lineage (opt-in) ────────────────────────────
+  # Marquez (Apache-2.0) — the reference `LineageProvider` catalog (ADR 0034, #762):
+  # DataQ's OpenLineage emitter (#758) feeds it, and the daily `refresh_lineage_pull`
+  # beat task pulls the graph back into the `lineage_edges` cache. TWO extra containers
+  # (marquez + its own throwaway Postgres), gated behind the `lineage` **profile** so a
+  # plain `docker compose up` never starts them — bring them up explicitly with
+  #   docker compose --profile lineage up
+  # and point the app at Marquez by setting LINEAGE_PROVIDER=marquez, MARQUEZ_URL=
+  # http://marquez:5000, and OPENLINEAGE_URL=http://marquez:5000/api/v1/lineage in
+  # .env.app. See docs/orchestration.md for the emit→pull round-trip walkthrough.
+  #
+  # Marquez's newest release is 0.50.0 (2024-10); its slow cadence is an accepted
+  # low risk for a dev-time reference consumer (ADR 0034) — the /api/v1/lineage
+  # contract has been stable across releases.
+  marquez-db:
+    image: postgres:16-alpine
+    profiles: ["lineage"]
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: marquez
+      POSTGRES_DB: marquez
+      # trust auth: this is an isolated, network-internal, opt-in dev DB that holds no
+      # real data, so no password secures it (no credential is committed — CLAUDE.md).
+      POSTGRES_HOST_AUTH_METHOD: trust
+    volumes:
+      - marquez_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U marquez"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  marquez:
+    image: marquezproject/marquez:0.50.0
+    profiles: ["lineage"]
+    restart: unless-stopped
+    # entrypoint waits for the DB, runs Flyway migrations, then serves the API (5000)
+    # + admin (5001). No secret: the DB uses trust auth (POSTGRES_PASSWORD is unused).
+    environment:
+      MARQUEZ_PORT: 5000
+      MARQUEZ_ADMIN_PORT: 5001
+      POSTGRES_HOST: marquez-db
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: marquez
+      POSTGRES_USER: marquez
+      # Unused (marquez-db runs trust auth) — kept only because Marquez's JDBC config
+      # requires the var to exist. Ships BLANK per the no-credentials-in-tracked-files
+      # rule (CLAUDE.md §11); set MARQUEZ_DB_PASSWORD in .env only if you point this at
+      # a real password-auth Postgres.
+      POSTGRES_PASSWORD: "${MARQUEZ_DB_PASSWORD:-}"
+    ports:
+      # Host 5002/5003: macOS binds 5000 (AirPlay Receiver) by default. In-network the
+      # app still reaches http://marquez:5000; only host-side browsing uses 5002/5003.
+      - "5002:5000"
+      - "5003:5001"
+    depends_on:
+      marquez-db:
+        condition: service_healthy
+
 volumes:
   postgres_data:
   pnpm-store:
+  marquez_db_data:

@@ -81,6 +81,54 @@ suites yet — or a multi-database project — set **`lineage_namespace`** on th
 config (the OpenLineage namespace verbatim, e.g. `snowflake://<account>`) to pin the anchor and
 bypass the inference entirely.
 
+### Lineage from a catalog — the `LineageProvider` seam (ADR 0034, #762)
+
+The dbt slice above sees only what the dbt manifest models. A **governance catalog** sees
+more — including consumers that emit no OpenLineage themselves (a Power BI report now sitting
+downstream of a monitored mart). DataQ pulls that graph through a provider-agnostic
+**`LineageProvider`** seam (mirroring the `OrchestrationProvider` discipline — no
+provider-specific branching in service code), caching the pulled edges into the same
+`lineage_edges` table with `source='marquez'`. The seam's graph carries a **node kind** per node
+(`dataset` today; `job` collapsed through; `bi_report`/`dashboard` reserved) — so **downstream
+nodes are not assumed to be tables**, and a BI/dashboard node round-trips the moment a
+capable catalog (Purview/DataHub) lands behind the seam, with no schema or query change.
+
+- **Reference implementation: Marquez** (Apache-2.0). Pull = `GET {MARQUEZ_URL}/api/v1/lineage?
+  nodeId=dataset:{namespace}:{name}&depth=N`; identity matches DataQ assets byte-for-byte because
+  both use the OpenLineage naming spec. Fail-soft (5 s timeout, node cap, depth clamp) — a dead
+  catalog yields an empty graph, never an error.
+- **Deferred behind the same seam** (do not build): **DataHub** (8 GB-RAM footprint — bring your
+  own; our emitter already feeds its OL receiver), **OpenMetadata** (SDK is source-available,
+  blocked by ADR 0031; REST-only would need its own ADR), **Purview** (Azure-only, parked).
+- **Config (dark by default).** Set `LINEAGE_PROVIDER=marquez` + `MARQUEZ_URL=http://marquez:5000`
+  in `.env.app`. The daily **`refresh_lineage_pull`** beat task then seeds a pull from each known
+  asset, collapses jobs to dataset→dataset edges, and upserts them. Pulled edges carry a **NULL
+  `connection_id`** (a catalog pull has no orchestration connection) and dedupe on the
+  `(upstream, downstream, source) WHERE connection_id IS NULL` partial unique index; their prune is
+  scoped to `(source='marquez', connection_id IS NULL)`, so **dbt-sourced edges are never touched**
+  — the two sources coexist as distinct rows for the same table pair, and the blast-radius walk
+  spans both.
+
+**Local round-trip (emitter → Marquez → pull).** The reference compose stack ships a Marquez
+(+ its own Postgres) behind an opt-in profile so a plain `docker compose up` is unaffected:
+
+```bash
+# 1. start Marquez (2 extra containers) alongside the app
+docker compose --profile lineage up
+# 2. in .env.app, point the emitter and the pull at Marquez, then restart api+worker:
+#      OPENLINEAGE_URL=http://marquez:5000/api/v1/lineage
+#      LINEAGE_PROVIDER=marquez
+#      MARQUEZ_URL=http://marquez:5000
+# 3. run a suite (emits START/COMPLETE RunEvents to Marquez), then trigger the pull:
+docker compose exec worker python -c \
+  "from backend.app.worker.tasks import refresh_lineage_pull; print(refresh_lineage_pull())"
+# 4. the pulled edges appear in lineage_edges with source='marquez'.
+```
+
+Marquez's newest release is 0.50.0 (2024-10); its slow cadence is an **accepted low risk** for a
+dev-time reference consumer (ADR 0034) — the `/api/v1/lineage` contract has been stable across
+releases, and production lineage is a bring-your-own catalog behind the same seam.
+
 ## Wiring a trigger
 
 In the UI, open a suite's **Triggers** and bind it to a `(provider, pipeline/DAG, env)`.
