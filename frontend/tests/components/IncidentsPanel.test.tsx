@@ -128,6 +128,35 @@ describe('IncidentsPanel', () => {
     await waitFor(() => expect(mockResolve).toHaveBeenCalledWith('inc-1'));
   });
 
+  it('surfaces a failed acknowledge, resets busy, and does not reload', async () => {
+    mockList.mockResolvedValue([incident()]);
+    mockAck.mockRejectedValue(new Error('forbidden'));
+    renderPanel({ s1: 'edit' });
+    await userEvent.click(await screen.findByRole('button', { name: 'Acknowledge' }));
+    // The error surfaces to the user…
+    expect(await screen.findByText(/Action failed: forbidden/)).toBeInTheDocument();
+    // …the list is NOT reloaded (initial fetch only)…
+    expect(mockList).toHaveBeenCalledTimes(1);
+    // …and the action button is usable again (busy state reset in finally).
+    // Name regex + button-level class: jsdom never fires the leave-motion events,
+    // so the spinner SPAN lingers mid-animation — but the button's own
+    // `ant-btn-loading` state class drops the moment `loading` goes false.
+    const ackButton = await screen.findByRole('button', { name: /Acknowledge/ });
+    expect(ackButton).toBeEnabled();
+    expect(ackButton).not.toHaveClass('ant-btn-loading');
+  });
+
+  it('surfaces a failed resolve without reloading', async () => {
+    mockList.mockResolvedValue([incident()]);
+    mockResolve.mockRejectedValue(new Error('nope'));
+    renderPanel({ s1: 'owner' });
+    await userEvent.click(await screen.findByRole('button', { name: 'Resolve' }));
+    const confirms = await screen.findAllByRole('button', { name: 'Resolve' });
+    await userEvent.click(confirms[confirms.length - 1]);
+    expect(await screen.findByText(/Action failed: nope/)).toBeInTheDocument();
+    expect(mockList).toHaveBeenCalledTimes(1);
+  });
+
   it('surfaces a load error', async () => {
     mockList.mockRejectedValue(new Error('boom'));
     renderPanel({ s1: 'owner' });

@@ -74,6 +74,14 @@ def render_slack_message(report: RunReport, route: Route) -> dict[str, object]:
             lines += f"\n…and {len(failing) - _MAX_CHECK_LINES} more"
         blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": lines}})
 
+    # Minimal incident references (ADR 0034 #761): one shared-format line per
+    # failing check with an active incident. Rich formatting defers to #773.
+    if report.incidents:
+        incident_lines = "\n".join(
+            f"_{render.incident_line(card)}_" for card in report.incidents[:_MAX_CHECK_LINES]
+        )
+        blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": incident_lines}})
+
     # A "View run" button deep-links to the run-detail page (when a public base URL
     # is configured; otherwise there's no link to offer).
     if report.run_url:

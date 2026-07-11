@@ -283,3 +283,31 @@ def test_unknown_field_rejected(client: TestClient, world: dict[str, Any]) -> No
     _as(world["owner"])
     resp = client.post(f"/api/v1/incidents/{world['incident'].id}/ack", json={"notee": "typo"})
     assert resp.status_code == 422
+
+
+# ── fix batch (PR #775 review): pagination (the #772 /assets gap, one PR later) ─
+
+
+def test_list_pagination_limit_offset_and_truncation(
+    client: TestClient, world: dict[str, Any]
+) -> None:
+    """limit caps (truncates) the newest-first list; offset pages the remainder
+    deterministically; past-the-end is an empty page, not an error."""
+    db = client_db(client)
+    # Two more failing checks on the suite → three incidents total.
+    for _ in range(2):
+        _incident(db, world["suite"])
+    _as(world["owner"])
+
+    full = client.get("/api/v1/incidents").json()
+    assert len(full) == 3
+
+    page1 = client.get("/api/v1/incidents", params={"limit": 2}).json()
+    assert len(page1) == 2  # truncated at the cap
+    page2 = client.get("/api/v1/incidents", params={"limit": 2, "offset": 2}).json()
+    assert len(page2) == 1
+    # The pages tile the full ordering with no overlap or gap.
+    assert [i["id"] for i in page1] + [i["id"] for i in page2] == [i["id"] for i in full]
+    assert client.get("/api/v1/incidents", params={"offset": 10}).json() == []
+    # Bounds still validate (#570 class).
+    assert client.get("/api/v1/incidents", params={"offset": -1}).status_code == 422

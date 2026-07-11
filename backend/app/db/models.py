@@ -809,8 +809,12 @@ class Incident(Base):
     __tablename__ = "incidents"
     __table_args__ = (
         _in_check("status", INCIDENT_STATUSES, "incident_status_valid"),
+        # Single-sourced from INCIDENT_RESOLVED_BY so the vocabulary and the
+        # constraint can't drift (and CodeQL sees the constant used).
         CheckConstraint(
-            "resolved_by IS NULL OR resolved_by IN ('user', 'auto')",
+            "resolved_by IS NULL OR resolved_by IN ("
+            + ", ".join(f"'{v}'" for v in INCIDENT_RESOLVED_BY)
+            + ")",
             name="incident_resolved_by_valid",
         ),
         Index("ix_incidents_asset_id", "asset_id"),

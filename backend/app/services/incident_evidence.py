@@ -13,15 +13,25 @@ layers, each best-effort (a missing layer degrades to ``None``/empty, never fail
 * ``sibling_checks`` — the other checks' outcomes in the same run.
 * ``downstream_blast_radius`` — the lineage-derived downstream assets (§2).
 
-**PII rule is absolute: the card NEVER carries ``sample_failures`` content** — only
-counts/aggregates and identity. ``profile_diff`` (failing-vs-last-passing batch) is
-deliberately omitted: it needs a live datasource introspection, which is not
-"existing data" and not cheap; it is a null placeholder the card documents.
+**PII rule: the card never reads ``sample_failures``**, and ``observed_value`` is
+embedded with its list-valued sample-bearing keys (``partial_unexpected_list``,
+``unexpected_index_list`` — the raw-cell carriers among ``gx_runner._SAMPLE_KEYS``)
+**stripped**. Scalar aggregates (counts, percents, a max/min) are sanctioned — the
+#416 alert already exposes expected-vs-observed to the same audience — but value
+*lists* are the sample-row shape and never ride the card. ``profile_diff``
+(failing-vs-last-passing batch) is deliberately omitted: it needs a live datasource
+introspection, which is not "existing data" and not cheap; it is a null placeholder
+the card documents.
+
+Each layer is individually try/except-wrapped (:func:`_layer`): one broken layer
+degrades to ``None`` with a structured warning instead of poisoning the incident
+sync for the whole run — the same fail-open posture as ``lineage.edges``.
 """
 
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
@@ -39,6 +49,23 @@ log = get_logger(__name__)
 # pipeline runs the delay-vs-history baseline averages over.
 _TREND_LIMIT = 10
 _PIPELINE_HISTORY_LIMIT = 10
+
+# The list-valued, sample-row-bearing keys of `gx_runner._SAMPLE_KEYS` — the two
+# that carry raw cell values (vs. the scalar `unexpected_count`/`unexpected_percent`
+# aggregates). GX also mirrors them into `observed_value` for some expectation
+# shapes, so they are stripped before the card embeds it (module PII rule).
+_SAMPLE_LIST_KEYS = frozenset({"partial_unexpected_list", "unexpected_index_list"})
+
+
+def _layer(name: str, fn: Callable[[], Any]) -> Any:
+    """Run one evidence layer best-effort: any failure logs a structured warning
+    and degrades that layer to ``None`` — never poisoning the card (and through
+    it the whole run's incident sync)."""
+    try:
+        return fn()
+    except Exception:
+        log.warning("incident_evidence_layer_failed", layer=name)
+        return None
 
 
 def _num(value: Decimal | None) -> float | None:
@@ -60,19 +87,30 @@ def build_evidence(
 ) -> dict[str, Any]:
     """Assemble the layer-1 evidence card for a breaching ``result`` on ``run``.
 
-    Every layer is best-effort — this must never raise into the incident engine
-    (which itself never raises into the run path). ``check``/``asset`` may be
-    ``None`` (a since-deleted check, an unresolved asset) and degrade gracefully.
+    Every layer is wrapped by :func:`_layer` — one raising layer degrades to
+    ``None`` (warned), the rest of the card survives, and nothing propagates into
+    the incident engine (which itself never raises into the run path).
+    ``check``/``asset`` may be ``None`` (a since-deleted check, an unresolved
+    asset) and degrade gracefully.
     """
     return {
         "generated_at": _utc_now_iso(),
-        "check": _check_layer(check),
-        "asset": _asset_layer(asset),
-        "failing_result": _failing_result_layer(result),
-        "metric_trend": _metric_trend_layer(session, check_id=result.check_id),
-        "sibling_checks": _sibling_checks_layer(session, run=run, exclude_check_id=result.check_id),
-        "upstream_pipeline_run": _upstream_pipeline_layer(session, run=run),
-        "downstream_blast_radius": _blast_radius_layer(session, asset=asset),
+        "check": _layer("check", lambda: _check_layer(check)),
+        "asset": _layer("asset", lambda: _asset_layer(asset)),
+        "failing_result": _layer("failing_result", lambda: _failing_result_layer(result)),
+        "metric_trend": _layer(
+            "metric_trend", lambda: _metric_trend_layer(session, check_id=result.check_id)
+        ),
+        "sibling_checks": _layer(
+            "sibling_checks",
+            lambda: _sibling_checks_layer(session, run=run, exclude_check_id=result.check_id),
+        ),
+        "upstream_pipeline_run": _layer(
+            "upstream_pipeline_run", lambda: _upstream_pipeline_layer(session, run=run)
+        ),
+        "downstream_blast_radius": _layer(
+            "downstream_blast_radius", lambda: _blast_radius_layer(session, asset=asset)
+        ),
         # Needs a live datasource profile of both batches — not existing data, not
         # cheap. Documented null placeholder (see module docstring).
         "profile_diff": None,
@@ -108,16 +146,28 @@ def _asset_layer(asset: Asset | None) -> dict[str, Any] | None:
 def _failing_result_layer(result: Result) -> dict[str, Any]:
     """The breaching result — status + metric + GX aggregates. **No sample rows.**
 
-    ``observed_value``/``expected_value`` are GX aggregates (already sanitized at
-    write time and surfaced by the alert card); ``sample_failures`` is deliberately
-    excluded — it is the only result column that can carry raw (PII-bearing) rows.
+    ``sample_failures`` is never read. ``observed_value`` scalar aggregates are
+    sanctioned (the #416 alert exposes expected-vs-observed to the same audience),
+    but list-valued sample-bearing keys (``_SAMPLE_LIST_KEYS`` — GX mirrors them
+    into ``observed_value`` for some expectation shapes, and aggregate
+    expectations like most_common can carry raw cells in lists) are **stripped**
+    before the card embeds it. ``expected_value`` is the check's own kwargs (user
+    config, no row data) and passes through.
     """
     return {
         "status": result.status,
         "metric_value": _num(result.metric_value),
-        "observed_value": result.observed_value,
+        "observed_value": _strip_sample_lists(result.observed_value),
         "expected_value": result.expected_value,
     }
+
+
+def _strip_sample_lists(observed: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Drop the list-valued sample-bearing keys from an ``observed_value`` dict
+    (see ``_SAMPLE_LIST_KEYS``); non-dict / ``None`` shapes pass through."""
+    if not isinstance(observed, dict):
+        return observed
+    return {key: val for key, val in observed.items() if key not in _SAMPLE_LIST_KEYS}
 
 
 def _metric_trend_layer(session: Session, *, check_id: uuid.UUID) -> list[dict[str, Any]]:

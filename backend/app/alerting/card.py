@@ -97,6 +97,14 @@ def _facts_block(report: RunReport) -> dict[str, Any]:
     # Owner / Environment / Triggered by / Started / Duration — the same shared
     # metadata the Slack + email renderers show (#661, #416 parity).
     facts += [{"title": label, "value": value} for label, value in render.run_metadata(report)]
+    # One minimal incident fact (ADR 0034 #761): how many active incidents this
+    # run's failing checks reference. Deep incident formatting on the card defers
+    # to the #773 navigation-inversion phase.
+    if report.incidents:
+        new_count = sum(1 for card in report.incidents if card.is_new)
+        facts.append(
+            {"title": "Incidents", "value": f"{len(report.incidents)} active ({new_count} new)"}
+        )
     return {"type": "FactSet", "facts": facts}
 
 

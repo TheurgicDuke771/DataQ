@@ -134,8 +134,13 @@ def _incident_cards(
 
     The incident engine has already run (worker order), so the active incidents on
     this run's asset are current. One card per failing check that has an active
-    incident; ``is_new`` when this run opened it (``occurrence_count == 1``). The
-    evidence is passed through opaque — it was redacted at snapshot time.
+    incident. ``is_new`` derives from the engine's **timestamp contract** (see
+    ``incident_service.open_or_attach_incident``): an open stamps ``last_seen_at``
+    == ``created_at`` (same transaction ``now()``), an attach strictly bumps it
+    (``clock_timestamp()``) — so a freshly-opened incident reads new even when a
+    concurrent attach lands between the sync and this build (which would already
+    have bumped ``occurrence_count`` and mislabeled the count-based derivation).
+    The evidence is passed through opaque — it was redacted at snapshot time.
     """
     active = incident_service.active_incidents_for_run(session, run)
     if not active:
@@ -155,7 +160,7 @@ def _incident_cards(
                 check_name=check.name if check is not None else "(deleted check)",
                 status=result.status,
                 occurrence_count=incident.occurrence_count,
-                is_new=incident.occurrence_count == 1,
+                is_new=incident.created_at == incident.last_seen_at,
                 evidence=incident.evidence,
             )
         )

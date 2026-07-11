@@ -175,6 +175,8 @@ def list_incidents(
     suite_id: uuid.UUID | None = None,
     state: str | None = Query(default=None, description="Filter by lifecycle status"),
     limit: int = Query(default=100, ge=1, le=500),
+    # Pagination offset — the #772 /assets shape; limit alone truncated silently.
+    offset: int = Query(default=0, ge=0),
 ) -> list[IncidentRead]:
     if state is not None and state not in INCIDENT_STATUSES:
         # A bogus state is a 422, not a silent empty list (the #570 clean-input rule).
@@ -192,6 +194,7 @@ def list_incidents(
         suite_id=suite_id,
         state=state,
         limit=limit,
+        offset=offset,
     )
     return [_to_summary(i) for i in incidents]
 

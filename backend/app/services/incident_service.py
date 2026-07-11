@@ -37,7 +37,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -67,6 +67,9 @@ _ACTIVE_INCIDENT_PREDICATE = text(
 )
 # The clean/passing result status that auto-resolves an active incident.
 _PASSING_RESULT = "pass"
+# Bounded open→attach retry (open loses the insert AND the winner resolves in the
+# gap → the pair is free again → re-open). 3 attempts is already paranoid.
+_OPEN_ATTACH_ATTEMPTS = 3
 
 
 def _now() -> datetime:
@@ -167,53 +170,84 @@ def open_or_attach_incident(
     Upsert-race-safe: the ``INSERT … ON CONFLICT DO NOTHING`` against the partial
     unique index means a concurrent second breaching result loses the insert and
     falls through to the attach path — exactly one active incident, occurrences
-    counted. Does **not** commit (the caller batches the run's results into one
+    counted. When the conflicting incident resolves in the insert→attach gap the
+    pair is free again, so the open is **retried** (bounded loop) rather than
+    erroring out and rolling back the whole run's sync.
+
+    **Timestamp contract (the `is_new` signal):** an open stamps ``last_seen_at``
+    with the same transaction-start ``now()`` the ``created_at`` server default
+    uses, so a freshly-opened incident has ``created_at == last_seen_at``; an
+    attach bumps ``last_seen_at`` with ``clock_timestamp()`` (wall clock, strictly
+    later even inside one transaction), breaking the equality. The alert builder
+    derives ``is_new`` from that equality — stable under a concurrent attach,
+    unlike re-deriving from ``occurrence_count`` at build time.
+
+    Does **not** commit (the caller batches the run's results into one
     transaction); the evidence card is (re)snapshotted here either way.
     """
     assert run.asset_id is not None  # guarded by the caller (_sync / anchor rule)
     evidence = build_evidence(session, run=run, result=result, check=check, asset=asset)
-    now = _now()
-    prior_id = _most_recent_resolved_id(session, asset_id=run.asset_id, check_id=result.check_id)
-    new_id = session.execute(
-        pg_insert(Incident)
-        .values(
-            asset_id=run.asset_id,
-            check_id=result.check_id,
-            suite_id=run.suite_id,
-            status="open",
-            occurrence_count=1,
-            last_seen_at=now,
-            evidence=evidence,
-            prior_incident_id=prior_id,
-        )
-        .on_conflict_do_nothing(
-            index_elements=["asset_id", "check_id"],
-            index_where=_ACTIVE_INCIDENT_PREDICATE,
-        )
-        .returning(Incident.id)
-    ).scalar_one_or_none()
 
-    if new_id is not None:
-        incident = session.get(Incident, new_id)
-        assert incident is not None  # just inserted in this transaction
-        return incident, "opened"
+    for _ in range(_OPEN_ATTACH_ATTEMPTS):
+        # Recomputed per attempt: an incident that resolved in the gap is now the
+        # reopen link for the fresh open.
+        prior_id = _most_recent_resolved_id(
+            session, asset_id=run.asset_id, check_id=result.check_id
+        )
+        new_id = session.execute(
+            pg_insert(Incident)
+            .values(
+                asset_id=run.asset_id,
+                check_id=result.check_id,
+                suite_id=run.suite_id,
+                status="open",
+                occurrence_count=1,
+                last_seen_at=func.now(),  # == created_at (see timestamp contract)
+                evidence=evidence,
+                prior_incident_id=prior_id,
+            )
+            .on_conflict_do_nothing(
+                index_elements=["asset_id", "check_id"],
+                index_where=_ACTIVE_INCIDENT_PREDICATE,
+            )
+            .returning(Incident.id)
+        ).scalar_one_or_none()
 
-    # Conflict → an active incident already exists (the winner's row, now visible
-    # under READ COMMITTED since our insert blocked on its commit). Attach.
-    active = _active_incident(session, asset_id=run.asset_id, check_id=result.check_id)
-    if active is None:  # pragma: no cover — the conflicting row vanished mid-tx
-        raise IncidentNotActiveError("incident vanished during attach")
-    active.occurrence_count += 1
-    active.last_seen_at = now
-    active.evidence = evidence
-    return active, "attached"
+        if new_id is not None:
+            incident = session.get(Incident, new_id)
+            assert incident is not None  # just inserted in this transaction
+            return incident, "opened"
+
+        # Conflict → an active incident already exists (the winner's row, now
+        # visible under READ COMMITTED since our insert blocked on its commit).
+        # Attach an occurrence (row-locked — serialize with ack/resolve).
+        active = _active_incident(
+            session, asset_id=run.asset_id, check_id=result.check_id, for_update=True
+        )
+        if active is None:
+            # Resolved in the insert→attach gap — the pair is free again; retry
+            # the open instead of raising (a raise would roll back the WHOLE
+            # run's sync, not just this pair).
+            continue
+        active.occurrence_count += 1
+        active.last_seen_at = func.clock_timestamp()  # breaks created_at equality
+        active.evidence = evidence
+        return active, "attached"
+
+    # Only reachable if the pair flip-flopped open↔resolved on every attempt —
+    # practically impossible; surfaced (and swallowed fail-soft) by the caller.
+    raise IncidentNotActiveError(  # pragma: no cover
+        "incident open/attach did not converge",
+        detail={"asset_id": str(run.asset_id), "check_id": str(result.check_id)},
+    )
 
 
 def _auto_resolve_active(session: Session, *, asset_id: uuid.UUID, check_id: uuid.UUID) -> bool:
     """Auto-resolve the active incident for the pair on a passing result. Returns
     whether one was resolved (``False`` when none is active — the common clean
-    case). ``resolved_by='auto'``; no actor user."""
-    active = _active_incident(session, asset_id=asset_id, check_id=check_id)
+    case). ``resolved_by='auto'``; no actor user. Row-locked (``FOR UPDATE``) so it
+    serializes with a concurrent manual ack/resolve instead of clobbering it."""
+    active = _active_incident(session, asset_id=asset_id, check_id=check_id, for_update=True)
     if active is None:
         return False
     now = _now()
@@ -231,8 +265,16 @@ def acknowledge_incident(
     Idempotent on an already-acknowledged incident (records the newer actor/note);
     a **resolved** incident is a 409 (`IncidentNotActiveError`) — it is closed, and
     reopening is only ever a new incident (never a mutation back to active).
+
+    **Lock-then-recheck**: the row is re-read ``FOR UPDATE`` before the status
+    check, so a resolve (manual or auto) that commits between the caller's stale
+    read and this transition can never be silently reopened — the lost-update
+    race that would otherwise also double-match the active partial unique index
+    (an unhandled 500) once a successor incident exists for the pair.
     """
+    session.refresh(incident, with_for_update=True)
     if incident.status == "resolved":
+        session.rollback()  # release the lock; nothing to write
         raise IncidentNotActiveError(
             "cannot acknowledge a resolved incident", detail={"incident_id": str(incident.id)}
         )
@@ -251,8 +293,16 @@ def resolve_incident(
     session: Session, incident: Incident, *, user_id: uuid.UUID, note: str | None = None
 ) -> Incident:
     """Manually resolve an incident (``open|acknowledged → resolved``, ``resolved_by
-    ='user'``). Manual wins over auto. A double-resolve is a 409."""
+    ='user'``). Manual wins over auto. A double-resolve is a 409.
+
+    Same lock-then-recheck as :func:`acknowledge_incident`: the ``FOR UPDATE``
+    re-read serializes concurrent resolves (manual/manual or auto/manual) so
+    exactly one wins and the loser gets a clean 409 instead of silently
+    overwriting the winner's actor/notes.
+    """
+    session.refresh(incident, with_for_update=True)
     if incident.status == "resolved":
+        session.rollback()  # release the lock; nothing to write
         raise IncidentNotActiveError(
             "incident is already resolved", detail={"incident_id": str(incident.id)}
         )
@@ -285,17 +335,20 @@ def auto_resolve_enabled(session: Session, suite_id: uuid.UUID) -> bool:
 
 
 def _active_incident(
-    session: Session, *, asset_id: uuid.UUID, check_id: uuid.UUID
+    session: Session, *, asset_id: uuid.UUID, check_id: uuid.UUID, for_update: bool = False
 ) -> Incident | None:
     """The single active (open|acknowledged) incident for the pair, if any — the
-    partial unique index guarantees at most one."""
-    return session.scalars(
-        select(Incident).where(
-            Incident.asset_id == asset_id,
-            Incident.check_id == check_id,
-            Incident.status.in_(INCIDENT_ACTIVE_STATUSES),
-        )
-    ).first()
+    partial unique index guarantees at most one. ``for_update`` row-locks it for
+    the mutating callers (attach, auto-resolve) so they serialize with the
+    manual ack/resolve lock instead of losing updates."""
+    stmt = select(Incident).where(
+        Incident.asset_id == asset_id,
+        Incident.check_id == check_id,
+        Incident.status.in_(INCIDENT_ACTIVE_STATUSES),
+    )
+    if for_update:
+        stmt = stmt.with_for_update()
+    return session.scalars(stmt).first()
 
 
 def _most_recent_resolved_id(
@@ -318,7 +371,15 @@ def _most_recent_resolved_id(
 def active_incidents_for_run(session: Session, run: Run) -> dict[uuid.UUID, Incident]:
     """The active incidents on this run's asset keyed by ``check_id`` — the map the
     alert builder joins its failing checks against so a published report references
-    the open incident. Empty when the run has no resolved asset."""
+    the open incident. Empty when the run has no resolved asset.
+
+    The ``suite_id`` filter is consistent with the ``(asset_id, check_id)`` dedup
+    key, not a second key: a check belongs to exactly one suite and an incident's
+    ``suite_id`` is denormalized from the opening run's suite (= the check's
+    suite), so for any check in THIS run's results the pair's incident always
+    carries this run's ``suite_id`` — on a shared asset the filter merely
+    pre-drops sibling suites' incidents, whose checks can never appear in this
+    run's results anyway (they'd be dropped at the builder's check_id join)."""
     if run.asset_id is None:
         return {}
     rows = session.scalars(
@@ -345,8 +406,10 @@ def list_incidents(
     suite_id: uuid.UUID | None = None,
     state: str | None = None,
     limit: int = 100,
+    offset: int = 0,
 ) -> list[Incident]:
-    """Incidents on suites the caller can view, newest first (``created_at`` desc).
+    """Incidents on suites the caller can view, newest first (``created_at`` desc),
+    paginated with ``limit``/``offset`` (the #772 /assets pagination shape).
 
     Visibility derives from suite grants (ADR 0027 / #760): the accessible-suite
     subquery is always applied, so an ``asset_id``/``suite_id`` filter the caller
@@ -357,8 +420,9 @@ def list_incidents(
     stmt = (
         select(Incident)
         .where(Incident.suite_id.in_(accessible))
-        .order_by(Incident.created_at.desc())
+        .order_by(Incident.created_at.desc(), Incident.id.desc())
         .limit(limit)
+        .offset(offset)
     )
     if asset_id is not None:
         stmt = stmt.where(Incident.asset_id == asset_id)

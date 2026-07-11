@@ -62,6 +62,10 @@ def render_text_body(report: RunReport) -> str:
         lines.extend(_check_line(c) for c in failing[:_MAX_CHECK_LINES])
         if len(failing) > _MAX_CHECK_LINES:
             lines.append(f"  …and {len(failing) - _MAX_CHECK_LINES} more")
+    # Minimal incident references (ADR 0034 #761; rich formatting defers to #773).
+    if report.incidents:
+        lines.append("Incidents:")
+        lines.extend(f"  - {render.incident_line(card)}" for card in report.incidents)
     return "\n".join(lines)
 
 
@@ -114,6 +118,14 @@ def render_html_body(report: RunReport) -> str:
         if rows
         else ""
     )
+    # Minimal incident references (ADR 0034 #761; rich formatting defers to #773).
+    incidents_block = (
+        "<p style='margin:12px 0 0;font-size:13px;color:#6b7280;'>"
+        + "<br/>".join(_esc(render.incident_line(card)) for card in report.incidents)
+        + "</p>"
+        if report.incidents
+        else ""
+    )
     button = (
         f"<p style='margin:16px 0 0;'><a href='{_esc(report.run_url)}' "
         f"style='color:#2563eb;'>View run →</a></p>"
@@ -123,7 +135,7 @@ def render_html_body(report: RunReport) -> str:
     return (
         f"<div style='font-family:system-ui,Arial,sans-serif;'>"
         f"<h2 style='color:{colour};margin:0 0 4px;'>{_esc(render_subject(report))}</h2>"
-        f"{details}{checks_table}{button}</div>"
+        f"{details}{checks_table}{incidents_block}{button}</div>"
     )
 
 

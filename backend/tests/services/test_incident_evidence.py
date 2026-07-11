@@ -278,3 +278,87 @@ def test_card_degrades_with_none_check_and_asset(db_session: Any, world: dict[st
     assert card["check"] is None
     assert card["asset"] is None
     assert card["downstream_blast_radius"] == []
+
+
+# ── fix batch (PR #775 review): layer isolation + observed_value stripping ────
+
+
+def test_raising_layer_degrades_to_none_other_layers_intact(
+    db_session: Any, world: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One broken layer (blast radius here) degrades to None with the rest of the
+    card intact — the best-effort docstring made true."""
+    from backend.app.services import incident_evidence
+
+    def boom(*args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError("lineage walk exploded")
+
+    monkeypatch.setattr(incident_evidence, "downstream_assets", boom)
+    run = _run(db_session, world["suite"])
+    result = Result(run_id=run.id, check_id=world["check"].id, status="fail", metric_value=0.5)
+    db_session.add(result)
+    db_session.commit()
+
+    card = build_evidence(
+        db_session, run=run, result=result, check=world["check"], asset=world["asset"]
+    )
+    assert card["downstream_blast_radius"] is None  # the broken layer, degraded
+    assert card["check"]["name"] == "orders_not_null"  # neighbours intact
+    assert card["failing_result"]["status"] == "fail"
+    assert isinstance(card["metric_trend"], list)
+
+
+def test_raising_layer_never_poisons_incident_sync(
+    db_session: Any, world: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A broken evidence layer must not take the run's whole incident sync down —
+    the incident still opens (with the degraded card)."""
+    from sqlalchemy import select
+
+    from backend.app.db.models import Incident
+    from backend.app.services import incident_evidence, incident_service
+
+    def boom(*args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError("lineage walk exploded")
+
+    monkeypatch.setattr(incident_evidence, "downstream_assets", boom)
+    run = _run(db_session, world["suite"])
+    db_session.add(Result(run_id=run.id, check_id=world["check"].id, status="fail"))
+    db_session.commit()
+    incident_service.sync_incidents_for_run(db_session, run_id=run.id)
+
+    incidents = db_session.scalars(
+        select(Incident).where(Incident.suite_id == world["suite"].id)
+    ).all()
+    assert len(incidents) == 1
+    assert incidents[0].evidence["downstream_blast_radius"] is None
+
+
+def test_observed_value_sample_list_keys_stripped(db_session: Any, world: dict[str, Any]) -> None:
+    """[PII] GX can mirror sample-bearing list keys into observed_value; the card
+    must strip them while keeping the sanctioned scalar aggregates (#416)."""
+    secret = "leak-victim@example.com"
+    run = _run(db_session, world["suite"])
+    result = Result(
+        run_id=run.id,
+        check_id=world["check"].id,
+        status="fail",
+        observed_value={
+            "observed_value": 12,
+            "unexpected_count": 3,
+            "unexpected_percent": 1.5,
+            "partial_unexpected_list": [secret, "another@example.com"],
+            "unexpected_index_list": [{"email": secret, "id": 7}],
+        },
+    )
+    db_session.add(result)
+    db_session.commit()
+
+    card = build_evidence(
+        db_session, run=run, result=result, check=world["check"], asset=world["asset"]
+    )
+    observed = card["failing_result"]["observed_value"]
+    assert observed == {"observed_value": 12, "unexpected_count": 3, "unexpected_percent": 1.5}
+    import json
+
+    assert secret not in json.dumps(card)

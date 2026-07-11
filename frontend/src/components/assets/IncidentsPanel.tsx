@@ -11,7 +11,8 @@ import {
 import { useAsyncData } from '../../hooks/useAsyncData';
 import { errorMessage } from '../../utils/errors';
 import { AsyncBody } from '../AsyncBody';
-import { formatTimestamp } from '../results/resultsFormat';
+import type { ResultStatus } from '../../api/runs';
+import { RESULT_STATUS_COLORS, formatTimestamp } from '../results/resultsFormat';
 
 /**
  * Incidents section on the asset page (ADR 0034 #761) — the *active* incidents
@@ -56,12 +57,6 @@ const ACTING_LEVELS = new Set(['edit', 'admin', 'owner']);
 const STATUS_COLOR: Record<string, string> = {
   open: 'red',
   acknowledged: 'gold',
-};
-
-const SEVERITY_COLOR: Record<string, string> = {
-  warn: 'gold',
-  fail: 'red',
-  critical: 'magenta',
 };
 
 function IncidentsTable({
@@ -111,7 +106,13 @@ function IncidentsTable({
       dataIndex: 'latest_status',
       width: 100,
       render: (sev: string | null) =>
-        sev ? <Tag color={SEVERITY_COLOR[sev] ?? 'default'}>{sev}</Tag> : '—',
+        sev ? (
+          // Shared severity→colour map (resultsFormat) so incidents can't drift
+          // from the Results surface's tier colours.
+          <Tag color={RESULT_STATUS_COLORS[sev as ResultStatus] ?? 'default'}>{sev}</Tag>
+        ) : (
+          '—'
+        ),
     },
     {
       title: 'Occurrences',
