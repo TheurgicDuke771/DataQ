@@ -18,7 +18,12 @@ from sqlalchemy import select
 from backend.app.db.models import Asset, Connection, LineageEdge, User
 from backend.app.lineage import edges as edges_mod
 from backend.app.lineage.dbt_manifest import ManifestGraph, parse_manifest
-from backend.app.lineage.edges import downstream_assets, refresh_dbt_edges, upstream_assets
+from backend.app.lineage.edges import (
+    downstream_assets,
+    lineage_neighbourhood,
+    refresh_dbt_edges,
+    upstream_assets,
+)
 
 _FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 _NS = "snowflake://acct"
@@ -159,6 +164,60 @@ def test_upstream_provenance(db_session: Any) -> None:
     assert _STG_ORDERS in ups
     assert _STG_ORDER_LINES in ups
     assert _ORDERS_HEADER in ups
+
+
+# ── neighbourhood graph: hop depth + real edges (#805) ───────────────────────
+
+
+def test_neighbourhood_carries_hop_depth_and_the_real_edges(db_session: Any) -> None:
+    """The graph view needs more than "what is reachable": it needs how far each
+    node sits (to lay it out in hop columns) and which node connects to which (to
+    draw a truthful edge rather than a guessed one)."""
+    conn = _connection(db_session, env="dev")
+    _anchor(db_session, name=_ORDERS_HEADER, env="dev")
+    refresh_dbt_edges(db_session, connection=conn, graph=_graph("v1"))
+
+    orders_header = _asset_id(db_session, _ORDERS_HEADER)
+    stg_orders = _asset_id(db_session, _STG_ORDERS)
+    graph = lineage_neighbourhood(db_session, orders_header)
+
+    # Depth: the staging view is one hop out, the marts it feeds are two.
+    depth_by_name = {a.name: d for a, d in graph.downstream}
+    assert depth_by_name[_STG_ORDERS] == 1
+    assert depth_by_name[_MART_REVENUE] == 2
+    assert depth_by_name[_MART_CUSTOMER] == 2
+    assert graph.upstream == []  # orders_header is a source
+
+    # Edges are real (upstream → downstream), so the UI can draw mart_revenue as
+    # hanging off stg_orders — not off orders_header, which it never touches.
+    mart_revenue = _asset_id(db_session, _MART_REVENUE)
+    assert (orders_header, stg_orders) in graph.edges
+    assert (stg_orders, mart_revenue) in graph.edges
+    assert (orders_header, mart_revenue) not in graph.edges
+
+
+def test_neighbourhood_walks_both_directions_from_the_middle(db_session: Any) -> None:
+    """From a node in the middle of the chain, both walks run and their edges union
+    into one DAG (the up-walk's edges are normalized to upstream→downstream too)."""
+    conn = _connection(db_session, env="dev")
+    _anchor(db_session, name=_ORDERS_HEADER, env="dev")
+    refresh_dbt_edges(db_session, connection=conn, graph=_graph("v1"))
+
+    stg_orders = _asset_id(db_session, _STG_ORDERS)
+    orders_header = _asset_id(db_session, _ORDERS_HEADER)
+    graph = lineage_neighbourhood(db_session, stg_orders)
+
+    assert {a.name for a, _ in graph.upstream} == {_ORDERS_HEADER}
+    assert {a.name for a, _ in graph.downstream} == {_MART_REVENUE, _MART_CUSTOMER}
+    # Discovered by walking UP, but still stored upstream→downstream.
+    assert (orders_header, stg_orders) in graph.edges
+
+
+def test_neighbourhood_of_an_isolated_asset_is_empty(db_session: Any) -> None:
+    """A 0-edge asset yields an empty graph — the UI's empty-state case."""
+    _anchor(db_session, name=_ORDERS_HEADER, env="dev")
+    graph = lineage_neighbourhood(db_session, _asset_id(db_session, _ORDERS_HEADER))
+    assert graph.upstream == [] and graph.downstream == [] and graph.edges == []
 
 
 # ── fail-soft: no namespace anchor ────────────────────────────────────────────
