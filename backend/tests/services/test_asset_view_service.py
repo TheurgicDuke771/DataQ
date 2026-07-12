@@ -7,7 +7,7 @@ Skips without TEST_DATABASE_URL (JSONB/UUID need real Postgres)."""
 from __future__ import annotations
 
 import uuid
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -132,7 +132,7 @@ def _suite_with_run(db: Any, owner: User, *, run_status: str, result_statuses: l
         db.add(Result(run_id=run.id, check_id=check.id, status=status))
     db.commit()
     assert suite.asset_id is not None
-    return db.get(Asset, suite.asset_id)
+    return cast(Asset, db.get(Asset, suite.asset_id))
 
 
 def test_error_result_feeds_connection_health_not_suite_health(db_session: Any) -> None:
