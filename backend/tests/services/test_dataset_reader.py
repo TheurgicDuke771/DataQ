@@ -81,7 +81,7 @@ def _patch_sql(
         yield fake
 
     monkeypatch.setattr(dataset_reader, "_open_connection", _fake_open)
-    monkeypatch.setattr(pd, "read_sql", lambda stmt, conn: frame)
+    monkeypatch.setattr(pd, "read_sql", lambda stmt, conn, **kw: frame)
     return fake
 
 
@@ -131,7 +131,7 @@ def test_sql_table_read_happy_path(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_sql_count_preflight_fails_fast_without_reading(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def _explode(stmt: Any, conn: Any) -> Any:
+    def _explode(stmt: Any, conn: Any, **kw: Any) -> Any:
         raise AssertionError("read_sql must not run when the preflight is over-cap")
 
     fake = FakeSqlConnection(count=11)
@@ -173,7 +173,65 @@ def test_sql_query_spec_wraps_and_limits(monkeypatch: pytest.MonkeyPatch) -> Non
         secret_store=FakeSecretStore(),  # type: ignore[arg-type]
     )
     assert len(df) == 2
-    assert "SELECT COUNT(*) FROM (SELECT id FROM RETAIL.ORDERS) __dataq_src" in fake.statements[0]
+    assert "SELECT COUNT(*) FROM (\nSELECT id FROM RETAIL.ORDERS\n) __dataq_src" in (
+        fake.statements[0]
+    )
+
+
+def test_sql_query_with_trailing_comment_and_semicolons_wraps_safely(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Both pass validate_query but broke the old single-line wrapper: a trailing
+    # line comment swallowed `) __dataq_src LIMIT …`, and a `; ;` tail survived
+    # the old two-step rstrip. The newline-wrapped form neutralizes the comment;
+    # the one-pass strip removes the whole tail.
+    fake = _patch_sql(monkeypatch, count=1, frame=_frame(1))
+    read_dataset(
+        _conn("snowflake"),
+        DatasetSpec(query="SELECT id FROM T -- latest snapshot"),
+        max_rows=10,
+        secret_store=FakeSecretStore(),  # type: ignore[arg-type]
+    )
+    assert "-- latest snapshot\n) __dataq_src" in fake.statements[0]
+
+    fake2 = _patch_sql(monkeypatch, count=1, frame=_frame(1))
+    read_dataset(
+        _conn("snowflake"),
+        DatasetSpec(query="SELECT 1; ;"),
+        max_rows=10,
+        secret_store=FakeSecretStore(),  # type: ignore[arg-type]
+    )
+    assert "SELECT 1;" not in fake2.statements[0]
+    assert "SELECT 1\n" in fake2.statements[0]
+
+
+def test_sql_requires_secret_table_and_uc_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_sql(monkeypatch, count=1, frame=_frame(1))
+    # Credential-less SQL connection → the same clean 422 as the flat-file path.
+    with pytest.raises(DatasetReadUnsupportedError, match="credential"):
+        read_dataset(
+            _conn("snowflake", secret_ref=None),
+            DatasetSpec(table="t", schema="s"),
+            max_rows=10,
+            secret_store=FakeSecretStore(),  # type: ignore[arg-type]
+        )
+    # Neither query nor table → comparison-branded 422, not a profiler error.
+    with pytest.raises(DatasetReadUnsupportedError, match="table"):
+        read_dataset(
+            _conn("snowflake"),
+            DatasetSpec(schema="s"),
+            max_rows=10,
+            secret_store=FakeSecretStore(),  # type: ignore[arg-type]
+        )
+    # UC without a catalog would silently resolve against the session default
+    # catalog (the engine URL pins none) — refuse instead.
+    with pytest.raises(DatasetReadUnsupportedError, match="catalog"):
+        read_dataset(
+            _conn("unity_catalog"),
+            DatasetSpec(table="t", schema="s"),
+            max_rows=10,
+            secret_store=FakeSecretStore(),  # type: ignore[arg-type]
+        )
 
 
 def test_sql_query_revalidated_read_only_at_read_time(

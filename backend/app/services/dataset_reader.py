@@ -25,6 +25,7 @@ to operational `error` results; the authoring/dry-run paths surface them as
 
 from __future__ import annotations
 
+import string
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -113,10 +114,13 @@ def _wrapped_query(spec: DatasetSpec) -> str:
     Re-validated here (defence in depth — author-time validation already ran):
     a single read-only SELECT/WITH statement, so interpolating it into the
     COUNT/LIMIT wrappers below cannot smuggle a second statement or a write.
+    The whitespace+semicolon tail is stripped in ONE pass (matching
+    `validate_query`'s own trailing-chars rule — `.rstrip().rstrip(";")` would
+    leave `SELECT 1; ` from a `; ;` tail and break the wrapper).
     """
     assert spec.query is not None
     validate_query(spec.query)
-    return spec.query.rstrip().rstrip(";")
+    return spec.query.strip().rstrip(string.whitespace + ";")
 
 
 def _sql_read(
@@ -124,19 +128,40 @@ def _sql_read(
 ) -> Any:
     import pandas as pd
 
+    if not connection.secret_ref:
+        # Pre-check so a credential-less connection is the same clean 422 the
+        # flat-file path gives, not `_open_connection`'s bare ValueError 500.
+        raise DatasetReadUnsupportedError(
+            "connection has no stored credential",
+            detail={"connection_id": str(connection.id)},
+        )
     count_stmt: Any
     select_stmt: Any
     if spec.query is not None:
         q = _wrapped_query(spec)
         # Interpolation is safe: `q` passed the read-only single-statement
-        # validator (ADR 0019) at author time AND immediately above.
-        count_stmt = sa.text(f"SELECT COUNT(*) FROM ({q}) __dataq_src")  # noqa: S608
+        # validator (ADR 0019) at author time AND immediately above. The
+        # newline before the closing paren keeps a trailing `-- comment` (legal
+        # per the validator) from swallowing the wrapper's tail.
+        count_stmt = sa.text(f"SELECT COUNT(*) FROM (\n{q}\n) __dataq_src")  # noqa: S608
         select_stmt = sa.text(
-            f"SELECT * FROM ({q}) __dataq_src LIMIT {int(max_rows) + 1}"  # noqa: S608
+            f"SELECT * FROM (\n{q}\n) __dataq_src LIMIT {int(max_rows) + 1}"  # noqa: S608
         )
     else:
+        if not spec.table:
+            raise DatasetReadUnsupportedError(
+                "SQL comparison side needs a table (or a query)", detail={"spec": "table"}
+            )
+        if connection.type == "unity_catalog" and not spec.catalog:
+            # The UC engine URL deliberately pins no catalog (profiler parity) —
+            # an unqualified 2-part name would resolve against the session
+            # default catalog and silently read the wrong table.
+            raise DatasetReadUnsupportedError(
+                "a Unity Catalog comparison side needs a catalog",
+                detail={"spec": "catalog"},
+            )
         schema = resolve_effective_schema(connection, spec.schema)
-        source = _table(schema, spec.table or "", spec.catalog)
+        source = _table(schema, spec.table, spec.catalog)
         count_stmt = sa.select(sa.func.count()).select_from(source)
         select_stmt = sa.select(sa.text("*")).select_from(source).limit(max_rows + 1)
 
@@ -144,7 +169,11 @@ def _sql_read(
         count = int(conn.execute(count_stmt).scalar_one())
         if count > max_rows:
             raise _too_large(count, max_rows, side_hint="dataset")
-        df = pd.read_sql(select_stmt, conn)
+        # Arrow-backed dtypes for parity with the flat-file/Iceberg readers —
+        # cross-side dtype/null-semantics normalization is the #793 engine's
+        # contract, but the reader must not hand it numpy-vs-arrow skew of its
+        # own making (NULL ints → float64+NaN on one side only).
+        df = pd.read_sql(select_stmt, conn, dtype_backend="pyarrow")
     # Belt over the braces: the COUNT is racy (rows can land between preflight
     # and read) and the LIMIT is max_rows+1 exactly so growth is detectable.
     if len(df) > max_rows:
