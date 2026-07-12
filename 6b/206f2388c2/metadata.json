@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "6b206f2388c2",
+  "strategy": "manual-commit",
+  "branch": "pr805-merge",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/scripts/demo_data.py",
+    "frontend/e2e/lineage-graph.spec.ts",
+    "frontend/src/pages/AssetDetail.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/6b/206f2388c2/0/metadata.json",
+      "transcript": "/6b/206f2388c2/0/full.jsonl",
+      "compact_transcript": "/6b/206f2388c2/0/transcript.jsonl",
+      "content_hash": "/6b/206f2388c2/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 98,
+    "cache_creation_tokens": 46645,
+    "cache_read_tokens": 27984132,
+    "output_tokens": 28087,
+    "api_call_count": 48
+  }
+}
