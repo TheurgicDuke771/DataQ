@@ -66,7 +66,7 @@ class AdlsConnectionAdapter:
     def validate_config(self, raw: dict[str, Any]) -> AdlsConfig:
         return AdlsConfig.model_validate(raw)
 
-    def test(self, raw: dict[str, Any], secret: str) -> None:
+    def test(self, raw: dict[str, Any], secret: str, **_: Any) -> None:
         """Read the container's properties via SAS; raise on any failure.
 
         ``secret`` is the SAS token. Retries are disabled so an auth/endpoint

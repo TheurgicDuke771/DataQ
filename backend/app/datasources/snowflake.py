@@ -282,7 +282,7 @@ class SnowflakeConnectionAdapter:
     def validate_config(self, raw: dict[str, Any]) -> SnowflakeConfig:
         return SnowflakeConfig.model_validate(raw)
 
-    def test(self, raw: dict[str, Any], secret: str) -> None:
+    def test(self, raw: dict[str, Any], secret: str, **_: Any) -> None:
         """Open a connection and run ``SELECT 1``; raise on any failure.
 
         Deliberately GX-free — a lightweight connectivity probe, not a suite run.

@@ -88,7 +88,7 @@ class AirflowConnectionAdapter:
     def validate_config(self, raw: dict[str, Any]) -> AirflowConfig:
         return AirflowConfig.model_validate(raw)
 
-    def test(self, raw: dict[str, Any], secret: str) -> None:
+    def test(self, raw: dict[str, Any], secret: str, **_: Any) -> None:
         """GET the DAGs list (limit 1) with the credential; raise on any failure.
 
         ``secret`` is the Bearer token (token auth) or the password (basic auth,

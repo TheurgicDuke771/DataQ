@@ -14,6 +14,7 @@ request/response shapes and dependency wiring.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Mapping
 from typing import Any
 
 from pydantic import ValidationError
@@ -65,6 +66,32 @@ class ConnectionInUseError(DataQError):
     # dependents instead of letting the raw FK violation 500.
     status_code = 409
     code = "connection_in_use"
+
+
+def _extra_secrets(config: Mapping[str, Any], secret_store: SecretStore) -> dict[str, str]:
+    """Resolve every *additional* credential a connection's config names, by convention.
+
+    Some types need more than one credential (an Iceberg SQL catalog: the storage key
+    AND the catalog DB password). Rather than smuggle the second into non-secret
+    `config` — the #754/#826 bug — config holds only the SecretStore **key name**, in a
+    field suffixed ``_secret_name``, and the caller (here) resolves it. `foo_secret_name`
+    → the adapter receives ``foo_secret=<value>``.
+
+    Generic on purpose: no branching on `connection.type`, so the seam keeps its "the
+    caller resolves secrets, adapters never touch the store" invariant (ADR 0011) no
+    matter how many credentials a future type needs. A named-but-missing secret is left
+    out rather than raising, so `test()` surfaces it as a connectivity failure with the
+    adapter's own message instead of a 500.
+    """
+    out: dict[str, str] = {}
+    for key, value in config.items():
+        if not key.endswith("_secret_name") or not isinstance(value, str) or not value:
+            continue
+        try:
+            out[key.removesuffix("_name")] = secret_store.get(value)
+        except SecretNotFoundError:
+            log.warning("connection_extra_secret_missing", secret_field=key)
+    return out
 
 
 def _validated_config(conn_type: str, config: dict[str, Any]) -> None:
@@ -459,7 +486,7 @@ def test_connection(
         ) from exc
 
     try:
-        adapter.test(dict(conn.config), secret)
+        adapter.test(dict(conn.config), secret, **_extra_secrets(conn.config, secret_store))
     except Exception as exc:
         log.warning(
             "connection_test_failed",

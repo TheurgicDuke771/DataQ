@@ -43,6 +43,22 @@ An Iceberg connection needs two things the flat-file connection lacks: a **catal
 
 **Chosen: Option A.** It ships inside the existing `ConnectionAdapter`/`CheckRunner` seams with zero new cross-connection machinery, and it keeps lifecycles independent — which matches the real usage pattern: a user may register an ADLS path for **flat files and Iceberg tables both**, then later delete the flat-file connection and use that storage **only for Iceberg going forward**. Under Option A that deletion is clean — the `iceberg` connection owns its own storage credential and is unaffected, and the existing cascade-delete on the connection FK (ADR 0020) removes only the flat-file connection's own suites/checks. Under Option B the same action would either strand the Iceberg connection's storage credential or cascade into it. Credential duplication is the accepted cost.
 
+#### 3a. Amendment (2026-07-12): "one `secret_ref` per connection" was **wrong for a SQL catalog** — #754 / #826
+
+Option A assumed one credential per connection. A **SQL catalog** needs *two*: the storage key **and** the catalog DB password. With the single `secret_ref` slot taken by the storage key, the catalog password had nowhere legitimate to go — so it was smuggled inline into `config.catalog_uri`.
+
+`config` is **not** a secret. It is persisted in plaintext JSONB, returned verbatim by `GET /connections`, and — because ADR 0034 derives the Iceberg asset's OpenLineage namespace from `catalog_uri` — it was copied into `assets.namespace`, **rendered as label text in the UI** (including as a tree-folder name, beside a Copy button), shipped to third-party catalogs inside a lineage query string, and logged in plaintext. A credential in `config` leaks *by construction*.
+
+**Amended decision.** A connection may name **additional** secrets in config, by convention:
+
+- `config.<x>_secret_name` holds a **SecretStore key name** (an identifier, not a credential — safe in plaintext config). Iceberg uses `catalog_secret_name`.
+- `catalog_uri` must ship **credential-less** (username kept — it is an identifier). `IcebergConfig` now **rejects** a URI carrying a password, pointing the author at the secret slot.
+- The **caller** resolves every `*_secret_name` and passes the values to the adapter as keyword arguments; the credential is injected into the URI at catalog-load time and never persisted. This preserves the ADR 0011 seam invariant — *adapters never touch the SecretStore* — while scaling past one credential.
+- The namespace is derived from the **stripped** URI, which additionally makes the asset identity **stable across a password rotation** (previously, rotating the password silently forked the asset into a new row, orphaning its lineage and incidents).
+
+Migration `c9d0e1f2a3b4` repairs rows written before the guard, updating `assets.namespace` **in place** so `assets.id` — and every FK to it — survives.
+
+
 **Option B is recorded as the future evolution.** It was deferred to ADR 0015 (then pending); [ADR 0015](0015-two-connection-comparison-check-model.md) has since been written (2026-07-11) and settled the two-connection question **at the check grain only** — it explicitly declined to generalise "a connection that references another connection" (its §6), so Option B (separate catalog + storage credential connections) now awaits its own future ADR. That generalisation remains out of scope here.
 
 ### 4. Why we are NOT standing up Snowflake Iceberg tables / Databricks foreign catalog in this spike

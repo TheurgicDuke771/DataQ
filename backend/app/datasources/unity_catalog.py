@@ -69,7 +69,7 @@ class UnityCatalogConnectionAdapter:
     def validate_config(self, raw: dict[str, Any]) -> UnityCatalogConfig:
         return UnityCatalogConfig.model_validate(raw)
 
-    def test(self, raw: dict[str, Any], secret: str) -> None:
+    def test(self, raw: dict[str, Any], secret: str, **_: Any) -> None:
         """Open a SQL-Warehouse connection and run ``SELECT 1``; raise on failure.
 
         ``secret`` is the Databricks PAT. Deliberately GX/DQX-free — a lightweight

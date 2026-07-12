@@ -316,7 +316,9 @@ _ICEBERG_CONFIG = {
 
 def test_iceberg_count_preflight_and_read(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        dataset_reader, "load_iceberg_table", lambda cfg, secret, ident: FakeIcebergTable(4)
+        dataset_reader,
+        "load_iceberg_table",
+        lambda cfg, secret, ident, catalog_secret=None: FakeIcebergTable(4),
     )
     monkeypatch.setattr(
         dataset_reader, "read_iceberg_dataframe", lambda cfg, secret, ident, **kw: _frame(4)
@@ -334,7 +336,9 @@ def test_iceberg_over_cap_fails_before_materializing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        dataset_reader, "load_iceberg_table", lambda cfg, secret, ident: FakeIcebergTable(11)
+        dataset_reader,
+        "load_iceberg_table",
+        lambda cfg, secret, ident, catalog_secret=None: FakeIcebergTable(11),
     )
 
     def _explode(*a: Any, **kw: Any) -> Any:
