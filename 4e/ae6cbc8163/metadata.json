@@ -3,8 +3,9 @@
   "checkpoint_id": "4eae6cbc8163",
   "strategy": "manual-commit",
   "branch": "docs/adr-0015-comparison-check-model",
-  "checkpoints_count": 1,
+  "checkpoints_count": 24,
   "files_touched": [
+    "context/post-v1-roadmap.md",
     "docs/adr/0014-reconciliation-comparison-check-kind.md",
     "docs/adr/0015-two-connection-comparison-check-model.md",
     "docs/adr/0030-iceberg-native-read-path.md",
@@ -17,13 +18,20 @@
       "compact_transcript": "/4e/ae6cbc8163/0/transcript.jsonl",
       "content_hash": "/4e/ae6cbc8163/0/content_hash.txt",
       "prompt": "/4e/ae6cbc8163/0/prompt.txt"
+    },
+    {
+      "metadata": "/4e/ae6cbc8163/1/metadata.json",
+      "transcript": "/4e/ae6cbc8163/1/full.jsonl",
+      "compact_transcript": "/4e/ae6cbc8163/1/transcript.jsonl",
+      "content_hash": "/4e/ae6cbc8163/1/content_hash.txt",
+      "prompt": "/4e/ae6cbc8163/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 21,
-    "cache_creation_tokens": 169842,
-    "cache_read_tokens": 1750763,
-    "output_tokens": 15870,
-    "api_call_count": 15
+    "input_tokens": 118373,
+    "cache_creation_tokens": 8169005,
+    "cache_read_tokens": 245793315,
+    "output_tokens": 705924,
+    "api_call_count": 819
   }
 }
