@@ -63,7 +63,7 @@ def test_task_coerces_none_result_to_zero(monkeypatch: Any) -> None:
         def close(self) -> None:
             pass
 
-    monkeypatch.setattr(lineage_pull, "get_lineage_provider", lambda: object())
+    monkeypatch.setattr(lineage_pull, "get_lineage_provider", object)
     monkeypatch.setattr(tasks, "get_session", lambda: _Session())
     monkeypatch.setattr(lineage_pull, "refresh_pulled_edges", lambda *a, **k: None)
 
