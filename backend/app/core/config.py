@@ -131,6 +131,14 @@ class Settings(BaseSettings):
         1  # count of trusted proxies appending XFF; pick entry hops-from-right
     )
 
+    # ── Comparison checks (ADR 0015) ─────────────────────────────────────────
+    # Default row cap per comparison side. Both sides materialize in worker
+    # memory for the diff (#793), so this is a memory guardrail, not a tuning
+    # knob — over-cap runs fail fast (never a silently truncated diff). A check
+    # may override via config.max_rows; scale-aware execution (G-b) is the path
+    # past in-memory limits.
+    comparison_max_rows: int = 100_000
+
     # Workspace-admin allowlist — emails permitted to use the /admin read
     # endpoints (all-suites / all-users / access overview). Single-tenant, so this
     # is the whole-workspace admin set, distinct from the per-suite
