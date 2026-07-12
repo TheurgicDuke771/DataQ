@@ -7,11 +7,12 @@ expectation class (#651 — the same translation the runner performs, pulled
 forward so garbage 422s instead of persisting and only failing at run time);
 validation against live data remains the dry-run path, not CRUD.
 
-v1 monitor-kind limit (ADR 0012): although the schema CHECK reserves
-`freshness / volume / schema_drift / anomaly / comparison`, v1 only *runs*
-`expectation`. The API therefore refuses to author a non-`expectation` check —
-a reserved kind is schema-valid for forward-compat but not yet runnable, so
-letting a user create one would just produce a check that can never execute.
+Kind gating (ADR 0012): the schema CHECK reserves `freshness / volume /
+schema_drift / anomaly / comparison`; authorable today are `expectation`, the
+freshness/volume monitor kinds, and `comparison` (ADR 0015 — source ref +
+config validated here; its runner lands with #794, until then it yields an
+`error` result). `schema_drift` / `anomaly` remain schema-valid but refused —
+authoring one would produce a check that can never execute.
 
 FastAPI-free like the sibling services: takes a `Session`, returns ORM models,
 raises `DataQError` subclasses.
@@ -38,21 +39,38 @@ from backend.app.datasources.monitors import (
     monitor_expectation_type,
     validate_monitor_config,
 )
-from backend.app.db.models import Check, CheckVersion, Connection, Result, Run, Suite
+from backend.app.db.models import (
+    COMPARISON_KIND,
+    ORCHESTRATION_PROVIDERS,
+    Check,
+    CheckVersion,
+    Connection,
+    Result,
+    Run,
+    Suite,
+)
 from backend.app.services.custom_sql import (
     SQL_QUERYABLE_TYPES,
+    CustomSqlInvalidError,
     is_custom_sql,
     validate_custom_sql_check,
+    validate_query,
 )
+from backend.app.services.run_target import SuiteTargetInvalidError, resolve_target
 from backend.app.services.suite_service import get_suite
 
 log = get_logger(__name__)
 
-# v1 authors GX expectations + the freshness/volume monitor kinds (ADR 0012,
-# pulled into v1 per the 2026-06-29 amendment). The remaining reserved kinds
-# (schema_drift / anomaly / comparison) are schema-valid but have no runner yet,
-# so CRUD still refuses them.
-_V1_SUPPORTED_KINDS = {"expectation", *MONITOR_KINDS}
+# Authorable kinds: GX expectations, the freshness/volume monitor kinds (ADR
+# 0012, pulled into v1 per the 2026-06-29 amendment), and `comparison` (ADR
+# 0015 — authorable now, runnable when the #794 runner lands; until then a
+# comparison check yields an `error` result, see run_service). The remaining
+# reserved kinds (schema_drift / anomaly) have no model yet, so CRUD refuses.
+_V1_SUPPORTED_KINDS = {"expectation", *MONITOR_KINDS, COMPARISON_KIND}
+
+# Canonical expectation_type for a comparison check (mirrors `monitor:<kind>`).
+# `comparison:columns` (FDC's per-column grain) is reserved, not yet authorable.
+COMPARISON_EXPECTATION_TYPE = "comparison:records"
 
 # Datasources whose runner implements `run_monitors` (a `MonitorRunner`) — the
 # author-time gate for freshness/volume checks. The SQL datasources compute the
@@ -172,6 +190,133 @@ def _has_positive_threshold(fail: Decimal | None, critical: Decimal | None) -> b
     return (fail is not None and fail > 0) or (critical is not None and critical > 0)
 
 
+def _validate_comparison_keys(keys: Any) -> None:
+    """`config.keys` — the join keys the diff matches rows on (ADR 0015 §1).
+
+    A non-empty list; each entry is either a column name (same on both sides) or
+    a `{"source": ..., "target": ...}` mapping when the names differ.
+    """
+    if not isinstance(keys, list) or not keys:
+        raise CheckConfigInvalidError(
+            "a comparison check needs config.keys — a non-empty list of join key columns",
+            detail={"field": "config.keys"},
+        )
+    for i, key in enumerate(keys):
+        if isinstance(key, str) and key.strip():
+            continue
+        if (
+            isinstance(key, dict)
+            and isinstance(key.get("source"), str)
+            and key["source"].strip()
+            and isinstance(key.get("target"), str)
+            and key["target"].strip()
+        ):
+            continue
+        raise CheckConfigInvalidError(
+            "each comparison join key must be a column name or a "
+            '{"source": ..., "target": ...} mapping of non-empty names',
+            detail={"field": f"config.keys[{i}]"},
+        )
+
+
+def _validate_side_query(query: Any, *, connection_type: str, field: str) -> None:
+    """A per-side SQL projection must be read-only (ADR 0019 rules) and its side's
+    connection must be SQL-queryable (Iceberg/flat-file reads are native, not SQL)."""
+    if connection_type not in SQL_QUERYABLE_TYPES:
+        raise CheckConfigInvalidError(
+            f"{field}: a comparison SQL query requires a SQL datasource, "
+            f"not {connection_type!r}",
+            detail={"field": field, "supported": sorted(SQL_QUERYABLE_TYPES)},
+        )
+    try:
+        validate_query(query)
+    except CustomSqlInvalidError as exc:
+        raise CheckConfigInvalidError(
+            f"invalid comparison query in {field}: {exc.message}",
+            detail={"field": field, **(exc.detail or {})},
+        ) from exc
+
+
+def validate_comparison_check(
+    session: Session,
+    *,
+    config: dict[str, Any],
+    expectation_type: str,
+    source_connection_id: uuid.UUID | None,
+    suite_connection_type: str,
+) -> None:
+    """Author-time validation for `kind='comparison'` checks (ADR 0015). All 422s.
+
+    The suite supplies the target under test; the check supplies the source
+    (baseline): a connection ref + a suite-target-shaped dataset spec in
+    `config.source`. Either side may instead/additionally carry a read-only SQL
+    projection (`config.source.query` / `config.target_query`), gated exactly
+    like custom-SQL checks (ADR 0019). Cross-env source↔target is allowed by
+    design (DEV-vs-QA parity is a headline use case), so `env` is not compared.
+    """
+    if expectation_type != COMPARISON_EXPECTATION_TYPE:
+        raise CheckConfigInvalidError(
+            f"a comparison check's expectation_type must be "
+            f"{COMPARISON_EXPECTATION_TYPE!r}, not {expectation_type[:_ERROR_ECHO_MAX_CHARS]!r}",
+            detail={"expectation_type": expectation_type[:_ERROR_ECHO_MAX_CHARS]},
+        )
+    if source_connection_id is None:
+        raise CheckConfigInvalidError(
+            "a comparison check needs source_connection_id — the baseline connection "
+            "the suite's dataset is compared against",
+            detail={"field": "source_connection_id"},
+        )
+    source_conn = session.get(Connection, source_connection_id)
+    if source_conn is None:
+        raise CheckConfigInvalidError(
+            "source connection not found",
+            detail={"source_connection_id": str(source_connection_id)},
+        )
+    if source_conn.type in ORCHESTRATION_PROVIDERS:
+        # Orchestration providers are never queryable datasources (CLAUDE.md §4).
+        raise CheckConfigInvalidError(
+            "orchestration providers cannot be a comparison source; pick a datasource "
+            "connection",
+            detail={"source_connection_id": str(source_connection_id), "type": source_conn.type},
+        )
+
+    source_spec = config.get("source")
+    if not isinstance(source_spec, dict):
+        raise CheckConfigInvalidError(
+            "a comparison check needs config.source — the source dataset spec "
+            "(same shape as a suite target)",
+            detail={"field": "config.source"},
+        )
+    if "query" in source_spec:
+        _validate_side_query(
+            source_spec["query"], connection_type=source_conn.type, field="config.source.query"
+        )
+    else:
+        try:
+            resolve_target(source_conn.type, source_spec)
+        except SuiteTargetInvalidError as exc:
+            raise CheckConfigInvalidError(
+                f"invalid config.source for a {source_conn.type} source: {exc.message}",
+                detail={"field": "config.source", **(exc.detail or {})},
+            ) from exc
+
+    if "target_query" in config:
+        _validate_side_query(
+            config["target_query"],
+            connection_type=suite_connection_type,
+            field="config.target_query",
+        )
+
+    _validate_comparison_keys(config.get("keys"))
+
+    max_rows = config.get("max_rows")
+    if max_rows is not None and not (isinstance(max_rows, int) and max_rows > 0):
+        raise CheckConfigInvalidError(
+            "config.max_rows must be a positive integer when set",
+            detail={"field": "config.max_rows"},
+        )
+
+
 # Longest string allowed anywhere in an expectation config (keys AND values).
 # Generous for real kwargs — a long regex or value-set member runs fine on the
 # worker, so the cap must not reject anything the runner would execute — while
@@ -286,6 +431,7 @@ def record_check_version(
         name=check.name,
         kind=check.kind,
         expectation_type=check.expectation_type,
+        source_connection_id=check.source_connection_id,
         config=check.config,
         warn_threshold=check.warn_threshold,
         fail_threshold=check.fail_threshold,
@@ -307,6 +453,7 @@ def create_check(
     warn_threshold: Decimal | None,
     fail_threshold: Decimal | None,
     critical_threshold: Decimal | None,
+    source_connection_id: uuid.UUID | None = None,
     actor_id: uuid.UUID | None = None,
 ) -> Check:
     """Create a check in a suite, recording its first version (#280).
@@ -316,6 +463,11 @@ def create_check(
     """
     suite = get_suite(session, suite_id)  # 404 if the suite is missing
     validate_kind(kind)
+    if kind != COMPARISON_KIND and source_connection_id is not None:
+        raise CheckConfigInvalidError(
+            "only comparison checks carry a source connection (ADR 0015)",
+            detail={"kind": kind, "field": "source_connection_id"},
+        )
     if kind in MONITOR_KINDS:
         validate_monitor_check(
             kind,
@@ -324,6 +476,14 @@ def create_check(
             connection_type=_connection_type(session, suite),
             fail_threshold=fail_threshold,
             critical_threshold=critical_threshold,
+        )
+    elif kind == COMPARISON_KIND:
+        validate_comparison_check(
+            session,
+            config=config,
+            expectation_type=expectation_type,
+            source_connection_id=source_connection_id,
+            suite_connection_type=_connection_type(session, suite),
         )
     elif is_custom_sql(expectation_type):
         validate_custom_sql_check(
@@ -339,6 +499,7 @@ def create_check(
         name=name,
         kind=kind,
         expectation_type=expectation_type,
+        source_connection_id=source_connection_id,
         config=config,
         warn_threshold=warn_threshold,
         fail_threshold=fail_threshold,
@@ -382,15 +543,23 @@ def update_check(
     warn_threshold: Decimal | None = None,
     fail_threshold: Decimal | None = None,
     critical_threshold: Decimal | None = None,
+    source_connection_id: uuid.UUID | None = None,
     actor_id: uuid.UUID | None = None,
 ) -> Check:
     """Partial update, snapshotting the post-update state as a new version (#280).
 
     Follows the codebase PATCH convention (connections / suites): a `None`
     argument means "not provided", so an omitted field is left unchanged. v1 has
-    no clear-to-NULL path for thresholds; recreate the check to drop one.
+    no clear-to-NULL path for thresholds; recreate the check to drop one. The
+    same applies to `source_connection_id` (a comparison check can be repointed,
+    never cleared — the kind requires it, ADR 0015).
     """
     check = get_check(session, suite_id, check_id)
+    if source_connection_id is not None and check.kind != COMPARISON_KIND:
+        raise CheckConfigInvalidError(
+            "only comparison checks carry a source connection (ADR 0015)",
+            detail={"kind": check.kind, "field": "source_connection_id"},
+        )
     # Compute the effective post-patch values and validate them BEFORE touching
     # the ORM object: a rejected update must leave nothing dirty in the session
     # (mutate-then-raise would let a later commit on the same session persist
@@ -414,6 +583,19 @@ def update_check(
             fail_threshold=new_fail,
             critical_threshold=new_critical,
         )
+    elif check.kind == COMPARISON_KIND:
+        suite = get_suite(session, suite_id)
+        validate_comparison_check(
+            session,
+            config=new_config,
+            expectation_type=new_expectation_type,
+            source_connection_id=(
+                source_connection_id
+                if source_connection_id is not None
+                else check.source_connection_id
+            ),
+            suite_connection_type=_connection_type(session, suite),
+        )
     elif is_custom_sql(new_expectation_type):
         suite = get_suite(session, suite_id)
         validate_custom_sql_check(
@@ -434,6 +616,8 @@ def update_check(
         check.expectation_type = expectation_type
     if config is not None:
         check.config = config
+    if source_connection_id is not None:
+        check.source_connection_id = source_connection_id
     if warn_threshold is not None:
         check.warn_threshold = warn_threshold
     if fail_threshold is not None:

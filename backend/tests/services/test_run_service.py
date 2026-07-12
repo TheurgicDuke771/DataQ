@@ -183,6 +183,28 @@ def test_run_outcomes_unsupported_kind_raises() -> None:
         )
 
 
+def test_run_outcomes_comparison_errors_without_failing_siblings() -> None:
+    # ADR 0015: comparison is authorable before its runner ships (#794). A
+    # comparison check must yield a per-check operational `error` outcome — in
+    # order — while its expectation siblings still evaluate normally.
+    comparison = _monitor_check("comparison", {"source": {"table": "T"}, "keys": ["id"]})
+    comparison.expectation_type = "comparison:records"
+    checks = [_checks(1)[0], comparison, _checks(1)[0]]
+    runner = FakeRunner(
+        outcome=SuiteOutcome(
+            success=True,
+            checks=[CheckOutcome("e1", success=True), CheckOutcome("e2", success=True)],
+        )
+    )
+
+    outcomes = run_service._run_outcomes(runner, table="T", schema=None, checks=checks)
+
+    assert [o.expectation_type for o in outcomes] == ["e1", "comparison:records", "e2"]
+    assert outcomes[1].errored and not outcomes[1].success
+    assert outcomes[1].error_message is not None and "#794" in outcomes[1].error_message
+    assert outcomes[0].success and outcomes[2].success
+
+
 # ───────────────────────── success path ────────────────────────────
 
 

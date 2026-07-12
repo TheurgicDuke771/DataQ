@@ -34,10 +34,14 @@ router = APIRouter(tags=["checks"])
 
 class CheckCreate(ApiModel):
     name: str = Field(min_length=1, max_length=256)
-    # v1 authors only 'expectation' (service enforces; reserved kinds 422).
+    # Authorable kinds: expectation, freshness/volume, comparison (service
+    # enforces; remaining reserved kinds 422).
     kind: str = "expectation"
     expectation_type: str = Field(min_length=1, max_length=128)
     config: dict[str, Any] = Field(default_factory=dict)
+    # Comparison source ref (ADR 0015) — required for kind='comparison',
+    # rejected on any other kind (service enforces).
+    source_connection_id: uuid.UUID | None = None
     warn_threshold: Decimal | None = None
     fail_threshold: Decimal | None = None
     critical_threshold: Decimal | None = None
@@ -47,6 +51,9 @@ class CheckUpdate(ApiModel):
     name: str | None = Field(default=None, min_length=1, max_length=256)
     expectation_type: str | None = Field(default=None, min_length=1, max_length=128)
     config: dict[str, Any] | None = None
+    # Repoint a comparison check's source (never clearable — the kind requires
+    # it); 422 on any other kind.
+    source_connection_id: uuid.UUID | None = None
     warn_threshold: Decimal | None = None
     fail_threshold: Decimal | None = None
     critical_threshold: Decimal | None = None
@@ -60,6 +67,7 @@ class CheckRead(ApiModel):
     name: str
     kind: str
     expectation_type: str
+    source_connection_id: uuid.UUID | None = None
     config: dict[str, Any]
     warn_threshold: float | None
     fail_threshold: float | None
@@ -92,6 +100,7 @@ def create_check(
         warn_threshold=payload.warn_threshold,
         fail_threshold=payload.fail_threshold,
         critical_threshold=payload.critical_threshold,
+        source_connection_id=payload.source_connection_id,
         actor_id=current_user.id,
     )
     return CheckRead.model_validate(check)
@@ -149,6 +158,7 @@ def update_check(
         warn_threshold=payload.warn_threshold,
         fail_threshold=payload.fail_threshold,
         critical_threshold=payload.critical_threshold,
+        source_connection_id=payload.source_connection_id,
         actor_id=current_user.id,
     )
     return CheckRead.model_validate(check)
@@ -226,6 +236,7 @@ class CheckVersionRead(ApiModel):
     name: str
     kind: str
     expectation_type: str
+    source_connection_id: uuid.UUID | None = None
     config: dict[str, Any]
     warn_threshold: float | None
     fail_threshold: float | None
@@ -339,7 +350,9 @@ def dry_run_check(
     )
     return CheckDryRunResult(
         status=outcome.status,
-        metric_value=outcome.metric_value,
+        # Explicit Decimal→float: the response model wants clean JSON numbers
+        # (pydantic coerced this implicitly; typed now so checkers see it too).
+        metric_value=float(outcome.metric_value) if outcome.metric_value is not None else None,
         observed_value=outcome.observed_value,
         expected_value=outcome.expected_value,
     )
