@@ -71,9 +71,12 @@ def worst_severity(statuses: Iterable[str]) -> str | None:
     return max(present, key=lambda s: SEVERITY_RANK[s]) if present else None
 
 
-# Monitor-kind discriminator (ADR 0012; `comparison` reserved by ADR 0014). v1
-# only ever writes 'expectation'; the rest are constraint-valid but unused.
+# Monitor-kind discriminator (ADR 0012; `comparison` reserved by ADR 0014,
+# modeled by ADR 0015). v1 wrote only 'expectation'; freshness/volume shipped
+# post-v1, `comparison` authors as of ADR 0015 (runner in #794); the rest are
+# constraint-valid but unused.
 CHECK_KINDS = ("expectation", "freshness", "volume", "schema_drift", "anomaly", "comparison")
+COMPARISON_KIND = "comparison"
 PIPELINE_RUN_STATUSES = ("queued", "running", "succeeded", "failed", "cancelled")
 ORCHESTRATION_PROVIDERS = ("adf", "airflow", "dbt")
 PERMISSIONS = ("view", "edit", "admin")
@@ -362,7 +365,15 @@ class Check(Base):
     __tablename__ = "checks"
     __table_args__ = (
         _in_check("kind", CHECK_KINDS, "kind_valid"),
+        # ADR 0015: a comparison check carries its source (baseline) ref; every
+        # other kind must not. Presence ⇔ kind, DB-enforced so the run path can
+        # trust a comparison row always has a source.
+        CheckConstraint(
+            "(kind = 'comparison') = (source_connection_id IS NOT NULL)",
+            name="comparison_source_presence",
+        ),
         Index("ix_checks_suite_id", "suite_id"),
+        Index("ix_checks_source_connection_id", "source_connection_id"),
     )
 
     id: Mapped[uuid.UUID] = _uuid_pk()
@@ -376,6 +387,14 @@ class Check(Base):
         String(32), nullable=False, server_default=text("'expectation'")
     )
     expectation_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    # Comparison source ref (ADR 0015): the baseline connection this check diffs
+    # the suite's dataset (the target under test) against. Non-NULL exactly for
+    # kind='comparison' (table CHECK above). RESTRICT: deleting a referenced
+    # connection is blocked — the service pre-checks and 409s with the dependent
+    # checks rather than letting the FK error surface raw.
+    source_connection_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("connections.id", ondelete="RESTRICT")
+    )
     # Optional severity thresholds (ADR 0005). NULL → the check is plain pass/fail.
     warn_threshold: Mapped[Decimal | None] = mapped_column(Numeric)
     fail_threshold: Mapped[Decimal | None] = mapped_column(Numeric)
@@ -422,6 +441,10 @@ class CheckVersion(Base):
     name: Mapped[str] = mapped_column(String(256), nullable=False)
     kind: Mapped[str] = mapped_column(String(32), nullable=False)
     expectation_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    # Comparison source ref as a plain UUID — deliberately NO FK (ADR 0015/0020):
+    # a snapshot must outlive a later repoint + delete of the old source
+    # connection, so history never blocks a connection delete.
+    source_connection_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     config: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     warn_threshold: Mapped[Decimal | None] = mapped_column(Numeric)
     fail_threshold: Mapped[Decimal | None] = mapped_column(Numeric)

@@ -34,6 +34,7 @@ from backend.app.datasources.base import (
 )
 from backend.app.datasources.monitors import MONITOR_KINDS
 from backend.app.db.models import (
+    COMPARISON_KIND,
     RESULT_STATUSES,
     RUN_STATUSES,
     SEVERITY_RANK,
@@ -113,20 +114,33 @@ def _run_outcomes(
     * ``freshness``/``volume`` (monitor kinds) → the `MonitorRunner.run_monitors`
       SQL path — only when the runner is a SQL datasource (Snowflake/UC). A monitor
       check on a flat-file runner raises (gated here, not silently mis-run).
-    * any other reserved kind (`schema_drift`/`anomaly`/`comparison`) has no runner
-      yet → `NotImplementedError`.
+    * ``comparison`` (authorable since ADR 0015; its runner ships with #794) →
+      a per-check operational ``error`` outcome, not a raised exception — one
+      not-yet-runnable check must never fail its siblings' run (#122).
+    * any other reserved kind (`schema_drift`/`anomaly`) has no run path *or*
+      authoring path → `NotImplementedError` (unreachable via CRUD).
 
     This composes with the connection-type runner selection (ADR 0011): `kind`
     chooses the *monitor*, `connection.type` chose the *adapter* (the runner)."""
     expectation_idx = [i for i, c in enumerate(checks) if c.kind == _EXPECTATION_KIND]
     monitor_idx = [i for i, c in enumerate(checks) if c.kind in MONITOR_KINDS]
-    unsupported = sorted(
-        {c.kind for c in checks if c.kind != _EXPECTATION_KIND and c.kind not in MONITOR_KINDS}
-    )
+    comparison_idx = [i for i, c in enumerate(checks) if c.kind == COMPARISON_KIND]
+    handled = {_EXPECTATION_KIND, *MONITOR_KINDS, COMPARISON_KIND}
+    unsupported = sorted({c.kind for c in checks if c.kind not in handled})
     if unsupported:
         raise NotImplementedError(f"no run path for check kind(s) {', '.join(unsupported)}")
 
     outcomes: list[CheckOutcome | None] = [None] * len(checks)
+    for i in comparison_idx:
+        outcomes[i] = CheckOutcome(
+            expectation_type=checks[i].expectation_type,
+            success=False,
+            errored=True,
+            error_message=(
+                "comparison checks are not yet runnable — the comparison runner "
+                "ships with #794 (ADR 0015)"
+            ),
+        )
     if expectation_idx:
         specs = [
             CheckSpec(expectation_type=checks[i].expectation_type, kwargs=dict(checks[i].config))
@@ -151,8 +165,8 @@ def _run_outcomes(
         for i, oc in zip(monitor_idx, monitor_outcomes, strict=True):
             outcomes[i] = oc
 
-    # Every index is filled: expectation_idx + monitor_idx together cover all checks
-    # once the unsupported-kind guard above has run.
+    # Every index is filled: expectation_idx + monitor_idx + comparison_idx
+    # together cover all checks once the unsupported-kind guard above has run.
     return [cast(CheckOutcome, oc) for oc in outcomes]
 
 

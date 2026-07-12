@@ -353,6 +353,7 @@ def create_check(
     warn_threshold: float | None = None,
     fail_threshold: float | None = None,
     critical_threshold: float | None = None,
+    source_connection_id: str | None = None,
 ) -> dict[str, Any]:
     """Add a new check (a Great Expectations expectation) to a suite.
 
@@ -360,7 +361,11 @@ def create_check(
     human label; ``expectation_type`` is a GX expectation (e.g.
     ``expect_column_values_to_not_be_null``); ``config`` carries its arguments
     (e.g. ``{"column": "email"}``). Optional warn/fail/critical thresholds band
-    the result severity. Requires edit access. Returns the created check's id.
+    the result severity. For a cross-dataset reconciliation check use
+    ``kind="comparison"`` with ``expectation_type="comparison:records"``,
+    ``source_connection_id`` (the baseline connection to compare against) and a
+    config carrying ``source`` (the baseline dataset spec) + ``keys`` (join key
+    columns). Requires edit access. Returns the created check's id.
     """
     sid = _parse_uuid(suite_id, field="suite_id")
     _reject_nul(name=name, expectation_type=expectation_type, kind=kind, config=config or {})
@@ -373,6 +378,11 @@ def create_check(
             kind=kind,
             expectation_type=expectation_type,
             config=config or {},
+            source_connection_id=(
+                _parse_uuid(source_connection_id, field="source_connection_id")
+                if source_connection_id is not None
+                else None
+            ),
             warn_threshold=Decimal(str(warn_threshold)) if warn_threshold is not None else None,
             fail_threshold=Decimal(str(fail_threshold)) if fail_threshold is not None else None,
             critical_threshold=(

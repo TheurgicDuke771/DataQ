@@ -271,6 +271,15 @@ def trigger_suite_run(
 # ───────────────────────── export / import (portable documents) ─────
 
 
+class SourceConnectionRef(ApiModel):
+    """A comparison check's portable source ref (ADR 0015) — `(name, env)` is the
+    workspace-unique connection key, so it survives an export/import while a raw
+    UUID would not."""
+
+    name: str = Field(min_length=1, max_length=128)
+    env: str = Field(min_length=1, max_length=16)
+
+
 class CheckDocument(ApiModel):
     """One check inside a portable suite document — authoring fields only."""
 
@@ -278,6 +287,8 @@ class CheckDocument(ApiModel):
     kind: str = "expectation"
     expectation_type: str = Field(min_length=1, max_length=128)
     config: dict[str, Any] = Field(default_factory=dict)
+    # Present only on comparison checks (ADR 0015); resolved on import.
+    source_connection: SourceConnectionRef | None = None
     warn_threshold: Decimal | None = None
     fail_threshold: Decimal | None = None
     critical_threshold: Decimal | None = None
@@ -309,7 +320,7 @@ def export_suite(
     db: Annotated[Session, Depends(get_db)],
 ) -> SuiteDocument:
     suite = require_permission(db, suite_id, current_user.id, minimum="view")
-    return SuiteDocument.model_validate(suite_io.export_suite(suite))
+    return SuiteDocument.model_validate(suite_io.export_suite(db, suite))
 
 
 @router.post(

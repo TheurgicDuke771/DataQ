@@ -28,7 +28,7 @@ from backend.app.datasources.registry import (
     UnsupportedConnectionTypeError,
     get_connection_adapter,
 )
-from backend.app.db.models import ENVS, Connection, ConnectionVersion, Suite
+from backend.app.db.models import ENVS, Check, Connection, ConnectionVersion, Suite
 from backend.app.services.asset_service import resolve_and_upsert_asset
 
 log = get_logger(__name__)
@@ -57,6 +57,14 @@ class ConnectionTestFailedError(DataQError):
 class ConnectionSecretWriteError(DataQError):
     status_code = 502
     code = "connection_secret_write_failed"
+
+
+class ConnectionInUseError(DataQError):
+    # A comparison check references this connection as its source (ADR 0015):
+    # the FK is ON DELETE RESTRICT, so surface a friendly 409 naming the
+    # dependents instead of letting the raw FK violation 500.
+    status_code = 409
+    code = "connection_in_use"
 
 
 def _validated_config(conn_type: str, config: dict[str, Any]) -> None:
@@ -370,9 +378,52 @@ def delete_connection(
     session: Session, connection_id: uuid.UUID, *, secret_store: SecretStore
 ) -> None:
     conn = get_connection(session, connection_id)
+    # ADR 0015 delete guard: comparison checks referencing this connection as
+    # their source hold an ON DELETE RESTRICT FK — pre-check and 409 with the
+    # dependents so the user knows what to repoint/delete first. `total` is the
+    # real count; `checks` is a bounded sample (a 409 must not echo thousands
+    # of rows), flagged via `truncated` so a scripted remediation can't
+    # mistake the sample for the full set.
+    total = session.scalar(
+        select(func.count()).select_from(Check).where(Check.source_connection_id == conn.id)
+    )
+    if total:
+        dependents = list(
+            session.execute(
+                select(Check.name, Check.suite_id)
+                .where(Check.source_connection_id == conn.id)
+                .order_by(Check.created_at)
+                .limit(10)
+            )
+        )
+        raise ConnectionInUseError(
+            f"this connection is the comparison source of {total} check(s) — "
+            "repoint or delete them first",
+            detail={
+                "connection_id": str(connection_id),
+                "total": total,
+                "truncated": total > len(dependents),
+                "checks": [
+                    {"name": name, "suite_id": str(suite_id)} for name, suite_id in dependents
+                ],
+            },
+        )
     secret_ref = conn.secret_ref
     session.delete(conn)
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError as exc:
+        # TOCTOU backstop: a comparison check created between the pre-check and
+        # this commit trips the RESTRICT FK — map it to the same 409, never a
+        # raw 500. Any other integrity failure is not this race; re-raise.
+        session.rollback()
+        if "fk_checks_source_connection_id_connections" not in str(exc.orig):
+            raise
+        raise ConnectionInUseError(
+            "this connection became the comparison source of a check while the "
+            "delete was in flight — repoint or delete that check first",
+            detail={"connection_id": str(connection_id)},
+        ) from exc
     # Best-effort remove the orphaned credential from the store (#372) — after the
     # row is gone, and fail-soft (delete never raises), so a store hiccup can't 500
     # a successful delete.
