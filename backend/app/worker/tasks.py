@@ -44,6 +44,7 @@ from backend.app.lineage import pull as lineage_pull
 from backend.app.orchestration.registry import get_orchestration_provider
 from backend.app.services import (
     asset_service,
+    comparison_run,
     cron,
     incident_service,
     orchestration_service,
@@ -169,6 +170,20 @@ def _run_suite(session: Session, *, run_id: uuid.UUID) -> str:
     identifier = policy.get("identifier_column")
     index_columns = [str(identifier)] if identifier else None
 
+    # Comparison checks (ADR 0015, #794): bind an executor to this run's
+    # resolved target side so the diff validates the exact dataset the GX
+    # runner sees. Built only when the suite actually has comparison checks.
+    comparison_executor = None
+    if comparison_run.has_comparison_checks(checks):
+        comparison_executor = comparison_run.build_comparison_executor(
+            session,
+            suite_connection=connection,
+            target_table=table,
+            target_schema=target.schema,
+            target_catalog=target.catalog,
+            secret_store=get_secret_store(),
+        )
+
     run_service.execute_run(
         session,
         run=run,
@@ -177,6 +192,7 @@ def _run_suite(session: Session, *, run_id: uuid.UUID) -> str:
         table=table,
         schema=target.schema,
         index_columns=index_columns,
+        comparison_executor=comparison_executor,
     )
     return str(run.status)
 

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import uuid
 from collections import defaultdict
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
@@ -106,6 +106,7 @@ def _run_outcomes(
     schema: str | None,
     checks: list[Check],
     index_columns: list[str] | None = None,
+    comparison_executor: Callable[[Check], CheckOutcome] | None = None,
 ) -> list[CheckOutcome]:
     """Run a suite's checks, dispatching by `check.kind` (ADR 0012), and return one
     outcome per check in the **same order** (so they zip 1:1 onto result rows).
@@ -114,9 +115,11 @@ def _run_outcomes(
     * ``freshness``/``volume`` (monitor kinds) → the `MonitorRunner.run_monitors`
       SQL path — only when the runner is a SQL datasource (Snowflake/UC). A monitor
       check on a flat-file runner raises (gated here, not silently mis-run).
-    * ``comparison`` (authorable since ADR 0015; its runner ships with #794) →
-      a per-check operational ``error`` outcome, not a raised exception — one
-      not-yet-runnable check must never fail its siblings' run (#122).
+    * ``comparison`` → the injected ``comparison_executor`` (the worker builds
+      one via `comparison_run.build_comparison_executor`, #794). A caller that
+      supplies none (e.g. a path that cannot read datasources) gets a per-check
+      operational ``error`` outcome, not a raised exception — one unrunnable
+      check must never fail its siblings' run (#122).
     * any other reserved kind (`schema_drift`/`anomaly`) has no run path *or*
       authoring path → `NotImplementedError` (unreachable via CRUD).
 
@@ -132,15 +135,18 @@ def _run_outcomes(
 
     outcomes: list[CheckOutcome | None] = [None] * len(checks)
     for i in comparison_idx:
-        outcomes[i] = CheckOutcome(
-            expectation_type=checks[i].expectation_type,
-            success=False,
-            errored=True,
-            error_message=(
-                "comparison checks are not yet runnable — the comparison runner "
-                "ships with #794 (ADR 0015)"
-            ),
-        )
+        if comparison_executor is None:
+            outcomes[i] = CheckOutcome(
+                expectation_type=checks[i].expectation_type,
+                success=False,
+                errored=True,
+                error_message=(
+                    "comparison checks need the comparison run path (no executor "
+                    "supplied on this caller — ADR 0015)"
+                ),
+            )
+        else:
+            outcomes[i] = comparison_executor(checks[i])
     if expectation_idx:
         specs = [
             CheckSpec(expectation_type=checks[i].expectation_type, kwargs=dict(checks[i].config))
@@ -192,6 +198,7 @@ def execute_run(
     table: str,
     schema: str | None = None,
     index_columns: list[str] | None = None,
+    comparison_executor: Callable[[Check], CheckOutcome] | None = None,
 ) -> Run:
     """Run ``checks`` against ``table`` via ``runner`` and persist the outcome.
 
@@ -218,7 +225,12 @@ def execute_run(
     # rollback() discards any partial result inserts before we record the failure.
     try:
         outcomes = _run_outcomes(
-            runner, table=table, schema=schema, checks=checks, index_columns=index_columns
+            runner,
+            table=table,
+            schema=schema,
+            checks=checks,
+            index_columns=index_columns,
+            comparison_executor=comparison_executor,
         )
         rows = [
             _build_result(run.id, check, check_outcome)
@@ -598,6 +610,41 @@ def _redact_row(
     return out
 
 
+# Comparison sample buckets (ADR 0015 §4 — written by `comparison_run`).
+_COMPARISON_SAMPLE_KEYS = frozenset({"mismatched", "additional_in_source", "additional_in_target"})
+
+
+def _strip_side_suffix(name: str) -> str:
+    """`<col>_src` / `<col>_tgt` → `<col>` for policy/classifier matching."""
+    for suffix in ("_src", "_tgt"):
+        if name.endswith(suffix):
+            return name[: -len(suffix)]
+    return name
+
+
+def _redact_comparison_row(
+    row: Any,
+    *,
+    policy: Mapping[str, Any] | None,
+    tags: Mapping[str, str] | None,
+    values_by_column: Mapping[str, list[Any]],
+) -> Any:
+    """Per-column masking for a comparison sample row, matching policy and
+    classifier on the suffix-stripped column name (both sides of a PII column
+    mask together; the join-key columns are unsuffixed and match directly).
+    There is no `tested_column` in a comparison — every column is incidental,
+    so everything not affirmatively identifier/safe default-masks (#415)."""
+    if not isinstance(row, dict):
+        return _redact_sample_value(row)
+    out: dict[Any, Any] = {}
+    for col, val in row.items():
+        name = _strip_side_suffix(str(col))
+        vals = values_by_column.get(str(col), [val])
+        show = _may_show_incidental(name, vals, policy, tags)
+        out[col] = val if show else _redact_sample_value(val)
+    return out
+
+
 def redact_sample_failures(
     sample: dict[str, Any] | None,
     *,
@@ -665,6 +712,17 @@ def redact_sample_failures(
                 out[key] = value  # the tested column's failing values — surfaced
             else:
                 out[key] = _redact_sample_value(value)
+        elif key in _COMPARISON_SAMPLE_KEYS and isinstance(value, list):
+            # Comparison buckets (ADR 0015, #794): rows carry `<col>_src` /
+            # `<col>_tgt` pairs plus unsuffixed key columns. Policy/classifier
+            # matching runs on the SUFFIX-STRIPPED name so a `pii_columns`
+            # entry like `email` masks both sides — while unknown columns keep
+            # the default-mask posture.
+            vbc = _values_by_column(value)
+            out[key] = [
+                _redact_comparison_row(row, policy=policy, tags=tags, values_by_column=vbc)
+                for row in value
+            ]
         else:
             out[key] = _redact_sample_value(value)
     return out
