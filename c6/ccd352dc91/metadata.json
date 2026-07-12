@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "c6ccd352dc91",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-803-asset-health-split",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/c6/ccd352dc91/0/metadata.json",
+      "transcript": "/c6/ccd352dc91/0/full.jsonl",
+      "compact_transcript": "/c6/ccd352dc91/0/transcript.jsonl",
+      "content_hash": "/c6/ccd352dc91/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2,
+    "cache_creation_tokens": 1449,
+    "cache_read_tokens": 424201,
+    "output_tokens": 1173,
+    "api_call_count": 1
+  }
+}
