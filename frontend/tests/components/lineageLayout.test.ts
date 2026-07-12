@@ -89,6 +89,29 @@ describe('buildLineageLayout (#805)', () => {
     expect(layout.edges).toHaveLength(1);
   });
 
+  it('places a cyclic asset ONCE — a cycle must not duplicate a node id', () => {
+    // A → B and B → A: the up-walk and the down-walk both return B. Placing it
+    // twice would emit duplicate React keys and anchor edges to the wrong copy.
+    const b = node('b', 1);
+    const layout = buildLineageLayout(
+      CENTER,
+      [b],
+      [b],
+      [
+        { source: 'b', target: 'c' },
+        { source: 'c', target: 'b' },
+      ],
+    );
+    expect(layout.nodes.filter((n) => n.id === 'b')).toHaveLength(1);
+    expect(new Set(layout.nodes.map((n) => n.id)).size).toBe(layout.nodes.length);
+  });
+
+  it('never duplicates the centre, even on a self-edge', () => {
+    const layout = buildLineageLayout(CENTER, [node('c', 1)], [], []);
+    expect(layout.nodes.filter((n) => n.id === 'c')).toHaveLength(1);
+    expect(layout.nodes[0].isCenter).toBe(true);
+  });
+
   it('an isolated asset lays out just itself, with no edges', () => {
     const layout = buildLineageLayout(CENTER, [], [], []);
     expect(layout.nodes).toHaveLength(1);

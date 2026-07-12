@@ -46,7 +46,7 @@ describe('LineageGraph (#805)', () => {
 
   it('opens the asset a node points at when clicked', async () => {
     const onOpen = renderGraph();
-    await userEvent.click(screen.getByLabelText('Open asset ANALYTICS.MART.REVENUE'));
+    await userEvent.click(screen.getByLabelText(/Open asset ANALYTICS\.MART\.REVENUE/));
     expect(onOpen).toHaveBeenCalledWith('d1');
   });
 
@@ -62,6 +62,17 @@ describe('LineageGraph (#805)', () => {
     target.focus();
     await userEvent.keyboard('{Enter}');
     expect(onOpen).toHaveBeenCalledWith('u1');
+  });
+
+  it('signals "monitored" without relying on colour alone (WCAG 1.4.1)', () => {
+    renderGraph();
+    // d1 is monitored: it says so in its accessible name…
+    expect(screen.getByLabelText('Open asset ANALYTICS.MART.REVENUE (monitored)')).toBeVisible();
+    // …and an unmonitored node does not claim to be.
+    expect(screen.getByLabelText('Open asset BI.DASH.SALES')).toBeVisible();
+    // …plus a non-colour glyph marks it on the node itself.
+    const graph = screen.getByRole('img', { name: /Lineage graph/ });
+    expect(graph.querySelectorAll('circle')).toHaveLength(1);
   });
 
   it('labels but does not make the centre asset actionable', () => {

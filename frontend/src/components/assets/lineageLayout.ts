@@ -78,7 +78,16 @@ export function buildLineageLayout(
       col: 0,
     },
   ];
-  for (const n of upstream) {
+  // Nothing enforces an acyclic lineage graph (the per-direction BFS is cycle-safe
+  // via its own visited set, but the up-walk and down-walk are independent, and a
+  // catalog can emit a cycle). With A→B and B→A, B comes back as BOTH upstream and
+  // downstream — so place each asset once, first occurrence winning, or we'd emit
+  // two nodes sharing an id: duplicate React keys, and edges anchored to whichever
+  // copy `byId` happened to keep.
+  const seen = new Set<string>([center.id]);
+  const place = (n: LineageNode, col: number) => {
+    if (seen.has(n.id)) return;
+    seen.add(n.id);
     placed.push({
       node: {
         id: n.id,
@@ -90,24 +99,11 @@ export function buildLineageLayout(
         x: 0,
         y: 0,
       },
-      col: -n.depth,
+      col,
     });
-  }
-  for (const n of downstream) {
-    placed.push({
-      node: {
-        id: n.id,
-        name: n.name,
-        namespace: n.namespace,
-        env: n.env,
-        isMonitored: n.is_monitored,
-        isCenter: false,
-        x: 0,
-        y: 0,
-      },
-      col: n.depth,
-    });
-  }
+  };
+  for (const n of upstream) place(n, -n.depth);
+  for (const n of downstream) place(n, n.depth);
 
   // Group by column, then order the columns left → right by signed depth.
   const byCol = new Map<number, LaidOutNode[]>();

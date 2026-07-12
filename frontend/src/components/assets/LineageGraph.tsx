@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 
 import type { LineageEdge, LineageNode } from '../../api/assets';
 import { BRAND } from '../../theme';
+import { nameSegments } from './assetTree';
 import { type CenterAsset, NODE_H, NODE_W, buildLineageLayout } from './lineageLayout';
 
 /**
@@ -159,7 +160,11 @@ function GraphNode({
       tabIndex={interactive ? 0 : undefined}
       // The centre is labelled too (it just isn't actionable), so a screen reader
       // announces which asset the graph is centred on.
-      aria-label={interactive ? `Open asset ${node.name}` : `${node.name} (this asset)`}
+      aria-label={
+        interactive
+          ? `Open asset ${node.name}${node.isMonitored ? ' (monitored)' : ''}`
+          : `${node.name} (this asset)`
+      }
       style={{ cursor: interactive ? 'pointer' : 'default' }}
     >
       <title>{`${node.name}\n${node.namespace}`}</title>
@@ -184,16 +189,20 @@ function GraphNode({
       <text x={10} y={38} fontSize={10} fill="#8c8c8c" style={{ pointerEvents: 'none' }}>
         {truncate(node.env ? `${node.env} · ${node.namespace}` : node.namespace, 28)}
       </text>
+      {/* Monitored must not be colour-only (WCAG 1.4.1): a filled dot marks it, so
+          the state survives a colour-blind viewer and a greyscale print. */}
+      {!node.isCenter && node.isMonitored && (
+        <circle cx={NODE_W - 12} cy={12} r={3.5} fill={BRAND.primary} />
+      )}
     </g>
   );
 }
 
 /** The last dotted/slashed segment — the table/file, not the whole path. The full
- *  identity stays in the node's <title> tooltip. */
+ *  identity stays in the node's <title> tooltip. Reuses the one segmentation rule
+ *  (`assetTree.nameSegments`, #802) so the two views can't drift. */
 function leafName(name: string): string {
-  const sep = name.includes('/') ? '/' : '.';
-  const parts = name.split(sep).filter(Boolean);
-  return parts.length > 0 ? parts[parts.length - 1] : name;
+  return nameSegments(name).at(-1) ?? name;
 }
 
 function truncate(text: string, max: number): string {

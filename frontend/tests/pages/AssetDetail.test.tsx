@@ -233,7 +233,7 @@ describe('AssetDetail page', () => {
     // the leaf segment (both ORDERS assets share a leaf, so assert on identity).
     expect(screen.getByLabelText('ANALYTICS.PUBLIC.ORDERS (this asset)')).toBeInTheDocument();
     expect(screen.getByLabelText('Open asset RAW.ORDERS')).toBeInTheDocument(); // upstream
-    expect(screen.getByLabelText('Open asset ANALYTICS.MART.REVENUE')).toBeInTheDocument();
+    expect(screen.getByLabelText(/Open asset ANALYTICS\.MART\.REVENUE/)).toBeInTheDocument();
     // One drawn edge per real backend edge (u1→a1, a1→d1).
     expect(graph.querySelectorAll('path[marker-end]')).toHaveLength(2);
     expect(screen.getByText('1 upstream · 1 downstream')).toBeInTheDocument();

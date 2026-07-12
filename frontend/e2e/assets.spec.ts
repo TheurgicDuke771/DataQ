@@ -48,10 +48,9 @@ test.describe('Assets page', () => {
     await expect(page.getByRole('button', { name: 'Orders quality' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Orders volume' })).toBeVisible();
 
-    // Lineage sections render (empty or populated depending on dbt-manifest data).
-    // exact: substring matching would also hit the "No known upstream sources." empty-state.
-    await expect(page.getByText('Upstream', { exact: true })).toBeVisible();
-    await expect(page.getByText('Downstream', { exact: true })).toBeVisible();
+    // Lineage renders as one graph (#805) — or its empty state when the seed has no
+    // edges for this asset. Either way the Lineage card is present.
+    await expect(page.getByText('Lineage', { exact: true })).toBeVisible();
 
     // A composing suite links back to its suite page.
     await page.getByRole('button', { name: 'Orders quality' }).click();
