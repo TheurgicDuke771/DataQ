@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "f38f94ba85d0",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-802-hierarchical-asset-browse",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/features.md",
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f3/8f94ba85d0/0/metadata.json",
+      "transcript": "/f3/8f94ba85d0/0/full.jsonl",
+      "compact_transcript": "/f3/8f94ba85d0/0/transcript.jsonl",
+      "content_hash": "/f3/8f94ba85d0/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 18,
+    "cache_creation_tokens": 7765,
+    "cache_read_tokens": 2246053,
+    "output_tokens": 5085,
+    "api_call_count": 9
+  }
+}
