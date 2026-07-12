@@ -109,7 +109,7 @@ function AssetDetailBody({
               what `copyable` copies and what the tooltip reveals (#830). */}
           <Tooltip title={summary.namespace}>
             <Typography.Text type="secondary" copyable={{ text: summary.namespace }}>
-              {namespaceLabel(summary.namespace).text}
+              {namespaceLabel(summary.namespace)}
             </Typography.Text>
           </Tooltip>
         </Flex>

@@ -169,7 +169,7 @@ function AssetsTable({ assets, onOpen }: { assets: AssetSummary[]; onOpen: (id: 
           </Typography.Text>
           <Tooltip title={asset.namespace}>
             <Typography.Text type="secondary" style={{ fontSize: 12 }} ellipsis>
-              {namespaceLabel(asset.namespace).text}
+              {namespaceLabel(asset.namespace)}
             </Typography.Text>
           </Tooltip>
         </div>

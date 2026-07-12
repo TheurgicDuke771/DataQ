@@ -1,5 +1,5 @@
 import type { AssetSummary } from '../../api/assets';
-import { namespaceLabel } from './namespaceLabel';
+import { type DatasourceKind, datasourceKind, namespaceLabel } from './namespaceLabel';
 
 /**
  * Hierarchical asset browse (#802) — pure, so it can be unit-tested without
@@ -25,8 +25,10 @@ import { namespaceLabel } from './namespaceLabel';
  * `children` are independent.
  */
 
-export type DatasourceKind =
-  'snowflake' | 'unity_catalog' | 'adls_gen2' | 's3' | 'iceberg' | 'other';
+// `DatasourceKind` + `datasourceKind` live in `namespaceLabel` — one scheme table
+// feeds both the icon and the label, so they can't drift apart. Re-exported here
+// because this module's consumers already import them from it.
+export { type DatasourceKind, datasourceKind } from './namespaceLabel';
 
 export interface AssetTreeNode {
   /** Stable, unique key: the full `ns::{namespace}/seg/seg…` path. */
@@ -41,17 +43,6 @@ export interface AssetTreeNode {
   /** The asset — set on leaf (and folder-leaf) nodes; makes the node openable. */
   asset?: AssetSummary;
   children: AssetTreeNode[];
-}
-
-/** Classify an OL namespace by its scheme, for the root-node icon/label. */
-export function datasourceKind(namespace: string): DatasourceKind {
-  if (namespace.startsWith('snowflake://')) return 'snowflake';
-  if (namespace.startsWith('unitycatalog://')) return 'unity_catalog';
-  if (namespace.startsWith('abfss://')) return 'adls_gen2';
-  if (namespace.startsWith('s3://')) return 's3';
-  // Iceberg namespaces are the raw catalog_uri (thrift://…, http://…, "file") —
-  // no single stable scheme, so everything unrecognised falls here.
-  return 'other';
 }
 
 /**
@@ -104,7 +95,7 @@ export function buildAssetTree(assets: AssetSummary[]): AssetTreeNode[] {
         // Read the datasource, don't parse it: the raw namespace is a DSN for
         // Iceberg (#830). The key/sort still ride on the namespace, so grouping is
         // unchanged — only what's printed differs.
-        label: namespaceLabel(asset.namespace).text,
+        label: namespaceLabel(asset.namespace),
         kind: datasourceKind(asset.namespace),
         namespace: asset.namespace,
         children: new Map(),

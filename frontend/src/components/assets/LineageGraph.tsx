@@ -194,8 +194,8 @@ function GraphNode({
             tooltip above (#830). */}
         {truncate(
           node.env
-            ? `${node.env} · ${namespaceLabel(node.namespace).text}`
-            : namespaceLabel(node.namespace).text,
+            ? `${node.env} · ${namespaceLabel(node.namespace)}`
+            : namespaceLabel(node.namespace),
           28,
         )}
       </text>
