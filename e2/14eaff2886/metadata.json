@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "e214eaff2886",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-813-mcp-check-length-validation",
+  "checkpoints_count": 6,
+  "files_touched": [
+    "backend/app/services/check_service.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/e2/14eaff2886/0/metadata.json",
+      "transcript": "/e2/14eaff2886/0/full.jsonl",
+      "compact_transcript": "/e2/14eaff2886/0/transcript.jsonl",
+      "content_hash": "/e2/14eaff2886/0/content_hash.txt",
+      "prompt": "/e2/14eaff2886/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 81,
+    "cache_creation_tokens": 191918,
+    "cache_read_tokens": 7443359,
+    "output_tokens": 25697,
+    "api_call_count": 41
+  }
+}

@@ -1,0 +1,198 @@
+<task-notification>
+<task-id>a0b87a279859d5f83</task-id>
+<tool-use-id>toolu_019H2iTRZRFasQsVZqrZrVCn</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3890ca48-f83c-40ac-a424-e009239c3867/tasks/a0b87a279859d5f83.output</output-file>
+<status>completed</status>
+<summary>Agent "Reuse-duplication finder" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Findings
+
+```json
+[
+  {
+    "file": "backend/app/services/check_service.py",
+    "line": 138,
+    "summary": "`_NAME_MAX_LEN = 256` / `_EXPECTATION_TYPE_MAX_LEN = 128` are a third independent literal for bounds already declared in `checks.py`'s `CheckCreate`/`CheckUpdate` Field(max_length=...) and `models.py`'s `String(256)`/`String(128)` column widths. No shared constants module exists anywhere in `backend/app/` (confirmed via repo-wide search) for either pair to import from, and there's no test asserting the three stay in sync.",
+    "failure_scenario": "If `checks.name`/`checks.expectation_type` column widths are ever widened in a migration (e.g. `String(256)` -&gt; `String(512)`), the developer must remember to update this literal too; missing it silently reopens the exact gap this PR is fixing — but now only for MCP callers, since the REST Pydantic Field would be updated (it's co-located with the route) while this service-layer copy, three files away, is easy to forget."
+  },
+  {
+    "file": "backend/app/services/check_service.py",
+    "line": 133,
+    "summary": "The comment explicitly says these constants 'mirror' the api/v1/checks.py Field bounds and db/models.py column widths, i.e. the PR author already knew this was a duplicate-literal risk and chose to note it in a comment rather than derive/import it. Given `checks.py` imports `check_service` (not vice versa), importing the constant from the API layer would invert the api-&gt;service dependency direction, so the constant genuinely can't be pulled from `checks.py` without restructuring — but deriving it from `Check.name.type.length` (SQLAlchemy column metadata, the single source of truth already sitting in `db/models.py`) was not attempted.",
+    "failure_scenario": "A future refactor of the checks table (renaming/splitting the name column, or changing its type) has no compiler/test signal pointing back at this literal; the values quietly drift apart and the service-layer guard either rejects valid input or lets through what the DB will now reject with a 500."
+  },
+  {
+    "file": "backend/app/services/notification_service.py",
+    "line": 115,
+    "summary": "Established precedent for this exact pattern already exists: `_RECIPIENTS_MAX_LEN = 1024  # matches the suite_notifications.email_recipients column`, a standalone literal in the service layer with a comment pointing at the DB column, no shared-constants import. Unlike the new check_service.py case, there's no competing Pydantic `Field(max_length=...)` for `email_recipients` in `api/v1/notifications.py` (it's a plain `str | None`), so this duplicates a bound that lived in exactly one place (the DB column) rather than being a third copy of a value already replicated twice.",
+    "failure_scenario": "This is not a new failure scenario to flag — it's supporting evidence that the codebase's established convention IS 'duplicate the numeric literal across DB schema / Pydantic schema / service-layer guard with an explanatory comment', not 'derive it from one source.' Treating the check_service.py addition as a novel problem worth blocking on would be inconsistent with this prior art; the finding above (drift risk / no shared source) is a valid pre-existing gap in the codebase's convention, not something introduced fresh by this PR."
+  }
+]
+```
+
+Key takeaways for the reviewer:
+
+- No shared-constants module exists in `backend/app/core/` or `backend/app/services/` for length bounds anywhere in the repo — this was verified by grepping for `MAX_LEN`/`max_length` across `services/` and `core/`, and by `find` for any `constants`/`limits` module (none found).
+- The one prior example of the same shape — `backend/app/services/notification_service.py:115` (`_RECIPIENTS_MAX_LEN = 1024`) — duplicates a DB column width as a bare literal with a mirroring comment, no shared import. So duplicating the literal with a comment is the established pattern here, not an anomaly `check_service.py` invented.
+- The one structural difference worth flagging: in the notification case the literal duplicates a bound that exists in only one other place (the DB column — there's no Pydantic `max_length` for `email_recipients`). In the new check_service.py case, the bound already exists in *two* other places (`checks.py` Field **and** `models.py` column), so this literal is a third copy, not a second. That's a marginally higher drift risk than the precedent, but it's a difference of degree, not a new category of problem for this codebase.
+- No generic length-validation helper exists in `backend/app/services/` or `backend/app/core/` that `_validate_lengths` reinvents — `notification_service.assert_valid_recipients` is shaped for email-specific validation (regex + `@`/domain checks), not a generic bounds-checker, so there's nothing being duplicated there beyond the same "duplicate the numeric literal" idiom.
+- `checks.py` imports `check_service` (`from backend.app.services import check_service as svc`), not the reverse — so importing the constant from `api/v1/checks.py` into the service layer would invert the intended api→service dependency direction and would itself be a layering smell, which is presumably why the PR author didn't do it.
+
+Given the precedent, I'd frame this as a minor/optional cleanup note rather than a blocking finding — worth a comment suggesting a shared constants source (or deriving from `Check.name.type.length`) if the reviewer wants to reduce the three-way drift risk, but not inconsistent with how the codebase already handles this trade-off elsewhere.</result>
+<usage><subagent_tokens>62327</subagent_tokens><tool_uses>9</tool_uses><duration_ms>64521</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a09969f4525470c7a</task-id>
+<tool-use-id>toolu_01F2BuBPeRYXtTXr6cyX6hbt</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3890ca48-f83c-40ac-a424-e009239c3867/tasks/a09969f4525470c7a.output</output-file>
+<status>completed</status>
+<summary>Agent "Removed-behavior auditor" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Confirmed: 55 insertions, 0 deletions — purely additive, no `-` lines. No removed/replaced behavior to audit on Angle B's primary axis.
+
+Checked the adjacent angle (shadowing/duplication/boundary regression) in detail:
+
+- `_validate_lengths` bounds (`1 &lt;= len(name) &lt;= 256`, `1 &lt;= len(expectation_type) &lt;= 128`) exactly mirror the REST `CheckCreate`/`CheckUpdate` Pydantic `Field(min_length=1, max_length=...)` bounds in `backend/app/api/v1/checks.py:36,40,51-52` and the `String(256)`/`String(128)` column widths in `backend/app/db/models.py:383,389` — inclusive boundary, so a legitimate 256-char name or 128-char expectation_type still passes.
+- In `update_check` (`backend/app/services/check_service.py:616`), `_validate_lengths` runs immediately after `get_check` and before any ORM mutation — it can only raise before `check.name = name` etc. (lines 672+), so the "reject before touching the ORM object" invariant documented at lines 622-626 is preserved; no dirty-session-then-raise risk.
+- No pre-existing length validation on `name`/`expectation_type` exists elsewhere in the file to shadow or duplicate (only unrelated config-string caps `_CONFIG_STRING_MAX_CHARS` at lines 281/403/409).
+- Searched `backend/tests/` for boundary-length (256/128) or blank-string exercises of `name`/`expectation_type` through `check_service.create_check`/`update_check`: found only tests that go through the REST Pydantic layer first (`test_checks.py:120,122` blank name/type — already 422'd upstream by Pydantic, so redundant-but-harmless at service level) and tests that construct `Check(...)` ORM objects directly, bypassing the service functions entirely (`test_run_service.py:99,112`, `test_emitter.py:318` use `expectation_type=""`/`"x"` — these never call `create_check`/`update_check`, so `_validate_lengths` never runs against them). No test found calling the service functions directly with an oversized or boundary value that this new gate would newly reject.
+
+No findings.
+
+```json
+[]
+```</result>
+<usage><subagent_tokens>66820</subagent_tokens><tool_uses>18</tool_uses><duration_ms>83959</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>adae29d589e3a42f8</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3890ca48-f83c-40ac-a424-e009239c3867/tasks/adae29d589e3a42f8.output</output-file>
+<status>completed</status>
+<summary>Agent "Cross-file caller/callee tracer" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Confirmed the failure path. Findings below.
+
+```json
+[
+  {
+    "file": "backend/app/services/suite_io_service.py",
+    "line": 207,
+    "summary": "import_suite() builds `Check(name=c[\"name\"], expectation_type=c[\"expectation_type\"], ...)` directly as an ORM object — it never calls check_service.create_check(), so the new `_validate_lengths` guard is completely bypassed on the import path.",
+    "failure_scenario": "A suite-export document (or a hand-crafted import payload — suite_io_service has no length checks of its own on `name`/`expectation_type`) with a check name &gt;256 chars or expectation_type &gt;128 chars sails through all of import_suite's per-check validation (validate_kind/validate_monitor_check/validate_comparison_check/validate_custom_sql_check/validate_expectation_check — none of which check string length) and only fails at `session.commit()` (line 224) with a raw Postgres StringDataRightTruncation/IntegrityError. There is no handler for SQLAlchemy IntegrityError in backend/app/core/errors.py, so it falls through to `_unhandled_exception_handler` and returns a 500, not the clean 422 the sibling PR was written to guarantee. This is exactly the failure mode `_validate_lengths` was added to eliminate, just not fixed for this caller."
+  },
+  {
+    "file": "backend/app/services/suite_io_service.py",
+    "line": 222,
+    "summary": "record_check_version() is called for every imported check (mirroring create_check's own call), but since the Check rows above were never length-validated, an over-length name/expectation_type would also be copied verbatim into check_versions — same root cause as the finding above, just visible one line later on the version-snapshot insert instead of the checks insert (whichever table's write executes first inside the flush/commit).",
+    "failure_scenario": "Same as above: if the `checks` insert somehow succeeded (e.g. a future column widening) but `check_versions` kept the old width, or vice versa, a partially-successful import could commit checks but 500 on the version snapshot, leaving an inconsistent partially-imported suite despite the module's own atomicity claim (\"a bad document never leaves a half-imported suite behind\")."
+  }
+]
+```
+
+Points 2 and 3 from the task were checked and are **not** findings: (2) `CheckUpdate.name`/`expectation_type` are typed `str | None` with `Field(min_length=1, max_length=256/128)` — verified empirically that Pydantic v2 applies the length constraint only to the `str` union member, so an explicit JSON `null` validates straight to `None` without ever exercising `min_length`, matching the "not provided" sentinel `_validate_lengths` already expects (`if name is not None`). No double-reject, no unexpected behavior. (3) `checks.name`/`checks.expectation_type` are `String(256)`/`String(128)` (`backend/app/db/models.py:383,389`) and `check_versions.name`/`expectation_type` are identically `String(256)`/`String(128)` (lines 441, 443) — both exactly match `_NAME_MAX_LEN`/`_EXPECTATION_TYPE_MAX_LEN`, so no width mismatch for `create_check`/`update_check`'s own callers (REST `checks.py`, MCP `create_check`).</result>
+<usage><subagent_tokens>72132</subagent_tokens><tool_uses>19</tool_uses><duration_ms>93663</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a6bb5ee8c223cb149</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3890ca48-f83c-40ac-a424-e009239c3867/tasks/a6bb5ee8c223cb149.output</output-file>
+<status>completed</status>
+<summary>Agent "CLAUDE.md conventions check" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I reviewed the diff (`60941460 fix(checks): enforce name/expectation_type length limits in check_service`) against the full text of `/Users/arijit/Coding/Python/DataQ/CLAUDE.md` and `/Users/arijit/Coding/Python/DataQ/CONTRIBUTING.md` (40 rules, read in full above). Confirmed there is no `CLAUDE.md`/`CLAUDE.local.md` under `backend/app/services/` or `backend/tests/mcp/` (`find` returned nothing).
+
+Checks performed:
+- No migration changes in this diff (only `check_service.py` + `test_mcp_tools.py`) — CONTRIBUTING rule 30 ("Backward-compatible migrations only") not applicable, correctly no schema touch.
+- `_validate_lengths` mirrors real, verified bounds: `checks.name`/`checks.expectation_type` are `String(256)`/`String(128)` in `backend/app/db/models.py` (lines 383/389, 441/443), and REST `CheckCreate`/`CheckUpdate` use `Field(min_length=1, max_length=256/128)` in `backend/app/api/v1/checks.py` (lines 36/40/51/52). Since MCP's `create_check`/`update_check` (per the diff's own comment) have no Pydantic layer, an MCP caller genuinely can hit an unbounded string reaching Postgres — this is in-scope validation, not defense against an impossible scenario.
+- Commit is a single cohesive fix (one new helper + two call sites + one test) — satisfies "one functionality per commit" (CONTRIBUTING rule 1) and "every functionality change ships with test coverage" (rule 1a).
+- Linked GitHub issue #813 exists, has `bug`/`security`/`priority/P3` labels and milestone `v1.1 Week 3`, and the commit message contains `Fixes #813` — satisfies rule 3 ("Defects → GitHub issue first... PR must include Fixes #N").
+- Ran the actual CI tools locally: `black --check` → "All done, 2 files would be left unchanged"; `ruff check` → "All checks passed"; `mypy app/services/check_service.py` → "Success: no issues found." No formatting/lint/type violations of CLAUDE.md §6 tooling rules (Black/Ruff/mypy, CONTRIBUTING rules 19–21).
+- No cutting-across of the GX/monitor-kind seam (ADR 0012) — the length check runs uniformly before kind-specific validation and doesn't special-case any `check.kind`, so it doesn't conflict with the "GX-only for v1" or monitor-kind architecture described in CLAUDE.md §5.
+
+I could not find any diff line that both (a) I can quote verbatim and (b) breaks a rule I can quote verbatim from CLAUDE.md or CONTRIBUTING.md. Every angle in the task's checklist resolves to "compliant" rather than "violation."
+
+```json
+[]
+```</result>
+<usage><subagent_tokens>69244</subagent_tokens><tool_uses>13</tool_uses><duration_ms>96555</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ad0e6f599e5d7dec0</task-id>
+<tool-use-id>toolu_01JcuavBFvrYGhRctzozVfbG</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3890ca48-f83c-40ac-a424-e009239c3867/tasks/ad0e6f599e5d7dec0.output</output-file>
+<status>completed</status>
+<summary>Agent "Simplification and efficiency review" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>```json
+[
+  {
+    "file": "backend/app/services/check_service.py",
+    "line": 521,
+    "summary": "`_validate_lengths` (and `validate_kind`) run after `get_suite`/`get_check` inside the service layer, which itself runs after `require_permission` inside the MCP tool — unlike the analogous `_reject_nul` helper (backend/app/mcp/server.py:95-100), which `create_check` calls at server.py:371 before `_ctx()` even opens a session.",
+    "failure_scenario": "An MCP caller sending an oversized `name`/`expectation_type` pays for a permission-check query and a suite-lookup query before being rejected, where NUL-byte input is rejected for free with zero DB round-trips. REST doesn't feel this (Pydantic's `Field(max_length=...)` already 422s before the handler runs, so the service-layer copy never engages there) — so the wasted work is specific to the MCP path this feature was written for. Hoisting the check into a boundary helper next to `_reject_nul` (called at server.py:371) would give MCP the same zero-DB-cost fail-fast NUL rejection already has."
+  },
+  {
+    "file": "backend/app/services/check_service.py",
+    "line": 138,
+    "summary": "The bound literals 256/128 are now independently declared in three places with no shared source of truth: `db/models.py:383,389` (`String(256)`/`String(128)` columns), `api/v1/checks.py:36,40` (`Field(max_length=256/128)`), and now `_NAME_MAX_LEN`/`_EXPECTATION_TYPE_MAX_LEN` here.",
+    "failure_scenario": "A future migration widening/narrowing `checks.name` or `checks.expectation_type` (e.g. to 512) requires remembering to update this module and api/v1/checks.py too, or the three enforcement layers silently disagree (DB accepts a length REST/MCP reject, or vice versa). Deriving the constants from the SQLAlchemy column (e.g. `Check.name.type.length`) would keep one source of truth instead of three copies that can drift."
+  },
+  {
+    "file": "backend/app/services/check_service.py",
+    "line": 142,
+    "summary": "The two branches of `_validate_lengths` are structurally identical (range-check a string, raise `CheckConfigInvalidError` with a `{field, length, max}` detail) but are written out as two copy-pasted `if` blocks rather than a loop over `(field, value, max_len)` tuples.",
+    "failure_scenario": "Not a bug today, but the duplication means a third bounded field (plausible given `_reject_oversized_config`/`validate_comparison_check` keep adding new string-shaped guards in this file) would likely be added as a third copy-pasted block instead of one extra tuple in a list — the pattern that already causes the 256/128 magic-number drift noted above."
+  },
+  {
+    "file": "backend/app/services/check_service.py",
+    "line": 135,
+    "summary": "The comment justifying `_validate_lengths` (mirrored in the new test's docstring at backend/tests/mcp/test_mcp_tools.py:311-313) says it protects \"the MCP `create_check`/`update_check` tools\", but `backend/app/mcp/server.py` registers only 8 `@mcp.tool`s and there is no `update_check` tool today — only `create_check`.",
+    "failure_scenario": "A reader trusting the comment could believe there's a live MCP `update_check` surface this closes a gap on, when in fact `update_check`'s length guard currently has zero MCP caller and is pure speculative defense-in-depth against a bound REST's own Pydantic model already enforces before the service is ever called — worth being explicit that it's proactive, not closing an existing hole."
+  }
+]
+```</result>
+<usage><subagent_tokens>83812</subagent_tokens><tool_uses>15</tool_uses><duration_ms>188767</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>aae85c580f383f7e1</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3890ca48-f83c-40ac-a424-e009239c3867/tasks/aae85c580f383f7e1.output</output-file>
+<status>completed</status>
+<summary>Agent "Line-by-line diff scan" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>```json
+[
+  {
+    "file": "backend/app/services/check_service.py",
+    "line": 133-137,
+    "summary": "New comment on `_validate_lengths` claims it protects 'every caller — including the MCP `create_check`/`update_check` tools' — but `backend/app/mcp/server.py` has no `update_check` tool at all (only 8 MCP tools exist: list_suites, get_suite_results, get_health_score, get_adf_pipeline_status, trigger_suite_run, get_run_status, create_check, profile_column). The comment overstates coverage for a code path that doesn't exist.",
+    "failure_scenario": "A future maintainer reads this comment, assumes an MCP `update_check` tool exists and is guarded, and doesn't add length validation when one is eventually built (or wastes time searching for it during an incident). Documentation drift introduced in this exact diff, not merely pre-existing."
+  },
+  {
+    "file": "backend/app/services/suite_io_service.py",
+    "line": 201-219,
+    "summary": "`import_suite` builds `Check(...)` ORM objects directly from the imported document's dicts (`c['name']`, `c['expectation_type']`) and never calls `check_service.create_check`/`update_check`, so the new `_validate_lengths` guard is not applied here — even though `import_suite` already reuses several other check_service validators (`validate_kind`, `validate_monitor_check`, `validate_comparison_check`, `validate_expectation_check`) from the same module. Today this is masked because the sole caller, the REST import route (`backend/app/api/v1/suites.py`), validates each check via the `CheckDocument` Pydantic model which independently enforces matching `max_length=256`/`128` before calling in. But the enforcement is duplicated/parallel rather than shared, unlike the fix applied to create_check/update_check.",
+    "failure_scenario": "If any future caller invokes `suite_io_service.import_suite` directly with dicts not sourced from `CheckDocument` (e.g. a script, a batch-import job, or a future MCP import tool — exactly the gap this PR closes for create_check/update_check), an oversized name/expectation_type reaches `session.flush()`/`commit()` unvalidated and raises the raw Postgres `StringDataRightTruncation` this PR's own stated goal is to eliminate. Also a latent regression risk if `CheckDocument`'s `max_length` is ever loosened independently of `_NAME_MAX_LEN`/`_EXPECTATION_TYPE_MAX_LEN`, since the two are not the same source of truth despite the comment's claim of mirroring column widths everywhere."
+  }
+]
+```
+
+Investigation also confirmed several things checked but found **not** to be bugs (included for reviewer context, not as findings): (1) DB `String(256)`/`String(128)` (`backend/app/db/models.py:383,389`) and REST `CheckCreate`/`CheckUpdate` `Field(max_length=...)` (`backend/app/api/v1/checks.py:36,40,51,52`) numerically match `_NAME_MAX_LEN`/`_EXPECTATION_TYPE_MAX_LEN` exactly, no off-by-one; (2) the `1 &lt;= len(x) &lt;= MAX` bound logic is correctly non-inverted and the `None`-means-"unchanged" semantics in `update_check` are preserved; (3) `_service_errors()` (`backend/app/mcp/server.py:103-110`) does `raise ToolError(exc.message)` verbatim, so the new tests' `pytest.raises(ToolError, match="name"/"expectation_type")` correctly match with no regex-metacharacter issues; (4) no existing test, seed script (`backend/scripts/demo_data.py`), or caller relies on empty/oversized names succeeding through `check_service`, so no regression there; (5) no "duplicate/clone/copy suite" feature exists that could push a previously-valid name over the new 256-char cap via string concatenation.</result>
+<usage><subagent_tokens>82719</subagent_tokens><tool_uses>10</tool_uses><duration_ms>436756</duration_ms></usage>
+</task-notification>
