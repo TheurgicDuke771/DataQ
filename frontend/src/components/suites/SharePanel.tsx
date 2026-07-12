@@ -276,12 +276,14 @@ function AddCollaborator({
   };
 
   return (
-    // `wrap` + a shrinkable search field: on a phone the drawer is only as wide as
-    // the viewport, and an antd Select has a min-content width that `flex: 1` alone
-    // can't shrink past — so the row used to demand more width than it had and push
-    // the Add button off-screen, making a suite unshareable from mobile (#829).
-    // Basis 160px is the narrowest the search field stays usable at; below that the
-    // row wraps (search on top, permission + Add beneath) instead of overflowing.
+    // `wrap` + a search field that can actually shrink — the same shape TriggersPanel
+    // and SchedulesPanel already use for their control rows; this row was the one
+    // that never got it. An antd Select has a min-content width that `flex: 1` alone
+    // can't shrink past, so on a phone (342px content box) the row demanded 383px and
+    // pushed the Add button off-screen, making a suite unshareable from mobile (#829).
+    // At that width the search field and the permission picker share line 1 (160 + 8 +
+    // 110 ≤ 342) and the Add button wraps to line 2; at the drawer's desktop width the
+    // whole row fits on one line.
     <Flex gap={8} align="center" wrap>
       <Select
         showSearch
@@ -295,7 +297,7 @@ function AddCollaborator({
           value: u.id,
           label: u.display_name ? `${u.display_name} · ${u.email}` : u.email,
         }))}
-        style={{ flex: '1 1 160px', minWidth: 160 }}
+        style={{ flex: 1, minWidth: 160 }}
       />
       <Select
         value={permission}
