@@ -1,0 +1,72 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "5b62aeb6e1f0",
+  "session_id": "b8546e7c-0c8e-402c-b6cc-6720612adcfc",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-12T15:49:24.033347Z",
+  "branch": "fix/issue-801-mobile-overlay-nav",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/App.tsx",
+    "docs/progress.md"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "9d77563c1d03",
+  "checkpoint_transcript_start": 200,
+  "transcript_lines_at_start": 200,
+  "compact_transcript_start": 54,
+  "token_usage": {
+    "input_tokens": 21,
+    "cache_creation_tokens": 23870,
+    "cache_read_tokens": 1833618,
+    "output_tokens": 12076,
+    "api_call_count": 11
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01KjmBa8sottf6xA6hCXGQXK",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "9d77563c1d03",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 206,
+        "end": 207,
+        "entry_ids": [
+          "99b0df4e-2cb4-45f6-bde8-0bff6c259eaa"
+        ],
+        "tool_use_id": "toolu_01KjmBa8sottf6xA6hCXGQXK"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01KjmBa8sottf6xA6hCXGQXK"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "initial_attribution": {
+    "calculated_at": "2026-07-12T15:49:24.001737Z",
+    "agent_lines": 5,
+    "agent_removed": 1,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 5,
+    "total_lines_changed": 6,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}

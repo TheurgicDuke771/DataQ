@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "5b62aeb6e1f0",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-801-mobile-overlay-nav",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/progress.md",
+    "frontend/src/App.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/5b/62aeb6e1f0/0/metadata.json",
+      "transcript": "/5b/62aeb6e1f0/0/full.jsonl",
+      "compact_transcript": "/5b/62aeb6e1f0/0/transcript.jsonl",
+      "content_hash": "/5b/62aeb6e1f0/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 21,
+    "cache_creation_tokens": 23870,
+    "cache_read_tokens": 1833618,
+    "output_tokens": 12076,
+    "api_call_count": 11
+  }
+}
