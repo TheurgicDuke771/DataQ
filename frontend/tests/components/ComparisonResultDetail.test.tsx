@@ -68,3 +68,48 @@ describe('ComparisonResultDetail', () => {
     expect(screen.queryByText('Mismatched (sample)')).not.toBeInTheDocument();
   });
 });
+
+describe('ComparisonResultDetail — columns grain (#799)', () => {
+  it('renders value-grain counters and the per-column breakdown', () => {
+    render(
+      <App>
+        <ComparisonResultDetail
+          runId="run1"
+          result={{
+            ...result,
+            observed_value: {
+              source_rows: 3,
+              target_rows: 3,
+              matched_values: 4,
+              mismatched_values: 1,
+              additional_in_source_values: 1,
+              additional_in_target_values: 0,
+              mismatch_percent: 33.3333,
+              per_column: {
+                amount: {
+                  matched: 2,
+                  mismatched: 1,
+                  additional_in_source: 0,
+                  additional_in_target: 0,
+                },
+                status: {
+                  matched: 2,
+                  mismatched: 0,
+                  additional_in_source: 1,
+                  additional_in_target: 0,
+                },
+              },
+            },
+            sample_failures: {
+              mismatched: [{ order_id: '3', amount_src: '30', amount_tgt: '31' }],
+            },
+          }}
+        />
+      </App>,
+    );
+    expect(screen.getByText('Mismatched values')).toBeInTheDocument();
+    expect(screen.getByTestId('comparison-per-column')).toBeInTheDocument();
+    expect(screen.getByText('amount')).toBeInTheDocument();
+    expect(screen.getByText('status')).toBeInTheDocument();
+  });
+});

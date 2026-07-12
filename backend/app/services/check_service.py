@@ -68,9 +68,11 @@ log = get_logger(__name__)
 # reserved kinds (schema_drift / anomaly) have no model yet, so CRUD refuses.
 _V1_SUPPORTED_KINDS = {"expectation", *MONITOR_KINDS, COMPARISON_KIND}
 
-# Canonical expectation_type for a comparison check (mirrors `monitor:<kind>`).
-# `comparison:columns` (FDC's per-column grain) is reserved, not yet authorable.
+# Canonical expectation_types for a comparison check (mirrors `monitor:<kind>`).
+# `comparison:records` = row grain; `comparison:columns` = FDC's per-column
+# value grain (#799).
 COMPARISON_EXPECTATION_TYPE = "comparison:records"
+COMPARISON_EXPECTATION_TYPES = ("comparison:records", "comparison:columns")
 
 # Datasources whose runner implements `run_monitors` (a `MonitorRunner`) — the
 # author-time gate for freshness/volume checks. The SQL datasources compute the
@@ -276,10 +278,11 @@ def validate_comparison_check(
     # Same #651 string-size cap as expectation checks — no kind may persist a
     # config every GET / version snapshot / export re-emits unbounded.
     _reject_oversized_config(config)
-    if expectation_type != COMPARISON_EXPECTATION_TYPE:
+    if expectation_type not in COMPARISON_EXPECTATION_TYPES:
         raise CheckConfigInvalidError(
-            f"a comparison check's expectation_type must be "
-            f"{COMPARISON_EXPECTATION_TYPE!r}, not {expectation_type[:_ERROR_ECHO_MAX_CHARS]!r}",
+            "a comparison check's expectation_type must be one of "
+            f"{', '.join(COMPARISON_EXPECTATION_TYPES)}, not "
+            f"{expectation_type[:_ERROR_ECHO_MAX_CHARS]!r}",
             detail={"expectation_type": expectation_type[:_ERROR_ECHO_MAX_CHARS]},
         )
     if source_connection_id is None:
@@ -330,6 +333,16 @@ def validate_comparison_check(
         )
 
     _validate_comparison_keys(config.get("keys"))
+
+    if "tolerance" in config:
+        # Same shape check the engine applies at run time (defence in depth) —
+        # surfaced as the authoring 422 code.
+        from backend.app.datasources.comparison import ComparisonInputError, parse_tolerance
+
+        try:
+            parse_tolerance(config["tolerance"])
+        except ComparisonInputError as exc:
+            raise CheckConfigInvalidError(exc.message, detail=exc.detail) from exc
 
     max_rows = config.get("max_rows")
     # bool is an int subclass: {"max_rows": true} would otherwise pass as 1 and

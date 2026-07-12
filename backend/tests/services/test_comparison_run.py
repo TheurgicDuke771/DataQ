@@ -100,9 +100,9 @@ def test_executor_maps_buckets_onto_outcome(monkeypatch: pytest.MonkeyPatch) -> 
     assert outcome.observed_value["matched"] == 1
     assert outcome.observed_value["column_mismatch_counts"] == {"v": 1}
     assert outcome.sample_failures is not None
-    # Samples show the engine's canonical comparison form (numeric keys render
-    # via Float64 — "3.0"); original-value echo in samples is a #795 UI call.
-    assert {r["id"] for r in outcome.sample_failures["mismatched"]} == {"3.0"}
+    # Samples show the engine's canonical comparison form — integer-pair keys
+    # render via Int64 ("3", #799; was Float64 "3.0").
+    assert {r["id"] for r in outcome.sample_failures["mismatched"]} == {"3"}
     assert outcome.expected_value is not None
     assert outcome.expected_value["keys"] == ["id"]
 
@@ -335,3 +335,27 @@ def test_comparison_samples_redact_with_suffix_stripped_policy() -> None:
     assert row["junk_src"] == "<redacted>"  # unclassified defaults to masked
     extra = redacted["additional_in_source"][0]
     assert extra["order_id"] == "9" and extra["email_src"] == "<redacted>"
+
+
+def test_executor_dispatches_columns_grain(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`comparison:columns` routes to compare_columns and maps the value-grain
+    observed shape (+ tolerance passthrough into the engine)."""
+    source_conn, suite_conn = _conn(), _conn()
+    frames = {
+        source_conn.id: pd.DataFrame({"id": [1, 2], "v": [10.0, 20.0]}),
+        suite_conn.id: pd.DataFrame({"id": [1, 2], "v": [10.4, 25.0]}),
+    }
+    execute = _executor(monkeypatch, source_conn=source_conn, frames=frames, suite_conn=suite_conn)
+    check = _comparison_check(source_conn.id, tolerance={"absolute": 0.5})
+    check.expectation_type = "comparison:columns"
+    outcome = execute(check)
+
+    assert not outcome.errored
+    assert outcome.observed_value is not None
+    # Value grain: 10.0≈10.4 within 0.5 → matched; 20 vs 25 → mismatched.
+    assert outcome.observed_value["matched_values"] == 1
+    assert outcome.observed_value["mismatched_values"] == 1
+    assert outcome.observed_value["per_column"]["v"]["mismatched"] == 1
+    assert outcome.expected_value is not None
+    assert outcome.expected_value["tolerance"] == {"absolute": 0.5}
+    assert outcome.metric_value == 50.0

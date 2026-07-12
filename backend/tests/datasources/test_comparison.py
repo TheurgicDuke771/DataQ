@@ -277,3 +277,137 @@ def test_arrow_backed_frames_compare_cleanly() -> None:
     target = pd.DataFrame({"id": [1, 2], "v": [10, None]})
     res = _res(source=source, target=target)
     assert res.matched == 2 and res.success
+
+
+# ───────────────────────── tolerance (#799) ─────────────────────────
+
+
+def test_tolerance_absolute_and_relative() -> None:
+    from backend.app.datasources.comparison import Tolerance
+
+    source = pd.DataFrame({"id": [1, 2, 3], "v": [100.0, 200.0, 300.0]})
+    target = pd.DataFrame({"id": [1, 2, 3], "v": [100.4, 210.0, 300.0]})
+    exact = _res(source=source, target=target)
+    assert exact.mismatched == 2
+    absolute = _res(source=source, target=target, tolerance=Tolerance(absolute=0.5))
+    assert absolute.mismatched == 1  # 100.4 within 0.5; 210 not
+    relative = _res(source=source, target=target, tolerance=Tolerance(relative=0.05))
+    assert relative.mismatched == 0  # both within 5%
+
+
+def test_tolerance_never_equates_one_sided_null_or_strings() -> None:
+    from backend.app.datasources.comparison import Tolerance
+
+    source = pd.DataFrame({"id": [1, 2], "v": [1.0, None], "s": ["a", "b"]})
+    target = pd.DataFrame({"id": [1, 2], "v": [1.0, 2.0], "s": ["a", "c"]})
+    res = _res(source=source, target=target, tolerance=Tolerance(absolute=1e9))
+    # The huge tolerance cannot rescue a NULL-vs-value or a string mismatch.
+    assert res.mismatched == 1
+    assert res.column_mismatch_counts == {"v": 1, "s": 1}
+
+
+def test_parse_tolerance_validation() -> None:
+    from backend.app.datasources.comparison import parse_tolerance
+
+    assert parse_tolerance(None) is None
+    tol = parse_tolerance({"absolute": 0.5, "relative": 0.01})
+    assert tol is not None and tol.absolute == 0.5 and tol.relative == 0.01
+    for bad in [{}, {"absolute": -1}, {"absolute": True}, {"typo": 1}, "0.5", 0.5]:
+        with pytest.raises(ComparisonInputError):
+            parse_tolerance(bad)
+
+
+# ───────────────────────── column grain (#799) ──────────────────────
+
+
+def _col_res(**kw: Any) -> Any:
+    from backend.app.datasources.comparison import compare_columns
+
+    kw.setdefault("keys", ["id"])
+    source = kw.pop("source")
+    target = kw.pop("target")
+    return compare_columns(source, target, **kw)
+
+
+def test_columns_grain_buckets_fdc_parity() -> None:
+    # id=1: a matches, b mismatches. id=2: a null-in-target (additional_in_source
+    # for column a), b matches. id=3 only in source (its non-null values are
+    # additional_in_source). id=4 only in target.
+    source = pd.DataFrame({"id": [1, 2, 3], "a": ["x", "y", "z"], "b": [1, 2, None]})
+    target = pd.DataFrame({"id": [1, 2, 4], "a": ["x", None, "q"], "b": [9, 2, 4]})
+    res = _col_res(source=source, target=target)
+    assert res.per_column["a"] == {
+        "matched": 1,
+        "mismatched": 0,
+        "additional_in_source": 2,  # id=2 (null opposite) + id=3 (row only in source)
+        "additional_in_target": 1,  # id=4
+    }
+    assert res.per_column["b"] == {
+        "matched": 1,
+        "mismatched": 1,  # id=1: 1 vs 9
+        "additional_in_source": 0,  # id=3's b is NULL → counts nowhere (dropna parity)
+        "additional_in_target": 1,  # id=4
+    }
+    assert res.mismatched_values == 1
+    assert res.additional_in_source_values == 2
+    assert res.additional_in_target_values == 2
+    assert not res.success
+    # badness = non-matched / all counted slots = 5 / 7
+    assert res.mismatch_percent == round(5 / 7 * 100.0, 4)
+
+
+def test_columns_grain_success_and_samples_shape() -> None:
+    source = pd.DataFrame({"id": [1], "a": ["x"]})
+    target = pd.DataFrame({"id": [1], "a": ["y"]})
+    res = _col_res(source=source, target=target)
+    assert res.sample_mismatched == [{"id": "1", "a_src": "x", "a_tgt": "y"}]
+
+    clean = _col_res(source=source, target=source.copy())
+    assert clean.success and clean.mismatch_percent == 0.0
+
+
+def test_columns_grain_requires_shared_columns() -> None:
+    source = pd.DataFrame({"id": [1], "only_src": [1]})
+    target = pd.DataFrame({"id": [1], "only_tgt": [2]})
+    with pytest.raises(ComparisonInputError, match="shared non-key column"):
+        _col_res(source=source, target=target)
+
+
+def test_columns_grain_tolerance_applies() -> None:
+    from backend.app.datasources.comparison import Tolerance
+
+    source = pd.DataFrame({"id": [1], "v": [0.1]})
+    # float32 round-trip of 0.1 — the #808-review scenario tolerance exists for.
+    target = pd.DataFrame({"id": [1], "v": [0.10000000149011612]})
+    exact = _col_res(source=source, target=target)
+    assert exact.mismatched_values == 1
+    tolerant = _col_res(source=source, target=target, tolerance=Tolerance(relative=1e-6))
+    assert tolerant.success
+
+
+# ───────────────────────── #812 review findings ─────────────────────
+
+
+def test_uint64_beyond_int64_falls_back_to_float_canonical() -> None:
+    import numpy as np
+
+    big = np.array([2**63 + 5, 7], dtype="uint64")
+    source = pd.DataFrame({"id": [1, 2], "v": big})
+    target = pd.DataFrame({"id": [1, 2], "v": big.copy()})
+    res = _res(source=source, target=target)
+    assert res.success  # no TypeError, identical data reconciles
+
+
+def test_reserved_position_names_refused() -> None:
+    source = pd.DataFrame({"__dataq_pos": [1], "v": ["a"]})
+    target = pd.DataFrame({"__dataq_pos": [1], "v": ["a"]})
+    with pytest.raises(ComparisonInputError, match="reserved"):
+        _res(source=source, target=target, keys=["__dataq_pos"])
+
+
+def test_key_shadowed_by_sample_suffix_refused() -> None:
+    # key 'v_src' + compared column 'v' → sample keys collide.
+    source = pd.DataFrame({"v_src": [1, 2], "v": ["a", "b"]})
+    target = pd.DataFrame({"v_src": [1, 2], "v": ["a", "X"]})
+    with pytest.raises(ComparisonInputError, match="v_src"):
+        _res(source=source, target=target, keys=["v_src"])

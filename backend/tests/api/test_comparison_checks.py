@@ -150,10 +150,42 @@ def test_create_rejects_wrong_expectation_type(client: TestClient, db_session: A
     source = _connection(db_session)
     resp = client.post(
         f"/api/v1/suites/{sid}/checks",
-        json=_payload(str(source.id), expectation_type="comparison:columns"),
+        json=_payload(str(source.id), expectation_type="comparison:cells"),
     )
     assert resp.status_code == 422
     assert "comparison:records" in resp.json()["error"]["message"]
+
+
+def test_create_columns_grain_and_tolerance(client: TestClient, db_session: Any) -> None:
+    # `comparison:columns` is authorable (#799), and tolerance validates.
+    sid = _suite_id(client, _connection(db_session))
+    source = _connection(db_session)
+    ok = client.post(
+        f"/api/v1/suites/{sid}/checks",
+        json=_payload(
+            str(source.id),
+            expectation_type="comparison:columns",
+            config={
+                "source": {"table": "ORDERS", "schema": "RETAIL"},
+                "keys": ["order_id"],
+                "tolerance": {"relative": 0.001},
+            },
+        ),
+    )
+    assert ok.status_code == 201
+    bad_tolerance = client.post(
+        f"/api/v1/suites/{sid}/checks",
+        json=_payload(
+            str(source.id),
+            config={
+                "source": {"table": "ORDERS"},
+                "keys": ["order_id"],
+                "tolerance": {"absolute": -1},
+            },
+        ),
+    )
+    assert bad_tolerance.status_code == 422
+    assert bad_tolerance.json()["error"]["code"] == "check_config_invalid"
 
 
 def test_create_rejects_source_ref_on_expectation_kind(client: TestClient, db_session: Any) -> None:

@@ -18,7 +18,20 @@ const COUNT_LABELS: [string, string][] = [
   ['mismatched', 'Mismatched'],
   ['additional_in_source', 'Only in source'],
   ['additional_in_target', 'Only in target'],
+  // Value-grain counters (comparison:columns, #799) — presence-filtered like
+  // the row-grain ones, so each grain shows only its own set.
+  ['matched_values', 'Matched values'],
+  ['mismatched_values', 'Mismatched values'],
+  ['additional_in_source_values', 'Values only in source'],
+  ['additional_in_target_values', 'Values only in target'],
   ['mismatch_percent', 'Mismatch %'],
+];
+
+const PER_COLUMN_BUCKETS: [string, string][] = [
+  ['matched', 'Matched'],
+  ['mismatched', 'Mismatched'],
+  ['additional_in_source', 'Only in source'],
+  ['additional_in_target', 'Only in target'],
 ];
 
 /**
@@ -75,6 +88,31 @@ export function ComparisonResultDetail({ runId, result }: { runId: string; resul
           children: String(observed[key]),
         }))}
       />
+      {isRecord(observed.per_column) && (
+        <div data-testid="comparison-per-column">
+          <Typography.Text type="secondary">Per-column breakdown</Typography.Text>
+          <Table
+            size="small"
+            rowKey="column"
+            pagination={false}
+            scroll={{ x: 'max-content' }}
+            columns={[
+              { title: 'Column', dataIndex: 'column' },
+              ...PER_COLUMN_BUCKETS.map(([bucket, label]) => ({
+                title: label,
+                dataIndex: bucket,
+                render: (v: unknown) => String(v ?? 0),
+              })),
+            ]}
+            dataSource={Object.entries(observed.per_column as Record<string, unknown>).map(
+              ([column, counts]) => ({
+                column,
+                ...(isRecord(counts) ? counts : {}),
+              }),
+            )}
+          />
+        </div>
+      )}
       {BUCKETS.map(({ key, label }) => {
         const rows = sample[key];
         if (!Array.isArray(rows) || rows.length === 0) return null;
@@ -99,4 +137,8 @@ export function ComparisonResultDetail({ runId, result }: { runId: string; resul
       })}
     </Flex>
   );
+}
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
 }

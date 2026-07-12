@@ -68,17 +68,18 @@ def test_fixture_is_present_and_nonempty() -> None:
     """A gutted fixture must fail loudly, not vacuously pass the loops below."""
     assert len(_expectations()) >= 8
     assert len(_monitors()) == 2
-    assert len(_comparisons()) == 1
+    assert len(_comparisons()) == 2  # records + columns grains (#799)
 
 
-def test_comparison_entry_matches_backend_canonical_type() -> None:
-    """The comparison catalog entry (ADR 0015) must carry the backend's canonical
-    expectation_type; it bypasses GX (no fields — the dedicated form authors it)."""
-    from backend.app.services.check_service import COMPARISON_EXPECTATION_TYPE
+def test_comparison_entries_match_backend_canonical_types() -> None:
+    """The comparison catalog entries (ADR 0015 + #799) must carry exactly the
+    backend's canonical expectation_types; they bypass GX (no fields — the
+    dedicated side-by-side form authors them)."""
+    from backend.app.services.check_service import COMPARISON_EXPECTATION_TYPES
 
-    (entry,) = _comparisons()
-    assert entry["type"] == COMPARISON_EXPECTATION_TYPE
-    assert entry["fields"] == []
+    entries = _comparisons()
+    assert sorted(e["type"] for e in entries) == sorted(COMPARISON_EXPECTATION_TYPES)
+    assert all(e["fields"] == [] for e in entries)
 
 
 @pytest.mark.parametrize("entry", _expectation_params())
