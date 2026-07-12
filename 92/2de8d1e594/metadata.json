@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "922de8d1e594",
+  "strategy": "manual-commit",
+  "branch": "docs/comparison-build-currency",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/adr/README.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/92/2de8d1e594/0/metadata.json",
+      "transcript": "/92/2de8d1e594/0/full.jsonl",
+      "compact_transcript": "/92/2de8d1e594/0/transcript.jsonl",
+      "content_hash": "/92/2de8d1e594/0/content_hash.txt",
+      "prompt": "/92/2de8d1e594/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 957,
+    "cache_creation_tokens": 3472579,
+    "cache_read_tokens": 208858939,
+    "output_tokens": 352678,
+    "api_call_count": 491
+  }
+}
