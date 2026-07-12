@@ -358,6 +358,27 @@ class IcebergCheckRunner:
         raise MonitorConfigError(f"unknown monitor kind: {spec.kind!r}")
 
 
+def iceberg_credentials(
+    config: IcebergConfig, secret_ref: str | None, secret_store: SecretStore
+) -> tuple[str | None, str | None]:
+    """``(storage_secret, catalog_secret)`` for an Iceberg connection.
+
+    **The one place both credentials are resolved.** An Iceberg SQL catalog needs two
+    (the storage key AND the catalog DB password, #754/#826), and `catalog_uri` no
+    longer carries the second one — so a caller that resolves only the storage secret
+    would connect to the catalog with *no password* and fail obscurely, or worse,
+    succeed against an unauthenticated catalog. Every read path (runner, profiler,
+    comparison reader) goes through here so none of them can forget.
+
+    Both are optional: a local warehouse / vended-credentials REST catalog has neither.
+    """
+    secret = secret_store.get(secret_ref) if secret_ref else None
+    catalog_secret = (
+        secret_store.get(config.catalog_secret_name) if config.catalog_secret_name else None
+    )
+    return secret, catalog_secret
+
+
 def build_iceberg_runner(
     *, config: dict[str, Any], secret_ref: str | None, secret_store: SecretStore, **_: Any
 ) -> IcebergCheckRunner:
@@ -369,12 +390,5 @@ def build_iceberg_runner(
     REST) has no ``secret_ref`` (like the ADLS/S3 adapters).
     """
     iceberg_config = IcebergConfig.model_validate(config)
-    secret = secret_store.get(secret_ref) if secret_ref else None
-    # The SQL-catalog DB password lives in the SecretStore under a NAME held in
-    # config — the URI itself stays credential-less at rest (#754/#826).
-    catalog_secret = (
-        secret_store.get(iceberg_config.catalog_secret_name)
-        if iceberg_config.catalog_secret_name
-        else None
-    )
+    secret, catalog_secret = iceberg_credentials(iceberg_config, secret_ref, secret_store)
     return IcebergCheckRunner(config=iceberg_config, secret=secret, catalog_secret=catalog_secret)

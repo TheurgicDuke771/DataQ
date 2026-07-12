@@ -10,13 +10,14 @@ catalog/scan I/O is faked. The adapter is DB-free, so these are pure unit tests.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
 import pandas as pd
 import pyarrow as pa
 import pytest
 from pydantic import ValidationError
 
+from backend.app.core.secrets import SecretStore
 from backend.app.datasources import iceberg as iceberg_mod
 from backend.app.datasources.base import CheckSpec, MonitorSpec
 from backend.app.datasources.iceberg import (
@@ -24,6 +25,7 @@ from backend.app.datasources.iceberg import (
     IcebergConfig,
     IcebergConnectionAdapter,
     build_iceberg_runner,
+    iceberg_credentials,
     list_iceberg_columns,
     read_iceberg_dataframe,
 )
@@ -518,3 +520,56 @@ class TestCatalogCredential:
         uri = cfg.catalog_properties(None, "pw@evil-host/")
         assert "@real-host:5432/cat" in uri["uri"]
         assert "evil-host" not in uri["uri"].split("@")[-1]
+
+
+class TestEveryReadPathGetsTheCatalogCredential:
+    """Regression: `catalog_uri` is credential-less now, so ANY read path that resolves
+    only the storage secret would connect to the catalog with no password (#754/#826).
+    The runner path was wired first and the profiler/comparison paths were NOT — this
+    pins that every one of them goes through `iceberg_credentials`."""
+
+    class _Store:
+        def get(self, ref: str) -> str:
+            return {"kv-storage": "STORAGE_KEY", "kv-catalog": "CATALOG_PW"}[ref]
+
+    def _cfg(self) -> IcebergConfig:
+        return IcebergConfig(
+            catalog_type="sql",
+            catalog_uri="postgresql+psycopg2://u@h:5432/cat",
+            catalog_secret_name="kv-catalog",
+            secret_property="adls.account-key",
+        )
+
+    def test_resolves_both_credentials(self) -> None:
+        secret, catalog_secret = iceberg_credentials(
+            self._cfg(), "kv-storage", cast(SecretStore, self._Store())
+        )
+        assert secret == "STORAGE_KEY"
+        assert catalog_secret == "CATALOG_PW"
+
+    def test_both_are_optional(self) -> None:
+        cfg = IcebergConfig(catalog_type="rest", catalog_uri="https://cat.example")
+        assert iceberg_credentials(cfg, None, cast(SecretStore, self._Store())) == (None, None)
+
+    def test_the_runner_actually_reaches_the_catalog_with_the_password(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        seen: dict[str, Any] = {}
+
+        def _fake_load_catalog(name: str, **props: Any) -> Any:
+            seen.update(props)
+            raise RuntimeError("stop here — we only care about the props")
+
+        monkeypatch.setattr("pyiceberg.catalog.load_catalog", _fake_load_catalog)
+        runner = build_iceberg_runner(
+            config=self._cfg().model_dump(),
+            secret_ref="kv-storage",
+            secret_store=cast(SecretStore, self._Store()),
+        )
+        with pytest.raises(RuntimeError):
+            runner._load_table("retail.orders")
+
+        # The DSN handed to pyiceberg carries the catalog password…
+        assert seen["uri"] == "postgresql+psycopg2://u:CATALOG_PW@h:5432/cat"
+        # …and the storage key still lands on its own property.
+        assert seen["adls.account-key"] == "STORAGE_KEY"

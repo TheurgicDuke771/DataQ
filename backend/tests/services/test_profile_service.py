@@ -687,7 +687,9 @@ def test_profile_iceberg_computes_stats(monkeypatch: pytest.MonkeyPatch) -> None
     table = _FakeIcebergTable(
         pd.DataFrame({"amount": [10, 20, 20, 20], "city": ["x", "x", "y", None]})
     )
-    monkeypatch.setattr(svc, "load_iceberg_table", lambda config, secret, identifier: table)
+    monkeypatch.setattr(
+        svc, "load_iceberg_table", lambda config, secret, identifier, catalog_secret=None: table
+    )
     result = svc.profile_connection(
         _iceberg_conn(),
         columns=["amount", "city"],
@@ -713,7 +715,9 @@ def test_profile_iceberg_bare_table_without_namespace(monkeypatch: pytest.Monkey
     table = _FakeIcebergTable(pd.DataFrame({"a": [1]}))
     captured: dict[str, Any] = {}
 
-    def fake_load(config: Any, secret: Any, identifier: str) -> _FakeIcebergTable:
+    def fake_load(
+        config: Any, secret: Any, identifier: str, catalog_secret: Any = None
+    ) -> _FakeIcebergTable:
         captured["identifier"] = identifier
         return table
 
@@ -731,7 +735,9 @@ def test_profile_iceberg_folds_multilevel_namespace(monkeypatch: pytest.MonkeyPa
     table = _FakeIcebergTable(pd.DataFrame({"a": [1]}))
     captured: dict[str, Any] = {}
 
-    def fake_load(config: Any, secret: Any, identifier: str) -> _FakeIcebergTable:
+    def fake_load(
+        config: Any, secret: Any, identifier: str, catalog_secret: Any = None
+    ) -> _FakeIcebergTable:
         captured["identifier"] = identifier
         return table
 
@@ -760,7 +766,9 @@ def test_profile_iceberg_blank_namespace_folds_to_bare_table(
     table = _FakeIcebergTable(pd.DataFrame({"a": [1]}))
     captured: dict[str, Any] = {}
 
-    def fake_load(config: Any, secret: Any, identifier: str) -> _FakeIcebergTable:
+    def fake_load(
+        config: Any, secret: Any, identifier: str, catalog_secret: Any = None
+    ) -> _FakeIcebergTable:
         captured["identifier"] = identifier
         return table
 
@@ -787,7 +795,9 @@ def test_profile_iceberg_credential_less_connection_does_not_422(
     table = _FakeIcebergTable(pd.DataFrame({"a": [1, 2]}))
     captured: dict[str, Any] = {}
 
-    def fake_load(config: Any, secret: Any, identifier: str) -> _FakeIcebergTable:
+    def fake_load(
+        config: Any, secret: Any, identifier: str, catalog_secret: Any = None
+    ) -> _FakeIcebergTable:
         captured["secret"] = secret
         return table
 
@@ -819,7 +829,9 @@ def test_profile_iceberg_missing_column_returns_422_without_scanning(
     from backend.app.services import profile_service as svc
 
     table = _FakeIcebergTable(pd.DataFrame({"a": [1]}))
-    monkeypatch.setattr(svc, "load_iceberg_table", lambda config, secret, identifier: table)
+    monkeypatch.setattr(
+        svc, "load_iceberg_table", lambda config, secret, identifier, catalog_secret=None: table
+    )
     with pytest.raises(ProfileColumnNotFoundError) as exc:
         svc.profile_connection(
             _iceberg_conn(), columns=["missing"], top_n=5, table="orders", secret_store=_FakeStore()
@@ -836,7 +848,9 @@ def test_profile_iceberg_partially_missing_columns_returns_422_without_scanning(
     from backend.app.services import profile_service as svc
 
     table = _FakeIcebergTable(pd.DataFrame({"a": [1], "b": [2]}))
-    monkeypatch.setattr(svc, "load_iceberg_table", lambda config, secret, identifier: table)
+    monkeypatch.setattr(
+        svc, "load_iceberg_table", lambda config, secret, identifier, catalog_secret=None: table
+    )
     with pytest.raises(ProfileColumnNotFoundError):
         svc.profile_connection(
             _iceberg_conn(),
@@ -858,7 +872,9 @@ def test_profile_iceberg_valid_columns_load_once_and_scan_the_projection(
     table = _FakeIcebergTable(pd.DataFrame({"a": [1, 2], "b": [3, 4], "c": [5, 6]}))
     loads: list[str] = []
 
-    def fake_load(config: Any, secret: Any, identifier: str) -> _FakeIcebergTable:
+    def fake_load(
+        config: Any, secret: Any, identifier: str, catalog_secret: Any = None
+    ) -> _FakeIcebergTable:
         loads.append(identifier)
         return table
 
@@ -923,7 +939,9 @@ def test_profile_iceberg_arrow_backed_frame_matches_numpy_stats(
     assert all("pyarrow" in str(dt) for dt in arrow_df.dtypes)  # guard: actually Arrow-backed
 
     table = _FakeIcebergTable(arrow_df)
-    monkeypatch.setattr(svc, "load_iceberg_table", lambda config, secret, identifier: table)
+    monkeypatch.setattr(
+        svc, "load_iceberg_table", lambda config, secret, identifier, catalog_secret=None: table
+    )
     result = svc.profile_connection(
         _iceberg_conn(),
         columns=["amount", "city"],
@@ -944,7 +962,7 @@ def test_list_columns_iceberg_returns_schema_names(monkeypatch: pytest.MonkeyPat
 
     captured: dict[str, Any] = {}
 
-    def fake(config: Any, secret: Any, identifier: str) -> list[str]:
+    def fake(config: Any, secret: Any, identifier: str, catalog_secret: Any = None) -> list[str]:
         captured["identifier"] = identifier
         return ["id", "amount", "city"]
 

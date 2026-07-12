@@ -39,6 +39,7 @@ from backend.app.core.secrets import SecretStore
 from backend.app.datasources.flatfile import read_dataframe as read_flatfile_dataframe
 from backend.app.datasources.iceberg import (
     IcebergConfig,
+    iceberg_credentials,
     load_iceberg_table,
     read_iceberg_dataframe,
 )
@@ -218,14 +219,17 @@ def _iceberg_read(
             detail={"spec": "table"},
         )
     cfg = IcebergConfig.model_validate(connection.config)
-    # Credential optional, mirroring `build_iceberg_runner` (a local warehouse /
-    # vended-credentials REST catalog has none).
-    secret = secret_store.get(connection.secret_ref) if connection.secret_ref else None
-    table = load_iceberg_table(cfg, secret, spec.table)
+    # Both credentials, resolved in one place (a SQL catalog needs the catalog DB
+    # password too — #754/#826). Both optional: a local warehouse /
+    # vended-credentials REST catalog has neither.
+    secret, catalog_secret = iceberg_credentials(cfg, connection.secret_ref, secret_store)
+    table = load_iceberg_table(cfg, secret, spec.table, catalog_secret)
     count = int(table.scan().count())  # snapshot metadata — no data files read
     if count > max_rows:
         raise _too_large(count, max_rows, side_hint=f"iceberg table {spec.table!r}")
-    df = read_iceberg_dataframe(cfg, secret, spec.table, limit=max_rows + 1, table=table)
+    df = read_iceberg_dataframe(
+        cfg, secret, spec.table, limit=max_rows + 1, table=table, catalog_secret=catalog_secret
+    )
     if len(df) > max_rows:
         raise _too_large(len(df), max_rows, side_hint=f"iceberg table {spec.table!r}")
     return df

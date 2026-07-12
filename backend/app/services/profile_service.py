@@ -51,6 +51,7 @@ from backend.app.core.secrets import SecretStore
 from backend.app.datasources.flatfile import download_bytes, format_from_path
 from backend.app.datasources.iceberg import (
     IcebergConfig,
+    iceberg_credentials,
     load_iceberg_table,
     read_iceberg_dataframe,
 )
@@ -717,8 +718,8 @@ def _read_iceberg_dataframe(
     (#721 code review); that fallback now only fires for the `columns=None`
     (list-every-column) case, never reachable from here."""
     config = IcebergConfig.model_validate(connection.config)
-    secret = secret_store.get(connection.secret_ref) if connection.secret_ref else None
-    table = load_iceberg_table(config, secret, identifier)
+    secret, catalog_secret = iceberg_credentials(config, connection.secret_ref, secret_store)
+    table = load_iceberg_table(config, secret, identifier, catalog_secret)
     available = [field.name for field in table.schema().fields]
     missing = [c for c in columns if c not in available]
     if missing:
@@ -727,7 +728,13 @@ def _read_iceberg_dataframe(
             detail={"missing": missing, "available": available[:50]},
         )
     return read_iceberg_dataframe(
-        config, secret, identifier, columns=columns, limit=_SAMPLE_ROWS, table=table
+        config,
+        secret,
+        identifier,
+        columns=columns,
+        limit=_SAMPLE_ROWS,
+        table=table,
+        catalog_secret=catalog_secret,
     )
 
 
@@ -737,8 +744,8 @@ def _list_iceberg_columns(
     """Resolve config + optional secret and list the target's schema field names
     (metadata only, no data scan) — the Iceberg column-listing I/O seam."""
     config = IcebergConfig.model_validate(connection.config)
-    secret = secret_store.get(connection.secret_ref) if connection.secret_ref else None
-    return iceberg_column_names(config, secret, identifier)
+    secret, catalog_secret = iceberg_credentials(config, connection.secret_ref, secret_store)
+    return iceberg_column_names(config, secret, identifier, catalog_secret)
 
 
 def profile_iceberg(
