@@ -2,9 +2,10 @@ import { App, Button, Card, Flex, Form, Input, Tag, Typography } from 'antd';
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
-import { getConnection } from '../api/connections';
+import { getConnection, listConnections } from '../api/connections';
 import { createCheck, getSuite } from '../api/suites';
-import { buildCheckPayload } from '../components/checks/checkForm';
+import { buildCheckPayload, buildComparisonPayload } from '../components/checks/checkForm';
+import { ComparisonCheckForm } from '../components/checks/ComparisonCheckForm';
 import { ConfigFieldItem, SeverityThresholdFields } from '../components/checks/checkFormFields';
 import { ColumnProfilePanel } from '../components/checks/ColumnProfilePanel';
 import { DryRunPreview } from '../components/checks/DryRunPreview';
@@ -46,7 +47,9 @@ export function CheckNew() {
     // suite). The connection only gates the Custom-SQL category — never let its
     // absence break the rest of the page (target / dry-run / profiler).
     const connection = await getConnection(suite.connection_id).catch(() => null);
-    return { suite, connection };
+    // The comparison editor's source picker; best-effort like the connection.
+    const connections = await listConnections().catch(() => []);
+    return { suite, connection, connections };
   });
   const target = state.status === 'ok' ? state.data.suite.target : null;
   const connectionType = state.status === 'ok' ? state.data.connection?.type : undefined;
@@ -64,10 +67,13 @@ export function CheckNew() {
 
   const onFinish = (values: Record<string, unknown>) => {
     if (!suiteId || !expectationType) return;
+    const isComparison = EXPECTATION_BY_TYPE[expectationType]?.kind === 'comparison';
     return run(async () => {
       await createCheck(
         suiteId,
-        buildCheckPayload({ ...values, expectation_type: expectationType }),
+        isComparison
+          ? buildComparisonPayload(values)
+          : buildCheckPayload({ ...values, expectation_type: expectationType }),
       );
       message.success(`${values.name as string}: created`);
       backToSuite();
@@ -90,11 +96,20 @@ export function CheckNew() {
           <Form.Item name="name" label="Name" rules={[{ required: true }]}>
             <Input placeholder="e.g. order_id not null" />
           </Form.Item>
-          {spec.fields.map((field) => (
-            <ConfigFieldItem key={field.name} field={field} connectionType={connectionType} />
-          ))}
+          {spec.kind === 'comparison' ? (
+            <ComparisonCheckForm
+              connections={state.status === 'ok' ? state.data.connections : []}
+              suiteConnectionName={state.status === 'ok' ? state.data.connection?.name : undefined}
+              suiteConnectionType={connectionType}
+              targetSummary={targetSummary(target)}
+            />
+          ) : (
+            spec.fields.map((field) => (
+              <ConfigFieldItem key={field.name} field={field} connectionType={connectionType} />
+            ))
+          )}
           <SeverityThresholdFields monitor={spec.thresholds} />
-          {suiteId && (
+          {suiteId && spec.kind !== 'comparison' && (
             <>
               <Form.Item>
                 <ColumnProfilePanel suiteId={suiteId} target={target} column={column} />
@@ -187,6 +202,21 @@ export function CheckNew() {
       </Flex>
     </Page>
   );
+}
+
+/** Human summary of the suite's run target for the locked target pane. */
+function targetSummary(target: Record<string, unknown> | null | undefined): string {
+  if (!target) return '(no run target set)';
+  const t = target as {
+    catalog?: string;
+    schema?: string;
+    table?: string;
+    path?: string;
+    pattern?: string;
+  };
+  if (t.path) return t.path;
+  if (t.pattern) return `batch: ${t.pattern}`;
+  return [t.catalog, t.schema, t.table].filter(Boolean).join('.') || '(no run target set)';
 }
 
 function Header({

@@ -107,6 +107,10 @@ function CheckEditForm({
   // `kind` is immutable on update (a freshness check can't become an expectation),
   // so a monitor check locks its type — only its config + thresholds are editable.
   const isMonitor = check.kind !== 'expectation';
+  // Comparison checks (ADR 0015) edit only name + thresholds here — the
+  // source/dataset config is authored on the dedicated side-by-side page
+  // (recreate to re-shape; repointing stays an API affair for now).
+  const isComparison = check.kind === 'comparison';
 
   // Seed from the loaded check once.
   useEffect(() => {
@@ -129,9 +133,24 @@ function CheckEditForm({
     }
     await run(async () => {
       // `kind` is immutable on update — omit it from the PATCH (don't rely on the
-      // backend silently ignoring an extra field).
-      const update = buildCheckPayload(values);
-      delete update.kind;
+      // backend silently ignoring an extra field). A comparison PATCH carries
+      // only name + thresholds: sending a rebuilt (empty) config would 422 on
+      // the comparison validator — and this page doesn't edit that config.
+      const update = isComparison
+        ? {
+            name: values.name as string,
+            warn_threshold:
+              typeof values.warn_threshold === 'number' ? values.warn_threshold : null,
+            fail_threshold:
+              typeof values.fail_threshold === 'number' ? values.fail_threshold : null,
+            critical_threshold:
+              typeof values.critical_threshold === 'number' ? values.critical_threshold : null,
+          }
+        : (() => {
+            const u = buildCheckPayload(values);
+            delete u.kind;
+            return u;
+          })();
       await updateCheck(suiteId, check.id, update);
       message.success(`${values.name as string}: saved`);
       onSaved();
@@ -179,9 +198,11 @@ function CheckEditForm({
 
         <SeverityThresholdFields monitor={spec?.thresholds} />
 
-        <Form.Item>
-          <ColumnProfilePanel suiteId={suiteId} target={target} column={column} />
-        </Form.Item>
+        {!isComparison && (
+          <Form.Item>
+            <ColumnProfilePanel suiteId={suiteId} target={target} column={column} />
+          </Form.Item>
+        )}
         {/* Dry-run previews a GX expectation; monitor kinds aren't GX, so skip it. */}
         {!spec?.kind && (
           <Form.Item>

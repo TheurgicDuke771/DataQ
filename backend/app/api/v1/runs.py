@@ -19,17 +19,18 @@ import uuid
 from datetime import datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import ConfigDict
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.api.v1._base import ApiModel
 from backend.app.core.auth import get_current_user, is_workspace_admin
-from backend.app.db.models import Check, User
+from backend.app.db.models import COMPARISON_KIND, Check, User
 from backend.app.db.session import get_db
 from backend.app.services import orchestration_service, run_dispatch
 from backend.app.services import run_service as svc
+from backend.app.services.comparison_report import ComparisonReportInvalidError, build_report
 from backend.app.services.suite_authz import require_permission
 
 router = APIRouter(tags=["runs"])
@@ -349,3 +350,44 @@ def list_pipelines(
     """
     pipelines = orchestration_service.list_pipelines(db, provider=provider, env=env, limit=limit)
     return [PipelineRunRead.model_validate(p) for p in pipelines]
+
+
+# ───────────────────────── comparison report download (ADR 0015 §4) ──
+
+
+@router.get(
+    "/runs/{run_id}/results/{result_id}/comparison_report",
+    summary="Download a comparison result's report (derived, never stored)",
+)
+def download_comparison_report(
+    run_id: uuid.UUID,
+    result_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    fmt: Annotated[str, Query(pattern="^(csv|xlsx)$")] = "csv",
+) -> Response:
+    """CSV/XLSX derived at request time from the persisted **redacted** buckets
+    (ADR 0015 §4 — a stored file would bypass redaction and the retention
+    sweep). Same authz + redaction as the run-detail read; format is chosen at
+    download time, nothing persists server-side."""
+    run = svc.get_run(db, run_id)
+    if run is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="run not found")
+    suite = require_permission(db, run.suite_id, current_user.id, minimum="view")
+    result = next((r for r in svc.list_results(db, run_id) if r.id == result_id), None)
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="result not found")
+    check = db.get(Check, result.check_id)
+    if check is None or check.kind != COMPARISON_KIND:
+        raise ComparisonReportInvalidError(
+            "this result is not a comparison check result",
+            detail={"result_id": str(result_id)},
+        )
+    redacted = svc.redact_sample_failures(result.sample_failures, policy=suite.column_policy)
+    payload, media_type = build_report(fmt, sample=redacted, observed=result.observed_value)
+    filename = f"comparison-{result_id}.{fmt}"
+    return Response(
+        content=payload,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

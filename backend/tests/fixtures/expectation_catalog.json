@@ -84,5 +84,10 @@
     "fields": [
       "unexpected_rows_query"
     ]
+  },
+  {
+    "type": "comparison:records",
+    "kind": "comparison",
+    "fields": []
   }
 ]

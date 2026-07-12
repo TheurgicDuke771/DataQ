@@ -24,7 +24,7 @@ export type ConfigFieldType = 'string' | 'number' | 'list' | 'sql';
 
 /** The check `kind` (ADR 0012). `expectation` (incl. custom-SQL) is GX; the
  *  monitor kinds run a scalar SQL aggregate instead. Sent to the backend. */
-export type CheckKind = 'expectation' | 'freshness' | 'volume';
+export type CheckKind = 'expectation' | 'freshness' | 'volume' | 'comparison';
 
 /**
  * Expectation categories — the GX-Cloud-style classification the check editor
@@ -33,7 +33,7 @@ export type CheckKind = 'expectation' | 'freshness' | 'volume';
  * a reserved-only category (surfaced disabled on the dedicated page).
  */
 export type ExpectationCategory =
-  'Column values' | 'Table shape' | 'Freshness' | 'Volume' | 'Custom SQL';
+  'Column values' | 'Table shape' | 'Freshness' | 'Volume' | 'Custom SQL' | 'Comparison';
 
 export const EXPECTATION_CATEGORIES: ExpectationCategory[] = [
   'Column values',
@@ -41,7 +41,13 @@ export const EXPECTATION_CATEGORIES: ExpectationCategory[] = [
   'Freshness',
   'Volume',
   'Custom SQL',
+  'Comparison',
 ];
+
+/** The canonical comparison expectation type (ADR 0015; `comparison:columns`
+ *  stays reserved). Authoring uses the dedicated side-by-side form, not the
+ *  generic `spec.fields` flow. */
+export const COMPARISON_EXPECTATION_TYPE = 'comparison:records';
 
 /** Monitor categories (ADR 0012) — like Custom SQL, they run a scalar SQL
  *  aggregate, so they're offered only on SQL-queryable datasources. */
@@ -273,6 +279,21 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
         help: 'Use {batch} for the suite’s target table. The check passes when the query returns no rows. Read-only (SELECT / WITH) only.',
       },
     ],
+  },
+  {
+    type: COMPARISON_EXPECTATION_TYPE,
+    kind: 'comparison',
+    label: 'Records reconciliation',
+    description:
+      'Diff this suite’s dataset (the target under test) against a baseline on another connection, joined on key columns — matched / mismatched / additional-per-side buckets (ADR 0015).',
+    category: 'Comparison',
+    // Authored via the dedicated side-by-side form (ComparisonCheckForm), not
+    // the generic field list.
+    fields: [],
+    thresholds: {
+      help: 'Band the mismatch-% (non-matching rows over all logical rows; higher = worse, 0–100). Leave blank for a binary reconciled pass/fail.',
+      max: 100,
+    },
   },
 ];
 

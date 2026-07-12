@@ -120,6 +120,9 @@ export interface Check {
   kind: string;
   expectation_type: string;
   config: Record<string, unknown>;
+  /** Comparison source ref (ADR 0015) — set exactly for kind='comparison'.
+   *  Optional in the type so pre-0015 fixtures/readers need no change. */
+  source_connection_id?: string | null;
   warn_threshold: number | null;
   fail_threshold: number | null;
   critical_threshold: number | null;
@@ -146,6 +149,8 @@ export interface CheckCreate {
   kind?: string;
   expectation_type: string;
   config: Record<string, unknown>;
+  /** Comparison source ref (ADR 0015) — required for kind='comparison'. */
+  source_connection_id?: string | null;
   warn_threshold?: number | null;
   fail_threshold?: number | null;
   critical_threshold?: number | null;
@@ -156,6 +161,8 @@ export interface CheckUpdate {
   name?: string;
   expectation_type?: string;
   config?: Record<string, unknown>;
+  /** Repoint a comparison check's source (never clearable). */
+  source_connection_id?: string | null;
   warn_threshold?: number | null;
   fail_threshold?: number | null;
   critical_threshold?: number | null;

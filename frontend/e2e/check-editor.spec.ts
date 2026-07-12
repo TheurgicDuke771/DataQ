@@ -84,4 +84,30 @@ test.describe('Check editor variants', () => {
     await expect(row).toBeVisible();
     await deleteCheck(page, name);
   });
+
+  test('author a comparison check via the side-by-side editor (ADR 0015)', async ({ page }) => {
+    const name = `e2e comparison ${Date.now()}`;
+
+    await page.getByText('Comparison', { exact: true }).click();
+    await page.getByText(/Diff this suite’s dataset/).click();
+
+    await page.getByLabel('Name').fill(name);
+    // The target pane is locked to the suite's connection — the ADR 0015 §1
+    // invariant made visible; only the source side is user-pickable.
+    await expect(page.getByTestId('comparison-target-connection')).toBeDisabled();
+    await page.getByLabel('Source connection').click();
+    // Cross-env baseline (dev suite vs the QA twin) — a headline use case.
+    await page.getByText('snowflake-analytics (snowflake, qa)', { exact: true }).click();
+    await page.getByRole('textbox', { name: /Table/ }).fill('ORDERS');
+    await page.getByLabel('Join key columns').click();
+    await page.keyboard.type('order_id');
+    await page.keyboard.press('Enter');
+    await page.getByRole('button', { name: 'Create check' }).click();
+
+    await expect(page).toHaveURL(/\/suites\/[0-9a-f-]+$/);
+    const row = page.locator('[role="listitem"]').filter({ hasText: name });
+    await expect(row).toBeVisible();
+    await expect(row.getByText('comparison:records')).toBeVisible();
+    await deleteCheck(page, name);
+  });
 });
