@@ -1,0 +1,81 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "164e32138734",
+  "session_id": "3890ca48-f83c-40ac-a424-e009239c3867",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-12T14:44:48.584376Z",
+  "branch": "chore/codeql-quality-findings",
+  "checkpoints_count": 6,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "0d30476044b3",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 193,
+    "cache_creation_tokens": 335338,
+    "cache_read_tokens": 15235770,
+    "output_tokens": 64002,
+    "api_call_count": 97
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-security-scan-2026-07-12T14:15:26.055959Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "security-scan"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "d739bd32a243",
+      "timestamp": "2026-07-12T14:15:26.055959Z",
+      "native": {
+        "command": "/security-scan"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/security-scan",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01SRqxhkMKdueR2TABFGMc2t",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "0d30476044b3",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 251,
+        "end": 252,
+        "entry_ids": [
+          "afa02beb-68d1-454b-b5d5-b864f5bfa566"
+        ],
+        "tool_use_id": "toolu_01SRqxhkMKdueR2TABFGMc2t"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01SRqxhkMKdueR2TABFGMc2t"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 8
+  }
+}
