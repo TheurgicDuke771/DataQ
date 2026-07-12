@@ -273,6 +273,51 @@ def test_run_outcomes_comparison_without_executor_errors() -> None:
 # ───────────────────────── redaction (comparison buckets) ───────────
 
 
+def test_executor_source_batch_not_found_is_friendly_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A routine "baseline hasn't landed" must not surface as the generic
+    # UNKNOWN failure (BatchNotFoundError is a ValueError, not a DataQError).
+    from backend.app.datasources.flatfile import BatchNotFoundError
+    from backend.app.services import run_target as run_target_module
+
+    source_conn = _conn("s3")
+
+    def _no_batch(*a: Any, **kw: Any) -> Any:
+        raise BatchNotFoundError("no files matched batch pattern")
+
+    monkeypatch.setattr(run_target_module, "materialize_path", _no_batch)
+    execute = comparison_run.build_comparison_executor(
+        FakeSession({source_conn.id: source_conn}),  # type: ignore[arg-type]
+        suite_connection=_conn(),
+        target_table="T",
+        target_schema=None,
+        target_catalog=None,
+        secret_store=FakeSecretStore(),  # type: ignore[arg-type]
+    )
+    check = _comparison_check(
+        source_conn.id, source={"pattern": r"orders_(\d+)\.csv", "strategy": "latest"}
+    )
+    outcome = execute(check)
+    assert outcome.errored
+    assert outcome.error_message is not None and "batch not found" in outcome.error_message
+
+
+def test_comparison_redaction_hard_masks_raw_suffixed_policy_names() -> None:
+    # A pii_columns entry written exactly as the DISPLAYED suffixed column
+    # ("status_src") — or a real column genuinely ending in _src — must still
+    # mask; the hard-mask levels match both raw and stripped names.
+    sample = {
+        "mismatched": [{"order_id": "7", "status_src": "gold", "status_tgt": "gold"}],
+    }
+    policy = {"identifier_column": "order_id", "pii_columns": ["status_src"]}
+    redacted = run_service.redact_sample_failures(sample, policy=policy)
+    assert redacted is not None
+    row = redacted["mismatched"][0]
+    assert row["status_src"] == "<redacted>"  # raw-name policy entry honored
+    assert row["order_id"] == "7"
+
+
 def test_comparison_samples_redact_with_suffix_stripped_policy() -> None:
     sample = {
         "mismatched": [

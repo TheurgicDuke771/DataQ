@@ -632,15 +632,21 @@ def _redact_comparison_row(
     """Per-column masking for a comparison sample row, matching policy and
     classifier on the suffix-stripped column name (both sides of a PII column
     mask together; the join-key columns are unsuffixed and match directly).
-    There is no `tested_column` in a comparison — every column is incidental,
-    so everything not affirmatively identifier/safe default-masks (#415)."""
+    The hard-mask levels (governance tags + `pii_columns`) match BOTH the raw
+    and stripped names, so an entry written as the displayed suffixed name
+    (`status_src`), or a real column that genuinely ends in `_src`, still
+    masks — an explicit listing must never be silently ignored. There is no
+    `tested_column` in a comparison — every column is incidental, so
+    everything not affirmatively identifier/safe default-masks (#415)."""
     if not isinstance(row, dict):
         return _redact_sample_value(row)
     out: dict[Any, Any] = {}
     for col, val in row.items():
-        name = _strip_side_suffix(str(col))
-        vals = values_by_column.get(str(col), [val])
-        show = _may_show_incidental(name, vals, policy, tags)
+        raw = str(col)
+        name = _strip_side_suffix(raw)
+        vals = values_by_column.get(raw, [val])
+        hard_masked = _tag_sensitive(raw, tags) or _policy_pii(raw, policy)
+        show = not hard_masked and _may_show_incidental(name, vals, policy, tags)
         out[col] = val if show else _redact_sample_value(val)
     return out
 

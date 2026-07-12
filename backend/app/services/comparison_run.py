@@ -29,6 +29,7 @@ from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
 from backend.app.datasources.base import CheckOutcome
 from backend.app.datasources.comparison import compare_records
+from backend.app.datasources.flatfile import BatchNotFoundError
 from backend.app.db.models import COMPARISON_KIND, Check, Connection
 from backend.app.services import run_target
 from backend.app.services.dataset_reader import DatasetSpec, default_max_rows, read_dataset
@@ -120,6 +121,16 @@ def build_comparison_executor(
                 target_df,
                 keys=list(cfg.get("keys") or []),
                 columns=cfg.get("columns"),
+            )
+        except BatchNotFoundError:
+            # A routine "baseline hasn't landed yet" on a flat-file batch
+            # source — friendly and specific, not the generic UNKNOWN failure
+            # (the suite's own target gets a whole-run skip for this; a missing
+            # SOURCE batch is per-check, so it surfaces as this error result).
+            return _error_outcome(
+                check,
+                "comparison source batch not found — no file matched the source "
+                "pattern (the baseline data may not have landed yet)",
             )
         except DataQError as exc:
             # Our own typed refusals (over-cap, duplicate/NULL keys, unreadable
