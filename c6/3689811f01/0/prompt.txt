@@ -1,0 +1,45 @@
+/security-scan
+
+---
+
+<task-notification>
+<task-id>af888868272030add</task-id>
+<tool-use-id>toolu_018QGGPiaEJcnTWDiZpwWWsu</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3890ca48-f83c-40ac-a424-e009239c3867/tasks/af888868272030add.output</output-file>
+<status>completed</status>
+<summary>Agent "OWASP spot check on changed endpoints" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>This confirms `connections.py`'s test-connection path is clean — the adapter exception text (which could carry a DSN/credential fragment) is never logged or returned to the client, only `type(exc).__name__` is logged and a fixed message returned. Good.
+
+I have everything needed for the report.
+
+## Security spot check — remaining API/MCP surface (2026-07-05 → 2026-07-12 batch)
+
+**connections.py** — clean. All routes `get_current_user`-gated (workspace-wide resource, consistent with the existing connection model — no suite-scoping applies here). Responses never carry secrets (`has_secret` only). `test_connection`/`reauth_connection` delegate to `connection_service`, which explicitly avoids echoing the adapter exception (DSN/credential fragments) to client or logs — only `type(exc).__name__` is logged, a fixed `ConnectionTestFailedError` message returned (`backend/app/services/connection_service.py:463-474`). This is the #536-lesson pattern applied correctly.
+
+**notifications.py** — clean. `require_permission(minimum="view"/"edit")` on every route; webhook URLs write-only through `SecretStore`, never returned (`has_webhook`/`has_slack_webhook` only).
+
+**probe.py** — clean. Unchanged demonstrator endpoint, `get_current_user`-gated, no new surface.
+
+**runs.py** — clean, including the new comparison-report download route. Suite-scoped `require_permission(view)` on `get_run`/`get_run_progress`/`cancel_run`(edit)/`download_comparison_report`; 404-before-403 existence hiding preserved. Sample redaction is field-built (never `model_validate` passthrough) via `redact_sample_failures`. The new `download_comparison_report` (lines 358-393) re-derives the report from the already-redacted `sample_failures` at request time — never a stored unredacted file — and gates identically to run-detail (view permission + 404 checks on both run and result).
+
+**schedules.py** — clean. All routes `get_current_user`-gated with service-level suite-ownership checks (`user_id=`/`include_all=is_workspace_admin`); Pydantic length/format constraints on cron/timezone.
+
+**suites.py** — clean. Consistent `require_permission` ladder (view/edit/admin) across CRUD, run-trigger, export/import, profiler, column-policy routes; all request bodies use bounded `Field` constraints; the new comparison-related `SourceConnectionRef`/`CheckDocument.source_connection` fields are simple bounded strings, no raw dict passthrough.
+
+**rate_limit.py (#783)** — clean. Fails open on any store exception (`RedisStore.incr_windows` catches `Exception` broadly → `None` → allow). The 429 response body (`error_envelope`) carries only `retry_after_seconds`; no internal state (counts, keys, Redis details) leaks into the response or is logged (only `key.split(":",1)[0]` — kind, never value). Dev-bypass scoping is correct and prod-safe: `docker-compose.yml` defaults `RATE_LIMIT_ENABLED` to `false` for local dev only, `ci.yml` hardcodes `"false"` for CI/test, and the prod template `.env.app.example` sets `true`; Terraform (`containerapps.tf`) does not override the flag at all, so prod falls back to the `Settings` default `rate_limit_enabled: bool = True` — there is no path by which the dev/CI bypass reaches a real deployment.
+
+**comparison_run.py / comparison_report.py / datasources/comparison.py / dataset_reader.py** — clean. `dataset_reader.py`'s SQL path re-validates any `query` spec through `validate_query` (ADR 0019 read-only/single-statement) a second time at read time (defense in depth beyond author-time validation) before string-interpolating it into COUNT/LIMIT wrappers; table-addressed reads use parameterized `sqlalchemy.select`. Row caps are enforced fail-fast (COUNT preflight where available, always a post-read length check) raising `DatasetTooLargeError` rather than silently truncating. `comparison_run.py` classifies unexpected exceptions through `classify_failure_reason` (never raw exception text, which could carry DSN/credential fragments) and logs server-side only; `DataQError` messages are redaction-safe by construction and surface verbatim. Report building (`comparison_report.py`) neutralizes CSV/XLSX formula-injection leaders on every cell. Sample/diff rows: confirmed `run_service.redact_sample_failures` has an explicit `_COMPARISON_SAMPLE_KEYS` branch (`_redact_comparison_row`) that suffix-strips `&lt;col&gt;_src`/`&lt;col&gt;_tgt` before policy/classifier matching, so comparison buckets get the same column-aware PII redaction as expectation-check samples — this was verified, not assumed.
+
+**mcp/server.py** — one real finding, otherwise clean:
+- Authz/redaction parity holds for all 8 tools: same `require_permission` calls at the same minimum levels as the REST equivalents (`get_suite_results`/`get_run_status` = view, `trigger_suite_run`/`create_check`/`profile_column` = edit), same `redact_sample_failures` call for sample rows, same NUL-byte rejection (`_reject_nul`) as the REST `ApiModel` boundary. `get_adf_pipeline_status` is actually stricter than the REST `/pipeline_runs` (it filters the correlated DQ run by `accessible` suite ids before exposing it).
+- **Finding — input validation gap, `create_check` tool (`backend/app/mcp/server.py:346-398`):** the MCP tool's `name`/`expectation_type` parameters are plain `str` with no length bound, whereas the REST `CheckCreate` model caps them at `max_length=256`/`128` (`backend/app/api/v1/checks.py:36,40`). `check_service.create_check` itself enforces no string-length limit either (confirmed by reading `validate_kind`/`validate_monitor_check`/`validate_comparison_check`), so an MCP caller can currently store an arbitrarily large `name`/`expectation_type` that the REST path would reject with a 422. Low severity (authenticated, edit-permission-gated, no injection — just an unbounded-size / minor-DoS/data-quality gap), but it is a real REST-vs-MCP inconsistency worth a backlog issue rather than silent acceptance.
+
+**Webhook surfaces** — not applicable this window, per the brief (no orchestration webhook files changed).</result>
+<usage><subagent_tokens>121282</subagent_tokens><tool_uses>23</tool_uses><duration_ms>105385</duration_ms></usage>
+</task-notification>
+
+---
+
+Yeah file and fix the #1.
+Also there are some 13 CodeQL code-scanning issues present, can you check
