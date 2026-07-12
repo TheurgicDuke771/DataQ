@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "04a93add5f72",
+  "strategy": "manual-commit",
+  "branch": "feature/comparison-engine",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/datasources/comparison.py",
+    "backend/tests/datasources/test_comparison.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/04/a93add5f72/0/metadata.json",
+      "transcript": "/04/a93add5f72/0/full.jsonl",
+      "compact_transcript": "/04/a93add5f72/0/transcript.jsonl",
+      "content_hash": "/04/a93add5f72/0/content_hash.txt",
+      "prompt": "/04/a93add5f72/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 615,
+    "cache_creation_tokens": 2005453,
+    "cache_read_tokens": 100269145,
+    "output_tokens": 246798,
+    "api_call_count": 320
+  }
+}
