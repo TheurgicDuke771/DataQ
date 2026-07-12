@@ -40,6 +40,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from backend.app.core.errors import DataQError
+from backend.app.core.jsonsafe import sanitize_json
 
 # Cap on rows carried per sample bucket (→ `Result.sample_failures`, which is
 # retention-swept and redacted downstream; samples must stay small).
@@ -147,8 +148,54 @@ def _reject_duplicate_keys(
         raise DuplicateKeyError(
             f"join keys are not unique on the {side} side — row pairing would be "
             "undefined, so the comparison refuses (dedupe upstream or add key columns)",
-            detail={"side": side, "sample_keys": dup_keys},
+            detail={"side": side, "sample_keys": sanitize_json(dup_keys)},
         )
+
+
+def _reject_null_keys(normalized: Any, key_cols: list[str], *, side: str) -> None:
+    """NULL join keys are refused (SQL semantics: NULL joins nothing) — pandas'
+    merge would silently pair NA keys across sides, welding two unrelated rows
+    into a fabricated match/mismatch."""
+    null_counts = {c: int(normalized[c].isna().sum()) for c in key_cols}
+    nulls = {c: n for c, n in null_counts.items() if n}
+    if nulls:
+        raise ComparisonInputError(
+            f"join key(s) contain NULLs on the {side} side — a NULL key cannot "
+            "pair rows (filter them upstream or pick complete key columns)",
+            detail={"side": side, "null_key_counts": nulls},
+        )
+
+
+def _is_datetime_like(s: Any) -> bool:
+    import pandas as pd
+
+    if pd.api.types.is_datetime64_any_dtype(s):
+        return True
+    if isinstance(s.dtype, pd.ArrowDtype):
+        import pyarrow as pa
+
+        pa_type = s.dtype.pyarrow_dtype
+        return bool(pa.types.is_timestamp(pa_type) or pa.types.is_date(pa_type))
+    return False
+
+
+def _canonical_datetime_strings(s: Any) -> Any:
+    """Render datetimes to one canonical form across backends.
+
+    numpy `datetime64.astype(str)` is whole-column data-dependent (an
+    all-midnight column renders date-only; one non-midnight value flips every
+    element) and ArrowDtype timestamps render ISO-T with nanoseconds — so
+    identical instants never string-match across the #792 readers. Canonical:
+    tz-aware values are converted to UTC then rendered naive; microsecond
+    precision (sub-µs is truncated — accepted, documented)."""
+    s = (
+        s.astype("datetime64[ns, UTC]")
+        if getattr(s.dt, "tz", None) is not None
+        else s.astype("datetime64[ns]")
+    )
+    if s.dt.tz is not None:
+        s = s.dt.tz_convert("UTC").dt.tz_localize(None)
+    return s.dt.strftime("%Y-%m-%dT%H:%M:%S.%f").astype("string")
 
 
 def _normalize_pair(s: Any, t: Any) -> tuple[Any, Any]:
@@ -161,15 +208,33 @@ def _normalize_pair(s: Any, t: Any) -> tuple[Any, Any]:
     * numbers are canonicalized through nullable ``Float64`` when the pair is
       numeric-compatible — numpy coerces a NULL-carrying int column to float64
       (``10`` → ``"10.0"``) while Arrow keeps ``int64`` (``"10"``): same
-      warehouse value, different string. A non-numeric side is adopted into the
-      numeric compare only when it parses losslessly (else both compare as
-      plain strings). Integers beyond float64's 2^53 exactness are the accepted
-      trade (documented; FDC's str-cast had the same class of issue).
+      warehouse value, different string;
+    * datetimes are canonicalized via `_canonical_datetime_strings` (numpy vs
+      Arrow render identical instants differently, and numpy's rendering is
+      data-dependent within a column);
+    * a non-numeric/non-datetime side is adopted into the typed compare only
+      when it parses **losslessly** (else both compare as plain strings).
+
+    Accepted trades (documented): integers beyond float64's 2^53 exactness;
+    float32-vs-float64 columns compare by exact value, so genuinely different
+    stored precisions mismatch (numeric tolerance is a #799 follow-up); a
+    tz-aware side compared against a naive side is normalized to UTC-naive.
     """
     import pandas as pd
 
-    s_num = pd.api.types.is_numeric_dtype(s)
-    t_num = pd.api.types.is_numeric_dtype(t)
+    s_dt = _is_datetime_like(s)
+    t_dt = _is_datetime_like(t)
+    if s_dt or t_dt:
+        s2 = s if s_dt else pd.to_datetime(s, errors="coerce", utc=False, format="mixed")
+        t2 = t if t_dt else pd.to_datetime(t, errors="coerce", utc=False, format="mixed")
+        s_lossless = s_dt or not bool((s2.isna() & s.notna()).any())
+        t_lossless = t_dt or not bool((t2.isna() & t.notna()).any())
+        if s_lossless and t_lossless:
+            return _canonical_datetime_strings(s2), _canonical_datetime_strings(t2)
+        return s.astype("string"), t.astype("string")
+
+    s_num = pd.api.types.is_numeric_dtype(s) and not pd.api.types.is_bool_dtype(s)
+    t_num = pd.api.types.is_numeric_dtype(t) and not pd.api.types.is_bool_dtype(t)
     if s_num or t_num:
         s2 = s if s_num else pd.to_numeric(s, errors="coerce")
         t2 = t if t_num else pd.to_numeric(t, errors="coerce")
@@ -177,6 +242,9 @@ def _normalize_pair(s: Any, t: Any) -> tuple[Any, Any]:
         t_lossless = t_num or not bool((t2.isna() & t.notna()).any())
         if s_lossless and t_lossless:
             return s2.astype("Float64").astype("string"), t2.astype("Float64").astype("string")
+    # Booleans compare as their string forms ("True"/"False") — deliberately
+    # NOT via the numeric branch (is_numeric_dtype(bool) is True in pandas, but
+    # canonicalizing True → "1.0" would mismatch a "True" string side).
     return s.astype("string"), t.astype("string")
 
 
@@ -206,9 +274,17 @@ def compare_records(
     # Rename target keys to the source names so the merge keys align (per-side
     # key mapping, ADR 0015 §1). Non-key columns keep their own names — the
     # compared set is resolved by name below.
-    target_df = target_df.rename(
-        columns={p.target: p.source for p in key_pairs if p.target != p.source}
-    )
+    rename_map = {p.target: p.source for p in key_pairs if p.target != p.source}
+    collisions = [dst for dst in rename_map.values() if dst in target_df.columns]
+    if collisions:
+        # Renaming onto an existing label would create duplicate columns and
+        # crash deep in normalization — refuse with the actionable cause.
+        raise ComparisonInputError(
+            "target side already has column(s) named like the mapped source "
+            f"key(s): {', '.join(collisions[:10])} — rename or drop them",
+            detail={"side": "target", "collisions": collisions[:10]},
+        )
+    target_df = target_df.rename(columns=rename_map)
     key_cols = src_keys
 
     source_value_cols = [c for c in source_df.columns if c not in key_cols]
@@ -230,6 +306,8 @@ def compare_records(
     for col in key_cols + compared:
         src[col], tgt[col] = _normalize_pair(source_df[col], target_df[col])
 
+    _reject_null_keys(src, key_cols, side="source")
+    _reject_null_keys(tgt, key_cols, side="target")
     _reject_duplicate_keys(src, source_df, key_cols, side="source")
     _reject_duplicate_keys(tgt, target_df, key_cols, side="target")
 
