@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "df9b3a6c939b",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-824-assets-deeplink-nginx",
+  "checkpoints_count": 3,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/df/9b3a6c939b/0/metadata.json",
+      "transcript": "/df/9b3a6c939b/0/full.jsonl",
+      "compact_transcript": "/df/9b3a6c939b/0/transcript.jsonl",
+      "content_hash": "/df/9b3a6c939b/0/content_hash.txt",
+      "prompt": "/df/9b3a6c939b/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 992,
+    "cache_creation_tokens": 1626167,
+    "cache_read_tokens": 224515696,
+    "output_tokens": 385817,
+    "api_call_count": 491
+  }
+}
