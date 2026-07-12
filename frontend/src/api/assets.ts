@@ -51,6 +51,18 @@ export interface AssetSummary {
    *  failed run must never render as green health. */
   has_failed_run: boolean;
   has_active_run: boolean;
+  /** Connection-health axis (#803) — could DataQ *execute* against the datasource?
+   *  `has_operational_error`: a latest run `failed`, or any check `error`ed (the
+   *  datasource threw). `has_skip`: a check's precondition wasn't met (e.g. the
+   *  batch hasn't landed) — degraded, not down. Both are operational (#122): they
+   *  never rank as severity, so they never colour *suite* (data-quality) health.
+   *  Derived from the recorded runs — there is no connection-probe polling loop. */
+  has_operational_error: boolean;
+  has_skip: boolean;
+  /** Any composing suite's latest run was `cancelled`. A cancelled run proves
+   *  nothing — killed before a check ran, we may never have reached the datasource
+   *  — so neither health axis may roll it up green. */
+  has_cancelled_run: boolean;
 }
 
 /** A lineage neighbour — mirrors `LineageNodeRead`. Render-only (no run data). */

@@ -29,6 +29,9 @@ function asset(overrides: Partial<AssetSummary> = {}): AssetSummary {
     last_run_at: '2026-07-01T09:00:00Z',
     has_failed_run: false,
     has_active_run: false,
+    has_operational_error: false,
+    has_cancelled_run: false,
+    has_skip: false,
     ...overrides,
   };
 }
@@ -52,7 +55,15 @@ describe('AssetHealthLead (#773)', () => {
     mockListAssets.mockResolvedValue([
       asset({ id: 'a1', name: 'HEALTHY.ORDERS' }),
       asset({ id: 'a2', name: 'FAILING.ORDERS', worst_severity: 'fail' }),
-      asset({ id: 'a3', name: 'RUNFAIL.ORDERS', has_failed_run: true }),
+      // A run that failed operationally: the backend rolls that up as BOTH a
+      // failed run and an operational error (the #803 connection axis), and it
+      // still "needs attention" — DataQ couldn't evaluate the asset at all.
+      asset({
+        id: 'a3',
+        name: 'RUNFAIL.ORDERS',
+        has_failed_run: true,
+        has_operational_error: true,
+      }),
       asset({ id: 'a4', name: 'INFLIGHT.ORDERS', has_active_run: true }),
     ]);
     renderLead();

@@ -24,6 +24,9 @@ const ASSET: AssetSummary = {
   last_run_at: '2026-07-01T09:00:00Z',
   has_failed_run: false,
   has_active_run: false,
+  has_operational_error: false,
+  has_cancelled_run: false,
+  has_skip: false,
 };
 
 afterEach(() => vi.clearAllMocks());

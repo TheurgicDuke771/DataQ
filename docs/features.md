@@ -75,6 +75,13 @@ Four ways a suite runs (all the same authz — [feature matrix](feature-matrix.m
   (datasource → database/catalog → schema → table, with env + health on each leaf) and a
   flat, searchable **All assets** table. Both open the asset detail (health across suites,
   lineage, incidents).
+- **Two health axes on an asset** — *Connection health* ("could DataQ reach and execute
+  against the datasource?" — a failed run, or a check the datasource threw on) and
+  *Data-quality health* (the severity-weighted verdict of its suites). They are derived
+  and shown separately, so a datasource DataQ cannot connect to never masquerades as a
+  data failure — and a run that evaluated nothing reads **No data**, never a green
+  "passing". Operational `error`/`skip` results feed only the connection axis. Both are
+  read off the runs already recorded — there is no connection-probe polling loop.
 - **Results page** — every run with its per-check outcomes; drill into a run for
   observed-vs-expected values and **redacted failing-row samples**.
 - **Severity + operational statuses** — warn / fail / critical for data outcomes, plus

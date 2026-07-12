@@ -18,11 +18,14 @@ import { BRAND } from '../../theme';
  * `/assets`; each attention row opens `/assets/:id` (→ its suites/runs).
  */
 
-/** An asset "needs attention" when a check tier is failing or its latest run
- *  failed operationally — an active-but-unconcluded run is *in progress*, not
- *  failing (mirrors `assetHealth`'s precedence). */
+/** An asset "needs attention" when a check tier is failing (bad data) or DataQ
+ *  couldn't execute against the datasource at all (#803 connection axis — a failed
+ *  run, or a check the datasource threw on). An active-but-unconcluded run is *in
+ *  progress*, not failing. `has_operational_error` subsumes `has_failed_run`, and
+ *  additionally catches a run that *succeeded* while its checks errored — which the
+ *  old run-status-only rule silently let read as healthy. */
 function needsAttention(a: AssetSummary): boolean {
-  return a.worst_severity !== null || a.has_failed_run;
+  return a.worst_severity !== null || a.has_operational_error;
 }
 
 /** Attention ordering: critical > fail > warn > operational run failure. The
