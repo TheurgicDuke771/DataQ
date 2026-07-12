@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "4c1b2be3633d",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-796-e2e-rate-limit",
+  "checkpoints_count": 2,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/4c/1b2be3633d/0/metadata.json",
+      "transcript": "/4c/1b2be3633d/0/full.jsonl",
+      "compact_transcript": "/4c/1b2be3633d/0/transcript.jsonl",
+      "content_hash": "/4c/1b2be3633d/0/content_hash.txt",
+      "prompt": "/4c/1b2be3633d/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 154,
+    "cache_creation_tokens": 365983,
+    "cache_read_tokens": 13182641,
+    "output_tokens": 77932,
+    "api_call_count": 86
+  }
+}
