@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "1b5acd7db797",
+  "strategy": "manual-commit",
+  "branch": "feat/issue-830-namespace-label",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "frontend/e2e/share-drawer-mobile.spec.ts",
+    "frontend/src/components/suites/SharePanel.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/1b/5acd7db797/0/metadata.json",
+      "transcript": "/1b/5acd7db797/0/full.jsonl",
+      "compact_transcript": "/1b/5acd7db797/0/transcript.jsonl",
+      "content_hash": "/1b/5acd7db797/0/content_hash.txt",
+      "prompt": "/1b/5acd7db797/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1595,
+    "cache_creation_tokens": 3676884,
+    "cache_read_tokens": 356489488,
+    "output_tokens": 562910,
+    "api_call_count": 788
+  }
+}
