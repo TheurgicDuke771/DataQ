@@ -1,5 +1,5 @@
 import { Card, Col, Form, Input, InputNumber, Radio, Row, Select, Tag, Typography } from 'antd';
-import { Suspense, lazy, useMemo } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useRef } from 'react';
 
 import {
   DATASOURCE_TYPES,
@@ -43,6 +43,17 @@ export function ComparisonCheckForm({
   );
   const sourceType = datasources.find((c) => c.id === sourceId)?.type as ConnectionType | undefined;
   const sourceSql = sourceType !== undefined && isSqlQueryable(sourceType);
+  // Repointing the source connection resets the dataset fields: antd preserves
+  // unmounted field values, so a stale hidden SQL-mode query (picked on a SQL
+  // source) would otherwise silently win over the visible table/path fields
+  // after switching to a non-SQL source — a 422 the form gives no hint about.
+  const prevSourceId = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (prevSourceId.current !== undefined && prevSourceId.current !== sourceId) {
+      form.setFieldsValue({ source_mode: 'table', source_query: undefined, source: {} });
+    }
+    prevSourceId.current = sourceId;
+  }, [sourceId, form]);
   const targetSql = suiteConnectionType !== undefined && isSqlQueryable(suiteConnectionType);
 
   return (

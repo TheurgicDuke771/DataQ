@@ -41,6 +41,20 @@ class ComparisonReportInvalidError(DataQError):
     code = "comparison_report_invalid"
 
 
+# Leading characters Excel/Sheets interpret as a formula — a cell carrying
+# warehouse data must never execute on the analyst's machine (CSV/XLSX formula
+# injection). The standard mitigation: prefix a single quote, which spreadsheet
+# apps render as literal text.
+_FORMULA_LEADERS = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _neutralize(value: Any) -> Any:
+    """Escape formula-leading strings; pass every other scalar through."""
+    if isinstance(value, str) and value.startswith(_FORMULA_LEADERS):
+        return f"'{value}"
+    return value
+
+
 def _bucket_rows(sample: dict[str, Any] | None) -> list[tuple[str, dict[str, Any]]]:
     rows: list[tuple[str, dict[str, Any]]] = []
     for bucket in _BUCKETS:
@@ -72,7 +86,7 @@ def build_csv(sample: dict[str, Any] | None, observed: dict[str, Any] | None) ->
             writer.writerow([f"# {key}", observed[key]])
     writer.writerow(["bucket", *columns])
     for bucket, row in rows:
-        writer.writerow([bucket, *[row.get(col, "") for col in columns]])
+        writer.writerow([bucket, *[_neutralize(row.get(col, "")) for col in columns]])
     return buf.getvalue().encode("utf-8")
 
 
@@ -107,10 +121,12 @@ def build_xlsx(sample: dict[str, Any] | None, observed: dict[str, Any] | None) -
 
 
 def _cell(value: Any) -> Any:
-    """openpyxl accepts scalars only — anything structured renders as a string."""
-    if value is None or isinstance(value, (str, int, float, bool)):
+    """openpyxl accepts scalars only — anything structured renders as a string.
+    Strings are formula-neutralized: openpyxl infers data_type 'f' for a
+    leading '=', which would make warehouse data executable on open."""
+    if value is None or isinstance(value, (int, float, bool)):
         return value
-    return str(value)
+    return _neutralize(value if isinstance(value, str) else str(value))
 
 
 def build_report(

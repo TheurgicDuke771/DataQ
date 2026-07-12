@@ -123,6 +123,30 @@ def test_xlsx_report_has_workbook_magic_and_sheets(client: TestClient, db_sessio
     assert "a@x.io" not in cells and "<redacted>" in cells
 
 
+def test_reports_neutralize_formula_leading_values(client: TestClient, db_session: Any) -> None:
+    # CSV/XLSX formula injection: a warehouse value beginning with '=' must
+    # never reach the file executable — spreadsheet apps would evaluate it.
+    run, result = _fixture_run(client, db_session)
+    result.sample_failures = {
+        "mismatched": [{"order_id": '=HYPERLINK("http://evil","x")', "note_src": "+SUM(A1)"}]
+    }
+    db_session.commit()
+    csv_body = client.get(
+        f"/api/v1/runs/{run.id}/results/{result.id}/comparison_report?fmt=csv"
+    ).text
+    assert "'=HYPERLINK" in csv_body  # neutralized (leading quote)
+    assert ',"=HYPERLINK' not in csv_body  # never as a raw cell start
+    xlsx = client.get(
+        f"/api/v1/runs/{run.id}/results/{result.id}/comparison_report?fmt=xlsx"
+    ).content
+    from openpyxl import load_workbook
+
+    wb = load_workbook(io.BytesIO(xlsx))
+    cells = [c.value for row in wb["mismatched"].iter_rows() for c in row]
+    assert any(isinstance(v, str) and v.startswith("'=HYPERLINK") for v in cells)
+    assert not any(isinstance(v, str) and v.startswith("=") for v in cells)
+
+
 def test_non_comparison_result_is_422(client: TestClient, db_session: Any) -> None:
     run, result = _fixture_run(client, db_session, kind="expectation")
     resp = client.get(f"/api/v1/runs/{run.id}/results/{result.id}/comparison_report")

@@ -163,12 +163,11 @@ export async function downloadComparisonReport(
     responseType: 'blob',
   });
   const url = URL.createObjectURL(data);
-  try {
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `comparison-${resultId}.${fmt}`;
-    link.click();
-  } finally {
-    URL.revokeObjectURL(url);
-  }
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `comparison-${resultId}.${fmt}`;
+  link.click();
+  // Deferred: a same-tick revoke can abort the download (Safari) — the browser
+  // dereferences the blob URL asynchronously after click().
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
