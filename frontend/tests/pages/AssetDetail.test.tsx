@@ -239,6 +239,32 @@ describe('AssetDetail page', () => {
     expect(screen.getByText('1 upstream · 1 downstream')).toBeInTheDocument();
   });
 
+  // Regression: useAsyncData fetches on mount only, so an asset→asset navigation
+  // (first made possible by the #805 clickable lineage nodes) must REMOUNT the page
+  // — otherwise the new URL renders the previous asset's data.
+  it('refetches when navigating from one asset to another (no stale detail)', async () => {
+    mockGet.mockResolvedValue(DETAIL);
+    render(
+      <MeContext.Provider value={meState(false)}>
+        <AntApp>
+          <MemoryRouter initialEntries={['/assets/a1']}>
+            <Routes>
+              <Route path="/assets/:assetId" element={<AssetDetail />} />
+            </Routes>
+          </MemoryRouter>
+        </AntApp>
+      </MeContext.Provider>,
+    );
+    await screen.findByRole('img', { name: /Lineage graph/ });
+    expect(mockGet).toHaveBeenCalledWith('a1');
+
+    // Click the downstream lineage node → the route param becomes d1, and the page
+    // must fetch THAT asset rather than keep showing a1's.
+    mockGet.mockClear();
+    await userEvent.click(screen.getByLabelText(/Open asset ANALYTICS\.MART\.REVENUE/));
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('d1'));
+  }, 15000);
+
   it('does not make the centre asset clickable — you are already on it', async () => {
     mockGet.mockResolvedValue(DETAIL);
     renderPage();

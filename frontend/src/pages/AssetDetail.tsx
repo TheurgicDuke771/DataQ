@@ -41,8 +41,17 @@ import { errorMessage } from '../utils/errors';
  * (ADR 0034 §4); no navigation inversion (phase 4).
  */
 export function AssetDetail() {
-  const navigate = useNavigate();
   const { assetId } = useParams<{ assetId: string }>();
+  // Remount on id change. `useAsyncData` fetches on mount (and on reload) only, so
+  // an asset→asset navigation — which the lineage graph's clickable nodes made
+  // possible for the first time (#805) — would otherwise re-render this same
+  // instance with a new URL but the PREVIOUS asset's data still on screen. Keying
+  // the page on the id makes the route param the identity of the mount.
+  return <AssetDetailPage key={assetId} assetId={assetId} />;
+}
+
+function AssetDetailPage({ assetId }: { assetId: string | undefined }) {
+  const navigate = useNavigate();
   const { state, reload } = useAsyncData(() => {
     if (!assetId) throw new Error('no asset');
     return getAsset(assetId);
