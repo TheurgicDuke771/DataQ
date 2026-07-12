@@ -111,21 +111,59 @@ capable catalog (Purview/DataHub) lands behind the seam, with no schema or query
   — the two sources coexist as distinct rows for the same table pair, and the blast-radius walk
   spans both.
 
-**Local round-trip (emitter → Marquez → pull).** The reference compose stack ships a Marquez
-(+ its own Postgres) behind an opt-in profile so a plain `docker compose up` is unaffected:
+**Local round-trip (producer → Marquez → pull → graph).** The reference compose stack ships a
+Marquez (+ its own Postgres) behind an opt-in profile so a plain `docker compose up` is unaffected.
+
+> **DataQ's own emission is not enough to produce lineage — and that is by design.** A DataQ run
+> *reads* the asset it validates, so the emitter (#758) sends it as a job **input** and emits no
+> outputs. That makes the DQ job a consumer in the catalog; it creates **no dataset→dataset edge**.
+> Edges come from whatever actually *transforms* data — dbt's OpenLineage integration, a Spark or
+> Airflow OL emitter, or any producer posting a RunEvent with both `inputs` and `outputs`. Point
+> Marquez at one of those (or post the events yourself, as below) and the pull has a graph to find.
 
 ```bash
-# 1. start Marquez (2 extra containers) alongside the app
-docker compose --profile lineage up
-# 2. in .env.app, point the emitter and the pull at Marquez, then restart api+worker:
-#      OPENLINEAGE_URL=http://marquez:5000/api/v1/lineage
+# 1. start Marquez (2 extra containers) alongside the app; it serves on host :5002
+docker compose --profile lineage up -d marquez-db marquez
+curl -sf http://localhost:5002/api/v1/namespaces   # ready check
+
+# 2. get a producer chain INTO Marquez. Any OL producer will do; to verify the seam
+#    without one, post RunEvents whose inputs/outputs use the SAME OpenLineage
+#    namespace + name as your DataQ assets (that identity match is the whole point —
+#    see ADR 0034). One event per transformation, e.g.
+#       {namespace}: snowflake://<account>
+#       ORDERS_HEADER -> STG_ORDERS -> MART_ORDER_REVENUE -> BI dashboard
+curl -X POST http://localhost:5002/api/v1/lineage -H 'Content-Type: application/json' -d '{
+  "eventType": "COMPLETE", "eventTime": "2026-07-12T19:05:00.000Z",
+  "run": {"runId": "<uuid>"}, "job": {"namespace": "dbt-local", "name": "build_stg_orders"},
+  "inputs":  [{"namespace": "snowflake://ACCT", "name": "DB.RETAIL.ORDERS_HEADER"}],
+  "outputs": [{"namespace": "snowflake://ACCT", "name": "DB.ANALYTICS_STG.STG_ORDERS"}],
+  "producer": "https://example/local-verify"}'
+
+# 3. point the pull at Marquez (dark until you do) and refresh. In .env.app:
 #      LINEAGE_PROVIDER=marquez
-#      MARQUEZ_URL=http://marquez:5000
-# 3. run a suite (emits START/COMPLETE RunEvents to Marquez), then trigger the pull:
+#      MARQUEZ_URL=http://marquez:5000        # in-network; :5002 is host-side only
+#    (add OPENLINEAGE_URL=http://marquez:5000/api/v1/lineage too if you also want
+#     DataQ's own DQ-job events in the catalog — they add no edges, see the note above)
 docker compose exec worker python -c \
   "from backend.app.worker.tasks import refresh_lineage_pull; print(refresh_lineage_pull())"
-# 4. the pulled edges appear in lineage_edges with source='marquez'.
+
+# 4. the pulled edges land in lineage_edges with source='marquez' (dbt edges untouched),
+#    and render in the asset's lineage graph (#805).
+docker compose exec postgres psql -U dataq -d dataq \
+  -c "select source, count(*) from lineage_edges group by source;"
 ```
+
+**Verified locally 2026-07-12 (#804).** Off-by-default confirmed (`get_lineage_provider()` → `None`
+with no env); env-configured, the pull walked each known asset as a seed, **cached 3
+`source='marquez'` edges** alongside the existing 8 `source='dbt'` ones (neither pruned the other),
+and the asset's lineage graph rendered the full chain — including a **BI dashboard node that only
+Marquez knew about**, which dbt's manifest never produced. Seeds that Marquez has never heard of
+log a fail-soft `marquez_lineage_pull_failed` warning per node and are skipped, exactly as intended.
+
+**Not yet verified against a deployed app.** The Azure subscription lapsed (2026-07-12), so there is
+no running prod to attach a catalog to, and the harness Flow-A chain needs live Snowflake. The
+prod-side stand-up — a Marquez the deployed app can reach, plus enabling OL emission on the harness
+flows — is deferred until infra returns; the app side needs no further change (it is one env var).
 
 Marquez's newest release is 0.50.0 (2024-10); its slow cadence is an **accepted low risk** for a
 dev-time reference consumer (ADR 0034) — the `/api/v1/lineage` contract has been stable across
