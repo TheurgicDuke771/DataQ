@@ -380,21 +380,29 @@ def delete_connection(
     conn = get_connection(session, connection_id)
     # ADR 0015 delete guard: comparison checks referencing this connection as
     # their source hold an ON DELETE RESTRICT FK — pre-check and 409 with the
-    # dependents (bounded) so the user knows what to repoint/delete first.
-    dependents = list(
-        session.execute(
-            select(Check.name, Check.suite_id)
-            .where(Check.source_connection_id == conn.id)
-            .order_by(Check.created_at)
-            .limit(10)
-        )
+    # dependents so the user knows what to repoint/delete first. `total` is the
+    # real count; `checks` is a bounded sample (a 409 must not echo thousands
+    # of rows), flagged via `truncated` so a scripted remediation can't
+    # mistake the sample for the full set.
+    total = session.scalar(
+        select(func.count()).select_from(Check).where(Check.source_connection_id == conn.id)
     )
-    if dependents:
+    if total:
+        dependents = list(
+            session.execute(
+                select(Check.name, Check.suite_id)
+                .where(Check.source_connection_id == conn.id)
+                .order_by(Check.created_at)
+                .limit(10)
+            )
+        )
         raise ConnectionInUseError(
-            "this connection is the comparison source of existing checks — "
+            f"this connection is the comparison source of {total} check(s) — "
             "repoint or delete them first",
             detail={
                 "connection_id": str(connection_id),
+                "total": total,
+                "truncated": total > len(dependents),
                 "checks": [
                     {"name": name, "suite_id": str(suite_id)} for name, suite_id in dependents
                 ],
@@ -402,7 +410,20 @@ def delete_connection(
         )
     secret_ref = conn.secret_ref
     session.delete(conn)
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError as exc:
+        # TOCTOU backstop: a comparison check created between the pre-check and
+        # this commit trips the RESTRICT FK — map it to the same 409, never a
+        # raw 500. Any other integrity failure is not this race; re-raise.
+        session.rollback()
+        if "fk_checks_source_connection_id_connections" not in str(exc.orig):
+            raise
+        raise ConnectionInUseError(
+            "this connection became the comparison source of a check while the "
+            "delete was in flight — repoint or delete that check first",
+            detail={"connection_id": str(connection_id)},
+        ) from exc
     # Best-effort remove the orphaned credential from the store (#372) — after the
     # row is gone, and fail-soft (delete never raises), so a store hiccup can't 500
     # a successful delete.

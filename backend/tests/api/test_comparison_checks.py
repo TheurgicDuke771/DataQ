@@ -185,7 +185,9 @@ def test_create_rejects_source_ref_on_expectation_kind(client: TestClient, db_se
         {"source": {"table": "ORDERS"}, "keys": [{"source": "id"}]},  # half a mapping
         {"source": {"table": "ORDERS"}, "keys": ["id"], "max_rows": 0},  # bad cap
         {"source": {"table": "ORDERS"}, "keys": ["id"], "max_rows": "many"},  # bad cap type
+        {"source": {"table": "ORDERS"}, "keys": ["id"], "max_rows": True},  # bool is int (== 1!)
         {"source": {"query": "DROP TABLE ORDERS"}, "keys": ["id"]},  # writeful query
+        {"source": {"table": "ORDERS"}, "keys": ["x" * 10_001]},  # #651 string-size cap
     ],
 )
 def test_create_rejects_bad_config(
@@ -298,6 +300,9 @@ def test_source_connection_delete_blocked_then_allowed(client: TestClient, db_se
     body = blocked.json()["error"]
     assert body["code"] == "connection_in_use"
     assert body["detail"]["checks"][0]["name"] == "orders reconcile"
+    # The sample is bounded; total + truncated let a caller trust the payload.
+    assert body["detail"]["total"] == 1
+    assert body["detail"]["truncated"] is False
 
     assert client.delete(f"/api/v1/suites/{sid}/checks/{cid}").status_code == 204
     assert client.delete(f"/api/v1/connections/{source.id}").status_code == 204

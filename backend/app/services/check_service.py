@@ -237,6 +237,25 @@ def _validate_side_query(query: Any, *, connection_type: str, field: str) -> Non
         ) from exc
 
 
+def _reject_oversized_config(config: dict[str, Any]) -> None:
+    """422 when any config string (keys included) exceeds the #651 cap.
+
+    Shared by the expectation and comparison validators so no kind can persist
+    a multi-megabyte config that every GET/version snapshot/export re-emits.
+    """
+    oversized = _find_oversized_string(config)
+    if oversized is not None:
+        # Bound the WHOLE path, not just each segment: deep nesting grows the
+        # accumulated path ~200 chars per level, which would round-trip an
+        # arbitrarily large echo through the 422 envelope and the error log.
+        if len(oversized) > _ERROR_ECHO_MAX_CHARS:
+            oversized = oversized[:_ERROR_ECHO_MAX_CHARS] + "…"
+        raise CheckConfigInvalidError(
+            f"config value at {oversized} exceeds {_CONFIG_STRING_MAX_CHARS} characters",
+            detail={"path": oversized, "max_chars": _CONFIG_STRING_MAX_CHARS},
+        )
+
+
 def validate_comparison_check(
     session: Session,
     *,
@@ -254,6 +273,9 @@ def validate_comparison_check(
     like custom-SQL checks (ADR 0019). Cross-env source↔target is allowed by
     design (DEV-vs-QA parity is a headline use case), so `env` is not compared.
     """
+    # Same #651 string-size cap as expectation checks — no kind may persist a
+    # config every GET / version snapshot / export re-emits unbounded.
+    _reject_oversized_config(config)
     if expectation_type != COMPARISON_EXPECTATION_TYPE:
         raise CheckConfigInvalidError(
             f"a comparison check's expectation_type must be "
@@ -310,7 +332,11 @@ def validate_comparison_check(
     _validate_comparison_keys(config.get("keys"))
 
     max_rows = config.get("max_rows")
-    if max_rows is not None and not (isinstance(max_rows, int) and max_rows > 0):
+    # bool is an int subclass: {"max_rows": true} would otherwise pass as 1 and
+    # silently cap the diff to a single row when the #794 runner lands.
+    if max_rows is not None and (
+        isinstance(max_rows, bool) or not isinstance(max_rows, int) or max_rows <= 0
+    ):
         raise CheckConfigInvalidError(
             "config.max_rows must be a positive integer when set",
             detail={"field": "config.max_rows"},
@@ -363,17 +389,7 @@ def validate_expectation_check(expectation_type: str, config: dict[str, Any]) ->
     Custom-SQL checks (ADR 0019) have their own validator and must not be passed
     here (their type is not a GX class).
     """
-    oversized = _find_oversized_string(config)
-    if oversized is not None:
-        # Bound the WHOLE path, not just each segment: deep nesting grows the
-        # accumulated path ~200 chars per level, which would round-trip an
-        # arbitrarily large echo through the 422 envelope and the error log.
-        if len(oversized) > _ERROR_ECHO_MAX_CHARS:
-            oversized = oversized[:_ERROR_ECHO_MAX_CHARS] + "…"
-        raise CheckConfigInvalidError(
-            f"config value at {oversized} exceeds {_CONFIG_STRING_MAX_CHARS} characters",
-            detail={"path": oversized, "max_chars": _CONFIG_STRING_MAX_CHARS},
-        )
+    _reject_oversized_config(config)
 
     # Lazy: importing great_expectations is heavy (seconds), and the API process
     # only needs it on the authoring paths — same pattern as the vault client.
