@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "d993e8169676",
+  "strategy": "manual-commit",
+  "branch": "docs/issue-804-marquez-local-verify",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/orchestration.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/d9/93e8169676/0/metadata.json",
+      "transcript": "/d9/93e8169676/0/full.jsonl",
+      "compact_transcript": "/d9/93e8169676/0/transcript.jsonl",
+      "content_hash": "/d9/93e8169676/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 42,
+    "cache_creation_tokens": 21566,
+    "cache_read_tokens": 11510322,
+    "output_tokens": 15934,
+    "api_call_count": 21
+  }
+}
