@@ -71,6 +71,10 @@ Four ways a suite runs (all the same authz — [feature matrix](feature-matrix.m
   severity-weighted **health score**, pass rate, run counts, average duration, per-day
   trends, and per-suite performance. Assets are the primary lens (ADR 0034 nav inversion):
   the sidebar leads with **Assets** above Suites, and every suite/run links back to its asset.
+- **Asset browse** — two lenses over the same assets: a **By source** drill-down
+  (datasource → database/catalog → schema → table, with env + health on each leaf) and a
+  flat, searchable **All assets** table. Both open the asset detail (health across suites,
+  lineage, incidents).
 - **Results page** — every run with its per-check outcomes; drill into a run for
   observed-vs-expected values and **redacted failing-row samples**.
 - **Severity + operational statuses** — warn / fail / critical for data outcomes, plus
