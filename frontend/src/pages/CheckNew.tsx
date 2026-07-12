@@ -72,7 +72,7 @@ export function CheckNew() {
       await createCheck(
         suiteId,
         isComparison
-          ? buildComparisonPayload(values)
+          ? buildComparisonPayload({ ...values, expectation_type: expectationType })
           : buildCheckPayload({ ...values, expectation_type: expectationType }),
       );
       message.success(`${values.name as string}: created`);

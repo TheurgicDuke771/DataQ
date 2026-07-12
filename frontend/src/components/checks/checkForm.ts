@@ -95,10 +95,15 @@ export function buildComparisonPayload(values: Record<string, unknown>): CheckCr
   };
   if (values.target_query) config.target_query = values.target_query;
   if (typeof values.max_rows === 'number') config.max_rows = values.max_rows;
+  const tolerance: Record<string, number> = {};
+  if (typeof values.tolerance_absolute === 'number') tolerance.absolute = values.tolerance_absolute;
+  if (typeof values.tolerance_relative === 'number') tolerance.relative = values.tolerance_relative;
+  if (Object.keys(tolerance).length > 0) config.tolerance = tolerance;
   return {
     name: values.name as string,
     kind: 'comparison',
-    expectation_type: COMPARISON_EXPECTATION_TYPE,
+    // The picked grain (records / columns, #799); records when unspecified.
+    expectation_type: (values.expectation_type as string) || COMPARISON_EXPECTATION_TYPE,
     config,
     source_connection_id: values.source_connection_id as string,
     warn_threshold: typeof values.warn_threshold === 'number' ? values.warn_threshold : null,

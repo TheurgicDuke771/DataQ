@@ -48,6 +48,7 @@ export const EXPECTATION_CATEGORIES: ExpectationCategory[] = [
  *  stays reserved). Authoring uses the dedicated side-by-side form, not the
  *  generic `spec.fields` flow. */
 export const COMPARISON_EXPECTATION_TYPE = 'comparison:records';
+export const COMPARISON_COLUMNS_EXPECTATION_TYPE = 'comparison:columns';
 
 /** Monitor categories (ADR 0012) — like Custom SQL, they run a scalar SQL
  *  aggregate, so they're offered only on SQL-queryable datasources. */
@@ -285,13 +286,26 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
     kind: 'comparison',
     label: 'Records reconciliation',
     description:
-      'Diff this suite’s dataset (the target under test) against a baseline on another connection, joined on key columns — matched / mismatched / additional-per-side buckets (ADR 0015).',
+      'Diff this suite’s dataset (the target under test) against a baseline on another connection, joined on key columns — matched / mismatched / additional-per-side ROW buckets (ADR 0015).',
     category: 'Comparison',
     // Authored via the dedicated side-by-side form (ComparisonCheckForm), not
     // the generic field list.
     fields: [],
     thresholds: {
       help: 'Band the mismatch-% (non-matching rows over all logical rows; higher = worse, 0–100). Leave blank for a binary reconciled pass/fail.',
+      max: 100,
+    },
+  },
+  {
+    type: COMPARISON_COLUMNS_EXPECTATION_TYPE,
+    kind: 'comparison',
+    label: 'Column-level reconciliation',
+    description:
+      'Same key-joined diff, counted per VALUE: each column reports its own matched / mismatched / additional-per-side counts (#799 — FDC column grain). Pick this when you need to know WHICH columns drift, not just which rows.',
+    category: 'Comparison',
+    fields: [],
+    thresholds: {
+      help: 'Band the mismatch-% (non-matching value slots over all compared slots; higher = worse, 0–100). Leave blank for a binary reconciled pass/fail.',
       max: 100,
     },
   },

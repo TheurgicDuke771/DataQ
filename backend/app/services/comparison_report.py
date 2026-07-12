@@ -25,6 +25,8 @@ REPORT_FORMATS = ("csv", "xlsx")
 # Bucket order is stable so two downloads of the same result are identical.
 _BUCKETS = ("mismatched", "additional_in_source", "additional_in_target")
 
+# Presence-filtered: the row grain carries the first block, the column grain
+# (#799) the `*_values` block; identity keys appear in both.
 _SUMMARY_KEYS = (
     "source_rows",
     "target_rows",
@@ -32,6 +34,10 @@ _SUMMARY_KEYS = (
     "mismatched",
     "additional_in_source",
     "additional_in_target",
+    "matched_values",
+    "mismatched_values",
+    "additional_in_source_values",
+    "additional_in_target_values",
     "mismatch_percent",
 )
 

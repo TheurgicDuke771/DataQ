@@ -159,6 +159,26 @@ export function ComparisonCheckForm({
           </Form.Item>
         </Col>
       </Row>
+      <Row gutter={16}>
+        <Col xs={24} md={12}>
+          <Form.Item
+            name="tolerance_absolute"
+            label="Numeric tolerance — absolute"
+            help="Numbers within ±this count as equal (e.g. 0.01 for cents)."
+          >
+            <InputNumber min={0} style={{ width: '100%' }} placeholder="0" step={0.01} />
+          </Form.Item>
+        </Col>
+        <Col xs={24} md={12}>
+          <Form.Item
+            name="tolerance_relative"
+            label="Numeric tolerance — relative"
+            help="Fraction of the larger value (1e-6 absorbs float32/float64 round-trips)."
+          >
+            <InputNumber min={0} style={{ width: '100%' }} placeholder="0" step={0.000001} />
+          </Form.Item>
+        </Col>
+      </Row>
     </>
   );
 }

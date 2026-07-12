@@ -89,5 +89,10 @@
     "type": "comparison:records",
     "kind": "comparison",
     "fields": []
+  },
+  {
+    "type": "comparison:columns",
+    "kind": "comparison",
+    "fields": []
   }
 ]
