@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "34c73817761a",
+  "strategy": "manual-commit",
+  "branch": "feature/comparison-dataset-reader",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/services/dataset_reader.py",
+    "backend/tests/services/test_dataset_reader.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/34/c73817761a/0/metadata.json",
+      "transcript": "/34/c73817761a/0/full.jsonl",
+      "compact_transcript": "/34/c73817761a/0/transcript.jsonl",
+      "content_hash": "/34/c73817761a/0/content_hash.txt",
+      "prompt": "/34/c73817761a/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 489,
+    "cache_creation_tokens": 965280,
+    "cache_read_tokens": 69887378,
+    "output_tokens": 198445,
+    "api_call_count": 254
+  }
+}
