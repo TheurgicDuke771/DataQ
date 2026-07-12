@@ -340,7 +340,13 @@ def _normalize_pair(s: Any, t: Any) -> _NormalizedPair:
             # (the cross-backend NULL-int→float64 skew still lands here and still
             # matches, since BOTH sides then render "10.0").
             if pd.api.types.is_integer_dtype(s2) and pd.api.types.is_integer_dtype(t2):
-                s_f, t_f = s2.astype("Int64"), t2.astype("Int64")
+                try:
+                    s_f, t_f = s2.astype("Int64"), t2.astype("Int64")
+                except (TypeError, OverflowError):
+                    # uint64 above int64-max can't cast safely — fall back to the
+                    # Float64 canonical form (main's behavior) instead of erroring
+                    # a perfectly comparable column.
+                    s_f, t_f = s2.astype("Float64"), t2.astype("Float64")
             else:
                 s_f, t_f = s2.astype("Float64"), t2.astype("Float64")
             # The numeric pair rides along for tolerance-aware equality (#799).
@@ -425,6 +431,27 @@ def _align(
         compared = [c for c in source_value_cols if c in set(target_value_cols)]
     only_source = sorted(set(source_value_cols) - set(compared) - set(key_cols))
     only_target = sorted(set(target_value_cols) - set(compared) - set(key_cols))
+
+    # Name-collision guards (typed refusals, never silent wrong output):
+    # the alignment reserves `__dataq_pos*` in its keys+positions merge, and
+    # samples key compared columns as `<col>_src`/`<col>_tgt` beside the raw
+    # key names — a user column landing on either would overwrite silently.
+    reserved = {"__dataq_pos", "__dataq_pos_src", "__dataq_pos_tgt"} & set(key_cols + compared)
+    if reserved:
+        raise ComparisonInputError(
+            f"column name(s) reserved by the comparison engine: {', '.join(sorted(reserved))} "
+            "— rename or exclude them",
+            detail={"reserved": sorted(reserved)},
+        )
+    suffixed = {f"{c}_{side}" for c in compared for side in ("src", "tgt")}
+    shadowed = sorted(suffixed & set(key_cols))
+    if shadowed:
+        raise ComparisonInputError(
+            "key column name(s) collide with a compared column's sample suffix "
+            f"({', '.join(shadowed)}) — sample rows would overwrite the key; rename "
+            "the key or exclude the column via config.columns",
+            detail={"collisions": shadowed},
+        )
 
     # Positional frames: every later gather is an .iloc on 0..n-1.
     source_df = source_df.reset_index(drop=True)

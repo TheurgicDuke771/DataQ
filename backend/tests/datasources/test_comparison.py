@@ -383,3 +383,31 @@ def test_columns_grain_tolerance_applies() -> None:
     assert exact.mismatched_values == 1
     tolerant = _col_res(source=source, target=target, tolerance=Tolerance(relative=1e-6))
     assert tolerant.success
+
+
+# ───────────────────────── #812 review findings ─────────────────────
+
+
+def test_uint64_beyond_int64_falls_back_to_float_canonical() -> None:
+    import numpy as np
+
+    big = np.array([2**63 + 5, 7], dtype="uint64")
+    source = pd.DataFrame({"id": [1, 2], "v": big})
+    target = pd.DataFrame({"id": [1, 2], "v": big.copy()})
+    res = _res(source=source, target=target)
+    assert res.success  # no TypeError, identical data reconciles
+
+
+def test_reserved_position_names_refused() -> None:
+    source = pd.DataFrame({"__dataq_pos": [1], "v": ["a"]})
+    target = pd.DataFrame({"__dataq_pos": [1], "v": ["a"]})
+    with pytest.raises(ComparisonInputError, match="reserved"):
+        _res(source=source, target=target, keys=["__dataq_pos"])
+
+
+def test_key_shadowed_by_sample_suffix_refused() -> None:
+    # key 'v_src' + compared column 'v' → sample keys collide.
+    source = pd.DataFrame({"v_src": [1, 2], "v": ["a", "b"]})
+    target = pd.DataFrame({"v_src": [1, 2], "v": ["a", "X"]})
+    with pytest.raises(ComparisonInputError, match="v_src"):
+        _res(source=source, target=target, keys=["v_src"])
