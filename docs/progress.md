@@ -74,7 +74,7 @@ _The rest of the 55 are mapped by theme in [post-v1-roadmap.md](../context/post-
 
 | Decision | Affects | Status |
 |---|---|---|
-| Two-connection model for `comparison` checks (**ADR 0015**, reserved in ADR 0014) | The reconciliation/`comparison` monitor kind, when its theme is picked up | ⬜ open, non-blocking until then |
+| Two-connection model for `comparison` checks (**ADR [0015](adr/0015-two-connection-comparison-check-model.md)**, reserved in ADR 0014) | The reconciliation/`comparison` monitor kind — model settled: suite = target under test, check adds one `source_connection_id` ref; build to follow | ✅ decided 2026-07-11 (ADR 0015 written) |
 
 ### Standing decisions of record & guardrails (carried from the go-live close)
 

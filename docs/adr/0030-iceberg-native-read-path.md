@@ -3,7 +3,7 @@
 - **Status:** Accepted (spike decision, 2026-07-07; native impl deferred — see Consequences)
 - **Date:** 2026-07-07
 - **Deciders:** @TheurgicDuke771
-- **Related:** [0003](0003-gx-only-for-v1.md) (GX-only; DQX swap seam), [0011](0011-extensibility-seams-for-deferred-integrations.md) (second-impl-deferred seams — `CheckRunner`/`ConnectionAdapter`), [0012](0012-monitor-kind-seam.md) (freshness/schema-drift monitor kinds this feeds), [0010](0010-provider-agnostic-infrastructure-seams.md)/[0013](0013-marketplace-distribution-and-anti-lock-in.md) (anti-lock-in), [0015](README.md) (pending two-connection model — the Option B evolution). Issue [#286](https://github.com/TheurgicDuke771/DataQ/issues/286).
+- **Related:** [0003](0003-gx-only-for-v1.md) (GX-only; DQX swap seam), [0011](0011-extensibility-seams-for-deferred-integrations.md) (second-impl-deferred seams — `CheckRunner`/`ConnectionAdapter`), [0012](0012-monitor-kind-seam.md) (freshness/schema-drift monitor kinds this feeds), [0010](0010-provider-agnostic-infrastructure-seams.md)/[0013](0013-marketplace-distribution-and-anti-lock-in.md) (anti-lock-in), [0015](0015-two-connection-comparison-check-model.md) (two-connection model — settled 2026-07-11 at the *check* grain only; Option B's connection→connection ref stays deferred, see its §6). Issue [#286](https://github.com/TheurgicDuke771/DataQ/issues/286).
 
 ## Context
 
@@ -43,7 +43,7 @@ An Iceberg connection needs two things the flat-file connection lacks: a **catal
 
 **Chosen: Option A.** It ships inside the existing `ConnectionAdapter`/`CheckRunner` seams with zero new cross-connection machinery, and it keeps lifecycles independent — which matches the real usage pattern: a user may register an ADLS path for **flat files and Iceberg tables both**, then later delete the flat-file connection and use that storage **only for Iceberg going forward**. Under Option A that deletion is clean — the `iceberg` connection owns its own storage credential and is unaffected, and the existing cascade-delete on the connection FK (ADR 0020) removes only the flat-file connection's own suites/checks. Under Option B the same action would either strand the Iceberg connection's storage credential or cascade into it. Credential duplication is the accepted cost.
 
-**Option B is recorded as the future evolution**, deferred to **ADR 0015** (the pending two-connection model). ADR 0015 is currently scoped to source+target refs for `comparison` checks; generalising "a connection that references another connection" would let the Iceberg catalog credential and storage credential be separate connections. That generalisation is out of scope here.
+**Option B is recorded as the future evolution.** It was deferred to ADR 0015 (then pending); [ADR 0015](0015-two-connection-comparison-check-model.md) has since been written (2026-07-11) and settled the two-connection question **at the check grain only** — it explicitly declined to generalise "a connection that references another connection" (its §6), so Option B (separate catalog + storage credential connections) now awaits its own future ADR. That generalisation remains out of scope here.
 
 ### 4. Why we are NOT standing up Snowflake Iceberg tables / Databricks foreign catalog in this spike
 
@@ -53,7 +53,7 @@ Deliberately skipped. The SQL runners are **format-transparent by construction**
 
 - **Positive:** DataQ "supports Iceberg" *today* at the engine level with no code. The native path, when built, is a thin runner behind the proven seams (more evidence ADR 0011 holds) and unlocks no-warehouse reads plus the snapshot/schema-history feed for `freshness`/`schema_drift` (ADR 0012). Delta **UniForm** tables come along for free: they publish Iceberg v2 metadata over the same parquet files, readable via Unity Catalog's Iceberg REST Catalog — so the native `pyiceberg` path reaches Delta tables (read-only) without a Databricks warehouse. Caveats for UniForm: Iceberg **v2 only**, **no deletion vectors** (mutually exclusive with UniForm), and **async metadata lag** (the Iceberg snapshot trails the latest Delta commit — `converted_delta_version`/`converted_delta_timestamp` track how far).
 - **Negative / cost:** the native build adds a `pyiceberg` runtime dependency (CVE-surface + version pin to evaluate before it enters `requirements.txt`), a new `IcebergConnectionAdapter` + `IcebergCheckRunner`, a spec-driven connection form (catalog type + warehouse URL + auth), and duplicated storage credentials vs. an existing ADLS/S3 connection (the Option A trade). The exact-expectation path materializes the whole snapshot (via `.to_arrow()`), memory-bound like the flat-file/UC DataFrame paths — same scale ceiling (G-b scale-aware execution, post-v1); `.to_arrow_batch_reader()` is the streaming escape hatch for the monitor/aggregate path (#716).
-- **Neutral / deferred:** the native runner is **not built this cycle**. This ADR records the decision and shape; implementation is a follow-up gated behind the v1.1 portability work and the ADR-0015 settlement (for the eventual Option B). Engine-level Iceberg remains the interim answer.
+- **Neutral / deferred:** the native runner is **not built this cycle**. This ADR records the decision and shape; implementation is a follow-up gated behind the v1.1 portability work (the ADR-0015 settlement has since landed, 2026-07-11, and did **not** enable Option B — see Decision §3). Engine-level Iceberg remains the interim answer.
 
 ## Alternatives considered
 
@@ -67,4 +67,4 @@ Deliberately skipped. The SQL runners are **format-transparent by construction**
 
 - Issue [#286](https://github.com/TheurgicDuke771/DataQ/issues/286) (this spike + the deferred native build).
 - ADR 0012 (freshness/schema-drift monitor kinds — Iceberg snapshot metadata is their ideal source).
-- ADR 0015 (pending — the two-connection model that would enable Option B).
+- [ADR 0015](0015-two-connection-comparison-check-model.md) — written 2026-07-11; settled the two-connection question at the *check* grain (comparison source ref) and explicitly did **not** generalize to connection→connection refs, so Option B remains deferred to its own future ADR.

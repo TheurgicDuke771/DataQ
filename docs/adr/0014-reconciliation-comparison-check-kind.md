@@ -30,7 +30,7 @@ Three facts shape how it can integrate:
 
 4. **Build is post-v1 (v1.x), not v1 scope.** Reserving the kind keeps the door open at near-zero cost — the same "pay nothing during v1 to keep the option live" discipline as [ADR 0010](0010-provider-agnostic-infrastructure-seams.md) / [ADR 0013](0013-marketplace-distribution-and-anti-lock-in.md). No reconciliation code, UI, or runner ships in v1.
 
-5. **The two-connection check model is deferred to a future ADR (0015, pending).** *How* a `comparison` check carries source + target connection refs — a dedicated kind-specific table, two columns on `checks`, or a small join — stresses the single-connection check/suite invariant and is the real design decision. It is written when the build starts, not now. **Reserving the kind does not make a comparison check buildable in v1's schema** — that is deliberate (reservation ≠ buildability).
+5. **The two-connection check model is deferred to a future ADR (0015, pending).** *How* a `comparison` check carries source + target connection refs — a dedicated kind-specific table, two columns on `checks`, or a small join — stresses the single-connection check/suite invariant and is the real design decision. It is written when the build starts, not now. **Reserving the kind does not make a comparison check buildable in v1's schema** — that is deliberate (reservation ≠ buildability). *(Since written — [ADR 0015](0015-two-connection-comparison-check-model.md), 2026-07-11: the settled model keeps the suite as the sole connection binding — the suite supplies the target side; the check adds a single source ref, none of the three shapes mooted above.)*
 
 ## Consequences
 
@@ -40,7 +40,7 @@ Three facts shape how it can integrate:
 - We port a **proven, unit-tested** engine rather than inventing diff logic.
 
 **Negative**
-- The two-connection invariant break is **unresolved** until ADR 0015 — a `comparison` check cannot actually be modeled in v1's single-connection check schema. Accepted: this ADR reserves the seam and records the decision; the model decision is intentionally deferred.
+- The two-connection invariant break is **unresolved** until ADR 0015 — a `comparison` check cannot actually be modeled in v1's single-connection check schema. Accepted: this ADR reserves the seam and records the decision; the model decision is intentionally deferred. *(Since resolved — [ADR 0015](0015-two-connection-comparison-check-model.md), 2026-07-11.)*
 - Porting cost is real: the engine must conform to DataQ's tooling (conda + Black + mypy + pytest + Bandit) where FDC is venv + ruff + unittest.
 - FDC loads full DataFrames into memory — fine for a local tool, risky for large tables on a shared platform. The runner needs row caps / pushdown (FDC's `_wrap_with_limit` + `inline_row_limit` hooks are the starting point).
 
@@ -57,6 +57,6 @@ Three facts shape how it can integrate:
 - [ADR 0012](0012-monitor-kind-seam.md) — monitor-kind seam; `comparison` joins its reserved `check.kind` CHECK set and reuses `metric_value`.
 - [ADR 0011](0011-extensibility-seams-for-deferred-integrations.md) — `ResultPublisher` + post-v1 RDBMS `ConnectionAdapter`s the comparison datasources need.
 - [ADR 0003](0003-gx-only-for-v1.md) — GX-only for v1 (why reconciliation is a separate kind, not a GX expectation).
-- **ADR 0015 (pending)** — two-connection check model (how a `comparison` check carries source + target connection refs).
+- **[ADR 0015](0015-two-connection-comparison-check-model.md)** (written 2026-07-11) — two-connection check model: the suite supplies the target side; the check adds a single `source_connection_id` ref.
 - Source engine: `github.com/TheurgicDuke771/FastAPI_DataComparison` (MIT) — `data_comparison/{column_comparison,record_comparison,get_dataset}.py`.
 - CLAUDE.md §4 (datasource vs orchestration distinction), §5 (monitor-kind seam reserved kinds).
