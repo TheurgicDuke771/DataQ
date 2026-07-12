@@ -86,7 +86,7 @@ in Week 7** (out of roadmap — run engine #426 + authoring UI #437). The rest s
 | `freshness`, `volume` | ✅ **shipped** (W7, #426/#437) | ADR 0012 |
 | `schema_drift` | 🔵 reserved (422 today) | ADR 0012 |
 | `anomaly` | 🔵 reserved (422 today); needs a baseline/seasonality model | ADR 0012 |
-| `comparison` (cross-dataset reconciliation) | 🔵 reserved; reuse the FastAPI_DataComparison engine; needs the two-connection model | ADR [0014](../docs/adr/0014-reconciliation-comparison-check-kind.md) → ADR 0015 (pending) |
+| `comparison` (cross-dataset reconciliation) | 🔵 reserved; reuse the FastAPI_DataComparison engine; two-connection model **decided 2026-07-11** (build in v1.1 W3) | ADR [0014](../docs/adr/0014-reconciliation-comparison-check-kind.md) → ADR [0015](../docs/adr/0015-two-connection-comparison-check-model.md) |
 
 **Monitor-engine follow-ups** (from the #426/#437 landings):
 | # | Title |
@@ -411,7 +411,7 @@ Captured in ADRs / progress.md, not yet broken into backlog issues:
 | Item | Where | Note |
 |---|---|---|
 | **DQX engine** for UC streaming/DLT | ADR [0003](../docs/adr/0003-gx-only-for-v1.md) | v1.1 — same `UnityCatalogCheckRunner` interface; UI `engine: gx \| dqx` toggle |
-| **Reconciliation two-connection model** | ADR [0014](../docs/adr/0014-reconciliation-comparison-check-kind.md) → ADR 0015 (pending) | unblocks the `comparison` monitor kind |
+| **Reconciliation two-connection model** | ADR [0014](../docs/adr/0014-reconciliation-comparison-check-kind.md) → ADR [0015](../docs/adr/0015-two-connection-comparison-check-model.md) (decided 2026-07-11) | `comparison` monitor kind unblocked — build in v1.1 W3 |
 | **HashiCorp Vault** `SecretStore` spike | HARNESS_TODO §5 | validates the ADR 0010/0013 seam (Key Vault = one impl) |
 | **Performance/scale harness** | ADR 0021 / HARNESS_TODO §6 | the script behind #327/#323 above |
 | **Dark mode / marketing page** | — | prototype deferrals → **Theme 12** below |
