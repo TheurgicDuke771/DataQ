@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "b4af632ec979",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-802-hierarchical-asset-browse",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/e2e/assets.spec.ts",
+    "frontend/src/components/assets/assetTree.ts",
+    "frontend/src/pages/Assets.tsx",
+    "frontend/tests/components/assetTree.test.ts",
+    "frontend/tests/pages/Assets.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/b4/af632ec979/0/metadata.json",
+      "transcript": "/b4/af632ec979/0/full.jsonl",
+      "compact_transcript": "/b4/af632ec979/0/transcript.jsonl",
+      "content_hash": "/b4/af632ec979/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 72,
+    "cache_creation_tokens": 68031,
+    "cache_read_tokens": 7770986,
+    "output_tokens": 42249,
+    "api_call_count": 36
+  }
+}
