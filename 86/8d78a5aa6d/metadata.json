@@ -1,0 +1,43 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "868d78a5aa6d",
+  "strategy": "manual-commit",
+  "branch": "feature/comparison-ui",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/api/v1/runs.py",
+    "backend/app/services/comparison_report.py",
+    "backend/requirements.txt",
+    "backend/tests/api/test_comparison_report.py",
+    "docs/feature-matrix.md",
+    "docs/progress.md",
+    "frontend/e2e/check-editor.spec.ts",
+    "frontend/src/api/runs.ts",
+    "frontend/src/api/suites.ts",
+    "frontend/src/components/checks/ComparisonCheckForm.tsx",
+    "frontend/src/components/checks/checkForm.ts",
+    "frontend/src/components/checks/expectationCatalog.ts",
+    "frontend/src/components/results/ComparisonResultDetail.tsx",
+    "frontend/src/pages/CheckEdit.tsx",
+    "frontend/src/pages/CheckNew.tsx",
+    "frontend/src/pages/RunDetail.tsx",
+    "frontend/tests/components/ComparisonCheckForm.test.tsx",
+    "frontend/tests/components/ComparisonResultDetail.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/86/8d78a5aa6d/0/metadata.json",
+      "transcript": "/86/8d78a5aa6d/0/full.jsonl",
+      "compact_transcript": "/86/8d78a5aa6d/0/transcript.jsonl",
+      "content_hash": "/86/8d78a5aa6d/0/content_hash.txt",
+      "prompt": "/86/8d78a5aa6d/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 919,
+    "cache_creation_tokens": 2754856,
+    "cache_read_tokens": 195978437,
+    "output_tokens": 338471,
+    "api_call_count": 472
+  }
+}
