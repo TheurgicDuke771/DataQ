@@ -333,6 +333,10 @@ jobs:
       # dev-bypass identity is workspace admin (compose parity, ADR 0027) so
       # admin.spec.ts can drive /admin + /settings.
       WORKSPACE_ADMIN_EMAILS: dev-bypass@dataq.local
+      # Throttling off (#796, compose parity): dev-bypass requests carry no
+      # bearer → the whole suite shares one per-IP unauthenticated bucket
+      # (120/min) and 429s mid-run. The limiter is covered by its own tests.
+      RATE_LIMIT_ENABLED: "false"
     steps:
       - uses: actions/checkout@v7
 
