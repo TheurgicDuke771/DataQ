@@ -12,7 +12,7 @@ import {
   SettingOutlined,
   UserOutlined,
 } from '@ant-design/icons';
-import { Avatar, Button, Dropdown, Flex, Layout, Menu, Spin, Tag, Typography } from 'antd';
+import { Avatar, Button, Drawer, Dropdown, Flex, Layout, Menu, Spin, Tag, Typography } from 'antd';
 import type { MenuProps } from 'antd';
 import { lazy, Suspense, useState } from 'react';
 import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
@@ -93,12 +93,15 @@ const SELECTABLE_KEYS = [...NAV_ITEMS, ...ADMIN_FOOTER_ITEMS].map((i) => i.key);
 export function App() {
   const location = useLocation();
   const isAdmin = useIsWorkspaceAdmin();
-  // Narrow-viewport nav (#617): below the `lg` breakpoint the Sider collapses to
-  // zero width. AntD's built-in zero-width trigger floats over every page's
-  // heading, so it's disabled (`trigger={null}`) and replaced by a ☰ toggle in
-  // the Header, which has reserved space.
-  const [navCollapsed, setNavCollapsed] = useState(false);
+  // Narrow-viewport nav (#617, #801): below the `lg` breakpoint the Sider
+  // collapses to zero width and the nav moves into an overlay Drawer that floats
+  // *above* the content (a scrim behind it) instead of squeezing the page — so
+  // the content keeps its full width whether the nav is open or shut. AntD's
+  // built-in zero-width trigger floats over every page's heading, so it's
+  // disabled (`trigger={null}`) and replaced by a ☰ toggle in the Header, which
+  // has reserved space. Desktop is unchanged: the Sider *is* the nav.
   const [narrow, setNarrow] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const footerItems = isAdmin ? [...ADMIN_FOOTER_ITEMS, DOC_ITEM] : [DOC_ITEM];
   // Highlight the nav item whose path matches the current location — exact, or a
   // sub-path at a segment boundary (so `/suites` matches `/suites/123` but not a
@@ -127,7 +130,9 @@ export function App() {
               type="text"
               icon={<MenuOutlined />}
               aria-label="Toggle navigation"
-              onClick={() => setNavCollapsed((c) => !c)}
+              aria-controls="app-nav-drawer"
+              aria-expanded={drawerOpen}
+              onClick={() => setDrawerOpen((o) => !o)}
               style={{ marginInlineStart: -8 }}
             />
           )}
@@ -153,44 +158,54 @@ export function App() {
             breakpoint="lg"
             collapsedWidth={0}
             trigger={null}
-            collapsed={navCollapsed}
+            collapsed={narrow}
             onBreakpoint={(broken) => {
               setNarrow(broken);
-              setNavCollapsed(broken);
+              // Reset the overlay on any breakpoint crossing so a drawer left open
+              // on mobile doesn't re-appear the next time we drop below `lg`.
+              setDrawerOpen(false);
             }}
             style={{ borderInlineEnd: `1px solid ${BRAND.border}`, height: '100%' }}
           >
-            {/* Primary nav up top, footer group (Admin · Settings · Documentation)
-              pinned to the bottom by the flex layout, separated by a hairline. The
-              primary nav takes the slack and scrolls if it ever exceeds the height,
-              so the footer stays put. */}
-            <Flex vertical style={{ height: '100%' }}>
-              <Menu
-                mode="inline"
-                selectedKeys={selectedKeys}
-                items={NAV_ITEMS}
-                onClick={() => narrow && setNavCollapsed(true)}
-                style={{
-                  borderInlineEnd: 0,
-                  paddingTop: 8,
-                  flex: 1,
-                  minHeight: 0,
-                  overflowY: 'auto',
-                }}
-              />
-              <Menu
-                mode="inline"
-                selectedKeys={selectedKeys}
-                items={footerItems}
-                onClick={() => narrow && setNavCollapsed(true)}
-                style={{
-                  borderInlineEnd: 0,
-                  borderTop: `1px solid ${BRAND.border}`,
-                  paddingBlock: 8,
-                }}
-              />
-            </Flex>
+            {/* Desktop: the Sider *is* the nav. Narrow: it collapses to zero width
+                and the nav lives in the overlay Drawer below, so it never squeezes
+                the content (#801). Rendering the nav only when !narrow also keeps a
+                single copy of each nav item in the DOM. */}
+            {!narrow && (
+              <SideNav selectedKeys={selectedKeys} footerItems={footerItems} onNavigate={noop} />
+            )}
           </Sider>
+          {/* Narrow-viewport overlay nav: a left Drawer with a scrim (AntD's default
+              mask). It floats above the content — the page keeps its full width
+              whether the nav is open or shut. Only mounted below `lg`; on desktop
+              the Sider handles everything. */}
+          {narrow && (
+            <Drawer
+              id="app-nav-drawer"
+              placement="left"
+              open={drawerOpen}
+              onClose={() => setDrawerOpen(false)}
+              width={SHELL.siderWidth}
+              styles={{
+                body: { padding: 0 },
+                header: { borderBottom: `1px solid ${BRAND.border}` },
+              }}
+              title={
+                <Flex align="center" gap={8}>
+                  <BrandMark size={20} />
+                  <Typography.Text strong style={{ color: BRAND.ink }}>
+                    DataQ
+                  </Typography.Text>
+                </Flex>
+              }
+            >
+              <SideNav
+                selectedKeys={selectedKeys}
+                footerItems={footerItems}
+                onNavigate={() => setDrawerOpen(false)}
+              />
+            </Drawer>
+          )}
           {/* The only scroll container: header + sider stay fixed, this scrolls. */}
           <Content style={{ padding: 24, position: 'relative', overflowY: 'auto' }}>
             <BrandWatermark />
@@ -224,6 +239,48 @@ export function App() {
         </Layout>
       </Layout>
     </AuthGate>
+  );
+}
+
+/** Shared no-op — the desktop Sider has nothing to close after a nav click. */
+const noop = () => {};
+
+/**
+ * The sider's nav content — the primary nav up top and the footer group (Admin ·
+ * Settings · Documentation) pinned to the bottom by the flex layout, separated by
+ * a hairline. The primary nav takes the slack and scrolls if it ever exceeds the
+ * height, so the footer stays put.
+ *
+ * Shared by the desktop `<Sider>` and the narrow-viewport overlay `<Drawer>`
+ * (#801). `onNavigate` fires after any nav click so the overlay can close itself;
+ * on desktop it's a no-op.
+ */
+function SideNav({
+  selectedKeys,
+  footerItems,
+  onNavigate,
+}: {
+  selectedKeys: string[];
+  footerItems: MenuProps['items'];
+  onNavigate: () => void;
+}) {
+  return (
+    <Flex vertical style={{ height: '100%' }}>
+      <Menu
+        mode="inline"
+        selectedKeys={selectedKeys}
+        items={NAV_ITEMS}
+        onClick={onNavigate}
+        style={{ borderInlineEnd: 0, paddingTop: 8, flex: 1, minHeight: 0, overflowY: 'auto' }}
+      />
+      <Menu
+        mode="inline"
+        selectedKeys={selectedKeys}
+        items={footerItems}
+        onClick={onNavigate}
+        style={{ borderInlineEnd: 0, borderTop: `1px solid ${BRAND.border}`, paddingBlock: 8 }}
+      />
+    </Flex>
   );
 }
 

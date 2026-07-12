@@ -1,7 +1,7 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from '../src/App';
 import { useIsWorkspaceAdmin } from '../src/auth/useMe';
@@ -126,5 +126,62 @@ describe('App shell', () => {
     mockUser.mockReturnValue(null);
     renderAt('/no-such-page');
     expect(screen.queryByText('DU')).not.toBeInTheDocument();
+  });
+
+  // Mobile overlay nav (#801): below `lg` the Sider collapses to zero width and
+  // the nav moves into an overlay Drawer so it never squeezes the content. The
+  // Sider fires `onBreakpoint(matchMedia.matches)` on mount, so forcing
+  // matchMedia to match drives the narrow layout in jsdom.
+  describe('narrow viewport (#801)', () => {
+    let realMatchMedia: typeof window.matchMedia;
+    beforeEach(() => {
+      realMatchMedia = window.matchMedia;
+      window.matchMedia = (query: string): MediaQueryList =>
+        ({
+          matches: true,
+          media: query,
+          onchange: null,
+          addListener: () => {},
+          removeListener: () => {},
+          addEventListener: () => {},
+          removeEventListener: () => {},
+          dispatchEvent: () => false,
+        }) as MediaQueryList;
+    });
+    afterEach(() => {
+      window.matchMedia = realMatchMedia;
+    });
+
+    it('hides the Sider nav and shows the hamburger; the nav opens in a Drawer overlay', async () => {
+      mockIsAdmin.mockReturnValue(false);
+      mockUser.mockReturnValue(devUser);
+      renderAt('/dashboard');
+
+      // The nav is not inline (would consume layout width) — it lives in a closed
+      // Drawer, so no nav links are in the DOM yet, and the ☰ toggle is present.
+      const toggle = screen.getByLabelText('Toggle navigation');
+      expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      expect(screen.queryByRole('link', { name: 'Assets' })).not.toBeInTheDocument();
+
+      // Opening the overlay surfaces the nav inside a dialog (the Drawer, with its
+      // built-in scrim) rather than pushing the page.
+      await userEvent.click(toggle);
+      expect(toggle).toHaveAttribute('aria-expanded', 'true');
+      const dialog = await screen.findByRole('dialog');
+      expect(within(dialog).getByRole('link', { name: 'Assets' })).toBeInTheDocument();
+      expect(within(dialog).getByRole('link', { name: 'Suites' })).toBeInTheDocument();
+    });
+
+    it('closes the overlay after a nav item is chosen', async () => {
+      mockIsAdmin.mockReturnValue(false);
+      mockUser.mockReturnValue(devUser);
+      renderAt('/dashboard');
+
+      const toggle = screen.getByLabelText('Toggle navigation');
+      await userEvent.click(toggle);
+      const dialog = await screen.findByRole('dialog');
+      await userEvent.click(within(dialog).getByRole('link', { name: 'Assets' }));
+      await waitFor(() => expect(toggle).toHaveAttribute('aria-expanded', 'false'));
+    });
   });
 });
