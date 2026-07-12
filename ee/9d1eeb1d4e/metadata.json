@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "ee9d1eeb1d4e",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-805-lineage-graph",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/ee/9d1eeb1d4e/0/metadata.json",
+      "transcript": "/ee/9d1eeb1d4e/0/full.jsonl",
+      "compact_transcript": "/ee/9d1eeb1d4e/0/transcript.jsonl",
+      "content_hash": "/ee/9d1eeb1d4e/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 522,
+    "cache_creation_tokens": 783991,
+    "cache_read_tokens": 77968431,
+    "output_tokens": 234417,
+    "api_call_count": 263
+  }
+}
