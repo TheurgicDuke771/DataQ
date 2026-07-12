@@ -276,7 +276,13 @@ function AddCollaborator({
   };
 
   return (
-    <Flex gap={8} align="center">
+    // `wrap` + a shrinkable search field: on a phone the drawer is only as wide as
+    // the viewport, and an antd Select has a min-content width that `flex: 1` alone
+    // can't shrink past — so the row used to demand more width than it had and push
+    // the Add button off-screen, making a suite unshareable from mobile (#829).
+    // Basis 160px is the narrowest the search field stays usable at; below that the
+    // row wraps (search on top, permission + Add beneath) instead of overflowing.
+    <Flex gap={8} align="center" wrap>
       <Select
         showSearch
         value={userId}
@@ -289,7 +295,7 @@ function AddCollaborator({
           value: u.id,
           label: u.display_name ? `${u.display_name} · ${u.email}` : u.email,
         }))}
-        style={{ flex: 1 }}
+        style={{ flex: '1 1 160px', minWidth: 160 }}
       />
       <Select
         value={permission}
