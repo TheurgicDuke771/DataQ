@@ -48,7 +48,8 @@ describe('Assets page', () => {
     renderPage();
     // Root = the OL namespace; leaf = the table segment (not the full dotted name),
     // with its env + health tags — the drill-down levels are expanded by default.
-    expect(await screen.findByText('snowflake://acct')).toBeInTheDocument();
+    // The root reads as a datasource now, not a raw OL namespace (#830).
+    expect(await screen.findByText('Snowflake · acct')).toBeInTheDocument();
     expect(screen.getByText('ANALYTICS')).toBeInTheDocument();
     expect(screen.getByText('PUBLIC')).toBeInTheDocument();
     expect(screen.getByText('ORDERS')).toBeInTheDocument();
@@ -74,7 +75,7 @@ describe('Assets page', () => {
   it('switches to the flat "All assets" table and back', async () => {
     mockList.mockResolvedValue([ASSET]);
     renderPage();
-    await screen.findByText('snowflake://acct');
+    await screen.findByText('Snowflake · acct');
 
     await userEvent.click(screen.getByText('All assets'));
     // The table shows the full dotted name + suite count (2) the tree omits.
@@ -94,8 +95,8 @@ describe('Assets page', () => {
     ]);
     renderPage();
     // Two datasource roots.
-    expect(await screen.findByText('snowflake://acct')).toBeInTheDocument();
-    expect(screen.getByText('s3://lake')).toBeInTheDocument();
+    expect(await screen.findByText('Snowflake · acct')).toBeInTheDocument();
+    expect(screen.getByText('S3 · lake')).toBeInTheDocument();
     // Both tables share the PUBLIC schema folder (merged), each a distinct leaf.
     expect(screen.getByText('ORDERS')).toBeInTheDocument();
     expect(screen.getByText('CUSTOMERS')).toBeInTheDocument();

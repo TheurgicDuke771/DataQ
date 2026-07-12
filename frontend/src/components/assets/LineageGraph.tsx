@@ -5,6 +5,7 @@ import { useMemo } from 'react';
 import type { LineageEdge, LineageNode } from '../../api/assets';
 import { BRAND } from '../../theme';
 import { nameSegments } from './assetTree';
+import { namespaceLabel } from './namespaceLabel';
 import { type CenterAsset, NODE_H, NODE_W, buildLineageLayout } from './lineageLayout';
 
 /**
@@ -187,7 +188,16 @@ function GraphNode({
         {truncate(leafName(node.name), 24)}
       </text>
       <text x={10} y={38} fontSize={10} fill="#8c8c8c" style={{ pointerEvents: 'none' }}>
-        {truncate(node.env ? `${node.env} · ${node.namespace}` : node.namespace, 28)}
+        {/* The label, not the raw namespace: a node subtitle has ~28 characters, and
+            an Iceberg namespace is a DSN — it truncated to `dev · postgresql+psy…`,
+            which told the reader nothing. The full namespace stays in the <title>
+            tooltip above (#830). */}
+        {truncate(
+          node.env
+            ? `${node.env} · ${namespaceLabel(node.namespace).text}`
+            : namespaceLabel(node.namespace).text,
+          28,
+        )}
       </text>
       {/* Monitored must not be colour-only (WCAG 1.4.1): a filled dot marks it, so
           the state survives a colour-blind viewer and a greyscale print. */}

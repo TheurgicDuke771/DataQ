@@ -1,4 +1,5 @@
 import type { AssetSummary } from '../../api/assets';
+import { namespaceLabel } from './namespaceLabel';
 
 /**
  * Hierarchical asset browse (#802) — pure, so it can be unit-tested without
@@ -30,10 +31,13 @@ export type DatasourceKind =
 export interface AssetTreeNode {
   /** Stable, unique key: the full `ns::{namespace}/seg/seg…` path. */
   key: string;
-  /** The segment label (a namespace on roots, one path segment otherwise). */
+  /** The segment label (a human datasource label on roots, one path segment otherwise). */
   label: string;
   /** Datasource kind — set on root (namespace) nodes only, for the icon. */
   kind?: DatasourceKind;
+  /** The raw OL namespace — set on root nodes only. The label is for reading; this
+   *  is the identity, kept so the UI can still surface it (tooltip) (#830). */
+  namespace?: string;
   /** The asset — set on leaf (and folder-leaf) nodes; makes the node openable. */
   asset?: AssetSummary;
   children: AssetTreeNode[];
@@ -66,6 +70,7 @@ interface MutableNode {
   key: string;
   label: string;
   kind?: DatasourceKind;
+  namespace?: string;
   asset?: AssetSummary;
   children: Map<string, MutableNode>;
 }
@@ -75,6 +80,7 @@ function freeze(node: MutableNode): AssetTreeNode {
     key: node.key,
     label: node.label,
     ...(node.kind ? { kind: node.kind } : {}),
+    ...(node.namespace ? { namespace: node.namespace } : {}),
     ...(node.asset ? { asset: node.asset } : {}),
     children: [...node.children.values()]
       .map(freeze)
@@ -84,8 +90,8 @@ function freeze(node: MutableNode): AssetTreeNode {
 
 /**
  * Build the connection-rooted asset tree from a flat asset list. Roots are
- * sorted by namespace, children by label, both case-insensitively; the shape is
- * deterministic for a given input (test-friendly, no render churn).
+ * sorted by their (human) label, children by label, both case-insensitively; the
+ * shape is deterministic for a given input (test-friendly, no render churn).
  */
 export function buildAssetTree(assets: AssetSummary[]): AssetTreeNode[] {
   const roots = new Map<string, MutableNode>();
@@ -95,8 +101,12 @@ export function buildAssetTree(assets: AssetSummary[]): AssetTreeNode[] {
     if (!node) {
       node = {
         key: rootKey,
-        label: asset.namespace,
+        // Read the datasource, don't parse it: the raw namespace is a DSN for
+        // Iceberg (#830). The key/sort still ride on the namespace, so grouping is
+        // unchanged — only what's printed differs.
+        label: namespaceLabel(asset.namespace).text,
         kind: datasourceKind(asset.namespace),
+        namespace: asset.namespace,
         children: new Map(),
       };
       roots.set(rootKey, node);
@@ -117,7 +127,14 @@ export function buildAssetTree(assets: AssetSummary[]): AssetTreeNode[] {
       if (i === segments.length - 1) cursor.asset = asset;
     });
   }
-  return [...roots.values()].map(freeze).sort((a, b) => a.label.localeCompare(b.label));
+  // Sort roots by what the user reads (the label), tie-broken by the namespace so
+  // two datasources that shorten to the same label still order deterministically.
+  return [...roots.values()]
+    .map(freeze)
+    .sort(
+      (a, b) =>
+        a.label.localeCompare(b.label) || (a.namespace ?? '').localeCompare(b.namespace ?? ''),
+    );
 }
 
 /** Every node key that has descendants — the default-expanded set (roots + folders). */

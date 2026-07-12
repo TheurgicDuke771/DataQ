@@ -5,7 +5,7 @@ import {
   GoldOutlined,
   ThunderboltOutlined,
 } from '@ant-design/icons';
-import { Empty, Flex, Segmented, Table, Tag, Tree, Typography } from 'antd';
+import { Empty, Flex, Segmented, Table, Tag, Tooltip, Tree, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import type { DataNode } from 'antd/es/tree';
 import type { ReactNode } from 'react';
@@ -13,6 +13,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { type AssetSummary, listAssets } from '../api/assets';
+import { namespaceLabel } from '../components/assets/namespaceLabel';
 import { AssetHealthTag } from '../components/assets/AssetHealthTag';
 import {
   type AssetTreeNode,
@@ -137,6 +138,12 @@ function toDataNode(node: AssetTreeNode): DataNode {
       {node.asset.env && <Tag style={{ marginInlineEnd: 0 }}>{node.asset.env}</Tag>}
       <AssetHealthTag summary={node.asset} />
     </Flex>
+  ) : node.namespace ? (
+    // A datasource root: show the human label, keep the raw OL namespace (the
+    // identity) one hover away rather than printing a DSN at people (#830).
+    <Tooltip title={node.namespace}>
+      <span>{node.label}</span>
+    </Tooltip>
   ) : (
     <span>{node.label}</span>
   );
@@ -160,9 +167,11 @@ function AssetsTable({ assets, onOpen }: { assets: AssetSummary[]; onOpen: (id: 
           <Typography.Text strong ellipsis style={{ display: 'block' }}>
             {name}
           </Typography.Text>
-          <Typography.Text type="secondary" style={{ fontSize: 12 }} ellipsis>
-            {asset.namespace}
-          </Typography.Text>
+          <Tooltip title={asset.namespace}>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }} ellipsis>
+              {namespaceLabel(asset.namespace).text}
+            </Typography.Text>
+          </Tooltip>
         </div>
       ),
     },
