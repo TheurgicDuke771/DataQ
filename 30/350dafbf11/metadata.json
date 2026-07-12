@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "30350dafbf11",
+  "strategy": "manual-commit",
+  "branch": "feature/comparison-engine",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/30/350dafbf11/0/metadata.json",
+      "transcript": "/30/350dafbf11/0/full.jsonl",
+      "compact_transcript": "/30/350dafbf11/0/transcript.jsonl",
+      "content_hash": "/30/350dafbf11/0/content_hash.txt",
+      "prompt": "/30/350dafbf11/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 577,
+    "cache_creation_tokens": 1459835,
+    "cache_read_tokens": 90708114,
+    "output_tokens": 231118,
+    "api_call_count": 298
+  }
+}
