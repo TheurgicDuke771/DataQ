@@ -36,6 +36,7 @@ from backend.app.services.check_service import (
     validate_comparison_check,
     validate_expectation_check,
     validate_kind,
+    validate_lengths,
     validate_monitor_check,
 )
 from backend.app.services.custom_sql import is_custom_sql, validate_custom_sql_check
@@ -167,6 +168,12 @@ def import_suite(
     source_ids: list[uuid.UUID | None] = []
     for c in checks:
         validate_kind(c["kind"])
+        # Direct `Check(...)` construction below has no Pydantic layer of its own —
+        # today the REST import route's `CheckDocument` model already enforces the
+        # same 256/128 bounds, but this keeps the guarantee at the service layer
+        # (the same reasoning as the MCP `create_check` fix, #813) rather than
+        # relying solely on the caller.
+        validate_lengths(name=c["name"], expectation_type=c["expectation_type"])
         source_ids.append(
             _resolve_source_connection(session, c) if c["kind"] == COMPARISON_KIND else None
         )

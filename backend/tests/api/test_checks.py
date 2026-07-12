@@ -372,6 +372,52 @@ def test_import_rejects_invalid_expectation_check(client: TestClient, db_session
     assert "smuggled" not in names
 
 
+def test_import_suite_service_rejects_oversized_name(db_session: Any) -> None:
+    # The REST import route's `CheckDocument` Pydantic model already caps
+    # name/expectation_type at 256/128, but `suite_io_service.import_suite`
+    # builds `Check(...)` ORM objects directly with no Pydantic layer of its
+    # own — a direct caller must still get a clean 422, not a raw Postgres
+    # `StringDataRightTruncation` on the INSERT (#813 follow-up).
+    from backend.app.services import suite_io_service
+    from backend.app.services.check_service import CheckConfigInvalidError
+
+    owner = User(aad_object_id=uuid.uuid4().hex, email="importer@example.com")
+    db_session.add(owner)
+    db_session.flush()
+    conn = Connection(
+        name=f"snowflake-{uuid.uuid4().hex[:8]}",
+        type="snowflake",
+        env="dev",
+        config={"account": "ab12345.eu-west-1"},
+        created_by=owner.id,
+    )
+    db_session.add(conn)
+    db_session.commit()
+
+    with pytest.raises(CheckConfigInvalidError, match="name"):
+        suite_io_service.import_suite(
+            db_session,
+            version=1,
+            name="smuggled",
+            description=None,
+            checks=[
+                {
+                    "name": "x" * 257,
+                    "kind": "expectation",
+                    "expectation_type": "expect_column_values_to_not_be_null",
+                    "config": {"column": "email"},
+                    "warn_threshold": None,
+                    "fail_threshold": None,
+                    "critical_threshold": None,
+                }
+            ],
+            connection_id=conn.id,
+            created_by=owner.id,
+        )
+    names = [s.name for s in db_session.query(Suite).all()]
+    assert "smuggled" not in names
+
+
 # ───────────────────────── custom-SQL (ADR 0019) ───────────────────
 
 

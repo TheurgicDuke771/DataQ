@@ -307,6 +307,31 @@ def test_create_check_rejects_nul_bytes(db_session: Any, monkeypatch: Any) -> No
         )
 
 
+def test_create_check_rejects_oversized_name_or_type(db_session: Any, monkeypatch: Any) -> None:
+    """The MCP tool has no Pydantic layer of its own, so `name`/`expectation_type`
+    length is enforced by `check_service` — matching the REST `CheckCreate` bounds
+    (256/128) and the `checks` column widths — as a clean ToolError, not a raw
+    Postgres `StringDataRightTruncation` on the INSERT."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+
+    with pytest.raises(ToolError, match="name"):
+        server.create_check(
+            str(suite.id),
+            name="x" * 257,
+            expectation_type="expect_column_values_to_not_be_null",
+            config={"column": "email"},
+        )
+    with pytest.raises(ToolError, match="expectation_type"):
+        server.create_check(
+            str(suite.id),
+            name="fine",
+            expectation_type="x" * 129,
+            config={"column": "email"},
+        )
+
+
 def test_create_check_requires_edit(db_session: Any, monkeypatch: Any) -> None:
     owner = _user(db_session, "owner@acme.io")
     suite = _suite(db_session, owner)
