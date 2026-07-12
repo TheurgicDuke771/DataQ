@@ -1,0 +1,35 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "9b56cf788fed",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-803-asset-health-split",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/api/v1/assets.py",
+    "backend/app/services/asset_view_service.py",
+    "backend/tests/services/test_asset_view_service.py",
+    "frontend/src/api/assets.ts",
+    "frontend/src/components/assets/health.ts",
+    "frontend/tests/components/AssetHealth.test.tsx",
+    "frontend/tests/components/AssetHealthLead.test.tsx",
+    "frontend/tests/components/assetTree.test.ts",
+    "frontend/tests/pages/AssetDetail.test.tsx",
+    "frontend/tests/pages/Assets.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/9b/56cf788fed/0/metadata.json",
+      "transcript": "/9b/56cf788fed/0/full.jsonl",
+      "compact_transcript": "/9b/56cf788fed/0/transcript.jsonl",
+      "content_hash": "/9b/56cf788fed/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 33,
+    "cache_creation_tokens": 54098,
+    "cache_read_tokens": 6394518,
+    "output_tokens": 17059,
+    "api_call_count": 16
+  }
+}
