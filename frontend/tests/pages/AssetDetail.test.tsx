@@ -62,6 +62,8 @@ const DETAIL: AssetDetailData = {
     last_run_at: '2026-07-01T09:00:00Z',
     has_failed_run: false,
     has_active_run: false,
+    has_operational_error: false,
+    has_skip: false,
   },
   suites: [
     {
@@ -174,6 +176,44 @@ describe('AssetDetail page', () => {
     expect(screen.getAllByText('Failing').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('No runs')).toBeInTheDocument();
     expect(screen.getByText('3 / 4')).toBeInTheDocument();
+  });
+
+  // #803: the header carries TWO labelled health axes, not one conflated badge.
+  it('renders connection health and data-quality health as separate labelled axes', async () => {
+    mockGet.mockResolvedValue(DETAIL);
+    renderPage();
+    await screen.findByRole('heading', { name: 'ANALYTICS.PUBLIC.ORDERS' });
+    expect(screen.getByText('Connection')).toBeInTheDocument();
+    expect(screen.getByText('Data quality')).toBeInTheDocument();
+    // The fixture connected fine (no operational error) but the data is failing:
+    // Connection must read Reachable while Data quality reads Failing.
+    expect(screen.getByText('Reachable')).toBeInTheDocument();
+    expect(screen.getAllByText('Failing').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('reads Errors on the connection axis without touching data-quality health', async () => {
+    // A run that succeeded but whose checks threw: DataQ could not evaluate, so the
+    // connection axis errors and the data-quality axis honestly says "No data" —
+    // it must NOT go green, and it must NOT claim a data failure.
+    mockGet.mockResolvedValue({
+      ...DETAIL,
+      summary: {
+        ...DETAIL.summary,
+        worst_severity: null,
+        checks_total: 0,
+        has_operational_error: true,
+      },
+    });
+    renderPage();
+    await screen.findByRole('heading', { name: 'ANALYTICS.PUBLIC.ORDERS' });
+    expect(screen.getByText('Errors')).toBeInTheDocument();
+    // Scope to the health *tag*: the empty-lineage <Empty> also renders an SVG
+    // <title>No data</title>, which would otherwise match.
+    const noDataTags = screen
+      .getAllByText('No data')
+      .filter((el) => el.classList.contains('ant-tag'));
+    expect(noDataTags).toHaveLength(1);
+    expect(screen.queryByText('Reachable')).not.toBeInTheDocument();
   });
 
   it('renders upstream/downstream lineage with monitored flags', async () => {

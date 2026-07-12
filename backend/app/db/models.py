@@ -42,8 +42,8 @@ RUN_STATUSES = ("queued", "running", "succeeded", "failed", "cancelled")
 # statuses carry NO penalty weight and MUST be excluded from the health-score N
 # (i.e. aggregate WHERE status IN the four tiers only).
 _RESULT_SEVERITY_TIERS = ("pass", "warn", "fail", "critical")
-_RESULT_OPERATIONAL_STATUSES = ("skip", "error")
-RESULT_STATUSES = _RESULT_SEVERITY_TIERS + _RESULT_OPERATIONAL_STATUSES
+RESULT_OPERATIONAL_STATUSES = ("skip", "error")
+RESULT_STATUSES = _RESULT_SEVERITY_TIERS + RESULT_OPERATIONAL_STATUSES
 # Failing severity tiers (the non-`pass` tiers) → rank, worst last. The single
 # source for the discrete "which run outcome is worse" ordering shared by alert
 # dedup, the RunReport builder, and run-outcome rollups (#655) — derived from the

@@ -60,9 +60,18 @@ class ComposingSuiteRead(ApiModel):
 
 
 class AssetSummaryRead(ApiModel):
-    """List-row aggregation for one visible asset. `worst_severity` /
-    `checks_*` / `last_run_at` roll up the caller-visible composing suites' latest
-    runs; `worst_severity` is null when all passed or nothing has run."""
+    """List-row aggregation for one visible asset, carrying **two orthogonal health
+    axes** (#803) the UI renders separately:
+
+    - *Suite health* (data quality) — `worst_severity` / `checks_*` over the
+      **evaluated** checks of the caller-visible composing suites' latest runs;
+      `worst_severity` is null when all passed or nothing has run. Operational
+      results never rank here.
+    - *Connection health* (reachability) — `has_operational_error` / `has_skip`
+      (plus the execution states below): could DataQ execute against the
+      datasource at all? Derived from the recorded runs only — no connection-probe
+      polling loop.
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -79,10 +88,13 @@ class AssetSummaryRead(ApiModel):
     checks_passed: int
     last_run_at: datetime | None
     # Latest-run execution states (distinct from check severity): any composing
-    # suite's latest run `failed` / still `queued`/`running`. The UI health badge
-    # reads these so an operationally-failed run never renders green.
+    # suite's latest run `failed` / still `queued`/`running`.
     has_failed_run: bool
     has_active_run: bool
+    # Connection health (#803): a failed run OR any `error` result → DataQ could not
+    # evaluate against the datasource; `skip` → a precondition wasn't met (degraded).
+    has_operational_error: bool
+    has_skip: bool
 
 
 class LineageNodeRead(ApiModel):

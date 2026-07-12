@@ -35,6 +35,7 @@ from backend.app.datasources.base import (
 from backend.app.datasources.monitors import MONITOR_KINDS
 from backend.app.db.models import (
     COMPARISON_KIND,
+    RESULT_OPERATIONAL_STATUSES,
     RESULT_STATUSES,
     RUN_STATUSES,
     SEVERITY_RANK,
@@ -373,6 +374,34 @@ def check_outcome_counts(
         total = passed + sum(by_status.get(tier, 0) for tier in SEVERITY_RANK)
         out[run_id] = (total, passed, worst)
     return out
+
+
+def operational_result_flags(
+    session: Session, run_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, tuple[bool, bool]]:
+    """Per-run ``(has_error, has_skip)`` over its **operational** results (#122).
+
+    The exact complement of :func:`check_outcome_counts`, which counts only the
+    *evaluated* severity tiers and deliberately drops ``skip``/``error``. Those
+    dropped rows are the signal that DataQ could not evaluate a check — the
+    datasource threw (``error``) or a precondition wasn't met (``skip``) — so the
+    asset view reads them to derive **connection** health (can we reach the thing?)
+    separately from **suite** health (is the data good?), per #803.
+
+    Presence, not counts: one grouped query, a row exists iff that status occurs.
+    """
+    if not run_ids:
+        return {}
+    rows = session.execute(
+        select(Result.run_id, Result.status)
+        .where(Result.run_id.in_(run_ids), Result.status.in_(RESULT_OPERATIONAL_STATUSES))
+        .group_by(Result.run_id, Result.status)
+    ).all()
+    flags: dict[uuid.UUID, tuple[bool, bool]] = {}
+    for run_id, status in rows:
+        has_error, has_skip = flags.get(run_id, (False, False))
+        flags[run_id] = (has_error or status == "error", has_skip or status == "skip")
+    return flags
 
 
 def get_run(session: Session, run_id: uuid.UUID) -> Run | None:

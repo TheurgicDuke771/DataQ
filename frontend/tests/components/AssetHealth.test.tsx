@@ -3,7 +3,12 @@ import { describe, expect, it } from 'vitest';
 
 import type { AssetSummary, RunOutcome } from '../../src/api/assets';
 import { AssetHealthTag } from '../../src/components/assets/AssetHealthTag';
-import { assetHealth, runHealth } from '../../src/components/assets/health';
+import {
+  assetHealth,
+  connectionHealth,
+  runHealth,
+  suiteHealth,
+} from '../../src/components/assets/health';
 
 type SummaryHealthInput = Pick<
   AssetSummary,
@@ -94,5 +99,98 @@ describe('AssetHealthTag', () => {
   it('renders the derived health', () => {
     render(<AssetHealthTag summary={{ ...CLEAN, worst_severity: 'critical' }} />);
     expect(screen.getByText('Critical')).toBeInTheDocument();
+  });
+});
+
+// ── the two split axes (#803) ────────────────────────────────────────────────
+// The point of the split: "could we reach it?" and "is the data good?" are
+// different questions, and neither may answer for the other.
+
+type ConnInput = Pick<
+  AssetSummary,
+  'has_operational_error' | 'has_skip' | 'has_active_run' | 'last_run_at'
+>;
+type SuiteInput = Pick<
+  AssetSummary,
+  'worst_severity' | 'checks_total' | 'has_active_run' | 'last_run_at'
+>;
+
+const CONN_OK: ConnInput = {
+  has_operational_error: false,
+  has_skip: false,
+  has_active_run: false,
+  last_run_at: '2026-01-01T00:00:00Z',
+};
+const SUITE_OK: SuiteInput = {
+  worst_severity: null,
+  checks_total: 3,
+  has_active_run: false,
+  last_run_at: '2026-01-01T00:00:00Z',
+};
+
+describe('connectionHealth (#803)', () => {
+  it('is Reachable for a clean concluded run', () => {
+    expect(connectionHealth(CONN_OK)).toEqual({ label: 'Reachable', color: 'success' });
+  });
+
+  it('is Errors when DataQ could not execute (failed run or a check that threw)', () => {
+    expect(connectionHealth({ ...CONN_OK, has_operational_error: true })).toEqual({
+      label: 'Errors',
+      color: 'error',
+    });
+  });
+
+  it('is Degraded on a skip — it executed, a precondition just was not met', () => {
+    expect(connectionHealth({ ...CONN_OK, has_skip: true })).toEqual({
+      label: 'Degraded',
+      color: 'warning',
+    });
+  });
+
+  it('an error outranks a skip', () => {
+    expect(
+      connectionHealth({ ...CONN_OK, has_operational_error: true, has_skip: true }).label,
+    ).toBe('Errors');
+  });
+
+  it('is No runs when nothing has run (unknown, not healthy)', () => {
+    expect(connectionHealth({ ...CONN_OK, last_run_at: null }).label).toBe('No runs');
+  });
+
+  it('IGNORES data-quality severity entirely — bad data is not a bad connection', () => {
+    // The same summary that reads Critical on the suite axis must read Reachable
+    // here: we connected fine, the data is what is wrong.
+    expect(connectionHealth(CONN_OK).label).toBe('Reachable');
+    expect(suiteHealth({ ...SUITE_OK, worst_severity: 'critical' }).label).toBe('Critical');
+  });
+});
+
+describe('suiteHealth (#803)', () => {
+  it('maps each failing severity to its tier', () => {
+    expect(suiteHealth({ ...SUITE_OK, worst_severity: 'warn' }).label).toBe('Warning');
+    expect(suiteHealth({ ...SUITE_OK, worst_severity: 'fail' }).label).toBe('Failing');
+    expect(suiteHealth({ ...SUITE_OK, worst_severity: 'critical' }).label).toBe('Critical');
+  });
+
+  it('is Passing only when checks were actually evaluated and none failed', () => {
+    expect(suiteHealth(SUITE_OK)).toEqual({ label: 'Passing', color: 'success' });
+  });
+
+  it('is No data — never a green Passing — when a run evaluated nothing', () => {
+    // The operational case: the run happened but every check errored/skipped, so
+    // checks_total is 0. Keying "Passing" off "a run happened" would paint this
+    // green; keying it off evaluated checks correctly says we know nothing.
+    expect(suiteHealth({ ...SUITE_OK, checks_total: 0 })).toEqual({
+      label: 'No data',
+      color: 'default',
+    });
+  });
+
+  it('is No runs when nothing has run', () => {
+    expect(suiteHealth({ ...SUITE_OK, checks_total: 0, last_run_at: null }).label).toBe('No runs');
+  });
+
+  it('shows an in-flight run as Running', () => {
+    expect(suiteHealth({ ...SUITE_OK, has_active_run: true }).label).toBe('Running');
   });
 });

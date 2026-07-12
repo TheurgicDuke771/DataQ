@@ -35,7 +35,7 @@ from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.db.models import Asset, Run, Suite, User, worst_severity
 from backend.app.lineage.edges import downstream_assets, upstream_assets
-from backend.app.services.run_service import check_outcome_counts
+from backend.app.services.run_service import check_outcome_counts, operational_result_flags
 from backend.app.services.suite_authz import effective_permissions
 from backend.app.services.suite_service import accessible_suite_ids
 
@@ -65,7 +65,12 @@ class RunOutcome:
 
     ``worst_severity`` is the highest failing tier among evaluated checks (warn <
     fail < critical), or ``None`` when all passed / nothing evaluated. ``run_id`` /
-    timestamps are ``None`` when the suite has never run."""
+    timestamps are ``None`` when the suite has never run.
+
+    ``has_error`` / ``has_skip`` are the run's **operational** results (#122) — a
+    check the datasource threw on, or one whose precondition wasn't met. They are
+    deliberately *not* severity: they say nothing about data quality, only about
+    whether DataQ could evaluate at all, and so feed connection health (#803)."""
 
     run_id: uuid.UUID | None = None
     status: str | None = None
@@ -74,6 +79,8 @@ class RunOutcome:
     checks_passed: int = 0
     finished_at: datetime | None = None
     created_at: datetime | None = None
+    has_error: bool = False
+    has_skip: bool = False
 
 
 @dataclass(frozen=True)
@@ -88,7 +95,20 @@ class ComposingSuite:
 
 @dataclass(frozen=True)
 class AssetSummary:
-    """List-row aggregation for one visible asset."""
+    """List-row aggregation for one visible asset.
+
+    **Two orthogonal health axes (#803).** The old single "health" conflated them:
+
+    - *Suite health* (data quality, ADR 0005) — ``worst_severity`` over the
+      **evaluated** checks, plus ``checks_total``/``checks_passed``. Operational
+      results never rank here, so a datasource DataQ couldn't reach reads as "no
+      data", never as a green "passing" nor as a red data failure.
+    - *Connection health* (reachability) — ``has_operational_error`` /
+      ``has_skip``: could DataQ execute against the datasource at all? Derived
+      **purely from the runs already recorded** (a latest run that `failed`, or
+      any ``error``/``skip`` result on one) — there is no connection-probe polling
+      loop behind this, by design.
+    """
 
     id: uuid.UUID
     namespace: str
@@ -98,17 +118,21 @@ class AssetSummary:
     owner_user_id: uuid.UUID | None
     last_seen: datetime
     suite_count: int
-    # Health rolled up across the caller-visible composing suites' latest runs.
+    # ── suite health (data quality) ──
     worst_severity: str | None
     checks_total: int
     checks_passed: int
     last_run_at: datetime | None
-    # Latest-run *execution* states (distinct from check severity — a run can fail
-    # operationally and write no results, so severity alone would read green):
-    # any latest run `failed` / any latest run still `queued`/`running`. The UI
-    # health badge consumes these so an operational failure is never shown passing.
+    # ── connection health (reachability / execution) ──
+    # `has_failed_run`: any latest run whose *execution* `failed` (wrote no results).
+    # `has_active_run`: any latest run still `queued`/`running` (hasn't concluded).
+    # `has_operational_error`: a failed run OR any `error` result — DataQ could not
+    #   evaluate against the datasource. `has_skip`: any `skip` result (a
+    #   precondition, e.g. the batch hasn't landed, wasn't met) — degraded, not down.
     has_failed_run: bool = False
     has_active_run: bool = False
+    has_operational_error: bool = False
+    has_skip: bool = False
 
 
 @dataclass(frozen=True)
@@ -148,11 +172,17 @@ def _latest_run_per_suite(session: Session, suite_ids: list[uuid.UUID]) -> dict[
     return {run.suite_id: run for run in rows}
 
 
-def _run_outcome(run: Run | None, outcome: tuple[int, int, str | None] | None) -> RunOutcome:
-    """Assemble a `RunOutcome` from a suite's latest run + its check-outcome tuple."""
+def _run_outcome(
+    run: Run | None,
+    outcome: tuple[int, int, str | None] | None,
+    op_flags: tuple[bool, bool] | None = None,
+) -> RunOutcome:
+    """Assemble a `RunOutcome` from a suite's latest run + its check-outcome tuple
+    + its operational (`error`/`skip`) flags."""
     if run is None:
         return RunOutcome()
     total, passed, worst = outcome or (0, 0, None)
+    has_error, has_skip = op_flags or (False, False)
     return RunOutcome(
         run_id=run.id,
         status=run.status,
@@ -161,6 +191,8 @@ def _run_outcome(run: Run | None, outcome: tuple[int, int, str | None] | None) -
         checks_passed=passed,
         finished_at=run.finished_at,
         created_at=run.created_at,
+        has_error=has_error,
+        has_skip=has_skip,
     )
 
 
@@ -169,8 +201,10 @@ def _composing_suites(
     levels: dict[uuid.UUID, str | None],
     latest_runs: dict[uuid.UUID, Run],
     outcomes: dict[uuid.UUID, tuple[int, int, str | None]],
+    op_flags: dict[uuid.UUID, tuple[bool, bool]] | None = None,
 ) -> list[ComposingSuite]:
     """Build the per-suite breakdown for one asset's suites (sorted by name)."""
+    op_flags = op_flags or {}
     composing: list[ComposingSuite] = []
     for suite in suites:
         level = levels.get(suite.id)
@@ -178,12 +212,13 @@ def _composing_suites(
             continue
         run = latest_runs.get(suite.id)
         outcome = outcomes.get(run.id) if run is not None else None
+        flags = op_flags.get(run.id) if run is not None else None
         composing.append(
             ComposingSuite(
                 suite_id=suite.id,
                 name=suite.name,
                 my_permission=level,
-                latest_run=_run_outcome(run, outcome),
+                latest_run=_run_outcome(run, outcome, flags),
             )
         )
     return composing
@@ -195,6 +230,7 @@ def _roll_up(asset: Asset, composing: list[ComposingSuite]) -> AssetSummary:
     checks_total = checks_passed = 0
     last_run_at: datetime | None = None
     has_failed_run = has_active_run = False
+    has_operational_error = has_skip = False
     for suite in composing:
         run = suite.latest_run
         if run.worst_severity is not None:
@@ -206,6 +242,13 @@ def _roll_up(asset: Asset, composing: list[ComposingSuite]) -> AssetSummary:
             has_failed_run = True
         elif run.status in ("queued", "running"):
             has_active_run = True
+        # Connection health (#803): a run that failed outright, or one that ran but
+        # whose checks threw, both mean DataQ could not evaluate against the
+        # datasource. `skip` is weaker — it executed, a precondition just wasn't met.
+        if run.status == "failed" or run.has_error:
+            has_operational_error = True
+        if run.has_skip:
+            has_skip = True
         checks_total += run.checks_total
         checks_passed += run.checks_passed
         ts = run.finished_at or run.created_at
@@ -226,6 +269,8 @@ def _roll_up(asset: Asset, composing: list[ComposingSuite]) -> AssetSummary:
         last_run_at=last_run_at,
         has_failed_run=has_failed_run,
         has_active_run=has_active_run,
+        has_operational_error=has_operational_error,
+        has_skip=has_skip,
     )
 
 
@@ -273,7 +318,9 @@ def list_visible_assets(
     )
     levels = effective_permissions(session, suites, user_id)
     latest_runs = _latest_run_per_suite(session, [s.id for s in suites])
-    outcomes = check_outcome_counts(session, [r.id for r in latest_runs.values()])
+    run_ids = [r.id for r in latest_runs.values()]
+    outcomes = check_outcome_counts(session, run_ids)
+    op_flags = operational_result_flags(session, run_ids)
 
     suites_by_asset: dict[uuid.UUID, list[Suite]] = defaultdict(list)
     for suite in suites:
@@ -283,7 +330,9 @@ def list_visible_assets(
     return [
         _roll_up(
             asset,
-            _composing_suites(suites_by_asset.get(asset.id, []), levels, latest_runs, outcomes),
+            _composing_suites(
+                suites_by_asset.get(asset.id, []), levels, latest_runs, outcomes, op_flags
+            ),
         )
         for asset in assets
     ]
@@ -316,8 +365,10 @@ def get_visible_asset(
 
     levels = effective_permissions(session, suites, user_id)
     latest_runs = _latest_run_per_suite(session, [s.id for s in suites])
-    outcomes = check_outcome_counts(session, [r.id for r in latest_runs.values()])
-    composing = _composing_suites(suites, levels, latest_runs, outcomes)
+    run_ids = [r.id for r in latest_runs.values()]
+    outcomes = check_outcome_counts(session, run_ids)
+    op_flags = operational_result_flags(session, run_ids)
+    composing = _composing_suites(suites, levels, latest_runs, outcomes, op_flags)
 
     summary = _roll_up(asset, composing)
     upstream = _lineage_nodes(session, upstream_assets(session, asset_id))
@@ -343,8 +394,10 @@ def summarize_asset(
     )
     levels = effective_permissions(session, suites, user_id) if suites else {}
     latest_runs = _latest_run_per_suite(session, [s.id for s in suites])
-    outcomes = check_outcome_counts(session, [r.id for r in latest_runs.values()])
-    composing = _composing_suites(suites, levels, latest_runs, outcomes)
+    run_ids = [r.id for r in latest_runs.values()]
+    outcomes = check_outcome_counts(session, run_ids)
+    op_flags = operational_result_flags(session, run_ids)
+    composing = _composing_suites(suites, levels, latest_runs, outcomes, op_flags)
     return _roll_up(asset, composing)
 
 

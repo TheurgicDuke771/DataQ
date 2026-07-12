@@ -4,7 +4,20 @@ import {
   EditOutlined,
   UserOutlined,
 } from '@ant-design/icons';
-import { App, Button, Card, Empty, Flex, Input, Modal, Select, Table, Tag, Typography } from 'antd';
+import {
+  App,
+  Button,
+  Card,
+  Empty,
+  Flex,
+  Input,
+  Modal,
+  Select,
+  Table,
+  Tag,
+  Tooltip,
+  Typography,
+} from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -18,9 +31,8 @@ import {
   updateAsset,
 } from '../api/assets';
 import { useIsWorkspaceAdmin } from '../auth/useMe';
-import { AssetHealthTag } from '../components/assets/AssetHealthTag';
 import { IncidentsPanel } from '../components/assets/IncidentsPanel';
-import { runHealth } from '../components/assets/health';
+import { type Health, connectionHealth, runHealth, suiteHealth } from '../components/assets/health';
 import { AsyncBody } from '../components/AsyncBody';
 import { Page } from '../components/layout/Page';
 import { formatTimestamp } from '../components/results/resultsFormat';
@@ -94,9 +106,21 @@ function AssetDetailBody({
             {summary.namespace}
           </Typography.Text>
         </Flex>
-        <Flex gap={8} align="center">
+        {/* Two health axes, deliberately separate (#803): "can we reach it?" vs
+            "is the data good?". The old single badge conflated them, so a
+            datasource DataQ couldn't even connect to read as a data failure. */}
+        <Flex gap={16} align="center" wrap>
           {summary.env && <Tag>{summary.env}</Tag>}
-          <AssetHealthTag summary={summary} />
+          <HealthAxis
+            label="Connection"
+            health={connectionHealth(summary)}
+            hint="Whether DataQ could reach and execute against the datasource behind this asset."
+          />
+          <HealthAxis
+            label="Data quality"
+            health={suiteHealth(summary)}
+            hint="The severity-weighted verdict of the suites on this asset. Operational errors are excluded."
+          />
         </Flex>
       </Flex>
 
@@ -146,6 +170,26 @@ function AssetDetailBody({
           emptyHint="No known downstream consumers."
         />
       </Flex>
+    </Flex>
+  );
+}
+
+/**
+ * One labelled health axis (#803) — the label makes explicit *which* health this
+ * is, so "Errors" on Connection can never be misread as a data failure (and vice
+ * versa). The hint is a tooltip on the label, not a wall of text on the page.
+ */
+function HealthAxis({ label, health, hint }: { label: string; health: Health; hint: string }) {
+  return (
+    <Flex gap={6} align="center">
+      <Tooltip title={hint}>
+        <Typography.Text type="secondary" style={{ fontSize: 12, cursor: 'help' }}>
+          {label}
+        </Typography.Text>
+      </Tooltip>
+      <Tag color={health.color} style={{ marginInlineEnd: 0 }}>
+        {health.label}
+      </Tag>
     </Flex>
   );
 }
