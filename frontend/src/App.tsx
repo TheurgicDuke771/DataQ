@@ -130,7 +130,10 @@ export function App() {
               type="text"
               icon={<MenuOutlined />}
               aria-label="Toggle navigation"
-              aria-controls="app-nav-drawer"
+              // Only claim to control the drawer while it exists: AntD doesn't
+              // mount the panel (`#app-nav-drawer`) until first open, so an
+              // always-on `aria-controls` would dangle at nothing while closed.
+              aria-controls={drawerOpen ? 'app-nav-drawer' : undefined}
               aria-expanded={drawerOpen}
               onClick={() => setDrawerOpen((o) => !o)}
               style={{ marginInlineStart: -8 }}
