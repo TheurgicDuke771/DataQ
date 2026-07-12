@@ -1,0 +1,103 @@
+<task-notification>
+<task-id>a330aae076614aad0</task-id>
+<tool-use-id>toolu_01JhbBN5qbNuW1avQ4yN7PP8</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/847a7528-ccc0-4f98-9741-a77d8e3a9692/tasks/a330aae076614aad0.output</output-file>
+<status>failed</status>
+<summary>Agent "Angle C: cross-file consistency trace" failed: Agent terminated early due to an API error: You've hit your monthly spend limit · raise it at claude.ai/settings/usage</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Now the code claims. Let me check the backend.</result>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a5706666ce88b36b2</task-id>
+<tool-use-id>toolu_016AEk5HqoPieNQ88UiqKVTE</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/847a7528-ccc0-4f98-9741-a77d8e3a9692/tasks/a5706666ce88b36b2.output</output-file>
+<status>completed</status>
+<summary>Agent "Angles: reuse+simplification" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Note: claude-opus-4-8[1m] (the safety classifier) was unavailable when reviewing this subagent's work. Please carefully verify the subagent's actions and output before acting on them.
+
+JSON findings based on the diff review:
+
+```json
+[
+  {
+    "file": "docs/adr/README.md",
+    "line": 58,
+    "summary": "The new 0015 index row is a ~130-word full restatement of the ADR — FK/RESTRICT+409/CHECK schema details, the DatasetReader seam, row-cap semantics, mismatch-%→metric_value mapping, report-download behavior, and even editor-pane UX. It is the longest row in the index by a wide margin; every other row (including dense recent ones like 0034/0035) summarizes the decision headline, not the mechanism. Condense to the decision shape only, e.g. 'suite stays single-connection (target under test); comparison check adds one source_connection_id ref; no connection→connection generalization (0030 Option B deferred)'.",
+    "failure_scenario": "When the comparison build lands and any detail shifts (e.g. the 409 pre-check, row-cap semantics, or the editor layout changes during implementation), the index row silently disagrees with the ADR — exactly the ADR-index drift CLAUDE.md §9 says this README exists to prevent. Readers scanning the index absorb stale mechanism details without opening the ADR."
+  },
+  {
+    "file": "docs/adr/0015-two-connection-comparison-check-model.md",
+    "line": 51,
+    "summary": "The ADR is 1854 words / 92 lines — the longest ADR in the repo (next is 0030 at 1605) — while docs/adr/README.md line 17 says 'Keep each ADR short — 1–2 pages. If it grows past that, the decision is probably two decisions.' The excess is issue-level implementation detail, chiefly Decision §5 (pane-by-pane authoring-UX layout: left/right/bottom panes, pre-filled locked picker) and the §3 optimization-latitude enumeration (Arrow batch readers, chunksize, sort/hash-merge over batches, key-only first pass). Cut §5 to one sentence ('editor pre-fills and locks the target connection to the suite's — the §1 invariant made visible') and drop the §3 technique list; both belong in the build issues.",
+    "failure_scenario": "UI layout and read-batching tactics will certainly change during the build; because they are codified in an Accepted ADR, implementers either treat throwaway detail as binding or the ADR quietly becomes wrong with no supersede/amend record — and the 1–2 page working agreement erodes as the precedent for future ADRs."
+  },
+  {
+    "file": "docs/adr/0015-two-connection-comparison-check-model.md",
+    "line": 44,
+    "summary": "Decision §4 and parts of §3 restate ADR 0014's §2–§3 rather than citing them: the metric→metric_value / samples→sample_failures-with-redaction / Celery-path mapping is 0014 §3 nearly verbatim, and §3's 'ported, not copied… no report files, no result cache, DataQ tooling (Black/mypy/pytest)' restates 0014 §2's dropped-and-replaced list and its porting-cost consequence. Keep only the genuine deltas (mismatch-% definition + 0016 banding, buckets→observed_value, the derived-on-demand report decision) and cite 0014 for the rest — §4's own heading ('reaffirming ADR 0014 §3') admits the overlap.",
+    "failure_scenario": "Two Accepted ADRs now each carry a copy of the same result-mapping and engine-porting rules; a future change (e.g. a new result field or a relaxed tooling rule) gets recorded in one and not the other, and readers can't tell which copy is authoritative since both are 'Accepted'."
+  },
+  {
+    "file": "docs/adr/0030-iceberg-native-read-path.md",
+    "line": 46,
+    "summary": "The branch updates two of 0030's three references to ADR 0015 with near-identical explanatory prose (header Related line 6 and bottom Related line 70 both say 'settled at the check grain… Option B stays deferred') but misses the third: body line 46 still reads 'deferred to ADR 0015 (the pending two-connection model). ADR 0015 is currently scoped to…' — now false on this very branch. Fix line 46, and collapse the duplicated sentence so exactly one spot in 0030 carries the status prose and the others are bare links.",
+    "failure_scenario": "0030 currently contradicts itself: lines 6/70 say 0015 is settled while line 46 says it is pending — a reader of the Option B section (the part 0015's settlement actually affects) gets the stale answer. The miss on this same PR demonstrates the cost of keeping three prose copies of another ADR's status in one file."
+  },
+  {
+    "file": "docs/adr/0015-two-connection-comparison-check-model.md",
+    "line": 55,
+    "summary": "Internal repetition inside the ADR: the 'no connection→connection generalization / 0030 Option B stays deferred' point is made four times (Context ¶3, Decision §6, the Alternatives bullet — which itself says 'see Decision §6' — and the Related 0030 bullet), and the 'authz/assets/incidents/lineage/runner-registry unchanged' consumer list appears three times (Context ¶2, Decision §1, Consequences-positive ¶1). State each once in Decision and reduce the other mentions to a pointer; this is the cheapest path back under the 1–2 page guide.",
+    "failure_scenario": "If Option B is later picked up or the invariant-consumer set changes (e.g. a new asset-derived surface), four in-file copies must be edited in lockstep; partial edits leave the ADR self-contradictory, and the repetition already pads the document past the length the ADR guide mandates."
+  }
+]
+```</result>
+<usage><subagent_tokens>66191</subagent_tokens><tool_uses>6</tool_uses><duration_ms>162010</duration_ms></usage>
+</task-notification>
+
+---
+
+continue...
+
+---
+
+<task-notification>
+<task-id>bbhkhwse2</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/847a7528-ccc0-4f98-9741-a77d8e3a9692/tasks/bbhkhwse2.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch PR 790 checks until done, then report state" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b39y4tjwo</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/847a7528-ccc0-4f98-9741-a77d8e3a9692/tasks/b39y4tjwo.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch rerun checks, then report PR state" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b07rhg6wm</task-id>
+<tool-use-id>toolu_01MdpaY5ESSuaMorqixdLt9k</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/847a7528-ccc0-4f98-9741-a77d8e3a9692/tasks/b07rhg6wm.output</output-file>
+<status>completed</status>
+<summary>Background command "Comment, arm auto-merge, watch PR 797 checks" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b19028xc6</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/847a7528-ccc0-4f98-9741-a77d8e3a9692/tasks/b19028xc6.output</output-file>
+<status>completed</status>
+<summary>Background command "Update PR 790 branch and watch checks to merge" completed (exit code 0)</summary>
+</task-notification>
