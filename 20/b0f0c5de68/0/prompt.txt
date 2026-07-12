@@ -1,0 +1,25 @@
+For #805 - user will not ablle to interact with SVG, correct? that why reactflow was suggested. But if SVG nodes are clockable then we should be good. 
+
+Subscription is enabled in azure. 
+So, once you done with these changes - Deploy the App in azure, deploy the marquez [run it once], run the adhoc harness once [add marquez to it], run the ui-tester in prod as dataq-admin. 
+
+THEN MAKE SURE ALL THE HARNESS AND UNWANTED JOBS IN AZURE ARE STOPPED/DISABLED.
+
+---
+
+<task-notification>
+<task-id>bvdt6nl2t</task-id>
+<tool-use-id>toolu_01CmQc7VeUKQkMV7ACGR1srR</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/b8546e7c-0c8e-402c-b6cc-6720612adcfc/tasks/bvdt6nl2t.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for dbt-lineage to finish" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+run the ui-tester again. 
+One question for lineage - The pull ran, reached Marquez, but DataQ not able to pull the lineage then is it not our issue?
+
+---
+
+rotate the password and resolve the security issues.
