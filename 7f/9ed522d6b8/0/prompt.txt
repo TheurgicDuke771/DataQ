@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bfdrbdsxv</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/847a7528-ccc0-4f98-9741-a77d8e3a9692/tasks/bfdrbdsxv.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch PR 798 checks through to merge" completed (exit code 0)</summary>
+</task-notification>
