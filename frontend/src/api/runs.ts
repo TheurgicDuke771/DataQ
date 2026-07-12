@@ -149,3 +149,26 @@ export async function listPipelineRuns(params?: {
   const { data } = await api.get<PipelineRun[]>('/pipeline_runs', { params });
   return data;
 }
+
+/** Download a comparison result's derived report (ADR 0015 §4) — fetched with
+ *  the authenticated client (a plain anchor carries no bearer), then saved via
+ *  a transient object URL. Nothing persists server-side. */
+export async function downloadComparisonReport(
+  runId: string,
+  resultId: string,
+  fmt: 'csv' | 'xlsx',
+): Promise<void> {
+  const { data } = await api.get<Blob>(`/runs/${runId}/results/${resultId}/comparison_report`, {
+    params: { fmt },
+    responseType: 'blob',
+  });
+  const url = URL.createObjectURL(data);
+  try {
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `comparison-${resultId}.${fmt}`;
+    link.click();
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}

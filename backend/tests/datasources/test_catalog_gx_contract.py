@@ -45,7 +45,11 @@ def _expectations() -> list[dict[str, Any]]:
 
 
 def _monitors() -> list[dict[str, Any]]:
-    return [e for e in _catalog() if e["kind"] != "expectation"]
+    return [e for e in _catalog() if e["kind"] in monitors.MONITOR_KINDS]
+
+
+def _comparisons() -> list[dict[str, Any]]:
+    return [e for e in _catalog() if e["kind"] == "comparison"]
 
 
 # Parametrization ids come from a SEPARATE minimal read that tolerates a broken
@@ -64,6 +68,17 @@ def test_fixture_is_present_and_nonempty() -> None:
     """A gutted fixture must fail loudly, not vacuously pass the loops below."""
     assert len(_expectations()) >= 8
     assert len(_monitors()) == 2
+    assert len(_comparisons()) == 1
+
+
+def test_comparison_entry_matches_backend_canonical_type() -> None:
+    """The comparison catalog entry (ADR 0015) must carry the backend's canonical
+    expectation_type; it bypasses GX (no fields — the dedicated form authors it)."""
+    from backend.app.services.check_service import COMPARISON_EXPECTATION_TYPE
+
+    (entry,) = _comparisons()
+    assert entry["type"] == COMPARISON_EXPECTATION_TYPE
+    assert entry["fields"] == []
 
 
 @pytest.mark.parametrize("entry", _expectation_params())

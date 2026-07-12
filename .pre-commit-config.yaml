@@ -31,6 +31,7 @@ repos:
           - sqlalchemy[mypy]==2.0.51
           - structlog==26.1.0
           - types-redis==4.6.0.20241004
+          - types-openpyxl==3.1.5.20260518
 
   # ── Single-source-of-truth enforcement for type-check deps (#54) ────────────
   - repo: local

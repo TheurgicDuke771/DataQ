@@ -12,12 +12,21 @@ One-page reference: what runs where. For the readable tour of everything DataQ o
 | Custom SQL (rows returned = failures) | ✅ | ✅ | — | — | — |
 | Freshness monitor (hours since latest timestamp) | ✅ | ✅ | — | — | ✅ |
 | Volume monitor (row count in range) | ✅ | ✅ | — | — | ✅ |
+| Comparison / reconciliation (diff vs a baseline connection) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Column profiler (nulls, distinct, min/max, top values) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Dry-run preview | ✅ | ✅ | ✅ | ✅ | ✅ |
 
 Custom SQL runs a SQL query, so it's **SQL-datasource only** (Snowflake, Unity Catalog;
 flat-file support is a tracked enhancement, [#520](https://github.com/TheurgicDuke771/DataQ/issues/520);
 Iceberg is not SQL-queryable — reads go through `pyiceberg` scans, not a query engine).
+**Comparison checks** (ADR [0015](adr/0015-two-connection-comparison-check-model.md), #791–#795)
+diff the suite's dataset (the **target under test**) against a baseline on any other
+datasource connection — cross-type and cross-env both supported — joined on key columns,
+producing matched / mismatched / additional-per-side buckets with a mismatch-% metric,
+capped fail-fast reads (`COMPARISON_MAX_ROWS`), redacted samples, and an on-demand
+CSV/XLSX report download (derived, never stored). Either SQL side may use a read-only
+query projection.
+
 The freshness/volume monitors run on **monitor-capable datasources** — the SQL
 datasources plus Apache Iceberg — computed natively (Iceberg's are `pyiceberg` scans, not
 SQL; ADR 0012/0030). Flat-file suites target a file or a batch pattern (e.g.

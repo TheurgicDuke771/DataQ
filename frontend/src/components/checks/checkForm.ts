@@ -1,4 +1,6 @@
 import type { CheckCreate } from '../../api/suites';
+
+import { COMPARISON_EXPECTATION_TYPE } from './expectationCatalog';
 import { EXPECTATION_BY_TYPE, type ExpectationSpec } from './expectationCatalog';
 
 /**
@@ -70,5 +72,38 @@ export function buildCheckPayload(values: Record<string, unknown>): CheckCreate 
     warn_threshold: numOrNull(values.warn_threshold),
     fail_threshold: numOrNull(values.fail_threshold),
     critical_threshold: numOrNull(values.critical_threshold),
+  };
+}
+
+/** Assemble a comparison check's payload (ADR 0015) from the side-by-side
+ *  form's structured values — kept beside `buildCheckPayload` so the two
+ *  payload shapes can't drift apart. */
+export function buildComparisonPayload(values: Record<string, unknown>): CheckCreate {
+  const raw = (values.source ?? {}) as Record<string, unknown>;
+  const source: Record<string, unknown> = {};
+  if ((values.source_mode ?? 'table') === 'query' && values.source_query) {
+    source.query = values.source_query;
+  } else {
+    for (const key of ['table', 'schema', 'catalog', 'namespace', 'path']) {
+      const value = raw[key];
+      if (value !== undefined && value !== null && value !== '') source[key] = value;
+    }
+  }
+  const config: Record<string, unknown> = {
+    source,
+    keys: (values.keys as string[] | undefined) ?? [],
+  };
+  if (values.target_query) config.target_query = values.target_query;
+  if (typeof values.max_rows === 'number') config.max_rows = values.max_rows;
+  return {
+    name: values.name as string,
+    kind: 'comparison',
+    expectation_type: COMPARISON_EXPECTATION_TYPE,
+    config,
+    source_connection_id: values.source_connection_id as string,
+    warn_threshold: typeof values.warn_threshold === 'number' ? values.warn_threshold : null,
+    fail_threshold: typeof values.fail_threshold === 'number' ? values.fail_threshold : null,
+    critical_threshold:
+      typeof values.critical_threshold === 'number' ? values.critical_threshold : null,
   };
 }

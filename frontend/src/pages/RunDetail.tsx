@@ -8,6 +8,7 @@ import { getRun, type Result, type ResultStatus } from '../api/runs';
 import { type Check, getSuite, listChecks } from '../api/suites';
 import { AssetLink } from '../components/assets/AssetLink';
 import { CheckTrend } from '../components/checks/CheckTrend';
+import { ComparisonResultDetail } from '../components/results/ComparisonResultDetail';
 import { SnoozedTag } from '../components/checks/snooze';
 import {
   formatDuration,
@@ -136,7 +137,12 @@ function RunDetailBody({
         />
       )}
 
-      <ResultsTable results={run.results} checks={checksById} suiteId={run.suite_id} />
+      <ResultsTable
+        results={run.results}
+        checks={checksById}
+        suiteId={run.suite_id}
+        runId={run.id}
+      />
     </Flex>
   );
 }
@@ -292,10 +298,12 @@ function ResultsTable({
   results,
   checks,
   suiteId,
+  runId,
 }: {
   results: Result[];
   checks: Map<string, Check>;
   suiteId: string;
+  runId: string;
 }) {
   if (results.length === 0) {
     return <Empty description="No check results — the run did not complete." />;
@@ -356,12 +364,18 @@ function ResultsTable({
         // Lazily fetch a check's metric trend only when its row is expanded —
         // keyed by check_id so each row's chart fetches its own history. The
         // redacted failing-row sample (if any) sits below the trend.
-        expandedRowRender: (record) => (
-          <Flex vertical gap={16}>
-            <CheckTrend key={record.check_id} suiteId={suiteId} checkId={record.check_id} />
-            <SampleFailures sample={record.sample_failures} />
-          </Flex>
-        ),
+        expandedRowRender: (record) =>
+          checks.get(record.check_id)?.kind === 'comparison' ? (
+            <Flex vertical gap={16}>
+              <CheckTrend key={record.check_id} suiteId={suiteId} checkId={record.check_id} />
+              <ComparisonResultDetail runId={runId} result={record} />
+            </Flex>
+          ) : (
+            <Flex vertical gap={16}>
+              <CheckTrend key={record.check_id} suiteId={suiteId} checkId={record.check_id} />
+              <SampleFailures sample={record.sample_failures} />
+            </Flex>
+          ),
         // Expandable when we can show a trend (known check) or a failing sample.
         rowExpandable: (record) => checks.has(record.check_id) || record.sample_failures !== null,
       }}
