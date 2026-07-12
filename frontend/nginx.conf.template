@@ -97,18 +97,33 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
-    # Long-cache fingerprinted assets; never cache index.html (it points at the
-    # current asset hashes).
-    location /assets/ {
+    # Long-cache the fingerprinted build output; never cache index.html (it points
+    # at the current asset hashes).
+    #
+    # **Matched on the FILE, not on the `/assets/` prefix** — and that is load-bearing.
+    # Vite emits its bundle to `dist/assets/`, which collides head-on with the app's
+    # own `/assets` SPA route (the ADR 0034 asset browse). A prefix `location /assets/`
+    # swallows that whole path space: `/assets/<uuid>` matched here, hit `=404`, and
+    # never reached the SPA fallback — so every asset deep link, bookmark and
+    # browser-refresh 404'd in production while in-app navigation looked perfectly fine.
+    # A regex location also takes precedence over the prefix `location /`, so the real
+    # build files still get the immutable long-cache they need.
+    location ~* ^/assets/.+\.(?:js|mjs|css|map|png|jpe?g|gif|svg|ico|webp|avif|woff2?|ttf|eot)$ {
         try_files $uri =404;
         expires 1y;
         add_header Cache-Control "public, immutable";
     }
 
     # SPA fallback: any non-file path returns index.html so client-side routes
-    # (deep links like /results/:runId) resolve to the app.
+    # (deep links like /results/:runId, /assets/:assetId) resolve to the app.
+    #
+    # No `$uri/` in try_files — deliberately. With it, a request for `/assets` found
+    # the on-disk `assets/` DIRECTORY and nginx issued its own 301 to `/assets/`,
+    # rebuilt from the *internal* scheme/port — so the browser was handed
+    # `http://…:8080/assets/` (plaintext, unroutable container port) and simply hung.
+    # An SPA never wants directory-index redirects; every non-file path is a route.
     location / {
-        try_files $uri $uri/ /index.html;
+        try_files $uri /index.html;
         add_header Cache-Control "no-cache";
     }
 }
