@@ -88,6 +88,12 @@ services:
       # No-colon form: WORKSPACE_ADMIN_EMAILS="" in .env opts back OUT (to a
       # non-admin identity, e.g. to exercise the Forbidden gate manually).
       WORKSPACE_ADMIN_EMAILS: ${WORKSPACE_ADMIN_EMAILS-dev-bypass@dataq.local}
+      # Request throttling off in the dev stack (#796): dev-bypass traffic
+      # carries no bearer, so a local Playwright run lands in the per-IP
+      # unauthenticated class (120/min) and 429s mid-suite. The limiter has its
+      # own tests (#725, ADR 0035); set RATE_LIMIT_ENABLED=true in .env to
+      # exercise it manually.
+      RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-false}
     volumes:
       # Bind-mount source for hot reload; the conda env in the image is untouched.
       - ./backend:/workspace/backend
