@@ -390,3 +390,44 @@ def test_non_string_target_field_raises_cleanly() -> None:
 def test_unknown_conn_type_raises() -> None:
     with pytest.raises(ValueError):
         resolve_asset_identity("made_up_type", {}, {"table": "x"})
+
+
+# ── credentials must never reach the asset identity (#826) ───────────────────
+
+
+def test_iceberg_namespace_never_carries_the_catalog_password() -> None:
+    """The namespace is persisted, served by the API, RENDERED IN THE UI and shipped to
+    catalogs inside a lineage query string. A credential in it leaks by construction."""
+    identity = resolve_asset_identity(
+        "iceberg",
+        {
+            "catalog_uri": (
+                "postgresql+psycopg2://airflowadmin:s3cr3t@pg.example.com:5432/"
+                "iceberg_catalog?sslmode=require"
+            )
+        },
+        {"namespace": "retail", "table": "purchase_orders"},
+    )
+    assert "s3cr3t" not in identity.namespace
+    assert identity.namespace == (
+        "postgresql+psycopg2://airflowadmin@pg.example.com:5432/iceberg_catalog?sslmode=require"
+    )
+    assert identity.name == "retail.purchase_orders"
+
+
+def test_iceberg_identity_is_stable_across_a_password_rotation() -> None:
+    """Rotating the catalog password must NOT fork the asset into a new identity.
+
+    A namespace derived from a credential-bearing URI changes when the password does —
+    silently creating a second `assets` row and orphaning the original's lineage and
+    incidents. Stripping the credential makes the identity depend only on *where* the
+    catalog is, which is what an identity should mean.
+    """
+    target = {"namespace": "retail", "table": "purchase_orders"}
+    before = resolve_asset_identity(
+        "iceberg", {"catalog_uri": "postgresql://u:OLD_PW@h:5432/cat"}, target
+    )
+    after = resolve_asset_identity(
+        "iceberg", {"catalog_uri": "postgresql://u:NEW_PW@h:5432/cat"}, target
+    )
+    assert before == after

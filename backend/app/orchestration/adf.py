@@ -90,7 +90,7 @@ class ADFConnectionAdapter:
     def validate_config(self, raw: dict[str, Any]) -> ADFConfig:
         return ADFConfig.model_validate(raw)
 
-    def test(self, raw: dict[str, Any], secret: str) -> None:
+    def test(self, raw: dict[str, Any], secret: str, **_: Any) -> None:
         """Acquire an SP token and GET the factory; raise on any failure.
 
         ``secret`` is the service-principal client secret. A successful return

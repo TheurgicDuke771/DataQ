@@ -62,7 +62,7 @@ class S3ConnectionAdapter:
     def validate_config(self, raw: dict[str, Any]) -> S3Config:
         return S3Config.model_validate(raw)
 
-    def test(self, raw: dict[str, Any], secret: str) -> None:
+    def test(self, raw: dict[str, Any], secret: str, **_: Any) -> None:
         """Issue ``head_bucket`` with the static credential; raise on any failure.
 
         ``secret`` is the secret access key. Retries are disabled so an

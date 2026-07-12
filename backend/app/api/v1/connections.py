@@ -16,12 +16,13 @@ from datetime import datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, status
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, field_validator
 from sqlalchemy.orm import Session
 
 from backend.app.api.v1._base import ApiModel
 from backend.app.core.auth import get_current_user
 from backend.app.core.secrets import SecretStore, get_secret_store
+from backend.app.core.uri_credentials import redact_config_uris
 from backend.app.db.models import Connection, User
 from backend.app.db.session import get_db
 from backend.app.services import connection_service as svc
@@ -61,7 +62,10 @@ class ConnectionRead(ApiModel):
             name=conn.name,
             type=conn.type,
             env=conn.env,
-            config=dict(conn.config),
+            # `config` is non-secret by contract, but a URI-shaped field can smuggle a
+            # credential through it (#754) — scrub any URI password on the way out, so
+            # a row written before the config-level guard existed can't still leak.
+            config=redact_config_uris(conn.config),
             has_secret=conn.secret_ref is not None,
             created_by=conn.created_by,
         )
@@ -220,6 +224,13 @@ class ConnectionVersionRead(ApiModel):
     changed_by: uuid.UUID | None
     changed_by_name: str | None
     created_at: datetime
+
+    @field_validator("config")
+    @classmethod
+    def _scrub_uri_credentials(cls, v: dict[str, Any]) -> dict[str, Any]:
+        # A snapshot taken before the config-level guard existed can still carry a
+        # credential in a URI-shaped field (#754) — never hand it back out.
+        return redact_config_uris(v)
 
 
 @router.get(

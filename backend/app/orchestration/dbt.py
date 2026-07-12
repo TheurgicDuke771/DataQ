@@ -217,7 +217,7 @@ class DbtConnectionAdapter:
     def validate_config(self, raw: dict[str, Any]) -> DbtConfig:
         return DbtConfig.model_validate(raw)
 
-    def test(self, raw: dict[str, Any], secret: str) -> None:
+    def test(self, raw: dict[str, Any], secret: str, **_: Any) -> None:
         """Read the first job's `latest/run_results.json`; raise on any failure.
 
         A green test means the artifacts store is reachable, the credential

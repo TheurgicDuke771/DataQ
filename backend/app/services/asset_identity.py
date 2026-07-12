@@ -18,7 +18,7 @@ Per-datasource identity (see docs/post-v1-assets-lineage-incidents-notes.md
                      {path or pattern base dir}
     s3             → s3://{bucket}
                      {path or pattern base dir}
-    iceberg        → {catalog_uri verbatim, or "file"}
+    iceberg        → {catalog_uri with any password stripped, or "file"}
                      {namespace.table verbatim}
 
 Snowflake/UC identifiers fold to the engine's *unquoted* case (Snowflake
@@ -39,6 +39,8 @@ import re
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
+
+from backend.app.core.uri_credentials import strip_uri_credentials
 
 # `pattern` is a **regex** (flatfile.py `re.compile`s it, first capture group =
 # batch key), not a glob — so the asset's directory prefix is the literal text
@@ -171,8 +173,19 @@ def _resolve_s3(config: dict[str, Any], target: dict[str, Any]) -> AssetIdentity
 
 def _resolve_iceberg(config: dict[str, Any], target: dict[str, Any]) -> AssetIdentity:
     catalog_uri = config.get("catalog_uri")
+    # NEVER let a credential into the identity (#826). The namespace is persisted on
+    # `assets`, returned by the read API, RENDERED IN THE UI, and shipped to catalogs
+    # inside a lineage query string — a password in here leaks by construction.
+    # `IcebergConfig` now refuses to store one, but strip defensively anyway: legacy
+    # rows exist, and this is the last gate before the value becomes an identity.
+    #
+    # Stripping also makes the identity STABLE: derived from a credential-bearing URI,
+    # the namespace would silently CHANGE when the password is rotated — forking the
+    # asset into a new row and orphaning its lineage and incidents.
     namespace = (
-        catalog_uri.strip() if isinstance(catalog_uri, str) and catalog_uri.strip() else "file"
+        strip_uri_credentials(catalog_uri.strip())
+        if isinstance(catalog_uri, str) and catalog_uri.strip()
+        else "file"
     )
     table = _require(target, "table", "iceberg", "target")
     ns_part = _str_or_none(target.get("namespace"))

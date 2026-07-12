@@ -41,6 +41,7 @@ import great_expectations as gx
 from pydantic import BaseModel, ConfigDict, model_validator
 
 from backend.app.core.secrets import SecretStore
+from backend.app.core.uri_credentials import inject_uri_password, uri_password
 from backend.app.datasources.base import CheckOutcome, CheckSpec, MonitorSpec, SuiteOutcome
 from backend.app.datasources.gx_runner import run_expectations
 from backend.app.datasources.monitors import (
@@ -72,7 +73,19 @@ class IcebergConfig(BaseModel):
     root. ``properties`` carries any extra non-secret catalog + storage options
     (e.g. ``{"s3.region": "us-east-1", "adls.account-name": "acct"}``).
     ``secret_property`` names the single ``load_catalog`` property the connection's
-    secret fills — the only place the credential lands.
+    secret fills — typically the *storage* credential (e.g. ``adls.account-key``).
+
+    **A SQL catalog needs a SECOND credential** (the catalog DB password), and
+    ``pyiceberg`` only accepts it inside the SQLAlchemy ``uri``. Putting it there in
+    config is what caused #754/#826: `config` is non-secret, so the password was
+    persisted, copied into the asset's OpenLineage namespace, served by the read API,
+    **rendered in the UI**, and sent to third-party catalogs in a query string.
+
+    So ``catalog_uri`` must ship **credential-less** (username is fine — that's an
+    identifier, not a credential) and ``catalog_secret_name`` names a SecretStore
+    entry holding the password. The caller resolves it and hands it in; it is injected
+    into the URI's userinfo at catalog-load time and never persisted. A password left
+    inline in ``catalog_uri`` is rejected outright by the validator below.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -83,6 +96,9 @@ class IcebergConfig(BaseModel):
     warehouse: str | None = None
     properties: dict[str, str] = {}
     secret_property: str | None = None
+    # A SecretStore *key name*, not a credential — safe to keep in non-secret config
+    # (same idiom as the `*_WEBHOOK_SECRET_NAME` settings).
+    catalog_secret_name: str | None = None
 
     @model_validator(mode="after")
     def _uri_present(self) -> IcebergConfig:
@@ -90,7 +106,27 @@ class IcebergConfig(BaseModel):
             raise ValueError(f"catalog_uri is required for a {self.catalog_type!r} catalog")
         return self
 
-    def catalog_properties(self, secret: str | None) -> dict[str, str]:
+    @model_validator(mode="after")
+    def _uri_carries_no_password(self) -> IcebergConfig:
+        """Reject a password smuggled into `catalog_uri` (#754 AC2).
+
+        `config` is NOT a secret: it is persisted in plaintext JSONB, returned by the
+        read API, and used to derive the asset's OpenLineage identity. A credential in
+        here leaks by construction, so refuse it at the door rather than redacting it
+        forever after — and point the author at the slot that does the right thing.
+        """
+        if self.catalog_uri and uri_password(self.catalog_uri):
+            raise ValueError(
+                "catalog_uri must not embed a password (config is stored and returned "
+                "in plaintext, and becomes the asset's lineage identity). Put the "
+                "catalog credential in the secret store and name it via "
+                "'catalog_secret_name'; keep the username in the URI."
+            )
+        return self
+
+    def catalog_properties(
+        self, secret: str | None, catalog_secret: str | None = None
+    ) -> dict[str, str]:
         """The keyword properties handed to ``pyiceberg.catalog.load_catalog``.
 
         The freeform ``properties`` go in **first** so the validated
@@ -102,7 +138,14 @@ class IcebergConfig(BaseModel):
         props: dict[str, str] = dict(self.properties)
         props["type"] = self.catalog_type
         if self.catalog_uri:
-            props["uri"] = self.catalog_uri
+            # The catalog credential is re-attached HERE and nowhere else — the last
+            # possible moment, in memory, for this one load. `catalog_uri` itself
+            # stays credential-less at rest (#754/#826).
+            props["uri"] = (
+                inject_uri_password(self.catalog_uri, catalog_secret)
+                if catalog_secret
+                else self.catalog_uri
+            )
         if self.warehouse:
             props["warehouse"] = self.warehouse
         if self.secret_property and secret is not None:
@@ -110,7 +153,12 @@ class IcebergConfig(BaseModel):
         return props
 
 
-def load_iceberg_table(config: IcebergConfig, secret: str | None, identifier: str) -> Any:
+def load_iceberg_table(
+    config: IcebergConfig,
+    secret: str | None,
+    identifier: str,
+    catalog_secret: str | None = None,
+) -> Any:
     """Load an Iceberg table by its ``namespace.table`` identifier (the live seam).
 
     The single catalog-load + ``load_table`` round-trip shared by the check/monitor
@@ -121,7 +169,9 @@ def load_iceberg_table(config: IcebergConfig, secret: str | None, identifier: st
     """
     from pyiceberg.catalog import load_catalog
 
-    catalog: Any = load_catalog(config.catalog_name, **config.catalog_properties(secret))
+    catalog: Any = load_catalog(
+        config.catalog_name, **config.catalog_properties(secret, catalog_secret)
+    )
     return catalog.load_table(identifier)
 
 
@@ -144,6 +194,7 @@ def read_iceberg_dataframe(
     columns: list[str] | None = None,
     limit: int | None = None,
     table: Any = None,
+    catalog_secret: str | None = None,
 ) -> Any:
     """Materialise an Iceberg table as an Arrow-backed pandas DataFrame (#721).
 
@@ -161,7 +212,7 @@ def read_iceberg_dataframe(
     never charged a second catalog round-trip for the scan (#721 code review).
     ``table=None`` (every other caller) loads it here, unchanged."""
     if table is None:
-        table = load_iceberg_table(config, secret, identifier)
+        table = load_iceberg_table(config, secret, identifier, catalog_secret)
     if columns:
         available = {field.name for field in table.schema().fields}
         selected = tuple(c for c in columns if c in available) or ("*",)
@@ -171,13 +222,18 @@ def read_iceberg_dataframe(
     return _to_arrow_backed_pandas(arrow)
 
 
-def list_iceberg_columns(config: IcebergConfig, secret: str | None, identifier: str) -> list[str]:
+def list_iceberg_columns(
+    config: IcebergConfig,
+    secret: str | None,
+    identifier: str,
+    catalog_secret: str | None = None,
+) -> list[str]:
     """Column (field) names of an Iceberg table from its schema — **no data scan**.
 
     Reads the table's ``schema()`` field names (a metadata-only lookup, like the
     flat-file lister's Parquet-footer read), so the check editor's column dropdown
     (#474) never scans table data to populate itself (#721)."""
-    table = load_iceberg_table(config, secret, identifier)
+    table = load_iceberg_table(config, secret, identifier, catalog_secret)
     return [field.name for field in table.schema().fields]
 
 
@@ -187,17 +243,24 @@ class IcebergConnectionAdapter:
     def validate_config(self, raw: dict[str, Any]) -> IcebergConfig:
         return IcebergConfig.model_validate(raw)
 
-    def test(self, raw: dict[str, Any], secret: str) -> None:
+    def test(
+        self, raw: dict[str, Any], secret: str, *, catalog_secret: str | None = None, **_: Any
+    ) -> None:
         """Load the catalog and list namespaces; raise on failure.
 
         A lightweight metadata round-trip — a green test means the catalog is
         reachable and the credential authenticates. Deliberately reads no table
         data (no scan), so it stays cheap.
+
+        ``catalog_secret`` is the SQL-catalog DB password, already resolved by the
+        caller (adapters never touch the SecretStore — `base.ConnectionAdapter`).
         """
         from pyiceberg.catalog import load_catalog
 
         config = self.validate_config(raw)
-        catalog: Any = load_catalog(config.catalog_name, **config.catalog_properties(secret))
+        catalog: Any = load_catalog(
+            config.catalog_name, **config.catalog_properties(secret, catalog_secret)
+        )
         catalog.list_namespaces()
 
 
@@ -215,13 +278,16 @@ class IcebergCheckRunner:
     covered without a live catalog.
     """
 
-    def __init__(self, *, config: IcebergConfig, secret: str | None) -> None:
+    def __init__(
+        self, *, config: IcebergConfig, secret: str | None, catalog_secret: str | None = None
+    ) -> None:
         self._config = config
         self._secret = secret
+        self._catalog_secret = catalog_secret
 
     def _load_table(self, identifier: str) -> Any:
         """Load the Iceberg table by ``namespace.table`` identifier (live seam)."""
-        return load_iceberg_table(self._config, self._secret, identifier)
+        return load_iceberg_table(self._config, self._secret, identifier, self._catalog_secret)
 
     def _read_dataframe(self, identifier: str) -> Any:
         """Materialise the whole current snapshot as Arrow-backed pandas.
@@ -304,4 +370,11 @@ def build_iceberg_runner(
     """
     iceberg_config = IcebergConfig.model_validate(config)
     secret = secret_store.get(secret_ref) if secret_ref else None
-    return IcebergCheckRunner(config=iceberg_config, secret=secret)
+    # The SQL-catalog DB password lives in the SecretStore under a NAME held in
+    # config — the URI itself stays credential-less at rest (#754/#826).
+    catalog_secret = (
+        secret_store.get(iceberg_config.catalog_secret_name)
+        if iceberg_config.catalog_secret_name
+        else None
+    )
+    return IcebergCheckRunner(config=iceberg_config, secret=secret, catalog_secret=catalog_secret)

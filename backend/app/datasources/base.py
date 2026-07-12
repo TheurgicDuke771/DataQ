@@ -139,8 +139,15 @@ class ConnectionAdapter(Protocol):
     `test` resolves connectivity against the live datasource using the config +
     its secret, raising on failure. Adapters never touch the DB or SecretStore —
     the caller resolves the secret and hands it in.
+
+    Some types need MORE than one credential (an Iceberg SQL catalog needs the
+    storage key *and* the catalog DB password). Rather than smuggle the second one
+    into non-secret `config` — the #754/#826 bug — the caller resolves every extra
+    secret named in config and passes them as keyword arguments. Adapters that need
+    none simply ignore them (`**_`), so the seam's "caller resolves secrets"
+    invariant holds for one credential or five.
     """
 
     def validate_config(self, raw: dict[str, Any]) -> BaseModel: ...
 
-    def test(self, raw: dict[str, Any], secret: str) -> None: ...
+    def test(self, raw: dict[str, Any], secret: str, **extra_secrets: Any) -> None: ...
