@@ -103,6 +103,7 @@ const DETAIL: AssetDetailData = {
       name: 'RAW.ORDERS',
       env: 'dev',
       is_monitored: false,
+      depth: 1,
     },
   ],
   downstream: [
@@ -112,7 +113,12 @@ const DETAIL: AssetDetailData = {
       name: 'ANALYTICS.MART.REVENUE',
       env: 'dev',
       is_monitored: true,
+      depth: 1,
     },
+  ],
+  lineage_edges: [
+    { source: 'u1', target: 'a1' },
+    { source: 'a1', target: 'd1' },
   ],
 };
 
@@ -217,13 +223,53 @@ describe('AssetDetail page', () => {
     expect(screen.queryByText('Reachable')).not.toBeInTheDocument();
   });
 
-  it('renders upstream/downstream lineage with monitored flags', async () => {
+  // #805: one left-to-right graph, not two list boxes.
+  it('renders lineage as a graph: upstream, the centre asset, and downstream', async () => {
     mockGet.mockResolvedValue(DETAIL);
     renderPage();
-    expect(await screen.findByText('RAW.ORDERS')).toBeInTheDocument();
-    expect(screen.getByText('Unmonitored')).toBeInTheDocument();
-    expect(screen.getByText('ANALYTICS.MART.REVENUE')).toBeInTheDocument();
-    expect(screen.getByText('Monitored')).toBeInTheDocument();
+    const graph = await screen.findByRole('img', { name: /Lineage graph/ });
+    expect(graph).toBeInTheDocument();
+    // Each node carries its full identity in an SVG <title>; the visible label is
+    // the leaf segment (both ORDERS assets share a leaf, so assert on identity).
+    expect(screen.getByLabelText('ANALYTICS.PUBLIC.ORDERS (this asset)')).toBeInTheDocument();
+    expect(screen.getByLabelText('Open asset RAW.ORDERS')).toBeInTheDocument(); // upstream
+    expect(screen.getByLabelText(/Open asset ANALYTICS\.MART\.REVENUE/)).toBeInTheDocument();
+    // One drawn edge per real backend edge (u1→a1, a1→d1).
+    expect(graph.querySelectorAll('path[marker-end]')).toHaveLength(2);
+    expect(screen.getByText('1 upstream · 1 downstream')).toBeInTheDocument();
+  });
+
+  // Regression: useAsyncData fetches on mount only, so an asset→asset navigation
+  // (first made possible by the #805 clickable lineage nodes) must REMOUNT the page
+  // — otherwise the new URL renders the previous asset's data.
+  it('refetches when navigating from one asset to another (no stale detail)', async () => {
+    mockGet.mockResolvedValue(DETAIL);
+    render(
+      <MeContext.Provider value={meState(false)}>
+        <AntApp>
+          <MemoryRouter initialEntries={['/assets/a1']}>
+            <Routes>
+              <Route path="/assets/:assetId" element={<AssetDetail />} />
+            </Routes>
+          </MemoryRouter>
+        </AntApp>
+      </MeContext.Provider>,
+    );
+    await screen.findByRole('img', { name: /Lineage graph/ });
+    expect(mockGet).toHaveBeenCalledWith('a1');
+
+    // Click the downstream lineage node → the route param becomes d1, and the page
+    // must fetch THAT asset rather than keep showing a1's.
+    mockGet.mockClear();
+    await userEvent.click(screen.getByLabelText(/Open asset ANALYTICS\.MART\.REVENUE/));
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('d1'));
+  }, 15000);
+
+  it('does not make the centre asset clickable — you are already on it', async () => {
+    mockGet.mockResolvedValue(DETAIL);
+    renderPage();
+    await screen.findByRole('img', { name: /Lineage graph/ });
+    expect(screen.queryByLabelText('Open asset ANALYTICS.PUBLIC.ORDERS')).not.toBeInTheDocument();
   });
 
   // CI module-import cost + userEvent on antd eats the 5s default (#778) — 15s budgets.
@@ -242,11 +288,12 @@ describe('AssetDetail page', () => {
     expect(await screen.findByText('run page')).toBeInTheDocument();
   }, 15000);
 
-  it('renders empty lineage panels when there are none', async () => {
-    mockGet.mockResolvedValue({ ...DETAIL, upstream: [], downstream: [] });
+  it('keeps a graceful empty state for a 0-edge asset', async () => {
+    mockGet.mockResolvedValue({ ...DETAIL, upstream: [], downstream: [], lineage_edges: [] });
     renderPage();
-    expect(await screen.findByText('No known upstream sources.')).toBeInTheDocument();
-    expect(screen.getByText('No known downstream consumers.')).toBeInTheDocument();
+    expect(await screen.findByText('No lineage recorded for this asset.')).toBeInTheDocument();
+    // No graph is drawn at all — not an empty canvas.
+    expect(screen.queryByRole('img', { name: /Lineage graph/ })).not.toBeInTheDocument();
   });
 
   it('surfaces a load error', async () => {

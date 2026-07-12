@@ -101,7 +101,11 @@ class AssetSummaryRead(ApiModel):
 
 class LineageNodeRead(ApiModel):
     """A lineage neighbour — OpenLineage identity + whether it is monitored. No
-    run data (blast-radius browse only; ADR 0034 §2)."""
+    run data (blast-radius browse only; ADR 0034 §2).
+
+    `depth` is the hop distance from the asset under view (1 = a direct neighbour):
+    the graph view lays nodes out in hop columns rather than flattening every hop
+    into one list (#805)."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -110,6 +114,18 @@ class LineageNodeRead(ApiModel):
     name: str
     env: str | None
     is_monitored: bool
+    depth: int
+
+
+class LineageEdgeRead(ApiModel):
+    """One edge of the lineage neighbourhood, `source` (upstream) → `target`
+    (downstream) asset id. The UI draws exactly these — without them a graph could
+    only guess which depth-2 node hangs off which depth-1 node (#805)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    source: uuid.UUID
+    target: uuid.UUID
 
 
 class AssetDetailRead(ApiModel):
@@ -121,6 +137,7 @@ class AssetDetailRead(ApiModel):
     suites: list[ComposingSuiteRead]
     upstream: list[LineageNodeRead]
     downstream: list[LineageNodeRead]
+    lineage_edges: list[LineageEdgeRead]
 
 
 class AssetMetadataUpdate(ApiModel):

@@ -26,7 +26,18 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.auth import _upsert_user
 from backend.app.core.secrets import SecretStore
-from backend.app.db.models import Check, Connection, Incident, PipelineRun, Result, Run, Suite, User
+from backend.app.db.models import (
+    Asset,
+    Check,
+    Connection,
+    Incident,
+    LineageEdge,
+    PipelineRun,
+    Result,
+    Run,
+    Suite,
+    User,
+)
 from backend.app.services import (
     check_service,
     connection_service,
@@ -34,6 +45,7 @@ from backend.app.services import (
     share_service,
     suite_service,
 )
+from backend.app.services.asset_service import upsert_assets
 
 # A second collaborator so the sharing surface isn't empty.
 ANALYST_OID = "demo-analyst-oid"
@@ -752,6 +764,7 @@ def seed_demo_data(session: Session, *, owner: User, secret_store: SecretStore) 
         run_count += _seed_second_suite_run(session, suite=volume_suite)
     pipeline_run_count = _seed_pipeline_runs(session, connections=connections)
     incident_count = _seed_incidents(session, suite=first_suite) if first_suite else 0
+    edge_count = _seed_lineage(session, suite=first_suite) if first_suite else 0
 
     session.commit()
     return {
@@ -762,4 +775,78 @@ def seed_demo_data(session: Session, *, owner: User, secret_store: SecretStore) 
         "runs": run_count,
         "pipeline_runs": pipeline_run_count,
         "incidents": incident_count,
+        "lineage_edges": edge_count,
     }
+
+
+# The demo lineage chain around the shared ORDERS asset. Two hops each way, so the
+# asset's graph (#805) has real depth-≥2 provenance AND blast radius to lay out —
+# without it the lineage view has nothing to show on a fresh install, and its e2e
+# would have nothing to assert.
+#
+#   RAW.ORDERS_RAW ─┐
+#                   ├─► PUBLIC.STG_ORDERS ─► PUBLIC.ORDERS ─► MART.REVENUE ─► BI.REVENUE_DAILY
+#   RAW.CUSTOMERS ──┘
+_DEMO_LINEAGE: tuple[tuple[str, str], ...] = (
+    ("ANALYTICS.RAW.ORDERS_RAW", "ANALYTICS.PUBLIC.STG_ORDERS"),
+    ("ANALYTICS.RAW.CUSTOMERS", "ANALYTICS.PUBLIC.STG_ORDERS"),
+    ("ANALYTICS.PUBLIC.STG_ORDERS", "ANALYTICS.PUBLIC.ORDERS"),
+    ("ANALYTICS.PUBLIC.ORDERS", "ANALYTICS.MART.REVENUE"),
+    ("ANALYTICS.MART.REVENUE", "ANALYTICS.BI.REVENUE_DAILY"),
+)
+
+
+def _seed_lineage(session: Session, *, suite: Suite) -> int:
+    """Seed a lineage neighbourhood around the suite's asset (idempotent).
+
+    Anchored on the *resolved* asset's namespace so the seeded neighbours share its
+    OpenLineage identity space (ADR 0034) — the same rule the dbt/Marquez importers
+    follow, so a real import later dedupes against these rather than forking them.
+    Edges are tagged ``source='dbt'`` (the manifest importer's provenance) and carry
+    the suite's connection, matching what `refresh_dbt_edges` would have written.
+    """
+    if suite.asset_id is None:
+        return 0
+    anchor = session.get(Asset, suite.asset_id)
+    if anchor is None:
+        return 0
+
+    names = {n for edge in _DEMO_LINEAGE for n in edge}
+    asset_ids = upsert_assets(
+        session,
+        [
+            {
+                "namespace": anchor.namespace,
+                "name": name,
+                "env": anchor.env,
+                "connection_id": suite.connection_id,
+            }
+            for name in sorted(names)
+        ],
+        preserve_provenance=True,
+    )
+
+    seeded = 0
+    for upstream, downstream in _DEMO_LINEAGE:
+        up_id = asset_ids[(anchor.namespace, upstream)]
+        down_id = asset_ids[(anchor.namespace, downstream)]
+        exists = session.scalar(
+            select(LineageEdge.id).where(
+                LineageEdge.upstream_asset_id == up_id,
+                LineageEdge.downstream_asset_id == down_id,
+                LineageEdge.source == "dbt",
+            )
+        )
+        if exists is not None:
+            continue
+        session.add(
+            LineageEdge(
+                upstream_asset_id=up_id,
+                downstream_asset_id=down_id,
+                source="dbt",
+                connection_id=suite.connection_id,
+            )
+        )
+        seeded += 1
+    session.flush()
+    return seeded

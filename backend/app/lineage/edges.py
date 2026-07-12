@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import uuid
 from collections import Counter
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
@@ -267,20 +268,76 @@ def _prune_stale(
 
 def downstream_assets(session: Session, asset_id: uuid.UUID, *, max_depth: int = 10) -> list[Asset]:
     """Distinct downstream assets of ``asset_id`` in BFS order (blast radius)."""
-    return _walk(session, asset_id, direction="down", max_depth=max_depth)
+    return [asset for asset, _depth in _walk(session, asset_id, "down", max_depth)]
 
 
 def upstream_assets(session: Session, asset_id: uuid.UUID, *, max_depth: int = 10) -> list[Asset]:
     """Distinct upstream assets of ``asset_id`` in BFS order (provenance)."""
-    return _walk(session, asset_id, direction="up", max_depth=max_depth)
+    return [asset for asset, _depth in _walk(session, asset_id, "up", max_depth)]
 
 
-def _walk(session: Session, start: uuid.UUID, *, direction: str, max_depth: int) -> list[Asset]:
+@dataclass(frozen=True)
+class LineageNeighbourhood:
+    """The lineage subgraph around one asset — enough to *draw* it (#805).
+
+    The flat `upstream_assets` / `downstream_assets` lists answer "what is reachable",
+    which is all the blast-radius consumers need. A graph view additionally needs to
+    know **how far** each node sits (to lay it out in hop columns) and **which node
+    connects to which** (to draw a truthful edge rather than a guessed one) — so this
+    carries the hop distance per node and the edges actually traversed.
+
+    ``edges`` are normalized ``(upstream_id, downstream_id)`` pairs regardless of the
+    direction they were discovered in, so the two walks compose into one DAG.
+    """
+
+    upstream: list[tuple[Asset, int]]
+    downstream: list[tuple[Asset, int]]
+    edges: list[tuple[uuid.UUID, uuid.UUID]]
+
+
+def lineage_neighbourhood(
+    session: Session, asset_id: uuid.UUID, *, max_depth: int = 10
+) -> LineageNeighbourhood:
+    """Both walks from ``asset_id``, with hop depth per node + the traversed edges."""
+    up, up_edges = _walk_graph(session, asset_id, "up", max_depth)
+    down, down_edges = _walk_graph(session, asset_id, "down", max_depth)
+
+    ids = [aid for aid, _ in up] + [aid for aid, _ in down]
+    by_id = (
+        {a.id: a for a in session.scalars(select(Asset).where(Asset.id.in_(ids)))} if ids else {}
+    )
+    return LineageNeighbourhood(
+        upstream=[(by_id[aid], d) for aid, d in up if aid in by_id],
+        downstream=[(by_id[aid], d) for aid, d in down if aid in by_id],
+        edges=sorted(set(up_edges) | set(down_edges)),
+    )
+
+
+def _walk(
+    session: Session, start: uuid.UUID, direction: str, max_depth: int
+) -> list[tuple[Asset, int]]:
+    """`_walk_graph`, resolved to `Asset` rows (dropping the edges)."""
+    order, _edges = _walk_graph(session, start, direction, max_depth)
+    if not order:
+        return []
+    ids = [aid for aid, _ in order]
+    by_id = {a.id: a for a in session.scalars(select(Asset).where(Asset.id.in_(ids)))}
+    return [(by_id[aid], depth) for aid, depth in order if aid in by_id]
+
+
+def _walk_graph(
+    session: Session, start: uuid.UUID, direction: str, max_depth: int
+) -> tuple[list[tuple[uuid.UUID, int]], set[tuple[uuid.UUID, uuid.UUID]]]:
     """Depth-capped BFS over `lineage_edges` in ``direction`` from ``start``.
 
     Source-agnostic (blast radius spans every lineage source, not just dbt).
-    De-duplicates, caps at ``max_depth`` hops, and returns the distinct reachable
-    assets in discovery (BFS) order.
+    De-duplicates and caps at ``max_depth`` hops, returning the distinct reachable
+    asset ids **with their hop distance** in discovery (BFS) order, plus every edge
+    traversed — including cross-edges back into already-visited nodes, so the
+    subgraph is faithful and not just a spanning tree.
+
+    Edges come back normalized as ``(upstream_id, downstream_id)`` whichever way we
+    walked, so an up-walk and a down-walk can be unioned into one DAG.
     """
     if direction == "down":
         from_col, to_col = LineageEdge.upstream_asset_id, LineageEdge.downstream_asset_id
@@ -289,20 +346,19 @@ def _walk(session: Session, start: uuid.UUID, *, direction: str, max_depth: int)
 
     visited = {start}
     frontier = [start]
-    order: list[uuid.UUID] = []
+    order: list[tuple[uuid.UUID, int]] = []
+    edges: set[tuple[uuid.UUID, uuid.UUID]] = set()
     depth = 0
     while frontier and depth < max_depth:
-        reached = session.execute(select(to_col).where(from_col.in_(frontier))).scalars().all()
+        rows = session.execute(select(from_col, to_col).where(from_col.in_(frontier))).all()
         next_frontier: list[uuid.UUID] = []
-        for aid in reached:
-            if aid not in visited:
-                visited.add(aid)
-                order.append(aid)
-                next_frontier.append(aid)
+        for src, dst in rows:
+            # `src`/`dst` are in walk order; store the edge in its true direction.
+            edges.add((src, dst) if direction == "down" else (dst, src))
+            if dst not in visited:
+                visited.add(dst)
+                order.append((dst, depth + 1))
+                next_frontier.append(dst)
         frontier = next_frontier
         depth += 1
-
-    if not order:
-        return []
-    by_id = {a.id: a for a in session.scalars(select(Asset).where(Asset.id.in_(order)))}
-    return [by_id[aid] for aid in order if aid in by_id]
+    return order, edges

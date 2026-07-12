@@ -34,7 +34,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.db.models import Asset, Run, Suite, User, worst_severity
-from backend.app.lineage.edges import downstream_assets, upstream_assets
+from backend.app.lineage.edges import lineage_neighbourhood
 from backend.app.services.run_service import check_outcome_counts, operational_result_flags
 from backend.app.services.suite_authz import effective_permissions
 from backend.app.services.suite_service import accessible_suite_ids
@@ -141,13 +141,31 @@ class AssetSummary:
 
 @dataclass(frozen=True)
 class LineageNode:
-    """A lineage neighbour — enough to render, no run data (ADR 0034 §2)."""
+    """A lineage neighbour — enough to render, no run data (ADR 0034 §2).
+
+    ``depth`` is the hop distance from the asset under view (1 = a direct
+    neighbour), which is what lets the UI lay the graph out in columns (#805)
+    instead of flattening every hop into one list.
+    """
 
     id: uuid.UUID
     namespace: str
     name: str
     env: str | None
     is_monitored: bool
+    depth: int = 1
+
+
+@dataclass(frozen=True)
+class LineageEdgeRef:
+    """One edge of the neighbourhood DAG, as ``(upstream → downstream)`` asset ids.
+
+    The UI draws exactly these; without them a graph could only *guess* which node
+    at depth 2 hangs off which node at depth 1 (#805).
+    """
+
+    source: uuid.UUID
+    target: uuid.UUID
 
 
 @dataclass(frozen=True)
@@ -158,6 +176,7 @@ class AssetDetail:
     suites: list[ComposingSuite]
     upstream: list[LineageNode] = field(default_factory=list)
     downstream: list[LineageNode] = field(default_factory=list)
+    lineage_edges: list[LineageEdgeRef] = field(default_factory=list)
 
 
 # ── internals ────────────────────────────────────────────────────────────────
@@ -378,9 +397,17 @@ def get_visible_asset(
     composing = _composing_suites(suites, levels, latest_runs, outcomes, op_flags)
 
     summary = _roll_up(asset, composing)
-    upstream = _lineage_nodes(session, upstream_assets(session, asset_id))
-    downstream = _lineage_nodes(session, downstream_assets(session, asset_id))
-    return AssetDetail(summary=summary, suites=composing, upstream=upstream, downstream=downstream)
+    graph = lineage_neighbourhood(session, asset_id)
+    monitored = _monitored_ids(
+        session, [a.id for a, _ in graph.upstream] + [a.id for a, _ in graph.downstream]
+    )
+    return AssetDetail(
+        summary=summary,
+        suites=composing,
+        upstream=_lineage_nodes(graph.upstream, monitored),
+        downstream=_lineage_nodes(graph.downstream, monitored),
+        lineage_edges=[LineageEdgeRef(source=u, target=d) for u, d in graph.edges],
+    )
 
 
 def summarize_asset(
@@ -408,20 +435,21 @@ def summarize_asset(
     return _roll_up(asset, composing)
 
 
-def _lineage_nodes(session: Session, assets: list[Asset]) -> list[LineageNode]:
-    """Map reachable lineage assets to render-only nodes (+ monitored flag).
-
-    ``is_monitored`` = the asset has ≥1 suite targeting it (globally — a structural
-    fact, not a grant), resolved for all nodes in one grouped query (no N+1)."""
-    if not assets:
-        return []
-    ids = [a.id for a in assets]
-    monitored = {
+def _monitored_ids(session: Session, ids: list[uuid.UUID]) -> set[uuid.UUID]:
+    """Which of ``ids`` have ≥1 suite targeting them (globally — a structural fact,
+    not a grant). One grouped query for the whole neighbourhood (no N+1)."""
+    if not ids:
+        return set()
+    return {
         asset_id
         for (asset_id,) in session.execute(
             select(Suite.asset_id).where(Suite.asset_id.in_(ids)).group_by(Suite.asset_id)
         )
     }
+
+
+def _lineage_nodes(assets: list[tuple[Asset, int]], monitored: set[uuid.UUID]) -> list[LineageNode]:
+    """Map reachable lineage assets (+ their hop depth) to render-only nodes."""
     return [
         LineageNode(
             id=a.id,
@@ -429,8 +457,9 @@ def _lineage_nodes(session: Session, assets: list[Asset]) -> list[LineageNode]:
             name=a.name,
             env=a.env,
             is_monitored=a.id in monitored,
+            depth=depth,
         )
-        for a in assets
+        for a, depth in assets
     ]
 
 

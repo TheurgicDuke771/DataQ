@@ -1,14 +1,8 @@
-import {
-  ApartmentOutlined,
-  ArrowLeftOutlined,
-  EditOutlined,
-  UserOutlined,
-} from '@ant-design/icons';
+import { ArrowLeftOutlined, EditOutlined, UserOutlined } from '@ant-design/icons';
 import {
   App,
   Button,
   Card,
-  Empty,
   Flex,
   Input,
   Modal,
@@ -26,17 +20,16 @@ import { type AdminUser, listAdminUsers } from '../api/admin';
 import {
   type AssetDetail as AssetDetailData,
   type ComposingSuite,
-  type LineageNode,
   getAsset,
   updateAsset,
 } from '../api/assets';
 import { useIsWorkspaceAdmin } from '../auth/useMe';
 import { IncidentsPanel } from '../components/assets/IncidentsPanel';
+import { LineageGraph } from '../components/assets/LineageGraph';
 import { type Health, connectionHealth, runHealth, suiteHealth } from '../components/assets/health';
 import { AsyncBody } from '../components/AsyncBody';
 import { Page } from '../components/layout/Page';
 import { formatTimestamp } from '../components/results/resultsFormat';
-import SimpleList from '../components/SimpleList';
 import { useAsyncData } from '../hooks/useAsyncData';
 import { errorMessage } from '../utils/errors';
 
@@ -48,8 +41,17 @@ import { errorMessage } from '../utils/errors';
  * (ADR 0034 §4); no navigation inversion (phase 4).
  */
 export function AssetDetail() {
-  const navigate = useNavigate();
   const { assetId } = useParams<{ assetId: string }>();
+  // Remount on id change. `useAsyncData` fetches on mount (and on reload) only, so
+  // an asset→asset navigation — which the lineage graph's clickable nodes made
+  // possible for the first time (#805) — would otherwise re-render this same
+  // instance with a new URL but the PREVIOUS asset's data still on screen. Keying
+  // the page on the id makes the route param the identity of the mount.
+  return <AssetDetailPage key={assetId} assetId={assetId} />;
+}
+
+function AssetDetailPage({ assetId }: { assetId: string | undefined }) {
+  const navigate = useNavigate();
   const { state, reload } = useAsyncData(() => {
     if (!assetId) throw new Error('no asset');
     return getAsset(assetId);
@@ -158,18 +160,20 @@ function AssetDetailBody({
         )}
       />
 
-      <Flex gap={16} wrap align="stretch">
-        <LineagePanel
-          title="Upstream"
-          nodes={asset.upstream}
-          emptyHint="No known upstream sources."
-        />
-        <LineagePanel
-          title="Downstream"
-          nodes={asset.downstream}
-          emptyHint="No known downstream consumers."
-        />
-      </Flex>
+      {/* One left-to-right graph (#805) — provenance → this asset → blast radius —
+          replacing the two separate upstream/downstream list boxes. */}
+      <LineageGraph
+        center={{
+          id: summary.id,
+          name: summary.name,
+          namespace: summary.namespace,
+          env: summary.env,
+        }}
+        upstream={asset.upstream}
+        downstream={asset.downstream}
+        edges={asset.lineage_edges}
+        onOpenAsset={(id) => navigate(`/assets/${id}`)}
+      />
     </Flex>
   );
 }
@@ -460,55 +464,6 @@ function SuitesSection({
         dataSource={suites}
         pagination={false}
       />
-    </Card>
-  );
-}
-
-function LineagePanel({
-  title,
-  nodes,
-  emptyHint,
-}: {
-  title: string;
-  nodes: LineageNode[];
-  emptyHint: string;
-}) {
-  return (
-    <Card
-      size="small"
-      title={
-        <Flex gap={8} align="center">
-          <ApartmentOutlined />
-          {title}
-        </Flex>
-      }
-      style={{ flex: 1, minWidth: 280 }}
-    >
-      {nodes.length === 0 ? (
-        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={emptyHint} />
-      ) : (
-        // SimpleList (the #516 antd-List shim) — antd's List is deprecated in v6.
-        <SimpleList<LineageNode>
-          size="small"
-          dataSource={nodes}
-          rowKey="id"
-          renderItem={(node) => (
-            <SimpleList.Item>
-              <Flex vertical gap={2} style={{ minWidth: 0, flex: 1 }}>
-                <Flex gap={8} align="center" wrap>
-                  <Typography.Text strong ellipsis>
-                    {node.name}
-                  </Typography.Text>
-                  {node.is_monitored ? <Tag color="blue">Monitored</Tag> : <Tag>Unmonitored</Tag>}
-                </Flex>
-                <Typography.Text type="secondary" style={{ fontSize: 12 }} ellipsis>
-                  {node.namespace}
-                </Typography.Text>
-              </Flex>
-            </SimpleList.Item>
-          )}
-        />
-      )}
     </Card>
   );
 }

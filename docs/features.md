@@ -75,6 +75,11 @@ Four ways a suite runs (all the same authz — [feature matrix](feature-matrix.m
   (datasource → database/catalog → schema → table, with env + health on each leaf) and a
   flat, searchable **All assets** table. Both open the asset detail (health across suites,
   lineage, incidents).
+- **Lineage graph** — an asset's provenance and blast radius render as one
+  left-to-right graph (upstream → this asset → downstream), one column per hop, with
+  clickable nodes. Depth ≥2 comes from the blast-radius BFS, which also returns the
+  real edges — so a two-hop consumer is drawn hanging off the node it actually
+  descends from, not off the asset it never touches.
 - **Two health axes on an asset** — *Connection health* ("could DataQ reach and execute
   against the datasource?" — a failed run, or a check the datasource threw on) and
   *Data-quality health* (the severity-weighted verdict of its suites). They are derived

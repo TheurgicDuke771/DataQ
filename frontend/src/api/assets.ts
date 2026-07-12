@@ -73,6 +73,16 @@ export interface LineageNode {
   env: string | null;
   /** Whether the neighbour has ≥1 suite targeting it (a structural fact). */
   is_monitored: boolean;
+  /** Hop distance from the asset under view (1 = a direct neighbour). Lets the
+   *  graph lay nodes out in hop columns instead of flattening every hop (#805). */
+  depth: number;
+}
+
+/** One edge of the lineage neighbourhood — mirrors `LineageEdgeRead`.
+ *  `source` is the upstream asset id, `target` the downstream one. */
+export interface LineageEdge {
+  source: string;
+  target: string;
 }
 
 /** Asset detail — mirrors `AssetDetailRead`. */
@@ -81,6 +91,8 @@ export interface AssetDetail {
   suites: ComposingSuite[];
   upstream: LineageNode[];
   downstream: LineageNode[];
+  /** The real edges among the neighbourhood, so the graph draws truth, not a guess. */
+  lineage_edges: LineageEdge[];
 }
 
 /** Metadata mutation payload — mirrors `AssetMetadataUpdate` (admin-only). */
