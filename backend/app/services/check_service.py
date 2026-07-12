@@ -130,6 +130,34 @@ def validate_kind(kind: str) -> None:
         )
 
 
+# Mirrors the `checks.name` / `checks.expectation_type` column widths (db/models.py)
+# and the REST `CheckCreate`/`CheckUpdate` Field bounds (api/v1/checks.py). Enforced
+# here too so every caller — including the MCP `create_check`/`update_check` tools,
+# which have no Pydantic layer of their own — gets a clean 422 instead of a raw
+# `StringDataRightTruncation` from Postgres on an over-length INSERT/UPDATE.
+_NAME_MAX_LEN = 256
+_EXPECTATION_TYPE_MAX_LEN = 128
+
+
+def _validate_lengths(*, name: str | None, expectation_type: str | None) -> None:
+    if name is not None and not (1 <= len(name) <= _NAME_MAX_LEN):
+        raise CheckConfigInvalidError(
+            f"name must be 1-{_NAME_MAX_LEN} characters",
+            detail={"field": "name", "length": len(name), "max": _NAME_MAX_LEN},
+        )
+    if expectation_type is not None and not (
+        1 <= len(expectation_type) <= _EXPECTATION_TYPE_MAX_LEN
+    ):
+        raise CheckConfigInvalidError(
+            f"expectation_type must be 1-{_EXPECTATION_TYPE_MAX_LEN} characters",
+            detail={
+                "field": "expectation_type",
+                "length": len(expectation_type),
+                "max": _EXPECTATION_TYPE_MAX_LEN,
+            },
+        )
+
+
 def validate_monitor_check(
     kind: str,
     config: dict[str, Any],
@@ -492,6 +520,7 @@ def create_check(
     """
     suite = get_suite(session, suite_id)  # 404 if the suite is missing
     validate_kind(kind)
+    _validate_lengths(name=name, expectation_type=expectation_type)
     if kind != COMPARISON_KIND and source_connection_id is not None:
         raise CheckConfigInvalidError(
             "only comparison checks carry a source connection (ADR 0015)",
@@ -584,6 +613,7 @@ def update_check(
     never cleared — the kind requires it, ADR 0015).
     """
     check = get_check(session, suite_id, check_id)
+    _validate_lengths(name=name, expectation_type=expectation_type)
     if source_connection_id is not None and check.kind != COMPARISON_KIND:
         raise CheckConfigInvalidError(
             "only comparison checks carry a source connection (ADR 0015)",
