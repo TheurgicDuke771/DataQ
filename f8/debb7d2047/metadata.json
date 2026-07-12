@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "f8debb7d2047",
+  "strategy": "manual-commit",
+  "branch": "feat/issue-830-namespace-label",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "frontend/src/components/assets/LineageGraph.tsx",
+    "frontend/src/components/assets/assetTree.ts",
+    "frontend/src/components/assets/namespaceLabel.ts",
+    "frontend/src/components/dashboard/AssetHealthLead.tsx",
+    "frontend/src/pages/AssetDetail.tsx",
+    "frontend/src/pages/Assets.tsx",
+    "frontend/tests/components/namespaceLabel.test.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f8/debb7d2047/0/metadata.json",
+      "transcript": "/f8/debb7d2047/0/full.jsonl",
+      "compact_transcript": "/f8/debb7d2047/0/transcript.jsonl",
+      "content_hash": "/f8/debb7d2047/0/content_hash.txt",
+      "prompt": "/f8/debb7d2047/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1599,
+    "cache_creation_tokens": 3679612,
+    "cache_read_tokens": 357058854,
+    "output_tokens": 566644,
+    "api_call_count": 790
+  }
+}
