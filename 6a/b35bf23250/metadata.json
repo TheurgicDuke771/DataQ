@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "6ab35bf23250",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-805-lineage-graph",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/lineage/edges.py",
+    "backend/tests/lineage/test_edges.py",
+    "frontend/src/components/assets/LineageGraph.tsx",
+    "frontend/tests/components/LineageGraph.test.tsx",
+    "frontend/tests/components/lineageLayout.test.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/6a/b35bf23250/0/metadata.json",
+      "transcript": "/6a/b35bf23250/0/full.jsonl",
+      "compact_transcript": "/6a/b35bf23250/0/transcript.jsonl",
+      "content_hash": "/6a/b35bf23250/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 90,
+    "cache_creation_tokens": 70911,
+    "cache_read_tokens": 21007173,
+    "output_tokens": 44446,
+    "api_call_count": 45
+  }
+}
