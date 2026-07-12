@@ -143,10 +143,13 @@ def _sql_read(
         # validator (ADR 0019) at author time AND immediately above. The
         # newline before the closing paren keeps a trailing `-- comment` (legal
         # per the validator) from swallowing the wrapper's tail.
-        count_stmt = sa.text(f"SELECT COUNT(*) FROM (\n{q}\n) __dataq_src")  # noqa: S608
-        select_stmt = sa.text(
-            f"SELECT * FROM (\n{q}\n) __dataq_src LIMIT {int(max_rows) + 1}"  # noqa: S608
+        count_sql = f"SELECT COUNT(*) FROM (\n{q}\n) __dataq_src"  # noqa: S608  # nosec B608
+        select_sql = (
+            f"SELECT * FROM (\n{q}\n) __dataq_src "  # noqa: S608  # nosec B608
+            f"LIMIT {int(max_rows) + 1}"
         )
+        count_stmt = sa.text(count_sql)
+        select_stmt = sa.text(select_sql)
     else:
         if not spec.table:
             raise DatasetReadUnsupportedError(
