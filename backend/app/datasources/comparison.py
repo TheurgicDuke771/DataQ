@@ -564,7 +564,7 @@ def compare_records(
 
     column_mismatch_counts: dict[str, int] = {}
     if aligned.compared and both_n:
-        neq_any = np.zeros(both_n, dtype=bool)
+        neq_any: Any = np.zeros(both_n, dtype=bool)
         for col in aligned.compared:
             eq, _, _ = _pair_equality(aligned, col, tolerance)
             neq = (~eq).to_numpy(dtype=bool)
