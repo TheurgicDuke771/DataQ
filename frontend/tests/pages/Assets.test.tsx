@@ -40,20 +40,65 @@ function renderPage() {
 }
 
 describe('Assets page', () => {
-  it('lists visible assets with health + suite count', async () => {
+  it('defaults to the connection-rooted tree (namespace root, table leaf with health)', async () => {
     mockList.mockResolvedValue([ASSET]);
     renderPage();
-    expect(await screen.findByText('ANALYTICS.PUBLIC.ORDERS')).toBeInTheDocument();
-    expect(screen.getByText('snowflake://acct')).toBeInTheDocument();
+    // Root = the OL namespace; leaf = the table segment (not the full dotted name),
+    // with its env + health tags — the drill-down levels are expanded by default.
+    expect(await screen.findByText('snowflake://acct')).toBeInTheDocument();
+    expect(screen.getByText('ANALYTICS')).toBeInTheDocument();
+    expect(screen.getByText('PUBLIC')).toBeInTheDocument();
+    expect(screen.getByText('ORDERS')).toBeInTheDocument();
+    expect(screen.getByText('dev')).toBeInTheDocument();
     expect(screen.getByText('Failing')).toBeInTheDocument();
-    expect(screen.getByText('2')).toBeInTheDocument();
   });
 
-  it('navigates to the detail on row click', async () => {
+  it('opens the detail when a leaf asset is selected', async () => {
     mockList.mockResolvedValue([ASSET]);
     renderPage();
-    await userEvent.click(await screen.findByText('ANALYTICS.PUBLIC.ORDERS'));
+    await userEvent.click(await screen.findByText('ORDERS'));
     expect(await screen.findByText('detail for asset')).toBeInTheDocument();
+  });
+
+  it('selecting a folder node does not navigate', async () => {
+    mockList.mockResolvedValue([ASSET]);
+    renderPage();
+    // ANALYTICS is a database folder (no asset) — clicking it must not open a detail.
+    await userEvent.click(await screen.findByText('ANALYTICS'));
+    expect(screen.queryByText('detail for asset')).not.toBeInTheDocument();
+  });
+
+  it('switches to the flat "All assets" table and back', async () => {
+    mockList.mockResolvedValue([ASSET]);
+    renderPage();
+    await screen.findByText('snowflake://acct');
+
+    await userEvent.click(screen.getByText('All assets'));
+    // The table shows the full dotted name + suite count (2) the tree omits.
+    expect(await screen.findByText('ANALYTICS.PUBLIC.ORDERS')).toBeInTheDocument();
+    expect(screen.getByText('2')).toBeInTheDocument();
+
+    // Row click still navigates from the table view.
+    await userEvent.click(screen.getByText('ANALYTICS.PUBLIC.ORDERS'));
+    expect(await screen.findByText('detail for asset')).toBeInTheDocument();
+  });
+
+  it('groups assets under their datasource and drills into each schema', async () => {
+    mockList.mockResolvedValue([
+      ASSET,
+      { ...ASSET, id: 'a2', name: 'ANALYTICS.PUBLIC.CUSTOMERS', env: 'dev' },
+      { ...ASSET, id: 'a3', namespace: 's3://lake', name: 'raw/events.parquet', env: 'qa' },
+    ]);
+    renderPage();
+    // Two datasource roots.
+    expect(await screen.findByText('snowflake://acct')).toBeInTheDocument();
+    expect(screen.getByText('s3://lake')).toBeInTheDocument();
+    // Both tables share the PUBLIC schema folder (merged), each a distinct leaf.
+    expect(screen.getByText('ORDERS')).toBeInTheDocument();
+    expect(screen.getByText('CUSTOMERS')).toBeInTheDocument();
+    // The flat-file asset splits on '/'.
+    expect(screen.getByText('raw')).toBeInTheDocument();
+    expect(screen.getByText('events.parquet')).toBeInTheDocument();
   });
 
   it('shows an empty state when there are no assets', async () => {
