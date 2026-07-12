@@ -59,6 +59,10 @@ export interface AssetSummary {
    *  Derived from the recorded runs — there is no connection-probe polling loop. */
   has_operational_error: boolean;
   has_skip: boolean;
+  /** Any composing suite's latest run was `cancelled`. A cancelled run proves
+   *  nothing — killed before a check ran, we may never have reached the datasource
+   *  — so neither health axis may roll it up green. */
+  has_cancelled_run: boolean;
 }
 
 /** A lineage neighbour — mirrors `LineageNodeRead`. Render-only (no run data). */

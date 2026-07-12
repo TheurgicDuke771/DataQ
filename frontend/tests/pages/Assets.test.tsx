@@ -25,6 +25,7 @@ const ASSET: AssetSummary = {
   has_failed_run: false,
   has_active_run: false,
   has_operational_error: false,
+  has_cancelled_run: false,
   has_skip: false,
 };
 

@@ -92,7 +92,9 @@ class AssetSummaryRead(ApiModel):
     has_failed_run: bool
     has_active_run: bool
     # Connection health (#803): a failed run OR any `error` result → DataQ could not
-    # evaluate against the datasource; `skip` → a precondition wasn't met (degraded).
+    # evaluate against the datasource; `skip` → a precondition wasn't met (degraded);
+    # `cancelled` → the run was killed, so it proves nothing (never rolls up green).
+    has_cancelled_run: bool
     has_operational_error: bool
     has_skip: bool
 

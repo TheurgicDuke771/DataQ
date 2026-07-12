@@ -126,11 +126,15 @@ class AssetSummary:
     # ── connection health (reachability / execution) ──
     # `has_failed_run`: any latest run whose *execution* `failed` (wrote no results).
     # `has_active_run`: any latest run still `queued`/`running` (hasn't concluded).
+    # `has_cancelled_run`: any latest run `cancelled`. A cancelled run proves
+    #   nothing — if it was killed before a single check ran, we may never have
+    #   reached the datasource at all, so it must not roll up green.
     # `has_operational_error`: a failed run OR any `error` result — DataQ could not
     #   evaluate against the datasource. `has_skip`: any `skip` result (a
     #   precondition, e.g. the batch hasn't landed, wasn't met) — degraded, not down.
     has_failed_run: bool = False
     has_active_run: bool = False
+    has_cancelled_run: bool = False
     has_operational_error: bool = False
     has_skip: bool = False
 
@@ -229,7 +233,7 @@ def _roll_up(asset: Asset, composing: list[ComposingSuite]) -> AssetSummary:
     statuses: list[str] = []
     checks_total = checks_passed = 0
     last_run_at: datetime | None = None
-    has_failed_run = has_active_run = False
+    has_failed_run = has_active_run = has_cancelled_run = False
     has_operational_error = has_skip = False
     for suite in composing:
         run = suite.latest_run
@@ -242,6 +246,8 @@ def _roll_up(asset: Asset, composing: list[ComposingSuite]) -> AssetSummary:
             has_failed_run = True
         elif run.status in ("queued", "running"):
             has_active_run = True
+        elif run.status == "cancelled":
+            has_cancelled_run = True
         # Connection health (#803): a run that failed outright, or one that ran but
         # whose checks threw, both mean DataQ could not evaluate against the
         # datasource. `skip` is weaker — it executed, a precondition just wasn't met.
@@ -269,6 +275,7 @@ def _roll_up(asset: Asset, composing: list[ComposingSuite]) -> AssetSummary:
         last_run_at=last_run_at,
         has_failed_run=has_failed_run,
         has_active_run=has_active_run,
+        has_cancelled_run=has_cancelled_run,
         has_operational_error=has_operational_error,
         has_skip=has_skip,
     )

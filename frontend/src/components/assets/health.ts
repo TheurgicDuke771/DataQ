@@ -60,18 +60,35 @@ export function assetHealth(
  *   datasource threw) → **Errors**;
  * - any `skip` (a precondition wasn't met — e.g. the batch hasn't landed) →
  *   **Degraded**: it executed, it just found nothing to check;
- * - a run in flight → **Running**; a clean concluded run → **Reachable**;
+ * - a run in flight → **Running**;
+ * - a check actually got evaluated → **Reachable**. This is *positive evidence*:
+ *   to evaluate anything we must have connected. Keying green off "a run happened"
+ *   instead would call a run the user cancelled before it ever opened a connection
+ *   "Reachable";
+ * - a `cancelled` run that evaluated nothing → **Cancelled** (it proves nothing —
+ *   never green);
+ * - a run concluded cleanly with no checks to evaluate → **Reachable** (it
+ *   succeeded, so we did connect);
  * - nothing has ever run → **No runs** (unknown, not healthy).
  */
 export function connectionHealth(
   summary: Pick<
     AssetSummary,
-    'has_operational_error' | 'has_skip' | 'has_active_run' | 'last_run_at'
+    | 'has_operational_error'
+    | 'has_skip'
+    | 'has_active_run'
+    | 'has_cancelled_run'
+    | 'checks_total'
+    | 'last_run_at'
   >,
 ): Health {
   if (summary.has_operational_error) return { label: 'Errors', color: 'error' };
   if (summary.has_skip) return { label: 'Degraded', color: 'warning' };
   if (summary.has_active_run) return STATUS_HEALTH.running;
+  // Something was evaluated ⇒ we connected. Positive evidence beats a cancelled
+  // sibling suite, so this is checked before the cancelled fallback.
+  if (summary.checks_total > 0) return { label: 'Reachable', color: 'success' };
+  if (summary.has_cancelled_run) return STATUS_HEALTH.cancelled;
   if (summary.last_run_at !== null) return { label: 'Reachable', color: 'success' };
   return { label: 'No runs', color: 'default' };
 }
@@ -86,13 +103,22 @@ export function connectionHealth(
  * checks all skipped, evaluated nothing, so it reports **No data** rather than a
  * green "Passing" it hasn't earned (the bug the old single signal had once the
  * operational flags were pulled out of it).
+ *
+ * A `cancelled` run is only ever **Partial**, never green: it was killed part-way,
+ * so the checks it did evaluate passing says nothing about the ones it never ran.
  */
 export function suiteHealth(
-  summary: Pick<AssetSummary, 'worst_severity' | 'checks_total' | 'has_active_run' | 'last_run_at'>,
+  summary: Pick<
+    AssetSummary,
+    'worst_severity' | 'checks_total' | 'has_active_run' | 'has_cancelled_run' | 'last_run_at'
+  >,
 ): Health {
   if (summary.worst_severity) return SEVERITY_HEALTH[summary.worst_severity];
   if (summary.has_active_run) return STATUS_HEALTH.running;
-  if (summary.checks_total > 0) return { label: 'Passing', color: 'success' };
+  if (summary.checks_total > 0) {
+    if (summary.has_cancelled_run) return { label: 'Partial', color: 'warning' };
+    return { label: 'Passing', color: 'success' };
+  }
   if (summary.last_run_at !== null) return { label: 'No data', color: 'default' };
   return { label: 'No runs', color: 'default' };
 }

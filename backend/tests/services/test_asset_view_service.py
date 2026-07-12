@@ -188,5 +188,23 @@ def test_failing_data_does_not_touch_connection_health(db_session: Any) -> None:
     assert s.has_skip is False
 
 
-def test_operational_result_flags_empty_input() -> None:
-    assert run_service.operational_result_flags(None, []) == {}  # type: ignore[arg-type]
+def test_cancelled_run_is_flagged_so_it_never_rolls_up_green(db_session: Any) -> None:
+    """A cancelled run proves nothing: killed before a check ran, we may never have
+    reached the datasource. It is neither a failure nor an active run, so without
+    its own flag it would look identical to a clean success and read green on both
+    axes. (The UI keys `connectionHealth`/`suiteHealth` off this.)"""
+    owner = _user(db_session)
+    asset = _suite_with_run(db_session, owner, run_status="cancelled", result_statuses=[])
+    s = svc.summarize_asset(db_session, asset, user_id=owner.id, include_all=True)
+
+    assert s.has_cancelled_run is True
+    # Explicitly NOT any of the other execution states — this is the whole point:
+    # nothing else in the summary distinguishes it from a healthy run.
+    assert s.has_failed_run is False
+    assert s.has_active_run is False
+    assert s.has_operational_error is False
+    assert s.checks_total == 0
+
+
+def test_operational_result_flags_empty_input(db_session: Any) -> None:
+    assert run_service.operational_result_flags(db_session, []) == {}

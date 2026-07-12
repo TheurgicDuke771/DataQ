@@ -108,23 +108,31 @@ describe('AssetHealthTag', () => {
 
 type ConnInput = Pick<
   AssetSummary,
-  'has_operational_error' | 'has_skip' | 'has_active_run' | 'last_run_at'
+  | 'has_operational_error'
+  | 'has_skip'
+  | 'has_active_run'
+  | 'has_cancelled_run'
+  | 'checks_total'
+  | 'last_run_at'
 >;
 type SuiteInput = Pick<
   AssetSummary,
-  'worst_severity' | 'checks_total' | 'has_active_run' | 'last_run_at'
+  'worst_severity' | 'checks_total' | 'has_active_run' | 'has_cancelled_run' | 'last_run_at'
 >;
 
 const CONN_OK: ConnInput = {
   has_operational_error: false,
   has_skip: false,
   has_active_run: false,
+  has_cancelled_run: false,
+  checks_total: 3,
   last_run_at: '2026-01-01T00:00:00Z',
 };
 const SUITE_OK: SuiteInput = {
   worst_severity: null,
   checks_total: 3,
   has_active_run: false,
+  has_cancelled_run: false,
   last_run_at: '2026-01-01T00:00:00Z',
 };
 
@@ -154,7 +162,24 @@ describe('connectionHealth (#803)', () => {
   });
 
   it('is No runs when nothing has run (unknown, not healthy)', () => {
-    expect(connectionHealth({ ...CONN_OK, last_run_at: null }).label).toBe('No runs');
+    expect(connectionHealth({ ...CONN_OK, checks_total: 0, last_run_at: null }).label).toBe(
+      'No runs',
+    );
+  });
+
+  it('never greens a cancelled run that evaluated nothing — it proves no reachability', () => {
+    // Killed before a single check ran: we may never have opened a connection at
+    // all, so claiming "Reachable" here would be a lie.
+    expect(connectionHealth({ ...CONN_OK, has_cancelled_run: true, checks_total: 0 }).label).toBe(
+      'Cancelled',
+    );
+  });
+
+  it('is Reachable when a cancelled run still evaluated something (we did connect)', () => {
+    // Positive evidence wins: to evaluate a check at all we must have connected.
+    expect(connectionHealth({ ...CONN_OK, has_cancelled_run: true, checks_total: 2 }).label).toBe(
+      'Reachable',
+    );
   });
 
   it('IGNORES data-quality severity entirely — bad data is not a bad connection', () => {
@@ -192,5 +217,20 @@ describe('suiteHealth (#803)', () => {
 
   it('shows an in-flight run as Running', () => {
     expect(suiteHealth({ ...SUITE_OK, has_active_run: true }).label).toBe('Running');
+  });
+
+  it('is Partial — never a green Passing — when the run was cancelled part-way', () => {
+    // 2 of 5 checks passed before the user cancelled. The 2 passing says nothing
+    // about the 3 that never ran, so this must not read green.
+    expect(suiteHealth({ ...SUITE_OK, has_cancelled_run: true })).toEqual({
+      label: 'Partial',
+      color: 'warning',
+    });
+  });
+
+  it('a real data failure still outranks a cancellation', () => {
+    expect(
+      suiteHealth({ ...SUITE_OK, has_cancelled_run: true, worst_severity: 'critical' }).label,
+    ).toBe('Critical');
   });
 });
