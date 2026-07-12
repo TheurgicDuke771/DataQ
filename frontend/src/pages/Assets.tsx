@@ -117,8 +117,6 @@ function AssetsTree({ assets, onOpen }: { assets: AssetSummary[]; onOpen: (id: s
     <Tree
       showLine
       showIcon
-      // `key` regenerates when the derived tree changes so the expand set re-seeds.
-      key={defaultExpandedKeys.length}
       defaultExpandedKeys={defaultExpandedKeys}
       treeData={treeData}
       selectedKeys={[]}
