@@ -1,0 +1,76 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "901edf4a45a6",
+  "session_id": "847a7528-ccc0-4f98-9741-a77d8e3a9692",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-12T01:12:11.388692Z",
+  "branch": "feature/comparison-check-schema",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/app/services/check_service.py",
+    "backend/app/services/connection_service.py",
+    "backend/tests/api/test_comparison_checks.py"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "035d49af560f",
+  "checkpoint_transcript_start": 869,
+  "transcript_lines_at_start": 869,
+  "compact_transcript_start": 240,
+  "token_usage": {
+    "input_tokens": 34,
+    "cache_creation_tokens": 20407,
+    "cache_read_tokens": 6276874,
+    "output_tokens": 11541,
+    "api_call_count": 17
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01ToDeVCJQsEF4hF1cUjpeT6",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "035d49af560f",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 174,
+        "end": 175,
+        "entry_ids": [
+          "5df1e1d1-6b51-4279-8da9-7ea60a75fe90"
+        ],
+        "tool_use_id": "toolu_01ToDeVCJQsEF4hF1cUjpeT6"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01ToDeVCJQsEF4hF1cUjpeT6"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 5
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-12T01:12:11.311718Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 53,
+    "human_modified": 23,
+    "human_removed": 0,
+    "total_committed": 53,
+    "total_lines_changed": 77,
+    "agent_percentage": 0,
+    "metric_version": 2
+  }
+}
