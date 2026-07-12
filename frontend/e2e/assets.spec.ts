@@ -1,20 +1,32 @@
 import { expect, test } from '@playwright/test';
 
-// The read-only Assets view (ADR 0034 gap G-d phase 2, #760). The demo seed
-// (backend/scripts/demo_data.py) lands TWO suites on the ANALYTICS.ORDERS table —
-// "Orders quality" and "Orders volume" — with the same run target, so they
-// resolve to ONE asset. The asset detail therefore renders health across ≥2
-// composing suites (the #760 acceptance criterion). Visibility is derived from
-// suite grants; the seed owner sees every suite.
+// The read-only Assets view (ADR 0034 gap G-d phase 2, #760; hierarchical browse
+// #802). The demo seed (backend/scripts/demo_data.py) lands TWO suites on the
+// ANALYTICS.PUBLIC.ORDERS table — "Orders quality" and "Orders volume" — with the
+// same run target, so they resolve to ONE asset. The asset detail therefore
+// renders health across ≥2 composing suites (the #760 acceptance criterion).
+// Visibility is derived from suite grants; the seed owner sees every suite.
 test.describe('Assets page', () => {
-  test('lists monitored assets and reaches the detail from the sidebar', async ({ page }) => {
+  test('drills the connection-rooted tree to an asset leaf and opens the detail', async ({
+    page,
+  }) => {
     await page.goto('/');
-    // The Assets nav item is a sidebar addition (phase 2 — not the phase-4
-    // navigation inversion; Suites stays primary).
     await page.getByRole('link', { name: 'Assets' }).click();
     await expect(page.getByRole('heading', { name: 'Assets', level: 3 })).toBeVisible();
 
-    // The seeded ORDERS asset appears (name = DB.SCHEMA.TABLE, upper-cased).
+    // Default lens = the connection-rooted drill-down (#802): the OL namespace is
+    // the datasource root, the table is a leaf under DB → schema.
+    await expect(page.getByText('By source')).toBeVisible();
+    const ordersLeaf = page.getByRole('treeitem', { name: /ORDERS/ });
+    await expect(ordersLeaf.first()).toBeVisible();
+    await ordersLeaf.first().click();
+    await expect(page).toHaveURL(/\/assets\/[0-9a-f-]+$/);
+  });
+
+  test('the "All assets" table lens still lists and opens assets', async ({ page }) => {
+    await page.goto('/assets');
+    await page.getByText('All assets').click();
+
     const ordersRow = page
       .locator('tr.ant-table-row')
       .filter({ hasText: 'ANALYTICS.PUBLIC.ORDERS' });
@@ -26,8 +38,7 @@ test.describe('Assets page', () => {
   test('renders health across ≥2 suites on the shared asset', async ({ page }) => {
     await page.goto('/assets');
     await page
-      .locator('tr.ant-table-row')
-      .filter({ hasText: 'ANALYTICS.PUBLIC.ORDERS' })
+      .getByRole('treeitem', { name: /ORDERS/ })
       .first()
       .click();
 
