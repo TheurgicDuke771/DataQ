@@ -336,8 +336,10 @@ def test_source_connection_delete_blocked_then_allowed(client: TestClient, db_se
     assert body["detail"]["total"] == 1
     assert body["detail"]["truncated"] is False
 
-    assert client.delete(f"/api/v1/suites/{sid}/checks/{cid}").status_code == 204
-    assert client.delete(f"/api/v1/connections/{source.id}").status_code == 204
+    delete_check = client.delete(f"/api/v1/suites/{sid}/checks/{cid}")
+    assert delete_check.status_code == 204
+    delete_connection = client.delete(f"/api/v1/connections/{source.id}")
+    assert delete_connection.status_code == 204
 
 
 # ───────────────────────── export / import round-trip ───────────────
