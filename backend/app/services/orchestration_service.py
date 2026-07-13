@@ -19,6 +19,7 @@ FastAPI-free by design (like `connection_service` / `run_service`): takes a
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
@@ -32,6 +33,7 @@ from backend.app.db.models import Connection, PipelineRun, Run, Suite, TriggerBi
 from backend.app.orchestration.base import OrchestrationProvider, RunUpdate
 from backend.app.orchestration.registry import get_orchestration_provider
 from backend.app.services import run_dispatch
+from backend.app.services.failure_classifier import classify_failure_reason
 
 log = get_logger(__name__)
 
@@ -528,3 +530,39 @@ def list_pipelines(
     pr = aliased(PipelineRun, sub)
     stmt = select(pr).order_by(func.coalesce(pr.started_at, pr.created_at).desc()).limit(limit)
     return list(session.scalars(stmt))
+
+
+# ─────────────────────────── poll health (#828) ────────────────────────────
+#
+# A poll that fails every 10 minutes used to be visible only in the logs. These two
+# functions make the outcome a fact about the connection, so the product can say "this
+# integration is broken" instead of rendering a clean empty state over a dead one.
+
+
+def record_poll_success(session: Session, *, connection: Connection) -> None:
+    """Mark a connection's poll healthy: clear the error, reset the failure streak."""
+    connection.last_polled_at = datetime.now(UTC)
+    connection.last_poll_error = None
+    connection.consecutive_poll_failures = 0
+    session.commit()
+
+
+def record_poll_failure(session: Session, *, connection_id: uuid.UUID, exc: BaseException) -> None:
+    """Record a failed poll against the connection and grow its failure streak.
+
+    Takes a ``connection_id`` rather than the ORM object on purpose: the caller has just
+    rolled the session back, so its `Connection` instance is detached/stale. Re-loading
+    inside a fresh transaction is the only safe way to read-modify-write here.
+
+    The stored reason is **classified**, never the raw exception text — a transport error
+    routinely carries the thing that failed to authenticate (a SAS query string, a DSN, a
+    bearer token). `classify_failure_reason` is the same redaction-safe path a failed run
+    uses (#605), so a leaked credential can't reach the API through this column.
+    """
+    connection = session.get(Connection, connection_id)
+    if connection is None:  # deleted mid-sweep — nothing to record against
+        return
+    connection.last_polled_at = datetime.now(UTC)
+    connection.last_poll_error = classify_failure_reason(exc)[:512]
+    connection.consecutive_poll_failures = (connection.consecutive_poll_failures or 0) + 1
+    session.commit()

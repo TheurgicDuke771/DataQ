@@ -55,6 +55,14 @@ class ConnectionRead(ApiModel):
     has_secret: bool
     created_by: uuid.UUID
 
+    # Poll health (#828) — orchestration connections only; NULL/0 elsewhere. A failing
+    # poll used to live purely in the logs, so a dead integration looked identical to a
+    # healthy-but-quiet one. `last_poll_error` is a CLASSIFIED reason, never raw
+    # exception text (which can carry a SAS/DSN/token).
+    last_polled_at: datetime | None = None
+    last_poll_error: str | None = None
+    consecutive_poll_failures: int = 0
+
     @classmethod
     def from_model(cls, conn: Connection) -> ConnectionRead:
         return cls(
@@ -68,6 +76,9 @@ class ConnectionRead(ApiModel):
             config=redact_config_uris(conn.config),
             has_secret=conn.secret_ref is not None,
             created_by=conn.created_by,
+            last_polled_at=conn.last_polled_at,
+            last_poll_error=conn.last_poll_error,
+            consecutive_poll_failures=conn.consecutive_poll_failures or 0,
         )
 
 

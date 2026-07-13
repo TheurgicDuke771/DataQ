@@ -86,6 +86,19 @@ export interface LineageEdge {
 }
 
 /** Asset detail — mirrors `AssetDetailRead`. */
+/** A lineage-feeding connection whose poll is currently failing (#828).
+ *  Non-empty ⇒ the lineage below may be stale or empty for reasons that have nothing
+ *  to do with this asset, so the UI must NOT render a clean "no lineage" empty state. */
+export interface LineageSourceHealth {
+  connection_id: string;
+  name: string;
+  type: string;
+  consecutive_failures: number;
+  /** A classified reason — never raw exception text. */
+  last_error: string | null;
+  last_polled_at: string | null;
+}
+
 export interface AssetDetail {
   summary: AssetSummary;
   suites: ComposingSuite[];
@@ -93,6 +106,7 @@ export interface AssetDetail {
   downstream: LineageNode[];
   /** The real edges among the neighbourhood, so the graph draws truth, not a guess. */
   lineage_edges: LineageEdge[];
+  failing_lineage_sources: LineageSourceHealth[];
 }
 
 /** Metadata mutation payload — mirrors `AssetMetadataUpdate` (admin-only). */
