@@ -5,20 +5,34 @@ guiding principle). This module aggregates, per asset, the suites that target it
 their latest run health + the lineage neighbourhood, for the `/assets` API.
 
 **Authz is derived, never granted (ADR 0034 decision 5 / ADR 0027).** An asset is
-visible iff the caller can `view` ≥1 suite mapped to it (`suites.asset_id`); the
-aggregation is filtered to *only* the suites the caller's grants cover; a
-workspace-admin sees every suite (`include_all`). An asset wholly outside the
-caller's grants is 404-no-leak (the API layer raises `AssetNotFoundError`). This
-reuses `suite_service.accessible_suite_ids` verbatim, so the visibility rule has a
-single source of truth and can never drift from the suites/runs surfaces.
+visible iff the caller can `view` ≥1 suite mapped to it (`suites.asset_id`) **or the
+asset has no suites at all**; the aggregation is filtered to *only* the suites the
+caller's grants cover; a workspace-admin sees every suite (`include_all`). An asset
+whose suites the caller can all not see is 404-no-leak (the API layer raises
+`AssetNotFoundError`). This reuses `suite_service.accessible_suite_ids` verbatim, so
+the visibility rule has a single source of truth and can never drift from the
+suites/runs surfaces.
+
+**The suite-less clause is an ADR 0034 amendment (#845/#846).** Redaction protects a
+*grant*; an asset nobody has granted is protected by nothing — a suite-less asset (a
+raw source table, an unmonitored mart, an asset whose last suite was deleted, its runs
+cascading with it per #540) has no runs, results or samples behind it. Withholding only
+its *name*, while the lineage graph reveals its existence anyway, bought nothing and
+cost a great deal: it made browse disagree with the detail endpoint about what exists,
+and it would have painted every raw upstream "🔒 Restricted" — which isn't restricted,
+it's merely unmonitored.
 
 Asset-metadata mutation (owner, description) is workspace-Admin-only — enforced at
 the API layer (`require_workspace_admin`), not here; `update_asset_metadata` is the
 plain persistence half.
 
-Lineage nodes are **not** authz-filtered: blast radius is the point (ADR 0034 §2),
-and a node exposes only its OpenLineage `(namespace, name)` + whether it is
-monitored — never run data or grants — so nothing sensitive leaks through it.
+**Lineage nodes ARE authz-filtered — but redacted, never dropped (#845).** The walk
+itself is unscoped, because blast radius is the point (ADR 0034 §2) and a table's
+consumers do not stop existing because you can't see them. A neighbour behind the grant
+boundary is therefore returned as an **anonymous** node (id + depth only; no name,
+namespace, env, or monitored flag) rather than named — a graph that named it would
+defeat the no-leak 404 one click earlier, which is precisely what it used to do — and
+rather than removed, since removing it would assert "nothing consumes this table".
 """
 
 from __future__ import annotations
@@ -146,14 +160,32 @@ class LineageNode:
     ``depth`` is the hop distance from the asset under view (1 = a direct
     neighbour), which is what lets the UI lay the graph out in columns (#805)
     instead of flattening every hop into one list.
+
+    **A neighbour outside the caller's grants is REDACTED, not omitted (#845).** The
+    lineage walk is not authz-scoped — it can't be, because the graph's job is blast
+    radius, and a table's real consumers do not stop existing because you can't see
+    them. But the asset endpoint 404s those assets *no-leak* (ADR 0034 decision 5), so
+    handing their ``name``/``namespace``/``env`` to a non-grantee through the graph
+    would defeat that guarantee one click earlier — and did.
+
+    So an inaccessible neighbour keeps only ``id`` (an opaque UUID; the edges need it
+    to draw the shape) and ``depth``: identity fields are ``None`` and ``is_monitored``
+    is forced ``False``. The user still learns that *something* is downstream — which
+    keeps the blast radius honest instead of asserting the confident falsehood
+    "nothing consumes this table" (the #828/#823 lesson: never fix a leak by shipping a
+    lie). What they don't learn is *what* it is.
+
+    Redaction is done **here, server-side**: a name that is hidden in CSS has still
+    crossed the wire.
     """
 
     id: uuid.UUID
-    namespace: str
-    name: str
+    namespace: str | None
+    name: str | None
     env: str | None
     is_monitored: bool
     depth: int = 1
+    is_accessible: bool = True
 
 
 @dataclass(frozen=True)
@@ -342,13 +374,26 @@ def list_visible_assets(
     partial-grant caller sees the asset but only the suites/runs they can view
     roll up into its health."""
     accessible = accessible_suite_ids(user_id, include_all=include_all)
-    visible_asset_ids = select(Suite.asset_id).where(
+    granted_asset_ids = select(Suite.asset_id).where(
         Suite.asset_id.is_not(None), Suite.id.in_(accessible)
     )
+    # Browse shows what actually exists: the assets whose suites you can view, PLUS the
+    # suite-less ones (#846 — same rule as `get_visible_asset` and the lineage graph).
+    #
+    # This was a real bug, not a nicety. The list was a plain `IN (SELECT suite.asset_id
+    # …)`, which silently dropped every suite-less asset — so a lineage-discovered table
+    # existed, was drawn in the graph, and (for an admin) opened fine, yet never appeared
+    # in browse. A schema visibly containing two assets listed one.
+    #
+    # `NOT IN` is only safe because the subquery excludes NULL `asset_id`: a single NULL
+    # makes `NOT IN` match *nothing*, which would silently empty browse instead of failing
+    # loudly.
+    all_targeted = select(Suite.asset_id).where(Suite.asset_id.is_not(None))
+    visible = Asset.id.in_(granted_asset_ids) | Asset.id.not_in(all_targeted)
     assets = list(
         session.scalars(
             select(Asset)
-            .where(Asset.id.in_(visible_asset_ids))
+            .where(visible)
             .order_by(Asset.namespace, Asset.name)
             .limit(limit)
             .offset(offset)
@@ -405,10 +450,19 @@ def get_visible_asset(
             .order_by(Suite.name)
         )
     )
-    # No-leak: for a non-admin, an unknown id and an id they can see no suite for
-    # both 404. An admin's visibility is workspace-wide (ADR 0027), so a suite-less
-    # asset is still returned (with an empty suites list) rather than hidden.
-    if asset is None or (not suites and not include_all):
+    # No-leak: an asset whose suites the caller can ALL not see is indistinguishable from
+    # one that doesn't exist. That is the grant boundary, and it stays closed.
+    #
+    # A **suite-less** asset is not behind that boundary (ADR 0034 amendment, #845/#846):
+    # no suites means no grant to withhold and nothing behind it — no runs, no results, no
+    # samples. It opens to an honest, empty page (identity + lineage, no health). Hiding it
+    # only produced the dead link that surfaced #845: the lineage graph must draw it (else
+    # the graph claims the table feeds nothing), and a node the graph draws must be a node
+    # the endpoint opens.
+    if asset is None:
+        raise AssetNotFoundError("asset not found", detail={"asset_id": str(asset_id)})
+    if not suites and not include_all and _monitored_ids(session, [asset_id]):
+        # It HAS suites — the caller simply can't view any of them. 404, no-leak.
         raise AssetNotFoundError("asset not found", detail={"asset_id": str(asset_id)})
 
     levels = effective_permissions(session, suites, user_id)
@@ -420,16 +474,35 @@ def get_visible_asset(
 
     summary = _roll_up(asset, composing)
     graph = lineage_neighbourhood(session, asset_id)
-    monitored = _monitored_ids(
-        session, [a.id for a, _ in graph.upstream] + [a.id for a, _ in graph.downstream]
+    neighbour_ids = [a.id for a, _ in graph.upstream] + [a.id for a, _ in graph.downstream]
+    # ONE lookup of "which of these assets has any suite" — it answers both questions
+    # below (is it monitored? could a grant even exist for it?), which are the same fact.
+    has_suite = _monitored_ids(session, neighbour_ids)
+    # The lineage walk is not authz-scoped (blast radius must stay true), so the caller's
+    # own visibility is applied HERE, at the boundary — a neighbour they hold no grant for
+    # is redacted to an anonymous node rather than handed over (#845).
+    accessible_assets = _accessible_asset_ids(
+        session,
+        neighbour_ids,
+        user_id=user_id,
+        include_all=include_all,
+        has_suite=has_suite,
     )
     return AssetDetail(
         summary=summary,
         suites=composing,
-        upstream=_lineage_nodes(graph.upstream, monitored),
-        downstream=_lineage_nodes(graph.downstream, monitored),
+        upstream=_lineage_nodes(graph.upstream, has_suite, accessible_assets),
+        downstream=_lineage_nodes(graph.downstream, has_suite, accessible_assets),
         lineage_edges=[LineageEdgeRef(source=u, target=d) for u, d in graph.edges],
-        failing_lineage_sources=failing_lineage_sources(session),
+        # Lineage-source health names ORCHESTRATION CONNECTIONS (name, type, classified
+        # poll error) — infrastructure information, not asset information. It is shown to
+        # a caller with a stake in this asset (≥1 suite on it) or an admin; a caller who
+        # merely reached a suite-less asset through browse has no stake and is not handed
+        # the workspace's connection inventory. Without this gate, the #846 visibility
+        # widening would have quietly widened an infra disclosure too (#848 review).
+        failing_lineage_sources=(
+            failing_lineage_sources(session) if (suites or include_all) else []
+        ),
     )
 
 
@@ -502,16 +575,83 @@ def _monitored_ids(session: Session, ids: list[uuid.UUID]) -> set[uuid.UUID]:
     }
 
 
-def _lineage_nodes(assets: list[tuple[Asset, int]], monitored: set[uuid.UUID]) -> list[LineageNode]:
-    """Map reachable lineage assets (+ their hop depth) to render-only nodes."""
+def _accessible_asset_ids(
+    session: Session,
+    ids: list[uuid.UUID],
+    *,
+    user_id: uuid.UUID,
+    include_all: bool,
+    has_suite: set[uuid.UUID],
+) -> set[uuid.UUID]:
+    """Of ``ids``, the assets the caller may see — the one visibility rule (#845).
+
+    An asset is visible when **either**:
+
+    - the caller can view ≥1 suite targeting it (ADR 0034 decision 5 — authz derived from
+      the suite ladder, never granted separately); **or**
+    - it has **no suites at all** (ADR 0034 amendment, #845/#846).
+
+    The second clause is the point, and it is not a loophole: redaction exists to protect
+    a *grant*, and an asset nobody has granted is protected by nothing. A suite-less asset
+    (a raw source table, a dbt mart nobody monitors yet, an asset whose last suite was
+    deleted — its runs/results cascade with it, #540) has no runs, no results and no
+    samples behind it. The only thing withheld was its **name** — which the lineage graph
+    reveals the existence of anyway.
+
+    Keeping those hidden forced a worse lie than the one #845 fixes: every raw upstream
+    would render "🔒 Restricted" to a non-admin, when it isn't restricted at all — it's
+    merely unmonitored. Lineage would be a wall of locked boxes.
+
+    So the only thing we withhold is an asset that someone *else* monitors and you may
+    not — exactly the grant boundary the no-leak 404 defends.
+
+    A workspace-admin (``include_all``) sees everything (ADR 0027).
+
+    ``has_suite`` is the caller-supplied "assets that ANY suite targets" set — the only
+    assets a grant could exist for. It is passed in rather than re-queried because the
+    caller has already computed it (it is the same set the ``is_monitored`` flag reads),
+    and querying it twice made the two derivations independent when they are in fact the
+    same fact about the same rows.
+    """
+    if not ids:
+        return set()
+    if include_all:
+        return set(ids)
+    granted = {
+        asset_id
+        for (asset_id,) in session.execute(
+            select(Suite.asset_id)
+            .where(Suite.asset_id.in_(ids), Suite.id.in_(accessible_suite_ids(user_id)))
+            .group_by(Suite.asset_id)
+        )
+    }
+    # The granted ones, plus the suite-less ones: an id absent from `has_suite` is
+    # targeted by no suite at all, so nothing is being kept from anyone.
+    return granted | (set(ids) - has_suite)
+
+
+def _lineage_nodes(
+    assets: list[tuple[Asset, int]],
+    monitored: set[uuid.UUID],
+    accessible: set[uuid.UUID],
+) -> list[LineageNode]:
+    """Map reachable lineage assets (+ their hop depth) to render-only nodes,
+    **redacting the ones outside the caller's grants** (#845 — see `LineageNode`).
+
+    A redacted node keeps its id (the edges reference it) and its depth, and nothing
+    else: no name, no namespace, no env, and ``is_monitored`` forced ``False`` rather
+    than reported — whether someone else monitors an asset you can't see is itself a
+    fact about that asset.
+    """
     return [
         LineageNode(
             id=a.id,
-            namespace=a.namespace,
-            name=a.name,
-            env=a.env,
-            is_monitored=a.id in monitored,
+            namespace=a.namespace if a.id in accessible else None,
+            name=a.name if a.id in accessible else None,
+            env=a.env if a.id in accessible else None,
+            is_monitored=a.id in monitored and a.id in accessible,
             depth=depth,
+            is_accessible=a.id in accessible,
         )
         for a, depth in assets
     ]

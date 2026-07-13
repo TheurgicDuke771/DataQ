@@ -68,11 +68,18 @@ export interface AssetSummary {
 /** A lineage neighbour — mirrors `LineageNodeRead`. Render-only (no run data). */
 export interface LineageNode {
   id: string;
-  namespace: string;
-  name: string;
+  /** Null when `is_accessible` is false: a neighbour outside your grants is redacted
+   *  server-side (#845), so its identity never crosses the wire. The node is still
+   *  present — dropping it would assert "nothing consumes this table", which is false. */
+  namespace: string | null;
+  name: string | null;
   env: string | null;
-  /** Whether the neighbour has ≥1 suite targeting it (a structural fact). */
+  /** Whether the neighbour has ≥1 suite targeting it (a structural fact). Always false
+   *  for a redacted node — whether someone else monitors an asset you cannot see is
+   *  itself a fact about that asset. */
   is_monitored: boolean;
+  /** False → a redacted placeholder: unnameable and not openable (#845). */
+  is_accessible: boolean;
   /** Hop distance from the asset under view (1 = a direct neighbour). Lets the
    *  graph lay nodes out in hop columns instead of flattening every hop (#805). */
   depth: number;

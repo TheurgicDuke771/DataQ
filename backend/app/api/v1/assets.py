@@ -110,11 +110,20 @@ class LineageNodeRead(ApiModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
-    namespace: str
-    name: str
+    # Nullable because a neighbour the caller holds no grant for is REDACTED, not
+    # omitted (#845): the graph still shows that something is downstream — dropping it
+    # would assert the falsehood "nothing consumes this table" — but its identity is
+    # withheld, because the asset endpoint 404s it no-leak (ADR 0034 decision 5) and a
+    # graph that names it would defeat that guarantee one click earlier.
+    namespace: str | None
+    name: str | None
     env: str | None
+    # False for a redacted node: whether someone else monitors an asset you cannot see
+    # is itself a fact about that asset.
     is_monitored: bool
     depth: int
+    # False → this node is a redacted placeholder: not nameable, not openable.
+    is_accessible: bool
 
 
 class LineageEdgeRead(ApiModel):

@@ -314,30 +314,101 @@ def test_summary_flags_failed_and_active_runs(client: TestClient, world: dict[st
     assert asset_y["has_failed_run"] is False
 
 
+def test_redacted_neighbour_identity_never_reaches_the_response_body(
+    client: TestClient, world: dict[str, Any]
+) -> None:
+    """The claim #845 makes is that a restricted neighbour's identity **never crosses the
+    wire** — so assert it at the wire, not at the DTO one layer above it.
+
+    `LineageNodeRead` is a separate Pydantic model from the service dataclass. If someone
+    later re-tightens `name: str` with an empty-string fallback, or a serializer starts
+    deriving a display name, the leak would ship with a fully green suite unless something
+    inspects the raw body. This does."""
+    db = client_db(client)
+    stranger = _user(db, "stranger2@example.com")
+    conn = _connection(db, stranger)
+    secret = _suite(db, stranger, conn, name="Secret mart", table="MART_SECRET_REVENUE")
+    assert secret.asset_id is not None
+    secret_asset = db.get(Asset, secret.asset_id)
+    db.add(
+        LineageEdge(
+            upstream_asset_id=world["asset_x"],
+            downstream_asset_id=secret.asset_id,
+            source="dbt",
+        )
+    )
+    db.commit()
+
+    _as(world["owner"])
+    resp = client.get(f"/api/v1/assets/{world['asset_x']}")
+    assert resp.status_code == 200
+
+    node = next(n for n in resp.json()["downstream"] if n["id"] == str(secret.asset_id))
+    assert node["is_accessible"] is False
+    assert node["name"] is None and node["namespace"] is None and node["env"] is None
+    assert node["is_monitored"] is False
+    # The raw body — the actual wire. The name must survive nowhere in it.
+    assert "MART_SECRET_REVENUE" not in resp.text
+    assert secret_asset is not None and secret_asset.name not in resp.text
+
+
+def test_asset_with_only_unshared_suites_is_404_and_unlisted(
+    client: TestClient, world: dict[str, Any]
+) -> None:
+    """The grant boundary that DOES stay closed (#845/#846).
+
+    Relaxing the suite-less rule must not relax this one: an asset that someone *else*
+    monitors, whose suites the caller cannot view, is still 404-no-leak and still absent
+    from browse. That is the boundary the lineage graph redacts around — the two rules
+    are one rule, and if they ever disagree the graph offers a dead link again."""
+    db = client_db(client)
+    stranger = _user(db, "stranger@example.com")
+    conn = _connection(db, stranger)
+    secret_suite = _suite(db, stranger, conn, name="Secret revenue", table="MART_REVENUE")
+    assert secret_suite.asset_id is not None
+
+    _as(world["owner"])
+    listed = {a["id"] for a in client.get("/api/v1/assets").json()}
+    assert str(secret_suite.asset_id) not in listed
+    assert client.get(f"/api/v1/assets/{secret_suite.asset_id}").status_code == 404
+
+
 def test_orphan_asset_after_composing_suite_deleted(
     client: TestClient, world: dict[str, Any], make_workspace_admin: Any
 ) -> None:
-    """Deleting an asset's only composing suite (after it ran) orphans the asset:
-    non-admins lose it everywhere (list + 404 detail); a workspace-admin still
-    reaches the detail, with an empty suites list (finding: admin orphan access)."""
+    """Deleting an asset's only composing suite (after it ran) orphans the asset. It stays
+    visible — to **everyone**, not just admins (ADR 0034 amendment, #845/#846) — with an
+    empty suites list and no health.
+
+    This reverses the earlier rule (orphans hidden from non-admins), deliberately. A
+    suite-less asset has no suites, runs, results or samples behind it — the delete
+    cascaded all of it (#540) — so there is no grant to protect and nothing to leak but
+    the *name*, which the lineage graph reveals the existence of regardless. Hiding it
+    bought no security and cost real correctness: browse and the detail endpoint
+    disagreed about what existed, and every unmonitored upstream in a lineage graph would
+    have rendered "restricted" to a non-admin when it is nothing of the sort.
+
+    The grant boundary that *does* stay closed is an asset with suites the caller cannot
+    view — see `test_asset_with_only_unshared_suites_is_404_and_unlisted`."""
     db = client_db(client)
     _seed_run(db, world["s3"], status="pass")  # the suite has run history
     suite_service.delete_suite(db, world["s3"].id)  # cascades runs/results (#540)
 
     _as(world["owner"])
     listed = {a["id"] for a in client.get("/api/v1/assets").json()}
-    assert str(world["asset_y"]) not in listed
-    assert client.get(f"/api/v1/assets/{world['asset_y']}").status_code == 404
-
-    admin = _user(db, _ADMIN_EMAIL)
-    make_workspace_admin(_ADMIN_EMAIL)
-    _as(admin)
+    assert str(world["asset_y"]) in listed  # browse shows what exists
     resp = client.get(f"/api/v1/assets/{world['asset_y']}")
     assert resp.status_code == 200
     body = resp.json()
     assert body["suites"] == []
     assert body["summary"]["suite_count"] == 0
     assert body["summary"]["last_run_at"] is None  # run history died with the suite
+
+    admin = _user(db, _ADMIN_EMAIL)
+    make_workspace_admin(_ADMIN_EMAIL)
+    _as(admin)
+    admin_body = client.get(f"/api/v1/assets/{world['asset_y']}").json()
+    assert admin_body["suites"] == []
 
 
 # ── lineage in detail ────────────────────────────────────────────────────────

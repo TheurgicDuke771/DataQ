@@ -21,6 +21,7 @@ function node(id: string, depth: number, over: Partial<LineageNode> = {}): Linea
     name: `DB.S.${id.toUpperCase()}`,
     env: 'dev',
     is_monitored: false,
+    is_accessible: true,
     depth,
     ...over,
   };
