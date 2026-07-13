@@ -15,8 +15,8 @@ from urllib.parse import urlparse
 import httpx
 from sqlalchemy.orm import Session
 
-from backend.app.alerting.base import RunReport
-from backend.app.alerting.card import render_teams_message
+from backend.app.alerting.base import ConnectionHealthReport, RunReport
+from backend.app.alerting.card import render_teams_health_message, render_teams_message
 from backend.app.alerting.routing import route_for
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
@@ -62,14 +62,7 @@ class TeamsPublisher:
         )
         if not webhook:
             return
-        # SSRF guard at the request sink: the webhook is user-supplied, so only
-        # post to an https URL on an allowlisted host. upsert validates on write;
-        # this re-checks at send time (rotated/workspace secrets, defence in depth).
-        host = (urlparse(webhook).hostname or "").lower()
-        if not any(
-            host == allowed or host.endswith(f".{allowed}")
-            for allowed in notification_service.allowed_webhook_hosts()
-        ):
+        if not _webhook_allowed(webhook):
             log.warning("teams_webhook_host_not_allowed", run_id=str(report.run_id))
             return
         response = httpx.post(
@@ -84,3 +77,51 @@ class TeamsPublisher:
             urgency=route.urgency,
             failed_checks=report.failed_checks,
         )
+
+    def publish_health(self, session: Session, report: ConnectionHealthReport) -> None:
+        """Post a connection poll-health edge to the **workspace** webhook (#837).
+
+        No per-suite config applies (a connection has no suite), so this resolves the
+        workspace webhook only — `resolve_webhook(None, …)` is exactly that fallback.
+        Whether to alert was already decided at the threshold crossing; here we just
+        deliver. Quiet no-op when no workspace webhook is configured.
+        """
+        webhook = notification_service.resolve_webhook(
+            None,
+            secret_store=self._secret_store,
+            workspace_secret_name=self._workspace_secret_name,
+        )
+        if not webhook:
+            return
+        if not _webhook_allowed(webhook):
+            log.warning("teams_webhook_host_not_allowed", connection_id=str(report.connection_id))
+            return
+        response = httpx.post(
+            webhook, json=render_teams_health_message(report), timeout=self._timeout
+        )
+        response.raise_for_status()
+        log.info(
+            "teams_health_alert_sent",
+            connection_id=str(report.connection_id),
+            state=report.state,
+            consecutive_failures=report.consecutive_failures,
+        )
+
+
+def _webhook_allowed(webhook: str) -> bool:
+    """SSRF guard at the request sink: the webhook is user-supplied, so only post to an
+    **https** URL on an allowlisted host. upsert validates on write; this re-checks at
+    send time (rotated / workspace secrets — defence in depth), and is shared by the run +
+    health paths so the two can't drift apart on which hosts are reachable.
+
+    The scheme check matters for the WORKSPACE webhook in particular: it is never
+    write-validated (only per-suite webhooks are), so an `http://` value would otherwise
+    ship the alert — connection name, failure reason, observed-vs-expected data — in
+    cleartext. Same reasoning as the Slack publisher (#639 review); the two guards now
+    agree."""
+    parsed = urlparse(webhook)
+    host = (parsed.hostname or "").lower()
+    return parsed.scheme == "https" and any(
+        host == allowed or host.endswith(f".{allowed}")
+        for allowed in notification_service.allowed_webhook_hosts()
+    )

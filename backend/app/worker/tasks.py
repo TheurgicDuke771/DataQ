@@ -22,6 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.alerting import dispatch as alert_dispatch
+from backend.app.alerting.base import HEALTH_FAILING, HEALTH_RECOVERED
 from backend.app.core.config import get_settings
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
@@ -313,6 +314,42 @@ def auto_classify_columns(suite_id: str) -> str:
         session.close()
 
 
+def _alert_poll_health(
+    session: Session, *, connection_id: uuid.UUID, streak: int, recovered: bool
+) -> None:
+    """Push a poll-health alert on a **transition**, and only on a transition (#837).
+
+    The failure edge fires when the streak *equals* the threshold — not when it exceeds
+    it. That `==` is the whole design: a connection whose credential expired keeps
+    failing every 10 minutes forever, and alerting on `>=` would send 144 notifications
+    a day until someone muted the channel — which is how you end up back at #828, blind
+    to a real outage because the alert that would have told you is in a mute rule.
+
+    The recovery edge fires only when the streak we just cleared had reached the
+    threshold, i.e. only when we actually alerted on the way down — so a connection that
+    blipped once and recovered stays silent in both directions.
+
+    Threshold changes take effect on the next streak: a connection already past a
+    newly-lowered threshold won't retro-fire (it never lands on `==` again).
+
+    Never raises — `publish_connection_health` swallows its own failures, and a
+    notification problem must not break the polling sweep.
+    """
+    threshold = get_settings().orchestration_poll_failure_alert_threshold
+    if threshold <= 0:  # push disabled; #828's in-app health signals still stand
+        return
+    if recovered:
+        if streak >= threshold:
+            alert_dispatch.publish_connection_health(
+                session, connection_id=connection_id, state=HEALTH_RECOVERED
+            )
+        return
+    if streak == threshold:
+        alert_dispatch.publish_connection_health(
+            session, connection_id=connection_id, state=HEALTH_FAILING
+        )
+
+
 def _poll_orchestration_runs(
     session: Session,
     *,
@@ -377,7 +414,9 @@ def _poll_orchestration_runs(
             summary["recorded"] += len(result.pipeline_runs)
             summary["triggered"] += len(result.triggered_runs)
             summary["skipped"] += result.skipped
-            orchestration_service.record_poll_success(session, connection=connection)
+            recovered_from = orchestration_service.record_poll_success(
+                session, connection=connection
+            )
         except Exception as exc:
             summary["errors"] += 1
             session.rollback()
@@ -392,8 +431,11 @@ def _poll_orchestration_runs(
             # the rollback above, on a clean session, and is itself fail-soft — a
             # bookkeeping error must never take down the sweep it is reporting on.
             try:
-                orchestration_service.record_poll_failure(
+                streak = orchestration_service.record_poll_failure(
                     session, connection_id=connection.id, exc=exc
+                )
+                _alert_poll_health(
+                    session, connection_id=connection.id, streak=streak, recovered=False
                 )
             except Exception:
                 session.rollback()
@@ -401,6 +443,15 @@ def _poll_orchestration_runs(
                     "orchestration_poll_health_write_failed",
                     connection_id=str(connection.id),
                 )
+        else:
+            # The recovery alert lives OUT of the try above, deliberately. Inside it, any
+            # raise on the notification path would land in the `except` — which records a
+            # poll FAILURE — so a connection that had just polled *successfully* would be
+            # marked failing, corrupting the very streak the alert keys on. The publish is
+            # already fail-soft; this makes it structurally impossible for it to matter.
+            _alert_poll_health(
+                session, connection_id=connection.id, streak=recovered_from, recovered=True
+            )
     log.info("orchestration_poll_completed", **summary)
     return summary
 

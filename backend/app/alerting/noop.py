@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from backend.app.alerting.base import RunReport
+from backend.app.alerting.base import ConnectionHealthReport, RunReport
 from backend.app.core.logging import get_logger
 
 if TYPE_CHECKING:
@@ -28,4 +28,12 @@ class NoopPublisher:
             suite=report.suite_name,
             run_status=report.run_status,
             worst_severity=report.worst_severity,
+        )
+
+    def publish_health(self, session: Session, report: ConnectionHealthReport) -> None:
+        log.debug(
+            "health_publish_noop",
+            connection_id=str(report.connection_id),
+            state=report.state,
+            consecutive_failures=report.consecutive_failures,
         )

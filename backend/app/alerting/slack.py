@@ -18,7 +18,7 @@ import httpx
 from sqlalchemy.orm import Session
 
 from backend.app.alerting import render
-from backend.app.alerting.base import CheckReport, RunReport
+from backend.app.alerting.base import CheckReport, ConnectionHealthReport, RunReport
 from backend.app.alerting.routing import CRITICAL, Route, route_for
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
@@ -107,6 +107,42 @@ def render_slack_message(report: RunReport, route: Route) -> dict[str, object]:
     return {"text": headline, "blocks": blocks}
 
 
+def render_slack_health_message(report: ConnectionHealthReport) -> dict[str, object]:
+    """The Slack payload for a connection poll-health edge (#837).
+
+    Pure, and reads only the report's **classified** ``reason`` — the raw exception it
+    was derived from routinely carries the credential that failed to authenticate, and
+    must never reach a webhook.
+    """
+    headline = render.health_headline(report)
+    emoji = ":rotating_light:" if report.is_failing else ":white_check_mark:"
+    blocks: list[dict[str, object]] = [
+        {"type": "header", "text": {"type": "plain_text", "text": f"{emoji} {headline}"[:150]}},
+        {
+            "type": "section",
+            "fields": [
+                {"type": "mrkdwn", "text": f"*{label}:*\n{value}"}
+                for label, value in render.health_facts(report)
+            ],
+        },
+        {"type": "section", "text": {"type": "mrkdwn", "text": render.health_impact(report)}},
+    ]
+    if report.connection_url:
+        blocks.append(
+            {
+                "type": "actions",
+                "elements": [
+                    {
+                        "type": "button",
+                        "text": {"type": "plain_text", "text": "View connection"},
+                        "url": report.connection_url,
+                    }
+                ],
+            }
+        )
+    return {"text": headline, "blocks": blocks}
+
+
 def _check_line(check: CheckReport) -> str:
     """One failing check as a Slack mrkdwn bullet: name · status · expected-vs-
     observed · redacted sample (via the shared :mod:`render` formatter)."""
@@ -153,15 +189,7 @@ class SlackPublisher:
         )
         if not webhook:
             return
-        # SSRF guard at the request sink: only POST to an https URL on an
-        # allowlisted Slack host. The scheme check matters for the WORKSPACE webhook
-        # too — it's never write-validated (only per-suite webhooks are), so an
-        # http:// workspace URL would otherwise be POSTed in cleartext (#639 review).
-        parsed = urlparse(webhook)
-        host = (parsed.hostname or "").lower()
-        if parsed.scheme != "https" or not any(
-            host == a or host.endswith(f".{a}") for a in self._allowed_hosts
-        ):
+        if not self._webhook_allowed(webhook):
             log.warning("slack_webhook_not_allowed", run_id=str(report.run_id))
             return
         response = httpx.post(
@@ -175,4 +203,45 @@ class SlackPublisher:
             worst_severity=report.worst_severity,
             urgency=route.urgency,
             failed_checks=report.failed_checks,
+        )
+
+    def publish_health(self, session: Session, report: ConnectionHealthReport) -> None:
+        """Post a connection poll-health edge to the **workspace** Slack webhook (#837).
+
+        A connection has no suite, so no per-suite config or threshold applies — this
+        resolves the workspace webhook only (`resolve_slack_webhook(None, …)`), and the
+        send decision was already made at the threshold crossing. Quiet no-op when Slack
+        is unconfigured.
+        """
+        webhook = notification_service.resolve_slack_webhook(
+            None,
+            secret_store=self._secret_store,
+            workspace_secret_name=self._webhook_secret_name,
+        )
+        if not webhook:
+            return
+        if not self._webhook_allowed(webhook):
+            log.warning("slack_webhook_not_allowed", connection_id=str(report.connection_id))
+            return
+        response = httpx.post(
+            webhook, json=render_slack_health_message(report), timeout=self._timeout
+        )
+        response.raise_for_status()
+        log.info(
+            "slack_health_alert_sent",
+            connection_id=str(report.connection_id),
+            state=report.state,
+            consecutive_failures=report.consecutive_failures,
+        )
+
+    def _webhook_allowed(self, webhook: str) -> bool:
+        """SSRF guard at the request sink: only POST to an https URL on an allowlisted
+        Slack host. The scheme check matters for the WORKSPACE webhook too — it's never
+        write-validated (only per-suite webhooks are), so an http:// workspace URL would
+        otherwise be POSTed in cleartext (#639 review). Shared by the run + health paths
+        so neither can be hardened without the other."""
+        parsed = urlparse(webhook)
+        host = (parsed.hostname or "").lower()
+        return parsed.scheme == "https" and any(
+            host == a or host.endswith(f".{a}") for a in self._allowed_hosts
         )

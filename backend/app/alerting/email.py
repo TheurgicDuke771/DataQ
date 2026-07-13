@@ -18,7 +18,7 @@ from email.message import EmailMessage
 from sqlalchemy.orm import Session
 
 from backend.app.alerting import render
-from backend.app.alerting.base import CheckReport, RunReport
+from backend.app.alerting.base import CheckReport, ConnectionHealthReport, RunReport
 from backend.app.alerting.routing import route_for
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretNotFoundError, SecretStore
@@ -28,6 +28,10 @@ log = get_logger(__name__)
 
 _SMTP_TIMEOUT_SECONDS = 15.0
 _MAX_CHECK_LINES = 20
+
+# Inline table-cell style, shared by the run + connection-health bodies (email clients
+# strip <style> blocks, so it has to be inline on every cell).
+_TD = "padding:6px 10px;border-bottom:1px solid #eee;font-size:13px;vertical-align:top;"
 
 
 def render_subject(report: RunReport) -> str:
@@ -80,7 +84,7 @@ def render_html_body(report: RunReport) -> str:
         "padding:6px 10px;text-align:left;border-bottom:2px solid #d1d5db;"
         "font-size:13px;color:#374151;"
     )
-    td = "padding:6px 10px;border-bottom:1px solid #eee;font-size:13px;vertical-align:top;"
+    td = _TD
     label_td = f"{td}color:#6b7280;white-space:nowrap;"
 
     # Run-details table: base facts + shared run metadata (owner/env/trigger/…),
@@ -136,6 +140,47 @@ def render_html_body(report: RunReport) -> str:
         f"<div style='font-family:system-ui,Arial,sans-serif;'>"
         f"<h2 style='color:{colour};margin:0 0 4px;'>{_esc(render_subject(report))}</h2>"
         f"{details}{checks_table}{incidents_block}{button}</div>"
+    )
+
+
+def render_health_subject(report: ConnectionHealthReport) -> str:
+    """Subject line for a connection poll-health edge (#837)."""
+    return f"[DataQ] {render.health_headline(report).removeprefix('DataQ — ')}"
+
+
+def render_health_text_body(report: ConnectionHealthReport) -> str:
+    """Plain-text body for a connection poll-health edge.
+
+    Reads only the report's **classified** ``reason``; the raw exception (which can
+    carry a SAS/DSN/token) never reaches the mailer.
+    """
+    lines = [render.health_headline(report), ""]
+    lines.extend(f"{label}: {value}" for label, value in render.health_facts(report))
+    lines += ["", render.health_impact(report)]
+    if report.connection_url:
+        lines.append(f"View connection: {report.connection_url}")
+    return "\n".join(lines)
+
+
+def render_health_html_body(report: ConnectionHealthReport) -> str:
+    """Minimal HTML body for a connection poll-health edge (same table style as a run)."""
+    colour = "#dc2626" if report.is_failing else "#16a34a"
+    rows = "".join(
+        f"<tr><td style='{_TD};font-weight:600;'>{_esc(label)}</td>"
+        f"<td style='{_TD}'>{_esc(value)}</td></tr>"
+        for label, value in render.health_facts(report)
+    )
+    button = (
+        f"<p style='margin:16px 0 0;'><a href='{_esc(report.connection_url)}' "
+        f"style='color:#2563eb;'>View connection →</a></p>"
+        if report.connection_url
+        else ""
+    )
+    return (
+        f"<div style='font-family:system-ui,Arial,sans-serif;'>"
+        f"<h2 style='color:{colour};margin:0 0 4px;'>{_esc(render.health_headline(report))}</h2>"
+        f"<p style='margin:0 0 12px;color:#4b5563;'>{_esc(render.health_impact(report))}</p>"
+        f"<table style='border-collapse:collapse;'>{rows}</table>{button}</div>"
     )
 
 
@@ -206,18 +251,13 @@ class EmailPublisher:
             log.warning("email_password_unresolved", secret_name=self._password_secret_name)
             return
 
-        message = EmailMessage()
-        message["Subject"] = render_subject(report)
-        message["From"] = self._sender
-        message["To"] = ", ".join(recipients)
-        message.set_content(render_text_body(report))
-        message.add_alternative(render_html_body(report), subtype="html")
-
-        context = ssl.create_default_context()
-        with smtplib.SMTP(self._smtp_host, self._smtp_port, timeout=self._timeout) as server:
-            server.starttls(context=context)
-            server.login(self._username, password)
-            server.send_message(message)
+        message = self._message(
+            subject=render_subject(report),
+            recipients=recipients,
+            text=render_text_body(report),
+            html=render_html_body(report),
+        )
+        self._send(message, password=password)
         log.info(
             "email_alert_sent",
             run_id=str(report.run_id),
@@ -225,3 +265,56 @@ class EmailPublisher:
             recipients=len(recipients),
             worst_severity=report.worst_severity,
         )
+
+    def publish_health(self, session: Session, report: ConnectionHealthReport) -> None:
+        """Email a connection poll-health edge to the **workspace** recipients (#837).
+
+        A connection has no suite, so there is no per-suite recipient override to
+        resolve — this goes to ``EMAIL_TO``. Quiet no-op when the SMTP transport or the
+        workspace recipient list is unconfigured.
+        """
+        if not (self._username and self._password_secret_name and self._sender):
+            return
+        if not self._recipients:
+            return
+        try:
+            password = self._secret_store.get(self._password_secret_name)
+        except SecretNotFoundError:
+            log.warning("email_password_unresolved", secret_name=self._password_secret_name)
+            return
+        message = self._message(
+            subject=render_health_subject(report),
+            recipients=self._recipients,
+            text=render_health_text_body(report),
+            html=render_health_html_body(report),
+        )
+        self._send(message, password=password)
+        log.info(
+            "email_health_alert_sent",
+            connection_id=str(report.connection_id),
+            state=report.state,
+            recipients=len(self._recipients),
+        )
+
+    def _message(
+        self, *, subject: str, recipients: tuple[str, ...], text: str, html: str
+    ) -> EmailMessage:
+        """A multipart text+HTML message from this publisher's sender to ``recipients``."""
+        message = EmailMessage()
+        message["Subject"] = subject
+        message["From"] = self._sender
+        message["To"] = ", ".join(recipients)
+        message.set_content(text)
+        message.add_alternative(html, subtype="html")
+        return message
+
+    def _send(self, message: EmailMessage, *, password: str) -> None:
+        """SMTP submission over STARTTLS. Shared by the run + health paths so the
+        transport (and its TLS context) is implemented exactly once — a security
+        property that must not be able to differ between two copies of it."""
+        context = ssl.create_default_context()
+        with smtplib.SMTP(self._smtp_host, self._smtp_port, timeout=self._timeout) as server:
+            server.starttls(context=context)
+            # mypy: guarded by the transport check in both callers.
+            server.login(self._username or "", password)
+            server.send_message(message)

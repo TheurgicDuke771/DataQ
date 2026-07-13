@@ -39,6 +39,14 @@ Portability, auto-monitors, and polish on top of v1:
 - **Mobile** — the sidebar becomes an overlay drawer on a narrow viewport, and the share /
   edit panels reflow so their controls stay on screen (previously the "Add" button in the
   share drawer was painted off the right edge, making a suite unshareable from a phone).
+- **A broken orchestration poll now tells you** — an expired credential silently stopped
+  pipeline-run ingest, suite triggering, and lineage refresh for six days in our own
+  production. A failing poll is now a fact about the connection: the connections list badges
+  it with a failure count, the lineage panel warns instead of showing a confident empty
+  graph, and after 3 consecutive failures an alert is pushed to the workspace channel — once
+  on the way down and once on recovery, never once per poll. The reason is always the
+  **classified** one, never raw error text (the real failure carried a SAS token in its
+  message).
 
 ### Fixed
 

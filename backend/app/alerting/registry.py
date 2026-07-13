@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import threading
 
-from backend.app.alerting.base import ResultPublisher
+from backend.app.alerting.base import AlertPublisher, HealthPublisher, ResultPublisher
 from backend.app.alerting.composite import CompositePublisher
 from backend.app.alerting.email import EmailPublisher
 from backend.app.alerting.slack import SlackPublisher
@@ -26,7 +26,7 @@ from backend.app.core.secrets import get_secret_store
 
 log = get_logger(__name__)
 
-_publisher_singleton: ResultPublisher | None = None
+_publisher_singleton: AlertPublisher | None = None
 _publisher_lock = threading.Lock()
 
 
@@ -35,7 +35,7 @@ def _split_csv(raw: str) -> tuple[str, ...]:
     return tuple(part.strip() for part in raw.split(",") if part.strip())
 
 
-def _build_publisher() -> ResultPublisher:
+def _build_publisher() -> AlertPublisher:
     """A composite over every channel (Teams · Slack · email). Each child resolves
     its secret + per-suite policy per run (so rotation is picked up) and stays a
     quiet no-op until configured; the registry only wires the store + names, never
@@ -66,8 +66,9 @@ def _build_publisher() -> ResultPublisher:
     )
 
 
-def get_result_publisher() -> ResultPublisher:
-    """Return the configured publisher (built once, then cached)."""
+def _get_publisher() -> AlertPublisher:
+    """The cached composite (built once). Both seams below are views onto this one
+    object — the channels and their secrets are identical, only the DTO differs."""
     global _publisher_singleton
     if _publisher_singleton is not None:
         return _publisher_singleton
@@ -76,6 +77,17 @@ def get_result_publisher() -> ResultPublisher:
             _publisher_singleton = _build_publisher()
             log.info("result_publisher_initialized", impl=type(_publisher_singleton).__name__)
         return _publisher_singleton
+
+
+def get_result_publisher() -> ResultPublisher:
+    """Return the configured run-outcome publisher (built once, then cached)."""
+    return _get_publisher()
+
+
+def get_health_publisher() -> HealthPublisher:
+    """Return the configured connection-health publisher (#837) — the same cached
+    composite, viewed through the health seam."""
+    return _get_publisher()
 
 
 def reset_result_publisher_cache() -> None:

@@ -208,6 +208,16 @@ class Settings(BaseSettings):
     email_to: str = ""  # comma-separated recipients; empty → no email alerting
     email_password_secret_name: str | None = None
 
+    # ── Connection poll-health alerting (#837) ───────────────────────────────
+    # How many CONSECUTIVE failed orchestration polls a connection may rack up
+    # before DataQ pushes an alert. At the 10-minute poll cadence the default (3)
+    # means ~30 minutes of a genuinely dead poll, which rides out the transient
+    # blips (a 502, a restarting orchestrator) that would otherwise cry wolf. The
+    # alert fires on the CROSSING only, so a connection dead for a week alerts once,
+    # not 1,008 times. 0 disables the push entirely (the connection-health badge and
+    # the lineage warning from #828 remain either way).
+    orchestration_poll_failure_alert_threshold: int = 3
+
     # ── Snowflake probe (Week 1 exit-gate endpoint) ──────────────────────────
     # Config for the single seeded dev Snowflake connection the probe runs
     # against. All optional: when unset the probe still creates + dispatches a

@@ -131,6 +131,10 @@ Delivered when a run breaches its threshold ([Notifications & alerting](notifica
 - **Dedup** — you hear about a breakage once (and again on escalation); a clean run resets.
 - **Snooze** — silence a known-broken check for N hours (history + re-fire preserved).
 - **Per-suite config** — channels + threshold + recipients set per suite.
+- **Connection poll-health alerts** — when an orchestration connection's poll keeps failing
+  (an expired credential, a moved orchestrator), DataQ stops ingesting pipeline runs and
+  firing the suites bound to them. After 3 consecutive failures it alerts — once on the way
+  down, once on recovery — with the classified reason.
 
 ## Data protection
 

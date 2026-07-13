@@ -83,18 +83,22 @@ bypass the inference entirely.
 
 #### When lineage is empty — check the poll before you check the graph
 
-An empty lineage graph and a **broken lineage pipeline look identical in the UI**. Today the
-asset simply says "No lineage recorded", whether that is the truth or whether DataQ has been
-unable to read your artifacts for a week. Two things follow, both learned the hard way in
-production (see [#828](https://github.com/TheurgicDuke771/DataQ/issues/828)):
+An empty lineage graph and a broken lineage pipeline once **looked identical in the UI** — the
+asset said "No lineage recorded" whether that was the truth or whether DataQ had been unable to
+read your artifacts for a week. That is fixed ([#828](https://github.com/TheurgicDuke771/DataQ/issues/828),
+[#837](https://github.com/TheurgicDuke771/DataQ/issues/837)), but the underlying failure mode is
+worth understanding, because it is quiet by nature.
 
-**1. The artifacts-store credential is a silent single point of failure.** The dbt connection's
-secret is the read credential for the artifacts store (an ADLS SAS, an S3 secret key). When it
-expires, every poll fails with an auth error, DataQ stops reading `manifest.json`, and **nothing
-in the UI says so** — the dbt builds keep succeeding and keep publishing artifacts that are never
-consumed. Prefer a long-lived credential, diary its expiry, and if lineage looks wrong, **test
-the dbt connection first** (`Connections → the dbt connection → Test`): a red test is your answer.
-Poll failures are logged as `orchestration_poll_failed` with `provider=dbt`.
+**1. The artifacts-store credential is a single point of failure — now a *visible* one.** The dbt
+connection's secret is the read credential for the artifacts store (an ADLS SAS, an S3 secret
+key). When it expires, every poll fails with an auth error and DataQ stops reading
+`manifest.json` — while the dbt builds keep succeeding and keep publishing artifacts nobody
+consumes. DataQ now says so in three places: the **connections list badges** the failing poll with
+its consecutive-failure count, the **lineage panel warns** instead of showing a confident empty
+graph, and after 3 consecutive failures (~30 min) an **alert is pushed** to your workspace channel
+(see [notifications](notifications.md#connection-poll-health-alerts)). Poll failures are also
+logged as `orchestration_poll_failed` with `provider=dbt`. If lineage still looks wrong, **test
+the dbt connection** (`Connections → the dbt connection → Test`): a red test is your answer.
 
 **2. Fixing the credential is not enough — the backlog is already stranded.** The poll only
 records builds whose `generated_at` falls inside its **15-minute lookback**. Once the credential

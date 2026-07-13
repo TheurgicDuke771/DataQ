@@ -14,10 +14,11 @@ import uuid
 from sqlalchemy.orm import Session
 
 from backend.app.alerting import dedup, registry, suppression
-from backend.app.alerting.builder import build_run_report
+from backend.app.alerting.base import HealthState
+from backend.app.alerting.builder import build_connection_health_report, build_run_report
 from backend.app.alerting.routing import ALWAYS
 from backend.app.core.logging import get_logger
-from backend.app.db.models import Run
+from backend.app.db.models import Connection, Run
 from backend.app.services import notification_service
 
 log = get_logger(__name__)
@@ -58,4 +59,31 @@ def publish_run_outcome(session: Session, *, run_id: uuid.UUID) -> bool:
         return True
     except Exception:
         log.exception("result_publish_failed", run_id=str(run_id))
+        return False
+
+
+def publish_connection_health(
+    session: Session, *, connection_id: uuid.UUID, state: HealthState
+) -> bool:
+    """Publish a connection's poll-health **edge** (#837) — it started failing, or it
+    recovered.
+
+    Best-effort and never raises, exactly like :func:`publish_run_outcome`: the health
+    is already persisted, and a broken notification channel must not take down the
+    polling sweep that is reporting on it.
+
+    No dedup/snooze layer here, by design. Those exist on the run path because a
+    scheduled suite re-alerts on every run; this is dispatched only on a *transition*
+    (the crossing, and the recovery), so a dead connection alerts once — not 144 times a
+    day until someone mutes it, which would recreate the very invisibility #828 fixed.
+    """
+    try:
+        connection = session.get(Connection, connection_id)
+        if connection is None:  # deleted between the poll and the alert
+            return False
+        report = build_connection_health_report(connection, state=state)
+        registry.get_health_publisher().publish_health(session, report)
+        return True
+    except Exception:
+        log.exception("connection_health_publish_failed", connection_id=str(connection_id))
         return False

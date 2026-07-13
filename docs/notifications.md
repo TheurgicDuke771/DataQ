@@ -54,6 +54,37 @@ known upstream incident). A run alerts only if at least one **un-snoozed** check
 failing; when every failing check is snoozed, the alert is suppressed. Snoozes expire
 automatically.
 
+## Connection poll-health alerts
+
+Run alerts tell you a **check** broke. This one tells you the **pipe** broke.
+
+An orchestration connection (ADF / Airflow / dbt) is polled every 10 minutes. When that
+poll starts failing — an expired credential, a revoked token, an orchestrator that moved
+— DataQ stops ingesting pipeline runs, stops firing the suites bound to them, and stops
+refreshing any lineage the connection feeds. Nothing is *failing*; things are simply not
+*happening*, which is far easier to miss. Prod lineage was dark for six days on exactly
+this ([#828](https://github.com/TheurgicDuke771/DataQ/issues/828)).
+
+So after **3 consecutive failed polls** (~30 minutes — enough to ride out a restarting
+orchestrator or a transient 502), DataQ pushes an alert through the same channels as run
+alerts, carrying the connection, the classified reason, and how long it has been down.
+
+- **It fires on the crossing, and only the crossing.** A connection dead for a week
+  alerts once, not a thousand times — an alert you have to mute is an alert that stops
+  working.
+- **Recovery is signalled too**, so the loop closes without you going to look.
+- **The reason is classified, never the raw error** (`auth_failed`, `not_found`, …). The
+  real #828 exception carried the SAS token inside its message, and an alert is the one
+  place that string would leave DataQ.
+- No per-suite config applies — a connection has no suite, so these go to the
+  **workspace** channel (`TEAMS_WEBHOOK_SECRET_NAME` / `SLACK_WEBHOOK_SECRET_NAME` /
+  `EMAIL_TO`).
+
+Tune with `ORCHESTRATION_POLL_FAILURE_ALERT_THRESHOLD` (default `3`; `0` disables the
+push). Disabling the push does **not** blind the UI: the connections list still badges a
+failing poll with its failure count, and the lineage panel still warns rather than
+showing a confident empty graph.
+
 ## Troubleshooting
 
 | Symptom | Check |
