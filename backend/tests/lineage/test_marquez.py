@@ -264,3 +264,93 @@ def test_huge_graph_truncated_at_cap(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_get(monkeypatch, _FakeResponse(json_body=payload))
     graph = _provider().get_lineage(namespace="ns", name="t0", depth=3)
     assert len(graph.nodes) == 3
+
+
+# ── list_datasets (#823) ─────────────────────────────────────────────────────
+#
+# The catalog enumeration the pull now seeds from. It had no tests at all in the first
+# cut of #823, and that is exactly where a non-terminating loop was hiding.
+
+
+class _Resp:
+    def __init__(self, payload: Any, status: int = 200) -> None:
+        self._payload = payload
+        self.status_code = status
+
+    def raise_for_status(self) -> None:
+        if self.status_code >= 400:
+            raise httpx.HTTPStatusError("boom", request=None, response=None)  # type: ignore[arg-type]
+
+    def json(self) -> Any:
+        return self._payload
+
+
+def test_list_datasets_paginates(monkeypatch: Any) -> None:
+    pages = {
+        0: {"datasets": [{"name": f"DB.S.T{i}"} for i in range(100)]},
+        100: {"datasets": [{"name": "DB.S.LAST"}]},
+    }
+    seen: list[int] = []
+
+    def fake_get(url: str, **kw: Any) -> Any:
+        offset = kw["params"]["offset"]
+        seen.append(offset)
+        return _Resp(pages.get(offset, {"datasets": []}))
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    names = MarquezLineageProvider("http://mz").list_datasets(namespace="snowflake://a")
+
+    assert len(names) == 101
+    assert names[-1] == "DB.S.LAST"
+    assert seen == [0, 100]  # advanced by the PAGE length, then stopped on a short page
+
+
+def test_list_datasets_terminates_when_no_entry_parses(monkeypatch: Any) -> None:
+    """The non-terminating loop the review caught.
+
+    A server returning full pages whose rows we can't parse (e.g. the name only under a
+    nested `id`) would make our name list never grow. Paging on `len(names)` would then
+    loop forever — an unbounded run of 5 s HTTP calls that hangs the refresh task.
+    Paging on the PAGE length is what bounds it.
+    """
+    calls = {"n": 0}
+
+    def fake_get(url: str, **kw: Any) -> Any:
+        calls["n"] += 1
+        assert calls["n"] < 500, "list_datasets did not terminate"
+        # Always a FULL page, and not one entry has a top-level `name`.
+        return _Resp({"datasets": [{"id": {"name": "X"}} for _ in range(100)]})
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    names = MarquezLineageProvider("http://mz").list_datasets(namespace="snowflake://a")
+
+    assert names == []
+    assert calls["n"] == 100  # bounded by _MAX_DATASETS / _DATASET_PAGE, not infinite
+
+
+def test_an_unknown_namespace_is_empty_not_an_outage(monkeypatch: Any) -> None:
+    """A 404 means "the catalog has no such namespace" — an observation, not a failure.
+
+    Raising `unavailable` here would permanently suppress the stale-edge prune for any
+    workspace with an asset the catalog doesn't cover (an S3 bucket while only dbt is
+    emitting — i.e. most of them), and would cry outage on every cycle.
+    """
+    monkeypatch.setattr(httpx, "get", lambda url, **kw: _Resp({}, status=404))
+    assert MarquezLineageProvider("http://mz").list_datasets(namespace="s3://nope") == []
+
+
+def test_a_transport_failure_is_unavailable(monkeypatch: Any) -> None:
+    def boom(url: str, **kw: Any) -> Any:
+        raise httpx.ConnectError("dead")
+
+    monkeypatch.setattr(httpx, "get", boom)
+    with pytest.raises(LineageUnavailableError):
+        MarquezLineageProvider("http://mz").list_datasets(namespace="snowflake://a")
+
+
+def test_a_malformed_entry_is_dropped_not_raised(monkeypatch: Any) -> None:
+    payload = {"datasets": [{"name": "DB.S.OK"}, {"no_name": 1}, "garbage", None, {"name": 42}]}
+    monkeypatch.setattr(httpx, "get", lambda url, **kw: _Resp(payload))
+    assert MarquezLineageProvider("http://mz").list_datasets(namespace="snowflake://a") == [
+        "DB.S.OK"
+    ]

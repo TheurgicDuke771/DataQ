@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import uuid
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any, cast
@@ -173,13 +173,12 @@ def _refresh_pulled_edges(session: Session, *, provider: LineageProvider, depth:
     # discipline `lineage.edges` uses.
     refresh_started_at = _clock(session)
 
-    # Canonicalize every catalog identity BEFORE it becomes an asset (#823). The catalog
-    # holds whatever case its producer emitted, and materializing that verbatim would
-    # fork the asset: `DB.RETAIL.customers` from dbt would land alongside the
-    # `DB.RETAIL.CUSTOMERS` a suite target already created — two assets, one table,
-    # inside our own DB. Folding on the way in means a pulled dataset lands on the asset
-    # the engine's own case would have produced, whoever emitted it.
-    name_pairs = {(canonical_identity(*up), canonical_identity(*down)) for (up, down) in name_pairs}
+    # Resolve every catalog identity to a DataQ identity BEFORE it becomes an asset
+    # (#823). Materializing the catalog's string verbatim would fork the asset:
+    # `DB.RETAIL.customers` from dbt would land alongside the `DB.RETAIL.CUSTOMERS` a
+    # suite target already created — two assets, one table, inside our own DB.
+    resolve = _identity_resolver(seeds)
+    name_pairs = {(resolve(up), resolve(down)) for (up, down) in name_pairs}
 
     # Materialize every endpoint dataset as an asset (NULL provenance — a pull has no
     # connection; `preserve_provenance` keeps a datasource-resolved asset's env/conn).
@@ -257,6 +256,54 @@ def _catalog_index(names: Sequence[str], namespace: str) -> dict[tuple[str, str]
     return index
 
 
+def _identity_resolver(
+    seeds: Sequence[Any],
+) -> Callable[[tuple[str, str]], tuple[str, str]]:
+    """Map a catalog identity onto the DataQ identity it belongs to.
+
+    Three cases, in order — and the ordering is the whole safety argument:
+
+    1. **It IS one of our assets** (byte-identical) → keep it. Nothing to reconcile.
+    2. **Exactly one of our assets folds to the same key** → use *that asset's* name,
+       verbatim. This is what preserves a **quoted** identifier: Snowflake's
+       `DB.S."orders"` legitimately yields the asset name `DB.S.orders`, and blindly
+       folding a pulled `DB.S.orders` to `DB.S.ORDERS` would hang the quoted table's
+       lineage on the *unquoted* table — a silently wrong edge, the exact harm
+       `lineage.identity` warns about.
+    3. **Two of our assets fold to the same key** (the quoted/unquoted pair actually
+       coexists) → we cannot tell which one the catalog meant, so keep the catalog's
+       string verbatim. It may fork an asset; it will never mis-attribute lineage to a
+       table the user is monitoring. Forking is recoverable; a wrong edge is a lie.
+    4. **We know nothing about it** (a blast-radius table we don't monitor) → store the
+       canonical form, so that if someone later points a suite at it, `asset_identity`
+       produces the same name and the two converge instead of forking.
+    """
+    by_exact: set[tuple[str, str]] = set()
+    by_key: dict[tuple[str, str], list[tuple[str, str]]] = defaultdict(list)
+    for namespace, name in seeds:
+        by_exact.add((namespace, name))
+        by_key[canonical_identity(namespace, name)].append((namespace, name))
+
+    def resolve(identity: tuple[str, str]) -> tuple[str, str]:
+        if identity in by_exact:
+            return identity
+        key = canonical_identity(*identity)
+        owners = by_key.get(key, [])
+        if len(owners) == 1:
+            return owners[0]
+        if len(owners) > 1:
+            log.warning(
+                "lineage_pull_ambiguous_asset",
+                namespace=identity[0],
+                catalog_name=identity[1],
+                candidates=sorted(n for _ns, n in owners),
+            )
+            return identity
+        return key
+
+    return resolve
+
+
 def _collect_dataset_edges(
     provider: LineageProvider, seeds: Sequence[Any], *, depth: int
 ) -> tuple[set[tuple[tuple[str, str], tuple[str, str]]], _SeedOutcome]:
@@ -270,9 +317,16 @@ def _collect_dataset_edges(
     (`provider.list_datasets`) and seed with its exact string, matched to our assets
     through `canonical_identity`.
 
-    Exact match wins; the canonical fold is only a fallback; an ambiguous fold is
-    refused. That ordering matters — the fold is deliberately lossy for the case-
-    insensitive engines, so it must never override a name the catalog literally has.
+    **Every fold-equivalent name is seeded, not just one.** Picking a single "best" name
+    is a trap: DataQ's *own* emitter (#758) writes `asset.name` verbatim, so in the
+    reference compose story (emit → Marquez → pull back) the catalog holds BOTH our
+    upper twin and the producer's mixed-case name as separate datasets. An
+    exact-match-wins rule would seed our own twin, whose subgraph is just
+    `dataset → job:dataq:suite.X` with no output dataset — **zero** dataset edges — and
+    the pull would report a healthy `resolved` while returning nothing (and, with a
+    prune, DELETING the real lineage). They are the same table, so we pull the union of
+    their nodes and merge. There is no ambiguity to resolve at seed time: over-pulling a
+    fold-equivalent name is free, because the ingest fold collapses the endpoints anyway.
 
     Returns ``(pairs, outcome)``.
     """
@@ -296,40 +350,34 @@ def _collect_dataset_edges(
             outcome = replace(outcome, unavailable=outcome.unavailable + len(asset_names))
             continue
 
-        exact = set(catalog_names)
         folded = _catalog_index(catalog_names, namespace)
+        pulled: set[str] = set()  # a name shared by two assets is fetched once
 
         for name in asset_names:
-            if name in exact:
-                seed_name = name
-            else:
-                candidates = folded.get(canonical_identity(namespace, name), [])
-                if len(candidates) > 1:
-                    # Two catalog datasets fold to this asset's key. Picking one would
-                    # be a coin-flip that draws a WRONG lineage edge; say so and skip.
-                    log.warning(
-                        "lineage_pull_ambiguous_dataset",
-                        provider=provider.provider,
-                        namespace=namespace,
-                        asset=name,
-                        candidates=sorted(candidates),
-                    )
-                    outcome = replace(outcome, ambiguous=outcome.ambiguous + 1)
-                    continue
-                if not candidates:
-                    outcome = replace(outcome, absent=outcome.absent + 1)
-                    continue
-                seed_name = candidates[0]
-
-            try:
-                graph = provider.get_lineage(namespace=namespace, name=seed_name, depth=depth)
-            except LineageUnavailableError:
-                outcome = replace(outcome, unavailable=outcome.unavailable + 1)
+            candidates = folded.get(canonical_identity(namespace, name), [])
+            if not candidates:
+                outcome = replace(outcome, absent=outcome.absent + 1)
                 continue
-            outcome = replace(outcome, resolved=outcome.resolved + 1)
-            for node_id, node in graph.nodes.items():
-                nodes[node_id] = node
-            edges.update(graph.edges)
+
+            failed = 0
+            for seed_name in candidates:
+                if seed_name in pulled:
+                    continue
+                pulled.add(seed_name)
+                try:
+                    graph = provider.get_lineage(namespace=namespace, name=seed_name, depth=depth)
+                except LineageUnavailableError:
+                    failed += 1
+                    continue
+                for node_id, node in graph.nodes.items():
+                    nodes[node_id] = node
+                edges.update(graph.edges)
+
+            if failed and failed == len(candidates):
+                # Every name for this asset errored — we learned nothing about it.
+                outcome = replace(outcome, unavailable=outcome.unavailable + 1)
+            else:
+                outcome = replace(outcome, resolved=outcome.resolved + 1)
 
     return _collapse_to_datasets(LineageGraph(nodes=nodes, edges=tuple(edges))), outcome
 

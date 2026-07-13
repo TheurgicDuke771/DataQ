@@ -201,61 +201,111 @@ class TestThePullResolvesAgainstTheRealCatalog:
         assert outcome.unavailable == 0  # NOT an outage — do not prune on this
         assert outcome.resolved == 0
 
-    def test_an_ambiguous_fold_is_refused_never_guessed(self) -> None:
-        """Two catalog datasets folding to one key must not be silently picked between.
+    def test_every_fold_equivalent_name_is_seeded_including_our_own_twin(self) -> None:
+        """The review's #1 finding: picking ONE name is a trap.
 
-        Snowflake's quoted `"orders"` and unquoted `ORDERS` are genuinely different
-        tables. Guessing would draw a WRONG lineage edge — worse than drawing none.
+        DataQ's own emitter (#758) writes `asset.name` verbatim, so in the reference
+        compose story (emit -> Marquez -> pull back) the catalog holds BOTH our upper
+        twin and the producer's mixed-case name as separate datasets. An
+        "exact match wins" rule seeds OUR twin — whose subgraph is just
+        `dataset -> job:dataq:suite.X` with no output dataset, i.e. ZERO dataset edges —
+        so the pull would report a healthy `resolved` while returning nothing, and then
+        PRUNE the real lineage. They are the same table: pull both, merge.
         """
+        from backend.app.lineage.provider import LineageGraph
         from backend.app.lineage.pull import _collect_dataset_edges
 
-        class _AmbiguousCatalog:
-            provider = "marquez"
-
-            def list_datasets(self, *, namespace: str) -> list[str]:
-                # Neither is our exact name, and BOTH fold to `DB.S.ORDERS`.
-                return ["DB.S.orders", "DB.S.Orders"]
-
-            def get_lineage(self, *, namespace: str, name: str, depth: int) -> Any:
-                raise AssertionError("must not pull an ambiguous seed")
-
-        _pairs, outcome = _collect_dataset_edges(
-            _AmbiguousCatalog(), [("snowflake://a", "DB.S.ORDERS")], depth=3
-        )
-        assert outcome.ambiguous == 1
-        assert outcome.resolved == 0
-
-    def test_an_exact_catalog_name_always_beats_the_fold(self) -> None:
-        """Exact match wins even when other datasets fold to the same key.
-
-        The fold is deliberately lossy for case-insensitive engines, so it must never
-        override a name the catalog literally holds — otherwise a legitimate quoted
-        identifier could be hijacked by its unquoted twin.
-        """
-        from backend.app.lineage.pull import _collect_dataset_edges
-
-        class _CatalogWithBoth:
+        class _CatalogWithBothCasings:
             provider = "marquez"
 
             def __init__(self) -> None:
                 self.pulled: list[str] = []
 
             def list_datasets(self, *, namespace: str) -> list[str]:
-                return ["DB.S.orders", "DB.S.ORDERS"]
+                # ORDERS = what DataQ's own emitter wrote; orders = what dbt wrote.
+                return ["DB.S.ORDERS", "DB.S.orders"]
 
             def get_lineage(self, *, namespace: str, name: str, depth: int) -> Any:
                 self.pulled.append(name)
-                from backend.app.lineage.provider import LineageGraph
-
                 return LineageGraph.empty()
 
-        catalog = _CatalogWithBoth()
+        catalog = _CatalogWithBothCasings()
         _pairs, outcome = _collect_dataset_edges(
             catalog, [("snowflake://a", "DB.S.ORDERS")], depth=3
         )
-        assert outcome.resolved == 1
-        assert outcome.ambiguous == 0
-        assert catalog.pulled == ["DB.S.ORDERS"]  # the exact one, not the folded twin
+        assert sorted(catalog.pulled) == ["DB.S.ORDERS", "DB.S.orders"]
+        assert outcome.resolved == 1  # one ASSET resolved, via two catalog names
+        assert outcome.absent == 0
+
+    def test_a_name_shared_by_two_assets_is_fetched_once(self) -> None:
+        from backend.app.lineage.provider import LineageGraph
+        from backend.app.lineage.pull import _collect_dataset_edges
+
+        class _Catalog:
+            provider = "marquez"
+
+            def __init__(self) -> None:
+                self.pulled: list[str] = []
+
+            def list_datasets(self, *, namespace: str) -> list[str]:
+                return ["DB.S.orders"]
+
+            def get_lineage(self, *, namespace: str, name: str, depth: int) -> Any:
+                self.pulled.append(name)
+                return LineageGraph.empty()
+
+        catalog = _Catalog()
+        # Two assets folding to the same key must not double the HTTP cost.
+        _collect_dataset_edges(
+            catalog, [("snowflake://a", "DB.S.ORDERS"), ("snowflake://a", "DB.S.orders")], depth=3
+        )
+        assert catalog.pulled == ["DB.S.orders"]
+
+
+class TestIngestNeverMisattributesLineage:
+    """The review's #4 finding: a blanket ingest fold hangs a QUOTED table's lineage on
+    its unquoted twin — a silently wrong edge, which is worse than a missing one."""
+
+    def test_a_quoted_identifier_keeps_its_own_asset(self) -> None:
+        from backend.app.lineage.pull import _identity_resolver
+
+        # `DB.S."orders"` (quoted) legitimately yields the asset name `DB.S.orders`.
+        resolve = _identity_resolver([("snowflake://a", "DB.S.orders")])
+        # A pulled `DB.S.orders` must land on THAT asset, not be folded to DB.S.ORDERS.
+        assert resolve(("snowflake://a", "DB.S.orders")) == ("snowflake://a", "DB.S.orders")
+
+    def test_when_both_twins_exist_the_catalog_name_is_kept_verbatim(self) -> None:
+        from backend.app.lineage.pull import _identity_resolver
+
+        # The quoted and unquoted tables genuinely coexist as two DataQ assets.
+        resolve = _identity_resolver(
+            [("snowflake://a", "DB.S.orders"), ("snowflake://a", "DB.S.ORDERS")]
+        )
+        # We cannot know which the catalog meant, so we must not guess: keep it verbatim.
+        # Forking an asset is recoverable; attaching lineage to the WRONG monitored table
+        # is a lie.
+        assert resolve(("snowflake://a", "DB.S.Orders")) == ("snowflake://a", "DB.S.Orders")
+
+    def test_a_producers_casing_lands_on_the_asset_we_already_have(self) -> None:
+        from backend.app.lineage.pull import _identity_resolver
+
+        resolve = _identity_resolver([(_NS, "DATAQ_DB.RETAIL.ORDERS_HEADER")])
+        assert resolve((_NS, "DATAQ_DB.RETAIL.orders_header")) == (
+            _NS,
+            "DATAQ_DB.RETAIL.ORDERS_HEADER",
+        )
+
+    def test_an_unknown_table_is_stored_canonically_so_it_converges_later(self) -> None:
+        from backend.app.lineage.pull import _identity_resolver
+
+        # A blast-radius table nobody monitors. Store it in the form `asset_identity`
+        # would produce, so a suite pointed at it later lands on the SAME row instead of
+        # forking a second asset.
+        resolve = _identity_resolver([])
+        assert resolve((_NS, "DATAQ_DB.ANALYTICS.mart_customer_orders")) == (
+            _NS,
+            "DATAQ_DB.ANALYTICS.MART_CUSTOMER_ORDERS",
+        )
 
 
 class _ReplayProvider:

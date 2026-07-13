@@ -98,13 +98,22 @@ class MarquezLineageProvider:
         url = f"{self._base_url}/api/v1/namespaces/{quote(namespace, safe='')}/datasets"
         names: list[str] = []
         offset = 0
-        while len(names) < _MAX_DATASETS:
+        while offset < _MAX_DATASETS:
             try:
                 response = httpx.get(
                     url,
                     params={"limit": _DATASET_PAGE, "offset": offset},
                     timeout=self._timeout,
                 )
+                if response.status_code == 404:
+                    # The catalog has never heard of this namespace. That is an
+                    # OBSERVATION, not an outage — and the distinction is load-bearing:
+                    # raising `unavailable` here would permanently disable the stale-edge
+                    # prune for every workspace holding an asset the catalog doesn't
+                    # cover (an S3 bucket while only dbt/Snowflake is emitted — i.e. most
+                    # of them), and would fire an outage warning on every 24 h cycle,
+                    # burying the signal a REAL outage needs to send.
+                    return []
                 response.raise_for_status()
                 payload = response.json()
             except (httpx.HTTPError, ValueError) as exc:
@@ -121,13 +130,17 @@ class MarquezLineageProvider:
                 # dropped, never raised — one bad row must not blind the whole pull.
                 if isinstance(entry, dict) and isinstance(entry.get("name"), str):
                     names.append(entry["name"])
+            # Advance on the PAGE length, never on how many names we managed to keep.
+            # Paging on `len(names)` would spin forever against a server whose rows we
+            # can't parse: the page stays full, our list never grows, and the loop never
+            # terminates — an unbounded run of 5 s HTTP calls that hangs the refresh.
             if len(page) < _DATASET_PAGE:
                 break
-            offset += _DATASET_PAGE
+            offset += len(page)
 
-        if len(names) >= _MAX_DATASETS:
+        if offset >= _MAX_DATASETS:
             log.warning("marquez_dataset_list_truncated", namespace=namespace, cap=_MAX_DATASETS)
-        return names[:_MAX_DATASETS]
+        return names
 
     def get_lineage(self, *, namespace: str, name: str, depth: int) -> LineageGraph:
         """Pull + normalize the lineage graph around ``dataset:{namespace}:{name}``.
