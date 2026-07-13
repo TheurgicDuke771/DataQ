@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "77c44db24cb1",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-849-pat-plaintext-logs",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/77/c44db24cb1/0/metadata.json",
+      "transcript": "/77/c44db24cb1/0/full.jsonl",
+      "compact_transcript": "/77/c44db24cb1/0/transcript.jsonl",
+      "content_hash": "/77/c44db24cb1/0/content_hash.txt",
+      "prompt": "/77/c44db24cb1/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2919,
+    "cache_creation_tokens": 6058997,
+    "cache_read_tokens": 582615916,
+    "output_tokens": 944065,
+    "api_call_count": 1439
+  }
+}
