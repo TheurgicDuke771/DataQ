@@ -1,5 +1,5 @@
 import { ApartmentOutlined } from '@ant-design/icons';
-import { Alert, Card, Empty, Flex, Tag, Typography } from 'antd';
+import { Alert, Card, Flex, Tag, Typography } from 'antd';
 import { useMemo } from 'react';
 
 import type { LineageEdge, LineageNode, LineageSourceHealth } from '../../api/assets';
@@ -46,6 +46,10 @@ export function LineageGraph({
     [center, upstream, downstream, edges],
   );
   const isolated = upstream.length === 0 && downstream.length === 0;
+  const restrictedCount = useMemo(
+    () => [...upstream, ...downstream].filter((n) => !n.is_accessible).length,
+    [upstream, downstream],
+  );
 
   return (
     <Card
@@ -93,60 +97,70 @@ export function LineageGraph({
           }
         />
       )}
-      {isolated ? (
-        <Empty
-          image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description={
-            failingSources.length > 0
-              ? 'No lineage recorded — but a lineage source is currently failing (above), so this may not be the truth.'
-              : 'No lineage recorded for this asset.'
-          }
-        />
-      ) : (
-        // The ONLY scroll container: a wide graph scrolls inside the card, so the
-        // page itself never overflows horizontally on a phone (#805).
-        <div style={{ overflowX: 'auto', overflowY: 'hidden' }}>
-          <svg
-            width={layout.width}
-            height={layout.height}
-            role="img"
-            aria-label={`Lineage graph: ${upstream.length} upstream and ${downstream.length} downstream assets around ${center.name}`}
-            style={{ display: 'block' }}
-          >
-            <defs>
-              <marker
-                id="dq-lineage-arrow"
-                markerWidth="8"
-                markerHeight="8"
-                refX="7"
-                refY="4"
-                orient="auto"
-              >
-                <path d="M0,0 L8,4 L0,8 z" fill="#c4c8cf" />
-              </marker>
-            </defs>
+      {/* An asset with no neighbours still renders AS A GRAPH — just its own box, alone.
+          The old `<Empty>` placeholder replaced the asset with a grey icon, which reads as
+          "there is nothing here" when the truth is "here is the asset, and nothing is
+          attached to it yet". The caption below still says so in words; what changes is
+          that the asset itself stays on screen, so the panel keeps its shape whether or
+          not lineage exists.
 
-            {/* Edges first so the node cards sit on top of the curves. */}
-            {layout.edges.map((e) => (
-              <path
-                key={e.id}
-                d={e.path}
-                fill="none"
-                stroke="#c4c8cf"
-                strokeWidth={1.5}
-                markerEnd="url(#dq-lineage-arrow)"
-              />
-            ))}
+          This div is also the ONLY scroll container: a wide graph scrolls inside the card,
+          so the page itself never overflows horizontally on a phone (#805). */}
+      <div style={{ overflowX: 'auto', overflowY: 'hidden' }}>
+        <svg
+          width={layout.width}
+          height={layout.height}
+          role="img"
+          aria-label={`Lineage graph: ${upstream.length} upstream and ${downstream.length} downstream assets around ${center.name}`}
+          style={{ display: 'block' }}
+        >
+          <defs>
+            <marker
+              id="dq-lineage-arrow"
+              markerWidth="8"
+              markerHeight="8"
+              refX="7"
+              refY="4"
+              orient="auto"
+            >
+              <path d="M0,0 L8,4 L0,8 z" fill="#c4c8cf" />
+            </marker>
+          </defs>
 
-            {layout.nodes.map((n) => (
-              <GraphNode
-                key={n.id}
-                node={n}
-                onOpen={n.isCenter ? undefined : () => onOpenAsset(n.id)}
-              />
-            ))}
-          </svg>
-        </div>
+          {/* Edges first so the node cards sit on top of the curves. */}
+          {layout.edges.map((e) => (
+            <path
+              key={e.id}
+              d={e.path}
+              fill="none"
+              stroke="#c4c8cf"
+              strokeWidth={1.5}
+              markerEnd="url(#dq-lineage-arrow)"
+            />
+          ))}
+
+          {layout.nodes.map((n) => (
+            <GraphNode
+              key={n.id}
+              node={n}
+              // A redacted neighbour (#845) is not openable — the asset endpoint 404s
+              // it no-leak, so offering the click would just be a dead link, which is
+              // exactly the bug that surfaced this.
+              onOpen={n.isCenter || !n.isAccessible ? undefined : () => onOpenAsset(n.id)}
+            />
+          ))}
+        </svg>
+      </div>
+
+      {/* Isolated: the asset's own box is on screen above; say in words why nothing is
+          attached to it. The failing-source variant matters — an empty graph and a broken
+          lineage pipeline look identical, and that ambiguity is what #828 was about. */}
+      {isolated && (
+        <Typography.Text type="secondary" style={{ fontSize: 12, marginTop: 8 }}>
+          {failingSources.length > 0
+            ? 'No lineage recorded — but a lineage source is currently failing (above), so this may not be the truth.'
+            : 'No lineage recorded for this asset.'}
+        </Typography.Text>
       )}
 
       {/* The monitored/unmonitored distinction the old list boxes carried as tags
@@ -164,6 +178,16 @@ export function LineageGraph({
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
             Click any node to open that asset.
           </Typography.Text>
+          {/* State the redaction rather than letting the reader infer it from a locked
+              box. The COUNT is disclosed, the identities are not (#845) — so the blast
+              radius stays true without naming assets the viewer has no grant for. */}
+          {restrictedCount > 0 && (
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {restrictedCount === 1
+                ? '1 connected asset is outside your access.'
+                : `${restrictedCount} connected assets are outside your access.`}
+            </Typography.Text>
+          )}
         </Flex>
       )}
     </Card>
@@ -180,6 +204,11 @@ function GraphNode({
   onOpen?: () => void;
 }) {
   const interactive = onOpen !== undefined;
+  // A neighbour outside the viewer's grants (#845). The backend already withheld its
+  // name/namespace/env, so there is nothing here to hide — this only decides how the
+  // placeholder reads. Deliberately still DRAWN: omitting it would tell the viewer
+  // "nothing consumes this table", which is false.
+  const redacted = !node.isCenter && !node.isAccessible;
   return (
     <g
       transform={`translate(${node.x}, ${node.y})`}
@@ -199,42 +228,52 @@ function GraphNode({
       // The centre is labelled too (it just isn't actionable), so a screen reader
       // announces which asset the graph is centred on.
       aria-label={
-        interactive
-          ? `Open asset ${node.name}${node.isMonitored ? ' (monitored)' : ''}`
-          : `${node.name} (this asset)`
+        redacted
+          ? 'A connected asset outside your access'
+          : interactive
+            ? `Open asset ${node.name}${node.isMonitored ? ' (monitored)' : ''}`
+            : `${node.name} (this asset)`
       }
       style={{ cursor: interactive ? 'pointer' : 'default' }}
     >
-      <title>{`${node.name}\n${node.namespace}`}</title>
+      <title>
+        {redacted
+          ? 'This asset is connected to the one you are viewing, but is outside your access.'
+          : `${node.name}\n${node.namespace}`}
+      </title>
       <rect
         width={NODE_W}
         height={NODE_H}
         rx={8}
-        fill={node.isCenter ? BRAND.selectedBg : '#ffffff'}
+        fill={node.isCenter ? BRAND.selectedBg : redacted ? '#fafafa' : '#ffffff'}
         stroke={node.isCenter ? BRAND.primary : node.isMonitored ? '#91caff' : BRAND.border}
         strokeWidth={node.isCenter ? 2 : 1}
+        strokeDasharray={redacted ? '4 3' : undefined}
       />
       <text
         x={10}
         y={21}
         fontSize={12}
         fontWeight={600}
-        fill={BRAND.ink}
+        fill={redacted ? '#8c8c8c' : BRAND.ink}
+        fontStyle={redacted ? 'italic' : undefined}
         style={{ pointerEvents: 'none' }}
       >
-        {truncate(leafName(node.name), 24)}
+        {redacted ? '🔒 Restricted' : truncate(leafName(node.name ?? ''), 24)}
       </text>
       <text x={10} y={38} fontSize={10} fill="#8c8c8c" style={{ pointerEvents: 'none' }}>
         {/* The label, not the raw namespace: a node subtitle has ~28 characters, and
             an Iceberg namespace is a DSN — it truncated to `dev · postgresql+psy…`,
             which told the reader nothing. The full namespace stays in the <title>
             tooltip above (#830). */}
-        {truncate(
-          node.env
-            ? `${node.env} · ${namespaceLabel(node.namespace)}`
-            : namespaceLabel(node.namespace),
-          28,
-        )}
+        {redacted
+          ? 'outside your access'
+          : truncate(
+              node.env
+                ? `${node.env} · ${namespaceLabel(node.namespace ?? '')}`
+                : namespaceLabel(node.namespace ?? ''),
+              28,
+            )}
       </text>
       {/* Monitored must not be colour-only (WCAG 1.4.1): a filled dot marks it, so
           the state survives a colour-blind viewer and a greyscale print. */}

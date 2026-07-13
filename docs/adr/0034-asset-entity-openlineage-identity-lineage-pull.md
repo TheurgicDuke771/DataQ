@@ -99,3 +99,54 @@ which is the only kind that could have caught it.
 namespace half genuinely joins, and it is what makes DataQ a good OL citizen), but
 "interop is a join, not a mapping layer" is withdrawn — cross-producer name reconciliation
 is a permanent, if small, cost.
+
+## Amendment (2026-07-13, #845/#846) — decision 5's boundary was drawn in the wrong place
+
+Decision 5 says asset visibility derives from suite grants, and that an asset outside
+those grants is **404-no-leak**. Two things were wrong in practice, both found in
+production by a user clicking a node.
+
+**1. The lineage graph defeated the no-leak 404.** The graph's walk was never
+authz-scoped — deliberately, because blast radius is the point (§2). But that meant a
+non-admin received the **name, namespace, env and monitored-status** of assets they held
+no grant for, and could click one straight into `Failed to load asset: asset not found`.
+The 404 was carefully built so it could not confirm such an asset exists; the graph
+confirmed it one click earlier. The guarantee was doing nothing.
+
+The fix is **redaction, not omission**: an inaccessible neighbour is returned as an
+anonymous node (id + depth; no identity, `is_monitored` forced false), drawn but not
+clickable, alongside a count — *"1 connected asset is outside your access."* Dropping it
+instead would have asserted "nothing consumes this table", which is false. We do not fix
+a leak by shipping a lie (the #828/#823 lesson). Redaction happens **server-side**: a
+name hidden in CSS has still crossed the wire.
+
+**2. "No suites" was treated as "outside your grants". It isn't.** Redaction protects a
+*grant* — and an asset nobody has granted is protected by nothing. A suite-less asset (a
+raw source table, an unmonitored mart, an asset whose last suite was deleted, its runs and
+results cascading with it per #540) has no runs, no results, no samples behind it. The only
+thing being withheld was its **name**, whose existence the lineage graph reveals anyway.
+
+That withholding bought no security and cost real correctness:
+
+- **Browse and the detail endpoint disagreed about what exists.** The asset list was a
+  plain `Asset.id IN (SELECT suite.asset_id …)`, so a lineage-discovered table never
+  appeared — even for a workspace-admin, whom `get_visible_asset` explicitly *does* hand
+  suite-less orphans. A schema visibly containing two assets listed one.
+- It would have painted **every unmonitored upstream "🔒 Restricted"** to a non-admin. It
+  is not restricted; it is merely unmonitored — a different lie, and one that makes
+  lineage unreadable for everyone who is not an admin.
+
+### The amended rule (one rule, three surfaces)
+
+An asset is visible iff **the caller can view ≥1 suite targeting it, OR it has no suites
+at all**. A workspace-admin sees everything (ADR 0027). The browse list, the detail
+endpoint, and the lineage graph all derive from this one predicate — if they ever diverge,
+the graph offers a node the endpoint refuses, which is exactly the bug that surfaced this.
+
+The boundary that stays closed, unchanged: an asset that *someone else monitors* and you
+may not view is still 404-no-leak, still absent from browse, and now redacted in the
+graph.
+
+**Status of decision 5:** amended. Authz stays derived from suite grants (no asset-level
+ACLs — the rejection in *Alternatives* stands). What changes is that the derivation now
+says explicitly what an *ungranted* asset is: not a secret, and not a dead link.

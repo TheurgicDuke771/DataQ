@@ -103,6 +103,7 @@ const DETAIL: AssetDetailData = {
       name: 'RAW.ORDERS',
       env: 'dev',
       is_monitored: false,
+      is_accessible: true,
       depth: 1,
     },
   ],
@@ -113,6 +114,7 @@ const DETAIL: AssetDetailData = {
       name: 'ANALYTICS.MART.REVENUE',
       env: 'dev',
       is_monitored: true,
+      is_accessible: true,
       depth: 1,
     },
   ],
@@ -289,12 +291,13 @@ describe('AssetDetail page', () => {
     expect(await screen.findByText('run page')).toBeInTheDocument();
   }, 15000);
 
-  it('keeps a graceful empty state for a 0-edge asset', async () => {
+  it('draws the asset alone when it has no lineage, and says so', async () => {
     mockGet.mockResolvedValue({ ...DETAIL, upstream: [], downstream: [], lineage_edges: [] });
     renderPage();
     expect(await screen.findByText('No lineage recorded for this asset.')).toBeInTheDocument();
-    // No graph is drawn at all — not an empty canvas.
-    expect(screen.queryByRole('img', { name: /Lineage graph/ })).not.toBeInTheDocument();
+    // The asset's own box is still drawn: an <Empty> icon in its place read as "there is
+    // nothing here", when the truth is "here is the asset, nothing attached to it yet".
+    expect(screen.getByRole('img', { name: /Lineage graph/ })).toBeInTheDocument();
   });
 
   it('surfaces a load error', async () => {
