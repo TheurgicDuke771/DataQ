@@ -18,6 +18,7 @@ from backend.app.alerting.base import (
     HEALTH_FAILING,
     CheckReport,
     ConnectionHealthReport,
+    HealthState,
     IncidentCard,
     RunReport,
 )
@@ -43,7 +44,9 @@ def _run_url(run_id: uuid.UUID) -> str | None:
     return f"{base}/results/{run_id}" if base else None
 
 
-def build_connection_health_report(connection: Connection, *, state: str) -> ConnectionHealthReport:
+def build_connection_health_report(
+    connection: Connection, *, state: HealthState
+) -> ConnectionHealthReport:
     """A :class:`ConnectionHealthReport` from a connection's persisted poll health (#837).
 
     The reason is read straight off ``Connection.last_poll_error``, which
@@ -58,7 +61,14 @@ def build_connection_health_report(connection: Connection, *, state: str) -> Con
         connection_type=connection.type,
         state=state,
         consecutive_failures=connection.consecutive_poll_failures or 0,
-        reason=connection.last_poll_error if state == HEALTH_FAILING else None,
+        # A failing edge must never render a card that says "failing" and silently omits
+        # WHY (health_facts drops empty values) — an unset reason degrades to a visible
+        # "unknown", it does not disappear.
+        reason=(
+            (connection.last_poll_error or "unknown — test the connection")
+            if state == HEALTH_FAILING
+            else None
+        ),
         last_polled_at=connection.last_polled_at,
         connection_url=f"{base}/connections" if base else None,
     )

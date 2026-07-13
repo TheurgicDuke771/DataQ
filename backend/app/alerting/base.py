@@ -16,7 +16,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Final, Literal, Protocol, runtime_checkable
 
 # Failing severity tiers (worst last) — a run is alert-worthy when any check lands
 # in one of these (or the run failed to execute). `pass` is clean; `skip`/`error`
@@ -43,8 +43,16 @@ __all__ = [
 # The two connection-health transitions worth telling someone about (#837). Both are
 # *edges*, not states: the poller emits one when a connection crosses the failure
 # threshold and one when it comes back — never once per failing poll.
-HEALTH_FAILING = "failing"
-HEALTH_RECOVERED = "recovered"
+#
+# The state is a Literal, not a free str: `is_failing` is `state == HEALTH_FAILING`, so
+# ANY other value renders as a *recovery* — a typo'd call site (`"failed"`, `"FAILING"`)
+# would send a confident all-clear for a connection that is dead, silently. A field whose
+# two values mean opposite things must not admit a third, so mypy rejects it at the call
+# site rather than the operator discovering it at 3am.
+HealthState = Literal["failing", "recovered"]
+
+HEALTH_FAILING: Final[HealthState] = "failing"
+HEALTH_RECOVERED: Final[HealthState] = "recovered"
 
 
 @dataclass(frozen=True)
@@ -175,7 +183,7 @@ class ConnectionHealthReport:
     connection_id: uuid.UUID
     connection_name: str
     connection_type: str
-    state: str
+    state: HealthState
     consecutive_failures: int
     reason: str | None
     last_polled_at: datetime | None

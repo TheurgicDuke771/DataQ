@@ -14,6 +14,7 @@ import uuid
 from sqlalchemy.orm import Session
 
 from backend.app.alerting import dedup, registry, suppression
+from backend.app.alerting.base import HealthState
 from backend.app.alerting.builder import build_connection_health_report, build_run_report
 from backend.app.alerting.routing import ALWAYS
 from backend.app.core.logging import get_logger
@@ -61,7 +62,9 @@ def publish_run_outcome(session: Session, *, run_id: uuid.UUID) -> bool:
         return False
 
 
-def publish_connection_health(session: Session, *, connection_id: uuid.UUID, state: str) -> bool:
+def publish_connection_health(
+    session: Session, *, connection_id: uuid.UUID, state: HealthState
+) -> bool:
     """Publish a connection's poll-health **edge** (#837) — it started failing, or it
     recovered.
 

@@ -414,11 +414,8 @@ def _poll_orchestration_runs(
             summary["recorded"] += len(result.pipeline_runs)
             summary["triggered"] += len(result.triggered_runs)
             summary["skipped"] += result.skipped
-            previous_failures = orchestration_service.record_poll_success(
+            recovered_from = orchestration_service.record_poll_success(
                 session, connection=connection
-            )
-            _alert_poll_health(
-                session, connection_id=connection.id, streak=previous_failures, recovered=True
             )
         except Exception as exc:
             summary["errors"] += 1
@@ -446,6 +443,15 @@ def _poll_orchestration_runs(
                     "orchestration_poll_health_write_failed",
                     connection_id=str(connection.id),
                 )
+        else:
+            # The recovery alert lives OUT of the try above, deliberately. Inside it, any
+            # raise on the notification path would land in the `except` — which records a
+            # poll FAILURE — so a connection that had just polled *successfully* would be
+            # marked failing, corrupting the very streak the alert keys on. The publish is
+            # already fail-soft; this makes it structurally impossible for it to matter.
+            _alert_poll_health(
+                session, connection_id=connection.id, streak=recovered_from, recovered=True
+            )
     log.info("orchestration_poll_completed", **summary)
     return summary
 

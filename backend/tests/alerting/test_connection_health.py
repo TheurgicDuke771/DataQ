@@ -24,11 +24,12 @@ from typing import Any
 
 import pytest
 
-from backend.app.alerting import dispatch, registry
+from backend.app.alerting import dispatch, registry, render
 from backend.app.alerting.base import (
     HEALTH_FAILING,
     HEALTH_RECOVERED,
     ConnectionHealthReport,
+    HealthState,
 )
 from backend.app.alerting.builder import build_connection_health_report
 from backend.app.alerting.card import render_teams_health_message
@@ -63,7 +64,7 @@ def spy(monkeypatch: pytest.MonkeyPatch) -> _SpyHealthPublisher:
 
 
 def _report(
-    *, state: str = HEALTH_FAILING, failures: int = 3, reason: str | None = "auth_failed"
+    *, state: HealthState = HEALTH_FAILING, failures: int = 3, reason: str | None = "auth_failed"
 ) -> ConnectionHealthReport:
     return ConnectionHealthReport(
         connection_id=uuid.uuid4(),
@@ -261,6 +262,39 @@ def test_five_failing_sweeps_produce_exactly_one_alert(
     _sweep(db_session)
 
     assert [r.state for r in spy.reports] == [HEALTH_FAILING, HEALTH_RECOVERED]
+
+
+def test_a_failing_alert_never_hides_why(db_session: Any, spy: _SpyHealthPublisher) -> None:
+    """A card that says "poll failing" and omits the reason is barely better than the
+    silence #828 was about. An unset reason degrades to a visible 'unknown', it does not
+    vanish (health_facts drops empty values)."""
+    conn = _connection(db_session, consecutive_poll_failures=3, last_poll_error=None)
+    dispatch.publish_connection_health(db_session, connection_id=conn.id, state=HEALTH_FAILING)
+    assert spy.reports[0].reason
+    assert "Reason" in str(render.health_facts(spy.reports[0]))
+
+
+def test_a_recovery_alert_cannot_mark_a_healthy_poll_as_failing(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The recovery alert must sit OUTSIDE the try that records a poll failure: if a
+    notification raised in there, a poll that actually SUCCEEDED would be recorded as a
+    failure — corrupting the streak the alert keys on."""
+
+    class _Exploding:
+        def publish_health(self, session: Any, report: ConnectionHealthReport) -> None:
+            raise RuntimeError("channel down")
+
+    conn = _connection(db_session, consecutive_poll_failures=4)
+    db_session.commit()
+    monkeypatch.setattr(registry, "get_health_publisher", lambda: _Exploding())
+    monkeypatch.setattr(tasks, "get_orchestration_provider", lambda _t: _HealthyProvider())
+
+    _sweep(db_session)
+
+    db_session.refresh(conn)
+    assert conn.consecutive_poll_failures == 0  # the success stands
+    assert conn.last_poll_error is None
 
 
 # ── the redaction property: no raw exception text in any channel ─────────────────

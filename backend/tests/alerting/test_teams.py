@@ -123,6 +123,21 @@ def test_non_allowlisted_webhook_host_is_skipped(
     assert post.calls == []
 
 
+def test_cleartext_http_webhook_is_skipped(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An http:// workspace webhook must never be POSTed. The workspace value is never
+    write-validated (only per-suite webhooks are), so without this check the alert — and
+    everything it carries — would go over the wire in cleartext (matches Slack, #639)."""
+    suite = _suite(db_session)
+    post = _CapturePost()
+    monkeypatch.setattr(httpx, "post", post)
+    _publisher({_WS_NAME: "http://contoso.webhook.office.com/workspace"}).publish(
+        db_session, _report(suite, worst="critical")
+    )
+    assert post.calls == []
+
+
 def test_per_suite_webhook_overrides_workspace(
     db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:

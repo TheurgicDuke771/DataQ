@@ -110,11 +110,18 @@ class TeamsPublisher:
 
 def _webhook_allowed(webhook: str) -> bool:
     """SSRF guard at the request sink: the webhook is user-supplied, so only post to an
-    allowlisted host. upsert validates on write; this re-checks at send time (rotated /
-    workspace secrets — defence in depth), and is shared by the run + health paths so
-    the two can't drift apart on which hosts are reachable."""
-    host = (urlparse(webhook).hostname or "").lower()
-    return any(
+    **https** URL on an allowlisted host. upsert validates on write; this re-checks at
+    send time (rotated / workspace secrets — defence in depth), and is shared by the run +
+    health paths so the two can't drift apart on which hosts are reachable.
+
+    The scheme check matters for the WORKSPACE webhook in particular: it is never
+    write-validated (only per-suite webhooks are), so an `http://` value would otherwise
+    ship the alert — connection name, failure reason, observed-vs-expected data — in
+    cleartext. Same reasoning as the Slack publisher (#639 review); the two guards now
+    agree."""
+    parsed = urlparse(webhook)
+    host = (parsed.hostname or "").lower()
+    return parsed.scheme == "https" and any(
         host == allowed or host.endswith(f".{allowed}")
         for allowed in notification_service.allowed_webhook_hosts()
     )

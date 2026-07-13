@@ -545,7 +545,14 @@ def record_poll_success(session: Session, *, connection: Connection) -> int:
     Returns the streak it just cleared, so the caller can tell a *recovery* (we had been
     failing) from a poll that was healthy all along and alert only on the transition
     (#837). The decision is the caller's — this function stays a pure state write.
+
+    Row-locked for the same reason as `record_poll_failure`: three schedules sweep the
+    same connections (the 10-min poll beat, the 30-min gap-recovery beat, and the #492
+    poll-now), so two can recover the same connection concurrently. Without the lock both
+    would read the pre-recovery streak and both would fire a recovery alert; with it, the
+    second reads the already-cleared 0 and stays quiet.
     """
+    session.refresh(connection, with_for_update=True)
     previous_failures = connection.consecutive_poll_failures or 0
     connection.last_polled_at = datetime.now(UTC)
     connection.last_poll_error = None
@@ -564,12 +571,20 @@ def record_poll_failure(session: Session, *, connection_id: uuid.UUID, exc: Base
     rolled the session back, so its `Connection` instance is detached/stale. Re-loading
     inside a fresh transaction is the only safe way to read-modify-write here.
 
+    Row-locked (``with_for_update``) because this is a read-modify-write on a counter that
+    an alert threshold rides on, and **three** schedules sweep the same connections: the
+    10-min poll beat, the 30-min gap-recovery beat, and the #492 alert-triggered poll-now.
+    Two overlapping sweeps would otherwise both read N, both write N+1 (a lost update),
+    and — since each then sees the streak *equal* the threshold — both fire the alert. A
+    duplicate alert on the feature whose entire point is "don't storm the channel" is not
+    an acceptable race, and the streak would also under-count the outage the UI reports.
+
     The stored reason is **classified**, never the raw exception text — a transport error
     routinely carries the thing that failed to authenticate (a SAS query string, a DSN, a
     bearer token). `classify_failure_reason` is the same redaction-safe path a failed run
     uses (#605), so a leaked credential can't reach the API through this column.
     """
-    connection = session.get(Connection, connection_id)
+    connection = session.get(Connection, connection_id, with_for_update=True)
     if connection is None:  # deleted mid-sweep — nothing to record against
         return 0
     connection.last_polled_at = datetime.now(UTC)
