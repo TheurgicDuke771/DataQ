@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "8d4892644043",
+  "strategy": "manual-commit",
+  "branch": "docs/w3-security-and-asset-visibility",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/8d/4892644043/0/metadata.json",
+      "transcript": "/8d/4892644043/0/full.jsonl",
+      "compact_transcript": "/8d/4892644043/0/transcript.jsonl",
+      "content_hash": "/8d/4892644043/0/content_hash.txt",
+      "prompt": "/8d/4892644043/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 3056,
+    "cache_creation_tokens": 6125521,
+    "cache_read_tokens": 618868913,
+    "output_tokens": 986341,
+    "api_call_count": 1505
+  }
+}
