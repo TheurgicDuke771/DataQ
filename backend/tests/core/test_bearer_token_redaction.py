@@ -204,3 +204,23 @@ class TestThePatNeverReachesTheJwtValidator:
         # An AAD token: still validated exactly as before (we broke nothing).
         await scheme(_Req(_JWT), SecurityScopes())  # type: ignore[arg-type]  # duck-typed request
         assert seen == [f"Bearer {_JWT}"]
+
+
+class TestTheExporterDoesNotAmplifyItsOwnLogs:
+    """`azure.core`'s HTTP policy logs a request AND a response line for every call the
+    SDK makes — including the exporter's own uploads to App Insights. Those records reach
+    root, re-enter the OTel bridge, are exported, and generate more uploads: a
+    self-sustaining amplifier (#852).
+
+    Measured in prod at ~10 records/second — 19,000 in half an hour — which drowned the
+    application's real logs (a poll event became unfindable in the noise) and burned
+    ingestion quota. It is silenced at INFO, not detached, so a genuine transport WARNING
+    still reaches stdout and the backend.
+    """
+
+    def test_the_http_policy_chatter_is_silenced_at_info(self) -> None:
+        configure_logging()
+        policy_log = logging.getLogger("azure.core.pipeline.policies.http_logging_policy")
+        assert not policy_log.isEnabledFor(logging.INFO)
+        # …but a real problem still gets through.
+        assert policy_log.isEnabledFor(logging.WARNING)

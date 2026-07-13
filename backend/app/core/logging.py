@@ -272,6 +272,20 @@ def configure_logging(service_name: str = "dataq") -> None:
     root.handlers = [handler]
     root.setLevel(level)
 
+    # `azure.core`'s HTTP logging policy logs a full request AND response line for EVERY
+    # HTTP call the Azure SDK makes — Key Vault reads, and (once the OTel bridge below is
+    # attached) the exporter's own uploads to App Insights. That last one is a
+    # self-sustaining amplifier: the upload is logged, the log record reaches root,
+    # re-enters the export bridge, is uploaded, and is logged again. Measured in prod at
+    # ~10 records/second — 19,000 in half an hour — which drowned the application's real
+    # logs (a genuine orchestration-poll event became unfindable in the noise) and burned
+    # ingestion quota (#852).
+    #
+    # Silenced at INFO rather than detached (`propagate = False`), so a genuine transport
+    # WARNING from the SDK still reaches stdout and the backend; only the per-request
+    # chatter that feeds the loop is dropped.
+    logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
+
     # Detach uvicorn's pre-configured handlers; let logs propagate to root so
     # they hit the structlog ProcessorFormatter above.
     for name in ("uvicorn", "uvicorn.error"):
