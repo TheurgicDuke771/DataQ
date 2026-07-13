@@ -59,10 +59,36 @@ _SECRET_QS_RE = re.compile(
 # scrub above, missed by it until #536.
 _URL_USERINFO_RE = re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://[^/\s:@\"']+):[^@/\s\"']+@")
 
+# BARE credentials — a token sitting in a message with no `key=` prefix and no URL
+# around it, so neither scrub above sees it (#849).
+#
+# This is not hypothetical: `fastapi_azure_auth` logs
+# ``log.warning('Malformed token received. %s. Error: %s', access_token, …)``, and a
+# DataQ PAT is not a JWT, so **every PAT-authenticated request** drove that line and
+# shipped the raw token to App Insights. The token is a live bearer credential: anyone
+# with read access to telemetry could authenticate as its owner.
+#
+# The lesson is the one CLAUDE.md §10 already states — redact at the LOGGER, not the
+# call site. We do not control what a third-party library logs, and "grep the codebase
+# for places we log tokens" would never have found this one, because we don't log it:
+# a dependency does.
+#
+# `dq_live_` is duplicated from `api_key_service.TOKEN_PREFIX` deliberately — core.logging
+# must not import the service layer (import cycle) — and a drift-guard test pins the two
+# together so a renamed prefix can't silently stop being redacted.
+_BEARER_TOKEN_RE = re.compile(
+    r"(?i)(?:"
+    r"dq_live_[A-Za-z0-9_\-]{6,}"  # a DataQ PAT (ADR 0026)
+    r"|eyJ[A-Za-z0-9_\-]{4,}\.[A-Za-z0-9_\-]{4,}\.[A-Za-z0-9_\-]*"  # a JWT (AAD access token)
+    r"|\bbearer\s+[A-Za-z0-9._~+/\-]{8,}=*"  # any `Bearer <token>` header echo
+    r")"
+)
+
 
 def _scrub_secret_strings(text: str) -> str:
     text = _SECRET_QS_RE.sub(lambda m: f"{m.group(1)}={_REDACTED}", text)
-    return _URL_USERINFO_RE.sub(lambda m: f"{m.group(1)}:{_REDACTED}@", text)
+    text = _URL_USERINFO_RE.sub(lambda m: f"{m.group(1)}:{_REDACTED}@", text)
+    return _BEARER_TOKEN_RE.sub(_REDACTED, text)
 
 
 def _redact_pii(_logger: Any, _name: str, event_dict: EventDict) -> EventDict:

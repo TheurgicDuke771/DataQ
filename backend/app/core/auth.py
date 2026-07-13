@@ -25,6 +25,7 @@ from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import Depends, Request, Security
+from fastapi.security import SecurityScopes
 from fastapi_azure_auth import SingleTenantAzureAuthorizationCodeBearer
 from fastapi_azure_auth.user import User as AzureUser
 from sqlalchemy.dialects.postgresql import insert
@@ -52,6 +53,37 @@ def _dev_bypass_allowed(settings: Settings) -> bool:
     )
 
 
+class _PatAwareAzureScheme(SingleTenantAzureAuthorizationCodeBearer):
+    """The Azure scheme, taught to keep its hands off a DataQ PAT (#849).
+
+    `Security(azure_scheme)` is a FastAPI *dependency*, so it resolves **before**
+    `get_current_user`'s body runs — meaning the PAT-first ordering documented there was
+    never actually first. Every `dq_live_…` bearer was handed to a JWT validator, which
+    naturally failed to decode it and logged
+
+        log.warning('Malformed token received. %s. Error: %s', access_token, error)
+
+    …shipping the **raw PAT** — a live bearer credential — into App Insights on every
+    single PAT-authenticated request, plus an exception record for good measure.
+
+    A PAT is not a JWT and must never reach a JWT validator. Short-circuiting to ``None``
+    here makes the two branches genuinely disjoint (`get_current_user` then takes the PAT
+    path), removes the log line at its source, and stops the exception spam.
+
+    The logger-level redaction in `core.logging` (`_BEARER_TOKEN_RE`) stays as the
+    backstop — we do not control what a dependency logs, and the next library to echo a
+    token won't announce itself either.
+    """
+
+    async def __call__(  # type: ignore[override]  # library types this as HTTPConnection -> Optional[User]
+        self, request: Request, security_scopes: SecurityScopes
+    ) -> AzureUser | None:
+        if _pat_token(request) is not None:
+            return None
+        user: AzureUser | None = await super().__call__(request, security_scopes)
+        return user
+
+
 def _build_azure_scheme(
     settings: Settings,
 ) -> SingleTenantAzureAuthorizationCodeBearer | None:
@@ -60,7 +92,7 @@ def _build_azure_scheme(
     assert settings.azure_api_client_id is not None
     assert settings.azure_tenant_id is not None
     assert settings.azure_api_scope_uri is not None
-    return SingleTenantAzureAuthorizationCodeBearer(
+    return _PatAwareAzureScheme(
         app_client_id=settings.azure_api_client_id,
         tenant_id=settings.azure_tenant_id,
         scopes={settings.azure_api_scope_uri: settings.azure_api_scope},
