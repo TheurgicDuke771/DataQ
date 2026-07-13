@@ -39,6 +39,15 @@ _PII_KEYS: frozenset[str] = frozenset(
         "aad_object_id",
         "upn",
         "preferred_username",
+        # Credential-bearing headers in their HYPHENATED header spelling (#849 review).
+        # `authorization` was already covered above, but a headers dict is keyed
+        # `x-api-key`, not `x_api_key`, and the key match is exact. Key-based redaction is
+        # the sturdier of the two mechanisms — it cannot be fooled by a token SHAPE nobody
+        # anticipated, which is exactly how the PAT leak happened.
+        "api-key",
+        "x-api-key",
+        "cookie",
+        "set-cookie",
         "user_id",
         "name",
         "display_name",
@@ -59,10 +68,42 @@ _SECRET_QS_RE = re.compile(
 # scrub above, missed by it until #536.
 _URL_USERINFO_RE = re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://[^/\s:@\"']+):[^@/\s\"']+@")
 
+# BARE credentials — a token sitting in a message with no `key=` prefix and no URL
+# around it, so neither scrub above sees it (#849).
+#
+# This is not hypothetical: `fastapi_azure_auth` logs
+# ``log.warning('Malformed token received. %s. Error: %s', access_token, …)``, and a
+# DataQ PAT is not a JWT, so **every PAT-authenticated request** drove that line and
+# shipped the raw token to App Insights. The token is a live bearer credential: anyone
+# with read access to telemetry could authenticate as its owner.
+#
+# The lesson is the one CLAUDE.md §10 already states — redact at the LOGGER, not the
+# call site. We do not control what a third-party library logs, and "grep the codebase
+# for places we log tokens" would never have found this one, because we don't log it:
+# a dependency does.
+#
+# `dq_live_` is duplicated from `api_key_service.TOKEN_PREFIX` deliberately — core.logging
+# must not import the service layer (import cycle) — and a drift-guard test pins the two
+# together so a renamed prefix can't silently stop being redacted.
+_BEARER_TOKEN_RE = re.compile(
+    r"(?i)(?:"
+    r"dq_live_[A-Za-z0-9_\-]{6,}"  # a DataQ PAT (ADR 0026)
+    r"|eyJ[A-Za-z0-9_\-]{4,}\.[A-Za-z0-9_\-]{4,}\.[A-Za-z0-9_\-]*"  # a JWT (AAD access token)
+    # A `Bearer <token>` header echo. Deliberately requires the value to LOOK like a
+    # token — ≥16 chars AND containing a digit or one of `-._~+/=` — because
+    # `bearer\s+\w{8,}` also matches prose ("bearer authentication required") and an
+    # over-eager redactor is not a safe failure: it hides the diagnostics an operator
+    # needs, and the usual response is to weaken or disable the scrubber entirely, at
+    # which point nothing is redacted at all (#849 review).
+    r"|\bbearer\s+(?=[A-Za-z0-9._~+/\-]*[0-9\-._~+/])[A-Za-z0-9._~+/\-]{16,}=*"
+    r")"
+)
+
 
 def _scrub_secret_strings(text: str) -> str:
     text = _SECRET_QS_RE.sub(lambda m: f"{m.group(1)}={_REDACTED}", text)
-    return _URL_USERINFO_RE.sub(lambda m: f"{m.group(1)}:{_REDACTED}@", text)
+    text = _URL_USERINFO_RE.sub(lambda m: f"{m.group(1)}:{_REDACTED}@", text)
+    return _BEARER_TOKEN_RE.sub(_REDACTED, text)
 
 
 def _redact_pii(_logger: Any, _name: str, event_dict: EventDict) -> EventDict:
@@ -230,6 +271,20 @@ def configure_logging(service_name: str = "dataq") -> None:
     root = logging.getLogger()
     root.handlers = [handler]
     root.setLevel(level)
+
+    # `azure.core`'s HTTP logging policy logs a full request AND response line for EVERY
+    # HTTP call the Azure SDK makes — Key Vault reads, and (once the OTel bridge below is
+    # attached) the exporter's own uploads to App Insights. That last one is a
+    # self-sustaining amplifier: the upload is logged, the log record reaches root,
+    # re-enters the export bridge, is uploaded, and is logged again. Measured in prod at
+    # ~10 records/second — 19,000 in half an hour — which drowned the application's real
+    # logs (a genuine orchestration-poll event became unfindable in the noise) and burned
+    # ingestion quota (#852).
+    #
+    # Silenced at INFO rather than detached (`propagate = False`), so a genuine transport
+    # WARNING from the SDK still reaches stdout and the backend; only the per-request
+    # chatter that feeds the loop is dropped.
+    logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
 
     # Detach uvicorn's pre-configured handlers; let logs propagate to root so
     # they hit the structlog ProcessorFormatter above.
