@@ -81,6 +81,32 @@ suites yet — or a multi-database project — set **`lineage_namespace`** on th
 config (the OpenLineage namespace verbatim, e.g. `snowflake://<account>`) to pin the anchor and
 bypass the inference entirely.
 
+#### When lineage is empty — check the poll before you check the graph
+
+An empty lineage graph and a **broken lineage pipeline look identical in the UI**. Today the
+asset simply says "No lineage recorded", whether that is the truth or whether DataQ has been
+unable to read your artifacts for a week. Two things follow, both learned the hard way in
+production (see [#828](https://github.com/TheurgicDuke771/DataQ/issues/828)):
+
+**1. The artifacts-store credential is a silent single point of failure.** The dbt connection's
+secret is the read credential for the artifacts store (an ADLS SAS, an S3 secret key). When it
+expires, every poll fails with an auth error, DataQ stops reading `manifest.json`, and **nothing
+in the UI says so** — the dbt builds keep succeeding and keep publishing artifacts that are never
+consumed. Prefer a long-lived credential, diary its expiry, and if lineage looks wrong, **test
+the dbt connection first** (`Connections → the dbt connection → Test`): a red test is your answer.
+Poll failures are logged as `orchestration_poll_failed` with `provider=dbt`.
+
+**2. Fixing the credential is not enough — the backlog is already stranded.** The poll only
+records builds whose `generated_at` falls inside its **15-minute lookback**. Once the credential
+is restored the poll starts succeeding and still records *nothing*, because every build produced
+during the outage is now older than the window. The artifacts are sitting right there in the
+store, and DataQ will not read them.
+
+> **Recovery:** re-run the dbt build (or wait for the next scheduled one) so a **fresh** artifact
+> lands inside the poll window. The next poll ingests it, dispatches `refresh_dbt_lineage`, and
+> the graph repopulates. Re-running the producer is currently the only way to recover a lineage
+> gap.
+
 ### Lineage from a catalog — the `LineageProvider` seam (ADR 0034, #762)
 
 The dbt slice above sees only what the dbt manifest models. A **governance catalog** sees

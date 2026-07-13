@@ -10,12 +10,18 @@
 
 - **Checks on 5 datasources** — Snowflake, Unity Catalog (Databricks), ADLS Gen2 + S3
   flat files (CSV/Parquet, batch patterns), and Apache Iceberg (native `pyiceberg` read).
-  Four check styles: **GX expectations**, **custom SQL** (rows returned = failures), and
-  **freshness / volume monitors**; plus a column profiler and dry-run preview on every
+  Five check styles: **GX expectations**, **custom SQL** (rows returned = failures),
+  **freshness / volume monitors**, and **comparison** (reconcile two datasets across
+  connections — ADR 0015); plus a column profiler and dry-run preview on every
   datasource. [Feature matrix →](https://theurgicduke771.github.io/DataQ/feature-matrix/)
+- **Assets, lineage & incidents** — the table/file is a first-class entity: health rolled
+  up across every suite that targets it, **table-level lineage** (a left-to-right graph of
+  provenance and blast radius, from dbt's manifest or an OpenLineage catalog), and open
+  incidents. Assets are the primary lens — the dashboard and sidebar lead with them (ADR
+  0034). [Concepts →](https://theurgicduke771.github.io/DataQ/concepts/)
 - **Three run modes** — run now (live progress + cancel), **cron schedules**
-  (timezone/DST-aware), and **pipeline triggers**: ADF + Airflow runs are monitored, and
-  a successful pipeline can trigger the bound suite. [Scheduling →](https://theurgicduke771.github.io/DataQ/scheduling/) · [Orchestration →](https://theurgicduke771.github.io/DataQ/orchestration/)
+  (timezone/DST-aware), and **pipeline triggers**: ADF, Airflow **and dbt** runs are
+  monitored, and a successful pipeline can trigger the bound suite. [Scheduling →](https://theurgicduke771.github.io/DataQ/scheduling/) · [Orchestration →](https://theurgicduke771.github.io/DataQ/orchestration/)
 - **Severity + alerting** — warn/fail/critical tiers band each check's unexpected-%;
   alerts to **Teams / Slack / email** with severity-aware routing, first-failure dedup,
   and per-check snooze. [Notifications →](https://theurgicduke771.github.io/DataQ/notifications/)
