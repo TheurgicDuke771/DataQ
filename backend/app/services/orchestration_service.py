@@ -19,6 +19,7 @@ FastAPI-free by design (like `connection_service` / `run_service`): takes a
 
 from __future__ import annotations
 
+import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -540,39 +541,64 @@ def list_pipelines(
 # integration is broken" instead of rendering a clean empty state over a dead one.
 
 
-# A poll's health bookkeeping takes a ROW LOCK (#837, to stop two overlapping sweeps both
-# firing the same alert). A lock, by default, waits FOREVER — and that is how it took prod
-# down (#854): one contended row was enough to hang the poll task, which wedged the
-# worker's pool, which silently stopped EVERY periodic task (orchestration polling,
-# scheduled-suite dispatch, gap recovery, the purge). The worker stayed "healthy"
-# throughout; only the database told the truth.
+# A poll's health bookkeeping takes a ROW LOCK (#837, so two overlapping sweeps can't both
+# fire the same alert). The *unbounded wait* on that lock is what took prod down (#854) —
+# see `db.session`, where `lock_timeout` is now set on the ENGINE so no statement anywhere
+# can block forever. This module only has to decide what to DO when the lock is contended.
 #
-# So the lock now fails fast. Bookkeeping is best-effort by contract (the caller already
-# treats it that way): if the row is contended we log it and move on, rather than block a
-# shared beat task indefinitely. A short wait is worth it — the lock is only held across
-# a couple of statements — but an unbounded one never is.
-_LOCK_TIMEOUT = "3s"
+# Postgres SQLSTATE for "could not obtain lock within the timeout".
+_LOCK_NOT_AVAILABLE = "55P03"
+
+# How many times to try for the lock before giving up. Contention here is transient by
+# nature (the lock is held across two statements), so one retry converts almost every
+# collision into a normal write — which matters, because SKIPPING the write leaves
+# `last_polled_at` stale and the UI then reports a HEALTHY poll as failing: the confident
+# -and-wrong health display #828 exists to prevent (#855 review).
+_LOCK_ATTEMPTS = 2
+_LOCK_RETRY_SECONDS = 0.25
+
+
+def _is_lock_timeout(exc: OperationalError) -> bool:
+    """Whether this is lock contention, as opposed to a real database fault.
+
+    `OperationalError` also covers a dropped connection, a server restart, an
+    admin-terminated backend. Treating those as "the row was busy" would report a genuine
+    DB outage as routine contention and send the next debugger down the wrong path — and
+    the entire lesson of #854 is what an invisible failure costs. Anything that is not
+    `lock_not_available` is re-raised.
+    """
+    return getattr(getattr(exc, "orig", None), "pgcode", None) == _LOCK_NOT_AVAILABLE
 
 
 def _lock_connection(session: Session, connection_id: uuid.UUID) -> Connection | None:
-    """Row-lock a connection for the health write, waiting at most `_LOCK_TIMEOUT`.
+    """Row-lock a connection for the health write; ``None`` if it is gone or contended.
 
-    Returns the locked row, or ``None`` when the connection is gone **or** the lock could
-    not be taken in time. A timeout raises `OperationalError` (Postgres `lock_not_available`),
-    which aborts the transaction — so it is rolled back here, leaving the session usable for
-    the caller.
+    The wait is bounded by the engine-level `lock_timeout`, so this can never hang. A
+    contended row is retried once (contention is brief) and only then given up on — the
+    caller treats the bookkeeping as best-effort, because blocking a SHARED beat task is
+    never worth a health field.
+
+    NOTE: on contention this **rolls the session back** — a lock timeout aborts the
+    transaction, so it must be. Both callers reach here with nothing uncommitted pending
+    (`ingest_polled_runs` commits first; the failure path has already rolled back), which
+    is why that is safe. Do not add an uncommitted write before calling this (#855 review).
     """
-    try:
-        session.execute(text(f"SET LOCAL lock_timeout = '{_LOCK_TIMEOUT}'"))
-        return session.get(Connection, connection_id, with_for_update=True)
-    except OperationalError:
-        session.rollback()
-        log.warning(
-            "orchestration_poll_health_lock_timeout",
-            connection_id=str(connection_id),
-            waited=_LOCK_TIMEOUT,
-        )
-        return None
+    for attempt in range(_LOCK_ATTEMPTS):
+        try:
+            return session.get(Connection, connection_id, with_for_update=True)
+        except OperationalError as exc:
+            session.rollback()
+            if not _is_lock_timeout(exc):
+                raise  # a real DB fault must never masquerade as lock contention
+            if attempt + 1 < _LOCK_ATTEMPTS:
+                time.sleep(_LOCK_RETRY_SECONDS)
+                continue
+            log.warning(
+                "orchestration_poll_health_lock_contended",
+                connection_id=str(connection_id),
+                attempts=_LOCK_ATTEMPTS,
+            )
+    return None
 
 
 def record_poll_success(session: Session, *, connection: Connection) -> int:

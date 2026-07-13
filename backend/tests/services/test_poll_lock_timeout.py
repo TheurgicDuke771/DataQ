@@ -227,3 +227,51 @@ def test_the_sweep_survives_a_contended_row(
         "down with it (#854)"
     )
     assert summary, "the sweep returned no summary — it did not complete"
+
+
+def test_a_real_db_fault_is_not_mislabelled_as_lock_contention(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`OperationalError` also covers a dropped connection / server restart. Swallowing
+    those as "the row was busy" would report a genuine DB outage as routine contention —
+    and the whole lesson of #854 is what an invisible failure costs (#855 review)."""
+    from sqlalchemy.exc import OperationalError
+
+    class _Dead:
+        pgcode = "57P01"  # admin_shutdown — NOT lock_not_available
+
+    def _boom(*args: Any, **kwargs: Any) -> None:
+        raise OperationalError("SELECT 1", {}, _Dead())  # type: ignore[arg-type]  # orig is duck-typed
+
+    monkeypatch.setattr(
+        orchestration_service, "_lock_connection", orchestration_service._lock_connection
+    )
+    session = db_session
+    monkeypatch.setattr(type(session), "get", lambda *a, **k: _boom())
+
+    with pytest.raises(OperationalError):
+        orchestration_service.record_poll_failure(
+            session, connection_id=uuid.uuid4(), exc=RuntimeError("x")
+        )
+
+
+def test_the_engine_bounds_every_lock_wait(db_session: Any) -> None:
+    """The class-level guard (#855 review): the timeout lives on the ENGINE, so NO
+    statement anywhere — not merely these two functions — can block on a lock forever.
+
+    The original defect was never "these two functions lock a row"; it was that anything
+    sharing the beat could block indefinitely and take every periodic task with it. A
+    per-callsite guard would leave that property intact for the next `with_for_update`
+    someone adds. Asserted against a REAL connection (`SHOW lock_timeout`), not by
+    introspecting SQLAlchemy's kwargs — what matters is what Postgres actually enforces.
+    """
+    from backend.app.db.session import SessionLocal, _LOCK_TIMEOUT_MS
+
+    session = SessionLocal()
+    try:
+        setting = session.execute(text("SHOW lock_timeout")).scalar_one()
+    finally:
+        session.close()
+
+    assert setting not in ("0", "0ms"), "lock_timeout is unset — a lock can block forever"
+    assert str(_LOCK_TIMEOUT_MS) in str(setting) or setting.endswith("s")
