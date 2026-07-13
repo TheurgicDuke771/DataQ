@@ -75,6 +75,14 @@ Four ways a suite runs (all the same authz — [feature matrix](feature-matrix.m
   (datasource → database/catalog → schema → table, with env + health on each leaf) and a
   flat, searchable **All assets** table. Both open the asset detail (health across suites,
   lineage, incidents).
+- **Datasources read as names, not connection strings** — an asset is *identified* by its
+  OpenLineage namespace (the physical location, so DataQ's identifiers join byte-for-byte
+  with dbt/Spark emissions), but it is *displayed* as a human label: `Snowflake · ACCT`,
+  `ADLS · account/container`, `iceberg_catalog`. The raw namespace stays one hover away
+  (and is what the copy button copies). Note the label is deliberately **not** the
+  connection name: several connections can point at one datasource instance and all
+  resolve to the same namespace — which is exactly what makes the same table reached two
+  ways a single asset.
 - **Lineage graph** — an asset's provenance and blast radius render as one
   left-to-right graph (upstream → this asset → downstream), one column per hop, with
   clickable nodes. Depth ≥2 comes from the blast-radius BFS, which also returns the
@@ -95,6 +103,10 @@ Four ways a suite runs (all the same authz — [feature matrix](feature-matrix.m
   (config / connectivity / permission), not a bare "failed".
 - **Metric trends** — the numeric `metric_value` per check is kept for trend/baseline even
   after samples are purged by the retention sweep.
+- **Usable on a phone** — the whole app, not just the dashboard. On a narrow viewport the
+  sidebar becomes an overlay drawer (it never squeezes the page), tables scroll inside
+  their own container rather than the page, the lineage graph scrolls inside its card, and
+  the panels that grant access or edit a suite reflow so their controls stay on screen.
 
 ## Orchestration (monitor + trigger only)
 

@@ -22,6 +22,37 @@ Portability, auto-monitors, and polish on top of v1:
   extended to every datasource.
 - **Run failure reasons** — a run that fails to execute now shows a redaction-safe reason.
 - **Secret lifecycle** — connection delete cleans up its stored secret.
+- **Assets as the primary lens** — a data asset (table/file) is now a first-class entity
+  with its own page: health rolled up across every suite that targets it, open incidents,
+  and lineage. The dashboard and sidebar lead with assets; suites and runs link back to
+  the asset they touch (ADR 0034).
+- **Lineage graph** — an asset's provenance and blast radius render as one left-to-right
+  graph, one column per hop, with clickable nodes.
+- **Asset browse by source** — drill down datasource → database → schema → table, with a
+  flat searchable table as the second lens.
+- **Two health axes on an asset** — "could DataQ reach the datasource?" is shown separately
+  from "is the data good?", so an unreachable datasource no longer masquerades as a data
+  failure, and a run that evaluated nothing no longer reads as a green pass.
+- **Datasources read as names** — the UI shows `Snowflake · ACCT` / `ADLS · account/container`
+  / `iceberg_catalog` instead of the raw connection string (an Iceberg namespace is a full
+  DSN). The raw identifier stays available on hover and via copy.
+- **Mobile** — the sidebar becomes an overlay drawer on a narrow viewport, and the share /
+  edit panels reflow so their controls stay on screen (previously the "Add" button in the
+  share drawer was painted off the right edge, making a suite unshareable from a phone).
+
+### Fixed
+
+- **Iceberg catalog credential exposure** — the SQL-catalog password had to be carried
+  inline in the `catalog_uri` (the connection type had only one secret slot), which meant
+  it was persisted in the connections table, copied into the asset identity, returned by
+  the API, and rendered in the UI. Iceberg connections now take a **second secret**
+  (`catalog_secret_name`), the config **rejects** a password in `catalog_uri`, and a
+  migration scrubs existing rows. **Action required:** an existing Iceberg connection whose
+  `catalog_uri` carried a password must be re-pointed at a secret and **the password
+  rotated** — treat it as disclosed.
+- **`/assets` deep links 404'd** in the production image — the nginx rule for the hashed
+  bundle directory also swallowed the `/assets` app route.
+
 - Docs: Features overview, Recommended usage, this changelog, security, REST API,
   troubleshooting, deployment, and a first-suite tutorial.
 

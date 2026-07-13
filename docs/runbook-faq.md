@@ -69,3 +69,13 @@ after a retention window — never written to logs.
 
 **Can an AI assistant use DataQ?** Yes — 8 MCP tools at `/mcp` (Claude Desktop / Claude.ai
 / Copilot / Cursor), Azure-AD authenticated. See [AI assistants (MCP setup)](mcp-setup.md).
+
+**An asset shows no lineage — is that right?** Maybe not. "No lineage recorded" is what you
+see both when an asset genuinely has no upstreams **and** when DataQ has been unable to read
+your dbt artifacts — the two are indistinguishable in the UI today. Test the dbt connection
+first: its secret is the artifacts-store read credential, and when it expires the poll fails
+silently while your dbt builds keep succeeding. Note that fixing the credential alone will
+**not** backfill — the poll's 15-minute lookback means every build produced during the outage
+is already stranded, so you must re-run the dbt build to get a fresh artifact into the window.
+Full detail in [Orchestration → When lineage is empty](orchestration.md#when-lineage-is-empty--check-the-poll-before-you-check-the-graph)
+and [#828](https://github.com/TheurgicDuke771/DataQ/issues/828).
