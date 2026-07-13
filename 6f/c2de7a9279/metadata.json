@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "6fc2de7a9279",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-854-poll-lock-timeout",
+  "checkpoints_count": 3,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/6f/c2de7a9279/0/metadata.json",
+      "transcript": "/6f/c2de7a9279/0/full.jsonl",
+      "compact_transcript": "/6f/c2de7a9279/0/transcript.jsonl",
+      "content_hash": "/6f/c2de7a9279/0/content_hash.txt",
+      "prompt": "/6f/c2de7a9279/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 3180,
+    "cache_creation_tokens": 6758211,
+    "cache_read_tokens": 654170899,
+    "output_tokens": 1033443,
+    "api_call_count": 1564
+  }
+}
