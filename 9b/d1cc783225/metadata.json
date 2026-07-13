@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "9bd1cc783225",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-829-share-drawer-mobile",
+  "checkpoints_count": 2,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/9b/d1cc783225/0/metadata.json",
+      "transcript": "/9b/d1cc783225/0/full.jsonl",
+      "compact_transcript": "/9b/d1cc783225/0/transcript.jsonl",
+      "content_hash": "/9b/d1cc783225/0/content_hash.txt",
+      "prompt": "/9b/d1cc783225/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1641,
+    "cache_creation_tokens": 3706164,
+    "cache_read_tokens": 363358843,
+    "output_tokens": 577761,
+    "api_call_count": 811
+  }
+}
