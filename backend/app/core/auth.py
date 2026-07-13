@@ -25,10 +25,12 @@ from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import Depends, Request, Security
+from fastapi.security import SecurityScopes
 from fastapi_azure_auth import SingleTenantAzureAuthorizationCodeBearer
 from fastapi_azure_auth.user import User as AzureUser
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
+from starlette.requests import HTTPConnection
 
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.errors import DataQError
@@ -52,6 +54,43 @@ def _dev_bypass_allowed(settings: Settings) -> bool:
     )
 
 
+class _PatAwareAzureScheme(SingleTenantAzureAuthorizationCodeBearer):
+    """The Azure scheme, taught to keep its hands off a DataQ PAT (#849).
+
+    `Security(azure_scheme)` is a FastAPI *dependency*, so it resolves **before**
+    `get_current_user`'s body runs — meaning the PAT-first ordering documented there was
+    never actually first. Every `dq_live_…` bearer was handed to a JWT validator, which
+    naturally failed to decode it and logged
+
+        log.warning('Malformed token received. %s. Error: %s', access_token, error)
+
+    …shipping the **raw PAT** — a live bearer credential — into App Insights on every
+    single PAT-authenticated request, plus an exception record for good measure.
+
+    A PAT is not a JWT and must never reach a JWT validator. Short-circuiting to ``None``
+    here makes the two branches genuinely disjoint (`get_current_user` then takes the PAT
+    path), removes the log line at its source, and stops the exception spam.
+
+    The logger-level redaction in `core.logging` (`_BEARER_TOKEN_RE`) stays as the
+    backstop — we do not control what a dependency logs, and the next library to echo a
+    token won't announce itself either.
+    """
+
+    async def __call__(
+        self, request: HTTPConnection, security_scopes: SecurityScopes
+    ) -> AzureUser | None:
+        # `HTTPConnection`, not `Request`, because that is what the library declares and
+        # what FastAPI may hand us: a WebSocket route secured with this scheme yields a
+        # `WebSocket` — also an HTTPConnection, but NOT a Request. Narrowing the type
+        # would have needed a `type: ignore[override]`, which silences precisely the check
+        # that would flag the mismatch (#849 review). Both carry `.headers`, which is all
+        # `_pat_token` reads.
+        if _pat_token(request) is not None:
+            return None
+        user: AzureUser | None = await super().__call__(request, security_scopes)
+        return user
+
+
 def _build_azure_scheme(
     settings: Settings,
 ) -> SingleTenantAzureAuthorizationCodeBearer | None:
@@ -60,7 +99,7 @@ def _build_azure_scheme(
     assert settings.azure_api_client_id is not None
     assert settings.azure_tenant_id is not None
     assert settings.azure_api_scope_uri is not None
-    return SingleTenantAzureAuthorizationCodeBearer(
+    return _PatAwareAzureScheme(
         app_client_id=settings.azure_api_client_id,
         tenant_id=settings.azure_tenant_id,
         scopes={settings.azure_api_scope_uri: settings.azure_api_scope},
@@ -73,8 +112,11 @@ def _build_azure_scheme(
     )
 
 
-def _bearer_token(request: Request) -> str | None:
-    """The raw bearer token from the Authorization header, if any."""
+def _bearer_token(request: HTTPConnection) -> str | None:
+    """The raw bearer token from the Authorization header, if any.
+
+    Takes `HTTPConnection` (the common base of `Request` and `WebSocket`) so the security
+    scheme can call it with whatever FastAPI injects — only `.headers` is read."""
     header = request.headers.get("Authorization", "")
     scheme, _, token = header.partition(" ")
     if scheme.lower() == "bearer" and token.strip():
@@ -82,7 +124,7 @@ def _bearer_token(request: Request) -> str | None:
     return None
 
 
-def _pat_token(request: Request) -> str | None:
+def _pat_token(request: HTTPConnection) -> str | None:
     """The bearer token when it is a DataQ PAT (by prefix), else None."""
     token = _bearer_token(request)
     if token is not None and token.startswith(api_key_service.TOKEN_PREFIX):
