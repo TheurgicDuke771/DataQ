@@ -54,12 +54,19 @@ test.describe('share drawer (390px)', () => {
       )
       .toBeLessThanOrEqual(0);
 
-    // The controls a user needs to actually grant access all survive the reflow —
+    // Both pickers a user needs to actually grant access survive the reflow —
     // wrapping must not push the permission picker out to make room for the button.
-    // Scoped to the add row: `ShareRow` renders the same permission labels, so an
-    // unscoped text match would go ambiguous the moment this suite has a view share.
+    //
+    // Located structurally (the two `.ant-select`s that are the Add button's
+    // siblings) rather than by text or placeholder: an antd Select renders NO
+    // `placeholder` attribute — the placeholder is a separate span — so
+    // `getByPlaceholder` matches nothing, and matching the permission label by text
+    // would go ambiguous the moment this suite has a `view` share, since `ShareRow`
+    // renders the same labels.
     const addRow = add.locator('xpath=..');
-    await expect(addRow.getByPlaceholder('Search by email or name')).toBeInViewport({ ratio: 1 });
-    await expect(addRow.locator('.ant-select-selection-item')).toBeInViewport({ ratio: 1 });
+    const pickers = addRow.locator('.ant-select');
+    await expect(pickers).toHaveCount(2);
+    await expect(pickers.first()).toBeInViewport({ ratio: 1 });
+    await expect(pickers.last()).toBeInViewport({ ratio: 1 });
   });
 });
