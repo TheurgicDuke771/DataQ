@@ -1,0 +1,146 @@
+For #805 - user will not ablle to interact with SVG, correct? that why reactflow was suggested. But if SVG nodes are clockable then we should be good. 
+
+Subscription is enabled in azure. 
+So, once you done with these changes - Deploy the App in azure, deploy the marquez [run it once], run the adhoc harness once [add marquez to it], run the ui-tester in prod as dataq-admin. 
+
+THEN MAKE SURE ALL THE HARNESS AND UNWANTED JOBS IN AZURE ARE STOPPED/DISABLED.
+
+---
+
+<task-notification>
+<task-id>bvdt6nl2t</task-id>
+<tool-use-id>toolu_01CmQc7VeUKQkMV7ACGR1srR</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/b8546e7c-0c8e-402c-b6cc-6720612adcfc/tasks/bvdt6nl2t.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for dbt-lineage to finish" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+run the ui-tester again. 
+One question for lineage - The pull ran, reached Marquez, but DataQ not able to pull the lineage then is it not our issue?
+
+---
+
+rotate the password and resolve the security issues.
+
+---
+
+<task-notification>
+<task-id>b78dge6t7</task-id>
+<tool-use-id>toolu_01PZpW4Aq4JMr1cATuukNX1E</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/b8546e7c-0c8e-402c-b6cc-6720612adcfc/tasks/b78dge6t7.output</output-file>
+<status>completed</status>
+<summary>Background command "Merge PR 827" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+yeah lineage first, then the label
+Also make the suit sh`are drawer as an overlay in Mobile
+
+---
+
+deploy the latest changes to Prod. 
+Then update the documents - READMEs, GitHub page, @docs/progress.md , and others
+
+---
+
+Okay, lets pickup #823 and then #828
+
+---
+
+Good. 
+Is the latest canges deployened to PROD and documented [if required]
+And, what is pending for Asset/Lineage piece?
+
+---
+
+Okay lets impllement #837 then deploy the changes to PROD (along with #839 migration)
+
+---
+
+<task-notification>
+<task-id>bh1g1t544</task-id>
+<summary>Monitor event: "CI checks on PR 841"</summary>
+<event>Backend — SAST (Bandit): pass
+Backend — dependency audit (pip-audit): pass
+Backend — lint &amp; format: pass
+Frontend — dependency audit (pnpm audit): pass
+Frontend — lint &amp; format: pass
+GitGuardian Security Checks: pass
+Secret scanning (betterleaks): pass
+build: pass
+deploy: skipping</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bh1g1t544</task-id>
+<summary>Monitor event: "CI checks on PR 841"</summary>
+<event>Backend — type check: pass</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bh1g1t544</task-id>
+<summary>Monitor event: "CI checks on PR 841"</summary>
+<event>CodeQL analysis (javascript-typescript): pass
+CodeQL analysis (python): pass
+CodeQL: pass</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bh1g1t544</task-id>
+<summary>Monitor event: "CI checks on PR 841"</summary>
+<event>Frontend — tests: pass</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bh1g1t544</task-id>
+<summary>Monitor event: "CI checks on PR 841"</summary>
+<event>Backend — tests: pass
+Frontend — browser E2E (Playwright): pass
+ALL CHECKS COMPLETE</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bs6pdzzxn</task-id>
+<summary>Monitor event: "production deploy run 29224243043"</summary>
+<event>Backend — build, migrate, deploy (API + worker): success</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bs6pdzzxn</task-id>
+<summary>Monitor event: "production deploy run 29224243043"</summary>
+<event>Frontend — build image, deploy to Container App: success
+DEPLOY success</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bjsmjpkui</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/b8546e7c-0c8e-402c-b6cc-6720612adcfc/tasks/bjsmjpkui.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for an orchestration poll cycle in prod" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+I just noticed For Olivia the Order Header lineage shows Mart Order Revenue, but when clicked it showed `Failed to load asset asset not found`. Is it intended?
+
+---
+
+Fix the security issue, and rotate the PAT
