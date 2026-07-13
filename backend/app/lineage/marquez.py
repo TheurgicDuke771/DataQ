@@ -12,8 +12,14 @@ is ``DATASET`` / ``JOB`` / ``DATASET_FIELD`` / ``RUN``; each edge object is
 ``{"origin": nodeId, "destination": nodeId}`` and is **directed origin→destination**
 (upstream→downstream). Dataset identity comes from the node's ``data.namespace`` /
 ``data.name`` (never from splitting the ``id`` string — an OpenLineage namespace can
-contain ``:``). Because #757 adopted OpenLineage naming verbatim, matching a pulled
-dataset to a DataQ asset is a byte-for-byte join, not a mapping layer.
+contain ``:``).
+
+Matching a pulled dataset to a DataQ asset is **not** the byte-for-byte join ADR 0034
+originally assumed. A real producer emits whatever case its source spelled, so the
+*names* diverge even though the *namespaces* agree (measured — see
+`lineage.identity`, #823). The pull therefore enumerates the catalog's own dataset
+names (:meth:`list_datasets`) and reconciles them through
+`lineage.identity.canonical_identity`; this module never invents a node id.
 
 **Fail-soft, never raises** (the seam contract, mirroring the emitter's 5 s bounded
 transport): a dead/slow Marquez, a non-200, garbage JSON, or a structurally-broken
@@ -36,6 +42,7 @@ seam for production lineage.
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -62,6 +69,12 @@ _MAX_DEPTH = 20
 # memory. Well above any realistic blast-radius neighbourhood for a single dataset.
 _MAX_NODES = 10_000
 
+# Dataset-listing pagination (#823). Marquez's `.../datasets` is limit/offset paged; the
+# cap is the same "bound the blast radius of a hostile/huge catalog" discipline as
+# `_MAX_NODES`, and hitting it is LOGGED rather than silently swallowed.
+_DATASET_PAGE = 100
+_MAX_DATASETS = 10_000
+
 
 class MarquezLineageProvider:
     """Pulls lineage from a Marquez server's ``/api/v1/lineage`` API."""
@@ -72,6 +85,62 @@ class MarquezLineageProvider:
         # Trailing slash stripped so the path join is unambiguous.
         self._base_url = base_url.rstrip("/")
         self._timeout = timeout
+
+    def list_datasets(self, *, namespace: str) -> list[str]:
+        """Every dataset name Marquez holds in ``namespace`` (``GET .../datasets``).
+
+        Paginated (`limit`/`offset`, with `totalCount` in the body) and hard-capped at
+        `_MAX_DATASETS`, so a catalog with a runaway namespace can't be materialized
+        into memory. A truncated listing is logged, not silently accepted — silently
+        seeing "fewer datasets" is exactly the class of invisible degradation #823/#828
+        exist to kill.
+        """
+        url = f"{self._base_url}/api/v1/namespaces/{quote(namespace, safe='')}/datasets"
+        names: list[str] = []
+        offset = 0
+        while offset < _MAX_DATASETS:
+            try:
+                response = httpx.get(
+                    url,
+                    params={"limit": _DATASET_PAGE, "offset": offset},
+                    timeout=self._timeout,
+                )
+                if response.status_code == 404:
+                    # The catalog has never heard of this namespace. That is an
+                    # OBSERVATION, not an outage — and the distinction is load-bearing:
+                    # raising `unavailable` here would permanently disable the stale-edge
+                    # prune for every workspace holding an asset the catalog doesn't
+                    # cover (an S3 bucket while only dbt/Snowflake is emitted — i.e. most
+                    # of them), and would fire an outage warning on every 24 h cycle,
+                    # burying the signal a REAL outage needs to send.
+                    return []
+                response.raise_for_status()
+                payload = response.json()
+            except (httpx.HTTPError, ValueError) as exc:
+                log.warning("marquez_dataset_list_failed", namespace=namespace, error=str(exc))
+                raise LineageUnavailableError(
+                    f"marquez dataset listing failed for {namespace}: {exc}"
+                ) from exc
+
+            page = payload.get("datasets") if isinstance(payload, dict) else None
+            if not isinstance(page, list) or not page:
+                break
+            for entry in page:
+                # Tolerant per-entry (the get_lineage contract): a malformed dataset is
+                # dropped, never raised — one bad row must not blind the whole pull.
+                if isinstance(entry, dict) and isinstance(entry.get("name"), str):
+                    names.append(entry["name"])
+            # Advance on the PAGE length, never on how many names we managed to keep.
+            # Paging on `len(names)` would spin forever against a server whose rows we
+            # can't parse: the page stays full, our list never grows, and the loop never
+            # terminates — an unbounded run of 5 s HTTP calls that hangs the refresh.
+            if len(page) < _DATASET_PAGE:
+                break
+            offset += len(page)
+
+        if offset >= _MAX_DATASETS:
+            log.warning("marquez_dataset_list_truncated", namespace=namespace, cap=_MAX_DATASETS)
+        return names
 
     def get_lineage(self, *, namespace: str, name: str, depth: int) -> LineageGraph:
         """Pull + normalize the lineage graph around ``dataset:{namespace}:{name}``.

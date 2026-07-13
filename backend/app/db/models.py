@@ -257,6 +257,28 @@ class Connection(Base):
     created_at: Mapped[datetime] = _created_at()
     updated_at: Mapped[datetime] = _updated_at()
 
+    # ── Poll health (#828) ────────────────────────────────────────────────────
+    # An orchestration poll that fails every 10 minutes used to be visible ONLY in the
+    # logs: the connection still read as configured, the lineage UI showed its normal
+    # empty state, and the beat task reported success with an `errors` count nobody saw.
+    # Prod lineage rotted for six days on an expired SAS and the product cheerfully said
+    # "nothing to see here". These three columns are what make that state *a fact about
+    # the connection* rather than a line in App Insights.
+    #
+    # NULL on every non-orchestration connection (and on any orchestration connection
+    # never yet polled) — "unknown", which the UI must not render as healthy.
+    last_polled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # A **classified**, redaction-safe reason — never raw exception text, which can
+    # carry a SAS/token/DSN (the #536 traceback-locals leak is the precedent). NULL
+    # means the last poll succeeded.
+    last_poll_error: Mapped[str | None] = mapped_column(String(512))
+    # Consecutive failures; reset to 0 on any success. The counter (not a bare boolean)
+    # is what lets the UI say "failing for ~6 days" instead of "failing", and what a
+    # future alert threshold rides on.
+    consecutive_poll_failures: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0")
+    )
+
 
 class ConnectionVersion(Base):
     """An immutable snapshot of a connection's editable, **non-secret** state,

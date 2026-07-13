@@ -120,6 +120,7 @@ const DETAIL: AssetDetailData = {
     { source: 'u1', target: 'a1' },
     { source: 'a1', target: 'd1' },
   ],
+  failing_lineage_sources: [],
 };
 
 function meState(isAdmin: boolean): AsyncState<MeResponse> {
@@ -443,4 +444,55 @@ describe('AssetDetail page', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith('a1', { owner_user_id: null }));
   }, 15000);
+});
+
+// #828 — the lineage empty state must never lie.
+//
+// Prod lineage was dark for six days behind an expired credential and this card said
+// "No lineage recorded for this asset", which is exactly what it says for an asset that
+// genuinely has no upstreams. A broken integration and an isolated table were
+// indistinguishable. These pin the difference.
+describe('AssetDetail — a failing lineage source (#828)', () => {
+  it('warns instead of showing a clean empty state when a lineage source is failing', async () => {
+    mockGet.mockResolvedValue({
+      ...DETAIL,
+      upstream: [],
+      downstream: [],
+      lineage_edges: [],
+      failing_lineage_sources: [
+        {
+          connection_id: 'c-1',
+          name: 'dbt — Retail',
+          type: 'dbt',
+          consecutive_failures: 864,
+          last_error: 'authentication failed',
+          last_polled_at: '2026-07-13T00:00:00Z',
+        },
+      ],
+    });
+
+    renderPage();
+
+    expect(await screen.findByText(/a source is failing/i)).toBeInTheDocument();
+    expect(screen.getByText(/dbt — Retail/)).toBeInTheDocument();
+    expect(screen.getByText(/864/)).toBeInTheDocument();
+    expect(screen.getByText(/authentication failed/)).toBeInTheDocument();
+    // and the empty state itself stops asserting the absence is the truth
+    expect(screen.getByText(/may not be the truth/i)).toBeInTheDocument();
+  });
+
+  it('shows the plain empty state when every lineage source is healthy', async () => {
+    mockGet.mockResolvedValue({
+      ...DETAIL,
+      upstream: [],
+      downstream: [],
+      lineage_edges: [],
+      failing_lineage_sources: [],
+    });
+
+    renderPage();
+
+    expect(await screen.findByText('No lineage recorded for this asset.')).toBeInTheDocument();
+    expect(screen.queryByText(/a source is failing/i)).not.toBeInTheDocument();
+  });
 });

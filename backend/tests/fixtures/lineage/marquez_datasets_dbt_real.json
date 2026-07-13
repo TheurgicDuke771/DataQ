@@ -1,0 +1,1079 @@
+{
+    "totalCount": 10,
+    "datasets": [
+        {
+            "id": {
+                "namespace": "snowflake://ACME-TEST01",
+                "name": "DATAQ_DB.ANALYTICS.mart_customer_orders"
+            },
+            "type": "DB_TABLE",
+            "name": "DATAQ_DB.ANALYTICS.mart_customer_orders",
+            "physicalName": "DATAQ_DB.ANALYTICS.mart_customer_orders",
+            "createdAt": "2026-07-12T23:15:31.400667Z",
+            "updatedAt": "2026-07-13T03:02:09.737326Z",
+            "namespace": "snowflake://ACME-TEST01",
+            "sourceName": "snowflake://ACME-TEST01",
+            "fields": [
+                {
+                    "name": "customer_id",
+                    "type": null,
+                    "tags": [],
+                    "description": "Customer grain \u2014 unique, not null."
+                },
+                {
+                    "name": "customer_id",
+                    "type": null,
+                    "tags": [],
+                    "description": "Customer grain \u2014 unique, not null."
+                }
+            ],
+            "tags": [],
+            "lastModifiedAt": null,
+            "lastLifecycleState": "",
+            "description": null,
+            "currentVersion": "dcb35daf-7d9e-42f7-b3ba-f910b8ebb48f",
+            "columnLineage": null,
+            "facets": {
+                "columnLineage": {
+                    "fields": {
+                        "city": {
+                            "inputFields": [
+                                {
+                                    "name": "customers",
+                                    "field": "city",
+                                    "namespace": "snowflake://ACME-TEST01",
+                                    "transformations": []
+                                }
+                            ]
+                        },
+                        "state": {
+                            "inputFields": [
+                                {
+                                    "name": "customers",
+                                    "field": "state",
+                                    "namespace": "snowflake://ACME-TEST01",
+                                    "transformations": []
+                                }
+                            ]
+                        },
+                        "last_name": {
+                            "inputFields": [
+                                {
+                                    "name": "customers",
+                                    "field": "last_name",
+                                    "namespace": "snowflake://ACME-TEST01",
+                                    "transformations": []
+                                }
+                            ]
+                        },
+                        "first_name": {
+                            "inputFields": [
+                                {
+                                    "name": "customers",
+                                    "field": "first_name",
+                                    "namespace": "snowflake://ACME-TEST01",
+                                    "transformations": []
+                                }
+                            ]
+                        },
+                        "customer_id": {
+                            "inputFields": [
+                                {
+                                    "name": "customers",
+                                    "field": "customer_id",
+                                    "namespace": "snowflake://ACME-TEST01",
+                                    "transformations": []
+                                }
+                            ]
+                        },
+                        "order_count": {
+                            "inputFields": [
+                                {
+                                    "name": "orders",
+                                    "field": "order_count",
+                                    "namespace": "snowflake://ACME-TEST01",
+                                    "transformations": []
+                                }
+                            ]
+                        },
+                        "signup_date": {
+                            "inputFields": [
+                                {
+                                    "name": "customers",
+                                    "field": "signup_date",
+                                    "namespace": "snowflake://ACME-TEST01",
+                                    "transformations": []
+                                }
+                            ]
+                        },
+                        "last_order_ts": {
+                            "inputFields": [
+                                {
+                                    "name": "DATAQ_DB.ANALYTICS_STG.stg_orders",
+                                    "field": "order_ts",
+                                    "namespace": "snowflake://ACME-TEST01",
+                                    "transformations": []
+                                }
+                            ]
+                        },
+                        "first_order_ts": {
+                            "inputFields": [
+                                {
+                                    "name": "DATAQ_DB.ANALYTICS_STG.stg_orders",
+                                    "field": "order_ts",
+                                    "namespace": "snowflake://ACME-TEST01",
+                                    "transformations": []
+                                }
+                            ]
+                        },
+                        "lifetime_value": {
+                            "inputFields": [
+                                {
+                                    "name": "DATAQ_DB.ANALYTICS_STG.stg_orders",
+                                    "field": "order_total",
+                                    "namespace": "snowflake://ACME-TEST01",
+                                    "transformations": []
+                                }
+                            ]
+                        }
+                    },
+                    "dataset": [],
+                    "_producer": "https://github.com/OpenLineage/OpenLineage/tree/1.51.0/client/python",
+                    "_schemaURL": "https://openlineage.io/spec/facets/1-2-0/ColumnLineageDatasetFacet.json#/$defs/ColumnLineageDatasetFacet"
+                },
+                "dataQualityAssertions": {
+                    "_producer": "https://github.com/OpenLineage/OpenLineage/tree/1.51.0/client/python",
+                    "_schemaURL": "https://openlineage.io/spec/facets/1-1-0/DataQualityAssertionsDatasetFacet.json#/$defs/DataQualityAssertionsDatasetFacet",
+                    "assertions": [
+                        {
+                            "actual": "0",
+                            "params": {},
+                            "success": true,
+                            "expected": "0",
+                            "severity": "error",
+                            "assertion": "unique_mart_customer_orders_customer_id"
+                        },
+                        {
+                            "actual": "0",
+                            "params": {},
+                            "success": true,
+                            "expected": "0",
+                            "severity": "error",
+                            "assertion": "not_null_mart_customer_orders_customer_id"
+                        }
+                    ]
+                },
+                "dataSource": {
+                    "uri": "snowflake://ACME-TEST01",
+                    "name": "snowflake://ACME-TEST01",
+                    "_producer": "https://github.com/OpenLineage/OpenLineage/tree/1.51.0/client/python",
+                    "_schemaURL": "https://openlineage.io/spec/facets/1-0-1/DatasourceDatasetFacet.json#/$defs/DatasourceDatasetFacet"
+                },
+                "dbt_model": {
+                    "config": {
+                        "access": "protected",
+                        "materialized": "dynamic_table"
+                    },
+                    "_producer": "https://github.com/OpenLineage/OpenLineage/tree/1.51.0/client/python",
+                    "_schemaURL": "https://github.com/OpenLineage/OpenLineage/tree/main/integration/common/openlineage/schema/dbt-model-dataset-facet.json"
+                },
+                "documentation": {
+                    "_producer": "https://github.com/OpenLineage/OpenLineage/tree/1.51.0/client/python",
+                    "_schemaURL": "https://openlineage.io/spec/facets/1-1-0/DocumentationDatasetFacet.json#/$defs/DocumentationDatasetFacet",
+                    "description": "Per-customer lifetime order stats (dynamic table, target_lag 1h). One row per CUSTOMER_ID."
+                },
+                "schema": {
+                    "fields": [
+                        {
+                            "name": "customer_id",
+                            "fields": [],
+                            "description": "Customer grain \u2014 unique, not null."
+                        }
+                    ],
+                    "_producer": "https://github.com/OpenLineage/OpenLineage/tree/1.51.0/client/python",
+                    "_schemaURL": "https://openlineage.io/spec/facets/1-2-0/SchemaDatasetFacet.json#/$defs/SchemaDatasetFacet"
+                }
+            },
+            "deleted": false
+        },
+        {
+            "id": {
+                "namespace": "snowflake://ACME-TEST01",
+                "name": "DATAQ_DB.ANALYTICS.mart_order_revenue"
+            },
+            "type": "DB_TABLE",
+            "name": "DATAQ_DB.ANALYTICS.mart_order_revenue",
+            "physicalName": "DATAQ_DB.ANALYTICS.mart_order_revenue",
+            "createdAt": "2026-07-12T23:15:31.411477Z",
+            "updatedAt": "2026-07-13T03:02:09.737326Z",
+            "namespace": "snowflake://ACME-TEST01",
+            "sourceName": "snowflake://ACME-TEST01",
+            "fields": [
+                {
+                    "name": "order_number",
+                    "type": null,
+                    "tags": [],
+                    "description": "Order grain \u2014 unique, not null."
+                },
+                {
+                    "name": "order_ts",
+                    "type": null,
+                    "tags": [],
+                    "description": "Order timestamp \u2014 freshness anchor for the DataQ freshness monitor."
+                },
+                {
+                    "name": "line_count",
+                    "type": null,
+                    "tags": [],
+                    "description": "Number of order lines rolled into the order."
+                },
+                {
+                    "name": "order_number",
+                    "type": null,
+                    "tags": [],
+                    "description": "Order grain \u2014 unique, not null."
+                },
+                {
+                    "name": "order_ts",
+                    "type": null,
+                    "tags": [],
+                    "description": "Order timestamp \u2014 freshness anchor for the DataQ freshness monitor."
+                },
+                {
+                    "name": "line_count",
+                    "type": null,
+                    "tags": [],
+                    "description": "Number of order lines rolled into the order."
+                }
+            ],
+            "tags": [],
+            "lastModifiedAt": null,
+            "lastLifecycleState": "",
+            "description": null,
+            "currentVersion": "ca3ffd07-1c09-480a-8dd4-3ee99dfc26c3",
+            "columnLineage": null,
+            "facets": {
+                "columnLineage": {
+                    "fields": {
+                        "tax": {
+                            "inputFields": [
+                                {
+                                    "name": "orders",
+                                    "field": "tax",
+                                    "namespace": "snowflake://ACME-TEST01",
+                                    "transformations": []
+                                }
+                            ]
+                        },
+                        "status": {
+                            "inputFields": [
+                                {
+                                    "name": "orders",
+                                    "field": "status",
+                                    "namespace": "snowflake://ACME-TEST01",
+                                    "transformations": []
+                                }
+                            ]
+                        },
+                        "channel": {
+                            "inputFields": [
+                                {
+                                    "name": "orders",
+                                    "field": "channel",
+                                    "namespace": "snowflake://ACME-TEST01",
+                                    "transformations": []
+                                }
+                            ]
+                        },
+                        "currency": {
+                            "inputFields": [
+                                {
+                                    "name": "orders",
+                                    "field": "currency",
+                                    "namespace": "snowflake://ACME-TEST01",
+                                    "transformations": []
+                                }
+                            ]
+                        },
+                        "order_ts": {
+                            "inputFields": [
+                                {
+                                    "name": "orders",
+                                    "field": "order_ts",
+                                    "namespace": "snowflake://ACME-TEST01",
+                                    "transformations": []
+                                }
+                            ]
+                        },
+                        "store_id": {
+                            "inputFields": [
+                                {
+                                    "name": "orders",
+                                    "field": "store_id",
+                                    "namespace": "snowflake://ACME-TEST01",
+                                    "transformations": []
+                                }
+                            ]
+                        },
+                        "subtotal": {
+                            "inputFields": [
+                                {
+                                    "name": "orders",
+                                    "field": "subtotal",
+                                    "namespace": "snowflake://ACME-TEST01",
+                                    "transformations": []
+                                }
+                            ]
+                        },
+                        "total_qty": {
+                            "inputFields": [
+                                {
+                                    "name": "DATAQ_DB.ANALYTICS_STG.stg_order_lines",
+                                    "field": "qty",
+                                    "namespace": "snowflake://ACME-TEST01",
+                                    "transformations": []
+                                }
+                            ]
+                        },
+                        "line_count": {
+                            "inputFields": [
+                                {
+                                    "name": "lines",
+                                    "field": "line_count",
+                                    "namespace": "snowflake://ACME-TEST01",
+                                    "transformations": []
+                                }
+                            ]
+                        },
+                        "customer_id": {
+                            "inputFields": [
+                                {
+                                    "name": "orders",
+                                    "field": "customer_id",
+                                    "namespace": "snowflake://ACME-TEST01",
+                                    "transformations": []
+                                }
+                            ]
+                        },
+                        "order_total": {
+                            "inputFields": [
+                                {
+                                    "name": "orders",
+                                    "field": "order_total",
+                                    "namespace": "snowflake://ACME-TEST01",
+                                    "transformations": []
+                                }
+                            ]
+                        },
+                        "order_number": {
+                            "inputFields": [
+                                {
+                                    "name": "orders",
+                                    "field": "order_number",
+                                    "namespace": "snowflake://ACME-TEST01",
+                                    "transformations": []
+                                }
+                            ]
+                        },
+                        "reconciled_subtotal": {
+                            "inputFields": [
+                                {
+                                    "name": "DATAQ_DB.ANALYTICS_STG.stg_order_lines",
+                                    "field": "line_total",
+                                    "namespace": "snowflake://ACME-TEST01",
+                                    "transformations": []
+                                }
+                            ]
+                        }
+                    },
+                    "dataset": [],
+                    "_producer": "https://github.com/OpenLineage/OpenLineage/tree/1.51.0/client/python",
+                    "_schemaURL": "https://openlineage.io/spec/facets/1-2-0/ColumnLineageDatasetFacet.json#/$defs/ColumnLineageDatasetFacet"
+                },
+                "dataQualityAssertions": {
+                    "_producer": "https://github.com/OpenLineage/OpenLineage/tree/1.51.0/client/python",
+                    "_schemaURL": "https://openlineage.io/spec/facets/1-1-0/DataQualityAssertionsDatasetFacet.json#/$defs/DataQualityAssertionsDatasetFacet",
+                    "assertions": [
+                        {
+                            "actual": "0",
+                            "params": {},
+                            "success": true,
+                            "expected": "0",
+                            "severity": "error",
+                            "assertion": "not_null_mart_order_revenue_order_ts"
+                        },
+                        {
+                            "actual": "0",
+                            "params": {},
+                            "success": true,
+                            "expected": "0",
+                            "severity": "error",
+                            "assertion": "not_null_mart_order_revenue_order_number"
+                        },
+                        {
+                            "actual": "0",
+                            "params": {},
+                            "success": true,
+                            "expected": "0",
+                            "severity": "error",
+                            "assertion": "unique_mart_order_revenue_order_number"
+                        }
+                    ]
+                },
+                "dataSource": {
+                    "uri": "snowflake://ACME-TEST01",
+                    "name": "snowflake://ACME-TEST01",
+                    "_producer": "https://github.com/OpenLineage/OpenLineage/tree/1.51.0/client/python",
+                    "_schemaURL": "https://openlineage.io/spec/facets/1-0-1/DatasourceDatasetFacet.json#/$defs/DatasourceDatasetFacet"
+                },
+                "dbt_model": {
+                    "config": {
+                        "access": "protected",
+                        "materialized": "dynamic_table"
+                    },
+                    "_producer": "https://github.com/OpenLineage/OpenLineage/tree/1.51.0/client/python",
+                    "_schemaURL": "https://github.com/OpenLineage/OpenLineage/tree/main/integration/common/openlineage/schema/dbt-model-dataset-facet.json"
+                },
+                "documentation": {
+                    "_producer": "https://github.com/OpenLineage/OpenLineage/tree/1.51.0/client/python",
+                    "_schemaURL": "https://openlineage.io/spec/facets/1-1-0/DocumentationDatasetFacet.json#/$defs/DocumentationDatasetFacet",
+                    "description": "Per-order line-item roll-up (dynamic table, target_lag 1h). One row per ORDER_NUMBER."
+                },
+                "schema": {
+                    "fields": [
+                        {
+                            "name": "order_number",
+                            "fields": [],
+                            "description": "Order grain \u2014 unique, not null."
+                        },
+                        {
+                            "name": "order_ts",
+                            "fields": [],
+                            "description": "Order timestamp \u2014 freshness anchor for the DataQ freshness monitor."
+                        },
+                        {
+                            "name": "line_count",
+                            "fields": [],
+                            "description": "Number of order lines rolled into the order."
+                        }
+                    ],
+                    "_producer": "https://github.com/OpenLineage/OpenLineage/tree/1.51.0/client/python",
+                    "_schemaURL": "https://openlineage.io/spec/facets/1-2-0/SchemaDatasetFacet.json#/$defs/SchemaDatasetFacet"
+                }
+            },
+            "deleted": false
+        },
+        {
+            "id": {
+                "namespace": "snowflake://ACME-TEST01",
+                "name": "DATAQ_DB.ANALYTICS_STG.stg_customers"
+            },
+            "type": "DB_TABLE",
+            "name": "DATAQ_DB.ANALYTICS_STG.stg_customers",
+            "physicalName": "DATAQ_DB.ANALYTICS_STG.stg_customers",
+            "createdAt": "2026-07-12T23:15:27.080989Z",
+            "updatedAt": "2026-07-12T23:15:33.250582Z",
+            "namespace": "snowflake://ACME-TEST01",
+            "sourceName": "snowflake://ACME-TEST01",
+            "fields": [],
+            "tags": [],
+            "lastModifiedAt": null,
+            "lastLifecycleState": "",
+            "description": null,
+            "currentVersion": "cdf37aa3-fed3-4872-bb72-750128e06430",
+            "columnLineage": null,
+            "facets": {
+                "columnLineage": {
+                    "fields": {
+                        "city": {
+                            "inputFields": [
+                                {
+                                    "name": "source",
+                                    "field": "city",
+                                    "namespace": "snowflake://ACME-TEST01",
+                                    "transformations": []
+                                }
+                            ]
+                        },
+                        "email": {
+                            "inputFields": [
+                                {
+                                    "name": "source",
+                                    "field": "email",
+                                    "namespace": "snowflake://ACME-TEST01",
+                                    "transformations": []
+                                }
+                            ]
+                        },
+                        "state": {
+                            "inputFields": [
+                                {
+                                    "name": "source",
+                                    "field": "state",
+                                    "namespace": "snowflake://ACME-TEST01",
+                                    "transformations": []
+                                }
+                            ]
+                        },
+                        "last_name": {
+                            "inputFields": [
+                                {
+                                    "name": "source",
+                                    "field": "last_name",
+                                    "namespace": "snowflake://ACME-TEST01",
+                                    "transformations": []
+                                }
+                            ]
+                        },
+                        "first_name": {
+                            "inputFields": [
+                                {
+                                    "name": "source",
+                                    "field": "first_name",
+                                    "namespace": "snowflake://ACME-TEST01",
+                                    "transformations": []
+                                }
+                            ]
+                        },
+                        "customer_id": {
+                            "inputFields": [
+                                {
+                                    "name": "source",
+                                    "field": "customer_id",
+                                    "namespace": "snowflake://ACME-TEST01",
+                                    "transformations": []
+                                }
+                            ]
+                        },
+                        "signup_date": {
+                            "inputFields": [
+                                {
+                                    "name": "source",
+                                    "field": "signup_date",
+                                    "namespace": "snowflake://ACME-TEST01",
+                                    "transformations": []
+                                }
+                            ]
+                        },
+                        "marketing_opt_in": {
+                            "inputFields": [
+                                {
+                                    "name": "source",
+                                    "field": "marketing_opt_in",
+                                    "namespace": "snowflake://ACME-TEST01",
+                                    "transformations": []
+                                }
+                            ]
+                        }
+                    },
+                    "dataset": [],
+                    "_producer": "https://github.com/OpenLineage/OpenLineage/tree/1.51.0/client/python",
+                    "_schemaURL": "https://openlineage.io/spec/facets/1-2-0/ColumnLineageDatasetFacet.json#/$defs/ColumnLineageDatasetFacet"
+                },
+                "dataSource": {
+                    "uri": "snowflake://ACME-TEST01",
+                    "name": "snowflake://ACME-TEST01",
+                    "_producer": "https://github.com/OpenLineage/OpenLineage/tree/1.51.0/client/python",
+                    "_schemaURL": "https://openlineage.io/spec/facets/1-0-1/DatasourceDatasetFacet.json#/$defs/DatasourceDatasetFacet"
+                },
+                "dbt_model": {
+                    "config": {
+                        "access": "protected",
+                        "materialized": "view"
+                    },
+                    "_producer": "https://github.com/OpenLineage/OpenLineage/tree/1.51.0/client/python",
+                    "_schemaURL": "https://github.com/OpenLineage/OpenLineage/tree/main/integration/common/openlineage/schema/dbt-model-dataset-facet.json"
+                }
+            },
+            "deleted": false
+        },
+        {
+            "id": {
+                "namespace": "snowflake://ACME-TEST01",
+                "name": "DATAQ_DB.ANALYTICS_STG.stg_order_lines"
+            },
+            "type": "DB_TABLE",
+            "name": "DATAQ_DB.ANALYTICS_STG.stg_order_lines",
+            "physicalName": "DATAQ_DB.ANALYTICS_STG.stg_order_lines",
+            "createdAt": "2026-07-12T23:15:27.117547Z",
+            "updatedAt": "2026-07-12T23:15:33.258256Z",
+            "namespace": "snowflake://ACME-TEST01",
+            "sourceName": "snowflake://ACME-TEST01",
+            "fields": [],
+            "tags": [],
+            "lastModifiedAt": null,
+            "lastLifecycleState": "",
+            "description": null,
+            "currentVersion": "e533279e-9b53-4879-a73c-77137877f50c",
+            "columnLineage": null,
+            "facets": {
+                "columnLineage": {
+                    "fields": {
+                        "qty": {
+                            "inputFields": [
+                                {
+                                    "name": "source",
+                                    "field": "qty",
+                                    "namespace": "snowflake://ACME-TEST01",
+                                    "transformations": []
+                                }
+                            ]
+                        },
+                        "sku_id": {
+                            "inputFields": [
+                                {
+                                    "name": "source",
+                                    "field": "sku_id",
+                                    "namespace": "snowflake://ACME-TEST01",
+                                    "transformations": []
+                                }
+                            ]
+                        },
+                        "line_id": {
+                            "inputFields": [
+                                {
+                                    "name": "source",
+                                    "field": "line_id",
+                                    "namespace": "snowflake://ACME-TEST01",
+                                    "transformations": []
+                                }
+                            ]
+                        },
+                        "line_total": {
+                            "inputFields": [
+                                {
+                                    "name": "source",
+                                    "field": "line_total",
+                                    "namespace": "snowflake://ACME-TEST01",
+                                    "transformations": []
+                                }
+                            ]
+                        },
+                        "unit_price": {
+                            "inputFields": [
+                                {
+                                    "name": "source",
+                                    "field": "unit_price",
+                                    "namespace": "snowflake://ACME-TEST01",
+                                    "transformations": []
+                                }
+                            ]
+                        },
+                        "order_number": {
+                            "inputFields": [
+                                {
+                                    "name": "source",
+                                    "field": "order_number",
+                                    "namespace": "snowflake://ACME-TEST01",
+                                    "transformations": []
+                                }
+                            ]
+                        }
+                    },
+                    "dataset": [],
+                    "_producer": "https://github.com/OpenLineage/OpenLineage/tree/1.51.0/client/python",
+                    "_schemaURL": "https://openlineage.io/spec/facets/1-2-0/ColumnLineageDatasetFacet.json#/$defs/ColumnLineageDatasetFacet"
+                },
+                "dataSource": {
+                    "uri": "snowflake://ACME-TEST01",
+                    "name": "snowflake://ACME-TEST01",
+                    "_producer": "https://github.com/OpenLineage/OpenLineage/tree/1.51.0/client/python",
+                    "_schemaURL": "https://openlineage.io/spec/facets/1-0-1/DatasourceDatasetFacet.json#/$defs/DatasourceDatasetFacet"
+                },
+                "dbt_model": {
+                    "config": {
+                        "access": "protected",
+                        "materialized": "view"
+                    },
+                    "_producer": "https://github.com/OpenLineage/OpenLineage/tree/1.51.0/client/python",
+                    "_schemaURL": "https://github.com/OpenLineage/OpenLineage/tree/main/integration/common/openlineage/schema/dbt-model-dataset-facet.json"
+                }
+            },
+            "deleted": false
+        },
+        {
+            "id": {
+                "namespace": "snowflake://ACME-TEST01",
+                "name": "DATAQ_DB.ANALYTICS_STG.stg_orders"
+            },
+            "type": "DB_TABLE",
+            "name": "DATAQ_DB.ANALYTICS_STG.stg_orders",
+            "physicalName": "DATAQ_DB.ANALYTICS_STG.stg_orders",
+            "createdAt": "2026-07-12T23:15:27.106921Z",
+            "updatedAt": "2026-07-12T23:15:33.258256Z",
+            "namespace": "snowflake://ACME-TEST01",
+            "sourceName": "snowflake://ACME-TEST01",
+            "fields": [],
+            "tags": [],
+            "lastModifiedAt": null,
+            "lastLifecycleState": "",
+            "description": null,
+            "currentVersion": "f26dc96d-f9d8-478f-a8f0-373d9fb1af06",
+            "columnLineage": null,
+            "facets": {
+                "columnLineage": {
+                    "fields": {
+                        "tax": {
+                            "inputFields": [
+                                {
+                                    "name": "source",
+                                    "field": "tax",
+                                    "namespace": "snowflake://ACME-TEST01",
+                                    "transformations": []
+                                }
+                            ]
+                        },
+                        "status": {
+                            "inputFields": [
+                                {
+                                    "name": "source",
+                                    "field": "status",
+                                    "namespace": "snowflake://ACME-TEST01",
+                                    "transformations": []
+                                }
+                            ]
+                        },
+                        "channel": {
+                            "inputFields": [
+                                {
+                                    "name": "source",
+                                    "field": "channel",
+                                    "namespace": "snowflake://ACME-TEST01",
+                                    "transformations": []
+                                }
+                            ]
+                        },
+                        "currency": {
+                            "inputFields": [
+                                {
+                                    "name": "source",
+                                    "field": "currency",
+                                    "namespace": "snowflake://ACME-TEST01",
+                                    "transformations": []
+                                }
+                            ]
+                        },
+                        "order_ts": {
+                            "inputFields": [
+                                {
+                                    "name": "source",
+                                    "field": "order_ts",
+                                    "namespace": "snowflake://ACME-TEST01",
+                                    "transformations": []
+                                }
+                            ]
+                        },
+                        "promo_id": {
+                            "inputFields": [
+                                {
+                                    "name": "source",
+                                    "field": "promo_id",
+                                    "namespace": "snowflake://ACME-TEST01",
+                                    "transformations": []
+                                }
+                            ]
+                        },
+                        "store_id": {
+                            "inputFields": [
+                                {
+                                    "name": "source",
+                                    "field": "store_id",
+                                    "namespace": "snowflake://ACME-TEST01",
+                                    "transformations": []
+                                }
+                            ]
+                        },
+                        "subtotal": {
+                            "inputFields": [
+                                {
+                                    "name": "source",
+                                    "field": "subtotal",
+                                    "namespace": "snowflake://ACME-TEST01",
+                                    "transformations": []
+                                }
+                            ]
+                        },
+                        "customer_id": {
+                            "inputFields": [
+                                {
+                                    "name": "source",
+                                    "field": "customer_id",
+                                    "namespace": "snowflake://ACME-TEST01",
+                                    "transformations": []
+                                }
+                            ]
+                        },
+                        "order_total": {
+                            "inputFields": [
+                                {
+                                    "name": "source",
+                                    "field": "order_total",
+                                    "namespace": "snowflake://ACME-TEST01",
+                                    "transformations": []
+                                }
+                            ]
+                        },
+                        "order_number": {
+                            "inputFields": [
+                                {
+                                    "name": "source",
+                                    "field": "order_number",
+                                    "namespace": "snowflake://ACME-TEST01",
+                                    "transformations": []
+                                }
+                            ]
+                        }
+                    },
+                    "dataset": [],
+                    "_producer": "https://github.com/OpenLineage/OpenLineage/tree/1.51.0/client/python",
+                    "_schemaURL": "https://openlineage.io/spec/facets/1-2-0/ColumnLineageDatasetFacet.json#/$defs/ColumnLineageDatasetFacet"
+                },
+                "dataSource": {
+                    "uri": "snowflake://ACME-TEST01",
+                    "name": "snowflake://ACME-TEST01",
+                    "_producer": "https://github.com/OpenLineage/OpenLineage/tree/1.51.0/client/python",
+                    "_schemaURL": "https://openlineage.io/spec/facets/1-0-1/DatasourceDatasetFacet.json#/$defs/DatasourceDatasetFacet"
+                },
+                "dbt_model": {
+                    "config": {
+                        "access": "protected",
+                        "materialized": "view"
+                    },
+                    "_producer": "https://github.com/OpenLineage/OpenLineage/tree/1.51.0/client/python",
+                    "_schemaURL": "https://github.com/OpenLineage/OpenLineage/tree/main/integration/common/openlineage/schema/dbt-model-dataset-facet.json"
+                }
+            },
+            "deleted": false
+        },
+        {
+            "id": {
+                "namespace": "snowflake://ACME-TEST01",
+                "name": "DATAQ_DB.ANALYTICS_STG.stg_products"
+            },
+            "type": "DB_TABLE",
+            "name": "DATAQ_DB.ANALYTICS_STG.stg_products",
+            "physicalName": "DATAQ_DB.ANALYTICS_STG.stg_products",
+            "createdAt": "2026-07-12T23:15:27.120306Z",
+            "updatedAt": "2026-07-13T03:02:11.962210Z",
+            "namespace": "snowflake://ACME-TEST01",
+            "sourceName": "snowflake://ACME-TEST01",
+            "fields": [],
+            "tags": [],
+            "lastModifiedAt": null,
+            "lastLifecycleState": "",
+            "description": null,
+            "currentVersion": "e7cba52a-cd12-42d0-849d-b0d1631e2a10",
+            "columnLineage": null,
+            "facets": {
+                "columnLineage": {
+                    "fields": {
+                        "active": {
+                            "inputFields": [
+                                {
+                                    "name": "source",
+                                    "field": "active",
+                                    "namespace": "snowflake://ACME-TEST01",
+                                    "transformations": []
+                                }
+                            ]
+                        },
+                        "sku_id": {
+                            "inputFields": [
+                                {
+                                    "name": "source",
+                                    "field": "sku_id",
+                                    "namespace": "snowflake://ACME-TEST01",
+                                    "transformations": []
+                                }
+                            ]
+                        },
+                        "category": {
+                            "inputFields": [
+                                {
+                                    "name": "source",
+                                    "field": "category",
+                                    "namespace": "snowflake://ACME-TEST01",
+                                    "transformations": []
+                                }
+                            ]
+                        },
+                        "created_at": {
+                            "inputFields": [
+                                {
+                                    "name": "source",
+                                    "field": "created_at",
+                                    "namespace": "snowflake://ACME-TEST01",
+                                    "transformations": []
+                                }
+                            ]
+                        },
+                        "unit_price": {
+                            "inputFields": [
+                                {
+                                    "name": "source",
+                                    "field": "unit_price",
+                                    "namespace": "snowflake://ACME-TEST01",
+                                    "transformations": []
+                                }
+                            ]
+                        }
+                    },
+                    "dataset": [],
+                    "_producer": "https://github.com/OpenLineage/OpenLineage/tree/1.51.0/client/python",
+                    "_schemaURL": "https://openlineage.io/spec/facets/1-2-0/ColumnLineageDatasetFacet.json#/$defs/ColumnLineageDatasetFacet"
+                },
+                "dataSource": {
+                    "uri": "snowflake://ACME-TEST01",
+                    "name": "snowflake://ACME-TEST01",
+                    "_producer": "https://github.com/OpenLineage/OpenLineage/tree/1.51.0/client/python",
+                    "_schemaURL": "https://openlineage.io/spec/facets/1-0-1/DatasourceDatasetFacet.json#/$defs/DatasourceDatasetFacet"
+                },
+                "dbt_model": {
+                    "config": {
+                        "access": "protected",
+                        "materialized": "view"
+                    },
+                    "_producer": "https://github.com/OpenLineage/OpenLineage/tree/1.51.0/client/python",
+                    "_schemaURL": "https://github.com/OpenLineage/OpenLineage/tree/main/integration/common/openlineage/schema/dbt-model-dataset-facet.json"
+                }
+            },
+            "deleted": false
+        },
+        {
+            "id": {
+                "namespace": "snowflake://ACME-TEST01",
+                "name": "DATAQ_DB.RETAIL.customers"
+            },
+            "type": "DB_TABLE",
+            "name": "DATAQ_DB.RETAIL.customers",
+            "physicalName": "DATAQ_DB.RETAIL.customers",
+            "createdAt": "2026-07-12T23:15:27.080989Z",
+            "updatedAt": "2026-07-12T23:15:27.757255Z",
+            "namespace": "snowflake://ACME-TEST01",
+            "sourceName": "snowflake://ACME-TEST01",
+            "fields": [],
+            "tags": [],
+            "lastModifiedAt": null,
+            "lastLifecycleState": "",
+            "description": "Customer dimension (ADF timer pipeline).",
+            "currentVersion": "0f40ba8f-19cb-46b3-9506-b1f6ca36e6d2",
+            "columnLineage": null,
+            "facets": {
+                "dataSource": {
+                    "uri": "snowflake://ACME-TEST01",
+                    "name": "snowflake://ACME-TEST01",
+                    "_producer": "https://github.com/OpenLineage/OpenLineage/tree/1.51.0/client/python",
+                    "_schemaURL": "https://openlineage.io/spec/facets/1-0-1/DatasourceDatasetFacet.json#/$defs/DatasourceDatasetFacet"
+                },
+                "documentation": {
+                    "_producer": "https://github.com/OpenLineage/OpenLineage/tree/1.51.0/client/python",
+                    "_schemaURL": "https://openlineage.io/spec/facets/1-1-0/DocumentationDatasetFacet.json#/$defs/DocumentationDatasetFacet",
+                    "description": "Customer dimension (ADF timer pipeline)."
+                }
+            },
+            "deleted": false
+        },
+        {
+            "id": {
+                "namespace": "snowflake://ACME-TEST01",
+                "name": "DATAQ_DB.RETAIL.order_lines"
+            },
+            "type": "DB_TABLE",
+            "name": "DATAQ_DB.RETAIL.order_lines",
+            "physicalName": "DATAQ_DB.RETAIL.order_lines",
+            "createdAt": "2026-07-12T23:15:27.117547Z",
+            "updatedAt": "2026-07-12T23:15:27.686390Z",
+            "namespace": "snowflake://ACME-TEST01",
+            "sourceName": "snowflake://ACME-TEST01",
+            "fields": [],
+            "tags": [],
+            "lastModifiedAt": null,
+            "lastLifecycleState": "",
+            "description": "Order line items (Airflow schedule load). Grain: one row per LINE_ID.",
+            "currentVersion": "1dc6d619-d41d-4b91-a879-c8fd87d9a387",
+            "columnLineage": null,
+            "facets": {
+                "dataSource": {
+                    "uri": "snowflake://ACME-TEST01",
+                    "name": "snowflake://ACME-TEST01",
+                    "_producer": "https://github.com/OpenLineage/OpenLineage/tree/1.51.0/client/python",
+                    "_schemaURL": "https://openlineage.io/spec/facets/1-0-1/DatasourceDatasetFacet.json#/$defs/DatasourceDatasetFacet"
+                },
+                "documentation": {
+                    "_producer": "https://github.com/OpenLineage/OpenLineage/tree/1.51.0/client/python",
+                    "_schemaURL": "https://openlineage.io/spec/facets/1-1-0/DocumentationDatasetFacet.json#/$defs/DocumentationDatasetFacet",
+                    "description": "Order line items (Airflow schedule load). Grain: one row per LINE_ID."
+                }
+            },
+            "deleted": false
+        },
+        {
+            "id": {
+                "namespace": "snowflake://ACME-TEST01",
+                "name": "DATAQ_DB.RETAIL.orders_header"
+            },
+            "type": "DB_TABLE",
+            "name": "DATAQ_DB.RETAIL.orders_header",
+            "physicalName": "DATAQ_DB.RETAIL.orders_header",
+            "createdAt": "2026-07-12T23:15:27.106921Z",
+            "updatedAt": "2026-07-12T23:15:31.387308Z",
+            "namespace": "snowflake://ACME-TEST01",
+            "sourceName": "snowflake://ACME-TEST01",
+            "fields": [],
+            "tags": [],
+            "lastModifiedAt": null,
+            "lastLifecycleState": "",
+            "description": "Order headers (ADF event pipeline). Grain: one row per ORDER_NUMBER.",
+            "currentVersion": "13f4d47e-1470-4897-96aa-3b65ac865a7b",
+            "columnLineage": null,
+            "facets": {
+                "dataSource": {
+                    "uri": "snowflake://ACME-TEST01",
+                    "name": "snowflake://ACME-TEST01",
+                    "_producer": "https://github.com/OpenLineage/OpenLineage/tree/1.51.0/client/python",
+                    "_schemaURL": "https://openlineage.io/spec/facets/1-0-1/DatasourceDatasetFacet.json#/$defs/DatasourceDatasetFacet"
+                },
+                "documentation": {
+                    "_producer": "https://github.com/OpenLineage/OpenLineage/tree/1.51.0/client/python",
+                    "_schemaURL": "https://openlineage.io/spec/facets/1-1-0/DocumentationDatasetFacet.json#/$defs/DocumentationDatasetFacet",
+                    "description": "Order headers (ADF event pipeline). Grain: one row per ORDER_NUMBER."
+                }
+            },
+            "deleted": false
+        },
+        {
+            "id": {
+                "namespace": "snowflake://ACME-TEST01",
+                "name": "DATAQ_DB.RETAIL.products"
+            },
+            "type": "DB_TABLE",
+            "name": "DATAQ_DB.RETAIL.products",
+            "physicalName": "DATAQ_DB.RETAIL.products",
+            "createdAt": "2026-07-12T23:15:27.120306Z",
+            "updatedAt": "2026-07-12T23:15:30.789857Z",
+            "namespace": "snowflake://ACME-TEST01",
+            "sourceName": "snowflake://ACME-TEST01",
+            "fields": [],
+            "tags": [],
+            "lastModifiedAt": null,
+            "lastLifecycleState": "",
+            "description": "Product/SKU dimension (Airflow schedule load).",
+            "currentVersion": "95c4bebb-0088-4974-8422-7cf21afea1b8",
+            "columnLineage": null,
+            "facets": {
+                "dataSource": {
+                    "uri": "snowflake://ACME-TEST01",
+                    "name": "snowflake://ACME-TEST01",
+                    "_producer": "https://github.com/OpenLineage/OpenLineage/tree/1.51.0/client/python",
+                    "_schemaURL": "https://openlineage.io/spec/facets/1-0-1/DatasourceDatasetFacet.json#/$defs/DatasourceDatasetFacet"
+                },
+                "documentation": {
+                    "_producer": "https://github.com/OpenLineage/OpenLineage/tree/1.51.0/client/python",
+                    "_schemaURL": "https://openlineage.io/spec/facets/1-1-0/DocumentationDatasetFacet.json#/$defs/DocumentationDatasetFacet",
+                    "description": "Product/SKU dimension (Airflow schedule load)."
+                }
+            },
+            "deleted": false
+        }
+    ]
+}

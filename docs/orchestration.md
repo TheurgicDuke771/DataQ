@@ -119,9 +119,21 @@ provider-specific branching in service code), caching the pulled edges into the 
 nodes are not assumed to be tables**, and a BI/dashboard node round-trips the moment a
 capable catalog (Purview/DataHub) lands behind the seam, with no schema or query change.
 
+- **Cross-producer identity — names do NOT join byte-for-byte** (#823, ADR 0034 amendment).
+  OpenLineage has no case-folding rule, so two producers naming the same physical table need not
+  agree: real `openlineage-dbt` emits `DATAQ_DB.ANALYTICS.mart_order_revenue` where DataQ's asset
+  identity is `DATAQ_DB.ANALYTICS.MART_ORDER_REVENUE` (its `database`/`schema` come from the dbt
+  profile, the table from the model filename). Namespaces *do* agree. So the pull **enumerates the
+  catalog's own dataset names and seeds with those**, reconciling them to DataQ's assets through an
+  engine-correct fold (`snowflake://` → upper, `unitycatalog://` → lower, and **no fold** for
+  `abfss://`/`s3://`/Iceberg, which are case-**sensitive**). An exact name always wins over the
+  fold, and an ambiguous fold (two catalog datasets folding to one key — Snowflake's quoted
+  `"orders"` vs unquoted `ORDERS`) is **refused, never guessed**. Pulled identities are
+  canonicalized on ingest, so a catalog can never fork a second asset for a table you already
+  monitor.
 - **Reference implementation: Marquez** (Apache-2.0). Pull = `GET {MARQUEZ_URL}/api/v1/lineage?
-  nodeId=dataset:{namespace}:{name}&depth=N`; identity matches DataQ assets byte-for-byte because
-  both use the OpenLineage naming spec. Fail-soft (5 s timeout, node cap, depth clamp) — and a
+  nodeId=dataset:{namespace}:{name}&depth=N`, seeded from `GET .../namespaces/{ns}/datasets`.
+  Fail-soft (5 s timeout, node cap, depth clamp) — and a
   dead catalog is treated as **unavailable**, not as empty lineage: the refresh skips pruning for
   that pass (an outage can never wipe the cached graph), never surfaces an error, and stale edges
   wait for the next clean pull.

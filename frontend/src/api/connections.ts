@@ -123,6 +123,12 @@ export interface Connection {
   config: Record<string, unknown>;
   has_secret: boolean;
   created_by: string;
+  /** Poll health (#828) — orchestration connections only. A failing poll used to be
+   *  visible ONLY in the logs, so a dead integration looked exactly like a healthy
+   *  quiet one. `last_poll_error` is a classified reason, never raw exception text. */
+  last_polled_at?: string | null;
+  last_poll_error?: string | null;
+  consecutive_poll_failures?: number;
 }
 
 /** Human-readable labels for the connection types, for grouping + display. */

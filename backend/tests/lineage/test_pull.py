@@ -33,13 +33,22 @@ _JOB_ID = "job:dataq:suite.abc"
 
 
 class _FakeProvider:
-    """A `LineageProvider` that replays canned graphs keyed on the seed identity."""
+    """A `LineageProvider` that replays canned graphs keyed on the seed identity.
+
+    `list_datasets` reports exactly the datasets the canned graphs are keyed on — i.e.
+    it behaves like a catalog that holds those names verbatim. The pull now seeds from
+    the catalog's OWN listing rather than from our asset names (#823), so a fake that
+    didn't list would report every asset `absent` and pull nothing.
+    """
 
     provider = "marquez"
 
     def __init__(self, graphs: dict[tuple[str, str], LineageGraph]) -> None:
         self._graphs = graphs
         self.calls: list[tuple[str, str, int]] = []
+
+    def list_datasets(self, *, namespace: str) -> list[str]:
+        return [name for (ns, name) in self._graphs if ns == namespace]
 
     def get_lineage(self, *, namespace: str, name: str, depth: int) -> LineageGraph:
         self.calls.append((namespace, name, depth))
@@ -48,6 +57,9 @@ class _FakeProvider:
 
 class _BoomProvider:
     provider = "marquez"
+
+    def list_datasets(self, *, namespace: str) -> list[str]:
+        raise RuntimeError("catalog on fire")
 
     def get_lineage(self, *, namespace: str, name: str, depth: int) -> LineageGraph:
         raise RuntimeError("catalog on fire")
@@ -289,6 +301,9 @@ def test_provider_outage_never_prunes_cache(db_session: Any) -> None:
     class _DeadProvider:
         provider = "marquez"
 
+        def list_datasets(self, *, namespace: str) -> list[str]:
+            raise LineageUnavailableError("catalog down")
+
         def get_lineage(self, *, namespace: str, name: str, depth: int) -> Any:
             raise LineageUnavailableError("catalog down")
 
@@ -311,6 +326,12 @@ def test_partial_outage_upserts_but_skips_prune(db_session: Any) -> None:
     class _FlakyProvider:
         provider = "marquez"
         calls = 0
+
+        def list_datasets(self, *, namespace: str) -> list[str]:
+            # The catalog lists both seeded assets, so both reach `get_lineage`; the
+            # FIRST call then dies. That exercises a PER-SEED outage — distinct from a
+            # whole-namespace one, where the listing itself fails.
+            return ["pre-up", "pre-down"]
 
         def get_lineage(self, *, namespace: str, name: str, depth: int) -> LineageGraph:
             type(self).calls += 1

@@ -377,7 +377,8 @@ def _poll_orchestration_runs(
             summary["recorded"] += len(result.pipeline_runs)
             summary["triggered"] += len(result.triggered_runs)
             summary["skipped"] += result.skipped
-        except Exception:
+            orchestration_service.record_poll_success(session, connection=connection)
+        except Exception as exc:
             summary["errors"] += 1
             session.rollback()
             log.exception(
@@ -385,6 +386,21 @@ def _poll_orchestration_runs(
                 connection_id=str(connection.id),
                 provider=connection.type,
             )
+            # Make the failure a fact about the CONNECTION, not just a log line (#828).
+            # This is the whole point: prod lineage rotted for six days behind an
+            # expired credential while the product reported nothing wrong. Runs after
+            # the rollback above, on a clean session, and is itself fail-soft — a
+            # bookkeeping error must never take down the sweep it is reporting on.
+            try:
+                orchestration_service.record_poll_failure(
+                    session, connection_id=connection.id, exc=exc
+                )
+            except Exception:
+                session.rollback()
+                log.exception(
+                    "orchestration_poll_health_write_failed",
+                    connection_id=str(connection.id),
+                )
     log.info("orchestration_poll_completed", **summary)
     return summary
 

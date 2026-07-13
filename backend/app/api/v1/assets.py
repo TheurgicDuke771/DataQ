@@ -128,6 +128,26 @@ class LineageEdgeRead(ApiModel):
     target: uuid.UUID
 
 
+class LineageSourceHealthRead(ApiModel):
+    """A lineage-feeding connection whose poll is currently failing (#828).
+
+    Present so the UI can never render a clean "no lineage recorded" empty state over a
+    broken integration — the failure mode that let prod lineage rot for six days behind
+    an expired credential while the product reported nothing wrong.
+
+    `last_error` is a **classified** reason, never raw exception text.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    connection_id: uuid.UUID
+    name: str
+    type: str
+    consecutive_failures: int
+    last_error: str | None = None
+    last_polled_at: datetime | None = None
+
+
 class AssetDetailRead(ApiModel):
     """Asset detail: the summary + per-suite breakdown + upstream/downstream lineage."""
 
@@ -138,6 +158,8 @@ class AssetDetailRead(ApiModel):
     upstream: list[LineageNodeRead]
     downstream: list[LineageNodeRead]
     lineage_edges: list[LineageEdgeRead]
+    # Non-empty ⇒ lineage may be stale/absent for reasons unrelated to this asset.
+    failing_lineage_sources: list[LineageSourceHealthRead] = Field(default_factory=list)
 
 
 class AssetMetadataUpdate(ApiModel):

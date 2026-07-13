@@ -1,0 +1,735 @@
+{
+    "graph": [
+        {
+            "id": "dataset:snowflake://ACME-TEST01:DATAQ_DB.ANALYTICS.mart_customer_orders",
+            "type": "DATASET",
+            "data": {
+                "id": {
+                    "namespace": "snowflake://ACME-TEST01",
+                    "name": "DATAQ_DB.ANALYTICS.mart_customer_orders"
+                },
+                "type": "DB_TABLE",
+                "name": "DATAQ_DB.ANALYTICS.mart_customer_orders",
+                "physicalName": "DATAQ_DB.ANALYTICS.mart_customer_orders",
+                "createdAt": "2026-07-12T23:15:31.400667Z",
+                "updatedAt": "2026-07-13T03:02:09.737326Z",
+                "namespace": "snowflake://ACME-TEST01",
+                "sourceName": "snowflake://ACME-TEST01",
+                "fields": [
+                    {
+                        "name": "customer_id",
+                        "type": null,
+                        "tags": [],
+                        "description": "Customer grain \u2014 unique, not null."
+                    }
+                ],
+                "tags": [],
+                "lastModifiedAt": null,
+                "description": null,
+                "lastLifecycleState": ""
+            },
+            "inEdges": [
+                {
+                    "origin": "job:dataq:DATAQ_DB.ANALYTICS.dataq_lineage.mart_customer_orders.build.run",
+                    "destination": "dataset:snowflake://ACME-TEST01:DATAQ_DB.ANALYTICS.mart_customer_orders"
+                }
+            ],
+            "outEdges": [
+                {
+                    "origin": "dataset:snowflake://ACME-TEST01:DATAQ_DB.ANALYTICS.mart_customer_orders",
+                    "destination": "job:dataq:DATAQ_DB.ANALYTICS.dataq_lineage.mart_customer_orders.build.test"
+                }
+            ]
+        },
+        {
+            "id": "dataset:snowflake://ACME-TEST01:DATAQ_DB.ANALYTICS.mart_order_revenue",
+            "type": "DATASET",
+            "data": {
+                "id": {
+                    "namespace": "snowflake://ACME-TEST01",
+                    "name": "DATAQ_DB.ANALYTICS.mart_order_revenue"
+                },
+                "type": "DB_TABLE",
+                "name": "DATAQ_DB.ANALYTICS.mart_order_revenue",
+                "physicalName": "DATAQ_DB.ANALYTICS.mart_order_revenue",
+                "createdAt": "2026-07-12T23:15:31.411477Z",
+                "updatedAt": "2026-07-13T03:02:09.737326Z",
+                "namespace": "snowflake://ACME-TEST01",
+                "sourceName": "snowflake://ACME-TEST01",
+                "fields": [
+                    {
+                        "name": "order_number",
+                        "type": null,
+                        "tags": [],
+                        "description": "Order grain \u2014 unique, not null."
+                    },
+                    {
+                        "name": "order_ts",
+                        "type": null,
+                        "tags": [],
+                        "description": "Order timestamp \u2014 freshness anchor for the DataQ freshness monitor."
+                    },
+                    {
+                        "name": "line_count",
+                        "type": null,
+                        "tags": [],
+                        "description": "Number of order lines rolled into the order."
+                    }
+                ],
+                "tags": [],
+                "lastModifiedAt": null,
+                "description": null,
+                "lastLifecycleState": ""
+            },
+            "inEdges": [
+                {
+                    "origin": "job:dataq:DATAQ_DB.ANALYTICS.dataq_lineage.mart_order_revenue.build.run",
+                    "destination": "dataset:snowflake://ACME-TEST01:DATAQ_DB.ANALYTICS.mart_order_revenue"
+                }
+            ],
+            "outEdges": [
+                {
+                    "origin": "dataset:snowflake://ACME-TEST01:DATAQ_DB.ANALYTICS.mart_order_revenue",
+                    "destination": "job:dataq:DATAQ_DB.ANALYTICS.dataq_lineage.mart_order_revenue.build.test"
+                }
+            ]
+        },
+        {
+            "id": "dataset:snowflake://ACME-TEST01:DATAQ_DB.ANALYTICS_STG.stg_customers",
+            "type": "DATASET",
+            "data": {
+                "id": {
+                    "namespace": "snowflake://ACME-TEST01",
+                    "name": "DATAQ_DB.ANALYTICS_STG.stg_customers"
+                },
+                "type": "DB_TABLE",
+                "name": "DATAQ_DB.ANALYTICS_STG.stg_customers",
+                "physicalName": "DATAQ_DB.ANALYTICS_STG.stg_customers",
+                "createdAt": "2026-07-12T23:15:27.080989Z",
+                "updatedAt": "2026-07-12T23:15:33.250582Z",
+                "namespace": "snowflake://ACME-TEST01",
+                "sourceName": "snowflake://ACME-TEST01",
+                "fields": [],
+                "tags": [],
+                "lastModifiedAt": null,
+                "description": null,
+                "lastLifecycleState": ""
+            },
+            "inEdges": [
+                {
+                    "origin": "job:dataq:DATAQ_DB.ANALYTICS_STG.dataq_lineage.stg_customers.build.run",
+                    "destination": "dataset:snowflake://ACME-TEST01:DATAQ_DB.ANALYTICS_STG.stg_customers"
+                }
+            ],
+            "outEdges": [
+                {
+                    "origin": "dataset:snowflake://ACME-TEST01:DATAQ_DB.ANALYTICS_STG.stg_customers",
+                    "destination": "job:dataq:DATAQ_DB.ANALYTICS.dataq_lineage.mart_customer_orders.build.run"
+                }
+            ]
+        },
+        {
+            "id": "dataset:snowflake://ACME-TEST01:DATAQ_DB.ANALYTICS_STG.stg_order_lines",
+            "type": "DATASET",
+            "data": {
+                "id": {
+                    "namespace": "snowflake://ACME-TEST01",
+                    "name": "DATAQ_DB.ANALYTICS_STG.stg_order_lines"
+                },
+                "type": "DB_TABLE",
+                "name": "DATAQ_DB.ANALYTICS_STG.stg_order_lines",
+                "physicalName": "DATAQ_DB.ANALYTICS_STG.stg_order_lines",
+                "createdAt": "2026-07-12T23:15:27.117547Z",
+                "updatedAt": "2026-07-12T23:15:33.258256Z",
+                "namespace": "snowflake://ACME-TEST01",
+                "sourceName": "snowflake://ACME-TEST01",
+                "fields": [],
+                "tags": [],
+                "lastModifiedAt": null,
+                "description": null,
+                "lastLifecycleState": ""
+            },
+            "inEdges": [
+                {
+                    "origin": "job:dataq:DATAQ_DB.ANALYTICS_STG.dataq_lineage.stg_order_lines.build.run",
+                    "destination": "dataset:snowflake://ACME-TEST01:DATAQ_DB.ANALYTICS_STG.stg_order_lines"
+                }
+            ],
+            "outEdges": [
+                {
+                    "origin": "dataset:snowflake://ACME-TEST01:DATAQ_DB.ANALYTICS_STG.stg_order_lines",
+                    "destination": "job:dataq:DATAQ_DB.ANALYTICS.dataq_lineage.mart_order_revenue.build.run"
+                }
+            ]
+        },
+        {
+            "id": "dataset:snowflake://ACME-TEST01:DATAQ_DB.ANALYTICS_STG.stg_orders",
+            "type": "DATASET",
+            "data": {
+                "id": {
+                    "namespace": "snowflake://ACME-TEST01",
+                    "name": "DATAQ_DB.ANALYTICS_STG.stg_orders"
+                },
+                "type": "DB_TABLE",
+                "name": "DATAQ_DB.ANALYTICS_STG.stg_orders",
+                "physicalName": "DATAQ_DB.ANALYTICS_STG.stg_orders",
+                "createdAt": "2026-07-12T23:15:27.106921Z",
+                "updatedAt": "2026-07-12T23:15:33.258256Z",
+                "namespace": "snowflake://ACME-TEST01",
+                "sourceName": "snowflake://ACME-TEST01",
+                "fields": [],
+                "tags": [],
+                "lastModifiedAt": null,
+                "description": null,
+                "lastLifecycleState": ""
+            },
+            "inEdges": [
+                {
+                    "origin": "job:dataq:DATAQ_DB.ANALYTICS_STG.dataq_lineage.stg_orders.build.run",
+                    "destination": "dataset:snowflake://ACME-TEST01:DATAQ_DB.ANALYTICS_STG.stg_orders"
+                }
+            ],
+            "outEdges": [
+                {
+                    "origin": "dataset:snowflake://ACME-TEST01:DATAQ_DB.ANALYTICS_STG.stg_orders",
+                    "destination": "job:dataq:DATAQ_DB.ANALYTICS.dataq_lineage.mart_customer_orders.build.run"
+                },
+                {
+                    "origin": "dataset:snowflake://ACME-TEST01:DATAQ_DB.ANALYTICS_STG.stg_orders",
+                    "destination": "job:dataq:DATAQ_DB.ANALYTICS.dataq_lineage.mart_order_revenue.build.run"
+                }
+            ]
+        },
+        {
+            "id": "dataset:snowflake://ACME-TEST01:DATAQ_DB.RETAIL.customers",
+            "type": "DATASET",
+            "data": {
+                "id": {
+                    "namespace": "snowflake://ACME-TEST01",
+                    "name": "DATAQ_DB.RETAIL.customers"
+                },
+                "type": "DB_TABLE",
+                "name": "DATAQ_DB.RETAIL.customers",
+                "physicalName": "DATAQ_DB.RETAIL.customers",
+                "createdAt": "2026-07-12T23:15:27.080989Z",
+                "updatedAt": "2026-07-12T23:15:27.757255Z",
+                "namespace": "snowflake://ACME-TEST01",
+                "sourceName": "snowflake://ACME-TEST01",
+                "fields": [],
+                "tags": [],
+                "lastModifiedAt": null,
+                "description": "Customer dimension (ADF timer pipeline).",
+                "lastLifecycleState": ""
+            },
+            "inEdges": [],
+            "outEdges": [
+                {
+                    "origin": "dataset:snowflake://ACME-TEST01:DATAQ_DB.RETAIL.customers",
+                    "destination": "job:dataq:DATAQ_DB.ANALYTICS_STG.dataq_lineage.stg_customers.build.run"
+                }
+            ]
+        },
+        {
+            "id": "dataset:snowflake://ACME-TEST01:DATAQ_DB.RETAIL.order_lines",
+            "type": "DATASET",
+            "data": {
+                "id": {
+                    "namespace": "snowflake://ACME-TEST01",
+                    "name": "DATAQ_DB.RETAIL.order_lines"
+                },
+                "type": "DB_TABLE",
+                "name": "DATAQ_DB.RETAIL.order_lines",
+                "physicalName": "DATAQ_DB.RETAIL.order_lines",
+                "createdAt": "2026-07-12T23:15:27.117547Z",
+                "updatedAt": "2026-07-12T23:15:27.686390Z",
+                "namespace": "snowflake://ACME-TEST01",
+                "sourceName": "snowflake://ACME-TEST01",
+                "fields": [],
+                "tags": [],
+                "lastModifiedAt": null,
+                "description": "Order line items (Airflow schedule load). Grain: one row per LINE_ID.",
+                "lastLifecycleState": ""
+            },
+            "inEdges": [],
+            "outEdges": [
+                {
+                    "origin": "dataset:snowflake://ACME-TEST01:DATAQ_DB.RETAIL.order_lines",
+                    "destination": "job:dataq:DATAQ_DB.ANALYTICS_STG.dataq_lineage.stg_order_lines.build.run"
+                }
+            ]
+        },
+        {
+            "id": "dataset:snowflake://ACME-TEST01:DATAQ_DB.RETAIL.orders_header",
+            "type": "DATASET",
+            "data": {
+                "id": {
+                    "namespace": "snowflake://ACME-TEST01",
+                    "name": "DATAQ_DB.RETAIL.orders_header"
+                },
+                "type": "DB_TABLE",
+                "name": "DATAQ_DB.RETAIL.orders_header",
+                "physicalName": "DATAQ_DB.RETAIL.orders_header",
+                "createdAt": "2026-07-12T23:15:27.106921Z",
+                "updatedAt": "2026-07-12T23:15:31.387308Z",
+                "namespace": "snowflake://ACME-TEST01",
+                "sourceName": "snowflake://ACME-TEST01",
+                "fields": [],
+                "tags": [],
+                "lastModifiedAt": null,
+                "description": "Order headers (ADF event pipeline). Grain: one row per ORDER_NUMBER.",
+                "lastLifecycleState": ""
+            },
+            "inEdges": [],
+            "outEdges": [
+                {
+                    "origin": "dataset:snowflake://ACME-TEST01:DATAQ_DB.RETAIL.orders_header",
+                    "destination": "job:dataq:DATAQ_DB.ANALYTICS_STG.dataq_lineage.stg_orders.build.run"
+                }
+            ]
+        },
+        {
+            "id": "job:dataq:DATAQ_DB.ANALYTICS.dataq_lineage.mart_customer_orders.build.run",
+            "type": "JOB",
+            "data": {
+                "id": {
+                    "namespace": "dataq",
+                    "name": "DATAQ_DB.ANALYTICS.dataq_lineage.mart_customer_orders.build.run"
+                },
+                "type": "BATCH",
+                "name": "DATAQ_DB.ANALYTICS.dataq_lineage.mart_customer_orders.build.run",
+                "simpleName": "DATAQ_DB.ANALYTICS.dataq_lineage.mart_customer_orders.build.run",
+                "parentJobName": null,
+                "parentJobUuid": null,
+                "createdAt": "2026-07-12T23:15:31.400667Z",
+                "updatedAt": "2026-07-12T23:15:33.250582Z",
+                "namespace": "dataq",
+                "inputs": [
+                    {
+                        "namespace": "snowflake://ACME-TEST01",
+                        "name": "DATAQ_DB.ANALYTICS_STG.stg_orders"
+                    },
+                    {
+                        "namespace": "snowflake://ACME-TEST01",
+                        "name": "DATAQ_DB.ANALYTICS_STG.stg_customers"
+                    }
+                ],
+                "outputs": [
+                    {
+                        "namespace": "snowflake://ACME-TEST01",
+                        "name": "DATAQ_DB.ANALYTICS.mart_customer_orders"
+                    }
+                ],
+                "location": null,
+                "description": null,
+                "latestRun": {
+                    "id": "019f596c-ca48-710b-82a3-aa2aff2be8c3",
+                    "createdAt": "2026-07-12T23:15:31.400667Z",
+                    "updatedAt": "2026-07-12T23:15:33.250582Z",
+                    "nominalStartTime": null,
+                    "nominalEndTime": null,
+                    "state": "COMPLETED",
+                    "startedAt": "2026-07-12T23:15:31.400667Z",
+                    "endedAt": "2026-07-12T23:15:33.250582Z",
+                    "durationMs": 1850,
+                    "args": {},
+                    "jobVersion": {
+                        "namespace": "dataq",
+                        "name": "DATAQ_DB.ANALYTICS.dataq_lineage.mart_customer_orders.build.run",
+                        "version": "5d65d2e7-53fc-4b92-af4e-25c0fbebce52"
+                    },
+                    "inputDatasetVersions": [],
+                    "outputDatasetVersions": [],
+                    "facets": {}
+                }
+            },
+            "inEdges": [
+                {
+                    "origin": "dataset:snowflake://ACME-TEST01:DATAQ_DB.ANALYTICS_STG.stg_customers",
+                    "destination": "job:dataq:DATAQ_DB.ANALYTICS.dataq_lineage.mart_customer_orders.build.run"
+                },
+                {
+                    "origin": "dataset:snowflake://ACME-TEST01:DATAQ_DB.ANALYTICS_STG.stg_orders",
+                    "destination": "job:dataq:DATAQ_DB.ANALYTICS.dataq_lineage.mart_customer_orders.build.run"
+                }
+            ],
+            "outEdges": [
+                {
+                    "origin": "job:dataq:DATAQ_DB.ANALYTICS.dataq_lineage.mart_customer_orders.build.run",
+                    "destination": "dataset:snowflake://ACME-TEST01:DATAQ_DB.ANALYTICS.mart_customer_orders"
+                }
+            ]
+        },
+        {
+            "id": "job:dataq:DATAQ_DB.ANALYTICS.dataq_lineage.mart_customer_orders.build.test",
+            "type": "JOB",
+            "data": {
+                "id": {
+                    "namespace": "dataq",
+                    "name": "DATAQ_DB.ANALYTICS.dataq_lineage.mart_customer_orders.build.test"
+                },
+                "type": "BATCH",
+                "name": "DATAQ_DB.ANALYTICS.dataq_lineage.mart_customer_orders.build.test",
+                "simpleName": "DATAQ_DB.ANALYTICS.dataq_lineage.mart_customer_orders.build.test",
+                "parentJobName": null,
+                "parentJobUuid": null,
+                "createdAt": "2026-07-13T03:02:09.737184Z",
+                "updatedAt": "2026-07-13T03:02:09.737326Z",
+                "namespace": "dataq",
+                "inputs": [
+                    {
+                        "namespace": "snowflake://ACME-TEST01",
+                        "name": "DATAQ_DB.ANALYTICS.mart_customer_orders"
+                    }
+                ],
+                "outputs": [],
+                "location": null,
+                "description": null,
+                "latestRun": {
+                    "id": "019f596c-ca49-736b-8cbb-166a904cce89",
+                    "createdAt": "2026-07-13T03:02:09.737184Z",
+                    "updatedAt": "2026-07-13T03:02:09.737326Z",
+                    "nominalStartTime": null,
+                    "nominalEndTime": null,
+                    "state": "COMPLETED",
+                    "startedAt": "2026-07-13T03:02:09.737184Z",
+                    "endedAt": "2026-07-13T03:02:09.737326Z",
+                    "durationMs": 0,
+                    "args": {},
+                    "jobVersion": {
+                        "namespace": "dataq",
+                        "name": "DATAQ_DB.ANALYTICS.dataq_lineage.mart_customer_orders.build.test",
+                        "version": "891e06cd-af36-4319-9f65-67af18cfa098"
+                    },
+                    "inputDatasetVersions": [],
+                    "outputDatasetVersions": [],
+                    "facets": {}
+                }
+            },
+            "inEdges": [
+                {
+                    "origin": "dataset:snowflake://ACME-TEST01:DATAQ_DB.ANALYTICS.mart_customer_orders",
+                    "destination": "job:dataq:DATAQ_DB.ANALYTICS.dataq_lineage.mart_customer_orders.build.test"
+                }
+            ],
+            "outEdges": []
+        },
+        {
+            "id": "job:dataq:DATAQ_DB.ANALYTICS.dataq_lineage.mart_order_revenue.build.run",
+            "type": "JOB",
+            "data": {
+                "id": {
+                    "namespace": "dataq",
+                    "name": "DATAQ_DB.ANALYTICS.dataq_lineage.mart_order_revenue.build.run"
+                },
+                "type": "BATCH",
+                "name": "DATAQ_DB.ANALYTICS.dataq_lineage.mart_order_revenue.build.run",
+                "simpleName": "DATAQ_DB.ANALYTICS.dataq_lineage.mart_order_revenue.build.run",
+                "parentJobName": null,
+                "parentJobUuid": null,
+                "createdAt": "2026-07-12T23:15:31.411477Z",
+                "updatedAt": "2026-07-12T23:15:33.258256Z",
+                "namespace": "dataq",
+                "inputs": [
+                    {
+                        "namespace": "snowflake://ACME-TEST01",
+                        "name": "DATAQ_DB.ANALYTICS_STG.stg_orders"
+                    },
+                    {
+                        "namespace": "snowflake://ACME-TEST01",
+                        "name": "DATAQ_DB.ANALYTICS_STG.stg_order_lines"
+                    }
+                ],
+                "outputs": [
+                    {
+                        "namespace": "snowflake://ACME-TEST01",
+                        "name": "DATAQ_DB.ANALYTICS.mart_order_revenue"
+                    }
+                ],
+                "location": null,
+                "description": null,
+                "latestRun": {
+                    "id": "019f596c-ca48-77ea-8b35-5bda6678c1b2",
+                    "createdAt": "2026-07-12T23:15:31.411477Z",
+                    "updatedAt": "2026-07-12T23:15:33.258256Z",
+                    "nominalStartTime": null,
+                    "nominalEndTime": null,
+                    "state": "COMPLETED",
+                    "startedAt": "2026-07-12T23:15:31.411477Z",
+                    "endedAt": "2026-07-12T23:15:33.258256Z",
+                    "durationMs": 1847,
+                    "args": {},
+                    "jobVersion": {
+                        "namespace": "dataq",
+                        "name": "DATAQ_DB.ANALYTICS.dataq_lineage.mart_order_revenue.build.run",
+                        "version": "25e1baa9-f665-49d2-bbd6-6893a2b973be"
+                    },
+                    "inputDatasetVersions": [],
+                    "outputDatasetVersions": [],
+                    "facets": {}
+                }
+            },
+            "inEdges": [
+                {
+                    "origin": "dataset:snowflake://ACME-TEST01:DATAQ_DB.ANALYTICS_STG.stg_order_lines",
+                    "destination": "job:dataq:DATAQ_DB.ANALYTICS.dataq_lineage.mart_order_revenue.build.run"
+                },
+                {
+                    "origin": "dataset:snowflake://ACME-TEST01:DATAQ_DB.ANALYTICS_STG.stg_orders",
+                    "destination": "job:dataq:DATAQ_DB.ANALYTICS.dataq_lineage.mart_order_revenue.build.run"
+                }
+            ],
+            "outEdges": [
+                {
+                    "origin": "job:dataq:DATAQ_DB.ANALYTICS.dataq_lineage.mart_order_revenue.build.run",
+                    "destination": "dataset:snowflake://ACME-TEST01:DATAQ_DB.ANALYTICS.mart_order_revenue"
+                }
+            ]
+        },
+        {
+            "id": "job:dataq:DATAQ_DB.ANALYTICS.dataq_lineage.mart_order_revenue.build.test",
+            "type": "JOB",
+            "data": {
+                "id": {
+                    "namespace": "dataq",
+                    "name": "DATAQ_DB.ANALYTICS.dataq_lineage.mart_order_revenue.build.test"
+                },
+                "type": "BATCH",
+                "name": "DATAQ_DB.ANALYTICS.dataq_lineage.mart_order_revenue.build.test",
+                "simpleName": "DATAQ_DB.ANALYTICS.dataq_lineage.mart_order_revenue.build.test",
+                "parentJobName": null,
+                "parentJobUuid": null,
+                "createdAt": "2026-07-13T03:02:09.737184Z",
+                "updatedAt": "2026-07-13T03:02:09.737326Z",
+                "namespace": "dataq",
+                "inputs": [
+                    {
+                        "namespace": "snowflake://ACME-TEST01",
+                        "name": "DATAQ_DB.ANALYTICS.mart_order_revenue"
+                    }
+                ],
+                "outputs": [],
+                "location": null,
+                "description": null,
+                "latestRun": {
+                    "id": "019f596c-ca49-7f30-be57-e00e4376e36c",
+                    "createdAt": "2026-07-13T03:02:09.737184Z",
+                    "updatedAt": "2026-07-13T03:02:09.737326Z",
+                    "nominalStartTime": null,
+                    "nominalEndTime": null,
+                    "state": "COMPLETED",
+                    "startedAt": "2026-07-13T03:02:09.737184Z",
+                    "endedAt": "2026-07-13T03:02:09.737326Z",
+                    "durationMs": 0,
+                    "args": {},
+                    "jobVersion": {
+                        "namespace": "dataq",
+                        "name": "DATAQ_DB.ANALYTICS.dataq_lineage.mart_order_revenue.build.test",
+                        "version": "1d69f4d8-e529-4b4e-a380-941a2a503a1b"
+                    },
+                    "inputDatasetVersions": [],
+                    "outputDatasetVersions": [],
+                    "facets": {}
+                }
+            },
+            "inEdges": [
+                {
+                    "origin": "dataset:snowflake://ACME-TEST01:DATAQ_DB.ANALYTICS.mart_order_revenue",
+                    "destination": "job:dataq:DATAQ_DB.ANALYTICS.dataq_lineage.mart_order_revenue.build.test"
+                }
+            ],
+            "outEdges": []
+        },
+        {
+            "id": "job:dataq:DATAQ_DB.ANALYTICS_STG.dataq_lineage.stg_customers.build.run",
+            "type": "JOB",
+            "data": {
+                "id": {
+                    "namespace": "dataq",
+                    "name": "DATAQ_DB.ANALYTICS_STG.dataq_lineage.stg_customers.build.run"
+                },
+                "type": "BATCH",
+                "name": "DATAQ_DB.ANALYTICS_STG.dataq_lineage.stg_customers.build.run",
+                "simpleName": "DATAQ_DB.ANALYTICS_STG.dataq_lineage.stg_customers.build.run",
+                "parentJobName": null,
+                "parentJobUuid": null,
+                "createdAt": "2026-07-12T23:15:27.080989Z",
+                "updatedAt": "2026-07-12T23:15:27.757255Z",
+                "namespace": "dataq",
+                "inputs": [
+                    {
+                        "namespace": "snowflake://ACME-TEST01",
+                        "name": "DATAQ_DB.RETAIL.customers"
+                    }
+                ],
+                "outputs": [
+                    {
+                        "namespace": "snowflake://ACME-TEST01",
+                        "name": "DATAQ_DB.ANALYTICS_STG.stg_customers"
+                    }
+                ],
+                "location": null,
+                "description": null,
+                "latestRun": {
+                    "id": "019f596c-ca48-75de-b45b-7c7a2c5334bb",
+                    "createdAt": "2026-07-12T23:15:27.080989Z",
+                    "updatedAt": "2026-07-12T23:15:27.757255Z",
+                    "nominalStartTime": null,
+                    "nominalEndTime": null,
+                    "state": "COMPLETED",
+                    "startedAt": "2026-07-12T23:15:27.080989Z",
+                    "endedAt": "2026-07-12T23:15:27.757255Z",
+                    "durationMs": 677,
+                    "args": {},
+                    "jobVersion": {
+                        "namespace": "dataq",
+                        "name": "DATAQ_DB.ANALYTICS_STG.dataq_lineage.stg_customers.build.run",
+                        "version": "b7f2a351-1a23-441d-a398-76531a2cbcb3"
+                    },
+                    "inputDatasetVersions": [],
+                    "outputDatasetVersions": [],
+                    "facets": {}
+                }
+            },
+            "inEdges": [
+                {
+                    "origin": "dataset:snowflake://ACME-TEST01:DATAQ_DB.RETAIL.customers",
+                    "destination": "job:dataq:DATAQ_DB.ANALYTICS_STG.dataq_lineage.stg_customers.build.run"
+                }
+            ],
+            "outEdges": [
+                {
+                    "origin": "job:dataq:DATAQ_DB.ANALYTICS_STG.dataq_lineage.stg_customers.build.run",
+                    "destination": "dataset:snowflake://ACME-TEST01:DATAQ_DB.ANALYTICS_STG.stg_customers"
+                }
+            ]
+        },
+        {
+            "id": "job:dataq:DATAQ_DB.ANALYTICS_STG.dataq_lineage.stg_order_lines.build.run",
+            "type": "JOB",
+            "data": {
+                "id": {
+                    "namespace": "dataq",
+                    "name": "DATAQ_DB.ANALYTICS_STG.dataq_lineage.stg_order_lines.build.run"
+                },
+                "type": "BATCH",
+                "name": "DATAQ_DB.ANALYTICS_STG.dataq_lineage.stg_order_lines.build.run",
+                "simpleName": "DATAQ_DB.ANALYTICS_STG.dataq_lineage.stg_order_lines.build.run",
+                "parentJobName": null,
+                "parentJobUuid": null,
+                "createdAt": "2026-07-12T23:15:27.117547Z",
+                "updatedAt": "2026-07-12T23:15:27.686390Z",
+                "namespace": "dataq",
+                "inputs": [
+                    {
+                        "namespace": "snowflake://ACME-TEST01",
+                        "name": "DATAQ_DB.RETAIL.order_lines"
+                    }
+                ],
+                "outputs": [
+                    {
+                        "namespace": "snowflake://ACME-TEST01",
+                        "name": "DATAQ_DB.ANALYTICS_STG.stg_order_lines"
+                    }
+                ],
+                "location": null,
+                "description": null,
+                "latestRun": {
+                    "id": "019f596c-ca47-7ef5-87f0-0afe4255a924",
+                    "createdAt": "2026-07-12T23:15:27.117547Z",
+                    "updatedAt": "2026-07-12T23:15:27.686390Z",
+                    "nominalStartTime": null,
+                    "nominalEndTime": null,
+                    "state": "COMPLETED",
+                    "startedAt": "2026-07-12T23:15:27.117547Z",
+                    "endedAt": "2026-07-12T23:15:27.686390Z",
+                    "durationMs": 569,
+                    "args": {},
+                    "jobVersion": {
+                        "namespace": "dataq",
+                        "name": "DATAQ_DB.ANALYTICS_STG.dataq_lineage.stg_order_lines.build.run",
+                        "version": "bdbe68a7-9186-4fb9-825c-c53de438a2ff"
+                    },
+                    "inputDatasetVersions": [],
+                    "outputDatasetVersions": [],
+                    "facets": {}
+                }
+            },
+            "inEdges": [
+                {
+                    "origin": "dataset:snowflake://ACME-TEST01:DATAQ_DB.RETAIL.order_lines",
+                    "destination": "job:dataq:DATAQ_DB.ANALYTICS_STG.dataq_lineage.stg_order_lines.build.run"
+                }
+            ],
+            "outEdges": [
+                {
+                    "origin": "job:dataq:DATAQ_DB.ANALYTICS_STG.dataq_lineage.stg_order_lines.build.run",
+                    "destination": "dataset:snowflake://ACME-TEST01:DATAQ_DB.ANALYTICS_STG.stg_order_lines"
+                }
+            ]
+        },
+        {
+            "id": "job:dataq:DATAQ_DB.ANALYTICS_STG.dataq_lineage.stg_orders.build.run",
+            "type": "JOB",
+            "data": {
+                "id": {
+                    "namespace": "dataq",
+                    "name": "DATAQ_DB.ANALYTICS_STG.dataq_lineage.stg_orders.build.run"
+                },
+                "type": "BATCH",
+                "name": "DATAQ_DB.ANALYTICS_STG.dataq_lineage.stg_orders.build.run",
+                "simpleName": "DATAQ_DB.ANALYTICS_STG.dataq_lineage.stg_orders.build.run",
+                "parentJobName": null,
+                "parentJobUuid": null,
+                "createdAt": "2026-07-12T23:15:27.106921Z",
+                "updatedAt": "2026-07-12T23:15:31.387308Z",
+                "namespace": "dataq",
+                "inputs": [
+                    {
+                        "namespace": "snowflake://ACME-TEST01",
+                        "name": "DATAQ_DB.RETAIL.orders_header"
+                    }
+                ],
+                "outputs": [
+                    {
+                        "namespace": "snowflake://ACME-TEST01",
+                        "name": "DATAQ_DB.ANALYTICS_STG.stg_orders"
+                    }
+                ],
+                "location": null,
+                "description": null,
+                "latestRun": {
+                    "id": "019f596c-ca48-78e5-8e79-9c26d6be6294",
+                    "createdAt": "2026-07-12T23:15:27.106921Z",
+                    "updatedAt": "2026-07-12T23:15:31.387308Z",
+                    "nominalStartTime": null,
+                    "nominalEndTime": null,
+                    "state": "COMPLETED",
+                    "startedAt": "2026-07-12T23:15:27.106921Z",
+                    "endedAt": "2026-07-12T23:15:31.387308Z",
+                    "durationMs": 4281,
+                    "args": {},
+                    "jobVersion": {
+                        "namespace": "dataq",
+                        "name": "DATAQ_DB.ANALYTICS_STG.dataq_lineage.stg_orders.build.run",
+                        "version": "c9d6e979-683c-47a3-85f3-e13b6e55abba"
+                    },
+                    "inputDatasetVersions": [],
+                    "outputDatasetVersions": [],
+                    "facets": {}
+                }
+            },
+            "inEdges": [
+                {
+                    "origin": "dataset:snowflake://ACME-TEST01:DATAQ_DB.RETAIL.orders_header",
+                    "destination": "job:dataq:DATAQ_DB.ANALYTICS_STG.dataq_lineage.stg_orders.build.run"
+                }
+            ],
+            "outEdges": [
+                {
+                    "origin": "job:dataq:DATAQ_DB.ANALYTICS_STG.dataq_lineage.stg_orders.build.run",
+                    "destination": "dataset:snowflake://ACME-TEST01:DATAQ_DB.ANALYTICS_STG.stg_orders"
+                }
+            ]
+        }
+    ]
+}

@@ -11,6 +11,7 @@ import {
   Flex,
   Spin,
   Tag,
+  Tooltip,
   Typography,
 } from 'antd';
 import { useCallback, useState } from 'react';
@@ -279,6 +280,26 @@ function ConnectionCard({
               <Badge status="success" text="credential set" />
             ) : (
               <Badge status="warning" text="no credential" />
+            )}
+            {/* A failing poll is a fact about the connection now, not a log line (#828).
+                Without this, an integration that has been dead for a week renders
+                identically to a healthy one — which is how prod lineage rotted for six
+                days behind an expired credential with nobody the wiser. The count is
+                shown because "failing" and "failing since last Tuesday" are different
+                problems. */}
+            {(connection.consecutive_poll_failures ?? 0) > 0 && (
+              <Tooltip
+                title={
+                  connection.last_poll_error
+                    ? `Last error: ${connection.last_poll_error}`
+                    : 'The scheduled poll for this connection is failing.'
+                }
+              >
+                <Badge
+                  status="error"
+                  text={`poll failing (${connection.consecutive_poll_failures}×)`}
+                />
+              </Tooltip>
             )}
           </Flex>
           <Button

@@ -33,7 +33,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
-from backend.app.db.models import Asset, Run, Suite, User, worst_severity
+from backend.app.db.models import Asset, Connection, Run, Suite, User, worst_severity
 from backend.app.lineage.edges import lineage_neighbourhood
 from backend.app.services.run_service import check_outcome_counts, operational_result_flags
 from backend.app.services.suite_authz import effective_permissions
@@ -169,6 +169,24 @@ class LineageEdgeRef:
 
 
 @dataclass(frozen=True)
+class LineageSourceHealth:
+    """Whether the integrations that FEED lineage are actually working (#828).
+
+    Without this, an empty lineage graph is a lie by omission: "no lineage recorded" is
+    rendered identically whether the asset genuinely has no upstreams or whether the dbt
+    poll has been failing for six days behind an expired credential. The UI must be able
+    to tell the user which one it is looking at.
+    """
+
+    connection_id: uuid.UUID
+    name: str
+    type: str
+    consecutive_failures: int
+    last_error: str | None
+    last_polled_at: datetime | None
+
+
+@dataclass(frozen=True)
 class AssetDetail:
     """Asset detail: the summary aggregation + per-suite breakdown + lineage."""
 
@@ -177,6 +195,10 @@ class AssetDetail:
     upstream: list[LineageNode] = field(default_factory=list)
     downstream: list[LineageNode] = field(default_factory=list)
     lineage_edges: list[LineageEdgeRef] = field(default_factory=list)
+    # Non-empty ⇒ a lineage source is broken, so the graph below may be stale or empty
+    # for a reason that has nothing to do with this asset. Never show a clean empty
+    # state over a broken integration.
+    failing_lineage_sources: list[LineageSourceHealth] = field(default_factory=list)
 
 
 # ── internals ────────────────────────────────────────────────────────────────
@@ -407,7 +429,39 @@ def get_visible_asset(
         upstream=_lineage_nodes(graph.upstream, monitored),
         downstream=_lineage_nodes(graph.downstream, monitored),
         lineage_edges=[LineageEdgeRef(source=u, target=d) for u, d in graph.edges],
+        failing_lineage_sources=failing_lineage_sources(session),
     )
+
+
+def failing_lineage_sources(session: Session) -> list[LineageSourceHealth]:
+    """Lineage-feeding connections whose poll is currently failing (#828).
+
+    Workspace-wide, not per-asset, and deliberately so: lineage arrives from a *source*
+    (a dbt project's manifest), not from the asset. If that source is down, every asset's
+    lineage is suspect — including the ones that legitimately have none — so the caveat
+    belongs on all of them.
+
+    Scoped to `dbt` because it is the only orchestration provider that feeds lineage
+    today (`read_manifest`, #759). Widening it means adding a provider, not rewriting
+    this: the filter rides the existing capability, not a hardcoded list of names.
+    """
+    rows = session.scalars(
+        select(Connection).where(
+            Connection.type == "dbt",
+            Connection.consecutive_poll_failures > 0,
+        )
+    ).all()
+    return [
+        LineageSourceHealth(
+            connection_id=c.id,
+            name=c.name,
+            type=c.type,
+            consecutive_failures=c.consecutive_poll_failures,
+            last_error=c.last_poll_error,
+            last_polled_at=c.last_polled_at,
+        )
+        for c in rows
+    ]
 
 
 def summarize_asset(

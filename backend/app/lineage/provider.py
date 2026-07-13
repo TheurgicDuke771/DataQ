@@ -129,6 +129,24 @@ class LineageProvider(Protocol):
 
     provider: str
 
+    def list_datasets(self, *, namespace: str) -> list[str]:
+        """Every dataset name the catalog holds in ``namespace``.
+
+        Needed because a catalog **byte-matches** the node id it is asked for, and we
+        cannot construct that string ourselves: a real producer emits whatever case its
+        source spelled (`openlineage-dbt` emits `DB.SCHEMA.mart_orders` where DataQ's
+        asset identity is `DB.SCHEMA.MART_ORDERS` — #823). So the pull enumerates what
+        the catalog actually has and seeds with the catalog's own string, matching it to
+        our assets through `lineage.identity.canonical_identity`.
+
+        Guessing case variants cannot substitute for this: the real name is neither
+        all-upper nor all-lower, it is mixed per segment.
+
+        Raises :class:`LineageUnavailableError` on the same conditions as
+        :meth:`get_lineage`.
+        """
+        ...
+
     def get_lineage(self, *, namespace: str, name: str, depth: int) -> LineageGraph:
         """Pull the lineage graph around the dataset ``namespace``/``name`` out to
         ``depth`` hops, normalized to a :class:`LineageGraph`.

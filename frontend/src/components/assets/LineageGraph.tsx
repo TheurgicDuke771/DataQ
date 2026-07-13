@@ -1,8 +1,8 @@
 import { ApartmentOutlined } from '@ant-design/icons';
-import { Card, Empty, Flex, Tag, Typography } from 'antd';
+import { Alert, Card, Empty, Flex, Tag, Typography } from 'antd';
 import { useMemo } from 'react';
 
-import type { LineageEdge, LineageNode } from '../../api/assets';
+import type { LineageEdge, LineageNode, LineageSourceHealth } from '../../api/assets';
 import { BRAND } from '../../theme';
 import { nameSegments } from './assetTree';
 import { namespaceLabel } from './namespaceLabel';
@@ -29,12 +29,16 @@ export function LineageGraph({
   upstream,
   downstream,
   edges,
+  failingSources = [],
   onOpenAsset,
 }: {
   center: CenterAsset;
   upstream: LineageNode[];
   downstream: LineageNode[];
   edges: LineageEdge[];
+  /** Lineage-feeding connections whose poll is failing (#828). Non-empty ⇒ what's
+   *  below may be stale or missing for reasons unrelated to this asset. */
+  failingSources?: LineageSourceHealth[];
   onOpenAsset: (assetId: string) => void;
 }) {
   const layout = useMemo(
@@ -60,10 +64,43 @@ export function LineageGraph({
         )
       }
     >
+      {/* Never show a clean empty state over a broken integration (#828). Prod lineage
+          was dark for six days behind an expired credential and this card cheerfully
+          said "No lineage recorded" — indistinguishable from an asset that genuinely
+          has no upstreams. If a lineage source is failing, say so FIRST, and say it
+          whether the graph is empty or not (a partial graph is just as misleading). */}
+      {failingSources.length > 0 && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message="Lineage may be incomplete — a source is failing"
+          description={
+            <>
+              {failingSources.map((s) => (
+                <div key={s.connection_id}>
+                  <Typography.Text strong>{s.name}</Typography.Text> ({s.type}) has failed{' '}
+                  {s.consecutive_failures}{' '}
+                  {s.consecutive_failures === 1 ? 'poll' : 'consecutive polls'}
+                  {s.last_error ? `: ${s.last_error}` : '.'}
+                </div>
+              ))}
+              <div style={{ marginTop: 4 }}>
+                Until it recovers, lineage here may be stale or missing — this is not necessarily
+                the whole picture.
+              </div>
+            </>
+          }
+        />
+      )}
       {isolated ? (
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description="No lineage recorded for this asset."
+          description={
+            failingSources.length > 0
+              ? 'No lineage recorded — but a lineage source is currently failing (above), so this may not be the truth.'
+              : 'No lineage recorded for this asset.'
+          }
         />
       ) : (
         // The ONLY scroll container: a wide graph scrolls inside the card, so the

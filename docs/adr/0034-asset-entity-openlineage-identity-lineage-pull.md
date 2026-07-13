@@ -35,3 +35,67 @@ Gap G-d: DataQ has runs and alerts but no answer to "what broke downstream, who 
 - **DataHub as the reference consumer** — rejected for the compose stack (Kafka + OpenSearch + MySQL, 8 GB RAM minimum); it still works via the same emitter/seam when a user brings one.
 - **OpenMetadata via its Python SDK** — rejected outright: `openmetadata-ingestion` is Collate source-available with a non-compete clause, prohibited by ADR 0031; REST-API-only integration would need its own ADR.
 - **Purview / Atlas now** — parked: preview-grade OL support, Azure-only hosting, contra the wind-down posture.
+
+---
+
+## Amendment (2026-07-13, #823) — the byte-for-byte join premise was **half wrong**
+
+Decision 2 above claims our identifiers "match `openlineage-dbt`/Spark emissions
+byte-for-byte, making future emission/pull interop a join instead of a mapping layer."
+
+**Measured against a real producer, that is true of the `namespace` and false of the
+`name`.** Real `openlineage-dbt` 1.51.0, fed the real `manifest.json` from a real
+Snowflake build:
+
+| | namespace | name |
+|---|---|---|
+| `openlineage-dbt` | `snowflake://ACCT` ✅ | `DATAQ_DB.ANALYTICS.`**`mart_order_revenue`** |
+| DataQ (`asset_identity`) | `snowflake://ACCT` ✅ | `DATAQ_DB.ANALYTICS.`**`MART_ORDER_REVENUE`** |
+
+Same physical table; different bytes. `openlineage-dbt` formats a name as a bare
+`".".join([database, schema, table])` with **no case folding**, so it emits whatever its
+source spelled — `database`/`schema` from the dbt *profile*, the table from the model
+*filename*. The result is mixed case, per segment. **OpenLineage carries no case-folding
+rule**, so nothing obliges two producers to agree, and catalogs byte-match.
+
+The consequence was not a degraded join — it was **no join at all**: every seed 404'd
+against a perfectly-populated catalog, and the pull was permanently, silently dark
+(`unavailable=10 fetched_pairs=0`). Worse, where a catalog held *both* casings (DataQ's
+own emitter sends `asset.name` verbatim, so DataQ and dbt naming the same table create
+**two datasets**), the seed resolved `200` and returned the *wrong, stale* subgraph.
+
+### What changes
+
+**The identity itself does not.** `assets.namespace`/`name` keep the engine's own case —
+that is what makes an asset identity *correct*, and it is what our emission puts on the
+wire. No migration, no re-keying.
+
+**A reconciliation step is added at the `LineageProvider` seam** — the mapping layer this
+ADR hoped to avoid, but scoped to exactly one boundary (`lineage/identity.py`):
+
+- **A canonical fold**, mirroring how each engine folds an *unquoted* identifier:
+  `snowflake://` → UPPER, `unitycatalog://` → lower, and **no fold at all** for
+  `abfss://` / `s3://` / Iceberg. That last part is load-bearing: those stores are
+  case-**sensitive**, so folding them would not repair a mismatch, it would *invent* one
+  and silently merge two distinct objects into one asset.
+- **The catalog is enumerated, not guessed** (`LineageProvider.list_datasets`). We seed
+  with the catalog's own string, because we cannot construct it — and case variants
+  cannot substitute, since the real name is neither all-upper nor all-lower.
+- **Exact match wins; the fold is a fallback; an ambiguous fold is refused.** Snowflake's
+  quoted `"orders"` really is a different table from unquoted `ORDERS`, so when two
+  catalog datasets fold to one key we log and skip rather than draw a wrong edge.
+- **Pulled identities are canonicalized on ingest**, so a catalog dataset can never fork
+  a second asset for a table DataQ already knows.
+
+### The honest lesson
+
+The original premise was adopted from the OL *spec*; it was never checked against an OL
+*implementation*. It survived a green test suite because every fixture was hand-written
+by us — so the fixtures agreed with us. The regression tests for this are now driven by a
+**captured real payload** (`backend/tests/fixtures/lineage/marquez_*_dbt_real.json`),
+which is the only kind that could have caught it.
+
+**Status of decision 2:** amended. Adopting the OL naming spec is still right (the
+namespace half genuinely joins, and it is what makes DataQ a good OL citizen), but
+"interop is a join, not a mapping layer" is withdrawn — cross-producer name reconciliation
+is a permanent, if small, cost.
