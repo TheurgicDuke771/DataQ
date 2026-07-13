@@ -26,6 +26,7 @@ from __future__ import annotations
 import uuid
 from collections import defaultdict
 from collections.abc import Sequence
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any, cast
 
@@ -36,6 +37,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.config import get_settings
 from backend.app.core.logging import get_logger
 from backend.app.db.models import Asset, LineageEdge
+from backend.app.lineage.identity import canonical_identity
 from backend.app.lineage.marquez import MarquezLineageProvider
 from backend.app.lineage.provider import (
     LineageGraph,
@@ -105,7 +107,24 @@ def _refresh_pulled_edges(session: Session, *, provider: LineageProvider, depth:
         log.info("lineage_pull_no_seed_assets")
         return None
 
-    name_pairs, unavailable = _collect_dataset_edges(provider, seeds, depth=depth)
+    name_pairs, outcome = _collect_dataset_edges(provider, seeds, depth=depth)
+    unavailable = outcome.unavailable
+
+    if outcome.resolved == 0 and not unavailable and outcome.absent:
+        # The catalog answered, and knows NONE of our assets. That is a legitimate
+        # observation — but it is also exactly what a systematic identity mismatch looks
+        # like (#823: every seed 404s because the producer spelled the name in another
+        # case). Say so loudly: "we asked about N tables and the catalog had never heard
+        # of any of them" is a configuration smell, not a normal steady state, and the
+        # silent version of this is what kept the pull dark.
+        log.warning(
+            "lineage_pull_no_seed_matched_catalog",
+            provider=provider.provider,
+            seeds=len(seeds),
+            absent=outcome.absent,
+            hint="no asset matched any catalog dataset — check namespace/name alignment",
+        )
+
     if unavailable:
         # The catalog couldn't be (fully) consulted — we learned nothing about the
         # missing seeds, so DO NOT prune: wiping the cache on an outage is the failure
@@ -116,12 +135,22 @@ def _refresh_pulled_edges(session: Session, *, provider: LineageProvider, depth:
             provider=provider.provider,
             seeds=len(seeds),
             unavailable=unavailable,
+            absent=outcome.absent,
+            ambiguous=outcome.ambiguous,
+            resolved=outcome.resolved,
             fetched_pairs=len(name_pairs),
         )
         if not name_pairs:
             return None
     if not name_pairs and not unavailable:
-        log.info("lineage_pull_no_edges", provider=provider.provider, seeds=len(seeds))
+        log.info(
+            "lineage_pull_no_edges",
+            provider=provider.provider,
+            seeds=len(seeds),
+            resolved=outcome.resolved,
+            absent=outcome.absent,
+            ambiguous=outcome.ambiguous,
+        )
         # Genuinely-empty observation → previously cached edges are now stale.
         refresh_started_at = _clock(session)
         _prune_stale(session, refresh_started_at=refresh_started_at)
@@ -133,6 +162,14 @@ def _refresh_pulled_edges(session: Session, *, provider: LineageProvider, depth:
     # just-seen edge and drops only edges last touched in an earlier refresh — the exact
     # discipline `lineage.edges` uses.
     refresh_started_at = _clock(session)
+
+    # Canonicalize every catalog identity BEFORE it becomes an asset (#823). The catalog
+    # holds whatever case its producer emitted, and materializing that verbatim would
+    # fork the asset: `DB.RETAIL.customers` from dbt would land alongside the
+    # `DB.RETAIL.CUSTOMERS` a suite target already created — two assets, one table,
+    # inside our own DB. Folding on the way in means a pulled dataset lands on the asset
+    # the engine's own case would have produced, whoever emitted it.
+    name_pairs = {(canonical_identity(*up), canonical_identity(*down)) for (up, down) in name_pairs}
 
     # Materialize every endpoint dataset as an asset (NULL provenance — a pull has no
     # connection; `preserve_provenance` keeps a datasource-resolved asset's env/conn).
@@ -161,6 +198,12 @@ def _refresh_pulled_edges(session: Session, *, provider: LineageProvider, depth:
         provider=provider.provider,
         seeds=len(seeds),
         edges=int(live),
+        # The three outcomes stay distinct all the way to the log line — an operator
+        # must be able to tell "the catalog is down" from "the catalog doesn't know my
+        # tables" from "my tables have no lineage" without reading the code (#823/#828).
+        resolved_seeds=outcome.resolved,
+        absent_seeds=outcome.absent,
+        ambiguous_seeds=outcome.ambiguous,
         unavailable_seeds=unavailable,
     )
     return int(live)
@@ -170,30 +213,115 @@ def _clock(session: Session) -> datetime:
     return cast(datetime, session.execute(select(func.clock_timestamp())).scalar_one())
 
 
+@dataclass(frozen=True)
+class _SeedOutcome:
+    """What the catalog had to say about our seeds — the three cases kept DISTINCT.
+
+    Collapsing these is the bug #823/#828 are both about: "the catalog is unreachable",
+    "the catalog has never heard of this table", and "the catalog knows the table and it
+    genuinely has no lineage" are three different facts, and only the last one licenses
+    a prune. Reported as three counters so a permanently-dark pull is visible in the
+    logs instead of looking like an empty catalog.
+    """
+
+    unavailable: int = 0
+    """Seeds whose catalog call errored — we learned NOTHING (no prune)."""
+    absent: int = 0
+    """Assets the catalog holds no dataset for — a true observation, not a failure."""
+    resolved: int = 0
+    """Assets matched to a catalog dataset and pulled."""
+    ambiguous: int = 0
+    """Assets whose fold key matched >1 catalog dataset — refused, never guessed."""
+
+
+def _catalog_index(names: Sequence[str], namespace: str) -> dict[tuple[str, str], list[str]]:
+    """Index a namespace's catalog dataset names by canonical identity.
+
+    A list (not a single name) per key on purpose: two catalog datasets CAN fold to the
+    same key (Snowflake's quoted `"orders"` and unquoted `ORDERS` are different tables),
+    and the caller must refuse to guess rather than pick one.
+    """
+    index: dict[tuple[str, str], list[str]] = defaultdict(list)
+    for name in names:
+        index[canonical_identity(namespace, name)].append(name)
+    return index
+
+
 def _collect_dataset_edges(
     provider: LineageProvider, seeds: Sequence[Any], *, depth: int
-) -> tuple[set[tuple[tuple[str, str], tuple[str, str]]], int]:
+) -> tuple[set[tuple[tuple[str, str], tuple[str, str]]], _SeedOutcome]:
     """Pull each seed's graph, merge, and collapse to dataset→dataset OL-name pairs.
 
-    Returns ``(pairs, unavailable)``: a deduped set of
-    ``((up_ns, up_name), (down_ns, down_name))`` plus the count of seeds whose pull
-    raised :class:`LineageUnavailableError` — the caller's no-prune-on-outage signal.
-    Job (and any non-dataset) nodes are collapsed through, so only dataset endpoints —
-    the only kind with an `assets` identity today — reach the cache.
+    **Seeds are resolved against the catalog's own dataset names, not ours** (#823). A
+    catalog byte-matches the node id it is handed, and a real producer emits whatever
+    case its source spelled — `openlineage-dbt` emits `DB.SCHEMA.mart_orders` where our
+    asset identity is `DB.SCHEMA.MART_ORDERS`. Seeding with our string 404s against a
+    perfectly-populated catalog, so we enumerate what the catalog HAS
+    (`provider.list_datasets`) and seed with its exact string, matched to our assets
+    through `canonical_identity`.
+
+    Exact match wins; the canonical fold is only a fallback; an ambiguous fold is
+    refused. That ordering matters — the fold is deliberately lossy for the case-
+    insensitive engines, so it must never override a name the catalog literally has.
+
+    Returns ``(pairs, outcome)``.
     """
     nodes: dict[str, Any] = {}
     edges: set[tuple[str, str]] = set()
-    unavailable = 0
+    outcome = _SeedOutcome()
+
+    # One listing per namespace, not per asset — a workspace has a handful of
+    # datasources and potentially thousands of assets.
+    by_namespace: dict[str, list[str]] = defaultdict(list)
     for namespace, name in seeds:
+        by_namespace[namespace].append(name)
+
+    for namespace, asset_names in by_namespace.items():
         try:
-            graph = provider.get_lineage(namespace=namespace, name=name, depth=depth)
+            catalog_names = provider.list_datasets(namespace=namespace)
         except LineageUnavailableError:
-            unavailable += 1
+            # The whole namespace is unconsultable — every asset under it is
+            # `unavailable`, never `absent`. Conflating the two would let an outage
+            # look like "the catalog knows nothing", and prune the cache.
+            outcome = replace(outcome, unavailable=outcome.unavailable + len(asset_names))
             continue
-        for node_id, node in graph.nodes.items():
-            nodes[node_id] = node
-        edges.update(graph.edges)
-    return _collapse_to_datasets(LineageGraph(nodes=nodes, edges=tuple(edges))), unavailable
+
+        exact = set(catalog_names)
+        folded = _catalog_index(catalog_names, namespace)
+
+        for name in asset_names:
+            if name in exact:
+                seed_name = name
+            else:
+                candidates = folded.get(canonical_identity(namespace, name), [])
+                if len(candidates) > 1:
+                    # Two catalog datasets fold to this asset's key. Picking one would
+                    # be a coin-flip that draws a WRONG lineage edge; say so and skip.
+                    log.warning(
+                        "lineage_pull_ambiguous_dataset",
+                        provider=provider.provider,
+                        namespace=namespace,
+                        asset=name,
+                        candidates=sorted(candidates),
+                    )
+                    outcome = replace(outcome, ambiguous=outcome.ambiguous + 1)
+                    continue
+                if not candidates:
+                    outcome = replace(outcome, absent=outcome.absent + 1)
+                    continue
+                seed_name = candidates[0]
+
+            try:
+                graph = provider.get_lineage(namespace=namespace, name=seed_name, depth=depth)
+            except LineageUnavailableError:
+                outcome = replace(outcome, unavailable=outcome.unavailable + 1)
+                continue
+            outcome = replace(outcome, resolved=outcome.resolved + 1)
+            for node_id, node in graph.nodes.items():
+                nodes[node_id] = node
+            edges.update(graph.edges)
+
+    return _collapse_to_datasets(LineageGraph(nodes=nodes, edges=tuple(edges))), outcome
 
 
 def _collapse_to_datasets(
