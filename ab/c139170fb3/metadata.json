@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "abc139170fb3",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-823-lineage-identity-alignment",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ab/c139170fb3/0/metadata.json",
+      "transcript": "/ab/c139170fb3/0/full.jsonl",
+      "compact_transcript": "/ab/c139170fb3/0/transcript.jsonl",
+      "content_hash": "/ab/c139170fb3/0/content_hash.txt",
+      "prompt": "/ab/c139170fb3/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2115,
+    "cache_creation_tokens": 4629602,
+    "cache_read_tokens": 463232921,
+    "output_tokens": 721124,
+    "api_call_count": 1043
+  }
+}
