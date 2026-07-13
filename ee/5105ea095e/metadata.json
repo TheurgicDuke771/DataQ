@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "ee5105ea095e",
+  "strategy": "manual-commit",
+  "branch": "fix/docs-site-build-broken",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/ee/5105ea095e/0/metadata.json",
+      "transcript": "/ee/5105ea095e/0/full.jsonl",
+      "compact_transcript": "/ee/5105ea095e/0/transcript.jsonl",
+      "content_hash": "/ee/5105ea095e/0/content_hash.txt",
+      "prompt": "/ee/5105ea095e/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1805,
+    "cache_creation_tokens": 4075773,
+    "cache_read_tokens": 390006469,
+    "output_tokens": 609492,
+    "api_call_count": 889
+  }
+}
