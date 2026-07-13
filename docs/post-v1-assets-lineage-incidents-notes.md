@@ -9,7 +9,7 @@
 > [0034](adr/0034-asset-entity-openlineage-identity-lineage-pull.md).
 >
 > Related: **#596** (this doc), Themes 2/3/5/14 in
-> [context/post-v1-roadmap.md](../context/post-v1-roadmap.md), ADR 0012 (monitor
+> [context/post-v1-roadmap.md](https://github.com/TheurgicDuke771/DataQ/blob/main/context/post-v1-roadmap.md), ADR 0012 (monitor
 > kinds), ADR 0027/0033 (authz axes), ADR 0029 (dbt provider), ADR 0031 (licensing).
 
 ## 1. The asset entity — the one migration everything rides

@@ -2,9 +2,20 @@ name: Docs
 
 # Build the MkDocs Material site and publish it to GitHub Pages (#288).
 # Requires Pages enabled with Source = "GitHub Actions" (Settings → Pages) once.
+#
+# The build ALSO runs on pull requests (#834). `mkdocs build --strict` aborts on a
+# warning — a broken cross-doc link is enough — and this used to run on `main` only,
+# so a bad link merged green and then silently killed every publish. The site sat
+# two days stale before anyone noticed. Build on the PR; publish only from `main`.
 on:
   push:
     branches: [main]
+    paths:
+      - docs/**
+      - mkdocs.yml
+      - requirements-docs.txt
+      - .github/workflows/docs.yml
+  pull_request:
     paths:
       - docs/**
       - mkdocs.yml
@@ -32,12 +43,17 @@ jobs:
           python-version: "3.13"
       - run: pip install -r requirements-docs.txt
       - run: mkdocs build --strict
+      # Nothing to upload on a PR — the build IS the gate there.
       - uses: actions/upload-pages-artifact@v5
+        if: github.event_name != 'pull_request'
         with:
           path: site
 
+  # Publish only from `main` — a pull_request run is a build-only gate (#834) and
+  # must never push a branch's docs to the live site.
   deploy:
     needs: build
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
