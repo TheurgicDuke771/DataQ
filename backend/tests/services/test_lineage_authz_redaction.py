@@ -158,6 +158,62 @@ def test_a_grantee_sees_the_neighbour_in_full(db_session: Any) -> None:
     assert node.is_monitored is True
 
 
+@pytest.mark.parametrize("include_all", [False, True])
+def test_the_three_surfaces_agree_on_what_is_visible(db_session: Any, include_all: bool) -> None:
+    """Browse, the detail endpoint, and the lineage graph must derive visibility from the
+    SAME rule — over every asset kind.
+
+    This is the regression that matters. The bug being fixed here *was* a disagreement
+    between two of these surfaces: the graph offered a node the endpoint refused. They
+    agree today; nothing but this test stops a future edit to one of the three
+    (a SQL predicate, an imperative guard, a set expression) from re-opening the gap.
+    """
+    owner = _user(db_session)
+    viewer = _user(db_session)
+    stranger = _user(db_session)
+
+    granted = _suite_on(db_session, owner, table="GRANTED")
+    _grant(db_session, granted, owner, viewer)
+    ungranted = _suite_on(db_session, stranger, table="UNGRANTED")  # suites, none viewer's
+    suiteless = Asset(namespace=_SECRET_NS, name="SUITELESS", env="dev")
+    db_session.add(suiteless)
+    db_session.commit()
+
+    kinds = {
+        "granted": cast(uuid.UUID, granted.asset_id),
+        "ungranted": cast(uuid.UUID, ungranted.asset_id),
+        "suiteless": suiteless.id,
+    }
+    user_id = stranger.id if include_all else viewer.id  # admin identity is irrelevant
+
+    listed = {
+        row[0].id if isinstance(row, tuple) else row.id
+        for row in svc.list_visible_assets(db_session, user_id=user_id, include_all=include_all)
+    }
+    for kind, asset_id in kinds.items():
+        # 1) the detail endpoint
+        try:
+            svc.get_visible_asset(db_session, asset_id, user_id=user_id, include_all=include_all)
+            openable = True
+        except AssetNotFoundError:
+            openable = False
+        # 2) browse
+        is_listed = asset_id in listed
+        # 3) the lineage graph's own accessibility derivation
+        graph_accessible = asset_id in svc._accessible_asset_ids(
+            db_session,
+            [asset_id],
+            user_id=user_id,
+            include_all=include_all,
+            has_suite=svc._monitored_ids(db_session, [asset_id]),
+        )
+
+        expected = include_all or kind != "ungranted"
+        assert openable is expected, f"{kind}: detail disagrees (include_all={include_all})"
+        assert is_listed is expected, f"{kind}: browse disagrees (include_all={include_all})"
+        assert graph_accessible is expected, f"{kind}: graph disagrees (include_all={include_all})"
+
+
 def test_a_workspace_admin_sees_everything_unredacted(db_session: Any, scenario: Any) -> None:
     """An admin's visibility is workspace-wide (ADR 0027) — redaction must not apply."""
     _, header, mart = scenario

@@ -314,6 +314,44 @@ def test_summary_flags_failed_and_active_runs(client: TestClient, world: dict[st
     assert asset_y["has_failed_run"] is False
 
 
+def test_redacted_neighbour_identity_never_reaches_the_response_body(
+    client: TestClient, world: dict[str, Any]
+) -> None:
+    """The claim #845 makes is that a restricted neighbour's identity **never crosses the
+    wire** — so assert it at the wire, not at the DTO one layer above it.
+
+    `LineageNodeRead` is a separate Pydantic model from the service dataclass. If someone
+    later re-tightens `name: str` with an empty-string fallback, or a serializer starts
+    deriving a display name, the leak would ship with a fully green suite unless something
+    inspects the raw body. This does."""
+    db = client_db(client)
+    stranger = _user(db, "stranger2@example.com")
+    conn = _connection(db, stranger)
+    secret = _suite(db, stranger, conn, name="Secret mart", table="MART_SECRET_REVENUE")
+    assert secret.asset_id is not None
+    secret_asset = db.get(Asset, secret.asset_id)
+    db.add(
+        LineageEdge(
+            upstream_asset_id=world["asset_x"],
+            downstream_asset_id=secret.asset_id,
+            source="dbt",
+        )
+    )
+    db.commit()
+
+    _as(world["owner"])
+    resp = client.get(f"/api/v1/assets/{world['asset_x']}")
+    assert resp.status_code == 200
+
+    node = next(n for n in resp.json()["downstream"] if n["id"] == str(secret.asset_id))
+    assert node["is_accessible"] is False
+    assert node["name"] is None and node["namespace"] is None and node["env"] is None
+    assert node["is_monitored"] is False
+    # The raw body — the actual wire. The name must survive nowhere in it.
+    assert "MART_SECRET_REVENUE" not in resp.text
+    assert secret_asset is not None and secret_asset.name not in resp.text
+
+
 def test_asset_with_only_unshared_suites_is_404_and_unlisted(
     client: TestClient, world: dict[str, Any]
 ) -> None:

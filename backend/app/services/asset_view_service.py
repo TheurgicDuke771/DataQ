@@ -475,20 +475,34 @@ def get_visible_asset(
     summary = _roll_up(asset, composing)
     graph = lineage_neighbourhood(session, asset_id)
     neighbour_ids = [a.id for a, _ in graph.upstream] + [a.id for a, _ in graph.downstream]
-    monitored = _monitored_ids(session, neighbour_ids)
+    # ONE lookup of "which of these assets has any suite" — it answers both questions
+    # below (is it monitored? could a grant even exist for it?), which are the same fact.
+    has_suite = _monitored_ids(session, neighbour_ids)
     # The lineage walk is not authz-scoped (blast radius must stay true), so the caller's
     # own visibility is applied HERE, at the boundary — a neighbour they hold no grant for
     # is redacted to an anonymous node rather than handed over (#845).
     accessible_assets = _accessible_asset_ids(
-        session, neighbour_ids, user_id=user_id, include_all=include_all
+        session,
+        neighbour_ids,
+        user_id=user_id,
+        include_all=include_all,
+        has_suite=has_suite,
     )
     return AssetDetail(
         summary=summary,
         suites=composing,
-        upstream=_lineage_nodes(graph.upstream, monitored, accessible_assets),
-        downstream=_lineage_nodes(graph.downstream, monitored, accessible_assets),
+        upstream=_lineage_nodes(graph.upstream, has_suite, accessible_assets),
+        downstream=_lineage_nodes(graph.downstream, has_suite, accessible_assets),
         lineage_edges=[LineageEdgeRef(source=u, target=d) for u, d in graph.edges],
-        failing_lineage_sources=failing_lineage_sources(session),
+        # Lineage-source health names ORCHESTRATION CONNECTIONS (name, type, classified
+        # poll error) — infrastructure information, not asset information. It is shown to
+        # a caller with a stake in this asset (≥1 suite on it) or an admin; a caller who
+        # merely reached a suite-less asset through browse has no stake and is not handed
+        # the workspace's connection inventory. Without this gate, the #846 visibility
+        # widening would have quietly widened an infra disclosure too (#848 review).
+        failing_lineage_sources=(
+            failing_lineage_sources(session) if (suites or include_all) else []
+        ),
     )
 
 
@@ -562,7 +576,12 @@ def _monitored_ids(session: Session, ids: list[uuid.UUID]) -> set[uuid.UUID]:
 
 
 def _accessible_asset_ids(
-    session: Session, ids: list[uuid.UUID], *, user_id: uuid.UUID, include_all: bool
+    session: Session,
+    ids: list[uuid.UUID],
+    *,
+    user_id: uuid.UUID,
+    include_all: bool,
+    has_suite: set[uuid.UUID],
 ) -> set[uuid.UUID]:
     """Of ``ids``, the assets the caller may see — the one visibility rule (#845).
 
@@ -587,6 +606,12 @@ def _accessible_asset_ids(
     not — exactly the grant boundary the no-leak 404 defends.
 
     A workspace-admin (``include_all``) sees everything (ADR 0027).
+
+    ``has_suite`` is the caller-supplied "assets that ANY suite targets" set — the only
+    assets a grant could exist for. It is passed in rather than re-queried because the
+    caller has already computed it (it is the same set the ``is_monitored`` flag reads),
+    and querying it twice made the two derivations independent when they are in fact the
+    same fact about the same rows.
     """
     if not ids:
         return set()
@@ -600,9 +625,9 @@ def _accessible_asset_ids(
             .group_by(Suite.asset_id)
         )
     }
-    # Assets ANY suite targets — the only ones a grant could exist for. An id absent from
-    # this set is suite-less, so nothing is being kept from anyone.
-    return granted | (set(ids) - _monitored_ids(session, ids))
+    # granted ∪ (the suite-less ones): an id absent from `has_suite` is targeted by no
+    # suite at all, so nothing is being kept from anyone.
+    return granted | (set(ids) - has_suite)
 
 
 def _lineage_nodes(
