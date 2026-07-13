@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "96be87cdc43f",
+  "strategy": "manual-commit",
+  "branch": "docs/claude-md-823-828",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/96/be87cdc43f/0/metadata.json",
+      "transcript": "/96/be87cdc43f/0/full.jsonl",
+      "compact_transcript": "/96/be87cdc43f/0/transcript.jsonl",
+      "content_hash": "/96/be87cdc43f/0/content_hash.txt",
+      "prompt": "/96/be87cdc43f/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2125,
+    "cache_creation_tokens": 4635602,
+    "cache_read_tokens": 466100981,
+    "output_tokens": 725809,
+    "api_call_count": 1048
+  }
+}
