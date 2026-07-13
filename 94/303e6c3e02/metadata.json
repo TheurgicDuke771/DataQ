@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "94303e6c3e02",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-849-pat-plaintext-logs-clean",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/94/303e6c3e02/0/metadata.json",
+      "transcript": "/94/303e6c3e02/0/full.jsonl",
+      "compact_transcript": "/94/303e6c3e02/0/transcript.jsonl",
+      "content_hash": "/94/303e6c3e02/0/content_hash.txt",
+      "prompt": "/94/303e6c3e02/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 3006,
+    "cache_creation_tokens": 6100066,
+    "cache_read_tokens": 605219112,
+    "output_tokens": 969541,
+    "api_call_count": 1481
+  }
+}
