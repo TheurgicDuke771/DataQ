@@ -25,6 +25,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy import func, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, aliased
 
 from backend.app.core.logging import get_logger
@@ -539,6 +540,41 @@ def list_pipelines(
 # integration is broken" instead of rendering a clean empty state over a dead one.
 
 
+# A poll's health bookkeeping takes a ROW LOCK (#837, to stop two overlapping sweeps both
+# firing the same alert). A lock, by default, waits FOREVER — and that is how it took prod
+# down (#854): one contended row was enough to hang the poll task, which wedged the
+# worker's pool, which silently stopped EVERY periodic task (orchestration polling,
+# scheduled-suite dispatch, gap recovery, the purge). The worker stayed "healthy"
+# throughout; only the database told the truth.
+#
+# So the lock now fails fast. Bookkeeping is best-effort by contract (the caller already
+# treats it that way): if the row is contended we log it and move on, rather than block a
+# shared beat task indefinitely. A short wait is worth it — the lock is only held across
+# a couple of statements — but an unbounded one never is.
+_LOCK_TIMEOUT = "3s"
+
+
+def _lock_connection(session: Session, connection_id: uuid.UUID) -> Connection | None:
+    """Row-lock a connection for the health write, waiting at most `_LOCK_TIMEOUT`.
+
+    Returns the locked row, or ``None`` when the connection is gone **or** the lock could
+    not be taken in time. A timeout raises `OperationalError` (Postgres `lock_not_available`),
+    which aborts the transaction — so it is rolled back here, leaving the session usable for
+    the caller.
+    """
+    try:
+        session.execute(text(f"SET LOCAL lock_timeout = '{_LOCK_TIMEOUT}'"))
+        return session.get(Connection, connection_id, with_for_update=True)
+    except OperationalError:
+        session.rollback()
+        log.warning(
+            "orchestration_poll_health_lock_timeout",
+            connection_id=str(connection_id),
+            waited=_LOCK_TIMEOUT,
+        )
+        return None
+
+
 def record_poll_success(session: Session, *, connection: Connection) -> int:
     """Mark a connection's poll healthy: clear the error, reset the failure streak.
 
@@ -552,11 +588,13 @@ def record_poll_success(session: Session, *, connection: Connection) -> int:
     would read the pre-recovery streak and both would fire a recovery alert; with it, the
     second reads the already-cleared 0 and stays quiet.
     """
-    session.refresh(connection, with_for_update=True)
-    previous_failures = connection.consecutive_poll_failures or 0
-    connection.last_polled_at = datetime.now(UTC)
-    connection.last_poll_error = None
-    connection.consecutive_poll_failures = 0
+    locked = _lock_connection(session, connection.id)
+    if locked is None:  # contended or deleted — never block the sweep on bookkeeping
+        return 0
+    previous_failures = locked.consecutive_poll_failures or 0
+    locked.last_polled_at = datetime.now(UTC)
+    locked.last_poll_error = None
+    locked.consecutive_poll_failures = 0
     session.commit()
     return previous_failures
 
@@ -584,8 +622,8 @@ def record_poll_failure(session: Session, *, connection_id: uuid.UUID, exc: Base
     bearer token). `classify_failure_reason` is the same redaction-safe path a failed run
     uses (#605), so a leaked credential can't reach the API through this column.
     """
-    connection = session.get(Connection, connection_id, with_for_update=True)
-    if connection is None:  # deleted mid-sweep — nothing to record against
+    connection = _lock_connection(session, connection_id)
+    if connection is None:  # deleted mid-sweep, or the row is contended — either way, move on
         return 0
     connection.last_polled_at = datetime.now(UTC)
     connection.last_poll_error = classify_failure_reason(exc)[:512]
