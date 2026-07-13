@@ -265,7 +265,7 @@ def test_the_engine_bounds_every_lock_wait(db_session: Any) -> None:
     someone adds. Asserted against a REAL connection (`SHOW lock_timeout`), not by
     introspecting SQLAlchemy's kwargs — what matters is what Postgres actually enforces.
     """
-    from backend.app.db.session import SessionLocal, _LOCK_TIMEOUT_MS
+    from backend.app.db.session import _LOCK_TIMEOUT_MS, SessionLocal
 
     session = SessionLocal()
     try:
