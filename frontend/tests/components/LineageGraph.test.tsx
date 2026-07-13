@@ -12,8 +12,36 @@ const CENTER = {
   env: 'dev',
 };
 
-function node(id: string, name: string, depth: number, isMonitored = false): LineageNode {
-  return { id, name, namespace: 'snowflake://acct', env: 'dev', is_monitored: isMonitored, depth };
+function node(
+  id: string,
+  name: string,
+  depth: number,
+  isMonitored = false,
+  isAccessible = true,
+): LineageNode {
+  return {
+    id,
+    name,
+    namespace: 'snowflake://acct',
+    env: 'dev',
+    is_monitored: isMonitored,
+    is_accessible: isAccessible,
+    depth,
+  };
+}
+
+/** A neighbour outside the viewer's grants: the backend already stripped its identity
+ *  (#845), so the fixture must too — this is exactly what the API sends. */
+function redactedNode(id: string, depth: number): LineageNode {
+  return {
+    id,
+    name: null,
+    namespace: null,
+    env: null,
+    is_monitored: false,
+    is_accessible: false,
+    depth,
+  };
 }
 
 const UP = [node('u1', 'RAW.ORDERS', 1)];
@@ -88,7 +116,7 @@ describe('LineageGraph (#805)', () => {
     expect(scroller.style.overflowX).toBe('auto');
   });
 
-  it('keeps a graceful empty state for a 0-edge asset', () => {
+  it('still draws the asset itself when it has no lineage', () => {
     render(
       <LineageGraph
         center={CENTER}
@@ -98,7 +126,66 @@ describe('LineageGraph (#805)', () => {
         onOpenAsset={vi.fn()}
       />,
     );
+    // The asset's own box stays on screen — an <Empty> icon in its place read as
+    // "there is nothing here", when the truth is "here is the asset, with nothing
+    // attached to it yet". The words still say so.
+    const graph = screen.getByRole('img', { name: /Lineage graph/ });
+    expect(graph).toBeInTheDocument();
+    expect(graph.querySelectorAll('path[marker-end]')).toHaveLength(0);
+    expect(screen.getByLabelText(`${CENTER.name} (this asset)`)).toBeInTheDocument();
     expect(screen.getByText('No lineage recorded for this asset.')).toBeInTheDocument();
-    expect(screen.queryByRole('img', { name: /Lineage graph/ })).not.toBeInTheDocument();
+  });
+
+  // ── neighbours outside the viewer's grants (#845) ──────────────────────────
+  //
+  // Found in prod: Olivia saw a downstream mart, clicked it, got "asset not found".
+  // The graph was offering a door the API refuses to open — and, worse, naming an
+  // asset the endpoint 404s no-leak precisely so it can't be named.
+
+  describe('a neighbour outside your grants', () => {
+    const REDACTED = [redactedNode('r1', 1)];
+    const R_EDGES: LineageEdge[] = [{ source: 'c', target: 'r1' }];
+
+    function renderRedacted(onOpenAsset = vi.fn()) {
+      render(
+        <LineageGraph
+          center={CENTER}
+          upstream={[]}
+          downstream={REDACTED}
+          edges={R_EDGES}
+          onOpenAsset={onOpenAsset}
+        />,
+      );
+      return onOpenAsset;
+    }
+
+    it('is still drawn — omitting it would claim nothing consumes this table', () => {
+      renderRedacted();
+      expect(screen.getByRole('img', { name: /Lineage graph/ })).toBeInTheDocument();
+      expect(screen.getByText(/Restricted/)).toBeInTheDocument();
+      expect(screen.queryByText('No lineage recorded for this asset.')).not.toBeInTheDocument();
+    });
+
+    it('is not clickable — no dead link to a 404', async () => {
+      const onOpenAsset = renderRedacted();
+      const node = screen.getByLabelText('A connected asset outside your access');
+      await userEvent.click(node);
+      expect(onOpenAsset).not.toHaveBeenCalled();
+      expect(node).not.toHaveAttribute('role', 'button');
+    });
+
+    it('states the redaction rather than leaving it to be inferred', () => {
+      renderRedacted();
+      expect(screen.getByText('1 connected asset is outside your access.')).toBeInTheDocument();
+    });
+
+    it('renders no identity for the redacted node — not even a stray null', () => {
+      renderRedacted();
+      // Scoped to the redacted node itself (the CENTRE legitimately shows its own name
+      // and namespace — it's the asset you are looking at).
+      const node = screen.getByLabelText('A connected asset outside your access');
+      expect(node.textContent).toMatch(/Restricted/);
+      expect(node.textContent).not.toMatch(/null|undefined|snowflake:\/\//);
+    });
   });
 });
