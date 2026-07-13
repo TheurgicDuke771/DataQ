@@ -210,6 +210,22 @@ def _configure_otel_log_export(
         # foreign record carrying a secret in its message is scrubbed before export
         # (#494). App-level structlog records are already redacted upstream.
         handler.setFormatter(formatter)
+        # Break the exporter's feedback loop AT THE BRIDGE (#852).
+        #
+        # `azure.core`'s HTTP policy logs a request AND a response line for every call the
+        # SDK makes — including the exporter's own uploads. Those records reach root,
+        # re-enter this handler, are exported, and generate more uploads. Measured in prod
+        # at ~10/sec.
+        #
+        # Setting that logger's level was not enough: it works in the API but NOT in the
+        # Celery worker, where something in the worker/prefork logging setup restores INFO.
+        # Rather than keep chasing who resets it, drop the records here, at the one place
+        # they must pass through to reach the backend. A filter on the handler cannot be
+        # defeated by a level reset elsewhere.
+        #
+        # Only the EXPORT is filtered — the records still reach stdout, so a real transport
+        # problem is still visible in the container log.
+        handler.addFilter(lambda record: not record.name.startswith("azure.core"))
         root.addHandler(handler)
 
         # Break the feedback loop: the SDK/exporter log their own "failed to export"

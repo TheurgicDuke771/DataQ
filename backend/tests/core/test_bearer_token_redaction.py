@@ -224,3 +224,32 @@ class TestTheExporterDoesNotAmplifyItsOwnLogs:
         assert not policy_log.isEnabledFor(logging.INFO)
         # …but a real problem still gets through.
         assert policy_log.isEnabledFor(logging.WARNING)
+
+    def test_the_export_bridge_drops_azure_core_records(self) -> None:
+        """Level-setting alone did NOT hold in the Celery worker (it works in the API), so
+        the loop is broken at the bridge as well: an `azure.core` record must never be
+        handed to the exporter, whatever else resets logging levels (#852)."""
+        import logging as _logging
+
+        class _Bridge(_logging.Handler):
+            def __init__(self) -> None:
+                super().__init__()
+                self.exported: list[str] = []
+
+            def emit(self, record: _logging.LogRecord) -> None:
+                self.exported.append(record.name)
+
+        bridge = _Bridge()
+        bridge.addFilter(lambda record: not record.name.startswith("azure.core"))
+
+        for name in (
+            "azure.core.pipeline.policies.http_logging_policy",
+            "backend.app.worker.tasks",
+        ):
+            record = _logging.LogRecord(name, _logging.INFO, __file__, 1, "x", None, None)
+            if bridge.filter(record):
+                bridge.emit(record)
+
+        assert bridge.exported == [
+            "backend.app.worker.tasks"
+        ], "the exporter's own HTTP chatter reached the export bridge — that is the loop"
