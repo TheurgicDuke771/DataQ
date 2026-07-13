@@ -1,9 +1,10 @@
 import { ArrowRightOutlined, DatabaseOutlined } from '@ant-design/icons';
-import { Card, Empty, Flex, Grid, Spin, Tag, Typography } from 'antd';
+import { Card, Empty, Flex, Grid, Spin, Tag, Tooltip, Typography } from 'antd';
 import { useNavigate } from 'react-router-dom';
 
 import { type AssetSummary, listAssets } from '../../api/assets';
 import { AssetHealthTag } from '../assets/AssetHealthTag';
+import { namespaceLabel } from '../assets/namespaceLabel';
 import { useAsyncData } from '../../hooks/useAsyncData';
 import { BRAND } from '../../theme';
 
@@ -180,9 +181,11 @@ function AssetHealthBody({
                 <Typography.Text strong ellipsis style={{ maxWidth: 360 }}>
                   {a.name}
                 </Typography.Text>
-                <Typography.Text type="secondary" style={{ fontSize: 12 }} ellipsis>
-                  {a.namespace}
-                </Typography.Text>
+                <Tooltip title={a.namespace}>
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }} ellipsis>
+                    {namespaceLabel(a.namespace)}
+                  </Typography.Text>
+                </Tooltip>
               </Flex>
               <Flex gap={8} align="center">
                 {a.env && <Tag>{a.env}</Tag>}

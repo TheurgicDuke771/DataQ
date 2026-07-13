@@ -60,7 +60,11 @@ describe('buildAssetTree', () => {
   it('roots by namespace and nests db → schema → table, leaf carries the asset', () => {
     const a = asset({ id: 'a1', namespace: 'snowflake://acct', name: 'ANALYTICS.PUBLIC.ORDERS' });
     const [root] = buildAssetTree([a]);
-    expect(root.label).toBe('snowflake://acct');
+    // The root *reads* as a datasource but is still keyed on the raw OL namespace,
+    // which it keeps so the UI can surface the identity on hover (#830).
+    expect(root.label).toBe('Snowflake · acct');
+    expect(root.namespace).toBe('snowflake://acct');
+    expect(root.key).toBe('ns::snowflake://acct');
     expect(root.kind).toBe('snowflake');
     expect(root.asset).toBeUndefined();
     const db = root.children[0];
@@ -87,7 +91,10 @@ describe('buildAssetTree', () => {
     const dev = asset({ id: 'a1', namespace: 'snowflake://dev', name: 'DB.S.T', env: 'dev' });
     const qa = asset({ id: 'a2', namespace: 'snowflake://qa', name: 'DB.S.T', env: 'qa' });
     const roots = buildAssetTree([dev, qa]);
-    expect(roots.map((r) => r.label)).toEqual(['snowflake://dev', 'snowflake://qa']);
+    expect(roots.map((r) => r.label)).toEqual(['Snowflake · dev', 'Snowflake · qa']);
+    // Two roots, still keyed on the distinct namespaces — the friendlier label must
+    // not collapse them (the grouping rides on the namespace, not the label).
+    expect(roots.map((r) => r.namespace)).toEqual(['snowflake://dev', 'snowflake://qa']);
   });
 
   it('handles a folder-and-leaf collision (a path that is both)', () => {

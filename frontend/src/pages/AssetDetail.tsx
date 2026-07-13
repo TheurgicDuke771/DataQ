@@ -27,6 +27,7 @@ import { useIsWorkspaceAdmin } from '../auth/useMe';
 import { IncidentsPanel } from '../components/assets/IncidentsPanel';
 import { LineageGraph } from '../components/assets/LineageGraph';
 import { type Health, connectionHealth, runHealth, suiteHealth } from '../components/assets/health';
+import { namespaceLabel } from '../components/assets/namespaceLabel';
 import { AsyncBody } from '../components/AsyncBody';
 import { Page } from '../components/layout/Page';
 import { formatTimestamp } from '../components/results/resultsFormat';
@@ -104,9 +105,13 @@ function AssetDetailBody({
           <Typography.Title level={3} style={{ margin: 0 }}>
             {summary.name}
           </Typography.Title>
-          <Typography.Text type="secondary" copyable>
-            {summary.namespace}
-          </Typography.Text>
+          {/* The human label reads; the raw OL namespace stays the identity, so it's
+              what `copyable` copies and what the tooltip reveals (#830). */}
+          <Tooltip title={summary.namespace}>
+            <Typography.Text type="secondary" copyable={{ text: summary.namespace }}>
+              {namespaceLabel(summary.namespace)}
+            </Typography.Text>
+          </Tooltip>
         </Flex>
         {/* Two health axes, deliberately separate (#803): "can we reach it?" vs
             "is the data good?". The old single badge conflated them, so a
