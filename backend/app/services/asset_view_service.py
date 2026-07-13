@@ -625,8 +625,8 @@ def _accessible_asset_ids(
             .group_by(Suite.asset_id)
         )
     }
-    # granted ∪ (the suite-less ones): an id absent from `has_suite` is targeted by no
-    # suite at all, so nothing is being kept from anyone.
+    # The granted ones, plus the suite-less ones: an id absent from `has_suite` is
+    # targeted by no suite at all, so nothing is being kept from anyone.
     return granted | (set(ids) - has_suite)
 
 
