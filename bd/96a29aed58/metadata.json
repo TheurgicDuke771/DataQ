@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "bd96a29aed58",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-852-export-filter",
+  "checkpoints_count": 4,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/bd/96a29aed58/0/metadata.json",
+      "transcript": "/bd/96a29aed58/0/full.jsonl",
+      "compact_transcript": "/bd/96a29aed58/0/transcript.jsonl",
+      "content_hash": "/bd/96a29aed58/0/content_hash.txt",
+      "prompt": "/bd/96a29aed58/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 3351,
+    "cache_creation_tokens": 8157359,
+    "cache_read_tokens": 706676126,
+    "output_tokens": 1080773,
+    "api_call_count": 1643
+  }
+}
