@@ -273,3 +273,51 @@ class _ReplayProvider:
     def get_lineage(self, *, namespace: str, name: str, depth: int) -> Any:
         self.calls.append((namespace, name, depth))
         return _parse_graph(self._graph, seed_node_id=f"dataset:{namespace}:{name}")
+
+
+class TestAMismatchMustNeverDeleteTheCache:
+    """The prune is the only destructive path here, and #823 nearly armed it.
+
+    Reclassifying a 404 seed from `unavailable` to `absent` is the honest reading (the
+    catalog is UP, it just has no such dataset) — but it also removes the very condition
+    that used to suppress the prune. Left unguarded, a systematic identity mismatch (the
+    #823 bug itself) would not merely return no lineage: it would DELETE every cached
+    edge on the next refresh. A prune must be earned by evidence we can both reach the
+    catalog and find our tables in it.
+    """
+
+    def test_a_catalog_that_knows_none_of_our_assets_does_not_prune(self, db_session: Any) -> None:
+        from backend.app.db.models import Asset, LineageEdge
+        from backend.app.lineage.pull import refresh_pulled_edges
+
+        # A previously-pulled edge sitting in the cache.
+        up = Asset(namespace=_NS, name="DB.S.A", env="dev")
+        down = Asset(namespace=_NS, name="DB.S.B", env="dev")
+        db_session.add_all([up, down])
+        db_session.flush()
+        edge = LineageEdge(
+            upstream_asset_id=up.id,
+            downstream_asset_id=down.id,
+            source="marquez",
+            connection_id=None,
+        )
+        db_session.add(edge)
+        db_session.commit()
+        edge_id = edge.id
+
+        class _CatalogKnowsNothingOfOurs:
+            """Up, healthy, and holding datasets — just not ours (the #823 shape)."""
+
+            provider = "marquez"
+
+            def list_datasets(self, *, namespace: str) -> list[str]:
+                return ["SOME_OTHER_DB.X.Y"]
+
+            def get_lineage(self, *, namespace: str, name: str, depth: int) -> Any:
+                raise AssertionError("nothing of ours should have resolved")
+
+        refresh_pulled_edges(db_session, provider=_CatalogKnowsNothingOfOurs())
+
+        # The cache MUST survive. If this fails, a naming mismatch silently destroys
+        # every lineage edge the product has.
+        assert db_session.get(LineageEdge, edge_id) is not None

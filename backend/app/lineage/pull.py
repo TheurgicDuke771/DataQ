@@ -142,6 +142,16 @@ def _refresh_pulled_edges(session: Session, *, provider: LineageProvider, depth:
         )
         if not name_pairs:
             return None
+    if not name_pairs and not unavailable and outcome.resolved == 0:
+        # The catalog answered and matched NONE of our assets. That is NOT a licence to
+        # prune. Reclassifying a 404 seed from `unavailable` to `absent` (which is the
+        # honest reading — the catalog is up, it simply has no such dataset) would
+        # otherwise hand a systematic identity mismatch the power to DELETE every cached
+        # edge: exactly the #823 failure, now with data loss on top. A prune is only
+        # ever justified by evidence we can read the catalog *and* find our tables in
+        # it — i.e. by `resolved > 0`.
+        return None
+
     if not name_pairs and not unavailable:
         log.info(
             "lineage_pull_no_edges",
