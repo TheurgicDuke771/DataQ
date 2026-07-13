@@ -30,6 +30,7 @@ from fastapi_azure_auth import SingleTenantAzureAuthorizationCodeBearer
 from fastapi_azure_auth.user import User as AzureUser
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
+from starlette.requests import HTTPConnection
 
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.errors import DataQError
@@ -75,9 +76,15 @@ class _PatAwareAzureScheme(SingleTenantAzureAuthorizationCodeBearer):
     token won't announce itself either.
     """
 
-    async def __call__(  # type: ignore[override]  # library types this as HTTPConnection -> Optional[User]
-        self, request: Request, security_scopes: SecurityScopes
+    async def __call__(
+        self, request: HTTPConnection, security_scopes: SecurityScopes
     ) -> AzureUser | None:
+        # `HTTPConnection`, not `Request`, because that is what the library declares and
+        # what FastAPI may hand us: a WebSocket route secured with this scheme yields a
+        # `WebSocket` — also an HTTPConnection, but NOT a Request. Narrowing the type
+        # would have needed a `type: ignore[override]`, which silences precisely the check
+        # that would flag the mismatch (#849 review). Both carry `.headers`, which is all
+        # `_pat_token` reads.
         if _pat_token(request) is not None:
             return None
         user: AzureUser | None = await super().__call__(request, security_scopes)
@@ -105,8 +112,11 @@ def _build_azure_scheme(
     )
 
 
-def _bearer_token(request: Request) -> str | None:
-    """The raw bearer token from the Authorization header, if any."""
+def _bearer_token(request: HTTPConnection) -> str | None:
+    """The raw bearer token from the Authorization header, if any.
+
+    Takes `HTTPConnection` (the common base of `Request` and `WebSocket`) so the security
+    scheme can call it with whatever FastAPI injects — only `.headers` is read."""
     header = request.headers.get("Authorization", "")
     scheme, _, token = header.partition(" ")
     if scheme.lower() == "bearer" and token.strip():
@@ -114,7 +124,7 @@ def _bearer_token(request: Request) -> str | None:
     return None
 
 
-def _pat_token(request: Request) -> str | None:
+def _pat_token(request: HTTPConnection) -> str | None:
     """The bearer token when it is a DataQ PAT (by prefix), else None."""
     token = _bearer_token(request)
     if token is not None and token.startswith(api_key_service.TOKEN_PREFIX):

@@ -23,12 +23,15 @@ Two defences, both tested here:
 
 from __future__ import annotations
 
+import io
 import logging
+import uuid
 from typing import Any
 
 import pytest
 
-from backend.app.core.logging import _scrub_secret_strings
+from backend.app.core.logging import _scrub_secret_strings, configure_logging
+from backend.app.db.models import User
 from backend.app.services import api_key_service
 
 # The SHAPE of the credential that leaked — never the value. The real token is revoked,
@@ -38,11 +41,31 @@ _PAT = "dq_live_" + "0" * 40
 _JWT = "eyJ" + "A" * 12 + "." + "B" * 12 + "." + "C" * 12
 
 
-def test_the_prefix_the_redactor_matches_is_the_prefix_we_actually_issue() -> None:
-    """Drift guard. `core.logging` cannot import `api_key_service` (import cycle), so the
-    `dq_live_` prefix is duplicated in the regex. If the issued prefix is ever renamed,
-    this fails loudly instead of the redactor silently ceasing to match real tokens."""
-    assert api_key_service.TOKEN_PREFIX == "dq_live_"
+def test_a_REAL_minted_token_is_scrubbed_whole(db_session: Any) -> None:
+    """Pin the regex to what we ACTUALLY issue, not to a literal someone remembered to
+    update (#849 review).
+
+    Asserting `TOKEN_PREFIX == "dq_live_"` would catch a renamed prefix but NOT a changed
+    token *alphabet*: swap `secrets.token_urlsafe` for a generator emitting characters
+    outside `[A-Za-z0-9_-]` and the regex would match only a **prefix** of the token,
+    leaving the tail in the log — a partial credential — with a literal-comparison test
+    still green. So mint one the real way, through `create_key`, and assert nothing of it
+    survives.
+    """
+    user = User(aad_object_id=uuid.uuid4().hex, email=f"{uuid.uuid4().hex[:8]}@ex.com")
+    db_session.add(user)
+    db_session.flush()
+    _, token = api_key_service.create_key(db_session, user, name="redaction-probe")
+
+    scrubbed = _scrub_secret_strings(f"Malformed token received. {token}. Error: x")
+
+    assert token not in scrubbed
+    # …and no fragment of the secret half survives either — a truncated credential is
+    # still a disclosure, and is exactly what an alphabet change would produce.
+    secret_half = token[len(api_key_service.TOKEN_PREFIX) :]
+    assert secret_half not in scrubbed
+    assert secret_half[:12] not in scrubbed
+    assert "Malformed token received" in scrubbed  # still diagnosable
 
 
 class TestTheLoggerLevelBackstop:
@@ -94,6 +117,52 @@ class TestTheLoggerLevelBackstop:
         # ships; that is what must be clean.
         rendered = _scrub_secret_strings(caplog.records[0].getMessage())
         assert _PAT not in rendered
+
+
+class TestTheRealLoggingPipeline:
+    """The layer the credential actually crossed (#849 review).
+
+    Every other test here calls `_scrub_secret_strings` directly — but the leak did not
+    happen because that helper was wrong; it happened because the **pipeline** carried a
+    message the helper never saw. Drop `_redact_pii` from the `foreign_pre_chain`, stop
+    applying the string scrub to the `event` key, or reorder the ProcessorFormatter, and
+    every unit test above still passes while the token ships again.
+
+    So assert on the bytes the handler actually writes.
+    """
+
+    def test_the_librarys_warning_reaches_the_handler_with_no_token_in_it(
+        self, db_session: Any, capsys: Any
+    ) -> None:
+        user = User(aad_object_id=uuid.uuid4().hex, email=f"{uuid.uuid4().hex[:8]}@ex.com")
+        db_session.add(user)
+        db_session.flush()
+        _, token = api_key_service.create_key(db_session, user, name="pipeline-probe")
+
+        configure_logging()  # the REAL stack: structlog processors + ProcessorFormatter
+        buffer = io.StringIO()
+        handler = logging.getLogger().handlers[0]
+        original_stream = handler.stream  # type: ignore[attr-defined]  # StreamHandler
+        handler.stream = buffer  # type: ignore[attr-defined]  # StreamHandler
+        try:
+            # Verbatim the call fastapi_azure_auth makes (auth.py:171), exc_info and all —
+            # the traceback is rendered into the record too, and must be clean as well.
+            try:
+                raise ValueError("Not enough segments")
+            except ValueError as exc:
+                logging.getLogger("fastapi_azure_auth").warning(
+                    "Malformed token received. %s. Error: %s", token, exc, exc_info=True
+                )
+        finally:
+            handler.stream = original_stream  # type: ignore[attr-defined]  # StreamHandler
+
+        emitted = buffer.getvalue()
+        assert emitted, "nothing was emitted — the assertion below would be vacuous"
+        assert token not in emitted
+        assert token[len(api_key_service.TOKEN_PREFIX) :][:12] not in emitted
+        # The line is still useful to an operator.
+        assert "Malformed token received" in emitted
+        assert "Not enough segments" in emitted
 
 
 class TestThePatNeverReachesTheJwtValidator:

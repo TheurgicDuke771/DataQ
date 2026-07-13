@@ -39,6 +39,15 @@ _PII_KEYS: frozenset[str] = frozenset(
         "aad_object_id",
         "upn",
         "preferred_username",
+        # Credential-bearing headers in their HYPHENATED header spelling (#849 review).
+        # `authorization` was already covered above, but a headers dict is keyed
+        # `x-api-key`, not `x_api_key`, and the key match is exact. Key-based redaction is
+        # the sturdier of the two mechanisms — it cannot be fooled by a token SHAPE nobody
+        # anticipated, which is exactly how the PAT leak happened.
+        "api-key",
+        "x-api-key",
+        "cookie",
+        "set-cookie",
         "user_id",
         "name",
         "display_name",
@@ -80,7 +89,13 @@ _BEARER_TOKEN_RE = re.compile(
     r"(?i)(?:"
     r"dq_live_[A-Za-z0-9_\-]{6,}"  # a DataQ PAT (ADR 0026)
     r"|eyJ[A-Za-z0-9_\-]{4,}\.[A-Za-z0-9_\-]{4,}\.[A-Za-z0-9_\-]*"  # a JWT (AAD access token)
-    r"|\bbearer\s+[A-Za-z0-9._~+/\-]{8,}=*"  # any `Bearer <token>` header echo
+    # A `Bearer <token>` header echo. Deliberately requires the value to LOOK like a
+    # token — ≥16 chars AND containing a digit or one of `-._~+/=` — because
+    # `bearer\s+\w{8,}` also matches prose ("bearer authentication required") and an
+    # over-eager redactor is not a safe failure: it hides the diagnostics an operator
+    # needs, and the usual response is to weaken or disable the scrubber entirely, at
+    # which point nothing is redacted at all (#849 review).
+    r"|\bbearer\s+(?=[A-Za-z0-9._~+/\-]*[0-9\-._~+/])[A-Za-z0-9._~+/\-]{16,}=*"
     r")"
 )
 
