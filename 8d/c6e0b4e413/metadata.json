@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "8dc6e0b4e413",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-837-poll-failure-alert",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/changelog.md",
+    "docs/features.md",
+    "docs/orchestration.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/8d/c6e0b4e413/0/metadata.json",
+      "transcript": "/8d/c6e0b4e413/0/full.jsonl",
+      "compact_transcript": "/8d/c6e0b4e413/0/transcript.jsonl",
+      "content_hash": "/8d/c6e0b4e413/0/content_hash.txt",
+      "prompt": "/8d/c6e0b4e413/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2347,
+    "cache_creation_tokens": 4807439,
+    "cache_read_tokens": 484457331,
+    "output_tokens": 780660,
+    "api_call_count": 1161
+  }
+}
