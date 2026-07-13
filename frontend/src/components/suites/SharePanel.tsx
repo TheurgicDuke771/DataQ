@@ -276,7 +276,15 @@ function AddCollaborator({
   };
 
   return (
-    <Flex gap={8} align="center">
+    // `wrap` + a search field that can actually shrink — the same shape TriggersPanel
+    // and SchedulesPanel already use for their control rows; this row was the one
+    // that never got it. An antd Select has a min-content width that `flex: 1` alone
+    // can't shrink past, so on a phone (342px content box) the row demanded 383px and
+    // pushed the Add button off-screen, making a suite unshareable from mobile (#829).
+    // At that width the search field and the permission picker share line 1 (160 + 8 +
+    // 110 ≤ 342) and the Add button wraps to line 2; at the drawer's desktop width the
+    // whole row fits on one line.
+    <Flex gap={8} align="center" wrap>
       <Select
         showSearch
         value={userId}
@@ -289,7 +297,7 @@ function AddCollaborator({
           value: u.id,
           label: u.display_name ? `${u.display_name} · ${u.email}` : u.email,
         }))}
-        style={{ flex: 1 }}
+        style={{ flex: 1, minWidth: 160 }}
       />
       <Select
         value={permission}
