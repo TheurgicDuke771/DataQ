@@ -77,5 +77,5 @@ first: its secret is the artifacts-store read credential, and when it expires th
 silently while your dbt builds keep succeeding. Note that fixing the credential alone will
 **not** backfill — the poll's 15-minute lookback means every build produced during the outage
 is already stranded, so you must re-run the dbt build to get a fresh artifact into the window.
-Full detail in [Orchestration → When lineage is empty](orchestration.md#when-lineage-is-empty--check-the-poll-before-you-check-the-graph)
+Full detail in [Orchestration → When lineage is empty](orchestration.md#when-lineage-is-empty-check-the-poll-before-you-check-the-graph)
 and [#828](https://github.com/TheurgicDuke771/DataQ/issues/828).

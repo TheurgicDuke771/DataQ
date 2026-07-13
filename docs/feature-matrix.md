@@ -50,7 +50,7 @@ four mechanisms:
    any OL-compatible receiver (`OPENLINEAGE_URL`, dark by default).
 4. **Catalog pull** — the `LineageProvider` seam pulls a governance catalog's graph back in
    as `source='marquez'` edges (daily beat, dark by default;
-   [details](orchestration.md#lineage-from-a-catalog--the-lineageprovider-seam-adr-0034-762)).
+   [details](orchestration.md#lineage-from-a-catalog-the-lineageprovider-seam-adr-0034-762)).
 
 | Datasource | Asset entity | ① Run-stamping | ② dbt manifest | ③ OL emission | ④ Catalog pull |
 |---|---|:-:|:-:|:-:|:-:|
