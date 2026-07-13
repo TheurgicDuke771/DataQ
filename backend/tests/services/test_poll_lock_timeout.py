@@ -107,7 +107,7 @@ def _run_with_deadline(fn: Any) -> bool:
     def target() -> None:
         try:
             fn()
-        except BaseException as exc:  # noqa: BLE001  # re-raised on the main thread below
+        except BaseException as exc:  # re-raised on the main thread below
             error.append(exc)
         finally:
             done.set()
