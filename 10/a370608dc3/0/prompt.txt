@@ -1,0 +1,59 @@
+For #805 - user will not ablle to interact with SVG, correct? that why reactflow was suggested. But if SVG nodes are clockable then we should be good. 
+
+Subscription is enabled in azure. 
+So, once you done with these changes - Deploy the App in azure, deploy the marquez [run it once], run the adhoc harness once [add marquez to it], run the ui-tester in prod as dataq-admin. 
+
+THEN MAKE SURE ALL THE HARNESS AND UNWANTED JOBS IN AZURE ARE STOPPED/DISABLED.
+
+---
+
+<task-notification>
+<task-id>bvdt6nl2t</task-id>
+<tool-use-id>toolu_01CmQc7VeUKQkMV7ACGR1srR</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/b8546e7c-0c8e-402c-b6cc-6720612adcfc/tasks/bvdt6nl2t.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for dbt-lineage to finish" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+run the ui-tester again. 
+One question for lineage - The pull ran, reached Marquez, but DataQ not able to pull the lineage then is it not our issue?
+
+---
+
+rotate the password and resolve the security issues.
+
+---
+
+<task-notification>
+<task-id>b78dge6t7</task-id>
+<tool-use-id>toolu_01PZpW4Aq4JMr1cATuukNX1E</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/b8546e7c-0c8e-402c-b6cc-6720612adcfc/tasks/b78dge6t7.output</output-file>
+<status>completed</status>
+<summary>Background command "Merge PR 827" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+yeah lineage first, then the label
+Also make the suit sh`are drawer as an overlay in Mobile
+
+---
+
+deploy the latest changes to Prod. 
+Then update the documents - READMEs, GitHub page, @docs/progress.md , and others
+
+---
+
+Okay, lets pickup #823 and then #828
+
+---
+
+Good. 
+Is the latest canges deployened to PROD and documented [if required]
+And, what is pending for Asset/Lineage piece?
+
+---
+
+Okay lets impllement #837 then deploy the changes to PROD (along with #839 migration)
