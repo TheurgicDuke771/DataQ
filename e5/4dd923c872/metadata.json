@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "e54dd923c872",
+  "strategy": "manual-commit",
+  "branch": "docs/w3-outage-postmortem",
+  "checkpoints_count": 3,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/e5/4dd923c872/0/metadata.json",
+      "transcript": "/e5/4dd923c872/0/full.jsonl",
+      "compact_transcript": "/e5/4dd923c872/0/transcript.jsonl",
+      "content_hash": "/e5/4dd923c872/0/content_hash.txt",
+      "prompt": "/e5/4dd923c872/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 3431,
+    "cache_creation_tokens": 8886026,
+    "cache_read_tokens": 732077566,
+    "output_tokens": 1097319,
+    "api_call_count": 1679
+  }
+}
