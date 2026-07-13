@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "06ac3f0dbe30",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-823-lineage-identity-alignment",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/lineage/marquez.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/06/ac3f0dbe30/0/metadata.json",
+      "transcript": "/06/ac3f0dbe30/0/full.jsonl",
+      "compact_transcript": "/06/ac3f0dbe30/0/transcript.jsonl",
+      "content_hash": "/06/ac3f0dbe30/0/content_hash.txt",
+      "prompt": "/06/ac3f0dbe30/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2069,
+    "cache_creation_tokens": 4613809,
+    "cache_read_tokens": 450296053,
+    "output_tokens": 709206,
+    "api_call_count": 1020
+  }
+}
