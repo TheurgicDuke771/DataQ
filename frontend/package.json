@@ -23,7 +23,7 @@
     "@fontsource/inter": "^5.2.8",
     "@fontsource/jetbrains-mono": "^5.2.8",
     "@monaco-editor/react": "^4.7.0",
-    "antd": "^6.5.0",
+    "antd": "^6.5.1",
     "axios": "^1.18.0",
     "monaco-editor": "^0.55.1",
     "oidc-client-ts": "^3.5.0",
