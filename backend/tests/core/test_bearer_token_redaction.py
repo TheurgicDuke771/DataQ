@@ -2,7 +2,7 @@
 
 Found in production. App Insights held, in plaintext:
 
-    DecodeError: Malformed token received. dq_live_NNZ5EHSoDSDGVTsW5YUgTEUL-… Error: …
+    DecodeError: Malformed token received. dq_live_<the caller's actual PAT>. Error: …
 
 `fastapi_azure_auth` logs the raw token when a JWT decode fails
 (``log.warning('Malformed token received. %s. …', access_token, …)``), and a DataQ PAT is
@@ -31,9 +31,11 @@ import pytest
 from backend.app.core.logging import _scrub_secret_strings
 from backend.app.services import api_key_service
 
-# The exact shape of the credential that leaked (structure preserved, value fabricated).
-_PAT = "dq_live_NNZ5EHSoDSDGVTsW5YUgTEUL-qycw37uCxZb6bZH2B0"
-_JWT = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NSJ9.dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
+# The SHAPE of the credential that leaked — never the value. The real token is revoked,
+# but a revoked credential is still a credential: CLAUDE.md forbids one in any git-tracked
+# file, and a scanner cannot tell "expired" from "live" (nor should it have to).
+_PAT = "dq_live_" + "0" * 40
+_JWT = "eyJ" + "A" * 12 + "." + "B" * 12 + "." + "C" * 12
 
 
 def test_the_prefix_the_redactor_matches_is_the_prefix_we_actually_issue() -> None:
