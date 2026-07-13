@@ -13,7 +13,12 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from backend.app.alerting.base import CheckReport, IncidentCard, RunReport
+from backend.app.alerting.base import (
+    CheckReport,
+    ConnectionHealthReport,
+    IncidentCard,
+    RunReport,
+)
 
 # Longer scalars (a big value_set, a stringified row) are truncated so one check
 # can't blow up a card; the full detail lives on the linked run-detail page.
@@ -148,6 +153,54 @@ def format_duration(seconds: float | None) -> str | None:
 def _format_timestamp(when: datetime | None) -> str | None:
     """A compact UTC-ish timestamp for the alert, or ``None`` when absent."""
     return when.strftime("%Y-%m-%d %H:%M %Z").strip() if when is not None else None
+
+
+def health_headline(report: ConnectionHealthReport) -> str:
+    """The one-line summary of a connection-health edge (#837) — shared by all three
+    channels so a Teams title, a Slack header and an email subject can't drift.
+
+    Says what broke *and* what it costs, because "poll failing" alone reads like a
+    transient blip: a connection whose poll is down stops ingesting pipeline runs, stops
+    firing the suites bound to them, and (for dbt) stops refreshing lineage — which is
+    exactly the six days of silent rot #828 came from.
+    """
+    if not report.is_failing:
+        return f"DataQ — {report.connection_name}: orchestration poll recovered"
+    return (
+        f"DataQ — {report.connection_name}: orchestration poll failing "
+        f"({report.consecutive_failures} consecutive failures)"
+    )
+
+
+def health_facts(report: ConnectionHealthReport) -> list[tuple[str, str]]:
+    """``(label, value)`` pairs describing a connection-health edge, omitting the ones
+    that don't apply (no reason / no failure count on a recovery).
+
+    ``Reason`` is passed through from the report, which carries the **classified**
+    failure — this formatter never sees, and so can never leak, the raw exception text.
+    """
+    pairs: list[tuple[str, str | None]] = [
+        ("Connection", report.connection_name),
+        ("Provider", report.connection_type),
+        ("Reason", report.reason),
+        (
+            "Consecutive failures",
+            str(report.consecutive_failures) if report.is_failing else None,
+        ),
+        ("Last polled", _format_timestamp(report.last_polled_at)),
+    ]
+    return [(label, value) for label, value in pairs if value]
+
+
+def health_impact(report: ConnectionHealthReport) -> str:
+    """What the operator loses while this poll is down (failing edge), or the
+    all-clear (recovery edge)."""
+    if not report.is_failing:
+        return "Polling has resumed; pipeline runs are being ingested again."
+    return (
+        "While this poll is down, pipeline runs are not ingested, suites bound to this "
+        "connection are not triggered, and any lineage it feeds goes stale."
+    )
 
 
 def run_metadata(report: RunReport) -> list[tuple[str, str]]:

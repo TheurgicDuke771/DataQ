@@ -13,7 +13,12 @@ from __future__ import annotations
 from typing import Any
 
 from backend.app.alerting import render
-from backend.app.alerting.base import FAILING_TIERS, CheckReport, RunReport
+from backend.app.alerting.base import (
+    FAILING_TIERS,
+    CheckReport,
+    ConnectionHealthReport,
+    RunReport,
+)
 from backend.app.alerting.routing import QUIET, Route
 
 # Teams' incoming-webhook (Workflows) body shape: a message wrapping one or more
@@ -44,6 +49,45 @@ def render_teams_message(report: RunReport, route: Route) -> dict[str, Any]:
         "attachments": [
             {"contentType": _CARD_CONTENT_TYPE, "content": _adaptive_card(report, route)},
         ],
+    }
+
+
+def render_teams_health_message(report: ConnectionHealthReport) -> dict[str, Any]:
+    """The Teams payload for a connection-health edge (#837) — same message envelope
+    as a run card, a much smaller body: headline, impact, and the classified facts.
+
+    Pure, and it only reads the report's already-classified ``reason``, so no raw
+    exception text (and no credential inside one) can reach the webhook.
+    """
+    body: list[dict[str, Any]] = [
+        _text(
+            render.health_headline(report),
+            size="Large",
+            weight="Bolder",
+            color=_DEFAULT_COLOR if report.is_failing else "good",
+            wrap=True,
+        ),
+        _text(render.health_impact(report), is_subtle=True, wrap=True),
+        {
+            "type": "FactSet",
+            "facts": [
+                {"title": label, "value": value} for label, value in render.health_facts(report)
+            ],
+        },
+    ]
+    card: dict[str, Any] = {
+        "type": "AdaptiveCard",
+        "$schema": _ADAPTIVE_CARD_SCHEMA,
+        "version": _ADAPTIVE_CARD_VERSION,
+        "body": body,
+    }
+    if report.connection_url:
+        card["actions"] = [
+            {"type": "Action.OpenUrl", "title": "View connection", "url": report.connection_url}
+        ]
+    return {
+        "type": "message",
+        "attachments": [{"contentType": _CARD_CONTENT_TYPE, "content": card}],
     }
 
 

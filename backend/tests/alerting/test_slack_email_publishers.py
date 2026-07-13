@@ -17,7 +17,12 @@ import pytest
 
 from backend.app.alerting import email as email_mod
 from backend.app.alerting import slack as slack_mod
-from backend.app.alerting.base import CheckReport, RunReport
+from backend.app.alerting.base import (
+    HEALTH_FAILING,
+    CheckReport,
+    ConnectionHealthReport,
+    RunReport,
+)
 from backend.app.alerting.composite import CompositePublisher
 from backend.app.alerting.email import EmailPublisher, render_subject
 from backend.app.alerting.routing import route_for
@@ -212,21 +217,54 @@ def test_slack_noop_on_clean_run_below_threshold(
     assert posted == []
 
 
+class _Boom:
+    """A channel that is down on both seams."""
+
+    def __init__(self, calls: list[str]) -> None:
+        self._calls = calls
+
+    def publish(self, session, report):  # type: ignore[no-untyped-def]
+        self._calls.append("boom")
+        raise RuntimeError("channel down")
+
+    def publish_health(self, session, report):  # type: ignore[no-untyped-def]
+        self._calls.append("boom")
+        raise RuntimeError("channel down")
+
+
+class _Ok:
+    def __init__(self, calls: list[str]) -> None:
+        self._calls = calls
+
+    def publish(self, session, report):  # type: ignore[no-untyped-def]
+        self._calls.append("ok")
+
+    def publish_health(self, session, report):  # type: ignore[no-untyped-def]
+        self._calls.append("ok")
+
+
 def test_composite_isolates_a_failing_child(db_session: Any) -> None:
     """One child raising must not stop the others."""
     calls: list[str] = []
-
-    class _Boom:
-        def publish(self, session, report):  # type: ignore[no-untyped-def]
-            calls.append("boom")
-            raise RuntimeError("channel down")
-
-    class _Ok:
-        def publish(self, session, report):  # type: ignore[no-untyped-def]
-            calls.append("ok")
-
-    CompositePublisher([_Boom(), _Ok()]).publish(db_session, _report(worst="fail"))
+    CompositePublisher([_Boom(calls), _Ok(calls)]).publish(db_session, _report(worst="fail"))
     assert calls == ["boom", "ok"]  # the second ran despite the first raising
+
+
+def test_composite_isolates_a_failing_child_on_the_health_seam(db_session: Any) -> None:
+    """Same contract on the connection-health seam (#837): a dead Slack webhook must not
+    swallow the email telling you the poll has been down for half an hour."""
+    calls: list[str] = []
+    report = ConnectionHealthReport(
+        connection_id=uuid.uuid4(),
+        connection_name="dbt-prod",
+        connection_type="dbt",
+        state=HEALTH_FAILING,
+        consecutive_failures=3,
+        reason="auth_failed",
+        last_polled_at=None,
+    )
+    CompositePublisher([_Boom(calls), _Ok(calls)]).publish_health(db_session, report)
+    assert calls == ["boom", "ok"]
 
 
 # ── rendering, remaining branches (W8 coverage audit) ────────────────────────

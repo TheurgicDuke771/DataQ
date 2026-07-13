@@ -27,7 +27,24 @@ from backend.app.db.models import FAILING_TIERS
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
-__all__ = ["FAILING_TIERS", "CheckReport", "IncidentCard", "ResultPublisher", "RunReport"]
+__all__ = [
+    "FAILING_TIERS",
+    "HEALTH_FAILING",
+    "HEALTH_RECOVERED",
+    "AlertPublisher",
+    "CheckReport",
+    "ConnectionHealthReport",
+    "HealthPublisher",
+    "IncidentCard",
+    "ResultPublisher",
+    "RunReport",
+]
+
+# The two connection-health transitions worth telling someone about (#837). Both are
+# *edges*, not states: the poller emits one when a connection crosses the failure
+# threshold and one when it comes back — never once per failing poll.
+HEALTH_FAILING = "failing"
+HEALTH_RECOVERED = "recovered"
 
 
 @dataclass(frozen=True)
@@ -140,6 +157,36 @@ class RunReport:
         )
 
 
+@dataclass(frozen=True)
+class ConnectionHealthReport:
+    """A connection's poll-health transition — the unit a ``HealthPublisher`` sends.
+
+    Deliberately **not** a ``RunReport`` (#837): a connection whose poll is failing has
+    no suite, no checks and no severity, and shoehorning one into the run shape would
+    put a fake run in every channel's card. It is its own DTO behind its own seam.
+
+    ``reason`` is the **classified** failure (``Connection.last_poll_error``, produced by
+    `classify_failure_reason`) — never raw exception text. That is load-bearing rather
+    than tidy: the outage this feature exists for (#828) raised an auth error whose
+    message carried the SAS query string, and an alert is the one place that string
+    would leave DataQ's trust boundary. ``None`` on recovery (nothing is wrong).
+    """
+
+    connection_id: uuid.UUID
+    connection_name: str
+    connection_type: str
+    state: str
+    consecutive_failures: int
+    reason: str | None
+    last_polled_at: datetime | None
+    connection_url: str | None = None
+
+    @property
+    def is_failing(self) -> bool:
+        """Whether this is the failure edge (vs the recovery edge)."""
+        return self.state == HEALTH_FAILING
+
+
 @runtime_checkable
 class ResultPublisher(Protocol):
     """Sends a completed run's redacted ``RunReport`` to an external channel.
@@ -153,3 +200,31 @@ class ResultPublisher(Protocol):
     """
 
     def publish(self, session: Session, report: RunReport) -> None: ...
+
+
+@runtime_checkable
+class HealthPublisher(Protocol):
+    """Sends a connection's poll-health transition to an external channel.
+
+    A sibling of :class:`ResultPublisher`, not a widening of it: the same channels
+    (Teams · Slack · email) deliver both, but a health alert has no suite, so none of
+    the per-suite machinery (`enabled`, `alert_on` threshold, per-suite webhook) applies
+    — it is **workspace-level** and routes to the workspace destination only.
+
+    *Whether* to alert is decided upstream, at the threshold crossing (`worker.tasks`);
+    a publisher reaching here just delivers. Implementations may raise — the composite
+    isolates a broken channel, exactly as on the run path.
+    """
+
+    def publish_health(self, session: Session, report: ConnectionHealthReport) -> None: ...
+
+
+@runtime_checkable
+class AlertPublisher(ResultPublisher, HealthPublisher, Protocol):
+    """A channel that can deliver **both** a run outcome and a connection-health edge.
+
+    Every real publisher (Teams/Slack/email/composite/noop) implements both halves, so
+    the registry can hold one composite and serve either seam from it. The two protocols
+    stay separate so a future channel can implement just one without lying about the
+    other.
+    """

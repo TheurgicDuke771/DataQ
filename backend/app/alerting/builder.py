@@ -14,7 +14,13 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.alerting.base import CheckReport, IncidentCard, RunReport
+from backend.app.alerting.base import (
+    HEALTH_FAILING,
+    CheckReport,
+    ConnectionHealthReport,
+    IncidentCard,
+    RunReport,
+)
 from backend.app.core.config import get_settings
 from backend.app.db.models import (
     FAILING_TIERS,
@@ -35,6 +41,27 @@ def _run_url(run_id: uuid.UUID) -> str | None:
     than emitting a broken relative one."""
     base = get_settings().public_base_url.rstrip("/")
     return f"{base}/results/{run_id}" if base else None
+
+
+def build_connection_health_report(connection: Connection, *, state: str) -> ConnectionHealthReport:
+    """A :class:`ConnectionHealthReport` from a connection's persisted poll health (#837).
+
+    The reason is read straight off ``Connection.last_poll_error``, which
+    `orchestration_service.record_poll_failure` already stored **classified** — so the
+    alert cannot carry the raw exception text (and the credential inside it). Nothing
+    here re-derives the reason from an exception; that is the whole point of the column.
+    """
+    base = get_settings().public_base_url.rstrip("/")
+    return ConnectionHealthReport(
+        connection_id=connection.id,
+        connection_name=connection.name,
+        connection_type=connection.type,
+        state=state,
+        consecutive_failures=connection.consecutive_poll_failures or 0,
+        reason=connection.last_poll_error if state == HEALTH_FAILING else None,
+        last_polled_at=connection.last_polled_at,
+        connection_url=f"{base}/connections" if base else None,
+    )
 
 
 def _target_label(suite: Suite | None) -> str:

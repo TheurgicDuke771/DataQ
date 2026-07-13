@@ -539,16 +539,26 @@ def list_pipelines(
 # integration is broken" instead of rendering a clean empty state over a dead one.
 
 
-def record_poll_success(session: Session, *, connection: Connection) -> None:
-    """Mark a connection's poll healthy: clear the error, reset the failure streak."""
+def record_poll_success(session: Session, *, connection: Connection) -> int:
+    """Mark a connection's poll healthy: clear the error, reset the failure streak.
+
+    Returns the streak it just cleared, so the caller can tell a *recovery* (we had been
+    failing) from a poll that was healthy all along and alert only on the transition
+    (#837). The decision is the caller's — this function stays a pure state write.
+    """
+    previous_failures = connection.consecutive_poll_failures or 0
     connection.last_polled_at = datetime.now(UTC)
     connection.last_poll_error = None
     connection.consecutive_poll_failures = 0
     session.commit()
+    return previous_failures
 
 
-def record_poll_failure(session: Session, *, connection_id: uuid.UUID, exc: BaseException) -> None:
+def record_poll_failure(session: Session, *, connection_id: uuid.UUID, exc: BaseException) -> int:
     """Record a failed poll against the connection and grow its failure streak.
+
+    Returns the new streak length (0 when the connection has been deleted mid-sweep), so
+    the caller can alert exactly on the threshold crossing (#837).
 
     Takes a ``connection_id`` rather than the ORM object on purpose: the caller has just
     rolled the session back, so its `Connection` instance is detached/stale. Re-loading
@@ -561,8 +571,9 @@ def record_poll_failure(session: Session, *, connection_id: uuid.UUID, exc: Base
     """
     connection = session.get(Connection, connection_id)
     if connection is None:  # deleted mid-sweep — nothing to record against
-        return
+        return 0
     connection.last_polled_at = datetime.now(UTC)
     connection.last_poll_error = classify_failure_reason(exc)[:512]
     connection.consecutive_poll_failures = (connection.consecutive_poll_failures or 0) + 1
     session.commit()
+    return connection.consecutive_poll_failures
