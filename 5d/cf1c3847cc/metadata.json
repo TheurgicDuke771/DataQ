@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "5dcf1c3847cc",
+  "strategy": "manual-commit",
+  "branch": "refactor/issue-428-shared-sql-ident",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/5d/cf1c3847cc/0/metadata.json",
+      "transcript": "/5d/cf1c3847cc/0/full.jsonl",
+      "compact_transcript": "/5d/cf1c3847cc/0/transcript.jsonl",
+      "content_hash": "/5d/cf1c3847cc/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 4,
+    "cache_creation_tokens": 3020,
+    "cache_read_tokens": 531984,
+    "output_tokens": 816,
+    "api_call_count": 2
+  }
+}
