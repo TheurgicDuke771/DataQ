@@ -123,7 +123,15 @@ class Settings(BaseSettings):
     rate_limit_enabled: bool = True
     rate_limit_authenticated_per_minute: int = 300  # per sha256(bearer) bucket
     rate_limit_unauthenticated_per_minute: int = 120  # per client-IP bucket
-    rate_limit_webhook_per_minute: int = 120  # per client-IP, /api/v1/orchestration/events/*
+    rate_limit_webhook_per_minute: int = (
+        120  # per provider + client-IP bucket, /api/v1/orchestration/events/* (#785) —
+        # each provider (adf/airflow/dbt) has its own bucket at this cap, NOT a
+        # per-IP total; the total is rate_limit_webhook_ip_per_minute below.
+    )
+    rate_limit_webhook_ip_per_minute: int = (
+        240  # per-IP ceiling across ALL webhook buckets from one IP (#785) — bounds
+        # the aggregate a single IP can spend across provider buckets.
+    )
     rate_limit_ip_per_minute: int = (
         1200  # per-IP ceiling across all bearer buckets (rotated-token backstop)
     )

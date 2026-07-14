@@ -167,6 +167,53 @@ def test_webhook_class_is_tighter_and_ip_keyed_despite_bearer(limiter: TestClien
     assert limiter.post(path, headers=headers).status_code == 429  # WEBHOOK limit = 2
 
 
+def test_webhook_burst_on_one_provider_does_not_throttle_another(limiter: TestClient) -> None:
+    # #785: same source IP, but each provider has its own bucket — an adf burst
+    # past the limit must not 429 airflow's or dbt's callbacks.
+    adf = "/api/v1/orchestration/events/adf"
+    for _ in range(2):  # WEBHOOK limit = 2
+        assert limiter.post(adf).status_code != 429
+    assert limiter.post(adf).status_code == 429
+    assert limiter.post("/api/v1/orchestration/events/airflow").status_code != 429
+    assert limiter.post("/api/v1/orchestration/events/dbt").status_code != 429
+
+
+def test_webhook_unknown_segments_share_one_bucket(limiter: TestClient) -> None:
+    # Rotating an unknown segment must not mint fresh buckets — all such requests
+    # land in the shared bare-IP webhook bucket and 429 together.
+    for i in range(2):  # WEBHOOK limit = 2
+        assert limiter.post(f"/api/v1/orchestration/events/scan-{i}").status_code != 429
+    assert limiter.post("/api/v1/orchestration/events/scan-99").status_code == 429
+
+
+@pytest.fixture
+def webhook_ceiling_limiter(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
+    """High per-provider webhook cap, low webhook `ipall` ceiling — exercises the
+    aggregate backstop (#785): per-provider buckets must not multiply the total
+    webhook budget one IP can spend by rotating the provider segment."""
+    monkeypatch.setenv("RATE_LIMIT_ENABLED", "true")
+    monkeypatch.setenv("RATE_LIMIT_WEBHOOK_PER_MINUTE", "50")  # provider cap out of the way
+    monkeypatch.setenv("RATE_LIMIT_WEBHOOK_IP_PER_MINUTE", "4")  # aggregate ceiling
+    get_settings.cache_clear()
+    monkeypatch.setattr(rate_limit, "_now", lambda: _FROZEN)
+    set_store_for_testing(InMemoryStore(clock=lambda: _FROZEN))
+    with TestClient(app) as c:
+        yield c
+
+
+def test_rotating_provider_segments_hit_webhook_ip_ceiling(
+    webhook_ceiling_limiter: TestClient,
+) -> None:
+    # Round-robin the provider segments: no single provider bucket fills (cap 50),
+    # but the aggregate per-IP ceiling (4) closes the segment-rotation multiplier.
+    paths = [f"/api/v1/orchestration/events/{p}" for p in ("adf", "airflow", "dbt", "nonesuch")]
+    for i in range(4):
+        assert webhook_ceiling_limiter.post(paths[i % 4]).status_code != 429
+    resp = webhook_ceiling_limiter.post(paths[0])
+    assert resp.status_code == 429
+    assert resp.headers["X-RateLimit-Limit"] == "4"  # the webhook IP ceiling, reported
+
+
 # ───────────────────────── 4/5. exemptions ─────────────────────────
 
 
