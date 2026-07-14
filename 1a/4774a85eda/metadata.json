@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "1a4774a85eda",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-785-webhook-bucket-per-provider",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/core/rate_limit.py",
+    "backend/tests/api/test_rate_limiting.py",
+    "backend/tests/core/test_rate_limit.py",
+    "docs/adr/0035-request-rate-limiting.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/1a/4774a85eda/0/metadata.json",
+      "transcript": "/1a/4774a85eda/0/full.jsonl",
+      "compact_transcript": "/1a/4774a85eda/0/transcript.jsonl",
+      "content_hash": "/1a/4774a85eda/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 69,
+    "cache_creation_tokens": 61247,
+    "cache_read_tokens": 6066657,
+    "output_tokens": 26812,
+    "api_call_count": 35
+  }
+}
