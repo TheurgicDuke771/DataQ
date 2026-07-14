@@ -334,6 +334,41 @@ def test_sibling_ips_in_one_slash24_share_a_bucket(limiter: TestClient) -> None:
     assert limiter.get(PROBE, headers={"X-Forwarded-For": "9.9.8.1"}).status_code != 429
 
 
+def test_ipv4_mapped_ipv6_shares_the_dotted_quad_bucket(limiter: TestClient) -> None:
+    # A dual-stack chain can present the same client as `9.9.9.x` on one request
+    # and `::ffff:9.9.9.x` on another — both must land in the ONE /24 bucket
+    # (and never in a shared ::/64 that would collapse all IPv4 clients).
+    assert limiter.get(PROBE, headers={"X-Forwarded-For": "9.9.9.1"}).status_code != 429
+    assert limiter.get(PROBE, headers={"X-Forwarded-For": "::ffff:9.9.9.2"}).status_code != 429
+    assert limiter.get(PROBE, headers={"X-Forwarded-For": "9.9.9.3"}).status_code != 429
+    # 4th in the same /24 (mapped form) → 429; an unrelated IPv4 /24 stays fresh.
+    assert limiter.get(PROBE, headers={"X-Forwarded-For": "::ffff:9.9.9.4"}).status_code == 429
+    assert limiter.get(PROBE, headers={"X-Forwarded-For": "7.7.7.7"}).status_code != 429
+
+
+def test_bearer_ipall_ceiling_keys_on_prefix(ip_ceiling_limiter: TestClient) -> None:
+    # The combined #725+#789 attack: rotate a fresh bearer AND sibling pool IPs.
+    # Each request mints a fresh tok bucket, but the ipall ceiling (4) must
+    # accumulate across the /24 — pinning that the ceiling key uses the prefix
+    # bucket, not the raw /32.
+    for i in range(4):
+        h = {"Authorization": f"Bearer rot-{i}", "X-Forwarded-For": f"9.9.9.{10 + i}"}
+        assert ip_ceiling_limiter.get(PROBE, headers=h).status_code != 429
+    resp = ip_ceiling_limiter.get(
+        PROBE, headers={"Authorization": "Bearer rot-x", "X-Forwarded-For": "9.9.9.200"}
+    )
+    assert resp.status_code == 429
+    assert resp.headers["X-RateLimit-Limit"] == "4"  # the ipall ceiling, reported
+
+
+def test_webhook_bucket_keys_on_prefix(limiter: TestClient) -> None:
+    # The per-provider webhook bucket must also accumulate across sibling /32s.
+    adf = "/api/v1/orchestration/events/adf"
+    for i in range(2):  # WEBHOOK limit = 2
+        assert limiter.post(adf, headers={"X-Forwarded-For": f"9.9.9.{20 + i}"}).status_code != 429
+    assert limiter.post(adf, headers={"X-Forwarded-For": "9.9.9.99"}).status_code == 429
+
+
 def test_xff_last_hop_defines_the_bucket(limiter: TestClient) -> None:
     h = {"X-Forwarded-For": "9.9.9.9"}
     for _ in range(3):

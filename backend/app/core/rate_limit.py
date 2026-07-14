@@ -242,18 +242,24 @@ def _bucket_ip(ip: str, settings: Settings) -> str:
     standard allocation) makes the whole pool share one bucket. The prefix length
     rides in the key, so retuning the mask starts fresh buckets rather than
     cross-counting. A non-address (`"unknown"`) passes through unchanged.
+
+    An IPv4-mapped IPv6 address (`::ffff:a.b.c.d` — what a dual-stack `[::]`
+    listener's socket peer or a proxy-written XFF entry carries) is unwrapped and
+    folded as IPv4: every mapped address lives in `::ffff:0:0/96`, so folding it
+    at /64 would collapse the ENTIRE IPv4 internet into one `::/64` bucket — one
+    abusive client would 429 all unauthenticated IPv4 traffic — and the same
+    client would key differently as `a.b.c.d` vs `::ffff:a.b.c.d`.
     """
     try:
         addr = ipaddress.ip_address(ip)
     except ValueError:
         return ip
+    if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped is not None:
+        addr = addr.ipv4_mapped
     prefix = (
-        settings.rate_limit_ipv4_prefix
-        if isinstance(addr, ipaddress.IPv4Address)
-        else settings.rate_limit_ipv6_prefix
+        settings.rate_limit_ipv4_prefix if addr.version == 4 else settings.rate_limit_ipv6_prefix
     )
-    network = ipaddress.ip_network((addr, prefix), strict=False)
-    return f"{network.network_address}/{prefix}"
+    return str(ipaddress.ip_network((addr, prefix), strict=False))
 
 
 def _resolve_policy(

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+from collections.abc import Callable
 
 import pytest
 from starlette.requests import Request
@@ -136,14 +137,40 @@ def test_bucket_ip_full_mask_disables_grouping() -> None:
     assert rate_limit._bucket_ip("2001:db8::1", s) == "2001:db8::1/128"
 
 
+def test_bucket_ip_ipv4_mapped_ipv6_unwraps_to_ipv4() -> None:
+    # A dual-stack `[::]` listener's socket peer (and some proxy XFF chains)
+    # carries `::ffff:a.b.c.d`. Folding that as IPv6 would put the ENTIRE IPv4
+    # internet into one ::/64 bucket; it must unwrap and fold as IPv4, keying
+    # identically to its dotted-quad twin.
+    s = _settings()
+    assert rate_limit._bucket_ip("::ffff:9.9.9.1", s) == "9.9.9.0/24"
+    assert rate_limit._bucket_ip("::ffff:9.9.9.1", s) == rate_limit._bucket_ip("9.9.9.2", s)
+    assert rate_limit._bucket_ip("::ffff:203.0.113.7", s) != rate_limit._bucket_ip(
+        "::ffff:9.9.9.1", s
+    )
+
+
 def test_bucket_ip_non_address_passes_through() -> None:
     # `_client_ip` can yield "unknown" (no socket peer); it must key as-is, not raise.
     assert rate_limit._bucket_ip("unknown", _settings()) == "unknown"
 
 
-def test_prefix_out_of_range_rejected_by_settings() -> None:
-    with pytest.raises(Exception, match="rate_limit_ipv4_prefix"):
-        Settings(_env_file=None, rate_limit_ipv4_prefix=0)
+@pytest.mark.parametrize(
+    "build",
+    [
+        lambda: Settings(_env_file=None, rate_limit_ipv4_prefix=0),
+        lambda: Settings(_env_file=None, rate_limit_ipv4_prefix=33),
+        lambda: Settings(_env_file=None, rate_limit_ipv6_prefix=8),
+    ],
+    ids=["v4-below", "v4-above", "v6-below"],
+)
+def test_prefix_out_of_range_rejected_by_settings(build: Callable[[], Settings]) -> None:
+    # Pin the CONSTRAINT (ge/le), not just any error naming the field — a bare
+    # name match would also pass on extra="forbid" if the field were deleted.
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match=r"greater than or equal|less than or equal"):
+        build()
 
 
 # ───────────────────────── client-IP extraction ─────────────────────────
