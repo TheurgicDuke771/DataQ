@@ -23,12 +23,12 @@ Semantics (locked):
 
 from __future__ import annotations
 
-import re
 from collections.abc import Callable
 from datetime import UTC, date, datetime, time
 from typing import Any
 
 from backend.app.datasources.base import CheckOutcome, MonitorSpec
+from backend.app.datasources.sql import is_sql_identifier
 
 FRESHNESS = "freshness"
 VOLUME = "volume"
@@ -48,20 +48,18 @@ def monitor_expectation_type(kind: str) -> str:
     return f"{_EXPECTATION_PREFIX}{kind}"
 
 
-# SQL identifier we're willing to interpolate into the aggregate. Monitor config is
-# user-authored, so the column/table/schema must be validated before they touch a
-# query string (no bound-param slot for an identifier). Snowflake/Databricks
-# unquoted identifiers: a letter/underscore lead, then word chars or `$`.
-_IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_$]*$")
-
-
 class MonitorConfigError(ValueError):
     """A monitor check's config is missing/invalid (bad column, range, or kind)."""
 
 
 def _ident(name: object, *, what: str) -> str:
-    """Validate a SQL identifier (so it's safe to interpolate) and return it."""
-    if not isinstance(name, str) or not _IDENT_RE.match(name):
+    """Validate a SQL identifier (so it's safe to interpolate) and return it.
+
+    Monitor config is user-authored, so the column/table/schema must be validated
+    before they touch a query string (no bound-param slot for an identifier). The
+    allowlist itself is the shared `datasources.sql` one (#428) — one source of
+    truth with the profiler's validator."""
+    if not isinstance(name, str) or not is_sql_identifier(name):
         raise MonitorConfigError(f"invalid {what} identifier: {name!r}")
     return name
 
