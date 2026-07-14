@@ -38,7 +38,7 @@ from backend.app.datasources.gx_runner import (
     run_expectations,
     to_suite_outcome,
 )
-from backend.app.datasources.monitors import evaluate_monitors
+from backend.app.datasources.monitors import run_monitors_over_engine
 
 __all__ = [
     "SnowflakeCheckRunner",
@@ -236,18 +236,17 @@ class SnowflakeCheckRunner:
         addresses the target as ``schema.table`` (the database is in the DSN), so no
         catalog. A connection-level failure (can't reach the warehouse) propagates,
         failing the run like the GX path; a bad monitor errors only itself."""
-        from sqlalchemy import create_engine, text
+        from sqlalchemy import create_engine
 
         engine = create_engine(self._connection_string, connect_args=self._connect_args or {})
         try:
-            with engine.connect() as conn:
-                return evaluate_monitors(
-                    lambda sql: conn.execute(text(sql)).scalar(),
-                    table=table,
-                    schema=schema or self._config.schema_,
-                    catalog=None,
-                    monitors=monitors,
-                )
+            return run_monitors_over_engine(
+                engine,
+                table=table,
+                schema=schema or self._config.schema_,
+                catalog=None,
+                monitors=monitors,
+            )
         finally:
             engine.dispose()
 

@@ -8,9 +8,12 @@ unexpected-%. This module is the pure, datasource-agnostic core:
 * :func:`build_monitor_sql` — the aggregate query a SQL runner executes;
 * :func:`monitor_outcome` — scalar result + check config → ``CheckOutcome``.
 
-The per-datasource *execution* (open a connection, run the SQL, fetch the scalar)
-lives in the SQL runners; this module never touches a connection, so it is fully
-unit-tested. v1 monitors are SQL-datasource only (Snowflake / Unity Catalog).
+The per-datasource *execution* (build an engine/URL, own its lifecycle) lives in
+the SQL runners; everything here up to `run_monitors_over_engine` is connection-
+free and fully unit-tested, and that one helper — the engine → one connection →
+scalar loop the SQL runners share (#428) — is handed an already-built engine and
+never constructs one. v1 monitors are SQL-datasource only (Snowflake / Unity
+Catalog) plus the Iceberg runner's native scan scalars.
 
 Semantics (locked):
 * **freshness** — config ``{"column": <timestamp col>}``; metric = **age in hours**
@@ -23,12 +26,15 @@ Semantics (locked):
 
 from __future__ import annotations
 
-import re
 from collections.abc import Callable
 from datetime import UTC, date, datetime, time
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from sqlalchemy.engine import Engine
 
 from backend.app.datasources.base import CheckOutcome, MonitorSpec
+from backend.app.datasources.sql import is_sql_identifier
 
 FRESHNESS = "freshness"
 VOLUME = "volume"
@@ -48,20 +54,18 @@ def monitor_expectation_type(kind: str) -> str:
     return f"{_EXPECTATION_PREFIX}{kind}"
 
 
-# SQL identifier we're willing to interpolate into the aggregate. Monitor config is
-# user-authored, so the column/table/schema must be validated before they touch a
-# query string (no bound-param slot for an identifier). Snowflake/Databricks
-# unquoted identifiers: a letter/underscore lead, then word chars or `$`.
-_IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_$]*$")
-
-
 class MonitorConfigError(ValueError):
     """A monitor check's config is missing/invalid (bad column, range, or kind)."""
 
 
 def _ident(name: object, *, what: str) -> str:
-    """Validate a SQL identifier (so it's safe to interpolate) and return it."""
-    if not isinstance(name, str) or not _IDENT_RE.match(name):
+    """Validate a SQL identifier (so it's safe to interpolate) and return it.
+
+    Monitor config is user-authored, so the column/table/schema must be validated
+    before they touch a query string (no bound-param slot for an identifier). The
+    allowlist itself is the shared `datasources.sql` one (#428) — one source of
+    truth with the profiler's validator."""
+    if not isinstance(name, str) or not is_sql_identifier(name):
         raise MonitorConfigError(f"invalid {what} identifier: {name!r}")
     return name
 
@@ -289,3 +293,32 @@ def evaluate_monitors(
         return fetch_scalar(sql)
 
     return run_monitor_specs(scalar_for, monitors=monitors, now=now)
+
+
+def run_monitors_over_engine(
+    engine: Engine,
+    *,
+    table: str,
+    schema: str | None,
+    catalog: str | None,
+    monitors: list[MonitorSpec],
+) -> list[CheckOutcome]:
+    """Run monitor checks over ONE connection from ``engine``, one outcome each.
+
+    The execution edge the SQL runners (Snowflake / Unity Catalog) share (#428):
+    opens a single connection and sources every monitor's scalar from it via
+    `evaluate_monitors` (a bad monitor errors only itself; a connection-level
+    failure propagates and fails the whole run — the open happens before the
+    per-monitor loop). The engine's lifecycle (build + dispose) belongs to the
+    caller — the seam #427 threads a per-run shared engine through.
+    """
+    from sqlalchemy import text  # lazy: keep sqlalchemy off this module's import cost
+
+    with engine.connect() as conn:
+        return evaluate_monitors(
+            lambda sql: conn.execute(text(sql)).scalar(),
+            table=table,
+            schema=schema,
+            catalog=catalog,
+            monitors=monitors,
+        )
