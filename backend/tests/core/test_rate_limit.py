@@ -48,10 +48,11 @@ def test_webhook_prefix_wins_even_with_bearer() -> None:
     assert key == "adf:ip:9.9.9.9"  # per-IP even though a bearer was present
 
 
-@pytest.mark.parametrize("provider", ["adf", "airflow", "dbt"])
+@pytest.mark.parametrize("provider", sorted(rate_limit._WEBHOOK_PROVIDERS))
 def test_webhook_key_folds_known_provider(provider: str) -> None:
     # Each provider gets its own per-IP bucket (#785), so a burst on one can't
-    # crowd out another's callbacks from the same egress IP.
+    # crowd out another's callbacks from the same egress IP. Parametrized over
+    # the production set so a newly added provider is exercised automatically.
     _, _, key = _resolve_policy(
         f"/api/v1/orchestration/events/{provider}", None, "9.9.9.9", _settings()
     )
@@ -65,8 +66,10 @@ def test_webhook_key_trailing_path_still_folds_provider() -> None:
     assert key == "adf:ip:9.9.9.9"
 
 
-@pytest.mark.parametrize("segment", ["nonesuch", "", "adf%00", "ADF"])
+@pytest.mark.parametrize("segment", ["nonesuch", "", "adf\x00", "ADF"])
 def test_webhook_unknown_segment_shares_bare_ip_bucket(segment: str) -> None:
+    # NB: ASGI hands the middleware the percent-DECODED path, so an encoded
+    # probe like `adf%00` arrives here as the raw "adf\x00" — test that layer.
     # Unknown segments must NOT mint fresh buckets (a scanner rotating the path
     # would never 429) — they all share the bare per-IP bucket.
     _, _, key = _resolve_policy(
@@ -76,9 +79,9 @@ def test_webhook_unknown_segment_shares_bare_ip_bucket(segment: str) -> None:
 
 
 def test_webhook_providers_match_orchestration_registry() -> None:
-    # `_WEBHOOK_PROVIDERS` mirrors the orchestration registry without importing it
-    # (core must not depend on the orchestration layer) — this pins the two sets
-    # together so a new provider can't silently land in the shared bucket.
+    # `_WEBHOOK_PROVIDERS` derives from the shared `db.models.ORCHESTRATION_PROVIDERS`
+    # vocabulary; this pins that vocabulary to the orchestration registry so a
+    # provider registered there can't silently land in the shared bare-IP bucket.
     from backend.app.orchestration.registry import _PROVIDERS
 
     assert rate_limit._WEBHOOK_PROVIDERS == frozenset(_PROVIDERS)
@@ -282,3 +285,10 @@ def test_warn_store_unavailable_once_per_window(monkeypatch: pytest.MonkeyPatch)
     # A new window warns again.
     _warn_store_unavailable_once(101, path="/api/v1/x", cls="unauth", key="ip:1.2.3.4")
     assert len(rec.events) == 2
+
+    # A provider-folded webhook key (#785) still reports kind "ip" — the field's
+    # value domain is pinned to {tok, ip} so log queries keyed on it keep matching.
+    _warn_store_unavailable_once(102, path="/api/v1/x", cls="webhook", key="adf:ip:1.2.3.4")
+    assert rec.events[2][1]["key_kind"] == "ip"
+    _warn_store_unavailable_once(103, path="/api/v1/x", cls="default", key="tok:abcd")
+    assert rec.events[3][1]["key_kind"] == "tok"

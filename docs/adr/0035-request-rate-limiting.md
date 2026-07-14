@@ -53,7 +53,7 @@ on the parent FastAPI app as the **innermost** user middleware.
 
   | Class | Matches | Key | Default |
   |---|---|---|---|
-  | `webhook` | `/api/v1/orchestration/events/*` | per provider **+** client-IP (**even with a bearer** — machine path). The known provider segment (adf/airflow/dbt) is folded into the key so one noisy orchestrator can't crowd out another's callbacks from the same egress IP (#785); an *unknown* segment shares one bare-IP bucket, so a path scanner can't mint fresh buckets by rotating the segment | 120 |
+  | `webhook` | `/api/v1/orchestration/events/*` | per provider **+** client-IP (**even with a bearer** — machine path), **plus** a per-IP `ipall` ceiling. The known provider segment (adf/airflow/dbt, from the shared `ORCHESTRATION_PROVIDERS` vocabulary) is folded into the key so one noisy orchestrator can't crowd out another's callbacks from the same egress IP (#785); an *unknown* segment shares one bare-IP bucket, so a path scanner can't mint fresh buckets by rotating the segment; and the `rl:webhook:ipall:{ip}` ceiling (`RATE_LIMIT_WEBHOOK_IP_PER_MINUTE`) bounds the **aggregate** one IP can spend across provider buckets — without it, per-provider folding would quietly multiply the per-IP webhook budget by (providers + 1). Ops note: provider-folded keys match `rl:webhook:*:ip:*` in a Redis SCAN, not the pre-#785 `rl:webhook:ip:*` | 120 (per provider bucket) / 240 (`ipall`) |
   | `default` | any request with a bearer | per `sha256(token)[:32]` **plus** a per-IP `ipall` ceiling | 300 (token) / 1200 (`ipall`) |
   | `unauth` | everything else | per client-IP | 120 |
 
