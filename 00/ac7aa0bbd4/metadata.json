@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "00ac7aa0bbd4",
+  "strategy": "manual-commit",
+  "branch": "refactor/issue-427-one-connection-per-monitor-run",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/datasources/snowflake.py",
+    "backend/app/datasources/unity_catalog.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/00/ac7aa0bbd4/0/metadata.json",
+      "transcript": "/00/ac7aa0bbd4/0/full.jsonl",
+      "compact_transcript": "/00/ac7aa0bbd4/0/transcript.jsonl",
+      "content_hash": "/00/ac7aa0bbd4/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 444,
+    "cache_creation_tokens": 399605,
+    "cache_read_tokens": 55687977,
+    "output_tokens": 141090,
+    "api_call_count": 223
+  }
+}
