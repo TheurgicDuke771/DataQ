@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "f726d636d82a",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-789-ip-prefix-buckets",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/core/rate_limit.py",
+    "backend/tests/api/test_rate_limiting.py",
+    "backend/tests/core/test_rate_limit.py",
+    "docs/adr/0035-request-rate-limiting.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f7/26d636d82a/0/metadata.json",
+      "transcript": "/f7/26d636d82a/0/full.jsonl",
+      "compact_transcript": "/f7/26d636d82a/0/transcript.jsonl",
+      "content_hash": "/f7/26d636d82a/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 372,
+    "cache_creation_tokens": 349418,
+    "cache_read_tokens": 41279775,
+    "output_tokens": 119744,
+    "api_call_count": 187
+  }
+}
