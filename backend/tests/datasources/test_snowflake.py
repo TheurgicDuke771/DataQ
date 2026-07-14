@@ -17,7 +17,7 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from backend.app.datasources.base import CheckRunner, CheckSpec, ConnectionAdapter
+from backend.app.datasources.base import CheckRunner, CheckSpec, ConnectionAdapter, MonitorSpec
 from backend.app.datasources.registry import (
     UnsupportedConnectionTypeError,
     get_connection_adapter,
@@ -617,3 +617,92 @@ def test_registry_unknown_type_raises() -> None:
     # valid connection type at all (a post-v1 RDBMS candidate, ADR 0011).
     with pytest.raises(UnsupportedConnectionTypeError, match="mssql"):
         get_connection_adapter("mssql")
+
+
+# ───────────────────────── shared engine lifecycle (#427) ─────────────────────────
+
+
+def _runner_with_counted_engine(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> tuple[SnowflakeCheckRunner, list[str]]:
+    """A real runner whose lazy `create_engine` is redirected to a seeded sqlite
+    DB, with every construction recorded — pins that the engine is built ONCE
+    per runner, not per call."""
+    import sqlalchemy
+
+    real_create_engine = sqlalchemy.create_engine
+    db_url = f"sqlite:///{tmp_path}/sf.sqlite"
+    seed = real_create_engine(db_url)
+    with seed.begin() as conn:
+        conn.execute(sqlalchemy.text("CREATE TABLE ORDERS (id INTEGER)"))
+        conn.execute(sqlalchemy.text("INSERT INTO ORDERS (id) VALUES (1), (2)"))
+    seed.dispose()
+
+    created: list[str] = []
+
+    def _fake_create_engine(url: str, **_kwargs: Any) -> Any:
+        created.append(str(url))
+        return real_create_engine(db_url)
+
+    monkeypatch.setattr(sqlalchemy, "create_engine", _fake_create_engine)
+    config = SnowflakeConfig.model_validate(
+        {
+            "account": "acct",
+            "user": "u",
+            "database": "DB",
+            "schema": "PUBLIC",
+            "warehouse": "WH",
+        }
+    )
+    return SnowflakeCheckRunner(config, "pw"), created
+
+
+def test_run_monitors_reuses_one_engine_across_calls(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+    runner, created = _runner_with_counted_engine(monkeypatch, tmp_path)
+    monitors = [MonitorSpec(kind="volume", config={"min_rows": 1, "max_rows": 10})]
+    # sqlite has no schemas — run over the bare table by clearing the fallback.
+    monkeypatch.setattr(runner._config, "schema_", None)
+    first = runner.run_monitors(table="ORDERS", schema=None, monitors=monitors)
+    second = runner.run_monitors(table="ORDERS", schema=None, monitors=monitors)
+    assert first[0].success and second[0].success
+    assert len(created) == 1  # ONE engine for the runner's lifetime, not per call
+    runner.close()
+
+
+def test_close_disposes_and_is_idempotent(monkeypatch: pytest.MonkeyPatch, tmp_path: Any) -> None:
+    runner, created = _runner_with_counted_engine(monkeypatch, tmp_path)
+    monkeypatch.setattr(runner._config, "schema_", None)
+    monitors = [MonitorSpec(kind="volume", config={"min_rows": 1, "max_rows": 10})]
+    runner.run_monitors(table="ORDERS", schema=None, monitors=monitors)
+    runner.close()
+    runner.close()  # idempotent
+    assert runner._engine is None
+    # A later use lazily rebuilds — close() must not brick the runner.
+    runner.run_monitors(table="ORDERS", schema=None, monitors=monitors)
+    assert len(created) == 2
+    runner.close()
+
+
+def test_close_before_any_use_is_a_noop() -> None:
+    config = SnowflakeConfig.model_validate(
+        {"account": "a", "user": "u", "database": "d", "schema": "s", "warehouse": "w"}
+    )
+    runner = SnowflakeCheckRunner(config, "pw")
+    runner.close()  # never built an engine — must not raise
+
+
+def test_close_check_runner_helper_dispatches_and_noops() -> None:
+    from backend.app.datasources.registry import close_check_runner
+
+    class _WithClose:
+        closed = 0
+
+        def close(self) -> None:
+            self.closed += 1
+
+    with_close = _WithClose()
+    close_check_runner(with_close)
+    assert with_close.closed == 1
+    close_check_runner(object())  # no close() → silent no-op

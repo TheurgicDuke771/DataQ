@@ -153,3 +153,14 @@ def build_check_runner(
         secret_store=secret_store,
         catalog=catalog,
     )
+
+
+def close_check_runner(runner: object) -> None:
+    """Release any datasource resources the runner holds — its shared SQL engine
+    pool (#427). The runner-owning path (worker run, dry-run) calls this in a
+    ``finally`` once the run is over. Runners without a ``close`` (flat-file,
+    Iceberg — nothing pooled to release) are a no-op, so callers never branch on
+    the runner type."""
+    close = getattr(runner, "close", None)
+    if callable(close):
+        close()

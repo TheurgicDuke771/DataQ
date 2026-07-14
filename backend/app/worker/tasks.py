@@ -27,8 +27,9 @@ from backend.app.core.config import get_settings
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore, get_secret_store
+from backend.app.datasources.base import CheckRunner
 from backend.app.datasources.flatfile import BatchNotFoundError
-from backend.app.datasources.registry import build_check_runner
+from backend.app.datasources.registry import build_check_runner, close_check_runner
 from backend.app.db.models import (
     ORCHESTRATION_PROVIDERS,
     Check,
@@ -142,6 +143,36 @@ def _run_suite(session: Session, *, run_id: uuid.UUID) -> str:
             reason=classify_failure_reason(exc),
         )
 
+    # From here the runner exists — everything below runs under a finally that
+    # releases its shared engine pool (#427), whatever path the run takes.
+    try:
+        return _run_suite_with_runner(
+            session,
+            run_id=run_id,
+            run=run,
+            suite=suite,
+            connection=connection,
+            target=target,
+            checks=checks,
+            runner=runner,
+        )
+    finally:
+        close_check_runner(runner)
+
+
+def _run_suite_with_runner(
+    session: Session,
+    *,
+    run_id: uuid.UUID,
+    run: Run,
+    suite: Suite,
+    connection: Connection,
+    target: run_target.ResolvedTarget,
+    checks: list[Check],
+    runner: CheckRunner,
+) -> str:
+    """The post-setup half of `_run_suite` — the runner's owner (`_run_suite`)
+    wraps this in the finally that closes it (#427)."""
     # Materialize the concrete path (live for a flat-file batch target). Kept
     # separate from setup so a missing batch is a skip, not a setup failure.
     try:

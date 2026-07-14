@@ -333,6 +333,60 @@ def test_run_suite_batch_listing_failure_marks_failed(monkeypatch: pytest.Monkey
     assert session.added == []
 
 
+# ───────────────────────── runner lifecycle (#427) ─────────────────────────
+
+
+class ClosableFakeRunner(FakeRunner):
+    def __init__(self, outcome: SuiteOutcome) -> None:
+        super().__init__(outcome)
+        self.closed = 0
+
+    def close(self) -> None:
+        self.closed += 1
+
+
+def test_run_suite_closes_runner_after_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The runner's shared engine pool (#427) must be released when the run ends.
+    run, suite, connection, checks = _graph(1)
+    session = FakeSession(run=run, suite=suite, connection=connection, checks=checks)
+    runner = ClosableFakeRunner(
+        SuiteOutcome(success=True, checks=[CheckOutcome("x", success=True)])
+    )
+    monkeypatch.setattr(tasks, "build_check_runner", lambda **_kw: runner)
+
+    assert tasks._run_suite(_sess(session), run_id=run.id) == "succeeded"
+    assert runner.closed == 1
+
+
+def test_run_suite_closes_runner_even_when_materialize_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run, suite, connection, checks = _graph(1)
+    session = FakeSession(run=run, suite=suite, connection=connection, checks=checks)
+    runner = ClosableFakeRunner(
+        SuiteOutcome(success=True, checks=[CheckOutcome("x", success=True)])
+    )
+    monkeypatch.setattr(tasks, "build_check_runner", lambda **_kw: runner)
+
+    def _boom(*_a: Any, **_k: Any) -> str:
+        raise RuntimeError("S3 unreachable")
+
+    monkeypatch.setattr(run_target, "materialize_path", _boom)
+
+    assert tasks._run_suite(_sess(session), run_id=run.id) == "failed"
+    assert runner.closed == 1
+
+
+def test_run_suite_tolerates_runner_without_close(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Flat-file / Iceberg runners have no close() — the lifecycle hook must no-op.
+    run, suite, connection, checks = _graph(1)
+    session = FakeSession(run=run, suite=suite, connection=connection, checks=checks)
+    runner = FakeRunner(SuiteOutcome(success=True, checks=[CheckOutcome("x", success=True)]))
+    monkeypatch.setattr(tasks, "build_check_runner", lambda **_kw: runner)
+
+    assert tasks._run_suite(_sess(session), run_id=run.id) == "succeeded"
+
+
 # ───────────────────────── task wrapper ────────────────────────────
 
 
