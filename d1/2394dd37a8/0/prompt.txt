@@ -1,0 +1,7 @@
+Lets pick up 
+* #785
+* #789
+* #858
+* #859 + Week 4 Schema Drift
+
+Plan it out then start
