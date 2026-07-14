@@ -24,6 +24,11 @@ dual-key shape (#785): its primary bucket is per provider + IP (so one noisy
 orchestrator can't crowd out another's callbacks), and a per-IP `ipall` ceiling
 (`rate_limit_webhook_ip_per_minute`) bounds the aggregate one IP can spend
 across provider buckets. Both counters move in one pipelined round trip.
+
+"Per-IP" everywhere above means per address PREFIX (#789 — IPv4 /24, IPv6 /64
+by default, configurable): keying on the full address lets a rotating NAT/proxy
+pool spread a burst across sibling addresses so no bucket ever fills. See
+`_bucket_ip`.
 """
 
 from __future__ import annotations
@@ -226,6 +231,31 @@ def _client_ip(request: Request, trusted_hops: int) -> str:
     return "unknown"
 
 
+def _bucket_ip(ip: str, settings: Settings) -> str:
+    """The per-IP bucket key component: `ip` folded onto its address prefix (#789).
+
+    Keying per full /32 dilutes the cap against a rotating NAT/proxy pool — the
+    pool spreads a burst across many sibling addresses so no single bucket ever
+    fills (observed live: 200 requests over 11 distinct IPs in one /24, none near
+    the cap). Folding onto a configurable prefix (IPv4 `rate_limit_ipv4_prefix`,
+    default /24; IPv6 `rate_limit_ipv6_prefix`, default /64 — one subscriber's
+    standard allocation) makes the whole pool share one bucket. The prefix length
+    rides in the key, so retuning the mask starts fresh buckets rather than
+    cross-counting. A non-address (`"unknown"`) passes through unchanged.
+    """
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return ip
+    prefix = (
+        settings.rate_limit_ipv4_prefix
+        if isinstance(addr, ipaddress.IPv4Address)
+        else settings.rate_limit_ipv6_prefix
+    )
+    network = ipaddress.ip_network((addr, prefix), strict=False)
+    return f"{network.network_address}/{prefix}"
+
+
 def _resolve_policy(
     path: str, bearer: str | None, ip: str, settings: Settings
 ) -> tuple[str, int, str]:
@@ -285,7 +315,10 @@ async def rate_limit_middleware(
         return await call_next(request)
 
     bearer = _bearer_token(request)
-    ip = _client_ip(request, settings.rate_limit_xff_trusted_hops)
+    # Every per-IP key site (policy key + the ipall ceilings) uses the PREFIX
+    # bucket (#789), so a NAT/proxy pool rotating sibling addresses can't dilute
+    # the cap. The raw client address is never a key input past this point.
+    ip = _bucket_ip(_client_ip(request, settings.rate_limit_xff_trusted_hops), settings)
     cls, limit, key = _resolve_policy(path, bearer, ip, settings)
 
     now = int(_now())

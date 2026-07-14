@@ -85,6 +85,26 @@ on the parent FastAPI app as the **innermost** user middleware.
   zone directive has no in-repo home today (the nginx conf is generated), and it
   can't do principal-aware limits. Left as a documented future layer.
 
+### Threat model — per-IP means per address prefix (#789)
+
+Every per-IP bucket (unauth, webhook, and both `ipall` ceilings) keys on an
+address **prefix** — IPv4 `/24`, IPv6 `/64` by default
+(`RATE_LIMIT_IPV4_PREFIX` / `RATE_LIMIT_IPV6_PREFIX`) — not the full address.
+Keying per `/32` dilutes the cap against a **rotating NAT/proxy pool**: the
+post-#725 deploy verification observed a 200-request burst from one machine land
+on 11 distinct source IPs inside a single `2.57.171.0/24` pool (13–26 requests
+each, none near the 120 cap). The same mechanics serve a deliberately
+distributed low-rate attacker. Folding onto the allocation prefix makes the pool
+share one bucket; `/64` is the standard single-subscriber IPv6 allocation, where
+per-address keying would be trivially dilutable (one host holds 2^64 addresses).
+Trade-offs, accepted: a prefix that legitimately hosts many independent clients
+(CGNAT, corporate egress) shares the cap — the masks are tunable per deployment,
+and `/32` / `/128` disable grouping; benign CGNAT users are unaffected in the
+default posture (they previously shared a single egress /32 anyway). The prefix
+length rides in the key (`ip:2.57.171.0/24`), so retuning starts fresh buckets
+instead of cross-counting, and the token-bucket class is IP-independent and
+untouched.
+
 ### Threat model — the client-IP rule
 
 Per-IP buckets pick the client from `X-Forwarded-For` at a **configurable trusted

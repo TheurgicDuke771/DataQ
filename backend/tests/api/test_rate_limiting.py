@@ -322,6 +322,18 @@ def test_window_reset_restores_allowance(monkeypatch: pytest.MonkeyPatch) -> Non
 # ───────────────────────── 10. X-Forwarded-For keying ─────────────────────────
 
 
+def test_sibling_ips_in_one_slash24_share_a_bucket(limiter: TestClient) -> None:
+    # #789: a rotating NAT/proxy pool spreads a burst across sibling /32s in one
+    # /24 — those must accumulate in ONE bucket and trip the cap together.
+    for i in range(3):  # UNAUTH limit = 3
+        h = {"X-Forwarded-For": f"9.9.9.{10 + i}"}  # three distinct /32s, one /24
+        assert limiter.get(PROBE, headers=h).status_code != 429
+    resp = limiter.get(PROBE, headers={"X-Forwarded-For": "9.9.9.99"})
+    assert resp.status_code == 429
+    # A different /24 is a fresh, independent bucket.
+    assert limiter.get(PROBE, headers={"X-Forwarded-For": "9.9.8.1"}).status_code != 429
+
+
 def test_xff_last_hop_defines_the_bucket(limiter: TestClient) -> None:
     h = {"X-Forwarded-For": "9.9.9.9"}
     for _ in range(3):

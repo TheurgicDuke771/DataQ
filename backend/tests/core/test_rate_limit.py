@@ -112,6 +112,40 @@ def test_no_bearer_keys_by_ip() -> None:
     assert key == "ip:9.9.9.9"
 
 
+# ───────────────────────── prefix bucketing (#789) ─────────────────────────
+
+
+def test_bucket_ip_ipv4_folds_to_slash24() -> None:
+    # NAT/proxy-pool dilution: sibling /32s in one /24 must share a bucket.
+    s = _settings()
+    assert rate_limit._bucket_ip("2.57.171.13", s) == "2.57.171.0/24"
+    assert rate_limit._bucket_ip("2.57.171.201", s) == "2.57.171.0/24"
+    assert rate_limit._bucket_ip("2.57.172.13", s) == "2.57.172.0/24"  # next /24 is distinct
+
+
+def test_bucket_ip_ipv6_folds_to_slash64() -> None:
+    s = _settings()
+    assert rate_limit._bucket_ip("2001:db8:1:2:aaaa::1", s) == "2001:db8:1:2::/64"
+    assert rate_limit._bucket_ip("2001:db8:1:2:bbbb::2", s) == "2001:db8:1:2::/64"
+    assert rate_limit._bucket_ip("2001:db8:1:3::1", s) == "2001:db8:1:3::/64"
+
+
+def test_bucket_ip_full_mask_disables_grouping() -> None:
+    s = Settings(_env_file=None, rate_limit_ipv4_prefix=32, rate_limit_ipv6_prefix=128)
+    assert rate_limit._bucket_ip("9.9.9.9", s) == "9.9.9.9/32"
+    assert rate_limit._bucket_ip("2001:db8::1", s) == "2001:db8::1/128"
+
+
+def test_bucket_ip_non_address_passes_through() -> None:
+    # `_client_ip` can yield "unknown" (no socket peer); it must key as-is, not raise.
+    assert rate_limit._bucket_ip("unknown", _settings()) == "unknown"
+
+
+def test_prefix_out_of_range_rejected_by_settings() -> None:
+    with pytest.raises(Exception, match="rate_limit_ipv4_prefix"):
+        Settings(_env_file=None, rate_limit_ipv4_prefix=0)
+
+
 # ───────────────────────── client-IP extraction ─────────────────────────
 
 
