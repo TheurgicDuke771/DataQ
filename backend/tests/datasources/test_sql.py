@@ -1,13 +1,19 @@
-"""Tests for the shared SQL-datasource primitives (#428) — the single-source
-identifier allowlist and the deduped monitor-over-engine execution loop."""
+"""Tests for the shared SQL-identifier allowlist (#428) and the deduped
+monitor-over-engine execution loop it enabled (now in `monitors.py`)."""
 
 from __future__ import annotations
 
-import pytest
-from sqlalchemy import create_engine, text
+from pathlib import Path
 
+import pytest
+from sqlalchemy import create_engine, event, text
+from sqlalchemy.engine import Engine
+
+from backend.app.datasources import monitors as monitors_module
 from backend.app.datasources.base import MonitorSpec
-from backend.app.datasources.sql import is_sql_identifier, run_monitors_over_engine
+from backend.app.datasources.monitors import run_monitors_over_engine
+from backend.app.datasources.sql import is_sql_identifier
+from backend.app.services import profile_service
 
 # ───────────────────────── identifier allowlist ─────────────────────────
 
@@ -19,69 +25,111 @@ def test_valid_identifiers_pass(name: str) -> None:
 
 @pytest.mark.parametrize(
     "name",
-    ["", "1abc", "a b", 'a"b', "a;drop table t", "a.b", "col-name", None, 42, ["orders"]],
+    [
+        "",
+        "1abc",
+        "a b",
+        'a"b',
+        "a;drop table t",
+        "a.b",
+        "col-name",
+        "col\n",  # fullmatch: the `$`-anchor loophole (one trailing \n) is closed
+        None,
+        42,
+        ["orders"],
+    ],
 )
 def test_invalid_identifiers_and_non_strings_fail(name: object) -> None:
     assert not is_sql_identifier(name)
 
 
-def test_allowlist_is_shared_by_monitors_and_profiler() -> None:
-    # The point of #428: one source of truth. Both consumers must reject through
-    # the same decision — pin that they actually route through it.
+def test_monitors_ident_routes_through_shared_allowlist(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Pin the ROUTING, not just behavioral agreement (#428's whole point): with
+    # the shared predicate forced to False, the consumer must reject a name it
+    # would otherwise accept — proving it has no private regex copy.
     from backend.app.datasources.monitors import MonitorConfigError, _ident
+
+    assert _ident("fine_col", what="column") == "fine_col"
+    monkeypatch.setattr(monitors_module, "is_sql_identifier", lambda name: False)
+    with pytest.raises(MonitorConfigError):
+        _ident("fine_col", what="column")
+
+
+def test_profiler_validate_identifier_routes_through_shared_allowlist(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from backend.app.services.profile_service import (
         ProfileIdentifierInvalidError,
         validate_identifier,
     )
 
-    with pytest.raises(MonitorConfigError):
-        _ident("a;drop", what="column")
-    with pytest.raises(ProfileIdentifierInvalidError):
-        validate_identifier("a;drop")
-    assert _ident("fine_col", what="column") == "fine_col"
     assert validate_identifier("fine_col") == "fine_col"
+    monkeypatch.setattr(profile_service, "is_sql_identifier", lambda name: False)
+    with pytest.raises(ProfileIdentifierInvalidError):
+        validate_identifier("fine_col")
 
 
 # ───────────────────────── run_monitors_over_engine ─────────────────────────
 
 
-@pytest.fixture
-def engine():  # type: ignore[no-untyped-def]
-    eng = create_engine("sqlite://")
+def _seeded_engine(tmp_path: Path) -> Engine:
+    # A file-backed DB (not sqlite:// in-memory, whose SingletonThreadPool hands
+    # every connect() the same DBAPI connection and would mask an extra open).
+    eng = create_engine(f"sqlite:///{tmp_path}/monitors.sqlite")
     with eng.begin() as conn:
         conn.execute(text("CREATE TABLE orders (id INTEGER)"))
         conn.execute(text("INSERT INTO orders (id) VALUES (1), (2), (3)"))
-    yield eng
-    eng.dispose()
+    eng.dispose()  # drop the seeding connection so the test counts from zero
+    return eng
 
 
-def test_volume_monitor_runs_over_one_engine_connection(engine) -> None:  # type: ignore[no-untyped-def]
-    outcomes = run_monitors_over_engine(
-        engine,
-        table="orders",
-        schema=None,
-        catalog=None,
-        monitors=[MonitorSpec(kind="volume", config={"min_rows": 1, "max_rows": 10})],
-    )
-    assert len(outcomes) == 1
+def test_monitors_share_exactly_one_connection(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    # The helper's contract (and #427's cost story): ONE DBAPI connect per call,
+    # however many monitors run. Counted via the pool's connect event — outcomes
+    # alone can't detect a regression to connect-per-monitor.
+    eng = _seeded_engine(tmp_path)
+    connects: list[object] = []
+    event.listen(eng, "connect", lambda dbapi_conn, rec: connects.append(dbapi_conn))
+    try:
+        outcomes = run_monitors_over_engine(
+            eng,
+            table="orders",
+            schema=None,
+            catalog=None,
+            monitors=[
+                MonitorSpec(kind="volume", config={"min_rows": 1, "max_rows": 10}),
+                MonitorSpec(kind="volume", config={"min_rows": 5, "max_rows": 10}),
+            ],
+        )
+    finally:
+        eng.dispose()
+    assert len(connects) == 1
+    assert len(outcomes) == 2
     assert outcomes[0].success
     assert outcomes[0].metric_value == 0.0
     assert outcomes[0].observed_value == {"row_count": 3, "deviation_pct": 0.0}
+    assert not outcomes[1].success  # 3 rows < floor 5 → volume deviation
 
 
-def test_bad_monitor_errors_only_itself(engine) -> None:  # type: ignore[no-untyped-def]
+def test_bad_monitor_errors_only_itself(tmp_path) -> None:  # type: ignore[no-untyped-def]
     # First monitor queries a nonexistent column (SQL error at fetch time); the
     # sibling volume monitor on the same connection must still produce a result.
-    outcomes = run_monitors_over_engine(
-        engine,
-        table="orders",
-        schema=None,
-        catalog=None,
-        monitors=[
-            MonitorSpec(kind="freshness", config={"column": "no_such_col"}),
-            MonitorSpec(kind="volume", config={"min_rows": 1, "max_rows": 10}),
-        ],
-    )
+    eng = _seeded_engine(tmp_path)
+    try:
+        outcomes = run_monitors_over_engine(
+            eng,
+            table="orders",
+            schema=None,
+            catalog=None,
+            monitors=[
+                MonitorSpec(kind="freshness", config={"column": "no_such_col"}),
+                MonitorSpec(kind="volume", config={"min_rows": 1, "max_rows": 10}),
+            ],
+        )
+    finally:
+        eng.dispose()
     assert [o.errored for o in outcomes] == [True, False]
     assert outcomes[1].success
 

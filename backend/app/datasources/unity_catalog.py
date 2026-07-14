@@ -30,7 +30,7 @@ from pydantic import BaseModel, ConfigDict, field_validator
 from backend.app.core.secrets import SecretStore
 from backend.app.datasources.base import CheckOutcome, CheckSpec, MonitorSpec, SuiteOutcome
 from backend.app.datasources.gx_runner import run_expectations
-from backend.app.datasources.sql import run_monitors_over_engine
+from backend.app.datasources.monitors import run_monitors_over_engine
 
 
 class UnityCatalogConfig(BaseModel):

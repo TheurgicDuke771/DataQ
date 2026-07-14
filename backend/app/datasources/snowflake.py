@@ -38,7 +38,7 @@ from backend.app.datasources.gx_runner import (
     run_expectations,
     to_suite_outcome,
 )
-from backend.app.datasources.sql import run_monitors_over_engine
+from backend.app.datasources.monitors import run_monitors_over_engine
 
 __all__ = [
     "SnowflakeCheckRunner",
