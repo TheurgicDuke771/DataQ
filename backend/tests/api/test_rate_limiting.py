@@ -167,6 +167,25 @@ def test_webhook_class_is_tighter_and_ip_keyed_despite_bearer(limiter: TestClien
     assert limiter.post(path, headers=headers).status_code == 429  # WEBHOOK limit = 2
 
 
+def test_webhook_burst_on_one_provider_does_not_throttle_another(limiter: TestClient) -> None:
+    # #785: same source IP, but each provider has its own bucket — an adf burst
+    # past the limit must not 429 airflow's or dbt's callbacks.
+    adf = "/api/v1/orchestration/events/adf"
+    for _ in range(2):  # WEBHOOK limit = 2
+        assert limiter.post(adf).status_code != 429
+    assert limiter.post(adf).status_code == 429
+    assert limiter.post("/api/v1/orchestration/events/airflow").status_code != 429
+    assert limiter.post("/api/v1/orchestration/events/dbt").status_code != 429
+
+
+def test_webhook_unknown_segments_share_one_bucket(limiter: TestClient) -> None:
+    # Rotating an unknown segment must not mint fresh buckets — all such requests
+    # land in the shared bare-IP webhook bucket and 429 together.
+    for i in range(2):  # WEBHOOK limit = 2
+        assert limiter.post(f"/api/v1/orchestration/events/scan-{i}").status_code != 429
+    assert limiter.post("/api/v1/orchestration/events/scan-99").status_code == 429
+
+
 # ───────────────────────── 4/5. exemptions ─────────────────────────
 
 

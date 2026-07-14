@@ -55,6 +55,15 @@ _GC_SECONDS: Final = WINDOW_SECONDS * 2  # EXPIRE horizon — pure GC, never the
 _EXEMPT_PATHS: Final = frozenset({"/healthz"})
 _WEBHOOK_PREFIX: Final = "/api/v1/orchestration/events/"
 
+# The provider segments that get their OWN per-IP webhook bucket (#785), so a
+# burst from one provider can't crowd out another's callbacks when both egress
+# through the same IP. Mirrors `orchestration.registry._PROVIDERS` — not imported
+# (core must not depend on the orchestration layer); a sync test pins the two
+# together. An UNKNOWN segment falls into the shared bare-IP bucket: folding
+# arbitrary path segments into the key would let a scanner mint a fresh bucket
+# per request and never 429.
+_WEBHOOK_PROVIDERS: Final = frozenset({"adf", "airflow", "dbt"})
+
 # An IPv4 host with a `:port` suffix (proxies sometimes append one). IPv6 is left
 # untouched (it has its own colons) and validated as-is.
 _IPV4_PORT_RE: Final = re.compile(r"^(\d{1,3}(?:\.\d{1,3}){3}):\d+$")
@@ -220,12 +229,18 @@ def _resolve_policy(
 
     Order matters: the webhook (machine) path is keyed per-IP EVEN when a bearer
     is present, so an orchestrator's callbacks share one bucket regardless of any
-    token they carry. Otherwise a bearer buckets per sha256(token) and the
-    unauthenticated path per client-IP. The raw token is never used as a key —
-    only its hash — so it is never logged or stored.
+    token they carry. A known provider segment (adf/airflow/dbt) is folded into
+    the webhook key so each provider gets an independent per-IP bucket (#785).
+    Otherwise a bearer buckets per sha256(token) and the unauthenticated path per
+    client-IP. The raw token is never used as a key — only its hash — so it is
+    never logged or stored.
     """
     if path.startswith(_WEBHOOK_PREFIX):
-        return "webhook", settings.rate_limit_webhook_per_minute, f"ip:{ip}"
+        provider = path[len(_WEBHOOK_PREFIX) :].split("/", 1)[0]
+        limit = settings.rate_limit_webhook_per_minute
+        if provider in _WEBHOOK_PROVIDERS:
+            return "webhook", limit, f"{provider}:ip:{ip}"
+        return "webhook", limit, f"ip:{ip}"
     if bearer is not None:
         digest = hashlib.sha256(bearer.encode()).hexdigest()[:32]
         return "default", settings.rate_limit_authenticated_per_minute, f"tok:{digest}"

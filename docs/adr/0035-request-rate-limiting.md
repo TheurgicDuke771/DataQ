@@ -53,7 +53,7 @@ on the parent FastAPI app as the **innermost** user middleware.
 
   | Class | Matches | Key | Default |
   |---|---|---|---|
-  | `webhook` | `/api/v1/orchestration/events/*` | per client-IP (**even with a bearer** — machine path) | 120 |
+  | `webhook` | `/api/v1/orchestration/events/*` | per provider **+** client-IP (**even with a bearer** — machine path). The known provider segment (adf/airflow/dbt) is folded into the key so one noisy orchestrator can't crowd out another's callbacks from the same egress IP (#785); an *unknown* segment shares one bare-IP bucket, so a path scanner can't mint fresh buckets by rotating the segment | 120 |
   | `default` | any request with a bearer | per `sha256(token)[:32]` **plus** a per-IP `ipall` ceiling | 300 (token) / 1200 (`ipall`) |
   | `unauth` | everything else | per client-IP | 120 |
 
@@ -122,9 +122,9 @@ review; fail-open means a Redis blip never takes the API down.
 
 **Follow-ups (filed from the #783 review round):** [#784](https://github.com/TheurgicDuke771/DataQ/issues/784)
 (a circuit breaker for a slow-but-alive Redis, so a laggy store isn't paid per
-request) and [#785](https://github.com/TheurgicDuke771/DataQ/issues/785) (key the
+request). [#785](https://github.com/TheurgicDuke771/DataQ/issues/785) (key the
 webhook bucket per-provider-path, not bare per-IP, so one noisy orchestrator
-can't throttle another).
+can't throttle another) — **done**, folded into the class table above.
 
 ## Alternatives considered
 

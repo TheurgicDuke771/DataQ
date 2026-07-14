@@ -45,7 +45,43 @@ def test_webhook_prefix_wins_even_with_bearer() -> None:
     cls, limit, key = _resolve_policy("/api/v1/orchestration/events/adf", "sometoken", "9.9.9.9", s)
     assert cls == "webhook"
     assert limit == s.rate_limit_webhook_per_minute
-    assert key == "ip:9.9.9.9"  # per-IP even though a bearer was present
+    assert key == "adf:ip:9.9.9.9"  # per-IP even though a bearer was present
+
+
+@pytest.mark.parametrize("provider", ["adf", "airflow", "dbt"])
+def test_webhook_key_folds_known_provider(provider: str) -> None:
+    # Each provider gets its own per-IP bucket (#785), so a burst on one can't
+    # crowd out another's callbacks from the same egress IP.
+    _, _, key = _resolve_policy(
+        f"/api/v1/orchestration/events/{provider}", None, "9.9.9.9", _settings()
+    )
+    assert key == f"{provider}:ip:9.9.9.9"
+
+
+def test_webhook_key_trailing_path_still_folds_provider() -> None:
+    _, _, key = _resolve_policy(
+        "/api/v1/orchestration/events/adf/extra", None, "9.9.9.9", _settings()
+    )
+    assert key == "adf:ip:9.9.9.9"
+
+
+@pytest.mark.parametrize("segment", ["nonesuch", "", "adf%00", "ADF"])
+def test_webhook_unknown_segment_shares_bare_ip_bucket(segment: str) -> None:
+    # Unknown segments must NOT mint fresh buckets (a scanner rotating the path
+    # would never 429) — they all share the bare per-IP bucket.
+    _, _, key = _resolve_policy(
+        f"/api/v1/orchestration/events/{segment}", None, "9.9.9.9", _settings()
+    )
+    assert key == "ip:9.9.9.9"
+
+
+def test_webhook_providers_match_orchestration_registry() -> None:
+    # `_WEBHOOK_PROVIDERS` mirrors the orchestration registry without importing it
+    # (core must not depend on the orchestration layer) — this pins the two sets
+    # together so a new provider can't silently land in the shared bucket.
+    from backend.app.orchestration.registry import _PROVIDERS
+
+    assert rate_limit._WEBHOOK_PROVIDERS == frozenset(_PROVIDERS)
 
 
 def test_bearer_keys_by_sha256_prefix() -> None:
