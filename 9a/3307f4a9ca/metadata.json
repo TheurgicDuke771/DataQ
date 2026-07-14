@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "9a3307f4a9ca",
+  "strategy": "manual-commit",
+  "branch": "refactor/issue-428-shared-sql-ident",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/datasources/monitors.py",
+    "backend/app/datasources/snowflake.py",
+    "backend/app/datasources/sql.py",
+    "backend/app/datasources/unity_catalog.py",
+    "backend/app/services/profile_service.py",
+    "backend/tests/datasources/test_sql.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/9a/3307f4a9ca/0/metadata.json",
+      "transcript": "/9a/3307f4a9ca/0/full.jsonl",
+      "compact_transcript": "/9a/3307f4a9ca/0/transcript.jsonl",
+      "content_hash": "/9a/3307f4a9ca/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 94,
+    "cache_creation_tokens": 70512,
+    "cache_read_tokens": 10747138,
+    "output_tokens": 26041,
+    "api_call_count": 47
+  }
+}
