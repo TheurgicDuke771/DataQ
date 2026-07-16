@@ -156,6 +156,14 @@ erDiagram
         jsonb config "GX expectation kwargs"
         timestamptz alert_snoozed_until
     }
+    monitor_baselines {
+        uuid id PK
+        uuid check_id FK "UNIQUE - one current baseline"
+        string kind "denormalized from check"
+        jsonb baseline "kind-shaped: schema snapshot / anomaly params"
+        timestamptz captured_at
+        uuid captured_by FK "NULL = run-captured"
+    }
     check_versions {
         uuid id PK
         uuid check_id FK
@@ -277,6 +285,8 @@ erDiagram
     suites ||--o{ schedules : "scheduled by (CASCADE)"
     suites ||--o| suite_notifications : "alert config (CASCADE)"
 
+    checks ||--o| monitor_baselines : "diff reference, #592 (CASCADE)"
+    users |o--o{ monitor_baselines : "captured_by (SET NULL)"
     checks ||--o{ check_versions : "config history (CASCADE)"
     checks ||--o{ results : "evaluated as (CASCADE)"
     runs ||--o{ results : "produces (CASCADE)"
