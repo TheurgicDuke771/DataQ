@@ -52,6 +52,7 @@ function packagesFromLockfile(lockfilePath) {
   const lines = text.split('\n');
   const packages = new Map();
   let inPackages = false;
+  let keyCount = 0; // every 2-space-indented key in the section, parseable or not
   for (const line of lines) {
     if (/^packages:\s*$/.test(line)) {
       inPackages = true;
@@ -59,6 +60,7 @@ function packagesFromLockfile(lockfilePath) {
     }
     if (inPackages && /^\S/.test(line)) inPackages = false; // next top-level section
     if (!inPackages) continue;
+    if (/^ {2}\S.*:\s*$/.test(line)) keyCount += 1;
     const match = line.match(/^ {2}'?((?:@[^/'@]+\/)?[^/'@]+)@([^'():]+)(?:\([^)]*\))?'?:\s*$/);
     if (!match) continue;
     const [, name, version] = match;
@@ -66,7 +68,7 @@ function packagesFromLockfile(lockfilePath) {
     if (!packages.has(name)) packages.set(name, new Set());
     packages.get(name).add(version);
   }
-  return packages;
+  return { packages, keyCount };
 }
 
 async function fetchAdvisories(packages) {
@@ -90,9 +92,16 @@ async function main() {
   const lockfile = lockfileArg
     ? path.resolve(lockfileArg.split('=')[1])
     : path.resolve(__dirname, '..', 'pnpm-lock.yaml');
-  const packages = packagesFromLockfile(lockfile);
-  if (packages.size === 0) {
-    console.error(`no packages parsed from ${lockfile} — refusing to pass an empty audit`);
+  const { packages, keyCount } = packagesFromLockfile(lockfile);
+  const parsedCount = [...packages.values()].reduce((n, s) => n + s.size, 0);
+  if (packages.size === 0 || parsedCount !== keyCount) {
+    // A lockfile-format change that breaks the regex for SOME keys must never
+    // shrink the audited graph silently — parsed entries must account for every
+    // key in the packages: section.
+    console.error(
+      `parsed ${parsedCount} of ${keyCount} package keys from ${lockfile} — ` +
+        'refusing to audit a truncated graph (lockfile format drift?)',
+    );
     process.exit(2);
   }
 
@@ -102,8 +111,19 @@ async function main() {
   for (const [name, entries] of Object.entries(advisories)) {
     const ourVersions = [...(packages.get(name) ?? [])];
     for (const advisory of entries) {
+      // Fail-closed on contract drift: semver.satisfies returns FALSE (never
+      // throws) for a range it can't parse, which would silently skip the
+      // advisory — the same class of quiet breakage that killed `pnpm audit`.
+      const range = advisory.vulnerable_versions ?? '*';
+      if (semver.validRange(range) === null) {
+        console.error(
+          `unparseable vulnerable_versions ${JSON.stringify(range)} on ${name} ` +
+            `advisory ${advisory.url ?? advisory.id} — refusing to skip it`,
+        );
+        process.exit(2);
+      }
       const hit = ourVersions.filter((v) =>
-        semver.satisfies(v, advisory.vulnerable_versions ?? '*', { includePrerelease: true }),
+        semver.satisfies(v, range, { includePrerelease: true }),
       );
       if (hit.length === 0) continue;
       reported += 1;

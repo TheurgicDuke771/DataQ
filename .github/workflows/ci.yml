@@ -436,7 +436,7 @@ jobs:
         # `pnpm audit --audit-level=high` once a pnpm release supports the
         # bulk endpoint (#877 tracks it).
         run: |
-          npm install --prefix scripts --no-save --no-package-lock semver@^7
+          npm install --prefix scripts --no-save --no-package-lock semver@7.8.5
           node scripts/audit_bulk.cjs --audit-level=high
 
   # ── CodeQL SAST ──────────────────────────────────────────────────────────────
