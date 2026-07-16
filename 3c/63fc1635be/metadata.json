@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "3c63fc1635be",
+  "strategy": "manual-commit",
+  "branch": "refactor/issue-726-monitor-kind-registry",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/3c/63fc1635be/0/metadata.json",
+      "transcript": "/3c/63fc1635be/0/full.jsonl",
+      "compact_transcript": "/3c/63fc1635be/0/transcript.jsonl",
+      "content_hash": "/3c/63fc1635be/0/content_hash.txt",
+      "prompt": "/3c/63fc1635be/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 754,
+    "cache_creation_tokens": 1658018,
+    "cache_read_tokens": 142951979,
+    "output_tokens": 287442,
+    "api_call_count": 380
+  }
+}
