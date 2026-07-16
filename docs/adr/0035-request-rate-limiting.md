@@ -53,9 +53,12 @@ on the parent FastAPI app as the **innermost** user middleware.
 
   | Class | Matches | Key | Default |
   |---|---|---|---|
-  | `webhook` | `/api/v1/orchestration/events/*` | per provider **+** client-IP (**even with a bearer** — machine path), **plus** a per-IP `ipall` ceiling. The known provider segment (adf/airflow/dbt, from the shared `ORCHESTRATION_PROVIDERS` vocabulary) is folded into the key so one noisy orchestrator can't crowd out another's callbacks from the same egress IP (#785); an *unknown* segment shares one bare-IP bucket, so a path scanner can't mint fresh buckets by rotating the segment; and the `rl:webhook:ipall:{ip}` ceiling (`RATE_LIMIT_WEBHOOK_IP_PER_MINUTE`) bounds the **aggregate** one IP can spend across provider buckets — without it, per-provider folding would quietly multiply the per-IP webhook budget by (providers + 1). Ops note: provider-folded keys match `rl:webhook:*:ip:*` in a Redis SCAN, not the pre-#785 `rl:webhook:ip:*` | 120 (per provider bucket) / 240 (`ipall`) |
+  | `webhook` | `/api/v1/orchestration/events/*` | per provider **+** client-IP (**even with a bearer** — machine path), **plus** a per-IP `ipall` ceiling. The known provider segment (adf/airflow/dbt, from the shared `ORCHESTRATION_PROVIDERS` vocabulary) is folded into the key so one noisy orchestrator can't crowd out another's callbacks from the same egress IP (#785); an *unknown* segment shares one bare-IP bucket, so a path scanner can't mint fresh buckets by rotating the segment; and the `rl:webhook:ipall:{ip}` ceiling (`RATE_LIMIT_WEBHOOK_IP_PER_MINUTE`) bounds the **aggregate** one IP can spend across provider buckets — without it, per-provider folding would quietly multiply the per-IP webhook budget by (providers + 1). Ops note: provider-folded keys match `rl:webhook:*:ip:*` in a Redis SCAN, not the pre-#785 `rl:webhook:ip:*` — and since #789 the ip component is the **folded network** (`ip:2.57.171.0/24`), so an exact-address lookup (`MATCH *ip:203.0.113.7*`) returns nothing even at /32 (`ip:203.0.113.7/32`); SCAN with the folded form | 120 (per provider bucket) / 240 (`ipall`) |
   | `default` | any request with a bearer | per `sha256(token)[:32]` **plus** a per-IP `ipall` ceiling | 300 (token) / 1200 (`ipall`) |
   | `unauth` | everything else | per client-IP | 120 |
+
+  "Per client-IP" throughout this table means per client-IP **prefix** since #789 — see the threat-model section below.
+
 
   The raw token is never a key input — only its hash — so it is never logged or
   stored. `/healthz` and a **genuine CORS preflight** (an `OPTIONS` carrying both
@@ -84,6 +87,29 @@ on the parent FastAPI app as the **innermost** user middleware.
   the frontend proxy is legitimate defence-in-depth, but the `http{}`-context
   zone directive has no in-repo home today (the nginx conf is generated), and it
   can't do principal-aware limits. Left as a documented future layer.
+
+### Threat model — per-IP means per address prefix (#789)
+
+Every per-IP bucket (unauth, webhook, and both `ipall` ceilings) keys on an
+address **prefix** — IPv4 `/24`, IPv6 `/64` by default
+(`RATE_LIMIT_IPV4_PREFIX` / `RATE_LIMIT_IPV6_PREFIX`) — not the full address.
+Keying per `/32` dilutes the cap against a **rotating NAT/proxy pool**: the
+post-#725 deploy verification observed a 200-request burst from one machine land
+on 11 distinct source IPs inside a single `2.57.171.0/24` pool (13–26 requests
+each, none near the 120 cap). The same mechanics serve a deliberately
+distributed low-rate attacker. Folding onto the allocation prefix makes the pool
+share one bucket; `/64` is the standard single-subscriber IPv6 allocation, where
+per-address keying would be trivially dilutable (one host holds 2^64 addresses).
+Trade-offs, accepted: a prefix that legitimately hosts many independent clients
+(CGNAT, corporate egress) shares the cap — the masks are tunable per deployment,
+and `/32` / `/128` disable grouping. NB: the "unaffected" case is only
+single-egress-IP NAT (those users already shared one /32 bucket); **pool-based
+CGNAT** — a carrier NATing subscribers across a /24-or-wider pool — previously
+spread across many independent buckets and now shares one, so a CGNAT-heavy user
+base may genuinely need a longer mask (or /32). The prefix
+length rides in the key (`ip:2.57.171.0/24`), so retuning starts fresh buckets
+instead of cross-counting, and the token-bucket class is IP-independent and
+untouched.
 
 ### Threat model — the client-IP rule
 

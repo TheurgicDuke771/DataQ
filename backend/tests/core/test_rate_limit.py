@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+from collections.abc import Callable
 
 import pytest
 from starlette.requests import Request
@@ -110,6 +111,66 @@ def test_no_bearer_keys_by_ip() -> None:
     assert cls == "unauth"
     assert limit == s.rate_limit_unauthenticated_per_minute
     assert key == "ip:9.9.9.9"
+
+
+# ───────────────────────── prefix bucketing (#789) ─────────────────────────
+
+
+def test_bucket_ip_ipv4_folds_to_slash24() -> None:
+    # NAT/proxy-pool dilution: sibling /32s in one /24 must share a bucket.
+    s = _settings()
+    assert rate_limit._bucket_ip("2.57.171.13", s) == "2.57.171.0/24"
+    assert rate_limit._bucket_ip("2.57.171.201", s) == "2.57.171.0/24"
+    assert rate_limit._bucket_ip("2.57.172.13", s) == "2.57.172.0/24"  # next /24 is distinct
+
+
+def test_bucket_ip_ipv6_folds_to_slash64() -> None:
+    s = _settings()
+    assert rate_limit._bucket_ip("2001:db8:1:2:aaaa::1", s) == "2001:db8:1:2::/64"
+    assert rate_limit._bucket_ip("2001:db8:1:2:bbbb::2", s) == "2001:db8:1:2::/64"
+    assert rate_limit._bucket_ip("2001:db8:1:3::1", s) == "2001:db8:1:3::/64"
+
+
+def test_bucket_ip_full_mask_disables_grouping() -> None:
+    s = Settings(_env_file=None, rate_limit_ipv4_prefix=32, rate_limit_ipv6_prefix=128)
+    assert rate_limit._bucket_ip("9.9.9.9", s) == "9.9.9.9/32"
+    assert rate_limit._bucket_ip("2001:db8::1", s) == "2001:db8::1/128"
+
+
+def test_bucket_ip_ipv4_mapped_ipv6_unwraps_to_ipv4() -> None:
+    # A dual-stack `[::]` listener's socket peer (and some proxy XFF chains)
+    # carries `::ffff:a.b.c.d`. Folding that as IPv6 would put the ENTIRE IPv4
+    # internet into one ::/64 bucket; it must unwrap and fold as IPv4, keying
+    # identically to its dotted-quad twin.
+    s = _settings()
+    assert rate_limit._bucket_ip("::ffff:9.9.9.1", s) == "9.9.9.0/24"
+    assert rate_limit._bucket_ip("::ffff:9.9.9.1", s) == rate_limit._bucket_ip("9.9.9.2", s)
+    assert rate_limit._bucket_ip("::ffff:203.0.113.7", s) != rate_limit._bucket_ip(
+        "::ffff:9.9.9.1", s
+    )
+
+
+def test_bucket_ip_non_address_passes_through() -> None:
+    # `_client_ip` can yield "unknown" (no socket peer); it must key as-is, not raise.
+    assert rate_limit._bucket_ip("unknown", _settings()) == "unknown"
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        lambda: Settings(_env_file=None, rate_limit_ipv4_prefix=0),
+        lambda: Settings(_env_file=None, rate_limit_ipv4_prefix=33),
+        lambda: Settings(_env_file=None, rate_limit_ipv6_prefix=8),
+    ],
+    ids=["v4-below", "v4-above", "v6-below"],
+)
+def test_prefix_out_of_range_rejected_by_settings(build: Callable[[], Settings]) -> None:
+    # Pin the CONSTRAINT (ge/le), not just any error naming the field — a bare
+    # name match would also pass on extra="forbid" if the field were deleted.
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match=r"greater than or equal|less than or equal"):
+        build()
 
 
 # ───────────────────────── client-IP extraction ─────────────────────────
