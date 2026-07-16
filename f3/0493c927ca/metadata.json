@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "f30493c927ca",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-592-schema-baseline-store",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/alembic/versions/e2f3a4b5c6d7_add_monitor_baselines.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f3/0493c927ca/0/metadata.json",
+      "transcript": "/f3/0493c927ca/0/full.jsonl",
+      "compact_transcript": "/f3/0493c927ca/0/transcript.jsonl",
+      "content_hash": "/f3/0493c927ca/0/content_hash.txt",
+      "prompt": "/f3/0493c927ca/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 566,
+    "cache_creation_tokens": 931893,
+    "cache_read_tokens": 85588666,
+    "output_tokens": 184177,
+    "api_call_count": 286
+  }
+}
