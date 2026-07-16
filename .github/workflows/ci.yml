@@ -422,22 +422,22 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v6
-        with:
-          version: 9
-
       - uses: actions/setup-node@v6
         with:
           node-version: "24"
 
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: pnpm audit (high+)
-        # Fails on high/critical advisories in the dependency tree; lower
-        # severities are reported but don't block (avoid noise from unfixable
-        # transitive dev-tool advisories). Pairs with Dependabot alerts (async).
-        run: pnpm audit --audit-level=high
+      - name: Audit lockfile via the npm bulk advisory endpoint (high+)
+        # npm retired the legacy audit endpoints on 2026-07-15 (410) and no
+        # RELEASED pnpm speaks the bulk endpoint yet (pnpm#11265; verified vs
+        # 11.13.1) — so the gate queries the bulk endpoint directly over the
+        # same pnpm-lock.yaml graph with the same high+ threshold (#877).
+        # No pnpm install needed: the script reads the lockfile. Fail-closed:
+        # endpoint/parse failures exit 2, never a silent pass. REVERT to
+        # `pnpm audit --audit-level=high` once a pnpm release supports the
+        # bulk endpoint (#877 tracks it).
+        run: |
+          npm install --prefix scripts --no-save --no-package-lock semver@^7
+          node scripts/audit_bulk.cjs --audit-level=high
 
   # ── CodeQL SAST ──────────────────────────────────────────────────────────────
   codeql:
