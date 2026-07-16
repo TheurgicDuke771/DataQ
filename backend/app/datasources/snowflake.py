@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import base64
 import json
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 from urllib.parse import quote_plus
 
 import great_expectations as gx
@@ -38,7 +38,7 @@ from backend.app.datasources.gx_runner import (
     run_expectations,
     to_suite_outcome,
 )
-from backend.app.datasources.monitors import run_monitors_over_engine
+from backend.app.datasources.monitors import MONITOR_KINDS, run_monitors_over_engine
 from backend.app.datasources.sql import LazyEngine
 
 __all__ = [
@@ -171,6 +171,9 @@ def build_connect_args(config: SnowflakeConfig, secret: str) -> dict[str, Any]:
 
 class SnowflakeCheckRunner:
     """`CheckRunner` for Snowflake. Building the asset connects to the warehouse."""
+
+    # Runner-advertised monitor capability (#429) — the run path gates on this.
+    supported_monitor_kinds: ClassVar[frozenset[str]] = frozenset(MONITOR_KINDS)
 
     def __init__(self, config: SnowflakeConfig, secret: str) -> None:
         self._config = config

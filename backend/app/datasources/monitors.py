@@ -27,6 +27,7 @@ Semantics (locked):
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, time
 from typing import TYPE_CHECKING, Any
 
@@ -38,7 +39,6 @@ from backend.app.datasources.sql import is_sql_identifier
 
 FRESHNESS = "freshness"
 VOLUME = "volume"
-MONITOR_KINDS = (FRESHNESS, VOLUME)
 
 # A monitor's `expectation_type` slot records the kind (the column is GX-shaped but
 # monitors aren't GX); `monitor:<kind>` keeps it self-describing on the result row.
@@ -98,19 +98,15 @@ def build_monitor_sql(
 
     ``freshness`` → ``SELECT MAX(<column>) ...``; ``volume`` → ``SELECT COUNT(*) ...``.
     Identifiers are validated (no bind slot for them), so a bad column/table raises
-    :class:`MonitorConfigError` rather than building an injectable query.
+    :class:`MonitorConfigError` rather than building an injectable query. Dispatch
+    is the #726 registry — a kind with no scalar-SQL form (the stateful kinds)
+    refuses here rather than building a wrong query.
     """
+    strategy = _strategy(kind)
+    if strategy.build_sql is None:
+        raise MonitorConfigError(f"monitor kind {kind!r} has no scalar-SQL form")
     target = qualified_table(table=table, schema=schema, catalog=catalog)
-    # `column` + every part of `target` are validated by `_ident` (strict identifier
-    # regex) before interpolation. SQL identifiers can't be bound parameters, so
-    # validated interpolation is the correct construction — not an injection vector
-    # (hence the S608 suppressions).
-    if kind == FRESHNESS:
-        column = _ident(config.get("column"), what="freshness column")
-        return f"SELECT MAX({column}) FROM {target}"  # noqa: S608  # nosec B608
-    if kind == VOLUME:
-        return f"SELECT COUNT(*) FROM {target}"  # noqa: S608  # nosec B608
-    raise MonitorConfigError(f"unknown monitor kind: {kind!r}")
+    return strategy.build_sql(target, config)
 
 
 def _freshness_age_hours(max_timestamp: datetime, now: datetime) -> float:
@@ -172,12 +168,7 @@ def validate_monitor_config(kind: str, config: dict[str, Any]) -> None:
     (`build_monitor_sql`/`monitor_outcome` re-derive the same checks). This is only the
     config-shape gate; threshold policy (e.g. freshness *requires* a threshold) and the
     SQL-datasource gate live in the service layer, which owns the Check + connection."""
-    if kind == FRESHNESS:
-        _ident(config.get("column"), what="freshness column")
-    elif kind == VOLUME:
-        _volume_bounds(config)
-    else:
-        raise MonitorConfigError(f"unknown monitor kind: {kind!r}")
+    _strategy(kind).validate_config(config)
 
 
 def monitor_outcome(
@@ -192,47 +183,111 @@ def monitor_outcome(
     freshness check on an empty table (``MAX`` is NULL) can't be assessed, so it's an
     operational ``error`` (#122), not a silent pass.
     """
-    expectation_type = f"{_EXPECTATION_PREFIX}{kind}"
-    if kind == FRESHNESS:
-        column = _ident(config.get("column"), what="freshness column")
-        if scalar is None:
-            return CheckOutcome(
-                expectation_type=expectation_type,
-                success=False,
-                errored=True,
-                error_message=f"no rows: MAX({column}) is NULL, freshness can't be assessed",
-                expected_value={"monitor": FRESHNESS, "column": column},
-            )
-        max_ts = _as_aware_datetime(scalar, column)
-        age_hours = _freshness_age_hours(max_ts, now)
-        # NOTE: freshness has no in-config bound (unlike volume's min/max_rows), so
-        # the binary fallback is unconditionally `success=True` — "stale" is only
-        # defined by a threshold. A freshness check WITHOUT a fail/critical age
-        # threshold therefore always resolves `pass` no matter how stale (the metric
-        # is computed but never banded). The check-create path (the monitor-authoring
-        # slice) MUST require a freshness threshold so this never ships as silent green.
+    return _strategy(kind).outcome(scalar, config, now)
+
+
+# ───────────────────── per-kind strategies (#726) ─────────────────────
+#
+# Adding a monitor kind = one strategy entry in MONITOR_KIND_REGISTRY below —
+# never a third parallel if-chain. `build_sql` receives the already-validated
+# qualified target; identifiers can't be bound parameters, so validated
+# interpolation is the correct construction (hence the S608 suppressions).
+
+
+def _validate_freshness(config: dict[str, Any]) -> None:
+    _ident(config.get("column"), what="freshness column")
+
+
+def _freshness_sql(target: str, config: dict[str, Any]) -> str:
+    column = _ident(config.get("column"), what="freshness column")
+    return f"SELECT MAX({column}) FROM {target}"  # noqa: S608  # nosec B608
+
+
+def _freshness_outcome(scalar: Any, config: dict[str, Any], now: datetime) -> CheckOutcome:
+    expectation_type = monitor_expectation_type(FRESHNESS)
+    column = _ident(config.get("column"), what="freshness column")
+    if scalar is None:
         return CheckOutcome(
             expectation_type=expectation_type,
-            success=True,  # binary fallback when no thresholds; thresholds band the age
-            metric_value=age_hours,
-            observed_value={"max_timestamp": max_ts.isoformat(), "age_hours": round(age_hours, 3)},
+            success=False,
+            errored=True,
+            error_message=f"no rows: MAX({column}) is NULL, freshness can't be assessed",
             expected_value={"monitor": FRESHNESS, "column": column},
         )
-    if kind == VOLUME:
-        min_rows, max_rows = _volume_bounds(config)
-        try:
-            row_count = int(scalar)
-        except (TypeError, ValueError) as exc:
-            raise MonitorConfigError(f"volume COUNT(*) is not an integer: {scalar!r}") from exc
-        deviation = _volume_deviation_pct(row_count, min_rows=min_rows, max_rows=max_rows)
-        return CheckOutcome(
-            expectation_type=expectation_type,
-            success=deviation == 0.0,  # in range → pass; thresholds band the deviation
-            metric_value=deviation,
-            observed_value={"row_count": row_count, "deviation_pct": round(deviation, 3)},
-            expected_value={"monitor": VOLUME, "min_rows": min_rows, "max_rows": max_rows},
-        )
-    raise MonitorConfigError(f"unknown monitor kind: {kind!r}")
+    max_ts = _as_aware_datetime(scalar, column)
+    age_hours = _freshness_age_hours(max_ts, now)
+    # NOTE: freshness has no in-config bound (unlike volume's min/max_rows), so
+    # the binary fallback is unconditionally `success=True` — "stale" is only
+    # defined by a threshold. A freshness check WITHOUT a fail/critical age
+    # threshold therefore always resolves `pass` no matter how stale (the metric
+    # is computed but never banded). The check-create path (the monitor-authoring
+    # slice) MUST require a freshness threshold so this never ships as silent green.
+    return CheckOutcome(
+        expectation_type=expectation_type,
+        success=True,  # binary fallback when no thresholds; thresholds band the age
+        metric_value=age_hours,
+        observed_value={"max_timestamp": max_ts.isoformat(), "age_hours": round(age_hours, 3)},
+        expected_value={"monitor": FRESHNESS, "column": column},
+    )
+
+
+def _validate_volume(config: dict[str, Any]) -> None:
+    _volume_bounds(config)
+
+
+def _volume_sql(target: str, config: dict[str, Any]) -> str:
+    return f"SELECT COUNT(*) FROM {target}"  # noqa: S608  # nosec B608
+
+
+def _volume_outcome(scalar: Any, config: dict[str, Any], now: datetime) -> CheckOutcome:
+    min_rows, max_rows = _volume_bounds(config)
+    try:
+        row_count = int(scalar)
+    except (TypeError, ValueError) as exc:
+        raise MonitorConfigError(f"volume COUNT(*) is not an integer: {scalar!r}") from exc
+    deviation = _volume_deviation_pct(row_count, min_rows=min_rows, max_rows=max_rows)
+    return CheckOutcome(
+        expectation_type=monitor_expectation_type(VOLUME),
+        success=deviation == 0.0,  # in range → pass; thresholds band the deviation
+        metric_value=deviation,
+        observed_value={"row_count": row_count, "deviation_pct": round(deviation, 3)},
+        expected_value={"monitor": VOLUME, "min_rows": min_rows, "max_rows": max_rows},
+    )
+
+
+@dataclass(frozen=True)
+class MonitorKindStrategy:
+    """One monitor kind's behavior behind the #726 registry.
+
+    ``validate_config`` is the DB-free structural gate; ``outcome`` bands the
+    scalar; ``build_sql`` renders the scalar-aggregate over an already-validated
+    qualified target — ``None`` for kinds with no scalar-SQL form (the stateful
+    kinds, #592/#593, evaluate through their own path)."""
+
+    kind: str
+    validate_config: Callable[[dict[str, Any]], None]
+    outcome: Callable[[Any, dict[str, Any], datetime], CheckOutcome]
+    build_sql: Callable[[str, dict[str, Any]], str] | None
+
+
+MONITOR_KIND_REGISTRY: dict[str, MonitorKindStrategy] = {
+    FRESHNESS: MonitorKindStrategy(
+        FRESHNESS, _validate_freshness, _freshness_outcome, _freshness_sql
+    ),
+    VOLUME: MonitorKindStrategy(VOLUME, _validate_volume, _volume_outcome, _volume_sql),
+}
+
+# Derived, never hand-maintained: the authoring allowlist (check_service) and the
+# run-path partition (run_service) both key off this, so registering a kind above
+# is the ONLY step that widens them.
+MONITOR_KINDS = tuple(MONITOR_KIND_REGISTRY)
+
+
+def _strategy(kind: str) -> MonitorKindStrategy:
+    strategy = MONITOR_KIND_REGISTRY.get(kind)
+    if strategy is None:
+        raise MonitorConfigError(f"unknown monitor kind: {kind!r}")
+    return strategy
 
 
 def run_monitor_specs(

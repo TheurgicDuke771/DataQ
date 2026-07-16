@@ -35,7 +35,7 @@ this module stays cheap and the dependency only loads on a live Iceberg path.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 
 import great_expectations as gx
 from pydantic import BaseModel, ConfigDict, model_validator
@@ -46,6 +46,7 @@ from backend.app.datasources.base import CheckOutcome, CheckSpec, MonitorSpec, S
 from backend.app.datasources.gx_runner import run_expectations
 from backend.app.datasources.monitors import (
     FRESHNESS,
+    MONITOR_KINDS,
     VOLUME,
     MonitorConfigError,
     run_monitor_specs,
@@ -277,6 +278,9 @@ class IcebergCheckRunner:
     then runs in-process on the returned frame, so the validation path is fully
     covered without a live catalog.
     """
+
+    # Runner-advertised monitor capability (#429) — the run path gates on this.
+    supported_monitor_kinds: ClassVar[frozenset[str]] = frozenset(MONITOR_KINDS)
 
     def __init__(
         self, *, config: IcebergConfig, secret: str | None, catalog_secret: str | None = None
