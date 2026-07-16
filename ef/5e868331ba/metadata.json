@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "ef5e868331ba",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-592-schema-baseline-store",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/ef/5e868331ba/0/metadata.json",
+      "transcript": "/ef/5e868331ba/0/full.jsonl",
+      "compact_transcript": "/ef/5e868331ba/0/transcript.jsonl",
+      "content_hash": "/ef/5e868331ba/0/content_hash.txt",
+      "prompt": "/ef/5e868331ba/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 558,
+    "cache_creation_tokens": 926056,
+    "cache_read_tokens": 83422008,
+    "output_tokens": 181190,
+    "api_call_count": 282
+  }
+}
