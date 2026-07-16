@@ -25,8 +25,12 @@ REST) may omit the secret entirely (like the ADLS/S3 adapters).
 ``scan().to_arrow()`` → ``to_pandas(types_mapper=pd.ArrowDtype)`` — Arrow-backed
 pandas dtypes, keeping parity with ``FlatFileCheckRunner``'s
 ``dtype_backend="pyarrow"`` — **not** the bare ``scan().to_pandas()`` shortcut
-(which drops to numpy dtypes). Monitors avoid materialising the whole table:
-volume is ``scan().count()`` and freshness scans only its one timestamp column.
+(which drops to numpy dtypes). Monitors avoid touching data files entirely where
+the metadata is trustworthy (#859): volume answers from the snapshot summary's
+``total-records`` and freshness from per-file column upper bounds — degrading
+honestly to ``scan().count()`` / a one-column ``MAX`` scan (with the reason
+recorded on the result) when summary fields are absent, row-level deletes exist,
+or a file lacks stats.
 
 ``pyiceberg`` is imported lazily (like the other adapters' clients) so importing
 this module stays cheap and the dependency only loads on a live Iceberg path.
@@ -34,7 +38,8 @@ this module stays cheap and the dependency only loads on a live Iceberg path.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from dataclasses import replace
+from datetime import UTC, date, datetime, timedelta
 from typing import Any, ClassVar, Literal
 
 import great_expectations as gx
@@ -340,27 +345,218 @@ class IcebergCheckRunner:
         fails the whole run (matching the SQL runners' open-connection-first
         contract); a bad *monitor* then errors only itself (#122)."""
         loaded = self._load_table(table)  # load failure propagates — before the loop
-        return run_monitor_specs(
-            lambda spec: self._monitor_scalar(loaded, spec),
-            monitors=monitors,
-            now=datetime.now(UTC),
-        )
+        sources: dict[int, dict[str, Any]] = {}
+        index = iter(range(len(monitors)))
 
-    def _monitor_scalar(self, table: Any, spec: MonitorSpec) -> Any:
-        """The scalar a monitor bands: ``COUNT(*)`` (volume) or ``MAX(column)``
-        (freshness), computed from the Iceberg table without materialising it."""
+        def scalar_for(spec: MonitorSpec) -> Any:
+            i = next(index)
+            scalar, detail = self._monitor_scalar(loaded, spec)
+            sources[i] = detail
+            return scalar
+
+        outcomes = run_monitor_specs(scalar_for, monitors=monitors, now=datetime.now(UTC))
+        # Stamp WHICH path answered (#859 / the #828 lesson: a degraded answer must
+        # say so) — metadata (`snapshot-summary` / `file-bounds`) or the scan
+        # fallback with its reason — onto the successful outcomes' detail.
+        return [
+            (
+                replace(oc, observed_value={**oc.observed_value, **detail})
+                if not oc.errored and oc.observed_value is not None and (detail := sources.get(i))
+                else oc
+            )
+            for i, oc in enumerate(outcomes)
+        ]
+
+    def _monitor_scalar(self, table: Any, spec: MonitorSpec) -> tuple[Any, dict[str, Any]]:
+        """The scalar a monitor bands plus a source detail dict (#859).
+
+        The answer is read from table METADATA when it is trustworthy — no data
+        scan, no compute burned on the check:
+
+        * ``volume`` — the current snapshot summary's ``total-records``;
+        * ``freshness`` — the max per-file upper bound of the timestamp column
+          across the current snapshot's data files (exact for timestamp/date
+          types), UNLESS row-level deletes exist (a deleted row may hold the
+          max, so the bound would over-report freshness).
+
+        Summary fields are engine-written and OPTIONAL, so every metadata path
+        degrades to the scan (``scan().count()`` / a one-column ``MAX``) with the
+        reason recorded — never a confident answer from an untrustworthy source.
+        """
         validate_monitor_config(spec.kind, spec.config)  # structural gate (bad column/range)
         if spec.kind == VOLUME:
-            return table.scan().count()
+            try:
+                total, delta = _volume_from_snapshot_summary(table)
+            except Exception as exc:  # the FAST path must never fail the check
+                total, delta = None, {
+                    "fallback_reason": f"metadata unavailable ({type(exc).__name__})"
+                }
+            if total is not None:
+                return total, {"source": "snapshot-summary", **delta}
+            return table.scan().count(), {"source": "scan-fallback", **delta}
         if spec.kind == FRESHNESS:
+            column = spec.config["column"]
+            try:
+                bound, reason = _freshness_from_file_bounds(table, column)
+            except MonitorConfigError:
+                raise  # unknown column = the check's own config error, not a degrade
+            except Exception as exc:
+                bound, reason = None, f"metadata unavailable ({type(exc).__name__})"
+            if reason is None:
+                return bound, {"source": "file-bounds"}
             import pyarrow.compute as pc
 
-            column = spec.config["column"]
             arrow = table.scan(selected_fields=(column,)).to_arrow()
             if arrow.num_rows == 0:
-                return None  # empty table → monitor_outcome maps to an operational error
-            return pc.max(arrow.column(column)).as_py()
+                # empty table → monitor_outcome maps to an operational error
+                return None, {"source": "scan-fallback", "fallback_reason": reason}
+            return pc.max(arrow.column(column)).as_py(), {
+                "source": "scan-fallback",
+                "fallback_reason": reason,
+            }
         raise MonitorConfigError(f"unknown monitor kind: {spec.kind!r}")
+
+
+def _summary_get(summary: Any, key: str) -> Any:
+    """A snapshot summary field, tolerating pyiceberg's Summary object OR a plain
+    mapping OR None — summary fields are engine-written and optional, so absence
+    is an expected answer, never an exception."""
+    if summary is None:
+        return None
+    get = getattr(summary, "get", None)
+    if callable(get):
+        return get(key)
+    try:
+        return summary[key]
+    except (KeyError, TypeError, IndexError):
+        return None
+
+
+def _summary_int(summary: Any, key: str) -> int | None:
+    raw = _summary_get(summary, key)
+    if raw is None:
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+_DELETE_TOTAL_KEYS = ("total-delete-files", "total-position-deletes", "total-equality-deletes")
+
+
+def _row_delete_guard(summary: Any) -> str | None:
+    """``None`` when the summary PROVES the snapshot has zero row-level deletes;
+    otherwise the degrade reason. All three ``total-*`` fields are optional and
+    engine-written, so an ABSENT field is "cannot prove", never "no deletes" —
+    with live delete files, summary ``total-records`` over-counts (it nets only
+    data-file records; verified against pyiceberg's ``_update_totals``) and a
+    column upper bound may belong to a deleted row. Both metadata paths refuse
+    to answer unless proven clean."""
+    for key in _DELETE_TOTAL_KEYS:
+        raw = _summary_get(summary, key)
+        if raw is None:
+            return f"snapshot summary omits {key} — cannot prove no row-level deletes"
+        count = _summary_int(summary, key)
+        if count is None:
+            return f"unparseable snapshot summary field {key}"
+        if count > 0:
+            return f"row-level deletes present ({key}={count})"
+    return None
+
+
+def _volume_from_snapshot_summary(table: Any) -> tuple[int | None, dict[str, Any]]:
+    """``(total_records, delta_detail)`` from the current snapshot's summary (#859).
+
+    ``total-records`` is the row count the engine recorded at commit time — the
+    volume answer with zero data-file scanning — but it nets only DATA-file
+    records: on a merge-on-read table with live position/equality deletes it
+    over-counts (a false-green vs the delete-aware ``scan().count()``), so the
+    delete guard applies here exactly as it does to freshness. ``None`` → the
+    caller falls back to the scan. The per-commit ``added-records``/
+    ``deleted-records`` delta rides along as observed detail when present — a
+    row-count scan can never provide it.
+    """
+    snapshot = table.current_snapshot()
+    if snapshot is None:
+        return None, {"fallback_reason": "table has no current snapshot"}
+    summary = getattr(snapshot, "summary", None)
+    total = _summary_int(summary, "total-records")
+    if total is None:
+        return None, {"fallback_reason": "snapshot summary lacks total-records"}
+    guard = _row_delete_guard(summary)
+    if guard is not None:
+        return None, {"fallback_reason": guard}
+    delta: dict[str, Any] = {}
+    added = _summary_int(summary, "added-records")
+    deleted = _summary_int(summary, "deleted-records")
+    if added is not None:
+        delta["added_records"] = added
+    if deleted is not None:
+        delta["deleted_records"] = deleted
+    return total, delta
+
+
+# Iceberg physically stores timestamp bounds as epoch micros and dates as
+# epoch days — decode to the datetime/date shapes `monitor_outcome` bands.
+_EPOCH_DT = datetime(1970, 1, 1, tzinfo=UTC)
+_EPOCH_DATE = date(1970, 1, 1)
+
+
+def _decode_bound(field_type: Any, raw: bytes) -> Any:
+    from pyiceberg.conversions import from_bytes
+    from pyiceberg.types import DateType, TimestampType, TimestamptzType
+
+    value = from_bytes(field_type, raw)
+    if isinstance(field_type, (TimestampType, TimestamptzType)):
+        return _EPOCH_DT + timedelta(microseconds=int(value))
+    if isinstance(field_type, DateType):
+        return _EPOCH_DATE + timedelta(days=int(value))
+    return value  # non-temporal → monitor_outcome raises its established type error
+
+
+def _freshness_from_file_bounds(table: Any, column: str) -> tuple[Any, str | None]:
+    """``(max_bound, None)`` from per-file column upper bounds — or ``(None,
+    reason)`` when the metadata can't be trusted and the caller must scan (#859).
+
+    The max upper bound over the current snapshot's data files IS ``MAX(column)``
+    for timestamp/date columns (bounds are exact for temporal types) — unless
+    row-level deletes exist: a deleted row may hold the max, so the bound would
+    over-report freshness (a false-green), and we degrade to the scan instead.
+    A file missing the bound (stats disabled) likewise degrades, as does a table
+    with no current snapshot (conservative — the scan of a truly empty table is
+    free, and a non-standard table object without snapshot metadata keeps
+    working). A snapshot with zero live data files returns ``(None, None)`` —
+    authoritatively no rows, the same operational error the scan path produces.
+    """
+    snapshot = table.current_snapshot()
+    if snapshot is None:
+        return None, "table has no current snapshot"
+    guard = _row_delete_guard(getattr(snapshot, "summary", None))
+    if guard is not None:
+        return None, guard
+    schema = table.schema()  # metadata unavailability (non-standard table) → caller degrades
+    try:
+        field = schema.find_field(column)
+    except Exception as exc:
+        # A real schema that lacks the column is the CHECK's config error (#122),
+        # not a metadata degrade — relabeling it "metadata unavailable" and letting
+        # the fallback scan re-raise would make the outcome right by coincidence.
+        raise MonitorConfigError(f"unknown freshness column {column!r}") from exc
+    max_bound: Any = None
+    for task in table.scan(selected_fields=(column,)).plan_files():
+        # The authoritative per-task delete signal — belt to the summary guard's
+        # braces (a writer could omit the summary fields yet attach delete files).
+        if getattr(task, "delete_files", None):
+            return None, "scan tasks carry row-level delete files"
+        bounds = getattr(task.file, "upper_bounds", None) or {}
+        raw_bound = bounds.get(field.field_id)
+        if raw_bound is None:
+            return None, "a data file lacks an upper bound for the column"
+        value = _decode_bound(field.field_type, raw_bound)
+        if max_bound is None or value > max_bound:
+            max_bound = value
+    return max_bound, None  # None with no files = empty table, same as no snapshot
 
 
 def iceberg_credentials(
