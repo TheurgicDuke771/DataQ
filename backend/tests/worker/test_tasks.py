@@ -16,7 +16,7 @@ from backend.app.datasources.base import CheckOutcome, CheckSpec, SuiteOutcome
 from backend.app.datasources.flatfile import BatchNotFoundError
 from backend.app.db.models import Check, Connection, Run, Suite
 from backend.app.lineage import dispatch as lineage_dispatch
-from backend.app.services import run_target
+from backend.app.services import run_service, run_target
 from backend.app.worker import tasks
 
 
@@ -331,6 +331,83 @@ def test_run_suite_batch_listing_failure_marks_failed(monkeypatch: pytest.Monkey
     assert run.status == "failed"
     assert run.finished_at is not None
     assert session.added == []
+
+
+# ───────────────────────── runner lifecycle (#427) ─────────────────────────
+
+
+class ClosableFakeRunner(FakeRunner):
+    def __init__(self, outcome: SuiteOutcome) -> None:
+        super().__init__(outcome)
+        self.closed = 0
+
+    def close(self) -> None:
+        self.closed += 1
+
+
+def test_run_suite_closes_runner_after_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The runner's shared engine pool (#427) must be released when the run ends.
+    run, suite, connection, checks = _graph(1)
+    session = FakeSession(run=run, suite=suite, connection=connection, checks=checks)
+    runner = ClosableFakeRunner(
+        SuiteOutcome(success=True, checks=[CheckOutcome("x", success=True)])
+    )
+    monkeypatch.setattr(tasks, "build_check_runner", lambda **_kw: runner)
+
+    assert tasks._run_suite(_sess(session), run_id=run.id) == "succeeded"
+    assert runner.closed == 1
+
+
+def test_run_suite_closes_runner_even_when_materialize_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run, suite, connection, checks = _graph(1)
+    session = FakeSession(run=run, suite=suite, connection=connection, checks=checks)
+    runner = ClosableFakeRunner(
+        SuiteOutcome(success=True, checks=[CheckOutcome("x", success=True)])
+    )
+    monkeypatch.setattr(tasks, "build_check_runner", lambda **_kw: runner)
+
+    def _boom(*_a: Any, **_k: Any) -> str:
+        raise RuntimeError("S3 unreachable")
+
+    monkeypatch.setattr(run_target, "materialize_path", _boom)
+
+    assert tasks._run_suite(_sess(session), run_id=run.id) == "failed"
+    assert runner.closed == 1
+
+
+def test_run_suite_closes_runner_when_execute_run_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The propagating-exception branch is the REASON the close is scoped by
+    # owned_runner — the handled-failure tests would also pass with a close on
+    # the return path.
+    run, suite, connection, checks = _graph(1)
+    session = FakeSession(run=run, suite=suite, connection=connection, checks=checks)
+    runner = ClosableFakeRunner(
+        SuiteOutcome(success=True, checks=[CheckOutcome("x", success=True)])
+    )
+    monkeypatch.setattr(tasks, "build_check_runner", lambda **_kw: runner)
+
+    def _boom(*_a: Any, **_k: Any) -> None:
+        raise RuntimeError("unexpected mid-run crash")
+
+    monkeypatch.setattr(run_service, "execute_run", _boom)
+
+    with pytest.raises(RuntimeError, match="unexpected mid-run crash"):
+        tasks._run_suite(_sess(session), run_id=run.id)
+    assert runner.closed == 1
+
+
+def test_run_suite_tolerates_runner_without_close(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Flat-file / Iceberg runners have no close() — the lifecycle hook must no-op.
+    run, suite, connection, checks = _graph(1)
+    session = FakeSession(run=run, suite=suite, connection=connection, checks=checks)
+    runner = FakeRunner(SuiteOutcome(success=True, checks=[CheckOutcome("x", success=True)]))
+    monkeypatch.setattr(tasks, "build_check_runner", lambda **_kw: runner)
+
+    assert tasks._run_suite(_sess(session), run_id=run.id) == "succeeded"
 
 
 # ───────────────────────── task wrapper ────────────────────────────

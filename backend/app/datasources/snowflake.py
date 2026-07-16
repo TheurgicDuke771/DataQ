@@ -39,6 +39,7 @@ from backend.app.datasources.gx_runner import (
     to_suite_outcome,
 )
 from backend.app.datasources.monitors import run_monitors_over_engine
+from backend.app.datasources.sql import LazyEngine
 
 __all__ = [
     "SnowflakeCheckRunner",
@@ -175,9 +176,33 @@ class SnowflakeCheckRunner:
         self._config = config
         self._connection_string = build_connection_string(config, secret)
         # Key-pair auth: the loaded DER private key (under 'private_key'),
-        # consumed by run_monitors' create_engine connect-args and re-encoded
-        # for the GX kwargs form in run_checks; empty for password auth.
+        # consumed by the shared engine's connect-args and re-encoded for the
+        # GX kwargs form in run_checks; empty for password auth.
         self._connect_args = build_connect_args(config, secret)
+        # The runner's ONE lazily-built engine (#427) — every non-GX SQL
+        # touchpoint shares it (and its pooled session) instead of paying a
+        # fresh engine + auth handshake per call. Disposed by `close()`; the
+        # run path owns that lifecycle via `registry.owned_runner`. (GX's
+        # `run_checks` still builds its own engine internally from the
+        # connection string — not injectable.)
+        self._engine = LazyEngine(self._build_engine)
+
+    def _build_engine(self) -> Any:
+        from sqlalchemy import create_engine
+
+        # pool_pre_ping: the pooled session can sit idle across a long GX
+        # validation in a mixed suite — revalidate on checkout so a
+        # warehouse-side idle reap surfaces as a fresh connect, not a dead
+        # connection failing the monitors.
+        return create_engine(
+            self._connection_string,
+            connect_args=self._connect_args or {},
+            pool_pre_ping=True,
+        )
+
+    def close(self) -> None:
+        """Dispose the shared engine's pool. Idempotent; a no-op if never used."""
+        self._engine.close()
 
     def run_checks(
         self,
@@ -232,23 +257,18 @@ class SnowflakeCheckRunner:
     ) -> list[CheckOutcome]:
         """Evaluate freshness/volume monitors via scalar SQL aggregates (no GX).
 
-        Opens one SQLAlchemy connection over the same DSN the GX path uses; Snowflake
-        addresses the target as ``schema.table`` (the database is in the DSN), so no
-        catalog. A connection-level failure (can't reach the warehouse) propagates,
-        failing the run like the GX path; a bad monitor errors only itself."""
-        from sqlalchemy import create_engine
-
-        engine = create_engine(self._connection_string, connect_args=self._connect_args or {})
-        try:
-            return run_monitors_over_engine(
-                engine,
-                table=table,
-                schema=schema or self._config.schema_,
-                catalog=None,
-                monitors=monitors,
-            )
-        finally:
-            engine.dispose()
+        Runs over the runner's shared engine (#427 — one connection per run, no
+        per-call engine); Snowflake addresses the target as ``schema.table`` (the
+        database is in the DSN), so no catalog. A connection-level failure (can't
+        reach the warehouse) propagates, failing the run like the GX path; a bad
+        monitor errors only itself."""
+        return run_monitors_over_engine(
+            self._engine.get(),
+            table=table,
+            schema=schema or self._config.schema_,
+            catalog=None,
+            monitors=monitors,
+        )
 
 
 def build_snowflake_runner(

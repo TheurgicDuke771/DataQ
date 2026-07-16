@@ -31,6 +31,7 @@ from backend.app.datasources.flatfile import BatchNotFoundError
 from backend.app.datasources.registry import (
     UnsupportedConnectionTypeError,
     build_check_runner,
+    owned_runner,
 )
 from backend.app.db.models import Connection
 from backend.app.services import run_target
@@ -137,66 +138,71 @@ def dry_run_check(
             detail={"reason": classify_failure_reason(exc)},
         ) from exc
 
-    # Materialize a flat-file batch target to a concrete file (lists the store) —
-    # a no-op for SQL / UC / literal flat-file targets. Batch-not-found is "no data
-    # yet", a clean 422; a bad credential / unreachable store while listing is a 502.
-    try:
-        table = run_target.materialize_path(
-            connection.type,
-            connection.config,
-            resolved,
-            secret_ref=connection.secret_ref,
-            secret_store=secret_store,
-        )
-    except BatchNotFoundError as exc:
-        raise DryRunNoDataError(
-            "no file has landed for the suite's batch target yet — dry-run needs live data",
-            detail={"connection_type": connection.type},
-        ) from exc
-    except DataQError:
-        raise  # a SuiteTargetInvalidError (422) from a malformed batch spec — keep it
-    except Exception as exc:
-        log.warning(
-            "dry_run_failed", connection_type=connection.type, error_type=type(exc).__name__
-        )
-        raise DryRunFailedError(
-            "dry run could not list the datasource store",
-            detail={"reason": classify_failure_reason(exc)},
-        ) from exc
+    # The runner exists from here — `owned_runner` releases its shared engine
+    # pool (#427) on every exit path of the dry run.
+    with owned_runner(runner):
+        # Materialize a flat-file batch target to a concrete file (lists the store) —
+        # a no-op for SQL / UC / literal flat-file targets. Batch-not-found is "no data
+        # yet", a clean 422; a bad credential / unreachable store while listing is a 502.
+        try:
+            table = run_target.materialize_path(
+                connection.type,
+                connection.config,
+                resolved,
+                secret_ref=connection.secret_ref,
+                secret_store=secret_store,
+            )
+        except BatchNotFoundError as exc:
+            raise DryRunNoDataError(
+                "no file has landed for the suite's batch target yet — dry-run needs live data",
+                detail={"connection_type": connection.type},
+            ) from exc
+        except DataQError:
+            raise  # a SuiteTargetInvalidError (422) from a malformed batch spec — keep it
+        except Exception as exc:
+            log.warning(
+                "dry_run_failed", connection_type=connection.type, error_type=type(exc).__name__
+            )
+            raise DryRunFailedError(
+                "dry run could not list the datasource store",
+                detail={"reason": classify_failure_reason(exc)},
+            ) from exc
 
-    try:
-        outcome = runner.run_checks(
-            table=table,
-            schema=resolved.schema,
-            checks=[CheckSpec(expectation_type=expectation_type, kwargs=dict(config))],
-        )
-        # One outcome per spec; index inside the guard so a malformed/empty
-        # runner result is a clean 502, not an uncaught IndexError → 500.
-        check_outcome = outcome.checks[0]
-    except Exception as exc:
-        log.warning(
-            "dry_run_failed", connection_type=connection.type, error_type=type(exc).__name__
-        )
-        raise DryRunFailedError(
-            "dry run could not execute against the datasource",
-            detail={"table": table, "reason": classify_failure_reason(exc)},
-        ) from exc
+        try:
+            outcome = runner.run_checks(
+                table=table,
+                schema=resolved.schema,
+                checks=[CheckSpec(expectation_type=expectation_type, kwargs=dict(config))],
+            )
+            # One outcome per spec; index inside the guard so a malformed/empty
+            # runner result is a clean 502, not an uncaught IndexError → 500.
+            check_outcome = outcome.checks[0]
+        except Exception as exc:
+            log.warning(
+                "dry_run_failed", connection_type=connection.type, error_type=type(exc).__name__
+            )
+            raise DryRunFailedError(
+                "dry run could not execute against the datasource",
+                detail={"table": table, "reason": classify_failure_reason(exc)},
+            ) from exc
 
-    status, metric = resolve_status(
-        check_outcome,
-        warn_threshold=warn_threshold,
-        fail_threshold=fail_threshold,
-        critical_threshold=critical_threshold,
-    )
-    # Preview exactly what a persisted run would record: an unevaluable check
-    # (#122) is 'error', not a misleading 'fail' tag, and surfaces the GX message.
-    if check_outcome.errored:
-        observed = {"error": check_outcome.error_message} if check_outcome.error_message else None
-    else:
-        observed = sanitize_json(check_outcome.observed_value)
-    return DryRunOutcome(
-        status=status,
-        metric_value=metric,
-        observed_value=observed,
-        expected_value=sanitize_json(check_outcome.expected_value),
-    )
+        status, metric = resolve_status(
+            check_outcome,
+            warn_threshold=warn_threshold,
+            fail_threshold=fail_threshold,
+            critical_threshold=critical_threshold,
+        )
+        # Preview exactly what a persisted run would record: an unevaluable check
+        # (#122) is 'error', not a misleading 'fail' tag, and surfaces the GX message.
+        if check_outcome.errored:
+            observed = (
+                {"error": check_outcome.error_message} if check_outcome.error_message else None
+            )
+        else:
+            observed = sanitize_json(check_outcome.observed_value)
+        return DryRunOutcome(
+            status=status,
+            metric_value=metric,
+            observed_value=observed,
+            expected_value=sanitize_json(check_outcome.expected_value),
+        )
