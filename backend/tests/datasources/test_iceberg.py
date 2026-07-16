@@ -134,28 +134,63 @@ def test_test_propagates_catalog_failure(monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 class _FakeScan:
-    def __init__(self, table: pa.Table) -> None:
+    def __init__(self, table: pa.Table, files: list[Any] | None = None, owner: Any = None) -> None:
         self._table = table
+        self._files = files or []
+        self._owner = owner
+
+    def _count_data_call(self) -> None:
+        if self._owner is not None:
+            self._owner.scan_calls += 1
 
     def to_arrow(self) -> pa.Table:
+        self._count_data_call()
         return self._table
 
     def count(self) -> int:
+        self._count_data_call()
         return int(self._table.num_rows)
+
+    def plan_files(self) -> list[Any]:
+        return self._files  # metadata-only — deliberately NOT a data call
 
 
 class _FakeTable:
     """Stands in for a ``pyiceberg`` Table — ``scan()`` returns a real Arrow table
     (optionally projected to ``selected_fields``) so the runner's materialisation
-    + GX + monitor math run for real."""
+    + GX + monitor math run for real. ``snapshot``/``schema_``/``files`` model the
+    metadata surface the #859 fast-paths read; the default (no snapshot) routes
+    monitors down the scan fallback, like a table with no metadata to trust."""
 
-    def __init__(self, df: pd.DataFrame) -> None:
+    def __init__(
+        self,
+        df: pd.DataFrame,
+        *,
+        snapshot: Any | None = None,
+        schema: Any | None = None,
+        files: list[Any] | None = None,
+    ) -> None:
         self._arrow = pa.Table.from_pandas(df, preserve_index=False)
+        self._snapshot = snapshot
+        self._schema = schema
+        self._files = files or []
+        self.scan_calls = 0  # data-path invocations — the fast-path tests pin 0
+
+    def current_snapshot(self) -> Any | None:
+        return self._snapshot
+
+    def schema(self) -> Any:
+        if self._schema is None:
+            raise NotImplementedError("fake has no schema")
+        return self._schema
 
     def scan(self, *, selected_fields: tuple[str, ...] | None = None) -> _FakeScan:
-        if selected_fields:
-            return _FakeScan(self._arrow.select(list(selected_fields)))
-        return _FakeScan(self._arrow)
+        scan = _FakeScan(
+            self._arrow.select(list(selected_fields)) if selected_fields else self._arrow,
+            files=self._files,
+            owner=self,
+        )
+        return scan
 
 
 def _runner_over(df: pd.DataFrame, monkeypatch: pytest.MonkeyPatch) -> IcebergCheckRunner:
@@ -223,7 +258,13 @@ def test_run_monitors_volume_in_range(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     assert outcome.success is True
     assert outcome.metric_value == 0.0
-    assert outcome.observed_value == {"row_count": 50, "deviation_pct": 0.0}
+    assert outcome.observed_value == {
+        "row_count": 50,
+        "deviation_pct": 0.0,
+        # the default fake has no snapshot → the run says WHICH path answered (#859)
+        "source": "scan-fallback",
+        "fallback_reason": "table has no current snapshot",
+    }
 
 
 def test_run_monitors_volume_below_floor(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -573,3 +614,178 @@ class TestEveryReadPathGetsTheCatalogCredential:
         assert seen["uri"] == "postgresql+psycopg2://u:CATALOG_PW@h:5432/cat"
         # …and the storage key still lands on its own property.
         assert seen["adls.account-key"] == "STORAGE_KEY"
+
+
+# ───────────────────── metadata fast-paths (#859) ─────────────────────
+
+
+class _FakeSnapshot:
+    def __init__(self, summary: dict[str, str] | None) -> None:
+        self.summary = summary
+
+
+def _bounds_file(field_id: int, raw: bytes | None) -> Any:
+    from types import SimpleNamespace
+
+    return SimpleNamespace(file=SimpleNamespace(upper_bounds={field_id: raw} if raw else {}))
+
+
+def test_volume_answers_from_snapshot_summary_without_scanning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The DataFrame deliberately DISAGREES with the summary (1 row vs 50) — the
+    # metadata must win, proving no scan happened; scan_calls pins it to zero.
+    snapshot = _FakeSnapshot({"total-records": "50", "added-records": "7", "deleted-records": "2"})
+    fake = _FakeTable(pd.DataFrame({"id": [1]}), snapshot=snapshot)
+    runner = IcebergCheckRunner(config=IcebergConfig.model_validate(_REST_CONFIG), secret="tok")
+    monkeypatch.setattr(runner, "_load_table", lambda identifier: fake)
+    [outcome] = runner.run_monitors(
+        table="sales.orders",
+        schema=None,
+        monitors=[MonitorSpec("volume", {"min_rows": 10, "max_rows": 100})],
+    )
+    assert outcome.success is True
+    assert outcome.observed_value == {
+        "row_count": 50,
+        "deviation_pct": 0.0,
+        "source": "snapshot-summary",
+        "added_records": 7,  # the per-commit delta a row-count scan can never give
+        "deleted_records": 2,
+    }
+    assert fake.scan_calls == 0  # metadata-only — no data path touched
+
+
+def test_volume_falls_back_to_scan_when_summary_lacks_total(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Summary fields are engine-written and OPTIONAL — degrade honestly (#828).
+    fake = _FakeTable(pd.DataFrame({"id": [1, 2, 3]}), snapshot=_FakeSnapshot({"op": "append"}))
+    runner = IcebergCheckRunner(config=IcebergConfig.model_validate(_REST_CONFIG), secret="tok")
+    monkeypatch.setattr(runner, "_load_table", lambda identifier: fake)
+    [outcome] = runner.run_monitors(
+        table="sales.orders",
+        schema=None,
+        monitors=[MonitorSpec("volume", {"min_rows": 1, "max_rows": 100})],
+    )
+    assert outcome.observed_value is not None
+    assert outcome.observed_value["row_count"] == 3
+    assert outcome.observed_value["source"] == "scan-fallback"
+    assert outcome.observed_value["fallback_reason"] == "snapshot summary lacks total-records"
+    assert fake.scan_calls == 1
+
+
+def _tz_field_schema() -> tuple[Any, int]:
+    from pyiceberg.schema import Schema
+    from pyiceberg.types import NestedField, TimestamptzType
+
+    return Schema(NestedField(1, "loaded_at", TimestamptzType())), 1
+
+
+def test_freshness_answers_from_file_bounds_without_scanning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from pyiceberg.conversions import to_bytes
+    from pyiceberg.types import TimestamptzType
+
+    schema, field_id = _tz_field_schema()
+    five_hours_ago = datetime.now(UTC) - timedelta(hours=5)
+    stale = five_hours_ago - timedelta(hours=20)
+    files = [
+        _bounds_file(field_id, to_bytes(TimestamptzType(), int(stale.timestamp() * 1_000_000))),
+        _bounds_file(
+            field_id, to_bytes(TimestamptzType(), int(five_hours_ago.timestamp() * 1_000_000))
+        ),
+    ]
+    # The DataFrame holds a FRESHER row than any bound — metadata must win.
+    fake = _FakeTable(
+        pd.DataFrame({"loaded_at": [datetime.now(UTC)]}),
+        snapshot=_FakeSnapshot({"total-delete-files": "0"}),
+        schema=schema,
+        files=files,
+    )
+    runner = IcebergCheckRunner(config=IcebergConfig.model_validate(_REST_CONFIG), secret="tok")
+    monkeypatch.setattr(runner, "_load_table", lambda identifier: fake)
+    [outcome] = runner.run_monitors(
+        table="sales.orders",
+        schema=None,
+        monitors=[MonitorSpec("freshness", {"column": "loaded_at"})],
+    )
+    assert outcome.metric_value == pytest.approx(5.0, abs=0.1)  # max bound across files
+    assert outcome.observed_value is not None
+    assert outcome.observed_value["source"] == "file-bounds"
+    assert fake.scan_calls == 0
+
+
+def test_freshness_falls_back_when_row_level_deletes_present(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A deleted row may hold the max → the bound would over-report freshness
+    # (false-green). Must scan instead, and say why.
+    schema, field_id = _tz_field_schema()
+    recent = datetime.now(UTC) - timedelta(hours=2)
+    fake = _FakeTable(
+        pd.DataFrame({"loaded_at": [recent]}),
+        snapshot=_FakeSnapshot({"total-delete-files": "3"}),
+        schema=schema,
+        files=[_bounds_file(field_id, None)],
+    )
+    runner = IcebergCheckRunner(config=IcebergConfig.model_validate(_REST_CONFIG), secret="tok")
+    monkeypatch.setattr(runner, "_load_table", lambda identifier: fake)
+    [outcome] = runner.run_monitors(
+        table="sales.orders",
+        schema=None,
+        monitors=[MonitorSpec("freshness", {"column": "loaded_at"})],
+    )
+    assert outcome.metric_value == pytest.approx(2.0, abs=0.1)  # from the scan, not bounds
+    assert outcome.observed_value is not None
+    assert outcome.observed_value["source"] == "scan-fallback"
+    assert "total-delete-files=3" in outcome.observed_value["fallback_reason"]
+    assert fake.scan_calls == 1
+
+
+def test_freshness_falls_back_when_a_file_lacks_bounds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    schema, field_id = _tz_field_schema()
+    recent = datetime.now(UTC) - timedelta(hours=1)
+    fake = _FakeTable(
+        pd.DataFrame({"loaded_at": [recent]}),
+        snapshot=_FakeSnapshot({"total-delete-files": "0"}),
+        schema=schema,
+        files=[_bounds_file(field_id, None)],  # stats disabled on this file
+    )
+    runner = IcebergCheckRunner(config=IcebergConfig.model_validate(_REST_CONFIG), secret="tok")
+    monkeypatch.setattr(runner, "_load_table", lambda identifier: fake)
+    [outcome] = runner.run_monitors(
+        table="sales.orders",
+        schema=None,
+        monitors=[MonitorSpec("freshness", {"column": "loaded_at"})],
+    )
+    assert outcome.observed_value is not None
+    assert outcome.observed_value["source"] == "scan-fallback"
+    assert outcome.observed_value["fallback_reason"] == (
+        "a data file lacks an upper bound for the column"
+    )
+
+
+def test_freshness_empty_snapshot_is_operational_error_without_scan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A snapshot with zero live data files is AUTHORITATIVELY empty — same "no
+    # rows" operational error as the scan path, but metadata-only.
+    schema, _ = _tz_field_schema()
+    fake = _FakeTable(
+        pd.DataFrame({"loaded_at": pd.Series([], dtype="datetime64[ns, UTC]")}),
+        snapshot=_FakeSnapshot({"total-delete-files": "0"}),
+        schema=schema,
+        files=[],
+    )
+    runner = IcebergCheckRunner(config=IcebergConfig.model_validate(_REST_CONFIG), secret="tok")
+    monkeypatch.setattr(runner, "_load_table", lambda identifier: fake)
+    [outcome] = runner.run_monitors(
+        table="sales.orders",
+        schema=None,
+        monitors=[MonitorSpec("freshness", {"column": "loaded_at"})],
+    )
+    assert outcome.errored is True  # can't assess freshness with no rows (#122)
+    assert fake.scan_calls == 0
