@@ -435,6 +435,48 @@ class Check(Base):
     suite: Mapped["Suite"] = relationship(back_populates="checks")
 
 
+class MonitorBaseline(Base):
+    """The persisted reference state a *stateful* monitor kind diffs against
+    (#592, ADR 0012) — one CURRENT baseline per check.
+
+    ``schema_drift`` stores the column-name/type snapshot it compares the live
+    schema to; the W5 ``anomaly`` kind (#593) reuses this exact shape for its
+    metric-baseline parameters — one persistence shape, two consumers, which is
+    why the payload is a kind-shaped JSONB rather than schema-drift columns.
+
+    Semantics: UNIQUE per check (the current baseline — re-baseline REPLACES the
+    row, it doesn't append; history lives in `results`, not here). Cascade with
+    the check. ``captured_by`` records a manual re-baseline actor; NULL means the
+    run path captured it automatically (first run of the check). The baseline is
+    metadata about the target's *shape*, never row data — no PII concerns, no
+    retention sweep involvement.
+    """
+
+    __tablename__ = "monitor_baselines"
+    __table_args__ = (
+        UniqueConstraint("check_id", name="uq_monitor_baselines_check"),
+        _in_check("kind", CHECK_KINDS, "kind_valid"),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    check_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("checks.id", ondelete="CASCADE"), nullable=False
+    )
+    # Denormalized from the check for queryability/debugging (which kinds hold
+    # baselines); the check's kind is the authority.
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    # Kind-shaped payload. schema_drift: {"columns": [{"name": ..., "type": ...}, ...]}.
+    baseline: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    captured_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    captured_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = _created_at()
+    updated_at: Mapped[datetime] = _updated_at()
+
+
 class CheckVersion(Base):
     """An immutable snapshot of a check's editable state, written on create and
     after every successful update — the source for the "version history" drawer
