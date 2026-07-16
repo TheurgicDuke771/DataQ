@@ -723,3 +723,11 @@ def test_close_check_runner_never_raises() -> None:
             raise RuntimeError("dispose blew up")
 
     close_check_runner(_ExplodingClose())  # must not raise
+
+
+def test_supported_monitor_kinds_is_explicit() -> None:
+    # #880 review: NEVER frozenset(MONITOR_KINDS) — that would auto-advertise
+    # every future registry kind and self-defeat the per-kind gate. Widening
+    # this set is a conscious act, done when the runner actually implements
+    # the new kind.
+    assert SnowflakeCheckRunner.supported_monitor_kinds == frozenset({"freshness", "volume"})

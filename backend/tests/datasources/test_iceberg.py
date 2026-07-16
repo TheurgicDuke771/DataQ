@@ -906,3 +906,11 @@ def test_freshness_unknown_column_on_real_schema_is_config_error(
     assert outcome.error_message is not None
     assert "unknown freshness column" in outcome.error_message
     assert fake.scan_calls == 0  # the config error never reached the data path
+
+
+def test_supported_monitor_kinds_is_explicit() -> None:
+    # #880 review: NEVER frozenset(MONITOR_KINDS) — that would auto-advertise
+    # every future registry kind and self-defeat the per-kind gate. Widening
+    # this set is a conscious act, done when the runner actually implements
+    # the new kind.
+    assert IcebergCheckRunner.supported_monitor_kinds == frozenset({"freshness", "volume"})

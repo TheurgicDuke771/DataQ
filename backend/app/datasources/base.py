@@ -105,15 +105,25 @@ class CheckRunner(Protocol):
 
 @runtime_checkable
 class MonitorRunner(Protocol):
-    """A datasource runner that can also evaluate **monitor** kinds (freshness/
-    volume) by running scalar SQL aggregates against the table — the SQL datasources
-    (Snowflake, Unity Catalog) in v1. Flat-file runners don't implement this, so the
-    run path can gate monitor checks to SQL datasources via an ``isinstance`` check.
+    """A datasource runner that can also evaluate **monitor** kinds by running
+    scalar aggregates against the table — Snowflake / Unity Catalog (SQL) and
+    Iceberg (native scan) today.
+
+    The run path gates on ``supported_monitor_kinds`` — the runner-advertised
+    capability set (#429) — NOT on ``isinstance`` against this Protocol: a
+    ``runtime_checkable`` isinstance is a name-only structural match, so an
+    unrelated ``run_monitors`` method would pass the gate and then TypeError at
+    the call instead of raising the clean unsupported-kind error. Keeping the
+    capability data-driven also keeps the monitor-kind seam orthogonal to the
+    datasource seam (ADR 0012): new kinds (#592/#593) extend a runner's set,
+    never the orchestrator's dispatch.
 
     One ``CheckOutcome`` per ``MonitorSpec``, in order. A monitor that can't be
-    evaluated (bad column, type mismatch) yields an ``errored`` outcome rather than
-    failing its siblings — mirroring `CheckRunner` semantics.
+    evaluated (bad column, type mismatch) yields an ``errored`` outcome rather
+    than failing its siblings — mirroring `CheckRunner` semantics.
     """
+
+    supported_monitor_kinds: frozenset[str]
 
     def run_monitors(
         self,

@@ -79,7 +79,7 @@ COMPARISON_EXPECTATION_TYPES = ("comparison:records", "comparison:columns")
 # aggregate in-warehouse; Iceberg computes it natively (`scan().count()` / a column
 # MAX, ADR 0030). This is broader than `SQL_QUERYABLE_TYPES` (which gates *custom
 # SQL* — Iceberg is a native DataFrame read, not SQL-queryable), so the two stay
-# distinct. Kept in sync with the run path's `isinstance(runner, MonitorRunner)`.
+# distinct. Kept in sync with the runners' `supported_monitor_kinds` capability (#429).
 MONITOR_CAPABLE_TYPES = frozenset({*SQL_QUERYABLE_TYPES, "iceberg"})
 
 

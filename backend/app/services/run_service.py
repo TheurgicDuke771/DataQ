@@ -159,16 +159,34 @@ def _run_outcomes(
         for i, oc in zip(expectation_idx, suite_outcome.checks, strict=True):
             outcomes[i] = oc
     if monitor_idx:
-        if not isinstance(runner, MonitorRunner):
+        # Capability gate (#429): the runner ADVERTISES which monitor kinds it
+        # evaluates. Never `isinstance(runner, MonitorRunner)` — a
+        # runtime_checkable Protocol matches on the method NAME alone, so an
+        # unrelated `run_monitors` would pass the gate and TypeError at the call;
+        # and per-kind capability keeps this dispatch data-driven as stateful
+        # kinds (#592/#593) land on some runners before others.
+        supported = frozenset(getattr(runner, "supported_monitor_kinds", frozenset()))
+        unsupported_kinds = sorted({checks[i].kind for i in monitor_idx} - supported)
+        if unsupported_kinds:
             raise NotImplementedError(
-                f"{type(runner).__name__} does not support monitor checks — "
-                "freshness/volume need a monitor-capable datasource (Snowflake / "
-                "Unity Catalog / Iceberg)"
+                f"{type(runner).__name__} does not support monitor kind(s) "
+                f"{', '.join(unsupported_kinds)} — these need a monitor-capable "
+                "datasource (Snowflake / Unity Catalog / Iceberg)"
             )
+        if not callable(getattr(runner, "run_monitors", None)):
+            # The mirror hole of the old isinstance gate: advertising kinds
+            # without the method must reject as cleanly as the reverse.
+            raise NotImplementedError(
+                f"{type(runner).__name__} advertises monitor kinds but implements "
+                "no run_monitors — runner capability and implementation drifted"
+            )
+        monitor_runner = cast(MonitorRunner, runner)
         monitors = [
             MonitorSpec(kind=checks[i].kind, config=dict(checks[i].config)) for i in monitor_idx
         ]
-        monitor_outcomes = runner.run_monitors(table=table, schema=schema, monitors=monitors)
+        monitor_outcomes = monitor_runner.run_monitors(
+            table=table, schema=schema, monitors=monitors
+        )
         for i, oc in zip(monitor_idx, monitor_outcomes, strict=True):
             outcomes[i] = oc
 

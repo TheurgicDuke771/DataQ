@@ -21,7 +21,7 @@ real credentials.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, ClassVar
 from urllib.parse import quote_plus, urlparse
 
 import great_expectations as gx
@@ -30,7 +30,7 @@ from pydantic import BaseModel, ConfigDict, field_validator
 from backend.app.core.secrets import SecretStore
 from backend.app.datasources.base import CheckOutcome, CheckSpec, MonitorSpec, SuiteOutcome
 from backend.app.datasources.gx_runner import run_expectations
-from backend.app.datasources.monitors import run_monitors_over_engine
+from backend.app.datasources.monitors import FRESHNESS, VOLUME, run_monitors_over_engine
 from backend.app.datasources.sql import LazyEngine
 
 
@@ -129,6 +129,12 @@ class UnityCatalogCheckRunner:
     (`_read_table`), monkeypatched in tests; GX then runs in-process on the
     returned frame, so the validation path itself is fully covered.
     """
+
+    # Runner-advertised monitor capability (#429): EXPLICITLY what this runner
+    # implements — never frozenset(MONITOR_KINDS), which would auto-advertise
+    # every future registry entry and self-defeat the per-kind gate (a stateful
+    # kind must be claimed by a runner only once it actually evaluates it).
+    supported_monitor_kinds: ClassVar[frozenset[str]] = frozenset({FRESHNESS, VOLUME})
 
     def __init__(self, *, config: UnityCatalogConfig, token: str, catalog: str) -> None:
         self._config = config

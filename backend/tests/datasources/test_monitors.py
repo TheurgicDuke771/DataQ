@@ -7,7 +7,7 @@ from datetime import UTC, date, datetime, timedelta
 import pytest
 
 from backend.app.datasources import monitors
-from backend.app.datasources.base import MonitorSpec
+from backend.app.datasources.base import CheckOutcome, MonitorSpec
 from backend.app.datasources.monitors import (
     MonitorConfigError,
     build_monitor_sql,
@@ -211,3 +211,59 @@ def test_freshness_naive_timestamp_assumed_utc() -> None:
 def test_freshness_non_date_scalar_still_raises() -> None:
     with pytest.raises(MonitorConfigError):
         monitor_outcome("freshness", scalar=12345, config={"column": "ts"}, now=_NOW)
+
+
+# ───────────────────── strategy registry (#726) ─────────────────────
+
+
+def test_registry_addition_routes_all_three_functions(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The #726 AC: adding a kind = ONE registry entry — build/validate/outcome all
+    # route through it with no edits to any chain (there are no chains left).
+    from backend.app.datasources import monitors as m
+
+    calls: list[str] = []
+    fake = m.MonitorKindStrategy(
+        kind="fake_kind",
+        validate_config=lambda config: calls.append("validate"),
+        outcome=lambda scalar, config, now: CheckOutcome(
+            expectation_type=m.monitor_expectation_type("fake_kind"),
+            success=True,
+            metric_value=float(scalar),
+        ),
+        build_sql=lambda target, config: f"SELECT 42 FROM {target}",
+    )
+    monkeypatch.setitem(m.MONITOR_KIND_REGISTRY, "fake_kind", fake)
+
+    m.validate_monitor_config("fake_kind", {})
+    assert calls == ["validate"]
+    sql = m.build_monitor_sql("fake_kind", table="t", schema=None, catalog=None, config={})
+    assert sql == "SELECT 42 FROM t"
+    outcome = m.monitor_outcome("fake_kind", scalar=7, config={}, now=datetime.now(UTC))
+    assert outcome.metric_value == 7.0
+    assert outcome.expectation_type == "monitor:fake_kind"
+
+
+def test_registry_kind_without_sql_form_refuses_to_build(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A stateful kind (build_sql=None — the #592/#593 shape) must refuse the SQL
+    # path with a clear config error, never build a wrong query.
+    from backend.app.datasources import monitors as m
+
+    stateful = m.MonitorKindStrategy(
+        kind="stateful_kind",
+        validate_config=lambda config: None,
+        outcome=lambda scalar, config, now: CheckOutcome(
+            expectation_type="monitor:stateful_kind", success=True
+        ),
+        build_sql=None,
+    )
+    monkeypatch.setitem(m.MONITOR_KIND_REGISTRY, "stateful_kind", stateful)
+    with pytest.raises(m.MonitorConfigError, match="no scalar-SQL form"):
+        m.build_monitor_sql("stateful_kind", table="t", schema=None, catalog=None, config={})
+
+
+def test_monitor_kinds_derives_from_registry() -> None:
+    from backend.app.datasources import monitors as m
+
+    assert m.MONITOR_KINDS == tuple(m.MONITOR_KIND_REGISTRY)

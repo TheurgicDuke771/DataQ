@@ -40,7 +40,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 
 import great_expectations as gx
 from pydantic import BaseModel, ConfigDict, model_validator
@@ -282,6 +282,11 @@ class IcebergCheckRunner:
     then runs in-process on the returned frame, so the validation path is fully
     covered without a live catalog.
     """
+
+    # Runner-advertised monitor capability (#429): EXPLICITLY what this runner
+    # implements — never frozenset(MONITOR_KINDS), which would auto-advertise
+    # every future registry entry and self-defeat the per-kind gate.
+    supported_monitor_kinds: ClassVar[frozenset[str]] = frozenset({FRESHNESS, VOLUME})
 
     def __init__(
         self, *, config: IcebergConfig, secret: str | None, catalog_secret: str | None = None
