@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "fc828afa20ec",
+  "strategy": "manual-commit",
+  "branch": "refactor/issue-726-monitor-kind-registry",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/datasources/monitors.py",
+    "backend/app/datasources/snowflake.py",
+    "backend/app/datasources/unity_catalog.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/fc/828afa20ec/0/metadata.json",
+      "transcript": "/fc/828afa20ec/0/full.jsonl",
+      "compact_transcript": "/fc/828afa20ec/0/transcript.jsonl",
+      "content_hash": "/fc/828afa20ec/0/content_hash.txt",
+      "prompt": "/fc/828afa20ec/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 738,
+    "cache_creation_tokens": 1648458,
+    "cache_read_tokens": 137402238,
+    "output_tokens": 278647,
+    "api_call_count": 372
+  }
+}
