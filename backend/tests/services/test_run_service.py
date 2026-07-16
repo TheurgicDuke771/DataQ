@@ -197,6 +197,23 @@ def test_run_outcomes_rejects_runner_with_unrelated_run_monitors() -> None:
         )
 
 
+def test_run_outcomes_rejects_capability_without_implementation() -> None:
+    # The mirror hole of the old isinstance gate (#880 review): advertising
+    # kinds without run_monitors must reject as cleanly as the reverse — never
+    # an AttributeError at the call site.
+    class _AllTalk(FakeRunner):
+        supported_monitor_kinds = frozenset(MONITOR_KINDS)  # no run_monitors at all
+
+    runner = _AllTalk(outcome=SuiteOutcome(success=True, checks=[]))
+    with pytest.raises(NotImplementedError, match="capability and implementation drifted"):
+        run_service._run_outcomes(
+            runner,
+            table="T",
+            schema=None,
+            checks=[_monitor_check("volume", {"min_rows": 1, "max_rows": 9})],
+        )
+
+
 def test_run_outcomes_gate_is_per_kind_not_per_runner() -> None:
     # Capability is a SET of kinds (#429 altitude note): a runner supporting only
     # freshness must reject a volume check by NAME, so stateful kinds (#592/#593)

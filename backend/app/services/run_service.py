@@ -173,6 +173,13 @@ def _run_outcomes(
                 f"{', '.join(unsupported_kinds)} — these need a monitor-capable "
                 "datasource (Snowflake / Unity Catalog / Iceberg)"
             )
+        if not callable(getattr(runner, "run_monitors", None)):
+            # The mirror hole of the old isinstance gate: advertising kinds
+            # without the method must reject as cleanly as the reverse.
+            raise NotImplementedError(
+                f"{type(runner).__name__} advertises monitor kinds but implements "
+                "no run_monitors — runner capability and implementation drifted"
+            )
         monitor_runner = cast(MonitorRunner, runner)
         monitors = [
             MonitorSpec(kind=checks[i].kind, config=dict(checks[i].config)) for i in monitor_idx

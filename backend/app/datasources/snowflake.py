@@ -38,7 +38,7 @@ from backend.app.datasources.gx_runner import (
     run_expectations,
     to_suite_outcome,
 )
-from backend.app.datasources.monitors import MONITOR_KINDS, run_monitors_over_engine
+from backend.app.datasources.monitors import FRESHNESS, VOLUME, run_monitors_over_engine
 from backend.app.datasources.sql import LazyEngine
 
 __all__ = [
@@ -172,8 +172,11 @@ def build_connect_args(config: SnowflakeConfig, secret: str) -> dict[str, Any]:
 class SnowflakeCheckRunner:
     """`CheckRunner` for Snowflake. Building the asset connects to the warehouse."""
 
-    # Runner-advertised monitor capability (#429) — the run path gates on this.
-    supported_monitor_kinds: ClassVar[frozenset[str]] = frozenset(MONITOR_KINDS)
+    # Runner-advertised monitor capability (#429): EXPLICITLY what this runner
+    # implements — never frozenset(MONITOR_KINDS), which would auto-advertise
+    # every future registry entry and self-defeat the per-kind gate (a stateful
+    # kind must be claimed by a runner only once it actually evaluates it).
+    supported_monitor_kinds: ClassVar[frozenset[str]] = frozenset({FRESHNESS, VOLUME})
 
     def __init__(self, config: SnowflakeConfig, secret: str) -> None:
         self._config = config

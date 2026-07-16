@@ -30,7 +30,7 @@ from pydantic import BaseModel, ConfigDict, field_validator
 from backend.app.core.secrets import SecretStore
 from backend.app.datasources.base import CheckOutcome, CheckSpec, MonitorSpec, SuiteOutcome
 from backend.app.datasources.gx_runner import run_expectations
-from backend.app.datasources.monitors import MONITOR_KINDS, run_monitors_over_engine
+from backend.app.datasources.monitors import FRESHNESS, VOLUME, run_monitors_over_engine
 from backend.app.datasources.sql import LazyEngine
 
 
@@ -130,8 +130,11 @@ class UnityCatalogCheckRunner:
     returned frame, so the validation path itself is fully covered.
     """
 
-    # Runner-advertised monitor capability (#429) — the run path gates on this.
-    supported_monitor_kinds: ClassVar[frozenset[str]] = frozenset(MONITOR_KINDS)
+    # Runner-advertised monitor capability (#429): EXPLICITLY what this runner
+    # implements — never frozenset(MONITOR_KINDS), which would auto-advertise
+    # every future registry entry and self-defeat the per-kind gate (a stateful
+    # kind must be claimed by a runner only once it actually evaluates it).
+    supported_monitor_kinds: ClassVar[frozenset[str]] = frozenset({FRESHNESS, VOLUME})
 
     def __init__(self, *, config: UnityCatalogConfig, token: str, catalog: str) -> None:
         self._config = config

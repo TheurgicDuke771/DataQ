@@ -46,7 +46,6 @@ from backend.app.datasources.base import CheckOutcome, CheckSpec, MonitorSpec, S
 from backend.app.datasources.gx_runner import run_expectations
 from backend.app.datasources.monitors import (
     FRESHNESS,
-    MONITOR_KINDS,
     VOLUME,
     MonitorConfigError,
     run_monitor_specs,
@@ -279,8 +278,10 @@ class IcebergCheckRunner:
     covered without a live catalog.
     """
 
-    # Runner-advertised monitor capability (#429) — the run path gates on this.
-    supported_monitor_kinds: ClassVar[frozenset[str]] = frozenset(MONITOR_KINDS)
+    # Runner-advertised monitor capability (#429): EXPLICITLY what this runner
+    # implements — never frozenset(MONITOR_KINDS), which would auto-advertise
+    # every future registry entry and self-defeat the per-kind gate.
+    supported_monitor_kinds: ClassVar[frozenset[str]] = frozenset({FRESHNESS, VOLUME})
 
     def __init__(
         self, *, config: IcebergConfig, secret: str | None, catalog_secret: str | None = None

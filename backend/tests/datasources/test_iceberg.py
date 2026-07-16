@@ -573,3 +573,11 @@ class TestEveryReadPathGetsTheCatalogCredential:
         assert seen["uri"] == "postgresql+psycopg2://u:CATALOG_PW@h:5432/cat"
         # …and the storage key still lands on its own property.
         assert seen["adls.account-key"] == "STORAGE_KEY"
+
+
+def test_supported_monitor_kinds_is_explicit() -> None:
+    # #880 review: NEVER frozenset(MONITOR_KINDS) — that would auto-advertise
+    # every future registry kind and self-defeat the per-kind gate. Widening
+    # this set is a conscious act, done when the runner actually implements
+    # the new kind.
+    assert IcebergCheckRunner.supported_monitor_kinds == frozenset({"freshness", "volume"})

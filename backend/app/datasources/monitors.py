@@ -279,7 +279,12 @@ MONITOR_KIND_REGISTRY: dict[str, MonitorKindStrategy] = {
 
 # Derived, never hand-maintained: the authoring allowlist (check_service) and the
 # run-path partition (run_service) both key off this, so registering a kind above
-# is the ONLY step that widens them.
+# is the ONLY step that widens them. Registration is IMPORT-TIME ONLY — an entry
+# in the dict literal above (the #592/#593 pattern), never a runtime mutation:
+# every derived value (this tuple, the authoring allowlist, runners' advertised
+# capability sets) snapshots at import, so a late registration would be half
+# visible (dispatchable but unauthorable/unroutable). Tests may monkeypatch the
+# registry for isolation; production code must not.
 MONITOR_KINDS = tuple(MONITOR_KIND_REGISTRY)
 
 

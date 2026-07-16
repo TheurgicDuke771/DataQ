@@ -284,3 +284,11 @@ def test_gx_read_and_monitors_share_one_engine(
     runner._read_table(table="orders", schema=None)
     assert len(created) == 2
     runner.close()
+
+
+def test_supported_monitor_kinds_is_explicit() -> None:
+    # #880 review: NEVER frozenset(MONITOR_KINDS) — that would auto-advertise
+    # every future registry kind and self-defeat the per-kind gate. Widening
+    # this set is a conscious act, done when the runner actually implements
+    # the new kind.
+    assert UnityCatalogCheckRunner.supported_monitor_kinds == frozenset({"freshness", "volume"})
