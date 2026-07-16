@@ -31,6 +31,7 @@ from backend.app.core.secrets import SecretStore
 from backend.app.datasources.base import CheckOutcome, CheckSpec, MonitorSpec, SuiteOutcome
 from backend.app.datasources.gx_runner import run_expectations
 from backend.app.datasources.monitors import run_monitors_over_engine
+from backend.app.datasources.sql import LazyEngine
 
 
 class UnityCatalogConfig(BaseModel):
@@ -133,26 +134,28 @@ class UnityCatalogCheckRunner:
         self._config = config
         self._token = token
         self._catalog = catalog
-        self._engine: Any | None = None
+        # The runner's ONE lazily-built engine (#427), shared by the GX read
+        # (`_read_table`) AND `run_monitors` — a mixed suite (expectations +
+        # monitors) pays a single warehouse session instead of two. Disposed by
+        # `close()`; the run path owns that lifecycle via `registry.owned_runner`.
+        self._engine = LazyEngine(self._build_engine)
 
-    def _get_engine(self) -> Any:
-        """The runner's ONE lazily-built engine (#427), shared by the GX read
-        (`_read_table`) AND `run_monitors` — a mixed suite (expectations +
-        monitors) now pays a single warehouse session instead of two. Disposed by
-        `close()`; the run path owns that lifecycle."""
-        if self._engine is None:
-            from sqlalchemy import create_engine
+    def _build_engine(self) -> Any:
+        from sqlalchemy import create_engine
 
-            self._engine = create_engine(
-                build_databricks_url(self._config, self._token, catalog=self._catalog)
-            )
-        return self._engine
+        # pool_pre_ping: run_monitors may draw the connection _read_table checked
+        # in before a long GX validation — revalidate on checkout so a
+        # warehouse-side idle reap / auto-stop surfaces as a fresh connect, not a
+        # dead connection failing every monitor (the old per-call engine always
+        # got a fresh one).
+        return create_engine(
+            build_databricks_url(self._config, self._token, catalog=self._catalog),
+            pool_pre_ping=True,
+        )
 
     def close(self) -> None:
         """Dispose the shared engine's pool. Idempotent; a no-op if never used."""
-        if self._engine is not None:
-            self._engine.dispose()
-            self._engine = None
+        self._engine.close()
 
     def _read_table(self, *, table: str, schema: str | None) -> Any:
         """Reflect + read the whole table into a DataFrame (live seam).
@@ -163,7 +166,7 @@ class UnityCatalogCheckRunner:
         """
         import pandas as pd
 
-        return pd.read_sql_table(table, self._get_engine(), schema=schema)
+        return pd.read_sql_table(table, self._engine.get(), schema=schema)
 
     def run_checks(
         self,
@@ -195,7 +198,7 @@ class UnityCatalogCheckRunner:
         ``catalog`` qualifies the target as ``catalog.schema.table``. A connection
         failure propagates; a bad monitor errors only itself."""
         return run_monitors_over_engine(
-            self._get_engine(),
+            self._engine.get(),
             table=table,
             schema=schema,
             catalog=self._catalog,

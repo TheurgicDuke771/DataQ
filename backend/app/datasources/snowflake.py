@@ -39,6 +39,7 @@ from backend.app.datasources.gx_runner import (
     to_suite_outcome,
 )
 from backend.app.datasources.monitors import run_monitors_over_engine
+from backend.app.datasources.sql import LazyEngine
 
 __all__ = [
     "SnowflakeCheckRunner",
@@ -178,27 +179,30 @@ class SnowflakeCheckRunner:
         # consumed by the shared engine's connect-args and re-encoded for the
         # GX kwargs form in run_checks; empty for password auth.
         self._connect_args = build_connect_args(config, secret)
-        self._engine: Any | None = None
+        # The runner's ONE lazily-built engine (#427) — every non-GX SQL
+        # touchpoint shares it (and its pooled session) instead of paying a
+        # fresh engine + auth handshake per call. Disposed by `close()`; the
+        # run path owns that lifecycle via `registry.owned_runner`. (GX's
+        # `run_checks` still builds its own engine internally from the
+        # connection string — not injectable.)
+        self._engine = LazyEngine(self._build_engine)
 
-    def _get_engine(self) -> Any:
-        """The runner's ONE lazily-built engine (#427) — every non-GX SQL
-        touchpoint on this runner shares it (and its pooled session) instead of
-        paying a fresh engine + auth handshake per call. Disposed by `close()`;
-        the run path owns that lifecycle. (GX's `run_checks` still builds its own
-        engine internally from the connection string — not injectable.)"""
-        if self._engine is None:
-            from sqlalchemy import create_engine
+    def _build_engine(self) -> Any:
+        from sqlalchemy import create_engine
 
-            self._engine = create_engine(
-                self._connection_string, connect_args=self._connect_args or {}
-            )
-        return self._engine
+        # pool_pre_ping: the pooled session can sit idle across a long GX
+        # validation in a mixed suite — revalidate on checkout so a
+        # warehouse-side idle reap surfaces as a fresh connect, not a dead
+        # connection failing the monitors.
+        return create_engine(
+            self._connection_string,
+            connect_args=self._connect_args or {},
+            pool_pre_ping=True,
+        )
 
     def close(self) -> None:
         """Dispose the shared engine's pool. Idempotent; a no-op if never used."""
-        if self._engine is not None:
-            self._engine.dispose()
-            self._engine = None
+        self._engine.close()
 
     def run_checks(
         self,
@@ -259,7 +263,7 @@ class SnowflakeCheckRunner:
         reach the warehouse) propagates, failing the run like the GX path; a bad
         monitor errors only itself."""
         return run_monitors_over_engine(
-            self._get_engine(),
+            self._engine.get(),
             table=table,
             schema=schema or self._config.schema_,
             catalog=None,

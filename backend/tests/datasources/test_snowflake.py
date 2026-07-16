@@ -624,10 +624,10 @@ def test_registry_unknown_type_raises() -> None:
 
 def _runner_with_counted_engine(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Any
-) -> tuple[SnowflakeCheckRunner, list[str]]:
+) -> tuple[SnowflakeCheckRunner, list[dict[str, Any]]]:
     """A real runner whose lazy `create_engine` is redirected to a seeded sqlite
-    DB, with every construction recorded — pins that the engine is built ONCE
-    per runner, not per call."""
+    DB, with every construction (url + kwargs) recorded — pins that the engine
+    is built ONCE per runner and that connect-args/pre-ping actually reach it."""
     import sqlalchemy
 
     real_create_engine = sqlalchemy.create_engine
@@ -638,21 +638,25 @@ def _runner_with_counted_engine(
         conn.execute(sqlalchemy.text("INSERT INTO ORDERS (id) VALUES (1), (2)"))
     seed.dispose()
 
-    created: list[str] = []
+    created: list[dict[str, Any]] = []
 
-    def _fake_create_engine(url: str, **_kwargs: Any) -> Any:
-        created.append(str(url))
+    def _fake_create_engine(url: str, **kwargs: Any) -> Any:
+        created.append({"url": str(url), **kwargs})
         return real_create_engine(db_url)
 
     monkeypatch.setattr(sqlalchemy, "create_engine", _fake_create_engine)
-    config = SnowflakeConfig.model_validate(
-        {
-            "account": "acct",
-            "user": "u",
-            "database": "DB",
-            "schema": "PUBLIC",
-            "warehouse": "WH",
-        }
+    # `model_construct` (validation bypass, test-only): a schema-less config is
+    # unconstructable via model_validate, but sqlite has no schemas — the run
+    # must qualify the bare table. Never mutate a validated instance instead
+    # (assignment would bypass validation and rot if validate_assignment lands).
+    config = SnowflakeConfig.model_construct(
+        account="acct",
+        user="u",
+        database="DB",
+        schema_=None,  # type: ignore[arg-type]  # deliberate: schema-less for sqlite
+        warehouse="WH",
+        role=None,
+        auth_type="password",
     )
     return SnowflakeCheckRunner(config, "pw"), created
 
@@ -662,23 +666,23 @@ def test_run_monitors_reuses_one_engine_across_calls(
 ) -> None:
     runner, created = _runner_with_counted_engine(monkeypatch, tmp_path)
     monitors = [MonitorSpec(kind="volume", config={"min_rows": 1, "max_rows": 10})]
-    # sqlite has no schemas — run over the bare table by clearing the fallback.
-    monkeypatch.setattr(runner._config, "schema_", None)
     first = runner.run_monitors(table="ORDERS", schema=None, monitors=monitors)
     second = runner.run_monitors(table="ORDERS", schema=None, monitors=monitors)
     assert first[0].success and second[0].success
     assert len(created) == 1  # ONE engine for the runner's lifetime, not per call
+    # The construction must carry the auth connect-args and the stale-connection
+    # guard — a fake that swallowed kwargs couldn't catch either regressing.
+    assert created[0]["connect_args"] == {}
+    assert created[0]["pool_pre_ping"] is True
     runner.close()
 
 
 def test_close_disposes_and_is_idempotent(monkeypatch: pytest.MonkeyPatch, tmp_path: Any) -> None:
     runner, created = _runner_with_counted_engine(monkeypatch, tmp_path)
-    monkeypatch.setattr(runner._config, "schema_", None)
     monitors = [MonitorSpec(kind="volume", config={"min_rows": 1, "max_rows": 10})]
     runner.run_monitors(table="ORDERS", schema=None, monitors=monitors)
     runner.close()
     runner.close()  # idempotent
-    assert runner._engine is None
     # A later use lazily rebuilds — close() must not brick the runner.
     runner.run_monitors(table="ORDERS", schema=None, monitors=monitors)
     assert len(created) == 2
@@ -706,3 +710,16 @@ def test_close_check_runner_helper_dispatches_and_noops() -> None:
     close_check_runner(with_close)
     assert with_close.closed == 1
     close_check_runner(object())  # no close() → silent no-op
+
+
+def test_close_check_runner_never_raises() -> None:
+    # close runs inside the run path's finally — a raising dispose() must never
+    # replace the in-flight result (it would skip incident sync/alerts or mask a
+    # dry-run's mapped error). Logged, swallowed.
+    from backend.app.datasources.registry import close_check_runner
+
+    class _ExplodingClose:
+        def close(self) -> None:
+            raise RuntimeError("dispose blew up")
+
+    close_check_runner(_ExplodingClose())  # must not raise

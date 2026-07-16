@@ -146,3 +146,52 @@ def test_connection_failure_propagates(tmp_path) -> None:  # type: ignore[no-unt
             catalog=None,
             monitors=[MonitorSpec(kind="volume", config={"min_rows": 0, "max_rows": 1})],
         )
+
+
+# ───────────────────────── LazyEngine (#427) ─────────────────────────
+
+
+def test_lazy_engine_builds_once_and_rebuilds_after_close() -> None:
+    from backend.app.datasources.sql import LazyEngine
+
+    built: list[object] = []
+
+    class _FakeEngine:
+        def __init__(self) -> None:
+            self.disposed = 0
+
+        def dispose(self) -> None:
+            self.disposed += 1
+
+    def factory() -> _FakeEngine:
+        eng = _FakeEngine()
+        built.append(eng)
+        return eng
+
+    lazy = LazyEngine(factory)
+    first = lazy.get()
+    assert lazy.get() is first  # one build, shared
+    assert len(built) == 1
+
+    lazy.close()
+    lazy.close()  # idempotent — dispose exactly once
+    assert first.disposed == 1
+
+    second = lazy.get()  # a closed holder lazily rebuilds
+    assert second is not first
+    assert len(built) == 2
+    lazy.close()
+
+
+def test_lazy_engine_close_before_use_never_builds() -> None:
+    from backend.app.datasources.sql import LazyEngine
+
+    built: list[object] = []
+
+    def factory() -> object:
+        built.append(object())
+        return built[-1]
+
+    lazy = LazyEngine(factory)
+    lazy.close()
+    assert built == []

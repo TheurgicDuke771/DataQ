@@ -277,6 +277,10 @@ def test_gx_read_and_monitors_share_one_engine(
     )
     assert len(outcomes) == 1
     assert len(created) == 1  # ONE engine across the GX read AND the monitor path
+    assert created[0].endswith("uc.sqlite") or created[0].startswith("databricks")  # url recorded
     runner.close()
-    assert runner._engine is None
     runner.close()  # idempotent
+    # After close a later use lazily rebuilds — never a bricked runner.
+    runner._read_table(table="orders", schema=None)
+    assert len(created) == 2
+    runner.close()

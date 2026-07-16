@@ -31,7 +31,7 @@ from backend.app.datasources.flatfile import BatchNotFoundError
 from backend.app.datasources.registry import (
     UnsupportedConnectionTypeError,
     build_check_runner,
-    close_check_runner,
+    owned_runner,
 )
 from backend.app.db.models import Connection
 from backend.app.services import run_target
@@ -138,9 +138,9 @@ def dry_run_check(
             detail={"reason": classify_failure_reason(exc)},
         ) from exc
 
-    # The runner exists from here — release its shared engine pool (#427)
-    # whatever path the dry run takes.
-    try:
+    # The runner exists from here — `owned_runner` releases its shared engine
+    # pool (#427) on every exit path of the dry run.
+    with owned_runner(runner):
         # Materialize a flat-file batch target to a concrete file (lists the store) —
         # a no-op for SQL / UC / literal flat-file targets. Batch-not-found is "no data
         # yet", a clean 422; a bad credential / unreachable store while listing is a 502.
@@ -206,5 +206,3 @@ def dry_run_check(
             observed_value=observed,
             expected_value=sanitize_json(check_outcome.expected_value),
         )
-    finally:
-        close_check_runner(runner)
