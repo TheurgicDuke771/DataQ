@@ -393,6 +393,8 @@ class IcebergCheckRunner:
             column = spec.config["column"]
             try:
                 bound, reason = _freshness_from_file_bounds(table, column)
+            except MonitorConfigError:
+                raise  # unknown column = the check's own config error, not a degrade
             except Exception as exc:
                 bound, reason = None, f"metadata unavailable ({type(exc).__name__})"
             if reason is None:
@@ -435,15 +437,40 @@ def _summary_int(summary: Any, key: str) -> int | None:
         return None
 
 
+_DELETE_TOTAL_KEYS = ("total-delete-files", "total-position-deletes", "total-equality-deletes")
+
+
+def _row_delete_guard(summary: Any) -> str | None:
+    """``None`` when the summary PROVES the snapshot has zero row-level deletes;
+    otherwise the degrade reason. All three ``total-*`` fields are optional and
+    engine-written, so an ABSENT field is "cannot prove", never "no deletes" —
+    with live delete files, summary ``total-records`` over-counts (it nets only
+    data-file records; verified against pyiceberg's ``_update_totals``) and a
+    column upper bound may belong to a deleted row. Both metadata paths refuse
+    to answer unless proven clean."""
+    for key in _DELETE_TOTAL_KEYS:
+        raw = _summary_get(summary, key)
+        if raw is None:
+            return f"snapshot summary omits {key} — cannot prove no row-level deletes"
+        count = _summary_int(summary, key)
+        if count is None:
+            return f"unparseable snapshot summary field {key}"
+        if count > 0:
+            return f"row-level deletes present ({key}={count})"
+    return None
+
+
 def _volume_from_snapshot_summary(table: Any) -> tuple[int | None, dict[str, Any]]:
     """``(total_records, delta_detail)`` from the current snapshot's summary (#859).
 
     ``total-records`` is the row count the engine recorded at commit time — the
-    volume answer with zero data-file scanning. ``None`` when the table has no
-    current snapshot or the engine omitted the field (it is optional): the caller
-    falls back to the scan. The per-commit ``added-records``/``deleted-records``
-    delta rides along as observed detail when present — a row-count scan can
-    never provide it.
+    volume answer with zero data-file scanning — but it nets only DATA-file
+    records: on a merge-on-read table with live position/equality deletes it
+    over-counts (a false-green vs the delete-aware ``scan().count()``), so the
+    delete guard applies here exactly as it does to freshness. ``None`` → the
+    caller falls back to the scan. The per-commit ``added-records``/
+    ``deleted-records`` delta rides along as observed detail when present — a
+    row-count scan can never provide it.
     """
     snapshot = table.current_snapshot()
     if snapshot is None:
@@ -452,6 +479,9 @@ def _volume_from_snapshot_summary(table: Any) -> tuple[int | None, dict[str, Any
     total = _summary_int(summary, "total-records")
     if total is None:
         return None, {"fallback_reason": "snapshot summary lacks total-records"}
+    guard = _row_delete_guard(summary)
+    if guard is not None:
+        return None, {"fallback_reason": guard}
     delta: dict[str, Any] = {}
     added = _summary_int(summary, "added-records")
     deleted = _summary_int(summary, "deleted-records")
@@ -497,19 +527,23 @@ def _freshness_from_file_bounds(table: Any, column: str) -> tuple[Any, str | Non
     snapshot = table.current_snapshot()
     if snapshot is None:
         return None, "table has no current snapshot"
-    summary = getattr(snapshot, "summary", None)
-    for key in ("total-delete-files", "total-position-deletes", "total-equality-deletes"):
-        raw = _summary_get(summary, key)
-        if raw is None:
-            continue
-        count = _summary_int(summary, key)
-        if count is None:
-            return None, f"unparseable snapshot summary field {key}"
-        if count > 0:
-            return None, f"row-level deletes present ({key}={count})"
-    field = table.schema().find_field(column)  # unknown column raises → per-check error (#122)
+    guard = _row_delete_guard(getattr(snapshot, "summary", None))
+    if guard is not None:
+        return None, guard
+    schema = table.schema()  # metadata unavailability (non-standard table) → caller degrades
+    try:
+        field = schema.find_field(column)
+    except Exception as exc:
+        # A real schema that lacks the column is the CHECK's config error (#122),
+        # not a metadata degrade — relabeling it "metadata unavailable" and letting
+        # the fallback scan re-raise would make the outcome right by coincidence.
+        raise MonitorConfigError(f"unknown freshness column {column!r}") from exc
     max_bound: Any = None
     for task in table.scan(selected_fields=(column,)).plan_files():
+        # The authoritative per-task delete signal — belt to the summary guard's
+        # braces (a writer could omit the summary fields yet attach delete files).
+        if getattr(task, "delete_files", None):
+            return None, "scan tasks carry row-level delete files"
         bounds = getattr(task.file, "upper_bounds", None) or {}
         raw_bound = bounds.get(field.field_id)
         if raw_bound is None:

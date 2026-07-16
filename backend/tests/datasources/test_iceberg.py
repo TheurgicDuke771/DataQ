@@ -624,6 +624,15 @@ class _FakeSnapshot:
         self.summary = summary
 
 
+# Proof-of-no-deletes: the metadata paths require all three optional totals
+# PRESENT and zero — absence means "cannot prove", which must degrade (#879 review).
+_NO_DELETES = {
+    "total-delete-files": "0",
+    "total-position-deletes": "0",
+    "total-equality-deletes": "0",
+}
+
+
 def _bounds_file(field_id: int, raw: bytes | None) -> Any:
     from types import SimpleNamespace
 
@@ -635,7 +644,9 @@ def test_volume_answers_from_snapshot_summary_without_scanning(
 ) -> None:
     # The DataFrame deliberately DISAGREES with the summary (1 row vs 50) — the
     # metadata must win, proving no scan happened; scan_calls pins it to zero.
-    snapshot = _FakeSnapshot({"total-records": "50", "added-records": "7", "deleted-records": "2"})
+    snapshot = _FakeSnapshot(
+        {"total-records": "50", "added-records": "7", "deleted-records": "2", **_NO_DELETES}
+    )
     fake = _FakeTable(pd.DataFrame({"id": [1]}), snapshot=snapshot)
     runner = IcebergCheckRunner(config=IcebergConfig.model_validate(_REST_CONFIG), secret="tok")
     monkeypatch.setattr(runner, "_load_table", lambda identifier: fake)
@@ -699,7 +710,7 @@ def test_freshness_answers_from_file_bounds_without_scanning(
     # The DataFrame holds a FRESHER row than any bound — metadata must win.
     fake = _FakeTable(
         pd.DataFrame({"loaded_at": [datetime.now(UTC)]}),
-        snapshot=_FakeSnapshot({"total-delete-files": "0"}),
+        snapshot=_FakeSnapshot(dict(_NO_DELETES)),
         schema=schema,
         files=files,
     )
@@ -750,7 +761,7 @@ def test_freshness_falls_back_when_a_file_lacks_bounds(
     recent = datetime.now(UTC) - timedelta(hours=1)
     fake = _FakeTable(
         pd.DataFrame({"loaded_at": [recent]}),
-        snapshot=_FakeSnapshot({"total-delete-files": "0"}),
+        snapshot=_FakeSnapshot(dict(_NO_DELETES)),
         schema=schema,
         files=[_bounds_file(field_id, None)],  # stats disabled on this file
     )
@@ -776,7 +787,7 @@ def test_freshness_empty_snapshot_is_operational_error_without_scan(
     schema, _ = _tz_field_schema()
     fake = _FakeTable(
         pd.DataFrame({"loaded_at": pd.Series([], dtype="datetime64[ns, UTC]")}),
-        snapshot=_FakeSnapshot({"total-delete-files": "0"}),
+        snapshot=_FakeSnapshot(dict(_NO_DELETES)),
         schema=schema,
         files=[],
     )
@@ -789,3 +800,109 @@ def test_freshness_empty_snapshot_is_operational_error_without_scan(
     )
     assert outcome.errored is True  # can't assess freshness with no rows (#122)
     assert fake.scan_calls == 0
+
+
+def test_volume_falls_back_when_row_level_deletes_present(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Summary total-records nets only DATA-file records — with live position
+    # deletes it over-counts, and trusting it would false-PASS a volume floor.
+    fake = _FakeTable(
+        pd.DataFrame({"id": [1, 2, 3]}),  # the delete-aware truth: 3 rows
+        snapshot=_FakeSnapshot(
+            {"total-records": "1000000", **_NO_DELETES, "total-position-deletes": "400000"}
+        ),
+    )
+    runner = IcebergCheckRunner(config=IcebergConfig.model_validate(_REST_CONFIG), secret="tok")
+    monkeypatch.setattr(runner, "_load_table", lambda identifier: fake)
+    [outcome] = runner.run_monitors(
+        table="sales.orders",
+        schema=None,
+        monitors=[MonitorSpec("volume", {"min_rows": 1, "max_rows": 100})],
+    )
+    assert outcome.observed_value is not None
+    assert outcome.observed_value["row_count"] == 3  # the scan answered, not the summary
+    assert outcome.observed_value["source"] == "scan-fallback"
+    assert "total-position-deletes=400000" in outcome.observed_value["fallback_reason"]
+
+
+def test_volume_falls_back_when_delete_totals_absent(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The total-*-deletes fields are OPTIONAL: absent means "cannot prove no
+    # deletes", never "no deletes" — the metadata answer must be refused.
+    fake = _FakeTable(
+        pd.DataFrame({"id": [1, 2, 3]}),
+        snapshot=_FakeSnapshot({"total-records": "50"}),  # no delete fields at all
+    )
+    runner = IcebergCheckRunner(config=IcebergConfig.model_validate(_REST_CONFIG), secret="tok")
+    monkeypatch.setattr(runner, "_load_table", lambda identifier: fake)
+    [outcome] = runner.run_monitors(
+        table="sales.orders",
+        schema=None,
+        monitors=[MonitorSpec("volume", {"min_rows": 1, "max_rows": 100})],
+    )
+    assert outcome.observed_value is not None
+    assert outcome.observed_value["row_count"] == 3
+    assert outcome.observed_value["source"] == "scan-fallback"
+    assert "cannot prove no row-level deletes" in outcome.observed_value["fallback_reason"]
+
+
+def test_freshness_falls_back_when_scan_tasks_carry_delete_files(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Belt to the summary guard's braces: covers a summary that CLAIMS clean
+    # while scan tasks still carry delete files.
+    from types import SimpleNamespace
+
+    from pyiceberg.conversions import to_bytes
+    from pyiceberg.types import TimestamptzType
+
+    schema, field_id = _tz_field_schema()
+    stale = datetime.now(UTC) - timedelta(hours=30)
+    recent = datetime.now(UTC) - timedelta(hours=2)
+    task = SimpleNamespace(
+        file=SimpleNamespace(
+            upper_bounds={field_id: to_bytes(TimestamptzType(), int(stale.timestamp() * 1_000_000))}
+        ),
+        delete_files=[object()],  # live row-level deletes on this task
+    )
+    fake = _FakeTable(
+        pd.DataFrame({"loaded_at": [recent]}),
+        snapshot=_FakeSnapshot(dict(_NO_DELETES)),
+        schema=schema,
+        files=[task],
+    )
+    runner = IcebergCheckRunner(config=IcebergConfig.model_validate(_REST_CONFIG), secret="tok")
+    monkeypatch.setattr(runner, "_load_table", lambda identifier: fake)
+    [outcome] = runner.run_monitors(
+        table="sales.orders",
+        schema=None,
+        monitors=[MonitorSpec("freshness", {"column": "loaded_at"})],
+    )
+    assert outcome.metric_value == pytest.approx(2.0, abs=0.1)  # scan truth, not the bound
+    assert outcome.observed_value is not None
+    assert outcome.observed_value["fallback_reason"] == "scan tasks carry row-level delete files"
+
+
+def test_freshness_unknown_column_on_real_schema_is_config_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A schema that provably lacks the column is the CHECK's error (#122) — never
+    # relabeled "metadata unavailable" and left for the fallback scan to trip on.
+    schema, _ = _tz_field_schema()
+    fake = _FakeTable(
+        pd.DataFrame({"loaded_at": [datetime.now(UTC)]}),
+        snapshot=_FakeSnapshot(dict(_NO_DELETES)),
+        schema=schema,
+        files=[],
+    )
+    runner = IcebergCheckRunner(config=IcebergConfig.model_validate(_REST_CONFIG), secret="tok")
+    monkeypatch.setattr(runner, "_load_table", lambda identifier: fake)
+    [outcome] = runner.run_monitors(
+        table="sales.orders",
+        schema=None,
+        monitors=[MonitorSpec("freshness", {"column": "no_such_col"})],
+    )
+    assert outcome.errored is True
+    assert outcome.error_message is not None
+    assert "unknown freshness column" in outcome.error_message
+    assert fake.scan_calls == 0  # the config error never reached the data path
