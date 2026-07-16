@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "3b516ed8138b",
+  "strategy": "manual-commit",
+  "branch": "refactor/issue-726-monitor-kind-registry",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/datasources/iceberg.py",
+    "backend/app/datasources/monitors.py",
+    "backend/app/datasources/snowflake.py",
+    "backend/app/datasources/unity_catalog.py",
+    "backend/app/services/run_service.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/3b/516ed8138b/0/metadata.json",
+      "transcript": "/3b/516ed8138b/0/full.jsonl",
+      "compact_transcript": "/3b/516ed8138b/0/transcript.jsonl",
+      "content_hash": "/3b/516ed8138b/0/content_hash.txt",
+      "prompt": "/3b/516ed8138b/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 762,
+    "cache_creation_tokens": 1671477,
+    "cache_read_tokens": 145764490,
+    "output_tokens": 294295,
+    "api_call_count": 384
+  }
+}
