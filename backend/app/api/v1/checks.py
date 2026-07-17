@@ -22,12 +22,18 @@ from sqlalchemy.orm import Session
 
 from backend.app.api.v1._base import ApiModel
 from backend.app.core.auth import get_current_user
+from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore, get_secret_store
+from backend.app.datasources.monitors import STATEFUL_MONITOR_KINDS
 from backend.app.db.models import Connection, User
 from backend.app.db.session import get_db
 from backend.app.services import check_service as svc
 from backend.app.services import dryrun_service as dryrun
+from backend.app.services import schema_drift as schema_drift_service
+from backend.app.services.check_service import CheckConfigInvalidError
 from backend.app.services.suite_authz import require_permission
+
+log = get_logger(__name__)
 
 router = APIRouter(tags=["checks"])
 
@@ -177,6 +183,36 @@ def delete_check(
 ) -> None:
     require_permission(db, suite_id, current_user.id, minimum="edit")
     svc.delete_check(db, suite_id, check_id)
+
+
+# ───────────────────────── schema-drift re-baseline (#592) ─────────
+
+
+@router.post(
+    "/suites/{suite_id}/checks/{check_id}/rebaseline",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Drop a schema_drift check's stored baseline (recaptured on the next run)",
+)
+def rebaseline_check(
+    suite_id: uuid.UUID,
+    check_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> None:
+    """Deliberately a delete-then-recapture-next-run, not an immediate recapture:
+    recapturing here would run datasource introspection on the API request
+    thread. 204 whether or not a baseline existed (idempotent); 422 for a
+    non-stateful kind (nothing to re-baseline)."""
+    require_permission(db, suite_id, current_user.id, minimum="edit")
+    check = svc.get_check(db, suite_id, check_id)
+    if check.kind not in STATEFUL_MONITOR_KINDS:
+        raise CheckConfigInvalidError(
+            f"only stateful monitor checks hold a baseline; {check.kind!r} does not",
+            detail={"kind": check.kind},
+        )
+    schema_drift_service.rebaseline(db, check)
+    db.commit()
+    log.info("check_rebaselined", check_id=str(check_id), suite_id=str(suite_id))
 
 
 # ───────────────────────── alert snooze (suppression) ──────────────

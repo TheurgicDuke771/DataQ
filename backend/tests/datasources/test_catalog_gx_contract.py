@@ -67,7 +67,7 @@ def _expectation_params() -> list[Any]:
 def test_fixture_is_present_and_nonempty() -> None:
     """A gutted fixture must fail loudly, not vacuously pass the loops below."""
     assert len(_expectations()) >= 8
-    assert len(_monitors()) == 2
+    assert len(_monitors()) == 3  # freshness, volume, schema_drift (#592)
     assert len(_comparisons()) == 2  # records + columns grains (#799)
 
 

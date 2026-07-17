@@ -24,22 +24,25 @@ export type ConfigFieldType = 'string' | 'number' | 'list' | 'sql';
 
 /** The check `kind` (ADR 0012). `expectation` (incl. custom-SQL) is GX; the
  *  monitor kinds run a scalar SQL aggregate instead. Sent to the backend. */
-export type CheckKind = 'expectation' | 'freshness' | 'volume' | 'comparison';
+export type CheckKind = 'expectation' | 'freshness' | 'volume' | 'schema_drift' | 'comparison';
 
 /**
  * Expectation categories — the GX-Cloud-style classification the check editor
  * groups by. v1 ships value-level GX expectations + custom-SQL (ADR 0019) + the
- * freshness/volume monitor kinds (ADR 0012, pulled into v1). `Schema drift` stays
- * a reserved-only category (surfaced disabled on the dedicated page).
+ * freshness/volume monitor kinds (ADR 0012, pulled into v1); `Schema` carries the
+ * schema_drift baseline-diff kind (#592) — datasource-agnostic, so it is never
+ * gated by connection type (the executor introspects warehouses, flat files, and
+ * Iceberg metadata alike).
  */
 export type ExpectationCategory =
-  'Column values' | 'Table shape' | 'Freshness' | 'Volume' | 'Custom SQL' | 'Comparison';
+  'Column values' | 'Table shape' | 'Freshness' | 'Volume' | 'Schema' | 'Custom SQL' | 'Comparison';
 
 export const EXPECTATION_CATEGORIES: ExpectationCategory[] = [
   'Column values',
   'Table shape',
   'Freshness',
   'Volume',
+  'Schema',
   'Custom SQL',
   'Comparison',
 ];
@@ -265,6 +268,26 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
       // No max: a shortfall caps at 100% but a spike is unbounded (e.g. 10× the
       // ceiling = 900% deviation), so the band inputs must allow > 100.
       help: 'Band the % the row count falls outside [min, max] (either direction; higher = worse; a spike can exceed 100%). Leave blank for a binary in-range pass/fail.',
+    },
+  },
+  {
+    type: 'monitor:schema_drift',
+    kind: 'schema_drift',
+    label: 'Schema drift',
+    description:
+      'Did the table\u2019s column shape change? Diffs the live columns (names + types) against a baseline captured on the first run. Works on every datasource \u2014 warehouses via information_schema, flat files via the file header/footer, Iceberg from table metadata.',
+    category: 'Schema',
+    fields: [
+      {
+        name: 'ignore_columns',
+        label: 'Ignored columns',
+        type: 'list',
+        optional: true,
+        help: 'Columns excluded from the diff (housekeeping/audit columns that churn by design). Matched case-insensitively.',
+      },
+    ],
+    thresholds: {
+      help: 'Band the drifted-column count (added + removed + type-changed; higher = worse). Leave blank for a binary no-drift pass/fail.',
     },
   },
   {

@@ -79,6 +79,13 @@
     ]
   },
   {
+    "type": "monitor:schema_drift",
+    "kind": "schema_drift",
+    "fields": [
+      "ignore_columns"
+    ]
+  },
+  {
     "type": "unexpected_rows_expectation",
     "kind": "expectation",
     "fields": [

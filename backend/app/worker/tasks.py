@@ -28,6 +28,7 @@ from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore, get_secret_store
 from backend.app.datasources.flatfile import BatchNotFoundError
+from backend.app.datasources.monitors import STATEFUL_MONITOR_KINDS
 from backend.app.datasources.registry import build_check_runner, owned_runner
 from backend.app.db.models import (
     ORCHESTRATION_PROVIDERS,
@@ -53,6 +54,7 @@ from backend.app.services import (
     run_dispatch,
     run_service,
     run_target,
+    schema_drift,
     suite_service,
 )
 from backend.app.services.failure_classifier import classify_failure_reason
@@ -190,6 +192,20 @@ def _run_suite(session: Session, *, run_id: uuid.UUID) -> str:
                 secret_store=get_secret_store(),
             )
 
+        # Stateful monitor kinds (#592): the baseline-diff executor owns the
+        # session + baseline store, which runners never see. Built only when the
+        # suite actually has a stateful check.
+        stateful_monitor_executor = None
+        if any(c.kind in STATEFUL_MONITOR_KINDS for c in checks):
+            stateful_monitor_executor = schema_drift.build_schema_drift_executor(
+                session,
+                connection=connection,
+                target_table=table,
+                target_schema=target.schema,
+                target_catalog=target.catalog,
+                secret_store=get_secret_store(),
+            )
+
         run_service.execute_run(
             session,
             run=run,
@@ -199,6 +215,7 @@ def _run_suite(session: Session, *, run_id: uuid.UUID) -> str:
             schema=target.schema,
             index_columns=index_columns,
             comparison_executor=comparison_executor,
+            stateful_monitor_executor=stateful_monitor_executor,
         )
         return str(run.status)
 

@@ -39,6 +39,7 @@ from backend.app.datasources.sql import is_sql_identifier
 
 FRESHNESS = "freshness"
 VOLUME = "volume"
+SCHEMA_DRIFT = "schema_drift"
 
 # A monitor's `expectation_type` slot records the kind (the column is GX-shaped but
 # monitors aren't GX); `monitor:<kind>` keeps it self-describing on the result row.
@@ -255,6 +256,49 @@ def _volume_outcome(scalar: Any, config: dict[str, Any], now: datetime) -> Check
     )
 
 
+def _validate_schema_drift(config: dict[str, Any]) -> None:
+    """schema_drift needs no required config; ``ignore_columns`` (optional) must
+    be a list of plain identifiers — they're compared against introspected names,
+    never interpolated into SQL, but the allowlist keeps garbage out early."""
+    ignore = config.get("ignore_columns")
+    if ignore is None:
+        return
+    if not isinstance(ignore, list):
+        raise MonitorConfigError(f"ignore_columns must be a list of column names: {ignore!r}")
+    for name in ignore:
+        _ident(name, what="ignored column")
+
+
+def _schema_drift_outcome(scalar: Any, config: dict[str, Any], now: datetime) -> CheckOutcome:
+    """Band a schema diff (#592). ``scalar`` is the diff payload the stateful
+    executor computed (`services/schema_drift.py` — it owns the baseline store and
+    introspection; this stays DB-free): either a first-run capture notice or the
+    added/removed/type_changed detail. ``metric_value`` = drifted-column count,
+    banded by the check's ADR-0016 thresholds like every other monitor metric."""
+    if not isinstance(scalar, dict):
+        raise MonitorConfigError(f"schema_drift expects a diff payload dict: {scalar!r}")
+    expectation_type = monitor_expectation_type(SCHEMA_DRIFT)
+    if scalar.get("baseline_captured"):
+        return CheckOutcome(
+            expectation_type=expectation_type,
+            success=True,  # nothing to compare yet — the baseline is the reference
+            metric_value=0.0,
+            observed_value=dict(scalar),
+            expected_value={"monitor": SCHEMA_DRIFT},
+        )
+    added = list(scalar.get("added", ()))
+    removed = list(scalar.get("removed", ()))
+    type_changed = list(scalar.get("type_changed", ()))
+    drifted = len(added) + len(removed) + len(type_changed)
+    return CheckOutcome(
+        expectation_type=expectation_type,
+        success=drifted == 0,  # binary fallback; thresholds band the count
+        metric_value=float(drifted),
+        observed_value=dict(scalar),
+        expected_value={"monitor": SCHEMA_DRIFT, "drifted_columns": 0},
+    )
+
+
 @dataclass(frozen=True)
 class MonitorKindStrategy:
     """One monitor kind's behavior behind the #726 registry.
@@ -275,6 +319,11 @@ MONITOR_KIND_REGISTRY: dict[str, MonitorKindStrategy] = {
         FRESHNESS, _validate_freshness, _freshness_outcome, _freshness_sql
     ),
     VOLUME: MonitorKindStrategy(VOLUME, _validate_volume, _volume_outcome, _volume_sql),
+    # Stateful (#592): no scalar-SQL form — the run path routes it through the
+    # baseline-diff executor in `services/schema_drift.py`, never run_monitors.
+    SCHEMA_DRIFT: MonitorKindStrategy(
+        SCHEMA_DRIFT, _validate_schema_drift, _schema_drift_outcome, None
+    ),
 }
 
 # Derived, never hand-maintained: the authoring allowlist (check_service) and the
@@ -286,6 +335,11 @@ MONITOR_KIND_REGISTRY: dict[str, MonitorKindStrategy] = {
 # visible (dispatchable but unauthorable/unroutable). Tests may monkeypatch the
 # registry for isolation; production code must not.
 MONITOR_KINDS = tuple(MONITOR_KIND_REGISTRY)
+# The run-path partition (#592): scalar kinds go to the runners' `run_monitors`
+# (gated by their advertised capability, #429); stateful kinds go to the
+# session-aware executor the worker injects (they need the baseline store).
+SCALAR_MONITOR_KINDS = tuple(k for k, s in MONITOR_KIND_REGISTRY.items() if s.build_sql is not None)
+STATEFUL_MONITOR_KINDS = tuple(k for k, s in MONITOR_KIND_REGISTRY.items() if s.build_sql is None)
 
 
 def _strategy(kind: str) -> MonitorKindStrategy:
