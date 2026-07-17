@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "c56df6a990bc",
+  "strategy": "manual-commit",
+  "branch": "docs/adr-0036-connection-anchored-engines",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "CLAUDE.md",
+    "docs/adr/0036-connection-anchored-check-engines.md",
+    "docs/adr/README.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/c5/6df6a990bc/0/metadata.json",
+      "transcript": "/c5/6df6a990bc/0/full.jsonl",
+      "compact_transcript": "/c5/6df6a990bc/0/transcript.jsonl",
+      "content_hash": "/c5/6df6a990bc/0/content_hash.txt",
+      "prompt": "/c5/6df6a990bc/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 15,
+    "cache_creation_tokens": 25790,
+    "cache_read_tokens": 864756,
+    "output_tokens": 12259,
+    "api_call_count": 8
+  }
+}

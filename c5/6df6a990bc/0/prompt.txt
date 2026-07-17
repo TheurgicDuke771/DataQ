@@ -1,0 +1,4 @@
+* Refinement one. Yes. engine should be at check level, not suit level.
+* Refinement two. Yes. There should be an additional validation while creating connection to check if the platform native engines are available. If not, what is the limitation or what additional access we need to enable user to use the platform native capabilities. like granting access to a database or providing higher privilege to the dataq user. 
+* Refinement three. Yes. Agree. We should not duplicate the kind based on the engines. 
+* Refinement four. Yes. The check Lifecycle is tied to the connection. And when importing or exporting a check, user should be given a toast message that some of the checks needs platform native capabilities and might not work.
