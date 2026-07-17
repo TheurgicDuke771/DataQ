@@ -339,13 +339,21 @@ describe('Suites', () => {
     expect(screen.getByRole('button', { name: 'Snooze' })).toBeInTheDocument();
   });
 
-  it('hides snooze controls (but keeps the badge) for a view-only user', async () => {
+  it('hides snooze AND re-baseline controls (but keeps the badge) for a view-only user', async () => {
     // Snooze/unsnooze are edit-gated on the backend — a viewer must not be
     // offered a control that can only 403 (matches the sibling panels).
     const user = userEvent.setup();
     mockListConnections.mockResolvedValue([connection]);
     mockListSuites.mockResolvedValue([suite({ my_permission: 'view' })]);
-    mockListChecks.mockResolvedValue([check({ alert_snoozed_until: '2099-01-01T00:00:00Z' })]);
+    mockListChecks.mockResolvedValue([
+      check({ alert_snoozed_until: '2099-01-01T00:00:00Z' }),
+      check({
+        id: 'chk-drift',
+        name: 'drift',
+        kind: 'schema_drift',
+        expectation_type: 'monitor:schema_drift',
+      }),
+    ]);
 
     renderPage();
     await user.click(await screen.findByText('orders-suite'));
@@ -354,6 +362,8 @@ describe('Suites', () => {
     expect(screen.getByText(/Snoozed until/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Snooze' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Unsnooze' })).not.toBeInTheDocument();
+    // Re-baseline is edit-gated the same way (#592) — a viewer must never see it.
+    expect(screen.queryByRole('button', { name: 'Re-baseline' })).not.toBeInTheDocument();
   });
 
   it('deletes a suite via the detail panel after confirming', async () => {

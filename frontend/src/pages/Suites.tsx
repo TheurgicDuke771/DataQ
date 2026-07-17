@@ -475,7 +475,7 @@ function SuiteDetail({
       <ChecksList
         suiteId={suite.id}
         state={state}
-        canSnooze={canRun}
+        canEditChecks={canRun}
         onAdd={() => navigate(`/suites/${suite.id}/checks/new`)}
         onEdit={(check) => navigate(`/suites/${suite.id}/checks/${check.id}/edit`)}
         onChanged={reload}
@@ -518,16 +518,17 @@ const SNOOZE_TICK_MS = 60_000;
 function ChecksList({
   suiteId,
   state,
-  canSnooze,
+  canEditChecks,
   onAdd,
   onEdit,
   onChanged,
 }: {
   suiteId: string;
   state: AsyncState<Check[]>;
-  /** Edit capability — snooze/unsnooze are edit-gated on the backend, so the
-   *  controls hide for view-only users (matching the sibling panels). */
-  canSnooze: boolean;
+  /** Edit capability — snooze/unsnooze AND re-baseline (#592) are edit-gated
+   *  on the backend, so the controls hide for view-only users (matching the
+   *  sibling panels). */
+  canEditChecks: boolean;
   onAdd: () => void;
   onEdit: (check: Check) => void;
   onChanged: () => void;
@@ -582,6 +583,10 @@ function ChecksList({
           onChanged();
         } catch (err) {
           message.error(`Re-baseline failed: ${errorMessage(err)}`);
+          // Re-throw so antd keeps the confirm OPEN on failure — resolving here
+          // would close it exactly like a success (the #204 drift
+          // useConfirmDelete exists to prevent).
+          throw err;
         }
       },
     });
@@ -616,7 +621,7 @@ function ChecksList({
               actions={[
                 // Snooze/unsnooze are edit-gated (backend 403s a viewer), so the
                 // control renders only with the capability — like TriggersPanel.
-                ...(!canSnooze
+                ...(!canEditChecks
                   ? []
                   : isSnoozed(check, now)
                     ? [
@@ -648,7 +653,7 @@ function ChecksList({
                       ]),
                 // Re-baseline is schema_drift-only (the backend 422s other
                 // kinds) and edit-gated like snooze.
-                ...(canSnooze && check.kind === 'schema_drift'
+                ...(canEditChecks && check.kind === 'schema_drift'
                   ? [
                       <Button
                         key="rebaseline"
