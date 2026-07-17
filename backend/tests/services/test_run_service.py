@@ -214,6 +214,42 @@ def test_run_outcomes_rejects_capability_without_implementation() -> None:
         )
 
 
+def test_run_outcomes_stateful_kind_routes_to_injected_executor() -> None:
+    # schema_drift (#592) never reaches runner.run_monitors — it goes to the
+    # session-aware executor the worker injects (the comparison pattern).
+    runner = FakeRunner(outcome=SuiteOutcome(success=True, checks=[]))
+    seen: list[str] = []
+
+    def executor(check: Check) -> CheckOutcome:
+        seen.append(check.kind)
+        return CheckOutcome("monitor:schema_drift", success=True, metric_value=0.0)
+
+    [outcome] = run_service._run_outcomes(
+        runner,
+        table="T",
+        schema=None,
+        checks=[_monitor_check("schema_drift", {})],
+        stateful_monitor_executor=executor,
+    )
+    assert seen == ["schema_drift"]
+    assert outcome.metric_value == 0.0
+
+
+def test_run_outcomes_stateful_kind_without_executor_errors_per_check() -> None:
+    # No executor supplied (a caller that can't reach the baseline store) → the
+    # CHECK errors; siblings still run (#122), the run never raises.
+    runner = FakeRunner(outcome=SuiteOutcome(success=True, checks=[]))
+    [outcome] = run_service._run_outcomes(
+        runner,
+        table="T",
+        schema=None,
+        checks=[_monitor_check("schema_drift", {})],
+    )
+    assert outcome.errored is True
+    assert outcome.error_message is not None
+    assert "baseline-diff run path" in outcome.error_message
+
+
 def test_run_outcomes_gate_is_per_kind_not_per_runner() -> None:
     # Capability is a SET of kinds (#429 altitude note): a runner supporting only
     # freshness must reject a volume check by NAME, so stateful kinds (#592/#593)
@@ -232,10 +268,11 @@ def test_run_outcomes_gate_is_per_kind_not_per_runner() -> None:
 
 
 def test_run_outcomes_unsupported_kind_raises() -> None:
+    # `anomaly` (#593) is the one still-reserved kind with no run path.
     runner = FakeRunner(outcome=SuiteOutcome(success=True, checks=[]))
-    with pytest.raises(NotImplementedError, match="schema_drift"):
+    with pytest.raises(NotImplementedError, match="anomaly"):
         run_service._run_outcomes(
-            runner, table="T", schema=None, checks=[_monitor_check("schema_drift", {})]
+            runner, table="T", schema=None, checks=[_monitor_check("anomaly", {})]
         )
 
 

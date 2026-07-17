@@ -59,14 +59,16 @@ function renderPage() {
 afterEach(() => vi.clearAllMocks());
 
 describe('CheckNew', () => {
-  it('shows the datasource-agnostic categories plus the reserved (disabled) one', () => {
+  it('shows the datasource-agnostic categories (schema drift is real now, #592)', () => {
     renderPage();
     expect(screen.getByText('Column values')).toBeInTheDocument();
     expect(screen.getByText('Table shape')).toBeInTheDocument();
-    // Schema drift is still a reserved roadmap marker.
-    expect(screen.getByText('Schema drift')).toBeInTheDocument();
-    // Freshness/Volume are now real categories, but SQL-datasource-gated — with no
-    // connection loaded here they're hidden (no longer reserved cards either).
+    // Schema is a real, datasource-agnostic category (#592) — no reserved card left.
+    expect(screen.getByText('Schema')).toBeInTheDocument();
+    expect(screen.queryByText('Schema drift')).not.toBeInTheDocument();
+    expect(screen.queryByText('coming soon')).not.toBeInTheDocument();
+    // Freshness/Volume are real categories, but SQL-datasource-gated — with no
+    // connection loaded here they're hidden.
     expect(screen.queryByText('Freshness')).not.toBeInTheDocument();
     expect(screen.queryByText('Volume')).not.toBeInTheDocument();
   });

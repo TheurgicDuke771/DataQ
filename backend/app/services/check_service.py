@@ -35,6 +35,7 @@ from backend.app.core.logging import get_logger
 from backend.app.datasources.monitors import (
     FRESHNESS,
     MONITOR_KINDS,
+    STATEFUL_MONITOR_KINDS,
     MonitorConfigError,
     monitor_expectation_type,
     validate_monitor_config,
@@ -81,6 +82,12 @@ COMPARISON_EXPECTATION_TYPES = ("comparison:records", "comparison:columns")
 # SQL* — Iceberg is a native DataFrame read, not SQL-queryable), so the two stay
 # distinct. Kept in sync with the runners' `supported_monitor_kinds` capability (#429).
 MONITOR_CAPABLE_TYPES = frozenset({*SQL_QUERYABLE_TYPES, "iceberg"})
+
+# schema_drift (#592) introspects the target's column shape through the
+# baseline-diff executor (`services/schema_drift.py`) — not the runner — so it
+# also covers the flat-file datasources (Parquet footer / CSV header sample),
+# which have no `run_monitors` at all.
+SCHEMA_DRIFT_CAPABLE_TYPES = frozenset({*MONITOR_CAPABLE_TYPES, "adls_gen2", "s3"})
 
 
 class CheckNotFoundError(DataQError):
@@ -171,12 +178,11 @@ def validate_monitor_check(
     """Validate a freshness/volume monitor check at author time (create/update).
 
     Four gates, each a 422:
-    1. **Monitor-capable datasource only** — a monitor needs a datasource whose runner
-       implements `run_monitors` (`MONITOR_CAPABLE_TYPES`: the SQL datasources compute
-       the aggregate in-warehouse; Iceberg computes it natively). A monitor on a
-       flat-file suite would only fail at run time (its runner has no `run_monitors`),
-       so reject it up front. Broader than custom-SQL's `SQL_QUERYABLE_TYPES` — Iceberg
-       supports monitors but is not SQL-queryable.
+    1. **Monitor-capable datasource only** — a scalar monitor (freshness/volume)
+       needs a runner with `run_monitors` (`MONITOR_CAPABLE_TYPES`); a stateful
+       kind (schema_drift, #592) runs through the baseline-diff executor instead,
+       which also introspects flat files (`SCHEMA_DRIFT_CAPABLE_TYPES`). Rejecting
+       an unsupported pairing up front keeps the failure a 422, not a failed run.
     2. **expectation_type matches the kind** — a monitor's type is the canonical
        ``monitor:<kind>``. The run path keys off `kind`, so a mismatched/junk type
        would still execute but mislabel every result row (and could smuggle a
@@ -189,12 +195,15 @@ def validate_monitor_check(
        threshold is the inverse footgun (always fail). Require a positive fail-or-
        critical threshold so a freshness check bands meaningfully.
     """
-    if connection_type not in MONITOR_CAPABLE_TYPES:
+    capable = (
+        SCHEMA_DRIFT_CAPABLE_TYPES if kind in STATEFUL_MONITOR_KINDS else MONITOR_CAPABLE_TYPES
+    )
+    if connection_type not in capable:
         raise CheckConfigInvalidError(
             f"{kind} monitor checks require a monitor-capable datasource, not {connection_type!r}",
             detail={
                 "connection_type": connection_type,
-                "supported": sorted(MONITOR_CAPABLE_TYPES),
+                "supported": sorted(capable),
             },
         )
     expected_type = monitor_expectation_type(kind)
