@@ -123,9 +123,25 @@ def test_incremental_since_reads_only_newer_events() -> None:
     result = UnityCatalogLineageProvider().fetch_edges(
         conn, connection_config=_CONFIG, since=future
     )
-    assert conn.since_used == future  # the watermark was bound into the query
     assert result.edges == ()
     assert result.new_watermark == future  # carried forward, never regressed
+
+
+def test_incremental_bound_floor_is_watermark_minus_safety_window() -> None:
+    # The query re-scans a safety window BEFORE the watermark so a late-ingested row
+    # (event_time <= watermark, ingested after the last pull) is not lost to a strict
+    # `>`. The returned watermark still never regresses below `since`.
+    from backend.app.lineage.warehouse_unity_catalog import _WATERMARK_SAFETY
+
+    # A mark AFTER every event: the safety window (6h) still doesn't reach the July
+    # payload, so nothing is re-read and the watermark stays put — proving both the
+    # floor offset and the never-regress guarantee in one case.
+    mark = datetime(2027, 1, 1, tzinfo=UTC)
+    conn = _FakeConn()
+    result = UnityCatalogLineageProvider().fetch_edges(conn, connection_config=_CONFIG, since=mark)
+    assert conn.since_used == mark - _WATERMARK_SAFETY  # re-scan window applied to the query
+    assert result.new_watermark == mark  # but the watermark itself never regressed
+    assert result.edges == ()
 
 
 def test_is_incremental_flag_is_true() -> None:

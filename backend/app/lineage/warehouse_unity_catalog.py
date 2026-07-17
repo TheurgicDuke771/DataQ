@@ -54,6 +54,14 @@ _TABLE_TYPES = frozenset({"TABLE", "VIEW", "MATERIALIZED_VIEW", "STREAMING_TABLE
 # system.access.table_lineage retains 365d, so a first pull is bounded regardless.
 _DEFAULT_LOOKBACK_DAYS = 365
 
+# Safety re-scan window subtracted from the persisted watermark on each incremental
+# pull. system.access.table_lineage ingests with ~1-2h lag, so a statement whose
+# event_time is <= the last watermark can be INGESTED after the pull that set it — a
+# strict `> watermark` would miss it forever. Re-reading a bounded window before the
+# watermark closes that gap; the edge upsert is idempotent (ON CONFLICT bumps
+# last_seen), so re-reads are harmless. 6h comfortably exceeds the documented lag.
+_WATERMARK_SAFETY = timedelta(hours=6)
+
 
 class UnityCatalogLineageProvider:
     """`WarehouseLineageProvider` for Unity Catalog via ``system.access.table_lineage``."""
@@ -116,11 +124,13 @@ class UnityCatalogLineageProvider:
         the max ``event_time`` observed — the new watermark the caller persists. A pull
         with no new rows returns ``(dedupe([]), since)`` so the watermark never regresses.
         """
-        # A concrete, BOUND floor (never a SQL expression as a param value): the caller's
-        # watermark, or now-minus-retention on a first pull. event_time is compared with a
-        # bound timestamp — no interpolation, no injection surface.
+        # A concrete, BOUND floor (never a SQL expression as a param value): event_time
+        # is compared with a bound timestamp — no interpolation, no injection surface.
+        # An incremental pull re-scans a safety window BEFORE the watermark so a
+        # late-ingested row (event_time <= watermark, ingested after the last pull) is
+        # not lost to a strict `>`; a first pull reads from the retention floor.
         floor = (
-            since
+            since - _WATERMARK_SAFETY
             if since is not None
             else datetime.now(UTC) - timedelta(days=_DEFAULT_LOOKBACK_DAYS)
         )
