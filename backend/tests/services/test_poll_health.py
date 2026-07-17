@@ -248,6 +248,7 @@ class TestWarehouseLineageStatusStopsLying:
         status = warehouse_lineage_status(db_session)
         assert len(status) == 1
         assert status[0].connection_id == conn.id
+        assert status[0].degraded_reason is not None
         assert "view-level" in status[0].degraded_reason
         assert status[0].last_error is None
 
