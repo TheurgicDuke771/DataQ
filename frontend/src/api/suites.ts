@@ -198,6 +198,12 @@ export async function clearCheckSnooze(suiteId: string, checkId: string): Promis
   return data;
 }
 
+/** Drop a schema_drift check's stored baseline — the NEXT run recaptures it from
+ *  the live target (#592; edit-gated; 422 for non-stateful kinds). */
+export async function rebaselineCheck(suiteId: string, checkId: string): Promise<void> {
+  await api.post(`/suites/${suiteId}/checks/${checkId}/rebaseline`);
+}
+
 /**
  * Mirrors the backend `CheckVersionRead` — one immutable snapshot in a check's
  * history (#280). `changed_by_name` is the author's display name (or email),
