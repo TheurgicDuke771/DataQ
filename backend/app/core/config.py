@@ -64,6 +64,15 @@ class Settings(BaseSettings):
     lineage_provider: str = ""
     marquez_url: str | None = None
 
+    # Warehouse-native lineage pull (ADR 0034, #858) — dark by default. When true, the
+    # beat task refreshes `lineage_edges` for every Snowflake / Unity Catalog connection
+    # straight from the warehouse's own lineage views (Snowflake OBJECT_DEPENDENCIES /
+    # ACCESS_HISTORY; UC system.access.table_lineage) — no dbt/manifest hop. Off by
+    # default because it queries ACCOUNT_USAGE / system.access, which need a grant the
+    # connection's principal may not have; turn it on once those grants are in place.
+    #   WAREHOUSE_LINEAGE_ENABLED=true
+    warehouse_lineage_enabled: bool = False
+
     sample_failures_retention_days: int = 30
 
     # Stuck-run reaper (#309): a run committed `queued` (before `send_task`) — or
