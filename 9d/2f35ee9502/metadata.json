@@ -3,7 +3,7 @@
   "checkpoint_id": "9d2f35ee9502",
   "strategy": "manual-commit",
   "branch": "docs/ledger-858-warehouse-lineage-build",
-  "checkpoints_count": 1,
+  "checkpoints_count": 2,
   "files_touched": [
     "docs/progress.md"
   ],
@@ -14,13 +14,20 @@
       "compact_transcript": "/9d/2f35ee9502/0/transcript.jsonl",
       "content_hash": "/9d/2f35ee9502/0/content_hash.txt",
       "prompt": "/9d/2f35ee9502/0/prompt.txt"
+    },
+    {
+      "metadata": "/9d/2f35ee9502/1/metadata.json",
+      "transcript": "/9d/2f35ee9502/1/full.jsonl",
+      "compact_transcript": "/9d/2f35ee9502/1/transcript.jsonl",
+      "content_hash": "/9d/2f35ee9502/1/content_hash.txt",
+      "prompt": ""
     }
   ],
   "token_usage": {
-    "input_tokens": 1720,
-    "cache_creation_tokens": 6340204,
-    "cache_read_tokens": 483281479,
-    "output_tokens": 600702,
-    "api_call_count": 869
+    "input_tokens": 1725,
+    "cache_creation_tokens": 6343458,
+    "cache_read_tokens": 483644216,
+    "output_tokens": 603962,
+    "api_call_count": 872
   }
 }
