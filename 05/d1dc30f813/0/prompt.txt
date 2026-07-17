@@ -1,0 +1,9 @@
+triage 12 dependabot PRs. Then start on #858 spike
+
+---
+
+do the local db one first then build on the spike result
+
+---
+
+continue...

@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "05d1dc30f813",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-858-warehouse-lineage-ui",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/05/d1dc30f813/0/metadata.json",
+      "transcript": "/05/d1dc30f813/0/full.jsonl",
+      "compact_transcript": "/05/d1dc30f813/0/transcript.jsonl",
+      "content_hash": "/05/d1dc30f813/0/content_hash.txt",
+      "prompt": "/05/d1dc30f813/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1630,
+    "cache_creation_tokens": 6239207,
+    "cache_read_tokens": 461652873,
+    "output_tokens": 577031,
+    "api_call_count": 824
+  }
+}
