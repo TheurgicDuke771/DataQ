@@ -123,13 +123,30 @@ class Settings(BaseSettings):
     rate_limit_enabled: bool = True
     rate_limit_authenticated_per_minute: int = 300  # per sha256(bearer) bucket
     rate_limit_unauthenticated_per_minute: int = 120  # per client-IP bucket
-    rate_limit_webhook_per_minute: int = 120  # per client-IP, /api/v1/orchestration/events/*
+    rate_limit_webhook_per_minute: int = (
+        120  # per provider + client-IP bucket, /api/v1/orchestration/events/* (#785) —
+        # each provider (adf/airflow/dbt) has its own bucket at this cap, NOT a
+        # per-IP total; the total is rate_limit_webhook_ip_per_minute below.
+    )
+    rate_limit_webhook_ip_per_minute: int = (
+        240  # per-IP ceiling across ALL webhook buckets from one IP (#785) — bounds
+        # the aggregate a single IP can spend across provider buckets.
+    )
     rate_limit_ip_per_minute: int = (
         1200  # per-IP ceiling across all bearer buckets (rotated-token backstop)
     )
     rate_limit_xff_trusted_hops: int = (
         1  # count of trusted proxies appending XFF; pick entry hops-from-right
     )
+    # Per-IP buckets key on an address PREFIX, not the full address (#789): a
+    # client egressing through a rotating NAT/proxy pool spreads requests across
+    # many /32s in one allocation, so no single full-address bucket ever fills —
+    # observed live (a 200-request burst landed on 11 distinct /24-pool IPs, none
+    # near the cap). Grouping by prefix makes the pool share one bucket. Trade-off:
+    # a prefix that legitimately hosts many independent clients (CGNAT) shares the
+    # cap — tune the masks per deployment. /32 and /128 disable grouping.
+    rate_limit_ipv4_prefix: int = Field(default=24, ge=8, le=32)
+    rate_limit_ipv6_prefix: int = Field(default=64, ge=32, le=128)
 
     # ── Comparison checks (ADR 0015) ─────────────────────────────────────────
     # Default row cap per comparison side. Both sides materialize in worker

@@ -21,7 +21,7 @@ real credentials.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, ClassVar
 from urllib.parse import quote_plus, urlparse
 
 import great_expectations as gx
@@ -30,7 +30,8 @@ from pydantic import BaseModel, ConfigDict, field_validator
 from backend.app.core.secrets import SecretStore
 from backend.app.datasources.base import CheckOutcome, CheckSpec, MonitorSpec, SuiteOutcome
 from backend.app.datasources.gx_runner import run_expectations
-from backend.app.datasources.monitors import evaluate_monitors
+from backend.app.datasources.monitors import FRESHNESS, VOLUME, run_monitors_over_engine
+from backend.app.datasources.sql import LazyEngine
 
 
 class UnityCatalogConfig(BaseModel):
@@ -129,10 +130,38 @@ class UnityCatalogCheckRunner:
     returned frame, so the validation path itself is fully covered.
     """
 
+    # Runner-advertised monitor capability (#429): EXPLICITLY what this runner
+    # implements — never frozenset(MONITOR_KINDS), which would auto-advertise
+    # every future registry entry and self-defeat the per-kind gate (a stateful
+    # kind must be claimed by a runner only once it actually evaluates it).
+    supported_monitor_kinds: ClassVar[frozenset[str]] = frozenset({FRESHNESS, VOLUME})
+
     def __init__(self, *, config: UnityCatalogConfig, token: str, catalog: str) -> None:
         self._config = config
         self._token = token
         self._catalog = catalog
+        # The runner's ONE lazily-built engine (#427), shared by the GX read
+        # (`_read_table`) AND `run_monitors` — a mixed suite (expectations +
+        # monitors) pays a single warehouse session instead of two. Disposed by
+        # `close()`; the run path owns that lifecycle via `registry.owned_runner`.
+        self._engine = LazyEngine(self._build_engine)
+
+    def _build_engine(self) -> Any:
+        from sqlalchemy import create_engine
+
+        # pool_pre_ping: run_monitors may draw the connection _read_table checked
+        # in before a long GX validation — revalidate on checkout so a
+        # warehouse-side idle reap / auto-stop surfaces as a fresh connect, not a
+        # dead connection failing every monitor (the old per-call engine always
+        # got a fresh one).
+        return create_engine(
+            build_databricks_url(self._config, self._token, catalog=self._catalog),
+            pool_pre_ping=True,
+        )
+
+    def close(self) -> None:
+        """Dispose the shared engine's pool. Idempotent; a no-op if never used."""
+        self._engine.close()
 
     def _read_table(self, *, table: str, schema: str | None) -> Any:
         """Reflect + read the whole table into a DataFrame (live seam).
@@ -142,15 +171,8 @@ class UnityCatalogCheckRunner:
         pinned catalog + `schema` qualify it to `catalog.schema.table`.
         """
         import pandas as pd
-        from sqlalchemy import create_engine
 
-        engine = create_engine(
-            build_databricks_url(self._config, self._token, catalog=self._catalog)
-        )
-        try:
-            return pd.read_sql_table(table, engine, schema=schema)
-        finally:
-            engine.dispose()
+        return pd.read_sql_table(table, self._engine.get(), schema=schema)
 
     def run_checks(
         self,
@@ -177,25 +199,17 @@ class UnityCatalogCheckRunner:
         self, *, table: str, schema: str | None, monitors: list[MonitorSpec]
     ) -> list[CheckOutcome]:
         """Evaluate freshness/volume monitors via scalar SQL aggregates over the SQL
-        Warehouse (no GX / no DataFrame read). The pinned ``catalog`` qualifies the
-        target as ``catalog.schema.table``. A connection failure propagates; a bad
-        monitor errors only itself."""
-        from sqlalchemy import create_engine, text
-
-        engine = create_engine(
-            build_databricks_url(self._config, self._token, catalog=self._catalog)
+        Warehouse (no GX / no DataFrame read), over the runner's shared engine
+        (#427 — one connection per run, no per-call engine). The pinned
+        ``catalog`` qualifies the target as ``catalog.schema.table``. A connection
+        failure propagates; a bad monitor errors only itself."""
+        return run_monitors_over_engine(
+            self._engine.get(),
+            table=table,
+            schema=schema,
+            catalog=self._catalog,
+            monitors=monitors,
         )
-        try:
-            with engine.connect() as conn:
-                return evaluate_monitors(
-                    lambda sql: conn.execute(text(sql)).scalar(),
-                    table=table,
-                    schema=schema,
-                    catalog=self._catalog,
-                    monitors=monitors,
-                )
-        finally:
-            engine.dispose()
 
 
 def build_unity_catalog_runner(

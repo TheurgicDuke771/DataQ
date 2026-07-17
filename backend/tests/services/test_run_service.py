@@ -14,6 +14,7 @@ import pytest
 from sqlalchemy.orm import Session
 
 from backend.app.datasources.base import CheckOutcome, CheckRunner, CheckSpec, SuiteOutcome
+from backend.app.datasources.monitors import MONITOR_KINDS
 from backend.app.db.models import Check, Result, Run
 from backend.app.services import run_service
 
@@ -118,6 +119,8 @@ class FakeMonitorRunner:
     """A SQL-datasource-like runner that handles both expectation (run_checks) and
     monitor (run_monitors) kinds — so the kind-dispatch can route to each."""
 
+    supported_monitor_kinds = frozenset(MONITOR_KINDS)  # the #429 capability the gate reads
+
     def __init__(
         self, *, check_outcomes: list[CheckOutcome], monitor_outcomes: list[CheckOutcome]
     ) -> None:
@@ -163,8 +166,8 @@ def test_run_outcomes_routes_by_kind_and_keeps_check_order() -> None:
 
 
 def test_run_outcomes_monitor_on_non_sql_runner_raises() -> None:
-    # FakeRunner has no run_monitors → not a MonitorRunner → monitor check rejected
-    # (freshness/volume need a SQL datasource).
+    # FakeRunner advertises no monitor capability → monitor check rejected
+    # (freshness/volume need a monitor-capable datasource).
     runner = FakeRunner(outcome=SuiteOutcome(success=True, checks=[]))
     with pytest.raises(NotImplementedError, match="monitor"):
         run_service._run_outcomes(
@@ -175,11 +178,101 @@ def test_run_outcomes_monitor_on_non_sql_runner_raises() -> None:
         )
 
 
-def test_run_outcomes_unsupported_kind_raises() -> None:
-    runner = FakeRunner(outcome=SuiteOutcome(success=True, checks=[]))
-    with pytest.raises(NotImplementedError, match="schema_drift"):
+def test_run_outcomes_rejects_runner_with_unrelated_run_monitors() -> None:
+    # The #429 AC: a runner that merely HAS a method named run_monitors (which an
+    # isinstance against the runtime_checkable Protocol would have accepted) but
+    # advertises no capability is rejected CLEANLY at the gate — never a TypeError
+    # from calling an unrelated method.
+    class _Impostor(FakeRunner):
+        def run_monitors(self) -> None:  # unrelated signature — calling it would TypeError
+            raise AssertionError("the gate must reject before calling this")
+
+    runner = _Impostor(outcome=SuiteOutcome(success=True, checks=[]))
+    with pytest.raises(NotImplementedError, match="does not support monitor kind"):
         run_service._run_outcomes(
-            runner, table="T", schema=None, checks=[_monitor_check("schema_drift", {})]
+            runner,
+            table="T",
+            schema=None,
+            checks=[_monitor_check("volume", {"min_rows": 1, "max_rows": 9})],
+        )
+
+
+def test_run_outcomes_rejects_capability_without_implementation() -> None:
+    # The mirror hole of the old isinstance gate (#880 review): advertising
+    # kinds without run_monitors must reject as cleanly as the reverse — never
+    # an AttributeError at the call site.
+    class _AllTalk(FakeRunner):
+        supported_monitor_kinds = frozenset(MONITOR_KINDS)  # no run_monitors at all
+
+    runner = _AllTalk(outcome=SuiteOutcome(success=True, checks=[]))
+    with pytest.raises(NotImplementedError, match="capability and implementation drifted"):
+        run_service._run_outcomes(
+            runner,
+            table="T",
+            schema=None,
+            checks=[_monitor_check("volume", {"min_rows": 1, "max_rows": 9})],
+        )
+
+
+def test_run_outcomes_stateful_kind_routes_to_injected_executor() -> None:
+    # schema_drift (#592) never reaches runner.run_monitors — it goes to the
+    # session-aware executor the worker injects (the comparison pattern).
+    runner = FakeRunner(outcome=SuiteOutcome(success=True, checks=[]))
+    seen: list[str] = []
+
+    def executor(check: Check) -> CheckOutcome:
+        seen.append(check.kind)
+        return CheckOutcome("monitor:schema_drift", success=True, metric_value=0.0)
+
+    [outcome] = run_service._run_outcomes(
+        runner,
+        table="T",
+        schema=None,
+        checks=[_monitor_check("schema_drift", {})],
+        stateful_monitor_executor=executor,
+    )
+    assert seen == ["schema_drift"]
+    assert outcome.metric_value == 0.0
+
+
+def test_run_outcomes_stateful_kind_without_executor_errors_per_check() -> None:
+    # No executor supplied (a caller that can't reach the baseline store) → the
+    # CHECK errors; siblings still run (#122), the run never raises.
+    runner = FakeRunner(outcome=SuiteOutcome(success=True, checks=[]))
+    [outcome] = run_service._run_outcomes(
+        runner,
+        table="T",
+        schema=None,
+        checks=[_monitor_check("schema_drift", {})],
+    )
+    assert outcome.errored is True
+    assert outcome.error_message is not None
+    assert "baseline-diff run path" in outcome.error_message
+
+
+def test_run_outcomes_gate_is_per_kind_not_per_runner() -> None:
+    # Capability is a SET of kinds (#429 altitude note): a runner supporting only
+    # freshness must reject a volume check by NAME, so stateful kinds (#592/#593)
+    # can land on some runners before others without re-entangling the seams.
+    class _FreshnessOnly(FakeMonitorRunner):
+        supported_monitor_kinds = frozenset({"freshness"})
+
+    runner = _FreshnessOnly(check_outcomes=[], monitor_outcomes=[])
+    with pytest.raises(NotImplementedError, match="volume"):
+        run_service._run_outcomes(
+            cast(CheckRunner, runner),
+            table="T",
+            schema=None,
+            checks=[_monitor_check("volume", {"min_rows": 1, "max_rows": 9})],
+        )
+
+
+def test_run_outcomes_unsupported_kind_raises() -> None:
+    # `anomaly` (#593) is the one still-reserved kind with no run path.
+    runner = FakeRunner(outcome=SuiteOutcome(success=True, checks=[]))
+    with pytest.raises(NotImplementedError, match="anomaly"):
+        run_service._run_outcomes(
+            runner, table="T", schema=None, checks=[_monitor_check("anomaly", {})]
         )
 
 

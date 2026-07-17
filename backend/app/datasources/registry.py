@@ -9,8 +9,11 @@ datasource is an entry here plus the adapter/runner, nothing else.
 
 from __future__ import annotations
 
+from collections.abc import Generator
+from contextlib import contextmanager
 from typing import Any, Protocol
 
+from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
 from backend.app.datasources.adls import AdlsConnectionAdapter
 from backend.app.datasources.base import CheckRunner, ConnectionAdapter
@@ -25,6 +28,8 @@ from backend.app.datasources.unity_catalog import (
 from backend.app.orchestration.adf import ADFConnectionAdapter
 from backend.app.orchestration.airflow import AirflowConnectionAdapter
 from backend.app.orchestration.dbt import DbtConnectionAdapter
+
+log = get_logger(__name__)
 
 
 class UnsupportedConnectionTypeError(ValueError):
@@ -153,3 +158,41 @@ def build_check_runner(
         secret_store=secret_store,
         catalog=catalog,
     )
+
+
+def close_check_runner(runner: object) -> None:
+    """Release any datasource resources the runner holds — its shared SQL engine
+    pool (#427). Runners without a ``close`` (flat-file, Iceberg — nothing pooled
+    to release) are a no-op, so callers never branch on the runner type.
+
+    Best-effort by design: this runs inside the run path's ``finally``, so a
+    raising ``dispose()`` must never replace the in-flight result (it would turn
+    an already-terminal run into a task error that skips incident sync + alert
+    dispatch, or mask a dry-run's mapped 422/502 as a 500). Failures are logged,
+    never raised."""
+    close = getattr(runner, "close", None)
+    if not callable(close):
+        return
+    try:
+        close()
+    except Exception as exc:
+        log.warning(
+            "check_runner_close_failed",
+            runner_type=type(runner).__name__,
+            error_type=type(exc).__name__,
+        )
+
+
+@contextmanager
+def owned_runner(runner: CheckRunner) -> Generator[CheckRunner]:
+    """Scope a runner's datasource resources to a ``with`` block (#427).
+
+    The run-owning paths (worker suite run, dry-run) wrap everything after
+    `build_check_runner` in this, so the shared engine pool is released on every
+    exit — normal, handled-failure, or propagating exception — without threading
+    a second function signature or hand-rolled try/finally through each caller.
+    """
+    try:
+        yield runner
+    finally:
+        close_check_runner(runner)

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+from collections.abc import Callable
 
 import pytest
 from starlette.requests import Request
@@ -45,7 +46,46 @@ def test_webhook_prefix_wins_even_with_bearer() -> None:
     cls, limit, key = _resolve_policy("/api/v1/orchestration/events/adf", "sometoken", "9.9.9.9", s)
     assert cls == "webhook"
     assert limit == s.rate_limit_webhook_per_minute
-    assert key == "ip:9.9.9.9"  # per-IP even though a bearer was present
+    assert key == "adf:ip:9.9.9.9"  # per-IP even though a bearer was present
+
+
+@pytest.mark.parametrize("provider", sorted(rate_limit._WEBHOOK_PROVIDERS))
+def test_webhook_key_folds_known_provider(provider: str) -> None:
+    # Each provider gets its own per-IP bucket (#785), so a burst on one can't
+    # crowd out another's callbacks from the same egress IP. Parametrized over
+    # the production set so a newly added provider is exercised automatically.
+    _, _, key = _resolve_policy(
+        f"/api/v1/orchestration/events/{provider}", None, "9.9.9.9", _settings()
+    )
+    assert key == f"{provider}:ip:9.9.9.9"
+
+
+def test_webhook_key_trailing_path_still_folds_provider() -> None:
+    _, _, key = _resolve_policy(
+        "/api/v1/orchestration/events/adf/extra", None, "9.9.9.9", _settings()
+    )
+    assert key == "adf:ip:9.9.9.9"
+
+
+@pytest.mark.parametrize("segment", ["nonesuch", "", "adf\x00", "ADF"])
+def test_webhook_unknown_segment_shares_bare_ip_bucket(segment: str) -> None:
+    # NB: ASGI hands the middleware the percent-DECODED path, so an encoded
+    # probe like `adf%00` arrives here as the raw "adf\x00" — test that layer.
+    # Unknown segments must NOT mint fresh buckets (a scanner rotating the path
+    # would never 429) — they all share the bare per-IP bucket.
+    _, _, key = _resolve_policy(
+        f"/api/v1/orchestration/events/{segment}", None, "9.9.9.9", _settings()
+    )
+    assert key == "ip:9.9.9.9"
+
+
+def test_webhook_providers_match_orchestration_registry() -> None:
+    # `_WEBHOOK_PROVIDERS` derives from the shared `db.models.ORCHESTRATION_PROVIDERS`
+    # vocabulary; this pins that vocabulary to the orchestration registry so a
+    # provider registered there can't silently land in the shared bare-IP bucket.
+    from backend.app.orchestration.registry import _PROVIDERS
+
+    assert rate_limit._WEBHOOK_PROVIDERS == frozenset(_PROVIDERS)
 
 
 def test_bearer_keys_by_sha256_prefix() -> None:
@@ -71,6 +111,66 @@ def test_no_bearer_keys_by_ip() -> None:
     assert cls == "unauth"
     assert limit == s.rate_limit_unauthenticated_per_minute
     assert key == "ip:9.9.9.9"
+
+
+# ───────────────────────── prefix bucketing (#789) ─────────────────────────
+
+
+def test_bucket_ip_ipv4_folds_to_slash24() -> None:
+    # NAT/proxy-pool dilution: sibling /32s in one /24 must share a bucket.
+    s = _settings()
+    assert rate_limit._bucket_ip("2.57.171.13", s) == "2.57.171.0/24"
+    assert rate_limit._bucket_ip("2.57.171.201", s) == "2.57.171.0/24"
+    assert rate_limit._bucket_ip("2.57.172.13", s) == "2.57.172.0/24"  # next /24 is distinct
+
+
+def test_bucket_ip_ipv6_folds_to_slash64() -> None:
+    s = _settings()
+    assert rate_limit._bucket_ip("2001:db8:1:2:aaaa::1", s) == "2001:db8:1:2::/64"
+    assert rate_limit._bucket_ip("2001:db8:1:2:bbbb::2", s) == "2001:db8:1:2::/64"
+    assert rate_limit._bucket_ip("2001:db8:1:3::1", s) == "2001:db8:1:3::/64"
+
+
+def test_bucket_ip_full_mask_disables_grouping() -> None:
+    s = Settings(_env_file=None, rate_limit_ipv4_prefix=32, rate_limit_ipv6_prefix=128)
+    assert rate_limit._bucket_ip("9.9.9.9", s) == "9.9.9.9/32"
+    assert rate_limit._bucket_ip("2001:db8::1", s) == "2001:db8::1/128"
+
+
+def test_bucket_ip_ipv4_mapped_ipv6_unwraps_to_ipv4() -> None:
+    # A dual-stack `[::]` listener's socket peer (and some proxy XFF chains)
+    # carries `::ffff:a.b.c.d`. Folding that as IPv6 would put the ENTIRE IPv4
+    # internet into one ::/64 bucket; it must unwrap and fold as IPv4, keying
+    # identically to its dotted-quad twin.
+    s = _settings()
+    assert rate_limit._bucket_ip("::ffff:9.9.9.1", s) == "9.9.9.0/24"
+    assert rate_limit._bucket_ip("::ffff:9.9.9.1", s) == rate_limit._bucket_ip("9.9.9.2", s)
+    assert rate_limit._bucket_ip("::ffff:203.0.113.7", s) != rate_limit._bucket_ip(
+        "::ffff:9.9.9.1", s
+    )
+
+
+def test_bucket_ip_non_address_passes_through() -> None:
+    # `_client_ip` can yield "unknown" (no socket peer); it must key as-is, not raise.
+    assert rate_limit._bucket_ip("unknown", _settings()) == "unknown"
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        lambda: Settings(_env_file=None, rate_limit_ipv4_prefix=0),
+        lambda: Settings(_env_file=None, rate_limit_ipv4_prefix=33),
+        lambda: Settings(_env_file=None, rate_limit_ipv6_prefix=8),
+    ],
+    ids=["v4-below", "v4-above", "v6-below"],
+)
+def test_prefix_out_of_range_rejected_by_settings(build: Callable[[], Settings]) -> None:
+    # Pin the CONSTRAINT (ge/le), not just any error naming the field — a bare
+    # name match would also pass on extra="forbid" if the field were deleted.
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match=r"greater than or equal|less than or equal"):
+        build()
 
 
 # ───────────────────────── client-IP extraction ─────────────────────────
@@ -246,3 +346,10 @@ def test_warn_store_unavailable_once_per_window(monkeypatch: pytest.MonkeyPatch)
     # A new window warns again.
     _warn_store_unavailable_once(101, path="/api/v1/x", cls="unauth", key="ip:1.2.3.4")
     assert len(rec.events) == 2
+
+    # A provider-folded webhook key (#785) still reports kind "ip" — the field's
+    # value domain is pinned to {tok, ip} so log queries keyed on it keep matching.
+    _warn_store_unavailable_once(102, path="/api/v1/x", cls="webhook", key="adf:ip:1.2.3.4")
+    assert rec.events[2][1]["key_kind"] == "ip"
+    _warn_store_unavailable_once(103, path="/api/v1/x", cls="default", key="tok:abcd")
+    assert rec.events[3][1]["key_kind"] == "tok"

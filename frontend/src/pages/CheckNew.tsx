@@ -1,4 +1,4 @@
-import { App, Button, Card, Flex, Form, Input, Tag, Typography } from 'antd';
+import { App, Button, Card, Flex, Form, Input, Typography } from 'antd';
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
@@ -17,11 +17,6 @@ import {
 import { Page } from '../components/layout/Page';
 import { useAsyncAction } from '../hooks/useAsyncAction';
 import { useAsyncData } from '../hooks/useAsyncData';
-
-// Monitor-kind categories still reserved by ADR 0012 — surfaced (disabled) so the
-// roadmap is visible. Freshness + Volume are now authorable (real catalog
-// categories, SQL-datasource-gated); Schema drift remains a v1.x auto-monitor.
-const RESERVED_CATEGORIES = ['Schema drift'] as const;
 
 /**
  * Dedicated full-page check authoring flow (GX-Cloud style): pick a category →
@@ -185,17 +180,6 @@ export function CheckNew() {
             <Typography.Text strong>{g.category}</Typography.Text>
             <Typography.Paragraph type="secondary" style={{ margin: 0, fontSize: 12 }}>
               {g.specs.length} expectation{g.specs.length === 1 ? '' : 's'}
-            </Typography.Paragraph>
-          </Card>
-        ))}
-        {RESERVED_CATEGORIES.map((label) => (
-          <Card key={label} size="small" style={{ width: 220, opacity: 0.55 }}>
-            <Flex justify="space-between" align="center" gap={8}>
-              <Typography.Text strong>{label}</Typography.Text>
-              <Tag>v1.x</Tag>
-            </Flex>
-            <Typography.Paragraph type="secondary" style={{ margin: 0, fontSize: 12 }}>
-              Auto-monitor — coming soon
             </Typography.Paragraph>
           </Card>
         ))}

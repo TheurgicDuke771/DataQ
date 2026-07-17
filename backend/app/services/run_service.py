@@ -32,7 +32,11 @@ from backend.app.datasources.base import (
     MonitorRunner,
     MonitorSpec,
 )
-from backend.app.datasources.monitors import MONITOR_KINDS
+from backend.app.datasources.monitors import (
+    MONITOR_KINDS,
+    SCALAR_MONITOR_KINDS,
+    STATEFUL_MONITOR_KINDS,
+)
 from backend.app.db.models import (
     COMPARISON_KIND,
     RESULT_OPERATIONAL_STATUSES,
@@ -108,26 +112,31 @@ def _run_outcomes(
     checks: list[Check],
     index_columns: list[str] | None = None,
     comparison_executor: Callable[[Check], CheckOutcome] | None = None,
+    stateful_monitor_executor: Callable[[Check], CheckOutcome] | None = None,
 ) -> list[CheckOutcome]:
     """Run a suite's checks, dispatching by `check.kind` (ADR 0012), and return one
     outcome per check in the **same order** (so they zip 1:1 onto result rows).
 
     * ``expectation`` kind → the GX `CheckRunner.run_checks`.
-    * ``freshness``/``volume`` (monitor kinds) → the `MonitorRunner.run_monitors`
-      SQL path — only when the runner is a SQL datasource (Snowflake/UC). A monitor
-      check on a flat-file runner raises (gated here, not silently mis-run).
+    * scalar monitor kinds (``freshness``/``volume``) → `run_monitors` on a
+      runner that advertises the kind (#429); an unsupported kind raises here,
+      never silently mis-runs.
+    * stateful monitor kinds (``schema_drift``, #592) → the injected
+      ``stateful_monitor_executor`` (the worker builds one via
+      `schema_drift.build_schema_drift_executor` — it owns the session and the
+      baseline store, which runners must never see). A caller that supplies
+      none gets a per-check operational ``error`` outcome (#122).
     * ``comparison`` → the injected ``comparison_executor`` (the worker builds
-      one via `comparison_run.build_comparison_executor`, #794). A caller that
-      supplies none (e.g. a path that cannot read datasources) gets a per-check
-      operational ``error`` outcome, not a raised exception — one unrunnable
-      check must never fail its siblings' run (#122).
-    * any other reserved kind (`schema_drift`/`anomaly`) has no run path *or*
-      authoring path → `NotImplementedError` (unreachable via CRUD).
+      one via `comparison_run.build_comparison_executor`, #794); same
+      no-executor semantics.
+    * any other reserved kind (`anomaly`) has no run path *or* authoring path
+      → `NotImplementedError` (unreachable via CRUD).
 
     This composes with the connection-type runner selection (ADR 0011): `kind`
     chooses the *monitor*, `connection.type` chose the *adapter* (the runner)."""
     expectation_idx = [i for i, c in enumerate(checks) if c.kind == _EXPECTATION_KIND]
-    monitor_idx = [i for i, c in enumerate(checks) if c.kind in MONITOR_KINDS]
+    monitor_idx = [i for i, c in enumerate(checks) if c.kind in SCALAR_MONITOR_KINDS]
+    stateful_idx = [i for i, c in enumerate(checks) if c.kind in STATEFUL_MONITOR_KINDS]
     comparison_idx = [i for i, c in enumerate(checks) if c.kind == COMPARISON_KIND]
     handled = {_EXPECTATION_KIND, *MONITOR_KINDS, COMPARISON_KIND}
     unsupported = sorted({c.kind for c in checks if c.kind not in handled})
@@ -135,6 +144,19 @@ def _run_outcomes(
         raise NotImplementedError(f"no run path for check kind(s) {', '.join(unsupported)}")
 
     outcomes: list[CheckOutcome | None] = [None] * len(checks)
+    for i in stateful_idx:
+        if stateful_monitor_executor is None:
+            outcomes[i] = CheckOutcome(
+                expectation_type=checks[i].expectation_type,
+                success=False,
+                errored=True,
+                error_message=(
+                    "stateful monitor kinds need the baseline-diff run path (no "
+                    "executor supplied on this caller — #592)"
+                ),
+            )
+        else:
+            outcomes[i] = stateful_monitor_executor(checks[i])
     for i in comparison_idx:
         if comparison_executor is None:
             outcomes[i] = CheckOutcome(
@@ -159,21 +181,40 @@ def _run_outcomes(
         for i, oc in zip(expectation_idx, suite_outcome.checks, strict=True):
             outcomes[i] = oc
     if monitor_idx:
-        if not isinstance(runner, MonitorRunner):
+        # Capability gate (#429): the runner ADVERTISES which monitor kinds it
+        # evaluates. Never `isinstance(runner, MonitorRunner)` — a
+        # runtime_checkable Protocol matches on the method NAME alone, so an
+        # unrelated `run_monitors` would pass the gate and TypeError at the call;
+        # and per-kind capability keeps this dispatch data-driven as stateful
+        # kinds (#592/#593) land on some runners before others.
+        supported = frozenset(getattr(runner, "supported_monitor_kinds", frozenset()))
+        unsupported_kinds = sorted({checks[i].kind for i in monitor_idx} - supported)
+        if unsupported_kinds:
             raise NotImplementedError(
-                f"{type(runner).__name__} does not support monitor checks — "
-                "freshness/volume need a monitor-capable datasource (Snowflake / "
-                "Unity Catalog / Iceberg)"
+                f"{type(runner).__name__} does not support monitor kind(s) "
+                f"{', '.join(unsupported_kinds)} — these need a monitor-capable "
+                "datasource (Snowflake / Unity Catalog / Iceberg)"
             )
+        if not callable(getattr(runner, "run_monitors", None)):
+            # The mirror hole of the old isinstance gate: advertising kinds
+            # without the method must reject as cleanly as the reverse.
+            raise NotImplementedError(
+                f"{type(runner).__name__} advertises monitor kinds but implements "
+                "no run_monitors — runner capability and implementation drifted"
+            )
+        monitor_runner = cast(MonitorRunner, runner)
         monitors = [
             MonitorSpec(kind=checks[i].kind, config=dict(checks[i].config)) for i in monitor_idx
         ]
-        monitor_outcomes = runner.run_monitors(table=table, schema=schema, monitors=monitors)
+        monitor_outcomes = monitor_runner.run_monitors(
+            table=table, schema=schema, monitors=monitors
+        )
         for i, oc in zip(monitor_idx, monitor_outcomes, strict=True):
             outcomes[i] = oc
 
-    # Every index is filled: expectation_idx + monitor_idx + comparison_idx
-    # together cover all checks once the unsupported-kind guard above has run.
+    # Every index is filled: expectation_idx + monitor_idx + stateful_idx +
+    # comparison_idx together cover all checks once the unsupported-kind guard
+    # above has run.
     return [cast(CheckOutcome, oc) for oc in outcomes]
 
 
@@ -200,6 +241,7 @@ def execute_run(
     schema: str | None = None,
     index_columns: list[str] | None = None,
     comparison_executor: Callable[[Check], CheckOutcome] | None = None,
+    stateful_monitor_executor: Callable[[Check], CheckOutcome] | None = None,
 ) -> Run:
     """Run ``checks`` against ``table`` via ``runner`` and persist the outcome.
 
@@ -232,6 +274,7 @@ def execute_run(
             checks=checks,
             index_columns=index_columns,
             comparison_executor=comparison_executor,
+            stateful_monitor_executor=stateful_monitor_executor,
         )
         rows = [
             _build_result(run.id, check, check_outcome)

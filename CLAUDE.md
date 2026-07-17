@@ -58,7 +58,7 @@ DataQ/
 │   │   ├── api/                 # FastAPI routers (versioned: /api/v1/...)
 │   │   ├── services/            # business logic per domain
 │   │   ├── orchestration/       # OrchestrationProvider abstraction (ADF, Airflow)
-│   │   ├── datasources/         # ConnectionAdapter + CheckRunner per type; gx_runner.py (shared GX translation), flatfile.py (flat-file IO + runner + batch resolution)
+│   │   ├── datasources/         # ConnectionAdapter + CheckRunner per type; gx_runner.py (shared GX translation), flatfile.py (flat-file IO + runner + batch resolution), sql.py (shared SQL-identifier allowlist — #428)
 │   │   └── mcp/                 # FastMCP tools (Week 7)
 │   ├── alembic/
 │   └── tests/                   # + tests/support/ (adversarial harness), tests/integration/ (end-to-end datasource runs)

@@ -167,6 +167,53 @@ def test_webhook_class_is_tighter_and_ip_keyed_despite_bearer(limiter: TestClien
     assert limiter.post(path, headers=headers).status_code == 429  # WEBHOOK limit = 2
 
 
+def test_webhook_burst_on_one_provider_does_not_throttle_another(limiter: TestClient) -> None:
+    # #785: same source IP, but each provider has its own bucket — an adf burst
+    # past the limit must not 429 airflow's or dbt's callbacks.
+    adf = "/api/v1/orchestration/events/adf"
+    for _ in range(2):  # WEBHOOK limit = 2
+        assert limiter.post(adf).status_code != 429
+    assert limiter.post(adf).status_code == 429
+    assert limiter.post("/api/v1/orchestration/events/airflow").status_code != 429
+    assert limiter.post("/api/v1/orchestration/events/dbt").status_code != 429
+
+
+def test_webhook_unknown_segments_share_one_bucket(limiter: TestClient) -> None:
+    # Rotating an unknown segment must not mint fresh buckets — all such requests
+    # land in the shared bare-IP webhook bucket and 429 together.
+    for i in range(2):  # WEBHOOK limit = 2
+        assert limiter.post(f"/api/v1/orchestration/events/scan-{i}").status_code != 429
+    assert limiter.post("/api/v1/orchestration/events/scan-99").status_code == 429
+
+
+@pytest.fixture
+def webhook_ceiling_limiter(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
+    """High per-provider webhook cap, low webhook `ipall` ceiling — exercises the
+    aggregate backstop (#785): per-provider buckets must not multiply the total
+    webhook budget one IP can spend by rotating the provider segment."""
+    monkeypatch.setenv("RATE_LIMIT_ENABLED", "true")
+    monkeypatch.setenv("RATE_LIMIT_WEBHOOK_PER_MINUTE", "50")  # provider cap out of the way
+    monkeypatch.setenv("RATE_LIMIT_WEBHOOK_IP_PER_MINUTE", "4")  # aggregate ceiling
+    get_settings.cache_clear()
+    monkeypatch.setattr(rate_limit, "_now", lambda: _FROZEN)
+    set_store_for_testing(InMemoryStore(clock=lambda: _FROZEN))
+    with TestClient(app) as c:
+        yield c
+
+
+def test_rotating_provider_segments_hit_webhook_ip_ceiling(
+    webhook_ceiling_limiter: TestClient,
+) -> None:
+    # Round-robin the provider segments: no single provider bucket fills (cap 50),
+    # but the aggregate per-IP ceiling (4) closes the segment-rotation multiplier.
+    paths = [f"/api/v1/orchestration/events/{p}" for p in ("adf", "airflow", "dbt", "nonesuch")]
+    for i in range(4):
+        assert webhook_ceiling_limiter.post(paths[i % 4]).status_code != 429
+    resp = webhook_ceiling_limiter.post(paths[0])
+    assert resp.status_code == 429
+    assert resp.headers["X-RateLimit-Limit"] == "4"  # the webhook IP ceiling, reported
+
+
 # ───────────────────────── 4/5. exemptions ─────────────────────────
 
 
@@ -273,6 +320,53 @@ def test_window_reset_restores_allowance(monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 # ───────────────────────── 10. X-Forwarded-For keying ─────────────────────────
+
+
+def test_sibling_ips_in_one_slash24_share_a_bucket(limiter: TestClient) -> None:
+    # #789: a rotating NAT/proxy pool spreads a burst across sibling /32s in one
+    # /24 — those must accumulate in ONE bucket and trip the cap together.
+    for i in range(3):  # UNAUTH limit = 3
+        h = {"X-Forwarded-For": f"9.9.9.{10 + i}"}  # three distinct /32s, one /24
+        assert limiter.get(PROBE, headers=h).status_code != 429
+    resp = limiter.get(PROBE, headers={"X-Forwarded-For": "9.9.9.99"})
+    assert resp.status_code == 429
+    # A different /24 is a fresh, independent bucket.
+    assert limiter.get(PROBE, headers={"X-Forwarded-For": "9.9.8.1"}).status_code != 429
+
+
+def test_ipv4_mapped_ipv6_shares_the_dotted_quad_bucket(limiter: TestClient) -> None:
+    # A dual-stack chain can present the same client as `9.9.9.x` on one request
+    # and `::ffff:9.9.9.x` on another — both must land in the ONE /24 bucket
+    # (and never in a shared ::/64 that would collapse all IPv4 clients).
+    assert limiter.get(PROBE, headers={"X-Forwarded-For": "9.9.9.1"}).status_code != 429
+    assert limiter.get(PROBE, headers={"X-Forwarded-For": "::ffff:9.9.9.2"}).status_code != 429
+    assert limiter.get(PROBE, headers={"X-Forwarded-For": "9.9.9.3"}).status_code != 429
+    # 4th in the same /24 (mapped form) → 429; an unrelated IPv4 /24 stays fresh.
+    assert limiter.get(PROBE, headers={"X-Forwarded-For": "::ffff:9.9.9.4"}).status_code == 429
+    assert limiter.get(PROBE, headers={"X-Forwarded-For": "7.7.7.7"}).status_code != 429
+
+
+def test_bearer_ipall_ceiling_keys_on_prefix(ip_ceiling_limiter: TestClient) -> None:
+    # The combined #725+#789 attack: rotate a fresh bearer AND sibling pool IPs.
+    # Each request mints a fresh tok bucket, but the ipall ceiling (4) must
+    # accumulate across the /24 — pinning that the ceiling key uses the prefix
+    # bucket, not the raw /32.
+    for i in range(4):
+        h = {"Authorization": f"Bearer rot-{i}", "X-Forwarded-For": f"9.9.9.{10 + i}"}
+        assert ip_ceiling_limiter.get(PROBE, headers=h).status_code != 429
+    resp = ip_ceiling_limiter.get(
+        PROBE, headers={"Authorization": "Bearer rot-x", "X-Forwarded-For": "9.9.9.200"}
+    )
+    assert resp.status_code == 429
+    assert resp.headers["X-RateLimit-Limit"] == "4"  # the ipall ceiling, reported
+
+
+def test_webhook_bucket_keys_on_prefix(limiter: TestClient) -> None:
+    # The per-provider webhook bucket must also accumulate across sibling /32s.
+    adf = "/api/v1/orchestration/events/adf"
+    for i in range(2):  # WEBHOOK limit = 2
+        assert limiter.post(adf, headers={"X-Forwarded-For": f"9.9.9.{20 + i}"}).status_code != 429
+    assert limiter.post(adf, headers={"X-Forwarded-For": "9.9.9.99"}).status_code == 429
 
 
 def test_xff_last_hop_defines_the_bucket(limiter: TestClient) -> None:

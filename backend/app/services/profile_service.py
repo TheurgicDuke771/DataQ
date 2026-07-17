@@ -35,7 +35,6 @@ from __future__ import annotations
 
 import io
 import math
-import re
 from collections.abc import Callable, Generator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -61,6 +60,7 @@ from backend.app.datasources.snowflake import (
     build_connect_args,
     build_connection_string,
 )
+from backend.app.datasources.sql import is_sql_identifier
 from backend.app.datasources.unity_catalog import UnityCatalogConfig, build_databricks_url
 from backend.app.db.models import Connection
 from backend.app.services.column_classification import ColumnClass, classify_column
@@ -76,10 +76,6 @@ _SUPPORTED_FORMATS = {"csv", "parquet"}
 # Flat-file profiling reads at most this many rows — stats are over the sample.
 _SAMPLE_ROWS = 100_000
 
-# A plain SQL identifier: letter/underscore start, then letters/digits/_/$ (the
-# Snowflake unquoted-identifier set). Anything else (spaces, quotes, dots, etc.)
-# is refused — it can't be made injection-safe by quoting alone here.
-_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_$]*$")
 
 # Connector timeouts (seconds): fail fast rather than hang the request thread.
 _LOGIN_TIMEOUT = 10
@@ -159,11 +155,12 @@ def validate_identifier(name: str | None) -> str:
     """Validate `name` against the plain-identifier allowlist and return it.
 
     Raises `ProfileIdentifierInvalidError` (422) for anything that isn't a plain
-    identifier. The SQLAlchemy Core builders quote safely on their own; this is
-    defence-in-depth and turns an odd name into a clean 422 instead of a quoted
-    column that simply doesn't exist.
+    identifier per the shared `datasources.sql` allowlist (#428 — one source of
+    truth with the monitor engine's validator). The SQLAlchemy Core builders
+    quote safely on their own; this is defence-in-depth and turns an odd name
+    into a clean 422 instead of a quoted column that simply doesn't exist.
     """
-    if not name or not _IDENTIFIER.match(name):
+    if name is None or not is_sql_identifier(name):
         raise ProfileIdentifierInvalidError(
             "not a valid table/schema/column identifier", detail={"identifier": name}
         )

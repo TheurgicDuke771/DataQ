@@ -17,7 +17,7 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from backend.app.datasources.base import CheckRunner, CheckSpec, ConnectionAdapter
+from backend.app.datasources.base import CheckRunner, CheckSpec, ConnectionAdapter, MonitorSpec
 from backend.app.datasources.registry import (
     UnsupportedConnectionTypeError,
     get_connection_adapter,
@@ -617,3 +617,117 @@ def test_registry_unknown_type_raises() -> None:
     # valid connection type at all (a post-v1 RDBMS candidate, ADR 0011).
     with pytest.raises(UnsupportedConnectionTypeError, match="mssql"):
         get_connection_adapter("mssql")
+
+
+# ───────────────────────── shared engine lifecycle (#427) ─────────────────────────
+
+
+def _runner_with_counted_engine(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> tuple[SnowflakeCheckRunner, list[dict[str, Any]]]:
+    """A real runner whose lazy `create_engine` is redirected to a seeded sqlite
+    DB, with every construction (url + kwargs) recorded — pins that the engine
+    is built ONCE per runner and that connect-args/pre-ping actually reach it."""
+    import sqlalchemy
+
+    real_create_engine = sqlalchemy.create_engine
+    db_url = f"sqlite:///{tmp_path}/sf.sqlite"
+    seed = real_create_engine(db_url)
+    with seed.begin() as conn:
+        conn.execute(sqlalchemy.text("CREATE TABLE ORDERS (id INTEGER)"))
+        conn.execute(sqlalchemy.text("INSERT INTO ORDERS (id) VALUES (1), (2)"))
+    seed.dispose()
+
+    created: list[dict[str, Any]] = []
+
+    def _fake_create_engine(url: str, **kwargs: Any) -> Any:
+        created.append({"url": str(url), **kwargs})
+        return real_create_engine(db_url)
+
+    monkeypatch.setattr(sqlalchemy, "create_engine", _fake_create_engine)
+    # `model_construct` (validation bypass, test-only): a schema-less config is
+    # unconstructable via model_validate, but sqlite has no schemas — the run
+    # must qualify the bare table. Never mutate a validated instance instead
+    # (assignment would bypass validation and rot if validate_assignment lands).
+    config = SnowflakeConfig.model_construct(
+        account="acct",
+        user="u",
+        database="DB",
+        schema_=None,  # type: ignore[arg-type]  # deliberate: schema-less for sqlite
+        warehouse="WH",
+        role=None,
+        auth_type="password",
+    )
+    return SnowflakeCheckRunner(config, "pw"), created
+
+
+def test_run_monitors_reuses_one_engine_across_calls(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+    runner, created = _runner_with_counted_engine(monkeypatch, tmp_path)
+    monitors = [MonitorSpec(kind="volume", config={"min_rows": 1, "max_rows": 10})]
+    first = runner.run_monitors(table="ORDERS", schema=None, monitors=monitors)
+    second = runner.run_monitors(table="ORDERS", schema=None, monitors=monitors)
+    assert first[0].success and second[0].success
+    assert len(created) == 1  # ONE engine for the runner's lifetime, not per call
+    # The construction must carry the auth connect-args and the stale-connection
+    # guard — a fake that swallowed kwargs couldn't catch either regressing.
+    assert created[0]["connect_args"] == {}
+    assert created[0]["pool_pre_ping"] is True
+    runner.close()
+
+
+def test_close_disposes_and_is_idempotent(monkeypatch: pytest.MonkeyPatch, tmp_path: Any) -> None:
+    runner, created = _runner_with_counted_engine(monkeypatch, tmp_path)
+    monitors = [MonitorSpec(kind="volume", config={"min_rows": 1, "max_rows": 10})]
+    runner.run_monitors(table="ORDERS", schema=None, monitors=monitors)
+    runner.close()
+    runner.close()  # idempotent
+    # A later use lazily rebuilds — close() must not brick the runner.
+    runner.run_monitors(table="ORDERS", schema=None, monitors=monitors)
+    assert len(created) == 2
+    runner.close()
+
+
+def test_close_before_any_use_is_a_noop() -> None:
+    config = SnowflakeConfig.model_validate(
+        {"account": "a", "user": "u", "database": "d", "schema": "s", "warehouse": "w"}
+    )
+    runner = SnowflakeCheckRunner(config, "pw")
+    runner.close()  # never built an engine — must not raise
+
+
+def test_close_check_runner_helper_dispatches_and_noops() -> None:
+    from backend.app.datasources.registry import close_check_runner
+
+    class _WithClose:
+        closed = 0
+
+        def close(self) -> None:
+            self.closed += 1
+
+    with_close = _WithClose()
+    close_check_runner(with_close)
+    assert with_close.closed == 1
+    close_check_runner(object())  # no close() → silent no-op
+
+
+def test_close_check_runner_never_raises() -> None:
+    # close runs inside the run path's finally — a raising dispose() must never
+    # replace the in-flight result (it would skip incident sync/alerts or mask a
+    # dry-run's mapped error). Logged, swallowed.
+    from backend.app.datasources.registry import close_check_runner
+
+    class _ExplodingClose:
+        def close(self) -> None:
+            raise RuntimeError("dispose blew up")
+
+    close_check_runner(_ExplodingClose())  # must not raise
+
+
+def test_supported_monitor_kinds_is_explicit() -> None:
+    # #880 review: NEVER frozenset(MONITOR_KINDS) — that would auto-advertise
+    # every future registry kind and self-defeat the per-kind gate. Widening
+    # this set is a conscious act, done when the runner actually implements
+    # the new kind.
+    assert SnowflakeCheckRunner.supported_monitor_kinds == frozenset({"freshness", "volume"})

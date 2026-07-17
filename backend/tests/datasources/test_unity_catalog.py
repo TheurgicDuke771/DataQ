@@ -231,3 +231,64 @@ def test_databricks_sqlalchemy_dialect_is_installed() -> None:
         "?http_path=/sql/1.0/warehouses/x&catalog=c"
     )
     assert engine.dialect.name == "databricks"
+
+
+# ───────────────────────── shared engine lifecycle (#427) ─────────────────────────
+
+
+def test_gx_read_and_monitors_share_one_engine(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+    """A mixed suite (expectations + monitors) must pay ONE warehouse session:
+    `_read_table` (the GX path) and `run_monitors` share the runner's lazy
+    engine (#427). Pinned by counting `create_engine` constructions."""
+    import sqlalchemy
+
+    from backend.app.datasources.base import MonitorSpec
+
+    real_create_engine = sqlalchemy.create_engine
+    db_url = f"sqlite:///{tmp_path}/uc.sqlite"
+    seed = real_create_engine(db_url)
+    with seed.begin() as conn:
+        conn.execute(sqlalchemy.text("CREATE TABLE orders (id INTEGER)"))
+        conn.execute(sqlalchemy.text("INSERT INTO orders (id) VALUES (1), (2)"))
+    seed.dispose()
+
+    created: list[str] = []
+
+    def _fake_create_engine(url: str, **_kwargs: Any) -> Any:
+        created.append(str(url))
+        return real_create_engine(db_url)
+
+    monkeypatch.setattr(sqlalchemy, "create_engine", _fake_create_engine)
+    runner = UnityCatalogCheckRunner(
+        config=UnityCatalogConfig.model_validate(_UC_CONFIG),
+        token="tok",
+        catalog="main",
+    )
+    df = runner._read_table(table="orders", schema=None)
+    assert len(df) == 2
+    # run_monitors reuses the same engine; the 3-part `main.x.orders` name errors
+    # PER-MONITOR on sqlite (which is fine — the connection itself succeeded).
+    outcomes = runner.run_monitors(
+        table="orders",
+        schema="x",
+        monitors=[MonitorSpec(kind="volume", config={"min_rows": 1, "max_rows": 10})],
+    )
+    assert len(outcomes) == 1
+    assert len(created) == 1  # ONE engine across the GX read AND the monitor path
+    assert created[0].endswith("uc.sqlite") or created[0].startswith("databricks")  # url recorded
+    runner.close()
+    runner.close()  # idempotent
+    # After close a later use lazily rebuilds — never a bricked runner.
+    runner._read_table(table="orders", schema=None)
+    assert len(created) == 2
+    runner.close()
+
+
+def test_supported_monitor_kinds_is_explicit() -> None:
+    # #880 review: NEVER frozenset(MONITOR_KINDS) — that would auto-advertise
+    # every future registry kind and self-defeat the per-kind gate. Widening
+    # this set is a conscious act, done when the runner actually implements
+    # the new kind.
+    assert UnityCatalogCheckRunner.supported_monitor_kinds == frozenset({"freshness", "volume"})

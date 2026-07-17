@@ -8,9 +8,12 @@ unexpected-%. This module is the pure, datasource-agnostic core:
 * :func:`build_monitor_sql` — the aggregate query a SQL runner executes;
 * :func:`monitor_outcome` — scalar result + check config → ``CheckOutcome``.
 
-The per-datasource *execution* (open a connection, run the SQL, fetch the scalar)
-lives in the SQL runners; this module never touches a connection, so it is fully
-unit-tested. v1 monitors are SQL-datasource only (Snowflake / Unity Catalog).
+The per-datasource *execution* (build an engine/URL, own its lifecycle) lives in
+the SQL runners; everything here up to `run_monitors_over_engine` is connection-
+free and fully unit-tested, and that one helper — the engine → one connection →
+scalar loop the SQL runners share (#428) — is handed an already-built engine and
+never constructs one. v1 monitors are SQL-datasource only (Snowflake / Unity
+Catalog) plus the Iceberg runner's native scan scalars.
 
 Semantics (locked):
 * **freshness** — config ``{"column": <timestamp col>}``; metric = **age in hours**
@@ -23,16 +26,20 @@ Semantics (locked):
 
 from __future__ import annotations
 
-import re
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, time
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from sqlalchemy.engine import Engine
 
 from backend.app.datasources.base import CheckOutcome, MonitorSpec
+from backend.app.datasources.sql import is_sql_identifier
 
 FRESHNESS = "freshness"
 VOLUME = "volume"
-MONITOR_KINDS = (FRESHNESS, VOLUME)
+SCHEMA_DRIFT = "schema_drift"
 
 # A monitor's `expectation_type` slot records the kind (the column is GX-shaped but
 # monitors aren't GX); `monitor:<kind>` keeps it self-describing on the result row.
@@ -48,20 +55,18 @@ def monitor_expectation_type(kind: str) -> str:
     return f"{_EXPECTATION_PREFIX}{kind}"
 
 
-# SQL identifier we're willing to interpolate into the aggregate. Monitor config is
-# user-authored, so the column/table/schema must be validated before they touch a
-# query string (no bound-param slot for an identifier). Snowflake/Databricks
-# unquoted identifiers: a letter/underscore lead, then word chars or `$`.
-_IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_$]*$")
-
-
 class MonitorConfigError(ValueError):
     """A monitor check's config is missing/invalid (bad column, range, or kind)."""
 
 
 def _ident(name: object, *, what: str) -> str:
-    """Validate a SQL identifier (so it's safe to interpolate) and return it."""
-    if not isinstance(name, str) or not _IDENT_RE.match(name):
+    """Validate a SQL identifier (so it's safe to interpolate) and return it.
+
+    Monitor config is user-authored, so the column/table/schema must be validated
+    before they touch a query string (no bound-param slot for an identifier). The
+    allowlist itself is the shared `datasources.sql` one (#428) — one source of
+    truth with the profiler's validator."""
+    if not isinstance(name, str) or not is_sql_identifier(name):
         raise MonitorConfigError(f"invalid {what} identifier: {name!r}")
     return name
 
@@ -94,19 +99,15 @@ def build_monitor_sql(
 
     ``freshness`` → ``SELECT MAX(<column>) ...``; ``volume`` → ``SELECT COUNT(*) ...``.
     Identifiers are validated (no bind slot for them), so a bad column/table raises
-    :class:`MonitorConfigError` rather than building an injectable query.
+    :class:`MonitorConfigError` rather than building an injectable query. Dispatch
+    is the #726 registry — a kind with no scalar-SQL form (the stateful kinds)
+    refuses here rather than building a wrong query.
     """
+    strategy = _strategy(kind)
+    if strategy.build_sql is None:
+        raise MonitorConfigError(f"monitor kind {kind!r} has no scalar-SQL form")
     target = qualified_table(table=table, schema=schema, catalog=catalog)
-    # `column` + every part of `target` are validated by `_ident` (strict identifier
-    # regex) before interpolation. SQL identifiers can't be bound parameters, so
-    # validated interpolation is the correct construction — not an injection vector
-    # (hence the S608 suppressions).
-    if kind == FRESHNESS:
-        column = _ident(config.get("column"), what="freshness column")
-        return f"SELECT MAX({column}) FROM {target}"  # noqa: S608  # nosec B608
-    if kind == VOLUME:
-        return f"SELECT COUNT(*) FROM {target}"  # noqa: S608  # nosec B608
-    raise MonitorConfigError(f"unknown monitor kind: {kind!r}")
+    return strategy.build_sql(target, config)
 
 
 def _freshness_age_hours(max_timestamp: datetime, now: datetime) -> float:
@@ -168,12 +169,7 @@ def validate_monitor_config(kind: str, config: dict[str, Any]) -> None:
     (`build_monitor_sql`/`monitor_outcome` re-derive the same checks). This is only the
     config-shape gate; threshold policy (e.g. freshness *requires* a threshold) and the
     SQL-datasource gate live in the service layer, which owns the Check + connection."""
-    if kind == FRESHNESS:
-        _ident(config.get("column"), what="freshness column")
-    elif kind == VOLUME:
-        _volume_bounds(config)
-    else:
-        raise MonitorConfigError(f"unknown monitor kind: {kind!r}")
+    _strategy(kind).validate_config(config)
 
 
 def monitor_outcome(
@@ -188,47 +184,169 @@ def monitor_outcome(
     freshness check on an empty table (``MAX`` is NULL) can't be assessed, so it's an
     operational ``error`` (#122), not a silent pass.
     """
-    expectation_type = f"{_EXPECTATION_PREFIX}{kind}"
-    if kind == FRESHNESS:
-        column = _ident(config.get("column"), what="freshness column")
-        if scalar is None:
-            return CheckOutcome(
-                expectation_type=expectation_type,
-                success=False,
-                errored=True,
-                error_message=f"no rows: MAX({column}) is NULL, freshness can't be assessed",
-                expected_value={"monitor": FRESHNESS, "column": column},
-            )
-        max_ts = _as_aware_datetime(scalar, column)
-        age_hours = _freshness_age_hours(max_ts, now)
-        # NOTE: freshness has no in-config bound (unlike volume's min/max_rows), so
-        # the binary fallback is unconditionally `success=True` — "stale" is only
-        # defined by a threshold. A freshness check WITHOUT a fail/critical age
-        # threshold therefore always resolves `pass` no matter how stale (the metric
-        # is computed but never banded). The check-create path (the monitor-authoring
-        # slice) MUST require a freshness threshold so this never ships as silent green.
+    return _strategy(kind).outcome(scalar, config, now)
+
+
+# ───────────────────── per-kind strategies (#726) ─────────────────────
+#
+# Adding a monitor kind = one strategy entry in MONITOR_KIND_REGISTRY below —
+# never a third parallel if-chain. `build_sql` receives the already-validated
+# qualified target; identifiers can't be bound parameters, so validated
+# interpolation is the correct construction (hence the S608 suppressions).
+
+
+def _validate_freshness(config: dict[str, Any]) -> None:
+    _ident(config.get("column"), what="freshness column")
+
+
+def _freshness_sql(target: str, config: dict[str, Any]) -> str:
+    column = _ident(config.get("column"), what="freshness column")
+    return f"SELECT MAX({column}) FROM {target}"  # noqa: S608  # nosec B608
+
+
+def _freshness_outcome(scalar: Any, config: dict[str, Any], now: datetime) -> CheckOutcome:
+    expectation_type = monitor_expectation_type(FRESHNESS)
+    column = _ident(config.get("column"), what="freshness column")
+    if scalar is None:
         return CheckOutcome(
             expectation_type=expectation_type,
-            success=True,  # binary fallback when no thresholds; thresholds band the age
-            metric_value=age_hours,
-            observed_value={"max_timestamp": max_ts.isoformat(), "age_hours": round(age_hours, 3)},
+            success=False,
+            errored=True,
+            error_message=f"no rows: MAX({column}) is NULL, freshness can't be assessed",
             expected_value={"monitor": FRESHNESS, "column": column},
         )
-    if kind == VOLUME:
-        min_rows, max_rows = _volume_bounds(config)
-        try:
-            row_count = int(scalar)
-        except (TypeError, ValueError) as exc:
-            raise MonitorConfigError(f"volume COUNT(*) is not an integer: {scalar!r}") from exc
-        deviation = _volume_deviation_pct(row_count, min_rows=min_rows, max_rows=max_rows)
+    max_ts = _as_aware_datetime(scalar, column)
+    age_hours = _freshness_age_hours(max_ts, now)
+    # NOTE: freshness has no in-config bound (unlike volume's min/max_rows), so
+    # the binary fallback is unconditionally `success=True` — "stale" is only
+    # defined by a threshold. A freshness check WITHOUT a fail/critical age
+    # threshold therefore always resolves `pass` no matter how stale (the metric
+    # is computed but never banded). The check-create path (the monitor-authoring
+    # slice) MUST require a freshness threshold so this never ships as silent green.
+    return CheckOutcome(
+        expectation_type=expectation_type,
+        success=True,  # binary fallback when no thresholds; thresholds band the age
+        metric_value=age_hours,
+        observed_value={"max_timestamp": max_ts.isoformat(), "age_hours": round(age_hours, 3)},
+        expected_value={"monitor": FRESHNESS, "column": column},
+    )
+
+
+def _validate_volume(config: dict[str, Any]) -> None:
+    _volume_bounds(config)
+
+
+def _volume_sql(target: str, config: dict[str, Any]) -> str:
+    return f"SELECT COUNT(*) FROM {target}"  # noqa: S608  # nosec B608
+
+
+def _volume_outcome(scalar: Any, config: dict[str, Any], now: datetime) -> CheckOutcome:
+    min_rows, max_rows = _volume_bounds(config)
+    try:
+        row_count = int(scalar)
+    except (TypeError, ValueError) as exc:
+        raise MonitorConfigError(f"volume COUNT(*) is not an integer: {scalar!r}") from exc
+    deviation = _volume_deviation_pct(row_count, min_rows=min_rows, max_rows=max_rows)
+    return CheckOutcome(
+        expectation_type=monitor_expectation_type(VOLUME),
+        success=deviation == 0.0,  # in range → pass; thresholds band the deviation
+        metric_value=deviation,
+        observed_value={"row_count": row_count, "deviation_pct": round(deviation, 3)},
+        expected_value={"monitor": VOLUME, "min_rows": min_rows, "max_rows": max_rows},
+    )
+
+
+def _validate_schema_drift(config: dict[str, Any]) -> None:
+    """schema_drift needs no required config; ``ignore_columns`` (optional) must
+    be a list of plain identifiers — they're compared against introspected names,
+    never interpolated into SQL, but the allowlist keeps garbage out early."""
+    ignore = config.get("ignore_columns")
+    if ignore is None:
+        return
+    if not isinstance(ignore, list):
+        raise MonitorConfigError(f"ignore_columns must be a list of column names: {ignore!r}")
+    for name in ignore:
+        _ident(name, what="ignored column")
+
+
+def _schema_drift_outcome(scalar: Any, config: dict[str, Any], now: datetime) -> CheckOutcome:
+    """Band a schema diff (#592). ``scalar`` is the diff payload the stateful
+    executor computed (`services/schema_drift.py` — it owns the baseline store and
+    introspection; this stays DB-free): either a first-run capture notice or the
+    added/removed/type_changed detail. ``metric_value`` = drifted-column count,
+    banded by the check's ADR-0016 thresholds like every other monitor metric."""
+    if not isinstance(scalar, dict):
+        raise MonitorConfigError(f"schema_drift expects a diff payload dict: {scalar!r}")
+    expectation_type = monitor_expectation_type(SCHEMA_DRIFT)
+    if scalar.get("baseline_captured"):
         return CheckOutcome(
             expectation_type=expectation_type,
-            success=deviation == 0.0,  # in range → pass; thresholds band the deviation
-            metric_value=deviation,
-            observed_value={"row_count": row_count, "deviation_pct": round(deviation, 3)},
-            expected_value={"monitor": VOLUME, "min_rows": min_rows, "max_rows": max_rows},
+            success=True,  # nothing to compare yet — the baseline is the reference
+            metric_value=0.0,
+            observed_value=dict(scalar),
+            expected_value={"monitor": SCHEMA_DRIFT},
         )
-    raise MonitorConfigError(f"unknown monitor kind: {kind!r}")
+    added = list(scalar.get("added", ()))
+    removed = list(scalar.get("removed", ()))
+    type_changed = list(scalar.get("type_changed", ()))
+    drifted = len(added) + len(removed) + len(type_changed)
+    return CheckOutcome(
+        expectation_type=expectation_type,
+        success=drifted == 0,  # binary fallback; thresholds band the count
+        metric_value=float(drifted),
+        observed_value=dict(scalar),
+        expected_value={"monitor": SCHEMA_DRIFT, "drifted_columns": 0},
+    )
+
+
+@dataclass(frozen=True)
+class MonitorKindStrategy:
+    """One monitor kind's behavior behind the #726 registry.
+
+    ``validate_config`` is the DB-free structural gate; ``outcome`` bands the
+    scalar; ``build_sql`` renders the scalar-aggregate over an already-validated
+    qualified target — ``None`` for kinds with no scalar-SQL form (the stateful
+    kinds, #592/#593, evaluate through their own path)."""
+
+    kind: str
+    validate_config: Callable[[dict[str, Any]], None]
+    outcome: Callable[[Any, dict[str, Any], datetime], CheckOutcome]
+    build_sql: Callable[[str, dict[str, Any]], str] | None
+
+
+MONITOR_KIND_REGISTRY: dict[str, MonitorKindStrategy] = {
+    FRESHNESS: MonitorKindStrategy(
+        FRESHNESS, _validate_freshness, _freshness_outcome, _freshness_sql
+    ),
+    VOLUME: MonitorKindStrategy(VOLUME, _validate_volume, _volume_outcome, _volume_sql),
+    # Stateful (#592): no scalar-SQL form — the run path routes it through the
+    # baseline-diff executor in `services/schema_drift.py`, never run_monitors.
+    SCHEMA_DRIFT: MonitorKindStrategy(
+        SCHEMA_DRIFT, _validate_schema_drift, _schema_drift_outcome, None
+    ),
+}
+
+# Derived, never hand-maintained: the authoring allowlist (check_service) and the
+# run-path partition (run_service) both key off this, so registering a kind above
+# is the ONLY step that widens them. Registration is IMPORT-TIME ONLY — an entry
+# in the dict literal above (the #592/#593 pattern), never a runtime mutation:
+# every derived value (this tuple, the authoring allowlist, runners' advertised
+# capability sets) snapshots at import, so a late registration would be half
+# visible (dispatchable but unauthorable/unroutable). Tests may monkeypatch the
+# registry for isolation; production code must not.
+MONITOR_KINDS = tuple(MONITOR_KIND_REGISTRY)
+# The run-path partition (#592): scalar kinds go to the runners' `run_monitors`
+# (gated by their advertised capability, #429); stateful kinds go to the
+# session-aware executor the worker injects (they need the baseline store).
+SCALAR_MONITOR_KINDS = tuple(k for k, s in MONITOR_KIND_REGISTRY.items() if s.build_sql is not None)
+STATEFUL_MONITOR_KINDS = tuple(k for k, s in MONITOR_KIND_REGISTRY.items() if s.build_sql is None)
+
+
+def _strategy(kind: str) -> MonitorKindStrategy:
+    strategy = MONITOR_KIND_REGISTRY.get(kind)
+    if strategy is None:
+        raise MonitorConfigError(f"unknown monitor kind: {kind!r}")
+    return strategy
 
 
 def run_monitor_specs(
@@ -289,3 +407,32 @@ def evaluate_monitors(
         return fetch_scalar(sql)
 
     return run_monitor_specs(scalar_for, monitors=monitors, now=now)
+
+
+def run_monitors_over_engine(
+    engine: Engine,
+    *,
+    table: str,
+    schema: str | None,
+    catalog: str | None,
+    monitors: list[MonitorSpec],
+) -> list[CheckOutcome]:
+    """Run monitor checks over ONE connection from ``engine``, one outcome each.
+
+    The execution edge the SQL runners (Snowflake / Unity Catalog) share (#428):
+    opens a single connection and sources every monitor's scalar from it via
+    `evaluate_monitors` (a bad monitor errors only itself; a connection-level
+    failure propagates and fails the whole run — the open happens before the
+    per-monitor loop). The engine's lifecycle (build + dispose) belongs to the
+    caller — the seam #427 threads a per-run shared engine through.
+    """
+    from sqlalchemy import text  # lazy: keep sqlalchemy off this module's import cost
+
+    with engine.connect() as conn:
+        return evaluate_monitors(
+            lambda sql: conn.execute(text(sql)).scalar(),
+            table=table,
+            schema=schema,
+            catalog=catalog,
+            monitors=monitors,
+        )

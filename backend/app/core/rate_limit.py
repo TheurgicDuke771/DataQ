@@ -19,8 +19,16 @@ The `default` (bearer) class carries a dual-key ceiling: besides the per-token
 bucket it also increments a per-IP `ipall` bucket counting ALL bearer traffic
 from one IP, so an attacker rotating a fresh random `Bearer <nonce>` per request
 (which would otherwise mint a fresh `tok:` bucket every time and never 429) is
-still capped by `rate_limit_ip_per_minute`. Both counters move in one pipelined
-round trip.
+still capped by `rate_limit_ip_per_minute`. The `webhook` class carries the same
+dual-key shape (#785): its primary bucket is per provider + IP (so one noisy
+orchestrator can't crowd out another's callbacks), and a per-IP `ipall` ceiling
+(`rate_limit_webhook_ip_per_minute`) bounds the aggregate one IP can spend
+across provider buckets. Both counters move in one pipelined round trip.
+
+"Per-IP" everywhere above means per address PREFIX (#789 — IPv4 /24, IPv6 /64
+by default, configurable): keying on the full address lets a rotating NAT/proxy
+pool spread a burst across sibling addresses so no bucket ever fills. See
+`_bucket_ip`.
 """
 
 from __future__ import annotations
@@ -39,6 +47,7 @@ from backend.app.core.auth import _bearer_token  # header-only bearer extractor 
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.errors import error_envelope
 from backend.app.core.logging import get_logger
+from backend.app.db.models import ORCHESTRATION_PROVIDERS
 
 if TYPE_CHECKING:
     from redis.asyncio import Redis as AsyncRedis
@@ -54,6 +63,15 @@ _GC_SECONDS: Final = WINDOW_SECONDS * 2  # EXPIRE horizon — pure GC, never the
 # counted like any other request.
 _EXEMPT_PATHS: Final = frozenset({"/healthz"})
 _WEBHOOK_PREFIX: Final = "/api/v1/orchestration/events/"
+
+# The provider segments that get their OWN per-IP webhook bucket (#785), so a
+# burst from one provider can't crowd out another's callbacks when both egress
+# through the same IP. Sourced from the shared provider vocabulary in `db.models`
+# (already a transitive dependency via `core.auth`); a sync test pins it to the
+# orchestration registry. An UNKNOWN segment falls into the shared bare-IP
+# bucket: folding arbitrary path segments into the key would let a scanner mint
+# a fresh bucket per request and never 429.
+_WEBHOOK_PROVIDERS: Final = frozenset(ORCHESTRATION_PROVIDERS)
 
 # An IPv4 host with a `:port` suffix (proxies sometimes append one). IPv6 is left
 # untouched (it has its own colons) and validated as-is.
@@ -213,6 +231,37 @@ def _client_ip(request: Request, trusted_hops: int) -> str:
     return "unknown"
 
 
+def _bucket_ip(ip: str, settings: Settings) -> str:
+    """The per-IP bucket key component: `ip` folded onto its address prefix (#789).
+
+    Keying per full /32 dilutes the cap against a rotating NAT/proxy pool — the
+    pool spreads a burst across many sibling addresses so no single bucket ever
+    fills (observed live: 200 requests over 11 distinct IPs in one /24, none near
+    the cap). Folding onto a configurable prefix (IPv4 `rate_limit_ipv4_prefix`,
+    default /24; IPv6 `rate_limit_ipv6_prefix`, default /64 — one subscriber's
+    standard allocation) makes the whole pool share one bucket. The prefix length
+    rides in the key, so retuning the mask starts fresh buckets rather than
+    cross-counting. A non-address (`"unknown"`) passes through unchanged.
+
+    An IPv4-mapped IPv6 address (`::ffff:a.b.c.d` — what a dual-stack `[::]`
+    listener's socket peer or a proxy-written XFF entry carries) is unwrapped and
+    folded as IPv4: every mapped address lives in `::ffff:0:0/96`, so folding it
+    at /64 would collapse the ENTIRE IPv4 internet into one `::/64` bucket — one
+    abusive client would 429 all unauthenticated IPv4 traffic — and the same
+    client would key differently as `a.b.c.d` vs `::ffff:a.b.c.d`.
+    """
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return ip
+    if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped is not None:
+        addr = addr.ipv4_mapped
+    prefix = (
+        settings.rate_limit_ipv4_prefix if addr.version == 4 else settings.rate_limit_ipv6_prefix
+    )
+    return str(ipaddress.ip_network((addr, prefix), strict=False))
+
+
 def _resolve_policy(
     path: str, bearer: str | None, ip: str, settings: Settings
 ) -> tuple[str, int, str]:
@@ -220,12 +269,16 @@ def _resolve_policy(
 
     Order matters: the webhook (machine) path is keyed per-IP EVEN when a bearer
     is present, so an orchestrator's callbacks share one bucket regardless of any
-    token they carry. Otherwise a bearer buckets per sha256(token) and the
-    unauthenticated path per client-IP. The raw token is never used as a key —
-    only its hash — so it is never logged or stored.
+    token they carry. A known provider segment (adf/airflow/dbt) is folded into
+    the webhook key so each provider gets an independent per-IP bucket (#785).
+    Otherwise a bearer buckets per sha256(token) and the unauthenticated path per
+    client-IP. The raw token is never used as a key — only its hash — so it is
+    never logged or stored.
     """
     if path.startswith(_WEBHOOK_PREFIX):
-        return "webhook", settings.rate_limit_webhook_per_minute, f"ip:{ip}"
+        provider = path[len(_WEBHOOK_PREFIX) :].split("/", 1)[0]
+        prefix = f"{provider}:" if provider in _WEBHOOK_PROVIDERS else ""
+        return "webhook", settings.rate_limit_webhook_per_minute, f"{prefix}ip:{ip}"
     if bearer is not None:
         digest = hashlib.sha256(bearer.encode()).hexdigest()[:32]
         return "default", settings.rate_limit_authenticated_per_minute, f"tok:{digest}"
@@ -238,12 +291,14 @@ def _warn_store_unavailable_once(window: int, *, path: str, cls: str, key: str) 
         return
     _store_unavailable_warned_window = window
     # Path only (never request.url / query string), class, and key KIND (tok/ip) —
-    # never the key value.
+    # never the key value. The kind's value domain is pinned to {tok, ip} — a
+    # provider-folded webhook key (`adf:ip:…`, #785) still reports "ip" so log
+    # queries keyed on the documented domain keep matching.
     log.warning(
         "rate_limit_store_unavailable",
         path=path,
         rate_limit_class=cls,
-        key_kind=key.split(":", 1)[0],
+        key_kind="tok" if key.startswith("tok:") else "ip",
     )
 
 
@@ -266,7 +321,10 @@ async def rate_limit_middleware(
         return await call_next(request)
 
     bearer = _bearer_token(request)
-    ip = _client_ip(request, settings.rate_limit_xff_trusted_hops)
+    # Every per-IP key site (policy key + the ipall ceilings) uses the PREFIX
+    # bucket (#789), so a NAT/proxy pool rotating sibling addresses can't dilute
+    # the cap. The raw client address is never a key input past this point.
+    ip = _bucket_ip(_client_ip(request, settings.rate_limit_xff_trusted_hops), settings)
     cls, limit, key = _resolve_policy(path, bearer, ip, settings)
 
     now = int(_now())
@@ -275,10 +333,15 @@ async def rate_limit_middleware(
     # The `default` (bearer) class gets a SECOND per-IP `ipall` bucket that counts
     # all bearer traffic from one IP, closing the rotated-token bypass (a fresh
     # random bearer mints a fresh tok bucket but shares the ipall ceiling). The
-    # webhook/unauth classes are already per-IP on their own single bucket.
+    # `webhook` class gets the same dual-key shape (#785): its primary bucket is
+    # per provider + IP, so without an `ipall` ceiling one IP could spend
+    # (providers + 1) x the webhook cap by rotating the segment. The unauth class
+    # stays single-key — it is already per-IP on its one bucket.
     keys = [f"rl:{cls}:{key}:{window}"]
     if cls == "default":
         keys.append(f"rl:default:ipall:{ip}:{window}")
+    elif cls == "webhook":
+        keys.append(f"rl:webhook:ipall:{ip}:{window}")
     counts = await _active_store().incr_windows(keys)
 
     if counts is None:
@@ -286,12 +349,14 @@ async def rate_limit_middleware(
         _warn_store_unavailable_once(window, path=path, cls=cls, key=key)
         return await call_next(request)
 
-    # Token bucket checked first so it wins the reported limit when both exceed.
+    # Primary bucket checked first so it wins the reported limit when both exceed.
     exceeded_limit: int | None = None
     if counts[0] > limit:
         exceeded_limit = limit
     elif cls == "default" and counts[1] > settings.rate_limit_ip_per_minute:
         exceeded_limit = settings.rate_limit_ip_per_minute
+    elif cls == "webhook" and counts[1] > settings.rate_limit_webhook_ip_per_minute:
+        exceeded_limit = settings.rate_limit_webhook_ip_per_minute
 
     if exceeded_limit is not None:
         retry_after = max(1, (window + 1) * WINDOW_SECONDS - now)

@@ -28,7 +28,8 @@ from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore, get_secret_store
 from backend.app.datasources.flatfile import BatchNotFoundError
-from backend.app.datasources.registry import build_check_runner
+from backend.app.datasources.monitors import STATEFUL_MONITOR_KINDS
+from backend.app.datasources.registry import build_check_runner, owned_runner
 from backend.app.db.models import (
     ORCHESTRATION_PROVIDERS,
     Check,
@@ -53,6 +54,7 @@ from backend.app.services import (
     run_dispatch,
     run_service,
     run_target,
+    schema_drift,
     suite_service,
 )
 from backend.app.services.failure_classifier import classify_failure_reason
@@ -142,60 +144,80 @@ def _run_suite(session: Session, *, run_id: uuid.UUID) -> str:
             reason=classify_failure_reason(exc),
         )
 
-    # Materialize the concrete path (live for a flat-file batch target). Kept
-    # separate from setup so a missing batch is a skip, not a setup failure.
-    try:
-        table = run_target.materialize_path(
-            connection.type,
-            connection.config,
-            target,
-            secret_ref=connection.secret_ref,
-            secret_store=get_secret_store(),
+    # From here the runner exists — everything below runs inside `owned_runner`,
+    # which releases its shared engine pool (#427) on every exit: normal return,
+    # handled failure, or propagating exception.
+    with owned_runner(runner):
+        # Materialize the concrete path (live for a flat-file batch target). Kept
+        # separate from setup so a missing batch is a skip, not a setup failure.
+        try:
+            table = run_target.materialize_path(
+                connection.type,
+                connection.config,
+                target,
+                secret_ref=connection.secret_ref,
+                secret_store=get_secret_store(),
+            )
+        except BatchNotFoundError:
+            run_service.skip_run(session, run=run, checks=checks, reason="batch_not_found")
+            log.info("run_suite_skipped_no_batch", run_id=str(run_id), suite_id=str(suite.id))
+            return str(run.status)
+        except Exception as exc:
+            return _terminal_failed(
+                session,
+                run,
+                event="run_suite_materialize_failed",
+                run_id=run_id,
+                reason=classify_failure_reason(exc),
+            )
+
+        # The suite's identifier column (#415) — requested from GX so failing rows
+        # are captured with a locator. A `None`/absent policy keeps the scalar-only
+        # sample.
+        policy = suite.column_policy or {}
+        identifier = policy.get("identifier_column")
+        index_columns = [str(identifier)] if identifier else None
+
+        # Comparison checks (ADR 0015, #794): bind an executor to this run's
+        # resolved target side so the diff validates the exact dataset the GX
+        # runner sees. Built only when the suite actually has comparison checks.
+        comparison_executor = None
+        if comparison_run.has_comparison_checks(checks):
+            comparison_executor = comparison_run.build_comparison_executor(
+                session,
+                suite_connection=connection,
+                target_table=table,
+                target_schema=target.schema,
+                target_catalog=target.catalog,
+                secret_store=get_secret_store(),
+            )
+
+        # Stateful monitor kinds (#592): the baseline-diff executor owns the
+        # session + baseline store, which runners never see. Built only when the
+        # suite actually has a stateful check.
+        stateful_monitor_executor = None
+        if any(c.kind in STATEFUL_MONITOR_KINDS for c in checks):
+            stateful_monitor_executor = schema_drift.build_schema_drift_executor(
+                session,
+                connection=connection,
+                target_table=table,
+                target_schema=target.schema,
+                target_catalog=target.catalog,
+                secret_store=get_secret_store(),
+            )
+
+        run_service.execute_run(
+            session,
+            run=run,
+            checks=checks,
+            runner=runner,
+            table=table,
+            schema=target.schema,
+            index_columns=index_columns,
+            comparison_executor=comparison_executor,
+            stateful_monitor_executor=stateful_monitor_executor,
         )
-    except BatchNotFoundError:
-        run_service.skip_run(session, run=run, checks=checks, reason="batch_not_found")
-        log.info("run_suite_skipped_no_batch", run_id=str(run_id), suite_id=str(suite.id))
         return str(run.status)
-    except Exception as exc:
-        return _terminal_failed(
-            session,
-            run,
-            event="run_suite_materialize_failed",
-            run_id=run_id,
-            reason=classify_failure_reason(exc),
-        )
-
-    # The suite's identifier column (#415) — requested from GX so failing rows are
-    # captured with a locator. A `None`/absent policy keeps the scalar-only sample.
-    policy = suite.column_policy or {}
-    identifier = policy.get("identifier_column")
-    index_columns = [str(identifier)] if identifier else None
-
-    # Comparison checks (ADR 0015, #794): bind an executor to this run's
-    # resolved target side so the diff validates the exact dataset the GX
-    # runner sees. Built only when the suite actually has comparison checks.
-    comparison_executor = None
-    if comparison_run.has_comparison_checks(checks):
-        comparison_executor = comparison_run.build_comparison_executor(
-            session,
-            suite_connection=connection,
-            target_table=table,
-            target_schema=target.schema,
-            target_catalog=target.catalog,
-            secret_store=get_secret_store(),
-        )
-
-    run_service.execute_run(
-        session,
-        run=run,
-        checks=checks,
-        runner=runner,
-        table=table,
-        schema=target.schema,
-        index_columns=index_columns,
-        comparison_executor=comparison_executor,
-    )
-    return str(run.status)
 
 
 @celery_app.task(name="run_suite")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
