@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "f24627fd4f3d",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-592-schema-drift-engine",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/api/v1/checks.py",
+    "backend/app/datasources/monitors.py",
+    "backend/app/services/check_service.py",
+    "backend/app/services/dryrun_service.py",
+    "backend/app/services/run_service.py",
+    "backend/app/services/schema_drift.py",
+    "backend/app/worker/tasks.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f2/4627fd4f3d/0/metadata.json",
+      "transcript": "/f2/4627fd4f3d/0/full.jsonl",
+      "compact_transcript": "/f2/4627fd4f3d/0/transcript.jsonl",
+      "content_hash": "/f2/4627fd4f3d/0/content_hash.txt",
+      "prompt": "/f2/4627fd4f3d/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 944,
+    "cache_creation_tokens": 2994427,
+    "cache_read_tokens": 204316083,
+    "output_tokens": 357404,
+    "api_call_count": 479
+  }
+}
