@@ -8,3 +8,4 @@
 *
 !.gitignore
 !snowflake_object_dependencies.json
+!uc_table_lineage_projected.json

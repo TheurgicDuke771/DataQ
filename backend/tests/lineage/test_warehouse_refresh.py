@@ -7,6 +7,7 @@ provenance isolation from dbt/marquez rows, and the empty-but-successful prune.
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -33,12 +34,22 @@ def _ident(name: str) -> AssetIdentity:
 class _StubProvider:
     """A WarehouseLineageProvider that returns a canned result (or raises)."""
 
-    source = "snowflake"
-
-    def __init__(self, result: WarehouseLineageResult | Exception) -> None:
+    def __init__(
+        self,
+        result: WarehouseLineageResult | Exception,
+        *,
+        source: str = "snowflake",
+        is_incremental: bool = False,
+    ) -> None:
         self._result = result
+        self.source = source
+        self.is_incremental = is_incremental
+        self.since_seen: Any = "unset"
 
-    def fetch_edges(self, conn: object, *, connection_config: dict[str, object]) -> Any:
+    def fetch_edges(
+        self, conn: object, *, connection_config: dict[str, object], since: Any = None
+    ) -> Any:
+        self.since_seen = since
         if isinstance(self._result, Exception):
             raise self._result
         return self._result
@@ -173,6 +184,50 @@ def test_empty_successful_pull_prunes_to_zero(
     assert _edges_for(db_session, sf_connection) == set()
 
 
+def test_incremental_source_never_prunes(sf_connection: Connection, db_session: Session) -> None:
+    # A log source (UC) is incremental: an edge from an earlier window must SURVIVE a
+    # later refresh that didn't re-observe it — pruning it would erase real lineage.
+    def uc(*pairs: tuple[str, str]) -> _StubProvider:
+        return _StubProvider(
+            _result(*pairs, tier=LineageTier.UNITY_CATALOG_SYSTEM_ACCESS, degraded=None),
+            source="unity_catalog",
+            is_incremental=True,
+        )
+
+    refresh_warehouse_edges(
+        db_session, connection=sf_connection, provider=uc(("A", "B")), conn=object()
+    )
+    # A second refresh observing a DIFFERENT edge must ADD it, keeping the first.
+    outcome = refresh_warehouse_edges(
+        db_session,
+        connection=sf_connection,
+        provider=uc(("C", "D")),
+        conn=object(),
+        since=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    assert outcome is not None and outcome.live_edges == 2  # both kept (no prune)
+    names = {
+        (u.split(".")[-1], d.split(".")[-1])
+        for u, d in _edges_for(db_session, sf_connection, source="unity_catalog")
+    }
+    assert names == {("A", "B"), ("C", "D")}
+
+
+def test_since_watermark_threaded_to_provider(
+    sf_connection: Connection, db_session: Session
+) -> None:
+    provider = _StubProvider(
+        _result(("A", "B"), tier=LineageTier.UNITY_CATALOG_SYSTEM_ACCESS, degraded=None),
+        source="unity_catalog",
+        is_incremental=True,
+    )
+    mark = datetime(2026, 5, 1, tzinfo=UTC)
+    refresh_warehouse_edges(
+        db_session, connection=sf_connection, provider=provider, conn=object(), since=mark
+    )
+    assert provider.since_seen == mark  # the persisted watermark reached the provider
+
+
 def test_prune_is_scoped_to_source_and_connection(
     sf_connection: Connection, db_session: Session
 ) -> None:
@@ -206,3 +261,15 @@ def test_prune_is_scoped_to_source_and_connection(
         ("DATAQ_DB.ANALYTICS.X", "DATAQ_DB.ANALYTICS.Y")
     }
     assert _edges_for(db_session, sf_connection, source="snowflake")
+
+
+def test_get_warehouse_lineage_provider_registry() -> None:
+    from backend.app.lineage.warehouse import get_warehouse_lineage_provider
+
+    sf = get_warehouse_lineage_provider("snowflake")
+    assert sf is not None and sf.source == "snowflake" and sf.is_incremental is False
+    uc = get_warehouse_lineage_provider("unity_catalog")
+    assert uc is not None and uc.source == "unity_catalog" and uc.is_incremental is True
+    # a type with no warehouse-native lineage (dbt/OpenLineage feeds it instead)
+    assert get_warehouse_lineage_provider("adls_gen2") is None
+    assert get_warehouse_lineage_provider("iceberg") is None
