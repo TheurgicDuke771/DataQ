@@ -24,7 +24,7 @@ export type ConfigFieldType = 'string' | 'number' | 'list' | 'sql';
 
 /** The check `kind` (ADR 0012). `expectation` (incl. custom-SQL) is GX; the
  *  monitor kinds run a scalar SQL aggregate instead. Sent to the backend. */
-export type CheckKind = 'expectation' | 'freshness' | 'volume' | 'comparison';
+export type CheckKind = 'expectation' | 'freshness' | 'volume' | 'schema_drift' | 'comparison';
 
 /**
  * Expectation categories — the GX-Cloud-style classification the check editor

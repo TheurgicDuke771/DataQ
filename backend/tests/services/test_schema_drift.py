@@ -270,14 +270,14 @@ def test_file_introspection_csv_types_from_sample(monkeypatch: pytest.MonkeyPatc
 def test_file_introspection_parquet_types_from_footer(monkeypatch: pytest.MonkeyPatch) -> None:
     import io
 
-    import pandas as pd
     import pyarrow as pa
     import pyarrow.parquet as pq
 
     buf = io.BytesIO()
-    pq.write_table(
-        pa.Table.from_pandas(pd.DataFrame({"id": [1], "name": ["x"]}), preserve_index=False), buf
-    )
+    # Explicit Arrow schema: from_pandas string inference varies by pyarrow
+    # version (string vs large_string) — the footer must be deterministic.
+    table = pa.table({"id": pa.array([1], pa.int64()), "name": pa.array(["x"], pa.string())})
+    pq.write_table(table, buf)
     monkeypatch.setattr(schema_drift, "download_bytes", lambda **kw: buf.getvalue())
     cols = introspect_columns(
         _file_connection("adls_gen2"),
