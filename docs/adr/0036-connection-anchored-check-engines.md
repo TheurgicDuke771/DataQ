@@ -3,6 +3,7 @@
 - **Status:** Accepted (direction + seam shape; Snowflake DMF is the first native build, DQX/Dataplex trigger-gated — see §6)
 - **Date:** 2026-07-17
 - **Deciders:** @TheurgicDuke771
+- **Amends:** ADR-0003 (its v1.1 engine-swap *shape* only — the suite-level `engine: gx | dqx` toggle moves to the check grain and engines become connection-anchored; 0003's core decision, GX-only for v1, stands)
 - **Related:** [0003](0003-gx-only-for-v1.md) (GX-only v1; the suite-level `gx | dqx` toggle this ADR supersedes), [0011](0011-extensibility-seams-for-deferred-integrations.md) (`CheckRunner`/`ConnectionAdapter` seams), [0012](0012-monitor-kind-seam.md) (`check.kind` + `metric_value` — the axis §4 keeps orthogonal), [0030](0030-iceberg-native-read-path.md) (registry dispatch shape), [0031](0031-oss-byol-distribution-licensing.md) (license guardrail gating DQX), post-v1 roadmap gap **G-g** (GX-pin engine risk — this ADR is its abstraction answer). Issues: [#124](https://github.com/TheurgicDuke771/DataQ/issues/124) (dimensions/backend catalog), [#889](https://github.com/TheurgicDuke771/DataQ/issues/889) (scorecard consumer).
 
 ## Context
@@ -52,11 +53,11 @@ DMF outcomes are metric-shaped and ride the existing result semantics unchanged:
 - **Export/import:** a suite export carrying native-engine checks imports anywhere, but the user is warned (toast + per-check report) that N checks require platform-native capabilities the target connection may not offer; the same save-time validation marks them explicitly rather than dropping or silently converting them.
 - **Connection delete** already cascades suites/checks (ADR 0020) — no new orphan class.
 
-## 6. Build order and triggers
+### 6. Build order and triggers
 
 | Engine | Gate / trigger | Notes |
 |---|---|---|
-| **DMF** (Snowflake) | Build first — umbrella issue filed | Ad-hoc `SELECT` invocation of system DMFs (`NULL_COUNT`, `NULL_PERCENT`, `DUPLICATE_COUNT`, `UNIQUE_COUNT`, `ROW_COUNT`, `FRESHNESS`) mapped onto existing kinds; custom DMFs later. **Constraint:** needs a live Snowflake with Enterprise features — the current trial runs to ~2026-07-25; after that the build waits on a new subscription. |
+| **DMF** (Snowflake) | Build first — umbrella issue [#895](https://github.com/TheurgicDuke771/DataQ/issues/895) | Ad-hoc `SELECT` invocation of system DMFs (`NULL_COUNT`, `NULL_PERCENT`, `DUPLICATE_COUNT`, `UNIQUE_COUNT`, `ROW_COUNT`, `FRESHNESS`) mapped onto existing kinds; custom DMFs later. **Constraint:** needs a live Snowflake with Enterprise features — the current trial runs to ~2026-07-25; after that the build waits on a new subscription. |
 | **DQX** (Unity Catalog) | A real Databricks/streaming user, **plus** two prereqs | (a) a remote-execution design — DQX's value is Spark-side evaluation, so DataQ must submit work to the workspace, a new architectural capability (today's UC runner pulls into pandas); (b) the Databricks **Labs license check** against ADR 0031's no-source-available guardrail *before* it stays on any roadmap. |
 | **Dataplex** (BigQuery) | A BigQuery-as-datasource decision | BigQuery isn't a DataQ datasource; that decision dominates the cost and comes first. |
 | **Scheduled-native ingest** (DMF schedules / Dataplex scans) | Separate future ADR | Pull-provider shape; must first settle synthetic-runs vs sibling-measurements-table for `results.run_id`. |
@@ -68,3 +69,10 @@ DMF outcomes are metric-shaped and ride the existing result semantics unchanged:
 - Backend engine-aware catalog lands with #124 (dimensions) as one story; check editor filters check types by the selected engine's supported matrix.
 - The scorecard (#889) and all trend/aggregation SQL stay engine-agnostic — guaranteed by §4.
 - G-g (GX-pin risk) is discharged from "watch item" to "decided abstraction": GX becomes one engine behind the seam rather than the definition of a check.
+
+## Alternatives considered
+
+- **Suite-level `engine` toggle (ADR 0003's sketch).** Rejected: the realistic suite is mostly GX expectations plus a few native checks — a suite-level engine forces artificial suite splits, and the per-engine supported matrix (§4) is per-check information anyway. The run path already partitions one run's checks across evaluators, so the check grain costs nothing structurally.
+- **Native metrics as a monitor kind (`kind='native_metric'`) instead of an engine.** Seriously considered (2026-07-17 discussion): it would ship ad-hoc DMF calls on the existing ADR 0012 seam with no engine machinery at all. Rejected because it dead-ends — it cannot represent DQX/Dataplex (full evaluators, not metrics), blocks future warehouse-side attachment management, and violates §4 by encoding the evaluator into the kind axis.
+- **Engine-specific kinds (`dmf_freshness`, `dqx_null_check`, …).** Rejected outright: forks the kind axis, so every consumer — scorecard (#889), dimension mapping (#124), trend SQL — would branch per engine forever.
+- **A global/workspace engine setting.** Rejected: engine availability is a property of a *connection instance* (edition, grants, workspace rights), not of the workspace. A global toggle cannot answer "is DMF available on *this* connection" and would reintroduce the config-page indirection §1 deliberately avoids.

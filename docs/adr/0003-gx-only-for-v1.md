@@ -4,6 +4,8 @@
 - **Date:** 2026-05-24
 - **Deciders:** @TheurgicDuke771
 
+> **Amendment (2026-07-17, ADR 0036):** the v1.1 engine-swap *shape* sketched below is superseded by [ADR 0036](0036-connection-anchored-check-engines.md) — engine selection is **per check** (`check.engine`, default `gx`), not a suite-level `engine: gx | dqx` toggle, and engines are **connection-anchored capabilities** (DQX is unlocked by a `unity_catalog` connection and stays trigger-gated behind a real streaming user, a remote-execution design, and a Labs license check per ADR 0031). This ADR's core decision — GX-only for v1, one result schema, the `CheckRunner` interface seam — stands.
+
 ## Context
 
 DataQ v1 must run data quality checks across four datasource types: Snowflake, ADLS Gen2, AWS S3, and Unity Catalog (Databricks). Two viable DQ frameworks were considered:

@@ -63,7 +63,7 @@ the remaining monitor kinds), *governance* (admin console, compliance controls),
 | G-d | **No incident workflow, no lineage, no ownership routing** — runs + alerts exist; "what broke downstream / who owns it / when was it resolved" doesn't. No data-access audit trail (the HIPAA gate). | This is what DQ products are bought for | **Theme 9** (results/reporting depth) + **Theme 4** / [#431](https://github.com/TheurgicDuke771/DataQ/issues/431) (audit trail); lineage/incident objects = **designed 2026-07-10** ([docs/post-v1-assets-lineage-incidents-notes.md](../docs/post-v1-assets-lineage-incidents-notes.md) + ADR 0034, build issues #757–#762); the incident-*narrative* half is design-captured as **Theme 2's agentic root-cause analysis** (2026-07-04); lineage may be *pulled/emitted* rather than built — **Theme 14** governance-catalog + OpenLineage capture (2026-07-04); incident objects anchor to the **asset entity** (Theme 3's Asset-first IA capture, phase 1 = the shared prerequisite) |
 | G-e | **Single-tenant, config-allowlist admin, one validated IdP** — fine internally, not sellable. | Blocks multi-team/commercial use | **Theme 3** (admin/access) + ADR 0026 / [#461](https://github.com/TheurgicDuke771/DataQ/issues/461) (API keys) |
 | G-f | **Ecosystem: 4 datasources** vs the 30–50 a category product ships; no dbt integration (seam reserved); can't check the Postgres it runs on. | Adoption ceiling | **Theme 8** (datasource depth; generic-RDBMS adapter is the cheap first win) |
-| G-g | **Engine risk: GX Core pin** — the product's core capability rides a fast-moving third party with documented API drift; DQX swap-in shape exists for UC only. | Strategic dependency | **Theme 2**'s engine-abstraction watch item (below) — no issue until the churn trigger fires |
+| G-g | **Engine risk: GX Core pin** — the product's core capability rides a fast-moving third party with documented API drift; DQX swap-in shape exists for UC only. | Strategic dependency | **Discharged 2026-07-17: ADR 0036** (connection-anchored check engines — `check.engine`, GX becomes one engine behind the seam); umbrella issue [#895](https://github.com/TheurgicDuke771/DataQ/issues/895) tracks the build (Snowflake DMF first) |
 | G-h | **Harness Databricks = Free Edition, non-commercial-only** — the UC demo leg cannot legally back a commercial demo, while ADR 0013's ambition is commercial BYOL (since refined by ADR 0031 — free-OSS BYOL, no license revenue; this trigger is about *Databricks'* terms and stands unchanged for any commercial demo/use). **Decision recorded 2026-07-03 (go-live):** acceptable while the deployment is demo/eval; trigger stands — before any commercial demo/use → paid workspace. | Licence landmine on the demo path | ADR 0021/0013 context — recorded in the go-live checklist ([progress-v1.md](../docs/progress-v1.md)); re-trigger **before any commercial demo** |
 | G-i | **Pre-marketplace teardown: the deployed app still carries the demo harness** — Flows A/B/C, the 5 harness connections (Snowflake/UC/ADLS/ADF/Airflow), demo suites/users, and the seeded-breach check are all ADR-0021 *test* fixtures, not product. Before any marketplace listing / distributable image / customer-facing deployment (ADR 0013): remove the harness flows + datasource connections + demo users from the reference deployment, and verify nothing in the shipped artifact references harness endpoints. (Noted 2026-07-03 with the G-h decision.) | A demo fixture shipping as if it were product surface — licence (G-h) + credibility + stale-credential risk | ADR 0013 pre-listing checklist item — this row is the note; fold into the marketplace workstream when Theme 2's marketplace work is picked up |
 
@@ -117,8 +117,12 @@ file from the detail doc when picked up.)*
 **Engine-abstraction watch item (from maturity-assessment G-g):** the product's core capability
 rides a pinned GX Core with documented API drift (CLAUDE.md §11); the DQX swap-in shape exists
 for the UC runner only. If GX churn continues (or DQX/v1.1 lands), generalise that runner-level
-engine seam beyond UC so the check engine is a pluggable impl, not a hard dependency. No issue
-filed yet — file one when the trigger fires.
+engine seam beyond UC so the check engine is a pluggable impl, not a hard dependency.
+**Discharged 2026-07-17:** [ADR 0036](../docs/adr/0036-connection-anchored-check-engines.md)
+decides the abstraction (engines are connection-anchored capabilities; `check.engine` per check;
+`kind` ⊥ `engine`); umbrella issue
+[#895](https://github.com/TheurgicDuke771/DataQ/issues/895) tracks the build — Snowflake DMF
+first, DQX/Dataplex trigger-gated per the ADR's §6.
 
 ### Agentic root-cause analysis (design-captured 2026-07-04 — the category-leading bet)
 
