@@ -9,7 +9,7 @@
 # step with these pins when bumping.
 
 black==26.5.1
-ruff==0.15.20
+ruff==0.15.22
 mypy==2.3.0
 bandit[toml]==1.9.4
 pre-commit==4.6.0
