@@ -13,6 +13,7 @@ import {
   deleteSuite,
   listChecks,
   listSuites,
+  rebaselineCheck,
   snoozeCheck,
   type Suite,
 } from '../../src/api/suites';
@@ -33,6 +34,7 @@ vi.mock('../../src/api/suites', async (importOriginal) => {
     deleteCheck: vi.fn(),
     snoozeCheck: vi.fn(),
     clearCheckSnooze: vi.fn(),
+    rebaselineCheck: vi.fn(),
   };
 });
 
@@ -49,6 +51,7 @@ const mockListChecks = vi.mocked(listChecks);
 const mockDeleteSuite = vi.mocked(deleteSuite);
 const mockDeleteCheck = vi.mocked(deleteCheck);
 const mockSnoozeCheck = vi.mocked(snoozeCheck);
+const mockRebaseline = vi.mocked(rebaselineCheck);
 const mockClearSnooze = vi.mocked(clearCheckSnooze);
 const mockRunSuite = vi.mocked(runSuite);
 const mockGetRunProgress = vi.mocked(getRunProgress);
@@ -268,6 +271,40 @@ describe('Suites', () => {
     await waitFor(() => expect(mockSnoozeCheck).toHaveBeenCalledWith('s1', 'chk1', 24));
     // The list refetches and the row now carries the snoozed badge.
     expect(await screen.findByText(/Snoozed until/)).toBeInTheDocument();
+  });
+
+  it('offers Re-baseline only on schema_drift checks and confirms before calling (#592)', async () => {
+    const user = userEvent.setup();
+    mockListConnections.mockResolvedValue([connection]);
+    mockListSuites.mockResolvedValue([suite({ my_permission: 'edit' })]);
+    const drift = check({
+      id: 'chk-drift',
+      name: 'schema drift',
+      kind: 'schema_drift',
+      expectation_type: 'monitor:schema_drift',
+    });
+    mockListChecks.mockResolvedValue([drift, check({ id: 'chk-exp' })]);
+    mockRebaseline.mockResolvedValue(undefined);
+
+    renderPage();
+    await user.click(await screen.findByText('orders-suite'));
+    await screen.findByText('schema drift');
+
+    // Exactly ONE Re-baseline action — the expectation check offers none.
+    const buttons = screen.getAllByRole('button', { name: 'Re-baseline' });
+    expect(buttons).toHaveLength(1);
+    await user.click(buttons[0]);
+    // Nothing fires until the modal confirms (dropping the reference is
+    // consequential — accumulated drift reads as "no drift" afterwards).
+    expect(mockRebaseline).not.toHaveBeenCalled();
+    await screen.findByText(/Drops the stored schema baseline/);
+    // The confirm modal's OK also reads "Re-baseline" — it's the primary button.
+    const ok = screen
+      .getAllByRole('button', { name: 'Re-baseline' })
+      .find((b) => b.className.includes('ant-btn-primary'));
+    if (!ok) throw new Error('confirm modal OK button not found');
+    await user.click(ok);
+    await waitFor(() => expect(mockRebaseline).toHaveBeenCalledWith('s1', 'chk-drift'));
   });
 
   it('unsnoozes a snoozed check (badge + Unsnooze action) (#653)', async () => {
