@@ -1,0 +1,56 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "7263cf77810e",
+  "session_id": "622c4288-d864-4f3e-ad26-c33cd8118bed",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-17T04:32:38.320946Z",
+  "branch": "feature/issue-592-schema-drift-engine",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "b6822106f07c",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 1014,
+    "cache_creation_tokens": 3033201,
+    "cache_read_tokens": 229798468,
+    "output_tokens": 382421,
+    "api_call_count": 514
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01LEJyewWimy67e2sXfENbRX",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "b6822106f07c",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 185,
+        "end": 186,
+        "entry_ids": [
+          "1c26655d-3667-4d1e-8bf2-c087fa5de74b"
+        ],
+        "tool_use_id": "toolu_01LEJyewWimy67e2sXfENbRX"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01LEJyewWimy67e2sXfENbRX"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    }
+  ]
+}
