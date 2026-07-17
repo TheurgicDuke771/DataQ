@@ -3,7 +3,7 @@
   "checkpoint_id": "4309868558ff",
   "strategy": "manual-commit",
   "branch": "feature/issue-858-warehouse-lineage-beat",
-  "checkpoints_count": 1,
+  "checkpoints_count": 4,
   "files_touched": [
     "backend/alembic/versions/960d18679639_add_warehouse_lineage_refresh_state_to_.py",
     "backend/app/core/config.py",
@@ -21,13 +21,20 @@
       "compact_transcript": "/43/09868558ff/0/transcript.jsonl",
       "content_hash": "/43/09868558ff/0/content_hash.txt",
       "prompt": "/43/09868558ff/0/prompt.txt"
+    },
+    {
+      "metadata": "/43/09868558ff/1/metadata.json",
+      "transcript": "/43/09868558ff/1/full.jsonl",
+      "compact_transcript": "/43/09868558ff/1/transcript.jsonl",
+      "content_hash": "/43/09868558ff/1/content_hash.txt",
+      "prompt": "/43/09868558ff/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 1504,
-    "cache_creation_tokens": 6187357,
-    "cache_read_tokens": 409730281,
-    "output_tokens": 546657,
-    "api_call_count": 761
+    "input_tokens": 1523,
+    "cache_creation_tokens": 6204497,
+    "cache_read_tokens": 410593450,
+    "output_tokens": 558684,
+    "api_call_count": 771
   }
 }

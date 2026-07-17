@@ -1,0 +1,6 @@
+What do you think the real life benefits of these features? And does DataQ needs them?
+
+---
+
+Okay, file issues for 2 [backlog] and 3 [week 4]. 
+Then lets discuss a bit about 1
