@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "e58885458ec8",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-858-warehouse-lineage-uc",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/lineage/warehouse.py",
+    "backend/app/lineage/warehouse_refresh.py",
+    "backend/app/lineage/warehouse_snowflake.py",
+    "backend/app/lineage/warehouse_unity_catalog.py",
+    "backend/tests/lineage/test_warehouse_refresh.py",
+    "backend/tests/lineage/test_warehouse_unity_catalog.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/e5/8885458ec8/0/metadata.json",
+      "transcript": "/e5/8885458ec8/0/full.jsonl",
+      "compact_transcript": "/e5/8885458ec8/0/transcript.jsonl",
+      "content_hash": "/e5/8885458ec8/0/content_hash.txt",
+      "prompt": "/e5/8885458ec8/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1378,
+    "cache_creation_tokens": 6125725,
+    "cache_read_tokens": 361400425,
+    "output_tokens": 509895,
+    "api_call_count": 698
+  }
+}
