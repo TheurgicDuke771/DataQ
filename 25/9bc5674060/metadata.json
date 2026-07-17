@@ -3,8 +3,11 @@
   "checkpoint_id": "259bc5674060",
   "strategy": "manual-commit",
   "branch": "feature/issue-858-warehouse-lineage-snowflake",
-  "checkpoints_count": 1,
-  "files_touched": null,
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/app/lineage/warehouse_snowflake.py",
+    "backend/tests/lineage/test_warehouse_snowflake.py"
+  ],
   "sessions": [
     {
       "metadata": "/25/9bc5674060/0/metadata.json",
@@ -12,13 +15,20 @@
       "compact_transcript": "/25/9bc5674060/0/transcript.jsonl",
       "content_hash": "/25/9bc5674060/0/content_hash.txt",
       "prompt": "/25/9bc5674060/0/prompt.txt"
+    },
+    {
+      "metadata": "/25/9bc5674060/1/metadata.json",
+      "transcript": "/25/9bc5674060/1/full.jsonl",
+      "compact_transcript": "/25/9bc5674060/1/transcript.jsonl",
+      "content_hash": "/25/9bc5674060/1/content_hash.txt",
+      "prompt": "/25/9bc5674060/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 1248,
-    "cache_creation_tokens": 6061754,
-    "cache_read_tokens": 315725061,
-    "output_tokens": 474606,
-    "api_call_count": 633
+    "input_tokens": 1252,
+    "cache_creation_tokens": 6114265,
+    "cache_read_tokens": 315809605,
+    "output_tokens": 477245,
+    "api_call_count": 637
   }
 }

@@ -1,0 +1,8 @@
+Hey, Can you check the feasibility for few things [no code change]- 
+* I know we already have a backlog item to checkout DQX, can we make it bit more generic - use platform specific DQ engine if available (ex. - DMF for snowflake, DQX for databricks, DataPlex/CloudeDQ for BigQuery, etc.)? 
+* Can we introduce tagging functionality in DataQ? if yes what will be the best approach to intoduce it?
+* Since we intoduced assets, can we have a DQ scorecard for the assets [like how many types of checks configured - based on the dimentions. And how many checks are passing, with pre-defined or custom weights for each dimention and/or checks]?
+
+---
+
+check now
