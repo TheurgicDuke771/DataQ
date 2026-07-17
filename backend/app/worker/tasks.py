@@ -39,7 +39,7 @@ from backend.app.db.models import (
     Suite,
 )
 from backend.app.db.session import get_session
-from backend.app.lineage import dbt_manifest
+from backend.app.lineage import dbt_manifest, warehouse_refresh
 from backend.app.lineage import dispatch as lineage_dispatch
 from backend.app.lineage import edges as lineage_edges
 from backend.app.lineage import pull as lineage_pull
@@ -803,5 +803,40 @@ def refresh_lineage_pull() -> int:
     session = get_session()
     try:
         return lineage_pull.refresh_pulled_edges(session, provider=provider) or 0
+    finally:
+        session.close()
+
+
+@celery_app.task(name="refresh_warehouse_lineage")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
+def refresh_warehouse_lineage() -> int:
+    """Celery-beat entry point — refresh warehouse-native lineage for every eligible
+    connection (#858, ADR 0034).
+
+    **Dark by default**: no-ops with zero queries unless ``WAREHOUSE_LINEAGE_ENABLED``
+    is set — the warehouse views it reads (Snowflake ACCOUNT_USAGE, UC system.access)
+    need a grant the connection's principal may not have, so this stays opt-in like the
+    catalog pull. Iterates the Snowflake / Unity Catalog connections and refreshes each
+    **independently** (`refresh_connection_lineage` is fail-soft per connection: one
+    unreachable warehouse records a classified error and never aborts the sweep). Daily
+    cadence — a cache refresh of external truth, not a liveness path. Returns the number
+    of connections successfully refreshed.
+    """
+    if not get_settings().warehouse_lineage_enabled:
+        return 0
+    session = get_session()
+    try:
+        connections = list(
+            session.scalars(
+                select(Connection).where(Connection.type.in_(("snowflake", "unity_catalog")))
+            )
+        )
+        refreshed = 0
+        for connection in connections:
+            outcome = warehouse_refresh.refresh_connection_lineage(
+                session, connection=connection, secret_store=get_secret_store()
+            )
+            if outcome is not None:
+                refreshed += 1
+        return refreshed
     finally:
         session.close()

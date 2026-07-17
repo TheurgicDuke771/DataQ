@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import delete, func, select
@@ -31,14 +31,17 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from backend.app.core.logging import get_logger
+from backend.app.core.secrets import SecretStore
 from backend.app.db.models import Connection, LineageEdge
 from backend.app.lineage.warehouse import (
     LineageTier,
     WarehouseLineageProvider,
     WarehouseLineageResult,
     WarehouseLineageUnavailableError,
+    get_warehouse_lineage_provider,
 )
 from backend.app.services.asset_service import upsert_assets
+from backend.app.services.failure_classifier import classify_failure_reason
 
 log = get_logger(__name__)
 
@@ -183,6 +186,76 @@ def _persist(
         degraded_reason=result.degraded_reason,
         freshness_lag=result.freshness_lag,
         new_watermark=result.new_watermark,
+    )
+
+
+def refresh_connection_lineage(
+    session: Session, *, connection: Connection, secret_store: SecretStore
+) -> WarehouseRefreshOutcome | None:
+    """Refresh one warehouse connection's lineage AND persist its refresh state (#858).
+
+    The beat task's per-connection unit: resolve the provider for the connection type,
+    open a datasource connection, run :func:`refresh_warehouse_edges` from the stored
+    watermark, and record the outcome onto the connection —
+    ``lineage_watermark`` (advanced for a log source), ``lineage_last_tier`` /
+    ``lineage_degraded_reason`` (so the UI can qualify the graph, #828),
+    ``lineage_last_refresh_at``, and a CLASSIFIED ``lineage_last_error`` (never raw
+    exception text — the `last_poll_error` precedent).
+
+    Fail-soft and self-contained: a connection whose warehouse is unreachable records a
+    classified error and returns ``None`` without touching the edge cache — one bad
+    connection never aborts the sweep. Returns ``None`` for a non-warehouse type (no
+    provider) with no state written.
+    """
+    provider = get_warehouse_lineage_provider(connection.type)
+    if provider is None:
+        return None
+
+    # Lazy import: profile_service pulls the heavy datasource stack; keep it off this
+    # module's import cost (and clear of any import cycle) until a refresh actually runs.
+    from backend.app.services.profile_service import _open_connection
+
+    # A snapshot source ignores the stored watermark; a log source reads from it.
+    since = connection.lineage_watermark if provider.is_incremental else None
+    try:
+        with _open_connection(connection, secret_store) as conn:
+            outcome = refresh_warehouse_edges(
+                session, connection=connection, provider=provider, conn=conn, since=since
+            )
+    except Exception as exc:
+        # Opening the datasource failed (bad/unreadable credential, unreachable host).
+        _record_refresh_error(session, connection, exc)
+        return None
+
+    if outcome is None:
+        # refresh_warehouse_edges already logged the unavailable/failed cause and left
+        # the cache untouched; surface it as connection state so the UI/health can see it.
+        _record_refresh_error(session, connection, RuntimeError("warehouse lineage unavailable"))
+        return None
+
+    connection.lineage_last_refresh_at = datetime.now(UTC)
+    connection.lineage_last_tier = str(outcome.tier)
+    connection.lineage_degraded_reason = outcome.degraded_reason
+    connection.lineage_last_error = None
+    if outcome.new_watermark is not None:
+        connection.lineage_watermark = outcome.new_watermark
+    session.commit()
+    return outcome
+
+
+def _record_refresh_error(session: Session, connection: Connection, exc: Exception) -> None:
+    """Stamp a classified refresh error onto the connection (never raw text). Every
+    caller reaches here via a path that already left the session write-clean — the
+    provider raised before any edge write, or `refresh_warehouse_edges` rolled back its
+    own partial persist — so this only records the health signal (no rollback here,
+    which would also discard the connection row this must update)."""
+    connection.lineage_last_refresh_at = datetime.now(UTC)
+    connection.lineage_last_error = classify_failure_reason(exc)
+    session.commit()
+    log.warning(
+        "warehouse_lineage_connection_refresh_failed",
+        connection_id=str(connection.id),
+        reason=connection.lineage_last_error,
     )
 
 

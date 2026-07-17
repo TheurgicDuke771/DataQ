@@ -279,6 +279,24 @@ class Connection(Base):
         Integer, nullable=False, server_default=text("0")
     )
 
+    # ── Warehouse-native lineage refresh state (#858) ────────────────────────────
+    # Per-connection state for the warehouse-lineage beat (snowflake / unity_catalog).
+    # All NULL on a connection never refreshed, and on every non-warehouse type.
+    #
+    # The incremental high-water mark for a LOG source (UC `table_lineage.event_time`).
+    # NULL for a snapshot source (Snowflake `OBJECT_DEPENDENCIES` — re-read whole).
+    lineage_watermark: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # When the last refresh ran, and which tier answered — so the UI can qualify the
+    # graph ("view-level only", "current as of ~2h ago") instead of a bare empty state
+    # (#828). `lineage_last_tier` is a `LineageTier` value; `lineage_degraded_reason`
+    # is the human note when a richer tier was unavailable (edition-gated, missing grant).
+    lineage_last_refresh_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    lineage_last_tier: Mapped[str | None] = mapped_column(String(64))
+    lineage_degraded_reason: Mapped[str | None] = mapped_column(String(512))
+    # A **classified**, redaction-safe reason the last refresh could not run (mirrors
+    # `last_poll_error` — never raw exception text). NULL means the last refresh ran.
+    lineage_last_error: Mapped[str | None] = mapped_column(String(512))
+
 
 class ConnectionVersion(Base):
     """An immutable snapshot of a connection's editable, **non-secret** state,

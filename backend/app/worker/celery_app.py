@@ -111,6 +111,16 @@ def create_celery_app() -> Celery:
                 "task": "refresh_lineage_pull",
                 "schedule": 86400.0,  # 24 hours
             },
+            # Warehouse-native lineage refresh (#858, ADR 0034): once a day, pull lineage
+            # for every Snowflake / Unity Catalog connection straight from the warehouse's
+            # own lineage views into `lineage_edges`. Dark by default — no-ops (zero
+            # queries) unless WAREHOUSE_LINEAGE_ENABLED. Same low-urgency daily cadence as
+            # the catalog pull: a cache refresh of external truth, freshness bounded by the
+            # warehouse view's own latency, not a liveness interval.
+            "refresh-warehouse-lineage": {
+                "task": "refresh_warehouse_lineage",
+                "schedule": 86400.0,  # 24 hours
+            },
         },
     )
     # Register task modules on worker boot (looks for backend.app.worker.tasks).
