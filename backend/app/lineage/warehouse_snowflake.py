@@ -73,13 +73,16 @@ class SnowflakeLineageProvider:
         skipped: list[str] = []
 
         # Tier 1: GET_LINEAGE. Its absence is a clean 0A000 — descend, don't fail.
+        # The reason is carried from the exception, NOT hard-coded: on Enterprise the
+        # function IS supported but its per-seed traversal is deferred (#858 follow-up),
+        # so an Enterprise operator must not see a false "unsupported on this edition".
         try:
             edges = self._from_get_lineage(conn, namespace)
             return WarehouseLineageResult(
                 edges=edges, tier=LineageTier.SNOWFLAKE_GET_LINEAGE, skipped_tiers=tuple(skipped)
             )
-        except _FeatureUnsupportedError:
-            skipped.append("get_lineage: unsupported on this edition")
+        except _FeatureUnsupportedError as exc:
+            skipped.append(f"get_lineage: {exc}")
 
         # Tier 2: ACCESS_HISTORY. Present-but-empty on Standard — corroborate.
         try:
@@ -169,7 +172,19 @@ class SnowflakeLineageProvider:
         """Column/statement-derived lineage. Returns ``None`` when the view is empty AND
         the account shows write activity in ``QUERY_HISTORY`` — the signature of edition
         gating rather than a genuinely idle account (the spike finding: emptiness here
-        must be corroborated, never read as "no lineage")."""
+        must be corroborated, never read as "no lineage").
+
+        Two known coarsenesses, both deferred to the Enterprise-account follow-up (no
+        live payload to tune against on the Standard demo account):
+        * **No time filter** — the query scans the full ``ACCESS_HISTORY`` retention
+          (up to 365d). The ``query_start_time`` watermark that makes this incremental
+          is the follow-up; today's snapshot-refresh re-reads it whole each pass.
+        * **Table-grain readxwrite cross-join** — ``LATERAL FLATTEN`` over
+          ``base_objects_accessed`` x ``objects_modified`` yields every (read, write)
+          pair of a query. For a normal ``INSERT … SELECT`` that is exactly the lineage;
+          it over-connects only a pathological single statement that reads and writes
+          unrelated tables. The finer ``objects_modified[].columns[].directSources``
+          grain is the follow-up; the table-grain floor is honest and deduped."""
         try:
             rows = conn.execute(
                 text(
@@ -223,7 +238,7 @@ class SnowflakeLineageProvider:
         return self._identity(namespace, parts[0], parts[1], parts[2])
 
     # ── tier 1: GET_LINEAGE (Enterprise; clean 0A000 when absent) ───────────────
-    def _from_get_lineage(self, conn: Any, namespace: str) -> tuple[LineageEdgePair, ...]:
+    def _from_get_lineage(self, conn: Any, _namespace: str) -> tuple[LineageEdgePair, ...]:
         """Probe GET_LINEAGE once with a trivial call. Its 0A000 on a lower edition is
         raised as :class:`_FeatureUnsupportedError` so the ladder descends. When supported,
         the per-object traversal is the build's next slice (the demo account is
@@ -257,9 +272,14 @@ def _sqlstate(exc: BaseException) -> str | None:
     return None
 
 
+_UNSUPPORTED_EDITION_MSG = "unsupported on this edition"
+
+
 def _reraise_if_feature_unsupported(exc: BaseException) -> None:
     """Raise :class:`_FeatureUnsupportedError` if ``exc`` is Snowflake's edition-gate 0A000,
     matched by SQLSTATE (structured) OR the documented message text (belt-and-braces —
     the connector surfaces both, and the SQLSTATE is the reliable one)."""
     if _sqlstate(exc) == _FEATURE_UNSUPPORTED_SQLSTATE or "Unsupported feature" in str(exc):
-        raise _FeatureUnsupportedError(str(exc)[:200]) from exc
+        # The edition gate → a stable, operator-legible reason (NOT the raw connector
+        # text, which can be noisy). The deferred-traversal path raises its own message.
+        raise _FeatureUnsupportedError(_UNSUPPORTED_EDITION_MSG) from exc

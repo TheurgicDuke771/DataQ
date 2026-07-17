@@ -225,6 +225,23 @@ def test_get_lineage_0a000_descends_the_ladder() -> None:
     assert any("get_lineage" in s for s in result.skipped_tiers)
 
 
+def test_get_lineage_supported_but_deferred_reports_honest_reason() -> None:
+    # On Enterprise, GET_LINEAGE IS supported but its per-seed traversal is deferred.
+    # The skipped_tiers note must say so — NOT the false "unsupported on this edition"
+    # an Enterprise operator would otherwise see (a hard-coded label was the bug).
+    conn = _FakeConn(
+        results={
+            "GET_LINEAGE": [(1,)],  # the probe succeeds → feature IS available
+            "ACCESS_HISTORY ah": [],
+            "QUERY_HISTORY": [(0,)],
+        }
+    )
+    result = SnowflakeLineageProvider().fetch_edges(conn, connection_config=_CONFIG)
+    note = next(s for s in result.skipped_tiers if s.startswith("get_lineage"))
+    assert "traversal not yet built" in note
+    assert "unsupported on this edition" not in note
+
+
 def test_get_lineage_message_only_gate_also_descends() -> None:
     # Belt-and-braces: even if a connector surfaced the gate without the SQLSTATE, the
     # documented message text still routes it to the descent (not a hard failure).
