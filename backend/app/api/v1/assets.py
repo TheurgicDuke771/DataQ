@@ -157,6 +157,27 @@ class LineageSourceHealthRead(ApiModel):
     last_polled_at: datetime | None = None
 
 
+class WarehouseLineageStatusRead(ApiModel):
+    """A warehouse-native lineage source (Snowflake / UC) that is degraded or failing —
+    so the graph can be qualified rather than shown as complete + current (#828, #858).
+
+    `tier` is the source that answered (e.g. `snowflake_object_dependencies`);
+    `degraded_reason` is the "working but coarse" note (view-level only, Enterprise
+    needed); `last_error` is a **classified** refresh failure. A healthy full-tier source
+    is not listed.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    connection_id: uuid.UUID
+    name: str
+    type: str
+    tier: str | None = None
+    degraded_reason: str | None = None
+    last_error: str | None = None
+    last_refreshed_at: datetime | None = None
+
+
 class AssetDetailRead(ApiModel):
     """Asset detail: the summary + per-suite breakdown + upstream/downstream lineage."""
 
@@ -169,6 +190,8 @@ class AssetDetailRead(ApiModel):
     lineage_edges: list[LineageEdgeRead]
     # Non-empty ⇒ lineage may be stale/absent for reasons unrelated to this asset.
     failing_lineage_sources: list[LineageSourceHealthRead] = Field(default_factory=list)
+    # Non-empty ⇒ a warehouse lineage source is coarse (degraded tier) or failing.
+    warehouse_lineage_status: list[WarehouseLineageStatusRead] = Field(default_factory=list)
 
 
 class AssetMetadataUpdate(ApiModel):

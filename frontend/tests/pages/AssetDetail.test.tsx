@@ -123,6 +123,7 @@ const DETAIL: AssetDetailData = {
     { source: 'a1', target: 'd1' },
   ],
   failing_lineage_sources: [],
+  warehouse_lineage_status: [],
 };
 
 function meState(isAdmin: boolean): AsyncState<MeResponse> {
@@ -472,6 +473,7 @@ describe('AssetDetail — a failing lineage source (#828)', () => {
           last_polled_at: '2026-07-13T00:00:00Z',
         },
       ],
+      warehouse_lineage_status: [],
     });
 
     renderPage();
@@ -491,6 +493,7 @@ describe('AssetDetail — a failing lineage source (#828)', () => {
       downstream: [],
       lineage_edges: [],
       failing_lineage_sources: [],
+      warehouse_lineage_status: [],
     });
 
     renderPage();
