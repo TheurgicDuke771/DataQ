@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "635fcdf94ebe",
+  "strategy": "manual-commit",
+  "branch": "fix/codeql-49-baseexception-reraise",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/63/5fcdf94ebe/0/metadata.json",
+      "transcript": "/63/5fcdf94ebe/0/full.jsonl",
+      "compact_transcript": "/63/5fcdf94ebe/0/transcript.jsonl",
+      "content_hash": "/63/5fcdf94ebe/0/content_hash.txt",
+      "prompt": "/63/5fcdf94ebe/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1102,
+    "cache_creation_tokens": 3829312,
+    "cache_read_tokens": 262939280,
+    "output_tokens": 415926,
+    "api_call_count": 558
+  }
+}
