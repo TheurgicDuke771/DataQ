@@ -27,6 +27,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import StrEnum
 from typing import Protocol, runtime_checkable
 
@@ -85,6 +86,13 @@ class WarehouseLineageResult:
     # Tiers whose absence was detected during the preflight/ladder descent — carried so
     # the UI/log can say "GET_LINEAGE unavailable (edition), fell back to …".
     skipped_tiers: tuple[str, ...] = field(default_factory=tuple)
+    # The high-water mark of the source's event log, for an INCREMENTAL provider (UC's
+    # `table_lineage` is append-only with an `event_time`): the caller persists it and
+    # passes it back as ``since`` next refresh, so the pull re-reads only new events.
+    # ``None`` for a SNAPSHOT provider (Snowflake `OBJECT_DEPENDENCIES` — no event time,
+    # re-read whole each pass). An incremental result covering no new events still
+    # carries the prior watermark so it never regresses.
+    new_watermark: datetime | None = None
 
     @classmethod
     def empty(
@@ -110,12 +118,24 @@ class WarehouseLineageProvider(Protocol):
     ``source`` is the stable tag stamped on pulled `lineage_edges` (``'snowflake'`` /
     ``'unity_catalog'``) — the connection-scoped prune scope, so one warehouse's
     refresh never touches another source's rows.
+
+    ``is_incremental`` splits the two refresh regimes: a SNAPSHOT source (Snowflake
+    `OBJECT_DEPENDENCIES`, a current-state view) is re-read whole and its stale edges
+    PRUNED; a LOG source (UC `table_lineage`, append-only with `event_time`) is read
+    forward from a watermark and its edges are NEVER pruned — an edge absent from the
+    latest window is a historical fact, not a removed dependency. The refresh reads this
+    flag to choose (`warehouse_refresh`).
     """
 
     source: str
+    is_incremental: bool
 
     def fetch_edges(
-        self, conn: object, *, connection_config: dict[str, object]
+        self,
+        conn: object,
+        *,
+        connection_config: dict[str, object],
+        since: datetime | None = None,
     ) -> WarehouseLineageResult:
         """Pull lineage edges over an already-open SQLAlchemy ``conn`` (the caller owns
         its lifecycle, via `profile_service._open_connection`). ``connection_config`` is
@@ -123,12 +143,33 @@ class WarehouseLineageProvider(Protocol):
         identities (Snowflake account → namespace; UC workspace host → namespace) that
         match `asset_identity` byte-for-byte.
 
+        ``since`` is the last persisted watermark for an INCREMENTAL provider — it reads
+        only events strictly after it and returns the new high-water mark on the result.
+        A SNAPSHOT provider ignores ``since`` (documented on the impl).
+
         Descends its tier ladder, returning the richest available as a
         :class:`WarehouseLineageResult`. Raises :class:`WarehouseLineageUnavailableError`
         only when NO tier could run — an empty-but-successful pull returns
         :meth:`WarehouseLineageResult.empty`, which the refresh may prune on.
         """
         ...
+
+
+def get_warehouse_lineage_provider(connection_type: str) -> WarehouseLineageProvider | None:
+    """The warehouse-native `WarehouseLineageProvider` for a datasource type, or ``None``
+    for a type with no warehouse-native lineage (flat-file/Iceberg — those get lineage
+    from dbt/OpenLineage, not a warehouse system view). Lazy-imports the impls so this
+    module stays free of the SQLAlchemy-heavy provider modules until a caller needs one.
+    """
+    if connection_type == "snowflake":
+        from backend.app.lineage.warehouse_snowflake import SnowflakeLineageProvider
+
+        return SnowflakeLineageProvider()
+    if connection_type == "unity_catalog":
+        from backend.app.lineage.warehouse_unity_catalog import UnityCatalogLineageProvider
+
+        return UnityCatalogLineageProvider()
+    return None
 
 
 def dedupe_edges(edges: Sequence[LineageEdgePair]) -> tuple[LineageEdgePair, ...]:

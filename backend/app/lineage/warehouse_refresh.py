@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import delete, func, select
@@ -54,6 +55,9 @@ class WarehouseRefreshOutcome:
     tier: LineageTier
     degraded_reason: str | None
     freshness_lag: str | None
+    # For an incremental (log) source, the high-water mark the caller persists and
+    # passes back as ``since`` next refresh. ``None`` for a snapshot source.
+    new_watermark: datetime | None = None
 
 
 def refresh_warehouse_edges(
@@ -62,16 +66,26 @@ def refresh_warehouse_edges(
     connection: Connection,
     provider: WarehouseLineageProvider,
     conn: object,
+    since: datetime | None = None,
 ) -> WarehouseRefreshOutcome | None:
     """Refresh ``connection``'s warehouse-native `lineage_edges` from ``provider``.
 
     ``conn`` is an already-open SQLAlchemy connection to the datasource (the caller
-    owns it — `profile_service._open_connection`). Never raises. Returns the outcome,
-    or ``None`` when skipped fail-soft (warehouse unavailable → cache untouched, or any
-    error).
+    owns it — `profile_service._open_connection`). ``since`` is the last persisted
+    watermark for an incremental provider (the caller stores
+    `WarehouseRefreshOutcome.new_watermark` and passes it back). Never raises. Returns
+    the outcome, or ``None`` when skipped fail-soft (warehouse unavailable → cache
+    untouched, or any error).
+
+    Two regimes, chosen by ``provider.is_incremental``:
+
+    * **snapshot** (Snowflake OBJECT_DEPENDENCIES) — re-read whole, PRUNE stale edges.
+    * **incremental / log** (UC table_lineage) — read forward from ``since``, upsert,
+      and NEVER prune: an edge absent from the latest window is a historical fact, not
+      a removed dependency. Pruning it would erase real lineage.
     """
     try:
-        result = provider.fetch_edges(conn, connection_config=dict(connection.config))
+        result = provider.fetch_edges(conn, connection_config=dict(connection.config), since=since)
     except WarehouseLineageUnavailableError as exc:
         # Learned nothing → do NOT prune. Leave the cache as-is for the next clean pass.
         log.warning(
@@ -133,16 +147,20 @@ def _persist(
         edge_rows = _edge_rows(result, id_by_name, source=source, connection_id=connection.id)
         _upsert_edges(session, edge_rows)
 
-    # Prune this (source, connection) scope. A successful empty pull prunes to zero; the
-    # unavailable case never reaches here (returned None above), so a prune is always
-    # backed by evidence we DID read the warehouse.
-    session.execute(
-        delete(LineageEdge).where(
-            LineageEdge.source == source,
-            LineageEdge.connection_id == connection.id,
-            LineageEdge.last_seen < refresh_started_at,
+    # Prune ONLY a snapshot source (Snowflake OBJECT_DEPENDENCIES — a current-state
+    # view). A log source (UC table_lineage) is incremental: an edge absent from this
+    # window is a historical fact, not a removed dependency, so pruning it would erase
+    # real lineage. A successful empty snapshot pull prunes to zero; the unavailable
+    # case never reaches here (returned None above), so a prune is always backed by
+    # evidence we DID read the warehouse.
+    if not provider.is_incremental:
+        session.execute(
+            delete(LineageEdge).where(
+                LineageEdge.source == source,
+                LineageEdge.connection_id == connection.id,
+                LineageEdge.last_seen < refresh_started_at,
+            )
         )
-    )
     live = session.execute(
         select(func.count())
         .select_from(LineageEdge)
@@ -155,6 +173,7 @@ def _persist(
         source=source,
         tier=str(result.tier),
         edges=int(live),
+        incremental=provider.is_incremental,
         degraded=result.degraded_reason is not None,
         skipped_tiers=list(result.skipped_tiers),
     )
@@ -163,6 +182,7 @@ def _persist(
         tier=result.tier,
         degraded_reason=result.degraded_reason,
         freshness_lag=result.freshness_lag,
+        new_watermark=result.new_watermark,
     )
 
 

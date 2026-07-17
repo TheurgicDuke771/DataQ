@@ -29,6 +29,7 @@ lineage and has no asset identity.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import text
@@ -65,9 +66,17 @@ class SnowflakeLineageProvider:
     """`WarehouseLineageProvider` for Snowflake. Descends the tier ladder above."""
 
     source = "snowflake"
+    # SNAPSHOT source: OBJECT_DEPENDENCIES is a current-state view with no event time, so
+    # the floor tier is re-read whole and pruned each refresh (the ACCESS_HISTORY log
+    # tier's own event-time watermark is a deferred Enterprise follow-up).
+    is_incremental = False
 
     def fetch_edges(
-        self, conn: object, *, connection_config: dict[str, object]
+        self,
+        conn: object,
+        *,
+        connection_config: dict[str, object],
+        since: datetime | None = None,
     ) -> WarehouseLineageResult:
         namespace = self._namespace(connection_config)
         skipped: list[str] = []
