@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "169dde35a657",
+  "strategy": "manual-commit",
+  "branch": "docs/ledger-adr-0036-reconcile",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/16/9dde35a657/0/metadata.json",
+      "transcript": "/16/9dde35a657/0/full.jsonl",
+      "compact_transcript": "/16/9dde35a657/0/transcript.jsonl",
+      "content_hash": "/16/9dde35a657/0/content_hash.txt",
+      "prompt": "/16/9dde35a657/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1748,
+    "cache_creation_tokens": 6443904,
+    "cache_read_tokens": 484757834,
+    "output_tokens": 611080,
+    "api_call_count": 883
+  }
+}
