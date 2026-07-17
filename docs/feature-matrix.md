@@ -38,7 +38,7 @@ and Iceberg ([#532](https://github.com/TheurgicDuke771/DataQ/issues/532)).
 
 Every datasource gets a first-class **asset** (identity = the OpenLineage dataset naming
 spec, ADR 0034); lineage edges are **observed, never inferred**, and can arrive through
-four mechanisms:
+five mechanisms:
 
 1. **Run-stamping** — every suite run (and suite save) resolves its target to an asset row
    and stamps `last_seen`. Works on all datasources; unreferenced stale rows are retired by
@@ -51,18 +51,29 @@ four mechanisms:
 4. **Catalog pull** — the `LineageProvider` seam pulls a governance catalog's graph back in
    as `source='marquez'` edges (daily beat, dark by default;
    [details](orchestration.md#lineage-from-a-catalog-the-lineageprovider-seam-adr-0034-762)).
+5. **Warehouse-native pull** (#858) — the `WarehouseLineageProvider` seam reads the
+   warehouse's OWN lineage views straight into `lineage_edges` with `source='snowflake'` /
+   `'unity_catalog'`: Snowflake `OBJECT_DEPENDENCIES` (all editions) → `ACCESS_HISTORY` /
+   `GET_LINEAGE` (Enterprise); Unity Catalog `system.access.table_lineage`. First-hand, no
+   dbt hop. Daily beat, **dark by default** (`WAREHOUSE_LINEAGE_ENABLED` — the views need a
+   grant); the tier that answered and any degraded/failing state surface on the asset's
+   lineage graph so a view-level-only or stale graph never reads as a confident complete
+   one ([details](orchestration.md#lineage-from-the-warehouse-warehouselineageprovider-858)).
 
-| Datasource | Asset entity | ① Run-stamping | ② dbt manifest | ③ OL emission | ④ Catalog pull |
-|---|---|:-:|:-:|:-:|:-:|
-| Snowflake | `snowflake://{org}-{account}` / `DB.SCHEMA.TABLE` | ✅ | ✅ (live-verified) | ✅ | ✅ |
-| Unity Catalog | `unitycatalog://{host}` / `catalog.schema.table` | ✅ | ✅ (adapter-aware) | ✅ | ✅ |
-| ADLS Gen2 (files) | `abfss://{container}@{account}.dfs.core.windows.net` / pattern **base prefix** | ✅ | — | ✅ | ✅ |
-| S3 (files) | `s3://{bucket}` / base prefix | ✅ | — | ✅ | ✅ |
-| Iceberg | `{catalog_uri}` / `namespace.table` | ✅ | —¹ | ✅ | ✅ |
-| BI reports / dashboards | not yet materialized² | — | — | — | reserved² |
+| Datasource | Asset entity | ① Run-stamping | ② dbt manifest | ③ OL emission | ④ Catalog pull | ⑤ Warehouse-native |
+|---|---|:-:|:-:|:-:|:-:|:-:|
+| Snowflake | `snowflake://{org}-{account}` / `DB.SCHEMA.TABLE` | ✅ | ✅ (live-verified) | ✅ | ✅ | ✅ (OBJECT_DEPENDENCIES live; ACCESS_HISTORY/GET_LINEAGE Enterprise) |
+| Unity Catalog | `unitycatalog://{host}` / `catalog.schema.table` | ✅ | ✅ (adapter-aware) | ✅ | ✅ | ✅ (system.access.table_lineage, incremental) |
+| ADLS Gen2 (files) | `abfss://{container}@{account}.dfs.core.windows.net` / pattern **base prefix** | ✅ | — | ✅ | ✅ | — |
+| S3 (files) | `s3://{bucket}` / base prefix | ✅ | — | ✅ | ✅ | — |
+| Iceberg | `{catalog_uri}` / `namespace.table` | ✅ | —¹ | ✅ | ✅ | —³ |
+| BI reports / dashboards | not yet materialized² | — | — | — | reserved² | — |
 
 ¹ dbt-managed Iceberg tables surface through the warehouse adapter (Snowflake/UC rows);
 native `pyiceberg` connections have no dbt slice of their own.
+³ Warehouse-native lineage reads a query engine's lineage view; a native `pyiceberg`
+connection has no engine to ask (an engine-registered Iceberg table is covered under its
+Snowflake/UC connection).
 ² The lineage graph's node-kind contract reserves `bi_report`/`dashboard` — a BI node
 (e.g. a Power BI report downstream of a mart) becomes representable the moment a capable
 catalog (Purview/DataHub) lands behind the seam plus an `assets.kind` column; no schema or

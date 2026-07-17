@@ -178,6 +178,7 @@ function AssetDetailBody({
         downstream={asset.downstream}
         edges={asset.lineage_edges}
         failingSources={asset.failing_lineage_sources}
+        warehouseStatus={asset.warehouse_lineage_status}
         onOpenAsset={(id) => navigate(`/assets/${id}`)}
       />
     </Flex>

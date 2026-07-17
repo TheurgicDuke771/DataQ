@@ -191,3 +191,76 @@ class TestThePollWritesHealth:
         assert conn.consecutive_poll_failures == 1
         assert conn.last_poll_error
         assert "LEAKME" not in conn.last_poll_error
+
+
+def _warehouse_connection(db_session: Any, conn_type: str = "snowflake") -> Connection:
+    user = User(aad_object_id=uuid.uuid4().hex, email=f"u-{uuid.uuid4().hex[:8]}@x.io")
+    db_session.add(user)
+    db_session.flush()
+    conn = Connection(
+        name=f"{conn_type}-{uuid.uuid4().hex[:8]}",
+        type=conn_type,
+        env="dev",
+        config={"account": "ACCT"} if conn_type == "snowflake" else {"workspace_url": "https://x"},
+        secret_ref="ref",
+        created_by=user.id,
+    )
+    db_session.add(conn)
+    db_session.flush()
+    return conn
+
+
+class TestWarehouseLineageStatusStopsLying:
+    """A degraded (view-level-only) or failing warehouse-lineage source must be
+    surfaced so the graph isn't shown as complete + current (#858 slice 4)."""
+
+    def test_never_refreshed_source_is_not_listed(self, db_session: Any) -> None:
+        from backend.app.services.asset_view_service import warehouse_lineage_status
+
+        _warehouse_connection(db_session)  # no lineage state yet
+        assert warehouse_lineage_status(db_session) == []
+
+    def test_healthy_full_tier_source_is_not_listed(self, db_session: Any) -> None:
+        from datetime import UTC, datetime
+
+        from backend.app.services.asset_view_service import warehouse_lineage_status
+
+        conn = _warehouse_connection(db_session)
+        conn.lineage_last_refresh_at = datetime.now(UTC)
+        conn.lineage_last_tier = "snowflake_get_lineage"
+        conn.lineage_degraded_reason = None
+        conn.lineage_last_error = None
+        db_session.flush()
+        # refreshed, full tier, no error → nothing to warn about
+        assert warehouse_lineage_status(db_session) == []
+
+    def test_degraded_tier_is_surfaced(self, db_session: Any) -> None:
+        from datetime import UTC, datetime
+
+        from backend.app.services.asset_view_service import warehouse_lineage_status
+
+        conn = _warehouse_connection(db_session)
+        conn.lineage_last_refresh_at = datetime.now(UTC)
+        conn.lineage_last_tier = "snowflake_object_dependencies"
+        conn.lineage_degraded_reason = "view-level lineage only — richer tiers need Enterprise"
+        db_session.flush()
+
+        status = warehouse_lineage_status(db_session)
+        assert len(status) == 1
+        assert status[0].connection_id == conn.id
+        assert "view-level" in status[0].degraded_reason
+        assert status[0].last_error is None
+
+    def test_failing_refresh_is_surfaced_with_classified_error(self, db_session: Any) -> None:
+        from datetime import UTC, datetime
+
+        from backend.app.services.asset_view_service import warehouse_lineage_status
+
+        conn = _warehouse_connection(db_session, "unity_catalog")
+        conn.lineage_last_refresh_at = datetime.now(UTC)
+        conn.lineage_last_error = "the datasource could not be reached"
+        db_session.flush()
+
+        status = warehouse_lineage_status(db_session)
+        assert len(status) == 1
+        assert status[0].last_error == "the datasource could not be reached"

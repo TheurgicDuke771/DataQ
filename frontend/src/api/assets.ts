@@ -114,6 +114,23 @@ export interface AssetDetail {
   /** The real edges among the neighbourhood, so the graph draws truth, not a guess. */
   lineage_edges: LineageEdge[];
   failing_lineage_sources: LineageSourceHealth[];
+  /** Warehouse-native lineage sources that are degraded (coarser tier) or failing, so
+   *  the graph can be qualified rather than shown as complete + current (#858). */
+  warehouse_lineage_status: WarehouseLineageStatus[];
+}
+
+/** A warehouse-native lineage source (Snowflake / UC) that is degraded or failing. */
+export interface WarehouseLineageStatus {
+  connection_id: string;
+  name: string;
+  type: string;
+  /** The source that answered, e.g. `snowflake_object_dependencies`. */
+  tier: string | null;
+  /** The "working but coarse" note (view-level only, Enterprise needed). */
+  degraded_reason: string | null;
+  /** A classified refresh failure — never raw exception text. */
+  last_error: string | null;
+  last_refreshed_at: string | null;
 }
 
 /** Metadata mutation payload — mirrors `AssetMetadataUpdate` (admin-only). */

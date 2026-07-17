@@ -42,7 +42,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from backend.app.core.errors import DataQError
@@ -219,6 +219,29 @@ class LineageSourceHealth:
 
 
 @dataclass(frozen=True)
+class WarehouseLineageStatus:
+    """A warehouse-native lineage source (Snowflake / UC) that is DEGRADED or FAILING —
+    surfaced so a view-level-only or stale graph never reads as a confident full one
+    (#828, #858 slice 4).
+
+    Distinct from :class:`LineageSourceHealth` (a dbt-poll failure counter): a warehouse
+    refresh has no poll counter, and its most important signal is the *tier* — a healthy
+    refresh can still be degraded (``OBJECT_DEPENDENCIES`` view-level only because the
+    account isn't Enterprise). ``degraded_reason`` is that "working but coarse" note;
+    ``last_error`` is a genuine refresh failure (classified). A source with neither is
+    healthy and is NOT listed (no banner over a clean full-tier graph).
+    """
+
+    connection_id: uuid.UUID
+    name: str
+    type: str
+    tier: str | None
+    degraded_reason: str | None
+    last_error: str | None
+    last_refreshed_at: datetime | None
+
+
+@dataclass(frozen=True)
 class AssetDetail:
     """Asset detail: the summary aggregation + per-suite breakdown + lineage."""
 
@@ -231,6 +254,10 @@ class AssetDetail:
     # for a reason that has nothing to do with this asset. Never show a clean empty
     # state over a broken integration.
     failing_lineage_sources: list[LineageSourceHealth] = field(default_factory=list)
+    # Warehouse-native lineage sources that are degraded (coarser tier) or failing — so
+    # the graph can be qualified ("view-level only", "last refreshed 2h ago") rather than
+    # presented as complete + current (#828, #858).
+    warehouse_lineage_status: list[WarehouseLineageStatus] = field(default_factory=list)
 
 
 # ── internals ────────────────────────────────────────────────────────────────
@@ -503,7 +530,46 @@ def get_visible_asset(
         failing_lineage_sources=(
             failing_lineage_sources(session) if (suites or include_all) else []
         ),
+        # Same stake gate as failing_lineage_sources — it names workspace connections
+        # (infra), so only a caller with a suite on this asset (or an admin) sees it.
+        warehouse_lineage_status=(
+            warehouse_lineage_status(session) if (suites or include_all) else []
+        ),
     )
+
+
+def warehouse_lineage_status(session: Session) -> list[WarehouseLineageStatus]:
+    """Warehouse-native lineage sources that are degraded or failing (#858 slice 4).
+
+    Workspace-wide (like `failing_lineage_sources`): a warehouse's lineage tier is a
+    property of the source, not the asset. Lists only Snowflake / Unity Catalog
+    connections that have refreshed at least once AND are either degraded (a coarser
+    tier — e.g. Snowflake OBJECT_DEPENDENCIES because the account isn't Enterprise) or
+    errored (the last refresh failed). A healthy full-tier source is omitted — no banner
+    over a clean, current graph.
+    """
+    rows = session.scalars(
+        select(Connection).where(
+            Connection.type.in_(("snowflake", "unity_catalog")),
+            Connection.lineage_last_refresh_at.is_not(None),
+            or_(
+                Connection.lineage_degraded_reason.is_not(None),
+                Connection.lineage_last_error.is_not(None),
+            ),
+        )
+    ).all()
+    return [
+        WarehouseLineageStatus(
+            connection_id=c.id,
+            name=c.name,
+            type=c.type,
+            tier=c.lineage_last_tier,
+            degraded_reason=c.lineage_degraded_reason,
+            last_error=c.lineage_last_error,
+            last_refreshed_at=c.lineage_last_refresh_at,
+        )
+        for c in rows
+    ]
 
 
 def failing_lineage_sources(session: Session) -> list[LineageSourceHealth]:

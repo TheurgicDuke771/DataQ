@@ -211,6 +211,51 @@ Marquez's newest release is 0.50.0 (2024-10); its slow cadence is an **accepted 
 dev-time reference consumer (ADR 0034) — the `/api/v1/lineage` contract has been stable across
 releases, and production lineage is a bring-your-own catalog behind the same seam.
 
+### Lineage from the warehouse — the `WarehouseLineageProvider` seam (#858)
+
+The catalog pull above reconciles a byte-mismatched identity we **can't construct** (a producer
+spells a name in some other case, so we enumerate the catalog and fold — #823). Reading the
+**warehouse's own** lineage views sidesteps that entirely: the engine returns identifiers in its
+own case — Snowflake `ACCOUNT_USAGE` upper, Unity Catalog `system.access` lower — which is
+**byte-identical to DataQ's asset identity**, so no fold, no enumerate step. That is why warehouse
+lineage is a **distinct seam** (`lineage.warehouse.WarehouseLineageProvider`, SQL → edge pairs),
+not a second `LineageProvider`.
+
+**Dark by default** (`WAREHOUSE_LINEAGE_ENABLED=true` to turn on): the views need a grant
+(Snowflake `IMPORTED PRIVILEGES` on `SNOWFLAKE`, UC `SELECT` on `system.access`) the connection's
+principal may not have. When enabled, a **daily beat** (`refresh_warehouse_lineage`) refreshes every
+Snowflake / Unity Catalog connection independently — one unreachable warehouse records a classified
+error and never aborts the sweep — writing edges tagged `source='snowflake'` / `'unity_catalog'`
+with the connection's id (the full-constraint regime, so a warehouse refresh never touches a dbt or
+Marquez row).
+
+**Snowflake — a tier ladder, richest first** (from the 2026-07-17 live spike):
+
+| Tier | Grain | Edition | Notes |
+|---|---|---|---|
+| `GET_LINEAGE` | object-level traversal | Enterprise+ | Tried first: its absence is a clean, catchable `0A000`, the best preflight signal. Per-seed traversal is a follow-up (no Enterprise account to test against). |
+| `ACCESS_HISTORY` | column/statement | Enterprise+ | **Present-but-empty on Standard** — so emptiness is corroborated against `QUERY_HISTORY` (edition-gated vs genuinely idle), never read as "no lineage". ~2–3h lag. |
+| `OBJECT_DEPENDENCIES` | view-level | all editions | The floor — live-verified on the demo account (RETAIL→STG→ANALYTICS chain). Views/matviews/dynamic-tables; no column detail. |
+
+A degraded descent (e.g. down to view-level because the account isn't Enterprise) is **surfaced on
+the asset's lineage graph**, not hidden — the graph says "view-level only" rather than presenting a
+coarse graph as complete (#828). `OBJECT_DEPENDENCIES` is a current-state view, so its refresh is a
+**snapshot diff** (re-read whole, prune stale edges).
+
+**Unity Catalog — `system.access.table_lineage`**, an append-only **log** with an `event_time`. So
+its refresh is **incremental**: read forward from a persisted watermark (`connections.lineage_watermark`),
+advance it to the new max, and **never prune** — an edge absent from the latest window is a historical
+fact, not a removed dependency. A 6h safety window before the watermark absorbs the system table's
+ingestion lag so a late-arriving row is never lost to a strict `>`. Only rows with **both** a source
+and a target table are edges (most rows are pure read-access with a null target).
+
+**Verified against real captured payloads (2026-07-17 spike), not against a deployed app.** The
+providers' parse + identity are pinned byte-for-byte against `asset_identity` using the actual
+`OBJECT_DEPENDENCIES` / `table_lineage` payloads captured from the live demo account/workspace; the
+edition-gated Snowflake tiers (Enterprise) have no live payload yet and their descent is exercised by
+fakes reproducing the connector's observed `0A000` / silent-empty. Enabling it against a deployed
+warehouse + the per-seed `GET_LINEAGE` traversal are follow-ups.
+
 ## Wiring a trigger
 
 In the UI, open a suite's **Triggers** and bind it to a `(provider, pipeline/DAG, env)`.

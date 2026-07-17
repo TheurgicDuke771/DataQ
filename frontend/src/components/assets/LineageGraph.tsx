@@ -2,7 +2,12 @@ import { ApartmentOutlined } from '@ant-design/icons';
 import { Alert, Card, Flex, Tag, Typography } from 'antd';
 import { useMemo } from 'react';
 
-import type { LineageEdge, LineageNode, LineageSourceHealth } from '../../api/assets';
+import type {
+  LineageEdge,
+  LineageNode,
+  LineageSourceHealth,
+  WarehouseLineageStatus,
+} from '../../api/assets';
 import { BRAND } from '../../theme';
 import { nameSegments } from './assetTree';
 import { namespaceLabel } from './namespaceLabel';
@@ -30,6 +35,7 @@ export function LineageGraph({
   downstream,
   edges,
   failingSources = [],
+  warehouseStatus = [],
   onOpenAsset,
 }: {
   center: CenterAsset;
@@ -39,6 +45,10 @@ export function LineageGraph({
   /** Lineage-feeding connections whose poll is failing (#828). Non-empty ⇒ what's
    *  below may be stale or missing for reasons unrelated to this asset. */
   failingSources?: LineageSourceHealth[];
+  /** Warehouse-native lineage sources that are degraded (coarser tier) or failing
+   *  (#858). A degraded source is working but coarse (view-level only), so the graph
+   *  is real but incomplete — an INFO note, distinct from the failing-source warning. */
+  warehouseStatus?: WarehouseLineageStatus[];
   onOpenAsset: (assetId: string) => void;
 }) {
   const layout = useMemo(
@@ -93,6 +103,30 @@ export function LineageGraph({
                 Until it recovers, lineage here may be stale or missing — this is not necessarily
                 the whole picture.
               </div>
+            </>
+          }
+        />
+      )}
+      {/* Warehouse-native lineage that is working but COARSE (a degraded tier — e.g.
+          Snowflake view-level-only because the account isn't Enterprise) or stale. Info,
+          not warning: the graph is real, just not the richest possible. Never let a
+          view-level graph read as a confident complete one (#828, #858). */}
+      {warehouseStatus.length > 0 && (
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message="Warehouse lineage may be coarse or stale"
+          description={
+            <>
+              {warehouseStatus.map((s) => (
+                <div key={s.connection_id}>
+                  <Typography.Text strong>{s.name}</Typography.Text> ({s.type}):{' '}
+                  {s.last_error
+                    ? `last refresh failed — ${s.last_error}`
+                    : (s.degraded_reason ?? 'lineage is degraded')}
+                </div>
+              ))}
             </>
           }
         />
