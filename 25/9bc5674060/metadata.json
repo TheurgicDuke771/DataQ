@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "259bc5674060",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-858-warehouse-lineage-snowflake",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/25/9bc5674060/0/metadata.json",
+      "transcript": "/25/9bc5674060/0/full.jsonl",
+      "compact_transcript": "/25/9bc5674060/0/transcript.jsonl",
+      "content_hash": "/25/9bc5674060/0/content_hash.txt",
+      "prompt": "/25/9bc5674060/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1248,
+    "cache_creation_tokens": 6061754,
+    "cache_read_tokens": 315725061,
+    "output_tokens": 474606,
+    "api_call_count": 633
+  }
+}
