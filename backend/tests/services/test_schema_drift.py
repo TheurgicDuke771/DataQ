@@ -105,8 +105,11 @@ def test_sql_introspection_reads_information_schema(monkeypatch: pytest.MonkeyPa
 
             class _Res:
                 @staticmethod
-                def all() -> list[tuple[str, str]]:
-                    return [("ID", "NUMBER"), ("EMAIL", "TEXT")]
+                def all() -> list[tuple[str, str, str, str]]:
+                    return [
+                        ("PUBLIC", "ORDERS", "ID", "NUMBER"),
+                        ("PUBLIC", "ORDERS", "EMAIL", "TEXT"),
+                    ]
 
             return _Res()
 
@@ -140,8 +143,8 @@ def test_sql_introspection_uc_catalog_prefix_is_validated(
 
             class _Res:
                 @staticmethod
-                def all() -> list[tuple[str, str]]:
-                    return [("id", "int")]
+                def all() -> list[tuple[str, str, str, str]]:
+                    return [("retail", "orders", "id", "int")]
 
             return _Res()
 
@@ -181,7 +184,7 @@ def test_sql_introspection_empty_result_is_classified_error(
         def execute(self, query: Any, params: dict[str, Any]) -> Any:
             class _Res:
                 @staticmethod
-                def all() -> list[tuple[str, str]]:
+                def all() -> list[tuple[str, str, str, str]]:
                     return []
 
             return _Res()
@@ -194,6 +197,42 @@ def test_sql_introspection_empty_result_is_classified_error(
     with pytest.raises(SchemaIntrospectionError, match="not found in information_schema"):
         introspect_columns(
             _sql_connection(), table="NOPE", schema=None, catalog=None, secret_store=_FakeStore()
+        )
+
+
+def test_sql_introspection_refuses_ambiguous_case_variants(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # UPPER() matching can hit TWO quoted case-variant objects; merging their
+    # columns would baseline a union schema no real table has (#881 review).
+    from contextlib import contextmanager
+
+    class _Conn:
+        def execute(self, query: Any, params: dict[str, Any]) -> Any:
+            class _Res:
+                @staticmethod
+                def all() -> list[tuple[str, str, str, str]]:
+                    return [
+                        ("PUBLIC", "ORDERS", "ID", "NUMBER"),
+                        ("PUBLIC", "Orders", "id", "TEXT"),
+                    ]
+
+            return _Res()
+
+    @contextmanager
+    def fake_open(connection: Connection, secret_store: Any) -> Any:
+        yield _Conn()
+
+    monkeypatch.setattr(schema_drift, "_open_connection", fake_open)
+    # The exact spelling wins when present…
+    cols = introspect_columns(
+        _sql_connection(), table="ORDERS", schema=None, catalog=None, secret_store=_FakeStore()
+    )
+    assert cols == [{"name": "ID", "type": "NUMBER"}]
+    # …but a reference matching several objects with NO exact hit is refused.
+    with pytest.raises(SchemaIntrospectionError, match="ambiguous"):
+        introspect_columns(
+            _sql_connection(), table="orders", schema=None, catalog=None, secret_store=_FakeStore()
         )
 
 
@@ -423,6 +462,28 @@ def test_dry_run_mode_never_persists(
     assert outcome.observed_value["dry_run"] is True
     session.flush()
     assert get_baseline(session, check.id) is None
+
+
+def test_concurrent_first_runs_do_not_blow_up_on_the_baseline_unique(
+    graph: tuple[Session, Connection, Check], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Two concurrent first runs both see no baseline and both insert; the loser's
+    # write must be a silent no-op (ON CONFLICT DO NOTHING), never an
+    # IntegrityError that fails the whole run and discards sibling results.
+    session, conn, check = graph
+    from backend.app.db.models import MonitorBaseline
+
+    session.add(MonitorBaseline(check_id=check.id, kind="schema_drift", baseline={"columns": []}))
+    session.flush()  # the "winner"'s row is already there
+    monkeypatch.setattr(schema_drift, "get_baseline", lambda s, cid: None)  # loser's stale read
+    outcome = _executor_with_snapshot(session, conn, _cols(("ID", "NUMBER")), monkeypatch)(check)
+    session.flush()  # must not raise
+    assert outcome.observed_value is not None
+    assert outcome.observed_value["baseline_captured"] is True
+    monkeypatch.undo()
+    row = get_baseline(session, check.id)
+    assert row is not None
+    assert row.baseline == {"columns": []}  # the winner's baseline is untouched
 
 
 def test_introspection_failure_is_per_check_error(

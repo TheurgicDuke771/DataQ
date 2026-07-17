@@ -25,6 +25,15 @@ Type strings are the datasource's own spelling (``NUMBER(38,0)``, ``int64``,
 ``string``): they are compared for equality within one datasource, never across
 datasources, so no cross-dialect normalisation is attempted. Baselines are
 metadata about the target's shape — no row data, no PII.
+
+Known limits, stated up front: CSV types come from pandas inference over a
+bounded row sample, so a value-shape change inside the sampled window (a NULL
+appearing in an int column → ``float64``) reports a type change even though the
+feed's declared schema never moved — ``ignore_columns`` or a re-baseline is the
+workaround for known-noisy columns. And the flat-file paths read the object
+through the existing ``download_bytes`` seam (like the profiler), so a Parquet
+footer read still downloads the whole blob today — a range-read is a filed
+follow-up, not a promise this module keeps yet.
 """
 
 from __future__ import annotations
@@ -36,6 +45,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select, text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from backend.app.core.logging import get_logger
@@ -138,7 +148,8 @@ def _sql_columns(
         validate_identifier(catalog)
     prefix = f"{catalog}." if catalog else ""
     query = text(
-        f"SELECT column_name, data_type FROM {prefix}information_schema.columns "  # noqa: S608  # nosec B608 — identifiers validated; values bound
+        f"SELECT table_schema, table_name, column_name, data_type "  # noqa: S608  # nosec B608 — identifiers validated; values bound
+        f"FROM {prefix}information_schema.columns "
         "WHERE UPPER(table_schema) = UPPER(:schema_name) "
         "AND UPPER(table_name) = UPPER(:table_name) "
         "ORDER BY ordinal_position"
@@ -149,7 +160,25 @@ def _sql_columns(
         raise SchemaIntrospectionError(
             f"table {table!r} not found in information_schema (schema {effective_schema!r})"
         )
-    return [{"name": str(name), "type": str(data_type)} for name, data_type in rows]
+    # Case-insensitive matching mirrors how the engines resolve unquoted
+    # identifiers — but it can match SEVERAL quoted case-variant objects (ORDERS
+    # and "Orders"), and merging their columns would baseline a union schema no
+    # real table has. Prefer the exact spelling; otherwise demand exactly one
+    # distinct object, and refuse (classified) when the reference is ambiguous.
+    by_object: dict[tuple[str, str], list[ColumnSpec]] = {}
+    for row_schema, row_table, name, data_type in rows:
+        by_object.setdefault((str(row_schema), str(row_table)), []).append(
+            {"name": str(name), "type": str(data_type)}
+        )
+    exact = by_object.get((effective_schema, table))
+    if exact is not None:
+        return exact
+    if len(by_object) > 1:
+        raise SchemaIntrospectionError(
+            f"table reference {table!r} is ambiguous: {len(by_object)} case-variant "
+            "objects match in information_schema — quote/spell the exact name"
+        )
+    return next(iter(by_object.values()))
 
 
 def _file_columns(
@@ -304,13 +333,22 @@ def build_schema_drift_executor(
                 "columns_checked": len(current),
             }
             if persist:
-                session.add(
-                    MonitorBaseline(
-                        check_id=check.id, kind=SCHEMA_DRIFT, baseline={"columns": current}
+                # ON CONFLICT DO NOTHING: two concurrent first runs of one suite
+                # both see no baseline (READ COMMITTED) and both insert — the
+                # loser must NOT blow up the whole run's commit with an
+                # IntegrityError (discarding every sibling result row, #122).
+                # Whichever run wins captured the same live schema moments apart;
+                # the loser's "baseline captured" report stays truthful. Rides
+                # the run's transaction, so a rolled-back run strands nothing.
+                session.execute(
+                    pg_insert(MonitorBaseline)
+                    .values(
+                        check_id=check.id,
+                        kind=SCHEMA_DRIFT,
+                        baseline={"columns": current},
                     )
+                    .on_conflict_do_nothing(constraint="uq_monitor_baselines_check")
                 )
-                # Flushed with the run's result rows — one transaction, so a run
-                # whose results roll back never strands a baseline it didn't report.
             else:
                 payload["dry_run"] = True
         else:
