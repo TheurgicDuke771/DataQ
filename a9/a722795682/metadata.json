@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "a9a722795682",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-592-rebaseline-ui",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/a9/a722795682/0/metadata.json",
+      "transcript": "/a9/a722795682/0/full.jsonl",
+      "compact_transcript": "/a9/a722795682/0/transcript.jsonl",
+      "content_hash": "/a9/a722795682/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1026,
+    "cache_creation_tokens": 3039880,
+    "cache_read_tokens": 234269588,
+    "output_tokens": 386108,
+    "api_call_count": 520
+  }
+}
