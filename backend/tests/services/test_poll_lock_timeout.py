@@ -107,8 +107,16 @@ def _run_with_deadline(fn: Any) -> bool:
     def target() -> None:
         try:
             fn()
-        except BaseException as exc:  # re-raised on the main thread below
+        except Exception as exc:  # re-raised on the main thread below
             error.append(exc)
+        except BaseException as exc:
+            # SystemExit / pytest's Failed deliberately subclass BaseException to
+            # escape except-Exception blocks — letting one vanish with the thread
+            # would make a blown-up fn read as "it returned" (the masquerade this
+            # helper exists to prevent). Record for the main thread, then
+            # RE-RAISE in place (CodeQL py/catch-base-exception: never swallow).
+            error.append(exc)
+            raise
         finally:
             done.set()
 
