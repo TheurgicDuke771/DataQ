@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "4309868558ff",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-858-warehouse-lineage-beat",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/alembic/versions/960d18679639_add_warehouse_lineage_refresh_state_to_.py",
+    "backend/app/core/config.py",
+    "backend/app/db/models.py",
+    "backend/app/lineage/warehouse_refresh.py",
+    "backend/app/worker/celery_app.py",
+    "backend/app/worker/tasks.py",
+    "backend/tests/lineage/test_warehouse_connection_refresh.py",
+    "backend/tests/worker/test_warehouse_lineage_task.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/43/09868558ff/0/metadata.json",
+      "transcript": "/43/09868558ff/0/full.jsonl",
+      "compact_transcript": "/43/09868558ff/0/transcript.jsonl",
+      "content_hash": "/43/09868558ff/0/content_hash.txt",
+      "prompt": "/43/09868558ff/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1504,
+    "cache_creation_tokens": 6187357,
+    "cache_read_tokens": 409730281,
+    "output_tokens": 546657,
+    "api_call_count": 761
+  }
+}

@@ -1,0 +1,80 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "4309868558ff",
+  "session_id": "622c4288-d864-4f3e-ad26-c33cd8118bed",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-17T13:38:15.108077Z",
+  "branch": "feature/issue-858-warehouse-lineage-beat",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "backend/alembic/versions/960d18679639_add_warehouse_lineage_refresh_state_to_.py",
+    "backend/app/core/config.py",
+    "backend/app/db/models.py",
+    "backend/app/lineage/warehouse_refresh.py",
+    "backend/app/worker/celery_app.py",
+    "backend/app/worker/tasks.py",
+    "backend/tests/lineage/test_warehouse_connection_refresh.py",
+    "backend/tests/worker/test_warehouse_lineage_task.py"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "fbb2fff33c92",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 1504,
+    "cache_creation_tokens": 6187357,
+    "cache_read_tokens": 409730281,
+    "output_tokens": 546657,
+    "api_call_count": 761
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01LEJyewWimy67e2sXfENbRX",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "fbb2fff33c92",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 185,
+        "end": 186,
+        "entry_ids": [
+          "1c26655d-3667-4d1e-8bf2-c087fa5de74b"
+        ],
+        "tool_use_id": "toolu_01LEJyewWimy67e2sXfENbRX"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01LEJyewWimy67e2sXfENbRX"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-17T13:38:14.890829Z",
+    "agent_lines": 478,
+    "agent_removed": 2,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 478,
+    "total_lines_changed": 480,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
