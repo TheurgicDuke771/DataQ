@@ -1,0 +1,10 @@
+# Captured warehouse-lineage payloads (#858 spike, 2026-07-17). Redacted at capture
+# time (usernames pseudonymized), parked here for the fixture-backed tests.
+#
+# Only the payloads a committed test actually reads are checked in — each after a
+# per-file review for sensitive content (the #823 lesson: tests ride REAL payloads,
+# but a real payload still gets read before it is committed). Everything else stays
+# local until the slice that needs it lands.
+*
+!.gitignore
+!snowflake_object_dependencies.json
