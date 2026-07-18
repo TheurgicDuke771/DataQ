@@ -26,7 +26,7 @@ from backend.app.services.asset_identity import format_snowflake_name, normalize
 
 _FIXTURES = Path(__file__).parent.parent / "fixtures" / "lineage_native"
 _ACCOUNT = "PVQSOEQ-ZGB34383"  # the demo account the payload was captured from
-_CONFIG: dict[str, Any] = {"account": _ACCOUNT}
+_CONFIG: dict[str, Any] = {"account": _ACCOUNT, "database": "DATAQ_DB"}
 
 
 def _object_dependencies_rows() -> list[tuple[Any, ...]]:
@@ -73,8 +73,9 @@ class _FakeConn:
         self._raises = raises or {}
         self.executed: list[str] = []
 
-    def execute(self, statement: Any) -> _Result:
+    def execute(self, statement: Any, params: dict[str, Any] | None = None) -> _Result:
         sql = str(statement)
+        self.params = params
         self.executed.append(sql)
         for needle, exc in self._raises.items():
             if needle in sql:
@@ -179,7 +180,7 @@ def test_access_history_populated_wins_over_floor() -> None:
     conn = _FakeConn(
         results={
             "ACCESS_HISTORY ah": [
-                ("DATAQ_DB.RETAIL.ORDERS_HEADER", "DATAQ_DB.ANALYTICS_STG.STG_ORDERS")
+                ("DATAQ_DB.RETAIL.ORDERS_HEADER", "DATAQ_DB.ANALYTICS_STG.STG_ORDERS", None)
             ],
             "OBJECT_DEPENDENCIES": _object_dependencies_rows(),
         },
@@ -215,7 +216,7 @@ def test_get_lineage_0a000_descends_the_ladder() -> None:
     conn = _FakeConn(
         results={
             "ACCESS_HISTORY ah": [
-                ("DATAQ_DB.RETAIL.CUSTOMERS", "DATAQ_DB.ANALYTICS_STG.STG_CUSTOMERS")
+                ("DATAQ_DB.RETAIL.CUSTOMERS", "DATAQ_DB.ANALYTICS_STG.STG_CUSTOMERS", None)
             ]
         },
         raises={"GET_LINEAGE": _feature_unsupported_error()},
@@ -334,3 +335,130 @@ def test_fully_denied_account_is_unavailable_not_empty() -> None:
     )
     with pytest.raises(WarehouseLineageUnavailableError):
         SnowflakeLineageProvider().fetch_edges(conn, connection_config=_CONFIG)
+
+
+# ── #908: scope + hygiene + column grain (Enterprise, live-tuned) ─────────────
+
+
+def _access_history_conn(rows: list[Any]) -> _FakeConn:
+    return _FakeConn(
+        results={"ACCESS_HISTORY ah": rows, "QUERY_HISTORY": [(100,)]},
+        raises={"GET_LINEAGE": _feature_unsupported_error()},
+    )
+
+
+def test_access_history_query_is_scoped_and_bound() -> None:
+    """The scope lives in the SQL (contractual, #908): both endpoints Table-domain,
+    both in the connection's database via a BOUND param (no interpolation), and a
+    bounded lookback — the unscoped account-wide sweep is what shipped Snowpark
+    scratch and a dropped schema as browsable assets."""
+    conn = _access_history_conn([])
+    SnowflakeLineageProvider().fetch_edges(conn, connection_config=_CONFIG)
+    sql = next(s for s in conn.executed if "ACCESS_HISTORY ah" in s)
+    assert "bo.value:objectDomain = 'Table'" in sql
+    assert "om.value:objectDomain = 'Table'" in sql
+    assert "SPLIT_PART(bo.value:objectName::string, '.', 1) = :db" in sql
+    assert "SPLIT_PART(om.value:objectName::string, '.', 1) = :db" in sql
+    assert "DATEADD('day', -90" in sql
+    assert conn.params == {"db": "DATAQ_DB"}
+
+
+def test_object_dependencies_query_is_db_bound() -> None:
+    conn = _FakeConn(
+        results={"OBJECT_DEPENDENCIES": []},
+        raises={
+            "GET_LINEAGE": _feature_unsupported_error(),
+            "ACCESS_HISTORY": _feature_unsupported_error(),
+        },
+    )
+    SnowflakeLineageProvider().fetch_edges(conn, connection_config=_CONFIG)
+    sql = next(s for s in conn.executed if "OBJECT_DEPENDENCIES" in s)
+    assert "referenced_database = :db AND referencing_database = :db" in sql
+    assert conn.params == {"db": "DATAQ_DB"}
+
+
+def test_missing_database_is_unavailable() -> None:
+    with pytest.raises(WarehouseLineageUnavailableError, match="database"):
+        SnowflakeLineageProvider().fetch_edges(_FakeConn(), connection_config={"account": _ACCOUNT})
+
+
+def test_snowpark_ephemera_rows_never_become_edges() -> None:
+    # Real class from the live pull: SNOWPARK_TEMP_* tables are session scratch —
+    # present in ACCESS_HISTORY, gone before anyone could browse the asset.
+    rows = [
+        ("DATAQ_DB.PERF.SNOWPARK_TEMP_TABLE_K0ADU7Z7AS", "DATAQ_DB.RETAIL.ORDERS", None),
+        ("DATAQ_DB.RETAIL.ORDERS", "DATAQ_DB.PERF.SNOWPARK_TEMP_STAGE_5G3D7DHWSF", None),
+        ("DATAQ_DB.RETAIL.ORDERS_HEADER", "DATAQ_DB.ANALYTICS_STG.STG_ORDERS", None),
+    ]
+    result = SnowflakeLineageProvider().fetch_edges(
+        _access_history_conn(rows), connection_config=_CONFIG
+    )
+    assert [(e.upstream.name, e.downstream.name) for e in result.edges] == [
+        (
+            format_snowflake_name("DATAQ_DB", "RETAIL", "ORDERS_HEADER"),
+            format_snowflake_name("DATAQ_DB", "ANALYTICS_STG", "STG_ORDERS"),
+        )
+    ]
+
+
+def test_column_pairs_extracted_from_direct_sources() -> None:
+    """objects_modified[].columns[].directSources → column_pairs (#908). The pair
+    attaches ONLY to the edge whose upstream is the direct source's table — a second
+    source table in the same statement belongs to its own edge's row."""
+    cols_json = json.dumps(
+        [
+            {
+                "columnName": "ORDER_TOTAL",
+                "directSources": [
+                    {
+                        "columnName": "SUBTOTAL",
+                        "objectDomain": "Table",
+                        "objectName": "DATAQ_DB.RETAIL.ORDERS_HEADER",
+                    },
+                    {  # a DIFFERENT source table — belongs to that edge's own row
+                        "columnName": "TAX_RATE",
+                        "objectDomain": "Table",
+                        "objectName": "DATAQ_DB.REFERENCE.TAX",
+                    },
+                ],
+            },
+            {"columnName": "LOADED_AT", "directSources": []},  # real shape: COPY columns
+        ]
+    )
+    rows = [("DATAQ_DB.RETAIL.ORDERS_HEADER", "DATAQ_DB.ANALYTICS_STG.STG_ORDERS", cols_json)]
+    result = SnowflakeLineageProvider().fetch_edges(
+        _access_history_conn(rows), connection_config=_CONFIG
+    )
+    [edge] = result.edges
+    assert edge.column_pairs == (("SUBTOTAL", "ORDER_TOTAL"),)
+
+
+def test_real_capture_empty_direct_sources_yield_no_pairs() -> None:
+    """The REAL captured Enterprise payload (2026-07-18): every historical write is
+    COPY-from-stage, so every ``columns[].directSources`` is EMPTY — the extractor
+    must yield zero pairs from it, never fabricate (the #823 discipline)."""
+    raw = json.loads((_FIXTURES / "sf_access_history_columns_projected.json").read_text())
+    provider = SnowflakeLineageProvider()
+    ns = f"snowflake://{normalize_snowflake_account(_ACCOUNT)}"
+    up = provider._identity_from_qualified(ns, "DATAQ_DB.RETAIL.ORDERS_HEADER")
+    assert up is not None
+    for entry in raw:
+        assert (
+            provider._column_pairs_from_json(
+                json.dumps(entry["tgt_columns"]), namespace=ns, upstream=up
+            )
+            == []
+        )
+
+
+def test_malformed_columns_json_never_breaks_the_pull() -> None:
+    rows = [
+        ("DATAQ_DB.RETAIL.A", "DATAQ_DB.RETAIL.B", "{not json"),
+        ("DATAQ_DB.RETAIL.A", "DATAQ_DB.RETAIL.C", json.dumps({"unexpected": "shape"})),
+        ("DATAQ_DB.RETAIL.A", "DATAQ_DB.RETAIL.D", json.dumps([{"columnName": 7}])),
+    ]
+    result = SnowflakeLineageProvider().fetch_edges(
+        _access_history_conn(rows), connection_config=_CONFIG
+    )
+    assert len(result.edges) == 3
+    assert all(e.column_pairs == () for e in result.edges)

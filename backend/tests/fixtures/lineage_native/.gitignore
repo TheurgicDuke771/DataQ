@@ -11,3 +11,7 @@
 !uc_table_lineage_projected.json
 # #901 column grain — reviewed 2026-07-18: table/column names + event times only.
 !uc_column_lineage_projected.json
+# #908 Enterprise ACCESS_HISTORY columns — reviewed 2026-07-18: table/column names
+# only (incl. quoted-lowercase workout tables — real identity shapes); every
+# directSources is empty (the whole point of the fixture: no fabrication).
+!sf_access_history_columns_projected.json
