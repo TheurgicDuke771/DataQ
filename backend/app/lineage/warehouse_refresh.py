@@ -288,6 +288,11 @@ def _existing_columns(
                 LineageEdge.source == source,
                 LineageEdge.connection_id == connection_id,
                 LineageEdge.columns.is_not(None),
+                # Exclude JSON 'null' in SQL (#907): rows bulk-written before
+                # `none_as_null` (or by an old image in the deploy window) carry it,
+                # pass `is_not(None)`, and would land as None values in a dict typed
+                # list-of-pairs. jsonb_typeof makes the filter mean what it says.
+                func.jsonb_typeof(LineageEdge.columns) != "null",
             )
         )
     }
