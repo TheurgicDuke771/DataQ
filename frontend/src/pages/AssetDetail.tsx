@@ -24,6 +24,7 @@ import {
   updateAsset,
 } from '../api/assets';
 import { useIsWorkspaceAdmin } from '../auth/useMe';
+import { ColumnLineagePanel } from '../components/assets/ColumnLineagePanel';
 import { IncidentsPanel } from '../components/assets/IncidentsPanel';
 import { LineageGraph } from '../components/assets/LineageGraph';
 import { type Health, connectionHealth, runHealth, suiteHealth } from '../components/assets/health';
@@ -180,6 +181,15 @@ function AssetDetailBody({
         failingSources={asset.failing_lineage_sources}
         warehouseStatus={asset.warehouse_lineage_status}
         onOpenAsset={(id) => navigate(`/assets/${id}`)}
+      />
+
+      {/* Column-grain refinement of the direct edges (#901); redacted far-endpoints
+          arrive count-only from the server and render as a locked box (#845). */}
+      <ColumnLineagePanel
+        centerId={summary.id}
+        centerName={summary.name}
+        nodes={[...asset.upstream, ...asset.downstream]}
+        edges={asset.lineage_edges}
       />
     </Flex>
   );
