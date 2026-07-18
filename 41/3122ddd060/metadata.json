@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "413122ddd060",
+  "strategy": "manual-commit",
+  "branch": "docs/ledger-lineage-arc",
+  "checkpoints_count": 9,
+  "files_touched": [
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/41/3122ddd060/0/metadata.json",
+      "transcript": "/41/3122ddd060/0/full.jsonl",
+      "compact_transcript": "/41/3122ddd060/0/transcript.jsonl",
+      "content_hash": "/41/3122ddd060/0/content_hash.txt",
+      "prompt": "/41/3122ddd060/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1125,
+    "cache_creation_tokens": 6858118,
+    "cache_read_tokens": 233551109,
+    "output_tokens": 399009,
+    "api_call_count": 578
+  }
+}
