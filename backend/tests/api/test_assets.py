@@ -680,3 +680,69 @@ def test_column_lineage_redacts_pairs_on_inaccessible_edges(
             (str(world["asset_x"]), str(world["asset_y"])),
         ):
             assert e["columns"] is None and e["column_count"] is None
+
+
+def test_json_null_columns_row_never_500s_the_asset_page(
+    client: TestClient, world: dict[str, Any]
+) -> None:
+    """#907 regression, pinned at the exact defect: a `columns` value of JSON `null`
+    (what the pre-fix bulk upsert wrote for every no-pairs edge — NOT SQL NULL, so it
+    passes `is_not(None)` filters) must render as a no-grain edge, never 500.
+
+    Written with a literal SQL cast because the fixed ORM type (`none_as_null=True`)
+    can no longer produce the value — exactly like the 339 rows the first prod
+    Snowflake refresh left behind."""
+    from sqlalchemy import text as sql_text
+
+    db = client_db(client)
+    db.add(
+        LineageEdge(
+            upstream_asset_id=world["asset_x"],
+            downstream_asset_id=world["asset_y"],
+            source="snowflake",
+        )
+    )
+    db.commit()
+    db.execute(
+        sql_text(
+            "UPDATE lineage_edges SET columns = 'null'::jsonb "
+            "WHERE upstream_asset_id = :up AND source = 'snowflake'"
+        ),
+        {"up": str(world["asset_x"])},
+    )
+    db.commit()
+
+    _as(world["owner"])
+    resp = client.get(f"/api/v1/assets/{world['asset_x']}")
+    assert resp.status_code == 200
+    edge = next(
+        e
+        for e in resp.json()["lineage_edges"]
+        if (e["source"], e["target"]) == (str(world["asset_x"]), str(world["asset_y"]))
+    )
+    assert edge["columns"] is None and edge["column_count"] is None
+
+
+def test_orm_none_columns_persists_as_sql_null(client: TestClient, world: dict[str, Any]) -> None:
+    """#907 write side: a no-pairs edge written through the model must store SQL NULL
+    (queryable with IS NULL), not JSON null — `none_as_null=True` pinned."""
+    from sqlalchemy import text as sql_text
+
+    db = client_db(client)
+    db.add(
+        LineageEdge(
+            upstream_asset_id=world["asset_y"],
+            downstream_asset_id=world["asset_x"],
+            source="snowflake",
+            columns=None,
+        )
+    )
+    db.commit()
+    n = db.execute(
+        sql_text(
+            "SELECT count(*) FROM lineage_edges "
+            "WHERE upstream_asset_id = :up AND source = 'snowflake' AND columns IS NULL"
+        ),
+        {"up": str(world["asset_y"])},
+    ).scalar_one()
+    assert n == 1

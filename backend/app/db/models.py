@@ -370,7 +370,10 @@ class Suite(Base):
     # profiler request (`table`/`schema`/`catalog`/`path`/`file_format`) and
     # resolved per connection type to the runner's (table, schema, catalog) by
     # `services.run_target.resolve_target`. NULL = targetless = not yet runnable.
-    target: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    # none_as_null: Python None must persist as SQL NULL, never JSON 'null' (#907 —
+    # suite_service passes an explicit target=None, and connection_service filters
+    # `target.isnot(None)`; JSON null would pass that filter).
+    target: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
     # The asset this suite's target resolves to (ADR 0034, gap G-d). Resolved from
     # `target` + the connection config on save via OpenLineage identity naming.
     # Nullable because resolution is fail-soft: a targetless or unresolvable suite
@@ -389,7 +392,7 @@ class Suite(Base):
     # (a suite targets one table); shaped to promote to a connection/column catalog
     # later. Auto-derivable from datasource classification/tags + name heuristics;
     # this column stores the resolved/overridden policy.
-    column_policy: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    column_policy: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
     created_by: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
     )
@@ -625,9 +628,11 @@ class Result(Base):
     # NULL where a check yields no meaningful scalar.
     metric_value: Mapped[Decimal | None] = mapped_column(Numeric)
     duration_ms: Mapped[int | None] = mapped_column(Integer)
-    observed_value: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
-    expected_value: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
-    sample_failures: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    # none_as_null on all three (#907): a None here means "absent", which must be
+    # SQL NULL — queryable with IS NULL and invisible to isnot(None) readers.
+    observed_value: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
+    expected_value: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
+    sample_failures: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
     sample_failures_purged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = _created_at()
 
@@ -900,7 +905,12 @@ class LineageEdge(Base):
     # on refresh for incremental sources — a log window only re-observes pairs
     # whose queries ran inside it, and forgetting the rest would be a prune the
     # never-prune regime forbids.
-    columns: Mapped[list[Any] | None] = mapped_column(JSONB)
+    #
+    # ``none_as_null=True`` is load-bearing (#907): without it a bulk INSERT
+    # serializes Python ``None`` as JSON ``null`` — which is NOT SQL NULL, so it
+    # slips past ``columns.is_not(None)`` filters and the reader that then
+    # iterates it 500s. Found live on the first prod Snowflake refresh (339 rows).
+    columns: Mapped[list[Any] | None] = mapped_column(JSONB(none_as_null=True))
 
 
 class Incident(Base):
@@ -1004,7 +1014,7 @@ class Incident(Base):
         UUID(as_uuid=True), ForeignKey("incidents.id", ondelete="SET NULL")
     )
     # Deterministic evidence card (layer 1) snapshot; never sample_failures content.
-    evidence: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    evidence: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
     created_at: Mapped[datetime] = _created_at()
     updated_at: Mapped[datetime] = _updated_at()
 

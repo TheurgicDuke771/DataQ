@@ -354,3 +354,37 @@ def test_incremental_refresh_merges_column_pairs_never_forgets(
         ["c", "d"],
         ["e", "f"],
     ]
+
+
+def test_bulk_upsert_no_pairs_edge_stores_sql_null_not_json_null(
+    db_session: Session, sf_connection: Connection
+) -> None:
+    """#907 pinned at the ACTUAL defect path — the multi-VALUES bulk upsert (the
+    writer that produced prod's 339 JSON-null rows). ORM reads can't tell the two
+    nulls apart (both deserialize to Python None), so assert in SQL."""
+    from sqlalchemy import text as sql_text
+
+    refresh_warehouse_edges(
+        db_session,
+        connection=sf_connection,
+        provider=_StubProvider(
+            WarehouseLineageResult(
+                edges=(LineageEdgePair(_ident("SRC"), _ident("DST")),),
+                tier=LineageTier.SNOWFLAKE_OBJECT_DEPENDENCIES,
+            )
+        ),
+        conn=object(),
+    )
+    json_null = db_session.execute(
+        sql_text(
+            "SELECT count(*) FROM lineage_edges "
+            "WHERE connection_id = :c AND columns = 'null'::jsonb"
+        ),
+        {"c": str(sf_connection.id)},
+    ).scalar_one()
+    sql_null = db_session.execute(
+        sql_text("SELECT count(*) FROM lineage_edges WHERE connection_id = :c AND columns IS NULL"),
+        {"c": str(sf_connection.id)},
+    ).scalar_one()
+    assert json_null == 0
+    assert sql_null == 1

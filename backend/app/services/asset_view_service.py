@@ -42,7 +42,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from sqlalchemy import or_, select, tuple_
+from sqlalchemy import func, or_, select, tuple_
 from sqlalchemy.orm import Session
 
 from backend.app.core.errors import DataQError
@@ -742,11 +742,24 @@ def _lineage_edge_refs(
         ).where(
             tuple_(LineageEdge.upstream_asset_id, LineageEdge.downstream_asset_id).in_(edges),
             LineageEdge.columns.is_not(None),
+            # Exclude JSON 'null' in SQL (#907) — rows bulk-written before
+            # `none_as_null` carry it and pass `is_not(None)`.
+            func.jsonb_typeof(LineageEdge.columns) != "null",
         )
     ):
-        bucket = pairs.setdefault((up, down), set())
         # Defensive shape check: `columns` is app-written JSONB, but a malformed
-        # entry must degrade to "skipped", never 500 the asset page.
+        # value must degrade to "skipped", never 500 the asset page — LOUDLY (#907
+        # review: a silent skip is the confident-empty-state failure mode #828
+        # taught; an operator must be able to see the backfill missed rows).
+        if not isinstance(cols, (list, tuple)):
+            log.warning(
+                "lineage_edge_columns_malformed",
+                upstream_asset_id=str(up),
+                downstream_asset_id=str(down),
+                value_type=type(cols).__name__,
+            )
+            continue
+        bucket = pairs.setdefault((up, down), set())
         bucket.update(
             (str(entry[0]), str(entry[1]))
             for entry in cols
