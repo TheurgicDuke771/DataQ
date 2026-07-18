@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "c8bd8cd53857",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-907-jsonb-null-500",
+  "checkpoints_count": 6,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/c8/bd8cd53857/0/metadata.json",
+      "transcript": "/c8/bd8cd53857/0/full.jsonl",
+      "compact_transcript": "/c8/bd8cd53857/0/transcript.jsonl",
+      "content_hash": "/c8/bd8cd53857/0/content_hash.txt",
+      "prompt": "/c8/bd8cd53857/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 725,
+    "cache_creation_tokens": 2833972,
+    "cache_read_tokens": 119282257,
+    "output_tokens": 248425,
+    "api_call_count": 372
+  }
+}
