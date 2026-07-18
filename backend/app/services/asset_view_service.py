@@ -744,9 +744,13 @@ def _lineage_edge_refs(
             LineageEdge.columns.is_not(None),
         )
     ):
-        bucket = pairs.setdefault((up, down), set())
         # Defensive shape check: `columns` is app-written JSONB, but a malformed
-        # entry must degrade to "skipped", never 500 the asset page.
+        # value must degrade to "skipped", never 500 the asset page. That includes
+        # JSON ``null`` — SQL-NULL-filtered rows can still carry it (#907: rows
+        # bulk-written before `none_as_null` deserialize to Python None here).
+        if not isinstance(cols, (list, tuple)):
+            continue
+        bucket = pairs.setdefault((up, down), set())
         bucket.update(
             (str(entry[0]), str(entry[1]))
             for entry in cols

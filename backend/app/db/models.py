@@ -900,7 +900,12 @@ class LineageEdge(Base):
     # on refresh for incremental sources — a log window only re-observes pairs
     # whose queries ran inside it, and forgetting the rest would be a prune the
     # never-prune regime forbids.
-    columns: Mapped[list[Any] | None] = mapped_column(JSONB)
+    #
+    # ``none_as_null=True`` is load-bearing (#907): without it a bulk INSERT
+    # serializes Python ``None`` as JSON ``null`` — which is NOT SQL NULL, so it
+    # slips past ``columns.is_not(None)`` filters and the reader that then
+    # iterates it 500s. Found live on the first prod Snowflake refresh (339 rows).
+    columns: Mapped[list[Any] | None] = mapped_column(JSONB(none_as_null=True))
 
 
 class Incident(Base):
