@@ -222,12 +222,27 @@ lineage is a **distinct seam** (`lineage.warehouse.WarehouseLineageProvider`, SQ
 not a second `LineageProvider`.
 
 **Dark by default** (`WAREHOUSE_LINEAGE_ENABLED=true` to turn on): the views need a grant
-(Snowflake `IMPORTED PRIVILEGES` on `SNOWFLAKE`, UC `SELECT` on `system.access`) the connection's
-principal may not have. When enabled, a **daily beat** (`refresh_warehouse_lineage`) refreshes every
+(Snowflake `IMPORTED PRIVILEGES` on `SNOWFLAKE` — or the finer `SNOWFLAKE.GOVERNANCE_VIEWER`
+database role, which covers the ACCESS_HISTORY/OBJECT_DEPENDENCIES tiers without blanket
+ACCOUNT_USAGE; UC `SELECT` on `system.access`) the connection's principal may not have. A tier
+the role can't read **skips with a "not authorized" reason and the ladder descends** (#902) —
+tested live: a denied tier never aborts the tiers the role *can* read, and a fully-denied
+account reports classified-unavailable, never a confident empty. When enabled, a **daily beat** (`refresh_warehouse_lineage`) refreshes every
 Snowflake / Unity Catalog connection independently — one unreachable warehouse records a classified
 error and never aborts the sweep — writing edges tagged `source='snowflake'` / `'unity_catalog'`
 with the connection's id (the full-constraint regime, so a warehouse refresh never touches a dbt or
 Marquez row).
+
+**Column grain (#901, live-verified on UC):** where the warehouse offers it —
+`system.access.column_lineage`, read from the same watermark window — each table edge is refined
+with `[upstream_column, downstream_column]` pairs, stored on the edge row (`lineage_edges.columns`)
+and **merged union-wise** on incremental refreshes (a log window only re-observes pairs whose
+queries ran inside it; forgetting the rest would be a prune the never-prune regime forbids). A
+separately-gated `column_lineage` degrades honestly: table edges still land, with a note. The asset
+page shows the mappings per direct edge; an edge whose far endpoint is outside the viewer's grants
+arrives **count-only** from the server (the #845 one-rule — a hidden asset's column names are
+schema disclosure) and renders as a locked box. Snowflake's column grain lives in `ACCESS_HISTORY`
+(Enterprise) and is honestly absent on Standard.
 
 **Snowflake — a tier ladder, richest first** (from the 2026-07-17 live spike):
 

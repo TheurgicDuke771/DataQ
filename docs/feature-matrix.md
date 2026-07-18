@@ -59,11 +59,18 @@ five mechanisms:
    grant); the tier that answered and any degraded/failing state surface on the asset's
    lineage graph so a view-level-only or stale graph never reads as a confident complete
    one ([details](orchestration.md#lineage-from-the-warehouse-warehouselineageprovider-858)).
+   **Column grain (#901):** where the warehouse offers it (UC
+   `system.access.column_lineage` — live-verified), the pull refines each table edge with
+   `upstream column → downstream column` pairs, shown on the asset page; a mapping whose
+   far endpoint is outside your grants renders as a **count-only redacted box** (the #845
+   one-rule — column names of a hidden asset are schema disclosure). Snowflake's column
+   grain lives in `ACCESS_HISTORY` (Enterprise) and reports honestly unavailable on
+   Standard.
 
 | Datasource | Asset entity | ① Run-stamping | ② dbt manifest | ③ OL emission | ④ Catalog pull | ⑤ Warehouse-native |
 |---|---|:-:|:-:|:-:|:-:|:-:|
 | Snowflake | `snowflake://{org}-{account}` / `DB.SCHEMA.TABLE` | ✅ | ✅ (live-verified) | ✅ | ✅ | ✅ (OBJECT_DEPENDENCIES live; ACCESS_HISTORY/GET_LINEAGE Enterprise) |
-| Unity Catalog | `unitycatalog://{host}` / `catalog.schema.table` | ✅ | ✅ (adapter-aware) | ✅ | ✅ | ✅ (system.access.table_lineage, incremental) |
+| Unity Catalog | `unitycatalog://{host}` / `catalog.schema.table` | ✅ | ✅ (adapter-aware) | ✅ | ✅ | ✅ (system.access.table_lineage, incremental; **+ column grain, live-verified**) |
 | ADLS Gen2 (files) | `abfss://{container}@{account}.dfs.core.windows.net` / pattern **base prefix** | ✅ | — | ✅ | ✅ | — |
 | S3 (files) | `s3://{bucket}` / base prefix | ✅ | — | ✅ | ✅ | — |
 | Iceberg | `{catalog_uri}` / `namespace.table` | ✅ | —¹ | ✅ | ✅ | —³ |
