@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "920e21a7d4ca",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-907-jsonb-null-500",
+  "checkpoints_count": 6,
+  "files_touched": [
+    "backend/alembic/versions/b2c3d4e5f6a9_null_out_json_null_lineage_columns.py",
+    "backend/app/db/models.py",
+    "backend/app/lineage/warehouse_refresh.py",
+    "backend/app/services/asset_view_service.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/92/0e21a7d4ca/0/metadata.json",
+      "transcript": "/92/0e21a7d4ca/0/full.jsonl",
+      "compact_transcript": "/92/0e21a7d4ca/0/transcript.jsonl",
+      "content_hash": "/92/0e21a7d4ca/0/content_hash.txt",
+      "prompt": "/92/0e21a7d4ca/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 764,
+    "cache_creation_tokens": 3359506,
+    "cache_read_tokens": 129467578,
+    "output_tokens": 261092,
+    "api_call_count": 392
+  }
+}

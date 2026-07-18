@@ -1,0 +1,172 @@
+* Perform a mutation spike (both backend and frontend), and check the issues found. Then run a full security scan of entire codebase to identify any vulnerabilities [considering the recent security events].
+* Then check the docs once [READMEs, github page, progress, etc.] and make sure they are up to date with the latest changes.
+* Next deploy the latest changes to prod [full routine pre - post checklist coverage, if needed run the ad-hoc harness job once, but make sure to turn everyting off once the validation is completed.]
+
+---
+
+<task-notification>
+<task-id>ada87a45bc0795e27</task-id>
+<tool-use-id>toolu_0158JkrXuQ5FfbgZXMY5Xijn</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/ada87a45bc0795e27.output</output-file>
+<status>failed</status>
+<summary>Agent "Injection/SSRF/authz security audit" failed: Agent terminated early due to an API error: You've hit your monthly spend limit · raise it at claude.ai/settings/usage</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b22v2xhtx</task-id>
+<tool-use-id>toolu_01BkSGhQGQ9jtZ2zzYbSRBK2</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/b22v2xhtx.output</output-file>
+<status>completed</status>
+<summary>Background command "Full-history betterleaks secret scan via docker" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bn44c7qw9</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/bn44c7qw9.output</output-file>
+<status>completed</status>
+<summary>Background command "Re-run Stryker capturing full survivor report" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bwrzi03j9</task-id>
+<tool-use-id>toolu_01AHZPVpBEZTu55zXACfqdAS</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/bwrzi03j9.output</output-file>
+<status>completed</status>
+<summary>Background command "Dump all surviving mutant diffs to scratchpad" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b9003k7m5</task-id>
+<tool-use-id>toolu_01XFRf6mQe2s1ZXCR55Qe19i</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/b9003k7m5.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for survivor dump to finish" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+continue...
+
+---
+
+<task-notification>
+<task-id>b8ilegm2n</task-id>
+<tool-use-id>toolu_01M6u4cAgKMQ2uohgRkge1w9</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/b8ilegm2n.output</output-file>
+<status>completed</status>
+<summary>Background command "Verify betterleaksignore silences the historical finding" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bn2fbkbjc</task-id>
+<tool-use-id>toolu_01KKeN1AJmG9HaK8QQUqzjPq</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/bn2fbkbjc.output</output-file>
+<status>completed</status>
+<summary>Background command "Note review outcome and watch PR checks" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b15esqu0y</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/b15esqu0y.output</output-file>
+<status>completed</status>
+<summary>Background command "Run harness window: wake, run mockdata flows, sleep" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Hey, what the status
+
+---
+
+What about log sanitization and other similar issues, it bites hard last week
+
+---
+
+Did we get full lineage on both SF and UC?
+
+---
+
+Test it live for both UC and SF (that's the main point of this exerise, not just to prove it theoriticaly). 
+Also pull the column lineage if available. 
+show the lineage in a reducted box if user don't have access to it.
+
+---
+
+<task-notification>
+<task-id>bv8eqmts3</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/bv8eqmts3.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch PR 903 CI checks" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+fix the prod issue
+
+---
+
+<task-notification>
+<task-id>bwrungqyj</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/bwrungqyj.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch PR 903 checks after fixup" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b5lt7v9c1</task-id>
+<tool-use-id>toolu_01NwFK4yeFk5t8zt98Rf1iTL</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/b5lt7v9c1.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for main CI green then dispatch Deploy" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b7k7ryww5</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/b7k7ryww5.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch docs PR checks then squash-merge" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+do the WAREHOUSE_LINEAGE_ENABLED flip
+
+---
+
+Is it landed?
+
+---
+
+<task-notification>
+<task-id>bn2y5ah5y</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/bn2y5ah5y.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for the first live warehouse-lineage refresh" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Asset is not working, and fetchinf temp objects and stages
