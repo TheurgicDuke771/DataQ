@@ -58,6 +58,13 @@ class LineageTier(StrEnum):
         return self in {self.SNOWFLAKE_GET_LINEAGE, self.SNOWFLAKE_ACCESS_HISTORY}
 
 
+# Defensive per-edge cap on persisted column pairs (#901/#908): real schemas are
+# bounded, but a generated/exploded join must not balloon the edge's JSONB. Shared by
+# every provider that offers the column grain — a per-provider copy already drifted
+# once (the SF port initially shipped uncapped; #911 review).
+MAX_COLUMN_PAIRS_PER_EDGE = 500
+
+
 @dataclass(frozen=True)
 class LineageEdgePair:
     """One directed edge as two OpenLineage identities — the warehouse provider's

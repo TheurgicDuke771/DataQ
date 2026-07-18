@@ -7,16 +7,19 @@ The tier ladder, richest first — chosen and ordered from the 2026-07-17 live s
    traversal, object-domain aware, no JSON parsing. **Its absence is a CLEAN, catchable
    ``0A000 Unsupported feature 'Data Lineage'``** — the best preflight signal, so it is
    tried first and its failure descends the ladder rather than erroring the pull.
-2. **``ACCOUNT_USAGE.ACCESS_HISTORY``** (Enterprise+) — query-derived column-level
-   lineage (CTAS / INSERT / MERGE / COPY). **On a Standard account the view is present
-   but SILENTLY EMPTY** (live-verified: 45,630 ``QUERY_HISTORY`` rows in 90d vs
-   ``COUNT(*)=0`` here) — so emptiness cannot be read as "no lineage"; it is corroborated
-   against ``QUERY_HISTORY`` to distinguish edition-gating from a genuinely idle account.
-   ~2-3h latency, surfaced as ``freshness_lag``.
-3. **``ACCOUNT_USAGE.OBJECT_DEPENDENCIES``** (all editions) — the view-level floor,
-   captured working on the demo account (real RETAIL→STG→ANALYTICS chain, UPPER identity
-   byte-identical to ``asset_identity``). Views/matviews/dynamic-tables only; no
-   column detail.
+2. **``ACCOUNT_USAGE.ACCESS_HISTORY``** (Enterprise+) — the DML event log: query-derived
+   table AND column lineage (CTAS / INSERT / MERGE). **On a Standard account the view is
+   present but SILENTLY EMPTY** (live-verified: 45,630 ``QUERY_HISTORY`` rows in 90d vs
+   ``COUNT(*)=0`` here). ~2-3h latency, surfaced as ``freshness_lag``.
+3. **``ACCOUNT_USAGE.OBJECT_DEPENDENCIES``** (all editions) — the current-state
+   VIEW-dependency graph, captured working on the demo account (real
+   RETAIL→STG→ANALYTICS chain, UPPER identity byte-identical to ``asset_identity``).
+
+**2 and 3 are COMPLEMENTARY, not alternatives (#908/#911):** a view never appears as a
+DML write, and a table→table INSERT leaves no dependency row — so the pull always reads
+the floor and UNIONS the scoped DML edges in. The reported ``tier`` names the richest
+source that contributed; emptiness on the DML side degrades the union to the floor,
+never to a confident empty.
 
 Identities are built with :func:`asset_identity.format_snowflake_name` +
 :func:`normalize_snowflake_account`, the SAME functions the suite-target resolver and
@@ -37,6 +40,7 @@ from sqlalchemy import text
 
 from backend.app.core.logging import get_logger
 from backend.app.lineage.warehouse import (
+    MAX_COLUMN_PAIRS_PER_EDGE,
     LineageEdgePair,
     LineageTier,
     WarehouseLineageResult,
@@ -61,6 +65,24 @@ _TABLE_DOMAINS = frozenset(
 # a lower edition) is not licensed — a clean, catchable preflight signal (the spike's
 # key finding vs ACCESS_HISTORY's silent-empty).
 _FEATURE_UNSUPPORTED_SQLSTATE = "0A000"
+
+# Bounded ACCESS_HISTORY lookback (#908): the DML log is read this many days back,
+# bound as a query param. An edge whose last producing query ages past the window is
+# pruned by the snapshot regime — deliberate freshness semantics for DML evidence
+# (the view-dependency half of the union is current-state and never expires).
+_ACCESS_HISTORY_LOOKBACK_DAYS = 90
+
+# The shared per-edge column-pair cap (#901/#908) — see `warehouse`.
+_MAX_COLUMN_PAIRS_PER_EDGE = MAX_COLUMN_PAIRS_PER_EDGE
+
+# ACCESS_HISTORY objectDomain values that are table-like (per-kind, title case —
+# distinct from OBJECT_DEPENDENCIES' UPPER domain vocabulary in `_TABLE_DOMAINS`).
+# A read FROM a view / external table into a table is real table lineage (#911).
+# The SQL IN-list in `_from_access_history` mirrors this set verbatim (pinned by a
+# test); it stays literal there because SQL text is never interpolated.
+_ACCESS_HISTORY_TABLE_DOMAINS = frozenset(
+    {"Table", "View", "Materialized view", "Dynamic table", "External table"}
+)
 
 
 class SnowflakeLineageProvider:
@@ -95,23 +117,17 @@ class SnowflakeLineageProvider:
         except _FeatureUnsupportedError as exc:
             skipped.append(f"get_lineage: {exc}")
 
-        # Tier 2: ACCESS_HISTORY. Present-but-empty on Standard — corroborate.
-        try:
-            access = self._from_access_history(conn, namespace, database)
-            if access is not None:
-                return WarehouseLineageResult(
-                    edges=access,
-                    tier=LineageTier.SNOWFLAKE_ACCESS_HISTORY,
-                    freshness_lag="~2-3h (ACCOUNT_USAGE latency)",
-                    skipped_tiers=tuple(skipped),
-                )
-            skipped.append("access_history: empty (edition-gated or no write history)")
-        except _FeatureUnsupportedError as exc:
-            # Carry the REAL reason (edition gate vs missing grant, #902) — the same
-            # honesty rule the tier-1 skip already follows.
-            skipped.append(f"access_history: {exc}")
-
-        # Tier 3: OBJECT_DEPENDENCIES — the all-editions floor.
+        # The two remaining sources are COMPLEMENTARY truths, not alternatives (#911
+        # review — the exclusive ladder was the deep defect): OBJECT_DEPENDENCIES is
+        # the current-state VIEW-dependency graph (a view is never a DML write, so it
+        # can never appear in ACCESS_HISTORY's objects_modified), and ACCESS_HISTORY
+        # is the DML event log (a table→table INSERT leaves no dependency-view row).
+        # Reading only the "winner" erased whichever half the other tier held — and
+        # since this source is snapshot-pruned, a tier-2 win would have PRUNED the
+        # entire dbt view graph on the next refresh. So: read the floor ALWAYS, and
+        # union the DML edges (with their column pairs) in when the account offers
+        # them. An empty or unreadable ACCESS_HISTORY degrades the union to the
+        # floor — never to a confident empty.
         try:
             floor = self._from_object_dependencies(conn, namespace, database)
         except Exception as exc:  # the floor failing means we learned nothing
@@ -119,15 +135,51 @@ class SnowflakeLineageProvider:
                 "snowflake lineage unavailable: could not read OBJECT_DEPENDENCIES "
                 f"({type(exc).__name__})"
             ) from exc
+
+        dml: tuple[LineageEdgePair, ...] = ()
+        try:
+            dml = self._from_access_history(conn, namespace, database)
+        except _FeatureUnsupportedError as exc:
+            # Carry the REAL reason (edition gate vs missing grant, #902) — the same
+            # honesty rule the tier-1 skip already follows.
+            skipped.append(f"access_history: {exc}")
+        if not dml and not any(s.startswith("access_history") for s in skipped):
+            # Scoped-empty is a normal state (an all-COPY database, or one idle in the
+            # window), NOT evidence of edition gating — the old "edition-gated or no
+            # write history" label mislabeled healthy Enterprise accounts.
+            skipped.append(
+                "access_history: no table-to-table DML in the scoped 90d window "
+                "(all-COPY/idle databases and Standard edition all look like this)"
+            )
+
+        # Union, DML-side wins per edge pair (it can carry column pairs; a view-dep
+        # edge never does). Both sides are already deduped and scoped.
+        merged: dict[tuple[str, str], LineageEdgePair] = {
+            (e.upstream.name, e.downstream.name): e for e in floor
+        }
+        merged.update({(e.upstream.name, e.downstream.name): e for e in dml})
+        tier = (
+            LineageTier.SNOWFLAKE_ACCESS_HISTORY
+            if dml
+            else LineageTier.SNOWFLAKE_OBJECT_DEPENDENCIES
+        )
         return WarehouseLineageResult(
-            edges=floor,
-            tier=LineageTier.SNOWFLAKE_OBJECT_DEPENDENCIES,
+            edges=tuple(merged.values()),
+            tier=tier,
+            # ACCOUNT_USAGE latency qualifies the DML half of the union; the view half
+            # is current-state.
+            freshness_lag="~2-3h (ACCOUNT_USAGE latency)" if dml else None,
             # The per-tier skip reasons are constructed, stable strings (edition gate /
-            # missing grant / deferred traversal — never raw connector text), so they
-            # can be surfaced verbatim; a blanket "need Enterprise" would mislabel a
-            # grant-shaped skip (#902).
+            # missing grant / deferred traversal / scoped-empty — never raw connector
+            # text), so they can be surfaced verbatim; a blanket "need Enterprise"
+            # would mislabel a grant-shaped skip (#902).
             degraded_reason=(
-                ("view-level lineage only — " + "; ".join(skipped)) if skipped else None
+                (
+                    ("column detail limited — " if dml else "view-level lineage only — ")
+                    + "; ".join(skipped)
+                )
+                if skipped
+                else None
             ),
             skipped_tiers=tuple(skipped),
         )
@@ -157,22 +209,31 @@ class SnowflakeLineageProvider:
             raise WarehouseLineageUnavailableError(
                 "snowflake lineage unavailable: connection config has no database"
             )
-        return database.strip().upper()
+        database = database.strip()
+        # The same quote-strip-else-UPPER rule the identity formatter applies (#911
+        # review): a quoted database ("DataQ_Db") is stored by ACCOUNT_USAGE in its
+        # exact inner case — blanket .upper() would exact-match nothing and turn a
+        # config nuance into a silently empty (and prunable!) graph.
+        if len(database) >= 2 and database.startswith('"') and database.endswith('"'):
+            return database[1:-1]
+        return database.upper()
 
     # ── tier 3: OBJECT_DEPENDENCIES (live-verified) ─────────────────────────────
     def _from_object_dependencies(
         self, conn: Any, namespace: str, database: str
     ) -> tuple[LineageEdgePair, ...]:
-        # Both endpoints bound to the connection's database (#908) — exact-match
-        # bound params, so SNOWFLAKE.TRUST_CENTER.* and other system deps never
-        # enter the graph.
+        # At least ONE endpoint bound to the connection's database (#908) — OR, not
+        # AND: a cross-database dependency touching this database is real lineage
+        # (dropping it would assert "nothing feeds this view", the #845-class
+        # omission), while SNOWFLAKE.TRUST_CENTER.* and other system deps have
+        # neither endpoint here and stay excluded. Exact-match bound params.
         rows = conn.execute(
             text(
                 "SELECT referenced_database, referenced_schema, referenced_object_name, "
                 "referenced_object_domain, referencing_database, referencing_schema, "
                 "referencing_object_name, referencing_object_domain "
                 "FROM SNOWFLAKE.ACCOUNT_USAGE.OBJECT_DEPENDENCIES "
-                "WHERE referenced_database = :db AND referencing_database = :db"
+                "WHERE referenced_database = :db OR referencing_database = :db"
             ),
             {"db": database},
         ).all()
@@ -199,32 +260,40 @@ class SnowflakeLineageProvider:
             )
         return dedupe_edges(edges)
 
-    # ── tier 2: ACCESS_HISTORY (Enterprise; empty-but-present on Standard) ───────
+    # ── ACCESS_HISTORY: the DML event log (Enterprise; empty-but-present on Standard) ─
     def _from_access_history(
         self, conn: Any, namespace: str, database: str
-    ) -> tuple[LineageEdgePair, ...] | None:
-        """Query-derived lineage at BOTH grains (#908, live-tuned on the Enterprise
-        account): table edges from the ``base_objects_accessed`` x ``objects_modified``
-        pairs, column pairs from ``objects_modified[].columns[].directSources``.
+    ) -> tuple[LineageEdgePair, ...]:
+        """Query-derived DML lineage at BOTH grains (#908, live-tuned): table edges
+        from the ``base_objects_accessed`` x ``objects_modified`` pairs, column pairs
+        from ``objects_modified[].columns[].directSources``.
 
         Scope + hygiene, each proven necessary by the first live pull:
 
-        * **Both endpoints ``objectDomain = 'Table'``, in SQL** — the real history is
-          dominated by ``Stage`` → Table (COPY) and ``Table function`` → Table
-          (GENERATOR) rows, which are not table lineage and were what materialized
-          stages as assets.
-        * **Both endpoints in the connection's database** (``SPLIT_PART`` exact match
-          on a bound param — no ``LIKE`` wildcard surprises from ``_`` in the name).
-        * **Bounded lookback (90d, matching the write-activity probe)** — never the
-          whole 365d retention; ACCESS_HISTORY is corroborating-tier evidence, not an
-          archaeology dig, and the dropped-schema ghosts (PERF) live in the old rows.
-        * **Snowpark ephemera dropped in Python** (``SNOWPARK_TEMP_*`` tables/stages
-          are session-scoped scratch, gone by the time anyone browses the asset).
+        * **Both endpoints in a table-like ``objectDomain``, in SQL** — the real
+          history is dominated by ``Stage`` → Table (COPY) and ``Table function`` →
+          Table (GENERATOR) rows, which are not table lineage and were what
+          materialized stages as assets. The domain set mirrors ``_TABLE_DOMAINS``
+          (a read FROM a view or an external table is table lineage; #911 review).
+        * **At least ONE endpoint in the connection's database** (``SPLIT_PART``
+          exact match on a bound param). ``OR``, not ``AND``: a cross-database edge
+          touching this database is real lineage, and dropping it would assert
+          "nothing feeds this table" — the omission the #845 amendment forbids. The
+          junk this scope exists to kill (system views, other tenants' noise) has
+          NEITHER endpoint here.
+        * **Bounded lookback** (``_ACCESS_HISTORY_LOOKBACK_DAYS``, bound) — never the
+          whole 365d retention; the dropped-schema ghosts (PERF) live in the old
+          rows. Consequence, documented: a DML edge whose last producing query ages
+          past the window is pruned — "no DML evidence in 90d" is this source's
+          freshness semantics; the view half of the union never expires.
+        * **Snowpark ephemera dropped edge-level in Python** (``SNOWPARK_TEMP_*``
+          session scratch — a pipeline that materializes THROUGH scratch loses the
+          hop; transitive stitching is a filed follow-up).
 
-        Returns ``None`` when the SCOPED view is empty AND the account shows write
-        activity — either edition-gating (Standard's silent-empty, the spike finding)
-        or a database whose DML simply never read a table (this account: all COPYs);
-        both descend to the floor rather than asserting an empty graph."""
+        Returns the (possibly empty) scoped DML edges — the caller unions them with
+        the OBJECT_DEPENDENCIES floor, so empty here never asserts an empty graph.
+        Raises `_FeatureUnsupportedError` (via the reraise helper) when the view is
+        edition-gated or unauthorized."""
         try:
             rows = conn.execute(
                 text(
@@ -236,67 +305,81 @@ class SnowflakeLineageProvider:
                     "LATERAL FLATTEN(input => ah.objects_modified) om "
                     "WHERE ah.objects_modified IS NOT NULL "
                     "AND ARRAY_SIZE(ah.objects_modified) > 0 "
-                    "AND ah.query_start_time > DATEADD('day', -90, CURRENT_TIMESTAMP()) "
-                    "AND bo.value:objectDomain = 'Table' "
-                    "AND om.value:objectDomain = 'Table' "
+                    "AND ah.query_start_time > DATEADD('day', -:lookback, CURRENT_TIMESTAMP()) "
+                    "AND bo.value:objectDomain IN ('Table', 'View', 'Materialized view', "
+                    "'Dynamic table', 'External table') "
+                    "AND om.value:objectDomain IN ('Table', 'View', 'Materialized view', "
+                    "'Dynamic table', 'External table') "
                     "AND bo.value:objectName IS NOT NULL "
                     "AND om.value:objectName IS NOT NULL "
-                    "AND SPLIT_PART(bo.value:objectName::string, '.', 1) = :db "
-                    "AND SPLIT_PART(om.value:objectName::string, '.', 1) = :db"
+                    "AND (SPLIT_PART(bo.value:objectName::string, '.', 1) = :db "
+                    "OR SPLIT_PART(om.value:objectName::string, '.', 1) = :db)"
                 ),
-                {"db": database},
+                {"db": database, "lookback": _ACCESS_HISTORY_LOOKBACK_DAYS},
             ).all()
         except Exception as exc:
             _reraise_if_feature_unsupported(exc)
             raise
-        if not rows:
-            return None if self._account_has_write_activity(conn) else ()
         edges: dict[tuple[str, str], tuple[AssetIdentity, AssetIdentity]] = {}
         pairs: dict[tuple[str, str], set[tuple[str, str]]] = {}
+        # The bo x om cross-join repeats each statement's columns blob once per base
+        # object, and repeated statements repeat it again — parse each distinct blob
+        # once (#911 review: the un-memoized parse was O(rows x columns x sources)).
+        parsed_pairs_by_blob: dict[str, dict[str, list[tuple[str, str]]]] = {}
+        dropped_names = 0
         for source_name, target_name, target_columns in rows:
             up = self._identity_from_qualified(namespace, source_name)
             down = self._identity_from_qualified(namespace, target_name)
-            if up is None or down is None or up.name == down.name:
+            if up is None or down is None:
+                dropped_names += 1  # non-3-part name (e.g. a dotted quoted identifier)
+                continue
+            if up.name == down.name:
                 continue
             if self._is_ephemeral(up.name) or self._is_ephemeral(down.name):
                 continue  # Snowpark session scratch — real rows, never real assets
             key = (up.name, down.name)
             edges[key] = (up, down)
-            for col_up, col_down in self._column_pairs_from_json(
-                target_columns, namespace=namespace, upstream=up
-            ):
-                pairs.setdefault(key, set()).add((col_up, col_down))
-        return dedupe_edges(
-            [
-                LineageEdgePair(
-                    upstream=up,
-                    downstream=down,
-                    column_pairs=tuple(sorted(pairs.get(key, ()))),
-                )
-                for key, (up, down) in edges.items()
-            ]
+            if target_columns:
+                if target_columns not in parsed_pairs_by_blob:
+                    parsed_pairs_by_blob[target_columns] = self._pairs_by_source_table(
+                        target_columns, namespace=namespace
+                    )
+                bucket = pairs.setdefault(key, set())
+                for pair in parsed_pairs_by_blob[target_columns].get(up.name, ()):
+                    if len(bucket) >= _MAX_COLUMN_PAIRS_PER_EDGE:
+                        break
+                    bucket.add(pair)
+        if dropped_names:
+            log.info(
+                "warehouse_lineage_unparseable_names_dropped",
+                source=self.source,
+                rows=dropped_names,
+            )
+        return tuple(
+            LineageEdgePair(
+                upstream=up,
+                downstream=down,
+                column_pairs=tuple(sorted(pairs.get(key, ()))),
+            )
+            for key, (up, down) in edges.items()
         )
 
-    def _column_pairs_from_json(
-        self, target_columns: str | None, *, namespace: str, upstream: AssetIdentity
-    ) -> list[tuple[str, str]]:
-        """Extract ``(source_column, written_column)`` pairs from one
-        ``objects_modified[].columns`` JSON blob, for the edge whose upstream is
-        ``upstream`` (#908).
+    def _pairs_by_source_table(
+        self, target_columns: str, *, namespace: str
+    ) -> dict[str, list[tuple[str, str]]]:
+        """Parse one ``objects_modified[].columns`` JSON blob ONCE into
+        ``{source_table_identity_name: [(source_column, written_column), …]}`` (#908).
 
         Each written column carries ``directSources`` — the exact source columns the
-        engine derived it from (Enterprise). A statement can read several tables, so a
-        direct source contributes to THIS edge only when its table identity IS the
-        edge's upstream — sources in other tables belong to those edges' own rows.
-        A malformed entry is skipped, never fatal (the table grain must survive a
-        JSON surprise)."""
-        if not target_columns:
-            return []
+        engine derived it from (Enterprise). A statement can read several tables, so
+        the caller attaches each bucket to the edge whose upstream matches its key —
+        sources in other tables belong to those edges' own rows. A malformed entry is
+        skipped, never fatal (the table grain must survive a JSON surprise)."""
         try:
             columns = json.loads(target_columns)
         except (TypeError, ValueError):
-            return []
-        out: list[tuple[str, str]] = []
+            return {}
+        out: dict[str, list[tuple[str, str]]] = {}
         if not isinstance(columns, list):
             return out
         for col in columns:
@@ -307,16 +390,18 @@ class SnowflakeLineageProvider:
             if not isinstance(written, str) or not isinstance(sources, list):
                 continue
             for src in sources:
-                if not isinstance(src, dict) or src.get("objectDomain") != "Table":
+                if not isinstance(src, dict) or src.get("objectDomain") not in (
+                    _ACCESS_HISTORY_TABLE_DOMAINS
+                ):
                     continue
                 src_table = src.get("objectName")
                 src_col = src.get("columnName")
                 if not isinstance(src_table, str) or not isinstance(src_col, str):
                     continue
                 ident = self._identity_from_qualified(namespace, src_table)
-                if ident is None or ident.name != upstream.name:
+                if ident is None:
                     continue
-                out.append((src_col, written))
+                out.setdefault(ident.name, []).append((src_col, written))
         return out
 
     @staticmethod
@@ -325,18 +410,6 @@ class SnowflakeLineageProvider:
         rows in ACCESS_HISTORY, gone before anyone could browse the asset (#908)."""
         last = qualified_name.rsplit(".", 1)[-1]
         return last.startswith("SNOWPARK_TEMP_")
-
-    def _account_has_write_activity(self, conn: Any) -> bool:
-        """Cheap corroboration: any query in the last 90d. If ACCESS_HISTORY is empty
-        yet the account has run queries, the emptiness is edition-gating (return the
-        empty-is-suspicious signal), not a truly idle account."""
-        count = conn.execute(
-            text(
-                "SELECT COUNT(*) FROM SNOWFLAKE.ACCOUNT_USAGE.QUERY_HISTORY "
-                "WHERE start_time > DATEADD('day', -90, CURRENT_TIMESTAMP())"
-            )
-        ).scalar()
-        return bool(count and int(count) > 0)
 
     def _identity_from_qualified(
         self, namespace: str, qualified: str | None
