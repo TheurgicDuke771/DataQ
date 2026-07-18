@@ -64,18 +64,57 @@ class _Result:
         return self._rows
 
 
-class _FakeConn:
-    """Routes the provider's query to the fixture, honoring its bound :since so the
-    incremental watermark is exercised for real."""
+def _column_lineage_rows(*, since: datetime | None = None) -> list[tuple[Any, ...]]:
+    """The captured column_lineage payload (#901 — 200 real rows, 2026-07-18 live
+    session) as SELECT-order tuples, filtered like the provider's WHERE clause."""
+    raw = json.loads((_FIXTURES / "uc_column_lineage_projected.json").read_text())
+    out = []
+    for r in raw:
+        if not (
+            r["source_table_full_name"]
+            and r["target_table_full_name"]
+            and r["source_column_name"]
+            and r["target_column_name"]
+        ):
+            continue
+        # The capture stored CAST(event_time AS STRING) — naive UTC in Databricks'
+        # string form; re-attach UTC so the fake's filter can compare with the floor.
+        et = datetime.fromisoformat(r["event_time"])
+        if et.tzinfo is None:
+            et = et.replace(tzinfo=UTC)
+        if since is not None and not et > since:
+            continue
+        out.append(
+            (
+                r["source_table_full_name"],
+                r["source_column_name"],
+                r["target_table_full_name"],
+                r["target_column_name"],
+            )
+        )
+    return out
 
-    def __init__(self, *, raises: Exception | None = None) -> None:
+
+class _FakeConn:
+    """Routes the provider's queries to the captured fixtures — table_lineage and
+    column_lineage discriminated off the statement text — honoring the bound :since
+    so the incremental watermark is exercised for real."""
+
+    def __init__(
+        self, *, raises: Exception | None = None, column_raises: Exception | None = None
+    ) -> None:
         self._raises = raises
+        self._column_raises = column_raises
         self.since_used: datetime | None = None
 
     def execute(self, statement: Any, params: dict[str, Any] | None = None) -> _Result:
+        since = (params or {}).get("since")
+        if "column_lineage" in str(statement):
+            if self._column_raises is not None:
+                raise self._column_raises
+            return _Result(_column_lineage_rows(since=since))
         if self._raises is not None:
             raise self._raises
-        since = (params or {}).get("since")
         self.since_used = since
         return _Result(_table_lineage_rows(since=since))
 
@@ -162,3 +201,45 @@ def test_missing_workspace_url_is_unavailable() -> None:
 
 def test_source_tag_is_unity_catalog() -> None:
     assert UnityCatalogLineageProvider().source == "unity_catalog"
+
+
+# ── column grain (#901) ────────────────────────────────────────────────────────
+
+
+def test_column_pairs_attach_to_their_table_edge() -> None:
+    """The captured column_lineage rows refine the edges from the captured
+    table_lineage payload — the join is on full names, byte-for-byte (#823)."""
+    result = UnityCatalogLineageProvider().fetch_edges(_FakeConn(), connection_config=_CONFIG)
+    by_name = {(e.upstream.name, e.downstream.name): e for e in result.edges}
+    key = (
+        format_unity_catalog_name("dataq_retail", "silver", "feedback"),
+        format_unity_catalog_name("dataq_retail", "gold", "feedback_sentiment"),
+    )
+    assert key in by_name
+    pairs = by_name[key].column_pairs
+    # A real derived-column mapping from the live capture: comment -> sentiment.
+    assert ("comment", "sentiment") in pairs
+    # Pass-through columns from the same real payload.
+    assert ("customer_id", "customer_id") in pairs
+    assert pairs == tuple(sorted(set(pairs)))  # deduped + deterministic order
+
+
+def test_column_grain_failure_degrades_never_fails_table_edges() -> None:
+    """column_lineage gated separately from table_lineage (a real UC grant shape):
+    the table edges still land, with an honest degrade note instead of a silent
+    absence — and never an Unavailable that would freeze the cache (#828)."""
+    conn = _FakeConn(column_raises=RuntimeError("PERMISSION_DENIED: column_lineage"))
+    result = UnityCatalogLineageProvider().fetch_edges(conn, connection_config=_CONFIG)
+    assert len(result.edges) > 0
+    assert all(e.column_pairs == () for e in result.edges)
+    assert result.degraded_reason is not None
+    assert "column-level lineage unavailable" in result.degraded_reason
+    # The degrade note is CLASSIFIED (exception type only) — never raw text, which
+    # for a storage-layer failure can carry a signed URL (#828).
+    assert "PERMISSION_DENIED" not in result.degraded_reason
+    assert "RuntimeError" in result.degraded_reason
+
+
+def test_healthy_column_grain_sets_no_degrade_note() -> None:
+    result = UnityCatalogLineageProvider().fetch_edges(_FakeConn(), connection_config=_CONFIG)
+    assert result.degraded_reason is None

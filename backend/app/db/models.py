@@ -893,6 +893,14 @@ class LineageEdge(Base):
     last_seen: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+    # Column-level refinement of this edge (#901): a JSONB list of
+    # ``[upstream_column, downstream_column]`` pairs from sources that offer the
+    # grain (UC ``system.access.column_lineage``). NULL = source has no column
+    # grain; ``[]`` = grain offered but no column events observed. Merged (union)
+    # on refresh for incremental sources — a log window only re-observes pairs
+    # whose queries ran inside it, and forgetting the rest would be a prune the
+    # never-prune regime forbids.
+    columns: Mapped[list[Any] | None] = mapped_column(JSONB)
 
 
 class Incident(Base):
