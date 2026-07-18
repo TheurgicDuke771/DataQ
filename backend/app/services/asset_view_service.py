@@ -146,7 +146,8 @@ class AssetSummary:
     env: str | None
     description: str | None
     owner_user_id: uuid.UUID | None
-    last_seen: datetime
+    # None on redacted rows (#920) — liveness cadence is a fact about the asset.
+    last_seen: datetime | None
     suite_count: int
     # ── suite health (data quality) ──
     worst_severity: str | None
@@ -169,9 +170,9 @@ class AssetSummary:
     has_skip: bool = False
     is_accessible: bool = True
     # Redacted rows only (#920): the non-leaf path segments (db/schema or folder),
-    # so the tree can place the locked row in its real group. None on full rows
-    # (the name carries the path) and on single-segment redacted names.
-    name_prefix: str | None = None
+    # pre-split server-side so client and server can never disagree on the
+    # separator rule. None on full rows and single-segment redacted names.
+    name_prefix_segments: list[str] | None = None
 
 
 @dataclass(frozen=True)
@@ -433,9 +434,6 @@ def list_visible_assets(
     partial-grant caller sees the asset but only the suites/runs they can view
     roll up into its health."""
     accessible = accessible_suite_ids(user_id, include_all=include_all)
-    granted_asset_ids = select(Suite.asset_id).where(
-        Suite.asset_id.is_not(None), Suite.id.in_(accessible)
-    )
     # Browse shows what actually exists — ALL of it (#846, extended by #920):
     #
     # - assets whose suites you can view → full rows;
@@ -444,16 +442,14 @@ def list_visible_assets(
     # - assets monitored ONLY by suites you can't see → **REDACTED rows** (#920,
     #   user-directed): omitting them asserted "this schema holds nothing else" —
     #   the same falsehood the lineage graph's #845 rule exists to prevent, one
-    #   surface over. The row keeps id + namespace (tree placement — a deliberate
-    #   disclosure) and nothing else; the detail endpoint keeps 404ing it.
+    #   surface over. The row keeps id + placement and nothing else; the detail
+    #   endpoint keeps 404ing it.
     #
-    # `NOT IN` is only safe because the subquery excludes NULL `asset_id`: a single
-    # NULL makes `NOT IN` match *nothing*, which would silently drop the suite-less
-    # class instead of failing loudly. Ordering note: redacted rows sort by their
-    # true (hidden) name — a weak alphabetical-position signal, accepted with the
-    # placement disclosure above.
-    all_targeted = select(Suite.asset_id).where(Suite.asset_id.is_not(None))
-    open_to_caller = Asset.id.in_(granted_asset_ids) | Asset.id.not_in(all_targeted)
+    # Accessibility is derived by `_accessible_asset_ids` — the SAME helper the
+    # lineage graph redacts with (#911-review: a second SQL encoding of the rule
+    # here would be the #845/#847 drift class reborn). Ordering note: redacted rows
+    # sort by their true (hidden) name — a weak alphabetical-position signal,
+    # accepted with the placement disclosure.
     assets = list(
         session.scalars(
             select(Asset).order_by(Asset.namespace, Asset.name).limit(limit).offset(offset)
@@ -461,10 +457,13 @@ def list_visible_assets(
     )
     if not assets:
         return []
-    open_ids = set(
-        session.scalars(
-            select(Asset.id).where(Asset.id.in_([a.id for a in assets]), open_to_caller)
-        )
+    page_ids = [a.id for a in assets]
+    open_ids = _accessible_asset_ids(
+        session,
+        page_ids,
+        user_id=user_id,
+        include_all=include_all,
+        has_suite=_monitored_ids(session, page_ids),
     )
 
     suites = list(
@@ -506,23 +505,28 @@ def _redacted_summary(asset: Asset) -> AssetSummary:
     axis (empty defaults — a hidden asset's health, monitoredness, and suite count
     are facts about it).
 
-    ``name_prefix`` (db/schema or folder path, leaf stripped) is a deliberate,
-    user-directed disclosure: the tree places the 🔒 row inside its real group
-    (`DATAQ_DB → ANALYTICS → Restricted`) — the same placement the lineage graph
-    already reveals for any redacted node connected by an edge."""
-    if "/" in asset.name:
-        prefix, _, _leaf = asset.name.rpartition("/")
-    else:
-        prefix, _, _leaf = asset.name.rpartition(".")
+    ``name_prefix_segments`` (db/schema or folder path, leaf stripped, ALREADY
+    segmented server-side with the same separator rule the tree uses) is a
+    deliberate, user-directed disclosure: the tree places the 🔒 row inside its
+    real group (`DATAQ_DB → ANALYTICS → Restricted`) — the same placement the
+    lineage graph already reveals for any redacted node connected by an edge.
+    Shipping segments, not a joined string, keeps one segmentation rule: a
+    re-split client-side would re-detect the separator on the PREFIX (which can
+    differ from the full name's — e.g. a dotted directory under a slashed path)
+    and file the locked row in a fabricated group."""
+    sep = "/" if "/" in asset.name else "."
+    segments = [part for part in asset.name.split(sep) if part]
     return AssetSummary(
         id=asset.id,
         namespace=asset.namespace,
         name=None,
-        name_prefix=prefix or None,
+        name_prefix_segments=segments[:-1] or None,
         env=None,
         description=None,
         owner_user_id=None,
-        last_seen=asset.last_seen,
+        # Liveness is a fact about the hidden asset too (watching it tick reveals
+        # the pipeline's cadence) — withheld like everything else (#921 review).
+        last_seen=None,
         suite_count=0,
         worst_severity=None,
         checks_total=0,

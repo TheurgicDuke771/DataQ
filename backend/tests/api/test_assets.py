@@ -789,7 +789,8 @@ def test_browse_includes_out_of_grant_assets_as_redacted_rows(
     # Placement is the deliberate disclosure: namespace + the non-leaf path only.
     assert row["namespace"] == secret_asset.namespace
     leaf = secret_asset.name.rsplit(".", 1)[-1]
-    assert row["name_prefix"] == secret_asset.name.rsplit(".", 1)[0]
+    assert row["name_prefix_segments"] == secret_asset.name.split(".")[:-1]
+    assert row["last_seen"] is None  # liveness cadence is a fact about the asset
     # Health/monitoredness are facts about the hidden asset — all at empty defaults.
     assert row["suite_count"] == 0 and row["checks_total"] == 0
     assert row["worst_severity"] is None and row["has_failed_run"] is False

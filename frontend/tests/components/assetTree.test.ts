@@ -135,7 +135,7 @@ describe('restricted rows (#920)', () => {
         id: 'r1',
         namespace: 'snowflake://acct',
         name: null,
-        name_prefix: 'DATAQ_DB.ANALYTICS',
+        name_prefix_segments: ['DATAQ_DB', 'ANALYTICS'],
         is_accessible: false,
       }),
     ]);
@@ -157,14 +157,14 @@ describe('restricted rows (#920)', () => {
         id: 'r1',
         namespace: 'snowflake://acct',
         name: null,
-        name_prefix: 'DB.S',
+        name_prefix_segments: ['DB', 'S'],
         is_accessible: false,
       }),
       asset({
         id: 'r2',
         namespace: 'snowflake://acct',
         name: null,
-        name_prefix: 'DB.S',
+        name_prefix_segments: ['DB', 'S'],
         is_accessible: false,
       }),
     ]);

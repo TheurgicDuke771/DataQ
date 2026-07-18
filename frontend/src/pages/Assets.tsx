@@ -12,7 +12,7 @@ import type { ReactNode } from 'react';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-import { type AssetSummary, listAssets } from '../api/assets';
+import { type AssetSummary, isRedacted, listAssets } from '../api/assets';
 import { namespaceLabel } from '../components/assets/namespaceLabel';
 import { AssetHealthTag } from '../components/assets/AssetHealthTag';
 import {
@@ -186,7 +186,7 @@ function AssetsTable({ assets, onOpen }: { assets: AssetSummary[]; onOpen: (id: 
       dataIndex: 'name',
       render: (name: string | null, asset) => (
         <div style={{ minWidth: 0 }}>
-          {name === null ? (
+          {isRedacted(asset) ? (
             // #920 redacted row — exists, but the viewer holds no grant. The
             // disclosed placement (prefix/namespace) renders; the name never does.
             <Typography.Text
@@ -194,7 +194,10 @@ function AssetsTable({ assets, onOpen }: { assets: AssetSummary[]; onOpen: (id: 
               italic
               aria-label="A restricted asset outside your access"
             >
-              🔒 Restricted{asset.name_prefix ? ` · ${asset.name_prefix}` : ''}
+              🔒 Restricted
+              {asset.name_prefix_segments?.length
+                ? ` · ${asset.name_prefix_segments.join(' › ')}`
+                : ''}
             </Typography.Text>
           ) : (
             <Typography.Text strong ellipsis style={{ display: 'block' }}>
@@ -232,9 +235,9 @@ function AssetsTable({ assets, onOpen }: { assets: AssetSummary[]; onOpen: (id: 
       title: 'Last seen',
       dataIndex: 'last_seen',
       width: 200,
-      render: (ts: string) => (
+      render: (ts: string | null) => (
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          {formatTimestamp(ts)}
+          {ts ? formatTimestamp(ts) : '—'}
         </Typography.Text>
       ),
     },
@@ -249,8 +252,8 @@ function AssetsTable({ assets, onOpen }: { assets: AssetSummary[]; onOpen: (id: 
       pagination={false}
       onRow={(asset) => ({
         // A redacted row is not openable — the detail endpoint 404s it (#920).
-        onClick: asset.is_accessible === false ? undefined : () => onOpen(asset.id),
-        style: { cursor: asset.is_accessible === false ? 'default' : 'pointer' },
+        onClick: isRedacted(asset) ? undefined : () => onOpen(asset.id),
+        style: { cursor: isRedacted(asset) ? 'default' : 'pointer' },
       })}
     />
   );

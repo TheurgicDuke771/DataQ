@@ -1,4 +1,4 @@
-import type { AssetSummary } from '../../api/assets';
+import { type AssetSummary, isRedacted } from '../../api/assets';
 import { type DatasourceKind, datasourceKind, namespaceLabel } from './namespaceLabel';
 
 /**
@@ -71,6 +71,28 @@ interface MutableNode {
   children: Map<string, MutableNode>;
 }
 
+/** Get-or-create the folder chain for `segments` under `start`; returns the last
+ *  node and its key path. One walk for full and restricted rows alike — a keying
+ *  or labeling change can never apply to one and not the other (#921 review). */
+function descend(
+  start: MutableNode,
+  startPath: string,
+  segments: string[],
+): { cursor: MutableNode; path: string } {
+  let cursor = start;
+  let path = startPath;
+  for (const segment of segments) {
+    path += `/${segment}`;
+    let child = cursor.children.get(segment);
+    if (!child) {
+      child = { key: path, label: segment, children: new Map() };
+      cursor.children.set(segment, child);
+    }
+    cursor = child;
+  }
+  return { cursor, path };
+}
+
 function freeze(node: MutableNode): AssetTreeNode {
   return {
     key: node.key,
@@ -108,24 +130,14 @@ export function buildAssetTree(assets: AssetSummary[]): AssetTreeNode[] {
       };
       roots.set(rootKey, node);
     }
-    if (asset.name === null || asset.is_accessible === false) {
+    if (isRedacted(asset)) {
       // A #920 redacted row: the asset exists but the viewer holds no grant. The
-      // server disclosed only the PARENT path (`name_prefix` — db/schema/folder,
-      // leaf stripped), so the locked leaf renders inside its real group
-      // (`DATAQ_DB → ANALYTICS → Restricted`); the leaf name stays hidden. Keyed
-      // by id so multiple restricted leaves coexist; no `asset` attached —
+      // server disclosed only the PARENT path — pre-split (`name_prefix_segments`),
+      // so client and server can never disagree on the separator — and the locked
+      // leaf renders inside its real group (`DATAQ_DB → ANALYTICS → Restricted`).
+      // Keyed by id so multiple restricted leaves coexist; no `asset` attached —
       // nothing to open (the detail endpoint 404s it).
-      let cursor: MutableNode = node;
-      let path = rootKey;
-      for (const segment of asset.name_prefix ? nameSegments(asset.name_prefix) : []) {
-        path += `/${segment}`;
-        let child = cursor.children.get(segment);
-        if (!child) {
-          child = { key: path, label: segment, children: new Map() };
-          cursor.children.set(segment, child);
-        }
-        cursor = child;
-      }
+      const { cursor, path } = descend(node, rootKey, asset.name_prefix_segments ?? []);
       cursor.children.set(`__restricted__/${asset.id}`, {
         key: `${path}/__restricted__/${asset.id}`,
         label: 'Restricted',
@@ -134,21 +146,11 @@ export function buildAssetTree(assets: AssetSummary[]): AssetTreeNode[] {
       });
       continue;
     }
-    const segments = nameSegments(asset.name);
-    let cursor: MutableNode = node;
-    let path = rootKey;
-    segments.forEach((segment, i) => {
-      path += `/${segment}`;
-      let child = cursor.children.get(segment);
-      if (!child) {
-        child = { key: path, label: segment, children: new Map() };
-        cursor.children.set(segment, child);
-      }
-      cursor = child;
-      // The final segment is the asset itself — attach it (a node can already
-      // have children from a longer sibling path, so this merges, not replaces).
-      if (i === segments.length - 1) cursor.asset = asset;
-    });
+    const segments = nameSegments(asset.name ?? '');
+    const { cursor } = descend(node, rootKey, segments);
+    // The final segment is the asset itself — attach it (a node can already
+    // have children from a longer sibling path, so this merges, not replaces).
+    cursor.asset = asset;
   }
   // Sort roots by what the user reads (the label), tie-broken by the namespace so
   // two datasources that shorten to the same label still order deterministically.

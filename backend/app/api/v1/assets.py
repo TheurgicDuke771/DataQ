@@ -85,7 +85,7 @@ class AssetSummaryRead(ApiModel):
     env: str | None
     description: str | None
     owner_user_id: uuid.UUID | None
-    last_seen: datetime
+    last_seen: datetime | None
     suite_count: int
     worst_severity: str | None
     checks_total: int
@@ -102,8 +102,9 @@ class AssetSummaryRead(ApiModel):
     has_operational_error: bool
     has_skip: bool
     is_accessible: bool = True
-    # Redacted rows only (#920): the non-leaf path segments for tree placement.
-    name_prefix: str | None = None
+    # Redacted rows only (#920): the non-leaf path segments for tree placement,
+    # pre-split server-side (one separator rule for client and server).
+    name_prefix_segments: list[str] | None = None
 
 
 class LineageNodeRead(ApiModel):
