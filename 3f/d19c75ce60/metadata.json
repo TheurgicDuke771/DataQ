@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "3fd19c75ce60",
+  "strategy": "manual-commit",
+  "branch": "docs/ledger-security-sweep-deploy",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "deploy/README.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/3f/d19c75ce60/0/metadata.json",
+      "transcript": "/3f/d19c75ce60/0/full.jsonl",
+      "compact_transcript": "/3f/d19c75ce60/0/transcript.jsonl",
+      "content_hash": "/3f/d19c75ce60/0/content_hash.txt",
+      "prompt": "/3f/d19c75ce60/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1778,
+    "cache_creation_tokens": 6562423,
+    "cache_read_tokens": 486696471,
+    "output_tokens": 625162,
+    "api_call_count": 899
+  }
+}
