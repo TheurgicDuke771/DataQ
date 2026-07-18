@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -6,7 +6,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { type AssetSummary, listAssets } from '../../src/api/assets';
 import { Assets } from '../../src/pages/Assets';
 
-vi.mock('../../src/api/assets', () => ({ listAssets: vi.fn() }));
+vi.mock('../../src/api/assets', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/api/assets')>()),
+  listAssets: vi.fn(),
+}));
 const mockList = vi.mocked(listAssets);
 
 const ASSET: AssetSummary = {
@@ -27,6 +30,7 @@ const ASSET: AssetSummary = {
   has_operational_error: false,
   has_cancelled_run: false,
   has_skip: false,
+  is_accessible: true,
 };
 
 afterEach(() => vi.clearAllMocks());
@@ -116,4 +120,26 @@ describe('Assets page', () => {
     renderPage();
     expect(await screen.findByText('Failed to load assets')).toBeInTheDocument();
   });
+});
+
+it('renders a redacted asset as a locked, non-navigating entry in its group (#920)', async () => {
+  mockList.mockResolvedValue([
+    ASSET,
+    {
+      ...ASSET,
+      id: 'r1',
+      name: null,
+      env: null,
+      last_seen: null,
+      is_accessible: false,
+      name_prefix_segments: ['ANALYTICS', 'PUBLIC'],
+      suite_count: 0,
+    },
+  ]);
+  renderPage();
+  const locked = await screen.findByLabelText('A restricted asset outside your access');
+  expect(locked).toBeInTheDocument();
+  expect(screen.queryByText(/MART_/)).not.toBeInTheDocument(); // no hidden identity anywhere
+  fireEvent.click(locked);
+  expect(screen.queryByTestId('detail-page')).not.toBeInTheDocument(); // not openable
 });

@@ -35,11 +35,15 @@ export interface ComposingSuite {
 export interface AssetSummary {
   id: string;
   namespace: string;
-  name: string;
+  /** Null = a REDACTED browse row (#920): monitored solely by suites outside the
+   *  viewer's grants — render as a locked entry (placement only), never openable
+   *  (the detail endpoint 404s it). `is_accessible` is the discriminator. */
+  name: string | null;
   env: string | null;
   description: string | null;
   owner_user_id: string | null;
-  last_seen: string;
+  /** Null on redacted rows (#920) — liveness cadence is a fact about the asset. */
+  last_seen: string | null;
   suite_count: number;
   /** Rolled up across the caller-visible composing suites' latest runs. */
   worst_severity: 'warn' | 'fail' | 'critical' | null;
@@ -59,6 +63,10 @@ export interface AssetSummary {
    *  Derived from the recorded runs — there is no connection-probe polling loop. */
   has_operational_error: boolean;
   has_skip: boolean;
+  is_accessible: boolean;
+  /** Redacted rows only: the disclosed non-leaf path segments (db/schema or
+   *  folder), pre-split server-side — one separator rule for client and server. */
+  name_prefix_segments?: string[] | null;
   /** Any composing suite's latest run was `cancelled`. A cancelled run proves
    *  nothing — killed before a check ran, we may never have reached the datasource
    *  — so neither health axis may roll it up green. */
@@ -167,4 +175,11 @@ export async function updateAsset(
 ): Promise<AssetSummary> {
   const { data } = await api.patch<AssetSummary>(`/assets/${assetId}`, payload);
   return data;
+}
+
+/** The #920 redacted-row discriminator — ONE definition for tree, table, and row
+ *  handlers (belt-and-braces on both fields so a serializer bug on either can
+ *  never render a hidden identity or a clickable locked row). */
+export function isRedacted(asset: AssetSummary): boolean {
+  return asset.is_accessible === false || asset.name === null;
 }

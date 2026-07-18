@@ -114,7 +114,13 @@ function AssetHealthBody({
   const truncated = assets.length >= LIST_CAP;
 
   const tiles: { label: string; value: number; tone: string }[] = [
-    { label: 'Monitored', value: assets.length, tone: BRAND.ink },
+    // Redacted rows (#920) are present in browse but are not the viewer's
+    // monitored assets — counting them would mislabel the stat.
+    {
+      label: 'Monitored',
+      value: assets.filter((a) => a.is_accessible !== false).length,
+      tone: BRAND.ink,
+    },
     {
       label: 'Need attention',
       value: attention.length,

@@ -160,8 +160,9 @@ def test_a_grantee_sees_the_neighbour_in_full(db_session: Any) -> None:
 
 @pytest.mark.parametrize("include_all", [False, True])
 def test_the_three_surfaces_agree_on_what_is_visible(db_session: Any, include_all: bool) -> None:
-    """Browse, the detail endpoint, and the lineage graph must derive visibility from the
-    SAME rule — over every asset kind.
+    """Browse, the detail endpoint, and the lineage graph must derive ACCESSIBILITY from
+    the SAME rule — over every asset kind. (#920 changed browse's *presentation* of an
+    inaccessible asset — a redacted row instead of omission — but the rule is one.)
 
     This is the regression that matters. The bug being fixed here *was* a disagreement
     between two of these surfaces: the graph offered a node the endpoint refused. They
@@ -186,8 +187,8 @@ def test_the_three_surfaces_agree_on_what_is_visible(db_session: Any, include_al
     }
     user_id = stranger.id if include_all else viewer.id  # admin identity is irrelevant
 
-    listed = {
-        row[0].id if isinstance(row, tuple) else row.id
+    rows_by_id = {
+        row.id: row
         for row in svc.list_visible_assets(db_session, user_id=user_id, include_all=include_all)
     }
     for kind, asset_id in kinds.items():
@@ -197,8 +198,11 @@ def test_the_three_surfaces_agree_on_what_is_visible(db_session: Any, include_al
             openable = True
         except AssetNotFoundError:
             openable = False
-        # 2) browse
-        is_listed = asset_id in listed
+        # 2) browse — since #920 EVERY asset is listed; accessibility is the row's
+        #    redaction state (an ungranted asset appears anonymous, never omitted).
+        row = rows_by_id.get(asset_id)
+        assert row is not None, f"{kind}: browse omitted the asset (include_all={include_all})"
+        browse_accessible = row.is_accessible
         # 3) the lineage graph's own accessibility derivation
         graph_accessible = asset_id in svc._accessible_asset_ids(
             db_session,
@@ -210,8 +214,14 @@ def test_the_three_surfaces_agree_on_what_is_visible(db_session: Any, include_al
 
         expected = include_all or kind != "ungranted"
         assert openable is expected, f"{kind}: detail disagrees (include_all={include_all})"
-        assert is_listed is expected, f"{kind}: browse disagrees (include_all={include_all})"
+        assert (
+            browse_accessible is expected
+        ), f"{kind}: browse disagrees (include_all={include_all})"
         assert graph_accessible is expected, f"{kind}: graph disagrees (include_all={include_all})"
+        # The redacted browse row and the redacted graph node tell the same lie-free
+        # story: existence yes, identity no.
+        if not expected:
+            assert row.name is None and row.env is None
 
 
 def test_a_workspace_admin_sees_everything_unredacted(db_session: Any, scenario: Any) -> None:

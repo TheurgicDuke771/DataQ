@@ -65,6 +65,7 @@ const DETAIL: AssetDetailData = {
     has_operational_error: false,
     has_cancelled_run: false,
     has_skip: false,
+    is_accessible: true,
   },
   suites: [
     {

@@ -1,4 +1,4 @@
-import type { AssetSummary } from '../../api/assets';
+import { type AssetSummary, isRedacted } from '../../api/assets';
 import { type DatasourceKind, datasourceKind, namespaceLabel } from './namespaceLabel';
 
 /**
@@ -42,6 +42,10 @@ export interface AssetTreeNode {
   namespace?: string;
   /** The asset — set on leaf (and folder-leaf) nodes; makes the node openable. */
   asset?: AssetSummary;
+  /** True → a #920 redacted leaf: an asset exists here that the viewer holds no
+   *  grant on. No `asset` is attached (nothing to open — the detail endpoint 404s
+   *  it); the label is a generic "Restricted". */
+  restricted?: boolean;
   children: AssetTreeNode[];
 }
 
@@ -63,7 +67,30 @@ interface MutableNode {
   kind?: DatasourceKind;
   namespace?: string;
   asset?: AssetSummary;
+  restricted?: boolean;
   children: Map<string, MutableNode>;
+}
+
+/** Get-or-create the folder chain for `segments` under `start`; returns the last
+ *  node and its key path. One walk for full and restricted rows alike — a keying
+ *  or labeling change can never apply to one and not the other (#921 review). */
+function descend(
+  start: MutableNode,
+  startPath: string,
+  segments: string[],
+): { cursor: MutableNode; path: string } {
+  let cursor = start;
+  let path = startPath;
+  for (const segment of segments) {
+    path += `/${segment}`;
+    let child = cursor.children.get(segment);
+    if (!child) {
+      child = { key: path, label: segment, children: new Map() };
+      cursor.children.set(segment, child);
+    }
+    cursor = child;
+  }
+  return { cursor, path };
 }
 
 function freeze(node: MutableNode): AssetTreeNode {
@@ -73,6 +100,7 @@ function freeze(node: MutableNode): AssetTreeNode {
     ...(node.kind ? { kind: node.kind } : {}),
     ...(node.namespace ? { namespace: node.namespace } : {}),
     ...(node.asset ? { asset: node.asset } : {}),
+    ...(node.restricted ? { restricted: true } : {}),
     children: [...node.children.values()]
       .map(freeze)
       .sort((a, b) => a.label.localeCompare(b.label)),
@@ -102,21 +130,27 @@ export function buildAssetTree(assets: AssetSummary[]): AssetTreeNode[] {
       };
       roots.set(rootKey, node);
     }
-    const segments = nameSegments(asset.name);
-    let cursor: MutableNode = node;
-    let path = rootKey;
-    segments.forEach((segment, i) => {
-      path += `/${segment}`;
-      let child = cursor.children.get(segment);
-      if (!child) {
-        child = { key: path, label: segment, children: new Map() };
-        cursor.children.set(segment, child);
-      }
-      cursor = child;
-      // The final segment is the asset itself — attach it (a node can already
-      // have children from a longer sibling path, so this merges, not replaces).
-      if (i === segments.length - 1) cursor.asset = asset;
-    });
+    if (isRedacted(asset)) {
+      // A #920 redacted row: the asset exists but the viewer holds no grant. The
+      // server disclosed only the PARENT path — pre-split (`name_prefix_segments`),
+      // so client and server can never disagree on the separator — and the locked
+      // leaf renders inside its real group (`DATAQ_DB → ANALYTICS → Restricted`).
+      // Keyed by id so multiple restricted leaves coexist; no `asset` attached —
+      // nothing to open (the detail endpoint 404s it).
+      const { cursor, path } = descend(node, rootKey, asset.name_prefix_segments ?? []);
+      cursor.children.set(`__restricted__/${asset.id}`, {
+        key: `${path}/__restricted__/${asset.id}`,
+        label: 'Restricted',
+        restricted: true,
+        children: new Map(),
+      });
+      continue;
+    }
+    const segments = nameSegments(asset.name ?? '');
+    const { cursor } = descend(node, rootKey, segments);
+    // The final segment is the asset itself — attach it (a node can already
+    // have children from a longer sibling path, so this merges, not replaces).
+    cursor.asset = asset;
   }
   // Sort roots by what the user reads (the label), tie-broken by the namespace so
   // two datasources that shorten to the same label still order deterministically.
