@@ -388,3 +388,34 @@ def test_bulk_upsert_no_pairs_edge_stores_sql_null_not_json_null(
     ).scalar_one()
     assert json_null == 0
     assert sql_null == 1
+
+
+def test_snapshot_refresh_replaces_column_pairs_never_accretes(
+    db_session: Session, sf_connection: Connection
+) -> None:
+    """#911 review: for a snapshot source the pull IS the current truth — a pair the
+    warehouse no longer reports (rewritten ETL) must go away, and a grain lost with a
+    revoked grant must clear rather than freeze at revocation time."""
+
+    def _snapshot(pairs: tuple[tuple[str, str], ...]) -> _StubProvider:
+        return _StubProvider(
+            WarehouseLineageResult(
+                edges=(LineageEdgePair(_ident("SRC"), _ident("DST"), column_pairs=pairs),),
+                tier=LineageTier.SNOWFLAKE_ACCESS_HISTORY,
+            )
+        )
+
+    refresh_warehouse_edges(
+        db_session, connection=sf_connection, provider=_snapshot((("a", "b"),)), conn=object()
+    )
+    refresh_warehouse_edges(
+        db_session, connection=sf_connection, provider=_snapshot((("c", "d"),)), conn=object()
+    )
+    cols = _columns_for(db_session, sf_connection)
+    assert cols[(_ident("SRC").name, _ident("DST").name)] == [["c", "d"]]  # replaced, not unioned
+    # Grain lost entirely (revoked grant → floor-only pull, no pairs) → cleared.
+    refresh_warehouse_edges(
+        db_session, connection=sf_connection, provider=_snapshot(()), conn=object()
+    )
+    cols = _columns_for(db_session, sf_connection)
+    assert cols[(_ident("SRC").name, _ident("DST").name)] is None

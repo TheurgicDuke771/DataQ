@@ -36,6 +36,7 @@ from sqlalchemy import text
 
 from backend.app.core.logging import get_logger
 from backend.app.lineage.warehouse import (
+    MAX_COLUMN_PAIRS_PER_EDGE,
     LineageEdgePair,
     LineageTier,
     WarehouseLineageResult,
@@ -62,10 +63,9 @@ _DEFAULT_LOOKBACK_DAYS = 365
 # last_seen), so re-reads are harmless. 6h comfortably exceeds the documented lag.
 _WATERMARK_SAFETY = timedelta(hours=6)
 
-# Defensive per-edge cap on persisted column pairs (#901): real schemas are bounded,
-# but a generated/exploded join must not balloon the edge's JSONB. Deterministic —
-# pairs are collected in event order and the cap keeps the first N distinct.
-_MAX_COLUMN_PAIRS_PER_EDGE = 500
+# The shared defensive cap (#901/#908, lives in `warehouse`) — pairs are collected in
+# event order and the cap keeps the first N distinct.
+_MAX_COLUMN_PAIRS_PER_EDGE = MAX_COLUMN_PAIRS_PER_EDGE
 
 
 class UnityCatalogLineageProvider:

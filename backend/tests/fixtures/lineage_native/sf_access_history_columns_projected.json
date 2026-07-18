@@ -1,0 +1,1852 @@
+[
+ {
+  "tgt_name": "DATAQ_DB.RETAIL.ORDERS_HEADER",
+  "tgt_columns": [
+   {
+    "baseSources": [],
+    "columnId": 3077,
+    "columnName": "PROMO_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 3075,
+    "columnName": "CHANNEL",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 3082,
+    "columnName": "ORDER_TOTAL",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 3079,
+    "columnName": "STATUS",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 3076,
+    "columnName": "STORE_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 3078,
+    "columnName": "ORDER_TS",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 3080,
+    "columnName": "SUBTOTAL",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 3083,
+    "columnName": "CURRENCY",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 3073,
+    "columnName": "ORDER_NUMBER",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 3081,
+    "columnName": "TAX",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 3074,
+    "columnName": "CUSTOMER_ID",
+    "directSources": []
+   }
+  ]
+ },
+ {
+  "tgt_name": "DATAQ_DB.RETAIL.ORDERS_HEADER",
+  "tgt_columns": [
+   {
+    "baseSources": [],
+    "columnId": 3077,
+    "columnName": "PROMO_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 3075,
+    "columnName": "CHANNEL",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 3082,
+    "columnName": "ORDER_TOTAL",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 3079,
+    "columnName": "STATUS",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 3076,
+    "columnName": "STORE_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 3078,
+    "columnName": "ORDER_TS",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 3083,
+    "columnName": "CURRENCY",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 3080,
+    "columnName": "SUBTOTAL",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 3073,
+    "columnName": "ORDER_NUMBER",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 3081,
+    "columnName": "TAX",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 3074,
+    "columnName": "CUSTOMER_ID",
+    "directSources": []
+   }
+  ]
+ },
+ {
+  "tgt_name": "DATAQ_DB.RETAIL.CUSTOMERS",
+  "tgt_columns": [
+   {
+    "baseSources": [],
+    "columnId": 2056,
+    "columnName": "PHONE",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 2054,
+    "columnName": "LAST_NAME",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 2057,
+    "columnName": "STREET",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 2058,
+    "columnName": "CITY",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 2061,
+    "columnName": "MARKETING_OPT_IN",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 2059,
+    "columnName": "STATE",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 2055,
+    "columnName": "EMAIL",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 2052,
+    "columnName": "CUSTOMER_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 2060,
+    "columnName": "SIGNUP_DATE",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 2053,
+    "columnName": "FIRST_NAME",
+    "directSources": []
+   }
+  ]
+ },
+ {
+  "tgt_name": "DATAQ_DB.RETAIL.\"vmgbwapevs\"",
+  "tgt_columns": [
+   {
+    "baseSources": [],
+    "columnId": 71690,
+    "columnName": "METHOD",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 71689,
+    "columnName": "ORDER_NUMBER",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 71688,
+    "columnName": "PAYMENT_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 71692,
+    "columnName": "CAPTURED_AMOUNT",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 71693,
+    "columnName": "PAID_TS",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 71691,
+    "columnName": "STATUS",
+    "directSources": []
+   }
+  ]
+ },
+ {
+  "tgt_name": "DATAQ_DB.RETAIL.\"fvamjsfnno\"",
+  "tgt_columns": [
+   {
+    "baseSources": [],
+    "columnId": 68623,
+    "columnName": "REFUND_AMOUNT",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 68622,
+    "columnName": "ORDER_NUMBER",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 68625,
+    "columnName": "REFUND_TS",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 68621,
+    "columnName": "REFUND_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 68624,
+    "columnName": "REASON",
+    "directSources": []
+   }
+  ]
+ },
+ {
+  "tgt_name": "DATAQ_DB.RETAIL.\"smftchnifp\"",
+  "tgt_columns": [
+   {
+    "baseSources": [],
+    "columnId": 66584,
+    "columnName": "LINE_TOTAL",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 66581,
+    "columnName": "SKU_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 66583,
+    "columnName": "UNIT_PRICE",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 66582,
+    "columnName": "QTY",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 66579,
+    "columnName": "LINE_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 66580,
+    "columnName": "ORDER_NUMBER",
+    "directSources": []
+   }
+  ]
+ },
+ {
+  "tgt_name": "DATAQ_DB.RETAIL.\"decqhyfohe\"",
+  "tgt_columns": [
+   {
+    "baseSources": [],
+    "columnId": 71682,
+    "columnName": "ORDER_NUMBER",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 71685,
+    "columnName": "REASON",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 71686,
+    "columnName": "CHANNEL",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 71687,
+    "columnName": "RETURN_TS",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 71683,
+    "columnName": "SKU_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 71681,
+    "columnName": "RETURN_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 71684,
+    "columnName": "QTY",
+    "directSources": []
+   }
+  ]
+ },
+ {
+  "tgt_name": "DATAQ_DB.RETAIL.\"abioskieob\"",
+  "tgt_columns": [
+   {
+    "baseSources": [],
+    "columnId": 70662,
+    "columnName": "NODE_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 70664,
+    "columnName": "SHIP_METHOD",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 70661,
+    "columnName": "ORDER_NUMBER",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 70663,
+    "columnName": "FULFILLED_TS",
+    "directSources": []
+   }
+  ]
+ },
+ {
+  "tgt_name": "DATAQ_DB.RETAIL.\"avuedvxfzn\"",
+  "tgt_columns": [
+   {
+    "baseSources": [],
+    "columnId": 66577,
+    "columnName": "ACTIVE",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 66570,
+    "columnName": "STYLE_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 66574,
+    "columnName": "MATERIAL",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 66571,
+    "columnName": "CATEGORY",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 66569,
+    "columnName": "SKU_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 66578,
+    "columnName": "CREATED_AT",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 66576,
+    "columnName": "UNIT_PRICE",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 66575,
+    "columnName": "SIZE",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 66572,
+    "columnName": "CATEGORY_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 66573,
+    "columnName": "COLOR",
+    "directSources": []
+   }
+  ]
+ },
+ {
+  "tgt_name": "DATAQ_DB.RETAIL.\"bpaflvcrmn\"",
+  "tgt_columns": [
+   {
+    "baseSources": [],
+    "columnId": 65568,
+    "columnName": "SETTLEMENT_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 65570,
+    "columnName": "BATCH_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 65571,
+    "columnName": "GROSS_AMOUNT",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 65575,
+    "columnName": "SETTLED_TS",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 65573,
+    "columnName": "NET_AMOUNT",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 65569,
+    "columnName": "PAYMENT_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 65574,
+    "columnName": "STATUS",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 65572,
+    "columnName": "FEE_AMOUNT",
+    "directSources": []
+   }
+  ]
+ },
+ {
+  "tgt_name": "DATAQ_DB.RETAIL.\"tuoaesvleo\"",
+  "tgt_columns": [
+   {
+    "baseSources": [],
+    "columnId": 62474,
+    "columnName": "CANCELLATION_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 62476,
+    "columnName": "REASON",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 62475,
+    "columnName": "ORDER_NUMBER",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 62477,
+    "columnName": "CANCELLED_TS",
+    "directSources": []
+   }
+  ]
+ },
+ {
+  "tgt_name": "DATAQ_DB.RETAIL.\"vvyopwlcid\"",
+  "tgt_columns": [
+   {
+    "baseSources": [],
+    "columnId": 65567,
+    "columnName": "STATUS",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 65564,
+    "columnName": "ORDER_DATE",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 65561,
+    "columnName": "SKU_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 65560,
+    "columnName": "SUPPLIER_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 65563,
+    "columnName": "QTY_RECEIVED",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 65565,
+    "columnName": "EXPECTED_DATE",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 65559,
+    "columnName": "PO_NUMBER",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 65566,
+    "columnName": "RECEIVED_DATE",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 65562,
+    "columnName": "QTY_ORDERED",
+    "directSources": []
+   }
+  ]
+ },
+ {
+  "tgt_name": "DATAQ_DB.RETAIL.\"vichknvgbv\"",
+  "tgt_columns": [
+   {
+    "baseSources": [],
+    "columnId": 62471,
+    "columnName": "ORDER_NUMBER",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 62470,
+    "columnName": "DISCOUNT_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 62472,
+    "columnName": "DISCOUNT_TYPE",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 62473,
+    "columnName": "AMOUNT",
+    "directSources": []
+   }
+  ]
+ },
+ {
+  "tgt_name": "DATAQ_DB.RETAIL.\"loikgrriwf\"",
+  "tgt_columns": [
+   {
+    "baseSources": [],
+    "columnId": 65556,
+    "columnName": "STATUS",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 65554,
+    "columnName": "ORDER_NUMBER",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 65553,
+    "columnName": "PAYMENT_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 65557,
+    "columnName": "CAPTURED_AMOUNT",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 65555,
+    "columnName": "METHOD",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 65558,
+    "columnName": "PAID_TS",
+    "directSources": []
+   }
+  ]
+ },
+ {
+  "tgt_name": "DATAQ_DB.RETAIL.\"nevxcxavad\"",
+  "tgt_columns": [
+   {
+    "baseSources": [],
+    "columnId": 63504,
+    "columnName": "UNIT_PRICE",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 63501,
+    "columnName": "ORDER_NUMBER",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 63505,
+    "columnName": "LINE_TOTAL",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 63503,
+    "columnName": "QTY",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 63500,
+    "columnName": "LINE_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 63502,
+    "columnName": "SKU_ID",
+    "directSources": []
+   }
+  ]
+ },
+ {
+  "tgt_name": "DATAQ_DB.RETAIL.\"tknwrkrqli\"",
+  "tgt_columns": [
+   {
+    "baseSources": [],
+    "columnId": 64527,
+    "columnName": "REASON",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 64524,
+    "columnName": "REFUND_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 64526,
+    "columnName": "REFUND_AMOUNT",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 64525,
+    "columnName": "ORDER_NUMBER",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 64528,
+    "columnName": "REFUND_TS",
+    "directSources": []
+   }
+  ]
+ },
+ {
+  "tgt_name": "DATAQ_DB.RETAIL.\"ulsvdiwjfg\"",
+  "tgt_columns": [
+   {
+    "baseSources": [],
+    "columnId": 68618,
+    "columnName": "ORDER_NUMBER",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 68620,
+    "columnName": "CANCELLED_TS",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 68617,
+    "columnName": "CANCELLATION_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 68619,
+    "columnName": "REASON",
+    "directSources": []
+   }
+  ]
+ },
+ {
+  "tgt_name": "DATAQ_DB.RETAIL.\"xprpssglso\"",
+  "tgt_columns": [
+   {
+    "baseSources": [],
+    "columnId": 70660,
+    "columnName": "AMOUNT",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 70657,
+    "columnName": "DISCOUNT_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 70659,
+    "columnName": "DISCOUNT_TYPE",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 70658,
+    "columnName": "ORDER_NUMBER",
+    "directSources": []
+   }
+  ]
+ },
+ {
+  "tgt_name": "DATAQ_DB.RETAIL.\"uexyqceinv\"",
+  "tgt_columns": [
+   {
+    "baseSources": [],
+    "columnId": 69635,
+    "columnName": "FULFILLED_TS",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 69633,
+    "columnName": "ORDER_NUMBER",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 69636,
+    "columnName": "SHIP_METHOD",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 69634,
+    "columnName": "NODE_ID",
+    "directSources": []
+   }
+  ]
+ },
+ {
+  "tgt_name": "DATAQ_DB.RETAIL.\"osmeginwkn\"",
+  "tgt_columns": [
+   {
+    "baseSources": [],
+    "columnId": 61459,
+    "columnName": "ORDER_DATE",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 61462,
+    "columnName": "STATUS",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 61460,
+    "columnName": "EXPECTED_DATE",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 61458,
+    "columnName": "QTY_RECEIVED",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 61455,
+    "columnName": "SUPPLIER_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 61457,
+    "columnName": "QTY_ORDERED",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 61456,
+    "columnName": "SKU_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 61461,
+    "columnName": "RECEIVED_DATE",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 61454,
+    "columnName": "PO_NUMBER",
+    "directSources": []
+   }
+  ]
+ },
+ {
+  "tgt_name": "DATAQ_DB.RETAIL.\"lsuugzraro\"",
+  "tgt_columns": [
+   {
+    "baseSources": [],
+    "columnId": 68612,
+    "columnName": "GROSS_AMOUNT",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 68615,
+    "columnName": "STATUS",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 68610,
+    "columnName": "PAYMENT_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 68613,
+    "columnName": "FEE_AMOUNT",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 68614,
+    "columnName": "NET_AMOUNT",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 68611,
+    "columnName": "BATCH_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 68609,
+    "columnName": "SETTLEMENT_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 68616,
+    "columnName": "SETTLED_TS",
+    "directSources": []
+   }
+  ]
+ },
+ {
+  "tgt_name": "DATAQ_DB.RETAIL.\"vgqcavypiy\"",
+  "tgt_columns": [
+   {
+    "baseSources": [],
+    "columnId": 67594,
+    "columnName": "CREATED_AT",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 67587,
+    "columnName": "CATEGORY",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 67589,
+    "columnName": "COLOR",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 67588,
+    "columnName": "CATEGORY_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 67586,
+    "columnName": "STYLE_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 67593,
+    "columnName": "ACTIVE",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 67585,
+    "columnName": "SKU_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 67591,
+    "columnName": "SIZE",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 67590,
+    "columnName": "MATERIAL",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 67592,
+    "columnName": "UNIT_PRICE",
+    "directSources": []
+   }
+  ]
+ },
+ {
+  "tgt_name": "DATAQ_DB.RETAIL.\"viqdnwhaev\"",
+  "tgt_columns": [
+   {
+    "baseSources": [],
+    "columnId": 64522,
+    "columnName": "CHANNEL",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 64521,
+    "columnName": "REASON",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 64523,
+    "columnName": "RETURN_TS",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 64518,
+    "columnName": "ORDER_NUMBER",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 64520,
+    "columnName": "QTY",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 64517,
+    "columnName": "RETURN_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 64519,
+    "columnName": "SKU_ID",
+    "directSources": []
+   }
+  ]
+ },
+ {
+  "tgt_name": "DATAQ_DB.RETAIL.\"dcuogyrict\"",
+  "tgt_columns": [
+   {
+    "baseSources": [],
+    "columnId": 61445,
+    "columnName": "PO_NUMBER",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 61450,
+    "columnName": "ORDER_DATE",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 61447,
+    "columnName": "SKU_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 61448,
+    "columnName": "QTY_ORDERED",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 61452,
+    "columnName": "RECEIVED_DATE",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 61451,
+    "columnName": "EXPECTED_DATE",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 61449,
+    "columnName": "QTY_RECEIVED",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 61453,
+    "columnName": "STATUS",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 61446,
+    "columnName": "SUPPLIER_ID",
+    "directSources": []
+   }
+  ]
+ },
+ {
+  "tgt_name": "DATAQ_DB.RETAIL.ORDERS_HEADER",
+  "tgt_columns": [
+   {
+    "baseSources": [],
+    "columnId": 3077,
+    "columnName": "PROMO_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 3075,
+    "columnName": "CHANNEL",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 3082,
+    "columnName": "ORDER_TOTAL",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 3079,
+    "columnName": "STATUS",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 3076,
+    "columnName": "STORE_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 3078,
+    "columnName": "ORDER_TS",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 3083,
+    "columnName": "CURRENCY",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 3080,
+    "columnName": "SUBTOTAL",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 3073,
+    "columnName": "ORDER_NUMBER",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 3081,
+    "columnName": "TAX",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 3074,
+    "columnName": "CUSTOMER_ID",
+    "directSources": []
+   }
+  ]
+ },
+ {
+  "tgt_name": "DATAQ_DB.RETAIL.\"tkfntyzdum\"",
+  "tgt_columns": [
+   {
+    "baseSources": [],
+    "columnId": 66562,
+    "columnName": "PAYMENT_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 66568,
+    "columnName": "SETTLED_TS",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 66564,
+    "columnName": "GROSS_AMOUNT",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 66561,
+    "columnName": "SETTLEMENT_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 66565,
+    "columnName": "FEE_AMOUNT",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 66567,
+    "columnName": "STATUS",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 66566,
+    "columnName": "NET_AMOUNT",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 66563,
+    "columnName": "BATCH_ID",
+    "directSources": []
+   }
+  ]
+ },
+ {
+  "tgt_name": "DATAQ_DB.RETAIL.\"lliaahhski\"",
+  "tgt_columns": [
+   {
+    "baseSources": [],
+    "columnId": 65552,
+    "columnName": "LINE_TOTAL",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 65549,
+    "columnName": "SKU_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 65550,
+    "columnName": "QTY",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 65551,
+    "columnName": "UNIT_PRICE",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 65548,
+    "columnName": "ORDER_NUMBER",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 65547,
+    "columnName": "LINE_ID",
+    "directSources": []
+   }
+  ]
+ },
+ {
+  "tgt_name": "DATAQ_DB.RETAIL.\"qtcyoofhog\"",
+  "tgt_columns": [
+   {
+    "baseSources": [],
+    "columnId": 65544,
+    "columnName": "UNIT_PRICE",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 65540,
+    "columnName": "CATEGORY_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 65543,
+    "columnName": "SIZE",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 65541,
+    "columnName": "COLOR",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 65542,
+    "columnName": "MATERIAL",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 65538,
+    "columnName": "STYLE_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 65546,
+    "columnName": "CREATED_AT",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 65545,
+    "columnName": "ACTIVE",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 65537,
+    "columnName": "SKU_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 65539,
+    "columnName": "CATEGORY",
+    "directSources": []
+   }
+  ]
+ },
+ {
+  "tgt_name": "DATAQ_DB.RETAIL.\"bttqqdnmru\"",
+  "tgt_columns": [
+   {
+    "baseSources": [],
+    "columnId": 64516,
+    "columnName": "CANCELLED_TS",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 64514,
+    "columnName": "ORDER_NUMBER",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 64513,
+    "columnName": "CANCELLATION_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 64515,
+    "columnName": "REASON",
+    "directSources": []
+   }
+  ]
+ },
+ {
+  "tgt_name": "DATAQ_DB.RETAIL.\"oniueuzosr\"",
+  "tgt_columns": [
+   {
+    "baseSources": [],
+    "columnId": 63494,
+    "columnName": "ORDER_NUMBER",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 63499,
+    "columnName": "RETURN_TS",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 63493,
+    "columnName": "RETURN_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 63496,
+    "columnName": "QTY",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 63497,
+    "columnName": "REASON",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 63498,
+    "columnName": "CHANNEL",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 63495,
+    "columnName": "SKU_ID",
+    "directSources": []
+   }
+  ]
+ },
+ {
+  "tgt_name": "DATAQ_DB.RETAIL.\"mlzuknhhbc\"",
+  "tgt_columns": [
+   {
+    "baseSources": [],
+    "columnId": 63490,
+    "columnName": "ORDER_NUMBER",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 63491,
+    "columnName": "DISCOUNT_TYPE",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 63489,
+    "columnName": "DISCOUNT_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 63492,
+    "columnName": "AMOUNT",
+    "directSources": []
+   }
+  ]
+ },
+ {
+  "tgt_name": "DATAQ_DB.RETAIL.\"lcqisznjtr\"",
+  "tgt_columns": [
+   {
+    "baseSources": [],
+    "columnId": 62465,
+    "columnName": "REFUND_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 62468,
+    "columnName": "REASON",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 62467,
+    "columnName": "REFUND_AMOUNT",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 62469,
+    "columnName": "REFUND_TS",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 62466,
+    "columnName": "ORDER_NUMBER",
+    "directSources": []
+   }
+  ]
+ },
+ {
+  "tgt_name": "DATAQ_DB.RETAIL.\"cohuxzjzua\"",
+  "tgt_columns": [
+   {
+    "baseSources": [],
+    "columnId": 61443,
+    "columnName": "FULFILLED_TS",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 61441,
+    "columnName": "ORDER_NUMBER",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 61444,
+    "columnName": "SHIP_METHOD",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 61442,
+    "columnName": "NODE_ID",
+    "directSources": []
+   }
+  ]
+ },
+ {
+  "tgt_name": "DATAQ_DB.PERF.ORDER_LINES_200M",
+  "tgt_columns": [
+   {
+    "baseSources": [],
+    "columnId": 44068,
+    "columnName": "SKU_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 44066,
+    "columnName": "LINE_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 44067,
+    "columnName": "ORDER_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 44069,
+    "columnName": "QTY",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 44070,
+    "columnName": "UNIT_PRICE",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 44071,
+    "columnName": "LINE_TS",
+    "directSources": []
+   }
+  ]
+ },
+ {
+  "tgt_name": "DATAQ_DB.PERF.ORDER_LINES_100M",
+  "tgt_columns": [
+   {
+    "baseSources": [],
+    "columnId": 51284,
+    "columnName": "UNIT_PRICE",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 51285,
+    "columnName": "LINE_TS",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 51282,
+    "columnName": "SKU_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 51280,
+    "columnName": "LINE_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 51281,
+    "columnName": "ORDER_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 51283,
+    "columnName": "QTY",
+    "directSources": []
+   }
+  ]
+ },
+ {
+  "tgt_name": "DATAQ_DB.PERF.ORDER_LINES_50M",
+  "tgt_columns": [
+   {
+    "baseSources": [],
+    "columnId": 58382,
+    "columnName": "UNIT_PRICE",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 58383,
+    "columnName": "LINE_TS",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 58378,
+    "columnName": "LINE_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 58380,
+    "columnName": "SKU_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 58379,
+    "columnName": "ORDER_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 58381,
+    "columnName": "QTY",
+    "directSources": []
+   }
+  ]
+ },
+ {
+  "tgt_name": "DATAQ_DB.RETAIL.ORDERS_HEADER",
+  "tgt_columns": [
+   {
+    "baseSources": [],
+    "columnId": 3077,
+    "columnName": "PROMO_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 3075,
+    "columnName": "CHANNEL",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 3082,
+    "columnName": "ORDER_TOTAL",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 3079,
+    "columnName": "STATUS",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 3076,
+    "columnName": "STORE_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 3078,
+    "columnName": "ORDER_TS",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 3080,
+    "columnName": "SUBTOTAL",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 3083,
+    "columnName": "CURRENCY",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 3073,
+    "columnName": "ORDER_NUMBER",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 3081,
+    "columnName": "TAX",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 3074,
+    "columnName": "CUSTOMER_ID",
+    "directSources": []
+   }
+  ]
+ },
+ {
+  "tgt_name": "DATAQ_DB.RETAIL.CUSTOMERS",
+  "tgt_columns": [
+   {
+    "baseSources": [],
+    "columnId": 2056,
+    "columnName": "PHONE",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 2054,
+    "columnName": "LAST_NAME",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 2057,
+    "columnName": "STREET",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 2058,
+    "columnName": "CITY",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 2061,
+    "columnName": "MARKETING_OPT_IN",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 2059,
+    "columnName": "STATE",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 2055,
+    "columnName": "EMAIL",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 2052,
+    "columnName": "CUSTOMER_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 2060,
+    "columnName": "SIGNUP_DATE",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 2053,
+    "columnName": "FIRST_NAME",
+    "directSources": []
+   }
+  ]
+ },
+ {
+  "tgt_name": "DATAQ_DB.RETAIL.\"brldynozgj\"",
+  "tgt_columns": [
+   {
+    "baseSources": [],
+    "columnId": 53266,
+    "columnName": "METHOD",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 53264,
+    "columnName": "PAYMENT_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 53268,
+    "columnName": "CAPTURED_AMOUNT",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 53265,
+    "columnName": "ORDER_NUMBER",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 53269,
+    "columnName": "PAID_TS",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 53267,
+    "columnName": "STATUS",
+    "directSources": []
+   }
+  ]
+ },
+ {
+  "tgt_name": "DATAQ_DB.RETAIL.\"pwtvsymrvf\"",
+  "tgt_columns": [
+   {
+    "baseSources": [],
+    "columnId": 55319,
+    "columnName": "ORDER_NUMBER",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 55321,
+    "columnName": "CANCELLED_TS",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 55318,
+    "columnName": "CANCELLATION_ID",
+    "directSources": []
+   },
+   {
+    "baseSources": [],
+    "columnId": 55320,
+    "columnName": "REASON",
+    "directSources": []
+   }
+  ]
+ }
+]

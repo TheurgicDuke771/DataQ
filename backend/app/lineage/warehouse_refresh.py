@@ -147,7 +147,17 @@ def _persist(
         # preserve_provenance: a warehouse pull must not flip a suite-resolved asset's
         # env/connection to this one.
         id_by_name = upsert_assets(session, asset_rows, preserve_provenance=True)
-        existing_columns = _existing_columns(session, source=source, connection_id=connection.id)
+        # Column-pair regime follows the EDGE regime (#911 review): an incremental
+        # (log) source unions pairs with the persisted prior — its window only
+        # re-observes pairs whose queries ran inside it. A snapshot source's pull IS
+        # the current truth: pairs replace, so a mapping the warehouse no longer
+        # reports (rewritten ETL, revoked column-level grant) goes away instead of
+        # accreting forever.
+        existing_columns = (
+            _existing_columns(session, source=source, connection_id=connection.id)
+            if provider.is_incremental
+            else {}
+        )
         edge_rows = _edge_rows(
             result,
             id_by_name,
@@ -155,7 +165,7 @@ def _persist(
             connection_id=connection.id,
             existing_columns=existing_columns,
         )
-        _upsert_edges(session, edge_rows)
+        _upsert_edges(session, edge_rows, replace_columns=not provider.is_incremental)
 
     # Prune ONLY a snapshot source (Snowflake OBJECT_DEPENDENCIES — a current-state
     # view). A log source (UC table_lineage) is incremental: an edge absent from this
@@ -337,21 +347,32 @@ def _edge_rows(
 
 
 def _upsert_edges(
-    session: Session, edge_rows: list[dict[str, Any]], *, chunk_size: int = _EDGE_CHUNK
+    session: Session,
+    edge_rows: list[dict[str, Any]],
+    *,
+    chunk_size: int = _EDGE_CHUNK,
+    replace_columns: bool = False,
 ) -> None:
+    """Upsert the refresh's edge rows, with per-regime `columns` semantics (#911):
+
+    - **incremental** (``replace_columns=False``): EXCLUDED carries the pre-merged
+      union (`_edge_rows`), and COALESCE never regresses a value another writer
+      landed to NULL — this row's NULL only means "nothing observed this window".
+    - **snapshot** (``replace_columns=True``): the pull is the current truth —
+      EXCLUDED overwrites verbatim, so a pair the warehouse no longer reports (or a
+      whole grain lost with a revoked grant) is cleared instead of frozen.
+    """
     for start in range(0, len(edge_rows), chunk_size):
         chunk = edge_rows[start : start + chunk_size]
         stmt = pg_insert(LineageEdge).values(chunk)
+        columns_value = (
+            stmt.excluded.columns
+            if replace_columns
+            else func.coalesce(stmt.excluded.columns, LineageEdge.columns)
+        )
         session.execute(
             stmt.on_conflict_do_update(
                 constraint="uq_lineage_edges_up_down_source_conn",
-                # `columns` was merged against the persisted value pre-insert
-                # (_edge_rows), so EXCLUDED carries the union — but never regress a
-                # value another writer landed to NULL: this row's NULL only means
-                # "nothing observed", and COALESCE keeps the merge accretive.
-                set_={
-                    "last_seen": func.clock_timestamp(),
-                    "columns": func.coalesce(stmt.excluded.columns, LineageEdge.columns),
-                },
+                set_={"last_seen": func.clock_timestamp(), "columns": columns_value},
             )
         )
