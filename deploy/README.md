@@ -314,7 +314,10 @@ curl -s -o /dev/null -w "healthz         %{http_code}\n"        $FE/healthz     
 curl -s -o /dev/null -w "api (auth)      %{http_code}\n"        $FE/api/v1/me     # 401
 curl -s -o /dev/null -w "mcp GET         %{http_code}\n"        $FE/mcp/          # 401  NOT 421
 curl -s -o /dev/null -w "mcp POST        %{http_code}\n" -X POST -H "content-type: application/json" $FE/mcp/  # 401  NOT 421
-curl -s -o /dev/null -w "openapi (gated) %{http_code}\n"        $FE/openapi.json  # 404
+curl -s -o /dev/null -w "openapi (gated) %{http_code}\n"        $FE/api/v1/openapi.json  # 404
+# NOTE: probe the gate on the API path. Bare $FE/openapi.json returns 200 — that's the
+# SPA catch-all serving index.html (nginx serves the shell for any non-proxied path
+# since the ACA cutover), not a leaked schema.
 
 # api + worker rolled to the deployed tag?
 az containerapp revision list -n dataq-app-api    -g dataq-rg --query "[?properties.active].properties.template.containers[0].image" -o tsv
