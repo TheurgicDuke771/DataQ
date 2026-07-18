@@ -1,0 +1,34 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "d702c2d62bdc",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-920-redacted-browse-tree",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/app/api/v1/assets.py",
+    "backend/app/services/asset_view_service.py",
+    "backend/tests/api/test_assets.py",
+    "frontend/src/api/assets.ts",
+    "frontend/src/components/assets/assetTree.ts",
+    "frontend/src/components/dashboard/AssetHealthLead.tsx",
+    "frontend/src/pages/Assets.tsx",
+    "frontend/tests/components/assetTree.test.ts",
+    "frontend/tests/pages/Assets.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/d7/02c2d62bdc/0/metadata.json",
+      "transcript": "/d7/02c2d62bdc/0/full.jsonl",
+      "compact_transcript": "/d7/02c2d62bdc/0/transcript.jsonl",
+      "content_hash": "/d7/02c2d62bdc/0/content_hash.txt",
+      "prompt": "/d7/02c2d62bdc/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1380,
+    "cache_creation_tokens": 8628356,
+    "cache_read_tokens": 332775876,
+    "output_tokens": 475489,
+    "api_call_count": 708
+  }
+}
