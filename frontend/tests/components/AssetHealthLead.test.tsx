@@ -20,6 +20,7 @@ function asset(overrides: Partial<AssetSummary> = {}): AssetSummary {
     name: 'ANALYTICS.PUBLIC.ORDERS',
     env: 'dev',
     description: null,
+    is_accessible: true,
     owner_user_id: null,
     last_seen: '2026-07-01T10:00:00Z',
     suite_count: 1,

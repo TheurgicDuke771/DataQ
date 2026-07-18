@@ -171,7 +171,8 @@ function AssetDetailBody({
       <LineageGraph
         center={{
           id: summary.id,
-          name: summary.name,
+          // A detail summary is never redacted (the endpoint 404s those) — coerce for the shared type.
+          name: summary.name ?? '',
           namespace: summary.namespace,
           env: summary.env,
         }}
@@ -187,7 +188,7 @@ function AssetDetailBody({
           arrive count-only from the server and render as a locked box (#845). */}
       <ColumnLineagePanel
         centerId={summary.id}
-        centerName={summary.name}
+        centerName={summary.name ?? ''}
         nodes={[...asset.upstream, ...asset.downstream]}
         edges={asset.lineage_edges}
       />

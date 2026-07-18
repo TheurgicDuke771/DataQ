@@ -161,7 +161,9 @@ def test_view_share_partial_grant_filters_aggregation(
     assert resp.status_code == 200
     by_id = {a["id"]: a for a in resp.json()}
     assert str(world["asset_x"]) in by_id
-    assert str(world["asset_y"]) not in by_id  # no grant on s3's asset
+    # #920: asset Y (no grant) is present but REDACTED — never omitted, never named.
+    y = by_id[str(world["asset_y"])]
+    assert y["is_accessible"] is False and y["name"] is None and y["suite_count"] == 0
     assert by_id[str(world["asset_x"])]["suite_count"] == 1  # s2 filtered out
 
 
@@ -174,12 +176,19 @@ def test_edit_share_sees_asset(client: TestClient, world: dict[str, Any]) -> Non
     assert str(world["asset_x"]) in {a["id"] for a in resp.json()}
 
 
-def test_no_share_sees_nothing(client: TestClient, world: dict[str, Any]) -> None:
+def test_no_share_sees_only_redacted_rows(client: TestClient, world: dict[str, Any]) -> None:
+    # #920 superseded the old empty-browse rule: a no-grant caller sees that assets
+    # EXIST (redacted rows — omission would assert an empty workspace) but learns no
+    # identity or health about any of them.
     outsider = _user(client_db(client), "outsider@example.com")
     _as(outsider)
     resp = client.get("/api/v1/assets")
     assert resp.status_code == 200
-    assert resp.json() == []
+    rows = resp.json()
+    assert rows  # the monitored assets exist — as anonymous entries
+    assert all(r["is_accessible"] is False and r["name"] is None for r in rows)
+    for leaf in ("ORDERS", "CUSTOMERS"):
+        assert f'"{leaf}"' not in resp.text  # no identity leaks, only prefixes
 
 
 def test_workspace_admin_sees_all(
@@ -355,12 +364,13 @@ def test_redacted_neighbour_identity_never_reaches_the_response_body(
 def test_asset_with_only_unshared_suites_is_404_and_unlisted(
     client: TestClient, world: dict[str, Any]
 ) -> None:
-    """The grant boundary that DOES stay closed (#845/#846).
+    """The grant boundary that DOES stay closed (#845/#846, amended by #920).
 
-    Relaxing the suite-less rule must not relax this one: an asset that someone *else*
-    monitors, whose suites the caller cannot view, is still 404-no-leak and still absent
-    from browse. That is the boundary the lineage graph redacts around — the two rules
-    are one rule, and if they ever disagree the graph offers a dead link again."""
+    An asset that someone *else* monitors, whose suites the caller cannot view, now
+    APPEARS in browse — but only as a redacted row (#920: omission asserted "nothing
+    else exists here"); its identity never crosses, and the detail endpoint is still
+    404-no-leak. The browse redaction, the graph redaction, and the 404 are one rule —
+    if they ever disagree the graph offers a dead link again."""
     db = client_db(client)
     stranger = _user(db, "stranger@example.com")
     conn = _connection(db, stranger)
@@ -368,8 +378,11 @@ def test_asset_with_only_unshared_suites_is_404_and_unlisted(
     assert secret_suite.asset_id is not None
 
     _as(world["owner"])
-    listed = {a["id"] for a in client.get("/api/v1/assets").json()}
-    assert str(secret_suite.asset_id) not in listed
+    resp = client.get("/api/v1/assets")
+    by_id = {a["id"]: a for a in resp.json()}
+    row = by_id[str(secret_suite.asset_id)]
+    assert row["is_accessible"] is False and row["name"] is None
+    assert "MART_REVENUE" not in resp.text
     assert client.get(f"/api/v1/assets/{secret_suite.asset_id}").status_code == 404
 
 
@@ -746,3 +759,50 @@ def test_orm_none_columns_persists_as_sql_null(client: TestClient, world: dict[s
         {"up": str(world["asset_y"])},
     ).scalar_one()
     assert n == 1
+
+
+def test_browse_includes_out_of_grant_assets_as_redacted_rows(
+    client: TestClient, world: dict[str, Any], make_workspace_admin: Any
+) -> None:
+    """#920 (user-directed): browse INCLUDES assets monitored solely by suites the
+    caller can't see — as redacted rows (the tree-level #845 rule: omission asserts
+    "this schema holds nothing else"). Pinned at the wire: only id + namespace +
+    the PARENT path cross; the leaf name, env, and every health fact stay home."""
+    db = client_db(client)
+    stranger = _user(db, "stranger4@example.com")
+    conn = _connection(db, stranger)
+    secret = _suite(db, stranger, conn, name="Secret browse", table="MART_SECRET_BROWSE")
+    assert secret.asset_id is not None
+    secret_asset = db.get(Asset, secret.asset_id)
+    assert secret_asset is not None
+    db.commit()
+
+    _as(world["owner"])
+    resp = client.get("/api/v1/assets", params={"limit": 200})
+    assert resp.status_code == 200
+    rows = {r["id"]: r for r in resp.json()}
+
+    row = rows[str(secret.asset_id)]
+    assert row["is_accessible"] is False
+    assert row["name"] is None and row["env"] is None and row["description"] is None
+    assert row["owner_user_id"] is None
+    # Placement is the deliberate disclosure: namespace + the non-leaf path only.
+    assert row["namespace"] == secret_asset.namespace
+    leaf = secret_asset.name.rsplit(".", 1)[-1]
+    assert row["name_prefix"] == secret_asset.name.rsplit(".", 1)[0]
+    # Health/monitoredness are facts about the hidden asset — all at empty defaults.
+    assert row["suite_count"] == 0 and row["checks_total"] == 0
+    assert row["worst_severity"] is None and row["has_failed_run"] is False
+    # The wire itself: the leaf name must survive nowhere in the body.
+    assert leaf not in resp.text
+
+    # The owner's own assets are untouched full rows.
+    mine = rows[str(world["asset_x"])]
+    assert mine["is_accessible"] is True and mine["name"] is not None
+
+    # A workspace admin still sees the full row (no redaction for include_all).
+    admin = _user(db, _ADMIN_EMAIL)
+    make_workspace_admin(_ADMIN_EMAIL)
+    _as(admin)
+    admin_rows = {r["id"]: r for r in client.get("/api/v1/assets", params={"limit": 200}).json()}
+    assert admin_rows[str(secret.asset_id)]["name"] == secret_asset.name

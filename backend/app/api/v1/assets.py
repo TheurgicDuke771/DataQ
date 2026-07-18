@@ -77,7 +77,11 @@ class AssetSummaryRead(ApiModel):
 
     id: uuid.UUID
     namespace: str
-    name: str
+    # Null = a REDACTED browse row (#920): the asset is monitored solely by suites
+    # outside the caller's grants; browse includes it anonymously (the tree-level
+    # #845 rule) — namespace only for placement, every other identity/health field
+    # withheld, `is_accessible=False`. The detail endpoint keeps 404ing it.
+    name: str | None
     env: str | None
     description: str | None
     owner_user_id: uuid.UUID | None
@@ -97,6 +101,9 @@ class AssetSummaryRead(ApiModel):
     has_cancelled_run: bool
     has_operational_error: bool
     has_skip: bool
+    is_accessible: bool = True
+    # Redacted rows only (#920): the non-leaf path segments for tree placement.
+    name_prefix: str | None = None
 
 
 class LineageNodeRead(ApiModel):

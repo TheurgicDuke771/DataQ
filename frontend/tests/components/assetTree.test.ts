@@ -28,6 +28,7 @@ function asset(
     has_operational_error: false,
     has_cancelled_run: false,
     has_skip: false,
+    is_accessible: true,
     ...over,
   };
 }
@@ -119,5 +120,62 @@ describe('expandableKeys', () => {
     expect(keys).toContain('ns::snowflake://acct/DB');
     expect(keys).toContain('ns::snowflake://acct/DB/S');
     expect(keys).not.toContain('ns::snowflake://acct/DB/S/T');
+  });
+});
+
+describe('restricted rows (#920)', () => {
+  it('places a locked leaf under the disclosed prefix path, with no name anywhere', () => {
+    const tree = buildAssetTree([
+      asset({
+        id: 'a1',
+        namespace: 'snowflake://acct',
+        name: 'DATAQ_DB.ANALYTICS.MART_CUSTOMER_ORDERS',
+      }),
+      asset({
+        id: 'r1',
+        namespace: 'snowflake://acct',
+        name: null,
+        name_prefix: 'DATAQ_DB.ANALYTICS',
+        is_accessible: false,
+      }),
+    ]);
+    const [root] = tree;
+    const db = root.children.find((c) => c.label === 'DATAQ_DB');
+    const schema = db?.children.find((c) => c.label === 'ANALYTICS');
+    expect(schema).toBeDefined();
+    const labels = (schema?.children ?? []).map((c) => c.label);
+    expect(labels).toContain('MART_CUSTOMER_ORDERS');
+    expect(labels).toContain('Restricted');
+    const locked = schema?.children.find((c) => c.restricted);
+    expect(locked?.asset).toBeUndefined(); // nothing to open — the detail 404s it
+    expect(locked?.key).toContain('r1'); // keyed by id, so siblings coexist
+  });
+
+  it('multiple restricted assets in one group each get their own leaf', () => {
+    const tree = buildAssetTree([
+      asset({
+        id: 'r1',
+        namespace: 'snowflake://acct',
+        name: null,
+        name_prefix: 'DB.S',
+        is_accessible: false,
+      }),
+      asset({
+        id: 'r2',
+        namespace: 'snowflake://acct',
+        name: null,
+        name_prefix: 'DB.S',
+        is_accessible: false,
+      }),
+    ]);
+    const schema = tree[0].children[0].children[0];
+    expect(schema.children.filter((c) => c.restricted)).toHaveLength(2);
+  });
+
+  it('a restricted asset with no prefix lands under the datasource root', () => {
+    const tree = buildAssetTree([
+      asset({ id: 'r3', namespace: 's3://bucket', name: null, is_accessible: false }),
+    ]);
+    expect(tree[0].children.some((c) => c.restricted)).toBe(true);
   });
 });

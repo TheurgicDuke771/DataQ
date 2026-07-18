@@ -42,6 +42,10 @@ export interface AssetTreeNode {
   namespace?: string;
   /** The asset — set on leaf (and folder-leaf) nodes; makes the node openable. */
   asset?: AssetSummary;
+  /** True → a #920 redacted leaf: an asset exists here that the viewer holds no
+   *  grant on. No `asset` is attached (nothing to open — the detail endpoint 404s
+   *  it); the label is a generic "Restricted". */
+  restricted?: boolean;
   children: AssetTreeNode[];
 }
 
@@ -63,6 +67,7 @@ interface MutableNode {
   kind?: DatasourceKind;
   namespace?: string;
   asset?: AssetSummary;
+  restricted?: boolean;
   children: Map<string, MutableNode>;
 }
 
@@ -73,6 +78,7 @@ function freeze(node: MutableNode): AssetTreeNode {
     ...(node.kind ? { kind: node.kind } : {}),
     ...(node.namespace ? { namespace: node.namespace } : {}),
     ...(node.asset ? { asset: node.asset } : {}),
+    ...(node.restricted ? { restricted: true } : {}),
     children: [...node.children.values()]
       .map(freeze)
       .sort((a, b) => a.label.localeCompare(b.label)),
@@ -101,6 +107,32 @@ export function buildAssetTree(assets: AssetSummary[]): AssetTreeNode[] {
         children: new Map(),
       };
       roots.set(rootKey, node);
+    }
+    if (asset.name === null || asset.is_accessible === false) {
+      // A #920 redacted row: the asset exists but the viewer holds no grant. The
+      // server disclosed only the PARENT path (`name_prefix` — db/schema/folder,
+      // leaf stripped), so the locked leaf renders inside its real group
+      // (`DATAQ_DB → ANALYTICS → Restricted`); the leaf name stays hidden. Keyed
+      // by id so multiple restricted leaves coexist; no `asset` attached —
+      // nothing to open (the detail endpoint 404s it).
+      let cursor: MutableNode = node;
+      let path = rootKey;
+      for (const segment of asset.name_prefix ? nameSegments(asset.name_prefix) : []) {
+        path += `/${segment}`;
+        let child = cursor.children.get(segment);
+        if (!child) {
+          child = { key: path, label: segment, children: new Map() };
+          cursor.children.set(segment, child);
+        }
+        cursor = child;
+      }
+      cursor.children.set(`__restricted__/${asset.id}`, {
+        key: `${path}/__restricted__/${asset.id}`,
+        label: 'Restricted',
+        restricted: true,
+        children: new Map(),
+      });
+      continue;
     }
     const segments = nameSegments(asset.name);
     let cursor: MutableNode = node;

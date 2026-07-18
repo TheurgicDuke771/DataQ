@@ -132,6 +132,28 @@ function AssetsTree({ assets, onOpen }: { assets: AssetSummary[]; onOpen: (id: s
 /** Map a pure `AssetTreeNode` to an antd `DataNode` (icons, env tag, health). */
 function toDataNode(node: AssetTreeNode): DataNode {
   const icon = node.kind ? KIND_ICON[node.kind] : undefined;
+  if (node.restricted) {
+    // A #920 redacted leaf: an asset exists in this group that the viewer holds no
+    // grant on — shown (dropping it would assert "this schema holds nothing else",
+    // the #845 falsehood) but anonymous and not openable. Same visual language as
+    // the lineage graph's restricted box.
+    return {
+      key: node.key,
+      title: (
+        <Tooltip title="An asset outside your access exists here.">
+          <Typography.Text
+            type="secondary"
+            italic
+            aria-label="A restricted asset outside your access"
+          >
+            🔒 Restricted
+          </Typography.Text>
+        </Tooltip>
+      ),
+      selectable: false,
+      isLeaf: true,
+    };
+  }
   const title = node.asset ? (
     <Flex align="center" gap={8} style={{ minWidth: 0 }}>
       <span>{node.label}</span>
@@ -162,11 +184,23 @@ function AssetsTable({ assets, onOpen }: { assets: AssetSummary[]; onOpen: (id: 
     {
       title: 'Asset',
       dataIndex: 'name',
-      render: (name: string, asset) => (
+      render: (name: string | null, asset) => (
         <div style={{ minWidth: 0 }}>
-          <Typography.Text strong ellipsis style={{ display: 'block' }}>
-            {name}
-          </Typography.Text>
+          {name === null ? (
+            // #920 redacted row — exists, but the viewer holds no grant. The
+            // disclosed placement (prefix/namespace) renders; the name never does.
+            <Typography.Text
+              type="secondary"
+              italic
+              aria-label="A restricted asset outside your access"
+            >
+              🔒 Restricted{asset.name_prefix ? ` · ${asset.name_prefix}` : ''}
+            </Typography.Text>
+          ) : (
+            <Typography.Text strong ellipsis style={{ display: 'block' }}>
+              {name}
+            </Typography.Text>
+          )}
           <Tooltip title={asset.namespace}>
             <Typography.Text type="secondary" style={{ fontSize: 12 }} ellipsis>
               {namespaceLabel(asset.namespace)}
@@ -214,8 +248,9 @@ function AssetsTable({ assets, onOpen }: { assets: AssetSummary[]; onOpen: (id: 
       dataSource={assets}
       pagination={false}
       onRow={(asset) => ({
-        onClick: () => onOpen(asset.id),
-        style: { cursor: 'pointer' },
+        // A redacted row is not openable — the detail endpoint 404s it (#920).
+        onClick: asset.is_accessible === false ? undefined : () => onOpen(asset.id),
+        style: { cursor: asset.is_accessible === false ? 'default' : 'pointer' },
       })}
     />
   );

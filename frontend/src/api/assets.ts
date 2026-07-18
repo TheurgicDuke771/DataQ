@@ -35,7 +35,10 @@ export interface ComposingSuite {
 export interface AssetSummary {
   id: string;
   namespace: string;
-  name: string;
+  /** Null = a REDACTED browse row (#920): monitored solely by suites outside the
+   *  viewer's grants — render as a locked entry (placement only), never openable
+   *  (the detail endpoint 404s it). `is_accessible` is the discriminator. */
+  name: string | null;
   env: string | null;
   description: string | null;
   owner_user_id: string | null;
@@ -59,6 +62,10 @@ export interface AssetSummary {
    *  Derived from the recorded runs — there is no connection-probe polling loop. */
   has_operational_error: boolean;
   has_skip: boolean;
+  is_accessible: boolean;
+  /** Redacted rows only: the disclosed non-leaf path (db/schema or folder) so the
+   *  tree places the locked row in its real group. */
+  name_prefix?: string | null;
   /** Any composing suite's latest run was `cancelled`. A cancelled run proves
    *  nothing — killed before a check ran, we may never have reached the datasource
    *  — so neither health axis may roll it up green. */

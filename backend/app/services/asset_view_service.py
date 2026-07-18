@@ -134,7 +134,15 @@ class AssetSummary:
 
     id: uuid.UUID
     namespace: str
-    name: str
+    # ``None`` = a REDACTED row (#920): the asset exists, is monitored by suites the
+    # caller holds no grant on, and browse includes it as an anonymous entry rather
+    # than omitting it — the tree-level twin of the lineage graph's #845 rule
+    # (omission asserts "this schema holds nothing else"). The namespace stays (the
+    # tree needs the placement — a deliberate, user-directed disclosure); the NAME
+    # is the protected fact, along with env/description/owner and every health
+    # field (forced to their empty defaults — a hidden asset's health is itself a
+    # fact about it). The detail endpoint keeps 404ing these no-leak.
+    name: str | None
     env: str | None
     description: str | None
     owner_user_id: uuid.UUID | None
@@ -159,6 +167,11 @@ class AssetSummary:
     has_cancelled_run: bool = False
     has_operational_error: bool = False
     has_skip: bool = False
+    is_accessible: bool = True
+    # Redacted rows only (#920): the non-leaf path segments (db/schema or folder),
+    # so the tree can place the locked row in its real group. None on full rows
+    # (the name carries the path) and on single-segment redacted names.
+    name_prefix: str | None = None
 
 
 @dataclass(frozen=True)
@@ -423,35 +436,41 @@ def list_visible_assets(
     granted_asset_ids = select(Suite.asset_id).where(
         Suite.asset_id.is_not(None), Suite.id.in_(accessible)
     )
-    # Browse shows what actually exists: the assets whose suites you can view, PLUS the
-    # suite-less ones (#846 — same rule as `get_visible_asset` and the lineage graph).
+    # Browse shows what actually exists — ALL of it (#846, extended by #920):
     #
-    # This was a real bug, not a nicety. The list was a plain `IN (SELECT suite.asset_id
-    # …)`, which silently dropped every suite-less asset — so a lineage-discovered table
-    # existed, was drawn in the graph, and (for an admin) opened fine, yet never appeared
-    # in browse. A schema visibly containing two assets listed one.
+    # - assets whose suites you can view → full rows;
+    # - suite-less assets → full rows (#846 — redaction protects a grant, and an
+    #   asset nobody granted is protected by nothing);
+    # - assets monitored ONLY by suites you can't see → **REDACTED rows** (#920,
+    #   user-directed): omitting them asserted "this schema holds nothing else" —
+    #   the same falsehood the lineage graph's #845 rule exists to prevent, one
+    #   surface over. The row keeps id + namespace (tree placement — a deliberate
+    #   disclosure) and nothing else; the detail endpoint keeps 404ing it.
     #
-    # `NOT IN` is only safe because the subquery excludes NULL `asset_id`: a single NULL
-    # makes `NOT IN` match *nothing*, which would silently empty browse instead of failing
-    # loudly.
+    # `NOT IN` is only safe because the subquery excludes NULL `asset_id`: a single
+    # NULL makes `NOT IN` match *nothing*, which would silently drop the suite-less
+    # class instead of failing loudly. Ordering note: redacted rows sort by their
+    # true (hidden) name — a weak alphabetical-position signal, accepted with the
+    # placement disclosure above.
     all_targeted = select(Suite.asset_id).where(Suite.asset_id.is_not(None))
-    visible = Asset.id.in_(granted_asset_ids) | Asset.id.not_in(all_targeted)
+    open_to_caller = Asset.id.in_(granted_asset_ids) | Asset.id.not_in(all_targeted)
     assets = list(
         session.scalars(
-            select(Asset)
-            .where(visible)
-            .order_by(Asset.namespace, Asset.name)
-            .limit(limit)
-            .offset(offset)
+            select(Asset).order_by(Asset.namespace, Asset.name).limit(limit).offset(offset)
         )
     )
     if not assets:
         return []
+    open_ids = set(
+        session.scalars(
+            select(Asset.id).where(Asset.id.in_([a.id for a in assets]), open_to_caller)
+        )
+    )
 
     suites = list(
         session.scalars(
             select(Suite)
-            .where(Suite.asset_id.in_([a.id for a in assets]), Suite.id.in_(accessible))
+            .where(Suite.asset_id.in_(list(open_ids)), Suite.id.in_(accessible))
             .order_by(Suite.name)
         )
     )
@@ -467,14 +486,50 @@ def list_visible_assets(
         suites_by_asset[suite.asset_id].append(suite)
 
     return [
-        _roll_up(
-            asset,
-            _composing_suites(
-                suites_by_asset.get(asset.id, []), levels, latest_runs, outcomes, op_flags
-            ),
+        (
+            _roll_up(
+                asset,
+                _composing_suites(
+                    suites_by_asset.get(asset.id, []), levels, latest_runs, outcomes, op_flags
+                ),
+            )
+            if asset.id in open_ids
+            else _redacted_summary(asset)
         )
         for asset in assets
     ]
+
+
+def _redacted_summary(asset: Asset) -> AssetSummary:
+    """A #920 redacted browse row: id + namespace + the PARENT path only — the leaf
+    name is the protected fact, along with env/description/owner and every health
+    axis (empty defaults — a hidden asset's health, monitoredness, and suite count
+    are facts about it).
+
+    ``name_prefix`` (db/schema or folder path, leaf stripped) is a deliberate,
+    user-directed disclosure: the tree places the 🔒 row inside its real group
+    (`DATAQ_DB → ANALYTICS → Restricted`) — the same placement the lineage graph
+    already reveals for any redacted node connected by an edge."""
+    if "/" in asset.name:
+        prefix, _, _leaf = asset.name.rpartition("/")
+    else:
+        prefix, _, _leaf = asset.name.rpartition(".")
+    return AssetSummary(
+        id=asset.id,
+        namespace=asset.namespace,
+        name=None,
+        name_prefix=prefix or None,
+        env=None,
+        description=None,
+        owner_user_id=None,
+        last_seen=asset.last_seen,
+        suite_count=0,
+        worst_severity=None,
+        checks_total=0,
+        checks_passed=0,
+        last_run_at=None,
+        is_accessible=False,
+    )
 
 
 def get_visible_asset(

@@ -27,6 +27,7 @@ const ASSET: AssetSummary = {
   has_operational_error: false,
   has_cancelled_run: false,
   has_skip: false,
+  is_accessible: true,
 };
 
 afterEach(() => vi.clearAllMocks());
