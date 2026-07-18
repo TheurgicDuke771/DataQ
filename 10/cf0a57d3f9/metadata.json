@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "10cf0a57d3f9",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-901-column-lineage",
+  "checkpoints_count": 4,
+  "files_touched": [
+    "backend/alembic/versions/a1b2c3d4e5f8_add_column_lineage_to_lineage_edges.py",
+    "backend/app/db/models.py",
+    "backend/app/lineage/warehouse.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/10/cf0a57d3f9/0/metadata.json",
+      "transcript": "/10/cf0a57d3f9/0/full.jsonl",
+      "compact_transcript": "/10/cf0a57d3f9/0/transcript.jsonl",
+      "content_hash": "/10/cf0a57d3f9/0/content_hash.txt",
+      "prompt": "/10/cf0a57d3f9/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 516,
+    "cache_creation_tokens": 964960,
+    "cache_read_tokens": 71667279,
+    "output_tokens": 170568,
+    "api_call_count": 265
+  }
+}

@@ -1,0 +1,75 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "10cf0a57d3f9",
+  "session_id": "ac097c7b-6067-40e0-bf7f-36fe97d011df",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-18T02:01:25.397719Z",
+  "branch": "feature/issue-901-column-lineage",
+  "checkpoints_count": 4,
+  "save_step_count": 1,
+  "files_touched": [
+    "backend/alembic/versions/a1b2c3d4e5f8_add_column_lineage_to_lineage_edges.py",
+    "backend/app/db/models.py",
+    "backend/app/lineage/warehouse.py"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "9da549c06f89",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 516,
+    "cache_creation_tokens": 964960,
+    "cache_read_tokens": 71667279,
+    "output_tokens": 170568,
+    "api_call_count": 265
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01VQrsHXb4rHeoD2PyjkTeBY",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "9da549c06f89",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 444,
+        "end": 445,
+        "entry_ids": [
+          "7e36d726-5c5c-4ea8-9a66-a7964eb5f085"
+        ],
+        "tool_use_id": "toolu_01VQrsHXb4rHeoD2PyjkTeBY"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01VQrsHXb4rHeoD2PyjkTeBY"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 7
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-18T02:01:25.303411Z",
+    "agent_lines": 53,
+    "agent_removed": 1,
+    "human_added": 455,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 508,
+    "total_lines_changed": 520,
+    "agent_percentage": 10.384615384615385,
+    "metric_version": 2
+  }
+}
