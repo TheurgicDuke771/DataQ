@@ -63,8 +63,8 @@ export function ColumnLineagePanel({
                   // The server withheld the pairs (far endpoint outside the viewer's
                   // grants) — an honest locked box, never an empty list.
                   <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-                    <LockOutlined /> Column mappings are hidden — they involve an asset
-                    you don't have access to.
+                    <LockOutlined /> Column mappings are hidden — they involve an asset you don't
+                    have access to.
                   </Typography.Paragraph>
                 ) : (
                   <Flex vertical gap={2} style={{ marginTop: 4 }}>

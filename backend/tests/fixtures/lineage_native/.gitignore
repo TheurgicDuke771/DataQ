@@ -9,3 +9,5 @@
 !.gitignore
 !snowflake_object_dependencies.json
 !uc_table_lineage_projected.json
+# #901 column grain — reviewed 2026-07-18: table/column names + event times only.
+!uc_column_lineage_projected.json
