@@ -129,12 +129,22 @@ class LineageNodeRead(ApiModel):
 class LineageEdgeRead(ApiModel):
     """One edge of the lineage neighbourhood, `source` (upstream) → `target`
     (downstream) asset id. The UI draws exactly these — without them a graph could
-    only guess which depth-2 node hangs off which depth-1 node (#805)."""
+    only guess which depth-2 node hangs off which depth-1 node (#805).
+
+    `columns` is the edge's column-level refinement (#901) where a warehouse source
+    recorded one — `[upstream_column, downstream_column]` pairs. **Redacted
+    server-side by the same #845 one-rule as the nodes**: when either endpoint is
+    outside the caller's grants, `columns` is null and only `column_count` remains —
+    the UI renders that as a redacted box ("N column links"), because a column name
+    of an asset you cannot see is schema disclosure. Both null ⇒ the edge simply has
+    no column grain (table-level source)."""
 
     model_config = ConfigDict(from_attributes=True)
 
     source: uuid.UUID
     target: uuid.UUID
+    columns: list[tuple[str, str]] | None = None
+    column_count: int | None = None
 
 
 class LineageSourceHealthRead(ApiModel):

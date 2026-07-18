@@ -86,10 +86,18 @@ export interface LineageNode {
 }
 
 /** One edge of the lineage neighbourhood — mirrors `LineageEdgeRead`.
- *  `source` is the upstream asset id, `target` the downstream one. */
+ *  `source` is the upstream asset id, `target` the downstream one.
+ *
+ *  `columns` is the edge's column-level refinement (#901) where a warehouse source
+ *  recorded one — `[upstream_column, downstream_column]` pairs. Redacted
+ *  SERVER-side by the #845 one-rule: when either endpoint is outside the viewer's
+ *  grants, `columns` is null and only `column_count` arrives — render that as a
+ *  redacted box, never as "no column lineage". Both null ⇒ table-grain edge. */
 export interface LineageEdge {
   source: string;
   target: string;
+  columns?: [string, string][] | null;
+  column_count?: number | null;
 }
 
 /** Asset detail — mirrors `AssetDetailRead`. */

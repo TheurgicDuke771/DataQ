@@ -622,3 +622,61 @@ def test_run_read_exposes_asset_id(client: TestClient, world: dict[str, Any]) ->
 def client_db(client: TestClient) -> Any:
     """The db_session the client's get_db override is bound to."""
     return app.dependency_overrides[get_db]()
+
+
+def test_column_lineage_redacts_pairs_on_inaccessible_edges(
+    client: TestClient, world: dict[str, Any]
+) -> None:
+    """#901 + #845 at the wire: an edge's column pairs are schema disclosure, so they
+    follow the SAME one-rule as the node identity — a redacted endpoint collapses the
+    mapping to a count-only box, and the column names never cross the wire. An
+    accessible edge returns the full pairs (and the same count), so the redacted and
+    open renderings are provably the same data minus the names."""
+    db = client_db(client)
+    stranger = _user(db, "stranger3@example.com")
+    conn = _connection(db, stranger)
+    secret = _suite(db, stranger, conn, name="Secret cols", table="MART_SECRET_COLS")
+    assert secret.asset_id is not None
+    db.add(
+        LineageEdge(
+            upstream_asset_id=world["asset_x"],
+            downstream_asset_id=secret.asset_id,
+            source="unity_catalog",
+            connection_id=conn.id,
+            columns=[["comment", "sentiment_secret_col"], ["customer_id", "customer_id"]],
+        )
+    )
+    # A fully-visible edge with column data: asset_x -> asset_y (both the owner's).
+    db.add(
+        LineageEdge(
+            upstream_asset_id=world["asset_x"],
+            downstream_asset_id=world["asset_y"],
+            source="unity_catalog",
+            connection_id=conn.id,
+            columns=[["order_id", "order_id"]],
+        )
+    )
+    db.commit()
+
+    _as(world["owner"])
+    resp = client.get(f"/api/v1/assets/{world['asset_x']}")
+    assert resp.status_code == 200
+    edges = {(e["source"], e["target"]): e for e in resp.json()["lineage_edges"]}
+
+    redacted = edges[(str(world["asset_x"]), str(secret.asset_id))]
+    assert redacted["columns"] is None
+    assert redacted["column_count"] == 2
+    # The wire itself: a hidden column name must survive nowhere in the body.
+    assert "sentiment_secret_col" not in resp.text
+
+    visible = edges[(str(world["asset_x"]), str(world["asset_y"]))]
+    assert visible["columns"] == [["order_id", "order_id"]]
+    assert visible["column_count"] == 1
+
+    # A table-grain-only edge carries neither field populated.
+    for e in resp.json()["lineage_edges"]:
+        if (e["source"], e["target"]) not in (
+            (str(world["asset_x"]), str(secret.asset_id)),
+            (str(world["asset_x"]), str(world["asset_y"])),
+        ):
+            assert e["columns"] is None and e["column_count"] is None

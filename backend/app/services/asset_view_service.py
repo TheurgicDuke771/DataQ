@@ -42,12 +42,20 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from sqlalchemy import or_, select
+from sqlalchemy import or_, select, tuple_
 from sqlalchemy.orm import Session
 
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
-from backend.app.db.models import Asset, Connection, Run, Suite, User, worst_severity
+from backend.app.db.models import (
+    Asset,
+    Connection,
+    LineageEdge,
+    Run,
+    Suite,
+    User,
+    worst_severity,
+)
 from backend.app.lineage.edges import lineage_neighbourhood
 from backend.app.services.run_service import check_outcome_counts, operational_result_flags
 from backend.app.services.suite_authz import effective_permissions
@@ -194,10 +202,21 @@ class LineageEdgeRef:
 
     The UI draws exactly these; without them a graph could only *guess* which node
     at depth 2 hangs off which node at depth 1 (#805).
+
+    ``columns`` is the edge's column-level refinement (#901) when a warehouse source
+    recorded one — ``[upstream_column, downstream_column]`` pairs, unioned across the
+    sources that observed the edge. **Redacted server-side by the #845 one-rule**: when
+    either endpoint is outside the caller's grants, the pairs are withheld and only
+    ``column_count`` survives — a column name is schema disclosure, the exact class the
+    node redaction exists to prevent, and a name hidden in CSS has still crossed the
+    wire. ``column_count`` is present whenever the edge has column data (it is the
+    redacted box's honest label: *something* maps, in N column links).
     """
 
     source: uuid.UUID
     target: uuid.UUID
+    columns: tuple[tuple[str, str], ...] | None = None
+    column_count: int | None = None
 
 
 @dataclass(frozen=True)
@@ -520,7 +539,12 @@ def get_visible_asset(
         suites=composing,
         upstream=_lineage_nodes(graph.upstream, has_suite, accessible_assets),
         downstream=_lineage_nodes(graph.downstream, has_suite, accessible_assets),
-        lineage_edges=[LineageEdgeRef(source=u, target=d) for u, d in graph.edges],
+        # The viewed asset is accessible by definition (this endpoint already authz'd
+        # it); neighbours use the same accessibility set the node redaction derives
+        # from, so the edge-level and node-level redaction can never disagree (#845).
+        lineage_edges=_lineage_edge_refs(
+            session, graph.edges, accessible={asset_id} | accessible_assets
+        ),
         # Lineage-source health names ORCHESTRATION CONNECTIONS (name, type, classified
         # poll error) — infrastructure information, not asset information. It is shown to
         # a caller with a stake in this asset (≥1 suite on it) or an admin; a caller who
@@ -694,6 +718,56 @@ def _accessible_asset_ids(
     # The granted ones, plus the suite-less ones: an id absent from `has_suite` is
     # targeted by no suite at all, so nothing is being kept from anyone.
     return granted | (set(ids) - has_suite)
+
+
+def _lineage_edge_refs(
+    session: Session,
+    edges: list[tuple[uuid.UUID, uuid.UUID]],
+    *,
+    accessible: set[uuid.UUID],
+) -> list[LineageEdgeRef]:
+    """The neighbourhood's edges with their column-level refinement (#901), redacted
+    by the #845 one-rule: an edge touching a redacted node yields ``column_count``
+    only — the pairs (column NAMES of an asset the caller can't see) never leave the
+    server. Column data is unioned across the sources that observed the edge (two
+    provenance rows for one asset pair are one drawn edge)."""
+    if not edges:
+        return []
+    pairs: dict[tuple[uuid.UUID, uuid.UUID], set[tuple[str, str]]] = {}
+    for up, down, cols in session.execute(
+        select(
+            LineageEdge.upstream_asset_id,
+            LineageEdge.downstream_asset_id,
+            LineageEdge.columns,
+        ).where(
+            tuple_(LineageEdge.upstream_asset_id, LineageEdge.downstream_asset_id).in_(edges),
+            LineageEdge.columns.is_not(None),
+        )
+    ):
+        bucket = pairs.setdefault((up, down), set())
+        # Defensive shape check: `columns` is app-written JSONB, but a malformed
+        # entry must degrade to "skipped", never 500 the asset page.
+        bucket.update(
+            (str(entry[0]), str(entry[1]))
+            for entry in cols
+            if isinstance(entry, (list, tuple)) and len(entry) == 2
+        )
+    refs: list[LineageEdgeRef] = []
+    for up, down in edges:
+        cols_set = pairs.get((up, down))
+        if not cols_set:
+            refs.append(LineageEdgeRef(source=up, target=down))
+            continue
+        both_visible = up in accessible and down in accessible
+        refs.append(
+            LineageEdgeRef(
+                source=up,
+                target=down,
+                columns=tuple(sorted(cols_set)) if both_visible else None,
+                column_count=len(cols_set),
+            )
+        )
+    return refs
 
 
 def _lineage_nodes(

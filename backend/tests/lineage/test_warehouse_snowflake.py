@@ -280,3 +280,57 @@ def test_missing_account_is_unavailable() -> None:
 
 def test_source_tag_is_snowflake() -> None:
     assert SnowflakeLineageProvider().source == "snowflake"
+
+
+# ── #902: authorization errors descend the ladder (found live, 2026-07-18) ────
+
+
+def _not_authorized_error() -> Exception:
+    """The live shape: role lacks the ACCOUNT_USAGE grant → 002003 compilation error
+    (Snowflake deliberately blurs missing-object and missing-grant into one message)."""
+
+    class _ProgrammingError(Exception):
+        sqlstate = "02000"
+
+    return _ProgrammingError(
+        "002003 (02000): SQL compilation error:\n"
+        "Table 'SNOWFLAKE.ACCOUNT_USAGE.TABLES' does not exist or not authorized."
+    )
+
+
+def test_not_authorized_tier_descends_instead_of_aborting() -> None:
+    """A least-privilege role (e.g. SNOWFLAKE.GOVERNANCE_VIEWER) can read the lower
+    tiers while the GET_LINEAGE probe's table is denied — the denied tier must skip
+    with a reason, not abort the tiers the role CAN read (#902)."""
+    conn = _FakeConn(
+        results={"OBJECT_DEPENDENCIES": _object_dependencies_rows()},
+        raises={
+            "GET_LINEAGE": _not_authorized_error(),
+            "ACCESS_HISTORY": _not_authorized_error(),
+        },
+    )
+    result = SnowflakeLineageProvider().fetch_edges(conn, connection_config=_CONFIG)
+    assert result.tier == LineageTier.SNOWFLAKE_OBJECT_DEPENDENCIES
+    assert len(result.edges) > 0
+    assert any("not authorized" in s for s in result.skipped_tiers)
+    # The degrade note carries the real (grant-shaped) reason — not a hardcoded
+    # "need Enterprise" that would mislead the operator toward the wrong fix.
+    assert result.degraded_reason is not None
+    assert "not authorized" in result.degraded_reason
+    # ...and it is a constructed, stable string — never the raw connector text.
+    assert "002003" not in result.degraded_reason
+
+
+def test_fully_denied_account_is_unavailable_not_empty() -> None:
+    """Every tier denied (no ACCOUNT_USAGE grant at all — the live DATAQ_READER
+    shape): the pull reports unavailable so the refresh freezes the cache; it must
+    never read as a confident empty graph (#828)."""
+    conn = _FakeConn(
+        raises={
+            "GET_LINEAGE": _not_authorized_error(),
+            "ACCESS_HISTORY": _not_authorized_error(),
+            "OBJECT_DEPENDENCIES": _not_authorized_error(),
+        }
+    )
+    with pytest.raises(WarehouseLineageUnavailableError):
+        SnowflakeLineageProvider().fetch_edges(conn, connection_config=_CONFIG)

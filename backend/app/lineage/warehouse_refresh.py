@@ -147,7 +147,14 @@ def _persist(
         # preserve_provenance: a warehouse pull must not flip a suite-resolved asset's
         # env/connection to this one.
         id_by_name = upsert_assets(session, asset_rows, preserve_provenance=True)
-        edge_rows = _edge_rows(result, id_by_name, source=source, connection_id=connection.id)
+        existing_columns = _existing_columns(session, source=source, connection_id=connection.id)
+        edge_rows = _edge_rows(
+            result,
+            id_by_name,
+            source=source,
+            connection_id=connection.id,
+            existing_columns=existing_columns,
+        )
         _upsert_edges(session, edge_rows)
 
     # Prune ONLY a snapshot source (Snowflake OBJECT_DEPENDENCIES — a current-state
@@ -235,7 +242,11 @@ def refresh_connection_lineage(
 
     connection.lineage_last_refresh_at = datetime.now(UTC)
     connection.lineage_last_tier = str(outcome.tier)
-    connection.lineage_degraded_reason = outcome.degraded_reason
+    # Bounded write: the reason is a joined list of constructed per-tier notes (#902),
+    # and the column is String(512) — overflow must degrade to a clipped note, never a
+    # raw StringDataRightTruncation (the #813 class).
+    reason = outcome.degraded_reason
+    connection.lineage_degraded_reason = reason[:512] if reason else None
     connection.lineage_last_error = None
     if outcome.new_watermark is not None:
         connection.lineage_watermark = outcome.new_watermark
@@ -259,13 +270,38 @@ def _record_refresh_error(session: Session, connection: Connection, exc: Excepti
     )
 
 
+def _existing_columns(
+    session: Session, *, source: str, connection_id: uuid.UUID
+) -> dict[tuple[uuid.UUID, uuid.UUID], list[list[str]]]:
+    """The connection's already-persisted column pairs, keyed by edge (#901) — the
+    merge base for an incremental pull, whose window only re-observes pairs whose
+    queries ran inside it (forgetting the rest would be a prune the never-prune
+    regime forbids)."""
+    return {
+        (up, down): cols
+        for up, down, cols in session.execute(
+            select(
+                LineageEdge.upstream_asset_id,
+                LineageEdge.downstream_asset_id,
+                LineageEdge.columns,
+            ).where(
+                LineageEdge.source == source,
+                LineageEdge.connection_id == connection_id,
+                LineageEdge.columns.is_not(None),
+            )
+        )
+    }
+
+
 def _edge_rows(
     result: WarehouseLineageResult,
     id_by_name: dict[tuple[str, str], uuid.UUID],
     *,
     source: str,
     connection_id: uuid.UUID,
+    existing_columns: dict[tuple[uuid.UUID, uuid.UUID], list[list[str]]] | None = None,
 ) -> list[dict[str, Any]]:
+    existing_columns = existing_columns or {}
     seen: set[tuple[uuid.UUID, uuid.UUID]] = set()
     rows: list[dict[str, Any]] = []
     for edge in result.edges:
@@ -274,6 +310,14 @@ def _edge_rows(
         if (up, down) in seen:
             continue
         seen.add((up, down))
+        # Column pairs accrete (union with what the edge already carries): a pair is
+        # forgotten only when its whole edge is pruned. NULL (never observed) stays
+        # NULL — it is not the same claim as "observed, zero pairs".
+        merged: list[list[str]] | None = None
+        prior = existing_columns.get((up, down))
+        if edge.column_pairs or prior:
+            union = {tuple(p) for p in (prior or [])} | set(edge.column_pairs)
+            merged = [list(p) for p in sorted(union)]
         rows.append(
             {
                 "upstream_asset_id": up,
@@ -281,6 +325,7 @@ def _edge_rows(
                 "source": source,
                 "connection_id": connection_id,
                 "last_seen": func.clock_timestamp(),
+                "columns": merged,
             }
         )
     return rows
@@ -295,6 +340,13 @@ def _upsert_edges(
         session.execute(
             stmt.on_conflict_do_update(
                 constraint="uq_lineage_edges_up_down_source_conn",
-                set_={"last_seen": func.clock_timestamp()},
+                # `columns` was merged against the persisted value pre-insert
+                # (_edge_rows), so EXCLUDED carries the union — but never regress a
+                # value another writer landed to NULL: this row's NULL only means
+                # "nothing observed", and COALESCE keeps the merge accretive.
+                set_={
+                    "last_seen": func.clock_timestamp(),
+                    "columns": func.coalesce(stmt.excluded.columns, LineageEdge.columns),
+                },
             )
         )
