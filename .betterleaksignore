@@ -1,0 +1,12 @@
+# Fingerprints of triaged full-history scan findings (betterleaks/gitleaks format:
+# <commit>:<path>:<rule>:<line>). CI's incremental scan never re-visits these old
+# blobs; this file keeps the periodic FULL-history scan (security cadence, CONTRIBUTING
+# rule set §security) at zero so a real leak can't hide behind a known false positive.
+#
+# 1) The #849 redaction test's original fixture literals (commit 08d2bbd3, 2026-07-13):
+#    _JWT was the public jwt.io demo token (header {alg:HS256} / payload {sub:12345} /
+#    demo-secret signature — a documentation value, not a credential) and _PAT was a
+#    fabricated-value stand-in. Both were replaced by constructed strings
+#    ("eyJ" + "A"*12 …) in a follow-up; the literals survive only in this historical blob,
+#    which cannot be purged (force-push to main is blocked). Triaged 2026-07-17: benign.
+08d2bbd31509ac02f8f956dc029ffdd7f056f376:backend/tests/core/test_bearer_token_redaction.py:jwt:36
