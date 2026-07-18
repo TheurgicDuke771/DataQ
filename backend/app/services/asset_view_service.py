@@ -745,7 +745,13 @@ def _lineage_edge_refs(
         )
     ):
         bucket = pairs.setdefault((up, down), set())
-        bucket.update((str(a), str(b)) for a, b in cols)
+        # Defensive shape check: `columns` is app-written JSONB, but a malformed
+        # entry must degrade to "skipped", never 500 the asset page.
+        bucket.update(
+            (str(entry[0]), str(entry[1]))
+            for entry in cols
+            if isinstance(entry, (list, tuple)) and len(entry) == 2
+        )
     refs: list[LineageEdgeRef] = []
     for up, down in edges:
         cols_set = pairs.get((up, down))

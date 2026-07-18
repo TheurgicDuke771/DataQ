@@ -70,12 +70,7 @@ def _column_lineage_rows(*, since: datetime | None = None) -> list[tuple[Any, ..
     raw = json.loads((_FIXTURES / "uc_column_lineage_projected.json").read_text())
     out = []
     for r in raw:
-        if not (
-            r["source_table_full_name"]
-            and r["target_table_full_name"]
-            and r["source_column_name"]
-            and r["target_column_name"]
-        ):
+        if not (r["source_column_name"] and r["target_column_name"]):
             continue
         # The capture stored CAST(event_time AS STRING) — naive UTC in Databricks'
         # string form; re-attach UTC so the fake's filter can compare with the floor.
@@ -86,9 +81,13 @@ def _column_lineage_rows(*, since: datetime | None = None) -> list[tuple[Any, ..
             continue
         out.append(
             (
-                r["source_table_full_name"],
+                r["source_table_catalog"],
+                r["source_table_schema"],
+                r["source_table_name"],
                 r["source_column_name"],
-                r["target_table_full_name"],
+                r["target_table_catalog"],
+                r["target_table_schema"],
+                r["target_table_name"],
                 r["target_column_name"],
             )
         )

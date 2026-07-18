@@ -11,9 +11,9 @@ fourth lineage table — the upsert/prune/provenance regime stays exactly the on
 them to their own table without losing anything (the pairs are all it would need).
 
 **Backward-compatible by construction** (CLAUDE.md §6): one nullable additive
-column. NULL means "this edge's source offers no column grain" (dbt, Snowflake
-OBJECT_DEPENDENCIES) — distinct from ``[]``, which a source that *does* offer the
-grain writes when a window genuinely observed no column events.
+column. NULL means "no column pairs ever observed for this edge" (dbt, Snowflake
+OBJECT_DEPENDENCIES — or a UC edge whose queries predate the pull window); the
+write path only ever records observed pairs, merged union-wise across refreshes.
 """
 
 from __future__ import annotations

@@ -205,12 +205,14 @@ class UnityCatalogLineageProvider:
         """Refine the table edges with ``system.access.column_lineage`` pairs (#901).
 
         Reads the same window as the table pull (same bound floor — no interpolation)
-        and joins on the table pair's **full names**, which arrive in UC's own lower
-        case and match the edge identities byte-for-byte. A column row whose table
-        pair produced no table edge in this window is dropped (logged): a pair we
-        can't anchor to an edge would fabricate lineage the table grain never saw.
-        Pairs are capped per edge — a runaway wide-schema join must not balloon the
-        edge row.
+        and joins on the table pair built from the row's SPLIT catalog/schema/name
+        columns through the same :func:`asset_identity.format_unity_catalog_name` the
+        table edges used — **by construction byte-identical**, where the raw
+        ``*_full_name`` string could diverge from the folded identity for a quoted
+        mixed-case table (review finding). A column row whose table pair produced no
+        table edge in this window is dropped (logged): a pair we can't anchor to an
+        edge would fabricate lineage the table grain never saw. Pairs are capped per
+        edge — a runaway wide-schema join must not balloon the edge row.
         """
         if not edges:
             return edges
@@ -221,8 +223,10 @@ class UnityCatalogLineageProvider:
         )
         rows = conn.execute(
             text(
-                "SELECT source_table_full_name, source_column_name, "
-                "target_table_full_name, target_column_name "
+                "SELECT source_table_catalog, source_table_schema, source_table_name, "
+                "source_column_name, "
+                "target_table_catalog, target_table_schema, target_table_name, "
+                "target_column_name "
                 "FROM system.access.column_lineage "
                 "WHERE source_table_full_name IS NOT NULL "
                 "AND target_table_full_name IS NOT NULL "
@@ -233,9 +237,15 @@ class UnityCatalogLineageProvider:
             {"since": floor},
         ).all()
         by_table_pair: dict[tuple[str, str], list[tuple[str, str]]] = {}
-        for src_table, src_col, tgt_table, tgt_col in rows:
+        for src_cat, src_schema, src_name, src_col, tgt_cat, tgt_schema, tgt_name, tgt_col in rows:
+            if not (src_cat and src_schema and src_name and tgt_cat and tgt_schema and tgt_name):
+                continue  # a partial name can't form an identity (mirrors the table pull)
+            key = (
+                format_unity_catalog_name(str(src_cat), str(src_schema), str(src_name)),
+                format_unity_catalog_name(str(tgt_cat), str(tgt_schema), str(tgt_name)),
+            )
             pair = (str(src_col), str(tgt_col))
-            bucket = by_table_pair.setdefault((str(src_table), str(tgt_table)), [])
+            bucket = by_table_pair.setdefault(key, [])
             if pair not in bucket and len(bucket) < _MAX_COLUMN_PAIRS_PER_EDGE:
                 bucket.append(pair)
         matched = 0
