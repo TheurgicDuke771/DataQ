@@ -36,10 +36,17 @@ depends_on = None
 # `results` rows are matched-row-locked only (an UPDATE, not an ALTER — the #605
 # hot-table concern is table-level locks); at this deployment's scale the sweep is
 # momentary and the migrate job runs before workers roll.
+# NOTE (#913): this tuple originally listed ("checks", "column_policy") — but
+# `column_policy` lives on SUITES (migration c3d4e5f6a7b8); it never existed on
+# checks. That wrong name failed `alembic upgrade head` on every fresh database
+# (caught by the main-branch E2E) AND failed the prod migrate job, so NO
+# environment ever recorded this revision as applied — which is what makes
+# editing it in place safe. Deliberately no existence guard: a wrong name here
+# SHOULD fail loudly, exactly as this one did.
 _TARGETS = (
     ("lineage_edges", "columns"),
     ("suites", "target"),
-    ("checks", "column_policy"),
+    ("suites", "column_policy"),
     ("results", "observed_value"),
     ("results", "expected_value"),
     ("results", "sample_failures"),
