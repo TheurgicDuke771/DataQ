@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "e62674ffe95b",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-901-column-lineage",
+  "checkpoints_count": 4,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/e6/2674ffe95b/0/metadata.json",
+      "transcript": "/e6/2674ffe95b/0/full.jsonl",
+      "compact_transcript": "/e6/2674ffe95b/0/transcript.jsonl",
+      "content_hash": "/e6/2674ffe95b/0/content_hash.txt",
+      "prompt": "/e6/2674ffe95b/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 518,
+    "cache_creation_tokens": 966674,
+    "cache_read_tokens": 72115039,
+    "output_tokens": 171103,
+    "api_call_count": 266
+  }
+}
