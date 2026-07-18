@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "b4234161a377",
+  "strategy": "manual-commit",
+  "branch": "docs/ledger-mfa-correction",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/b4/234161a377/0/metadata.json",
+      "transcript": "/b4/234161a377/0/full.jsonl",
+      "compact_transcript": "/b4/234161a377/0/transcript.jsonl",
+      "content_hash": "/b4/234161a377/0/content_hash.txt",
+      "prompt": "/b4/234161a377/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1145,
+    "cache_creation_tokens": 6871526,
+    "cache_read_tokens": 240769089,
+    "output_tokens": 405478,
+    "api_call_count": 588
+  }
+}
