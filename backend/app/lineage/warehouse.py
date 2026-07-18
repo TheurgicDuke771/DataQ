@@ -62,10 +62,17 @@ class LineageTier(StrEnum):
 class LineageEdgePair:
     """One directed edge as two OpenLineage identities — the warehouse provider's
     output unit. Both endpoints are already in the engine's own case, so they join
-    `assets` byte-for-byte with no fold (the whole point vs the catalog seam)."""
+    `assets` byte-for-byte with no fold (the whole point vs the catalog seam).
+
+    ``column_pairs`` is the edge's column-grain refinement (#901) —
+    ``(upstream_column, downstream_column)`` pairs from sources that offer it (UC
+    ``system.access.column_lineage``). Empty for table-grain-only sources; the
+    refresh persists it as the edge's ``columns`` JSONB.
+    """
 
     upstream: AssetIdentity
     downstream: AssetIdentity
+    column_pairs: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)

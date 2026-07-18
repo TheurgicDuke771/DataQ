@@ -62,6 +62,11 @@ _DEFAULT_LOOKBACK_DAYS = 365
 # last_seen), so re-reads are harmless. 6h comfortably exceeds the documented lag.
 _WATERMARK_SAFETY = timedelta(hours=6)
 
+# Defensive per-edge cap on persisted column pairs (#901): real schemas are bounded,
+# but a generated/exploded join must not balloon the edge's JSONB. Deterministic —
+# pairs are collected in event order and the cap keeps the first N distinct.
+_MAX_COLUMN_PAIRS_PER_EDGE = 500
+
 
 class UnityCatalogLineageProvider:
     """`WarehouseLineageProvider` for Unity Catalog via ``system.access.table_lineage``."""
@@ -87,9 +92,26 @@ class UnityCatalogLineageProvider:
                 f"system.access.table_lineage ({type(exc).__name__}) — the SQL warehouse "
                 "principal needs SELECT on system.access and system tables enabled"
             ) from exc
+        # Column grain (#901): a refinement of the table edges, never a reason to fail
+        # them — a workspace where column_lineage is gated separately still gets table
+        # lineage, with an honest degrade note instead of a silent absence.
+        degraded_reason: str | None = None
+        try:
+            edges = self._attach_column_pairs(conn, edges, since)
+        except Exception as exc:
+            degraded_reason = (
+                "column-level lineage unavailable: could not read "
+                f"system.access.column_lineage ({type(exc).__name__})"
+            )
+            log.warning(
+                "warehouse_lineage_column_grain_failed",
+                source=self.source,
+                error_type=type(exc).__name__,
+            )
         return WarehouseLineageResult(
             edges=edges,
             tier=LineageTier.UNITY_CATALOG_SYSTEM_ACCESS,
+            degraded_reason=degraded_reason,
             # The system table lags ingestion by up to ~1-2h (Databricks-documented).
             freshness_lag="~1-2h (system.access ingestion latency)",
             new_watermark=new_watermark,
@@ -173,3 +195,85 @@ class UnityCatalogLineageProvider:
                 )
             )
         return dedupe_edges(edges), max_event_time
+
+    def _attach_column_pairs(
+        self,
+        conn: Any,
+        edges: tuple[LineageEdgePair, ...],
+        since: datetime | None,
+    ) -> tuple[LineageEdgePair, ...]:
+        """Refine the table edges with ``system.access.column_lineage`` pairs (#901).
+
+        Reads the same window as the table pull (same bound floor — no interpolation)
+        and joins on the table pair built from the row's SPLIT catalog/schema/name
+        columns through the same :func:`asset_identity.format_unity_catalog_name` the
+        table edges used — **by construction byte-identical**, where the raw
+        ``*_full_name`` string could diverge from the folded identity for a quoted
+        mixed-case table (review finding). A column row whose table pair produced no
+        table edge in this window is dropped (logged): a pair we can't anchor to an
+        edge would fabricate lineage the table grain never saw. Pairs are capped per
+        edge — a runaway wide-schema join must not balloon the edge row.
+        """
+        if not edges:
+            return edges
+        floor = (
+            since - _WATERMARK_SAFETY
+            if since is not None
+            else datetime.now(UTC) - timedelta(days=_DEFAULT_LOOKBACK_DAYS)
+        )
+        rows = conn.execute(
+            text(
+                "SELECT source_table_catalog, source_table_schema, source_table_name, "
+                "source_column_name, "
+                "target_table_catalog, target_table_schema, target_table_name, "
+                "target_column_name "
+                "FROM system.access.column_lineage "
+                "WHERE source_table_full_name IS NOT NULL "
+                "AND target_table_full_name IS NOT NULL "
+                "AND source_column_name IS NOT NULL "
+                "AND target_column_name IS NOT NULL "
+                "AND event_time > :since"
+            ),
+            {"since": floor},
+        ).all()
+        by_table_pair: dict[tuple[str, str], list[tuple[str, str]]] = {}
+        for src_cat, src_schema, src_name, src_col, tgt_cat, tgt_schema, tgt_name, tgt_col in rows:
+            if not (src_cat and src_schema and src_name and tgt_cat and tgt_schema and tgt_name):
+                continue  # a partial name can't form an identity (mirrors the table pull)
+            key = (
+                format_unity_catalog_name(str(src_cat), str(src_schema), str(src_name)),
+                format_unity_catalog_name(str(tgt_cat), str(tgt_schema), str(tgt_name)),
+            )
+            pair = (str(src_col), str(tgt_col))
+            bucket = by_table_pair.setdefault(key, [])
+            if pair not in bucket and len(bucket) < _MAX_COLUMN_PAIRS_PER_EDGE:
+                bucket.append(pair)
+        matched = 0
+        refined: list[LineageEdgePair] = []
+        for edge in edges:
+            pairs = by_table_pair.pop((edge.upstream.name, edge.downstream.name), None)
+            if pairs:
+                matched += 1
+                refined.append(
+                    LineageEdgePair(
+                        upstream=edge.upstream,
+                        downstream=edge.downstream,
+                        column_pairs=tuple(sorted(pairs)),
+                    )
+                )
+            else:
+                refined.append(edge)
+        if by_table_pair:
+            # Column events whose table pair has no edge in this window — expected when
+            # the two logs' ingestion isn't aligned; the pairs return on a later pull.
+            log.info(
+                "warehouse_lineage_column_pairs_unanchored",
+                source=self.source,
+                table_pairs=len(by_table_pair),
+            )
+        log.info(
+            "warehouse_lineage_column_grain",
+            source=self.source,
+            edges_with_columns=matched,
+        )
+        return tuple(refined)

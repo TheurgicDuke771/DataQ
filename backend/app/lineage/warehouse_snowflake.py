@@ -104,8 +104,10 @@ class SnowflakeLineageProvider:
                     skipped_tiers=tuple(skipped),
                 )
             skipped.append("access_history: empty (edition-gated or no write history)")
-        except _FeatureUnsupportedError:
-            skipped.append("access_history: unsupported on this edition")
+        except _FeatureUnsupportedError as exc:
+            # Carry the REAL reason (edition gate vs missing grant, #902) — the same
+            # honesty rule the tier-1 skip already follows.
+            skipped.append(f"access_history: {exc}")
 
         # Tier 3: OBJECT_DEPENDENCIES — the all-editions floor.
         try:
@@ -118,13 +120,12 @@ class SnowflakeLineageProvider:
         return WarehouseLineageResult(
             edges=floor,
             tier=LineageTier.SNOWFLAKE_OBJECT_DEPENDENCIES,
+            # The per-tier skip reasons are constructed, stable strings (edition gate /
+            # missing grant / deferred traversal — never raw connector text), so they
+            # can be surfaced verbatim; a blanket "need Enterprise" would mislabel a
+            # grant-shaped skip (#902).
             degraded_reason=(
-                (
-                    "view-level lineage only — richer tiers (GET_LINEAGE / ACCESS_HISTORY) "
-                    "need Snowflake Enterprise edition"
-                )
-                if skipped
-                else None
+                ("view-level lineage only — " + "; ".join(skipped)) if skipped else None
             ),
             skipped_tiers=tuple(skipped),
         )
@@ -284,11 +285,26 @@ def _sqlstate(exc: BaseException) -> str | None:
 _UNSUPPORTED_EDITION_MSG = "unsupported on this edition"
 
 
+_NOT_AUTHORIZED_MSG = "not authorized (role lacks the ACCOUNT_USAGE / GET_LINEAGE grant)"
+
+
 def _reraise_if_feature_unsupported(exc: BaseException) -> None:
     """Raise :class:`_FeatureUnsupportedError` if ``exc`` is Snowflake's edition-gate 0A000,
     matched by SQLSTATE (structured) OR the documented message text (belt-and-braces —
-    the connector surfaces both, and the SQLSTATE is the reliable one)."""
+    the connector surfaces both, and the SQLSTATE is the reliable one).
+
+    Authorization failures descend the ladder too (#902, found live): Snowflake grants
+    are per-object — the ``SNOWFLAKE.GOVERNANCE_VIEWER`` database role authorizes
+    ACCESS_HISTORY + OBJECT_DEPENDENCIES *without* the GET_LINEAGE probe's table — so
+    an un-authorized tier is exactly as skippable as an edition-gated one. Snowflake
+    deliberately blurs missing-object and missing-grant into one message (002003
+    "does not exist or not authorized"), so that text IS the structured signal here.
+    If every tier is denied, the floor's failure already reports unavailable with a
+    classified reason — this never converts total denial into a silent empty.
+    """
     if _sqlstate(exc) == _FEATURE_UNSUPPORTED_SQLSTATE or "Unsupported feature" in str(exc):
         # The edition gate → a stable, operator-legible reason (NOT the raw connector
         # text, which can be noisy). The deferred-traversal path raises its own message.
         raise _FeatureUnsupportedError(_UNSUPPORTED_EDITION_MSG) from exc
+    if "does not exist or not authorized" in str(exc):
+        raise _FeatureUnsupportedError(_NOT_AUTHORIZED_MSG) from exc

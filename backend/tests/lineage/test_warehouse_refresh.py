@@ -273,3 +273,84 @@ def test_get_warehouse_lineage_provider_registry() -> None:
     # a type with no warehouse-native lineage (dbt/OpenLineage feeds it instead)
     assert get_warehouse_lineage_provider("adls_gen2") is None
     assert get_warehouse_lineage_provider("iceberg") is None
+
+
+# ── column grain persistence (#901) ───────────────────────────────────────────
+
+
+def _columns_for(
+    session: Session, connection: Connection, source: str = "snowflake"
+) -> dict[tuple[str, str], Any]:
+    name_by_id = {a.id: a.name for a in session.execute(select(Asset)).scalars()}
+    return {
+        (name_by_id[e.upstream_asset_id], name_by_id[e.downstream_asset_id]): e.columns
+        for e in session.execute(
+            select(LineageEdge).where(
+                LineageEdge.source == source, LineageEdge.connection_id == connection.id
+            )
+        ).scalars()
+    }
+
+
+def test_column_pairs_persist_on_the_edge(db_session: Session, sf_connection: Connection) -> None:
+    result = WarehouseLineageResult(
+        edges=(
+            LineageEdgePair(_ident("SRC"), _ident("DST"), column_pairs=(("a", "b"), ("c", "d"))),
+            LineageEdgePair(_ident("SRC"), _ident("OTHER")),
+        ),
+        tier=LineageTier.SNOWFLAKE_OBJECT_DEPENDENCIES,
+    )
+    refresh_warehouse_edges(
+        db_session, connection=sf_connection, provider=_StubProvider(result), conn=object()
+    )
+    cols = _columns_for(db_session, sf_connection)
+    assert cols[(_ident("SRC").name, _ident("DST").name)] == [["a", "b"], ["c", "d"]]
+    # An edge with no observed pairs stays NULL — "never observed" is not "zero pairs".
+    assert cols[(_ident("SRC").name, _ident("OTHER").name)] is None
+
+
+def test_incremental_refresh_merges_column_pairs_never_forgets(
+    db_session: Session, sf_connection: Connection
+) -> None:
+    """A log window only re-observes pairs whose queries ran inside it — the union
+    with the persisted pairs is what keeps the never-prune promise at column grain."""
+
+    def _incremental(pairs: tuple[tuple[str, str], ...]) -> _StubProvider:
+        return _StubProvider(
+            WarehouseLineageResult(
+                edges=(LineageEdgePair(_ident("SRC"), _ident("DST"), column_pairs=pairs),),
+                tier=LineageTier.UNITY_CATALOG_SYSTEM_ACCESS,
+            ),
+            source="unity_catalog",
+            is_incremental=True,
+        )
+
+    refresh_warehouse_edges(
+        db_session,
+        connection=sf_connection,
+        provider=_incremental((("a", "b"), ("c", "d"))),
+        conn=object(),
+    )
+    # Second window observes ONE old pair and one new — the union must keep all three.
+    refresh_warehouse_edges(
+        db_session,
+        connection=sf_connection,
+        provider=_incremental((("c", "d"), ("e", "f"))),
+        conn=object(),
+    )
+    cols = _columns_for(db_session, sf_connection, source="unity_catalog")
+    assert cols[(_ident("SRC").name, _ident("DST").name)] == [
+        ["a", "b"],
+        ["c", "d"],
+        ["e", "f"],
+    ]
+    # And a later window with NO column events must not regress the pairs to NULL.
+    refresh_warehouse_edges(
+        db_session, connection=sf_connection, provider=_incremental(()), conn=object()
+    )
+    cols = _columns_for(db_session, sf_connection, source="unity_catalog")
+    assert cols[(_ident("SRC").name, _ident("DST").name)] == [
+        ["a", "b"],
+        ["c", "d"],
+        ["e", "f"],
+    ]
