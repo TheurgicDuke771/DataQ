@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "65119bffd23a",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-913-migration-wrong-table",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/alembic/versions/b2c3d4e5f6a9_null_out_json_null_lineage_columns.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/65/119bffd23a/0/metadata.json",
+      "transcript": "/65/119bffd23a/0/full.jsonl",
+      "compact_transcript": "/65/119bffd23a/0/transcript.jsonl",
+      "content_hash": "/65/119bffd23a/0/content_hash.txt",
+      "prompt": "/65/119bffd23a/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1007,
+    "cache_creation_tokens": 6161689,
+    "cache_read_tokens": 194626483,
+    "output_tokens": 365644,
+    "api_call_count": 519
+  }
+}

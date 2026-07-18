@@ -1,0 +1,394 @@
+* Perform a mutation spike (both backend and frontend), and check the issues found. Then run a full security scan of entire codebase to identify any vulnerabilities [considering the recent security events].
+* Then check the docs once [READMEs, github page, progress, etc.] and make sure they are up to date with the latest changes.
+* Next deploy the latest changes to prod [full routine pre - post checklist coverage, if needed run the ad-hoc harness job once, but make sure to turn everyting off once the validation is completed.]
+
+---
+
+<task-notification>
+<task-id>ada87a45bc0795e27</task-id>
+<tool-use-id>toolu_0158JkrXuQ5FfbgZXMY5Xijn</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/ada87a45bc0795e27.output</output-file>
+<status>failed</status>
+<summary>Agent "Injection/SSRF/authz security audit" failed: Agent terminated early due to an API error: You've hit your monthly spend limit · raise it at claude.ai/settings/usage</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b22v2xhtx</task-id>
+<tool-use-id>toolu_01BkSGhQGQ9jtZ2zzYbSRBK2</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/b22v2xhtx.output</output-file>
+<status>completed</status>
+<summary>Background command "Full-history betterleaks secret scan via docker" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bn44c7qw9</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/bn44c7qw9.output</output-file>
+<status>completed</status>
+<summary>Background command "Re-run Stryker capturing full survivor report" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bwrzi03j9</task-id>
+<tool-use-id>toolu_01AHZPVpBEZTu55zXACfqdAS</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/bwrzi03j9.output</output-file>
+<status>completed</status>
+<summary>Background command "Dump all surviving mutant diffs to scratchpad" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b9003k7m5</task-id>
+<tool-use-id>toolu_01XFRf6mQe2s1ZXCR55Qe19i</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/b9003k7m5.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for survivor dump to finish" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+continue...
+
+---
+
+<task-notification>
+<task-id>b8ilegm2n</task-id>
+<tool-use-id>toolu_01M6u4cAgKMQ2uohgRkge1w9</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/b8ilegm2n.output</output-file>
+<status>completed</status>
+<summary>Background command "Verify betterleaksignore silences the historical finding" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bn2fbkbjc</task-id>
+<tool-use-id>toolu_01KKeN1AJmG9HaK8QQUqzjPq</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/bn2fbkbjc.output</output-file>
+<status>completed</status>
+<summary>Background command "Note review outcome and watch PR checks" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b15esqu0y</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/b15esqu0y.output</output-file>
+<status>completed</status>
+<summary>Background command "Run harness window: wake, run mockdata flows, sleep" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Hey, what the status
+
+---
+
+What about log sanitization and other similar issues, it bites hard last week
+
+---
+
+Did we get full lineage on both SF and UC?
+
+---
+
+Test it live for both UC and SF (that's the main point of this exerise, not just to prove it theoriticaly). 
+Also pull the column lineage if available. 
+show the lineage in a reducted box if user don't have access to it.
+
+---
+
+<task-notification>
+<task-id>bv8eqmts3</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/bv8eqmts3.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch PR 903 CI checks" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+fix the prod issue
+
+---
+
+<task-notification>
+<task-id>bwrungqyj</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/bwrungqyj.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch PR 903 checks after fixup" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b5lt7v9c1</task-id>
+<tool-use-id>toolu_01NwFK4yeFk5t8zt98Rf1iTL</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/b5lt7v9c1.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for main CI green then dispatch Deploy" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b7k7ryww5</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/b7k7ryww5.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch docs PR checks then squash-merge" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+do the WAREHOUSE_LINEAGE_ENABLED flip
+
+---
+
+Is it landed?
+
+---
+
+<task-notification>
+<task-id>bn2y5ah5y</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/bn2y5ah5y.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for the first live warehouse-lineage refresh" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Asset is not working, and fetchinf temp objects and stages
+
+---
+
+<task-notification>
+<task-id>bbvf182d1</task-id>
+<tool-use-id>toolu_01JFXp5tn2Gwgz6UQxJn9FDn</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/bbvf182d1.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch fix deploy and verify beat" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+continue...
+
+---
+
+<task-notification>
+<task-id>adc7eca855e13b6cb</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/adc7eca855e13b6cb.output</output-file>
+<status>completed</status>
+<summary>Agent "Review: reuse+simplification" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>```json
+[
+  {
+    "file": "backend/app/lineage/warehouse_snowflake.py",
+    "line": 254,
+    "summary": "Re-implements the group-column-pairs-then-attach pattern that warehouse_unity_catalog.py:_attach_column_pairs (lines 239-263) already built for #901 — both key a dict on (upstream.name, downstream.name), collect (src_col, tgt_col) pairs, and rebuild LineageEdgePair with tuple(sorted(pairs)). Belongs in a shared helper in warehouse.py (e.g. build_edges_with_column_pairs(edge_identities, pairs_by_key)). Critically, the Snowflake copy omits UC's _MAX_COLUMN_PAIRS_PER_EDGE=500 defensive cap.",
+    "failure_scenario": "The two providers' column-grain semantics drift independently: a runaway wide-schema/exploded statement on Snowflake balloons the edge's columns JSONB unbounded — the exact failure #901 added the cap to prevent on UC — and any future fix (cap, ordering, dedup rule) must be remembered and applied in two places."
+  },
+  {
+    "file": "backend/app/lineage/warehouse_snowflake.py",
+    "line": 269,
+    "summary": "The dedupe_edges(...) wrap over edges.items() is dead work: the edges dict is already keyed on (up.name, down.name) within a single constant namespace, and self-edges are dropped at line 259 (up.name == down.name), which itself duplicates dedupe_edges' own self-edge rule. Simpler form: return tuple(LineageEdgePair(...) for key, (up, down) in edges.items()) — the dict IS the dedupe.",
+    "failure_scenario": "Two places now encode the self-edge/dup rule; a reader assumes dedupe_edges is load-bearing here and 'optimizes' the dict away, or conversely edits dedupe_edges expecting it to affect this tier when it can never remove anything — either way the redundant layer misleads the next change."
+  },
+  {
+    "file": "backend/app/lineage/warehouse_snowflake.py",
+    "line": 192,
+    "summary": "In _from_object_dependencies the guard `if up_db is None or down_db is None: continue` is now dead code: the added SQL predicate `WHERE referenced_database = :db AND referencing_database = :db` can never return a row with a NULL database (NULL = :db is not TRUE). Simpler form: delete the guard, keeping only the _TABLE_DOMAINS check.",
+    "failure_scenario": "An unreachable branch that implies NULL databases still flow through — a future maintainer preserves or extends the NULL handling (e.g. adds NULL-tolerant identity building) believing it's exercised, and the branch drags an untestable line into the &gt;=80% coverage gate."
+  },
+  {
+    "file": "backend/app/lineage/warehouse_snowflake.py",
+    "line": 239,
+    "summary": "The 90-day lookback is a magic literal duplicated in two SQL strings — DATEADD('day', -90, ...) here and again in _account_has_write_activity (line 336) — with the docstring asserting they 'match'. Simpler form: one module-level _LOOKBACK_DAYS = 90 constant interpolated (or bound) into both queries, making the documented invariant structural.",
+    "failure_scenario": "Someone tunes the ACCESS_HISTORY window (say to 30d) without touching the corroboration probe: an account whose only writes are 31-89d old now returns empty-with-write-activity → None → 'edition-gated' skip and a needless descent to the view-level floor, silently degrading Enterprise accounts with no test catching the drift."
+  },
+  {
+    "file": "backend/app/lineage/warehouse_snowflake.py",
+    "line": 322,
+    "summary": "_is_ephemeral's docstring claims it covers Snowpark temp 'tables/stages', but stages can never reach it: the SQL already filters both endpoints to objectDomain = 'Table', and _identity_from_qualified returns None for non-3-part (stage) names before the check runs. The stage half of the guard's stated scope is unreachable; the filter could also live in the SQL WHERE alongside the other scope predicates (NOT LIKE 'SNOWPARK\\_TEMP\\_%' on the split table part), where the rest of the #908 hygiene already is.",
+    "failure_scenario": "A maintainer trusts the docstring and assumes Python-side ephemera filtering covers stages, then relaxes the SQL objectDomain filter (e.g. to admit external tables) — stages re-materialize as browsable assets, the exact #908 regression, because the safety net described here never actually catches them."
+  },
+  {
+    "file": "backend/app/lineage/warehouse_snowflake.py",
+    "line": 265,
+    "summary": "_column_pairs_from_json is called once per (base_object, modified_object) cross-join row, so the same om.value:columns blob is json.loads-parsed and fully scanned once per base table the statement read, each pass keeping only the one upstream's sources. Simpler form: parse each distinct target blob once, bucket its directSources pairs by _identity_from_qualified(src_table).name, then attach per-edge — the upstream keyword filter parameter disappears.",
+    "failure_scenario": "A statement reading N tables costs N identical parses of a potentially large JSON blob every 10-min refresh, and the helper is coupled to a single-upstream call shape — the planned GET_LINEAGE tier (or any caller wanting all pairs of a statement) can't reuse it without threading a fake 'upstream' through, inviting a third copy of the extraction logic."
+  }
+]
+```</result>
+<usage><subagent_tokens>74461</subagent_tokens><tool_uses>6</tool_uses><duration_ms>93981</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a37edc6e5d5d6e736</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/a37edc6e5d5d6e736.output</output-file>
+<status>completed</status>
+<summary>Agent "Review angle B: removed behavior" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>```json
+[
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/backend/app/lineage/warehouse_snowflake.py",
+    "line": 240,
+    "summary": "Tier-2 SQL now requires objectDomain = 'Table' on BOTH endpoints, but ACCESS_HISTORY uses per-kind domains ('View', 'Materialized view', etc. — 'Table' is only one value), and this contradicts tier 3's _TABLE_DOMAINS which deliberately keeps VIEW / MATERIALIZED VIEW / DYNAMIC TABLE / EXTERNAL TABLE. The old tier-2 body accepted ANY domain (its only guard was the 3-part-name check in _identity_from_qualified), so view/matview/dynamic-table endpoints that used to become edges are now silently dropped in SQL; _column_pairs_from_json repeats the same 'Table'-only filter on directSources.",
+    "failure_scenario": "An INSERT...SELECT whose base_objects_accessed row carries the source view (domain 'View'), or a materialized-view/dynamic-table refresh write (objects_modified domain != 'Table') — exactly the ANALYTICS mart dynamic tables DataQ's own dbt harness builds. Old code emitted those edges from tier 2; new code filters them out, and because a non-empty tier-2 result WINS over the floor, the surviving Table-Table edges mask the loss — the dynamic-table/matview edges vanish from the graph with no skipped/degraded signal."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/backend/app/lineage/warehouse_snowflake.py",
+    "line": 252,
+    "summary": "The rows-empty check happens BEFORE the new Python filters (_is_ephemeral, self-edge, None identity). If the scoped query returns rows but every row is filtered out in Python, the function returns dedupe_edges([]) == () — which fetch_edges treats as a successful ACCESS_HISTORY tier and never descends to the OBJECT_DEPENDENCIES floor. The old code had the same shape but its only filter was non-3-part names, so 'all rows filtered' was implausible; the new filters make it a documented live class (Snowpark scratch is 'real rows' per the docstring).",
+    "failure_scenario": "A database whose only Table-to-Table activity in the 90-day window is SNOWPARK_TEMP_* scratch (e.g. the harness PERF runs): rows is non-empty, every edge is dropped by _is_ephemeral, tier 2 returns () and is reported as the winning tier with zero edges — the still-valid RETAIL-&gt;STG-&gt;ANALYTICS view chain in OBJECT_DEPENDENCIES is never read, an empty graph is asserted, and the docstring's own promise ('both descend to the floor rather than asserting an empty graph') is violated."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/backend/app/lineage/warehouse_snowflake.py",
+    "line": 239,
+    "summary": "The old tier-2 query scanned the full 365d ACCESS_HISTORY retention; the new one is bounded to 90d, and the descend-to-floor decision on emptiness reuses the 90d account-wide _account_has_write_activity probe. When BOTH are empty (account idle &gt;90d) tier 2 returns () — asserting an empty graph — instead of None, skipping the floor. Under the old unscoped/unbounded query, a once-active account still returned rows so this branch was effectively unreachable; the 90d bound makes it reachable on any paused account.",
+    "failure_scenario": "The harness compute is stopped by default (#590) — leave it asleep ~3 months, then run a lineage refresh: QUERY_HISTORY(90d)=0 and scoped ACCESS_HISTORY(90d)=0, so tier 2 returns () and fetch_edges reports SNOWFLAKE_ACCESS_HISTORY with zero edges, while OBJECT_DEPENDENCIES (a current-state view with no time axis) still lists every live view dependency. The refresh replaces real view-level lineage with a confident empty state — the exact #828-class failure mode."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/backend/app/lineage/warehouse_snowflake.py",
+    "line": 160,
+    "summary": "_database folds the configured database to .upper() and both tiers now do exact-match binds against it (SPLIT_PART(...) = :db in tier 2, referenced_database = :db in tier 3). The old queries had no database predicate at all, so identifier-case mismatches could not lose rows. For a quoted mixed/lower-case database (or a config value carrying quote characters), ACCOUNT_USAGE stores the true case and neither predicate matches — and unlike edition-gating, nothing corroborates this emptiness.",
+    "failure_scenario": "A connection whose Snowflake database was created as \"DataQ_Db\" (quoted): tier 2's SPLIT_PART = 'DATAQ_DB' matches nothing (-&gt; None via the write-activity probe), tier 3's referenced_database = 'DATAQ_DB' also matches nothing, and fetch_edges returns an empty floor result with no error — the entire lineage pull silently degrades from 'all edges' (old unscoped behavior) to 'no edges' with the degraded_reason blaming edition gating rather than the case fold."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/backend/app/lineage/warehouse_snowflake.py",
+    "line": 175,
+    "summary": "Both tiers now require BOTH endpoints in the connection's database (referenced_database = :db AND referencing_database = :db; both SPLIT_PARTs = :db). The old unscoped queries returned cross-database edges (a view in the connection's DB reading a shared/other DB's table, or a COPY-target fed from another DB). Those edges are now dropped in SQL — omitted, not redacted — so the in-scope endpoint's upstream side is asserted empty.",
+    "failure_scenario": "A view DATAQ_DB.ANALYTICS.V built over SHARED_DB.RETAIL.ORDERS: old code emitted the edge; new code excludes it at both tiers, and the asset page shows V with no upstreams — indistinguishable from genuinely-source-less. This is the same 'dropping a neighbour asserts nothing feeds this table' failure the #845/#847 redaction amendment explicitly forbade (there the fix was redact-not-omit); here the removal reintroduces omission with no skipped_tiers/degraded_reason trace."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/backend/app/lineage/warehouse_snowflake.py",
+    "line": 108,
+    "summary": "The operator-facing skip string 'access_history: empty (edition-gated or no write history)' (and the docstring's None contract) was written for the OLD unscoped, unbounded query, where emptiness really did imply edition gating or a dead account. With the new scope (one database, 90d, Table-domain-only) a None can now also mean 'plenty of Enterprise write activity, just none matching the filters' (all-COPY DML — the docstring says this is exactly the live account), but the surfaced degraded_reason still names only the two old causes.",
+    "failure_scenario": "On the Enterprise account where every write is COPY-from-stage, tier 2 returns None and the floor result carries degraded_reason 'view-level lineage only — access_history: empty (edition-gated or no write history)'. An operator (or the #839 connection-health UI reading these classified strings verbatim) is told an Enterprise account is edition-gated / idle — a stable-but-now-false diagnosis, the same mislabeling class the #902 fix ('a blanket need-Enterprise would mislabel a grant-shaped skip') was about."
+  }
+]
+```</result>
+<usage><subagent_tokens>72715</subagent_tokens><tool_uses>8</tool_uses><duration_ms>152491</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b6vuzb9ke</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/b6vuzb9ke.output</output-file>
+<status>completed</status>
+<summary>Background command "Brief wait for remaining finders" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a02d5ce97c6ab28f0</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/a02d5ce97c6ab28f0.output</output-file>
+<status>completed</status>
+<summary>Agent "Review angle A: diff scan" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>[
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/backend/app/lineage/warehouse_snowflake.py",
+    "line": 160,
+    "summary": "_database() blanket-uppercases the configured database instead of applying the quoted-identifier fold (_normalize_part), so a quoted-lowercase or quote-wrapped database name can never match ACCOUNT_USAGE's stored actual-case value — producing a confident, prunable empty graph.",
+    "failure_scenario": "A connection whose database was created quoted (e.g. config value '\"dataq_db\"' or a lowercase 'dataq_db'): .strip().upper() yields '\"DATAQ_DB\"' (literal quotes retained) or 'DATAQ_DB', while OBJECT_DEPENDENCIES.referenced_database and the ACCESS_HISTORY objectName first segment store 'dataq_db'. Both scoped queries return zero rows; ACCESS_HISTORY empty + write activity returns None, the floor returns (), and fetch_edges reports an empty SNOWFLAKE_OBJECT_DEPENDENCIES result — a 'true observation' the refresh may PRUNE on, silently wiping all previously-pulled edges for the connection. format_snowflake_name/_normalize_part already implement the correct quote-strip-else-upper rule and are not used here."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/backend/app/lineage/warehouse_snowflake.py",
+    "line": 352,
+    "summary": "_identity_from_qualified() feeds ACCESS_HISTORY's actual-case, UNQUOTED qualified names back through format_snowflake_name, which re-folds lowercase segments to UPPER — corrupting the identity of quoted-lowercase objects and enabling false self-loop drops.",
+    "failure_scenario": "ACCESS_HISTORY returns quoted identifiers verbatim without quotes (e.g. 'DATAQ_DB.RETAIL.orders' for a table created as \"orders\"). format_snowflake_name treats 'orders' as an unquoted segment and folds it to 'ORDERS', so the edge/column pair attaches to asset name 'DATAQ_DB.RETAIL.ORDERS' — which never joins the `assets` row spelled '...orders' (the byte-for-byte join is the module's stated premise), and if a distinct unquoted ORDERS table also exists, an edge orders→ORDERS folds to equal names and is dropped by the `up.name == down.name` guard at line 259 as a self-loop. The fixture .gitignore itself notes the live account has 'quoted-lowercase workout tables — real identity shapes', yet no test covers them through the edge path."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/backend/app/lineage/warehouse_snowflake.py",
+    "line": 349,
+    "summary": "Dot-containing quoted identifiers break both the naive '.'-split (edge silently dropped) and the SPLIT_PART database scoping.",
+    "failure_scenario": "A table created as \"ORDERS.V2\" arrives from ACCESS_HISTORY as 'DATAQ_DB.RETAIL.ORDERS.V2' → split('.') gives 4 parts → _identity_from_qualified returns None → the whole edge (and, at line 316-318, any column pair sourced from it) vanishes silently even though the row passed the SQL scope filter. Conversely a database named with an embedded dot makes `SPLIT_PART(objectName, '.', 1) = :db` never match, silently emptying tier 2. No log line marks either drop, so the operator sees the #828-style confident-empty state the module exists to prevent."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/backend/app/lineage/warehouse_snowflake.py",
+    "line": 240,
+    "summary": "The SQL filter `objectDomain = 'Table'` on both endpoints is far narrower than the module's own _TABLE_DOMAINS (TABLE/VIEW/MATERIALIZED VIEW/DYNAMIC TABLE/EXTERNAL TABLE), silently dropping table-like endpoints at the richer tier that the floor tier would keep.",
+    "failure_scenario": "On an Enterprise account, an INSERT...SELECT reading an EXTERNAL TABLE (or a materialized view) into a mart table produces bo.value:objectDomain = 'External table' → the row is filtered out of tier 2, and because tier 2 answered (non-empty), tier 3 never runs — so an edge OBJECT_DEPENDENCIES would have reported (external tables are in _TABLE_DOMAINS at line 56) is absent from the graph. Same for directSources at line 310: `src.get(\"objectDomain\") != \"Table\"` drops column pairs sourced from any non-'Table' but table-like domain."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/backend/app/lineage/warehouse_snowflake.py",
+    "line": 261,
+    "summary": "Snowpark-temp rows are dropped edge-wise with no transitive collapse, so any pipeline that materializes through SNOWPARK_TEMP_* loses its real upstream entirely (A→TEMP→B yields neither A→TEMP, TEMP→B, nor A→B).",
+    "failure_scenario": "A Snowpark job does `df = session.table('RETAIL.ORDERS')...` which writes SNOWPARK_TEMP_TABLE_X, then inserts SNOWPARK_TEMP_TABLE_X into PERF.ORDERS_WIDE. ACCESS_HISTORY records (ORDERS → TEMP) and (TEMP → ORDERS_WIDE); both rows hit the _is_ephemeral continue, so ORDERS_WIDE renders with zero upstreams — indistinguishable from genuinely-unlineaged, on the very account whose PERF workout demonstrably ran such workloads. The pre-#908 code at least surfaced the chain (as noisy assets); now the real lineage is invisible with no degraded_reason mentioning the drop."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/backend/tests/lineage/test_warehouse_snowflake.py",
+    "line": 363,
+    "summary": "test_access_history_query_is_scoped_and_bound asserts conn.params AFTER two later executes have overwritten it, so it actually verifies the OBJECT_DEPENDENCIES floor's bind, not the ACCESS_HISTORY bind it documents.",
+    "failure_scenario": "_FakeConn.execute stores only the LAST call's params. In this test the ACCESS_HISTORY query ([] rows) is followed by the QUERY_HISTORY probe (params=None) and then the tier-3 floor query (params={'db': 'DATAQ_DB'}), so `assert conn.params == {'db': 'DATAQ_DB'}` passes via the floor query. If a regression made _from_access_history stop passing its params dict (e.g. f-string interpolation of the database, the exact injection/scoping property the test claims to pin), the test stays green — the docstring's 'BOUND param (no interpolation)' guarantee is unasserted for the query under test."
+  }
+]</result>
+<usage><subagent_tokens>87903</subagent_tokens><tool_uses>10</tool_uses><duration_ms>224549</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bnwghy7af</task-id>
+<tool-use-id>toolu_01PUi9tCP7BtpnihtR3J6QHq</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/bnwghy7af.output</output-file>
+<status>completed</status>
+<summary>Background command "Run harness window with DAG triggers for table-to-table DML" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bacibxhme</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/bacibxhme.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for the harness window to close" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+continue...
+
+---
+
+<task-notification>
+<task-id>b9goq2vtv</task-id>
+<tool-use-id>toolu_017JC4wbEwSgjLEtrB792p7r</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/b9goq2vtv.output</output-file>
+<status>completed</status>
+<summary>Background command "Run the canonical backend test gate" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b6dplt56p</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/b6dplt56p.output</output-file>
+<status>completed</status>
+<summary>Background command "Fixup commit, push, post review record, watch CI" completed (exit code 0)</summary>
+</task-notification>
