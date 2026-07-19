@@ -58,6 +58,7 @@ from backend.app.services import (
     suite_service,
 )
 from backend.app.services.failure_classifier import classify_failure_reason
+from backend.app.worker import beat_watchdog
 from backend.app.worker.celery_app import celery_app
 
 # Polling fallback (#171): look back slightly further than the 10-min beat
@@ -840,3 +841,44 @@ def refresh_warehouse_lineage() -> int:
         return refreshed
     finally:
         session.close()
+
+
+# ─────────────────────── beat liveness heartbeat (#904) ─────────────────────
+
+_HEARTBEAT_STORE: beat_watchdog._TickStore | None = None
+
+
+def _heartbeat_store() -> beat_watchdog._TickStore:
+    """One timeout-bounded Redis client for the heartbeat, built on first use."""
+    global _HEARTBEAT_STORE
+    if _HEARTBEAT_STORE is None:
+        _HEARTBEAT_STORE = beat_watchdog.build_store(get_settings().redis_url)
+    return _HEARTBEAT_STORE
+
+
+@celery_app.task(name="beat_heartbeat")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
+def beat_heartbeat() -> bool:
+    """Stamp 'the beat→broker→worker loop is actually executing tasks' (#904).
+
+    The stamp is written HERE, on execution, not by the scheduler — the outage
+    this defends against is "beat keeps queueing, nothing consumes", which a
+    scheduler-side heartbeat would have reported healthy right through. The
+    watchdog thread (`beat_watchdog`) reads it and exits the process when it
+    goes stale, so the platform restarts a worker that is up but idle.
+
+    The client is built ONCE and reused (a fresh pool every 60s forever is pure
+    churn) and carries bounded socket timeouts — without them an unresponsive
+    broker would block this task forever, pinning a pool slot every minute until
+    the worker is starved: the heartbeat would *become* the outage it watches
+    for (#931 review).
+
+    Fail-soft: a broker hiccup must not mark the task failed and spam the error
+    channel — the watchdog's own `unknown` verdict already covers an unreadable
+    store.
+    """
+    try:
+        beat_watchdog.record_beat_tick(_heartbeat_store())
+        return True
+    except Exception:
+        log.warning("beat_heartbeat_write_failed", exc_info=True)
+        return False

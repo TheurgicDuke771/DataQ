@@ -21,6 +21,7 @@ from celery.signals import (
     task_postrun,
     task_prerun,
     worker_process_init,
+    worker_ready,
 )
 
 from backend.app.core.config import get_settings
@@ -110,6 +111,15 @@ def create_celery_app() -> Celery:
             "refresh-lineage-pull": {
                 "task": "refresh_lineage_pull",
                 "schedule": 86400.0,  # 24 hours
+            },
+            # Beat liveness heartbeat (#904): every minute, a task whose only job is
+            # to prove the beat→broker→worker loop still EXECUTES. The watchdog
+            # thread reads its stamp and exits the process when it goes stale, so a
+            # worker that is up but consuming nothing gets restarted instead of
+            # silently stopping every scheduled task for hours.
+            "beat-heartbeat": {
+                "task": "beat_heartbeat",
+                "schedule": 60.0,  # 1 minute
             },
             # Warehouse-native lineage refresh (#858, ADR 0034): once a day, pull lineage
             # for every Snowflake / Unity Catalog connection straight from the warehouse's
@@ -212,3 +222,38 @@ def _recover_gaps_on_beat_start(**_kwargs: Any) -> None:
         celery_app.send_task("recover_orchestration_gaps")
     except Exception:  # pragma: no cover - defensive; startup must not fail on broker
         get_logger(__name__).exception("gap_recovery_startup_dispatch_failed")
+
+
+@worker_ready.connect  # type: ignore[untyped-decorator]  # celery signal .connect is unannotated
+def _start_beat_watchdog(**_kwargs: Any) -> None:
+    """Arm the beat liveness watchdog once this worker is consuming (#904).
+
+    Hooked on ``worker_ready`` (the main process, after the pool is up) rather
+    than ``worker_process_init`` (which fires in every prefork CHILD — N children
+    would mean N watchdogs racing to kill the same process, and a child's exit
+    would not restart the container anyway).
+
+    The watchdog reads the heartbeat the ``beat_heartbeat`` task writes on
+    execution and exits the process when it goes stale, so the platform restarts
+    a worker that is up but consuming nothing (#904/#905). Best-effort: it must
+    never prevent a worker from starting — a worker with no watchdog is the
+    status quo ante, a worker that won't boot is an outage.
+    """
+    settings = get_settings()
+    stale_after = settings.beat_watchdog_stale_after_s
+    if stale_after <= 0:
+        get_logger(__name__).info("beat_watchdog_disabled")
+        return
+    try:
+        from backend.app.worker.beat_watchdog import build_store, start_watchdog
+
+        # build_store, never a bare from_url: its socket timeouts are what keep
+        # the watchdog thread from blocking forever on a half-open connection
+        # (#854's lesson, on the thread that exists to notice hangs).
+        start_watchdog(
+            build_store(settings.redis_url),
+            stale_after_s=float(stale_after),
+            interval_s=float(settings.beat_watchdog_interval_s),
+        )
+    except Exception:  # pragma: no cover - defensive; startup must not fail on this
+        get_logger(__name__).exception("beat_watchdog_start_failed")

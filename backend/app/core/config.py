@@ -92,6 +92,17 @@ class Settings(BaseSettings):
     # swept and immediately re-created on the next refresh. <=0 disables the sweep.
     asset_orphan_retention_days: int = 30
 
+    # Beat liveness watchdog (#904). Three post-deploy rolls have left the worker
+    # "alive but doing nothing" — container Healthy, Celery ready, zero scheduled
+    # tasks executed, only the DB telling the truth — each cleared by a manual
+    # revision restart. The watchdog makes the worker notice and exit so the
+    # platform restarts it. `beat_watchdog_stale_after_s` must be several times
+    # the fastest beat interval (60s `dispatch_due_schedules`), so a slow tick is
+    # never mistaken for a wedge; it doubles as the boot grace period. <=0
+    # disables the watchdog entirely (a clean off-switch, like the sweeps above).
+    beat_watchdog_stale_after_s: int = 600
+    beat_watchdog_interval_s: int = 60
+
     azure_tenant_id: str | None = None
     azure_api_client_id: str | None = None
     azure_spa_client_id: str | None = None
