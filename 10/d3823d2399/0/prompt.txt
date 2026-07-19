@@ -1,0 +1,2 @@
+Lets start with week 4 remaining items. I think it can be grouped into 2 broad categoriees 1. flatfile (#476 & #520) 2. dimention & Score (#124 & #889) 
+Plan it out and. then start
