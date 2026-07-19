@@ -23,6 +23,34 @@ atomically via **Re-auth**. Leave the passphrase blank for an unencrypted key.
 Key-pair connections also require **Role** (the GX key-pair form mandates one for suite
 runs, so it is validated when the connection is saved).
 
+### Identifier casing (Snowflake / Unity Catalog)
+
+Warehouses fold **unquoted** identifiers — Snowflake upper-cases them — so a column
+created as `order_ts` is really stored as `ORDER_TS`, while one created as
+`"Amount"` is stored mixed-case and is only reachable quoted.
+
+DataQ handles both: type the name **exactly as the column dropdown reports it**.
+Lower-case names are sent unquoted and fold as the warehouse always folded them;
+anything else is quoted for you, using the right quote character for the engine
+(Snowflake `"`, Databricks backticks). This applies to every SQL path — profiling,
+the aggregate/top-values queries, and freshness/volume monitors alike.
+
+**Still unsupported**, and refused with a 422 rather than silently mis-resolved:
+
+- Identifiers needing quotes for reasons other than case — spaces, dots, leading
+  digits, non-ASCII characters.
+- Genuinely **reserved words** (`order`, `select`, …) used as a column or table
+  name. An unquoted `order` is stored `ORDER`, which neither `order` (parse error)
+  nor `"order"` (wrong case) reaches.
+
+In both cases, alias the column in a view and point the check at that.
+
+One more caveat: in a **three-part** `catalog.schema.table` target, only the table
+gets quoted — a mixed-case *catalog or schema* still folds
+([#936](https://github.com/TheurgicDuke771/DataQ/issues/936)). This affects nobody
+today (Unity Catalog is the only three-part datasource and it resolves identifiers
+case-insensitively), but don't rely on it if that changes.
+
 ### Flat files: formats and CSV delimiters
 
 Flat-file connections (ADLS Gen2 / S3) read `.csv` and `.parquet`/`.pq`. **The CSV

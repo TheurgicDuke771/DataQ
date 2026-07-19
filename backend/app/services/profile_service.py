@@ -40,7 +40,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import column, distinct, func, literal_column, quoted_name, select, table
+from sqlalchemy import column, distinct, func, literal_column, select
 from sqlalchemy.sql import Select
 
 from backend.app.core.errors import DataQError
@@ -60,7 +60,7 @@ from backend.app.datasources.snowflake import (
     build_connect_args,
     build_connection_string,
 )
-from backend.app.datasources.sql import is_sql_identifier
+from backend.app.datasources.sql import core_table, folding_identifier, is_sql_identifier
 from backend.app.datasources.unity_catalog import UnityCatalogConfig, build_databricks_url
 from backend.app.db.models import Connection
 from backend.app.services.column_classification import ColumnClass, classify_column
@@ -170,18 +170,17 @@ def validate_identifier(name: str | None) -> str:
 def _table(schema: str, table_name: str, catalog: str | None = None) -> Any:
     """A Core table clause, optionally with a 3-level namespace (Unity Catalog).
 
-    With a `catalog`, the namespace is `catalog.schema` passed as an unquoted
-    `quoted_name` so the dialect emits three dotted parts (`catalog.schema.table`)
-    rather than quoting the dotted string as one identifier. Safe because every
-    part is allowlist-validated.
+    Construction is the shared `datasources.sql.core_table` (#476 — one builder
+    with the monitor engine, so the two can't drift on quoting). Validating here
+    first is not redundant: it turns an odd name into a clean 422 with the
+    profiler's error shape, where `core_table`'s own guard is the last-resort
+    injection check and raises a bare `ValueError`.
     """
     validate_identifier(schema)
+    validate_identifier(table_name)
     if catalog is not None:
         validate_identifier(catalog)
-        namespace: Any = quoted_name(f"{catalog}.{schema}", quote=False)
-    else:
-        namespace = schema
-    return table(validate_identifier(table_name), schema=namespace)
+    return core_table(table=table_name, schema=schema, catalog=catalog)
 
 
 def build_aggregate_query(
@@ -194,7 +193,7 @@ def build_aggregate_query(
     """
     projection: list[Any] = [func.count().label("row_count")]
     for i, col in enumerate(columns):
-        c: Any = column(validate_identifier(col))
+        c: Any = column(folding_identifier(validate_identifier(col)))
         projection.append((func.count() - func.count(c)).label(f"nulls_{i}"))
         projection.append(func.count(distinct(c)).label(f"distinct_{i}"))
         projection.append(func.min(c).label(f"min_{i}"))
@@ -206,7 +205,7 @@ def build_top_values_query(
     schema: str, table_name: str, col: str, top_n: int, catalog: str | None = None
 ) -> Select[Any]:
     """Most frequent non-null values for one column (highest count first)."""
-    c: Any = column(validate_identifier(col))
+    c: Any = column(folding_identifier(validate_identifier(col)))
     freq = func.count().label("freq")
     return (
         select(c.label("value"), freq)
