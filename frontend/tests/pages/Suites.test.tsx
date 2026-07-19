@@ -225,7 +225,9 @@ describe('Suites', () => {
 
     renderPage();
 
-    expect(await screen.findByText('Failed to load suites')).toBeInTheDocument();
+    // #910: dedicated error page, not the old inline alert. A plain Error is a
+    // CLIENT failure → 500; only a real network failure claims 503 (#930 review).
+    expect(await screen.findByText('500 — Something went wrong')).toBeInTheDocument();
     expect(screen.getByText('boom')).toBeInTheDocument();
   });
 

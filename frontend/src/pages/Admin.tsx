@@ -16,6 +16,7 @@ import { Forbidden } from '../components/Forbidden';
 import { Page } from '../components/layout/Page';
 import { formatTimestamp } from '../components/results/resultsFormat';
 import { type AsyncState, useAsyncData } from '../hooks/useAsyncData';
+import { PageError } from '../components/feedback/PageError';
 
 /**
  * Workspace-admin control centre (#173): all suites / members / access overview.
@@ -34,7 +35,12 @@ export function Admin() {
   }
   if (me.status === 'error') {
     return (
-      <Alert type="error" showIcon title="Couldn't verify your access" description={me.error} />
+      <PageError
+        error={me.error}
+        kind={me.kind}
+        httpStatus={me.httpStatus}
+        requestId={me.requestId}
+      />
     );
   }
   if (!me.data.is_workspace_admin) {
@@ -139,6 +145,8 @@ function DataTable<T extends object>({
 }) {
   if (state.status === 'loading') return <Spin size="large" />;
   if (state.status === 'error') {
+    // Sub-panel inside a working page (one of three admin tabs) → inline Alert,
+    // not the full-page error the /me failure above warrants (#910).
     return <Alert type="error" showIcon title={errorMessage} description={state.error} />;
   }
   return (

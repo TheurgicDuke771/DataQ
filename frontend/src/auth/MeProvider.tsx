@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 
 import { fetchMe, type MeResponse } from '../api/me';
 import type { AsyncState } from '../hooks/useAsyncData';
-import { errorMessage } from '../utils/errors';
+import { fetchFailure } from '../utils/errors';
 import { MeContext } from './meContext';
 import { useCurrentUser } from './useCurrentUser';
 
@@ -39,7 +39,17 @@ export function MeProvider({ children }: { children: ReactNode }) {
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setState({ status: 'error', error: errorMessage(err, String(err)) });
+          // Classify like every other page fetch (#910/#930): Admin, Profile
+          // and Settings render PageError straight off this state, so without
+          // the HTTP facts a 403 or a 500 here would both paint the same page.
+          const failure = fetchFailure(err, String(err));
+          setState({
+            status: 'error',
+            error: failure.message,
+            kind: failure.kind,
+            httpStatus: failure.status,
+            requestId: failure.requestId,
+          });
         }
       });
     return () => {

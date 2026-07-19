@@ -1,5 +1,5 @@
 import { HistoryOutlined } from '@ant-design/icons';
-import { Alert, App, Button, Card, Flex, Form, Input, Select, Spin, Typography } from 'antd';
+import { App, Button, Card, Flex, Form, Input, Select, Spin, Typography } from 'antd';
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
@@ -14,6 +14,7 @@ import {
   EXPECTATION_BY_TYPE,
   expectationsByCategoryFor,
 } from '../components/checks/expectationCatalog';
+import { PageError } from '../components/feedback/PageError';
 import { Page } from '../components/layout/Page';
 import { useAsyncAction } from '../hooks/useAsyncAction';
 import { useAsyncData } from '../hooks/useAsyncData';
@@ -64,7 +65,12 @@ function CheckEditView({ suiteId, checkId }: { suiteId?: string; checkId?: strin
 
       {state.status === 'loading' && <Spin description="Loading check…" />}
       {state.status === 'error' && (
-        <Alert type="error" showIcon title="Failed to load check" description={state.error} />
+        <PageError
+          error={state.error}
+          kind={state.kind}
+          httpStatus={state.httpStatus}
+          requestId={state.requestId}
+        />
       )}
       {state.status === 'ok' && suiteId && (
         <Card size="small">

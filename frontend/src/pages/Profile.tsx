@@ -7,6 +7,7 @@ import { useMe } from '../auth/useMe';
 import { ApiKeysPanel } from '../components/profile/ApiKeysPanel';
 import { Page } from '../components/layout/Page';
 import { BRAND } from '../theme';
+import { PageError } from '../components/feedback/PageError';
 
 /**
  * Profile (`/profile`, ADR 0022 ProfileScreen). The account screen: an identity
@@ -25,7 +26,12 @@ export function Profile() {
   }
   if (me.status === 'error') {
     return (
-      <Alert type="error" showIcon title="Failed to load your profile" description={me.error} />
+      <PageError
+        error={me.error}
+        kind={me.kind}
+        httpStatus={me.httpStatus}
+        requestId={me.requestId}
+      />
     );
   }
 

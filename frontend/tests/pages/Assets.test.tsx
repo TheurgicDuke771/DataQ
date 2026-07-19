@@ -114,9 +114,23 @@ describe('Assets page', () => {
     await waitFor(() => expect(screen.getByText(/No assets yet/)).toBeInTheDocument());
   });
 
+  it('offers an in-place retry that refetches without a full page reload (#930)', async () => {
+    mockList.mockRejectedValueOnce(new Error('boom')).mockResolvedValueOnce([ASSET]);
+    renderPage();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Try again' }));
+
+    // The page recovers in place — the whole point of wiring onRetry rather than
+    // letting the catalog fall back to window.location.reload().
+    expect(await screen.findByText('Snowflake · acct')).toBeInTheDocument();
+    expect(mockList).toHaveBeenCalledTimes(2);
+  });
+
   it('surfaces a load error', async () => {
     mockList.mockRejectedValue(new Error('boom'));
     renderPage();
-    expect(await screen.findByText('Failed to load assets')).toBeInTheDocument();
+    // #930 review: this whole-page fetch now uses AsyncBody's `page` mode, so a
+    // failure renders the dedicated error page instead of a husk-of-a-page alert.
+    expect(await screen.findByText('500 — Something went wrong')).toBeInTheDocument();
   });
 });

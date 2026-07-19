@@ -1,8 +1,9 @@
-import { Alert, Button, Card, Flex, Spin, Typography } from 'antd';
+import { Button, Card, Flex, Spin, Typography } from 'antd';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import { listConnections } from '../api/connections';
 import { getSuite } from '../api/suites';
+import { PageError } from '../components/feedback/PageError';
 import { Page } from '../components/layout/Page';
 import { SuiteForm } from '../components/suites/SuiteForm';
 import { useAsyncData } from '../hooks/useAsyncData';
@@ -41,7 +42,12 @@ function SuiteEditView({ suiteId }: { suiteId?: string }) {
 
       {state.status === 'loading' && <Spin description="Loading suite…" />}
       {state.status === 'error' && (
-        <Alert type="error" showIcon title="Failed to load suite" description={state.error} />
+        <PageError
+          error={state.error}
+          kind={state.kind}
+          httpStatus={state.httpStatus}
+          requestId={state.requestId}
+        />
       )}
       {state.status === 'ok' && (
         <Card size="small">

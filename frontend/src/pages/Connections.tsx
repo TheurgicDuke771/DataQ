@@ -1,6 +1,5 @@
 import { MoreOutlined } from '@ant-design/icons';
 import {
-  Alert,
   App,
   Badge,
   Button,
@@ -34,6 +33,7 @@ import { ReauthModal } from '../components/connections/ReauthModal';
 import { Page } from '../components/layout/Page';
 import { type AsyncState, useAsyncData } from '../hooks/useAsyncData';
 import { useConfirmDelete } from '../hooks/useConfirmDelete';
+import { PageError } from '../components/feedback/PageError';
 
 /** Live connectivity state for a card — the health-page badge. */
 type HealthState = 'idle' | 'testing' | 'ok' | 'failed';
@@ -143,12 +143,11 @@ function ConnectionsBody({
   }
   if (state.status === 'error') {
     return (
-      <Alert
-        type="error"
-        showIcon
-        title="Failed to load connections"
-        description={state.error}
-        style={{ margin: 24 }}
+      <PageError
+        error={state.error}
+        kind={state.kind}
+        httpStatus={state.httpStatus}
+        requestId={state.requestId}
       />
     );
   }

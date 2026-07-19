@@ -70,7 +70,8 @@ describe('Profile', () => {
   });
 
   it('shows an error state when /me fails', () => {
-    renderProfile({ status: 'error', error: 'boom' });
-    expect(screen.getByText('Failed to load your profile')).toBeInTheDocument();
+    renderProfile({ status: 'error', error: 'boom', kind: 'http' as const });
+    // #910: dedicated error page (no status on the stubbed state → 500).
+    expect(screen.getByText('500 — Something went wrong')).toBeInTheDocument();
   });
 });

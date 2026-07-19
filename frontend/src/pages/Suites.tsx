@@ -56,6 +56,7 @@ import { type AsyncState, useAsyncData } from '../hooks/useAsyncData';
 import { useConfirmDelete } from '../hooks/useConfirmDelete';
 import { useRunTrigger } from '../hooks/useRunTrigger';
 import { errorMessage } from '../utils/errors';
+import { PageError } from '../components/feedback/PageError';
 
 /**
  * A suite's identity block — datasource avatar + name + connection/env — shared
@@ -216,12 +217,11 @@ function SuitesBody({
   }
   if (state.status === 'error') {
     return (
-      <Alert
-        type="error"
-        showIcon
-        title="Failed to load suites"
-        description={state.error}
-        style={{ margin: 24 }}
+      <PageError
+        error={state.error}
+        kind={state.kind}
+        httpStatus={state.httpStatus}
+        requestId={state.requestId}
       />
     );
   }

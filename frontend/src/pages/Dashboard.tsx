@@ -73,6 +73,9 @@ export function Dashboard() {
         />
       </Flex>
 
+      {/* PANEL-level failure, deliberately an inline Alert not a PageError (#910):
+          the page keeps rendering asset health and the tiles below, so a full-page
+          error illustration wedged in the middle would misdescribe what failed. */}
       {state.status === 'error' && (
         <Alert type="error" showIcon title="Failed to load dashboard" description={state.error} />
       )}
