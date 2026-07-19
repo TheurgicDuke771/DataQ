@@ -1,0 +1,40 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "bf853302706a",
+  "session_id": "1124e5df-e050-4dd0-a205-d4dc331f0280",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-19T23:45:16.810814Z",
+  "branch": "feature/issue-520-flatfile-monitors",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "backend/app/datasources/flatfile.py",
+    "backend/tests/datasources/test_flatfile.py"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "f967f2d41878",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 387,
+    "cache_creation_tokens": 449055,
+    "cache_read_tokens": 43366537,
+    "output_tokens": 139885,
+    "api_call_count": 204
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-19T23:45:16.73637Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 274,
+    "human_modified": 56,
+    "human_removed": 0,
+    "total_committed": 274,
+    "total_lines_changed": 330,
+    "agent_percentage": 0,
+    "metric_version": 2
+  }
+}
