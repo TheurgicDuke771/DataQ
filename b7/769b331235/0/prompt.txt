@@ -1037,3 +1037,63 @@ go with option #1 [and you are the only one who is owning/maintaning the DB/App/
 ---
 
 continue
+
+---
+
+<task-notification>
+<task-id>a5d34a8b7567613e9</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/a5d34a8b7567613e9.output</output-file>
+<status>completed</status>
+<summary>Agent "Review PR 931 beat watchdog" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Verified all candidates against the real code. Findings:
+
+```json
+[
+  {
+    "file": "backend/app/worker/celery_app.py",
+    "line": 253,
+    "summary": "The watchdog's Redis client is built with `redis.from_url(settings.redis_url)` and no `socket_timeout`/`socket_connect_timeout`. redis-py defaults both to None (verified: redis 5.3.1 → socket_timeout: None), so `store.get()` on the watchdog thread can block forever. The codebase already has the correct precedent at backend/app/core/rate_limit.py:105 (socket_connect_timeout=0.5, socket_timeout=0.2).",
+    "failure_scenario": "FAIL-TO-KILL — the exact #905 shape. Redis Container App rolls or drops a connection half-open; the watchdog thread issues a GET that never returns and never times out. The daemon thread hangs silently forever, the process keeps running 'Healthy', and every scheduled task stays dead — the watchdog is now itself an instance of the silent death it was written to end. This is the #854 lesson verbatim (a wait with no timeout waits FOREVER), reintroduced on the one thread whose whole job is to notice a hang."
+  },
+  {
+    "file": "backend/app/worker/tasks.py",
+    "line": 866,
+    "summary": "`beat_heartbeat` calls `redis.from_url(...)` per invocation (a fresh client + ConnectionPool every 60s, forever) and likewise sets no socket timeout. The try/except cannot rescue a hang — an untimed socket read never raises.",
+    "failure_scenario": "SELF-INFLICTED STARVATION. If Redis becomes unresponsive-but-connected, each heartbeat write blocks forever and pins a prefork slot. Beat keeps enqueuing beat_heartbeat every 60s, so hung heartbeats accumulate one per minute until every worker slot is occupied — the watchdog task becomes the cause of the 'beat queues, nothing consumes' outage it exists to detect. Compounding: no `--concurrency` is set anywhere (verified: no concurrency flag in the ACA command at deploy/terraform/azure/containerapps.tf:192, compose, or Dockerfile), so the pool size is whatever os.cpu_count() reports on the ACA node — unpinned and unverifiable, on a 1.0-CPU container."
+  },
+  {
+    "file": "backend/app/worker/beat_watchdog.py",
+    "line": 180,
+    "summary": "The `seen_tick` guard does not do what its docstring and the module header claim. It is set from a Redis key that `record_beat_tick` deliberately writes with NO expiry (line 58/94), so a key left by a PREVIOUS worker incarnation satisfies `seen_tick` on the very first read. A worker that has never executed a single task in this process is therefore killable.",
+    "failure_scenario": "FALSE KILL / CRASH LOOP — precisely the self-immolation guard 3 is documented to prevent. Worker boots and, for any reason that stops consumption but leaves Redis readable (bad queue config, broken consumer, wedged pool on a fresh deploy), never ticks. The stale key from the prior incarnation immediately sets seen_tick=True; at grace expiry the verdict is `stale` and the process exits. ACA restarts it, the key is now even staler, and it dies again ~10 minutes later — a permanent restart loop that buries the real cause, the #852 failure mode the module header explicitly promises to avoid."
+  },
+  {
+    "file": "backend/app/worker/beat_watchdog.py",
+    "line": 172,
+    "summary": "Staleness is computed from wall-clock `time.time()` on both the write (record_beat_tick → datetime.now(UTC).timestamp()) and the read, rather than a monotonic clock. `uptime_s` is also wall-clock derived (time.time() - started_at).",
+    "failure_scenario": "FALSE KILL on clock skew. An NTP step correction forward of more than stale_after_s (600s) — routine on a container whose clock drifted, or on host migration — instantly makes a perfectly fresh heartbeat look 10+ minutes old, and the watchdog kills a healthy worker mid-run. A backward step conversely suppresses a real kill. A monotonic clock cannot be used across the two processes here, but the write is a worker-side stamp read by the same host, so the skew window is entirely unguarded (e.g. no sanity check rejecting a negative or absurd age)."
+  },
+  {
+    "file": "backend/app/worker/beat_watchdog.py",
+    "line": 146,
+    "summary": "`os._exit(70)` skips all cleanup while tasks may be executing. The premise in the docstring ('the worker is by definition not processing anything') is not established by the verdict — `liveness_verdict` only proves that no BEAT task executed, not that no task is running.",
+    "failure_scenario": "DATA LOSS / ABORTED WORK. A long GX suite run (30-min comparison or profiler job) occupies the pool while, for an unrelated reason, beat_heartbeat does not execute within the window; the watchdog concludes 'wedged' and hard-exits mid-run. No DB session is committed or rolled back, so the `runs` row is stranded in `running` until the #458 stuck-run reaper notices. Restart is confirmed to work (celery is PID 1 — no ENTRYPOINT/init in backend/Dockerfile, exec-form command; ACA min_replicas=1 and compose `restart: unless-stopped` both restart on exit 70), so the exit does achieve a restart — but it does so at the cost of whatever real work was in flight."
+  },
+  {
+    "file": "backend/app/worker/beat_watchdog.py",
+    "line": 181,
+    "summary": "Lint gate fails. Verified by running ruff: E501 line-too-long (101 &gt; 100) at beat_watchdog.py:181, and I001 un-sorted import block at backend/app/worker/tasks.py:30 (`from backend.app.worker import beat_watchdog` is placed before `from backend.app.datasources...`).",
+    "failure_scenario": "CI merge gate blocks — Ruff is a required check on the main ruleset. Caught locally in seconds; this is the 'verify locally before push' rule, and it means the branch as pushed cannot merge."
+  },
+  {
+    "file": "backend/tests/worker/test_beat_watchdog.py",
+    "line": 120,
+    "summary": "Every `watchdog_loop` test runs exactly one iteration against a pre-seeded terminal state, so the loop's actual behaviour over time is untested. Missing: the ok→stale TRANSITION (a worker that ticks healthily and then wedges — the literal #905 shape the module is written for), and the case where a stale non-expiring key from a prior incarnation sets seen_tick on a worker that never ticked (the crash-loop above). `_terminate` itself — the os._exit path and its 1s log-flush sleep — has no test at all.",
+    "failure_scenario": "The suite is green on all three bugs reported above. The tests assert the pure verdict function, which is correct; the defects all live in the loop's state carried ACROSS iterations and in the untested client/exit plumbing. (Note: the `interval_s=0` concern is NOT a busy-loop risk — verified, iterations=1 bounds every call and the file runs in 0.11s.)"
+  }
+]
+```</result>
+<usage><subagent_tokens>77579</subagent_tokens><tool_uses>14</tool_uses><duration_ms>169439</duration_ms></usage>
+</task-notification>
