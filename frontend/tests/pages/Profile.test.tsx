@@ -71,6 +71,7 @@ describe('Profile', () => {
 
   it('shows an error state when /me fails', () => {
     renderProfile({ status: 'error', error: 'boom' });
-    expect(screen.getByText('Failed to load your profile')).toBeInTheDocument();
+    // #910: dedicated error page (no status on the stubbed state → 503).
+    expect(screen.getByText('503 — Service unavailable')).toBeInTheDocument();
   });
 });

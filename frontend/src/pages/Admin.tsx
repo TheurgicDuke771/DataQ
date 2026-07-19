@@ -138,9 +138,9 @@ function DataTable<T extends object>({
 }) {
   if (state.status === 'loading') return <Spin size="large" />;
   if (state.status === 'error') {
-    return (
-      <PageError error={state.error} httpStatus={state.httpStatus} requestId={state.requestId} />
-    );
+    // Sub-panel inside a working page (one of three admin tabs) → inline Alert,
+    // not the full-page error the /me failure above warrants (#910).
+    return <Alert type="error" showIcon title={errorMessage} description={state.error} />;
   }
   return (
     <Table

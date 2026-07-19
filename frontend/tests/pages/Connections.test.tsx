@@ -145,7 +145,8 @@ describe('Connections', () => {
 
     renderPage();
 
-    expect(await screen.findByText('Failed to load connections')).toBeInTheDocument();
+    // #910: dedicated error page, not the old inline alert.
+    expect(await screen.findByText('503 — Service unavailable')).toBeInTheDocument();
     expect(screen.getByText('boom')).toBeInTheDocument();
   });
 

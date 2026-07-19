@@ -171,7 +171,9 @@ describe('ConnectionEdit', () => {
     mockGet.mockRejectedValue(new Error('not found'));
     renderPage();
 
-    expect(await screen.findByText('Failed to load connection')).toBeInTheDocument();
+    // #910: a page-level fetch failure renders the dedicated error page. A plain
+    // Error carries no HTTP status (the server never answered) → the 503 page.
+    expect(await screen.findByText('503 — Service unavailable')).toBeInTheDocument();
   });
 
   it('refetches + reseeds when the route param changes (no stale prior connection)', async () => {

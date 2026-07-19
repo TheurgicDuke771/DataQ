@@ -36,13 +36,16 @@ export function PageError({
   onRetry?: () => void;
 }) {
   const code = toErrorCode(httpStatus);
-  const isServer = code >= 500;
+  // Only a real 5xx RESPONSE gets the catalog's generic copy: the server's own
+  // message there is noise ("psycopg2.ProgrammingError: …") and often leaky.
+  // A status-less failure is NOT that — no server answered, so whatever the
+  // client caught (a network error, a thrown app error) is the only information
+  // there is, and swallowing it would leave the user with a blank verdict.
+  const isServerResponse = httpStatus !== undefined && httpStatus >= 500;
   return (
     <ErrorState
       code={code}
-      // A network failure has no useful axios message ("Network Error") and a
-      // 5xx message is server noise — both keep the catalog copy.
-      message={isServer ? undefined : error}
+      message={isServerResponse ? undefined : error}
       requestId={requestId}
       onRetry={onRetry}
     />

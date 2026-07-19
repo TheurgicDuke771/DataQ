@@ -17,7 +17,6 @@ import { QualityTrends } from '../components/dashboard/QualityTrends';
 import { RecentRuns } from '../components/dashboard/RecentRuns';
 import { SuitePerformance } from '../components/dashboard/SuitePerformance';
 import { useAsyncData } from '../hooks/useAsyncData';
-import { PageError } from '../components/feedback/PageError';
 
 /**
  * Enhanced Monitoring Dashboard (`/dashboard`, ADR 0022) — the post-login
@@ -74,8 +73,11 @@ export function Dashboard() {
         />
       </Flex>
 
+      {/* PANEL-level failure, deliberately an inline Alert not a PageError (#910):
+          the page keeps rendering asset health and the tiles below, so a full-page
+          error illustration wedged in the middle would misdescribe what failed. */}
       {state.status === 'error' && (
-        <PageError error={state.error} httpStatus={state.httpStatus} requestId={state.requestId} />
+        <Alert type="error" showIcon title="Failed to load dashboard" description={state.error} />
       )}
 
       {/* Asset-level health leads the dashboard (ADR 0034 navigation inversion,

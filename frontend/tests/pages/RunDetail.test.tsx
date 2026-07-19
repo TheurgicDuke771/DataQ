@@ -175,7 +175,8 @@ describe('RunDetail page', () => {
   it('shows an error when the run fails to load', async () => {
     mockGetRun.mockRejectedValue(new Error('boom'));
     renderAt('rX');
-    expect(await screen.findByText('Failed to load run')).toBeInTheDocument();
+    // #910: dedicated error page, not the old inline alert.
+    expect(await screen.findByText('503 — Service unavailable')).toBeInTheDocument();
   });
 
   it('exports the run results as CSV with check names resolved', async () => {

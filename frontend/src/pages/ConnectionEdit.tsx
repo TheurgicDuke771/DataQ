@@ -1,9 +1,10 @@
 import { HistoryOutlined } from '@ant-design/icons';
-import { Alert, Button, Card, Flex, Spin, Typography } from 'antd';
+import { Button, Card, Flex, Spin, Typography } from 'antd';
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import { CONNECTION_TYPE_LABELS, getConnection } from '../api/connections';
+import { PageError } from '../components/feedback/PageError';
 import { Page } from '../components/layout/Page';
 import { ConnectionForm } from '../components/connections/ConnectionForm';
 import { ConnectionHistoryDrawer } from '../components/connections/ConnectionHistoryDrawer';
@@ -52,7 +53,7 @@ function ConnectionEditView({ connectionId }: { connectionId?: string }) {
 
       {state.status === 'loading' && <Spin description="Loading connection…" />}
       {state.status === 'error' && (
-        <Alert type="error" showIcon title="Failed to load connection" description={state.error} />
+        <PageError error={state.error} httpStatus={state.httpStatus} requestId={state.requestId} />
       )}
       {state.status === 'ok' && (
         <Card size="small">
