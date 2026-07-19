@@ -60,7 +60,7 @@ def test_recent_tick_is_ok() -> None:
 
 
 def test_tick_older_than_the_window_is_stale() -> None:
-    """The outage signature: up, armed, and nothing executed for 10× the tick."""
+    """The outage signature: up, armed, and nothing executed for ten times the tick."""
     assert _verdict(last_tick=1000.0, now_ts=1000.0 + _WINDOW + 1) == "stale"
 
 
@@ -106,7 +106,14 @@ def test_record_writes_the_epoch_stamp() -> None:
 # ── the loop's kill decision ────────────────────────────────────────────────
 
 
-def _run_loop(store: FakeStore, *, started_at: float, iterations: int = 1) -> list[Any]:
+def _run_loop(
+    store: FakeStore,
+    *,
+    started_at: float,
+    iterations: int = 3,
+    active: int = 0,
+) -> list[Any]:
+    """Run the loop with a stubbed terminate/active-tasks seam and collect kills."""
     kills: list[Any] = []
     wd.watchdog_loop(
         store,
@@ -115,17 +122,31 @@ def _run_loop(store: FakeStore, *, started_at: float, iterations: int = 1) -> li
         interval_s=0,
         started_at=started_at,
         terminate=lambda reason, age_s: kills.append((reason, age_s)),
+        active_tasks=lambda: active,
         iterations=iterations,
     )
     return kills
 
 
-def test_loop_kills_a_worker_whose_heartbeat_went_stale() -> None:
+def test_loop_kills_after_the_heartbeat_this_worker_produced_goes_stale() -> None:
+    """The #905 shape end to end: this incarnation ticks, then stops."""
     import time
 
-    # Booted long ago (past grace), last tick far older than the window.
-    store = FakeStore(str(time.time() - _WINDOW - 60))
-    assert len(_run_loop(store, started_at=time.time() - 10_000)) == 1
+    booted = time.time() - 10_000
+    # A tick produced AFTER boot (so guard 3 arms) but long ago (so it's stale).
+    store = FakeStore(str(booted + 1))
+    kills = _run_loop(store, started_at=booted)
+    assert len(kills) == 1
+
+
+def test_loop_needs_consecutive_confirmations_before_killing() -> None:
+    """Guard 5: one stale reading can be a clock step, so a single pass must not
+    kill — the streak has to survive `STALE_CONFIRMATIONS` iterations."""
+    import time
+
+    booted = time.time() - 10_000
+    store = FakeStore(str(booted + 1))
+    assert _run_loop(store, started_at=booted, iterations=wd.STALE_CONFIRMATIONS - 1) == []
 
 
 def test_loop_does_not_kill_while_the_heartbeat_is_fresh() -> None:
@@ -136,15 +157,81 @@ def test_loop_does_not_kill_while_the_heartbeat_is_fresh() -> None:
 
 
 def test_loop_does_not_kill_when_the_store_is_unreadable() -> None:
-    """Restarting cannot fix a broker outage, and a crash loop would bury it."""
+    """Guard 2: restarting cannot fix a broker outage, and a crash loop would
+    bury it (#852)."""
     import time
 
     assert _run_loop(FakeStore(fail=True), started_at=time.time() - 10_000) == []
 
 
 def test_loop_does_not_kill_a_worker_that_never_ticked() -> None:
-    """Third guard: only ever kill a worker that demonstrably WAS executing
-    tasks and then stopped — never one that has yet to produce a first tick."""
     import time
 
     assert _run_loop(FakeStore(None), started_at=time.time() - 10_000) == []
+
+
+def test_loop_ignores_a_stale_key_left_by_a_PREVIOUS_worker() -> None:
+    """Guard 3, the crash-loop bug found in review: the stamp never expires, so
+    a predecessor's key is readable the instant a new worker boots. If that
+    armed the watchdog, a worker that never consumes anything would kill itself
+    on someone else's tick, restart, and loop forever on an ever-staler key."""
+    import time
+
+    booted = time.time()
+    predecessor_tick = booted - 10_000  # older than boot AND older than the window
+    assert _run_loop(FakeStore(str(predecessor_tick)), started_at=booted - _WINDOW - 1) == []
+
+
+def test_loop_does_not_kill_while_tasks_are_running() -> None:
+    """Guard 4: a stale beat with a busy pool is a long GX run holding the
+    slots, not a wedge — hard-exiting would abort real work mid-flight and
+    strand its `runs` row."""
+    import time
+
+    booted = time.time() - 10_000
+    store = FakeStore(str(booted + 1))
+    assert _run_loop(store, started_at=booted, active=1) == []
+
+
+def test_loop_recovers_the_streak_when_work_resumes() -> None:
+    """A blip must not accumulate toward a kill: a stale reading followed by a
+    fresh one resets the streak, so the next stale reading starts from zero."""
+    import time
+
+    booted = time.time() - 10_000
+
+    class FlappingStore(FakeStore):
+        def __init__(self) -> None:
+            super().__init__()
+            self.reads = 0
+
+        def get(self, name: str) -> Any:
+            self.reads += 1
+            # stale, then fresh, then stale again — never two stale in a row.
+            return str(booted + 1) if self.reads % 2 else str(time.time())
+
+    assert _run_loop(FlappingStore(), started_at=booted, iterations=6) == []
+
+
+def test_negative_age_is_never_acted_on() -> None:
+    """A backwards clock step yields a future-dated tick; that reading is
+    meaningless and must not count toward a kill."""
+    import time
+
+    booted = time.time() - 10_000
+    assert _run_loop(FakeStore(str(time.time() + 5_000)), started_at=booted) == []
+
+
+def test_active_task_count_is_zero_outside_a_worker() -> None:
+    """'Unknown' must resolve to 0, never to 'busy' — a permanently-busy reading
+    would disarm the watchdog entirely."""
+    assert wd.active_task_count() == 0
+
+
+def test_build_store_bounds_its_socket_timeouts() -> None:
+    """The watchdog's own Redis client must never block forever (#854): an
+    untimed read hangs the one thread whose job is to notice hangs."""
+    client = wd.build_store("redis://localhost:6379/0")
+    kwargs = client.connection_pool.connection_kwargs  # type: ignore[attr-defined]
+    assert kwargs["socket_timeout"] == wd.REDIS_READ_TIMEOUT_S
+    assert kwargs["socket_connect_timeout"] == wd.REDIS_CONNECT_TIMEOUT_S

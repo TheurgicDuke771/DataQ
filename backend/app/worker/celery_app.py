@@ -245,12 +245,13 @@ def _start_beat_watchdog(**_kwargs: Any) -> None:
         get_logger(__name__).info("beat_watchdog_disabled")
         return
     try:
-        import redis
+        from backend.app.worker.beat_watchdog import build_store, start_watchdog
 
-        from backend.app.worker.beat_watchdog import start_watchdog
-
+        # build_store, never a bare from_url: its socket timeouts are what keep
+        # the watchdog thread from blocking forever on a half-open connection
+        # (#854's lesson, on the thread that exists to notice hangs).
         start_watchdog(
-            redis.from_url(settings.redis_url),
+            build_store(settings.redis_url),
             stale_after_s=float(stale_after),
             interval_s=float(settings.beat_watchdog_interval_s),
         )

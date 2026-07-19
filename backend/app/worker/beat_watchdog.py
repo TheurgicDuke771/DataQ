@@ -21,25 +21,35 @@ outage.
 **What is done about it.** A daemon thread compares that timestamp against the
 clock and, when it goes stale, logs loudly and terminates the process — the
 platform (ACA / compose ``restart:``) then restarts it, which is exactly the
-manual remedy that has worked all three times. "Alive but idle" stops being a
-state this system can sit in indefinitely.
+manual remedy that has worked all three times.
 
 **Why not a liveness probe.** Azure Container Apps probes are HTTP/TCP, and the
 worker serves neither; adding an HTTP server to a Celery worker to answer one
-question is more moving parts than the question deserves. Dying is portable —
-it works identically under compose, locally, and anywhere else this runs.
+question is more moving parts than the question deserves. Dying is portable.
 
-Three guards keep it from becoming a crash loop, because a watchdog that
-restarts a container every 30 seconds is worse than the bug it is watching:
+A watchdog that restarts a container every 30 seconds is worse than the bug it
+watches, and one that hangs is worse than none at all. Five guards, each earned
+by a concrete failure mode found in review:
 
-1. **Grace period from boot** — a cold start (migrations, slow broker) must not
-   look like a wedge.
-2. **Only ever fires on a STALE-but-READABLE heartbeat.** If Redis cannot be
-   read, the verdict is ``unknown`` and nothing is killed: restarting cannot fix
-   a broker outage, and a crash loop would bury the actual cause (the #852
-   lesson — noise that hides the signal is worse than no signal).
-3. **Never fires before the first heartbeat is seen**, so a deploy that starts
-   the worker before the beat has ticked once doesn't self-immolate.
+1. **Boot grace** — a cold start (migrations, slow broker) must not look like a
+   wedge.
+2. **Never kill on an unreadable store.** Restarting cannot fix a broker
+   outage, and a crash loop would bury the actual cause (#852: noise that hides
+   the signal is worse than no signal).
+3. **Never kill unless THIS incarnation saw a heartbeat.** The stamp has no
+   expiry, so a key left by a *previous* worker must not arm the watchdog — the
+   tick has to be newer than this process's start, or a worker that never
+   consumed anything would kill itself on its predecessor's key and loop
+   forever.
+4. **Never kill while tasks are actually running.** A stale beat with a busy
+   pool is a long GX run occupying the slots, not a wedge; hard-exiting there
+   would abort real work and strand its ``runs`` row.
+5. **Require consecutive confirmations.** One stale reading can be a clock step
+   (NTP); a wedge is still there a minute later.
+
+Every Redis call this module makes is **bounded by a socket timeout** — an
+untimed read is exactly the forever-wait #854 taught, and it would hang the one
+thread whose job is to notice hangs.
 """
 
 from __future__ import annotations
@@ -47,6 +57,7 @@ from __future__ import annotations
 import os
 import threading
 import time
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Literal, Protocol
 
@@ -56,6 +67,15 @@ log = get_logger(__name__)
 
 # Redis key holding the epoch seconds of the last *executed* beat task.
 BEAT_TICK_KEY = "dataq:beat:last_tick"
+
+# Bounded like every other Redis path in the app (`core/rate_limit.py`): a
+# watchdog that can block forever on a half-open connection is the #854 failure
+# reintroduced on the thread that exists to detect it.
+REDIS_CONNECT_TIMEOUT_S = 2.0
+REDIS_READ_TIMEOUT_S = 2.0
+
+# Consecutive stale readings required before terminating (guard 5).
+STALE_CONFIRMATIONS = 2
 
 Verdict = Literal["ok", "stale", "unknown"]
 
@@ -68,6 +88,21 @@ class _TickStore(Protocol):
     def get(self, name: str) -> object: ...
 
 
+def build_store(redis_url: str) -> _TickStore:
+    """A Redis client with bounded socket timeouts — the ONLY way this module's
+    client should be built. ``from_url`` defaults both timeouts to None, i.e.
+    block forever, which on the watchdog thread means it silently stops
+    watching."""
+    import redis
+
+    client: _TickStore = redis.from_url(
+        redis_url,
+        socket_connect_timeout=REDIS_CONNECT_TIMEOUT_S,
+        socket_timeout=REDIS_READ_TIMEOUT_S,
+    )
+    return client
+
+
 def _now() -> datetime:
     return datetime.now(UTC)
 
@@ -75,9 +110,10 @@ def _now() -> datetime:
 def record_beat_tick(store: _TickStore, *, now: datetime | None = None) -> None:
     """Stamp 'a scheduled task actually executed' — called BY the heartbeat task.
 
-    Deliberately no expiry: an absent key is indistinguishable from a key that
-    expired while the worker was wedged, and the watchdog needs to tell 'never
-    ticked' (grace) from 'ticked long ago' (stale)."""
+    Deliberately no expiry: an absent key is indistinguishable from one that
+    expired *because* the worker was wedged. Guard 3 (the tick must be newer
+    than this process's start) is what stops a stale key arming the watchdog,
+    not a TTL."""
     store.set(BEAT_TICK_KEY, str((now or _now()).timestamp()))
 
 
@@ -101,6 +137,22 @@ def read_beat_tick(store: _TickStore) -> float | None:
         return None
 
 
+def active_task_count() -> int:
+    """How many tasks this worker is executing right now (guard 4).
+
+    Read from Celery's in-process worker state — local and non-blocking, unlike
+    ``control.inspect()``, which round-trips the broker and could hang the
+    watchdog. The import is local and defensive: outside a worker (tests, the
+    API) the module may be absent, and 'unknown' must resolve to 0, never to
+    'busy' — a permanently-busy reading would disarm the watchdog entirely."""
+    try:
+        from celery.worker import state as worker_state
+
+        return len(worker_state.active_requests)
+    except Exception:  # pragma: no cover - defensive: not running inside a worker
+        return 0
+
+
 def liveness_verdict(
     *,
     last_tick: float | None,
@@ -112,28 +164,30 @@ def liveness_verdict(
     """Decide whether this worker is executing scheduled work — a pure function,
     so the decision is testable without threads, clocks, or a broker.
 
-    - ``unknown`` — still inside the boot grace period, or no heartbeat has ever
-      been observed, or the store could not be read. Never kill on these: the
-      first two are normal startup, and the third cannot be fixed by restarting.
-    - ``stale`` — a heartbeat exists and is older than ``stale_after_s``. This is
-      the outage signature: the process is up, the schedule is armed, and nothing
-      has run for many multiples of the tick interval.
+    - ``unknown`` — inside the boot grace period, no heartbeat readable, or a
+      negative age (the clock stepped backwards under us; never act on it).
+    - ``stale`` — a heartbeat exists and is older than ``stale_after_s``.
     - ``ok`` — a task executed recently.
     """
     if uptime_s < grace_s:
         return "unknown"
     if last_tick is None:
         return "unknown"
-    return "stale" if (now_ts - last_tick) > stale_after_s else "ok"
+    age = now_ts - last_tick
+    if age < 0:
+        # Clock stepped backwards (NTP correction): the reading is meaningless,
+        # and acting on it would kill a healthy worker.
+        return "unknown"
+    return "stale" if age > stale_after_s else "ok"
 
 
 def _terminate(reason: str, *, age_s: float) -> None:
     """Exit hard so the platform restarts us.
 
-    ``os._exit`` rather than ``sys.exit``/``SIGTERM``: the worker is by
-    definition not processing anything, and a graceful shutdown path can itself
-    block on the very pool that is wedged — which would leave the container
-    alive and idle, i.e. exactly where we started."""
+    ``os._exit`` rather than ``sys.exit``/``SIGTERM``: a graceful shutdown can
+    itself block on the very pool that is wedged, leaving the container alive
+    and idle — exactly where we started. Guard 4 has already established that no
+    task is running, so nothing in flight is aborted by exiting here."""
     log.error(
         "beat_watchdog_terminating",
         reason=reason,
@@ -153,20 +207,27 @@ def watchdog_loop(
     grace_s: float,
     interval_s: float,
     started_at: float,
-    terminate: object = _terminate,
+    terminate: Callable[..., None] = _terminate,
+    active_tasks: Callable[[], int] = active_task_count,
     iterations: int | None = None,
 ) -> None:
-    """Poll the heartbeat and terminate when it goes stale.
+    """Poll the heartbeat and terminate once staleness is confirmed.
 
     ``iterations`` bounds the loop for tests; production passes None (forever).
     """
-    seen_tick = False
+    seen_own_tick = False
+    stale_streak = 0
     count = 0
     while iterations is None or count < iterations:
         count += 1
         last_tick = read_beat_tick(store)
-        if last_tick is not None:
-            seen_tick = True
+        # Guard 3: only a tick produced AFTER this process started proves that
+        # THIS incarnation is consuming. The stamp never expires, so a
+        # predecessor's key would otherwise arm the watchdog against a worker
+        # that has never consumed anything — which would then die, restart, and
+        # loop forever on an ever-staler key.
+        if last_tick is not None and last_tick >= started_at:
+            seen_own_tick = True
         verdict = liveness_verdict(
             last_tick=last_tick,
             now_ts=time.time(),
@@ -174,11 +235,18 @@ def watchdog_loop(
             stale_after_s=stale_after_s,
             grace_s=grace_s,
         )
-        # `seen_tick` is the third guard: only kill a worker that demonstrably
-        # WAS executing tasks and then stopped. A worker that has never ticked
-        # since boot may simply be starting behind a slow broker.
-        if verdict == "stale" and seen_tick and callable(terminate):
-            terminate("no beat task executed within the stale window", age_s=time.time() - last_tick)  # type: ignore[operator]
+        # Guard 4: a busy pool is not a wedge. A 30-minute comparison run can
+        # legitimately outlast the stale window; killing it would abort real
+        # work and strand its `runs` row for the #458 reaper.
+        busy = active_tasks() > 0 if callable(active_tasks) else False
+        stale_streak = (
+            stale_streak + 1 if (verdict == "stale" and seen_own_tick and not busy) else 0
+        )
+        if stale_streak >= STALE_CONFIRMATIONS and callable(terminate) and last_tick is not None:
+            terminate(
+                "no beat task executed within the stale window",
+                age_s=time.time() - last_tick,
+            )
             return
         time.sleep(interval_s)
 
