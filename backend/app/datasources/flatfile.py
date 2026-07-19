@@ -19,6 +19,7 @@ the deferred-smoke seam.
 
 from __future__ import annotations
 
+import csv
 import io
 import re
 from dataclasses import dataclass
@@ -46,6 +47,19 @@ _FILE_TYPES = {"adls_gen2", "s3"}
 # Sort floor for files the store reports without a modified time.
 _MIN_DT = datetime.min.replace(tzinfo=UTC)
 
+# Delimiters `sniff_delimiter` will consider, and the fallback when it can't tell
+# (which is also the pre-#476 behaviour, so a failed sniff never regresses a file
+# that parses today). Deliberately a short allowlist rather than letting
+# `csv.Sniffer` pick freely: given a header like `name,title` it will happily
+# nominate `e` or a space as the delimiter, which is a *worse* silent wrong
+# answer than assuming a comma.
+_CSV_DELIMITERS = ",;\t|"
+_DEFAULT_DELIMITER = ","
+
+# How much of the object to hand the sniffer. The header plus a few rows is
+# plenty and keeps the decode bounded on a large file.
+_SNIFF_BYTES = 64 * 1024
+
 
 def format_from_path(path: str) -> str | None:
     """Infer the file format from the path extension (`None` if unrecognised)."""
@@ -55,6 +69,47 @@ def format_from_path(path: str) -> str | None:
     if lower.endswith((".parquet", ".pq")):
         return "parquet"
     return None
+
+
+def sniff_delimiter(sample: bytes) -> str:
+    """Guess a CSV's delimiter from its leading bytes, falling back to a comma.
+
+    Pure (no IO) so the decision is testable without a datasource. Sniffing is
+    per-*file* on purpose: a flat-file connection is a whole bucket/container and
+    the files under it need not agree on a delimiter, so a per-connection hint
+    would be the wrong granularity.
+
+    Never raises — an undecidable sample (single column, empty file, binary junk)
+    yields `_DEFAULT_DELIMITER`.
+    """
+    text = sample.decode("utf-8", errors="replace")
+    # Sniff over whole lines only: a sample cut mid-row can end in a fragment
+    # whose field counts don't line up, which is exactly what Sniffer keys off.
+    head, newline, _ = text.rpartition("\n")
+    if newline:
+        text = head
+    if not text.strip():
+        return _DEFAULT_DELIMITER
+    try:
+        return csv.Sniffer().sniff(text, delimiters=_CSV_DELIMITERS).delimiter
+    except csv.Error:
+        return _DEFAULT_DELIMITER
+
+
+def read_csv_bytes(raw: io.BytesIO, **kwargs: Any) -> Any:
+    """`pd.read_csv` over `raw` with the delimiter sniffed from its header (#476).
+
+    The single CSV-parsing seam for every flat-file path — runner, profiler,
+    column lister, schema-drift introspection — so they can never disagree about
+    what a file's columns are. Extra `kwargs` (``nrows``, ``usecols``, …) pass
+    straight through; the buffer is rewound before parsing, so callers may hand
+    over a buffer at any position.
+    """
+    import pandas as pd
+
+    sep = sniff_delimiter(raw.getvalue()[:_SNIFF_BYTES])
+    raw.seek(0)
+    return pd.read_csv(raw, sep=sep, **kwargs)
 
 
 def _s3_client(cfg: S3Config, secret: str) -> Any:
@@ -114,7 +169,7 @@ def read_dataframe(*, conn_type: str, config: dict[str, Any], path: str, secret:
         raise ValueError(f"unsupported flat-file format for path {path!r}")
     raw = io.BytesIO(download_bytes(conn_type=conn_type, config=config, path=path, secret=secret))
     if fmt == "csv":
-        return pd.read_csv(raw)
+        return read_csv_bytes(raw)
     return pd.read_parquet(raw, dtype_backend="pyarrow")
 
 

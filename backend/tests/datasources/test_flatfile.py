@@ -45,6 +45,78 @@ def test_format_from_path(path: str, expected: str | None) -> None:
     assert flatfile.format_from_path(path) == expected
 
 
+# ── sniff_delimiter / read_csv_bytes (#476) ──
+
+
+@pytest.mark.parametrize(
+    ("sample", "expected"),
+    [
+        (b"a,b,c\n1,2,3\n4,5,6\n", ","),
+        (b"a;b;c\n1;2;3\n4;5;6\n", ";"),
+        (b"a\tb\tc\n1\t2\t3\n4\t5\t6\n", "\t"),
+        (b"a|b|c\n1|2|3\n4|5|6\n", "|"),
+    ],
+)
+def test_sniff_delimiter_detects_each_supported_delimiter(sample: bytes, expected: str) -> None:
+    assert flatfile.sniff_delimiter(sample) == expected
+
+
+@pytest.mark.parametrize(
+    "sample",
+    [
+        b"",  # empty file
+        b"\n\n  \n",  # whitespace only
+        b"only_one_column\n1\n2\n",  # nothing to infer a delimiter from
+        b"\x00\x01\x02\xff\xfe",  # binary junk (undecodable)
+        b"a,b\n",  # header with no data rows
+    ],
+)
+def test_sniff_delimiter_falls_back_to_comma_when_undecidable(sample: bytes) -> None:
+    """An unsniffable sample must degrade to the pre-#476 behaviour, never raise —
+    a wrong-but-unchanged answer beats a 502 on a file that parses today."""
+    assert flatfile.sniff_delimiter(sample) == ","
+
+
+def test_sniff_delimiter_ignores_a_truncated_trailing_row() -> None:
+    """The sniff sample is a byte prefix, so the last line is usually cut. A
+    fragment with mismatched field counts is what Sniffer keys off, so it must be
+    dropped — otherwise the delimiter flips depending on where the cut landed."""
+    assert flatfile.sniff_delimiter(b"a;b;c\n1;2;3\n4;5") == ";"
+
+
+def test_sniff_delimiter_never_picks_a_delimiter_outside_the_allowlist() -> None:
+    """Left free, csv.Sniffer nominates letters/spaces on prose-ish headers. The
+    allowlist keeps a bad guess bounded to a comma."""
+    assert flatfile.sniff_delimiter(b"name title\nalice engineer\nbob analyst\n") == ","
+
+
+def test_read_csv_bytes_parses_a_semicolon_file_correctly() -> None:
+    df = flatfile.read_csv_bytes(io.BytesIO(b"a;b;c\n1;2;3\n4;5;6\n"))
+    assert list(df.columns) == ["a", "b", "c"] and len(df) == 2
+
+
+def test_read_csv_bytes_rewinds_a_consumed_buffer() -> None:
+    """Callers may hand over a buffer already read (the sniff itself consumes it),
+    so the parse must not silently see zero bytes."""
+    raw = io.BytesIO(b"a;b\n1;2\n")
+    raw.read()
+    df = flatfile.read_csv_bytes(raw)
+    assert list(df.columns) == ["a", "b"] and len(df) == 1
+
+
+def test_read_csv_bytes_passes_through_reader_kwargs() -> None:
+    df = flatfile.read_csv_bytes(io.BytesIO(b"a;b;c\n1;2;3\n4;5;6\n"), nrows=1, usecols=["a", "c"])
+    assert list(df.columns) == ["a", "c"] and len(df) == 1
+
+
+def test_read_dataframe_parses_a_semicolon_csv(monkeypatch: pytest.MonkeyPatch) -> None:
+    """#476: a `;`-delimited file used to yield ONE bogus column (the whole header
+    line) with no error — a silent wrong answer for every check on that file."""
+    monkeypatch.setattr(flatfile, "download_bytes", lambda **k: b"a;b\n1;2\n3;4\n")
+    df = flatfile.read_dataframe(conn_type="s3", config={}, path="x.csv", secret="s")
+    assert list(df.columns) == ["a", "b"] and len(df) == 2
+
+
 # ── read_dataframe (real parse, mocked download) ──
 
 
