@@ -25,7 +25,14 @@ export function Profile() {
     return <Spin size="large" style={{ marginTop: 80 }} />;
   }
   if (me.status === 'error') {
-    return <PageError error={me.error} httpStatus={me.httpStatus} requestId={me.requestId} />;
+    return (
+      <PageError
+        error={me.error}
+        kind={me.kind}
+        httpStatus={me.httpStatus}
+        requestId={me.requestId}
+      />
+    );
   }
 
   const { display_name, email, last_seen_at, is_workspace_admin } = me.data;

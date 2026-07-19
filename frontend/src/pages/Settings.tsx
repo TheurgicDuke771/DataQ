@@ -8,6 +8,7 @@ import { PROVIDER_CALLBACK_NOUNS, PROVIDER_LABELS } from '../api/triggerBindings
 import { authMethodLabel } from '../auth/config';
 import { useMe } from '../auth/useMe';
 import { Forbidden } from '../components/Forbidden';
+import { PageError } from '../components/feedback/PageError';
 import { Page } from '../components/layout/Page';
 import { useAsyncData } from '../hooks/useAsyncData';
 
@@ -32,7 +33,12 @@ export function Settings() {
   }
   if (me.status === 'error') {
     return (
-      <Alert type="error" showIcon title="Couldn't verify your access" description={me.error} />
+      <PageError
+        error={me.error}
+        kind={me.kind}
+        httpStatus={me.httpStatus}
+        requestId={me.requestId}
+      />
     );
   }
   if (!me.data.is_workspace_admin) {

@@ -65,7 +65,12 @@ function CheckEditView({ suiteId, checkId }: { suiteId?: string; checkId?: strin
 
       {state.status === 'loading' && <Spin description="Loading check…" />}
       {state.status === 'error' && (
-        <PageError error={state.error} httpStatus={state.httpStatus} requestId={state.requestId} />
+        <PageError
+          error={state.error}
+          kind={state.kind}
+          httpStatus={state.httpStatus}
+          requestId={state.requestId}
+        />
       )}
       {state.status === 'ok' && suiteId && (
         <Card size="small">

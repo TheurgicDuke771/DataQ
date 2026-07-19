@@ -143,7 +143,12 @@ function ConnectionsBody({
   }
   if (state.status === 'error') {
     return (
-      <PageError error={state.error} httpStatus={state.httpStatus} requestId={state.requestId} />
+      <PageError
+        error={state.error}
+        kind={state.kind}
+        httpStatus={state.httpStatus}
+        requestId={state.requestId}
+      />
     );
   }
   const connections = state.data;

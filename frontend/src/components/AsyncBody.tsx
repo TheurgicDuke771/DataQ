@@ -45,6 +45,7 @@ export function AsyncBody<T>({
       return (
         <PageError
           error={state.error}
+          kind={state.kind}
           httpStatus={state.httpStatus}
           requestId={state.requestId}
           onRetry={onRetry}

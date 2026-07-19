@@ -40,14 +40,23 @@ describe('PageError (#910)', () => {
     expect(screen.getByText('400 — Bad request')).toBeInTheDocument();
   });
 
-  it('treats a status-less failure as 503 AND keeps its message', () => {
-    // Axios network errors carry no response; "Service unavailable" is the honest
-    // reading, and must not be reported as a client-side 400. Unlike a real 5xx
-    // response, the message is KEPT — no server answered, so what the client
-    // caught is the only information available.
-    renderError({ error: 'Network Error' });
+  it('reports a NETWORK failure as 503 and keeps its message', () => {
+    // Request went out, nothing came back — "Service unavailable" is honest, and
+    // the message is KEPT because no server answered with anything better.
+    renderError({ error: 'Network Error', kind: 'network' });
     expect(screen.getByText('503 — Service unavailable')).toBeInTheDocument();
     expect(screen.getByText('Network Error')).toBeInTheDocument();
+  });
+
+  it('does NOT blame the service for a client-side failure (#930 review)', () => {
+    // A throw that never reached the network (an auth redirect rejecting
+    // in-flight, a TypeError in page code) used to paint a confident
+    // "503 — Service unavailable" over a perfectly healthy backend, sending
+    // the user — and support — after an outage that was not happening.
+    renderError({ error: 'login_required', kind: 'client' });
+    expect(screen.queryByText('503 — Service unavailable')).not.toBeInTheDocument();
+    expect(screen.getByText('500 — Something went wrong')).toBeInTheDocument();
+    expect(screen.getByText('login_required')).toBeInTheDocument();
   });
 
   it('offers an in-place retry when given one, instead of a full reload', async () => {

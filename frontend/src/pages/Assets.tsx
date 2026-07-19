@@ -39,7 +39,7 @@ import { useAsyncData } from '../hooks/useAsyncData';
  */
 export function Assets() {
   const navigate = useNavigate();
-  const { state } = useAsyncData(listAssets);
+  const { state, reload } = useAsyncData(listAssets);
   const [view, setView] = useState<'tree' | 'table'>('tree');
   const onOpen = (id: string) => navigate(`/assets/${id}`);
 
@@ -52,7 +52,13 @@ export function Assets() {
         The tables and files DataQ knows about. Health is rolled up across every suite that targets
         the asset.
       </Typography.Paragraph>
-      <AsyncBody state={state} loadingText="Loading assets…" errorTitle="Failed to load assets">
+      <AsyncBody
+        state={state}
+        loadingText="Loading assets…"
+        errorTitle="Failed to load assets"
+        page
+        onRetry={reload}
+      >
         {(assets) =>
           assets.length === 0 ? (
             <Empty description="No assets yet — give a suite a run target and it will appear here." />

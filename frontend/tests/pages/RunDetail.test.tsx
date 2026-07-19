@@ -175,8 +175,9 @@ describe('RunDetail page', () => {
   it('shows an error when the run fails to load', async () => {
     mockGetRun.mockRejectedValue(new Error('boom'));
     renderAt('rX');
-    // #910: dedicated error page, not the old inline alert.
-    expect(await screen.findByText('503 — Service unavailable')).toBeInTheDocument();
+    // #910: dedicated error page, not the old inline alert. A plain Error is a
+    // CLIENT failure → 500; only a real network failure claims 503 (#930 review).
+    expect(await screen.findByText('500 — Something went wrong')).toBeInTheDocument();
   });
 
   it('exports the run results as CSV with check names resolved', async () => {

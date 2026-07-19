@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 
-import { fetchFailure } from '../utils/errors';
+import { type FailureKind, fetchFailure } from '../utils/errors';
 
 /** Three-state result of an async fetch. The error branch keeps `error` (the
  *  message, what every consumer reads) and adds the HTTP facts (#910) so a
@@ -8,7 +8,13 @@ import { fetchFailure } from '../utils/errors';
 export type AsyncState<T> =
   | { status: 'loading' }
   | { status: 'ok'; data: T }
-  | { status: 'error'; error: string; httpStatus?: number; requestId?: string };
+  | {
+      status: 'error';
+      error: string;
+      kind: FailureKind;
+      httpStatus?: number;
+      requestId?: string;
+    };
 
 /**
  * Fetch on mount (and on `reload()`), with a cancelled-guard so a late
@@ -38,6 +44,7 @@ export function useAsyncData<T>(fetcher: () => Promise<T>): {
           setState({
             status: 'error',
             error: failure.message,
+            kind: failure.kind,
             httpStatus: failure.status,
             requestId: failure.requestId,
           });

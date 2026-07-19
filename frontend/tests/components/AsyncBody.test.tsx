@@ -22,7 +22,7 @@ describe('AsyncBody', () => {
   });
 
   it('renders the error title and message on failure', () => {
-    const state: AsyncState<string[]> = { status: 'error', error: 'boom' };
+    const state: AsyncState<string[]> = { status: 'error', error: 'boom', kind: 'http' as const };
     render(
       <AsyncBody state={state} errorTitle="Failed to load">
         {renderChild}

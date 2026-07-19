@@ -31,6 +31,7 @@ describe('fetchFailure (#910)', () => {
     const failure = fetchFailure(axiosFailure(500, 'Internal Server Error', 'req-42'));
     expect(failure).toEqual({
       message: 'Internal Server Error',
+      kind: 'http',
       status: 500,
       requestId: 'req-42',
     });
@@ -40,15 +41,19 @@ describe('fetchFailure (#910)', () => {
     expect(fetchFailure(axiosFailure(404, 'not found')).requestId).toBeUndefined();
   });
 
-  it('reports no status for a network-level failure (the server never answered)', () => {
-    // No `response` — this is what PageError renders as 503 rather than a 4xx.
+  it('classifies an axios error with no response as a NETWORK failure', () => {
+    // Request sent, nothing came back — PageError renders this as 503.
     const failure = fetchFailure(new AxiosError('Network Error'));
-    expect(failure.status).toBeUndefined();
-    expect(failure.message).toBe('Network Error');
+    expect(failure).toEqual({ message: 'Network Error', kind: 'network' });
   });
 
-  it('degrades a non-axios throw to message-only', () => {
-    expect(fetchFailure(new Error('plain'))).toEqual({ message: 'plain' });
-    expect(fetchFailure({ weird: true }, 'fallback')).toEqual({ message: 'fallback' });
+  it('classifies a non-axios throw as CLIENT, never as a server outage', () => {
+    // #930 review: these never reached the network, so they must not be
+    // reported as the service being unavailable.
+    expect(fetchFailure(new Error('plain'))).toEqual({ message: 'plain', kind: 'client' });
+    expect(fetchFailure({ weird: true }, 'fallback')).toEqual({
+      message: 'fallback',
+      kind: 'client',
+    });
   });
 });

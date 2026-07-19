@@ -42,7 +42,12 @@ function SuiteEditView({ suiteId }: { suiteId?: string }) {
 
       {state.status === 'loading' && <Spin description="Loading suite…" />}
       {state.status === 'error' && (
-        <PageError error={state.error} httpStatus={state.httpStatus} requestId={state.requestId} />
+        <PageError
+          error={state.error}
+          kind={state.kind}
+          httpStatus={state.httpStatus}
+          requestId={state.requestId}
+        />
       )}
       {state.status === 'ok' && (
         <Card size="small">

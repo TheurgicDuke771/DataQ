@@ -61,7 +61,12 @@ export function RunDetail() {
 
       {state.status === 'loading' && <Spin description="Loading run…" size="large" />}
       {state.status === 'error' && (
-        <PageError error={state.error} httpStatus={state.httpStatus} requestId={state.requestId} />
+        <PageError
+          error={state.error}
+          kind={state.kind}
+          httpStatus={state.httpStatus}
+          requestId={state.requestId}
+        />
       )}
       {state.status === 'ok' && (
         <RunDetailBody

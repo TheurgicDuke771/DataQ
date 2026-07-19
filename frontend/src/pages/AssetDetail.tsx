@@ -71,7 +71,13 @@ function AssetDetailPage({ assetId }: { assetId: string | undefined }) {
           Assets
         </Button>
       </div>
-      <AsyncBody state={state} loadingText="Loading asset…" errorTitle="Failed to load asset">
+      <AsyncBody
+        state={state}
+        loadingText="Loading asset…"
+        errorTitle="Failed to load asset"
+        page
+        onRetry={reload}
+      >
         {(asset) => (
           <AssetDetailBody
             asset={asset}

@@ -303,7 +303,9 @@ describe('AssetDetail page', () => {
   it('surfaces a load error', async () => {
     mockGet.mockRejectedValue(new Error('nope'));
     renderPage();
-    expect(await screen.findByText('Failed to load asset')).toBeInTheDocument();
+    // #930 review: this whole-page fetch now uses AsyncBody's `page` mode, so a
+    // failure renders the dedicated error page instead of a husk-of-a-page alert.
+    expect(await screen.findByText('500 — Something went wrong')).toBeInTheDocument();
   });
 
   // ── admin-only description edit (#760; backend PATCH is the security gate) ──

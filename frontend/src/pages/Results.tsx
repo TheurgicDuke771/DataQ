@@ -158,7 +158,12 @@ function RunsTab() {
   if (state.status === 'loading') return <Spin description="Loading runs…" size="large" />;
   if (state.status === 'error') {
     return (
-      <PageError error={state.error} httpStatus={state.httpStatus} requestId={state.requestId} />
+      <PageError
+        error={state.error}
+        kind={state.kind}
+        httpStatus={state.httpStatus}
+        requestId={state.requestId}
+      />
     );
   }
 
@@ -357,7 +362,12 @@ function PipelineRunsTab({ pollMs = PIPELINE_POLL_MS }: { pollMs?: number }) {
   if (state.status === 'loading') return <Spin description="Loading pipeline runs…" size="large" />;
   if (state.status === 'error') {
     return (
-      <PageError error={state.error} httpStatus={state.httpStatus} requestId={state.requestId} />
+      <PageError
+        error={state.error}
+        kind={state.kind}
+        httpStatus={state.httpStatus}
+        requestId={state.requestId}
+      />
     );
   }
 

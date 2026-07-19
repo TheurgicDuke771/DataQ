@@ -173,7 +173,7 @@ describe('ConnectionEdit', () => {
 
     // #910: a page-level fetch failure renders the dedicated error page. A plain
     // Error carries no HTTP status (the server never answered) → the 503 page.
-    expect(await screen.findByText('503 — Service unavailable')).toBeInTheDocument();
+    expect(await screen.findByText('500 — Something went wrong')).toBeInTheDocument();
   });
 
   it('refetches + reseeds when the route param changes (no stale prior connection)', async () => {

@@ -34,7 +34,14 @@ export function Admin() {
     return <Spin size="large" style={{ marginTop: 80 }} />;
   }
   if (me.status === 'error') {
-    return <PageError error={me.error} httpStatus={me.httpStatus} requestId={me.requestId} />;
+    return (
+      <PageError
+        error={me.error}
+        kind={me.kind}
+        httpStatus={me.httpStatus}
+        requestId={me.requestId}
+      />
+    );
   }
   if (!me.data.is_workspace_admin) {
     return <Forbidden message="The admin overview is restricted to workspace admins." />;
