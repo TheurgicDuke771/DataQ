@@ -27,6 +27,7 @@ from backend.app.core.config import get_settings
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore, get_secret_store
+from backend.app.worker import beat_watchdog
 from backend.app.datasources.flatfile import BatchNotFoundError
 from backend.app.datasources.monitors import STATEFUL_MONITOR_KINDS
 from backend.app.datasources.registry import build_check_runner, owned_runner
@@ -840,3 +841,31 @@ def refresh_warehouse_lineage() -> int:
         return refreshed
     finally:
         session.close()
+
+
+# ─────────────────────── beat liveness heartbeat (#904) ─────────────────────
+
+
+@celery_app.task(name="beat_heartbeat")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
+def beat_heartbeat() -> bool:
+    """Stamp 'the beat→broker→worker loop is actually executing tasks' (#904).
+
+    The stamp is written HERE, on execution, not by the scheduler — the outage
+    this defends against is "beat keeps queueing, nothing consumes", which a
+    scheduler-side heartbeat would have reported healthy right through. The
+    watchdog thread (`beat_watchdog`) reads it and exits the process when it
+    goes stale, so the platform restarts a worker that is up but idle.
+
+    Fail-soft: a broker hiccup writing the stamp must not mark the task failed
+    and spam the error channel — the watchdog's own `unknown` verdict already
+    covers an unreadable store.
+    """
+    import redis
+
+    try:
+        client = redis.from_url(get_settings().redis_url)
+        beat_watchdog.record_beat_tick(client)
+        return True
+    except Exception:
+        log.warning("beat_heartbeat_write_failed", exc_info=True)
+        return False
