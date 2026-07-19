@@ -11,6 +11,7 @@ import { CheckHistoryDrawer } from '../components/checks/CheckHistoryDrawer';
 import { ColumnProfilePanel } from '../components/checks/ColumnProfilePanel';
 import { DryRunPreview } from '../components/checks/DryRunPreview';
 import {
+  configFieldsFor,
   EXPECTATION_BY_TYPE,
   expectationsByCategoryFor,
 } from '../components/checks/expectationCatalog';
@@ -196,7 +197,7 @@ function CheckEditForm({
             <Typography.Paragraph type="secondary" style={{ marginTop: -8 }}>
               {spec.description}
             </Typography.Paragraph>
-            {spec.fields.map((field) => (
+            {configFieldsFor(spec, connectionType).map((field) => (
               <ConfigFieldItem key={field.name} field={field} connectionType={connectionType} />
             ))}
           </>

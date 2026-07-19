@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { ConnectionType } from '../../src/api/connections';
 import {
+  configFieldsFor,
   EXPECTATION_BY_TYPE,
   EXPECTATION_CATALOG,
   EXPECTATIONS_BY_CATEGORY,
@@ -66,8 +67,8 @@ describe('expectationsByCategoryFor (custom-SQL datasource gating, ADR 0019)', (
 });
 
 describe('expectationsByCategoryFor (freshness/volume monitor gating, ADR 0012)', () => {
-  it.each<ConnectionType>(['snowflake', 'unity_catalog', 'iceberg'])(
-    'offers Freshness + Volume for monitor-capable datasource %s (Iceberg computes them natively)',
+  it.each<ConnectionType>(['snowflake', 'unity_catalog', 'iceberg', 's3', 'adls_gen2'])(
+    'offers Freshness + Volume for monitor-capable datasource %s (Iceberg computes them natively; flat files over the resolved batch, #520)',
     (type) => {
       const names = categoryNames(expectationsByCategoryFor(type));
       expect(names).toContain('Freshness');
@@ -75,9 +76,11 @@ describe('expectationsByCategoryFor (freshness/volume monitor gating, ADR 0012)'
     },
   );
 
-  it.each<ConnectionType>(['s3', 'adls_gen2', 'adf', 'airflow'])(
+  it.each<ConnectionType>(['adf', 'airflow'])(
     'hides monitor categories for non-monitor-capable datasource %s',
     (type) => {
+      // Orchestration providers are not datasources at all (CLAUDE.md §4) — there
+      // is nothing to aggregate over.
       const names = categoryNames(expectationsByCategoryFor(type));
       expect(names).not.toContain('Freshness');
       expect(names).not.toContain('Volume');
@@ -104,6 +107,42 @@ describe('expectationsByCategoryFor (freshness/volume monitor gating, ADR 0012)'
     expect(byType['monitor:volume'].kind).toBe('volume');
     // No max bound — a volume spike's deviation-% is unbounded (can exceed 100).
     expect(byType['monitor:volume'].thresholds?.max).toBeUndefined();
+  });
+});
+
+describe('configFieldsFor (flat-file arrival-time freshness, #520)', () => {
+  const freshness = () => EXPECTATION_BY_TYPE['monitor:freshness'];
+  const columnField = (type: ConnectionType | undefined) =>
+    configFieldsFor(freshness(), type).find((f) => f.name === 'column');
+
+  it.each<ConnectionType>(['s3', 'adls_gen2'])(
+    'makes the timestamp column optional on flat-file datasource %s',
+    (type) => {
+      // Blank doesn't mean "skip the check" — it selects a DIFFERENT measurement
+      // (when the file landed), so the help text must say so rather than reading
+      // as an omission.
+      const field = columnField(type);
+      expect(field?.optional).toBe(true);
+      expect(field?.help).toMatch(/landed/i);
+    },
+  );
+
+  it.each<ConnectionType>(['snowflake', 'unity_catalog', 'iceberg'])(
+    'keeps the timestamp column required on %s (a table has no arrival time)',
+    (type) => {
+      // Mirrors the backend gate: a column-less freshness check on these 422s, so
+      // offering it as optional would produce a form that cannot be submitted.
+      expect(columnField(type)?.optional).toBeFalsy();
+    },
+  );
+
+  it('keeps the column required while the connection type is unknown', () => {
+    expect(columnField(undefined)?.optional).toBeFalsy();
+  });
+
+  it('leaves non-freshness specs untouched', () => {
+    const volume = EXPECTATION_BY_TYPE['monitor:volume'];
+    expect(configFieldsFor(volume, 's3')).toBe(volume.fields);
   });
 });
 

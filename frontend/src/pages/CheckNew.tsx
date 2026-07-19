@@ -10,6 +10,7 @@ import { ConfigFieldItem, SeverityThresholdFields } from '../components/checks/c
 import { ColumnProfilePanel } from '../components/checks/ColumnProfilePanel';
 import { DryRunPreview } from '../components/checks/DryRunPreview';
 import {
+  configFieldsFor,
   EXPECTATION_BY_TYPE,
   expectationsByCategoryFor,
   type ExpectationCategory,
@@ -99,7 +100,7 @@ export function CheckNew() {
               targetSummary={targetSummary(target)}
             />
           ) : (
-            spec.fields.map((field) => (
+            configFieldsFor(spec, connectionType).map((field) => (
               <ConfigFieldItem key={field.name} field={field} connectionType={connectionType} />
             ))
           )}

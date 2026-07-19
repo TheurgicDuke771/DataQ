@@ -24,14 +24,22 @@ import io
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, ClassVar
 
 import great_expectations as gx
 
+from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
 from backend.app.datasources.adls import AdlsConfig
-from backend.app.datasources.base import CheckSpec, SuiteOutcome
+from backend.app.datasources.base import CheckOutcome, CheckSpec, MonitorSpec, SuiteOutcome
 from backend.app.datasources.gx_runner import run_expectations
+from backend.app.datasources.monitors import (
+    FRESHNESS,
+    VOLUME,
+    MonitorConfigError,
+    freshness_column,
+    run_monitor_specs,
+)
 from backend.app.datasources.s3 import S3Config
 
 # Connector timeouts (seconds): fail fast rather than hang the worker thread.
@@ -41,6 +49,8 @@ from backend.app.datasources.s3 import S3Config
 # large file legitimately needs more headroom. Not accidental drift (#147).
 _CONNECT_TIMEOUT = 10
 _READ_TIMEOUT = 60
+
+log = get_logger(__name__)
 
 _FILE_TYPES = {"adls_gen2", "s3"}
 
@@ -173,6 +183,120 @@ def read_dataframe(*, conn_type: str, config: dict[str, Any], path: str, secret:
     return pd.read_parquet(raw, dtype_backend="pyarrow")
 
 
+class FlatFileReadError(RuntimeError):
+    """The object couldn't be downloaded/parsed — reason CLASSIFIED, never echoed.
+
+    A monitor's error message is persisted to `results` and rendered in the UI,
+    alerts and MCP output, so a raw object-store SDK exception must not reach it:
+    Azure auth failures on this project have carried the SAS query string in their
+    message (#828/#839). The exception type is logged (where the redactor sits) and
+    only a classification travels outward.
+    """
+
+
+def _is_temporal(series: Any) -> bool:
+    """Whether ``series`` already holds date/time values, numpy- **or** Arrow-backed.
+
+    `pd.api.types.is_datetime64_any_dtype` alone is not enough: `read_dataframe`
+    reads Parquet with ``dtype_backend="pyarrow"``, so a timestamp column arrives
+    as ``timestamp[ns][pyarrow]``, for which that check returns **False**. Missing
+    the Arrow case is what made column-based freshness fail on every Parquet file.
+    """
+    import pandas as pd
+
+    if pd.api.types.is_datetime64_any_dtype(series):
+        return True
+    arrow_type = getattr(series.dtype, "pyarrow_dtype", None)
+    if arrow_type is None:
+        return False
+    import pyarrow as pa
+
+    return bool(pa.types.is_timestamp(arrow_type) or pa.types.is_date(arrow_type))
+
+
+def max_timestamp(series: Any, *, column: str) -> Any:
+    """The newest timestamp in ``series``, or ``None`` if it holds none (#520).
+
+    Flat-file timestamps are not typed the way warehouse ones are: a Parquet
+    column arrives as a real datetime, but the same column in a CSV arrives as
+    **object-dtype strings**, whose ``max()`` is a string the age math rejects.
+    So strings are parsed here.
+
+    Numeric columns are **refused, not parsed**. ``pd.to_datetime`` cheerfully
+    reads integers as epoch offsets, so pointing a freshness monitor at an id
+    column would silently date it to 1970 and fire critical staleness forever —
+    a confident wrong answer where "this isn't a timestamp" is the truth.
+
+    Caveat, documented rather than guessed at: for *ambiguous* text dates
+    (``06/07/2026``) the parse follows pandas' day-first inference, so a
+    non-ISO-8601 CSV can be read month-first. Use ISO-8601 or Parquet where the
+    distinction matters; a heuristic of our own would just be a second guess.
+    """
+    import pandas as pd
+
+    cleaned = series.dropna()
+    if cleaned.empty:
+        return None
+    if _is_temporal(cleaned):  # numpy- or Arrow-backed; already an instant
+        return cleaned.max()
+    # Refuse on NUMERIC, rather than accept only object/string. The inverted form
+    # excluded Arrow-backed timestamps (Parquet) along with the numerics, so
+    # freshness told users their timestamp column was not a timestamp.
+    if pd.api.types.is_numeric_dtype(cleaned) or pd.api.types.is_bool_dtype(cleaned):
+        raise MonitorConfigError(  # see the epoch trap above
+            f"freshness column {column!r} is {cleaned.dtype}, not a date/timestamp"
+        )
+    parsed = pd.to_datetime(cleaned, errors="coerce", utc=True).dropna()
+    if parsed.empty:
+        raise MonitorConfigError(f"freshness column {column!r} holds no parseable timestamps")
+    return parsed.max()
+
+
+def file_last_modified(
+    *, conn_type: str, config: dict[str, Any], path: str, secret: str
+) -> datetime | None:
+    """The store's last-modified time for exactly ``path`` (live seam, #520).
+
+    The arrival-time source for a column-less freshness monitor. A **single
+    metadata call** (`head_object` / `get_blob_properties`) rather than a prefix
+    listing: this runs on every scheduled monitor run, and both stores list by
+    prefix, so a key like `data/orders.csv` sitting among dated siblings would
+    drain the whole page set on each run — the unbounded-read-on-a-scheduled-path
+    defect from #854. It is also exact by construction, which the listing version
+    had to filter for (`orders.csv` is a prefix of `orders.csv.bak`).
+
+    ``None`` when the object isn't there; the caller turns that into a per-check
+    error rather than a silent pass, because a missing file is precisely the
+    incident this monitor exists to catch. Any **other** failure (auth, network)
+    propagates — that is this call's second job, as the store-reachability probe.
+    """
+    if conn_type == "s3":
+        from botocore.exceptions import ClientError
+
+        cfg = S3Config.model_validate(config)
+        try:
+            head = _s3_client(cfg, secret).head_object(Bucket=cfg.bucket, Key=path)
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") in {"404", "NoSuchKey", "NotFound"}:
+                return None
+            raise
+        modified: datetime | None = head.get("LastModified")
+        return modified
+
+    from azure.core.exceptions import ResourceNotFoundError
+
+    acfg = AdlsConfig.model_validate(config)
+    client_az = _blob_service(acfg, secret)
+    try:
+        blob = client_az.get_blob_client(container=acfg.container, blob=path)
+        properties: datetime | None = blob.get_blob_properties().last_modified
+        return properties
+    except ResourceNotFoundError:
+        return None
+    finally:
+        client_az.close()
+
+
 class FlatFileCheckRunner:
     """`CheckRunner` for flat files — loads the file into pandas, runs GX on it.
 
@@ -181,10 +305,91 @@ class FlatFileCheckRunner:
     path; ``schema`` is ignored (flat files have no schema namespace).
     """
 
+    supported_monitor_kinds: ClassVar[frozenset[str]] = frozenset({FRESHNESS, VOLUME})
+
     def __init__(self, *, conn_type: str, config: dict[str, Any], secret: str) -> None:
         self._conn_type = conn_type
         self._config = config
         self._secret = secret
+
+    def run_monitors(
+        self, *, table: str, schema: str | None, monitors: list[MonitorSpec]
+    ) -> list[CheckOutcome]:
+        """Evaluate freshness/volume monitors on a flat file — no SQL (#520).
+
+        Reuses the shared `monitors.run_monitor_specs` banding loop; only the
+        scalar source differs:
+
+        * **volume** — the resolved batch's row count.
+        * **freshness with a ``column``** — ``MAX(column)`` over that frame, the
+          same semantics as the SQL runners.
+        * **freshness with no column** — the object's last-modified time, i.e.
+          *when the file landed*. This is the case the SQL runners can't express
+          and the reason #520 matters: on a landing zone, "the producer stopped
+          sending files" is the incident, and an in-file MAX cannot see it (the
+          newest file is old, but its rows look perfectly fresh).
+
+        Arrival time is fetched **once, up front, for every run** — it is both the
+        cheap freshness answer and the store-reachability probe, so a bad
+        credential or unreachable container propagates and fails the whole run
+        instead of erroring each monitor separately (the open-connection-first
+        contract the SQL and Iceberg runners keep).
+
+        The file itself is downloaded **lazily and at most once**, only if some
+        monitor actually needs its contents — so an arrival-time-only check costs
+        a listing, never a data read.
+        """
+        # The establishment probe: fails loudly before the per-monitor loop.
+        arrived_at = file_last_modified(
+            conn_type=self._conn_type, config=self._config, path=table, secret=self._secret
+        )
+        # One-slot memo of the READ ATTEMPT — not of the frame. Memoizing only
+        # successes leaves a failure unmemoised, so each later monitor retries the
+        # whole download: five monitors against a failing 2 GB object = five full
+        # downloads, and a transient failure yields inconsistent outcomes within one
+        # run (monitor 1 errored, monitor 3 fine, same file, same instant). A
+        # DataFrame is not None-comparable, hence a list rather than a sentinel.
+        attempt: list[Any] = []
+
+        def dataframe() -> Any:
+            if not attempt:
+                try:
+                    attempt.append(
+                        read_dataframe(
+                            conn_type=self._conn_type,
+                            config=self._config,
+                            path=table,
+                            secret=self._secret,
+                        )
+                    )
+                except Exception as exc:
+                    # Classified, never echoed: this message is persisted to
+                    # `results` and rendered in the UI/alerts/MCP, and object-store
+                    # auth errors have carried credentials in their text (#828).
+                    log.warning(
+                        "flatfile_monitor_read_failed",
+                        connection_type=self._conn_type,
+                        error_type=type(exc).__name__,
+                    )
+                    attempt.append(FlatFileReadError(f"could not read {table!r} from the store"))
+            if isinstance(attempt[0], FlatFileReadError):
+                raise attempt[0]
+            return attempt[0]
+
+        def scalar_for(spec: MonitorSpec) -> Any:
+            if spec.kind == VOLUME:
+                return len(dataframe())
+            column = freshness_column(spec.config)
+            if column is None:
+                return arrived_at
+            df = dataframe()
+            if column not in df.columns:
+                raise MonitorConfigError(f"freshness column {column!r} is not in {table!r}")
+            # None (an all-null column) routes through the shared "can't be
+            # assessed" error rather than being read as age zero.
+            return max_timestamp(df[column], column=column)
+
+        return run_monitor_specs(scalar_for, monitors=monitors, now=datetime.now(UTC))
 
     def run_checks(
         self,
