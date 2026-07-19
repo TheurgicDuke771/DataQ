@@ -287,9 +287,14 @@ def test_delete_with_dependent_suite_is_409_envelope_not_500(
     assert err["detail"]["total"] == 1
     assert err["detail"]["suites"][0]["name"] == "uses-conn"
 
-    # Removing the dependent unblocks the delete.
-    assert api.delete(f"/api/v1/suites/{suite.json()['id']}").status_code == 204
-    assert api.delete(f"/api/v1/connections/{cid}").status_code == 204
+    # Removing the dependent unblocks the delete. The calls are hoisted OUT of the
+    # asserts (CodeQL py/side-effect-in-assert): under `python -O` assert bodies are
+    # stripped, so an in-assert request would silently never fire and the test would
+    # "pass" having exercised nothing.
+    suite_deleted = api.delete(f"/api/v1/suites/{suite.json()['id']}")
+    assert suite_deleted.status_code == 204
+    conn_deleted = api.delete(f"/api/v1/connections/{cid}")
+    assert conn_deleted.status_code == 204
 
 
 # ───────────────────────── test connectivity ───────────────────────
