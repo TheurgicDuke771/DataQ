@@ -1,0 +1,46 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "818ef92b5f23",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-923-workspace-visible-assets",
+  "checkpoints_count": 6,
+  "files_touched": [
+    "backend/app/api/v1/assets.py",
+    "backend/app/services/asset_view_service.py",
+    "backend/app/services/incident_service.py",
+    "backend/tests/api/test_assets.py",
+    "backend/tests/services/test_asset_view_service.py",
+    "backend/tests/services/test_lineage_authz_redaction.py",
+    "frontend/src/api/assets.ts",
+    "frontend/src/components/assets/ColumnLineagePanel.tsx",
+    "frontend/src/components/assets/LineageGraph.tsx",
+    "frontend/src/components/assets/assetTree.ts",
+    "frontend/src/components/assets/lineageLayout.ts",
+    "frontend/src/components/dashboard/AssetHealthLead.tsx",
+    "frontend/src/pages/AssetDetail.tsx",
+    "frontend/src/pages/Assets.tsx",
+    "frontend/tests/components/AssetHealthLead.test.tsx",
+    "frontend/tests/components/ColumnLineagePanel.test.tsx",
+    "frontend/tests/components/LineageGraph.test.tsx",
+    "frontend/tests/components/assetTree.test.ts",
+    "frontend/tests/components/lineageLayout.test.ts",
+    "frontend/tests/pages/AssetDetail.test.tsx",
+    "frontend/tests/pages/Assets.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/81/8ef92b5f23/0/metadata.json",
+      "transcript": "/81/8ef92b5f23/0/full.jsonl",
+      "compact_transcript": "/81/8ef92b5f23/0/transcript.jsonl",
+      "content_hash": "/81/8ef92b5f23/0/content_hash.txt",
+      "prompt": "/81/8ef92b5f23/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1668,
+    "cache_creation_tokens": 9183455,
+    "cache_read_tokens": 379523620,
+    "output_tokens": 600069,
+    "api_call_count": 853
+  }
+}
