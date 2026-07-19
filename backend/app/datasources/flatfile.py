@@ -28,6 +28,7 @@ from typing import Any, ClassVar
 
 import great_expectations as gx
 
+from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
 from backend.app.datasources.adls import AdlsConfig
 from backend.app.datasources.base import CheckOutcome, CheckSpec, MonitorSpec, SuiteOutcome
@@ -48,6 +49,8 @@ from backend.app.datasources.s3 import S3Config
 # large file legitimately needs more headroom. Not accidental drift (#147).
 _CONNECT_TIMEOUT = 10
 _READ_TIMEOUT = 60
+
+log = get_logger(__name__)
 
 _FILE_TYPES = {"adls_gen2", "s3"}
 
@@ -180,6 +183,37 @@ def read_dataframe(*, conn_type: str, config: dict[str, Any], path: str, secret:
     return pd.read_parquet(raw, dtype_backend="pyarrow")
 
 
+class FlatFileReadError(RuntimeError):
+    """The object couldn't be downloaded/parsed — reason CLASSIFIED, never echoed.
+
+    A monitor's error message is persisted to `results` and rendered in the UI,
+    alerts and MCP output, so a raw object-store SDK exception must not reach it:
+    Azure auth failures on this project have carried the SAS query string in their
+    message (#828/#839). The exception type is logged (where the redactor sits) and
+    only a classification travels outward.
+    """
+
+
+def _is_temporal(series: Any) -> bool:
+    """Whether ``series`` already holds date/time values, numpy- **or** Arrow-backed.
+
+    `pd.api.types.is_datetime64_any_dtype` alone is not enough: `read_dataframe`
+    reads Parquet with ``dtype_backend="pyarrow"``, so a timestamp column arrives
+    as ``timestamp[ns][pyarrow]``, for which that check returns **False**. Missing
+    the Arrow case is what made column-based freshness fail on every Parquet file.
+    """
+    import pandas as pd
+
+    if pd.api.types.is_datetime64_any_dtype(series):
+        return True
+    arrow_type = getattr(series.dtype, "pyarrow_dtype", None)
+    if arrow_type is None:
+        return False
+    import pyarrow as pa
+
+    return bool(pa.types.is_timestamp(arrow_type) or pa.types.is_date(arrow_type))
+
+
 def max_timestamp(series: Any, *, column: str) -> Any:
     """The newest timestamp in ``series``, or ``None`` if it holds none (#520).
 
@@ -203,12 +237,13 @@ def max_timestamp(series: Any, *, column: str) -> Any:
     cleaned = series.dropna()
     if cleaned.empty:
         return None
-    if pd.api.types.is_datetime64_any_dtype(cleaned):
+    if _is_temporal(cleaned):  # numpy- or Arrow-backed; already an instant
         return cleaned.max()
-    if not (
-        pd.api.types.is_object_dtype(cleaned) or pd.api.types.is_string_dtype(cleaned)
-    ):  # numeric/bool — see the epoch trap above
-        raise MonitorConfigError(
+    # Refuse on NUMERIC, rather than accept only object/string. The inverted form
+    # excluded Arrow-backed timestamps (Parquet) along with the numerics, so
+    # freshness told users their timestamp column was not a timestamp.
+    if pd.api.types.is_numeric_dtype(cleaned) or pd.api.types.is_bool_dtype(cleaned):
+        raise MonitorConfigError(  # see the epoch trap above
             f"freshness column {column!r} is {cleaned.dtype}, not a date/timestamp"
         )
     parsed = pd.to_datetime(cleaned, errors="coerce", utc=True).dropna()
@@ -222,19 +257,44 @@ def file_last_modified(
 ) -> datetime | None:
     """The store's last-modified time for exactly ``path`` (live seam, #520).
 
-    The arrival-time source for a column-less freshness monitor. Listed rather
-    than downloaded — the whole point of arrival-time freshness is that it costs
-    no data read — and matched on the **exact** key, since both stores list by
-    prefix and `orders.csv` is a prefix of `orders.csv.bak`.
+    The arrival-time source for a column-less freshness monitor. A **single
+    metadata call** (`head_object` / `get_blob_properties`) rather than a prefix
+    listing: this runs on every scheduled monitor run, and both stores list by
+    prefix, so a key like `data/orders.csv` sitting among dated siblings would
+    drain the whole page set on each run — the unbounded-read-on-a-scheduled-path
+    defect from #854. It is also exact by construction, which the listing version
+    had to filter for (`orders.csv` is a prefix of `orders.csv.bak`).
 
-    ``None`` when the object isn't there or the store reports no timestamp; the
-    caller turns that into a per-check error rather than a silent pass, because a
-    missing file is precisely the incident this monitor exists to catch.
+    ``None`` when the object isn't there; the caller turns that into a per-check
+    error rather than a silent pass, because a missing file is precisely the
+    incident this monitor exists to catch. Any **other** failure (auth, network)
+    propagates — that is this call's second job, as the store-reachability probe.
     """
-    for ref in list_files(conn_type=conn_type, config=config, prefix=path, secret=secret):
-        if ref.path == path:
-            return ref.last_modified
-    return None
+    if conn_type == "s3":
+        from botocore.exceptions import ClientError
+
+        cfg = S3Config.model_validate(config)
+        try:
+            head = _s3_client(cfg, secret).head_object(Bucket=cfg.bucket, Key=path)
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") in {"404", "NoSuchKey", "NotFound"}:
+                return None
+            raise
+        modified: datetime | None = head.get("LastModified")
+        return modified
+
+    from azure.core.exceptions import ResourceNotFoundError
+
+    acfg = AdlsConfig.model_validate(config)
+    client_az = _blob_service(acfg, secret)
+    try:
+        blob = client_az.get_blob_client(container=acfg.container, blob=path)
+        properties: datetime | None = blob.get_blob_properties().last_modified
+        return properties
+    except ResourceNotFoundError:
+        return None
+    finally:
+        client_az.close()
 
 
 class FlatFileCheckRunner:
@@ -283,19 +343,38 @@ class FlatFileCheckRunner:
         arrived_at = file_last_modified(
             conn_type=self._conn_type, config=self._config, path=table, secret=self._secret
         )
-        frame: list[Any] = []  # one-slot memo; a DataFrame is not None-comparable
+        # One-slot memo of the READ ATTEMPT — not of the frame. Memoizing only
+        # successes leaves a failure unmemoised, so each later monitor retries the
+        # whole download: five monitors against a failing 2 GB object = five full
+        # downloads, and a transient failure yields inconsistent outcomes within one
+        # run (monitor 1 errored, monitor 3 fine, same file, same instant). A
+        # DataFrame is not None-comparable, hence a list rather than a sentinel.
+        attempt: list[Any] = []
 
         def dataframe() -> Any:
-            if not frame:
-                frame.append(
-                    read_dataframe(
-                        conn_type=self._conn_type,
-                        config=self._config,
-                        path=table,
-                        secret=self._secret,
+            if not attempt:
+                try:
+                    attempt.append(
+                        read_dataframe(
+                            conn_type=self._conn_type,
+                            config=self._config,
+                            path=table,
+                            secret=self._secret,
+                        )
                     )
-                )
-            return frame[0]
+                except Exception as exc:
+                    # Classified, never echoed: this message is persisted to
+                    # `results` and rendered in the UI/alerts/MCP, and object-store
+                    # auth errors have carried credentials in their text (#828).
+                    log.warning(
+                        "flatfile_monitor_read_failed",
+                        connection_type=self._conn_type,
+                        error_type=type(exc).__name__,
+                    )
+                    attempt.append(FlatFileReadError(f"could not read {table!r} from the store"))
+            if isinstance(attempt[0], FlatFileReadError):
+                raise attempt[0]
+            return attempt[0]
 
         def scalar_for(spec: MonitorSpec) -> Any:
             if spec.kind == VOLUME:
