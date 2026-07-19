@@ -270,6 +270,33 @@ def test_delete_returns_204_then_404(client: tuple[TestClient, FakeStore]) -> No
     assert gone.status_code == 404
 
 
+def test_delete_with_dependent_suite_is_409_envelope_not_500(
+    client: tuple[TestClient, FakeStore],
+) -> None:
+    """#753 at the wire: the FK conflict surfaces as the standard 409 error
+    envelope naming the dependent suites — never an unhandled 500."""
+    api, _ = client
+    cid = api.post("/api/v1/connections", json=_create_payload()).json()["id"]
+    suite = api.post("/api/v1/suites", json={"name": "uses-conn", "connection_id": cid})
+    assert suite.status_code == 201
+
+    resp = api.delete(f"/api/v1/connections/{cid}")
+    assert resp.status_code == 409
+    err = resp.json()["error"]
+    assert err["code"] == "connection_in_use"
+    assert err["detail"]["total"] == 1
+    assert err["detail"]["suites"][0]["name"] == "uses-conn"
+
+    # Removing the dependent unblocks the delete. The calls are hoisted OUT of the
+    # asserts (CodeQL py/side-effect-in-assert): under `python -O` assert bodies are
+    # stripped, so an in-assert request would silently never fire and the test would
+    # "pass" having exercised nothing.
+    suite_deleted = api.delete(f"/api/v1/suites/{suite.json()['id']}")
+    assert suite_deleted.status_code == 204
+    conn_deleted = api.delete(f"/api/v1/connections/{cid}")
+    assert conn_deleted.status_code == 204
+
+
 # ───────────────────────── test connectivity ───────────────────────
 
 
