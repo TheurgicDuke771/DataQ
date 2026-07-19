@@ -71,6 +71,40 @@ def test_profiler_validate_identifier_routes_through_shared_allowlist(
         validate_identifier("fine_col")
 
 
+# ───────────────────────── folding_identifier (#476) ─────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("name", "quoted"),
+    [
+        ("order_ts", False),  # lower-case → bare, so the warehouse folds it
+        ("load_ts_2", False),
+        ("copy", False),  # reserved in SQLAlchemy's dialect, NOT in Snowflake
+        ("select", False),  # genuinely reserved: broken either way, but consistent
+        ("Amount", True),  # mixed → quoted; the #476 fix
+        ("ORDER_TS", True),  # upper → quoted (resolves identically after folding)
+        ("A", True),
+    ],
+)
+def test_folding_identifier_decides_on_case_alone(name: str, quoted: bool) -> None:
+    """The quote decision must depend on CASE ONLY — never on the dialect's
+    reserved-word set, which is not the set the warehouse reserves (SQLAlchemy
+    reserves `copy`, Snowflake doesn't). Delegating to the compiler's default
+    would silently unresolve a column stored COPY."""
+    from backend.app.datasources.sql import folding_identifier
+
+    assert folding_identifier(name).quote is quoted
+
+
+def test_folding_identifier_preserves_the_name_itself() -> None:
+    """It changes the quoting flag, never the spelling — a fold applied to the
+    TEXT would resolve a different object."""
+    from backend.app.datasources.sql import folding_identifier
+
+    assert str(folding_identifier("Amount")) == "Amount"
+    assert str(folding_identifier("order_ts")) == "order_ts"
+
+
 # ───────────────────────── run_monitors_over_engine ─────────────────────────
 
 

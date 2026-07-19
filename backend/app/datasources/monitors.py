@@ -36,7 +36,7 @@ if TYPE_CHECKING:
     from sqlalchemy.sql import Select, TableClause
 
 from backend.app.datasources.base import CheckOutcome, MonitorSpec
-from backend.app.datasources.sql import core_table, is_sql_identifier
+from backend.app.datasources.sql import core_table, folding_identifier, is_sql_identifier
 
 FRESHNESS = "freshness"
 VOLUME = "volume"
@@ -216,7 +216,7 @@ def _freshness_statement(target: TableClause, config: dict[str, Any]) -> Select[
     from sqlalchemy import func, select
 
     name = _ident(config.get("column"), what="freshness column")
-    return select(func.max(sql_column(name))).select_from(target)
+    return select(func.max(sql_column(folding_identifier(name)))).select_from(target)
 
 
 def _freshness_outcome(scalar: Any, config: dict[str, Any], now: datetime) -> CheckOutcome:

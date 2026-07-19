@@ -35,10 +35,21 @@ anything else is quoted for you, using the right quote character for the engine
 (Snowflake `"`, Databricks backticks). This applies to every SQL path — profiling,
 the aggregate/top-values queries, and freshness/volume monitors alike.
 
-**Still unsupported:** identifiers that need quoting for reasons other than case —
-spaces, dots, leading digits, or non-ASCII characters. These are refused with a
-422 rather than silently mis-resolved. If you have such a column, alias it in a
-view and point the check at that.
+**Still unsupported**, and refused with a 422 rather than silently mis-resolved:
+
+- Identifiers needing quotes for reasons other than case — spaces, dots, leading
+  digits, non-ASCII characters.
+- Genuinely **reserved words** (`order`, `select`, …) used as a column or table
+  name. An unquoted `order` is stored `ORDER`, which neither `order` (parse error)
+  nor `"order"` (wrong case) reaches.
+
+In both cases, alias the column in a view and point the check at that.
+
+One more caveat: in a **three-part** `catalog.schema.table` target, only the table
+gets quoted — a mixed-case *catalog or schema* still folds
+([#936](https://github.com/TheurgicDuke771/DataQ/issues/936)). This affects nobody
+today (Unity Catalog is the only three-part datasource and it resolves identifiers
+case-insensitively), but don't rely on it if that changes.
 
 ### Flat files: formats and CSV delimiters
 

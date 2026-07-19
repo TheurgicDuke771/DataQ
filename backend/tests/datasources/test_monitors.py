@@ -48,6 +48,18 @@ def test_volume_statement_counts_rows_with_catalog() -> None:
     assert _snowflake_sql(statement) == "SELECT count(*) AS count_1 FROM main.sales.orders"
 
 
+def test_upper_case_target_still_resolves() -> None:
+    """Upper-case is the DOMINANT real-world spelling — it's what the catalog
+    dropdown reports for every Snowflake object — and its emitted SQL changed with
+    #476 (`RETAIL.ORDERS` → `"RETAIL"."ORDERS"`). Both resolve to the same object
+    (Snowflake folds unquoted to upper), but the change must be pinned rather than
+    inferred."""
+    statement = build_monitor_statement(
+        "volume", table="ORDERS", schema="RETAIL", catalog=None, config={}
+    )
+    assert _snowflake_sql(statement) == 'SELECT count(*) AS count_1 FROM "RETAIL"."ORDERS"'
+
+
 def test_table_only_qualification() -> None:
     statement = build_monitor_statement(
         "volume", table="orders", schema=None, catalog=None, config={}
@@ -79,6 +91,38 @@ def test_lower_case_identifiers_stay_unquoted_so_they_still_fold() -> None:
     sql = _snowflake_sql(statement)
     assert '"' not in sql
     assert sql == "SELECT max(order_ts) AS max_1 FROM retail.orders"
+
+
+def test_a_lower_case_reserved_word_is_not_quoted_into_oblivion() -> None:
+    """SQLAlchemy's Snowflake dialect reserves `copy`; **Snowflake does not**. Left
+    to the compiler's defaults, a column stored COPY (created unquoted as `copy`)
+    would be emitted `"copy"` and stop resolving — reintroducing the exact #476
+    failure for one word, on a path that worked before the fix.
+
+    So the quote decision is ours and depends only on case, never on the dialect's
+    reserved-word set."""
+    statement = build_monitor_statement(
+        "freshness", table="orders", schema="retail", catalog=None, config={"column": "copy"}
+    )
+    assert _snowflake_sql(statement) == "SELECT max(copy) AS max_1 FROM retail.orders"
+
+
+def test_three_part_names_do_not_quote_the_catalog_or_schema() -> None:
+    """Pins a KNOWN LIMIT, so it can't be mistaken for a guarantee.
+
+    Core's `schema=` slot takes one string, so a `catalog.schema` namespace must be
+    passed unquoted for the dialect to emit dotted parts — which suppresses quoting
+    for the catalog and schema as well. Only the table is quote-correct in the
+    3-part form. Building the namespace from pre-quoted parts would mean picking
+    the quote character ourselves, the dialect-specific mistake #476 exists to
+    avoid.
+
+    Currently unreachable: Unity Catalog is the only caller that passes a catalog
+    and folds case-insensitively; Snowflake passes catalog=None. Tracked as #936."""
+    statement = build_monitor_statement(
+        "volume", table="Orders", schema="Retail", catalog="MyCat", config={}
+    )
+    assert _snowflake_sql(statement) == 'SELECT count(*) AS count_1 FROM MyCat.Retail."Orders"'
 
 
 def test_quoting_follows_the_dialect_not_a_hardcoded_character() -> None:

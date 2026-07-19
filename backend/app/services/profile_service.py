@@ -60,7 +60,7 @@ from backend.app.datasources.snowflake import (
     build_connect_args,
     build_connection_string,
 )
-from backend.app.datasources.sql import core_table, is_sql_identifier
+from backend.app.datasources.sql import core_table, folding_identifier, is_sql_identifier
 from backend.app.datasources.unity_catalog import UnityCatalogConfig, build_databricks_url
 from backend.app.db.models import Connection
 from backend.app.services.column_classification import ColumnClass, classify_column
@@ -193,7 +193,7 @@ def build_aggregate_query(
     """
     projection: list[Any] = [func.count().label("row_count")]
     for i, col in enumerate(columns):
-        c: Any = column(validate_identifier(col))
+        c: Any = column(folding_identifier(validate_identifier(col)))
         projection.append((func.count() - func.count(c)).label(f"nulls_{i}"))
         projection.append(func.count(distinct(c)).label(f"distinct_{i}"))
         projection.append(func.min(c).label(f"min_{i}"))
@@ -205,7 +205,7 @@ def build_top_values_query(
     schema: str, table_name: str, col: str, top_n: int, catalog: str | None = None
 ) -> Select[Any]:
     """Most frequent non-null values for one column (highest count first)."""
-    c: Any = column(validate_identifier(col))
+    c: Any = column(folding_identifier(validate_identifier(col)))
     freq = func.count().label("freq")
     return (
         select(c.label("value"), freq)
