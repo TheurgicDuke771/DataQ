@@ -30,11 +30,27 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
+# A migration must never wait forever for a lock (#753 migration-safety audit).
+# `session.py` set this on the APP engine after #854 — an unbounded lock wait took
+# production down — but alembic builds its own engine here, so the migrate job was
+# still exposed: `dataq-app-migrate` runs BEFORE the api/worker roll, while the old
+# containers' beat is still writing every 10 minutes, so any DDL taking ACCESS
+# EXCLUSIVE can collide with an in-flight write. Unbounded, that collision hangs the
+# deploy (and holds locks while it hangs); bounded, it fails fast, visibly, and
+# retryably. Set on the ENGINE for the same reason session.py does — a per-migration
+# `SET LOCAL` leaves the next migration exposed.
+#
+# Longer than the app's 5s: a migration is rarer, more important, and legitimately
+# may wait out a short transaction rather than fail a deploy on a brush.
+_MIGRATION_LOCK_TIMEOUT_MS = 15_000
+
+
 def run_migrations_online() -> None:
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        connect_args={"options": f"-c lock_timeout={int(_MIGRATION_LOCK_TIMEOUT_MS)}"},
     )
     with connectable.connect() as connection:
         context.configure(

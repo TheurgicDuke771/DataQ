@@ -20,7 +20,7 @@ from pydantic import ConfigDict, Field, field_validator
 from sqlalchemy.orm import Session
 
 from backend.app.api.v1._base import ApiModel
-from backend.app.core.auth import get_current_user
+from backend.app.core.auth import get_current_user, is_workspace_admin
 from backend.app.core.secrets import SecretStore, get_secret_store
 from backend.app.core.uri_credentials import redact_config_uris
 from backend.app.db.models import Connection, User
@@ -178,7 +178,15 @@ def delete_connection(
     db: Annotated[Session, Depends(get_db)],
     secret_store: Annotated[SecretStore, Depends(get_secret_store)],
 ) -> None:
-    svc.delete_connection(db, connection_id, secret_store=secret_store)
+    # Actor identity gates which dependent-suite NAMES a 409 may echo back
+    # (ADR 0027 grants; #927 review) — admins see all names.
+    svc.delete_connection(
+        db,
+        connection_id,
+        secret_store=secret_store,
+        actor_id=current_user.id,
+        actor_is_admin=is_workspace_admin(current_user),
+    )
 
 
 @router.post(

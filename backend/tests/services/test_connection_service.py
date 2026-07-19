@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from backend.app.core.secrets import SecretNotFoundError, SecretWriteError
 from backend.app.db.models import Asset, Connection, ConnectionVersion, Suite, User
@@ -263,7 +263,7 @@ def test_delete_removes_row_and_secret(db_session: Any) -> None:
     conn = _create(db_session, store)
     ref = conn.secret_ref
     assert ref in store.data  # credential was written through on create
-    svc.delete_connection(db_session, conn.id, secret_store=store)
+    svc.delete_connection(db_session, conn.id, secret_store=store, actor_id=conn.created_by)
     with pytest.raises(ConnectionNotFoundError):
         svc.get_connection(db_session, conn.id)
     assert ref not in store.data  # #372: orphaned credential removed on delete
@@ -271,7 +271,9 @@ def test_delete_removes_row_and_secret(db_session: Any) -> None:
 
 def test_delete_unknown_raises_not_found(db_session: Any) -> None:
     with pytest.raises(ConnectionNotFoundError):
-        svc.delete_connection(db_session, uuid.uuid4(), secret_store=FakeStore())
+        svc.delete_connection(
+            db_session, uuid.uuid4(), secret_store=FakeStore(), actor_id=uuid.uuid4()
+        )
 
 
 def test_delete_with_dependent_suites_raises_409_not_500(db_session: Any) -> None:
@@ -293,7 +295,7 @@ def test_delete_with_dependent_suites_raises_409_not_500(db_session: Any) -> Non
     db_session.commit()
 
     with pytest.raises(svc.ConnectionInUseError) as exc:
-        svc.delete_connection(db_session, conn.id, secret_store=store)
+        svc.delete_connection(db_session, conn.id, secret_store=store, actor_id=owner.id)
     detail = exc.value.detail
     assert detail["total"] == 1
     assert detail["truncated"] is False
@@ -304,9 +306,75 @@ def test_delete_with_dependent_suites_raises_409_not_500(db_session: Any) -> Non
 
     # Removing the dependent unblocks the delete.
     suite_service.delete_suite(db_session, suite.id)
-    svc.delete_connection(db_session, conn.id, secret_store=store)
+    svc.delete_connection(db_session, conn.id, secret_store=store, actor_id=owner.id)
     with pytest.raises(ConnectionNotFoundError):
         svc.get_connection(db_session, conn.id)
+
+
+def test_delete_409_hides_suite_names_outside_the_actors_grants(db_session: Any) -> None:
+    """#927 review: suite NAMES are grant-scoped (ADR 0027) — a caller with no
+    grant on a dependent suite gets the count, never the name (the suite endpoint
+    404-no-leaks it; this 409 must not defeat that one request over)."""
+    store = FakeStore()
+    conn = _create(db_session, store)
+    stranger_owner = _user(db_session)
+    suite_service.create_suite(
+        db_session,
+        name="strangers-secret-suite",
+        description=None,
+        connection_id=conn.id,
+        created_by=stranger_owner.id,
+        target=None,
+    )
+    db_session.commit()
+
+    outsider = _user(db_session)
+    with pytest.raises(svc.ConnectionInUseError) as exc:
+        svc.delete_connection(db_session, conn.id, secret_store=store, actor_id=outsider.id)
+    detail = exc.value.detail
+    assert detail["total"] == 1
+    assert detail["restricted"] == 1
+    assert detail["suites"] == []  # counted, never named
+    assert "strangers-secret-suite" not in str(detail)
+
+    # A workspace-admin actor sees the full sample.
+    with pytest.raises(svc.ConnectionInUseError) as exc:
+        svc.delete_connection(
+            db_session, conn.id, secret_store=store, actor_id=outsider.id, actor_is_admin=True
+        )
+    detail = exc.value.detail
+    assert detail["restricted"] == 0
+    assert detail["suites"][0]["name"] == "strangers-secret-suite"
+
+
+def test_delete_orchestration_connection_cascades_pipeline_runs(db_session: Any) -> None:
+    """#927 review: pipeline_runs are observations polled THROUGH the connection —
+    they cascade with it (migration a3b4c5d6e7f8) instead of 500ing the delete."""
+    from backend.app.db.models import PipelineRun
+
+    store = FakeStore()
+    conn = _create(
+        db_session, store, name="af-dev", conn_type="airflow", config=dict(_AIRFLOW_CONFIG)
+    )
+    db_session.add(
+        PipelineRun(
+            provider="airflow",
+            connection_id=conn.id,
+            provider_run_id="run-1",
+            pipeline_or_dag_id="dag_a",
+            env="dev",
+            status="succeeded",
+        )
+    )
+    db_session.commit()
+
+    svc.delete_connection(db_session, conn.id, secret_store=store, actor_id=conn.created_by)
+    assert (
+        db_session.scalar(
+            select(func.count()).select_from(PipelineRun).where(PipelineRun.provider == "airflow")
+        )
+        == 0
+    )
 
 
 # ───────────────────────── test connectivity ───────────────────────
@@ -631,5 +699,5 @@ def test_delete_connection_cascades_versions(db_session: Any) -> None:
     """Cascade delete is accepted policy — history is not retained past deletion."""
     conn = _create(db_session, FakeStore())
     assert len(_versions(db_session, conn.id)) == 1
-    svc.delete_connection(db_session, conn.id, secret_store=FakeStore())
+    svc.delete_connection(db_session, conn.id, secret_store=FakeStore(), actor_id=conn.created_by)
     assert _versions(db_session, conn.id) == []

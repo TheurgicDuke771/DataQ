@@ -31,6 +31,7 @@ from backend.app.datasources.registry import (
 )
 from backend.app.db.models import ENVS, Check, Connection, ConnectionVersion, Suite
 from backend.app.services.asset_service import resolve_and_upsert_asset
+from backend.app.services.suite_service import accessible_suite_ids
 
 log = get_logger(__name__)
 
@@ -401,65 +402,119 @@ def list_connection_versions(session: Session, connection_id: uuid.UUID) -> list
     )
 
 
+def _dependent_suites_detail(
+    session: Session,
+    connection_id: uuid.UUID,
+    *,
+    actor_id: uuid.UUID,
+    actor_is_admin: bool,
+) -> dict[str, Any] | None:
+    """The 409 detail for suites still bound to the connection, or None when
+    clear. Suite NAMES are grant-scoped (ADR 0027/0037) — the sample lists only
+    suites the actor can view; the rest surface as a `restricted` count, never
+    names (#927 review: naming a stranger's suites in a 409 would defeat the
+    suite endpoint's 404-no-leak one request over)."""
+    total = session.scalar(
+        select(func.count()).select_from(Suite).where(Suite.connection_id == connection_id)
+    )
+    if not total:
+        return None
+    viewable = accessible_suite_ids(actor_id, include_all=actor_is_admin)
+    sample = list(
+        session.execute(
+            select(Suite.name, Suite.id)
+            .where(Suite.connection_id == connection_id, Suite.id.in_(viewable))
+            .order_by(Suite.created_at)
+            .limit(10)
+        )
+    )
+    viewable_total = session.scalar(
+        select(func.count())
+        .select_from(Suite)
+        .where(Suite.connection_id == connection_id, Suite.id.in_(viewable))
+    )
+    return {
+        "connection_id": str(connection_id),
+        "total": total,
+        "restricted": total - (viewable_total or 0),
+        "truncated": (viewable_total or 0) > len(sample),
+        "suites": [{"name": name, "id": str(sid)} for name, sid in sample],
+    }
+
+
+def _dependent_source_checks_detail(
+    session: Session,
+    connection_id: uuid.UUID,
+    *,
+    actor_id: uuid.UUID,
+    actor_is_admin: bool,
+) -> dict[str, Any] | None:
+    """The 409 detail for comparison checks sourcing this connection (ADR 0015),
+    or None when clear. Check names ride their suite's grant — same gating as
+    `_dependent_suites_detail`."""
+    total = session.scalar(
+        select(func.count()).select_from(Check).where(Check.source_connection_id == connection_id)
+    )
+    if not total:
+        return None
+    viewable = accessible_suite_ids(actor_id, include_all=actor_is_admin)
+    sample = list(
+        session.execute(
+            select(Check.name, Check.suite_id)
+            .where(Check.source_connection_id == connection_id, Check.suite_id.in_(viewable))
+            .order_by(Check.created_at)
+            .limit(10)
+        )
+    )
+    viewable_total = session.scalar(
+        select(func.count())
+        .select_from(Check)
+        .where(Check.source_connection_id == connection_id, Check.suite_id.in_(viewable))
+    )
+    return {
+        "connection_id": str(connection_id),
+        "total": total,
+        "restricted": total - (viewable_total or 0),
+        "truncated": (viewable_total or 0) > len(sample),
+        "checks": [{"name": name, "suite_id": str(sid)} for name, sid in sample],
+    }
+
+
 def delete_connection(
-    session: Session, connection_id: uuid.UUID, *, secret_store: SecretStore
+    session: Session,
+    connection_id: uuid.UUID,
+    *,
+    secret_store: SecretStore,
+    actor_id: uuid.UUID,
+    actor_is_admin: bool = False,
 ) -> None:
     conn = get_connection(session, connection_id)
     # Delete guard #1 (#753): suites still run against this connection. No
     # cascade is offered — deleting a connection must never silently take a
     # suite (and its checks/runs/results, #540) with it; the user deletes or
-    # repoints the suites first, and the 409 names them. Same bounded-sample
-    # shape as the comparison guard below.
-    suite_total = session.scalar(
-        select(func.count()).select_from(Suite).where(Suite.connection_id == conn.id)
+    # repoints the suites first, and the 409 counts them (naming only the ones
+    # the actor's grants cover).
+    suites_detail = _dependent_suites_detail(
+        session, conn.id, actor_id=actor_id, actor_is_admin=actor_is_admin
     )
-    if suite_total:
-        suite_sample = list(
-            session.execute(
-                select(Suite.name, Suite.id)
-                .where(Suite.connection_id == conn.id)
-                .order_by(Suite.created_at)
-                .limit(10)
-            )
-        )
+    if suites_detail:
         raise ConnectionInUseError(
-            f"{suite_total} suite(s) run against this connection — " "delete or repoint them first",
-            detail={
-                "connection_id": str(connection_id),
-                "total": suite_total,
-                "truncated": suite_total > len(suite_sample),
-                "suites": [{"name": name, "id": str(sid)} for name, sid in suite_sample],
-            },
+            f"{suites_detail['total']} suite(s) run against this connection — "
+            "delete or repoint them first",
+            detail=suites_detail,
         )
     # Delete guard #2 (ADR 0015): comparison checks referencing this connection
-    # as their source hold an ON DELETE RESTRICT FK — pre-check and 409 with the
-    # dependents so the user knows what to repoint/delete first. `total` is the
-    # real count; `checks` is a bounded sample (a 409 must not echo thousands
-    # of rows), flagged via `truncated` so a scripted remediation can't
-    # mistake the sample for the full set.
-    total = session.scalar(
-        select(func.count()).select_from(Check).where(Check.source_connection_id == conn.id)
+    # as their source hold an ON DELETE RESTRICT FK. Bounded sample + true
+    # total, `truncated`-flagged so a scripted remediation can't mistake the
+    # sample for the full set.
+    checks_detail = _dependent_source_checks_detail(
+        session, conn.id, actor_id=actor_id, actor_is_admin=actor_is_admin
     )
-    if total:
-        dependents = list(
-            session.execute(
-                select(Check.name, Check.suite_id)
-                .where(Check.source_connection_id == conn.id)
-                .order_by(Check.created_at)
-                .limit(10)
-            )
-        )
+    if checks_detail:
         raise ConnectionInUseError(
-            f"this connection is the comparison source of {total} check(s) — "
-            "repoint or delete them first",
-            detail={
-                "connection_id": str(connection_id),
-                "total": total,
-                "truncated": total > len(dependents),
-                "checks": [
-                    {"name": name, "suite_id": str(suite_id)} for name, suite_id in dependents
-                ],
-            },
+            f"this connection is the comparison source of {checks_detail['total']} "
+            "check(s) — repoint or delete them first",
+            detail=checks_detail,
         )
     secret_ref = conn.secret_ref
     session.delete(conn)
@@ -467,23 +522,31 @@ def delete_connection(
         session.commit()
     except IntegrityError as exc:
         # TOCTOU backstop: a suite or comparison check created between the
-        # pre-checks and this commit trips its FK — map both to the same 409 the
-        # pre-checks raise, never a raw 500 (#753). Any other integrity failure
-        # is not this race; re-raise.
+        # pre-checks and this commit trips its FK — re-derive the SAME detail
+        # shape the pre-checks raise (the dependents exist now, that's why the
+        # FK fired) and 409, never a raw 500 (#753/#927 review). Any other
+        # integrity failure is not this race; re-raise. (pipeline_runs no longer
+        # reaches here — its FK cascades, migration a3b4c5d6e7f8.)
         session.rollback()
         cause = str(exc.orig)
         if "fk_suites_connection_id_connections" in cause:
             raise ConnectionInUseError(
                 "a suite was bound to this connection while the delete was in "
                 "flight — delete or repoint it first",
-                detail={"connection_id": str(connection_id)},
+                detail=_dependent_suites_detail(
+                    session, connection_id, actor_id=actor_id, actor_is_admin=actor_is_admin
+                )
+                or {"connection_id": str(connection_id)},
             ) from exc
         if "fk_checks_source_connection_id_connections" not in cause:
             raise
         raise ConnectionInUseError(
             "this connection became the comparison source of a check while the "
             "delete was in flight — repoint or delete that check first",
-            detail={"connection_id": str(connection_id)},
+            detail=_dependent_source_checks_detail(
+                session, connection_id, actor_id=actor_id, actor_is_admin=actor_is_admin
+            )
+            or {"connection_id": str(connection_id)},
         ) from exc
     # Best-effort remove the orphaned credential from the store (#372) — after the
     # row is gone, and fail-soft (delete never raises), so a store hiccup can't 500

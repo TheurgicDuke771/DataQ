@@ -676,8 +676,12 @@ class PipelineRun(Base):
 
     id: Mapped[uuid.UUID] = _uuid_pk()
     provider: Mapped[str] = mapped_column(String(16), nullable=False)
+    # CASCADE (#753 review): observation rows are polled *through* this connection
+    # and are meaningless once it is gone — same rationale as lineage_edges. Without
+    # it, deleting any orchestration connection that had ever been polled 500'd on
+    # the bare FK (migration a3b4c5d6e7f8).
     connection_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("connections.id"), nullable=False
+        UUID(as_uuid=True), ForeignKey("connections.id", ondelete="CASCADE"), nullable=False
     )
     provider_run_id: Mapped[str] = mapped_column(String(256), nullable=False)
     pipeline_or_dag_id: Mapped[str] = mapped_column(String(256), nullable=False)
