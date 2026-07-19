@@ -5,7 +5,7 @@ the target table and turns the result into a badness ``metric_value`` that the
 severity layer bands (higher = worse, ADR 0016), exactly like a GX check's
 unexpected-%. This module is the pure, datasource-agnostic core:
 
-* :func:`build_monitor_sql` — the aggregate query a SQL runner executes;
+* :func:`build_monitor_statement` — the aggregate query a SQL runner executes;
 * :func:`monitor_outcome` — scalar result + check config → ``CheckOutcome``.
 
 The per-datasource *execution* (build an engine/URL, own its lifecycle) lives in
@@ -33,9 +33,10 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Engine
+    from sqlalchemy.sql import Select, TableClause
 
 from backend.app.datasources.base import CheckOutcome, MonitorSpec
-from backend.app.datasources.sql import is_sql_identifier
+from backend.app.datasources.sql import core_table, is_sql_identifier
 
 FRESHNESS = "freshness"
 VOLUME = "volume"
@@ -71,43 +72,53 @@ def _ident(name: object, *, what: str) -> str:
     return name
 
 
-def qualified_table(*, table: str, schema: str | None, catalog: str | None) -> str:
-    """A dotted, identifier-validated ``[catalog.][schema.]table`` for a monitor query.
+def qualified_table(*, table: str, schema: str | None, catalog: str | None) -> TableClause:
+    """An identifier-validated Core table clause for a monitor's target.
 
     A ``catalog`` with no ``schema`` is rejected: skipping the None ``schema`` would
     emit a 2-part ``catalog.table``, which Databricks/Unity Catalog resolves as
     ``schema.table`` (wrong object), not the intended 3-part name. So a catalog
     requires a schema — a misqualified-name footgun raised as a clear config error
-    rather than a confusing "table not found" at query time."""
+    rather than a confusing "table not found" at query time.
+
+    Validation happens here (for the `MonitorConfigError` message); construction is
+    the shared `datasources.sql.core_table`, so the dialect does the quoting."""
     if catalog is not None and schema is None:
         raise MonitorConfigError(
             f"monitor target {table!r} has a catalog but no schema — "
             "a catalog needs a schema (else catalog.table misresolves as schema.table)"
         )
-    parts = [
-        _ident(part, what=label)
-        for part, label in ((catalog, "catalog"), (schema, "schema"), (table, "table"))
-        if part is not None
-    ]
-    return ".".join(parts)
+    for part, label in ((catalog, "catalog"), (schema, "schema"), (table, "table")):
+        if part is not None:
+            _ident(part, what=label)
+    return core_table(table=table, schema=schema, catalog=catalog)
 
 
-def build_monitor_sql(
+def build_monitor_statement(
     kind: str, *, table: str, schema: str | None, catalog: str | None, config: dict[str, Any]
-) -> str:
-    """The scalar-aggregate SQL a SQL runner executes for this monitor.
+) -> Select[Any]:
+    """The scalar-aggregate query a SQL runner executes for this monitor.
 
     ``freshness`` → ``SELECT MAX(<column>) ...``; ``volume`` → ``SELECT COUNT(*) ...``.
-    Identifiers are validated (no bind slot for them), so a bad column/table raises
-    :class:`MonitorConfigError` rather than building an injectable query. Dispatch
-    is the #726 registry — a kind with no scalar-SQL form (the stateful kinds)
-    refuses here rather than building a wrong query.
+
+    Returns a **SQLAlchemy Core statement, not a SQL string** (#476). Identifiers
+    have no bind slot, so the pre-Core version interpolated the validated name
+    directly — which silently folded a quoted mixed-case column (``"Amount"`` was
+    emitted bare and resolved as ``AMOUNT``, i.e. not found). Core hands the
+    quoting decision to the dialect: lower-case names stay bare and fold exactly as
+    they always did, anything else is quoted. Hand-rolled quoting could not fix
+    this, because the quote character differs per dialect (Snowflake ``"`` vs
+    Databricks backticks).
+
+    A bad column/table raises :class:`MonitorConfigError` rather than building a
+    wrong query. Dispatch is the #726 registry — a kind with no scalar form (the
+    stateful kinds) refuses here.
     """
     strategy = _strategy(kind)
-    if strategy.build_sql is None:
+    if strategy.build_statement is None:
         raise MonitorConfigError(f"monitor kind {kind!r} has no scalar-SQL form")
     target = qualified_table(table=table, schema=schema, catalog=catalog)
-    return strategy.build_sql(target, config)
+    return strategy.build_statement(target, config)
 
 
 def _freshness_age_hours(max_timestamp: datetime, now: datetime) -> float:
@@ -190,18 +201,22 @@ def monitor_outcome(
 # ───────────────────── per-kind strategies (#726) ─────────────────────
 #
 # Adding a monitor kind = one strategy entry in MONITOR_KIND_REGISTRY below —
-# never a third parallel if-chain. `build_sql` receives the already-validated
-# qualified target; identifiers can't be bound parameters, so validated
-# interpolation is the correct construction (hence the S608 suppressions).
+# never a third parallel if-chain. `build_statement` receives the already-validated
+# target as a Core table clause and returns a Core `Select`; nothing here builds a
+# SQL string, so identifier quoting is the dialect's job at execution time (#476)
+# and there is no interpolation left for Bandit's S608/B608 to flag.
 
 
 def _validate_freshness(config: dict[str, Any]) -> None:
     _ident(config.get("column"), what="freshness column")
 
 
-def _freshness_sql(target: str, config: dict[str, Any]) -> str:
-    column = _ident(config.get("column"), what="freshness column")
-    return f"SELECT MAX({column}) FROM {target}"  # noqa: S608  # nosec B608
+def _freshness_statement(target: TableClause, config: dict[str, Any]) -> Select[Any]:
+    from sqlalchemy import column as sql_column
+    from sqlalchemy import func, select
+
+    name = _ident(config.get("column"), what="freshness column")
+    return select(func.max(sql_column(name))).select_from(target)
 
 
 def _freshness_outcome(scalar: Any, config: dict[str, Any], now: datetime) -> CheckOutcome:
@@ -236,8 +251,10 @@ def _validate_volume(config: dict[str, Any]) -> None:
     _volume_bounds(config)
 
 
-def _volume_sql(target: str, config: dict[str, Any]) -> str:
-    return f"SELECT COUNT(*) FROM {target}"  # noqa: S608  # nosec B608
+def _volume_statement(target: TableClause, config: dict[str, Any]) -> Select[Any]:
+    from sqlalchemy import func, select
+
+    return select(func.count()).select_from(target)
 
 
 def _volume_outcome(scalar: Any, config: dict[str, Any], now: datetime) -> CheckOutcome:
@@ -304,21 +321,21 @@ class MonitorKindStrategy:
     """One monitor kind's behavior behind the #726 registry.
 
     ``validate_config`` is the DB-free structural gate; ``outcome`` bands the
-    scalar; ``build_sql`` renders the scalar-aggregate over an already-validated
-    qualified target — ``None`` for kinds with no scalar-SQL form (the stateful
-    kinds, #592/#593, evaluate through their own path)."""
+    scalar; ``build_statement`` renders the scalar-aggregate as a Core `Select`
+    over an already-validated target — ``None`` for kinds with no scalar-SQL form
+    (the stateful kinds, #592/#593, evaluate through their own path)."""
 
     kind: str
     validate_config: Callable[[dict[str, Any]], None]
     outcome: Callable[[Any, dict[str, Any], datetime], CheckOutcome]
-    build_sql: Callable[[str, dict[str, Any]], str] | None
+    build_statement: Callable[[TableClause, dict[str, Any]], Select[Any]] | None
 
 
 MONITOR_KIND_REGISTRY: dict[str, MonitorKindStrategy] = {
     FRESHNESS: MonitorKindStrategy(
-        FRESHNESS, _validate_freshness, _freshness_outcome, _freshness_sql
+        FRESHNESS, _validate_freshness, _freshness_outcome, _freshness_statement
     ),
-    VOLUME: MonitorKindStrategy(VOLUME, _validate_volume, _volume_outcome, _volume_sql),
+    VOLUME: MonitorKindStrategy(VOLUME, _validate_volume, _volume_outcome, _volume_statement),
     # Stateful (#592): no scalar-SQL form — the run path routes it through the
     # baseline-diff executor in `services/schema_drift.py`, never run_monitors.
     SCHEMA_DRIFT: MonitorKindStrategy(
@@ -338,8 +355,12 @@ MONITOR_KINDS = tuple(MONITOR_KIND_REGISTRY)
 # The run-path partition (#592): scalar kinds go to the runners' `run_monitors`
 # (gated by their advertised capability, #429); stateful kinds go to the
 # session-aware executor the worker injects (they need the baseline store).
-SCALAR_MONITOR_KINDS = tuple(k for k, s in MONITOR_KIND_REGISTRY.items() if s.build_sql is not None)
-STATEFUL_MONITOR_KINDS = tuple(k for k, s in MONITOR_KIND_REGISTRY.items() if s.build_sql is None)
+SCALAR_MONITOR_KINDS = tuple(
+    k for k, s in MONITOR_KIND_REGISTRY.items() if s.build_statement is not None
+)
+STATEFUL_MONITOR_KINDS = tuple(
+    k for k, s in MONITOR_KIND_REGISTRY.items() if s.build_statement is None
+)
 
 
 def _strategy(kind: str) -> MonitorKindStrategy:
@@ -386,7 +407,7 @@ def run_monitor_specs(
 
 
 def evaluate_monitors(
-    fetch_scalar: Callable[[str], Any],
+    fetch_scalar: Callable[[Select[Any]], Any],
     *,
     table: str,
     schema: str | None,
@@ -394,17 +415,21 @@ def evaluate_monitors(
     monitors: list[MonitorSpec],
 ) -> list[CheckOutcome]:
     """Run a list of monitors over an already-open connection via `run_monitor_specs`,
-    with the scalar sourced from a SQL aggregate. ``fetch_scalar`` runs a SQL string
-    and returns its scalar — the runner closes over its connection, so this stays
-    DB-free and unit-testable. Connection *establishment* failure is the runner's
-    concern (it opens the connection before calling this)."""
+    with the scalar sourced from a SQL aggregate. ``fetch_scalar`` executes a Core
+    statement and returns its scalar — the runner closes over its connection, so this
+    stays DB-free and unit-testable. Connection *establishment* failure is the runner's
+    concern (it opens the connection before calling this).
+
+    The statement stays uncompiled all the way to the connection so the **connection's
+    own dialect** renders it (#476) — that is what makes identifier quoting correct
+    per warehouse instead of guessed here."""
     now = datetime.now(UTC)
 
     def scalar_for(spec: MonitorSpec) -> Any:
-        sql = build_monitor_sql(
+        statement = build_monitor_statement(
             spec.kind, table=table, schema=schema, catalog=catalog, config=spec.config
         )
-        return fetch_scalar(sql)
+        return fetch_scalar(statement)
 
     return run_monitor_specs(scalar_for, monitors=monitors, now=now)
 
@@ -426,11 +451,9 @@ def run_monitors_over_engine(
     per-monitor loop). The engine's lifecycle (build + dispose) belongs to the
     caller — the seam #427 threads a per-run shared engine through.
     """
-    from sqlalchemy import text  # lazy: keep sqlalchemy off this module's import cost
-
     with engine.connect() as conn:
         return evaluate_monitors(
-            lambda sql: conn.execute(text(sql)).scalar(),
+            lambda statement: conn.execute(statement).scalar(),
             table=table,
             schema=schema,
             catalog=catalog,

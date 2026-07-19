@@ -19,7 +19,10 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
-from typing import Any, Final
+from typing import TYPE_CHECKING, Any, Final
+
+if TYPE_CHECKING:
+    from sqlalchemy.sql import TableClause
 
 # The Snowflake/Databricks unquoted-identifier set: letter/underscore lead, then
 # word chars or `$`. Private — go through `is_sql_identifier`, whose isinstance
@@ -37,6 +40,47 @@ def is_sql_identifier(name: object) -> bool:
     one trailing ``\\n``, which has no business in an identifier.
     """
     return isinstance(name, str) and bool(_SQL_IDENTIFIER_RE.fullmatch(name))
+
+
+def core_table(*, table: str, schema: str | None, catalog: str | None) -> TableClause:
+    """A Core table clause for ``[catalog.][schema.]table`` — the dialect quotes it.
+
+    The one construction shared by the profiler's query builders and the monitor
+    engine (#476). Going through Core rather than f-string interpolation is what
+    makes a **mixed-case identifier** work at all: the compiler quotes anything
+    that isn't already lower-case (``"Amount"``) and leaves a lower-case name bare
+    so the warehouse folds it as it always has (``order_ts`` → ``ORDER_TS`` on
+    Snowflake). That rule is also why this is behaviour-preserving for every
+    identifier that works today.
+
+    It must be Core and not hand-rolled quoting because the quote character is
+    **dialect-specific** — Snowflake uses ``"``, Databricks/Unity Catalog uses
+    backticks and reads ``"..."`` as a string literal — and this module is shared
+    by both.
+
+    With a ``catalog`` the namespace is ``catalog.schema`` passed as an *unquoted*
+    ``quoted_name``, so the dialect emits three dotted parts rather than quoting
+    the dotted string as one identifier. That one spot is raw interpolation, hence
+    the allowlist check on every part here rather than trusting callers (they
+    validate first for a good error message; this is the injection guarantee).
+
+    A ``catalog`` with no ``schema`` is refused: dropping the ``None`` schema would
+    emit a 2-part ``catalog.table``, which Unity Catalog resolves as
+    ``schema.table`` — a wrong object rather than an error.
+    """
+    from sqlalchemy import table as table_clause
+    from sqlalchemy.sql import quoted_name
+
+    if catalog is not None and schema is None:
+        raise ValueError(f"table {table!r} has a catalog but no schema")
+    for part, label in ((table, "table"), (schema, "schema"), (catalog, "catalog")):
+        if part is not None and not is_sql_identifier(part):
+            raise ValueError(f"invalid {label} identifier: {part!r}")
+
+    namespace: Any = schema
+    if catalog is not None:
+        namespace = quoted_name(f"{catalog}.{schema}", quote=False)
+    return table_clause(table, schema=namespace)
 
 
 class LazyEngine:

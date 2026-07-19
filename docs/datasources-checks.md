@@ -23,6 +23,23 @@ atomically via **Re-auth**. Leave the passphrase blank for an unencrypted key.
 Key-pair connections also require **Role** (the GX key-pair form mandates one for suite
 runs, so it is validated when the connection is saved).
 
+### Identifier casing (Snowflake / Unity Catalog)
+
+Warehouses fold **unquoted** identifiers — Snowflake upper-cases them — so a column
+created as `order_ts` is really stored as `ORDER_TS`, while one created as
+`"Amount"` is stored mixed-case and is only reachable quoted.
+
+DataQ handles both: type the name **exactly as the column dropdown reports it**.
+Lower-case names are sent unquoted and fold as the warehouse always folded them;
+anything else is quoted for you, using the right quote character for the engine
+(Snowflake `"`, Databricks backticks). This applies to every SQL path — profiling,
+the aggregate/top-values queries, and freshness/volume monitors alike.
+
+**Still unsupported:** identifiers that need quoting for reasons other than case —
+spaces, dots, leading digits, or non-ASCII characters. These are refused with a
+422 rather than silently mis-resolved. If you have such a column, alias it in a
+view and point the check at that.
+
 ### Flat files: formats and CSV delimiters
 
 Flat-file connections (ADLS Gen2 / S3) read `.csv` and `.parquet`/`.pq`. **The CSV

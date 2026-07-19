@@ -138,8 +138,14 @@ def _sql_columns(
 
     Identifiers are allowlist-validated before the (only) interpolation — the
     optional catalog prefix; the schema/table land as BOUND parameters, matched
-    case-insensitively to mirror how the engines resolve unquoted identifiers
-    (the profiler's known #476 casing limits apply here identically).
+    case-insensitively to mirror how the engines resolve unquoted identifiers.
+
+    The case-insensitive match is deliberate and stays after #476: this queries
+    ``information_schema`` for *metadata*, where the table name is a VALUE, not an
+    identifier — so a user who typed ``orders`` still finds ``ORDERS``. The
+    ambiguity that creates (several case-variant objects) is resolved below by
+    preferring the exact spelling and refusing a genuinely ambiguous reference,
+    rather than by narrowing the match.
     """
     effective_schema = resolve_effective_schema(connection, schema)
     validate_identifier(table)
