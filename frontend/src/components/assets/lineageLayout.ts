@@ -27,13 +27,10 @@ const PAD = 12;
 
 export interface LaidOutNode {
   id: string;
-  /** Null for a redacted neighbour (#845) — the renderer shows a locked placeholder. */
-  name: string | null;
-  namespace: string | null;
+  name: string;
+  namespace: string;
   env: string | null;
   isMonitored: boolean;
-  /** False → outside the viewer's grants: redacted, and never clickable. */
-  isAccessible: boolean;
   /** The asset under view — rendered as the anchor and not clickable. */
   isCenter: boolean;
   x: number;
@@ -77,7 +74,7 @@ export function buildLineageLayout(
   // Signed-depth column per node: upstream left (negative), downstream right.
   const placed: { node: LaidOutNode; col: number }[] = [
     {
-      node: { ...center, isMonitored: true, isAccessible: true, isCenter: true, x: 0, y: 0 },
+      node: { ...center, isMonitored: true, isCenter: true, x: 0, y: 0 },
       col: 0,
     },
   ];
@@ -98,7 +95,6 @@ export function buildLineageLayout(
         namespace: n.namespace,
         env: n.env,
         isMonitored: n.is_monitored,
-        isAccessible: n.is_accessible,
         isCenter: false,
         x: 0,
         y: 0,

@@ -56,10 +56,6 @@ export function LineageGraph({
     [center, upstream, downstream, edges],
   );
   const isolated = upstream.length === 0 && downstream.length === 0;
-  const restrictedCount = useMemo(
-    () => [...upstream, ...downstream].filter((n) => !n.is_accessible).length,
-    [upstream, downstream],
-  );
 
   return (
     <Card
@@ -177,10 +173,7 @@ export function LineageGraph({
             <GraphNode
               key={n.id}
               node={n}
-              // A redacted neighbour (#845) is not openable — the asset endpoint 404s
-              // it no-leak, so offering the click would just be a dead link, which is
-              // exactly the bug that surfaced this.
-              onOpen={n.isCenter || !n.isAccessible ? undefined : () => onOpenAsset(n.id)}
+              onOpen={n.isCenter ? undefined : () => onOpenAsset(n.id)}
             />
           ))}
         </svg>
@@ -212,16 +205,6 @@ export function LineageGraph({
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
             Click any node to open that asset.
           </Typography.Text>
-          {/* State the redaction rather than letting the reader infer it from a locked
-              box. The COUNT is disclosed, the identities are not (#845) — so the blast
-              radius stays true without naming assets the viewer has no grant for. */}
-          {restrictedCount > 0 && (
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              {restrictedCount === 1
-                ? '1 connected asset is outside your access.'
-                : `${restrictedCount} connected assets are outside your access.`}
-            </Typography.Text>
-          )}
         </Flex>
       )}
     </Card>
@@ -238,11 +221,6 @@ function GraphNode({
   onOpen?: () => void;
 }) {
   const interactive = onOpen !== undefined;
-  // A neighbour outside the viewer's grants (#845). The backend already withheld its
-  // name/namespace/env, so there is nothing here to hide — this only decides how the
-  // placeholder reads. Deliberately still DRAWN: omitting it would tell the viewer
-  // "nothing consumes this table", which is false.
-  const redacted = !node.isCenter && !node.isAccessible;
   return (
     <g
       transform={`translate(${node.x}, ${node.y})`}
@@ -262,52 +240,42 @@ function GraphNode({
       // The centre is labelled too (it just isn't actionable), so a screen reader
       // announces which asset the graph is centred on.
       aria-label={
-        redacted
-          ? 'A connected asset outside your access'
-          : interactive
-            ? `Open asset ${node.name}${node.isMonitored ? ' (monitored)' : ''}`
-            : `${node.name} (this asset)`
+        interactive
+          ? `Open asset ${node.name}${node.isMonitored ? ' (monitored)' : ''}`
+          : `${node.name} (this asset)`
       }
       style={{ cursor: interactive ? 'pointer' : 'default' }}
     >
-      <title>
-        {redacted
-          ? 'This asset is connected to the one you are viewing, but is outside your access.'
-          : `${node.name}\n${node.namespace}`}
-      </title>
+      <title>{`${node.name}\n${node.namespace}`}</title>
       <rect
         width={NODE_W}
         height={NODE_H}
         rx={8}
-        fill={node.isCenter ? BRAND.selectedBg : redacted ? '#fafafa' : '#ffffff'}
+        fill={node.isCenter ? BRAND.selectedBg : '#ffffff'}
         stroke={node.isCenter ? BRAND.primary : node.isMonitored ? '#91caff' : BRAND.border}
         strokeWidth={node.isCenter ? 2 : 1}
-        strokeDasharray={redacted ? '4 3' : undefined}
       />
       <text
         x={10}
         y={21}
         fontSize={12}
         fontWeight={600}
-        fill={redacted ? '#8c8c8c' : BRAND.ink}
-        fontStyle={redacted ? 'italic' : undefined}
+        fill={BRAND.ink}
         style={{ pointerEvents: 'none' }}
       >
-        {redacted ? '🔒 Restricted' : truncate(leafName(node.name ?? ''), 24)}
+        {truncate(leafName(node.name), 24)}
       </text>
       <text x={10} y={38} fontSize={10} fill="#8c8c8c" style={{ pointerEvents: 'none' }}>
         {/* The label, not the raw namespace: a node subtitle has ~28 characters, and
             an Iceberg namespace is a DSN — it truncated to `dev · postgresql+psy…`,
             which told the reader nothing. The full namespace stays in the <title>
             tooltip above (#830). */}
-        {redacted
-          ? 'outside your access'
-          : truncate(
-              node.env
-                ? `${node.env} · ${namespaceLabel(node.namespace ?? '')}`
-                : namespaceLabel(node.namespace ?? ''),
-              28,
-            )}
+        {truncate(
+          node.env
+            ? `${node.env} · ${namespaceLabel(node.namespace)}`
+            : namespaceLabel(node.namespace),
+          28,
+        )}
       </text>
       {/* Monitored must not be colour-only (WCAG 1.4.1): a filled dot marks it, so
           the state survives a colour-blind viewer and a greyscale print. */}

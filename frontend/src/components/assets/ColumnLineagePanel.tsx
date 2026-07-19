@@ -1,4 +1,3 @@
-import { LockOutlined } from '@ant-design/icons';
 import { Card, Empty, Flex, Tag, Typography } from 'antd';
 
 import type { LineageEdge, LineageNode } from '../../api/assets';
@@ -7,16 +6,11 @@ import { nameSegments } from './assetTree';
 /**
  * Column-level lineage for the asset under view (#901) — the direct edges that carry
  * a column-grain refinement, as `upstream column → downstream column` mappings.
+ * Shown in full to every member (ADR 0037 — column names are schema metadata, i.e.
+ * identity, not measurement).
  *
- * Redaction contract (the #845 one-rule, applied SERVER-side): an edge whose far
- * endpoint is outside the viewer's grants arrives with `columns: null` and only
- * `column_count` — rendered here as a locked box ("N column links · restricted
- * asset"), because a hidden asset's column names are schema disclosure. The panel
- * must never render that as "no column lineage": something maps, in N links —
- * the viewer just may not see what.
- *
- * Edges with neither field are table-grain only and are omitted; if no direct edge
- * carries the grain, the panel says so rather than rendering an empty card.
+ * Edges without the column grain are table-level only and are omitted; if no direct
+ * edge carries the grain, the panel says so rather than rendering an empty card.
  */
 export function ColumnLineagePanel({
   centerId,
@@ -33,13 +27,12 @@ export function ColumnLineagePanel({
   const label = (id: string): string => {
     if (id === centerId) return tableName(centerName);
     const node = byId.get(id);
-    if (!node || !node.name) return 'Restricted asset';
-    return tableName(node.name);
+    // Defensive: every edge endpoint should be in the neighbourhood; a dangling
+    // id must degrade to a placeholder, never crash the panel.
+    return node ? tableName(node.name) : 'Unknown asset';
   };
   const direct = edges.filter(
-    (e) =>
-      (e.source === centerId || e.target === centerId) &&
-      (e.columns != null || e.column_count != null),
+    (e) => (e.source === centerId || e.target === centerId) && e.columns != null,
   );
   return (
     <Card size="small" title="Column lineage">
@@ -52,29 +45,19 @@ export function ColumnLineagePanel({
         <Flex vertical gap={12}>
           {direct.map((edge) => {
             const key = `${edge.source}->${edge.target}`;
-            const redacted = edge.columns == null;
             return (
-              <div key={key} data-testid={redacted ? 'column-edge-redacted' : 'column-edge'}>
+              <div key={key} data-testid="column-edge">
                 <Typography.Text strong>
                   {label(edge.source)} → {label(edge.target)}
                 </Typography.Text>{' '}
-                <Tag>{edge.column_count ?? edge.columns?.length ?? 0} column links</Tag>
-                {redacted ? (
-                  // The server withheld the pairs (far endpoint outside the viewer's
-                  // grants) — an honest locked box, never an empty list.
-                  <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-                    <LockOutlined /> Column mappings are hidden — they involve an asset you don't
-                    have access to.
-                  </Typography.Paragraph>
-                ) : (
-                  <Flex vertical gap={2} style={{ marginTop: 4 }}>
-                    {(edge.columns ?? []).map(([up, down]) => (
-                      <Typography.Text key={`${up}->${down}`} code>
-                        {up} → {down}
-                      </Typography.Text>
-                    ))}
-                  </Flex>
-                )}
+                <Tag>{edge.columns?.length ?? 0} column links</Tag>
+                <Flex vertical gap={2} style={{ marginTop: 4 }}>
+                  {(edge.columns ?? []).map(([up, down]) => (
+                    <Typography.Text key={`${up}->${down}`} code>
+                      {up} → {down}
+                    </Typography.Text>
+                  ))}
+                </Flex>
               </div>
             );
           })}

@@ -22,9 +22,11 @@ duplicate or raising an IntegrityError.
 must never fail an already-persisted run — the same contract as the sibling
 ``alerting.dispatch`` / ``lineage.dispatch`` hooks the worker calls next to it.
 
-Visibility derives from suite grants (same rule as the asset view, #760 / ADR
-0027): an incident is visible iff the caller can ``view`` its suite; a
-workspace-admin sees all; anything outside the caller's grants is 404-no-leak.
+Visibility derives from suite grants (ADR 0027): an incident is visible iff the
+caller can ``view`` its suite; a workspace-admin sees all; anything outside the
+caller's grants is 404-no-leak. Deliberately UNCHANGED by ADR 0037 (which opened
+asset *identity* to every member): an incident carries failure evidence —
+itemized measurement, not identity — so it stays behind the suite grants.
 
 The orphan-asset sweep (#770) never retires an asset with incident history:
 ``incidents.asset_id`` is registered in ``asset_service._SWEEP_REFERENCE_GUARDS``

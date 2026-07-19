@@ -4,10 +4,12 @@ import { api } from './client';
  * Assets API — the read-only browse/reason surface over `assets` (ADR 0034,
  * #760). Assets are what users reason about; suites remain how checks execute.
  *
- * **Authz is derived, never granted** (backend `asset_view_service`): an asset is
- * visible iff the caller can view ≥1 suite targeting it, the aggregation is
- * filtered to their grants, and an asset outside their grants 404s (no-leak). The
- * client never has to scope — it just renders what the API returns.
+ * **The ADR 0037 three-layer rule** (backend `asset_view_service`): asset
+ * identity + lineage topology (incl. column pairs) are visible to every member;
+ * the aggregate rollup is workspace-true (over ALL composing suites — one
+ * verdict for every viewer); only the composing-suite list is filtered to the
+ * caller's ADR 0027 grants, the rest collapsing to `restricted_suite_count`.
+ * The client never has to scope — it just renders what the API returns.
  */
 
 /** A suite's latest run outcome — mirrors the backend `RunOutcomeRead`. */
@@ -31,21 +33,18 @@ export interface ComposingSuite {
   latest_run: RunOutcome;
 }
 
-/** List-row aggregation for one visible asset — mirrors `AssetSummaryRead`. */
+/** List-row aggregation for one asset — mirrors `AssetSummaryRead`. Workspace-true
+ *  (ADR 0037): identical for every viewer, aggregated over ALL composing suites. */
 export interface AssetSummary {
   id: string;
   namespace: string;
-  /** Null = a REDACTED browse row (#920): monitored solely by suites outside the
-   *  viewer's grants — render as a locked entry (placement only), never openable
-   *  (the detail endpoint 404s it). `is_accessible` is the discriminator. */
-  name: string | null;
+  name: string;
   env: string | null;
   description: string | null;
   owner_user_id: string | null;
-  /** Null on redacted rows (#920) — liveness cadence is a fact about the asset. */
-  last_seen: string | null;
+  last_seen: string;
   suite_count: number;
-  /** Rolled up across the caller-visible composing suites' latest runs. */
+  /** Rolled up across ALL composing suites' latest runs (workspace-true). */
   worst_severity: 'warn' | 'fail' | 'critical' | null;
   checks_total: number;
   checks_passed: number;
@@ -63,31 +62,21 @@ export interface AssetSummary {
    *  Derived from the recorded runs — there is no connection-probe polling loop. */
   has_operational_error: boolean;
   has_skip: boolean;
-  is_accessible: boolean;
-  /** Redacted rows only: the disclosed non-leaf path segments (db/schema or
-   *  folder), pre-split server-side — one separator rule for client and server. */
-  name_prefix_segments?: string[] | null;
   /** Any composing suite's latest run was `cancelled`. A cancelled run proves
    *  nothing — killed before a check ran, we may never have reached the datasource
    *  — so neither health axis may roll it up green. */
   has_cancelled_run: boolean;
 }
 
-/** A lineage neighbour — mirrors `LineageNodeRead`. Render-only (no run data). */
+/** A lineage neighbour — mirrors `LineageNodeRead`. Render-only (no run data).
+ *  Fully named for every member (ADR 0037 — lineage topology is identity). */
 export interface LineageNode {
   id: string;
-  /** Null when `is_accessible` is false: a neighbour outside your grants is redacted
-   *  server-side (#845), so its identity never crosses the wire. The node is still
-   *  present — dropping it would assert "nothing consumes this table", which is false. */
-  namespace: string | null;
-  name: string | null;
+  namespace: string;
+  name: string;
   env: string | null;
-  /** Whether the neighbour has ≥1 suite targeting it (a structural fact). Always false
-   *  for a redacted node — whether someone else monitors an asset you cannot see is
-   *  itself a fact about that asset. */
+  /** Whether the neighbour has ≥1 suite targeting it (a structural fact). */
   is_monitored: boolean;
-  /** False → a redacted placeholder: unnameable and not openable (#845). */
-  is_accessible: boolean;
   /** Hop distance from the asset under view (1 = a direct neighbour). Lets the
    *  graph lay nodes out in hop columns instead of flattening every hop (#805). */
   depth: number;
@@ -97,15 +86,12 @@ export interface LineageNode {
  *  `source` is the upstream asset id, `target` the downstream one.
  *
  *  `columns` is the edge's column-level refinement (#901) where a warehouse source
- *  recorded one — `[upstream_column, downstream_column]` pairs. Redacted
- *  SERVER-side by the #845 one-rule: when either endpoint is outside the viewer's
- *  grants, `columns` is null and only `column_count` arrives — render that as a
- *  redacted box, never as "no column lineage". Both null ⇒ table-grain edge. */
+ *  recorded one — `[upstream_column, downstream_column]` pairs, shown to every
+ *  member (ADR 0037). Null ⇒ a table-grain edge. */
 export interface LineageEdge {
   source: string;
   target: string;
   columns?: [string, string][] | null;
-  column_count?: number | null;
 }
 
 /** Asset detail — mirrors `AssetDetailRead`. */
@@ -124,7 +110,11 @@ export interface LineageSourceHealth {
 
 export interface AssetDetail {
   summary: AssetSummary;
+  /** Only the suites the viewer can see (ADR 0027). */
   suites: ComposingSuite[];
+  /** How many MORE suites compose this asset outside the viewer's grants — they
+   *  still roll into `summary` (workspace-true) but stay unnamed (ADR 0037). */
+  restricted_suite_count: number;
   upstream: LineageNode[];
   downstream: LineageNode[];
   /** The real edges among the neighbourhood, so the graph draws truth, not a guess. */
@@ -175,11 +165,4 @@ export async function updateAsset(
 ): Promise<AssetSummary> {
   const { data } = await api.patch<AssetSummary>(`/assets/${assetId}`, payload);
   return data;
-}
-
-/** The #920 redacted-row discriminator — ONE definition for tree, table, and row
- *  handlers (belt-and-braces on both fields so a serializer bug on either can
- *  never render a hidden identity or a clickable locked row). */
-export function isRedacted(asset: AssetSummary): boolean {
-  return asset.is_accessible === false || asset.name === null;
 }
