@@ -50,6 +50,16 @@ by a concrete failure mode found in review:
 Every Redis call this module makes is **bounded by a socket timeout** — an
 untimed read is exactly the forever-wait #854 taught, and it would hang the one
 thread whose job is to notice hangs.
+
+**Assumed topology: one worker per Redis.** Production runs ``max_replicas = 1``,
+so the process that writes the stamp is the process that reads it. Point a
+second worker with a *skewed clock* at the same Redis — a host-run worker beside
+the compose one, which logs a 7-hour drift in practice — and the two disagree
+about what "recent" means. The guards contain the blast radius (a future-dated
+stamp reads as ``unknown``, and a confirmation streak absorbs one-off jumps),
+but the honest statement is that this is a single-writer signal, not a
+distributed one. Sharing a Redis across environments is already unsupported for
+the rate limiter's counters (ADR 0035); the same applies here.
 """
 
 from __future__ import annotations
