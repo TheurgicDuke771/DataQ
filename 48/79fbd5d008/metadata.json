@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "4879fbd5d008",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-476-csv-delimiter-sniffing",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/tests/datasources/test_flatfile.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/48/79fbd5d008/0/metadata.json",
+      "transcript": "/48/79fbd5d008/0/full.jsonl",
+      "compact_transcript": "/48/79fbd5d008/0/transcript.jsonl",
+      "content_hash": "/48/79fbd5d008/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 15,
+    "cache_creation_tokens": 8788,
+    "cache_read_tokens": 980192,
+    "output_tokens": 4896,
+    "api_call_count": 8
+  }
+}

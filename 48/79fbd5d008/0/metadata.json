@@ -1,0 +1,37 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "4879fbd5d008",
+  "session_id": "1124e5df-e050-4dd0-a205-d4dc331f0280",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-19T16:28:26.270259Z",
+  "branch": "fix/issue-476-csv-delimiter-sniffing",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/tests/datasources/test_flatfile.py"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "01ac04af6623",
+  "checkpoint_transcript_start": 143,
+  "transcript_lines_at_start": 143,
+  "compact_transcript_start": 36,
+  "token_usage": {
+    "input_tokens": 15,
+    "cache_creation_tokens": 8788,
+    "cache_read_tokens": 980192,
+    "output_tokens": 4896,
+    "api_call_count": 8
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-19T16:28:26.249495Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 43,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 43,
+    "total_lines_changed": 43,
+    "agent_percentage": 0,
+    "metric_version": 2
+  }
+}
