@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "3b25232a9f9b",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-910-5xx-error-pages",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/components/AsyncBody.tsx",
+    "frontend/src/components/feedback/PageError.tsx",
+    "frontend/src/hooks/useAsyncData.ts",
+    "frontend/src/pages/AssetDetail.tsx",
+    "frontend/src/pages/Assets.tsx",
+    "frontend/src/utils/errors.ts",
+    "frontend/tests/components/PageError.test.tsx",
+    "frontend/tests/utils/errors.test.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/3b/25232a9f9b/0/metadata.json",
+      "transcript": "/3b/25232a9f9b/0/full.jsonl",
+      "compact_transcript": "/3b/25232a9f9b/0/transcript.jsonl",
+      "content_hash": "/3b/25232a9f9b/0/content_hash.txt",
+      "prompt": "/3b/25232a9f9b/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2202,
+    "cache_creation_tokens": 11274115,
+    "cache_read_tokens": 503513348,
+    "output_tokens": 767611,
+    "api_call_count": 1123
+  }
+}
