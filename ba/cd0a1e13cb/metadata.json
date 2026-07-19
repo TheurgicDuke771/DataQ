@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "bacd0a1e13cb",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-476-monitor-identifier-quoting",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/datasources/monitors.py",
+    "backend/app/datasources/sql.py",
+    "backend/app/services/profile_service.py",
+    "backend/tests/datasources/test_monitors.py",
+    "docs/datasources-checks.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ba/cd0a1e13cb/0/metadata.json",
+      "transcript": "/ba/cd0a1e13cb/0/full.jsonl",
+      "compact_transcript": "/ba/cd0a1e13cb/0/transcript.jsonl",
+      "content_hash": "/ba/cd0a1e13cb/0/content_hash.txt",
+      "prompt": "/ba/cd0a1e13cb/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 210,
+    "cache_creation_tokens": 337423,
+    "cache_read_tokens": 16997810,
+    "output_tokens": 80793,
+    "api_call_count": 110
+  }
+}
