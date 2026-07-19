@@ -155,7 +155,9 @@ function AssetDetailBody({
 
       <SuitesSection
         suites={asset.suites}
-        restrictedCount={asset.restricted_suite_count}
+        // One owner for the total (#924 review): the workspace-true suite_count.
+        // The restricted count is derived, never a second wire field to disagree.
+        totalCount={summary.suite_count}
         onOpenSuite={(id) => navigate(`/suites/${id}`)}
         onOpenRun={onOpenRun}
       />
@@ -165,6 +167,7 @@ function AssetDetailBody({
         permissionBySuite={Object.fromEntries(
           asset.suites.map((s) => [s.suite_id, s.my_permission]),
         )}
+        restrictedSuiteCount={Math.max(0, summary.suite_count - asset.suites.length)}
       />
 
       {/* One left-to-right graph (#805) — provenance → this asset → blast radius —
@@ -404,12 +407,14 @@ function OwnerBlock({
 
 function SuitesSection({
   suites,
-  restrictedCount,
+  totalCount,
   onOpenSuite,
   onOpenRun,
 }: {
   suites: ComposingSuite[];
-  restrictedCount: number;
+  /** ALL composing suites (workspace-true `summary.suite_count`) — the single
+   *  owner of the total; the restricted note derives from it. */
+  totalCount: number;
   onOpenSuite: (suiteId: string) => void;
   onOpenRun: (runId: string) => void;
 }) {
@@ -471,7 +476,10 @@ function SuitesSection({
     },
   ];
   // The title counts ALL composing suites (workspace-true, matching the health
-  // rollup above it); the table lists only the viewer's suites (ADR 0027).
+  // rollup above it); the table lists only the viewer's suites (ADR 0027). The
+  // restricted count is DERIVED so title and footnote share one source; clamped
+  // because a pre-0037 API (deploy skew) sends a viewer-scoped suite_count.
+  const restrictedCount = Math.max(0, totalCount - suites.length);
   const total = suites.length + restrictedCount;
   return (
     <Card size="small" title={`Monitored by ${total} suite${total === 1 ? '' : 's'}`}>

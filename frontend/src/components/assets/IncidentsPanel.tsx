@@ -24,13 +24,21 @@ import { RESULT_STATUS_COLORS, formatTimestamp } from '../results/resultsFormat'
  * `permissionBySuite` maps each composing suite to the caller's level; ack/resolve
  * render only for `edit`/`admin`/`owner` — nav convenience, not the security
  * boundary (the backend 403s an unpermitted action regardless).
+ *
+ * Incidents stay suite-granted while the asset page opens to every member
+ * (ADR 0037), so the list here can be a grant-filtered SUBSET. When suites
+ * outside the viewer's access compose this asset (`restrictedSuiteCount`), the
+ * panel must say so — a confident "No open incidents." under a workspace-true
+ * red rollup would be the #828 misleading-empty-state class.
  */
 export function IncidentsPanel({
   assetId,
   permissionBySuite,
+  restrictedSuiteCount = 0,
 }: {
   assetId: string;
   permissionBySuite: Record<string, string>;
+  restrictedSuiteCount?: number;
 }) {
   const { state, reload } = useAsyncData(() => listIncidents({ asset_id: assetId }));
   return (
@@ -41,11 +49,23 @@ export function IncidentsPanel({
         errorTitle="Failed to load incidents"
       >
         {(incidents) => (
-          <IncidentsTable
-            incidents={incidents.filter((i) => i.status !== 'resolved')}
-            permissionBySuite={permissionBySuite}
-            onChanged={reload}
-          />
+          <>
+            <IncidentsTable
+              incidents={incidents.filter((i) => i.status !== 'resolved')}
+              permissionBySuite={permissionBySuite}
+              onChanged={reload}
+            />
+            {restrictedSuiteCount > 0 && (
+              <Typography.Text
+                type="secondary"
+                style={{ fontSize: 12, display: 'block', marginTop: 8 }}
+              >
+                {restrictedSuiteCount === 1
+                  ? 'Incidents from 1 suite outside your access are not shown here.'
+                  : `Incidents from ${restrictedSuiteCount} suites outside your access are not shown here.`}
+              </Typography.Text>
+            )}
+          </>
         )}
       </AsyncBody>
     </Card>

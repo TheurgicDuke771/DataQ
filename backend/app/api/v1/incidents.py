@@ -147,7 +147,9 @@ def _load_visible_incident(
     caller must have ``edit`` on the incident's suite (else 403).
 
     An unknown id and an id whose suite the caller can't view return the SAME 404
-    (existence hidden) — the asset-view no-leak rule, one object over.
+    (existence hidden) — the suite-grain no-leak rule, deliberately KEPT by
+    ADR 0037 (which retired the asset-grain one): incidents are itemized
+    evidence, not identity.
     """
     incident = incident_service.get_incident(db, incident_id)
     suite = db.get(Suite, incident.suite_id) if incident is not None else None

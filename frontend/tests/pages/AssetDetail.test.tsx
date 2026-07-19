@@ -502,7 +502,13 @@ describe('AssetDetail — a failing lineage source (#828)', () => {
   });
 
   it('counts restricted suites in the title and states they still shape health (ADR 0037)', async () => {
-    mockGet.mockResolvedValue({ ...DETAIL, restricted_suite_count: 3 });
+    // Restricted = workspace-true suite_count minus the listed suites (derived
+    // client-side — one owner for the total, #924 review): 5 total, 2 visible.
+    mockGet.mockResolvedValue({
+      ...DETAIL,
+      summary: { ...DETAIL.summary, suite_count: 5 },
+      restricted_suite_count: 3,
+    });
 
     renderPage();
 

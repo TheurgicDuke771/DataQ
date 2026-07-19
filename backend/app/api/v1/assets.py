@@ -117,6 +117,12 @@ class LineageNodeRead(ApiModel):
     env: str | None
     is_monitored: bool
     depth: int
+    # TRANSITION SHIM (#924 review — remove after one release): the pre-ADR-0037
+    # SPA bundle computes `redacted = !isCenter && !is_accessible` per node; with
+    # the field absent, every neighbour in a cached tab renders as an unclickable
+    # "🔒 Restricted" box until a hard refresh. Constant True keeps old bundles
+    # rendering correctly through the deploy window; nothing reads it server-side.
+    is_accessible: bool = True
 
 
 class LineageEdgeRead(ApiModel):

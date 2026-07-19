@@ -16,11 +16,12 @@ their latest run health + the lineage neighbourhood, for the `/assets` API.
   suites for **every** viewer — one truth per asset, never a per-viewer partial that
   silently disagrees between users (#889's two-verdicts-on-one-page problem).
 - **Itemized evaluation stays behind the ADR 0027 suite grants.** The per-suite
-  breakdown on the detail page lists only suites the caller can view
-  (`suite_service.accessible_suite_ids` — the single source of truth, so this can
-  never drift from the suites/runs surfaces); the rest collapse to
-  ``restricted_suite_count`` — a count, never names. Suite/run/result/sample/incident
-  endpoints keep their own grant scoping and 404-no-leak at the suite grain.
+  breakdown on the detail page lists only suites the caller can view — derived
+  from `suite_authz.effective_permissions` (the same owned/shared/workspace-admin
+  resolution that labels the rows, so listing and labeling can never disagree);
+  the rest collapse to ``restricted_suite_count`` — a count, never names.
+  Suite/run/result/sample/incident endpoints keep their own grant scoping and
+  404-no-leak at the suite grain.
 
 Asset-metadata mutation (owner, description) is workspace-Admin-only — enforced at
 the API layer (`require_workspace_admin`), not here; `update_asset_metadata` is the
@@ -51,7 +52,6 @@ from backend.app.db.models import (
 from backend.app.lineage.edges import lineage_neighbourhood
 from backend.app.services.run_service import check_outcome_counts, operational_result_flags
 from backend.app.services.suite_authz import effective_permissions
-from backend.app.services.suite_service import accessible_suite_ids
 
 log = get_logger(__name__)
 
@@ -302,48 +302,42 @@ def _run_outcome(
 def _composing_suites(
     suites: list[Suite],
     levels: dict[uuid.UUID, str | None],
-    latest_runs: dict[uuid.UUID, Run],
-    outcomes: dict[uuid.UUID, tuple[int, int, str | None]],
-    op_flags: dict[uuid.UUID, tuple[bool, bool]] | None = None,
+    outcome_by_suite: dict[uuid.UUID, RunOutcome],
 ) -> list[ComposingSuite]:
-    """Build the per-suite breakdown for one asset's suites (sorted by name)."""
-    op_flags = op_flags or {}
+    """Build the per-suite breakdown for one asset's suites (sorted by name).
+    Consumes the SAME ``RunOutcome`` map the workspace-true rollup reads, so the
+    listed rows and the rollup can never disagree about a run (#924 review)."""
     composing: list[ComposingSuite] = []
     for suite in suites:
         level = levels.get(suite.id)
         if level is None:  # defensive: only reachable suites are passed in
             continue
-        run = latest_runs.get(suite.id)
-        outcome = outcomes.get(run.id) if run is not None else None
-        flags = op_flags.get(run.id) if run is not None else None
         composing.append(
             ComposingSuite(
                 suite_id=suite.id,
                 name=suite.name,
                 my_permission=level,
-                latest_run=_run_outcome(run, outcome, flags),
+                latest_run=outcome_by_suite.get(suite.id, RunOutcome()),
             )
         )
     return composing
 
 
-def _suite_outcomes(
-    suites: list[Suite],
-    latest_runs: dict[uuid.UUID, Run],
-    outcomes: dict[uuid.UUID, tuple[int, int, str | None]],
-    op_flags: dict[uuid.UUID, tuple[bool, bool]],
-) -> dict[uuid.UUID, list[RunOutcome]]:
-    """One ``RunOutcome`` per suite (empty for a never-run suite), grouped by
-    asset — the workspace-true aggregation input (ADR 0037): EVERY composing
-    suite contributes, independent of any caller's grants."""
-    by_asset: dict[uuid.UUID, list[RunOutcome]] = defaultdict(list)
+def _latest_outcomes(session: Session, suites: list[Suite]) -> dict[uuid.UUID, RunOutcome]:
+    """One ``RunOutcome`` per suite (empty for a never-run suite) — the single
+    computation both the workspace-true rollup and the per-suite breakdown read.
+    Three grouped queries total (latest runs, check outcomes, operational flags)."""
+    latest_runs = _latest_run_per_suite(session, [s.id for s in suites])
+    run_ids = [r.id for r in latest_runs.values()]
+    outcomes = check_outcome_counts(session, run_ids)
+    op_flags = operational_result_flags(session, run_ids)
+    by_suite: dict[uuid.UUID, RunOutcome] = {}
     for suite in suites:
-        assert suite.asset_id is not None  # callers filter on asset_id
         run = latest_runs.get(suite.id)
         outcome = outcomes.get(run.id) if run is not None else None
         flags = op_flags.get(run.id) if run is not None else None
-        by_asset[suite.asset_id].append(_run_outcome(run, outcome, flags))
-    return by_asset
+        by_suite[suite.id] = _run_outcome(run, outcome, flags)
+    return by_suite
 
 
 def _roll_up(asset: Asset, suite_outcomes: list[RunOutcome]) -> AssetSummary:
@@ -426,11 +420,11 @@ def list_visible_assets(
         return []
     page_ids = [a.id for a in assets]
     suites = list(session.scalars(select(Suite).where(Suite.asset_id.in_(page_ids))))
-    latest_runs = _latest_run_per_suite(session, [s.id for s in suites])
-    run_ids = [r.id for r in latest_runs.values()]
-    outcomes = check_outcome_counts(session, run_ids)
-    op_flags = operational_result_flags(session, run_ids)
-    by_asset = _suite_outcomes(suites, latest_runs, outcomes, op_flags)
+    outcome_by_suite = _latest_outcomes(session, suites)
+    by_asset: dict[uuid.UUID, list[RunOutcome]] = defaultdict(list)
+    for suite in suites:
+        assert suite.asset_id is not None  # filtered on asset_id above
+        by_asset[suite.asset_id].append(outcome_by_suite[suite.id])
     return [_roll_up(asset, by_asset.get(asset.id, [])) for asset in assets]
 
 
@@ -453,27 +447,21 @@ def get_visible_asset(
     all_suites = list(
         session.scalars(select(Suite).where(Suite.asset_id == asset_id).order_by(Suite.name))
     )
-    # `accessible_suite_ids` is a SQL subquery (the single source of truth shared
-    # with the suites/runs surfaces) — resolve it once for this asset's suites.
-    accessible = accessible_suite_ids(user_id, include_all=include_all)
-    accessible_ids = set(
-        session.scalars(
-            select(Suite.id).where(Suite.asset_id == asset_id, Suite.id.in_(accessible))
-        )
-    )
-    visible = [s for s in all_suites if s.id in accessible_ids]
+    # ONE visibility derivation (#924 review): `effective_permissions` encodes the
+    # same owned/shared/workspace-admin rule `accessible_suite_ids` does (both
+    # resolve the admin off the same allowlist), and it must be called anyway to
+    # label the rows — so a suite is listed iff it has a label. A second SQL
+    # round-trip here would be a parallel encoding of the same rule, and its
+    # separate read is what opened the deleted-between-reads miscount window.
+    levels = effective_permissions(session, all_suites, user_id)
+    visible = [s for s in all_suites if include_all or levels.get(s.id)]
 
-    levels = effective_permissions(session, visible, user_id)
-    # Latest runs / outcomes over ALL composing suites — the workspace-true rollup
-    # input; the grant-filtered `visible` list reuses the same lookups.
-    latest_runs = _latest_run_per_suite(session, [s.id for s in all_suites])
-    run_ids = [r.id for r in latest_runs.values()]
-    outcomes = check_outcome_counts(session, run_ids)
-    op_flags = operational_result_flags(session, run_ids)
-    composing = _composing_suites(visible, levels, latest_runs, outcomes, op_flags)
-    by_asset = _suite_outcomes(all_suites, latest_runs, outcomes, op_flags)
+    # Latest runs / outcomes over ALL composing suites, computed ONCE — the
+    # workspace-true rollup and the grant-filtered breakdown read the same map.
+    outcome_by_suite = _latest_outcomes(session, all_suites)
+    composing = _composing_suites(visible, levels, outcome_by_suite)
 
-    summary = _roll_up(asset, by_asset.get(asset_id, []))
+    summary = _roll_up(asset, [outcome_by_suite[s.id] for s in all_suites])
     graph = lineage_neighbourhood(session, asset_id)
     neighbour_ids = [a.id for a, _ in graph.upstream] + [a.id for a, _ in graph.downstream]
     # One grouped lookup of "which of these assets has any suite" — the structural
@@ -566,12 +554,8 @@ def summarize_asset(session: Session, asset: Asset) -> AssetSummary:
     empty (no-run) health summary. Used by the admin PATCH response, where the
     asset need not have suites to have metadata."""
     suites = list(session.scalars(select(Suite).where(Suite.asset_id == asset.id)))
-    latest_runs = _latest_run_per_suite(session, [s.id for s in suites])
-    run_ids = [r.id for r in latest_runs.values()]
-    outcomes = check_outcome_counts(session, run_ids)
-    op_flags = operational_result_flags(session, run_ids)
-    by_asset = _suite_outcomes(suites, latest_runs, outcomes, op_flags)
-    return _roll_up(asset, by_asset.get(asset.id, []))
+    outcome_by_suite = _latest_outcomes(session, suites)
+    return _roll_up(asset, [outcome_by_suite[s.id] for s in suites])
 
 
 def _monitored_ids(session: Session, ids: list[uuid.UUID]) -> set[uuid.UUID]:
@@ -623,12 +607,23 @@ def _lineage_edge_refs(
                 value_type=type(cols).__name__,
             )
             continue
-        bucket = pairs.setdefault((up, down), set())
-        bucket.update(
+        valid = [
             (str(entry[0]), str(entry[1]))
             for entry in cols
             if isinstance(entry, (list, tuple)) and len(entry) == 2
-        )
+        ]
+        # The loud-degradation contract covers ENTRIES too (#924 review): a
+        # wrong-arity/non-list item inside a well-formed list must not vanish
+        # silently — with every entry dropped the edge would render as
+        # "table-grain", indistinguishable from no column data at all.
+        if len(valid) != len(cols):
+            log.warning(
+                "lineage_edge_column_entries_malformed",
+                upstream_asset_id=str(up),
+                downstream_asset_id=str(down),
+                dropped=len(cols) - len(valid),
+            )
+        pairs.setdefault((up, down), set()).update(valid)
     return [
         LineageEdgeRef(
             source=up,

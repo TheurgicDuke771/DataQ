@@ -31,8 +31,12 @@ export function ColumnLineagePanel({
     // id must degrade to a placeholder, never crash the panel.
     return node ? tableName(node.name) : 'Unknown asset';
   };
-  const direct = edges.filter(
-    (e) => (e.source === centerId || e.target === centerId) && e.columns != null,
+  // flatMap so `columns` is narrowed to non-null in scope — no dead `?? []`
+  // fallbacks downstream encoding a state the filter already excluded.
+  const direct = edges.flatMap((e) =>
+    (e.source === centerId || e.target === centerId) && e.columns != null
+      ? [{ source: e.source, target: e.target, columns: e.columns }]
+      : [],
   );
   return (
     <Card size="small" title="Column lineage">
@@ -50,9 +54,9 @@ export function ColumnLineagePanel({
                 <Typography.Text strong>
                   {label(edge.source)} → {label(edge.target)}
                 </Typography.Text>{' '}
-                <Tag>{edge.columns?.length ?? 0} column links</Tag>
+                <Tag>{edge.columns.length} column links</Tag>
                 <Flex vertical gap={2} style={{ marginTop: 4 }}>
-                  {(edge.columns ?? []).map(([up, down]) => (
+                  {edge.columns.map(([up, down]) => (
                     <Typography.Text key={`${up}->${down}`} code>
                       {up} → {down}
                     </Typography.Text>

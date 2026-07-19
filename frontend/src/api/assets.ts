@@ -113,8 +113,13 @@ export interface AssetDetail {
   /** Only the suites the viewer can see (ADR 0027). */
   suites: ComposingSuite[];
   /** How many MORE suites compose this asset outside the viewer's grants — they
-   *  still roll into `summary` (workspace-true) but stay unnamed (ADR 0037). */
-  restricted_suite_count: number;
+   *  still roll into `summary` (workspace-true) but stay unnamed (ADR 0037).
+   *  Optional because the UI does NOT read it (#924 review): the workspace-true
+   *  `summary.suite_count` is the single owner of the total, and the restricted
+   *  count is derived as `suite_count - suites.length` — so the card title and
+   *  the footnote can never disagree, and a deploy-skew response from a pre-0037
+   *  API (field absent) degrades gracefully instead of rendering NaN. */
+  restricted_suite_count?: number;
   upstream: LineageNode[];
   downstream: LineageNode[];
   /** The real edges among the neighbourhood, so the graph draws truth, not a guess. */
