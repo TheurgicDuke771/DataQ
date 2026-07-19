@@ -6,6 +6,7 @@ canned frame; only the network `download_bytes` is the deferred-smoke seam.
 """
 
 import io
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
 
@@ -183,6 +184,255 @@ def test_read_dataframe_unknown_format_raises(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setattr(flatfile, "download_bytes", lambda **k: b"")
     with pytest.raises(ValueError, match="unsupported flat-file format"):
         flatfile.read_dataframe(conn_type="s3", config={}, path="x.txt", secret="s")
+
+
+# ── run_monitors (#520) ──
+
+
+def _monitor_runner() -> Any:
+    return flatfile.FlatFileCheckRunner(conn_type="s3", config={}, secret="s")
+
+
+def _spec(kind: str, **config: Any) -> Any:
+    from backend.app.datasources.base import MonitorSpec
+
+    return MonitorSpec(kind=kind, config=config)
+
+
+_LANDED = datetime(2026, 6, 29, 0, 0, tzinfo=UTC)
+
+
+def _patch_store(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    mtime: datetime | None = _LANDED,
+    csv: bytes = b"id,load_ts\n1,2026-06-29T00:00:00\n2,2026-06-28T00:00:00\n",
+    reads: list[int] | None = None,
+) -> None:
+    """Stub both live seams: the listing (arrival time) and the download."""
+    monkeypatch.setattr(flatfile, "file_last_modified", lambda **k: mtime)
+
+    def _download(**_k: Any) -> bytes:
+        if reads is not None:
+            reads.append(1)
+        return csv
+
+    monkeypatch.setattr(flatfile, "download_bytes", _download)
+
+
+def test_volume_monitor_counts_rows_of_the_resolved_batch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_store(monkeypatch)
+    out = _monitor_runner().run_monitors(
+        table="raw/orders.csv", schema=None, monitors=[_spec("volume", min_rows=5, max_rows=10)]
+    )
+    assert out[0].errored is False
+    # 2 rows against a floor of 5 → 60% short.
+    assert out[0].metric_value == pytest.approx(60.0)
+
+
+def test_freshness_with_a_column_uses_the_in_file_max(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Same semantics as the SQL runners: the newest timestamp INSIDE the data."""
+    _patch_store(monkeypatch)
+    out = _monitor_runner().run_monitors(
+        table="raw/orders.csv", schema=None, monitors=[_spec("freshness", column="load_ts")]
+    )
+    assert out[0].errored is False
+    assert out[0].observed_value is not None
+    assert out[0].observed_value["max_timestamp"].startswith("2026-06-29T00:00:00")
+
+
+def test_freshness_without_a_column_uses_file_arrival_time(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#520's headline case — and the one no SQL datasource can express."""
+    _patch_store(monkeypatch, mtime=datetime(2026, 6, 20, tzinfo=UTC))
+    out = _monitor_runner().run_monitors(
+        table="raw/orders.csv", schema=None, monitors=[_spec("freshness")]
+    )
+    assert out[0].errored is False
+    assert out[0].observed_value is not None
+    assert out[0].observed_value["max_timestamp"].startswith("2026-06-20")
+    assert out[0].expected_value == {"monitor": "freshness", "source": "file_modified_time"}
+
+
+def test_arrival_time_freshness_never_downloads_the_file(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The whole point of arrival-time freshness is that it costs a LISTING, not a
+    data read — otherwise it is strictly worse than the in-file MAX it replaces."""
+    reads: list[int] = []
+    _patch_store(monkeypatch, reads=reads)
+    _monitor_runner().run_monitors(
+        table="raw/orders.csv", schema=None, monitors=[_spec("freshness")]
+    )
+    assert reads == []
+
+
+def test_the_file_is_downloaded_at_most_once_across_monitors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Three content-needing monitors on one file must not pull the object three
+    times — the memo is the flat-file analogue of the SQL runners' one connection."""
+    reads: list[int] = []
+    _patch_store(monkeypatch, reads=reads)
+    out = _monitor_runner().run_monitors(
+        table="raw/orders.csv",
+        schema=None,
+        monitors=[
+            _spec("volume", min_rows=1, max_rows=10),
+            _spec("freshness", column="load_ts"),
+            _spec("volume", min_rows=1, max_rows=10),
+        ],
+    )
+    assert [o.errored for o in out] == [False, False, False]
+    assert len(reads) == 1
+
+
+def test_a_missing_file_errors_rather_than_reporting_fresh(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A missing object is exactly the incident arrival-time freshness exists to
+    catch, so a None arrival time must NOT read as age zero."""
+    _patch_store(monkeypatch, mtime=None)
+    out = _monitor_runner().run_monitors(
+        table="raw/orders.csv", schema=None, monitors=[_spec("freshness")]
+    )
+    assert out[0].errored is True
+    assert out[0].metric_value is None
+
+
+def test_an_unreachable_store_fails_the_whole_run_not_one_monitor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The open-connection-first contract the SQL and Iceberg runners keep: a bad
+    credential is a run failure, not N identical per-check errors."""
+
+    def _boom(**_k: Any) -> Any:
+        raise RuntimeError("credential expired")
+
+    monkeypatch.setattr(flatfile, "file_last_modified", _boom)
+    with pytest.raises(RuntimeError, match="credential expired"):
+        _monitor_runner().run_monitors(
+            table="raw/orders.csv",
+            schema=None,
+            monitors=[_spec("volume", min_rows=1, max_rows=2)],
+        )
+
+
+def test_an_unknown_freshness_column_errors_only_that_monitor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_store(monkeypatch)
+    out = _monitor_runner().run_monitors(
+        table="raw/orders.csv",
+        schema=None,
+        monitors=[_spec("freshness", column="nope"), _spec("volume", min_rows=1, max_rows=10)],
+    )
+    assert out[0].errored is True and "not in" in (out[0].error_message or "")
+    assert out[1].errored is False
+
+
+def test_an_all_null_freshness_column_cannot_be_assessed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An empty MAX must route through "can't be assessed", never age zero — a
+    silent green on a column that carries no timestamps at all."""
+    _patch_store(monkeypatch, csv=b"id,load_ts\n1,\n2,\n")
+    out = _monitor_runner().run_monitors(
+        table="raw/orders.csv", schema=None, monitors=[_spec("freshness", column="load_ts")]
+    )
+    assert out[0].errored is True
+    assert out[0].metric_value is None
+
+
+def test_a_numeric_freshness_column_is_refused_not_read_as_epoch_offsets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The nastiest failure mode this path can have. `pd.to_datetime` reads integers
+    as epoch offsets, so a freshness monitor pointed at an id column would date the
+    data to 1970 and fire CRITICAL staleness forever — a confident wrong answer,
+    and one that looks exactly like a real incident. It must refuse instead."""
+    _patch_store(monkeypatch, csv=b"id,order_no\n1,1001\n2,1002\n")
+    out = _monitor_runner().run_monitors(
+        table="raw/orders.csv", schema=None, monitors=[_spec("freshness", column="order_no")]
+    )
+    assert out[0].errored is True
+    assert out[0].metric_value is None
+    assert "not a date/timestamp" in (out[0].error_message or "")
+
+
+def test_csv_string_timestamps_are_parsed_not_string_compared(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A CSV's timestamp column is object-dtype STRINGS (Parquet's is a real
+    datetime). Lexical max agrees with chronological max for ISO-8601, so the bug
+    hides behind the common format — this fixture picks one where they DISAGREE:
+    lexically "2026-Nov-30" > "2026-Dec-01" (N > D), chronologically it's the
+    reverse. A string max would report November as the newest data.
+
+    Deliberately unambiguous, too: a `29/06/2026` fixture would lean on pandas'
+    day-first *inference*, which is version-dependent and would make this test
+    assert the parser's guess rather than our behaviour."""
+    _patch_store(
+        monkeypatch,
+        csv=b"id,load_ts\n1,2026-Nov-30 00:00\n2,2026-Dec-01 00:00\n",
+    )
+    out = _monitor_runner().run_monitors(
+        table="raw/orders.csv", schema=None, monitors=[_spec("freshness", column="load_ts")]
+    )
+    assert out[0].errored is False
+    assert out[0].observed_value is not None
+    assert out[0].observed_value["max_timestamp"].startswith("2026-12-01")
+
+
+def test_an_unparseable_text_freshness_column_cannot_be_assessed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_store(monkeypatch, csv=b"id,load_ts\n1,not-a-date\n2,also-not\n")
+    out = _monitor_runner().run_monitors(
+        table="raw/orders.csv", schema=None, monitors=[_spec("freshness", column="load_ts")]
+    )
+    assert out[0].errored is True
+    assert out[0].metric_value is None
+
+
+def test_runner_advertises_the_kinds_it_implements() -> None:
+    """#429: the run-path gate reads this, so it must match reality."""
+    assert flatfile.FlatFileCheckRunner.supported_monitor_kinds == frozenset(
+        {"freshness", "volume"}
+    )
+
+
+# ── file_last_modified (live seam) ──
+
+
+def test_file_last_modified_matches_the_exact_key_not_a_prefix(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Both stores list by PREFIX, and `orders.csv` is a prefix of
+    `orders.csv.bak` — matching loosely would report a backup's timestamp as the
+    file's freshness."""
+    monkeypatch.setattr(
+        flatfile,
+        "list_files",
+        lambda **k: [
+            flatfile.FileRef(
+                path="raw/orders.csv.bak", last_modified=datetime(2026, 1, 1, tzinfo=UTC)
+            ),
+            flatfile.FileRef(path="raw/orders.csv", last_modified=_LANDED),
+        ],
+    )
+    got = flatfile.file_last_modified(conn_type="s3", config={}, path="raw/orders.csv", secret="s")
+    assert got == _LANDED
+
+
+def test_file_last_modified_is_none_when_absent(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(flatfile, "list_files", lambda **k: [])
+    assert (
+        flatfile.file_last_modified(conn_type="s3", config={}, path="raw/x.csv", secret="s") is None
+    )
 
 
 # ── build_flatfile_runner ──
@@ -372,8 +622,6 @@ def test_run_checks_duplicate_identical_expectations_stay_distinct(
 
 
 # ── batch resolution (pure resolve_batch + mocked list orchestrator) ──
-
-from datetime import UTC, datetime  # noqa: E402
 
 
 def _dt(day: int) -> datetime:

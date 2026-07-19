@@ -24,14 +24,21 @@ import io
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, ClassVar
 
 import great_expectations as gx
 
 from backend.app.core.secrets import SecretStore
 from backend.app.datasources.adls import AdlsConfig
-from backend.app.datasources.base import CheckSpec, SuiteOutcome
+from backend.app.datasources.base import CheckOutcome, CheckSpec, MonitorSpec, SuiteOutcome
 from backend.app.datasources.gx_runner import run_expectations
+from backend.app.datasources.monitors import (
+    FRESHNESS,
+    VOLUME,
+    MonitorConfigError,
+    freshness_column,
+    run_monitor_specs,
+)
 from backend.app.datasources.s3 import S3Config
 
 # Connector timeouts (seconds): fail fast rather than hang the worker thread.
@@ -173,6 +180,63 @@ def read_dataframe(*, conn_type: str, config: dict[str, Any], path: str, secret:
     return pd.read_parquet(raw, dtype_backend="pyarrow")
 
 
+def max_timestamp(series: Any, *, column: str) -> Any:
+    """The newest timestamp in ``series``, or ``None`` if it holds none (#520).
+
+    Flat-file timestamps are not typed the way warehouse ones are: a Parquet
+    column arrives as a real datetime, but the same column in a CSV arrives as
+    **object-dtype strings**, whose ``max()`` is a string the age math rejects.
+    So strings are parsed here.
+
+    Numeric columns are **refused, not parsed**. ``pd.to_datetime`` cheerfully
+    reads integers as epoch offsets, so pointing a freshness monitor at an id
+    column would silently date it to 1970 and fire critical staleness forever —
+    a confident wrong answer where "this isn't a timestamp" is the truth.
+
+    Caveat, documented rather than guessed at: for *ambiguous* text dates
+    (``06/07/2026``) the parse follows pandas' day-first inference, so a
+    non-ISO-8601 CSV can be read month-first. Use ISO-8601 or Parquet where the
+    distinction matters; a heuristic of our own would just be a second guess.
+    """
+    import pandas as pd
+
+    cleaned = series.dropna()
+    if cleaned.empty:
+        return None
+    if pd.api.types.is_datetime64_any_dtype(cleaned):
+        return cleaned.max()
+    if not (
+        pd.api.types.is_object_dtype(cleaned) or pd.api.types.is_string_dtype(cleaned)
+    ):  # numeric/bool — see the epoch trap above
+        raise MonitorConfigError(
+            f"freshness column {column!r} is {cleaned.dtype}, not a date/timestamp"
+        )
+    parsed = pd.to_datetime(cleaned, errors="coerce", utc=True).dropna()
+    if parsed.empty:
+        raise MonitorConfigError(f"freshness column {column!r} holds no parseable timestamps")
+    return parsed.max()
+
+
+def file_last_modified(
+    *, conn_type: str, config: dict[str, Any], path: str, secret: str
+) -> datetime | None:
+    """The store's last-modified time for exactly ``path`` (live seam, #520).
+
+    The arrival-time source for a column-less freshness monitor. Listed rather
+    than downloaded — the whole point of arrival-time freshness is that it costs
+    no data read — and matched on the **exact** key, since both stores list by
+    prefix and `orders.csv` is a prefix of `orders.csv.bak`.
+
+    ``None`` when the object isn't there or the store reports no timestamp; the
+    caller turns that into a per-check error rather than a silent pass, because a
+    missing file is precisely the incident this monitor exists to catch.
+    """
+    for ref in list_files(conn_type=conn_type, config=config, prefix=path, secret=secret):
+        if ref.path == path:
+            return ref.last_modified
+    return None
+
+
 class FlatFileCheckRunner:
     """`CheckRunner` for flat files — loads the file into pandas, runs GX on it.
 
@@ -181,10 +245,72 @@ class FlatFileCheckRunner:
     path; ``schema`` is ignored (flat files have no schema namespace).
     """
 
+    supported_monitor_kinds: ClassVar[frozenset[str]] = frozenset({FRESHNESS, VOLUME})
+
     def __init__(self, *, conn_type: str, config: dict[str, Any], secret: str) -> None:
         self._conn_type = conn_type
         self._config = config
         self._secret = secret
+
+    def run_monitors(
+        self, *, table: str, schema: str | None, monitors: list[MonitorSpec]
+    ) -> list[CheckOutcome]:
+        """Evaluate freshness/volume monitors on a flat file — no SQL (#520).
+
+        Reuses the shared `monitors.run_monitor_specs` banding loop; only the
+        scalar source differs:
+
+        * **volume** — the resolved batch's row count.
+        * **freshness with a ``column``** — ``MAX(column)`` over that frame, the
+          same semantics as the SQL runners.
+        * **freshness with no column** — the object's last-modified time, i.e.
+          *when the file landed*. This is the case the SQL runners can't express
+          and the reason #520 matters: on a landing zone, "the producer stopped
+          sending files" is the incident, and an in-file MAX cannot see it (the
+          newest file is old, but its rows look perfectly fresh).
+
+        Arrival time is fetched **once, up front, for every run** — it is both the
+        cheap freshness answer and the store-reachability probe, so a bad
+        credential or unreachable container propagates and fails the whole run
+        instead of erroring each monitor separately (the open-connection-first
+        contract the SQL and Iceberg runners keep).
+
+        The file itself is downloaded **lazily and at most once**, only if some
+        monitor actually needs its contents — so an arrival-time-only check costs
+        a listing, never a data read.
+        """
+        # The establishment probe: fails loudly before the per-monitor loop.
+        arrived_at = file_last_modified(
+            conn_type=self._conn_type, config=self._config, path=table, secret=self._secret
+        )
+        frame: list[Any] = []  # one-slot memo; a DataFrame is not None-comparable
+
+        def dataframe() -> Any:
+            if not frame:
+                frame.append(
+                    read_dataframe(
+                        conn_type=self._conn_type,
+                        config=self._config,
+                        path=table,
+                        secret=self._secret,
+                    )
+                )
+            return frame[0]
+
+        def scalar_for(spec: MonitorSpec) -> Any:
+            if spec.kind == VOLUME:
+                return len(dataframe())
+            column = freshness_column(spec.config)
+            if column is None:
+                return arrived_at
+            df = dataframe()
+            if column not in df.columns:
+                raise MonitorConfigError(f"freshness column {column!r} is not in {table!r}")
+            # None (an all-null column) routes through the shared "can't be
+            # assessed" error rather than being read as age zero.
+            return max_timestamp(df[column], column=column)
+
+        return run_monitor_specs(scalar_for, monitors=monitors, now=datetime.now(UTC))
 
     def run_checks(
         self,
