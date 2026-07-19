@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "ecf8af394342",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-753-connection-delete-409",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/tests/api/test_connections.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ec/f8af394342/0/metadata.json",
+      "transcript": "/ec/f8af394342/0/full.jsonl",
+      "compact_transcript": "/ec/f8af394342/0/transcript.jsonl",
+      "content_hash": "/ec/f8af394342/0/content_hash.txt",
+      "prompt": "/ec/f8af394342/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2080,
+    "cache_creation_tokens": 11203420,
+    "cache_read_tokens": 469644760,
+    "output_tokens": 728099,
+    "api_call_count": 1062
+  }
+}
