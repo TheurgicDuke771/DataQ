@@ -40,6 +40,7 @@ import {
   RESULT_STATUS_COLORS,
   RUN_STATUS_COLORS,
 } from '../components/results/resultsFormat';
+import { PageError } from '../components/feedback/PageError';
 
 const LIST_LIMIT = 200;
 
@@ -156,7 +157,9 @@ function RunsTab() {
 
   if (state.status === 'loading') return <Spin description="Loading runs…" size="large" />;
   if (state.status === 'error') {
-    return <Alert type="error" showIcon title="Failed to load runs" description={state.error} />;
+    return (
+      <PageError error={state.error} httpStatus={state.httpStatus} requestId={state.requestId} />
+    );
   }
 
   const windowDays = dateWindow === 'all' ? null : Number(dateWindow);
@@ -354,7 +357,7 @@ function PipelineRunsTab({ pollMs = PIPELINE_POLL_MS }: { pollMs?: number }) {
   if (state.status === 'loading') return <Spin description="Loading pipeline runs…" size="large" />;
   if (state.status === 'error') {
     return (
-      <Alert type="error" showIcon title="Failed to load pipeline runs" description={state.error} />
+      <PageError error={state.error} httpStatus={state.httpStatus} requestId={state.requestId} />
     );
   }
 

@@ -7,6 +7,7 @@ import { useMe } from '../auth/useMe';
 import { ApiKeysPanel } from '../components/profile/ApiKeysPanel';
 import { Page } from '../components/layout/Page';
 import { BRAND } from '../theme';
+import { PageError } from '../components/feedback/PageError';
 
 /**
  * Profile (`/profile`, ADR 0022 ProfileScreen). The account screen: an identity
@@ -24,9 +25,7 @@ export function Profile() {
     return <Spin size="large" style={{ marginTop: 80 }} />;
   }
   if (me.status === 'error') {
-    return (
-      <Alert type="error" showIcon title="Failed to load your profile" description={me.error} />
-    );
+    return <PageError error={me.error} httpStatus={me.httpStatus} requestId={me.requestId} />;
   }
 
   const { display_name, email, last_seen_at, is_workspace_admin } = me.data;

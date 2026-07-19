@@ -20,6 +20,7 @@ import { Page } from '../components/layout/Page';
 import { ScalarValue } from '../components/results/ScalarValue';
 import { useAsyncData } from '../hooks/useAsyncData';
 import { downloadCsv, downloadJson, toFilenameStem } from '../utils/download';
+import { PageError } from '../components/feedback/PageError';
 
 /** The four severity tiers that count as "evaluated" (ADR 0005) — skip/error don't. */
 const SEVERITY_STATUSES = new Set<ResultStatus>(['pass', 'warn', 'fail', 'critical']);
@@ -60,7 +61,7 @@ export function RunDetail() {
 
       {state.status === 'loading' && <Spin description="Loading run…" size="large" />}
       {state.status === 'error' && (
-        <Alert type="error" showIcon title="Failed to load run" description={state.error} />
+        <PageError error={state.error} httpStatus={state.httpStatus} requestId={state.requestId} />
       )}
       {state.status === 'ok' && (
         <RunDetailBody

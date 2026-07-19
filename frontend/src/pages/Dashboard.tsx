@@ -17,6 +17,7 @@ import { QualityTrends } from '../components/dashboard/QualityTrends';
 import { RecentRuns } from '../components/dashboard/RecentRuns';
 import { SuitePerformance } from '../components/dashboard/SuitePerformance';
 import { useAsyncData } from '../hooks/useAsyncData';
+import { PageError } from '../components/feedback/PageError';
 
 /**
  * Enhanced Monitoring Dashboard (`/dashboard`, ADR 0022) — the post-login
@@ -74,7 +75,7 @@ export function Dashboard() {
       </Flex>
 
       {state.status === 'error' && (
-        <Alert type="error" showIcon title="Failed to load dashboard" description={state.error} />
+        <PageError error={state.error} httpStatus={state.httpStatus} requestId={state.requestId} />
       )}
 
       {/* Asset-level health leads the dashboard (ADR 0034 navigation inversion,

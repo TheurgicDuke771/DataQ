@@ -1,10 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
 
-import { errorMessage } from '../utils/errors';
+import { fetchFailure } from '../utils/errors';
 
-/** Three-state result of an async fetch. */
+/** Three-state result of an async fetch. The error branch keeps `error` (the
+ *  message, what every consumer reads) and adds the HTTP facts (#910) so a
+ *  page-level failure can render the dedicated error page for its status. */
 export type AsyncState<T> =
-  { status: 'loading' } | { status: 'ok'; data: T } | { status: 'error'; error: string };
+  | { status: 'loading' }
+  | { status: 'ok'; data: T }
+  | { status: 'error'; error: string; httpStatus?: number; requestId?: string };
 
 /**
  * Fetch on mount (and on `reload()`), with a cancelled-guard so a late
@@ -30,7 +34,13 @@ export function useAsyncData<T>(fetcher: () => Promise<T>): {
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setState({ status: 'error', error: errorMessage(err, String(err)) });
+          const failure = fetchFailure(err, String(err));
+          setState({
+            status: 'error',
+            error: failure.message,
+            httpStatus: failure.status,
+            requestId: failure.requestId,
+          });
         }
       });
     return () => {

@@ -16,6 +16,7 @@ import { Forbidden } from '../components/Forbidden';
 import { Page } from '../components/layout/Page';
 import { formatTimestamp } from '../components/results/resultsFormat';
 import { type AsyncState, useAsyncData } from '../hooks/useAsyncData';
+import { PageError } from '../components/feedback/PageError';
 
 /**
  * Workspace-admin control centre (#173): all suites / members / access overview.
@@ -33,9 +34,7 @@ export function Admin() {
     return <Spin size="large" style={{ marginTop: 80 }} />;
   }
   if (me.status === 'error') {
-    return (
-      <Alert type="error" showIcon title="Couldn't verify your access" description={me.error} />
-    );
+    return <PageError error={me.error} httpStatus={me.httpStatus} requestId={me.requestId} />;
   }
   if (!me.data.is_workspace_admin) {
     return <Forbidden message="The admin overview is restricted to workspace admins." />;
@@ -139,7 +138,9 @@ function DataTable<T extends object>({
 }) {
   if (state.status === 'loading') return <Spin size="large" />;
   if (state.status === 'error') {
-    return <Alert type="error" showIcon title={errorMessage} description={state.error} />;
+    return (
+      <PageError error={state.error} httpStatus={state.httpStatus} requestId={state.requestId} />
+    );
   }
   return (
     <Table
