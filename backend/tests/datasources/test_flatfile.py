@@ -6,6 +6,7 @@ canned frame; only the network `download_bytes` is the deferred-smoke seam.
 """
 
 import io
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
 
@@ -183,6 +184,342 @@ def test_read_dataframe_unknown_format_raises(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setattr(flatfile, "download_bytes", lambda **k: b"")
     with pytest.raises(ValueError, match="unsupported flat-file format"):
         flatfile.read_dataframe(conn_type="s3", config={}, path="x.txt", secret="s")
+
+
+# ── run_monitors (#520) ──
+
+
+def _monitor_runner() -> Any:
+    return flatfile.FlatFileCheckRunner(conn_type="s3", config={}, secret="s")
+
+
+def _spec(kind: str, **config: Any) -> Any:
+    from backend.app.datasources.base import MonitorSpec
+
+    return MonitorSpec(kind=kind, config=config)
+
+
+_LANDED = datetime(2026, 6, 29, 0, 0, tzinfo=UTC)
+
+
+def _patch_store(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    mtime: datetime | None = _LANDED,
+    csv: bytes = b"id,load_ts\n1,2026-06-29T00:00:00\n2,2026-06-28T00:00:00\n",
+    reads: list[int] | None = None,
+) -> None:
+    """Stub both live seams: the listing (arrival time) and the download."""
+    monkeypatch.setattr(flatfile, "file_last_modified", lambda **k: mtime)
+
+    def _download(**_k: Any) -> bytes:
+        if reads is not None:
+            reads.append(1)
+        return csv
+
+    monkeypatch.setattr(flatfile, "download_bytes", _download)
+
+
+def test_volume_monitor_counts_rows_of_the_resolved_batch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_store(monkeypatch)
+    out = _monitor_runner().run_monitors(
+        table="raw/orders.csv", schema=None, monitors=[_spec("volume", min_rows=5, max_rows=10)]
+    )
+    assert out[0].errored is False
+    # 2 rows against a floor of 5 → 60% short.
+    assert out[0].metric_value == pytest.approx(60.0)
+
+
+def test_freshness_with_a_column_uses_the_in_file_max(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Same semantics as the SQL runners: the newest timestamp INSIDE the data."""
+    _patch_store(monkeypatch)
+    out = _monitor_runner().run_monitors(
+        table="raw/orders.csv", schema=None, monitors=[_spec("freshness", column="load_ts")]
+    )
+    assert out[0].errored is False
+    assert out[0].observed_value is not None
+    assert out[0].observed_value["max_timestamp"].startswith("2026-06-29T00:00:00")
+
+
+def test_freshness_without_a_column_uses_file_arrival_time(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#520's headline case — and the one no SQL datasource can express."""
+    _patch_store(monkeypatch, mtime=datetime(2026, 6, 20, tzinfo=UTC))
+    out = _monitor_runner().run_monitors(
+        table="raw/orders.csv", schema=None, monitors=[_spec("freshness")]
+    )
+    assert out[0].errored is False
+    assert out[0].observed_value is not None
+    assert out[0].observed_value["max_timestamp"].startswith("2026-06-20")
+    assert out[0].expected_value == {"monitor": "freshness", "source": "file_modified_time"}
+
+
+def test_arrival_time_freshness_never_downloads_the_file(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The whole point of arrival-time freshness is that it costs a LISTING, not a
+    data read — otherwise it is strictly worse than the in-file MAX it replaces."""
+    reads: list[int] = []
+    _patch_store(monkeypatch, reads=reads)
+    _monitor_runner().run_monitors(
+        table="raw/orders.csv", schema=None, monitors=[_spec("freshness")]
+    )
+    assert reads == []
+
+
+def test_the_file_is_downloaded_at_most_once_across_monitors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Three content-needing monitors on one file must not pull the object three
+    times — the memo is the flat-file analogue of the SQL runners' one connection."""
+    reads: list[int] = []
+    _patch_store(monkeypatch, reads=reads)
+    out = _monitor_runner().run_monitors(
+        table="raw/orders.csv",
+        schema=None,
+        monitors=[
+            _spec("volume", min_rows=1, max_rows=10),
+            _spec("freshness", column="load_ts"),
+            _spec("volume", min_rows=1, max_rows=10),
+        ],
+    )
+    assert [o.errored for o in out] == [False, False, False]
+    assert len(reads) == 1
+
+
+def test_a_failed_download_is_attempted_once_not_once_per_monitor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The memo caches the ATTEMPT, not the frame. Memoizing only successes leaves
+    a failure unmemoised, so every later monitor retries the whole download — five
+    monitors against a failing 2 GB object would be five full downloads, and a
+    transient failure would produce inconsistent outcomes inside one run.
+
+    This is the #904 shape exactly: the defect lives in state carried ACROSS
+    iterations, which a single-iteration test can't see."""
+    reads: list[int] = []
+
+    def _boom(**_k: Any) -> bytes:
+        reads.append(1)
+        raise RuntimeError("connection reset")
+
+    monkeypatch.setattr(flatfile, "file_last_modified", lambda **k: _LANDED)
+    monkeypatch.setattr(flatfile, "download_bytes", _boom)
+
+    out = _monitor_runner().run_monitors(
+        table="raw/orders.csv",
+        schema=None,
+        monitors=[
+            _spec("volume", min_rows=1, max_rows=10),
+            _spec("freshness", column="load_ts"),
+            _spec("volume", min_rows=1, max_rows=10),
+        ],
+    )
+    assert [o.errored for o in out] == [True, True, True]
+    assert len(reads) == 1
+
+
+def test_a_read_failure_message_is_classified_never_the_raw_exception(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A monitor's error message is persisted to `results` and rendered in the UI,
+    alerts and MCP output. Azure auth failures on this project have carried the SAS
+    query string in their text (#828/#839), so the reason must be CLASSIFIED — the
+    raw exception is logged (where the redactor sits), never echoed outward."""
+    # A distinctive sentinel, NOT a credential-shaped string: CLAUDE.md forbids a
+    # credential in any tracked file even as a mock, and a realistic SAS here
+    # would trip secret scanning for no extra assurance — the property under test
+    # is "the raw exception text is not echoed", whatever that text happens to be.
+    detail = "UPSTREAM-DETAIL-THAT-MUST-NOT-BE-ECHOED"
+
+    def _boom(**_k: Any) -> bytes:
+        raise RuntimeError(f"auth failed: {detail}")
+
+    monkeypatch.setattr(flatfile, "file_last_modified", lambda **k: _LANDED)
+    monkeypatch.setattr(flatfile, "download_bytes", _boom)
+
+    out = _monitor_runner().run_monitors(
+        table="raw/orders.csv", schema=None, monitors=[_spec("volume", min_rows=1, max_rows=2)]
+    )
+    message = out[0].error_message or ""
+    assert out[0].errored is True
+    assert detail not in message
+    assert "auth failed" not in message
+    assert "could not read" in message
+
+
+def test_a_missing_file_errors_rather_than_reporting_fresh(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A missing object is exactly the incident arrival-time freshness exists to
+    catch, so a None arrival time must NOT read as age zero."""
+    _patch_store(monkeypatch, mtime=None)
+    out = _monitor_runner().run_monitors(
+        table="raw/orders.csv", schema=None, monitors=[_spec("freshness")]
+    )
+    assert out[0].errored is True
+    assert out[0].metric_value is None
+
+
+def test_an_unreachable_store_fails_the_whole_run_not_one_monitor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The open-connection-first contract the SQL and Iceberg runners keep: a bad
+    credential is a run failure, not N identical per-check errors."""
+
+    def _boom(**_k: Any) -> Any:
+        raise RuntimeError("credential expired")
+
+    monkeypatch.setattr(flatfile, "file_last_modified", _boom)
+    with pytest.raises(RuntimeError, match="credential expired"):
+        _monitor_runner().run_monitors(
+            table="raw/orders.csv",
+            schema=None,
+            monitors=[_spec("volume", min_rows=1, max_rows=2)],
+        )
+
+
+def test_an_unknown_freshness_column_errors_only_that_monitor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_store(monkeypatch)
+    out = _monitor_runner().run_monitors(
+        table="raw/orders.csv",
+        schema=None,
+        monitors=[_spec("freshness", column="nope"), _spec("volume", min_rows=1, max_rows=10)],
+    )
+    assert out[0].errored is True and "not in" in (out[0].error_message or "")
+    assert out[1].errored is False
+
+
+def test_an_all_null_freshness_column_cannot_be_assessed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An empty MAX must route through "can't be assessed", never age zero — a
+    silent green on a column that carries no timestamps at all."""
+    _patch_store(monkeypatch, csv=b"id,load_ts\n1,\n2,\n")
+    out = _monitor_runner().run_monitors(
+        table="raw/orders.csv", schema=None, monitors=[_spec("freshness", column="load_ts")]
+    )
+    assert out[0].errored is True
+    assert out[0].metric_value is None
+
+
+def test_freshness_column_works_on_a_real_parquet_round_trip(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Rides REAL Parquet bytes through the real `read_dataframe`, not a hand-built
+    frame — because that difference was the whole bug.
+
+    `read_dataframe` reads Parquet with `dtype_backend="pyarrow"`, so a timestamp
+    column arrives as `timestamp[ns][pyarrow]`, for which `is_datetime64_any_dtype`
+    is **False**. Column freshness therefore failed on every Parquet file with
+    "your timestamp column is not a timestamp" — while the entire suite stayed
+    green, because every other fixture here builds a numpy-backed DataFrame by
+    hand. Same shape as the #823 lineage bug: the fixture encoded our mental model
+    instead of the real payload.
+    """
+    buf = io.BytesIO()
+    pd.DataFrame(
+        {"id": [1, 2], "load_ts": pd.to_datetime(["2026-06-28", "2026-06-29"])}
+    ).to_parquet(buf)
+    _patch_store(monkeypatch)
+    monkeypatch.setattr(flatfile, "download_bytes", lambda **k: buf.getvalue())
+
+    out = _monitor_runner().run_monitors(
+        table="raw/orders.parquet",
+        schema=None,
+        monitors=[_spec("freshness", column="load_ts")],
+    )
+    assert out[0].errored is False, out[0].error_message
+    assert out[0].observed_value is not None
+    assert out[0].observed_value["max_timestamp"].startswith("2026-06-29")
+
+
+def test_volume_works_on_a_real_parquet_round_trip(monkeypatch: pytest.MonkeyPatch) -> None:
+    buf = io.BytesIO()
+    pd.DataFrame({"id": [1, 2, 3]}).to_parquet(buf)
+    _patch_store(monkeypatch)
+    monkeypatch.setattr(flatfile, "download_bytes", lambda **k: buf.getvalue())
+    out = _monitor_runner().run_monitors(
+        table="raw/orders.parquet", schema=None, monitors=[_spec("volume", min_rows=3, max_rows=5)]
+    )
+    assert out[0].errored is False and out[0].metric_value == 0.0
+
+
+def test_arrow_backed_numeric_is_still_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The epoch-trap guard must survive the Arrow-dtype fix: widening the temporal
+    check must not accidentally let `int64[pyarrow]` through."""
+    buf = io.BytesIO()
+    pd.DataFrame({"id": [1, 2], "order_no": [1001, 1002]}).to_parquet(buf)
+    _patch_store(monkeypatch)
+    monkeypatch.setattr(flatfile, "download_bytes", lambda **k: buf.getvalue())
+    out = _monitor_runner().run_monitors(
+        table="raw/orders.parquet", schema=None, monitors=[_spec("freshness", column="order_no")]
+    )
+    assert out[0].errored is True
+    assert "not a date/timestamp" in (out[0].error_message or "")
+
+
+def test_a_numeric_freshness_column_is_refused_not_read_as_epoch_offsets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The nastiest failure mode this path can have. `pd.to_datetime` reads integers
+    as epoch offsets, so a freshness monitor pointed at an id column would date the
+    data to 1970 and fire CRITICAL staleness forever — a confident wrong answer,
+    and one that looks exactly like a real incident. It must refuse instead."""
+    _patch_store(monkeypatch, csv=b"id,order_no\n1,1001\n2,1002\n")
+    out = _monitor_runner().run_monitors(
+        table="raw/orders.csv", schema=None, monitors=[_spec("freshness", column="order_no")]
+    )
+    assert out[0].errored is True
+    assert out[0].metric_value is None
+    assert "not a date/timestamp" in (out[0].error_message or "")
+
+
+def test_csv_string_timestamps_are_parsed_not_string_compared(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A CSV's timestamp column is object-dtype STRINGS (Parquet's is a real
+    datetime). Lexical max agrees with chronological max for ISO-8601, so the bug
+    hides behind the common format — this fixture picks one where they DISAGREE:
+    lexically "2026-Nov-30" > "2026-Dec-01" (N > D), chronologically it's the
+    reverse. A string max would report November as the newest data.
+
+    Deliberately unambiguous, too: a `29/06/2026` fixture would lean on pandas'
+    day-first *inference*, which is version-dependent and would make this test
+    assert the parser's guess rather than our behaviour."""
+    _patch_store(
+        monkeypatch,
+        csv=b"id,load_ts\n1,2026-Nov-30 00:00\n2,2026-Dec-01 00:00\n",
+    )
+    out = _monitor_runner().run_monitors(
+        table="raw/orders.csv", schema=None, monitors=[_spec("freshness", column="load_ts")]
+    )
+    assert out[0].errored is False
+    assert out[0].observed_value is not None
+    assert out[0].observed_value["max_timestamp"].startswith("2026-12-01")
+
+
+def test_an_unparseable_text_freshness_column_cannot_be_assessed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_store(monkeypatch, csv=b"id,load_ts\n1,not-a-date\n2,also-not\n")
+    out = _monitor_runner().run_monitors(
+        table="raw/orders.csv", schema=None, monitors=[_spec("freshness", column="load_ts")]
+    )
+    assert out[0].errored is True
+    assert out[0].metric_value is None
+
+
+def test_runner_advertises_the_kinds_it_implements() -> None:
+    """#429: the run-path gate reads this, so it must match reality."""
+    assert flatfile.FlatFileCheckRunner.supported_monitor_kinds == frozenset(
+        {"freshness", "volume"}
+    )
 
 
 # ── build_flatfile_runner ──
@@ -373,8 +710,6 @@ def test_run_checks_duplicate_identical_expectations_stay_distinct(
 
 # ── batch resolution (pure resolve_batch + mocked list orchestrator) ──
 
-from datetime import UTC, datetime  # noqa: E402
-
 
 def _dt(day: int) -> datetime:
     return datetime(2026, 6, day, tzinfo=UTC)
@@ -498,6 +833,118 @@ def test_flatfile_runner_survives_adversarial_frame(
 
 _S3_CONFIG = {"bucket": "raw", "region": "us-west-2", "access_key_id": "AKIAX"}
 _ADLS_CONFIG = {"account_url": "https://acct.blob.core.windows.net", "container": "raw"}
+
+
+# ── file_last_modified (live seam) ──
+
+
+class _HeadS3Stub:
+    """Minimal S3 client stub: head_object only."""
+
+    def __init__(self, *, modified: datetime | None = _LANDED, error_code: str | None = None):
+        self._modified = modified
+        self._error_code = error_code
+        self.calls: list[tuple[str, str]] = []
+
+    def head_object(self, *, Bucket: str, Key: str) -> dict[str, Any]:  # noqa: N803 (boto3 kwargs)
+        self.calls.append((Bucket, Key))
+        if self._error_code is not None:
+            from botocore.exceptions import ClientError
+
+            raise ClientError({"Error": {"Code": self._error_code}}, "HeadObject")
+        return {"LastModified": self._modified}
+
+
+def test_file_last_modified_s3_heads_the_exact_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A single metadata call, not a prefix listing: this runs on every scheduled
+    monitor run, and `data/orders.csv` among dated siblings would otherwise drain
+    every page each time — the unbounded-read-on-a-scheduled-path defect (#854).
+    Heading the exact key is also exact by construction rather than by filtering."""
+    stub = _HeadS3Stub()
+    monkeypatch.setattr(flatfile, "_s3_client", lambda cfg, secret: stub)
+    got = flatfile.file_last_modified(
+        conn_type="s3", config=_S3_CONFIG, path="orders/a.csv", secret="s"
+    )
+    assert got == _LANDED
+    assert stub.calls == [(_S3_CONFIG["bucket"], "orders/a.csv")]
+
+
+@pytest.mark.parametrize("code", ["404", "NoSuchKey", "NotFound"])
+def test_file_last_modified_s3_missing_object_is_none(
+    monkeypatch: pytest.MonkeyPatch, code: str
+) -> None:
+    """Absent → None, which the caller turns into a per-check error. A missing file
+    is the incident this monitor exists to catch, so it must not read as fresh."""
+    monkeypatch.setattr(flatfile, "_s3_client", lambda cfg, secret: _HeadS3Stub(error_code=code))
+    assert (
+        flatfile.file_last_modified(
+            conn_type="s3", config=_S3_CONFIG, path="orders/gone.csv", secret="s"
+        )
+        is None
+    )
+
+
+def test_file_last_modified_s3_other_errors_propagate(monkeypatch: pytest.MonkeyPatch) -> None:
+    """This call is also the store-reachability probe, so an auth/permission failure
+    must fail the whole run rather than be mistaken for a missing file."""
+    monkeypatch.setattr(
+        flatfile, "_s3_client", lambda cfg, secret: _HeadS3Stub(error_code="AccessDenied")
+    )
+    from botocore.exceptions import ClientError
+
+    with pytest.raises(ClientError):
+        flatfile.file_last_modified(
+            conn_type="s3", config=_S3_CONFIG, path="orders/a.csv", secret="s"
+        )
+
+
+class _HeadBlobStub:
+    """Minimal ADLS BlobServiceClient stub for get_blob_properties."""
+
+    def __init__(self, *, modified: datetime | None = _LANDED, missing: bool = False):
+        self._modified = modified
+        self._missing = missing
+        self.closed = False
+
+    def get_blob_client(self, *, container: str, blob: str) -> Any:
+        outer = self
+
+        class _Blob:
+            def get_blob_properties(self) -> Any:
+                if outer._missing:
+                    from azure.core.exceptions import ResourceNotFoundError
+
+                    raise ResourceNotFoundError("nope")
+                return SimpleNamespace(last_modified=outer._modified)
+
+        return _Blob()
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def test_file_last_modified_adls_reads_blob_properties_and_closes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stub = _HeadBlobStub()
+    monkeypatch.setattr(flatfile, "_blob_service", lambda acfg, secret: stub)
+    got = flatfile.file_last_modified(
+        conn_type="adls_gen2", config=_ADLS_CONFIG, path="orders/a.csv", secret="sas"
+    )
+    assert got == _LANDED
+    assert stub.closed
+
+
+def test_file_last_modified_adls_missing_blob_is_none_and_still_closes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stub = _HeadBlobStub(missing=True)
+    monkeypatch.setattr(flatfile, "_blob_service", lambda acfg, secret: stub)
+    got = flatfile.file_last_modified(
+        conn_type="adls_gen2", config=_ADLS_CONFIG, path="orders/gone.csv", secret="sas"
+    )
+    assert got is None
+    assert stub.closed  # the finally must run on the not-found path too
 
 
 class _S3Stub:

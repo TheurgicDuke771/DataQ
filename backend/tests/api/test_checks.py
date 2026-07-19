@@ -586,14 +586,43 @@ def test_create_volume_with_inverted_range_rejected(client: TestClient, db_sessi
     assert resp.json()["error"]["code"] == "check_config_invalid"
 
 
-def test_create_monitor_on_flatfile_datasource_rejected(
+def test_create_monitor_on_flatfile_datasource_returns_201(
     client: TestClient, db_session: Any
 ) -> None:
-    # Flat-file runners have no run_monitors → not monitor-capable, like custom-SQL.
+    # #520: flat files ARE monitor-capable now — the runner computes volume as the
+    # resolved batch's row count. (This test asserted the opposite before #520.)
     sid = _suite_id(client, db_session, conn_type="s3")
     resp = client.post(f"/api/v1/suites/{sid}/checks", json=_volume_payload())
+    assert resp.status_code == 201
+    assert resp.json()["kind"] == "volume"
+
+
+def test_create_freshness_without_a_column_on_flatfile_returns_201(
+    client: TestClient, db_session: Any
+) -> None:
+    """#520's headline: a flat file can measure freshness from ARRIVAL time, which
+    no SQL datasource can express. This is the case that catches "the producer
+    stopped sending files" — invisible to an in-file MAX, since the newest file is
+    old but its rows look fresh."""
+    sid = _suite_id(client, db_session, conn_type="s3")
+    payload = {**_freshness_payload(), "config": {}}
+    resp = client.post(f"/api/v1/suites/{sid}/checks", json=payload)
+    assert resp.status_code == 201, resp.text
+
+
+@pytest.mark.parametrize("conn_type", ["snowflake", "unity_catalog", "iceberg"])
+def test_create_freshness_without_a_column_on_non_file_datasource_rejected(
+    client: TestClient, db_session: Any, conn_type: str
+) -> None:
+    """A table has no arrival time, so a column-less freshness monitor there can
+    never be evaluated. It must fail at AUTHOR time — the shared config validator
+    allows the omission (for flat files), so without this gate the check would save
+    clean and then error on every run."""
+    sid = _suite_id(client, db_session, conn_type=conn_type)
+    payload = {**_freshness_payload(), "config": {}}
+    resp = client.post(f"/api/v1/suites/{sid}/checks", json=payload)
     assert resp.status_code == 422
-    assert resp.json()["error"]["code"] == "check_config_invalid"
+    assert "arrival time" in resp.json()["error"]["message"]
 
 
 def test_create_monitor_on_iceberg_datasource_returns_201(

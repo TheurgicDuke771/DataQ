@@ -83,17 +83,34 @@ A read-only SQL rule in the Monaco editor: **any rows returned are failures**. U
 (`SELECT * FROM {batch} WHERE amount < 0`). Single read-only statement enforced
 server-side.
 
-### Freshness monitor (SQL datasources + Iceberg — ADR 0012/0030)
+### Freshness monitor (all datasources — ADR 0012/0030)
 
 *How stale is the table?* Point it at the load/updated **timestamp column**; the check
 measures hours since `MAX(column)` and bands that age with the thresholds. A **fail or
 critical threshold is required** — without one, a freshness check could never fail.
 
-### Volume monitor (SQL datasources + Iceberg — ADR 0012/0030)
+**On a flat file (ADLS Gen2 / S3) the timestamp column is optional.** Leave it blank
+and the check measures **when the file last landed** (the object's modified time)
+instead of the newest timestamp inside it. These catch different failures, and a
+landing zone usually wants both:
+
+| Blank column (arrival time) | Named column (in-file `MAX`) |
+|---|---|
+| Catches **"the producer stopped sending files"** — no new file has arrived. An in-file `MAX` is blind to this: the newest file is old, but its rows look perfectly fresh. | Catches **"files keep arriving but the data in them is stale"** — the pipeline runs, the content doesn't advance. |
+| Costs a listing, no data read. | Reads the resolved batch. |
+
+Caveats for the in-file form: a CSV's timestamps are text, so they're parsed — use
+**ISO-8601**, since an ambiguous `06/07/2026` follows pandas' day-first inference.
+A **numeric** column is refused outright rather than read as an epoch offset, which
+would date your data to 1970 and fire critical staleness forever.
+
+### Volume monitor (all datasources — ADR 0012/0030)
 
 *Did the load deliver?* Set the expected **min/max row count**; thresholds optionally
 band the % by which the count falls outside the range (a spike can exceed 100%), or
-leave them blank for binary in-range pass/fail.
+leave them blank for binary in-range pass/fail. On a flat file the count is over the
+**resolved batch** — the single file the target's batch pattern selects, not the
+whole prefix.
 
 ### Type names for `expect_column_values_to_be_of_type`
 

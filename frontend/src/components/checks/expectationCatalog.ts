@@ -14,6 +14,7 @@
 
 import {
   DATASOURCE_CATEGORY,
+  isFileDatasource,
   isSqlQueryable,
   supportsMonitors,
   type ConnectionType,
@@ -390,4 +391,39 @@ export function expectationsByCategoryFor(
     return true; // datasource-agnostic category
   };
   return EXPECTATIONS_BY_CATEGORY.filter((g) => allowed(g.category));
+}
+
+/**
+ * A spec's config fields, adjusted for the suite's datasource (#520).
+ *
+ * Only one adjustment today: on a **flat-file** connection the freshness
+ * timestamp column becomes optional, because leaving it blank selects a
+ * genuinely different measurement — the file's *arrival* time rather than the
+ * newest timestamp inside it. That's the case a warehouse can't express, and the
+ * one that catches "the producer stopped sending files" (an in-file MAX can't
+ * see it: the newest file is old, but its rows look perfectly fresh).
+ *
+ * Kept here rather than in the form so the catalog stays the single description
+ * of what a check needs, and so it can't drift from the backend gate in
+ * `check_service` that rejects a column-less freshness on non-file datasources.
+ */
+export function configFieldsFor(
+  spec: ExpectationSpec,
+  connectionType: ConnectionType | undefined,
+): ConfigField[] {
+  if (
+    spec.kind !== 'freshness' ||
+    connectionType === undefined ||
+    !isFileDatasource(connectionType)
+  )
+    return spec.fields;
+  return spec.fields.map((field) =>
+    field.name === 'column'
+      ? {
+          ...field,
+          optional: true,
+          help: 'Leave blank to measure when the FILE last landed instead — catches a producer that stopped sending files, which a timestamp inside the data cannot.',
+        }
+      : field,
+  );
 }

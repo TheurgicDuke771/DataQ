@@ -207,30 +207,53 @@ def monitor_outcome(
 # and there is no interpolation left for Bandit's S608/B608 to flag.
 
 
+def freshness_column(config: dict[str, Any]) -> str | None:
+    """The freshness column, or ``None`` for **arrival-time** freshness (#520).
+
+    Omitting ``column`` means "measure when the data last *landed*" rather than
+    the newest timestamp *inside* it. Only datasources with a native arrival time
+    can answer that — a flat file has one (the object's last-modified), a
+    warehouse table does not — so the SQL builder still demands a column and
+    `check_service` gates the column-less form to flat-file connections at author
+    time rather than letting it fail at run time.
+
+    The two measure genuinely different things and a flat file wants both
+    available: an in-file ``MAX(load_ts)`` misses "the producer stopped sending
+    files entirely" (the newest file is old but its rows look fine), while
+    arrival time misses "files keep landing but the rows inside are stale".
+    """
+    column = config.get("column")
+    return None if column is None else _ident(column, what="freshness column")
+
+
 def _validate_freshness(config: dict[str, Any]) -> None:
-    _ident(config.get("column"), what="freshness column")
+    freshness_column(config)
 
 
 def _freshness_statement(target: TableClause, config: dict[str, Any]) -> Select[Any]:
     from sqlalchemy import column as sql_column
     from sqlalchemy import func, select
 
+    # Required here, not optional: a SQL table has no arrival time to fall back to.
     name = _ident(config.get("column"), what="freshness column")
     return select(func.max(sql_column(folding_identifier(name)))).select_from(target)
 
 
 def _freshness_outcome(scalar: Any, config: dict[str, Any], now: datetime) -> CheckOutcome:
     expectation_type = monitor_expectation_type(FRESHNESS)
-    column = _ident(config.get("column"), what="freshness column")
+    column = freshness_column(config)
+    source = f"MAX({column})" if column is not None else "file arrival time"
+    expected: dict[str, Any] = {"monitor": FRESHNESS}
+    expected["column" if column is not None else "source"] = column or "file_modified_time"
     if scalar is None:
         return CheckOutcome(
             expectation_type=expectation_type,
             success=False,
             errored=True,
-            error_message=f"no rows: MAX({column}) is NULL, freshness can't be assessed",
-            expected_value={"monitor": FRESHNESS, "column": column},
+            error_message=f"{source} is unavailable, freshness can't be assessed",
+            expected_value=expected,
         )
-    max_ts = _as_aware_datetime(scalar, column)
+    max_ts = _as_aware_datetime(scalar, source)
     age_hours = _freshness_age_hours(max_ts, now)
     # NOTE: freshness has no in-config bound (unlike volume's min/max_rows), so
     # the binary fallback is unconditionally `success=True` — "stale" is only
@@ -243,7 +266,7 @@ def _freshness_outcome(scalar: Any, config: dict[str, Any], now: datetime) -> Ch
         success=True,  # binary fallback when no thresholds; thresholds band the age
         metric_value=age_hours,
         observed_value={"max_timestamp": max_ts.isoformat(), "age_hours": round(age_hours, 3)},
-        expected_value={"monitor": FRESHNESS, "column": column},
+        expected_value=expected,
     )
 
 

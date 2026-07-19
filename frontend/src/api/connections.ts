@@ -88,14 +88,26 @@ export const SQL_QUERYABLE_TYPES: ConnectionType[] = ['snowflake', 'unity_catalo
 
 export const isSqlQueryable = (type: ConnectionType): boolean => SQL_QUERYABLE_TYPES.includes(type);
 
+/** The flat-file datasources — the only ones with a native per-object arrival
+ *  time, so the only ones that can measure freshness without a column (#520). */
+export const FILE_TYPES: ConnectionType[] = ['adls_gen2', 's3'];
+
+export const isFileDatasource = (type: ConnectionType): boolean => FILE_TYPES.includes(type);
+
 /**
  * Datasources whose runner can evaluate freshness/volume **monitors** — the SQL
- * datasources (in-warehouse aggregate) plus Iceberg (native `scan().count()` / a
- * column MAX, ADR 0030). Broader than `SQL_QUERYABLE_TYPES`: Iceberg supports
- * monitors but is **not** SQL-queryable (no custom-SQL). Mirrors the backend
- * `check_service.MONITOR_CAPABLE_TYPES` author gate.
+ * datasources (in-warehouse aggregate), Iceberg (native `scan().count()` / a
+ * column MAX, ADR 0030), and flat files (over the resolved batch, #520). Broader
+ * than `SQL_QUERYABLE_TYPES`: neither Iceberg nor a flat file is SQL-queryable
+ * (no custom-SQL). Mirrors the backend `check_service.MONITOR_CAPABLE_TYPES`
+ * author gate.
  */
-export const MONITOR_CAPABLE_TYPES: ConnectionType[] = ['snowflake', 'unity_catalog', 'iceberg'];
+export const MONITOR_CAPABLE_TYPES: ConnectionType[] = [
+  'snowflake',
+  'unity_catalog',
+  'iceberg',
+  ...FILE_TYPES,
+];
 
 export const supportsMonitors = (type: ConnectionType): boolean =>
   MONITOR_CAPABLE_TYPES.includes(type);

@@ -75,19 +75,25 @@ _V1_SUPPORTED_KINDS = {"expectation", *MONITOR_KINDS, COMPARISON_KIND}
 COMPARISON_EXPECTATION_TYPE = "comparison:records"
 COMPARISON_EXPECTATION_TYPES = ("comparison:records", "comparison:columns")
 
+# The flat-file datasources. Their runner reads the resolved batch into pandas, so
+# volume is a row count and freshness is either an in-frame MAX or — uniquely —
+# the object's arrival time (#520).
+FILE_TYPES = frozenset({"adls_gen2", "s3"})
+
 # Datasources whose runner implements `run_monitors` (a `MonitorRunner`) — the
 # author-time gate for freshness/volume checks. The SQL datasources compute the
 # aggregate in-warehouse; Iceberg computes it natively (`scan().count()` / a column
-# MAX, ADR 0030). This is broader than `SQL_QUERYABLE_TYPES` (which gates *custom
-# SQL* — Iceberg is a native DataFrame read, not SQL-queryable), so the two stay
-# distinct. Kept in sync with the runners' `supported_monitor_kinds` capability (#429).
-MONITOR_CAPABLE_TYPES = frozenset({*SQL_QUERYABLE_TYPES, "iceberg"})
+# MAX, ADR 0030); flat files compute it over the resolved batch (#520). This is
+# broader than `SQL_QUERYABLE_TYPES` (which gates *custom SQL* — neither Iceberg nor
+# a flat file is SQL-queryable), so the two stay distinct. Kept in sync with the
+# runners' `supported_monitor_kinds` capability (#429).
+MONITOR_CAPABLE_TYPES = frozenset({*SQL_QUERYABLE_TYPES, "iceberg", *FILE_TYPES})
 
 # schema_drift (#592) introspects the target's column shape through the
-# baseline-diff executor (`services/schema_drift.py`) — not the runner — so it
-# also covers the flat-file datasources (Parquet footer / CSV header sample),
-# which have no `run_monitors` at all.
-SCHEMA_DRIFT_CAPABLE_TYPES = frozenset({*MONITOR_CAPABLE_TYPES, "adls_gen2", "s3"})
+# baseline-diff executor (`services/schema_drift.py`) — not the runner — so its
+# coverage is derived separately even though it now matches: flat files reached it
+# (Parquet footer / CSV header sample) before they had a `run_monitors` at all.
+SCHEMA_DRIFT_CAPABLE_TYPES = frozenset({*MONITOR_CAPABLE_TYPES, *FILE_TYPES})
 
 
 class CheckNotFoundError(DataQError):
@@ -217,6 +223,17 @@ def validate_monitor_check(
         validate_monitor_config(kind, config)
     except MonitorConfigError as exc:
         raise CheckConfigInvalidError(str(exc), detail={"kind": kind, "config": config}) from exc
+    # A column-less freshness monitor measures ARRIVAL time, which only a
+    # datasource with a native per-object timestamp can answer (#520). Gate it
+    # here: `monitors.freshness_column` accepts the omission structurally so the
+    # flat-file runner can use it, and without this the SQL builder would raise
+    # only at RUN time — a check that saves clean and then errors every night.
+    if kind == FRESHNESS and config.get("column") is None and connection_type not in FILE_TYPES:
+        raise CheckConfigInvalidError(
+            f"a freshness monitor on {connection_type!r} needs a timestamp column — "
+            "only flat-file datasources can measure freshness from file arrival time",
+            detail={"kind": kind, "connection_type": connection_type},
+        )
     if kind == FRESHNESS and not _has_positive_threshold(fail_threshold, critical_threshold):
         raise CheckConfigInvalidError(
             "a freshness monitor needs a positive fail or critical age threshold (hours) — "

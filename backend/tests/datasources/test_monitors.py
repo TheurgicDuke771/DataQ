@@ -205,7 +205,7 @@ def test_freshness_empty_table_is_operational_error() -> None:
     assert out.errored is True
     assert out.success is False
     assert out.metric_value is None
-    assert "NULL" in (out.error_message or "")
+    assert "MAX(ts) is unavailable" in (out.error_message or "")
 
 
 def test_freshness_non_timestamp_scalar_raises() -> None:
