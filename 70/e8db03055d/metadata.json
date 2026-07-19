@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "70e8db03055d",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-923-workspace-visible-assets",
+  "checkpoints_count": 6,
+  "files_touched": [
+    "docs/adr/0027-suite-permission-model-workspace-admin.md",
+    "docs/adr/0034-asset-entity-openlineage-identity-lineage-pull.md",
+    "docs/adr/0037-workspace-visible-asset-identity.md",
+    "docs/adr/README.md",
+    "docs/feature-matrix.md",
+    "docs/post-v1-assets-lineage-incidents-notes.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/70/e8db03055d/0/metadata.json",
+      "transcript": "/70/e8db03055d/0/full.jsonl",
+      "compact_transcript": "/70/e8db03055d/0/transcript.jsonl",
+      "content_hash": "/70/e8db03055d/0/content_hash.txt",
+      "prompt": "/70/e8db03055d/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1666,
+    "cache_creation_tokens": 9182694,
+    "cache_read_tokens": 379184239,
+    "output_tokens": 599602,
+    "api_call_count": 852
+  }
+}
