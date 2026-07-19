@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "75554c47aab5",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-904-beat-watchdog",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/75/554c47aab5/0/metadata.json",
+      "transcript": "/75/554c47aab5/0/full.jsonl",
+      "compact_transcript": "/75/554c47aab5/0/transcript.jsonl",
+      "content_hash": "/75/554c47aab5/0/content_hash.txt",
+      "prompt": "/75/554c47aab5/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2272,
+    "cache_creation_tokens": 11896246,
+    "cache_read_tokens": 524719482,
+    "output_tokens": 799533,
+    "api_call_count": 1158
+  }
+}
