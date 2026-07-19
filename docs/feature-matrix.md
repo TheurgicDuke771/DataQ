@@ -61,11 +61,10 @@ five mechanisms:
    one ([details](orchestration.md#lineage-from-the-warehouse-warehouselineageprovider-858)).
    **Column grain (#901):** where the warehouse offers it (UC
    `system.access.column_lineage` — live-verified), the pull refines each table edge with
-   `upstream column → downstream column` pairs, shown on the asset page; a mapping whose
-   far endpoint is outside your grants renders as a **count-only redacted box** (the #845
-   one-rule — column names of a hidden asset are schema disclosure). Snowflake's column
-   grain lives in `ACCESS_HISTORY` (Enterprise) and reports honestly unavailable on
-   Standard.
+   `upstream column → downstream column` pairs, shown on the asset page to every
+   workspace member (ADR 0037 — column names are schema metadata, i.e. identity).
+   Snowflake's column grain lives in `ACCESS_HISTORY` (Enterprise) and reports honestly
+   unavailable on Standard.
 
 | Datasource | Asset entity | ① Run-stamping | ② dbt manifest | ③ OL emission | ④ Catalog pull | ⑤ Warehouse-native |
 |---|---|:-:|:-:|:-:|:-:|:-:|

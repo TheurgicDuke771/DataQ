@@ -4,35 +4,28 @@ Assets are what users *reason about*; suites remain how checks *execute* (ADR 00
 guiding principle). This module aggregates, per asset, the suites that target it +
 their latest run health + the lineage neighbourhood, for the `/assets` API.
 
-**Authz is derived, never granted (ADR 0034 decision 5 / ADR 0027).** An asset is
-visible iff the caller can `view` ≥1 suite mapped to it (`suites.asset_id`) **or the
-asset has no suites at all**; the aggregation is filtered to *only* the suites the
-caller's grants cover; a workspace-admin sees every suite (`include_all`). An asset
-whose suites the caller can all not see is 404-no-leak (the API layer raises
-`AssetNotFoundError`). This reuses `suite_service.accessible_suite_ids` verbatim, so
-the visibility rule has a single source of truth and can never drift from the
-suites/runs surfaces.
+**The ADR 0037 three-layer rule (supersedes ADR 0034 decision 5 + #845/#846/#920):**
 
-**The suite-less clause is an ADR 0034 amendment (#845/#846).** Redaction protects a
-*grant*; an asset nobody has granted is protected by nothing — a suite-less asset (a
-raw source table, an unmonitored mart, an asset whose last suite was deleted, its runs
-cascading with it per #540) has no runs, results or samples behind it. Withholding only
-its *name*, while the lineage graph reveals its existence anyway, bought nothing and
-cost a great deal: it made browse disagree with the detail endpoint about what exists,
-and it would have painted every raw upstream "🔒 Restricted" — which isn't restricted,
-it's merely unmonitored.
+- **Identity & topology are workspace knowledge.** Every authenticated member sees
+  every asset's full identity (name, namespace, env, description, owner,
+  ``last_seen``) and the full lineage neighbourhood — named nodes, real edges, and
+  column-level pairs. Nothing here is redacted, anonymized, or 404'd: the detail
+  endpoint opens for every existing asset, and only a truly unknown id 404s.
+- **Aggregate verdicts are workspace-true.** The health rollup (``worst_severity``,
+  check counts, run-state flags, ``suite_count``) is computed over **all** composing
+  suites for **every** viewer — one truth per asset, never a per-viewer partial that
+  silently disagrees between users (#889's two-verdicts-on-one-page problem).
+- **Itemized evaluation stays behind the ADR 0027 suite grants.** The per-suite
+  breakdown on the detail page lists only suites the caller can view — derived
+  from `suite_authz.effective_permissions` (the same owned/shared/workspace-admin
+  resolution that labels the rows, so listing and labeling can never disagree);
+  the rest collapse to ``restricted_suite_count`` — a count, never names.
+  Suite/run/result/sample/incident endpoints keep their own grant scoping and
+  404-no-leak at the suite grain.
 
 Asset-metadata mutation (owner, description) is workspace-Admin-only — enforced at
 the API layer (`require_workspace_admin`), not here; `update_asset_metadata` is the
 plain persistence half.
-
-**Lineage nodes ARE authz-filtered — but redacted, never dropped (#845).** The walk
-itself is unscoped, because blast radius is the point (ADR 0034 §2) and a table's
-consumers do not stop existing because you can't see them. A neighbour behind the grant
-boundary is therefore returned as an **anonymous** node (id + depth only; no name,
-namespace, env, or monitored flag) rather than named — a graph that named it would
-defeat the no-leak 404 one click earlier, which is precisely what it used to do — and
-rather than removed, since removing it would assert "nothing consumes this table".
 """
 
 from __future__ import annotations
@@ -59,14 +52,14 @@ from backend.app.db.models import (
 from backend.app.lineage.edges import lineage_neighbourhood
 from backend.app.services.run_service import check_outcome_counts, operational_result_flags
 from backend.app.services.suite_authz import effective_permissions
-from backend.app.services.suite_service import accessible_suite_ids
 
 log = get_logger(__name__)
 
 
 class AssetNotFoundError(DataQError):
-    """Raised when an asset does not exist *or* is wholly outside the caller's
-    grants — the two are indistinguishable by design (404-no-leak, ADR 0027)."""
+    """Raised when an asset id names no asset. Identity is workspace-visible
+    (ADR 0037), so — unlike the suite endpoints — there is no no-leak case here:
+    every existing asset opens for every member."""
 
     status_code = 404
     code = "asset_not_found"
@@ -117,7 +110,9 @@ class ComposingSuite:
 
 @dataclass(frozen=True)
 class AssetSummary:
-    """List-row aggregation for one visible asset.
+    """List-row aggregation for one asset — **workspace-true** (ADR 0037): every
+    field is identical for every viewer, and the health axes aggregate over ALL
+    composing suites regardless of the caller's grants. One verdict per asset.
 
     **Two orthogonal health axes (#803).** The old single "health" conflated them:
 
@@ -134,20 +129,11 @@ class AssetSummary:
 
     id: uuid.UUID
     namespace: str
-    # ``None`` = a REDACTED row (#920): the asset exists, is monitored by suites the
-    # caller holds no grant on, and browse includes it as an anonymous entry rather
-    # than omitting it — the tree-level twin of the lineage graph's #845 rule
-    # (omission asserts "this schema holds nothing else"). The namespace stays (the
-    # tree needs the placement — a deliberate, user-directed disclosure); the NAME
-    # is the protected fact, along with env/description/owner and every health
-    # field (forced to their empty defaults — a hidden asset's health is itself a
-    # fact about it). The detail endpoint keeps 404ing these no-leak.
-    name: str | None
+    name: str
     env: str | None
     description: str | None
     owner_user_id: uuid.UUID | None
-    # None on redacted rows (#920) — liveness cadence is a fact about the asset.
-    last_seen: datetime | None
+    last_seen: datetime
     suite_count: int
     # ── suite health (data quality) ──
     worst_severity: str | None
@@ -168,11 +154,6 @@ class AssetSummary:
     has_cancelled_run: bool = False
     has_operational_error: bool = False
     has_skip: bool = False
-    is_accessible: bool = True
-    # Redacted rows only (#920): the non-leaf path segments (db/schema or folder),
-    # pre-split server-side so client and server can never disagree on the
-    # separator rule. None on full rows and single-segment redacted names.
-    name_prefix_segments: list[str] | None = None
 
 
 @dataclass(frozen=True)
@@ -183,31 +164,16 @@ class LineageNode:
     neighbour), which is what lets the UI lay the graph out in columns (#805)
     instead of flattening every hop into one list.
 
-    **A neighbour outside the caller's grants is REDACTED, not omitted (#845).** The
-    lineage walk is not authz-scoped — it can't be, because the graph's job is blast
-    radius, and a table's real consumers do not stop existing because you can't see
-    them. But the asset endpoint 404s those assets *no-leak* (ADR 0034 decision 5), so
-    handing their ``name``/``namespace``/``env`` to a non-grantee through the graph
-    would defeat that guarantee one click earlier — and did.
-
-    So an inaccessible neighbour keeps only ``id`` (an opaque UUID; the edges need it
-    to draw the shape) and ``depth``: identity fields are ``None`` and ``is_monitored``
-    is forced ``False``. The user still learns that *something* is downstream — which
-    keeps the blast radius honest instead of asserting the confident falsehood
-    "nothing consumes this table" (the #828/#823 lesson: never fix a leak by shipping a
-    lie). What they don't learn is *what* it is.
-
-    Redaction is done **here, server-side**: a name that is hidden in CSS has still
-    crossed the wire.
+    Fully named for every member (ADR 0037): lineage topology is identity, and
+    identity is workspace knowledge. ``is_monitored`` is the true structural fact.
     """
 
     id: uuid.UUID
-    namespace: str | None
-    name: str | None
+    namespace: str
+    name: str
     env: str | None
     is_monitored: bool
     depth: int = 1
-    is_accessible: bool = True
 
 
 @dataclass(frozen=True)
@@ -219,18 +185,14 @@ class LineageEdgeRef:
 
     ``columns`` is the edge's column-level refinement (#901) when a warehouse source
     recorded one — ``[upstream_column, downstream_column]`` pairs, unioned across the
-    sources that observed the edge. **Redacted server-side by the #845 one-rule**: when
-    either endpoint is outside the caller's grants, the pairs are withheld and only
-    ``column_count`` survives — a column name is schema disclosure, the exact class the
-    node redaction exists to prevent, and a name hidden in CSS has still crossed the
-    wire. ``column_count`` is present whenever the edge has column data (it is the
-    redacted box's honest label: *something* maps, in N column links).
+    sources that observed the edge, shown to every member (a column name is schema
+    metadata — identity, not measurement; ADR 0037). ``None`` ⇒ the edge simply has
+    no column grain (a table-level source recorded it).
     """
 
     source: uuid.UUID
     target: uuid.UUID
     columns: tuple[tuple[str, str], ...] | None = None
-    column_count: int | None = None
 
 
 @dataclass(frozen=True)
@@ -276,10 +238,14 @@ class WarehouseLineageStatus:
 
 @dataclass(frozen=True)
 class AssetDetail:
-    """Asset detail: the summary aggregation + per-suite breakdown + lineage."""
+    """Asset detail: the workspace-true summary + the caller's per-suite breakdown
+    + lineage. ``suites`` lists only suites the caller can view (ADR 0027);
+    ``restricted_suite_count`` is how many more compose the asset — those still
+    roll into ``summary`` (workspace-true, ADR 0037) but stay unnamed."""
 
     summary: AssetSummary
     suites: list[ComposingSuite]
+    restricted_suite_count: int = 0
     upstream: list[LineageNode] = field(default_factory=list)
     downstream: list[LineageNode] = field(default_factory=list)
     lineage_edges: list[LineageEdgeRef] = field(default_factory=list)
@@ -336,40 +302,54 @@ def _run_outcome(
 def _composing_suites(
     suites: list[Suite],
     levels: dict[uuid.UUID, str | None],
-    latest_runs: dict[uuid.UUID, Run],
-    outcomes: dict[uuid.UUID, tuple[int, int, str | None]],
-    op_flags: dict[uuid.UUID, tuple[bool, bool]] | None = None,
+    outcome_by_suite: dict[uuid.UUID, RunOutcome],
 ) -> list[ComposingSuite]:
-    """Build the per-suite breakdown for one asset's suites (sorted by name)."""
-    op_flags = op_flags or {}
+    """Build the per-suite breakdown for one asset's suites (sorted by name).
+    Consumes the SAME ``RunOutcome`` map the workspace-true rollup reads, so the
+    listed rows and the rollup can never disagree about a run (#924 review)."""
     composing: list[ComposingSuite] = []
     for suite in suites:
         level = levels.get(suite.id)
         if level is None:  # defensive: only reachable suites are passed in
             continue
-        run = latest_runs.get(suite.id)
-        outcome = outcomes.get(run.id) if run is not None else None
-        flags = op_flags.get(run.id) if run is not None else None
         composing.append(
             ComposingSuite(
                 suite_id=suite.id,
                 name=suite.name,
                 my_permission=level,
-                latest_run=_run_outcome(run, outcome, flags),
+                latest_run=outcome_by_suite.get(suite.id, RunOutcome()),
             )
         )
     return composing
 
 
-def _roll_up(asset: Asset, composing: list[ComposingSuite]) -> AssetSummary:
-    """Roll a set of composing suites up into the asset-level health summary."""
+def _latest_outcomes(session: Session, suites: list[Suite]) -> dict[uuid.UUID, RunOutcome]:
+    """One ``RunOutcome`` per suite (empty for a never-run suite) — the single
+    computation both the workspace-true rollup and the per-suite breakdown read.
+    Three grouped queries total (latest runs, check outcomes, operational flags)."""
+    latest_runs = _latest_run_per_suite(session, [s.id for s in suites])
+    run_ids = [r.id for r in latest_runs.values()]
+    outcomes = check_outcome_counts(session, run_ids)
+    op_flags = operational_result_flags(session, run_ids)
+    by_suite: dict[uuid.UUID, RunOutcome] = {}
+    for suite in suites:
+        run = latest_runs.get(suite.id)
+        outcome = outcomes.get(run.id) if run is not None else None
+        flags = op_flags.get(run.id) if run is not None else None
+        by_suite[suite.id] = _run_outcome(run, outcome, flags)
+    return by_suite
+
+
+def _roll_up(asset: Asset, suite_outcomes: list[RunOutcome]) -> AssetSummary:
+    """Roll the latest-run outcomes of ALL composing suites up into the asset-level
+    health summary. Workspace-true (ADR 0037): the input is never grant-filtered,
+    so every viewer computes — and sees — the same verdict."""
     statuses: list[str] = []
     checks_total = checks_passed = 0
     last_run_at: datetime | None = None
     has_failed_run = has_active_run = has_cancelled_run = False
     has_operational_error = has_skip = False
-    for suite in composing:
-        run = suite.latest_run
+    for run in suite_outcomes:
         if run.worst_severity is not None:
             statuses.append(run.worst_severity)
         # Execution state, distinct from check severity (see AssetSummary): a
@@ -401,7 +381,7 @@ def _roll_up(asset: Asset, composing: list[ComposingSuite]) -> AssetSummary:
         description=asset.description,
         owner_user_id=asset.owner_user_id,
         last_seen=asset.last_seen,
-        suite_count=len(composing),
+        suite_count=len(suite_outcomes),
         worst_severity=worst_severity(statuses),
         checks_total=checks_total,
         checks_passed=checks_passed,
@@ -420,36 +400,17 @@ def _roll_up(asset: Asset, composing: list[ComposingSuite]) -> AssetSummary:
 def list_visible_assets(
     session: Session,
     *,
-    user_id: uuid.UUID,
-    include_all: bool = False,
     limit: int = 200,
     offset: int = 0,
 ) -> list[AssetSummary]:
-    """Assets the caller can see (via ≥1 accessible composing suite), sorted by
-    ``(namespace, name)`` and paginated with ``limit``/``offset``.
+    """Every asset, fully identified, sorted by ``(namespace, name)`` and paginated
+    with ``limit``/``offset`` — identical output for every caller (ADR 0037), which
+    is why this takes no user: identity is workspace knowledge and the rollup is
+    workspace-true (aggregated over ALL composing suites, never grant-filtered).
 
     Pagination is applied at the SQL level over the *asset* page (not the suite
     rows), so a page is a stable, deterministic slice regardless of how many
-    suites compose each asset. Aggregation is filtered to the caller's grants: a
-    partial-grant caller sees the asset but only the suites/runs they can view
-    roll up into its health."""
-    accessible = accessible_suite_ids(user_id, include_all=include_all)
-    # Browse shows what actually exists — ALL of it (#846, extended by #920):
-    #
-    # - assets whose suites you can view → full rows;
-    # - suite-less assets → full rows (#846 — redaction protects a grant, and an
-    #   asset nobody granted is protected by nothing);
-    # - assets monitored ONLY by suites you can't see → **REDACTED rows** (#920,
-    #   user-directed): omitting them asserted "this schema holds nothing else" —
-    #   the same falsehood the lineage graph's #845 rule exists to prevent, one
-    #   surface over. The row keeps id + placement and nothing else; the detail
-    #   endpoint keeps 404ing it.
-    #
-    # Accessibility is derived by `_accessible_asset_ids` — the SAME helper the
-    # lineage graph redacts with (#911-review: a second SQL encoding of the rule
-    # here would be the #845/#847 drift class reborn). Ordering note: redacted rows
-    # sort by their true (hidden) name — a weak alphabetical-position signal,
-    # accepted with the placement disclosure.
+    suites compose each asset."""
     assets = list(
         session.scalars(
             select(Asset).order_by(Asset.namespace, Asset.name).limit(limit).offset(offset)
@@ -458,166 +419,67 @@ def list_visible_assets(
     if not assets:
         return []
     page_ids = [a.id for a in assets]
-    open_ids = _accessible_asset_ids(
-        session,
-        page_ids,
-        user_id=user_id,
-        include_all=include_all,
-        has_suite=_monitored_ids(session, page_ids),
-    )
-
-    suites = list(
-        session.scalars(
-            select(Suite)
-            .where(Suite.asset_id.in_(list(open_ids)), Suite.id.in_(accessible))
-            .order_by(Suite.name)
-        )
-    )
-    levels = effective_permissions(session, suites, user_id)
-    latest_runs = _latest_run_per_suite(session, [s.id for s in suites])
-    run_ids = [r.id for r in latest_runs.values()]
-    outcomes = check_outcome_counts(session, run_ids)
-    op_flags = operational_result_flags(session, run_ids)
-
-    suites_by_asset: dict[uuid.UUID, list[Suite]] = defaultdict(list)
+    suites = list(session.scalars(select(Suite).where(Suite.asset_id.in_(page_ids))))
+    outcome_by_suite = _latest_outcomes(session, suites)
+    by_asset: dict[uuid.UUID, list[RunOutcome]] = defaultdict(list)
     for suite in suites:
-        assert suite.asset_id is not None  # filtered in the query
-        suites_by_asset[suite.asset_id].append(suite)
-
-    return [
-        (
-            _roll_up(
-                asset,
-                _composing_suites(
-                    suites_by_asset.get(asset.id, []), levels, latest_runs, outcomes, op_flags
-                ),
-            )
-            if asset.id in open_ids
-            else _redacted_summary(asset)
-        )
-        for asset in assets
-    ]
-
-
-def _redacted_summary(asset: Asset) -> AssetSummary:
-    """A #920 redacted browse row: id + namespace + the PARENT path only — the leaf
-    name is the protected fact, along with env/description/owner and every health
-    axis (empty defaults — a hidden asset's health, monitoredness, and suite count
-    are facts about it).
-
-    ``name_prefix_segments`` (db/schema or folder path, leaf stripped, ALREADY
-    segmented server-side with the same separator rule the tree uses) is a
-    deliberate, user-directed disclosure: the tree places the 🔒 row inside its
-    real group (`DATAQ_DB → ANALYTICS → Restricted`) — the same placement the
-    lineage graph already reveals for any redacted node connected by an edge.
-    Shipping segments, not a joined string, keeps one segmentation rule: a
-    re-split client-side would re-detect the separator on the PREFIX (which can
-    differ from the full name's — e.g. a dotted directory under a slashed path)
-    and file the locked row in a fabricated group."""
-    sep = "/" if "/" in asset.name else "."
-    segments = [part for part in asset.name.split(sep) if part]
-    return AssetSummary(
-        id=asset.id,
-        namespace=asset.namespace,
-        name=None,
-        name_prefix_segments=segments[:-1] or None,
-        env=None,
-        description=None,
-        owner_user_id=None,
-        # Liveness is a fact about the hidden asset too (watching it tick reveals
-        # the pipeline's cadence) — withheld like everything else (#921 review).
-        last_seen=None,
-        suite_count=0,
-        worst_severity=None,
-        checks_total=0,
-        checks_passed=0,
-        last_run_at=None,
-        is_accessible=False,
-    )
+        assert suite.asset_id is not None  # filtered on asset_id above
+        by_asset[suite.asset_id].append(outcome_by_suite[suite.id])
+    return [_roll_up(asset, by_asset.get(asset.id, [])) for asset in assets]
 
 
 def get_visible_asset(
     session: Session, asset_id: uuid.UUID, *, user_id: uuid.UUID, include_all: bool = False
 ) -> AssetDetail:
-    """One asset's detail (aggregation + per-suite breakdown + lineage).
+    """One asset's detail (workspace-true aggregation + the caller's per-suite
+    breakdown + lineage). Opens for **every** member (ADR 0037) — only a truly
+    unknown id raises `AssetNotFoundError` (404).
 
-    Raises `AssetNotFoundError` (404) if the asset does not exist or the caller can
-    view no suite targeting it — the two are indistinguishable (no-leak). A
-    workspace-admin (``include_all``) sees every asset, **including suite-less
-    orphans** (e.g. a lineage-only node, or an asset whose last composing suite was
-    deleted) — for them only a truly unknown id 404s."""
+    The caller shapes exactly one thing: which composing suites are *listed*
+    (their grants; ``include_all`` for a workspace-admin). Suites outside the
+    grants still roll into the summary — workspace-true, one verdict for every
+    viewer — but surface only as ``restricted_suite_count``: a count, never
+    names (suite names can reveal intent; the ADR 0027 boundary lives at the
+    suite grain, where its 404-no-leak is intact)."""
     asset = session.get(Asset, asset_id)
-    accessible = accessible_suite_ids(user_id, include_all=include_all)
-    suites = list(
-        session.scalars(
-            select(Suite)
-            .where(Suite.asset_id == asset_id, Suite.id.in_(accessible))
-            .order_by(Suite.name)
-        )
-    )
-    # No-leak: an asset whose suites the caller can ALL not see is indistinguishable from
-    # one that doesn't exist. That is the grant boundary, and it stays closed.
-    #
-    # A **suite-less** asset is not behind that boundary (ADR 0034 amendment, #845/#846):
-    # no suites means no grant to withhold and nothing behind it — no runs, no results, no
-    # samples. It opens to an honest, empty page (identity + lineage, no health). Hiding it
-    # only produced the dead link that surfaced #845: the lineage graph must draw it (else
-    # the graph claims the table feeds nothing), and a node the graph draws must be a node
-    # the endpoint opens.
     if asset is None:
         raise AssetNotFoundError("asset not found", detail={"asset_id": str(asset_id)})
-    if not suites and not include_all and _monitored_ids(session, [asset_id]):
-        # It HAS suites — the caller simply can't view any of them. 404, no-leak.
-        raise AssetNotFoundError("asset not found", detail={"asset_id": str(asset_id)})
+    all_suites = list(
+        session.scalars(select(Suite).where(Suite.asset_id == asset_id).order_by(Suite.name))
+    )
+    # ONE visibility derivation (#924 review): `effective_permissions` encodes the
+    # same owned/shared/workspace-admin rule `accessible_suite_ids` does (both
+    # resolve the admin off the same allowlist), and it must be called anyway to
+    # label the rows — so a suite is listed iff it has a label. A second SQL
+    # round-trip here would be a parallel encoding of the same rule, and its
+    # separate read is what opened the deleted-between-reads miscount window.
+    levels = effective_permissions(session, all_suites, user_id)
+    visible = [s for s in all_suites if include_all or levels.get(s.id)]
 
-    levels = effective_permissions(session, suites, user_id)
-    latest_runs = _latest_run_per_suite(session, [s.id for s in suites])
-    run_ids = [r.id for r in latest_runs.values()]
-    outcomes = check_outcome_counts(session, run_ids)
-    op_flags = operational_result_flags(session, run_ids)
-    composing = _composing_suites(suites, levels, latest_runs, outcomes, op_flags)
+    # Latest runs / outcomes over ALL composing suites, computed ONCE — the
+    # workspace-true rollup and the grant-filtered breakdown read the same map.
+    outcome_by_suite = _latest_outcomes(session, all_suites)
+    composing = _composing_suites(visible, levels, outcome_by_suite)
 
-    summary = _roll_up(asset, composing)
+    summary = _roll_up(asset, [outcome_by_suite[s.id] for s in all_suites])
     graph = lineage_neighbourhood(session, asset_id)
     neighbour_ids = [a.id for a, _ in graph.upstream] + [a.id for a, _ in graph.downstream]
-    # ONE lookup of "which of these assets has any suite" — it answers both questions
-    # below (is it monitored? could a grant even exist for it?), which are the same fact.
+    # One grouped lookup of "which of these assets has any suite" — the structural
+    # `is_monitored` fact on the nodes.
     has_suite = _monitored_ids(session, neighbour_ids)
-    # The lineage walk is not authz-scoped (blast radius must stay true), so the caller's
-    # own visibility is applied HERE, at the boundary — a neighbour they hold no grant for
-    # is redacted to an anonymous node rather than handed over (#845).
-    accessible_assets = _accessible_asset_ids(
-        session,
-        neighbour_ids,
-        user_id=user_id,
-        include_all=include_all,
-        has_suite=has_suite,
-    )
     return AssetDetail(
         summary=summary,
         suites=composing,
-        upstream=_lineage_nodes(graph.upstream, has_suite, accessible_assets),
-        downstream=_lineage_nodes(graph.downstream, has_suite, accessible_assets),
-        # The viewed asset is accessible by definition (this endpoint already authz'd
-        # it); neighbours use the same accessibility set the node redaction derives
-        # from, so the edge-level and node-level redaction can never disagree (#845).
-        lineage_edges=_lineage_edge_refs(
-            session, graph.edges, accessible={asset_id} | accessible_assets
-        ),
-        # Lineage-source health names ORCHESTRATION CONNECTIONS (name, type, classified
-        # poll error) — infrastructure information, not asset information. It is shown to
-        # a caller with a stake in this asset (≥1 suite on it) or an admin; a caller who
-        # merely reached a suite-less asset through browse has no stake and is not handed
-        # the workspace's connection inventory. Without this gate, the #846 visibility
-        # widening would have quietly widened an infra disclosure too (#848 review).
-        failing_lineage_sources=(
-            failing_lineage_sources(session) if (suites or include_all) else []
-        ),
-        # Same stake gate as failing_lineage_sources — it names workspace connections
-        # (infra), so only a caller with a suite on this asset (or an admin) sees it.
-        warehouse_lineage_status=(
-            warehouse_lineage_status(session) if (suites or include_all) else []
-        ),
+        restricted_suite_count=len(all_suites) - len(composing),
+        upstream=_lineage_nodes(graph.upstream, has_suite),
+        downstream=_lineage_nodes(graph.downstream, has_suite),
+        lineage_edges=_lineage_edge_refs(session, graph.edges),
+        # Source-health advisories name workspace connections — which every member
+        # can already read off `GET /connections` (unscoped since Week 2), so there
+        # is nothing to gate (ADR 0037 retires the former stake gate). What matters
+        # is the #828 rule: never render a confident empty graph over a broken feed.
+        failing_lineage_sources=failing_lineage_sources(session),
+        warehouse_lineage_status=warehouse_lineage_status(session),
     )
 
 
@@ -686,29 +548,14 @@ def failing_lineage_sources(session: Session) -> list[LineageSourceHealth]:
     ]
 
 
-def summarize_asset(
-    session: Session, asset: Asset, *, user_id: uuid.UUID, include_all: bool = False
-) -> AssetSummary:
-    """Roll one already-loaded asset up into its list-row summary.
-
-    Unlike `get_visible_asset`, this never 404s on "no composing suites" — an asset
-    with zero suites rolls up to an empty (no-run) health summary. Used by the
-    admin PATCH response, where the asset need not have suites to have metadata."""
-    accessible = accessible_suite_ids(user_id, include_all=include_all)
-    suites = list(
-        session.scalars(
-            select(Suite)
-            .where(Suite.asset_id == asset.id, Suite.id.in_(accessible))
-            .order_by(Suite.name)
-        )
-    )
-    levels = effective_permissions(session, suites, user_id) if suites else {}
-    latest_runs = _latest_run_per_suite(session, [s.id for s in suites])
-    run_ids = [r.id for r in latest_runs.values()]
-    outcomes = check_outcome_counts(session, run_ids)
-    op_flags = operational_result_flags(session, run_ids)
-    composing = _composing_suites(suites, levels, latest_runs, outcomes, op_flags)
-    return _roll_up(asset, composing)
+def summarize_asset(session: Session, asset: Asset) -> AssetSummary:
+    """Roll one already-loaded asset up into its list-row summary — workspace-true
+    (ADR 0037), so it takes no user. An asset with zero suites rolls up to an
+    empty (no-run) health summary. Used by the admin PATCH response, where the
+    asset need not have suites to have metadata."""
+    suites = list(session.scalars(select(Suite).where(Suite.asset_id == asset.id)))
+    outcome_by_suite = _latest_outcomes(session, suites)
+    return _roll_up(asset, [outcome_by_suite[s.id] for s in suites])
 
 
 def _monitored_ids(session: Session, ids: list[uuid.UUID]) -> set[uuid.UUID]:
@@ -724,72 +571,14 @@ def _monitored_ids(session: Session, ids: list[uuid.UUID]) -> set[uuid.UUID]:
     }
 
 
-def _accessible_asset_ids(
-    session: Session,
-    ids: list[uuid.UUID],
-    *,
-    user_id: uuid.UUID,
-    include_all: bool,
-    has_suite: set[uuid.UUID],
-) -> set[uuid.UUID]:
-    """Of ``ids``, the assets the caller may see — the one visibility rule (#845).
-
-    An asset is visible when **either**:
-
-    - the caller can view ≥1 suite targeting it (ADR 0034 decision 5 — authz derived from
-      the suite ladder, never granted separately); **or**
-    - it has **no suites at all** (ADR 0034 amendment, #845/#846).
-
-    The second clause is the point, and it is not a loophole: redaction exists to protect
-    a *grant*, and an asset nobody has granted is protected by nothing. A suite-less asset
-    (a raw source table, a dbt mart nobody monitors yet, an asset whose last suite was
-    deleted — its runs/results cascade with it, #540) has no runs, no results and no
-    samples behind it. The only thing withheld was its **name** — which the lineage graph
-    reveals the existence of anyway.
-
-    Keeping those hidden forced a worse lie than the one #845 fixes: every raw upstream
-    would render "🔒 Restricted" to a non-admin, when it isn't restricted at all — it's
-    merely unmonitored. Lineage would be a wall of locked boxes.
-
-    So the only thing we withhold is an asset that someone *else* monitors and you may
-    not — exactly the grant boundary the no-leak 404 defends.
-
-    A workspace-admin (``include_all``) sees everything (ADR 0027).
-
-    ``has_suite`` is the caller-supplied "assets that ANY suite targets" set — the only
-    assets a grant could exist for. It is passed in rather than re-queried because the
-    caller has already computed it (it is the same set the ``is_monitored`` flag reads),
-    and querying it twice made the two derivations independent when they are in fact the
-    same fact about the same rows.
-    """
-    if not ids:
-        return set()
-    if include_all:
-        return set(ids)
-    granted = {
-        asset_id
-        for (asset_id,) in session.execute(
-            select(Suite.asset_id)
-            .where(Suite.asset_id.in_(ids), Suite.id.in_(accessible_suite_ids(user_id)))
-            .group_by(Suite.asset_id)
-        )
-    }
-    # The granted ones, plus the suite-less ones: an id absent from `has_suite` is
-    # targeted by no suite at all, so nothing is being kept from anyone.
-    return granted | (set(ids) - has_suite)
-
-
 def _lineage_edge_refs(
     session: Session,
     edges: list[tuple[uuid.UUID, uuid.UUID]],
-    *,
-    accessible: set[uuid.UUID],
 ) -> list[LineageEdgeRef]:
-    """The neighbourhood's edges with their column-level refinement (#901), redacted
-    by the #845 one-rule: an edge touching a redacted node yields ``column_count``
-    only — the pairs (column NAMES of an asset the caller can't see) never leave the
-    server. Column data is unioned across the sources that observed the edge (two
-    provenance rows for one asset pair are one drawn edge)."""
+    """The neighbourhood's edges with their column-level refinement (#901), shown
+    in full to every member (ADR 0037 — column names are schema metadata, i.e.
+    identity). Column data is unioned across the sources that observed the edge
+    (two provenance rows for one asset pair are one drawn edge)."""
     if not edges:
         return []
     pairs: dict[tuple[uuid.UUID, uuid.UUID], set[tuple[str, str]]] = {}
@@ -818,52 +607,48 @@ def _lineage_edge_refs(
                 value_type=type(cols).__name__,
             )
             continue
-        bucket = pairs.setdefault((up, down), set())
-        bucket.update(
+        valid = [
             (str(entry[0]), str(entry[1]))
             for entry in cols
             if isinstance(entry, (list, tuple)) and len(entry) == 2
-        )
-    refs: list[LineageEdgeRef] = []
-    for up, down in edges:
-        cols_set = pairs.get((up, down))
-        if not cols_set:
-            refs.append(LineageEdgeRef(source=up, target=down))
-            continue
-        both_visible = up in accessible and down in accessible
-        refs.append(
-            LineageEdgeRef(
-                source=up,
-                target=down,
-                columns=tuple(sorted(cols_set)) if both_visible else None,
-                column_count=len(cols_set),
+        ]
+        # The loud-degradation contract covers ENTRIES too (#924 review): a
+        # wrong-arity/non-list item inside a well-formed list must not vanish
+        # silently — with every entry dropped the edge would render as
+        # "table-grain", indistinguishable from no column data at all.
+        if len(valid) != len(cols):
+            log.warning(
+                "lineage_edge_column_entries_malformed",
+                upstream_asset_id=str(up),
+                downstream_asset_id=str(down),
+                dropped=len(cols) - len(valid),
             )
+        pairs.setdefault((up, down), set()).update(valid)
+    return [
+        LineageEdgeRef(
+            source=up,
+            target=down,
+            columns=tuple(sorted(cols)) if (cols := pairs.get((up, down))) else None,
         )
-    return refs
+        for up, down in edges
+    ]
 
 
 def _lineage_nodes(
     assets: list[tuple[Asset, int]],
     monitored: set[uuid.UUID],
-    accessible: set[uuid.UUID],
 ) -> list[LineageNode]:
-    """Map reachable lineage assets (+ their hop depth) to render-only nodes,
-    **redacting the ones outside the caller's grants** (#845 — see `LineageNode`).
-
-    A redacted node keeps its id (the edges reference it) and its depth, and nothing
-    else: no name, no namespace, no env, and ``is_monitored`` forced ``False`` rather
-    than reported — whether someone else monitors an asset you can't see is itself a
-    fact about that asset.
-    """
+    """Map reachable lineage assets (+ their hop depth) to render-only nodes —
+    fully named for every member (ADR 0037); ``is_monitored`` is the true
+    structural fact."""
     return [
         LineageNode(
             id=a.id,
-            namespace=a.namespace if a.id in accessible else None,
-            name=a.name if a.id in accessible else None,
-            env=a.env if a.id in accessible else None,
-            is_monitored=a.id in monitored and a.id in accessible,
+            namespace=a.namespace,
+            name=a.name,
+            env=a.env,
+            is_monitored=a.id in monitored,
             depth=depth,
-            is_accessible=a.id in accessible,
         )
         for a, depth in assets
     ]

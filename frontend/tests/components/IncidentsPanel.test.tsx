@@ -57,10 +57,14 @@ function detail(over: Partial<IncidentDetail> = {}): IncidentDetail {
 
 afterEach(() => vi.clearAllMocks());
 
-function renderPanel(permissionBySuite: Record<string, string>) {
+function renderPanel(permissionBySuite: Record<string, string>, restrictedSuiteCount = 0) {
   return render(
     <AntApp>
-      <IncidentsPanel assetId="a1" permissionBySuite={permissionBySuite} />
+      <IncidentsPanel
+        assetId="a1"
+        permissionBySuite={permissionBySuite}
+        restrictedSuiteCount={restrictedSuiteCount}
+      />
     </AntApp>,
   );
 }
@@ -165,6 +169,21 @@ describe('IncidentsPanel', () => {
     expect(await screen.findByText(/Action failed: nope/)).toBeInTheDocument();
     expect(mockList).toHaveBeenCalledTimes(1);
   }, 15000);
+
+  it('qualifies the list when hidden suites compose the asset (ADR 0037)', async () => {
+    mockList.mockResolvedValue([]);
+    renderPanel({}, 2);
+    expect(
+      await screen.findByText('Incidents from 2 suites outside your access are not shown here.'),
+    ).toBeInTheDocument();
+  });
+
+  it('shows no qualifier when every composing suite is visible', async () => {
+    mockList.mockResolvedValue([]);
+    renderPanel({ s1: 'owner' });
+    expect(await screen.findByText('No open incidents.')).toBeInTheDocument();
+    expect(screen.queryByText(/outside your access/)).not.toBeInTheDocument();
+  });
 
   it('surfaces a load error', async () => {
     mockList.mockRejectedValue(new Error('boom'));

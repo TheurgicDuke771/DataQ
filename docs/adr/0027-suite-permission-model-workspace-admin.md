@@ -16,6 +16,13 @@
 > The implicit-suite-admin rule below is **unchanged**; the grant model gains one
 > rule — no `edit` shares to Viewers (their effective level caps at `view`).
 
+> **Companion (2026-07-18, [ADR 0037](0037-workspace-visible-asset-identity.md)):** the
+> suite ladder below remains the *only* grant model — but it now guards **suite-derived
+> detail only** (suite/check config, runs, results, samples, incidents, and the
+> composing-suite list on an asset page). Asset *identity*, lineage topology and
+> **workspace-true aggregate verdicts** are visible to every workspace member and are
+> no longer derived from these grants. Suite endpoints keep their 404-no-leak.
+
 ## Context
 
 Suite authorization (`backend/app/services/suite_authz.py`) ranks four tiers —

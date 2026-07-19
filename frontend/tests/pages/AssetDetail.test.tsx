@@ -65,8 +65,8 @@ const DETAIL: AssetDetailData = {
     has_operational_error: false,
     has_cancelled_run: false,
     has_skip: false,
-    is_accessible: true,
   },
+  restricted_suite_count: 0,
   suites: [
     {
       suite_id: 's1',
@@ -104,7 +104,6 @@ const DETAIL: AssetDetailData = {
       name: 'RAW.ORDERS',
       env: 'dev',
       is_monitored: false,
-      is_accessible: true,
       depth: 1,
     },
   ],
@@ -115,7 +114,6 @@ const DETAIL: AssetDetailData = {
       name: 'ANALYTICS.MART.REVENUE',
       env: 'dev',
       is_monitored: true,
-      is_accessible: true,
       depth: 1,
     },
   ],
@@ -501,5 +499,35 @@ describe('AssetDetail — a failing lineage source (#828)', () => {
 
     expect(await screen.findByText('No lineage recorded for this asset.')).toBeInTheDocument();
     expect(screen.queryByText(/a source is failing/i)).not.toBeInTheDocument();
+  });
+
+  it('counts restricted suites in the title and states they still shape health (ADR 0037)', async () => {
+    // Restricted = workspace-true suite_count minus the listed suites (derived
+    // client-side — one owner for the total, #924 review): 5 total, 2 visible.
+    mockGet.mockResolvedValue({
+      ...DETAIL,
+      summary: { ...DETAIL.summary, suite_count: 5 },
+      restricted_suite_count: 3,
+    });
+
+    renderPage();
+
+    // 2 visible + 3 restricted — the title matches the workspace-true rollup.
+    expect(await screen.findByText('Monitored by 5 suites')).toBeInTheDocument();
+    expect(
+      screen.getByText(/3 more suites monitor this asset but are outside your access/),
+    ).toBeInTheDocument();
+    // The restricted suites are counted, never named.
+    expect(screen.getByText('Orders quality')).toBeInTheDocument();
+    expect(screen.getByText('Orders volume')).toBeInTheDocument();
+  });
+
+  it('shows no restricted note when every composing suite is visible', async () => {
+    mockGet.mockResolvedValue(DETAIL);
+
+    renderPage();
+
+    expect(await screen.findByText('Monitored by 2 suites')).toBeInTheDocument();
+    expect(screen.queryByText(/outside your access/)).not.toBeInTheDocument();
   });
 });

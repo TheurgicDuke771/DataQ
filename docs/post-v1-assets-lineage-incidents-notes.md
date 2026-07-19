@@ -119,11 +119,14 @@ into:
 
 ## 4. Authz & surfaces
 
-- **Asset visibility = derived, not granted.** An asset is visible iff the caller can
+- **Asset visibility = derived, not granted.** ~~An asset is visible iff the caller can
   `view` ≥1 suite mapped to it; the asset page aggregates **only** the
   suites/results the caller's grants cover (ADR 0027 ladder untouched, 404-no-leak
-  for assets wholly outside one's grants). Same rule for incidents (visible via the
-  incident's suite). Workspace-admins see all (0027); Viewers cap at `view` (0033).
+  for assets wholly outside one's grants).~~ **Superseded by [ADR 0037](adr/0037-workspace-visible-asset-identity.md)
+  (#923):** asset identity + lineage topology are visible to every member; the rollup is
+  workspace-true; the ADR 0027 grants guard suite-derived detail (composing-suite names,
+  runs, results, samples). Incidents stay suite-granted (unchanged). Workspace-admins
+  see all (0027); Viewers cap at `view` (0033).
 - **Asset metadata mutations** (assign owner, description): **workspace-Admin-only**
   at first — the cheap, safe row on the 0033 matrix; widen to composing-suite `edit`
   later if it chafes.

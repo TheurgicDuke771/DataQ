@@ -155,6 +155,9 @@ function AssetDetailBody({
 
       <SuitesSection
         suites={asset.suites}
+        // One owner for the total (#924 review): the workspace-true suite_count.
+        // The restricted count is derived, never a second wire field to disagree.
+        totalCount={summary.suite_count}
         onOpenSuite={(id) => navigate(`/suites/${id}`)}
         onOpenRun={onOpenRun}
       />
@@ -164,6 +167,7 @@ function AssetDetailBody({
         permissionBySuite={Object.fromEntries(
           asset.suites.map((s) => [s.suite_id, s.my_permission]),
         )}
+        restrictedSuiteCount={Math.max(0, summary.suite_count - asset.suites.length)}
       />
 
       {/* One left-to-right graph (#805) — provenance → this asset → blast radius —
@@ -171,8 +175,7 @@ function AssetDetailBody({
       <LineageGraph
         center={{
           id: summary.id,
-          // A detail summary is never redacted (the endpoint 404s those) — coerce for the shared type.
-          name: summary.name ?? '',
+          name: summary.name,
           namespace: summary.namespace,
           env: summary.env,
         }}
@@ -184,11 +187,10 @@ function AssetDetailBody({
         onOpenAsset={(id) => navigate(`/assets/${id}`)}
       />
 
-      {/* Column-grain refinement of the direct edges (#901); redacted far-endpoints
-          arrive count-only from the server and render as a locked box (#845). */}
+      {/* Column-grain refinement of the direct edges (#901). */}
       <ColumnLineagePanel
         centerId={summary.id}
-        centerName={summary.name ?? ''}
+        centerName={summary.name}
         nodes={[...asset.upstream, ...asset.downstream]}
         edges={asset.lineage_edges}
       />
@@ -405,10 +407,14 @@ function OwnerBlock({
 
 function SuitesSection({
   suites,
+  totalCount,
   onOpenSuite,
   onOpenRun,
 }: {
   suites: ComposingSuite[];
+  /** ALL composing suites (workspace-true `summary.suite_count`) — the single
+   *  owner of the total; the restricted note derives from it. */
+  totalCount: number;
   onOpenSuite: (suiteId: string) => void;
   onOpenRun: (runId: string) => void;
 }) {
@@ -469,11 +475,14 @@ function SuitesSection({
       },
     },
   ];
+  // The title counts ALL composing suites (workspace-true, matching the health
+  // rollup above it); the table lists only the viewer's suites (ADR 0027). The
+  // restricted count is DERIVED so title and footnote share one source; clamped
+  // because a pre-0037 API (deploy skew) sends a viewer-scoped suite_count.
+  const restrictedCount = Math.max(0, totalCount - suites.length);
+  const total = suites.length + restrictedCount;
   return (
-    <Card
-      size="small"
-      title={`Monitored by ${suites.length} suite${suites.length === 1 ? '' : 's'}`}
-    >
+    <Card size="small" title={`Monitored by ${total} suite${total === 1 ? '' : 's'}`}>
       <Table<ComposingSuite>
         scroll={{ x: 'max-content' }}
         rowKey="suite_id"
@@ -482,6 +491,13 @@ function SuitesSection({
         dataSource={suites}
         pagination={false}
       />
+      {restrictedCount > 0 && (
+        <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 8 }}>
+          {restrictedCount === 1
+            ? '1 more suite monitors this asset but is outside your access. Its results still count toward the health above.'
+            : `${restrictedCount} more suites monitor this asset but are outside your access. Their results still count toward the health above.`}
+        </Typography.Text>
+      )}
     </Card>
   );
 }

@@ -20,7 +20,6 @@ function asset(overrides: Partial<AssetSummary> = {}): AssetSummary {
     name: 'ANALYTICS.PUBLIC.ORDERS',
     env: 'dev',
     description: null,
-    is_accessible: true,
     owner_user_id: null,
     last_seen: '2026-07-01T10:00:00Z',
     suite_count: 1,
@@ -79,6 +78,18 @@ describe('AssetHealthLead (#773)', () => {
     expect(screen.getByText('Monitored')).toBeInTheDocument();
     expect(screen.getByText('Need attention')).toBeInTheDocument();
     expect(screen.getByText('In progress')).toBeInTheDocument();
+  });
+
+  it('counts only suite-bearing assets in the Monitored tile (ADR 0037 browse includes unmonitored)', async () => {
+    mockListAssets.mockResolvedValue([
+      asset({ id: 'a1', name: 'MONITORED.T' }), // suite_count 1 (factory default)
+      asset({ id: 'a2', name: 'UNMONITORED.T', suite_count: 0 }), // browse-only row
+    ]);
+    renderLead();
+    await screen.findByText('Monitored');
+    // Two assets in browse, but only one is monitored.
+    expect(screen.getByText('1')).toBeInTheDocument();
+    expect(screen.queryByText('2')).not.toBeInTheDocument();
   });
 
   it('says all healthy when nothing needs attention', async () => {

@@ -37,9 +37,8 @@ def _conn(db: Any, owner: User) -> Connection:
     return c
 
 
-def test_list_empty_when_no_visible_suites(db_session: Any) -> None:
-    user = _user(db_session)
-    assert svc.list_visible_assets(db_session, user_id=user.id) == []
+def test_list_empty_when_no_assets_exist(db_session: Any) -> None:
+    assert svc.list_visible_assets(db_session) == []
 
 
 def test_summarize_asset_with_no_suites(db_session: Any) -> None:
@@ -48,8 +47,7 @@ def test_summarize_asset_with_no_suites(db_session: Any) -> None:
     asset = Asset(namespace="snowflake://x", name="ORPHAN")
     db_session.add(asset)
     db_session.commit()
-    admin = _user(db_session)
-    summary = svc.summarize_asset(db_session, asset, user_id=admin.id, include_all=True)
+    summary = svc.summarize_asset(db_session, asset)
     assert summary.suite_count == 0
     assert summary.worst_severity is None
     assert summary.last_run_at is None
@@ -141,7 +139,7 @@ def test_error_result_feeds_connection_health_not_suite_health(db_session: Any) 
     `has_failed_run` alone misses, since the run itself never failed."""
     owner = _user(db_session)
     asset = _suite_with_run(db_session, owner, run_status="succeeded", result_statuses=["error"])
-    s = svc.summarize_asset(db_session, asset, user_id=owner.id, include_all=True)
+    s = svc.summarize_asset(db_session, asset)
 
     assert s.has_operational_error is True  # connection axis: could not evaluate
     assert s.has_failed_run is False  # the run itself succeeded
@@ -154,7 +152,7 @@ def test_skip_result_is_degraded_not_an_error(db_session: Any) -> None:
     executed, so it is NOT an operational error — only a degraded connection."""
     owner = _user(db_session)
     asset = _suite_with_run(db_session, owner, run_status="succeeded", result_statuses=["skip"])
-    s = svc.summarize_asset(db_session, asset, user_id=owner.id, include_all=True)
+    s = svc.summarize_asset(db_session, asset)
 
     assert s.has_skip is True
     assert s.has_operational_error is False
@@ -166,7 +164,7 @@ def test_failed_run_is_an_operational_error(db_session: Any) -> None:
     """A run whose execution failed wrote no results at all — connection axis."""
     owner = _user(db_session)
     asset = _suite_with_run(db_session, owner, run_status="failed", result_statuses=[])
-    s = svc.summarize_asset(db_session, asset, user_id=owner.id, include_all=True)
+    s = svc.summarize_asset(db_session, asset)
 
     assert s.has_failed_run is True
     assert s.has_operational_error is True
@@ -180,7 +178,7 @@ def test_failing_data_does_not_touch_connection_health(db_session: Any) -> None:
     asset = _suite_with_run(
         db_session, owner, run_status="succeeded", result_statuses=["pass", "critical"]
     )
-    s = svc.summarize_asset(db_session, asset, user_id=owner.id, include_all=True)
+    s = svc.summarize_asset(db_session, asset)
 
     assert s.worst_severity == "critical"  # suite axis: data is bad
     assert s.checks_total == 2 and s.checks_passed == 1
@@ -195,7 +193,7 @@ def test_cancelled_run_is_flagged_so_it_never_rolls_up_green(db_session: Any) ->
     axes. (The UI keys `connectionHealth`/`suiteHealth` off this.)"""
     owner = _user(db_session)
     asset = _suite_with_run(db_session, owner, run_status="cancelled", result_statuses=[])
-    s = svc.summarize_asset(db_session, asset, user_id=owner.id, include_all=True)
+    s = svc.summarize_asset(db_session, asset)
 
     assert s.has_cancelled_run is True
     # Explicitly NOT any of the other execution states — this is the whole point:

@@ -12,8 +12,8 @@ import { BRAND } from '../../theme';
  * Asset-health lead (`/dashboard`, ADR 0034 navigation inversion, #773) — the
  * dashboard now *leads* with asset-level health: how many assets DataQ monitors,
  * how many need attention, how many have a run in flight. Everything is derived
- * from the existing `/assets` list read (no new endpoint) and filtered to the
- * caller's grants by the backend, so this leaks nothing.
+ * from the existing `/assets` list read (no new endpoint), which is
+ * workspace-true (ADR 0037) — every member sees the same verdicts.
  *
  * Click-through is preserved end to end: the tiles and "View all assets" go to
  * `/assets`; each attention row opens `/assets/:id` (→ its suites/runs).
@@ -114,11 +114,11 @@ function AssetHealthBody({
   const truncated = assets.length >= LIST_CAP;
 
   const tiles: { label: string; value: number; tone: string }[] = [
-    // Redacted rows (#920) are present in browse but are not the viewer's
-    // monitored assets — counting them would mislabel the stat.
+    // Browse now includes unmonitored assets too (ADR 0037) — "Monitored" means
+    // exactly what it says: assets with ≥1 composing suite.
     {
       label: 'Monitored',
-      value: assets.filter((a) => a.is_accessible !== false).length,
+      value: assets.filter((a) => a.suite_count > 0).length,
       tone: BRAND.ink,
     },
     {

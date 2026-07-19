@@ -100,6 +100,17 @@ namespace half genuinely joins, and it is what makes DataQ a good OL citizen), b
 "interop is a join, not a mapping layer" is withdrawn — cross-producer name reconciliation
 is a permanent, if small, cost.
 
+> **Second amendment (2026-07-18, [ADR 0037](0037-workspace-visible-asset-identity.md), #923):**
+> decision 5 and the #845/#846 amendment below are **superseded**. Asset *identity* and
+> lineage topology (including column-level pairs) are now visible to every workspace
+> member; aggregate rollups are **workspace-true** (computed over all composing suites,
+> identical for every viewer); the grant boundary moves to suite-derived detail
+> (composing-suite names, runs, results, samples, incidents — the ADR 0027 ladder,
+> unchanged, with 404-no-leak intact at the suite grain). The asset detail endpoint
+> 200s for every existing asset; the redaction machinery this amendment introduced
+> (anonymous nodes, redacted browse rows, count-only column boxes) is removed. The
+> amendment below is kept for the historical record of why the derived model failed.
+
 ## Amendment (2026-07-13, #845/#846) — decision 5's boundary was drawn in the wrong place
 
 Decision 5 says asset visibility derives from suite grants, and that an asset outside

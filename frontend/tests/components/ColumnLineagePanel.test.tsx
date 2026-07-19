@@ -14,7 +14,6 @@ const node = (overrides: Partial<LineageNode> & { id: string }): LineageNode => 
   env: 'dev',
   is_monitored: true,
   depth: 1,
-  is_accessible: true,
   ...overrides,
 });
 
@@ -28,7 +27,6 @@ describe('ColumnLineagePanel (#901)', () => {
           ['comment', 'sentiment'],
           ['customer_id', 'customer_id'],
         ],
-        column_count: 2,
       },
     ];
     render(
@@ -45,32 +43,26 @@ describe('ColumnLineagePanel (#901)', () => {
     expect(screen.getByTestId('column-edge')).toBeInTheDocument();
   });
 
-  it('renders a redacted edge as a locked count-only box — no names, never an empty list', () => {
-    // The server's #845 one-rule: far endpoint outside the viewer's grants ⇒
-    // columns null, count only, node identity null.
+  it('degrades a dangling endpoint to a placeholder label, never crashes', () => {
     const edges: LineageEdge[] = [
-      { source: CENTER, target: HIDDEN, columns: null, column_count: 3 },
+      { source: CENTER, target: HIDDEN, columns: [['comment', 'sentiment']] },
     ];
     render(
       <ColumnLineagePanel
         centerId={CENTER}
         centerName="dataq_retail.silver.feedback"
-        nodes={[node({ id: HIDDEN, name: null, namespace: null, env: null, is_accessible: false })]}
+        nodes={[]} // HIDDEN missing from the neighbourhood — defensive path
         edges={edges}
       />,
     );
-    expect(screen.getByTestId('column-edge-redacted')).toBeInTheDocument();
-    expect(screen.getByText('3 column links')).toBeInTheDocument();
-    expect(screen.getByText(/Restricted asset/)).toBeInTheDocument();
-    expect(screen.getByText(/hidden/)).toBeInTheDocument();
-    // No pair rows exist to leak.
-    expect(screen.queryByTestId('column-edge')).not.toBeInTheDocument();
+    expect(screen.getByText(/Unknown asset/)).toBeInTheDocument();
+    expect(screen.getByText('comment → sentiment')).toBeInTheDocument();
   });
 
   it('says so when no direct edge carries column grain (table-level edges omitted)', () => {
     const edges: LineageEdge[] = [
       { source: CENTER, target: OPEN }, // table-grain only
-      { source: OPEN, target: HIDDEN, columns: [['a', 'b']], column_count: 1 }, // not direct
+      { source: OPEN, target: HIDDEN, columns: [['a', 'b']] }, // not direct
     ];
     render(
       <ColumnLineagePanel

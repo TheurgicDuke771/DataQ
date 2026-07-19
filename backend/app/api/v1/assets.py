@@ -4,12 +4,12 @@ Assets are the browse/reason grain over the suite execution grain. This surface
 lists the assets a caller can see and drills into one — its composing suites +
 their latest run health + the lineage neighbourhood.
 
-**Authz is derived, never granted (ADR 0027 / ADR 0034 decision 5):** an asset is
-visible iff the caller can `view` ≥1 suite targeting it; the aggregation is
-filtered to the caller's grants; a workspace-admin sees all; an asset wholly
-outside the caller's grants is 404-no-leak. All of that lives in
-`asset_view_service` (which reuses the suites/runs visibility subquery), so this
-module is a thin HTTP layer.
+**The ADR 0037 three-layer rule:** asset identity + lineage topology (incl.
+column pairs) are visible to every member; the aggregate rollup is
+workspace-true (over ALL composing suites — one verdict for every viewer); only
+the itemized layer — the composing-suite list — is filtered to the caller's
+ADR 0027 grants, with the rest collapsing to `restricted_suite_count`. All of
+that lives in `asset_view_service`; this module is a thin HTTP layer.
 
 Asset-metadata mutation (`PATCH`) is **workspace-Admin-only** (ADR 0034 §4) —
 gated by `require_workspace_admin`, the same 403 the /admin surface uses.
@@ -60,11 +60,12 @@ class ComposingSuiteRead(ApiModel):
 
 
 class AssetSummaryRead(ApiModel):
-    """List-row aggregation for one visible asset, carrying **two orthogonal health
-    axes** (#803) the UI renders separately:
+    """List-row aggregation for one asset — **workspace-true** (ADR 0037): every
+    field is identical for every viewer, aggregated over ALL composing suites.
+    Carries **two orthogonal health axes** (#803) the UI renders separately:
 
     - *Suite health* (data quality) — `worst_severity` / `checks_*` over the
-      **evaluated** checks of the caller-visible composing suites' latest runs;
+      **evaluated** checks of the composing suites' latest runs;
       `worst_severity` is null when all passed or nothing has run. Operational
       results never rank here.
     - *Connection health* (reachability) — `has_operational_error` / `has_skip`
@@ -77,15 +78,11 @@ class AssetSummaryRead(ApiModel):
 
     id: uuid.UUID
     namespace: str
-    # Null = a REDACTED browse row (#920): the asset is monitored solely by suites
-    # outside the caller's grants; browse includes it anonymously (the tree-level
-    # #845 rule) — namespace only for placement, every other identity/health field
-    # withheld, `is_accessible=False`. The detail endpoint keeps 404ing it.
-    name: str | None
+    name: str
     env: str | None
     description: str | None
     owner_user_id: uuid.UUID | None
-    last_seen: datetime | None
+    last_seen: datetime
     suite_count: int
     worst_severity: str | None
     checks_total: int
@@ -101,15 +98,12 @@ class AssetSummaryRead(ApiModel):
     has_cancelled_run: bool
     has_operational_error: bool
     has_skip: bool
-    is_accessible: bool = True
-    # Redacted rows only (#920): the non-leaf path segments for tree placement,
-    # pre-split server-side (one separator rule for client and server).
-    name_prefix_segments: list[str] | None = None
 
 
 class LineageNodeRead(ApiModel):
     """A lineage neighbour — OpenLineage identity + whether it is monitored. No
-    run data (blast-radius browse only; ADR 0034 §2).
+    run data (blast-radius browse only; ADR 0034 §2). Fully named for every
+    member (ADR 0037 — lineage topology is identity).
 
     `depth` is the hop distance from the asset under view (1 = a direct neighbour):
     the graph view lays nodes out in hop columns rather than flattening every hop
@@ -118,20 +112,17 @@ class LineageNodeRead(ApiModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
-    # Nullable because a neighbour the caller holds no grant for is REDACTED, not
-    # omitted (#845): the graph still shows that something is downstream — dropping it
-    # would assert the falsehood "nothing consumes this table" — but its identity is
-    # withheld, because the asset endpoint 404s it no-leak (ADR 0034 decision 5) and a
-    # graph that names it would defeat that guarantee one click earlier.
-    namespace: str | None
-    name: str | None
+    namespace: str
+    name: str
     env: str | None
-    # False for a redacted node: whether someone else monitors an asset you cannot see
-    # is itself a fact about that asset.
     is_monitored: bool
     depth: int
-    # False → this node is a redacted placeholder: not nameable, not openable.
-    is_accessible: bool
+    # TRANSITION SHIM (#924 review — remove after one release): the pre-ADR-0037
+    # SPA bundle computes `redacted = !isCenter && !is_accessible` per node; with
+    # the field absent, every neighbour in a cached tab renders as an unclickable
+    # "🔒 Restricted" box until a hard refresh. Constant True keeps old bundles
+    # rendering correctly through the deploy window; nothing reads it server-side.
+    is_accessible: bool = True
 
 
 class LineageEdgeRead(ApiModel):
@@ -140,19 +131,15 @@ class LineageEdgeRead(ApiModel):
     only guess which depth-2 node hangs off which depth-1 node (#805).
 
     `columns` is the edge's column-level refinement (#901) where a warehouse source
-    recorded one — `[upstream_column, downstream_column]` pairs. **Redacted
-    server-side by the same #845 one-rule as the nodes**: when either endpoint is
-    outside the caller's grants, `columns` is null and only `column_count` remains —
-    the UI renders that as a redacted box ("N column links"), because a column name
-    of an asset you cannot see is schema disclosure. Both null ⇒ the edge simply has
-    no column grain (table-level source)."""
+    recorded one — `[upstream_column, downstream_column]` pairs, shown to every
+    member (ADR 0037 — column names are schema metadata). Null ⇒ the edge has no
+    column grain (a table-level source recorded it)."""
 
     model_config = ConfigDict(from_attributes=True)
 
     source: uuid.UUID
     target: uuid.UUID
     columns: list[tuple[str, str]] | None = None
-    column_count: int | None = None
 
 
 class LineageSourceHealthRead(ApiModel):
@@ -197,12 +184,16 @@ class WarehouseLineageStatusRead(ApiModel):
 
 
 class AssetDetailRead(ApiModel):
-    """Asset detail: the summary + per-suite breakdown + upstream/downstream lineage."""
+    """Asset detail: the workspace-true summary + the caller's per-suite breakdown
+    + upstream/downstream lineage. `suites` lists only suites the caller can view
+    (ADR 0027); `restricted_suite_count` is how many more compose the asset — they
+    roll into `summary` (workspace-true) but stay unnamed."""
 
     model_config = ConfigDict(from_attributes=True)
 
     summary: AssetSummaryRead
     suites: list[ComposingSuiteRead]
+    restricted_suite_count: int = 0
     upstream: list[LineageNodeRead]
     downstream: list[LineageNodeRead]
     lineage_edges: list[LineageEdgeRead]
@@ -232,23 +223,16 @@ _LIST_LIMIT_DEFAULT = 200
 _LIST_LIMIT_MAX = 200
 
 
-@router.get("/assets", response_model=list[AssetSummaryRead], summary="List visible assets")
+@router.get("/assets", response_model=list[AssetSummaryRead], summary="List assets")
 def list_assets(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
     limit: int = Query(default=_LIST_LIMIT_DEFAULT, ge=1, le=_LIST_LIMIT_MAX),
     offset: int = Query(default=0, ge=0),
 ) -> list[svc.AssetSummary]:
-    # Visibility derived from suite grants — a workspace-admin sees every asset
-    # (ADR 0027), everyone else only assets with a suite they can view. Pages are
-    # a stable (namespace, name) ordering sliced by limit/offset.
-    return svc.list_visible_assets(
-        db,
-        user_id=current_user.id,
-        include_all=is_workspace_admin(current_user),
-        limit=limit,
-        offset=offset,
-    )
+    # Workspace-true (ADR 0037): identical rows for every member — the service
+    # takes no user. Auth still required (the dependency), like every surface.
+    return svc.list_visible_assets(db, limit=limit, offset=offset)
 
 
 @router.get("/assets/{asset_id}", response_model=AssetDetailRead, summary="Get an asset")
@@ -257,8 +241,8 @@ def get_asset(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> svc.AssetDetail:
-    # Raises AssetNotFoundError (404) for an unknown asset OR one the caller can
-    # see no composing suite for — existence hidden (no-leak, ADR 0027).
+    # Opens for every member (ADR 0037) — only a truly unknown id 404s. The caller
+    # shapes the composing-suite LIST only (their ADR 0027 grants; admins see all).
     return svc.get_visible_asset(
         db, asset_id, user_id=current_user.id, include_all=is_workspace_admin(current_user)
     )
@@ -285,6 +269,6 @@ def update_asset(
         set_owner="owner_user_id" in fields,
         set_description="description" in fields,
     )
-    # Return the refreshed summary (admin sees all → include_all). Never 404s on
-    # an asset with no composing suites — metadata exists independently of suites.
-    return svc.summarize_asset(db, asset, user_id=_admin.id, include_all=True)
+    # Return the refreshed workspace-true summary. Never 404s on an asset with no
+    # composing suites — metadata exists independently of suites.
+    return svc.summarize_asset(db, asset)
