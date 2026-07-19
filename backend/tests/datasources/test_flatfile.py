@@ -84,6 +84,49 @@ def test_sniff_delimiter_ignores_a_truncated_trailing_row() -> None:
     assert flatfile.sniff_delimiter(b"a;b;c\n1;2;3\n4;5") == ";"
 
 
+@pytest.mark.parametrize(
+    ("sample", "expected"),
+    [
+        # A foreign delimiter inside a quoted field, both directions. This is the
+        # exact silent-wrong-answer class the change exists to prevent, so it is
+        # pinned rather than left to Sniffer's current behaviour.
+        (b'name,note\n"a;b;c",1\n"d;e;f",2\n', ","),
+        (b'name;note\n"a,b,c";1\n"d,e,f";2\n', ";"),
+        (b"\xef\xbb\xbfa;b\n1;2\n", ";"),  # UTF-8 BOM
+        (b"a;b\r\n1;2\r\n3;4\r\n", ";"),  # CRLF
+    ],
+)
+def test_sniff_delimiter_survives_quoting_bom_and_crlf(sample: bytes, expected: str) -> None:
+    assert flatfile.sniff_delimiter(sample) == expected
+
+
+def test_read_csv_bytes_bounds_the_sniff_sample_on_a_large_file(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`_SNIFF_BYTES` bounds the UTF-8 decode, so the runner — which reads whole
+    objects by design — doesn't materialise a multi-GB file as a str just to pick
+    a delimiter.
+
+    Asserted by observing the sample handed to the sniffer, not by parse
+    correctness: the bound is a RESOURCE property, and a correctness assertion
+    passes with or without the slice (verified by mutation), so it would pin
+    nothing.
+    """
+    seen: list[bytes] = []
+
+    def _spy(sample: bytes) -> str:
+        seen.append(sample)
+        return ";"
+
+    monkeypatch.setattr(flatfile, "sniff_delimiter", _spy)
+    raw = io.BytesIO(b"alpha;beta\n" + b"1;2\n" * 20_000)
+    df = flatfile.read_csv_bytes(raw)
+
+    assert len(raw.getvalue()) > flatfile._SNIFF_BYTES  # the fixture must exceed it
+    assert seen and len(seen[0]) == flatfile._SNIFF_BYTES
+    assert list(df.columns) == ["alpha", "beta"] and len(df) == 20_000
+
+
 def test_sniff_delimiter_never_picks_a_delimiter_outside_the_allowlist() -> None:
     """Left free, csv.Sniffer nominates letters/spaces on prose-ish headers. The
     allowlist keeps a bad guess bounded to a comma."""
