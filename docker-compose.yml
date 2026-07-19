@@ -221,26 +221,6 @@ services:
       marquez-db:
         condition: service_healthy
 
-  # ── Local OTLP consumer (opt-in: `docker-compose --profile telemetry up`) ────
-  # The non-Azure half of the observability seam (#589/#591). DataQ exports spans
-  # AND logs over OTLP/HTTP whenever OTEL_EXPORTER_OTLP_ENDPOINT is set — App
-  # Insights is just one backend behind that seam (ADR 0010), so a local Jaeger
-  # gives the same traces with zero Azure. Set in `.env.app`:
-  #   OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318   (compose)
-  #   OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 (host dev)
-  # UI on http://localhost:16686. Off by default: telemetry costs CPU and most
-  # local work doesn't need it — unset endpoint means telemetry is simply off,
-  # which is a supported posture, not a degraded one.
-  jaeger:
-    image: jaegertracing/all-in-one:1.62.0
-    profiles: ["telemetry"]
-    restart: unless-stopped
-    environment:
-      COLLECTOR_OTLP_ENABLED: "true"
-    ports:
-      - "16686:16686"  # UI
-      - "4318:4318"    # OTLP/HTTP receiver (the endpoint DataQ exports to)
-
 volumes:
   postgres_data:
   pnpm-store:
