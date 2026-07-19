@@ -3,10 +3,11 @@
   "checkpoint_id": "8740a6054601",
   "strategy": "manual-commit",
   "branch": "feature/issue-520-flatfile-monitors",
-  "checkpoints_count": 1,
+  "checkpoints_count": 3,
   "files_touched": [
     "backend/app/datasources/flatfile.py",
-    "backend/tests/datasources/test_flatfile.py"
+    "backend/tests/datasources/test_flatfile.py",
+    "docs/feature-matrix.md"
   ],
   "sessions": [
     {
@@ -15,13 +16,20 @@
       "compact_transcript": "/87/40a6054601/0/transcript.jsonl",
       "content_hash": "/87/40a6054601/0/content_hash.txt",
       "prompt": "/87/40a6054601/0/prompt.txt"
+    },
+    {
+      "metadata": "/87/40a6054601/1/metadata.json",
+      "transcript": "/87/40a6054601/1/full.jsonl",
+      "compact_transcript": "/87/40a6054601/1/transcript.jsonl",
+      "content_hash": "/87/40a6054601/1/content_hash.txt",
+      "prompt": "/87/40a6054601/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 335,
-    "cache_creation_tokens": 408667,
-    "cache_read_tokens": 34728921,
-    "output_tokens": 117914,
-    "api_call_count": 177
+    "input_tokens": 2677,
+    "cache_creation_tokens": 13612043,
+    "cache_read_tokens": 581228497,
+    "output_tokens": 935997,
+    "api_call_count": 1370
   }
 }

@@ -1,0 +1,1129 @@
+* Perform a mutation spike (both backend and frontend), and check the issues found. Then run a full security scan of entire codebase to identify any vulnerabilities [considering the recent security events].
+* Then check the docs once [READMEs, github page, progress, etc.] and make sure they are up to date with the latest changes.
+* Next deploy the latest changes to prod [full routine pre - post checklist coverage, if needed run the ad-hoc harness job once, but make sure to turn everyting off once the validation is completed.]
+
+---
+
+<task-notification>
+<task-id>ada87a45bc0795e27</task-id>
+<tool-use-id>toolu_0158JkrXuQ5FfbgZXMY5Xijn</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/ada87a45bc0795e27.output</output-file>
+<status>failed</status>
+<summary>Agent "Injection/SSRF/authz security audit" failed: Agent terminated early due to an API error: You've hit your monthly spend limit · raise it at claude.ai/settings/usage</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b22v2xhtx</task-id>
+<tool-use-id>toolu_01BkSGhQGQ9jtZ2zzYbSRBK2</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/b22v2xhtx.output</output-file>
+<status>completed</status>
+<summary>Background command "Full-history betterleaks secret scan via docker" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bn44c7qw9</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/bn44c7qw9.output</output-file>
+<status>completed</status>
+<summary>Background command "Re-run Stryker capturing full survivor report" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bwrzi03j9</task-id>
+<tool-use-id>toolu_01AHZPVpBEZTu55zXACfqdAS</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/bwrzi03j9.output</output-file>
+<status>completed</status>
+<summary>Background command "Dump all surviving mutant diffs to scratchpad" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b9003k7m5</task-id>
+<tool-use-id>toolu_01XFRf6mQe2s1ZXCR55Qe19i</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/b9003k7m5.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for survivor dump to finish" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+continue...
+
+---
+
+<task-notification>
+<task-id>b8ilegm2n</task-id>
+<tool-use-id>toolu_01M6u4cAgKMQ2uohgRkge1w9</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/b8ilegm2n.output</output-file>
+<status>completed</status>
+<summary>Background command "Verify betterleaksignore silences the historical finding" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bn2fbkbjc</task-id>
+<tool-use-id>toolu_01KKeN1AJmG9HaK8QQUqzjPq</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/bn2fbkbjc.output</output-file>
+<status>completed</status>
+<summary>Background command "Note review outcome and watch PR checks" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b15esqu0y</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/b15esqu0y.output</output-file>
+<status>completed</status>
+<summary>Background command "Run harness window: wake, run mockdata flows, sleep" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Hey, what the status
+
+---
+
+What about log sanitization and other similar issues, it bites hard last week
+
+---
+
+Did we get full lineage on both SF and UC?
+
+---
+
+Test it live for both UC and SF (that's the main point of this exerise, not just to prove it theoriticaly). 
+Also pull the column lineage if available. 
+show the lineage in a reducted box if user don't have access to it.
+
+---
+
+<task-notification>
+<task-id>bv8eqmts3</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/bv8eqmts3.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch PR 903 CI checks" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+fix the prod issue
+
+---
+
+<task-notification>
+<task-id>bwrungqyj</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/bwrungqyj.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch PR 903 checks after fixup" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b5lt7v9c1</task-id>
+<tool-use-id>toolu_01NwFK4yeFk5t8zt98Rf1iTL</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/b5lt7v9c1.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for main CI green then dispatch Deploy" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b7k7ryww5</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/b7k7ryww5.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch docs PR checks then squash-merge" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+do the WAREHOUSE_LINEAGE_ENABLED flip
+
+---
+
+Is it landed?
+
+---
+
+<task-notification>
+<task-id>bn2y5ah5y</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/bn2y5ah5y.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for the first live warehouse-lineage refresh" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Asset is not working, and fetchinf temp objects and stages
+
+---
+
+<task-notification>
+<task-id>bbvf182d1</task-id>
+<tool-use-id>toolu_01JFXp5tn2Gwgz6UQxJn9FDn</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/bbvf182d1.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch fix deploy and verify beat" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+continue...
+
+---
+
+<task-notification>
+<task-id>adc7eca855e13b6cb</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/adc7eca855e13b6cb.output</output-file>
+<status>completed</status>
+<summary>Agent "Review: reuse+simplification" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>```json
+[
+  {
+    "file": "backend/app/lineage/warehouse_snowflake.py",
+    "line": 254,
+    "summary": "Re-implements the group-column-pairs-then-attach pattern that warehouse_unity_catalog.py:_attach_column_pairs (lines 239-263) already built for #901 — both key a dict on (upstream.name, downstream.name), collect (src_col, tgt_col) pairs, and rebuild LineageEdgePair with tuple(sorted(pairs)). Belongs in a shared helper in warehouse.py (e.g. build_edges_with_column_pairs(edge_identities, pairs_by_key)). Critically, the Snowflake copy omits UC's _MAX_COLUMN_PAIRS_PER_EDGE=500 defensive cap.",
+    "failure_scenario": "The two providers' column-grain semantics drift independently: a runaway wide-schema/exploded statement on Snowflake balloons the edge's columns JSONB unbounded — the exact failure #901 added the cap to prevent on UC — and any future fix (cap, ordering, dedup rule) must be remembered and applied in two places."
+  },
+  {
+    "file": "backend/app/lineage/warehouse_snowflake.py",
+    "line": 269,
+    "summary": "The dedupe_edges(...) wrap over edges.items() is dead work: the edges dict is already keyed on (up.name, down.name) within a single constant namespace, and self-edges are dropped at line 259 (up.name == down.name), which itself duplicates dedupe_edges' own self-edge rule. Simpler form: return tuple(LineageEdgePair(...) for key, (up, down) in edges.items()) — the dict IS the dedupe.",
+    "failure_scenario": "Two places now encode the self-edge/dup rule; a reader assumes dedupe_edges is load-bearing here and 'optimizes' the dict away, or conversely edits dedupe_edges expecting it to affect this tier when it can never remove anything — either way the redundant layer misleads the next change."
+  },
+  {
+    "file": "backend/app/lineage/warehouse_snowflake.py",
+    "line": 192,
+    "summary": "In _from_object_dependencies the guard `if up_db is None or down_db is None: continue` is now dead code: the added SQL predicate `WHERE referenced_database = :db AND referencing_database = :db` can never return a row with a NULL database (NULL = :db is not TRUE). Simpler form: delete the guard, keeping only the _TABLE_DOMAINS check.",
+    "failure_scenario": "An unreachable branch that implies NULL databases still flow through — a future maintainer preserves or extends the NULL handling (e.g. adds NULL-tolerant identity building) believing it's exercised, and the branch drags an untestable line into the &gt;=80% coverage gate."
+  },
+  {
+    "file": "backend/app/lineage/warehouse_snowflake.py",
+    "line": 239,
+    "summary": "The 90-day lookback is a magic literal duplicated in two SQL strings — DATEADD('day', -90, ...) here and again in _account_has_write_activity (line 336) — with the docstring asserting they 'match'. Simpler form: one module-level _LOOKBACK_DAYS = 90 constant interpolated (or bound) into both queries, making the documented invariant structural.",
+    "failure_scenario": "Someone tunes the ACCESS_HISTORY window (say to 30d) without touching the corroboration probe: an account whose only writes are 31-89d old now returns empty-with-write-activity → None → 'edition-gated' skip and a needless descent to the view-level floor, silently degrading Enterprise accounts with no test catching the drift."
+  },
+  {
+    "file": "backend/app/lineage/warehouse_snowflake.py",
+    "line": 322,
+    "summary": "_is_ephemeral's docstring claims it covers Snowpark temp 'tables/stages', but stages can never reach it: the SQL already filters both endpoints to objectDomain = 'Table', and _identity_from_qualified returns None for non-3-part (stage) names before the check runs. The stage half of the guard's stated scope is unreachable; the filter could also live in the SQL WHERE alongside the other scope predicates (NOT LIKE 'SNOWPARK\\_TEMP\\_%' on the split table part), where the rest of the #908 hygiene already is.",
+    "failure_scenario": "A maintainer trusts the docstring and assumes Python-side ephemera filtering covers stages, then relaxes the SQL objectDomain filter (e.g. to admit external tables) — stages re-materialize as browsable assets, the exact #908 regression, because the safety net described here never actually catches them."
+  },
+  {
+    "file": "backend/app/lineage/warehouse_snowflake.py",
+    "line": 265,
+    "summary": "_column_pairs_from_json is called once per (base_object, modified_object) cross-join row, so the same om.value:columns blob is json.loads-parsed and fully scanned once per base table the statement read, each pass keeping only the one upstream's sources. Simpler form: parse each distinct target blob once, bucket its directSources pairs by _identity_from_qualified(src_table).name, then attach per-edge — the upstream keyword filter parameter disappears.",
+    "failure_scenario": "A statement reading N tables costs N identical parses of a potentially large JSON blob every 10-min refresh, and the helper is coupled to a single-upstream call shape — the planned GET_LINEAGE tier (or any caller wanting all pairs of a statement) can't reuse it without threading a fake 'upstream' through, inviting a third copy of the extraction logic."
+  }
+]
+```</result>
+<usage><subagent_tokens>74461</subagent_tokens><tool_uses>6</tool_uses><duration_ms>93981</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a37edc6e5d5d6e736</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/a37edc6e5d5d6e736.output</output-file>
+<status>completed</status>
+<summary>Agent "Review angle B: removed behavior" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>```json
+[
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/backend/app/lineage/warehouse_snowflake.py",
+    "line": 240,
+    "summary": "Tier-2 SQL now requires objectDomain = 'Table' on BOTH endpoints, but ACCESS_HISTORY uses per-kind domains ('View', 'Materialized view', etc. — 'Table' is only one value), and this contradicts tier 3's _TABLE_DOMAINS which deliberately keeps VIEW / MATERIALIZED VIEW / DYNAMIC TABLE / EXTERNAL TABLE. The old tier-2 body accepted ANY domain (its only guard was the 3-part-name check in _identity_from_qualified), so view/matview/dynamic-table endpoints that used to become edges are now silently dropped in SQL; _column_pairs_from_json repeats the same 'Table'-only filter on directSources.",
+    "failure_scenario": "An INSERT...SELECT whose base_objects_accessed row carries the source view (domain 'View'), or a materialized-view/dynamic-table refresh write (objects_modified domain != 'Table') — exactly the ANALYTICS mart dynamic tables DataQ's own dbt harness builds. Old code emitted those edges from tier 2; new code filters them out, and because a non-empty tier-2 result WINS over the floor, the surviving Table-Table edges mask the loss — the dynamic-table/matview edges vanish from the graph with no skipped/degraded signal."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/backend/app/lineage/warehouse_snowflake.py",
+    "line": 252,
+    "summary": "The rows-empty check happens BEFORE the new Python filters (_is_ephemeral, self-edge, None identity). If the scoped query returns rows but every row is filtered out in Python, the function returns dedupe_edges([]) == () — which fetch_edges treats as a successful ACCESS_HISTORY tier and never descends to the OBJECT_DEPENDENCIES floor. The old code had the same shape but its only filter was non-3-part names, so 'all rows filtered' was implausible; the new filters make it a documented live class (Snowpark scratch is 'real rows' per the docstring).",
+    "failure_scenario": "A database whose only Table-to-Table activity in the 90-day window is SNOWPARK_TEMP_* scratch (e.g. the harness PERF runs): rows is non-empty, every edge is dropped by _is_ephemeral, tier 2 returns () and is reported as the winning tier with zero edges — the still-valid RETAIL-&gt;STG-&gt;ANALYTICS view chain in OBJECT_DEPENDENCIES is never read, an empty graph is asserted, and the docstring's own promise ('both descend to the floor rather than asserting an empty graph') is violated."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/backend/app/lineage/warehouse_snowflake.py",
+    "line": 239,
+    "summary": "The old tier-2 query scanned the full 365d ACCESS_HISTORY retention; the new one is bounded to 90d, and the descend-to-floor decision on emptiness reuses the 90d account-wide _account_has_write_activity probe. When BOTH are empty (account idle &gt;90d) tier 2 returns () — asserting an empty graph — instead of None, skipping the floor. Under the old unscoped/unbounded query, a once-active account still returned rows so this branch was effectively unreachable; the 90d bound makes it reachable on any paused account.",
+    "failure_scenario": "The harness compute is stopped by default (#590) — leave it asleep ~3 months, then run a lineage refresh: QUERY_HISTORY(90d)=0 and scoped ACCESS_HISTORY(90d)=0, so tier 2 returns () and fetch_edges reports SNOWFLAKE_ACCESS_HISTORY with zero edges, while OBJECT_DEPENDENCIES (a current-state view with no time axis) still lists every live view dependency. The refresh replaces real view-level lineage with a confident empty state — the exact #828-class failure mode."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/backend/app/lineage/warehouse_snowflake.py",
+    "line": 160,
+    "summary": "_database folds the configured database to .upper() and both tiers now do exact-match binds against it (SPLIT_PART(...) = :db in tier 2, referenced_database = :db in tier 3). The old queries had no database predicate at all, so identifier-case mismatches could not lose rows. For a quoted mixed/lower-case database (or a config value carrying quote characters), ACCOUNT_USAGE stores the true case and neither predicate matches — and unlike edition-gating, nothing corroborates this emptiness.",
+    "failure_scenario": "A connection whose Snowflake database was created as \"DataQ_Db\" (quoted): tier 2's SPLIT_PART = 'DATAQ_DB' matches nothing (-&gt; None via the write-activity probe), tier 3's referenced_database = 'DATAQ_DB' also matches nothing, and fetch_edges returns an empty floor result with no error — the entire lineage pull silently degrades from 'all edges' (old unscoped behavior) to 'no edges' with the degraded_reason blaming edition gating rather than the case fold."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/backend/app/lineage/warehouse_snowflake.py",
+    "line": 175,
+    "summary": "Both tiers now require BOTH endpoints in the connection's database (referenced_database = :db AND referencing_database = :db; both SPLIT_PARTs = :db). The old unscoped queries returned cross-database edges (a view in the connection's DB reading a shared/other DB's table, or a COPY-target fed from another DB). Those edges are now dropped in SQL — omitted, not redacted — so the in-scope endpoint's upstream side is asserted empty.",
+    "failure_scenario": "A view DATAQ_DB.ANALYTICS.V built over SHARED_DB.RETAIL.ORDERS: old code emitted the edge; new code excludes it at both tiers, and the asset page shows V with no upstreams — indistinguishable from genuinely-source-less. This is the same 'dropping a neighbour asserts nothing feeds this table' failure the #845/#847 redaction amendment explicitly forbade (there the fix was redact-not-omit); here the removal reintroduces omission with no skipped_tiers/degraded_reason trace."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/backend/app/lineage/warehouse_snowflake.py",
+    "line": 108,
+    "summary": "The operator-facing skip string 'access_history: empty (edition-gated or no write history)' (and the docstring's None contract) was written for the OLD unscoped, unbounded query, where emptiness really did imply edition gating or a dead account. With the new scope (one database, 90d, Table-domain-only) a None can now also mean 'plenty of Enterprise write activity, just none matching the filters' (all-COPY DML — the docstring says this is exactly the live account), but the surfaced degraded_reason still names only the two old causes.",
+    "failure_scenario": "On the Enterprise account where every write is COPY-from-stage, tier 2 returns None and the floor result carries degraded_reason 'view-level lineage only — access_history: empty (edition-gated or no write history)'. An operator (or the #839 connection-health UI reading these classified strings verbatim) is told an Enterprise account is edition-gated / idle — a stable-but-now-false diagnosis, the same mislabeling class the #902 fix ('a blanket need-Enterprise would mislabel a grant-shaped skip') was about."
+  }
+]
+```</result>
+<usage><subagent_tokens>72715</subagent_tokens><tool_uses>8</tool_uses><duration_ms>152491</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b6vuzb9ke</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/b6vuzb9ke.output</output-file>
+<status>completed</status>
+<summary>Background command "Brief wait for remaining finders" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a02d5ce97c6ab28f0</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/a02d5ce97c6ab28f0.output</output-file>
+<status>completed</status>
+<summary>Agent "Review angle A: diff scan" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>[
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/backend/app/lineage/warehouse_snowflake.py",
+    "line": 160,
+    "summary": "_database() blanket-uppercases the configured database instead of applying the quoted-identifier fold (_normalize_part), so a quoted-lowercase or quote-wrapped database name can never match ACCOUNT_USAGE's stored actual-case value — producing a confident, prunable empty graph.",
+    "failure_scenario": "A connection whose database was created quoted (e.g. config value '\"dataq_db\"' or a lowercase 'dataq_db'): .strip().upper() yields '\"DATAQ_DB\"' (literal quotes retained) or 'DATAQ_DB', while OBJECT_DEPENDENCIES.referenced_database and the ACCESS_HISTORY objectName first segment store 'dataq_db'. Both scoped queries return zero rows; ACCESS_HISTORY empty + write activity returns None, the floor returns (), and fetch_edges reports an empty SNOWFLAKE_OBJECT_DEPENDENCIES result — a 'true observation' the refresh may PRUNE on, silently wiping all previously-pulled edges for the connection. format_snowflake_name/_normalize_part already implement the correct quote-strip-else-upper rule and are not used here."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/backend/app/lineage/warehouse_snowflake.py",
+    "line": 352,
+    "summary": "_identity_from_qualified() feeds ACCESS_HISTORY's actual-case, UNQUOTED qualified names back through format_snowflake_name, which re-folds lowercase segments to UPPER — corrupting the identity of quoted-lowercase objects and enabling false self-loop drops.",
+    "failure_scenario": "ACCESS_HISTORY returns quoted identifiers verbatim without quotes (e.g. 'DATAQ_DB.RETAIL.orders' for a table created as \"orders\"). format_snowflake_name treats 'orders' as an unquoted segment and folds it to 'ORDERS', so the edge/column pair attaches to asset name 'DATAQ_DB.RETAIL.ORDERS' — which never joins the `assets` row spelled '...orders' (the byte-for-byte join is the module's stated premise), and if a distinct unquoted ORDERS table also exists, an edge orders→ORDERS folds to equal names and is dropped by the `up.name == down.name` guard at line 259 as a self-loop. The fixture .gitignore itself notes the live account has 'quoted-lowercase workout tables — real identity shapes', yet no test covers them through the edge path."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/backend/app/lineage/warehouse_snowflake.py",
+    "line": 349,
+    "summary": "Dot-containing quoted identifiers break both the naive '.'-split (edge silently dropped) and the SPLIT_PART database scoping.",
+    "failure_scenario": "A table created as \"ORDERS.V2\" arrives from ACCESS_HISTORY as 'DATAQ_DB.RETAIL.ORDERS.V2' → split('.') gives 4 parts → _identity_from_qualified returns None → the whole edge (and, at line 316-318, any column pair sourced from it) vanishes silently even though the row passed the SQL scope filter. Conversely a database named with an embedded dot makes `SPLIT_PART(objectName, '.', 1) = :db` never match, silently emptying tier 2. No log line marks either drop, so the operator sees the #828-style confident-empty state the module exists to prevent."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/backend/app/lineage/warehouse_snowflake.py",
+    "line": 240,
+    "summary": "The SQL filter `objectDomain = 'Table'` on both endpoints is far narrower than the module's own _TABLE_DOMAINS (TABLE/VIEW/MATERIALIZED VIEW/DYNAMIC TABLE/EXTERNAL TABLE), silently dropping table-like endpoints at the richer tier that the floor tier would keep.",
+    "failure_scenario": "On an Enterprise account, an INSERT...SELECT reading an EXTERNAL TABLE (or a materialized view) into a mart table produces bo.value:objectDomain = 'External table' → the row is filtered out of tier 2, and because tier 2 answered (non-empty), tier 3 never runs — so an edge OBJECT_DEPENDENCIES would have reported (external tables are in _TABLE_DOMAINS at line 56) is absent from the graph. Same for directSources at line 310: `src.get(\"objectDomain\") != \"Table\"` drops column pairs sourced from any non-'Table' but table-like domain."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/backend/app/lineage/warehouse_snowflake.py",
+    "line": 261,
+    "summary": "Snowpark-temp rows are dropped edge-wise with no transitive collapse, so any pipeline that materializes through SNOWPARK_TEMP_* loses its real upstream entirely (A→TEMP→B yields neither A→TEMP, TEMP→B, nor A→B).",
+    "failure_scenario": "A Snowpark job does `df = session.table('RETAIL.ORDERS')...` which writes SNOWPARK_TEMP_TABLE_X, then inserts SNOWPARK_TEMP_TABLE_X into PERF.ORDERS_WIDE. ACCESS_HISTORY records (ORDERS → TEMP) and (TEMP → ORDERS_WIDE); both rows hit the _is_ephemeral continue, so ORDERS_WIDE renders with zero upstreams — indistinguishable from genuinely-unlineaged, on the very account whose PERF workout demonstrably ran such workloads. The pre-#908 code at least surfaced the chain (as noisy assets); now the real lineage is invisible with no degraded_reason mentioning the drop."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/backend/tests/lineage/test_warehouse_snowflake.py",
+    "line": 363,
+    "summary": "test_access_history_query_is_scoped_and_bound asserts conn.params AFTER two later executes have overwritten it, so it actually verifies the OBJECT_DEPENDENCIES floor's bind, not the ACCESS_HISTORY bind it documents.",
+    "failure_scenario": "_FakeConn.execute stores only the LAST call's params. In this test the ACCESS_HISTORY query ([] rows) is followed by the QUERY_HISTORY probe (params=None) and then the tier-3 floor query (params={'db': 'DATAQ_DB'}), so `assert conn.params == {'db': 'DATAQ_DB'}` passes via the floor query. If a regression made _from_access_history stop passing its params dict (e.g. f-string interpolation of the database, the exact injection/scoping property the test claims to pin), the test stays green — the docstring's 'BOUND param (no interpolation)' guarantee is unasserted for the query under test."
+  }
+]</result>
+<usage><subagent_tokens>87903</subagent_tokens><tool_uses>10</tool_uses><duration_ms>224549</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bnwghy7af</task-id>
+<tool-use-id>toolu_01PUi9tCP7BtpnihtR3J6QHq</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/bnwghy7af.output</output-file>
+<status>completed</status>
+<summary>Background command "Run harness window with DAG triggers for table-to-table DML" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bacibxhme</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/bacibxhme.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for the harness window to close" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+continue...
+
+---
+
+<task-notification>
+<task-id>b9goq2vtv</task-id>
+<tool-use-id>toolu_017JC4wbEwSgjLEtrB792p7r</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/b9goq2vtv.output</output-file>
+<status>completed</status>
+<summary>Background command "Run the canonical backend test gate" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b6dplt56p</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/b6dplt56p.output</output-file>
+<status>completed</status>
+<summary>Background command "Fixup commit, push, post review record, watch CI" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>byjotx4go</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/byjotx4go.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch PR 914 checks and merge when green" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>braak1cpr</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/braak1cpr.output</output-file>
+<status>completed</status>
+<summary>Background command "Update PR 911 branch, watch checks, merge on green" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Use ui-tester with dataq admin for live testing.
+
+---
+
+<task-notification>
+<task-id>b4lpi2aoh</task-id>
+<tool-use-id>toolu_0136mGZHf6BGZjakbt3NEB1i</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/b4lpi2aoh.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch main CI; deploy on green" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bh80yva3x</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/bh80yva3x.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch deploy, verify migrate, images, and beat ticks" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bnrel0ua9</task-id>
+<tool-use-id>toolu_013NmGmsAdYTzSxG3t1ntDKT</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/bnrel0ua9.output</output-file>
+<status>completed</status>
+<summary>Background command "Peek at refresh progress" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+hey, what happens to the ui-tester
+
+---
+
+I'll complete the login start the ui-tester again. [do it in both dataq-admin and Olivia]
+
+---
+
+<task-notification>
+<task-id>a4a5605a4ce6686bf</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/a4a5605a4ce6686bf.output</output-file>
+<status>completed</status>
+<summary>Agent "Live prod UI test as admin" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Browser left signed in as Olivia at the dashboard, confirmed rendering correctly.
+
+---
+
+# DataQ Live Production Test Report — Assets/Lineage (#908/#909/#911)
+
+Raw findings, both phases executed live against `https://dataq-app-frontend.purplefield-f7322a1b.westus2.azurecontainerapps.io` with real interactive Entra sign-ins.
+
+## PHASE 1 — dataq-admin (Workspace admin)
+
+Identity confirmed via Profile: `dataq-admin@royarijit04outlook.onmicrosoft.com`, Role: Workspace admin.
+
+| # | Check | Desktop 1280px | Mobile 390px |
+|---|---|---|---|
+| a | /assets browse junk-free | **PASS** — exactly 22 real assets, zero junk classes | **PASS** — same 22, no overflow (scrollWidth=clientWidth=390) |
+| b | STG_ORDERS detail loads (ex-500) | **PASS** — 200, all sections render, INFO-styled advisory | **PASS** — 200, no overflow, no console errors |
+| c | feedback_sentiment column lineage | **PASS** — 6 links incl. `comment → sentiment` | **PASS** — same, no overflow |
+| d | Dashboard + Results console/network | **PASS** — 0 errors, all `/api/v1/*` 200 | **PASS** — 0 errors, no overflow |
+| e | Redacted boxes as admin | **PASS** — none present (expected) | n/a |
+
+Screenshots: `phase1-assets-desktop.png`, `phase1-stg-orders-desktop.png`, `phase1-feedback-sentiment-desktop.png`, `phase1-assets-mobile.png`, `phase1-feedback-sentiment-mobile.png`, `phase1-stg-orders-mobile.png` (all in the Playwright output dir alongside `entra_login_required.png` from the earlier blocked attempt).
+
+**Asset count detail (check a):** tracking_events_ (ADLS), mart_sales_by_channel, stg_sales_events, daily_revenue, feedback_sentiment, feedback×2 (raw+silver), sales_events, sales, purchase_orders (Iceberg), MART_CUSTOMER_ORDERS, MART_ORDER_REVENUE, STG_CUSTOMERS, STG_ORDER_LINES, STG_ORDERS, STG_PRODUCTS, CUSTOMERS, ORDER_LINES, ORDERS_HEADER, PAYMENTS, PRODUCTS, REFUNDS = 22, matches expected. Zero `SNOWPARK_TEMP_*`, PERF-schema, `adf_stage_import_*`, or lowercase gibberish.
+
+**Check (b) detail:** `DATAQ_DB.ANALYTICS_STG.STG_ORDERS` (`/assets/d73a6d24-0990-436d-9a20-eb9257e90ce0`) returns 200 (previously the exact 500). Identity, health axes ("Connection: No runs" / "Data quality: No runs"), suites table ("Monitored by 0 suites"), incidents ("No open incidents"), lineage graph (1 upstream/2 downstream, nodes clickable) all render. Advisory Alert uses `info-circle` icon — confirmed INFO not error — text: *"view-level lineage only — get_lineage: get_lineage supported but per-seed traversal not yet built; access_history: no table-to-table DML in the scoped 90d window (all-COPY/idle databases and Standard edition all look like this)"* for the DATAQ_READER connection.
+
+**Minor finding (not blocking):** the same INFO alert bundles two *failed-refresh* reasons ("Snowflake — Orders" / "Snowflake — Payments": *"last refresh failed — The run failed to execute"*) alongside the degraded-tier note, all rendered at the same INFO visual weight. Root cause: `frontend/src/components/assets/LineageGraph.tsx:114-133` — a single `type="info"` Alert covers both "coarser tier" and "refresh actually failed" cases; the latter arguably deserves warning-level treatment. Suggested fix: split into two alerts (or a per-item severity flag) so an actual failed refresh doesn't read as merely "coarse."
+
+**Minor finding (by design, confirmed intentional — not a bug):** the `feedback_sentiment` (pure Databricks/UC asset) page's warehouse-lineage advisory lists three unrelated **Snowflake** connections (Orders/Retail/Payments). Confirmed deliberate in `backend/app/services/asset_view_service.py:565-573` (`warehouse_lineage_status()` docstring: "a warehouse's lineage tier is a property of the source, not the asset" — workspace-wide by design, same pattern as `failing_lineage_sources`). Functionally correct but UX-confusing on first read; worth a copy tweak (e.g. "workspace lineage sources" framing) rather than a code fix.
+
+**Console/network across all Phase 1 pages:** 0 console errors/warnings; every `/api/v1/*` call observed returned 200 (`/me`, `/assets`, `/assets/{id}`, `/runs`, `/suites`, `/connections`, `/dashboard/summary`, `/admin/users`, `/incidents`).
+
+**PAT table check:** only masked tokens shown (`dq_live_jdoH…`), no full-token leak on the Profile page.
+
+## PHASE 2 — Olivia Bennett (Member)
+
+Sign-out via profile menu → Entra "Pick an account" confirm → landed back cleanly at splash/login. Re-signed in as Olivia; identity confirmed via Profile: `olivia.bennett@royarijit04outlook.onmicrosoft.com`, Role: Member. Admin/Settings nav items correctly absent for her role.
+
+| # | Check | Result |
+|---|---|---|
+| a | /assets browse — granted + suite-less only | **PASS** (desktop + mobile) — 17 assets shown (matches her dashboard's "17 Monitored"), vs admin's 22. Entire ADLS source hidden; within Snowflake, `MART_ORDER_REVENUE`, `CUSTOMERS`, `PRODUCTS`, `REFUNDS` absent. |
+| b | Redacted/anonymous boxes for out-of-grant neighbors | **PASS** — opened STG_ORDERS (accessible to her, "Monitored by 0 suites"); its downstream `MART_ORDER_REVENUE` (visible to admin) renders as **🔒 Restricted / outside your access**, aria-label "A connected asset outside your access." Confirmed at both 1280px and 390px, no page overflow. |
+| b (wire-leak) | Payload must not carry identifiers | **PASS** — raw response body for `GET /api/v1/assets/d73a6d24-...` shows the redacted neighbor as `{"id":"3650a319-...","namespace":null,"name":null,"env":null,"is_monitored":false,"depth":1,"is_accessible":false}`. Only an opaque UUID crosses the wire; no name/namespace/env leak. |
+| c | Redacted edge with column data → count-only | **Not exercised** — no live case in current data: the only column-grain edges are UC (`feedback → feedback_sentiment`), and Olivia has grants on both `feedback` (raw+silver) and `feedback_sentiment`, so no redacted-column scenario exists for her today. All Snowflake edges in this dataset are table-grain only (view-level tier), so `columns:null` regardless of access. Component logic was verified in source (`ColumnLineagePanel.tsx:55-68`, count-only + `LockOutlined` branch) during the earlier code review but could not be triggered live. |
+| d | feedback_sentiment grant? | **She has one** — suite owner ("Access: owner" on "Feedback Sentiment — UC gold"). Column lineage fully visible: 6 links incl. `comment → sentiment`, rendered identically to admin's view, no redaction (both neighbors also in her grants). Verified desktop + mobile (390px), no overflow, no console errors. |
+| d | STG_ORDERS as Olivia | Page loads 200, 0 suites for her, lineage shows 1 accessible upstream + 1 accessible downstream + 1 redacted downstream (see check b). No console errors. |
+
+**Observation:** the warehouse-lineage advisory (Snowflake connection names) DID appear on Olivia's `feedback_sentiment` page (she has a stake via suite ownership) but did NOT appear on her `STG_ORDERS` page (0 suites there) — confirms the stake-gate in `asset_view_service.py:548-561` works correctly both ways (shown when she has a stake, withheld when she doesn't), even though it's a documented workspace-wide list for any stakeholder, not scoped to connections she personally has access to. Consistent with intent, flagged only as the same UX note as Phase 1.
+
+**Console/network across all Phase 2 pages:** 0 console errors/warnings on every page checked (dashboard, assets browse ×2 viewports, STG_ORDERS ×2, feedback_sentiment ×2).
+
+**PAT table check (Olivia):** only masked tokens shown (`dq_live_hUaf…`), no leak.
+
+Screenshots: `phase2-olivia-stg-orders-redacted-mobile.png`, `phase2-olivia-feedback-sentiment-mobile.png`, `phase2-olivia-assets-mobile.png`.
+
+Browser left signed in as Olivia at `/dashboard`, viewport reset to 1280×900, per instructions.
+
+## Summary
+
+- **#909 (JSON-null 500 fix): verified live** — the exact ex-500 page loads cleanly for both identities, at both viewports.
+- **#908/#911 (Snowflake scoping + column-grain, UC column lineage): verified live** — 22/17 assets are all real, zero junk classes; column lineage renders correctly including the specified `comment → sentiment` mapping.
+- **#845 redaction one-rule: verified live**, including the wire-level no-leak proof (redacted node ships only an opaque UUID, all disclosing fields null).
+- **No blockers found.** Two minor, non-blocking UX observations noted above (INFO-alert severity conflation; workspace-wide Snowflake advisory appearing on unrelated UC asset pages) — both are candidates for follow-up issues, not regressions.
+- One check (c, redacted edge carrying column data) could not be exercised against live data because no such case currently exists in the seeded environment; the server/client code path was reviewed in source and appears correctly implemented, but this remains unverified end-to-end live.</result>
+<usage><subagent_tokens>197091</subagent_tokens><tool_uses>94</tool_uses><duration_ms>614683</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bzuj67nux</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/bzuj67nux.output</output-file>
+<status>completed</status>
+<summary>Background command "Run harness window with the dbt leg" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bpk7sw2pu</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/bpk7sw2pu.output</output-file>
+<status>completed</status>
+<summary>Background command "Correct ledger, PR, watch, merge" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b2em8wt56</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/b2em8wt56.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for all 918 checks then merge" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+What is this analytics_probe_analytics_probe schema in UC and why the `reference` schema of UC is not available in asset view? 
+
+Also even if the user don't have access to an asset include them in the main asset tree view as reducted. (an example Mart Order revenue for Olivia) 
+
+PAT for dataq-loader generated - `/Users/arijit/Downloads/DATAQ_LOADER_PAT-token-secret.txt`, you can add it to kv
+
+---
+
+<task-notification>
+<task-id>bc437s041</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/bc437s041.output</output-file>
+<status>completed</status>
+<summary>Background command "Run tree tests, tsc, lint, full frontend suite" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Do we need the harness jobs now? If not, MAKE SURE EVERYTHING IS STOPPED OR DISABLE MODE.
+
+---
+
+<task-notification>
+<task-id>b8q0qrx91</task-id>
+<tool-use-id>toolu_011fRkanZZtkLhCyBJt9UrDD</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/b8q0qrx91.output</output-file>
+<status>completed</status>
+<summary>Background command "Full frontend + backend gates" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bfwxwxcdp</task-id>
+<tool-use-id>toolu_01Sh8DbhNwae2ks4o4A92DnS</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/bfwxwxcdp.output</output-file>
+<status>completed</status>
+<summary>Background command "Full backend gate rerun" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a30e576c9f9c56cbf</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/a30e576c9f9c56cbf.output</output-file>
+<status>failed</status>
+<summary>Agent "Review 921: correctness angles" failed: Agent terminated early due to an API error: You've hit your monthly spend limit · raise it at claude.ai/settings/usage?from=cc_cli_limit_message</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a0640165a4ae5da26</task-id>
+<tool-use-id>toolu_01GjLkkKFvBrWFxWq4F8oS2d</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/a0640165a4ae5da26.output</output-file>
+<status>completed</status>
+<summary>Agent "Review 921: cleanup angles" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Note: claude-sonnet-5[1m] (the safety classifier) was unavailable when reviewing this subagent's work. Please carefully verify the subagent's actions and output before acting on them.
+
+```json
+[
+  {
+    "file": "backend/app/services/asset_view_service.py",
+    "line": 456,
+    "summary": "`open_to_caller` (granted-suites OR suite-less) is a second, SQL-side implementation of the exact rule `_accessible_asset_ids` (line 723) already encodes for the lineage graph — the rule #847 pinned as 'one rule, all three surfaces agree'. The row-redaction step (page ids -&gt; open_ids) could instead call `_accessible_asset_ids(session, ids, user_id=..., include_all=..., has_suite=_monitored_ids(session, ids))`, keeping one authoritative predicate.",
+    "failure_scenario": "Any future change to the visibility rule (e.g. a new grant clause, an owner-sees-own clause, or an ADR 0027 tier tweak) must now be edited in two places in the same file; missing one makes browse and the lineage graph disagree about who may see an asset — the exact #845/#847 divergence class the codebase already shipped a fix for, and the drift is invisible until a non-grantee screenshots a full row browse shows but the graph redacts (or vice versa)."
+  },
+  {
+    "file": "backend/app/services/asset_view_service.py",
+    "line": 464,
+    "summary": "Two round-trips where one suffices: the page query fetches assets, then a second query re-runs the `open_to_caller` predicate over the same 200 ids just to learn a boolean. `session.execute(select(Asset, open_to_caller.label('is_open')).order_by(...).limit(...).offset(...))` returns both in one query; the second query also re-executes the two correlated subselects (`granted_asset_ids`, `all_targeted`) a second time.",
+    "failure_scenario": "One extra DB round-trip plus a duplicate evaluation of the accessible-suite-ids ladder subquery on every browse page load — measurable added latency on the hottest read path of the assets page, and pure waste since the predicate is already expressed as a SQLAlchemy expression usable as a select column."
+  },
+  {
+    "file": "backend/app/services/asset_view_service.py",
+    "line": 514,
+    "summary": "`_redacted_summary`'s separator rule (`'/' in name -&gt; rpartition('/') else rpartition('.')`) re-implements frontend `nameSegments`' rule (assetTree.ts:58, `includes('/') ? '/' : '.'`) but only for the LAST separator, and without nameSegments' empty-segment filtering — two encodings of one grouping rule in two languages with no shared source or cross-pinning test.",
+    "failure_scenario": "A mixed-separator name like `db.schema.table/part` already splits the tree today: the full row's leaf sits under one node labeled `db.schema.table` (nameSegments splits the whole name on '/'), but the redacted sibling's prefix `db.schema.table` contains no '/', so nameSegments re-splits it on '.' into db -&gt; schema -&gt; table — the locked row renders in a different (fabricated) group than its accessible siblings. Any future nameSegments change (e.g. '\\\\' support) widens the drift silently."
+  },
+  {
+    "file": "backend/app/services/asset_view_service.py",
+    "line": 525,
+    "summary": "`_redacted_summary` passes through `last_seen=asset.last_seen` while its own docstring (and the AssetSummaryRead comment in api/v1/assets.py:80) says every non-placement field is withheld and 'a hidden asset's health is itself a fact about it'. `last_seen` is a liveness/health fact (when lineage last observed the asset) leaking on the redacted row; nothing in the diff's frontend renders it for restricted rows, so withholding it costs nothing.",
+    "failure_scenario": "The API returns a real timestamp on a row the same PR argues must disclose only id+namespace+prefix — a non-grantee can watch `last_seen` tick to infer the hidden asset's pipeline is active and roughly when it runs, the same fact-class the code deliberately forces to defaults for `is_monitored`/health; also a comment-vs-code contradiction that will mislead the next editor about the redaction contract."
+  },
+  {
+    "file": "frontend/src/components/assets/assetTree.ts",
+    "line": 120,
+    "summary": "The restricted-leaf branch (lines 120-128) copies the get-or-create segment-walk verbatim from the normal branch (lines 140-147). A small helper — `descend(cursor, path, segments): {cursor, path}` — serves both; the restricted branch then only differs in what it attaches at the end.",
+    "failure_scenario": "Any change to node keying or labeling (path escaping, casing, key collision handling — e.g. a fix for a segment literally named '__restricted__') applied to one copy but not the other makes restricted leaves materialize a parallel folder node with a mismatched key for the same prefix, splitting one schema group into two in the rendered tree, with no test failing unless a mixed accessible+restricted fixture covers that exact edit."
+  },
+  {
+    "file": "frontend/src/pages/Assets.tsx",
+    "line": 189,
+    "summary": "The redacted-row discriminator is inconsistent across the three consumers: assetTree.ts:111 checks `name === null || is_accessible === false`, the table cell (line 189) checks only `name === null`, and onRow (line 252) checks only `is_accessible === false` — while api/assets.ts's own doc comment declares '`is_accessible` is the discriminator'. Pick one (`is_accessible === false`, or an `isRedacted(asset)` helper in api/assets.ts) and use it everywhere.",
+    "failure_scenario": "A server row where the two fields disagree (a future serializer bug, or a mocked test fixture setting one but not the other) renders a clickable '🔒 Restricted' cell that navigates into the detail endpoint's 404 page, or an openable-cursored row whose cell shows the real name — each consumer fails a different way for the same payload, and the tree's belt-and-braces OR masks the divergence in unit tests."
+  }
+]
+```</result>
+<usage><subagent_tokens>66156</subagent_tokens><tool_uses>8</tool_uses><duration_ms>83720</duration_ms></usage>
+</task-notification>
+
+---
+
+continue...
+
+---
+
+<task-notification>
+<task-id>betidc24h</task-id>
+<tool-use-id>toolu_01Bxc9t21Y1KmNHXLEKECj5T</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/betidc24h.output</output-file>
+<status>completed</status>
+<summary>Background command "Full gates both sides" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bw6yr6qmu</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/bw6yr6qmu.output</output-file>
+<status>completed</status>
+<summary>Background command "Fixup, push, review record, watch CI, merge 921" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bfq81amo5</task-id>
+<tool-use-id>toolu_01LL6hCk1bStvGQgNFmHyohz</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/bfq81amo5.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for 921 checks, merge, deploy, verify beat" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a4a5605a4ce6686bf</task-id>
+<tool-use-id>toolu_01Vuguf3LAiraNYwqHVz8oLD</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/a4a5605a4ce6686bf.output</output-file>
+<status>completed</status>
+<summary>Agent "Live prod UI test as admin" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Left at desktop 1280px, dashboard, signed in as Olivia.
+
+---
+
+# #920/#921 Live Verification Report — Redacted Browse Rows
+
+Note: the browser session was lost between the prior report and this task (tool reported "Target page, context or browser has been closed"). Olivia had to re-authenticate — Entra remembered her account but still required her password; she entered it interactively, no credentials were guessed or supplied by me.
+
+| # | Check | Result |
+|---|---|---|
+| 1 | 🔒 rows render inside real schema groups | **PASS** — `Snowflake → DATAQ_DB → ANALYTICS`: `MART_CUSTOMER_ORDERS` + one `🔒 Restricted` row (= `MART_ORDER_REVENUE`). `RETAIL` group: `ORDER_LINES`/`ORDERS_HEADER`/`PAYMENTS` + 3 `🔒 Restricted` rows (= `CUSTOMERS`/`PRODUCTS`/`REFUNDS`). One more `🔒 Restricted` row under the ADLS source (the entirely-hidden `tracking_events_`). Total 5 restricted rows, correctly nested. Screenshot: `phase3-assets-redacted-tree-desktop.png`. |
+| 2 | Click on 🔒 does not navigate / no identity leak | **PASS** — clicked the ANALYTICS-group restricted row; URL stayed at `/assets`, no navigation. Snapshot after click shows aria-label unchanged: "A restricted asset outside your access" — no name, no tooltip, no revealed identity. |
+| 3 | "All assets" table: prefix + non-clickable + Last-seen "—" | **PASS** — rows render exactly `🔒 Restricted · DATAQ_DB › ANALYTICS` and `🔒 Restricted · DATAQ_DB › RETAIL` (×3); the ADLS restricted row shows just `🔒 Restricted` with subtitle `ADLS · dataqharness3erlgd/landing` (no schema breadcrumb — see note below). Last-seen column = `—` for all restricted rows. Restricted rows lack `cursor=pointer` in the accessibility tree (accessible rows have it) — confirms non-clickable. |
+| 4 | Wire check on `GET /api/v1/assets` | **PASS** — captured raw response body. All 5 `is_accessible:false` rows have `name`/`env`/`description`/`owner_user_id`/`last_seen` all `null`. `name_prefix_segments` is an array (`["DATAQ_DB","ANALYTICS"]` / `["DATAQ_DB","RETAIL"]`) for the 4 Snowflake redacted rows. The strings `MART_ORDER_REVENUE` and `REFUNDS` appear **0 times** anywhere in the response body (grep-verified programmatically). |
+| 5 | Dashboard "Monitored" stat = 17 | **PASS** — re-verified fresh after reload: `Monitored: 17`, unaffected by the 5 new redacted placeholder rows in browse. |
+| 6 | Console errors on /dashboard and /assets | **PASS** — 0 console errors/warnings on both pages (checked twice on /assets, before and after the "All assets" toggle + click interactions). |
+| — | Mobile 390px spot-check | **PASS** — identical redacted-row rendering, no page horizontal overflow (`scrollWidth === clientWidth === 390`), sidebar correctly collapsed to hamburger, no console errors. Screenshot: `phase3-assets-redacted-tree-mobile.png`. |
+
+**One data-shape nuance, not a fail:** the ADLS redacted row has `name_prefix_segments: null` rather than an array, while all 4 Snowflake redacted rows correctly carry an array. Root-caused in source: `backend/app/services/asset_view_service.py:502-523`, `_redacted_summary()` — `segments[:-1] or None` deliberately collapses to `None` when the asset's own name has no parent path segment (a flat single-segment name has nothing to disclose as a "prefix group"), which is exactly the ADLS case here (matches the tree rendering it directly under the source header, not nested in a sub-folder). This is intentional per the function's docstring, not a defect — the array-vs-null distinction tracks "has a real group to nest under" vs. "is already top-level," which is the correct semantic.
+
+**Wire-leak proof (raw payload excerpt for the ANALYTICS-group redacted row):**
+```json
+{"id":"3650a319-df4c-447a-9b63-3513a7176c57","namespace":"snowflake://PVQSOEQ-ZGB34383","name":null,"env":null,"description":null,"owner_user_id":null,"last_seen":null,"suite_count":0,...,"is_accessible":false,"name_prefix_segments":["DATAQ_DB","ANALYTICS"]}
+```
+Only an opaque internal UUID + namespace + the (intentionally disclosed, per code comment) parent-path segments cross the wire. No leaf name, no env, no description, no owner, no last-seen.
+
+**Summary:** All 6 requested checks PASS at both desktop 1280px and mobile 390px. No blockers found. One benign data-shape nuance noted (not a defect) on the `name_prefix_segments` null-vs-array behavior for flat (no-parent-path) redacted assets.
+
+Screenshots (in the Playwright output dir): `phase3-assets-redacted-tree-desktop.png`, `phase3-assets-redacted-tree-mobile.png`.
+
+Browser left signed in as Olivia at `/dashboard`, 1280×900, per standing instruction.</result>
+<usage><subagent_tokens>255318</subagent_tokens><tool_uses>37</tool_uses><duration_ms>304658</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b7tuo08tn</task-id>
+<tool-use-id>toolu_01BqTJq1XSTPes5N9Njvs6J4</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/b7tuo08tn.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch ledger PR and merge on green" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+I think we are doing the grant wrong. I think everyone should have a visibility to the asset, but the check and suit will have their own grant type. It's belong to the owner and whoever the owner wants the visibility. But if a new user enrolled to DataQ since they doesn't own any suit, they will not be able to see any asset as per current logic. Hence, they will not be able to create any check or suit. So I think by default, everyone should have a visibility to all assets, but not the check or suit, that access should be a different level. What do you think?
+
+---
+
+<task-notification>
+<task-id>bea4lbv5i</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/bea4lbv5i.output</output-file>
+<status>completed</status>
+<summary>Background command "Poll ACCOUNT_USAGE every 20min for directSources materialization" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Okay. So if we go with this, what the access and grants looks like in each level (asset, suits, etc.)
+
+---
+
+And how the asset scorecard [when implemented] will looks like in this model?
+
+---
+
+Okay, lets go with this approach [also cover the related open issues, even if it is backlog]. And add/update ADR as required.
+
+---
+
+continue...
+
+---
+
+<task-notification>
+<task-id>a98399fc3e8d219f4</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/a98399fc3e8d219f4.output</output-file>
+<status>completed</status>
+<summary>Agent "Review: cleanup + altitude" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>```json
+[
+  {
+    "file": "backend/app/services/asset_view_service.py",
+    "line": 458,
+    "summary": "get_visible_asset re-derives suite visibility with an extra accessible_suite_ids round-trip when effective_permissions over all_suites already yields it",
+    "failure_scenario": "The function loads `all_suites`, then runs a second dedicated query (`select(Suite.id).where(Suite.asset_id == asset_id, Suite.id.in_(accessible))`) to compute `accessible_ids`, then calls `effective_permissions(session, visible, user_id)`. But `effective_permissions` already encodes the exact same owned/shared/workspace-admin rule (a suite is visible iff its level is not None, and it resolves workspace-admin internally), so calling it over `all_suites` and deriving `visible = [s for s in all_suites if levels[s.id] is not None]` would eliminate one DB round-trip per detail request and one of two parallel encodings of the visibility rule. The waste is starkest for admins: with include_all=True the subquery is `select(Suite.id)` unfiltered, so the extra query is guaranteed to return every id of `all_suites` — a round-trip that can only confirm what was already known. It would also make the defensive `if level is None: continue` branch in `_composing_suites` (line 314) provably dead instead of a cross-helper drift hedge."
+  },
+  {
+    "file": "backend/app/services/asset_view_service.py",
+    "line": 330,
+    "summary": "_suite_outcomes duplicates _composing_suites' run/outcome/flags lookup verbatim and double-computes RunOutcome for every visible suite; its by-asset grouping is dead weight for 2 of 3 callers",
+    "failure_scenario": "Lines 342-345 (`run = latest_runs.get(suite.id)` / `outcome = outcomes.get(run.id)...` / `flags = op_flags.get(run.id)...` / `_run_outcome(run, outcome, flags)`) are a copy of lines 316-318+324 in `_composing_suites`. In get_visible_asset both are invoked over overlapping inputs (lines 473-474), so every grant-visible suite's RunOutcome is assembled twice per request; a future change to the outcome-tuple shape or the flags default must now be made in two places or they silently diverge (composing rows vs the rollup disagreeing about the same run). Additionally, `_suite_outcomes` returns a dict grouped by asset_id, but get_visible_asset (line 476) and summarize_asset (line 604) each pass suites of exactly one asset and immediately collapse the grouping with `.get(asset.id, [])` — only list_visible_assets needs it. A flat `{suite_id: RunOutcome}` helper would serve all three callers and let `_composing_suites` consume it, removing both the copy-paste and the double computation."
+  },
+  {
+    "file": "backend/app/services/asset_view_service.py",
+    "line": 485,
+    "summary": "restricted_suite_count is derivable state: summary.suite_count == len(suites) + restricted_suite_count by construction, and the frontend re-adds them to recompute the total the summary already carries",
+    "failure_scenario": "The workspace-true `summary.suite_count` is len(all composing suites) and `restricted_suite_count = len(all_suites) - len(composing)`, so the API ships two fields plus a list length that are linearly dependent. AssetDetail.tsx line 475 then computes `total = suites.length + restrictedCount` for the card title — reconstructing exactly `summary.suite_count`. If any future change breaks the invariant on one side (e.g. a suite dropped from `composing` by the defensive level-None skip without adjusting the count, or a filtered list endpoint), the page shows two different suite totals — the precise #889 'two verdicts on one page' class this PR cites as its motivation. Either derive `restricted_suite_count` client-side as `summary.suite_count - suites.length` (no new API field), or have SuitesSection take `summary.suite_count` as the title total so the invariant has one owner."
+  },
+  {
+    "file": "frontend/src/components/assets/ColumnLineagePanel.tsx",
+    "line": 53,
+    "summary": "Dead fallbacks left from the removed count-only redacted shape: the `direct` filter guarantees columns != null, so `?? 0` and `?? []` can never trigger",
+    "failure_scenario": "`direct` is filtered with `e.columns != null` (line 35), so inside the map `edge.columns` is always a non-null array — yet line 53 renders `edge.columns?.length ?? 0` and line 55 iterates `(edge.columns ?? [])`. These optional-chain/nullish fallbacks are residue of the deleted `column_count`-only redacted branch and now encode an unreachable state ('a direct edge with null columns rendering 0 links over an empty list'), which misleads the next reader into believing that state still exists and wastes reviewer attention re-deriving that it cannot. Narrowing once (e.g. `const cols = edge.columns!` after the filter, or filtering with a type guard so `columns` is non-nullable in scope) removes both."
+  }
+]
+```</result>
+<usage><subagent_tokens>105693</subagent_tokens><tool_uses>17</tool_uses><duration_ms>171802</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a14387a35e55a813c</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/a14387a35e55a813c.output</output-file>
+<status>completed</status>
+<summary>Agent "Review: cross-file + conventions" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>[
+  {
+    "file": "backend/app/api/v1/assets.py",
+    "line": 118,
+    "summary": "Removing `is_accessible` from LineageNodeRead breaks the deployed OLD frontend: `lineageLayout.ts:101` maps `isAccessible: n.is_accessible` (now undefined) and `LineageGraph.tsx:245` computes `redacted = !node.isCenter &amp;&amp; !node.isAccessible`, so EVERY lineage neighbour renders as a dashed '\ud83d\udd12 Restricted' placeholder with onOpen stripped, plus a false banner 'N connected assets are outside your access' (main:LineageGraph.tsx:60).",
+    "failure_scenario": "API and frontend deploy as separate containers (ADR 0028 \u00a75), and the SPA bundle is also cached in every open browser tab: from the moment the API container rolls until each user hard-reloads a rebuilt frontend, the entire lineage graph is unclickable and mislabels every neighbour as access-restricted \u2014 total loss of lineage navigation plus a false authz claim, not graceful degradation. Same one-field shim (`is_accessible: bool = True` kept for one release, dropped in a follow-up PR) would make the cutover safe, mirroring the two-step rule the repo applies to DB columns."
+  },
+  {
+    "file": "frontend/src/pages/AssetDetail.tsx",
+    "line": 475,
+    "summary": "`const total = suites.length + restrictedCount` with `restrictedCount={asset.restricted_suite_count}`: the NEW frontend types `restricted_suite_count: number` as required (api/assets.ts:117), but the OLD API never sends it \u2014 `undefined` arrives at runtime and `total` becomes NaN.",
+    "failure_scenario": "If the frontend container rolls before (or the API roll fails after) the frontend deploy, every asset detail page renders its suites card titled 'Monitored by NaN suites' for the whole mismatch window. One-line guard (`(asset.restricted_suite_count ?? 0)`) makes the new frontend tolerant of the old wire shape at zero cost."
+  },
+  {
+    "file": "backend/app/api/v1/incidents.py",
+    "line": 150,
+    "summary": "Stale cross-reference: the `_load_visible_incident` docstring still reads 'the asset-view no-leak rule, one object over' \u2014 but this PR deletes the asset-view no-leak rule (AssetNotFoundError now fires only for unknown ids; ADR 0037). The sibling docstring in incident_service.py was updated for exactly this ('Deliberately UNCHANGED by ADR 0037\u2026'), so this module was simply missed.",
+    "failure_scenario": "A future reader following the reference to understand incident authz finds the anchor behavior no longer exists, and could conclude incident no-leak should be relaxed to match the asset view \u2014 the precise misreading the updated incident_service.py docstring exists to prevent. Align this docstring with that one."
+  },
+  {
+    "file": "docs/progress.md",
+    "line": 27,
+    "summary": "The PR reverses the #920/#845 redaction model repo-wide but does not touch docs/progress.md, whose latest (2026-07-18) entry describes the redacted-rows behavior ('Browse now INCLUDES \u2026 as server-redacted rows \u2026 One rule, four renderings (full row / redacted row / anonymous graph node / 404)') as the current live state. CLAUDE.md \u00a713: 'Per-PR task ticks go in docs/progress.md (PR-template checkbox)'; \u00a712 calls it the 'Live task tracker (post-v1, per-PR status)\u2026 updated per PR'; CONTRIBUTING workflow step 3: 'Docs updated if required.'",
+    "failure_scenario": "The ledger's most recent entry now asserts the opposite of shipped behavior (redacted rows, anonymous nodes, no-leak 404 \u2014 all removed by ADR 0037). The ledger has 'silently drifted before' (its own words); the next session reading it as ground truth reintroduces the drift class this file explicitly warns about. Add the ADR 0037 supersession entry in this PR."
+  }
+]</result>
+<usage><subagent_tokens>115745</subagent_tokens><tool_uses>32</tool_uses><duration_ms>251637</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>aa45acc3d69a78ab2</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/aa45acc3d69a78ab2.output</output-file>
+<status>completed</status>
+<summary>Agent "Review: removed-behavior audit" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>[
+  {
+    "file": "frontend/src/pages/AssetDetail.tsx",
+    "line": 162,
+    "summary": "The retired asset-grain 404 was also the gate that kept the grant-scoped IncidentsPanel from rendering as a confident empty state to zero-grant viewers — SuitesSection gained a 'N more suites … outside your access' qualifier (line 486), but IncidentsPanel got no equivalent. Incidents stay ADR-0027 grant-scoped (correct per ADR 0037), so a member with no grants opens the now-public detail page and sees an unqualified empty 'Incidents' card directly beneath a workspace-true summary saying the asset is failing critically. The invariant 'never present a grant-filtered list as complete / never render a confident empty state over data you cannot see' (#828 lesson, applied throughout this PR for suites) was supposed to survive here and does not.",
+    "failure_scenario": "A data consumer with zero grants checks a table before using it: the workspace-true header shows worst_severity=critical / has_failed_run, but the Incidents card — documented in-code as the 'what is broken right now' view — shows nothing and no restricted-count hint. They conclude the failure is stale or already handled and trust the table, which is precisely the misleading-empty-state class ADR 0037's own suites treatment (restricted_suite_count + caption) exists to prevent."
+  },
+  {
+    "file": "frontend/src/pages/Assets.tsx",
+    "line": 42,
+    "summary": "ADR 0037's contract is 'browse returns a full row for every asset to every member' and 'a day-one member can browse the full estate', but the clients still consume a single default page: Assets.tsx fetches listAssets() once (server _LIST_LIMIT_MAX = 200, backend/app/api/v1/assets.py:216) with antd pagination={false} and no offset paging or truncation indicator, and AssetHealthLead.tsx computes its 'Monitored'/'Need attention' tile counts from the same capped fetch (its 'Showing the first 200 assets' note covers only the attention list, not the tiles). Under the old derived-visibility regime the fetch population was the viewer's granted assets, so the 200 cap was rarely binding; the PR deliberately widens the population to the whole workspace (and #919 catalog sync will widen it further) without revisiting the cap handling.",
+    "failure_scenario": "A workspace crosses 200 assets (easy once unmonitored inventory rows are workspace-visible). Browse silently shows only the alphabetically-first 200 with no hint more exist — the ADR's onboarding promise breaks invisibly — and the dashboard's workspace-true tiles report a wrong 'Need attention' count when a failing asset sorts after the 200th row, a confidently-wrong workspace verdict of exactly the kind the workspace-true redesign was meant to eliminate."
+  }
+]</result>
+<usage><subagent_tokens>140771</subagent_tokens><tool_uses>30</tool_uses><duration_ms>445631</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b8lp0xr4l</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/b8lp0xr4l.output</output-file>
+<status>completed</status>
+<summary>Background command "Full backend suite after review fixes" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b2lp6sq3x</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/b2lp6sq3x.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for CI on the fixup push" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bf9m39kt5</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/bf9m39kt5.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch Deploy run 29674072468 to completion" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bnlxuftl3</task-id>
+<tool-use-id>toolu_016r8TaK1RwBZjwEdBhFTHuF</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/bnlxuftl3.output</output-file>
+<status>failed</status>
+<summary>Background command "Poll for beat task dispatch lines" failed with exit code 1</summary>
+</task-notification>
+
+---
+
+what hanned to the asset does not have suit againt it does not have lineage
+
+---
+
+<task-notification>
+<task-id>b3dj3797c</task-id>
+<tool-use-id>toolu_014S3Q93GrSTmqPx63T6m8pL</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/b3dj3797c.output</output-file>
+<status>failed</status>
+<summary>Background command "Poll DB truth until the new beat's first poll tick lands" failed with exit code 1</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bsetzz9j4</task-id>
+<tool-use-id>toolu_01ETaU2GCHuNtHFGwn2DMqPa</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/bsetzz9j4.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch DB truth for a post-restart poll tick" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bbwm9813w</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/bbwm9813w.output</output-file>
+<status>completed</status>
+<summary>Background command "Verify ledger edits landed; watch PR 926 checks" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+What's left of week 3 [except azure and snowflake wind down]
+
+---
+
+lets close them out and re-assign the wind-down items to week 5. Then close out the week 3
+
+---
+
+<task-notification>
+<task-id>bxlroib61</task-id>
+<tool-use-id>toolu_013JA4Tmgte1QUJV7G5tbBF3</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/bxlroib61.output</output-file>
+<status>completed</status>
+<summary>Background command "Full backend suite for the 753 review batch" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>aace2a99a60a47f4b</task-id>
+<tool-use-id>toolu_01CJABBV29KJ1z5nCq2QQqLy</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/aace2a99a60a47f4b.output</output-file>
+<status>completed</status>
+<summary>Agent "Migration safety audit a3b4c5d6e7f8" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Alembic Migration Audit — `a3b4c5d6e7f8_pipeline_runs_connection_fk_cascade.py`
+
+**Scope note:** This file is currently **untracked** (`git status` shows `??`) on `fix/issue-753-connection-delete-409` — it hasn't been committed yet, alongside three other uncommitted files (`backend/app/db/models.py`, `backend/app/api/v1/connections.py`, `backend/tests/services/test_connection_service.py`). I audited it anyway per your instruction; flag before merge that it needs to be staged/committed onto this branch.
+
+Files reviewed:
+- `/Users/arijit/Coding/Python/DataQ/backend/alembic/versions/a3b4c5d6e7f8_pipeline_runs_connection_fk_cascade.py`
+- `/Users/arijit/Coding/Python/DataQ/backend/app/db/models.py` (diff, `PipelineRun.connection_id`)
+- Precedent: `/Users/arijit/Coding/Python/DataQ/backend/alembic/versions/a9b0c1d2e3f4_results_check_fk_cascade.py`
+
+### 🔴 Hard violations
+None. No `drop_column`/`drop_table`/`rename_*`/type change/nullable-tightening/DML+DDL mixing/destructive raw SQL. The one `drop_constraint` (FK) falls under checklist item 7's exception clause ("acceptable only if explicitly noted as part of a planned rollout") — it *is* explicitly noted in the docstring (lines 1–12) and mirrors an established repo pattern (`lineage_edges.connection_id`, `a9b0c1d2e3f4`).
+
+### 🟡 Concerns
+
+1. **Missing lock-behavior analysis that the repo's own precedent explicitly requires at this point.** `a9b0c1d2e3f4_results_check_fk_cascade.py` (lines 22–29) uses the *identical* drop+recreate-FK-in-one-transaction pattern and explicitly documents: "the drop+add pair runs in one transaction, so the ACCESS EXCLUSIVE lock from DROP CONSTRAINT is held through ADD CONSTRAINT's FK-validation scan... **Accepted for the current deploy: prod results/runs are days old (thousands of rows — a milliseconds scan). If this pattern is ever repeated once `results` is large, split it: `ADD CONSTRAINT … NOT VALID` + a separate non-transactional `VALIDATE CONSTRAINT`**." `a3b4c5d6e7f8` (lines 28-30) does the same drop+recreate against `pipeline_runs` but includes *none* of that analysis — no row-count check, no lock-window justification, no mention of `NOT VALID`. `pipeline_runs` is explicitly named in CLAUDE.md §"tables that will be large," and unlike `results`/`runs` (written only when a suite runs), it has had a **guaranteed automatic write every ~10 minutes per orchestration connection since go-live (2026-06-28)** — a materially different growth/write-cadence profile than the "days old, thousands of rows" case the precedent accepted. `op.create_foreign_key(...)` without `postgresql_not_valid=True` forces Postgres to hold the table's ACCESS EXCLUSIVE lock for the full FK-validation table scan, not just the metadata change.
+   - **Suggested fix:** confirm current `pipeline_runs` row count before merge; if it's still small (precedent's bar), add the same explicit acceptance note to the docstring. If it's grown non-trivially, split into `DROP CONSTRAINT` + `ADD CONSTRAINT ... postgresql_not_valid=True` (fast, metadata-only lock) in this migration, and a follow-up migration doing `op.execute("ALTER TABLE pipeline_runs VALIDATE CONSTRAINT fk_pipeline_runs_connection_id_connections")` (ShareUpdateExclusive — doesn't block reads/writes).
+
+2. **No `lock_timeout` guard around the DROP/ADD CONSTRAINT pair.** The deploy runs `dataq-app-migrate` (`alembic upgrade head`) **before** rolling api/worker, meaning old containers — including the Celery beat driving the 10-min orchestration poll — are still live and could be mid-transaction against `pipeline_runs` exactly when this ALTER TABLE fires. Per the repo's own recent incident memory (#854: a `FOR UPDATE` with no `lock_timeout` waited forever and wedged a worker during the July 13 outage), an unguarded ACCESS EXCLUSIVE acquisition here has the same failure shape: if a poll write is in-flight, the migrate job blocks; if the migrate job wins the lock first, the next poll write queues behind it for the full validation-scan duration.
+   - **Suggested fix:** wrap the DDL with `op.execute("SET LOCAL lock_timeout = '3s'")` (or similar) so a contended lock fails the migration fast/retryable instead of hanging indefinitely — verify the actual acceptable timeout with whoever owns the deploy job's retry semantics.
+
+3. **Behavior-change window during the migrate→roll gap.** Before this migration, `DELETE /connections/{id}` on a connection with orchestration history hit the bare FK and 500'd. After `alembic upgrade head` runs but *before* the api/worker roll completes, **old code** (which has no #753 pre-check) will now have that same DELETE **silently succeed and cascade-delete the connection's `pipeline_runs` history** — no 409, no confirmation, no admin-name-echo logic (that only exists in the new `connection_service.py`). This is a strict widening (nothing crashes) and is explicitly intended per the docstring, but it's worth flagging: for the duration of the rollout window, a delete that previously failed loudly now silently discards polling history under old code paths.
+
+### Rollback check
+`downgrade()` (lines 33–35) correctly drops the CASCADE constraint and recreates the original bare FK (no `ondelete`) — a proper inverse of `upgrade()`. Docstring claims "tested up + down locally," which is consistent with what's present. ✅
+
+### down_revision chain
+Verified via `alembic heads`/`alembic history` (not manual parsing — the naive regex approach falsely produced 28 "heads"; alembic's own resolver is authoritative): current tip is a single head, `a3b4c5d6e7f8 (head)`, with `down_revision = "b2c3d4e5f6a9"` correctly matching the prior tip (`b2c3d4e5f6a9_null_out_json_null_lineage_columns.py`). No branch/merge conflict. Constraint name `fk_pipeline_runs_connection_id_connections` also matches the project's `NAMING_CONVENTION` in `backend/app/db/base.py` (`fk_%(table_name)s_%(column_0_N_name)s_%(referred_table_name)s`), so `op.drop_constraint` will hit the real constraint. ✅
+
+### Suggested approach (verify against actual deploy/rollback process)
+This is a shape to confirm, not a ready-to-execute plan:
+1. Check current `pipeline_runs` row count in prod (or ask whoever has DB access) — if small, just add the precedent's explicit acceptance note to this migration's docstring and ship as-is.
+2. If non-trivial, split into (a) this migration doing `DROP CONSTRAINT` + `ADD CONSTRAINT ... postgresql_not_valid=True`, and (b) a follow-up migration/PR running `VALIDATE CONSTRAINT` outside a long-held lock.
+3. Either way, consider a `SET LOCAL lock_timeout` around the DDL given the beat's concurrent write cadence and the #854 precedent.
+4. Confirm with whoever owns `dataq-app-migrate` whether the job already has any timeout/retry wrapper that makes point 2 moot.
+
+### ✅ Verdict
+`Conditional — 3 concerns. Discuss with whoever runs the deploy.`</result>
+<usage><subagent_tokens>57191</subagent_tokens><tool_uses>14</tool_uses><duration_ms>216498</duration_ms></usage>
+</task-notification>
+
+---
+
+go with option #1 [and you are the only one who is owning/maintaning the DB/App/Job. It might be a different session, different model, but you are the only one. So you have to make the decision.]
+
+---
+
+continue
+
+---
+
+<task-notification>
+<task-id>a5d34a8b7567613e9</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/a5d34a8b7567613e9.output</output-file>
+<status>completed</status>
+<summary>Agent "Review PR 931 beat watchdog" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Verified all candidates against the real code. Findings:
+
+```json
+[
+  {
+    "file": "backend/app/worker/celery_app.py",
+    "line": 253,
+    "summary": "The watchdog's Redis client is built with `redis.from_url(settings.redis_url)` and no `socket_timeout`/`socket_connect_timeout`. redis-py defaults both to None (verified: redis 5.3.1 → socket_timeout: None), so `store.get()` on the watchdog thread can block forever. The codebase already has the correct precedent at backend/app/core/rate_limit.py:105 (socket_connect_timeout=0.5, socket_timeout=0.2).",
+    "failure_scenario": "FAIL-TO-KILL — the exact #905 shape. Redis Container App rolls or drops a connection half-open; the watchdog thread issues a GET that never returns and never times out. The daemon thread hangs silently forever, the process keeps running 'Healthy', and every scheduled task stays dead — the watchdog is now itself an instance of the silent death it was written to end. This is the #854 lesson verbatim (a wait with no timeout waits FOREVER), reintroduced on the one thread whose whole job is to notice a hang."
+  },
+  {
+    "file": "backend/app/worker/tasks.py",
+    "line": 866,
+    "summary": "`beat_heartbeat` calls `redis.from_url(...)` per invocation (a fresh client + ConnectionPool every 60s, forever) and likewise sets no socket timeout. The try/except cannot rescue a hang — an untimed socket read never raises.",
+    "failure_scenario": "SELF-INFLICTED STARVATION. If Redis becomes unresponsive-but-connected, each heartbeat write blocks forever and pins a prefork slot. Beat keeps enqueuing beat_heartbeat every 60s, so hung heartbeats accumulate one per minute until every worker slot is occupied — the watchdog task becomes the cause of the 'beat queues, nothing consumes' outage it exists to detect. Compounding: no `--concurrency` is set anywhere (verified: no concurrency flag in the ACA command at deploy/terraform/azure/containerapps.tf:192, compose, or Dockerfile), so the pool size is whatever os.cpu_count() reports on the ACA node — unpinned and unverifiable, on a 1.0-CPU container."
+  },
+  {
+    "file": "backend/app/worker/beat_watchdog.py",
+    "line": 180,
+    "summary": "The `seen_tick` guard does not do what its docstring and the module header claim. It is set from a Redis key that `record_beat_tick` deliberately writes with NO expiry (line 58/94), so a key left by a PREVIOUS worker incarnation satisfies `seen_tick` on the very first read. A worker that has never executed a single task in this process is therefore killable.",
+    "failure_scenario": "FALSE KILL / CRASH LOOP — precisely the self-immolation guard 3 is documented to prevent. Worker boots and, for any reason that stops consumption but leaves Redis readable (bad queue config, broken consumer, wedged pool on a fresh deploy), never ticks. The stale key from the prior incarnation immediately sets seen_tick=True; at grace expiry the verdict is `stale` and the process exits. ACA restarts it, the key is now even staler, and it dies again ~10 minutes later — a permanent restart loop that buries the real cause, the #852 failure mode the module header explicitly promises to avoid."
+  },
+  {
+    "file": "backend/app/worker/beat_watchdog.py",
+    "line": 172,
+    "summary": "Staleness is computed from wall-clock `time.time()` on both the write (record_beat_tick → datetime.now(UTC).timestamp()) and the read, rather than a monotonic clock. `uptime_s` is also wall-clock derived (time.time() - started_at).",
+    "failure_scenario": "FALSE KILL on clock skew. An NTP step correction forward of more than stale_after_s (600s) — routine on a container whose clock drifted, or on host migration — instantly makes a perfectly fresh heartbeat look 10+ minutes old, and the watchdog kills a healthy worker mid-run. A backward step conversely suppresses a real kill. A monotonic clock cannot be used across the two processes here, but the write is a worker-side stamp read by the same host, so the skew window is entirely unguarded (e.g. no sanity check rejecting a negative or absurd age)."
+  },
+  {
+    "file": "backend/app/worker/beat_watchdog.py",
+    "line": 146,
+    "summary": "`os._exit(70)` skips all cleanup while tasks may be executing. The premise in the docstring ('the worker is by definition not processing anything') is not established by the verdict — `liveness_verdict` only proves that no BEAT task executed, not that no task is running.",
+    "failure_scenario": "DATA LOSS / ABORTED WORK. A long GX suite run (30-min comparison or profiler job) occupies the pool while, for an unrelated reason, beat_heartbeat does not execute within the window; the watchdog concludes 'wedged' and hard-exits mid-run. No DB session is committed or rolled back, so the `runs` row is stranded in `running` until the #458 stuck-run reaper notices. Restart is confirmed to work (celery is PID 1 — no ENTRYPOINT/init in backend/Dockerfile, exec-form command; ACA min_replicas=1 and compose `restart: unless-stopped` both restart on exit 70), so the exit does achieve a restart — but it does so at the cost of whatever real work was in flight."
+  },
+  {
+    "file": "backend/app/worker/beat_watchdog.py",
+    "line": 181,
+    "summary": "Lint gate fails. Verified by running ruff: E501 line-too-long (101 &gt; 100) at beat_watchdog.py:181, and I001 un-sorted import block at backend/app/worker/tasks.py:30 (`from backend.app.worker import beat_watchdog` is placed before `from backend.app.datasources...`).",
+    "failure_scenario": "CI merge gate blocks — Ruff is a required check on the main ruleset. Caught locally in seconds; this is the 'verify locally before push' rule, and it means the branch as pushed cannot merge."
+  },
+  {
+    "file": "backend/tests/worker/test_beat_watchdog.py",
+    "line": 120,
+    "summary": "Every `watchdog_loop` test runs exactly one iteration against a pre-seeded terminal state, so the loop's actual behaviour over time is untested. Missing: the ok→stale TRANSITION (a worker that ticks healthily and then wedges — the literal #905 shape the module is written for), and the case where a stale non-expiring key from a prior incarnation sets seen_tick on a worker that never ticked (the crash-loop above). `_terminate` itself — the os._exit path and its 1s log-flush sleep — has no test at all.",
+    "failure_scenario": "The suite is green on all three bugs reported above. The tests assert the pure verdict function, which is correct; the defects all live in the loop's state carried ACROSS iterations and in the untested client/exit plumbing. (Note: the `interval_s=0` concern is NOT a busy-loop risk — verified, iterations=1 bounds every call and the file runs in 0.11s.)"
+  }
+]
+```</result>
+<usage><subagent_tokens>77579</subagent_tokens><tool_uses>14</tool_uses><duration_ms>169439</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b2qpall3z</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/b2qpall3z.output</output-file>
+<status>completed</status>
+<summary>Background command "Post findings table and watch CI on 931" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b1gse2h7s</task-id>
+<tool-use-id>toolu_012CfUTzMaSvZcNZsXgXTnTX</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/b1gse2h7s.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch CI on both remaining PRs" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bibts1p7x</task-id>
+<tool-use-id>toolu_018g4iuK29AyGZsyQyD8YAqU</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ac097c7b-6067-40e0-bf7f-36fe97d011df/tasks/bibts1p7x.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch the deploy to completion" completed (exit code 0)</summary>
+</task-notification>
