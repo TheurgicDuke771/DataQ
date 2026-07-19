@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "fef5893bc6b7",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-910-5xx-error-pages",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/fe/f5893bc6b7/0/metadata.json",
+      "transcript": "/fe/f5893bc6b7/0/full.jsonl",
+      "compact_transcript": "/fe/f5893bc6b7/0/transcript.jsonl",
+      "content_hash": "/fe/f5893bc6b7/0/content_hash.txt",
+      "prompt": "/fe/f5893bc6b7/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2126,
+    "cache_creation_tokens": 11223941,
+    "cache_read_tokens": 481895173,
+    "output_tokens": 739906,
+    "api_call_count": 1085
+  }
+}
