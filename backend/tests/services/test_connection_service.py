@@ -274,6 +274,41 @@ def test_delete_unknown_raises_not_found(db_session: Any) -> None:
         svc.delete_connection(db_session, uuid.uuid4(), secret_store=FakeStore())
 
 
+def test_delete_with_dependent_suites_raises_409_not_500(db_session: Any) -> None:
+    """#753: a connection still referenced by suites must 409 with the dependents
+    named (bounded sample + true total), never surface the raw FK violation."""
+    from backend.app.services import suite_service
+
+    store = FakeStore()
+    conn = _create(db_session, store)
+    owner = _user(db_session)
+    suite = suite_service.create_suite(
+        db_session,
+        name="depends-on-conn",
+        description=None,
+        connection_id=conn.id,
+        created_by=owner.id,
+        target=None,
+    )
+    db_session.commit()
+
+    with pytest.raises(svc.ConnectionInUseError) as exc:
+        svc.delete_connection(db_session, conn.id, secret_store=store)
+    detail = exc.value.detail
+    assert detail["total"] == 1
+    assert detail["truncated"] is False
+    assert detail["suites"] == [{"name": "depends-on-conn", "id": str(suite.id)}]
+    # The connection survives, credential untouched.
+    assert svc.get_connection(db_session, conn.id).id == conn.id
+    assert conn.secret_ref in store.data
+
+    # Removing the dependent unblocks the delete.
+    suite_service.delete_suite(db_session, suite.id)
+    svc.delete_connection(db_session, conn.id, secret_store=store)
+    with pytest.raises(ConnectionNotFoundError):
+        svc.get_connection(db_session, conn.id)
+
+
 # ───────────────────────── test connectivity ───────────────────────
 
 

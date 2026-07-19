@@ -270,6 +270,28 @@ def test_delete_returns_204_then_404(client: tuple[TestClient, FakeStore]) -> No
     assert gone.status_code == 404
 
 
+def test_delete_with_dependent_suite_is_409_envelope_not_500(
+    client: tuple[TestClient, FakeStore],
+) -> None:
+    """#753 at the wire: the FK conflict surfaces as the standard 409 error
+    envelope naming the dependent suites — never an unhandled 500."""
+    api, _ = client
+    cid = api.post("/api/v1/connections", json=_create_payload()).json()["id"]
+    suite = api.post("/api/v1/suites", json={"name": "uses-conn", "connection_id": cid})
+    assert suite.status_code == 201
+
+    resp = api.delete(f"/api/v1/connections/{cid}")
+    assert resp.status_code == 409
+    err = resp.json()["error"]
+    assert err["code"] == "connection_in_use"
+    assert err["detail"]["total"] == 1
+    assert err["detail"]["suites"][0]["name"] == "uses-conn"
+
+    # Removing the dependent unblocks the delete.
+    assert api.delete(f"/api/v1/suites/{suite.json()['id']}").status_code == 204
+    assert api.delete(f"/api/v1/connections/{cid}").status_code == 204
+
+
 # ───────────────────────── test connectivity ───────────────────────
 
 

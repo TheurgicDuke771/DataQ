@@ -405,8 +405,34 @@ def delete_connection(
     session: Session, connection_id: uuid.UUID, *, secret_store: SecretStore
 ) -> None:
     conn = get_connection(session, connection_id)
-    # ADR 0015 delete guard: comparison checks referencing this connection as
-    # their source hold an ON DELETE RESTRICT FK — pre-check and 409 with the
+    # Delete guard #1 (#753): suites still run against this connection. No
+    # cascade is offered — deleting a connection must never silently take a
+    # suite (and its checks/runs/results, #540) with it; the user deletes or
+    # repoints the suites first, and the 409 names them. Same bounded-sample
+    # shape as the comparison guard below.
+    suite_total = session.scalar(
+        select(func.count()).select_from(Suite).where(Suite.connection_id == conn.id)
+    )
+    if suite_total:
+        suite_sample = list(
+            session.execute(
+                select(Suite.name, Suite.id)
+                .where(Suite.connection_id == conn.id)
+                .order_by(Suite.created_at)
+                .limit(10)
+            )
+        )
+        raise ConnectionInUseError(
+            f"{suite_total} suite(s) run against this connection — " "delete or repoint them first",
+            detail={
+                "connection_id": str(connection_id),
+                "total": suite_total,
+                "truncated": suite_total > len(suite_sample),
+                "suites": [{"name": name, "id": str(sid)} for name, sid in suite_sample],
+            },
+        )
+    # Delete guard #2 (ADR 0015): comparison checks referencing this connection
+    # as their source hold an ON DELETE RESTRICT FK — pre-check and 409 with the
     # dependents so the user knows what to repoint/delete first. `total` is the
     # real count; `checks` is a bounded sample (a 409 must not echo thousands
     # of rows), flagged via `truncated` so a scripted remediation can't
@@ -440,11 +466,19 @@ def delete_connection(
     try:
         session.commit()
     except IntegrityError as exc:
-        # TOCTOU backstop: a comparison check created between the pre-check and
-        # this commit trips the RESTRICT FK — map it to the same 409, never a
-        # raw 500. Any other integrity failure is not this race; re-raise.
+        # TOCTOU backstop: a suite or comparison check created between the
+        # pre-checks and this commit trips its FK — map both to the same 409 the
+        # pre-checks raise, never a raw 500 (#753). Any other integrity failure
+        # is not this race; re-raise.
         session.rollback()
-        if "fk_checks_source_connection_id_connections" not in str(exc.orig):
+        cause = str(exc.orig)
+        if "fk_suites_connection_id_connections" in cause:
+            raise ConnectionInUseError(
+                "a suite was bound to this connection while the delete was in "
+                "flight — delete or repoint it first",
+                detail={"connection_id": str(connection_id)},
+            ) from exc
+        if "fk_checks_source_connection_id_connections" not in cause:
             raise
         raise ConnectionInUseError(
             "this connection became the comparison source of a check while the "
