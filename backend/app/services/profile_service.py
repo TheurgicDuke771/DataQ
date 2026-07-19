@@ -47,7 +47,7 @@ from backend.app.core.errors import DataQError
 from backend.app.core.jsonsafe import sanitize_json
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
-from backend.app.datasources.flatfile import download_bytes, format_from_path
+from backend.app.datasources.flatfile import download_bytes, format_from_path, read_csv_bytes
 from backend.app.datasources.iceberg import (
     IcebergConfig,
     iceberg_credentials,
@@ -635,7 +635,7 @@ def _read_dataframe(
         )
     )
     if file_format == "csv":
-        return pd.read_csv(raw, nrows=_SAMPLE_ROWS, usecols=lambda name: name in wanted)
+        return read_csv_bytes(raw, nrows=_SAMPLE_ROWS, usecols=lambda name: name in wanted)
 
     import pyarrow.parquet as pq
 
@@ -944,8 +944,6 @@ def list_file_columns(
     scan. Raises `ProfileTargetInvalidError` (422) for an unknown format and
     `ProfileFailedError` (502) if the file can't be read (exception not echoed).
     """
-    import pandas as pd
-
     # secret_ref presence is guaranteed by the dispatcher (`resolve_profiler`),
     # as in `profile_file`; a direct call without it surfaces as a read failure.
     fmt = infer_file_format(path, file_format)
@@ -957,7 +955,7 @@ def list_file_columns(
             )
         )
         if fmt == "csv":
-            return [str(c) for c in pd.read_csv(raw, nrows=0).columns]
+            return [str(c) for c in read_csv_bytes(raw, nrows=0).columns]
         import pyarrow.parquet as pq
 
         return [str(name) for name in pq.ParquetFile(raw).schema.names]

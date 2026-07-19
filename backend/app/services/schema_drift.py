@@ -51,7 +51,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
 from backend.app.datasources.base import CheckOutcome
-from backend.app.datasources.flatfile import download_bytes
+from backend.app.datasources.flatfile import download_bytes, read_csv_bytes
 from backend.app.datasources.iceberg import (
     IcebergConfig,
     iceberg_credentials,
@@ -190,8 +190,6 @@ def _file_columns(
 ) -> list[ColumnSpec]:
     """Column names+types of a flat file: the Parquet footer schema (exact, no
     data read) or a bounded CSV sample (pandas dtype inference)."""
-    import pandas as pd
-
     fmt = infer_file_format(path, file_format)
     secret = secret_store.get(connection.secret_ref or "")
     raw = io.BytesIO(
@@ -200,7 +198,7 @@ def _file_columns(
         )
     )
     if fmt == "csv":
-        df = pd.read_csv(raw, nrows=_CSV_TYPE_SAMPLE_ROWS)
+        df = read_csv_bytes(raw, nrows=_CSV_TYPE_SAMPLE_ROWS)
         return [{"name": str(col), "type": str(dtype)} for col, dtype in df.dtypes.items()]
     import pyarrow.parquet as pq
 

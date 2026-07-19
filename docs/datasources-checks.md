@@ -23,6 +23,18 @@ atomically via **Re-auth**. Leave the passphrase blank for an unencrypted key.
 Key-pair connections also require **Role** (the GX key-pair form mandates one for suite
 runs, so it is validated when the connection is saved).
 
+### Flat files: formats and CSV delimiters
+
+Flat-file connections (ADLS Gen2 / S3) read `.csv` and `.parquet`/`.pq`. **The CSV
+delimiter is detected per file, not per connection** — a connection is a whole
+bucket/container and the files under it need not agree, so DataQ sniffs each file's
+header. Comma, semicolon, tab, and pipe are recognised; anything it can't decide
+(a single-column file, an empty file) is read as comma-separated.
+
+If a file uses some other separator, DataQ will parse the whole header as one
+column — the symptom is a **column dropdown offering a single long name** like
+`id;email;amount`. Convert the file to one of the four separators, or to Parquet.
+
 ## Author a check
 
 1. Create (or open) a **suite** and point it at a **target** — a table (Snowflake/UC), a

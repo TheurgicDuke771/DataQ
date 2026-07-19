@@ -380,6 +380,26 @@ def test_read_dataframe_csv_projects_only_requested_columns(
     assert len(df) == 2
 
 
+def test_read_dataframe_csv_projects_columns_from_a_semicolon_file(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#476: projection is by column NAME, so a mis-sniffed delimiter doesn't just
+    mangle the frame — it selects nothing and the profile reports every requested
+    column as missing."""
+    from backend.app.services import profile_service as svc
+
+    monkeypatch.setattr(svc, "download_bytes", lambda **k: b"a;b;c\n1;2;3\n4;5;6\n")
+    df = svc._read_dataframe(
+        _flatfile_conn(),
+        path="x.csv",
+        file_format="csv",
+        columns=["a", "c"],
+        secret_store=_FakeStore(),
+    )
+    assert list(df.columns) == ["a", "c"]
+    assert len(df) == 2
+
+
 def test_read_dataframe_parquet_projects_only_requested_columns(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -414,6 +434,20 @@ def test_list_file_columns_csv_reads_header_only(monkeypatch: pytest.MonkeyPatch
         _flatfile_conn(), path="x.csv", file_format="csv", secret_store=_FakeStore()
     )
     assert cols == ["a", "b", "c"]  # all columns, names only
+
+
+def test_list_file_columns_csv_sniffs_a_semicolon_delimiter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#476: the column dropdown used to offer one bogus column ('a;b;c') for a
+    `;`-delimited file, which defeats the picker for that file entirely."""
+    from backend.app.services import profile_service as svc
+
+    monkeypatch.setattr(svc, "download_bytes", lambda **k: b"a;b;c\n1;2;3\n4;5;6\n")
+    cols = list_file_columns(
+        _flatfile_conn(), path="x.csv", file_format="csv", secret_store=_FakeStore()
+    )
+    assert cols == ["a", "b", "c"]
 
 
 def test_list_file_columns_parquet_reads_schema_names(monkeypatch: pytest.MonkeyPatch) -> None:

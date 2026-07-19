@@ -267,6 +267,25 @@ def test_file_introspection_csv_types_from_sample(monkeypatch: pytest.MonkeyPatc
     assert by_name["amount"] == "float64"
 
 
+def test_file_introspection_csv_sniffs_a_semicolon_delimiter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#476: a mis-parsed `;` file collapses to one column, so drift would report
+    every real column added AND removed the first time the delimiter changed."""
+    csv_bytes = b"id;email;amount\n1;a@x.io;10.5\n2;b@x.io;11.0\n"
+    monkeypatch.setattr(schema_drift, "download_bytes", lambda **kw: csv_bytes)
+    cols = introspect_columns(
+        _file_connection(),
+        table="landing/orders.csv",
+        schema=None,
+        catalog=None,
+        secret_store=_FakeStore(),
+    )
+    by_name = {c["name"]: c["type"] for c in cols}
+    assert set(by_name) == {"id", "email", "amount"}
+    assert by_name["id"] == "int64"
+
+
 def test_file_introspection_parquet_types_from_footer(monkeypatch: pytest.MonkeyPatch) -> None:
     import io
 
