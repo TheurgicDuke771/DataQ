@@ -1,0 +1,39 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "15215f11e25c",
+  "session_id": "1124e5df-e050-4dd0-a205-d4dc331f0280",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-20T02:14:23.274059Z",
+  "branch": "feature/issue-124-dq-dimension",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "docs/adr/0038-dq-dimension-classification.md"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "96542759cb42",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 740,
+    "cache_creation_tokens": 1328426,
+    "cache_read_tokens": 123797696,
+    "output_tokens": 243203,
+    "api_call_count": 392
+  },
+  "session_metrics": {
+    "turn_count": 3
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-20T02:14:23.154185Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 109,
+    "human_modified": 2,
+    "human_removed": 0,
+    "total_committed": 109,
+    "total_lines_changed": 121,
+    "agent_percentage": 0,
+    "metric_version": 2
+  }
+}
