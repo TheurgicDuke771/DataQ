@@ -25,7 +25,7 @@
     "@monaco-editor/react": "^4.7.0",
     "antd": "^6.5.1",
     "axios": "^1.18.0",
-    "monaco-editor": "^0.55.1",
+    "monaco-editor": "^0.56.0",
     "oidc-client-ts": "^3.5.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
