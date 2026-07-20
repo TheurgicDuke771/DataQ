@@ -1,0 +1,52 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "2f5e4995954a",
+  "session_id": "1124e5df-e050-4dd0-a205-d4dc331f0280",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-20T01:16:54.283912Z",
+  "branch": "fix/flatfile-monitor-followups",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "backend/app/datasources/flatfile.py",
+    "backend/tests/datasources/test_flatfile.py"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "c7126fcf55b2",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 444,
+    "cache_creation_tokens": 815813,
+    "cache_read_tokens": 53679201,
+    "output_tokens": 164211,
+    "api_call_count": 234
+  },
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-20T01:16:54.180075Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 47,
+    "human_modified": 3,
+    "human_removed": 0,
+    "total_committed": 47,
+    "total_lines_changed": 50,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}

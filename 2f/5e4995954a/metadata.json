@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "2f5e4995954a",
+  "strategy": "manual-commit",
+  "branch": "fix/flatfile-monitor-followups",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/datasources/flatfile.py",
+    "backend/tests/datasources/test_flatfile.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/2f/5e4995954a/0/metadata.json",
+      "transcript": "/2f/5e4995954a/0/full.jsonl",
+      "compact_transcript": "/2f/5e4995954a/0/transcript.jsonl",
+      "content_hash": "/2f/5e4995954a/0/content_hash.txt",
+      "prompt": "/2f/5e4995954a/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 444,
+    "cache_creation_tokens": 815813,
+    "cache_read_tokens": 53679201,
+    "output_tokens": 164211,
+    "api_call_count": 234
+  }
+}
