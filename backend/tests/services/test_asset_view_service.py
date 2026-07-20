@@ -309,7 +309,7 @@ def test_unclassified_checks_are_counted_but_never_bucketed(db_session: Any) -> 
 
     assert card.unclassified_checks == 2
     assert [d.dimension for d in card.covered] == ["validity"]
-    assert card.covered[0].checks_total == 1  # the two NULL results did not leak in
+    assert card.covered[0].checks_total == 1  # the two NULL checks did not leak in
     assert card.covered[0].score == 100.0
 
 
@@ -325,7 +325,9 @@ def test_skip_and_error_are_excluded_from_the_denominator(db_session: Any) -> No
     card = _scorecard_for(db_session, asset, owner.id)
     row = card.covered[0]
 
-    assert (row.checks_total, row.checks_passing) == (1, 1)
+    # Three checks EXIST, so coverage is 3 — but only one evaluated, and the score
+    # is over that one. The two numbers are deliberately different.
+    assert (row.checks_total, row.checks_passing, row.checks_evaluated) == (3, 1, 1)
     assert row.score == 100.0
 
 
@@ -342,5 +344,59 @@ def test_a_dimension_whose_checks_all_skipped_is_covered_with_no_score(
 
     assert [d.dimension for d in card.covered] == ["timeliness"]
     assert card.covered[0].score is None  # no signal — not 0, not 100
-    assert card.covered[0].checks_total == 0
+    assert card.covered[0].checks_total == 2  # the checks exist...
+    assert card.covered[0].checks_evaluated == 0  # ...but measured nothing
     assert "timeliness" not in card.uncovered
+
+
+def test_a_check_that_has_never_run_still_counts_as_covered(db_session: Any) -> None:
+    """THE bug this feature could most easily have shipped.
+
+    Coverage must come from checks, not results. Derived from results, a
+    `timeliness` check authored today on a nightly suite reads as *missing* until
+    tomorrow's run — and the panel would tell the user to write a check they
+    already wrote. It would also regress every time a run hard-failed and rolled
+    its results back.
+    """
+    owner = _user(db_session)
+    conn = _conn(db_session, owner)
+    suite = suite_service.create_suite(
+        db_session,
+        name=f"S-{uuid.uuid4().hex[:6]}",
+        description=None,
+        connection_id=conn.id,
+        created_by=owner.id,
+        target={"table": f"T{uuid.uuid4().hex[:6]}"},
+    )
+    db_session.add(
+        Check(
+            suite_id=suite.id,
+            name="never run",
+            expectation_type="expect_column_to_exist",
+            config={"column": "X"},
+            dimension="timeliness",
+        )
+    )
+    db_session.commit()
+    assert suite.asset_id is not None
+    asset = cast(Asset, db_session.get(Asset, suite.asset_id))
+
+    card = _scorecard_for(db_session, asset, owner.id)
+    assert [d.dimension for d in card.covered] == ["timeliness"]
+    assert card.covered[0].checks_total == 1
+    assert card.covered[0].checks_evaluated == 0
+    assert card.covered[0].score is None  # no run yet — no signal, not a failure
+    assert "timeliness" not in card.uncovered  # NOT "write a timeliness check"
+
+
+def test_an_unclassified_check_that_only_errored_is_still_counted(db_session: Any) -> None:
+    """The asymmetry review caught: a DIMENSIONED all-skip dimension stays visible
+    with "no signal", but an unclassified one used to vanish entirely — so an asset
+    whose only checks were five erroring custom-SQL checks reported "no checks at
+    all". Counting checks rather than severity-bearing results fixes it."""
+    owner = _user(db_session)
+    asset = _suite_with_dimensioned_results(
+        db_session, owner, results=[(None, "error"), (None, "skip")]
+    )
+    card = _scorecard_for(db_session, asset, owner.id)
+    assert card.unclassified_checks == 2

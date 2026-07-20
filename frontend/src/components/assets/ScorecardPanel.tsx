@@ -43,7 +43,11 @@ export function ScorecardPanel({ scorecard }: { scorecard?: Scorecard | null }) 
   if (!scorecard) return null;
 
   const { covered, uncovered, unclassified_checks: unclassified } = scorecard;
-  const nothingAtAll = covered.length === 0 && uncovered.length > 0;
+  // "No checks at all" is narrower than "nothing covered": an asset whose only
+  // checks are unclassified (custom SQL) has checks, they just aren't bucketed.
+  // Telling that user "no checks are classified yet" is right; telling the
+  // check-less user the same thing is wrong — they have nothing to classify.
+  const noChecksAtAll = covered.length === 0 && unclassified === 0;
 
   return (
     <Card
@@ -52,10 +56,14 @@ export function ScorecardPanel({ scorecard }: { scorecard?: Scorecard | null }) 
       styles={{ body: { paddingTop: 12 } }}
       data-testid="scorecard-panel"
     >
-      {nothingAtAll ? (
+      {covered.length === 0 ? (
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description="No checks are classified on this asset yet — nothing to score."
+          description={
+            noChecksAtAll
+              ? 'No checks on this asset yet — every dimension is uncovered.'
+              : 'No checks here carry a dimension yet, so there is nothing to score.'
+          }
         />
       ) : (
         <Space orientation="vertical" size={10} style={{ width: '100%' }}>
@@ -77,15 +85,26 @@ export function ScorecardPanel({ scorecard }: { scorecard?: Scorecard | null }) 
                   style={{ flex: 1, marginBottom: 0 }}
                 />
               )}
-              <Typography.Text type="secondary" style={{ whiteSpace: 'nowrap' }}>
-                {row.checks_passing}/{row.checks_total} checks
-              </Typography.Text>
+              <Tooltip
+                title={
+                  row.checks_evaluated < row.checks_total
+                    ? `${row.checks_total - row.checks_evaluated} of ${row.checks_total} did not evaluate (not yet run, skipped, or errored) and are excluded from the score`
+                    : undefined
+                }
+              >
+                <Typography.Text type="secondary" style={{ whiteSpace: 'nowrap' }}>
+                  {row.checks_passing}/{row.checks_total} passing
+                </Typography.Text>
+              </Tooltip>
             </Flex>
           ))}
         </Space>
       )}
 
-      {uncovered.length > 0 && !nothingAtAll && (
+      {/* Always shown when non-empty. Suppressing it when nothing is covered hid
+          the list in the MAXIMALLY actionable state — and since every pre-ADR-0038
+          asset has an empty `covered`, that was the default rendering. */}
+      {uncovered.length > 0 && (
         <Alert
           type="info"
           showIcon

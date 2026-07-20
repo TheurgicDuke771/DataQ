@@ -61,9 +61,17 @@ Three states, deliberately kept distinct:
 
 | What you see | What it means |
 |---|---|
-| A score bar | Checks ran and were evaluated. |
-| **No signal** | Checks exist but none evaluated (all skipped or errored). Not 0% — nothing was measured. |
-| Listed under **Not covered** | No checks for that dimension exist. Not 0%, and *definitely* not 100%. |
+| A score bar | Checks exist and evaluated in the latest run. |
+| **No signal** | Checks exist, but none evaluated — not yet run, or all skipped/errored. Not 0%: nothing was measured. |
+| Listed under **Not covered** | No checks for that dimension exist at all. Not 0%, and *definitely* not 100%. |
+
+**Coverage counts checks, not runs.** A check you author today counts as coverage
+immediately — it does not need a completed run first, and a suite whose latest run
+failed does not lose its coverage. The score is the part that waits for a run.
+
+The `3/5 passing` figure counts checks that passed in the latest run out of checks
+that exist, so the gap includes failing, skipped, errored **and** never-run checks;
+hover it to see how many were excluded from the score.
 
 The numbers are **workspace-wide**: everyone who can see the asset sees the same
 score, whether or not they can open the suites behind it. Two people comparing

@@ -113,8 +113,14 @@ export interface LineageSourceHealth {
  *  "everything failed" are opposite facts a 0 would conflate. */
 export interface DimensionScore {
   dimension: string;
+  /** Checks that EXIST in this dimension — coverage. A check authored today
+   *  counts before it has ever run. */
   checks_total: number;
+  /** Of those, how many passed in the latest run. */
   checks_passing: number;
+  /** How many evaluated a severity — the score's denominator. Below
+   *  `checks_total` when checks are unrun, skipped, or errored. */
+  checks_evaluated: number;
   score: number | null;
 }
 

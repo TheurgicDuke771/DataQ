@@ -54,7 +54,6 @@ from backend.app.db.models import (
 )
 from backend.app.lineage.edges import lineage_neighbourhood
 from backend.app.services.rollup import (
-    SEVERITY_STATUSES,
     evaluated_total,
     health_score,
     latest_runs_per_suite_stmt,
@@ -249,10 +248,10 @@ class WarehouseLineageStatus:
 class DimensionScore:
     """One row of the asset DQ scorecard (#889, ADR 0038).
 
-    `checks_total`/`checks_passing` count **evaluated** results only — `skip` and
-    `error` are excluded from the denominator, exactly as the health score is
-    (#122 / ADR 0005), so a dimension whose checks all failed to execute reports
-    0 evaluated rather than a misleading 0% pass.
+    `checks_total` counts checks that EXIST, so a check authored today counts as
+    coverage before it has ever run. `checks_evaluated` counts those that actually
+    produced a severity in the latest run — `skip`/`error` and never-run checks are
+    excluded (#122 / ADR 0005), and it is the score's denominator.
 
     `score` is the ADR-0005 severity-weighted score over that dimension's results,
     or `None` when nothing evaluated. **`None` is not zero and not 100** — the UI
@@ -261,8 +260,15 @@ class DimensionScore:
     """
 
     dimension: str
+    # Checks that EXIST in this dimension — the coverage number. Not a result
+    # count: a check authored today but not yet run still counts as covered.
     checks_total: int
+    # Of those, how many passed in the latest run. `checks_total - checks_passing`
+    # therefore spans failing, skipped, errored, AND never-run checks.
     checks_passing: int
+    # How many actually evaluated a severity — the score's denominator, which
+    # excludes skip/error (#122). Below `checks_total` whenever checks didn't run.
+    checks_evaluated: int
     score: float | None
 
 
@@ -387,59 +393,73 @@ def _latest_outcomes(session: Session, suites: list[Suite]) -> dict[uuid.UUID, R
     return by_suite
 
 
-def _scorecard(session: Session, run_ids: list[uuid.UUID]) -> Scorecard:
-    """Per-dimension coverage + score over a set of runs (#889).
+def _scorecard(session: Session, suite_ids: list[uuid.UUID], run_ids: list[uuid.UUID]) -> Scorecard:
+    """Per-dimension coverage + score for an asset (#889).
 
-    One grouped query — `results` joined to `checks` for the dimension, since the
-    classification lives on the check, not the result. Aggregating in SQL rather
-    than folding `status_histograms` in Python because the grouping key is the
-    dimension, not the run.
+    **Coverage comes from CHECKS, scores come from RESULTS**, and the distinction
+    is the whole feature. Deriving coverage from results — the obvious shortcut,
+    since results already carry the dimension via the join — makes "not covered"
+    mean "produced no result in the latest run": a `timeliness` check authored
+    today on a nightly suite would be reported as *missing* until tomorrow, and
+    the prescribed fix ("write a Timeliness check") would be exactly wrong. It
+    also regresses whenever a run hard-fails and rolls its results back.
 
-    **Workspace-true**: the caller passes the latest runs of ALL composing suites,
-    never a grant-filtered subset. A per-viewer score would put two different
-    numbers on one page for two people looking at the same asset — the exact
-    problem ADR 0037 exists to prevent, and the one this module's docstring cites
-    as #889's own framing.
+    So there are two queries: one over `checks` establishing what EXISTS, one over
+    `results` establishing how the latest run went.
 
-    NULL-dimension results are counted into `unclassified_checks` and deliberately
-    left OUT of every bucket: assigning them somewhere would corrupt both the
-    score of whatever bucket received them and the `uncovered` list, which is the
-    half users act on.
+    **Workspace-true**: the caller passes every composing suite, never a
+    grant-filtered subset. A per-viewer score would put two different numbers on
+    one page for two people looking at the same asset — the exact problem ADR 0037
+    exists to prevent, and the one this module's docstring cites as #889's framing.
+
+    Checks with a NULL dimension (ADR 0038 — custom SQL, or unclassified) are
+    counted in `unclassified_checks` and deliberately left OUT of every bucket:
+    assigning them somewhere would corrupt that bucket's score and make
+    `uncovered` a lie.
     """
-    if not run_ids:
-        return Scorecard(covered=[], uncovered=sorted(DQ_DIMENSIONS), unclassified_checks=0)
-
-    rows = session.execute(
-        select(Check.dimension, Result.status, func.count())
-        .select_from(Result)
-        .join(Check, Check.id == Result.check_id)
-        .where(Result.run_id.in_(run_ids))
-        .group_by(Check.dimension, Result.status)
+    # ── what exists (coverage) ──
+    check_rows = session.execute(
+        select(Check.dimension, func.count())
+        .where(Check.suite_id.in_(suite_ids))
+        .group_by(Check.dimension)
     ).all()
+    checks_by_dimension = {d: n for d, n in check_rows if d is not None}
+    unclassified = sum(n for d, n in check_rows if d is None)
 
-    by_dimension: dict[str, dict[str, int]] = defaultdict(dict)
-    unclassified = 0
-    for dimension, status, count in rows:
-        if dimension is None:
-            # Counted, never bucketed — see the docstring.
-            if status in SEVERITY_STATUSES:
-                unclassified += count
-            continue
-        by_dimension[dimension][status] = count
+    # ── how the latest run went (score) ──
+    # A plain dict, NOT a defaultdict: reading `histograms[dim]` below would
+    # CREATE the key, silently mutating the mapping while iterating over coverage.
+    # Nothing downstream reads it here, but it made a deliberately-broken variant
+    # of this function pass its own regression test — the container should not
+    # change shape because something looked at it.
+    histograms: dict[str, dict[str, int]] = {}
+    if run_ids:
+        result_rows = session.execute(
+            select(Check.dimension, Result.status, func.count())
+            .select_from(Result)
+            .join(Check, Check.id == Result.check_id)
+            .where(Result.run_id.in_(run_ids))
+            .group_by(Check.dimension, Result.status)
+        ).all()
+        for dimension, status, count in result_rows:
+            if dimension is not None:
+                histograms.setdefault(dimension, {})[status] = count
 
-    covered = [
-        DimensionScore(
-            dimension=dimension,
-            checks_total=evaluated_total(counts),
-            checks_passing=counts.get("pass", 0),
-            score=health_score(counts),
+    covered = []
+    for dimension, total in sorted(checks_by_dimension.items()):
+        hist = histograms.get(dimension, {})
+        covered.append(
+            DimensionScore(
+                dimension=dimension,
+                checks_total=total,
+                checks_passing=hist.get("pass", 0),
+                checks_evaluated=evaluated_total(hist),
+                # `None` when nothing EVALUATED — no run yet, or every result
+                # skipped/errored. Distinct from 0, which means it ran and failed.
+                score=health_score(hist) if hist else None,
+            )
         )
-        for dimension, counts in sorted(by_dimension.items())
-    ]
-    # A dimension with results but none EVALUATED (all skip/error) is still
-    # "covered" — checks exist for it — but has no score. That is a different
-    # state from having no checks at all, and the UI must not merge them.
-    uncovered = sorted(set(DQ_DIMENSIONS) - set(by_dimension))
+    uncovered = sorted(set(DQ_DIMENSIONS) - set(checks_by_dimension))
     return Scorecard(covered=covered, uncovered=uncovered, unclassified_checks=unclassified)
 
 
@@ -566,7 +586,11 @@ def get_visible_asset(
 
     summary = _roll_up(asset, [outcome_by_suite[s.id] for s in all_suites])
     # Workspace-true, like the summary: ALL composing suites, never `visible`.
-    scorecard = _scorecard(session, [o.run_id for o in outcome_by_suite.values() if o.run_id])
+    scorecard = _scorecard(
+        session,
+        [s.id for s in all_suites],
+        [o.run_id for o in outcome_by_suite.values() if o.run_id],
+    )
     graph = lineage_neighbourhood(session, asset_id)
     neighbour_ids = [a.id for a, _ in graph.upstream] + [a.id for a, _ in graph.downstream]
     # One grouped lookup of "which of these assets has any suite" — the structural

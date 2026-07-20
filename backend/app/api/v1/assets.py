@@ -194,8 +194,13 @@ class DimensionScoreRead(ApiModel):
     model_config = ConfigDict(from_attributes=True)
 
     dimension: str
+    # Checks that EXIST — coverage. A check authored today counts before it runs.
     checks_total: int
+    # Of those, how many passed in the latest run.
     checks_passing: int
+    # How many evaluated a severity (the score's denominator): excludes skip/error
+    # AND checks that have not run yet.
+    checks_evaluated: int
     score: float | None
 
 
