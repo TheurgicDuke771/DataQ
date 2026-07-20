@@ -1,6 +1,6 @@
 # ADR 0038 — DQ-dimension classification on checks: seven canonical dimensions, derived default, stored and overridable
 
-- **Status:** Accepted
+- **Status:** Accepted (§5 **amended 2026-07-19** — existing checks ARE backfilled; see the amendment in §5)
 - **Date:** 2026-07-19
 - **Deciders:** @TheurgicDuke771
 - **Related:** [0005](0005-severity-tier-weights.md) (severity tiers + the health-score formula the scorecard reuses), [0012](0012-monitor-kind-seam.md) (`check.kind` — the axis this one is orthogonal to), [0015](0015-two-connection-comparison-check-model.md) (`comparison` kind), [0019](0019-custom-sql-check-kind.md) (custom SQL — the one authoring path with no derivable dimension), [0036](0036-connection-anchored-check-engines.md) (§4 names this work; see *Relationship to ADR 0036* below), [0037](0037-workspace-visible-asset-identity.md) (the workspace-true aggregate rule the scorecard must obey). Issues: [#124](https://github.com/TheurgicDuke771/DataQ/issues/124) (this ADR), [#889](https://github.com/TheurgicDuke771/DataQ/issues/889) (the asset scorecard that consumes it).
@@ -74,7 +74,20 @@ The derivation map is therefore keyed on `expectation_type` **with a `kind` fall
 
 Additive nullable column on `checks` **and** on `check_versions` (history must round-trip the field, or restoring an old version silently reclassifies a check).
 
-**Existing rows are left NULL, not backfilled.** A backfill would be indistinguishable from a deliberate user classification, so a later correction to the derivation map could never tell "the map said so" from "a human said so". Instead, existing checks surface as unclassified and are classified on next edit — visible, attributable, and consistent with NULL being a real state. Users who want them classified in bulk can re-save; a bulk-classify action is out of scope.
+~~**Existing rows are left NULL, not backfilled.**~~ *(Superseded — see the amendment below.)* The original reasoning: a backfill would be indistinguishable from a deliberate user classification, so a later correction to the derivation map could never tell "the map said so" from "a human said so".
+
+#### Amendment (2026-07-19): existing checks ARE backfilled
+
+Migration `a7b8c9d0e1f2` fills `dimension` for every pre-existing check the map can classify.
+
+The original position over-weighted its own concern and under-weighted the cost:
+
+- **The ambiguity it feared is vacuous at the moment it matters.** The column is introduced one revision earlier, so when the backfill runs the set of checks carrying a *human-set* dimension is exactly **empty**. The backfill cannot overwrite anyone's decision, because nobody has made one yet. The original text reasoned as if derived and user-set values were being mixed, when in fact the user-set set is empty by construction.
+- **The cost of not doing it is the feature.** Leaving them NULL makes the #889 scorecard report "unclassified" for every existing check — useless on day one, on precisely the workspaces with the most history worth reporting on. "Classified on next edit" assumed people re-save old checks, which they do not.
+
+The residual risk is narrower than §5 claimed: only that a *future correction to the derivation map* cannot distinguish a backfilled row from a user's override. Mitigation is recorded in the migration — re-derive only rows whose stored value still equals that migration's map output, which it inlines for exactly this purpose.
+
+The backfill deliberately writes **no `check_versions` rows**: it is a system classification, not an edit, and minting a version per check would fill every history drawer with a change nobody made. Unmapped types (custom SQL) stay NULL — §3's "unclassified is a real state" is unchanged.
 
 ### 6. Surfaces
 
