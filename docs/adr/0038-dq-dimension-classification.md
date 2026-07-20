@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-07-19
 - **Deciders:** @TheurgicDuke771
-- **Related:** [0005](0005-severity-tiers-and-health-score.md) (severity tiers + the health-score formula the scorecard reuses), [0012](0012-monitor-kind-seam.md) (`check.kind` — the axis this one is orthogonal to), [0015](0015-two-connection-comparison-check-model.md) (`comparison` kind), [0019](0019-custom-sql-checks.md) (custom SQL — the one authoring path with no derivable dimension), [0036](0036-connection-anchored-check-engines.md) (§4 names this work; see *Relationship to ADR 0036* below), [0037](0037-workspace-visible-asset-identity.md) (the workspace-true aggregate rule the scorecard must obey). Issues: [#124](https://github.com/TheurgicDuke771/DataQ/issues/124) (this ADR), [#889](https://github.com/TheurgicDuke771/DataQ/issues/889) (the asset scorecard that consumes it).
+- **Related:** [0005](0005-severity-tier-weights.md) (severity tiers + the health-score formula the scorecard reuses), [0012](0012-monitor-kind-seam.md) (`check.kind` — the axis this one is orthogonal to), [0015](0015-two-connection-comparison-check-model.md) (`comparison` kind), [0019](0019-custom-sql-check-kind.md) (custom SQL — the one authoring path with no derivable dimension), [0036](0036-connection-anchored-check-engines.md) (§4 names this work; see *Relationship to ADR 0036* below), [0037](0037-workspace-visible-asset-identity.md) (the workspace-true aggregate rule the scorecard must obey). Issues: [#124](https://github.com/TheurgicDuke771/DataQ/issues/124) (this ADR), [#889](https://github.com/TheurgicDuke771/DataQ/issues/889) (the asset scorecard that consumes it).
 
 ## Context
 
