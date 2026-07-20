@@ -127,20 +127,40 @@ def _freshness_age_hours(max_timestamp: datetime, now: datetime) -> float:
     return max((now - max_timestamp).total_seconds() / 3600.0, 0.0)
 
 
-def _as_aware_datetime(scalar: object, column: str) -> datetime:
-    """Normalise a ``MAX(column)`` scalar to a tz-aware datetime for the age math.
+def _as_aware_datetime(scalar: object, source: str) -> datetime:
+    """Normalise a freshness scalar to a tz-aware datetime for the age math.
 
-    Accepts a ``datetime`` *or* a ``date`` (a DATE column's MAX is a ``date`` — e.g.
-    Snowflake ``SIGNUP_DATE`` → ``datetime.date``; midnight is used). A naive value
-    (Snowflake ``TIMESTAMP_NTZ`` returns no tzinfo) is assumed UTC, so subtracting a
-    UTC ``now`` never raises offset-naive-vs-aware."""
+    Accepts a ``datetime``, a ``date`` (a DATE column's MAX is a ``date`` — e.g.
+    Snowflake ``SIGNUP_DATE`` → ``datetime.date``; midnight is used), **or an
+    ISO-8601 string**. A naive value (Snowflake ``TIMESTAMP_NTZ`` returns no
+    tzinfo) is assumed UTC, so subtracting a UTC ``now`` never raises
+    offset-naive-vs-aware.
+
+    The string case is not hypothetical: the **Databricks SQL connector returns a
+    TIMESTAMP column's MAX as a str**, so every Unity Catalog freshness monitor
+    errored with "is not a date/timestamp (got str)" — a documented-supported
+    feature that had never once worked (found by running one against live UC;
+    no unit test could see it, because the type comes from the driver).
+
+    Parsed with ``fromisoformat`` rather than a general date parser on purpose:
+    a permissive parser would also accept junk, and this is the same trap as the
+    flat-file epoch case — a confident wrong instant is worse than a clear error.
+    """
     if isinstance(scalar, datetime):
         ts = scalar
     elif isinstance(scalar, date):  # a plain date (datetime is a date subclass — checked first)
         ts = datetime.combine(scalar, time.min)
+    elif isinstance(scalar, str):
+        try:
+            ts = datetime.fromisoformat(scalar)
+        except ValueError:
+            raise MonitorConfigError(
+                f"freshness value from {source} is not a parseable timestamp: {scalar[:40]!r}"
+            ) from None
     else:
         raise MonitorConfigError(
-            f"freshness column {column!r} is not a date/timestamp (got {type(scalar).__name__})"
+            f"freshness value from {source} is not a date/timestamp "
+            f"(got {type(scalar).__name__})"
         )
     return ts if ts.tzinfo is not None else ts.replace(tzinfo=UTC)
 
