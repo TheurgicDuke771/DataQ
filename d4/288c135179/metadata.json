@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "d4288c135179",
+  "strategy": "manual-commit",
+  "branch": "fix/uc-freshness-string-timestamp",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/datasources/monitors.py",
+    "backend/tests/datasources/test_monitors.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/d4/288c135179/0/metadata.json",
+      "transcript": "/d4/288c135179/0/full.jsonl",
+      "compact_transcript": "/d4/288c135179/0/transcript.jsonl",
+      "content_hash": "/d4/288c135179/0/content_hash.txt",
+      "prompt": "/d4/288c135179/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1073,
+    "cache_creation_tokens": 2655705,
+    "cache_read_tokens": 230339768,
+    "output_tokens": 370833,
+    "api_call_count": 567
+  }
+}
