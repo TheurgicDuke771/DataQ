@@ -387,3 +387,49 @@ def test_monitor_kinds_derives_from_registry() -> None:
     from backend.app.datasources import monitors as m
 
     assert m.MONITOR_KINDS == tuple(m.MONITOR_KIND_REGISTRY)
+
+
+# ── ISO-string timestamps (live UC finding) ──
+
+
+def test_freshness_accepts_an_iso_string_scalar() -> None:
+    """The Databricks SQL connector returns a TIMESTAMP column's MAX as a **str**,
+    so every Unity Catalog freshness monitor errored with "is not a date/timestamp
+    (got str)" — a documented-supported feature that had never once worked.
+
+    No unit test could have caught it: the type comes from the driver, and every
+    fixture here hands in a real datetime. It took running one against live UC.
+    """
+    ten_hours_ago = (_NOW - timedelta(hours=10)).replace(tzinfo=None)
+    out = monitor_outcome(
+        "freshness", scalar=ten_hours_ago.isoformat(), config={"column": "created_ts"}, now=_NOW
+    )
+    assert out.errored is False
+    assert out.metric_value == pytest.approx(10.0)
+
+
+def test_freshness_accepts_an_iso_string_with_an_offset() -> None:
+    out = monitor_outcome(
+        "freshness",
+        scalar="2026-06-29T02:00:00+00:00",
+        config={"column": "created_ts"},
+        now=_NOW,  # 2026-06-29 12:00 UTC
+    )
+    assert out.errored is False
+    assert out.metric_value == pytest.approx(10.0)
+
+
+@pytest.mark.parametrize("junk", ["not-a-date", "", "n/a", "yesterday"])
+def test_freshness_refuses_an_unparseable_string(junk: str) -> None:
+    """`fromisoformat`, not a permissive parser: a lenient one would invent an
+    instant from junk, which is the flat-file epoch trap in another costume — a
+    confident wrong answer beats no answer only if it is right."""
+    with pytest.raises(MonitorConfigError, match="not a parseable timestamp"):
+        monitor_outcome("freshness", scalar=junk, config={"column": "ts"}, now=_NOW)
+
+
+def test_the_error_names_the_source_not_a_fake_column() -> None:
+    """The message used to read `freshness column 'MAX(created_ts)'` — the source
+    descriptor rendered where a column name belongs. Live output, so worth fixing."""
+    with pytest.raises(MonitorConfigError, match=r"freshness value from MAX\(ts\)"):
+        monitor_outcome("freshness", scalar=12345, config={"column": "ts"}, now=_NOW)
