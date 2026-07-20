@@ -41,7 +41,10 @@ RUN_STATUSES = ("queued", "running", "succeeded", "failed", "cancelled")
 # (distinct from 'fail', a successful evaluation that breached). Operational
 # statuses carry NO penalty weight and MUST be excluded from the health-score N
 # (i.e. aggregate WHERE status IN the four tiers only).
-_RESULT_SEVERITY_TIERS = ("pass", "warn", "fail", "critical")
+RESULT_SEVERITY_TIERS = ("pass", "warn", "fail", "critical")
+# Backwards-compatible private alias (the tuple was private until #889 needed it
+# shared with the rollup module — the vocabulary is the same object).
+_RESULT_SEVERITY_TIERS = RESULT_SEVERITY_TIERS
 RESULT_OPERATIONAL_STATUSES = ("skip", "error")
 RESULT_STATUSES = _RESULT_SEVERITY_TIERS + RESULT_OPERATIONAL_STATUSES
 # Failing severity tiers (the non-`pass` tiers) → rank, worst last. The single

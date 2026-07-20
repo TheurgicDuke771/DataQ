@@ -50,6 +50,7 @@ from backend.app.db.models import (
     worst_severity,
 )
 from backend.app.lineage.edges import lineage_neighbourhood
+from backend.app.services.rollup import latest_runs_per_suite_stmt
 from backend.app.services.run_service import check_outcome_counts, operational_result_flags
 from backend.app.services.suite_authz import effective_permissions
 
@@ -266,12 +267,7 @@ def _latest_run_per_suite(session: Session, suite_ids: list[uuid.UUID]) -> dict[
     """The most-recent run for each suite (DISTINCT ON, newest `created_at`)."""
     if not suite_ids:
         return {}
-    rows = session.scalars(
-        select(Run)
-        .where(Run.suite_id.in_(suite_ids))
-        .distinct(Run.suite_id)
-        .order_by(Run.suite_id, Run.created_at.desc())
-    )
+    rows = session.scalars(latest_runs_per_suite_stmt(suite_ids))
     return {run.suite_id: run for run in rows}
 
 
