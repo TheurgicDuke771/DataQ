@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "eeac50bbc633",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-889-asset-scorecard",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/datasources-checks.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ee/ac50bbc633/0/metadata.json",
+      "transcript": "/ee/ac50bbc633/0/full.jsonl",
+      "compact_transcript": "/ee/ac50bbc633/0/transcript.jsonl",
+      "content_hash": "/ee/ac50bbc633/0/content_hash.txt",
+      "prompt": "/ee/ac50bbc633/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 927,
+    "cache_creation_tokens": 1933359,
+    "cache_read_tokens": 180860585,
+    "output_tokens": 306195,
+    "api_call_count": 492
+  }
+}
