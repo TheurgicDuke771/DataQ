@@ -1,0 +1,40 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "d23f3a87be2f",
+  "session_id": "1124e5df-e050-4dd0-a205-d4dc331f0280",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-20T04:55:21.208787Z",
+  "branch": "docs/w4-post-deploy-audit",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "CLAUDE.md",
+    "docs/progress.md"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "2dbd1571442a",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 1133,
+    "cache_creation_tokens": 2686770,
+    "cache_read_tokens": 252244188,
+    "output_tokens": 390012,
+    "api_call_count": 597
+  },
+  "session_metrics": {
+    "turn_count": 5
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-20T04:55:21.052081Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 65,
+    "human_modified": 4,
+    "human_removed": 0,
+    "total_committed": 65,
+    "total_lines_changed": 78,
+    "agent_percentage": 0,
+    "metric_version": 2
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "d23f3a87be2f",
+  "strategy": "manual-commit",
+  "branch": "docs/w4-post-deploy-audit",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "CLAUDE.md",
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/d2/3f3a87be2f/0/metadata.json",
+      "transcript": "/d2/3f3a87be2f/0/full.jsonl",
+      "compact_transcript": "/d2/3f3a87be2f/0/transcript.jsonl",
+      "content_hash": "/d2/3f3a87be2f/0/content_hash.txt",
+      "prompt": "/d2/3f3a87be2f/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1133,
+    "cache_creation_tokens": 2686770,
+    "cache_read_tokens": 252244188,
+    "output_tokens": 390012,
+    "api_call_count": 597
+  }
+}

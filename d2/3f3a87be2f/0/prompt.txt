@@ -1,0 +1,19 @@
+continue
+
+---
+
+Hope all the issues are fixed now and going forward, check the actual code and app. if all the pending issues and items are fixed or filed. Let's start with the group two.
+
+---
+
+Sounds good. Let's start.
+
+---
+
+Agreed. Go ahead.
+
+---
+
+* Do the live testing for ADLS container, Snowflake, or Databricks [use the PAT as required]. 
+* Existing checks are unclassified until next edited - update them with check derived dimension values.
+* Deploy the latest changes to PROD and update the docs [READMEs, GitHub pages, Progress.md, etc.)
