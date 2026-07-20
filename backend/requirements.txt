@@ -41,7 +41,7 @@ opentelemetry-sdk==1.43.0                        # spans (A3) + logs (#524) — 
 opentelemetry-instrumentation-fastapi==0.64b0    # server span per request
 opentelemetry-instrumentation-celery==0.64b0     # span per task run
 azure-monitor-opentelemetry-exporter==1.0.0b55   # Azure backend for spans + logs (exporter ONLY, not the distro — it would double-configure the log pipeline)
-opentelemetry-exporter-otlp-proto-http==1.43.0   # generic OTLP/HTTP backend for spans + logs (#589) — any OTLP consumer (Tempo/Jaeger/Datadog), vendor-neutral (ADR 0010)
+opentelemetry-exporter-otlp-proto-http==1.44.0   # generic OTLP/HTTP backend for spans + logs (#589) — any OTLP consumer (Tempo/Jaeger/Datadog), vendor-neutral (ADR 0010)
 
 # ── Auth / secrets ──
 fastapi-azure-auth==5.2.0
