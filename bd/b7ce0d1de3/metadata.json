@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "bdb7ce0d1de3",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-889-asset-scorecard",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/datasources-checks.md",
+    "frontend/src/components/assets/ScorecardPanel.tsx",
+    "frontend/tests/components/ScorecardPanel.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/bd/b7ce0d1de3/0/metadata.json",
+      "transcript": "/bd/b7ce0d1de3/0/full.jsonl",
+      "compact_transcript": "/bd/b7ce0d1de3/0/transcript.jsonl",
+      "content_hash": "/bd/b7ce0d1de3/0/content_hash.txt",
+      "prompt": "/bd/b7ce0d1de3/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 958,
+    "cache_creation_tokens": 1956714,
+    "cache_read_tokens": 191676114,
+    "output_tokens": 323954,
+    "api_call_count": 509
+  }
+}
