@@ -37,6 +37,13 @@ pattern) → add checks in the editor.
   expectation when one exists (cheaper, better samples). See
   [Custom SQL best practice](best-practices.md#custom-sql-the-escape-hatch-not-the-default).
 
+Each check is classified by **DQ dimension** automatically (a not-null check is
+Completeness, a freshness monitor is Timeliness). Leave it unless the check means something
+else — the same range check is *Validity* when it bounds a percentage and *Accuracy* when it
+asserts a reconciled total. Custom-SQL checks have no derivable dimension, so set one
+yourself or leave them unclassified; the asset scorecard counts them separately rather than
+filing them under a dimension they may not belong to.
+
 ## 3. Set severity thresholds that mean something
 
 **Do:** on each check, set **warn / fail / critical** thresholds (or leave blank for binary

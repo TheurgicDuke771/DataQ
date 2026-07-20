@@ -12,6 +12,23 @@ a **freshness** monitor (on the load/updated timestamp) and a **volume** monitor
 catch the incidents that page people, and their `metric_value` history builds the trend
 baseline.
 
+## Aim for dimension coverage, not check count
+
+"47 checks" tells you nothing. **"No Timeliness checks on this table"** tells you what to
+do next. Every check carries a DQ dimension (filled in from the check type), and the asset
+page scores each one and lists the dimensions with **no checks at all**.
+
+Use the uncovered list as the backlog. In practice the gaps cluster where they hurt most —
+Timeliness and Uniqueness — because those are the checks nobody thinks to write until an
+incident makes them obvious.
+
+Two things the scorecard deliberately will not do, and you should read them the same way:
+
+- An asset with no checks shows **"not covered"**, never a green 100. Nobody watching is
+  not the same as nothing wrong.
+- A dimension whose checks all skipped or errored shows **"no signal"**, not 0%. "We
+  measured nothing" and "everything failed" are opposite facts.
+
 ## Organize suites around a target, scoped to an environment
 
 - **One suite = one target** (a table or a file batch) on **one connection/env**. A

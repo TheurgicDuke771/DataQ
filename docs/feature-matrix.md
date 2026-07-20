@@ -19,7 +19,7 @@ One-page reference: what runs where. For the readable tour of everything DataQ o
 | Dry-run preview | ✅ | ✅ | ✅ | ✅ | ✅ |
 
 Custom SQL runs a SQL query, so it's **SQL-datasource only** (Snowflake, Unity Catalog;
-flat-file support is a tracked enhancement, [#520](https://github.com/TheurgicDuke771/DataQ/issues/520);
+there is no flat-file support, and no issue currently tracks adding it — flat files get freshness/volume monitors instead (see the rows above);
 Iceberg is not SQL-queryable — reads go through `pyiceberg` scans, not a query engine).
 **Comparison checks** (ADR [0015](adr/0015-two-connection-comparison-check-model.md), #791–#795)
 diff the suite's dataset (the **target under test**) against a baseline on any other
@@ -29,9 +29,11 @@ capped fail-fast reads (`COMPARISON_MAX_ROWS`), redacted samples, and an on-dema
 CSV/XLSX report download (derived, never stored). Either SQL side may use a read-only
 query projection.
 
-The freshness/volume monitors run on **monitor-capable datasources** — the SQL
-datasources plus Apache Iceberg — computed natively (Iceberg's are `pyiceberg` scans, not
-SQL; ADR 0012/0030). Flat-file suites target a file or a batch pattern (e.g.
+The freshness/volume monitors run on **every datasource** — the SQL datasources, Apache
+Iceberg (computed natively via `pyiceberg` scans, not SQL; ADR 0012/0030), and ADLS Gen2 /
+S3 flat files (over the resolved batch; #520). On a flat file, a freshness monitor with **no
+timestamp column** measures the object's arrival time instead — catching a producer that
+stopped sending files, which a timestamp inside the data cannot see. Flat-file suites target a file or a batch pattern (e.g.
 `orders_*.csv`) in CSV or Parquet; Iceberg suites target a `namespace.table`. Dry-run
 preview works on every datasource with a runner — Snowflake, Unity Catalog, flat files,
 and Iceberg ([#532](https://github.com/TheurgicDuke771/DataQ/issues/532)).
