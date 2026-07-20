@@ -787,3 +787,73 @@ def test_browse_rows_are_byte_identical_across_viewers(
     assert member_row["suite_count"] == 1
     assert member_row["last_seen"] is not None
     assert member_row == stranger_row == admin_row
+
+
+# ── DQ scorecard (#889) ──────────────────────────────────────────────────────
+
+
+def _seed_dimensioned_run(db_session: Any, suite: Any, *, dimension: str, status: str) -> None:
+    """A run on `suite` whose single check carries `dimension`."""
+    check = Check(
+        suite_id=suite.id,
+        name=f"c-{uuid.uuid4().hex[:6]}",
+        kind="expectation",
+        expectation_type="expect_column_values_to_not_be_null",
+        config={"column": "x"},
+        dimension=dimension,
+    )
+    db_session.add(check)
+    db_session.flush()
+    run = Run(suite_id=suite.id, status="succeeded", triggered_by="t", asset_id=suite.asset_id)
+    db_session.add(run)
+    db_session.flush()
+    db_session.add(Result(run_id=run.id, check_id=check.id, status=status))
+    db_session.commit()
+
+
+def test_scorecard_is_workspace_true_across_viewers(
+    client: TestClient, world: dict[str, Any]
+) -> None:
+    """ADR 0037's core rule, applied to the scorecard: the aggregate covers ALL
+    composing suites, so two people looking at the same asset see the same numbers.
+
+    Load-bearing by construction — the dimensioned check lives on **s2**, which the
+    viewer is NOT granted. A grant-scoped scorecard would omit it and the two cards
+    would differ. (Comparing two empty cards would pass no matter what the code
+    did, so the fixture must put the contribution behind the grant boundary.)
+    """
+    db = client_db(client)
+    _seed_dimensioned_run(db, world["s2"], dimension="uniqueness", status="fail")
+
+    _as(world["owner"])
+    owner_card = client.get(f"/api/v1/assets/{world['asset_x']}").json()["scorecard"]
+    # Guard the guard: the fixture must actually produce a covered dimension.
+    assert [d["dimension"] for d in owner_card["covered"]] == ["uniqueness"]
+    assert owner_card["covered"][0]["score"] == 50.0  # ADR 0005: all-fail is 50, not 0
+
+    viewer = _user(db, "scorecard-outsider@example.com")
+    _share(db, world["s1"], viewer, "view")  # s1 only — s2 stays restricted
+    _as(viewer)
+    body = client.get(f"/api/v1/assets/{world['asset_x']}").json()
+    assert body["restricted_suite_count"] == 1  # s2 really is hidden from them
+    assert body["scorecard"] == owner_card
+
+
+def test_unclassified_checks_are_reported_not_bucketed(
+    client: TestClient, world: dict[str, Any]
+) -> None:
+    """The world fixture's check predates ADR 0038 (no dimension), which is exactly
+    the shape every existing check has. It must be counted, not filed anywhere."""
+    _as(world["owner"])
+    card = client.get(f"/api/v1/assets/{world['asset_x']}").json()["scorecard"]
+    assert card["unclassified_checks"] == 1
+    assert card["covered"] == []
+    assert len(card["uncovered"]) == 7  # nothing was inferred from the NULL
+
+
+def test_scorecard_shape_is_serialised(client: TestClient, world: dict[str, Any]) -> None:
+    _as(world["owner"])
+    card = client.get(f"/api/v1/assets/{world['asset_x']}").json()["scorecard"]
+    assert set(card) == {"covered", "uncovered", "unclassified_checks"}
+    for row in card["covered"]:
+        assert set(row) == {"dimension", "checks_total", "checks_passing", "score"}

@@ -11,7 +11,7 @@ from typing import Any, cast
 
 import pytest
 
-from backend.app.db.models import Asset, Check, Connection, Result, Run, User
+from backend.app.db.models import DQ_DIMENSIONS, Asset, Check, Connection, Result, Run, User
 from backend.app.services import asset_view_service as svc
 from backend.app.services import run_service, suite_service
 
@@ -206,3 +206,141 @@ def test_cancelled_run_is_flagged_so_it_never_rolls_up_green(db_session: Any) ->
 
 def test_operational_result_flags_empty_input(db_session: Any) -> None:
     assert run_service.operational_result_flags(db_session, []) == {}
+
+
+# ── DQ scorecard (#889, ADR 0038) ────────────────────────────────────────────
+
+
+def _suite_with_dimensioned_results(
+    db: Any, owner: User, *, results: list[tuple[str | None, str]]
+) -> Asset:
+    """A suite whose latest run carries `(dimension, result_status)` pairs."""
+    conn = _conn(db, owner)
+    suite = suite_service.create_suite(
+        db,
+        name=f"S-{uuid.uuid4().hex[:6]}",
+        description=None,
+        connection_id=conn.id,
+        created_by=owner.id,
+        target={"table": f"T{uuid.uuid4().hex[:6]}"},
+    )
+    run = Run(suite_id=suite.id, status="succeeded", triggered_by="manual")
+    db.add(run)
+    db.flush()
+    for dimension, status in results:
+        check = Check(
+            suite_id=suite.id,
+            name=f"c-{uuid.uuid4().hex[:6]}",
+            expectation_type="expect_column_to_exist",
+            config={"column": "X"},
+            dimension=dimension,
+        )
+        db.add(check)
+        db.flush()
+        db.add(Result(run_id=run.id, check_id=check.id, status=status))
+    db.commit()
+    assert suite.asset_id is not None
+    return cast(Asset, db.get(Asset, suite.asset_id))
+
+
+def _scorecard_for(db: Any, asset: Asset, user_id: uuid.UUID) -> Any:
+    detail = svc.get_visible_asset(db, asset.id, user_id=user_id, include_all=True)
+    assert detail.scorecard is not None
+    return detail.scorecard
+
+
+def test_scorecard_scores_each_dimension_independently(db_session: Any) -> None:
+    owner = _user(db_session)
+    asset = _suite_with_dimensioned_results(
+        db_session,
+        owner,
+        results=[
+            ("completeness", "pass"),
+            ("completeness", "pass"),
+            ("uniqueness", "fail"),
+            ("uniqueness", "pass"),
+        ],
+    )
+    card = _scorecard_for(db_session, asset, owner.id)
+    by_dim = {d.dimension: d for d in card.covered}
+
+    assert by_dim["completeness"].score == 100.0
+    assert (by_dim["completeness"].checks_total, by_dim["completeness"].checks_passing) == (2, 2)
+    # ADR 0005: one fail of two → penalty 1.0 over N=2, W_MAX=2 → 75.0
+    assert by_dim["uniqueness"].score == 75.0
+    assert (by_dim["uniqueness"].checks_total, by_dim["uniqueness"].checks_passing) == (2, 1)
+
+
+def test_uncovered_lists_every_dimension_with_no_checks(db_session: Any) -> None:
+    """The actionable half. "This asset has no Timeliness checks" is what a lead
+    acts on; a pass-rate never says that."""
+    owner = _user(db_session)
+    asset = _suite_with_dimensioned_results(db_session, owner, results=[("completeness", "pass")])
+    card = _scorecard_for(db_session, asset, owner.id)
+
+    assert [d.dimension for d in card.covered] == ["completeness"]
+    assert "timeliness" in card.uncovered
+    assert "completeness" not in card.uncovered
+    assert len(card.uncovered) == len(DQ_DIMENSIONS) - 1
+
+
+def test_an_asset_with_no_checks_is_all_uncovered_not_a_perfect_score(db_session: Any) -> None:
+    """No coverage ≠ 100%. Rendering a green tick over an asset nobody checks is
+    the single most dangerous thing this feature could do."""
+    owner = _user(db_session)
+    asset = _suite_with_dimensioned_results(db_session, owner, results=[])
+    card = _scorecard_for(db_session, asset, owner.id)
+
+    assert card.covered == []
+    assert sorted(card.uncovered) == sorted(DQ_DIMENSIONS)
+
+
+def test_unclassified_checks_are_counted_but_never_bucketed(db_session: Any) -> None:
+    """ADR 0038: a NULL dimension is a real state (custom SQL is unclassifiable).
+    Filing those under some dimension would corrupt that bucket's score AND make
+    `uncovered` a lie — so they are reported separately."""
+    owner = _user(db_session)
+    asset = _suite_with_dimensioned_results(
+        db_session,
+        owner,
+        results=[(None, "fail"), (None, "pass"), ("validity", "pass")],
+    )
+    card = _scorecard_for(db_session, asset, owner.id)
+
+    assert card.unclassified_checks == 2
+    assert [d.dimension for d in card.covered] == ["validity"]
+    assert card.covered[0].checks_total == 1  # the two NULL results did not leak in
+    assert card.covered[0].score == 100.0
+
+
+def test_skip_and_error_are_excluded_from_the_denominator(db_session: Any) -> None:
+    """#122 / ADR 0005: they did not evaluate a severity, so they must not count
+    as passes NOR inflate the total."""
+    owner = _user(db_session)
+    asset = _suite_with_dimensioned_results(
+        db_session,
+        owner,
+        results=[("validity", "pass"), ("validity", "skip"), ("validity", "error")],
+    )
+    card = _scorecard_for(db_session, asset, owner.id)
+    row = card.covered[0]
+
+    assert (row.checks_total, row.checks_passing) == (1, 1)
+    assert row.score == 100.0
+
+
+def test_a_dimension_whose_checks_all_skipped_is_covered_with_no_score(
+    db_session: Any,
+) -> None:
+    """Distinct from uncovered: checks EXIST, they just didn't evaluate. Merging
+    the two states would tell a user to write checks they already have."""
+    owner = _user(db_session)
+    asset = _suite_with_dimensioned_results(
+        db_session, owner, results=[("timeliness", "skip"), ("timeliness", "error")]
+    )
+    card = _scorecard_for(db_session, asset, owner.id)
+
+    assert [d.dimension for d in card.covered] == ["timeliness"]
+    assert card.covered[0].score is None  # no signal — not 0, not 100
+    assert card.covered[0].checks_total == 0
+    assert "timeliness" not in card.uncovered

@@ -26,6 +26,7 @@ import {
 import { useIsWorkspaceAdmin } from '../auth/useMe';
 import { ColumnLineagePanel } from '../components/assets/ColumnLineagePanel';
 import { IncidentsPanel } from '../components/assets/IncidentsPanel';
+import { ScorecardPanel } from '../components/assets/ScorecardPanel';
 import { LineageGraph } from '../components/assets/LineageGraph';
 import { type Health, connectionHealth, runHealth, suiteHealth } from '../components/assets/health';
 import { namespaceLabel } from '../components/assets/namespaceLabel';
@@ -158,6 +159,11 @@ function AssetDetailBody({
           onChanged={onChanged}
         />
       )}
+
+      {/* Between the header verdict and the per-suite breakdown: the scorecard
+          answers "what is and isn't watched here", which is the question a data
+          CONSUMER has before they trust the table. */}
+      <ScorecardPanel scorecard={asset.scorecard} />
 
       <SuitesSection
         suites={asset.suites}

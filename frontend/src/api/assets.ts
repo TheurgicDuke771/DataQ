@@ -108,8 +108,33 @@ export interface LineageSourceHealth {
   last_polled_at: string | null;
 }
 
+/** One scorecard row (#889, ADR 0038). `score` is `null` when nothing evaluated —
+ *  which is neither 0 nor 100. Render "no signal": "we ran nothing" and
+ *  "everything failed" are opposite facts a 0 would conflate. */
+export interface DimensionScore {
+  dimension: string;
+  checks_total: number;
+  checks_passing: number;
+  score: number | null;
+}
+
+/** Per-dimension coverage + score, workspace-true (ADR 0037) — identical for every
+ *  viewer who can see the asset.
+ *
+ *  `uncovered` is the half users act on: dimensions with no checks at all.
+ *  `unclassified_checks` counts checks with no dimension (custom SQL, or anything
+ *  nobody classified); they are deliberately NOT bucketed, because filing them
+ *  under a dimension they may not belong to would make `uncovered` a lie. */
+export interface Scorecard {
+  covered: DimensionScore[];
+  uncovered: string[];
+  unclassified_checks: number;
+}
+
 export interface AssetDetail {
   summary: AssetSummary;
+  /** Absent from a pre-#889 API — the panel simply doesn't render. */
+  scorecard?: Scorecard | null;
   /** Only the suites the viewer can see (ADR 0027). */
   suites: ComposingSuite[];
   /** How many MORE suites compose this asset outside the viewer's grants — they

@@ -183,6 +183,39 @@ class WarehouseLineageStatusRead(ApiModel):
     last_refreshed_at: datetime | None = None
 
 
+class DimensionScoreRead(ApiModel):
+    """One scorecard row (#889, ADR 0038).
+
+    `score` is `null` when nothing evaluated — which is NOT zero and NOT 100. The
+    UI must render "no signal", because "we ran nothing" and "everything failed"
+    are opposite facts that a 0 would conflate.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    dimension: str
+    checks_total: int
+    checks_passing: int
+    score: float | None
+
+
+class ScorecardRead(ApiModel):
+    """Per-dimension coverage + score, **workspace-true** (ADR 0037) — identical
+    for every viewer who can see the asset.
+
+    `uncovered` is the actionable half: dimensions with no checks at all. Checks
+    with no dimension (ADR 0038 — custom SQL, or unclassified) are reported in
+    `unclassified_checks` and deliberately NOT bucketed, since filing them under a
+    dimension they may not belong to would make `uncovered` a lie.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    covered: list[DimensionScoreRead]
+    uncovered: list[str]
+    unclassified_checks: int
+
+
 class AssetDetailRead(ApiModel):
     """Asset detail: the workspace-true summary + the caller's per-suite breakdown
     + upstream/downstream lineage. `suites` lists only suites the caller can view
@@ -193,6 +226,7 @@ class AssetDetailRead(ApiModel):
 
     summary: AssetSummaryRead
     suites: list[ComposingSuiteRead]
+    scorecard: ScorecardRead | None = None
     restricted_suite_count: int = 0
     upstream: list[LineageNodeRead]
     downstream: list[LineageNodeRead]

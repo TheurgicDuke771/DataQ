@@ -41,16 +41,24 @@ from sqlalchemy.orm import Session
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.db.models import (
+    DQ_DIMENSIONS,
     Asset,
+    Check,
     Connection,
     LineageEdge,
+    Result,
     Run,
     Suite,
     User,
     worst_severity,
 )
 from backend.app.lineage.edges import lineage_neighbourhood
-from backend.app.services.rollup import latest_runs_per_suite_stmt
+from backend.app.services.rollup import (
+    SEVERITY_STATUSES,
+    evaluated_total,
+    health_score,
+    latest_runs_per_suite_stmt,
+)
 from backend.app.services.run_service import check_outcome_counts, operational_result_flags
 from backend.app.services.suite_authz import effective_permissions
 
@@ -238,6 +246,48 @@ class WarehouseLineageStatus:
 
 
 @dataclass(frozen=True)
+class DimensionScore:
+    """One row of the asset DQ scorecard (#889, ADR 0038).
+
+    `checks_total`/`checks_passing` count **evaluated** results only — `skip` and
+    `error` are excluded from the denominator, exactly as the health score is
+    (#122 / ADR 0005), so a dimension whose checks all failed to execute reports
+    0 evaluated rather than a misleading 0% pass.
+
+    `score` is the ADR-0005 severity-weighted score over that dimension's results,
+    or `None` when nothing evaluated. **`None` is not zero and not 100** — the UI
+    must render it as "no signal", because "we ran nothing" and "everything
+    failed" are opposite facts.
+    """
+
+    dimension: str
+    checks_total: int
+    checks_passing: int
+    score: float | None
+
+
+@dataclass(frozen=True)
+class Scorecard:
+    """Per-dimension coverage + score for an asset, **workspace-true** (ADR 0037).
+
+    Aggregated over ALL composing suites' latest runs, so every viewer sees the
+    same numbers — the "two verdicts on one page" problem this module's docstring
+    names is exactly #889's.
+
+    The valuable half is `uncovered`, not `covered`: "this asset has no Timeliness
+    checks at all" is immediately actionable, where a pass-rate is not. And
+    `unclassified_checks` keeps that honest — checks whose dimension is NULL
+    (ADR 0038: custom SQL, or anything nobody classified) are counted but NOT
+    bucketed, because filing them under a dimension they may not belong to would
+    make `uncovered` a lie.
+    """
+
+    covered: list[DimensionScore]
+    uncovered: list[str]
+    unclassified_checks: int
+
+
+@dataclass(frozen=True)
 class AssetDetail:
     """Asset detail: the workspace-true summary + the caller's per-suite breakdown
     + lineage. ``suites`` lists only suites the caller can view (ADR 0027);
@@ -246,6 +296,7 @@ class AssetDetail:
 
     summary: AssetSummary
     suites: list[ComposingSuite]
+    scorecard: Scorecard | None = None
     restricted_suite_count: int = 0
     upstream: list[LineageNode] = field(default_factory=list)
     downstream: list[LineageNode] = field(default_factory=list)
@@ -334,6 +385,62 @@ def _latest_outcomes(session: Session, suites: list[Suite]) -> dict[uuid.UUID, R
         flags = op_flags.get(run.id) if run is not None else None
         by_suite[suite.id] = _run_outcome(run, outcome, flags)
     return by_suite
+
+
+def _scorecard(session: Session, run_ids: list[uuid.UUID]) -> Scorecard:
+    """Per-dimension coverage + score over a set of runs (#889).
+
+    One grouped query — `results` joined to `checks` for the dimension, since the
+    classification lives on the check, not the result. Aggregating in SQL rather
+    than folding `status_histograms` in Python because the grouping key is the
+    dimension, not the run.
+
+    **Workspace-true**: the caller passes the latest runs of ALL composing suites,
+    never a grant-filtered subset. A per-viewer score would put two different
+    numbers on one page for two people looking at the same asset — the exact
+    problem ADR 0037 exists to prevent, and the one this module's docstring cites
+    as #889's own framing.
+
+    NULL-dimension results are counted into `unclassified_checks` and deliberately
+    left OUT of every bucket: assigning them somewhere would corrupt both the
+    score of whatever bucket received them and the `uncovered` list, which is the
+    half users act on.
+    """
+    if not run_ids:
+        return Scorecard(covered=[], uncovered=sorted(DQ_DIMENSIONS), unclassified_checks=0)
+
+    rows = session.execute(
+        select(Check.dimension, Result.status, func.count())
+        .select_from(Result)
+        .join(Check, Check.id == Result.check_id)
+        .where(Result.run_id.in_(run_ids))
+        .group_by(Check.dimension, Result.status)
+    ).all()
+
+    by_dimension: dict[str, dict[str, int]] = defaultdict(dict)
+    unclassified = 0
+    for dimension, status, count in rows:
+        if dimension is None:
+            # Counted, never bucketed — see the docstring.
+            if status in SEVERITY_STATUSES:
+                unclassified += count
+            continue
+        by_dimension[dimension][status] = count
+
+    covered = [
+        DimensionScore(
+            dimension=dimension,
+            checks_total=evaluated_total(counts),
+            checks_passing=counts.get("pass", 0),
+            score=health_score(counts),
+        )
+        for dimension, counts in sorted(by_dimension.items())
+    ]
+    # A dimension with results but none EVALUATED (all skip/error) is still
+    # "covered" — checks exist for it — but has no score. That is a different
+    # state from having no checks at all, and the UI must not merge them.
+    uncovered = sorted(set(DQ_DIMENSIONS) - set(by_dimension))
+    return Scorecard(covered=covered, uncovered=uncovered, unclassified_checks=unclassified)
 
 
 def _roll_up(asset: Asset, suite_outcomes: list[RunOutcome]) -> AssetSummary:
@@ -458,6 +565,8 @@ def get_visible_asset(
     composing = _composing_suites(visible, levels, outcome_by_suite)
 
     summary = _roll_up(asset, [outcome_by_suite[s.id] for s in all_suites])
+    # Workspace-true, like the summary: ALL composing suites, never `visible`.
+    scorecard = _scorecard(session, [o.run_id for o in outcome_by_suite.values() if o.run_id])
     graph = lineage_neighbourhood(session, asset_id)
     neighbour_ids = [a.id for a, _ in graph.upstream] + [a.id for a, _ in graph.downstream]
     # One grouped lookup of "which of these assets has any suite" — the structural
@@ -466,6 +575,7 @@ def get_visible_asset(
     return AssetDetail(
         summary=summary,
         suites=composing,
+        scorecard=scorecard,
         restricted_suite_count=len(all_suites) - len(composing),
         upstream=_lineage_nodes(graph.upstream, has_suite),
         downstream=_lineage_nodes(graph.downstream, has_suite),

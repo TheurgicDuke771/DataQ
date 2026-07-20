@@ -15,6 +15,7 @@ One-page reference: what runs where. For the readable tour of everything DataQ o
 | Volume monitor (row count in range) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Comparison / reconciliation (diff vs a baseline connection) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Column profiler (nulls, distinct, min/max, top values) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| DQ dimension on checks + asset scorecard (coverage + score) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Dry-run preview | ✅ | ✅ | ✅ | ✅ | ✅ |
 
 Custom SQL runs a SQL query, so it's **SQL-datasource only** (Snowflake, Unity Catalog;
