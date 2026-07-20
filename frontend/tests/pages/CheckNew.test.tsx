@@ -95,6 +95,9 @@ describe('CheckNew', () => {
       kind: 'expectation',
       expectation_type: 'expect_column_values_to_be_in_set',
       config: { column: 'status', value_set: ['active', 'closed', 'pending'] },
+      // ADR 0038: the derived default is SENT, not left for the backend — the
+      // form shows it as a selected value, so it must be what gets stored.
+      dimension: 'validity',
       warn_threshold: null,
       fail_threshold: null,
       critical_threshold: null,
@@ -152,6 +155,7 @@ describe('CheckNew — type_ hint (issue #768)', () => {
       kind: 'expectation',
       expectation_type: 'expect_column_values_to_be_of_type',
       config: { column: 'amount', type_: 'DECIMAL(38, 0)' },
+      dimension: 'validity',
       warn_threshold: null,
       fail_threshold: null,
       critical_threshold: null,

@@ -63,6 +63,9 @@ const existing: Check = {
   kind: 'expectation',
   expectation_type: 'expect_column_values_to_be_between',
   config: { column: 'amount', min_value: 0, max_value: 100 },
+  // Deliberately an OVERRIDE: this type derives to 'validity', so a prefill bug
+  // that seeded the derived default instead of the stored value would show up.
+  dimension: 'accuracy',
   warn_threshold: 5,
   fail_threshold: 10,
   critical_threshold: null,
@@ -106,6 +109,9 @@ describe('CheckEdit', () => {
       name: 'amount range v2',
       expectation_type: 'expect_column_values_to_be_between',
       config: { column: 'amount', min_value: 0, max_value: 100 },
+      // The stored override survives an edit that never touches the field —
+      // otherwise every rename would silently revert it to the derived guess.
+      dimension: 'accuracy',
       warn_threshold: 5,
       fail_threshold: 10,
       critical_threshold: null,
@@ -203,5 +209,56 @@ describe('CheckEdit — type_ hint (issue #768)', () => {
 
     await waitFor(() => expect(screen.getByLabelText('Column')).toHaveValue('amount'));
     expect(screen.queryByLabelText('Type')).not.toBeInTheDocument();
+  });
+});
+
+describe('CheckEdit — DQ dimension (ADR 0038, #124)', () => {
+  it('prefills the STORED dimension, not the type-derived default', async () => {
+    mockGetSuite.mockResolvedValue(suite);
+    mockGetConnection.mockResolvedValue(connection);
+    mockGetCheck.mockResolvedValue(existing); // stored 'accuracy'; type derives 'validity'
+    renderPage();
+
+    // If the create-page default leaked into edit mode, this would read Validity.
+    expect(await screen.findByText(/Accuracy —/)).toBeInTheDocument();
+  });
+
+  it('does not silently classify a check saved as unclassified', async () => {
+    const user = userEvent.setup();
+    mockGetSuite.mockResolvedValue(suite);
+    mockGetConnection.mockResolvedValue(connection);
+    // A derivable TYPE whose stored dimension is null — someone deliberately
+    // cleared it. Merely opening the editor and renaming must not reclassify it.
+    mockGetCheck.mockResolvedValue({ ...existing, dimension: null });
+    mockUpdate.mockResolvedValue({ ...existing, dimension: null });
+    renderPage();
+
+    const name = await screen.findByLabelText('Name');
+    await user.clear(name);
+    await user.type(name, 'renamed');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalled());
+    expect(mockUpdate.mock.calls[0][2]).toMatchObject({ dimension: undefined });
+  });
+});
+
+describe('CheckEdit — re-deriving on an expectation-type change (#124 review)', () => {
+  it('re-derives the dimension when the expectation type changes', async () => {
+    const user = userEvent.setup();
+    mockGetSuite.mockResolvedValue(suite);
+    mockGetConnection.mockResolvedValue(connection);
+    // Stored 'accuracy' on a between-check. Switching the type to a unique-check
+    // must NOT keep 'accuracy' while the help below claims the value is
+    // "defaulted from the check type" — that ships a uniqueness check filed as
+    // accuracy, looking like a deliberate override forever.
+    mockGetCheck.mockResolvedValue(existing);
+    renderPage();
+
+    const typeSelect = await screen.findByLabelText('Expectation');
+    await user.click(typeSelect);
+    await user.click(await screen.findByTitle('Column values unique'));
+
+    expect(await screen.findByText(/Uniqueness —/)).toBeInTheDocument();
   });
 });

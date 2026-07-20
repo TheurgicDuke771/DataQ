@@ -286,6 +286,10 @@ class CheckDocument(ApiModel):
     name: str = Field(min_length=1, max_length=256)
     kind: str = "expectation"
     expectation_type: str = Field(min_length=1, max_length=128)
+    # DQ dimension (ADR 0038). Absent on an older export → derived on import,
+    # exactly as if freshly authored. Optional in BOTH directions, so
+    # EXPORT_VERSION does not bump (it bumps only on an incompatible shape).
+    dimension: str | None = None
     config: dict[str, Any] = Field(default_factory=dict)
     # Present only on comparison checks (ADR 0015); resolved on import.
     source_connection: SourceConnectionRef | None = None
@@ -342,7 +346,19 @@ def import_suite(
         version=doc.version,
         name=doc.name,
         description=doc.description,
-        checks=[c.model_dump() for c in doc.checks],
+        # `dimension` is dropped when the payload did not SET it, so the service
+        # can tell "an older document omits the field" (→ derive) from "this
+        # document says the check is unclassified" (→ keep NULL). model_dump()
+        # alone emits the key either way, which would classify every pre-ADR-0038
+        # check on import — exactly the backfill ADR 0038 §5 forbids.
+        checks=[
+            {
+                k: v
+                for k, v in c.model_dump().items()
+                if k != "dimension" or "dimension" in c.model_fields_set
+            }
+            for c in doc.checks
+        ],
         connection_id=payload.connection_id,
         created_by=current_user.id,
     )

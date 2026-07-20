@@ -119,6 +119,9 @@ export interface Check {
   name: string;
   kind: string;
   expectation_type: string;
+  /** DQ dimension (ADR 0038). `null` = unclassified — render it as a coverage
+   *  gap, never bucket it silently. Optional so pre-0038 fixtures need no change. */
+  dimension?: string | null;
   config: Record<string, unknown>;
   /** Comparison source ref (ADR 0015) — set exactly for kind='comparison'.
    *  Optional in the type so pre-0015 fixtures/readers need no change. */
@@ -148,6 +151,8 @@ export interface CheckCreate {
   name: string;
   kind?: string;
   expectation_type: string;
+  /** DQ dimension (ADR 0038). Omit to take the backend's derived default. */
+  dimension?: string | null;
   config: Record<string, unknown>;
   /** Comparison source ref (ADR 0015) — required for kind='comparison'. */
   source_connection_id?: string | null;
@@ -160,6 +165,8 @@ export interface CheckCreate {
 export interface CheckUpdate {
   name?: string;
   expectation_type?: string;
+  /** Re-classifiable at any time (ADR 0038 §2). */
+  dimension?: string | null;
   config?: Record<string, unknown>;
   /** Repoint a comparison check's source (never clearable). */
   source_connection_id?: string | null;

@@ -92,11 +92,26 @@ def _num(value: Decimal | float | None) -> float | None:
     return float(value) if value is not None else None
 
 
-def _reject_nul(*, name: str, expectation_type: str, kind: str, config: dict[str, Any]) -> None:
+def _reject_nul(
+    *,
+    name: str,
+    expectation_type: str,
+    kind: str,
+    config: dict[str, Any],
+    dimension: str = "",
+) -> None:
     """NUL (\\x00) can't be stored by Postgres (text or JSONB) — reject it here
     like the REST boundary does (`ApiModel`, #567), instead of surfacing the
     driver's ValueError as an opaque tool failure."""
-    if contains_nul({"name": name, "expectation_type": expectation_type, "kind": kind, **config}):
+    if contains_nul(
+        {
+            "name": name,
+            "expectation_type": expectation_type,
+            "kind": kind,
+            "dimension": dimension,
+            **config,
+        }
+    ):
         raise ToolError("NUL (\\x00) characters are not allowed in check fields")
 
 
@@ -354,6 +369,7 @@ def create_check(
     fail_threshold: float | None = None,
     critical_threshold: float | None = None,
     source_connection_id: str | None = None,
+    dimension: str | None = None,
 ) -> dict[str, Any]:
     """Add a new check (a Great Expectations expectation) to a suite.
 
@@ -365,10 +381,20 @@ def create_check(
     ``kind="comparison"`` with ``expectation_type="comparison:records"``,
     ``source_connection_id`` (the baseline connection to compare against) and a
     config carrying ``source`` (the baseline dataset spec) + ``keys`` (join key
-    columns). Requires edit access. Returns the created check's id.
+    columns). ``dimension`` optionally overrides the DQ dimension (one of
+    accuracy, completeness, consistency, integrity, timeliness, uniqueness,
+    validity); leave it unset and DataQ derives it from the check type — only set
+    it when the user names a dimension explicitly. Requires edit access. Returns
+    the created check's id.
     """
     sid = _parse_uuid(suite_id, field="suite_id")
-    _reject_nul(name=name, expectation_type=expectation_type, kind=kind, config=config or {})
+    _reject_nul(
+        name=name,
+        expectation_type=expectation_type,
+        kind=kind,
+        config=config or {},
+        dimension=dimension or "",
+    )
     with _ctx() as (session, user), _service_errors():
         require_permission(session, sid, user.id, minimum="edit")
         check = check_service.create_check(
@@ -388,6 +414,7 @@ def create_check(
             critical_threshold=(
                 Decimal(str(critical_threshold)) if critical_threshold is not None else None
             ),
+            dimension=dimension,
             actor_id=user.id,
         )
         return {
@@ -395,6 +422,7 @@ def create_check(
             "suite_id": suite_id,
             "name": check.name,
             "expectation_type": check.expectation_type,
+            "dimension": check.dimension,
         }
 
 

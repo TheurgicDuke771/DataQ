@@ -2,6 +2,7 @@
   {
     "type": "expect_column_values_to_not_be_null",
     "kind": "expectation",
+    "dimension": "completeness",
     "fields": [
       "column"
     ]
@@ -9,6 +10,7 @@
   {
     "type": "expect_column_values_to_be_unique",
     "kind": "expectation",
+    "dimension": "uniqueness",
     "fields": [
       "column"
     ]
@@ -16,6 +18,7 @@
   {
     "type": "expect_column_values_to_be_between",
     "kind": "expectation",
+    "dimension": "validity",
     "fields": [
       "column",
       "min_value",
@@ -25,6 +28,7 @@
   {
     "type": "expect_column_values_to_be_in_set",
     "kind": "expectation",
+    "dimension": "validity",
     "fields": [
       "column",
       "value_set"
@@ -33,6 +37,7 @@
   {
     "type": "expect_column_value_lengths_to_be_between",
     "kind": "expectation",
+    "dimension": "validity",
     "fields": [
       "column",
       "min_value",
@@ -42,6 +47,7 @@
   {
     "type": "expect_column_values_to_match_regex",
     "kind": "expectation",
+    "dimension": "validity",
     "fields": [
       "column",
       "regex"
@@ -50,6 +56,7 @@
   {
     "type": "expect_column_values_to_be_of_type",
     "kind": "expectation",
+    "dimension": "validity",
     "fields": [
       "column",
       "type_"
@@ -58,6 +65,7 @@
   {
     "type": "expect_table_row_count_to_be_between",
     "kind": "expectation",
+    "dimension": "completeness",
     "fields": [
       "min_value",
       "max_value"
@@ -66,6 +74,7 @@
   {
     "type": "monitor:freshness",
     "kind": "freshness",
+    "dimension": "timeliness",
     "fields": [
       "column"
     ]
@@ -73,6 +82,7 @@
   {
     "type": "monitor:volume",
     "kind": "volume",
+    "dimension": "completeness",
     "fields": [
       "min_rows",
       "max_rows"
@@ -81,6 +91,7 @@
   {
     "type": "monitor:schema_drift",
     "kind": "schema_drift",
+    "dimension": "consistency",
     "fields": [
       "ignore_columns"
     ]
@@ -88,6 +99,7 @@
   {
     "type": "unexpected_rows_expectation",
     "kind": "expectation",
+    "dimension": null,
     "fields": [
       "unexpected_rows_query"
     ]
@@ -95,11 +107,13 @@
   {
     "type": "comparison:records",
     "kind": "comparison",
+    "dimension": "consistency",
     "fields": []
   },
   {
     "type": "comparison:columns",
     "kind": "comparison",
+    "dimension": "consistency",
     "fields": []
   }
 ]
