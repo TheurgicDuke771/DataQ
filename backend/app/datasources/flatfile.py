@@ -117,7 +117,12 @@ def read_csv_bytes(raw: io.BytesIO, **kwargs: Any) -> Any:
     """
     import pandas as pd
 
-    sep = sniff_delimiter(raw.getvalue()[:_SNIFF_BYTES])
+    # `read`, not `getvalue()[:n]`: getvalue copies the ENTIRE buffer before the
+    # slice, so on a large CSV — which the runner already holds whole in memory —
+    # picking a delimiter would transiently double peak RSS. The bound is meant to
+    # cap the work, not just the decode.
+    raw.seek(0)
+    sep = sniff_delimiter(raw.read(_SNIFF_BYTES))
     raw.seek(0)
     return pd.read_csv(raw, sep=sep, **kwargs)
 
@@ -227,6 +232,13 @@ def max_timestamp(series: Any, *, column: str) -> Any:
     column would silently date it to 1970 and fire critical staleness forever —
     a confident wrong answer where "this isn't a timestamp" is the truth.
 
+    A **mostly-unparseable** text column is refused for the same reason: with
+    ``errors="coerce"``, 99 junk values and one real date yield a confident metric
+    derived from that single row, which then bands as critically stale forever.
+    Requiring a majority to parse means "you pointed at the wrong column" surfaces
+    as an error instead of a plausible number. A minority of junk still parses
+    (it behaves like NULLs, matching ``MAX`` in SQL).
+
     Caveat, documented rather than guessed at: for *ambiguous* text dates
     (``06/07/2026``) the parse follows pandas' day-first inference, so a
     non-ISO-8601 CSV can be read month-first. Use ISO-8601 or Parquet where the
@@ -247,8 +259,11 @@ def max_timestamp(series: Any, *, column: str) -> Any:
             f"freshness column {column!r} is {cleaned.dtype}, not a date/timestamp"
         )
     parsed = pd.to_datetime(cleaned, errors="coerce", utc=True).dropna()
-    if parsed.empty:
-        raise MonitorConfigError(f"freshness column {column!r} holds no parseable timestamps")
+    if len(parsed) * 2 < len(cleaned):
+        raise MonitorConfigError(
+            f"freshness column {column!r} is mostly not timestamps "
+            f"({len(parsed)} of {len(cleaned)} values parsed) — check the column name"
+        )
     return parsed.max()
 
 
