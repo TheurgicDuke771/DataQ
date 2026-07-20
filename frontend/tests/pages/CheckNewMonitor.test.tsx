@@ -73,7 +73,7 @@ describe('CheckNew — monitor authoring (ADR 0012)', () => {
 
     await user.click(await screen.findByText('Freshness'));
     // Step 2 → the Freshness spec card (label appears as both category + card).
-    await user.click(await screen.findByText('How stale is the table?', { exact: false }));
+    await user.click(await screen.findByText('How stale is the target?', { exact: false }));
     await user.type(await screen.findByLabelText('Name'), 'orders fresh');
     await user.type(screen.getByLabelText('Timestamp column'), 'loaded_at');
     await user.type(screen.getByLabelText('Fail ≥'), '48');
@@ -97,7 +97,7 @@ describe('CheckNew — monitor authoring (ADR 0012)', () => {
     renderPage();
 
     await user.click(await screen.findByText('Freshness'));
-    await user.click(await screen.findByText('How stale is the table?', { exact: false }));
+    await user.click(await screen.findByText('How stale is the target?', { exact: false }));
     await user.type(await screen.findByLabelText('Name'), 'no threshold');
     await user.type(screen.getByLabelText('Timestamp column'), 'loaded_at');
 

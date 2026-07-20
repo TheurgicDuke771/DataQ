@@ -504,6 +504,38 @@ def test_csv_string_timestamps_are_parsed_not_string_compared(
     assert out[0].observed_value["max_timestamp"].startswith("2026-12-01")
 
 
+def test_a_mostly_unparseable_freshness_column_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`errors="coerce"` drops what it can't parse, so 9 junk values and 1 real date
+    would yield a confident metric derived from that ONE row — which then bands as
+    critically stale forever. Same silent-wrong-answer class as the epoch trap:
+    "you pointed at the wrong column" must surface as an error, not a number.
+
+    The junk is `pending`, deliberately NOT `n/a`: pandas maps `n/a` to NaN at
+    parse time, so it is dropped as a NULL long before this guard and behaves
+    correctly already. Only junk pandas keeps as a string reaches the coercion."""
+    rows = b"".join(b"%d,pending\n" % i for i in range(9))
+    _patch_store(monkeypatch, csv=b"id,load_ts\n" + rows + b"9,2020-01-01\n")
+    out = _monitor_runner().run_monitors(
+        table="raw/orders.csv", schema=None, monitors=[_spec("freshness", column="load_ts")]
+    )
+    assert out[0].errored is True
+    assert out[0].metric_value is None
+    assert "mostly not timestamps" in (out[0].error_message or "")
+
+
+def test_a_minority_of_junk_still_parses_like_nulls(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The inverse guard: a few bad values behave like NULLs (matching `MAX` in
+    SQL), so the threshold must not turn ordinary dirty data into an outage."""
+    rows = b"".join(b"%d,2020-01-0%d\n" % (i, (i % 9) + 1) for i in range(9))
+    _patch_store(monkeypatch, csv=b"id,load_ts\n" + rows + b"9,n/a\n")
+    out = _monitor_runner().run_monitors(
+        table="raw/orders.csv", schema=None, monitors=[_spec("freshness", column="load_ts")]
+    )
+    assert out[0].errored is False, out[0].error_message
+
+
 def test_an_unparseable_text_freshness_column_cannot_be_assessed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

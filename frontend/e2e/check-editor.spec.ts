@@ -2,9 +2,11 @@ import { expect, test } from '@playwright/test';
 
 // The check-editor variants beyond the plain expectation form (already covered
 // in suites.spec.ts): the freshness + volume monitor kinds (ADR 0012) and the
-// Monaco-backed custom-SQL editor (ADR 0019). All three are SQL-only
-// categories, offered here because the seeded suite targets Snowflake. Each
-// authoring loop creates → verifies on the suite detail → deletes.
+// Monaco-backed custom-SQL editor (ADR 0019). Custom SQL is SQL-only; the
+// monitor kinds also run on flat files since #520, but the seeded suite targets
+// Snowflake — which is why the timestamp column is REQUIRED here (on a flat-file
+// suite it is optional and blank means file-arrival time). Each authoring loop
+// creates → verifies on the suite detail → deletes.
 test.describe('Check editor variants', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/suites');
@@ -30,7 +32,7 @@ test.describe('Check editor variants', () => {
     const name = `e2e freshness ${Date.now()}`;
 
     await page.getByText('Freshness', { exact: true }).click();
-    await page.getByText(/How stale is the table/).click();
+    await page.getByText(/How stale is the target/).click();
 
     await page.getByLabel('Name').fill(name);
     await page.getByLabel('Timestamp column').fill('created_at');
