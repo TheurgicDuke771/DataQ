@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "ddf07fa5a939",
+  "strategy": "manual-commit",
+  "branch": "fix/flatfile-monitor-followups",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/dd/f07fa5a939/0/metadata.json",
+      "transcript": "/dd/f07fa5a939/0/full.jsonl",
+      "compact_transcript": "/dd/f07fa5a939/0/transcript.jsonl",
+      "content_hash": "/dd/f07fa5a939/0/content_hash.txt",
+      "prompt": "/dd/f07fa5a939/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 524,
+    "cache_creation_tokens": 1229099,
+    "cache_read_tokens": 70107037,
+    "output_tokens": 180826,
+    "api_call_count": 277
+  }
+}
