@@ -1,0 +1,39 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "429a50d7a486",
+  "session_id": "1124e5df-e050-4dd0-a205-d4dc331f0280",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-20T02:54:38.104498Z",
+  "branch": "refactor/issue-889-rollup-unification",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "backend/tests/services/test_rollup.py"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "aec9f35bda2a",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 820,
+    "cache_creation_tokens": 1887192,
+    "cache_read_tokens": 146690570,
+    "output_tokens": 276405,
+    "api_call_count": 435
+  },
+  "session_metrics": {
+    "turn_count": 4
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-20T02:54:37.970016Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 32,
+    "human_modified": 5,
+    "human_removed": 0,
+    "total_committed": 32,
+    "total_lines_changed": 38,
+    "agent_percentage": 0,
+    "metric_version": 2
+  }
+}
