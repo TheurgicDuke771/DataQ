@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "1fa31c652aff",
+  "strategy": "manual-commit",
+  "branch": "fix/flatfile-monitor-followups",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/datasources-checks.md",
+    "frontend/src/components/checks/expectationCatalog.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/1f/a31c652aff/0/metadata.json",
+      "transcript": "/1f/a31c652aff/0/full.jsonl",
+      "compact_transcript": "/1f/a31c652aff/0/transcript.jsonl",
+      "content_hash": "/1f/a31c652aff/0/content_hash.txt",
+      "prompt": "/1f/a31c652aff/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 502,
+    "cache_creation_tokens": 837986,
+    "cache_read_tokens": 65596500,
+    "output_tokens": 175032,
+    "api_call_count": 265
+  }
+}
