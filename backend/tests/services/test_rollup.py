@@ -62,8 +62,17 @@ def test_a_run_of_only_operational_results_has_no_score() -> None:
 # ── status_histograms ──
 
 
-def _seed_run(db: Any, *, suite: Suite, created_at: datetime, statuses: list[str]) -> Run:
+def _seed_run(
+    db: Any,
+    *,
+    suite: Suite,
+    created_at: datetime,
+    statuses: list[str],
+    run_id: uuid.UUID | None = None,
+) -> Run:
     run = Run(suite_id=suite.id, status="succeeded", created_at=created_at)
+    if run_id is not None:
+        run.id = run_id
     db.add(run)
     db.flush()
     for i, status in enumerate(statuses):
@@ -148,19 +157,28 @@ def test_latest_run_is_the_newest_per_suite(db_session: Any) -> None:
     assert {r.suite_id: r.id for r in runs} == {suite_a.id: newest_a.id, suite_b.id: only_b.id}
 
 
+# Explicit, ordered ids for the tie-break test. Server-generated UUIDs would make
+# it a COIN FLIP: with no tie-break Postgres returns whichever row its sort emits
+# first, which is the max about half the time — so a future removal of `id DESC`
+# would merge green on roughly every other run. Inserting the LOWER id first means
+# heap order (what an untied sort falls back to) yields the wrong answer
+# deterministically.
+_LOW_RUN_ID = uuid.UUID("00000000-0000-4000-8000-000000000001")
+_HIGH_RUN_ID = uuid.UUID("ffffffff-ffff-4fff-bfff-ffffffffffff")
+
+
 def test_ties_on_created_at_resolve_deterministically(db_session: Any) -> None:
     """Both previous copies ordered only by `created_at DESC`, so two runs sharing
     a timestamp resolved nondeterministically — the same page could show different
     numbers on refresh. The `id DESC` tie-break makes it stable."""
     suite = _suite(db_session)
     same = datetime.now(UTC)
-    a = _seed_run(db_session, suite=suite, created_at=same, statuses=["pass"])
-    b = _seed_run(db_session, suite=suite, created_at=same, statuses=["fail"])
-    expected = max(a.id, b.id)
+    _seed_run(db_session, suite=suite, created_at=same, statuses=["pass"], run_id=_LOW_RUN_ID)
+    _seed_run(db_session, suite=suite, created_at=same, statuses=["fail"], run_id=_HIGH_RUN_ID)
 
     for _ in range(3):  # stable across repeated evaluation, not merely once
         runs = list(db_session.scalars(latest_runs_per_suite_stmt([suite.id])))
-        assert [r.id for r in runs] == [expected]
+        assert [r.id for r in runs] == [_HIGH_RUN_ID]
 
 
 @pytest.mark.parametrize("status", ["failed", "cancelled", "queued", "running"])

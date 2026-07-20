@@ -32,6 +32,10 @@ from backend.app.services.rollup import (
 # because the dashboard API/MCP layers and its tests import them from this module,
 # and because "the dashboard's health score" is still a meaningful name for them.
 __all__ = [
+    "DashboardSummary",
+    "Kpis",
+    "SuitePerformance",
+    "TrendPoint",
     "dashboard_summary",
     "health_score",
     "pass_rate",
@@ -161,7 +165,16 @@ def _suite_performance(
     """
     # The shared latest-run-per-suite statement (#889) — kept in SQL here and
     # inner-joined, which is what drops a suite whose latest run wrote no results.
-    latest = latest_runs_per_suite_stmt(accessible).subquery()
+    #
+    # Narrowed to the two columns this join needs. The shared statement selects the
+    # whole Run entity (the asset view materialises it), and DISTINCT ON sorts
+    # EVERY run row for accessible suites, not just the surviving ones — so
+    # carrying `triggered_by`/`failure_reason` through would inflate the sort tuple
+    # from ~32 bytes to ~800 and raise work_mem spill risk on a large runs table.
+    # `with_only_columns` keeps the DISTINCT ON and ORDER BY intact.
+    latest = (
+        latest_runs_per_suite_stmt(accessible).with_only_columns(Run.id, Run.suite_id).subquery()
+    )
     stmt = (
         select(Suite.id, Suite.name, Result.status, func.count())
         .select_from(latest)
