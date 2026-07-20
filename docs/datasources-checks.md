@@ -51,6 +51,35 @@ gets quoted — a mixed-case *catalog or schema* still folds
 today (Unity Catalog is the only three-part datasource and it resolves identifiers
 case-insensitively), but don't rely on it if that changes.
 
+### Seeing coverage: the asset scorecard
+
+Because every check carries a dimension, the **asset page** shows a *Data quality
+by dimension* panel: per-dimension score and check counts, plus — the part worth
+looking at — the dimensions with **no checks at all**.
+
+Three states, deliberately kept distinct:
+
+| What you see | What it means |
+|---|---|
+| A score bar | Checks exist and evaluated in the latest run. |
+| **No signal** | Checks exist, but none evaluated — not yet run, or all skipped/errored. Not 0%: nothing was measured. |
+| Listed under **Not covered** | No checks for that dimension exist at all. Not 0%, and *definitely* not 100%. |
+
+**Coverage counts checks, not runs.** A check you author today counts as coverage
+immediately — it does not need a completed run first, and a suite whose latest run
+failed does not lose its coverage. The score is the part that waits for a run.
+
+The `3/5 passing` figure counts checks that passed in the latest run out of checks
+that exist, so the gap includes failing, skipped, errored **and** never-run checks;
+hover it to see how many were excluded from the score.
+
+The numbers are **workspace-wide**: everyone who can see the asset sees the same
+score, whether or not they can open the suites behind it. Two people comparing
+notes on the same table should never see two different verdicts.
+
+Checks with no dimension set are counted separately ("N checks have no dimension
+set") rather than filed under a dimension — otherwise "Not covered" would be wrong.
+
 ### Flat files: formats and CSV delimiters
 
 Flat-file connections (ADLS Gen2 / S3) read `.csv` and `.parquet`/`.pq`. **The CSV
