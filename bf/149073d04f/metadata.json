@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "bf149073d04f",
+  "strategy": "manual-commit",
+  "branch": "refactor/issue-889-rollup-unification",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/db/models.py",
+    "backend/app/services/run_service.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/bf/149073d04f/0/metadata.json",
+      "transcript": "/bf/149073d04f/0/full.jsonl",
+      "compact_transcript": "/bf/149073d04f/0/transcript.jsonl",
+      "content_hash": "/bf/149073d04f/0/content_hash.txt",
+      "prompt": "/bf/149073d04f/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 807,
+    "cache_creation_tokens": 1877304,
+    "cache_read_tokens": 142691318,
+    "output_tokens": 269717,
+    "api_call_count": 428
+  }
+}
