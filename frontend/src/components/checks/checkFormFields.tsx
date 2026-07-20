@@ -138,7 +138,11 @@ export function DimensionField({
       }
     >
       <Select
-        allowClear
+        // Clearable ONLY when the type has no derived default. Blank means
+        // "derive" to the backend, not "clear" — so on a derivable type a clear
+        // affordance would silently restore the default on create, and be a
+        // no-op on edit. Where there IS no default, blank genuinely stores NULL.
+        allowClear={derived === undefined}
         placeholder="Unclassified"
         options={DQ_DIMENSIONS.map((d: DqDimension) => ({
           value: d,

@@ -139,6 +139,19 @@ function CheckEditForm({
     });
   }, [check, form]);
 
+  // Changing the expectation type re-derives the dimension, mirroring the create
+  // page (which resets the whole form on type change). Without this the select
+  // keeps the OLD type's classification while the help text below it claims to be
+  // "defaulted from the check type" — and `buildCheckPayload` then sends the stale
+  // value explicitly, so a uniqueness check ends up filed as completeness and
+  // looks like a deliberate override forever.
+  const initialType = check.expectation_type;
+  useEffect(() => {
+    if (selectedType && selectedType !== initialType) {
+      form.setFieldsValue({ dimension: EXPECTATION_BY_TYPE[selectedType]?.dimension });
+    }
+  }, [selectedType, initialType, form]);
+
   const onSubmit = async () => {
     let values: Record<string, unknown>;
     try {

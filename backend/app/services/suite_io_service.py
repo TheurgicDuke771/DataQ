@@ -31,7 +31,7 @@ from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.datasources.monitors import MONITOR_KINDS
 from backend.app.db.models import COMPARISON_KIND, ORCHESTRATION_PROVIDERS, Check, Connection, Suite
-from backend.app.services.check_dimension import resolve_dimension
+from backend.app.services.check_dimension import derive_dimension
 from backend.app.services.check_service import (
     record_check_version,
     validate_comparison_check,
@@ -219,13 +219,15 @@ def import_suite(
             name=c["name"],
             kind=c["kind"],
             expectation_type=c["expectation_type"],
-            # An older document has no `dimension` key at all; derive it so an
-            # import behaves like a fresh authoring rather than landing a whole
-            # suite as unclassified.
-            dimension=resolve_dimension(
-                expectation_type=c["expectation_type"],
-                kind=c["kind"],
-                explicit=validate_dimension(c.get("dimension")),
+            # Key ABSENT (an older document) → derive, so an import behaves like
+            # fresh authoring. Key PRESENT — including an explicit null → take it
+            # verbatim: a null means "this check is unclassified", and deriving
+            # over it would re-create the very backfill ADR 0038 §5 forbids for
+            # every check that predates the migration.
+            dimension=(
+                validate_dimension(c["dimension"])
+                if "dimension" in c
+                else derive_dimension(expectation_type=c["expectation_type"], kind=c["kind"])
             ),
             source_connection_id=source_id,
             config=c["config"],

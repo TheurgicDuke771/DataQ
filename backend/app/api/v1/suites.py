@@ -346,7 +346,19 @@ def import_suite(
         version=doc.version,
         name=doc.name,
         description=doc.description,
-        checks=[c.model_dump() for c in doc.checks],
+        # `dimension` is dropped when the payload did not SET it, so the service
+        # can tell "an older document omits the field" (→ derive) from "this
+        # document says the check is unclassified" (→ keep NULL). model_dump()
+        # alone emits the key either way, which would classify every pre-ADR-0038
+        # check on import — exactly the backfill ADR 0038 §5 forbids.
+        checks=[
+            {
+                k: v
+                for k, v in c.model_dump().items()
+                if k != "dimension" or "dimension" in c.model_fields_set
+            }
+            for c in doc.checks
+        ],
         connection_id=payload.connection_id,
         created_by=current_user.id,
     )

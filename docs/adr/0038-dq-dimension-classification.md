@@ -28,7 +28,7 @@ Unlike the ADR-0005 severity columns or ADR-0012's `kind`/`metric_value`, a `dim
 
 The canonical six (completeness, uniqueness, validity, accuracy, consistency, timeliness) plus **integrity** — referential/relational correctness, which the six fold into "consistency" and which DataQ can express distinctly once cross-dataset comparison exists (ADR 0015).
 
-Stored as `TEXT` with a table `CHECK` over the vocabulary, matching the `CHECK_KINDS` idiom (`models._in_check`) — **not** a Postgres `ENUM`. An enum type needs `ALTER TYPE` to extend, which is exactly the migration friction this column was deferred to avoid; a `CHECK` constraint is a one-line ALTER and stays visible in the model file next to the other vocabularies.
+Stored as `VARCHAR(32)` with a table `CHECK` over the vocabulary, matching the `CHECK_KINDS` idiom (`models._in_check`) — **not** a Postgres `ENUM`. An enum type needs `ALTER TYPE` to extend, which is exactly the migration friction this column was deferred to avoid; a `CHECK` constraint is a one-line ALTER and stays visible in the model file next to the other vocabularies.
 
 **Closed, not free-form.** A free-text dimension makes the scorecard's coverage view meaningless the first time someone types "Timeliness " with a trailing space — you cannot report "you have no Timeliness checks" against a set you don't control. The cost is that adding an eighth dimension is a migration; that is the right trade for a reporting axis.
 
@@ -79,7 +79,8 @@ Additive nullable column on `checks` **and** on `check_versions` (history must r
 ### 6. Surfaces
 
 - **Check editor** — a dimension select, pre-filled with the derived default, always editable. The derived default is shown as the selected value rather than as a placeholder, so what you see is what gets stored.
-- **Export/import** — `dimension` rides the check document. Absent on import (an older export) → derived, exactly as if freshly authored. The export version does **not** bump: adding an optional field is backward-compatible in both directions, and `EXPORT_VERSION` is documented to bump only on an *incompatible* shape change.
+- **Export/import** — `dimension` rides the check document, and the two cases are distinguished: **absent** (an older export) → derived, exactly as if freshly authored; **present, including an explicit `null`** → taken verbatim, so an unclassified check stays unclassified. Conflating them would re-create §5's forbidden backfill by another door — export always emits the key, so every pre-migration check would be silently classified on the way through. The export version does **not** bump: adding an optional field is backward-compatible in both directions, and `EXPORT_VERSION` is documented to bump only on an *incompatible* shape change.
+- **Changing a check's expectation type** re-derives the dimension in the editor (the create page already resets the whole form on a type change). Keeping the old value would leave the select showing a classification the help text simultaneously claims is "defaulted from the check type" — and it would then be sent explicitly, so a uniqueness check filed as completeness would look like a deliberate override forever. The backend does not re-derive on PATCH: it cannot tell a derived value from an override, so leaving it is the conservative choice, and the editor sends the corrected value.
 - **Scorecard (#889)** — consumes this; not built here.
 
 ## Relationship to ADR 0036

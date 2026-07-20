@@ -242,3 +242,23 @@ describe('CheckEdit — DQ dimension (ADR 0038, #124)', () => {
     expect(mockUpdate.mock.calls[0][2]).toMatchObject({ dimension: undefined });
   });
 });
+
+describe('CheckEdit — re-deriving on an expectation-type change (#124 review)', () => {
+  it('re-derives the dimension when the expectation type changes', async () => {
+    const user = userEvent.setup();
+    mockGetSuite.mockResolvedValue(suite);
+    mockGetConnection.mockResolvedValue(connection);
+    // Stored 'accuracy' on a between-check. Switching the type to a unique-check
+    // must NOT keep 'accuracy' while the help below claims the value is
+    // "defaulted from the check type" — that ships a uniqueness check filed as
+    // accuracy, looking like a deliberate override forever.
+    mockGetCheck.mockResolvedValue(existing);
+    renderPage();
+
+    const typeSelect = await screen.findByLabelText('Expectation');
+    await user.click(typeSelect);
+    await user.click(await screen.findByTitle('Column values unique'));
+
+    expect(await screen.findByText(/Uniqueness —/)).toBeInTheDocument();
+  });
+});

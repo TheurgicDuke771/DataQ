@@ -717,6 +717,33 @@ def test_import_preserves_an_overridden_dimension(client: TestClient, db_session
     assert {c["dimension"] for c in checks} == {"accuracy"}
 
 
+def test_import_preserves_an_explicitly_unclassified_check(
+    client: TestClient, db_session: Any
+) -> None:
+    """The null must round-trip, not derive.
+
+    Export always emits the key, so a check that predates ADR 0038 exports as
+    `"dimension": null`. If import treated that the same as an absent key, every
+    pre-migration check would be silently classified on the way through —
+    attributable to nobody and indistinguishable from a human override, which is
+    exactly the backfill §5 forbids. `null` present ≠ key absent.
+    """
+    src = _suite_with_checks(client, db_session)
+    document = client.get(f"/api/v1/suites/{src}/export").json()
+    for c in document["checks"]:
+        c["dimension"] = None  # a derivable type, explicitly unclassified
+    target = _connection(db_session)
+
+    new_id = client.post(
+        "/api/v1/suites/import",
+        json={"connection_id": str(target.id), "document": document},
+    ).json()["id"]
+
+    checks = client.get(f"/api/v1/suites/{new_id}/checks").json()
+    assert checks
+    assert {c["dimension"] for c in checks} == {None}
+
+
 def test_import_rejects_a_non_canonical_dimension(client: TestClient, db_session: Any) -> None:
     src = _suite_with_checks(client, db_session)
     document = client.get(f"/api/v1/suites/{src}/export").json()
