@@ -42,6 +42,7 @@ from backend.app.datasources.monitors import (
 )
 from backend.app.db.models import (
     COMPARISON_KIND,
+    DQ_DIMENSIONS,
     ORCHESTRATION_PROVIDERS,
     Check,
     CheckVersion,
@@ -50,6 +51,7 @@ from backend.app.db.models import (
     Run,
     Suite,
 )
+from backend.app.services.check_dimension import is_valid_dimension, resolve_dimension
 from backend.app.services.custom_sql import (
     SQL_QUERYABLE_TYPES,
     CustomSqlInvalidError,
@@ -141,6 +143,24 @@ def validate_kind(kind: str) -> None:
             f"check kind {kind!r} is not supported in v1",
             detail={"kind": kind, "supported": sorted(_V1_SUPPORTED_KINDS)},
         )
+
+
+def validate_dimension(dimension: str | None) -> str | None:
+    """Reject a DQ dimension outside the seven canonical ones (422), ADR 0038.
+
+    `None` passes through — it means "not specified, derive it", not "invalid".
+    The vocabulary is closed precisely so the #889 coverage view can say "you have
+    no Timeliness checks"; a typo'd free-text value would make that a lie.
+    """
+    if dimension is not None and not is_valid_dimension(dimension):
+        raise CheckConfigInvalidError(
+            f"unknown DQ dimension {str(dimension)[:_ERROR_ECHO_MAX_CHARS]!r}",
+            detail={
+                "dimension": str(dimension)[:_ERROR_ECHO_MAX_CHARS],
+                "supported": sorted(DQ_DIMENSIONS),
+            },
+        )
+    return dimension
 
 
 # Mirrors the `checks.name` / `checks.expectation_type` column widths (db/models.py)
@@ -515,6 +535,7 @@ def record_check_version(
         name=check.name,
         kind=check.kind,
         expectation_type=check.expectation_type,
+        dimension=check.dimension,
         source_connection_id=check.source_connection_id,
         config=check.config,
         warn_threshold=check.warn_threshold,
@@ -538,9 +559,14 @@ def create_check(
     fail_threshold: Decimal | None,
     critical_threshold: Decimal | None,
     source_connection_id: uuid.UUID | None = None,
+    dimension: str | None = None,
     actor_id: uuid.UUID | None = None,
 ) -> Check:
     """Create a check in a suite, recording its first version (#280).
+
+    `dimension` (ADR 0038) is the author's optional override; omitted, it is
+    DERIVED from the expectation type/kind. Note that omitting it does not mean
+    "unclassified" — only a check whose type has no derivation lands NULL.
 
     Raises `SuiteNotFoundError` (404) if the suite does not exist, or
     `CheckConfigInvalidError` (422) for an unsupported kind.
@@ -584,6 +610,9 @@ def create_check(
         name=name,
         kind=kind,
         expectation_type=expectation_type,
+        dimension=resolve_dimension(
+            expectation_type=expectation_type, kind=kind, explicit=validate_dimension(dimension)
+        ),
         source_connection_id=source_connection_id,
         config=config,
         warn_threshold=warn_threshold,
@@ -629,6 +658,7 @@ def update_check(
     fail_threshold: Decimal | None = None,
     critical_threshold: Decimal | None = None,
     source_connection_id: uuid.UUID | None = None,
+    dimension: str | None = None,
     actor_id: uuid.UUID | None = None,
 ) -> Check:
     """Partial update, snapshotting the post-update state as a new version (#280).
@@ -637,10 +667,14 @@ def update_check(
     argument means "not provided", so an omitted field is left unchanged. v1 has
     no clear-to-NULL path for thresholds; recreate the check to drop one. The
     same applies to `source_connection_id` (a comparison check can be repointed,
-    never cleared — the kind requires it, ADR 0015).
+    never cleared — the kind requires it, ADR 0015). `dimension` (ADR 0038) is
+    re-settable at any time — derivation is a guess about intent, not a fact —
+    but the same convention applies: `None` means "not provided", so it cannot be
+    cleared back to unclassified.
     """
     check = get_check(session, suite_id, check_id)
     validate_lengths(name=name, expectation_type=expectation_type)
+    validate_dimension(dimension)
     if source_connection_id is not None and check.kind != COMPARISON_KIND:
         raise CheckConfigInvalidError(
             "only comparison checks carry a source connection (ADR 0015)",
@@ -710,6 +744,8 @@ def update_check(
         check.fail_threshold = fail_threshold
     if critical_threshold is not None:
         check.critical_threshold = critical_threshold
+    if dimension is not None:
+        check.dimension = dimension
     # Only snapshot a real change: a no-op PATCH (empty body, or fields set to
     # their current values) must not mint a duplicate version — that would fill
     # the history drawer with noise and defeat "see previous config". SQLAlchemy

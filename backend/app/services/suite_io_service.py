@@ -31,9 +31,11 @@ from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.datasources.monitors import MONITOR_KINDS
 from backend.app.db.models import COMPARISON_KIND, ORCHESTRATION_PROVIDERS, Check, Connection, Suite
+from backend.app.services.check_dimension import resolve_dimension
 from backend.app.services.check_service import (
     record_check_version,
     validate_comparison_check,
+    validate_dimension,
     validate_expectation_check,
     validate_kind,
     validate_lengths,
@@ -77,6 +79,7 @@ def export_suite(session: Session, suite: Suite) -> dict[str, Any]:
             "name": c.name,
             "kind": c.kind,
             "expectation_type": c.expectation_type,
+            "dimension": c.dimension,
             "config": c.config,
             "warn_threshold": c.warn_threshold,
             "fail_threshold": c.fail_threshold,
@@ -216,6 +219,14 @@ def import_suite(
             name=c["name"],
             kind=c["kind"],
             expectation_type=c["expectation_type"],
+            # An older document has no `dimension` key at all; derive it so an
+            # import behaves like a fresh authoring rather than landing a whole
+            # suite as unclassified.
+            dimension=resolve_dimension(
+                expectation_type=c["expectation_type"],
+                kind=c["kind"],
+                explicit=validate_dimension(c.get("dimension")),
+            ),
             source_connection_id=source_id,
             config=c["config"],
             warn_threshold=c["warn_threshold"],

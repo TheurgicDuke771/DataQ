@@ -112,6 +112,42 @@ leave them blank for binary in-range pass/fail. On a flat file the count is over
 **resolved batch** — the single file the target's batch pattern selects, not the
 whole prefix.
 
+### DQ dimension (ADR 0038)
+
+Every check carries a **DQ dimension** — the quality aspect it measures. This is a
+third axis, separate from the check *kind* (how it works) and the expectation type
+(the specific rule):
+
+| Dimension | Question it answers |
+|---|---|
+| Accuracy | Does the data match reality / a trusted source? |
+| Completeness | Is all the expected data present? |
+| Consistency | Do related datasets agree with each other? |
+| Integrity | Do relationships between datasets hold? |
+| Timeliness | Is the data recent enough? |
+| Uniqueness | Are there unexpected duplicates? |
+| Validity | Does the data conform to its rules and formats? |
+
+**It is filled in for you.** The editor defaults it from the check type — a
+not-null check is Completeness, a freshness monitor is Timeliness — and you can
+change it at any time, including long after the check was created. Derivation is a
+good guess about intent, not a fact: the same range check is *Validity* when it
+bounds a percentage and *Accuracy* when it asserts a reconciled total.
+
+Two dimensions are **never** guessed. **Accuracy** and **Integrity** can't be
+inferred from the shape of a rule, and a **custom SQL** check is an arbitrary
+predicate with no derivable answer at all — those start blank for you to set.
+
+Leaving it blank is legitimate: the check is recorded as *unclassified* and shows
+up as a **coverage gap** rather than being quietly filed under a dimension it
+doesn't belong to. That matters because the point of dimensions is coverage —
+"this table has no Timeliness checks at all" is the actionable finding, and it
+would be a lie if unclassified checks were silently bucketed.
+
+Checks created before this feature landed are unclassified until you next edit
+them; they were deliberately not bulk-classified, so a derived guess is never
+mistaken for someone's decision.
+
 ### Type names for `expect_column_values_to_be_of_type`
 
 The **Column values are of type** expectation's `type_` field is the one place the

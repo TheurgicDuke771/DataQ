@@ -6,7 +6,11 @@ import { getConnection, listConnections } from '../api/connections';
 import { createCheck, getSuite } from '../api/suites';
 import { buildCheckPayload, buildComparisonPayload } from '../components/checks/checkForm';
 import { ComparisonCheckForm } from '../components/checks/ComparisonCheckForm';
-import { ConfigFieldItem, SeverityThresholdFields } from '../components/checks/checkFormFields';
+import {
+  ConfigFieldItem,
+  DimensionField,
+  SeverityThresholdFields,
+} from '../components/checks/checkFormFields';
 import { ColumnProfilePanel } from '../components/checks/ColumnProfilePanel';
 import { DryRunPreview } from '../components/checks/DryRunPreview';
 import {
@@ -104,6 +108,7 @@ export function CheckNew() {
               <ConfigFieldItem key={field.name} field={field} connectionType={connectionType} />
             ))
           )}
+          <DimensionField spec={spec} initialValue={spec.dimension} />
           <SeverityThresholdFields monitor={spec.thresholds} />
           {suiteId && spec.kind !== 'comparison' && (
             <>

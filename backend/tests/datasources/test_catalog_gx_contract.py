@@ -151,3 +151,53 @@ def test_monitor_fields_match_engine_config_keys() -> None:
     by_kind = {e["kind"]: e["fields"] for e in _monitors()}
     assert by_kind[monitors.FRESHNESS] == ["column"]
     assert sorted(by_kind[monitors.VOLUME]) == ["max_rows", "min_rows"]
+
+
+# ─────────── catalog ↔ dimension-derivation contract (ADR 0038, #124) ──────────
+
+
+def _dimension_params() -> list[Any]:
+    try:
+        return [pytest.param(e, id=e["type"]) for e in _catalog()]
+    except Exception:
+        return []
+
+
+@pytest.mark.parametrize("entry", _dimension_params())
+def test_catalog_dimension_matches_the_backend_derivation(entry: dict[str, Any]) -> None:
+    """The editor pre-fills a check's dimension from the TS catalog, but the
+    BACKEND derivation is what actually gets stored (ADR 0038).
+
+    If the two disagree, the author is shown one classification and a different
+    one is persisted — a silent wrong answer with no error anywhere, and one that
+    would quietly skew the #889 coverage view. There is no compile-time link
+    between a TS object literal and a Python dict, so this is the only thing
+    holding them together.
+    """
+    from backend.app.services.check_dimension import derive_dimension
+
+    derived = derive_dimension(expectation_type=entry["type"], kind=entry["kind"])
+    assert derived == entry["dimension"], (
+        f"{entry['type']}: catalog says {entry['dimension']!r}, "
+        f"backend derives {derived!r} — the maps have drifted"
+    )
+
+
+def test_every_catalog_dimension_is_canonical() -> None:
+    """A catalog value outside the vocabulary would pass the editor's select and
+    then 422 (or violate the table CHECK) at save time."""
+    from backend.app.db.models import DQ_DIMENSIONS
+
+    for entry in _catalog():
+        assert entry["dimension"] is None or entry["dimension"] in DQ_DIMENSIONS
+
+
+def test_custom_sql_is_deliberately_unclassified_in_both_maps() -> None:
+    """Pinned as a decision, not left as an accident (ADR 0038 §3): an arbitrary
+    SQL predicate has no derivable dimension, and guessing one would put confident
+    nonsense in the scorecard."""
+    from backend.app.services.check_dimension import derive_dimension
+
+    entry = next(e for e in _catalog() if e["type"] == CUSTOM_SQL_EXPECTATION_TYPE)
+    assert entry["dimension"] is None
+    assert derive_dimension(expectation_type=entry["type"], kind=entry["kind"]) is None

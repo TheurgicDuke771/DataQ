@@ -286,6 +286,10 @@ class CheckDocument(ApiModel):
     name: str = Field(min_length=1, max_length=256)
     kind: str = "expectation"
     expectation_type: str = Field(min_length=1, max_length=128)
+    # DQ dimension (ADR 0038). Absent on an older export → derived on import,
+    # exactly as if freshly authored. Optional in BOTH directions, so
+    # EXPORT_VERSION does not bump (it bumps only on an incompatible shape).
+    dimension: str | None = None
     config: dict[str, Any] = Field(default_factory=dict)
     # Present only on comparison checks (ADR 0015); resolved on import.
     source_connection: SourceConnectionRef | None = None

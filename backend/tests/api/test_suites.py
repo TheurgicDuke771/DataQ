@@ -668,6 +668,67 @@ def test_export_import_round_trips(client: TestClient, db_session: Any) -> None:
     assert _check_set(reexported["checks"]) == _check_set(document["checks"])
 
 
+def test_export_carries_the_dq_dimension(client: TestClient, db_session: Any) -> None:
+    """ADR 0038 §6 — a document that dropped the dimension would silently
+    reclassify every check on import."""
+    src = _suite_with_checks(client, db_session)
+    document = client.get(f"/api/v1/suites/{src}/export").json()
+    assert all("dimension" in c for c in document["checks"])
+
+
+def test_import_derives_the_dimension_when_a_document_omits_it(
+    client: TestClient, db_session: Any
+) -> None:
+    """An OLDER export has no `dimension` key at all. It must derive, exactly as if
+    freshly authored — importing a whole suite as unclassified would poison the
+    #889 coverage view with a gap that isn't real."""
+    src = _suite_with_checks(client, db_session)
+    document = client.get(f"/api/v1/suites/{src}/export").json()
+    for c in document["checks"]:
+        c.pop("dimension", None)  # simulate a pre-ADR-0038 document
+    target = _connection(db_session)
+
+    new_id = client.post(
+        "/api/v1/suites/import",
+        json={"connection_id": str(target.id), "document": document},
+    ).json()["id"]
+
+    checks = client.get(f"/api/v1/suites/{new_id}/checks").json()
+    assert checks, "fixture must have checks for this to mean anything"
+    derived = {c["expectation_type"]: c["dimension"] for c in checks}
+    assert derived.get("expect_column_values_to_not_be_null") == "completeness"
+
+
+def test_import_preserves_an_overridden_dimension(client: TestClient, db_session: Any) -> None:
+    """A user's override must survive the round trip — otherwise export/import
+    silently reverts every deliberate reclassification to the derived guess."""
+    src = _suite_with_checks(client, db_session)
+    document = client.get(f"/api/v1/suites/{src}/export").json()
+    for c in document["checks"]:
+        c["dimension"] = "accuracy"  # never a derived value for these types
+    target = _connection(db_session)
+
+    new_id = client.post(
+        "/api/v1/suites/import",
+        json={"connection_id": str(target.id), "document": document},
+    ).json()["id"]
+
+    checks = client.get(f"/api/v1/suites/{new_id}/checks").json()
+    assert {c["dimension"] for c in checks} == {"accuracy"}
+
+
+def test_import_rejects_a_non_canonical_dimension(client: TestClient, db_session: Any) -> None:
+    src = _suite_with_checks(client, db_session)
+    document = client.get(f"/api/v1/suites/{src}/export").json()
+    document["checks"][0]["dimension"] = "not_a_dimension"
+    target = _connection(db_session)
+    resp = client.post(
+        "/api/v1/suites/import",
+        json={"connection_id": str(target.id), "document": document},
+    )
+    assert resp.status_code == 422
+
+
 def test_import_unknown_connection_returns_422(client: TestClient, db_session: Any) -> None:
     src = _suite_with_checks(client, db_session)
     document = client.get(f"/api/v1/suites/{src}/export").json()

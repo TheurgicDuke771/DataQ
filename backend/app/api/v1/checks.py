@@ -44,6 +44,10 @@ class CheckCreate(ApiModel):
     # enforces; remaining reserved kinds 422).
     kind: str = "expectation"
     expectation_type: str = Field(min_length=1, max_length=128)
+    # DQ dimension (ADR 0038). Omit to take the derived default; the service
+    # validates against the seven canonical values. Omitting is NOT the same as
+    # "unclassified" — only an underivable type (custom SQL) lands NULL.
+    dimension: str | None = None
     config: dict[str, Any] = Field(default_factory=dict)
     # Comparison source ref (ADR 0015) — required for kind='comparison',
     # rejected on any other kind (service enforces).
@@ -56,6 +60,9 @@ class CheckCreate(ApiModel):
 class CheckUpdate(ApiModel):
     name: str | None = Field(default=None, min_length=1, max_length=256)
     expectation_type: str | None = Field(default=None, min_length=1, max_length=128)
+    # Re-classifiable at any time (ADR 0038 §2) — derivation is a guess about
+    # intent, not a fact. Follows the PATCH convention: None = not provided.
+    dimension: str | None = None
     config: dict[str, Any] | None = None
     # Repoint a comparison check's source (never clearable — the kind requires
     # it); 422 on any other kind.
@@ -73,6 +80,9 @@ class CheckRead(ApiModel):
     name: str
     kind: str
     expectation_type: str
+    # NULL = unclassified (ADR 0038): an underivable type nobody has classified.
+    # Consumers must render it as a coverage gap, never bucket it silently.
+    dimension: str | None = None
     source_connection_id: uuid.UUID | None = None
     config: dict[str, Any]
     warn_threshold: float | None
@@ -107,6 +117,7 @@ def create_check(
         fail_threshold=payload.fail_threshold,
         critical_threshold=payload.critical_threshold,
         source_connection_id=payload.source_connection_id,
+        dimension=payload.dimension,
         actor_id=current_user.id,
     )
     return CheckRead.model_validate(check)
@@ -165,6 +176,7 @@ def update_check(
         fail_threshold=payload.fail_threshold,
         critical_threshold=payload.critical_threshold,
         source_connection_id=payload.source_connection_id,
+        dimension=payload.dimension,
         actor_id=current_user.id,
     )
     return CheckRead.model_validate(check)
@@ -272,6 +284,9 @@ class CheckVersionRead(ApiModel):
     name: str
     kind: str
     expectation_type: str
+    # Snapshotted (ADR 0038): showing the CURRENT dimension against an OLD config
+    # would misreport what the check was at that version.
+    dimension: str | None = None
     source_connection_id: uuid.UUID | None = None
     config: dict[str, Any]
     warn_threshold: float | None

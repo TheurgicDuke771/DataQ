@@ -1,7 +1,7 @@
 import type { CheckCreate } from '../../api/suites';
 
 import { COMPARISON_EXPECTATION_TYPE } from './expectationCatalog';
-import { EXPECTATION_BY_TYPE, type ExpectationSpec } from './expectationCatalog';
+import { EXPECTATION_BY_TYPE, type DqDimension, type ExpectationSpec } from './expectationCatalog';
 
 /**
  * Pure check-authoring form helpers shared by the edit page (`CheckEdit`)
@@ -69,6 +69,12 @@ export function buildCheckPayload(values: Record<string, unknown>): CheckCreate 
     kind: spec?.kind ?? 'expectation',
     expectation_type: values.expectation_type as string,
     config: formToConfig(spec, (values.config ?? {}) as Record<string, unknown>),
+    // ADR 0038. Whatever the form holds, with NO spec fallback. The create page
+    // seeds the derived default via `initialValue`, so it is already in `values`
+    // there — while in EDIT mode a stored NULL must stay NULL. Falling back to
+    // `spec.dimension` here silently reclassified a check someone had
+    // deliberately left unclassified, just because they renamed it.
+    dimension: (values.dimension as DqDimension | undefined) ?? undefined,
     warn_threshold: numOrNull(values.warn_threshold),
     fail_threshold: numOrNull(values.fail_threshold),
     critical_threshold: numOrNull(values.critical_threshold),

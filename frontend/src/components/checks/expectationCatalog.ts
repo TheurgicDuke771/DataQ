@@ -58,6 +58,39 @@ export const COMPARISON_COLUMNS_EXPECTATION_TYPE = 'comparison:columns';
  *  aggregate, so they're offered only on SQL-queryable datasources. */
 export const MONITOR_CATEGORIES: ExpectationCategory[] = ['Freshness', 'Volume'];
 
+/**
+ * The seven canonical DQ dimensions (ADR 0038) — the *semantic quality aspect* a
+ * check measures. A third axis, orthogonal to `kind` (how the monitor works) and
+ * `engine` (what evaluates it).
+ *
+ * `accuracy` and `integrity` are never DERIVED (see each spec's `dimension`):
+ * whether data matches reality, or a relationship holds, is not knowable from a
+ * rule shape. They exist for the author to pick — most often on a custom-SQL
+ * check, the one path with no derivable answer at all.
+ */
+export const DQ_DIMENSIONS = [
+  'accuracy',
+  'completeness',
+  'consistency',
+  'integrity',
+  'timeliness',
+  'uniqueness',
+  'validity',
+] as const;
+
+export type DqDimension = (typeof DQ_DIMENSIONS)[number];
+
+/** One-line "what does this dimension mean" help for the editor's select. */
+export const DQ_DIMENSION_HELP: Record<DqDimension, string> = {
+  accuracy: 'Does the data match reality / a trusted source?',
+  completeness: 'Is all the expected data present?',
+  consistency: 'Do related datasets agree with each other?',
+  integrity: 'Do relationships between datasets hold?',
+  timeliness: 'Is the data recent enough?',
+  uniqueness: 'Are there unexpected duplicates?',
+  validity: 'Does the data conform to its rules and formats?',
+};
+
 export interface ConfigField {
   /** Key in the GX `config` kwargs object. */
   name: string;
@@ -88,6 +121,17 @@ export interface ExpectationSpec {
   label: string;
   description: string;
   category: ExpectationCategory;
+  /**
+   * The DQ dimension this check type measures (ADR 0038) — the editor's derived
+   * default. `undefined` means genuinely underivable (custom SQL is an arbitrary
+   * predicate), which stores as NULL and renders as a coverage gap, NOT as a
+   * dimension to guess at.
+   *
+   * MIRRORS the backend `check_dimension.derive_dimension` map, which is the
+   * authority at write time. The two are pinned together by the catalog contract
+   * fixture — see `catalogContract.test.ts`.
+   */
+  dimension?: DqDimension;
   fields: ConfigField[];
   /** Present for monitor kinds — drives the threshold block's help/bounds/required. */
   thresholds?: MonitorThresholdSpec;
@@ -153,6 +197,7 @@ export function typeFieldHint(connectionType: ConnectionType | undefined): strin
 export const EXPECTATION_CATALOG: ExpectationSpec[] = [
   {
     type: 'expect_column_values_to_not_be_null',
+    dimension: 'completeness',
     label: 'Column values not null',
     description: 'Every value in the column is non-null.',
     category: 'Column values',
@@ -160,6 +205,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
   },
   {
     type: 'expect_column_values_to_be_unique',
+    dimension: 'uniqueness',
     label: 'Column values unique',
     description: 'Values in the column are distinct (no duplicates).',
     category: 'Column values',
@@ -167,6 +213,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
   },
   {
     type: 'expect_column_values_to_be_between',
+    dimension: 'validity',
     label: 'Column values in range',
     description: 'Numeric values fall within [min, max].',
     category: 'Column values',
@@ -178,6 +225,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
   },
   {
     type: 'expect_column_values_to_be_in_set',
+    dimension: 'validity',
     label: 'Column values in set',
     description: 'Every value is one of an allowed set.',
     category: 'Column values',
@@ -193,6 +241,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
   },
   {
     type: 'expect_column_value_lengths_to_be_between',
+    dimension: 'validity',
     label: 'Column value lengths in range',
     description: 'String lengths fall within [min, max].',
     category: 'Column values',
@@ -204,6 +253,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
   },
   {
     type: 'expect_column_values_to_match_regex',
+    dimension: 'validity',
     label: 'Column values match regex',
     description: 'Every value matches the given regular expression.',
     category: 'Column values',
@@ -211,6 +261,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
   },
   {
     type: 'expect_column_values_to_be_of_type',
+    dimension: 'validity',
     label: 'Column values are of type',
     description: 'Every value in the column matches the given data type.',
     category: 'Column values',
@@ -226,6 +277,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
   },
   {
     type: 'expect_table_row_count_to_be_between',
+    dimension: 'completeness',
     label: 'Table row count in range',
     description: 'The table’s row count falls within [min, max].',
     category: 'Table shape',
@@ -236,6 +288,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
   },
   {
     type: 'monitor:freshness',
+    dimension: 'timeliness',
     kind: 'freshness',
     label: 'Freshness',
     description:
@@ -256,6 +309,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
   },
   {
     type: 'monitor:volume',
+    dimension: 'completeness',
     kind: 'volume',
     label: 'Volume',
     description:
@@ -273,6 +327,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
   },
   {
     type: 'monitor:schema_drift',
+    dimension: 'consistency',
     kind: 'schema_drift',
     label: 'Schema drift',
     description:
@@ -307,6 +362,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
   },
   {
     type: COMPARISON_EXPECTATION_TYPE,
+    dimension: 'consistency',
     kind: 'comparison',
     label: 'Records reconciliation',
     description:
@@ -322,6 +378,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
   },
   {
     type: COMPARISON_COLUMNS_EXPECTATION_TYPE,
+    dimension: 'consistency',
     kind: 'comparison',
     label: 'Column-level reconciliation',
     description:

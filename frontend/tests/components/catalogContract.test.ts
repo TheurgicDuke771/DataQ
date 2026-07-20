@@ -27,6 +27,12 @@ function contractShape() {
   return EXPECTATION_CATALOG.map((spec) => ({
     type: spec.type,
     kind: spec.kind ?? 'expectation',
+    // ADR 0038: the catalog's dimension is the editor's derived default and
+    // MIRRORS the backend map. Carrying it in the fixture is what lets the
+    // backend contract test prove the two agree — a silent divergence would show
+    // the author one classification and store another. `null`, not omitted:
+    // "underivable" is a real value the backend must also produce.
+    dimension: spec.dimension ?? null,
     fields: spec.fields.map((f) => f.name),
   }));
 }

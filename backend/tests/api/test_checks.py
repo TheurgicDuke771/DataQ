@@ -1471,3 +1471,105 @@ def test_update_check_other_integrity_error_not_mislabelled_409(
     # TestClient propagates an unhandled server exception to the caller.
     with pytest.raises(IntegrityError):
         client.patch(f"/api/v1/suites/{sid}/checks/{cid}", json={"name": "renamed"})
+
+
+# ───────────────── DQ dimension (ADR 0038, #124) ────────────────────
+
+
+def test_create_derives_the_dimension_when_unspecified(client: TestClient, db_session: Any) -> None:
+    """The common path: nobody should hand-classify a not-null check."""
+    sid = _suite_id(client, db_session)
+    resp = client.post(f"/api/v1/suites/{sid}/checks", json=_payload())
+    assert resp.status_code == 201
+    assert resp.json()["dimension"] == "completeness"
+
+
+def test_create_honours_an_explicit_dimension_over_the_derived_one(
+    client: TestClient, db_session: Any
+) -> None:
+    sid = _suite_id(client, db_session)
+    resp = client.post(f"/api/v1/suites/{sid}/checks", json=_payload(dimension="accuracy"))
+    assert resp.status_code == 201
+    assert resp.json()["dimension"] == "accuracy"
+
+
+def test_create_leaves_an_underivable_check_unclassified(
+    client: TestClient, db_session: Any
+) -> None:
+    """NULL is a real state (ADR 0038 §3), not a failure — a custom-SQL predicate
+    genuinely cannot be classified, and the scorecard must see the gap."""
+    sid = _suite_id(client, db_session)
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks",
+        json=_payload(
+            name="custom",
+            expectation_type="unexpected_rows_expectation",
+            config={"unexpected_rows_query": "SELECT 1 WHERE false"},
+        ),
+    )
+    assert resp.status_code == 201
+    assert resp.json()["dimension"] is None
+
+
+@pytest.mark.parametrize("bad", ["Completeness", "timeliness ", "freshness", "nonsense"])
+def test_create_rejects_a_non_canonical_dimension(
+    client: TestClient, db_session: Any, bad: str
+) -> None:
+    """The vocabulary is closed so coverage reporting can be truthful — a typo'd
+    'timeliness ' would make "you have no Timeliness checks" a lie. Note
+    'freshness' is a KIND, not a dimension: the axes are easy to confuse."""
+    sid = _suite_id(client, db_session)
+    resp = client.post(f"/api/v1/suites/{sid}/checks", json=_payload(dimension=bad))
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "check_config_invalid"
+
+
+def test_dimension_is_reclassifiable_by_patch(client: TestClient, db_session: Any) -> None:
+    """ADR 0038 §2 — derivation is a guess about intent, so the override must be
+    changeable after creation, not only at authoring time."""
+    sid = _suite_id(client, db_session)
+    cid = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()["id"]
+    resp = client.patch(f"/api/v1/suites/{sid}/checks/{cid}", json={"dimension": "integrity"})
+    assert resp.status_code == 200
+    assert resp.json()["dimension"] == "integrity"
+
+
+def test_patch_rejects_a_non_canonical_dimension(client: TestClient, db_session: Any) -> None:
+    sid = _suite_id(client, db_session)
+    cid = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()["id"]
+    resp = client.patch(f"/api/v1/suites/{sid}/checks/{cid}", json={"dimension": "nope"})
+    assert resp.status_code == 422
+    assert client.get(f"/api/v1/suites/{sid}/checks/{cid}").json()["dimension"] == (
+        "completeness"
+    )  # unchanged — a rejected PATCH must leave nothing dirty
+
+
+def test_patch_without_a_dimension_does_not_clear_it(client: TestClient, db_session: Any) -> None:
+    """PATCH convention: None = "not provided". A rename must not silently wipe
+    the classification."""
+    sid = _suite_id(client, db_session)
+    cid = client.post(f"/api/v1/suites/{sid}/checks", json=_payload(dimension="accuracy")).json()[
+        "id"
+    ]
+    resp = client.patch(f"/api/v1/suites/{sid}/checks/{cid}", json={"name": "renamed"})
+    assert resp.status_code == 200
+    assert resp.json()["dimension"] == "accuracy"
+
+
+def test_version_history_snapshots_the_dimension(client: TestClient, db_session: Any) -> None:
+    """Without the snapshot, history would show the CURRENT classification against
+    an OLD config — and a future restore would silently reclassify."""
+    sid = _suite_id(client, db_session)
+    cid = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()["id"]
+    client.patch(f"/api/v1/suites/{sid}/checks/{cid}", json={"dimension": "validity"})
+    versions = client.get(f"/api/v1/suites/{sid}/checks/{cid}/versions").json()
+    # Newest first: v2 carries the override, v1 the derived default.
+    assert [v["dimension"] for v in versions] == ["validity", "completeness"]
+
+
+def test_monitor_kinds_derive_their_dimension(client: TestClient, db_session: Any) -> None:
+    sid = _suite_id(client, db_session)
+    fresh = client.post(f"/api/v1/suites/{sid}/checks", json=_freshness_payload())
+    vol = client.post(f"/api/v1/suites/{sid}/checks", json=_volume_payload())
+    assert fresh.json()["dimension"] == "timeliness"
+    assert vol.json()["dimension"] == "completeness"

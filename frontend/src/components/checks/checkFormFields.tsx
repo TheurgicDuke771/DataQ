@@ -1,4 +1,4 @@
-import { Divider, Flex, Form, Input, InputNumber, Skeleton, Typography } from 'antd';
+import { Divider, Flex, Form, Input, InputNumber, Select, Skeleton, Typography } from 'antd';
 import type { Rule } from 'antd/es/form';
 import { lazy, Suspense } from 'react';
 
@@ -6,9 +6,13 @@ import type { ConnectionType } from '../../api/connections';
 import { parseList } from './checkForm';
 import { validateCustomSqlQuery } from './customSql';
 import {
+  DQ_DIMENSION_HELP,
+  DQ_DIMENSIONS,
   TYPE_FIELD_NAME,
   typeFieldHint,
   type ConfigField,
+  type DqDimension,
+  type ExpectationSpec,
   type MonitorThresholdSpec,
 } from './expectationCatalog';
 
@@ -93,6 +97,54 @@ export function ConfigFieldItem({
       ) : (
         <Input placeholder={field.type === 'list' ? 'value1, value2, value3' : undefined} />
       )}
+    </Form.Item>
+  );
+}
+
+/**
+ * The DQ-dimension select (ADR 0038) — *what quality aspect* this check measures.
+ *
+ * Pre-filled with the spec's derived default as a real selected value, not a
+ * placeholder: what the author sees is what gets stored. Always editable, because
+ * derivation is a guess about intent — the same between-check is Validity bounding
+ * a percentage and Accuracy asserting a reconciled total.
+ *
+ * For an underivable type (custom SQL) it starts empty and stays optional, since
+ * "unclassified" is a legitimate outcome the scorecard renders as a coverage gap.
+ * Deliberately NOT required: forcing a guess would fill the coverage view with
+ * noise, which is exactly what it exists to surface.
+ */
+export function DimensionField({
+  spec,
+  initialValue,
+}: {
+  spec?: ExpectationSpec;
+  initialValue?: DqDimension;
+}) {
+  const derived = spec?.dimension;
+  return (
+    <Form.Item
+      name="dimension"
+      label="DQ dimension"
+      // Only the CREATE page seeds the derived default. In edit mode the stored
+      // value drives the field: applying the default there would silently
+      // reclassify a check deliberately saved as unclassified, just because
+      // someone opened the editor.
+      initialValue={initialValue}
+      extra={
+        derived
+          ? 'Defaulted from the check type — change it if this check means something else.'
+          : 'This check type has no obvious dimension. Pick one, or leave blank to record it as unclassified.'
+      }
+    >
+      <Select
+        allowClear
+        placeholder="Unclassified"
+        options={DQ_DIMENSIONS.map((d: DqDimension) => ({
+          value: d,
+          label: `${d.charAt(0).toUpperCase()}${d.slice(1)} — ${DQ_DIMENSION_HELP[d]}`,
+        }))}
+      />
     </Form.Item>
   );
 }

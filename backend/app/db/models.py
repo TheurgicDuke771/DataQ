@@ -77,6 +77,21 @@ def worst_severity(statuses: Iterable[str]) -> str | None:
 # constraint-valid but unused.
 CHECK_KINDS = ("expectation", "freshness", "volume", "schema_drift", "anomaly", "comparison")
 COMPARISON_KIND = "comparison"
+# DQ dimensions (ADR 0038) — the *semantic quality aspect* a check measures, a
+# third axis orthogonal to `kind` (how the monitor works) and `engine` (what
+# evaluates it). Closed vocabulary on purpose: coverage reporting ("this asset
+# has no Timeliness checks") is meaningless against a set we don't control.
+# NULL is a real state — see `check_dimension.derive_dimension`, which is
+# deliberately partial.
+DQ_DIMENSIONS = (
+    "accuracy",
+    "completeness",
+    "consistency",
+    "integrity",
+    "timeliness",
+    "uniqueness",
+    "validity",
+)
 PIPELINE_RUN_STATUSES = ("queued", "running", "succeeded", "failed", "cancelled")
 ORCHESTRATION_PROVIDERS = ("adf", "airflow", "dbt")
 PERMISSIONS = ("view", "edit", "admin")
@@ -408,6 +423,7 @@ class Check(Base):
     __tablename__ = "checks"
     __table_args__ = (
         _in_check("kind", CHECK_KINDS, "kind_valid"),
+        _in_check("dimension", DQ_DIMENSIONS, "dimension_valid"),
         # ADR 0015: a comparison check carries its source (baseline) ref; every
         # other kind must not. Presence ⇔ kind, DB-enforced so the run path can
         # trust a comparison row always has a source.
@@ -430,6 +446,13 @@ class Check(Base):
         String(32), nullable=False, server_default=text("'expectation'")
     )
     expectation_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    # DQ dimension (ADR 0038) — what quality aspect this check measures. Defaulted
+    # from `expectation_type`/`kind` at author time and then STORED, so #889 can
+    # GROUP BY it in SQL and a user's override survives a re-read. Nullable
+    # because derivation is partial by design: custom SQL is an arbitrary
+    # predicate, and accuracy/integrity are never derivable. NULL = unclassified,
+    # which the scorecard renders as a coverage gap — never silently bucketed.
+    dimension: Mapped[str | None] = mapped_column(String(32))
     # Comparison source ref (ADR 0015): the baseline connection this check diffs
     # the suite's dataset (the target under test) against. Non-NULL exactly for
     # kind='comparison' (table CHECK above). RESTRICT: deleting a referenced
@@ -526,6 +549,12 @@ class CheckVersion(Base):
     name: Mapped[str] = mapped_column(String(256), nullable=False)
     kind: Mapped[str] = mapped_column(String(32), nullable=False)
     expectation_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    # DQ dimension as at this version (ADR 0038). Snapshotted like every other
+    # editable field: without it, viewing history would show a check's CURRENT
+    # classification against an OLD config, and a future restore would silently
+    # reclassify. Deliberately NOT CHECK-constrained here — a snapshot records
+    # what was, and history must not become unwritable if the vocabulary changes.
+    dimension: Mapped[str | None] = mapped_column(String(32))
     # Comparison source ref as a plain UUID — deliberately NO FK (ADR 0015/0020):
     # a snapshot must outlive a later repoint + delete of the old source
     # connection, so history never blocks a connection delete.

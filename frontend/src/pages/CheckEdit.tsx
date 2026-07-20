@@ -6,7 +6,11 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { type ConnectionType, getConnection } from '../api/connections';
 import { type Check, getCheck, getSuite, updateCheck } from '../api/suites';
 import { buildCheckPayload, configToForm } from '../components/checks/checkForm';
-import { ConfigFieldItem, SeverityThresholdFields } from '../components/checks/checkFormFields';
+import {
+  ConfigFieldItem,
+  DimensionField,
+  SeverityThresholdFields,
+} from '../components/checks/checkFormFields';
 import { CheckHistoryDrawer } from '../components/checks/CheckHistoryDrawer';
 import { ColumnProfilePanel } from '../components/checks/ColumnProfilePanel';
 import { DryRunPreview } from '../components/checks/DryRunPreview';
@@ -125,6 +129,10 @@ function CheckEditForm({
       name: check.name,
       expectation_type: check.expectation_type,
       config: configToForm(EXPECTATION_BY_TYPE[check.expectation_type], check.config),
+      // The STORED value, not the derived default (ADR 0038): an override must
+      // survive a re-open, and a check saved as unclassified must not silently
+      // acquire a classification just because someone opened the editor.
+      dimension: check.dimension ?? undefined,
       warn_threshold: check.warn_threshold ?? undefined,
       fail_threshold: check.fail_threshold ?? undefined,
       critical_threshold: check.critical_threshold ?? undefined,
@@ -146,6 +154,7 @@ function CheckEditForm({
       const update = isComparison
         ? {
             name: values.name as string,
+            dimension: (values.dimension as string | undefined) ?? null,
             warn_threshold:
               typeof values.warn_threshold === 'number' ? values.warn_threshold : null,
             fail_threshold:
@@ -200,6 +209,7 @@ function CheckEditForm({
             {configFieldsFor(spec, connectionType).map((field) => (
               <ConfigFieldItem key={field.name} field={field} connectionType={connectionType} />
             ))}
+            <DimensionField spec={spec} />
           </>
         )}
 
