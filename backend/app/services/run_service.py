@@ -51,6 +51,7 @@ from backend.app.db.models import (
 from backend.app.services import run_dispatch, suite_service
 from backend.app.services.column_classification import ColumnClass, classify_column, is_sensitive
 from backend.app.services.failure_classifier import classify_failure_reason
+from backend.app.services.rollup import status_histograms
 from backend.app.services.severity import resolve_status
 
 log = get_logger(__name__)
@@ -397,18 +398,11 @@ def check_outcome_counts(
 
     Lets the runs list surface a run's *data-quality* outcome — distinct from the
     run's *execution* status, which is ``succeeded`` even when checks failed."""
-    if not run_ids:
-        return {}
-    rows = session.execute(
-        select(Result.run_id, Result.status, func.count())
-        .where(Result.run_id.in_(run_ids))
-        .group_by(Result.run_id, Result.status)
-    ).all()
-    by_run: dict[uuid.UUID, dict[str, int]] = defaultdict(dict)
-    for run_id, status, n in rows:
-        by_run[run_id][status] = n
     out: dict[uuid.UUID, tuple[int, int, str | None]] = {}
-    for run_id, by_status in by_run.items():
+    # A fold over the ONE shared histogram query (#889) — this used to build the
+    # same `{status: count}` mapping itself and then discard it, which is exactly
+    # the shape the health score needs.
+    for run_id, by_status in status_histograms(session, run_ids).items():
         passed = by_status.get("pass", 0)
         # Worst check outcome via the single shared severity helper (#655); skip/error
         # aren't failing tiers, so they never rank.

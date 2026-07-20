@@ -12,7 +12,6 @@ reading Postgres directly (a Grafana panel) is rejected as the product surface
 from __future__ import annotations
 
 import uuid
-from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 
@@ -21,65 +20,23 @@ from sqlalchemy.orm import Session
 
 from backend.app.db.models import Result, Run, Suite
 from backend.app.services import suite_service
+from backend.app.services.rollup import (
+    health_score,
+    latest_runs_per_suite_stmt,
+    pass_rate,
+    performance_state,
+)
 
-# ── health score (ADR 0005) ──────────────────────────────────────────────────
-# Fixed penalty weights; W_MAX (the critical weight) normalises into [0, 100] so
-# all-fail scores 50, not the floor — critical stays meaningfully worse than fail.
-# Deliberately separate from the shared `db.models.SEVERITY_RANK` (#655): that is a
-# discrete worst-outcome *ordering* over the failing tiers, whereas these are
-# continuous *weights* that also score `pass` (0.0) — a different concept.
-# nosec B105 — the keys are severity tiers (ADR 0005), not credentials; bandit
-# flags the "pass": 0.0 pair as a "hardcoded password" purely on the key name.
-_PENALTY: Mapping[str, float] = {
-    "pass": 0.0,
-    "warn": 0.5,
-    "fail": 1.0,
-    "critical": 2.0,
-}  # nosec B105
-_W_MAX = 2.0
-# Only the four severity tiers count toward the score / pass-rate. `skip` and
-# `error` did not evaluate a severity, so they are excluded from N rather than
-# treated as a pass (ADR 0005 covers the four tiers only).
-_SEVERITY_STATUSES: tuple[str, ...] = tuple(_PENALTY)
-
-# Health-score bands for the per-suite performance state label.
-_OPTIMAL_MIN = 90.0
-_STABLE_MIN = 60.0
-
-
-def health_score(counts: Mapping[str, int]) -> float | None:
-    """ADR-0005 health score from a status histogram, or ``None`` when no
-    severity results are in scope.
-
-    ``100 * (1 - penalty_sum / (N * 2.0))`` over the four tiers. 100 = all pass,
-    0 = all critical, 50 = all fail, 75 = all warn; ``{fail, fail, pass, pass}``
-    -> 75.0. Rounded to 1 dp for display stability.
-    """
-    n = sum(counts.get(s, 0) for s in _SEVERITY_STATUSES)
-    if n == 0:
-        return None
-    penalty = sum(_PENALTY[s] * counts.get(s, 0) for s in _SEVERITY_STATUSES)
-    return round(100.0 * (1.0 - penalty / (n * _W_MAX)), 1)
-
-
-def pass_rate(counts: Mapping[str, int]) -> float | None:
-    """Share of evaluated (severity) results that passed, 0-100, or ``None`` when
-    nothing evaluated. Excludes `skip`/`error` from the denominator (as the score)."""
-    n = sum(counts.get(s, 0) for s in _SEVERITY_STATUSES)
-    if n == 0:
-        return None
-    return round(100.0 * counts.get("pass", 0) / n, 1)
-
-
-def performance_state(score: float | None) -> str:
-    """Coarse state label for a suite's health score (prototype Suite Performance)."""
-    if score is None:
-        return "unknown"
-    if score >= _OPTIMAL_MIN:
-        return "optimal"
-    if score >= _STABLE_MIN:
-        return "stable"
-    return "critical"
+# The ADR-0005 score math now lives in `services/rollup.py`, shared with the asset
+# view and the #889 scorecard (one helper, not one-per-consumer). Re-exported here
+# because the dashboard API/MCP layers and its tests import them from this module,
+# and because "the dashboard's health score" is still a meaningful name for them.
+__all__ = [
+    "dashboard_summary",
+    "health_score",
+    "pass_rate",
+    "performance_state",
+]
 
 
 # ── summary shape ────────────────────────────────────────────────────────────
@@ -202,14 +159,9 @@ def _suite_performance(
     A suite with no run, or whose latest run wrote no results (a hard-failed run
     rolls back its results), is omitted — there is no health to show.
     """
-    # DISTINCT ON (suite_id) ordered by created_at desc → the latest run per suite.
-    latest = (
-        select(Run.id, Run.suite_id)
-        .where(Run.suite_id.in_(accessible))
-        .order_by(Run.suite_id, Run.created_at.desc())
-        .distinct(Run.suite_id)
-        .subquery()
-    )
+    # The shared latest-run-per-suite statement (#889) — kept in SQL here and
+    # inner-joined, which is what drops a suite whose latest run wrote no results.
+    latest = latest_runs_per_suite_stmt(accessible).subquery()
     stmt = (
         select(Suite.id, Suite.name, Result.status, func.count())
         .select_from(latest)
