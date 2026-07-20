@@ -85,7 +85,7 @@ server-side.
 
 ### Freshness monitor (all datasources — ADR 0012/0030)
 
-*How stale is the table?* Point it at the load/updated **timestamp column**; the check
+*How stale is the target?* Point it at the load/updated **timestamp column**; the check
 measures hours since `MAX(column)` and bands that age with the thresholds. A **fail or
 critical threshold is required** — without one, a freshness check could never fail.
 

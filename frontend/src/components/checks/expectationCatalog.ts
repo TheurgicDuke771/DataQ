@@ -239,7 +239,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
     kind: 'freshness',
     label: 'Freshness',
     description:
-      'How stale is the table? Measures hours since the latest value in a timestamp column.',
+      'How stale is the target? Measures hours since the latest timestamp in the data — or, on a flat file with no column set, since the file last landed.',
     category: 'Freshness',
     fields: [
       {
