@@ -150,6 +150,7 @@ erDiagram
         string name
         string kind "expectation (v1) / freshness / volume / ..."
         string expectation_type
+        string dimension "DQ dimension (ADR 0038) — nullable; NULL = unclassified"
         numeric warn_threshold
         numeric fail_threshold
         numeric critical_threshold
@@ -171,6 +172,7 @@ erDiagram
         string name
         string kind
         string expectation_type
+        string dimension "DQ dimension (ADR 0038) — nullable; NULL = unclassified"
         jsonb config
         numeric warn_threshold
         numeric fail_threshold

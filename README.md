@@ -19,6 +19,12 @@
   provenance and blast radius, from dbt's manifest or an OpenLineage catalog), and open
   incidents. Assets are the primary lens — the dashboard and sidebar lead with them (ADR
   0034). [Concepts →](https://theurgicduke771.github.io/DataQ/concepts/)
+- **Quality by dimension** — every check is classified (accuracy, completeness,
+  consistency, integrity, timeliness, uniqueness, validity), filled in automatically from
+  the check type. The asset **scorecard** turns that into the question people actually
+  ask: not just "are the checks passing" but **"what isn't being watched at all"** — an
+  asset with no Timeliness checks says so, and never shows a green tick for it.
+  [Dimensions →](https://theurgicduke771.github.io/DataQ/datasources-checks/)
 - **Three run modes** — run now (live progress + cancel), **cron schedules**
   (timezone/DST-aware), and **pipeline triggers**: ADF, Airflow **and dbt** runs are
   monitored, and a successful pipeline can trigger the bound suite. [Scheduling →](https://theurgicduke771.github.io/DataQ/scheduling/) · [Orchestration →](https://theurgicduke771.github.io/DataQ/orchestration/)

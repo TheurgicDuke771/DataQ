@@ -24,15 +24,23 @@ Stores you write checks **against** (see [Datasources & checks](datasources-chec
 
 Every check is a Great Expectations expectation in v1 (`check.kind`), authored in the UI:
 
+- **DQ dimension** — every check is classified by the quality aspect it measures
+  (accuracy, completeness, consistency, integrity, timeliness, uniqueness, validity).
+  It is filled in for you from the check type and stays editable; it powers the asset
+  **scorecard** below. See [Datasources & checks](datasources-checks.md#dq-dimension-adr-0038).
+
 - **GX expectations** — column- and table-shape rules (not-null, unique, in-set, row
   count, value ranges, …) from the GX catalog, with a form editor.
 - **Custom SQL** — an escape hatch for cross-column/join rules: rows returned = failures.
   Read-only, single-statement (enforced). SQL datasources only.
-- **Freshness monitor** — hours since the latest timestamp (is the data stale?).
+- **Freshness monitor** — hours since the latest timestamp (is the data stale?). On a
+  flat file you can leave the timestamp column blank, and it measures when the **file
+  last landed** instead — which catches a producer that stopped sending files, something
+  a timestamp inside the data cannot see.
 - **Volume monitor** — row count within an expected range (did the load land whole?).
-  Freshness + volume are the auto-monitor kinds; run on monitor-capable datasources —
-  the SQL datasources (Snowflake / Unity Catalog) plus Apache Iceberg, computed natively
-  via a `pyiceberg` scan rather than SQL.
+  Freshness + volume are the auto-monitor kinds and run on **every** datasource: the SQL
+  datasources (Snowflake / Unity Catalog), Apache Iceberg (computed natively via a
+  `pyiceberg` scan rather than SQL), and ADLS Gen2 / S3 flat files.
 - **Column profiler** — nulls, distinct count, min/max, and top values for a column, on
   any datasource — the baseline you set thresholds from.
 - **Dry-run preview** — run one check against live data **without persisting**, on every
@@ -71,6 +79,12 @@ Four ways a suite runs (all the same authz — [feature matrix](feature-matrix.m
   severity-weighted **health score**, pass rate, run counts, average duration, per-day
   trends, and per-suite performance. Assets are the primary lens (ADR 0034 nav inversion):
   the sidebar leads with **Assets** above Suites, and every suite/run links back to its asset.
+- **Asset DQ scorecard** — per-dimension coverage and score on the asset page: which
+  quality dimensions have checks, how they scored on the latest run, and — the part
+  worth acting on — which dimensions have **no checks at all**. Three states are kept
+  distinct on purpose: a score, "no signal" (checks exist but none evaluated), and
+  "not covered" (no checks) — an asset nobody watches never shows a green tick. The
+  numbers are workspace-wide, so two people looking at one asset see one verdict.
 - **Asset browse** — two lenses over the same assets: a **By source** drill-down
   (datasource → database/catalog → schema → table, with env + health on each leaf) and a
   flat, searchable **All assets** table. Both open the asset detail (health across suites,
