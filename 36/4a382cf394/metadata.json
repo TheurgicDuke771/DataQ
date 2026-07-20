@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "364a382cf394",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-124-dq-dimension",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/services/check_service.py",
+    "backend/tests/api/test_checks.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/36/4a382cf394/0/metadata.json",
+      "transcript": "/36/4a382cf394/0/full.jsonl",
+      "compact_transcript": "/36/4a382cf394/0/transcript.jsonl",
+      "content_hash": "/36/4a382cf394/0/content_hash.txt",
+      "prompt": "/36/4a382cf394/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 706,
+    "cache_creation_tokens": 1312480,
+    "cache_read_tokens": 114659414,
+    "output_tokens": 232783,
+    "api_call_count": 374
+  }
+}
