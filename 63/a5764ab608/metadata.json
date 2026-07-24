@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "63a5764ab608",
+  "strategy": "manual-commit",
+  "branch": "docs/dependency-triage-2026-07-24",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/63/a5764ab608/0/metadata.json",
+      "transcript": "/63/a5764ab608/0/full.jsonl",
+      "compact_transcript": "/63/a5764ab608/0/transcript.jsonl",
+      "content_hash": "/63/a5764ab608/0/content_hash.txt",
+      "prompt": "/63/a5764ab608/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 276,
+    "cache_creation_tokens": 678467,
+    "cache_read_tokens": 17800616,
+    "output_tokens": 73095,
+    "api_call_count": 140
+  }
+}
