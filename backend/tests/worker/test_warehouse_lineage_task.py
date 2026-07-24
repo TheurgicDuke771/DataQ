@@ -57,7 +57,7 @@ def test_task_refreshes_each_connection_and_is_fail_soft(monkeypatch: Any) -> No
     session = _Session(conns)
     monkeypatch.setattr(tasks, "get_settings", lambda: _settings(enabled=True))
     monkeypatch.setattr(tasks, "get_session", lambda: session)
-    monkeypatch.setattr(tasks, "get_secret_store", lambda: object())
+    monkeypatch.setattr(tasks, "get_secret_store", object)
 
     seen: list[str] = []
 
