@@ -1,6 +1,8 @@
 import Editor, { loader } from '@monaco-editor/react';
 import * as monaco from 'monaco-editor';
-import editorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
+// monaco-editor 0.56 added an `exports` map ("./*.js": "./esm/vs/*.js"), so the
+// `esm/vs/` prefix is now implicit and the old deep path no longer resolves.
+import editorWorker from 'monaco-editor/editor/editor.worker.js?worker';
 
 /**
  * Monaco SQL editor as an antd-Form-compatible controlled field (custom-SQL
