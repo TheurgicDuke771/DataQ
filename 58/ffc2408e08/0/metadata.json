@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "58ffc2408e08",
+  "session_id": "33af1d38-f9ba-4523-8367-e7aba99cffe4",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-24T23:33:05.478305Z",
+  "branch": "dependabot/npm_and_yarn/frontend/monaco-editor-0.56.0",
+  "checkpoints_count": 2,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "40ace2c2254d",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 186,
+    "cache_creation_tokens": 484347,
+    "cache_read_tokens": 10127649,
+    "output_tokens": 55858,
+    "api_call_count": 95
+  },
+  "session_metrics": {
+    "turn_count": 2
+  }
+}
