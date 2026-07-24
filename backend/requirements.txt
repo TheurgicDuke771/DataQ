@@ -66,4 +66,4 @@ adlfs==2026.5.0                   # pyiceberg FileIO for abfss:// (ADLS) warehou
 openlineage-python==1.51.0        # Apache-2.0 (rule 40); emits DQ RunEvents, dark by default. Core deps only (attrs/requests/httpx/pyyaml/python-dateutil/packaging) — no kafka/gcp extras
 
 # ── MCP (Week 7) ──
-fastmcp==3.4.3                    # CVE-2025-62800/62801/64340/69196, GHSA-rcfx-77hg-w2wv, CVE-2026-27124 (was 2.8.1)
+fastmcp==3.4.4                    # CVE-2025-62800/62801/64340/69196, GHSA-rcfx-77hg-w2wv, CVE-2026-27124 (was 2.8.1)
