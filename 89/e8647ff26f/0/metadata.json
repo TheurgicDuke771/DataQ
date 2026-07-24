@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "89e8647ff26f",
+  "session_id": "33af1d38-f9ba-4523-8367-e7aba99cffe4",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-24T23:34:34.658926Z",
+  "branch": "chore/codeql-56-unnecessary-lambda",
+  "checkpoints_count": 2,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "40ace2c2254d",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 206,
+    "cache_creation_tokens": 489808,
+    "cache_read_tokens": 11728754,
+    "output_tokens": 59496,
+    "api_call_count": 105
+  },
+  "session_metrics": {
+    "turn_count": 2
+  }
+}
