@@ -1,0 +1,13 @@
+What is the current state of project?
+
+---
+
+there are bunch of open PRs and code ql issues, can you triage them
+
+---
+
+PRs - 
+Merge all 8, then make the necessary changes to the other 4. 
+
+CodeQL - 
+Resolve all 6
