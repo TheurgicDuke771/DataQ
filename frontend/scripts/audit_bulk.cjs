@@ -29,6 +29,59 @@ const semver = require('semver');
 const BULK_URL = 'https://registry.npmjs.org/-/npm/v1/security/advisories/bulk';
 const SEVERITY_RANK = { info: 0, low: 1, moderate: 2, high: 3, critical: 4 };
 
+/**
+ * Documented exceptions: advisories that DO match our resolved graph but whose
+ * vulnerable code path is unreachable in this application.
+ *
+ * This is deliberately hostile to drift, because a security allowlist that rots
+ * is worse than no gate at all:
+ *
+ *   - Keyed by GHSA id AND package name, so the same id waived for one package
+ *     never silently waives a different one.
+ *   - Scoped to a `versions` semver range. A matched version OUTSIDE that range
+ *     still fails, so waiving one dependency line never blankets the others.
+ *   - Every entry carries the reason it is unreachable and the issue tracking
+ *     its removal. No bare ids.
+ *   - A STALE entry (one that matches nothing) is a hard failure, not a
+ *     shrug — once the dependency is upgraded, the exception must be deleted.
+ *     That is the forcing function; do not weaken it to a warning.
+ *
+ * Add an entry only when the vulnerable feature is genuinely not reachable —
+ * never merely because the upgrade is inconvenient.
+ */
+const ALLOWLIST = [
+  {
+    ghsa: 'GHSA-qwww-vcr4-c8h2',
+    package: 'react-router',
+    versions: '7.x',
+    reason:
+      'RSC-mode CSRF bypass. DataQ is a Vite SPA mounting the router declaratively ' +
+      'via <BrowserRouter> (src/main.tsx) — no RSC mode, no server actions, no ' +
+      'unstable_ RSC entry points. Only patch is react-router 8.x (a major bump).',
+    issue: '#968',
+  },
+  {
+    ghsa: 'GHSA-mh99-v99m-4gvg',
+    package: 'brace-expansion',
+    versions: '1.x',
+    reason:
+      'OOM DoS on unbounded expansion. Patched only in 5.0.8, and the 1.x line ends ' +
+      'at 1.1.16 — but minimatch@3 (dev-only: eslint, config-array, eslint-plugin-react) ' +
+      'declares ^1.1.7 and calls the default export that v5 dropped, so forcing v5 ' +
+      'breaks lint outright. Never bundled, never runs in prod, and the only globs it ' +
+      'expands are our own eslint.config.js patterns. Our 5.x line IS on patched 5.0.8.',
+    issue: '#969',
+  },
+];
+
+/** The GHSA id for an advisory, from its id field or its /advisories/<id> url. */
+function advisoryGhsaId(advisory) {
+  const fromUrl = String(advisory.url ?? '').match(/(GHSA-[0-9a-z-]+)/i);
+  if (fromUrl) return fromUrl[1];
+  const id = String(advisory.id ?? '');
+  return /^GHSA-/i.test(id) ? id : null;
+}
+
 function parseArgs(argv) {
   const levelArg = argv.find((a) => a.startsWith('--audit-level='));
   const level = levelArg ? levelArg.split('=')[1] : 'high';
@@ -107,6 +160,7 @@ async function main() {
 
   const advisories = await fetchAdvisories(packages);
   const failing = [];
+  const waived = new Set();
   let reported = 0;
   for (const [name, entries] of Object.entries(advisories)) {
     const ourVersions = [...(packages.get(name) ?? [])];
@@ -128,7 +182,24 @@ async function main() {
       if (hit.length === 0) continue;
       reported += 1;
       const severity = String(advisory.severity ?? '').toLowerCase();
-      const line = `${severity.toUpperCase().padEnd(8)} ${name}@${hit.join(',')} — ${advisory.title} (${advisory.url})`;
+      const ghsa = advisoryGhsaId(advisory);
+      const waiver = ALLOWLIST.find((w) => w.ghsa === ghsa && w.package === name);
+
+      // Only the versions the waiver actually covers are excused; anything else
+      // this advisory matched still counts against the gate.
+      const excused = waiver ? hit.filter((v) => semver.satisfies(v, waiver.versions)) : [];
+      if (excused.length > 0) waived.add(waiver);
+      const remaining = hit.filter((v) => !excused.includes(v));
+
+      if (excused.length > 0) {
+        console.log(
+          `WAIVED   ${severity.toUpperCase().padEnd(8)} ${name}@${excused.join(',')} — ${advisory.title} (${advisory.url})\n` +
+            `         ↳ ${waiver.reason} (tracked in ${waiver.issue})`,
+        );
+      }
+      if (remaining.length === 0) continue;
+
+      const line = `${severity.toUpperCase().padEnd(8)} ${name}@${remaining.join(',')} — ${advisory.title} (${advisory.url})`;
       console.log(line);
       if ((SEVERITY_RANK[severity] ?? SEVERITY_RANK.critical) >= SEVERITY_RANK[level]) {
         failing.push(line);
@@ -138,8 +209,22 @@ async function main() {
 
   console.log(
     `\naudited ${packages.size} packages from pnpm-lock.yaml — ` +
-      `${reported} advisories matched, ${failing.length} at ${level}+`,
+      `${reported} advisories matched, ${waived.size} waived, ${failing.length} at ${level}+`,
   );
+
+  // A waiver that no longer matches anything means the dependency moved on and
+  // the exception outlived its reason. Fail: a security allowlist nobody prunes
+  // is how an unreachable advisory quietly becomes a reachable one.
+  const stale = ALLOWLIST.filter((w) => !waived.has(w));
+  if (stale.length > 0) {
+    console.error(
+      '\nstale allowlist entries — these advisories no longer match the locked graph, ' +
+        'so the exception is obsolete. DELETE them from ALLOWLIST in this script:',
+    );
+    for (const w of stale) console.error(`  ${w.ghsa} (${w.package}) — tracked in ${w.issue}`);
+    process.exit(2);
+  }
+
   if (failing.length > 0) process.exit(1);
 }
 
