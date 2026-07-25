@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "bd5a39ce1e03",
+  "strategy": "manual-commit",
+  "branch": "test/issue-787-hoist-assert-side-effects",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/tests/api/test_runs.py",
+    "backend/tests/test_assert_hygiene.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/bd/5a39ce1e03/0/metadata.json",
+      "transcript": "/bd/5a39ce1e03/0/full.jsonl",
+      "compact_transcript": "/bd/5a39ce1e03/0/transcript.jsonl",
+      "content_hash": "/bd/5a39ce1e03/0/content_hash.txt",
+      "prompt": "/bd/5a39ce1e03/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 22256,
+    "cache_creation_tokens": 4088108,
+    "cache_read_tokens": 331275241,
+    "output_tokens": 547627,
+    "api_call_count": 900
+  }
+}
