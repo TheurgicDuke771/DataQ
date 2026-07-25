@@ -124,9 +124,17 @@ jobs:
     runs-on: ubuntu-latest
     # Ephemeral Postgres for DB-backed integration tests (seed/run/endpoint).
     # Matches the compose image; gen_random_uuid() is built in to PG16.
+    #
+    # Pulled from OUR GHCR mirror, not Docker Hub (#993). Service containers are
+    # pulled by the runner BEFORE any step runs, so an anonymous-pull throttle
+    # killed this required job before pytest started — twice in one day. The
+    # mirror is a digest-for-digest copy refreshed weekly by
+    # `mirror-ci-images.yml`, which also refuses a major-version drift: the
+    # `redis:7` pin is a SECURITY gate (#980 — Redis 8 bundles Vector Sets, an
+    # unpatched RCE surface), and Dependabot does not watch Docker image tags.
     services:
       postgres:
-        image: postgres:16-alpine
+        image: ghcr.io/theurgicduke771/ci-postgres:16-alpine
         env:
           POSTGRES_USER: dataq
           POSTGRES_PASSWORD: dataq
@@ -140,7 +148,7 @@ jobs:
           --health-retries 10
       # Redis broker for the real-broker E2E (dispatch -> worker round-trip).
       redis:
-        image: redis:7-alpine
+        image: ghcr.io/theurgicduke771/ci-redis:7-alpine
         ports:
           - 6379:6379
         options: >-
@@ -301,7 +309,7 @@ jobs:
     # No Azure / datasource creds: connectivity fails-soft, the UI paths are real.
     services:
       postgres:
-        image: postgres:16-alpine
+        image: ghcr.io/theurgicduke771/ci-postgres:16-alpine
         env:
           POSTGRES_USER: dataq
           POSTGRES_PASSWORD: dataq
@@ -314,7 +322,7 @@ jobs:
           --health-timeout 3s
           --health-retries 10
       redis:
-        image: redis:7-alpine
+        image: ghcr.io/theurgicduke771/ci-redis:7-alpine
         ports:
           - 6379:6379
         options: >-
