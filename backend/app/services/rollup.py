@@ -47,14 +47,19 @@ from backend.app.db.models import RESULT_SEVERITY_TIERS, Result, Run
 # all-fail scores 50, not the floor — critical stays meaningfully worse than fail.
 # Deliberately separate from `db.models.SEVERITY_RANK` (#655) — see the module
 # docstring.
-# nosec B105 — the keys are severity tiers (ADR 0005), not credentials; bandit
-# flags the "pass": 0.0 pair as a "hardcoded password" purely on the key name.
+# The keys are severity tiers (ADR 0005), not credentials. Historically bandit
+# flagged the "pass": 0.0 pair as a hardcoded password purely on the key name; the
+# CI-pinned version no longer does, so the B105 suppression was dropped (#806). If a
+# later bandit bump re-flags it, CI fails loudly — re-add a BARE suppression comment
+# carrying only the test id, and keep prose like this on its own line above it.
+# Bandit parses everything after the suppression token as a test-id list, so any
+# explanation sharing that line becomes one warning per word.
 _PENALTY: Mapping[str, float] = {
     "pass": 0.0,
     "warn": 0.5,
     "fail": 1.0,
     "critical": 2.0,
-}  # nosec B105
+}
 _W_MAX = 2.0
 
 # Only the four severity tiers count toward the score / pass-rate. `skip` and

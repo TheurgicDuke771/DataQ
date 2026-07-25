@@ -19,14 +19,25 @@ You will receive a response within **5 business days** acknowledging the report.
 
 Components in scope:
 - FastAPI backend (`/api/v1/*`, `/mcp`)
-- Authentication flow — OIDC sign-in (`oidc-client-ts`, Azure AD validated) + backend JWT validation (`fastapi-azure-auth`)
+- Authentication flow — generic OIDC sign-in (`oidc-client-ts`) + backend token validation, and personal access tokens
 - Celery worker + GX execution path
-- Key Vault secret access patterns
+- Secret-store access patterns (the `SecretStore` seam; Azure Key Vault is the validated implementation)
 
 Out of scope:
 - Vulnerabilities in third-party dependencies — report those upstream; we track them via Dependabot
-- Issues requiring physical access to Azure infrastructure
+- Issues requiring physical access to the infrastructure a deployment runs on
 
 ## Supported versions
 
-Only the latest commit on `main` is supported. There are no versioned releases in the v1 development phase.
+DataQ follows [Semantic Versioning](https://semver.org/), with releases tagged in this
+repository and curated in [CHANGELOG.md](../CHANGELOG.md).
+
+| Version | Supported |
+|---|---|
+| `main` (latest commit) | Yes — fixes land here first |
+| Latest tagged release (currently **v1.0.0**) | Yes |
+| Older tagged releases | No |
+
+Security fixes are applied to `main` and ship in the next release. There is no long-term
+support branch and no backporting to superseded tags — if you are running an older tag,
+upgrade to the latest release to pick up a fix.

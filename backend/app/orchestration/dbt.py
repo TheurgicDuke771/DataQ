@@ -52,7 +52,10 @@ _DBT_FAILURE_STATUSES = frozenset({"error", "fail", "runtime error"})
 _EVENT_STATUS_MAP = {
     "success": "succeeded",
     "succeeded": "succeeded",
-    "pass": "succeeded",  # nosec B105 — dbt result status, not a password
+    # "pass" here is a dbt result status, not a password (see the #806 note in
+    # services/rollup.py); the CI-pinned bandit no longer flags it, so the B105
+    # suppression was dropped.
+    "pass": "succeeded",
     "error": "failed",
     "fail": "failed",
     "failed": "failed",

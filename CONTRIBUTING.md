@@ -72,7 +72,7 @@ All checks run on every PR and must pass before merge.
 13. **Python:** Ruff (lint) → Black `--check` (format) → mypy (types) → Bandit (SAST) → pytest (from Week 8).
 14. **Frontend:** ESLint → Prettier `--check` → Vitest (from Week 8).
 15. **Secret scanning:** betterleaks in pre-commit hook AND in CI. A secret detected in CI blocks merge.
-16. **SAST:** Bandit (Python) + CodeQL (GitHub Actions) on every PR.
+16. **SAST:** Bandit (Python) + CodeQL (GitHub Actions) on every PR. **Suppression hygiene (#806):** a bandit suppression comment carries the test id and *nothing else* — put the justification on its own comment line above it, and never write the suppression token inside prose. Bandit parses everything after that token as a test-id list, so an inline explanation emits one warning per word, and a comment merely *mentioning* the token does the same. Prefer deleting a suppression the pinned bandit no longer needs: `bandit -q -r backend/app -c pyproject.toml` must emit **zero** warnings, so a dead suppression is visible rather than ambient noise that hides a real finding.
 17. **Dependency vulnerability scanning:** Dependabot alerts + auto-PRs for security updates, plus a synchronous CI gate (`pip-audit` backend, `pnpm audit` frontend). Python deps are pinned in `backend/requirements*.txt` (single source of truth; `environment.yml` and CI install from there).
 
 ---

@@ -144,9 +144,11 @@ def _sql_read(
         # validator (ADR 0019) at author time AND immediately above. The
         # newline before the closing paren keeps a trailing `-- comment` (legal
         # per the validator) from swallowing the wrapper's tail.
-        count_sql = f"SELECT COUNT(*) FROM (\n{q}\n) __dataq_src"  # noqa: S608  # nosec B608
+        # The bandit B608 suppression was dropped (#806) — the CI-pinned version no
+        # longer flags these. `# noqa: S608` stays: Ruff still does, so it is live.
+        count_sql = f"SELECT COUNT(*) FROM (\n{q}\n) __dataq_src"  # noqa: S608
         select_sql = (
-            f"SELECT * FROM (\n{q}\n) __dataq_src "  # noqa: S608  # nosec B608
+            f"SELECT * FROM (\n{q}\n) __dataq_src "  # noqa: S608
             f"LIMIT {int(max_rows) + 1}"
         )
         count_stmt = sa.text(count_sql)
