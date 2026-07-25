@@ -996,5 +996,7 @@ def resolve_batch_file(
                 batch=batch,
             )
     finally:
-        if scanned >= _BATCH_LISTING_WARN_AT:
+        # Only when the listing was large but still answered: a refused listing has
+        # already logged its own error, and two lines about one event reads as two.
+        if _BATCH_LISTING_WARN_AT <= scanned < _BATCH_LISTING_MAX:
             log.warning("flatfile_batch_listing_large", scanned=scanned, conn_type=conn_type)
