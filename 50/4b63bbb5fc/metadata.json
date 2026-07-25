@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "504b63bbb5fc",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-928-pipeline-runs-paging",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/api/v1/runs.py",
+    "backend/app/services/orchestration_service.py",
+    "backend/tests/api/test_runs.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/50/4b63bbb5fc/0/metadata.json",
+      "transcript": "/50/4b63bbb5fc/0/full.jsonl",
+      "compact_transcript": "/50/4b63bbb5fc/0/transcript.jsonl",
+      "content_hash": "/50/4b63bbb5fc/0/content_hash.txt",
+      "prompt": "/50/4b63bbb5fc/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 16930,
+    "cache_creation_tokens": 1130455,
+    "cache_read_tokens": 115519900,
+    "output_tokens": 219777,
+    "api_call_count": 342
+  }
+}
