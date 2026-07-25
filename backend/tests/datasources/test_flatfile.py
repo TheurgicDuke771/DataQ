@@ -206,18 +206,32 @@ def _patch_store(
     monkeypatch: pytest.MonkeyPatch,
     *,
     mtime: datetime | None = _LANDED,
-    csv: bytes = b"id,load_ts\n1,2026-06-29T00:00:00\n2,2026-06-28T00:00:00\n",
+    content: bytes = b"id,load_ts\n1,2026-06-29T00:00:00\n2,2026-06-28T00:00:00\n",
     reads: list[int] | None = None,
+    ranges: list[tuple[int, int]] | None = None,
 ) -> None:
-    """Stub both live seams: the listing (arrival time) and the download."""
+    """Stub every live seam over ONE canned object: arrival time, the whole-object
+    download, and the range reads (#882/#942).
+
+    All three serve the same bytes, so a test can assert *which* seam a code path
+    chose — the difference between "counted the rows" and "counted the rows
+    without pulling a 2 GB object" is invisible if the fake only exposes one way in.
+    """
     monkeypatch.setattr(flatfile, "file_last_modified", lambda **k: mtime)
 
     def _download(**_k: Any) -> bytes:
         if reads is not None:
             reads.append(1)
-        return csv
+        return content
+
+    def _read_range(*, start: int, length: int, **_k: Any) -> bytes:
+        if ranges is not None:
+            ranges.append((start, length))
+        return content[start : start + length]
 
     monkeypatch.setattr(flatfile, "download_bytes", _download)
+    monkeypatch.setattr(flatfile, "object_size", lambda **k: len(content))
+    monkeypatch.setattr(flatfile, "read_range", _read_range)
 
 
 def test_volume_monitor_counts_rows_of_the_resolved_batch(
@@ -400,7 +414,7 @@ def test_an_all_null_freshness_column_cannot_be_assessed(
 ) -> None:
     """An empty MAX must route through "can't be assessed", never age zero — a
     silent green on a column that carries no timestamps at all."""
-    _patch_store(monkeypatch, csv=b"id,load_ts\n1,\n2,\n")
+    _patch_store(monkeypatch, content=b"id,load_ts\n1,\n2,\n")
     out = _monitor_runner().run_monitors(
         table="raw/orders.csv", schema=None, monitors=[_spec("freshness", column="load_ts")]
     )
@@ -426,8 +440,7 @@ def test_freshness_column_works_on_a_real_parquet_round_trip(
     pd.DataFrame(
         {"id": [1, 2], "load_ts": pd.to_datetime(["2026-06-28", "2026-06-29"])}
     ).to_parquet(buf)
-    _patch_store(monkeypatch)
-    monkeypatch.setattr(flatfile, "download_bytes", lambda **k: buf.getvalue())
+    _patch_store(monkeypatch, content=buf.getvalue())
 
     out = _monitor_runner().run_monitors(
         table="raw/orders.parquet",
@@ -442,8 +455,7 @@ def test_freshness_column_works_on_a_real_parquet_round_trip(
 def test_volume_works_on_a_real_parquet_round_trip(monkeypatch: pytest.MonkeyPatch) -> None:
     buf = io.BytesIO()
     pd.DataFrame({"id": [1, 2, 3]}).to_parquet(buf)
-    _patch_store(monkeypatch)
-    monkeypatch.setattr(flatfile, "download_bytes", lambda **k: buf.getvalue())
+    _patch_store(monkeypatch, content=buf.getvalue())
     out = _monitor_runner().run_monitors(
         table="raw/orders.parquet", schema=None, monitors=[_spec("volume", min_rows=3, max_rows=5)]
     )
@@ -455,8 +467,7 @@ def test_arrow_backed_numeric_is_still_refused(monkeypatch: pytest.MonkeyPatch) 
     check must not accidentally let `int64[pyarrow]` through."""
     buf = io.BytesIO()
     pd.DataFrame({"id": [1, 2], "order_no": [1001, 1002]}).to_parquet(buf)
-    _patch_store(monkeypatch)
-    monkeypatch.setattr(flatfile, "download_bytes", lambda **k: buf.getvalue())
+    _patch_store(monkeypatch, content=buf.getvalue())
     out = _monitor_runner().run_monitors(
         table="raw/orders.parquet", schema=None, monitors=[_spec("freshness", column="order_no")]
     )
@@ -471,7 +482,7 @@ def test_a_numeric_freshness_column_is_refused_not_read_as_epoch_offsets(
     as epoch offsets, so a freshness monitor pointed at an id column would date the
     data to 1970 and fire CRITICAL staleness forever — a confident wrong answer,
     and one that looks exactly like a real incident. It must refuse instead."""
-    _patch_store(monkeypatch, csv=b"id,order_no\n1,1001\n2,1002\n")
+    _patch_store(monkeypatch, content=b"id,order_no\n1,1001\n2,1002\n")
     out = _monitor_runner().run_monitors(
         table="raw/orders.csv", schema=None, monitors=[_spec("freshness", column="order_no")]
     )
@@ -494,7 +505,7 @@ def test_csv_string_timestamps_are_parsed_not_string_compared(
     assert the parser's guess rather than our behaviour."""
     _patch_store(
         monkeypatch,
-        csv=b"id,load_ts\n1,2026-Nov-30 00:00\n2,2026-Dec-01 00:00\n",
+        content=b"id,load_ts\n1,2026-Nov-30 00:00\n2,2026-Dec-01 00:00\n",
     )
     out = _monitor_runner().run_monitors(
         table="raw/orders.csv", schema=None, monitors=[_spec("freshness", column="load_ts")]
@@ -516,7 +527,7 @@ def test_a_mostly_unparseable_freshness_column_is_refused(
     parse time, so it is dropped as a NULL long before this guard and behaves
     correctly already. Only junk pandas keeps as a string reaches the coercion."""
     rows = b"".join(b"%d,pending\n" % i for i in range(9))
-    _patch_store(monkeypatch, csv=b"id,load_ts\n" + rows + b"9,2020-01-01\n")
+    _patch_store(monkeypatch, content=b"id,load_ts\n" + rows + b"9,2020-01-01\n")
     out = _monitor_runner().run_monitors(
         table="raw/orders.csv", schema=None, monitors=[_spec("freshness", column="load_ts")]
     )
@@ -529,7 +540,7 @@ def test_a_minority_of_junk_still_parses_like_nulls(monkeypatch: pytest.MonkeyPa
     """The inverse guard: a few bad values behave like NULLs (matching `MAX` in
     SQL), so the threshold must not turn ordinary dirty data into an outage."""
     rows = b"".join(b"%d,2020-01-0%d\n" % (i, (i % 9) + 1) for i in range(9))
-    _patch_store(monkeypatch, csv=b"id,load_ts\n" + rows + b"9,n/a\n")
+    _patch_store(monkeypatch, content=b"id,load_ts\n" + rows + b"9,n/a\n")
     out = _monitor_runner().run_monitors(
         table="raw/orders.csv", schema=None, monitors=[_spec("freshness", column="load_ts")]
     )
@@ -539,7 +550,7 @@ def test_a_minority_of_junk_still_parses_like_nulls(monkeypatch: pytest.MonkeyPa
 def test_an_unparseable_text_freshness_column_cannot_be_assessed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _patch_store(monkeypatch, csv=b"id,load_ts\n1,not-a-date\n2,also-not\n")
+    _patch_store(monkeypatch, content=b"id,load_ts\n1,not-a-date\n2,also-not\n")
     out = _monitor_runner().run_monitors(
         table="raw/orders.csv", schema=None, monitors=[_spec("freshness", column="load_ts")]
     )
@@ -1076,3 +1087,137 @@ def test_blob_service_builds_against_account_url() -> None:
         assert client.account_name == "acct"
     finally:
         client.close()
+
+
+# ── bounded reads (#882 / #942) ──
+
+
+def _parquet(rows: int = 3) -> bytes:
+    buf = io.BytesIO()
+    pd.DataFrame(
+        {"id": range(rows), "load_ts": pd.date_range("2026-06-01", periods=rows)}
+    ).to_parquet(buf, index=False)
+    return buf.getvalue()
+
+
+def test_a_volume_monitor_never_materialises_the_file_as_a_dataframe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#942's headline: a nightly row count on a multi-GB Parquet used to pull the
+    whole object into worker memory and fully materialise it as a pandas frame.
+
+    Asserted by observing the SEAM taken, not the count — the count was always
+    right, which is exactly why this went unnoticed. A correctness-only assertion
+    passes with or without the fix.
+    """
+    reads: list[int] = []
+    _patch_store(monkeypatch, content=_parquet(), reads=reads)
+
+    out = _monitor_runner().run_monitors(
+        table="raw/orders.parquet", schema=None, monitors=[_spec("volume", min_rows=3, max_rows=5)]
+    )
+
+    assert out[0].errored is False and out[0].metric_value == 0.0
+    assert reads == [], "the whole object was downloaded to produce a row count"
+
+
+def test_a_parquet_row_count_reads_only_a_fraction_of_the_object(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Parquet states its own row count in the footer, so the count should cost a
+    couple of small range GETs rather than the object — whatever its size."""
+    content = _parquet(rows=20_000)
+    ranges: list[tuple[int, int]] = []
+    _patch_store(monkeypatch, content=content, ranges=ranges)
+
+    assert (
+        flatfile.row_count(conn_type="s3", config={}, path="raw/orders.parquet", secret="s")
+        == 20_000
+    )
+    assert ranges, "no range read was issued at all"
+    assert sum(length for _, length in ranges) < len(content)
+
+
+def test_a_csv_row_count_is_not_a_newline_count(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A CSV has no footer, so rows must be scanned — but counting newlines would
+    be a *plausible wrong answer*: a quoted field may legally contain one. Trading
+    an exact count for a believable one is the trade this codebase keeps paying for.
+    """
+    content = b'a,b\n1,"line one\nline two"\n2,"x"\n'
+    _patch_store(monkeypatch, content=content)
+
+    assert flatfile.row_count(conn_type="s3", config={}, path="raw/x.csv", secret="s") == 2
+
+
+def test_volume_and_column_freshness_together_read_the_object_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#942 AC 2. Column freshness genuinely needs the frame; volume must then come
+    off that frame rather than issuing a second, independent read of the same file."""
+    reads: list[int] = []
+    ranges: list[tuple[int, int]] = []
+    _patch_store(monkeypatch, content=_parquet(), reads=reads, ranges=ranges)
+
+    out = _monitor_runner().run_monitors(
+        table="raw/orders.parquet",
+        schema=None,
+        monitors=[_spec("volume", min_rows=1, max_rows=10), _spec("freshness", column="load_ts")],
+    )
+
+    assert [o.errored for o in out] == [False, False]
+    assert len(reads) == 1
+    assert ranges == [], "a second read was issued alongside the frame the run already had"
+
+
+def test_a_failing_row_count_is_attempted_once_not_once_per_monitor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The count gets the same attempt-memo the frame has. Without it, three volume
+    monitors on one target re-scan a failing object three times, and a transient
+    failure yields inconsistent outcomes inside a single run."""
+    attempts: list[int] = []
+    _patch_store(monkeypatch, content=_parquet())
+
+    def _boom(**_k: Any) -> int:
+        attempts.append(1)
+        raise RuntimeError("store unreachable")
+
+    monkeypatch.setattr(flatfile, "row_count", _boom)
+    out = _monitor_runner().run_monitors(
+        table="raw/orders.parquet",
+        schema=None,
+        monitors=[_spec("volume", min_rows=1, max_rows=2) for _ in range(3)],
+    )
+
+    assert [o.errored for o in out] == [True, True, True]
+    assert len(attempts) == 1
+
+
+def test_a_csv_head_read_drops_a_row_the_range_cut_in_half(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A byte range almost always ends mid-row, and a half-row parses as a COMPLETE
+    row with empty trailing fields — silently changing an inferred dtype. So the
+    trailing partial line is discarded before parsing."""
+    content = b"id,name\n" + b"".join(b"%d,abcdefghij\n" % i for i in range(200_000))
+    _patch_store(monkeypatch, content=content)
+    monkeypatch.setattr(flatfile, "_CSV_HEAD_BYTES", 5_000)
+
+    df = flatfile.read_csv_head(conn_type="s3", config={}, path="x.csv", secret="s", rows=100_000)
+
+    assert list(df.columns) == ["id", "name"]
+    # Every row that survived is whole — a truncated tail would show as a NaN name.
+    assert df["name"].notna().all()
+    assert len(df) < 200_000  # it really was a bounded read
+
+
+def test_a_range_reader_coalesces_small_sequential_reads(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Reading a footer apart in small steps must not become one request per step —
+    swapping one download for thousands of round trips is not an improvement."""
+    _patch_store(monkeypatch, content=b"x" * 100_000)
+    reader = flatfile.RangeReader(conn_type="s3", config={}, path="x.parquet", secret="s")
+
+    for _ in range(50):
+        reader.read(8)
+
+    assert reader.requests == 1

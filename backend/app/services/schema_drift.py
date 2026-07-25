@@ -30,15 +30,13 @@ Known limits, stated up front: CSV types come from pandas inference over a
 bounded row sample, so a value-shape change inside the sampled window (a NULL
 appearing in an int column → ``float64``) reports a type change even though the
 feed's declared schema never moved — ``ignore_columns`` or a re-baseline is the
-workaround for known-noisy columns. And the flat-file paths read the object
-through the existing ``download_bytes`` seam (like the profiler), so a Parquet
-footer read still downloads the whole blob today — a range-read is a filed
-follow-up, not a promise this module keeps yet.
+workaround for known-noisy columns. The flat-file paths now read through the
+``RangeReader`` seam (#882), so a Parquet footer costs a couple of small range
+GETs and a CSV sample a single head read — neither downloads the object.
 """
 
 from __future__ import annotations
 
-import io
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -51,7 +49,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
 from backend.app.datasources.base import CheckOutcome
-from backend.app.datasources.flatfile import download_bytes, read_csv_bytes
+from backend.app.datasources.flatfile import RangeReader, read_csv_head
 from backend.app.datasources.iceberg import (
     IcebergConfig,
     iceberg_credentials,
@@ -198,21 +196,32 @@ def _file_columns(
     file_format: str | None,
     secret_store: SecretStore,
 ) -> list[ColumnSpec]:
-    """Column names+types of a flat file: the Parquet footer schema (exact, no
-    data read) or a bounded CSV sample (pandas dtype inference)."""
+    """Column names+types of a flat file: the Parquet footer schema (exact) or a
+    bounded CSV sample (pandas dtype inference).
+
+    Both are **bounded reads** (#882): Parquet lands on its footer through
+    `RangeReader`, and the CSV sample is a head range. This runs on every
+    scheduled schema-drift run and on every dry-run preview, so downloading a
+    multi-GB object to read its column names was the #854 shape — full egress and
+    worker memory for a few hundred bytes of answer.
+    """
     fmt = infer_file_format(path, file_format)
     secret = secret_store.get(connection.secret_ref or "")
-    raw = io.BytesIO(
-        download_bytes(
-            conn_type=connection.type, config=connection.config, path=path, secret=secret
-        )
-    )
+    reader_args: dict[str, Any] = {
+        "conn_type": connection.type,
+        "config": connection.config,
+        "path": path,
+        "secret": secret,
+    }
     if fmt == "csv":
-        df = read_csv_bytes(raw, nrows=_CSV_TYPE_SAMPLE_ROWS)
+        # A head range, not the object: enough for the header plus the type
+        # sample. A truncated final row is dropped rather than mis-typed — see
+        # `read_csv_head`.
+        df = read_csv_head(**reader_args, rows=_CSV_TYPE_SAMPLE_ROWS)
         return [{"name": str(col), "type": str(dtype)} for col, dtype in df.dtypes.items()]
     import pyarrow.parquet as pq
 
-    arrow_schema = pq.ParquetFile(raw).schema_arrow
+    arrow_schema = pq.ParquetFile(RangeReader(**reader_args)).schema_arrow
     return [{"name": field.name, "type": str(field.type)} for field in arrow_schema]
 
 
