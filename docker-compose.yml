@@ -30,6 +30,9 @@ services:
       retries: 10
 
   redis:
+    # Pinned to 7.x deliberately — Redis 8 bundles the Vector Sets module, which
+    # carries an unpatched duplicate-HNSW-ID RCE (see #980 before bumping). Nothing
+    # in DataQ uses VSET; 7.x simply does not expose the command surface.
     image: redis:7-alpine
     restart: unless-stopped
     ports:
