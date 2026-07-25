@@ -224,7 +224,9 @@ def _db_engine() -> "Iterator[object]":
 # can fail a run. In CI both services are up, so the warning never fires.
 # ---------------------------------------------------------------------------
 
-_PROBE_TIMEOUT_S = 1.5
+# libpq silently clamps connect_timeout below 2, so 2 is the honest floor —
+# advertising 1.5 would describe a budget the driver does not honour.
+_PROBE_TIMEOUT_S = 2
 _FIX_HINT = "docker compose up -d postgres redis  (or scripts/test-backend.sh)"
 
 
@@ -234,17 +236,32 @@ def _probe_postgres() -> str | None:
         return "no TEST_DATABASE_URL and no local .env Postgres creds"
     try:
         from sqlalchemy import create_engine, text
+        from sqlalchemy.engine import make_url
+    except Exception:  # pragma: no cover - sqlalchemy is a hard dep
+        return None  # can't probe → say nothing rather than cry wolf
 
-        engine = create_engine(
-            TEST_DATABASE_URL,
-            future=True,
-            connect_args={"connect_timeout": int(_PROBE_TIMEOUT_S)},
-        )
+    # `connect_timeout` is a libpq/psycopg option. Passing it to any other driver
+    # raises at connect time, which would be swallowed below and reported as
+    # "not reachable" — a false alarm about a perfectly healthy database. Only
+    # attach it when the URL actually names a psycopg driver.
+    connect_args: dict[str, object] = {}
+    try:
+        if make_url(TEST_DATABASE_URL).drivername.startswith("postgresql+psycopg"):
+            connect_args["connect_timeout"] = _PROBE_TIMEOUT_S
+    except Exception:
+        return None  # unparseable URL — not our story to tell
+
+    try:
+        engine = create_engine(TEST_DATABASE_URL, future=True, connect_args=connect_args)
         try:
             with engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
         finally:
             engine.dispose()
+    except TypeError:
+        # Driver rejected our connect_args — the probe could not run. That is
+        # NOT evidence the database is down, so never claim that it is.
+        return None
     except Exception:
         return "not reachable"
     return None
@@ -293,21 +310,33 @@ def _infra_status() -> list[tuple[str, str | None]]:
 
 
 def pytest_report_header() -> list[str]:
-    """State infra reachability before the run, so a degraded pass is visible
-    from the first line rather than inferred from a skip count at the end."""
+    """State infra reachability up front.
+
+    A convenience for plain `pytest`, NOT the guarantee — pytest gates header
+    output on `verbosity >= 0`, so `-q` discards these lines entirely. The
+    terminal-summary banner below is what actually holds under `-q`.
+    """
     lines = []
     for label, reason in _infra_status():
         lines.append(f"test infra: {label} — {'OK' if reason is None else reason.upper()}")
     if any(reason for _, reason in _infra_status()):
-        lines.append(f"test infra: DEGRADED — DB-backed tests will skip. Fix: {_FIX_HINT}")
+        lines.append(f"test infra: DEGRADED — see the banner at the end. Fix: {_FIX_HINT}")
     return lines
 
 
+@pytest.hookimpl(trylast=True)
 def pytest_terminal_summary(terminalreporter: object) -> None:
-    """Re-state a degraded run at the end, where the summary line is read.
+    """Re-state a degraded run immediately above the final summary line.
 
-    The header scrolls away on a long run; this is the part that stops a
-    third-coverage pass from being mistaken for a green one.
+    This is the load-bearing half: `-q` suppresses the header entirely (pytest
+    gates it on verbosity >= 0), and `-q` is exactly the invocation that hid the
+    problem.
+
+    `trylast=True` is REQUIRED, not tidiness. conftest hookimpls are registered
+    last and therefore called FIRST, so without it this banner prints *above*
+    pytest-cov's terminal summary — and `addopts` carries
+    `--cov-report=term-missing`, whose table is ~140 lines on the full suite.
+    The banner would scroll off exactly like the header it exists to back up.
     """
     down = [(label, reason) for label, reason in _infra_status() if reason]
     if not down:
@@ -325,7 +354,7 @@ def pytest_terminal_summary(terminalreporter: object) -> None:
     # SKIP, while a missing secret store makes them FAIL. Claiming skips on a run
     # that had none would be the exact defect this banner exists to prevent.
     if skipped:
-        write(f"  {skipped} test(s) skipped — the DB-backed tests are among them.", red=True)
+        write(f"  {skipped} test(s) skipped — some of these need the missing service.", red=True)
     if broke:
         write(
             f"  {broke} test(s) failed/errored — likely for this reason, not a code defect.",
