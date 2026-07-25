@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "63afe4f0f020",
+  "strategy": "manual-commit",
+  "branch": "test/issue-278-custom-sql-mutation-gaps",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/63/afe4f0f020/0/metadata.json",
+      "transcript": "/63/afe4f0f020/0/full.jsonl",
+      "compact_transcript": "/63/afe4f0f020/0/transcript.jsonl",
+      "content_hash": "/63/afe4f0f020/0/content_hash.txt",
+      "prompt": "/63/afe4f0f020/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 22326,
+    "cache_creation_tokens": 4723397,
+    "cache_read_tokens": 352707102,
+    "output_tokens": 579101,
+    "api_call_count": 935
+  }
+}
