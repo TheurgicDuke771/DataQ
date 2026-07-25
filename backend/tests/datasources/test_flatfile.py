@@ -811,8 +811,23 @@ def test_resolve_batch_unknown_strategy_raises() -> None:
         flatfile.resolve_batch(_BATCH_FILES, pattern=_PATTERN, strategy="earliest")
 
 
+def _fake_listing(files: list[Any]) -> Any:
+    """A stub for `iter_files` that is a real GENERATOR, like the seam it replaces.
+
+    Deliberately not `iter(list)`: the live seam owns a client it releases in a
+    `finally`, so callers may close it — and a stub that isn't closeable would
+    hide a caller doing exactly that. A fixture must not be easier to satisfy than
+    the thing it stands in for.
+    """
+
+    def _gen(**_kwargs: Any) -> Any:
+        yield from files
+
+    return _gen
+
+
 def test_resolve_batch_file_lists_then_resolves(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(flatfile, "list_files", lambda **kwargs: _BATCH_FILES)
+    monkeypatch.setattr(flatfile, "iter_files", _fake_listing(_BATCH_FILES))
     got = flatfile.resolve_batch_file(
         conn_type="s3", config={}, secret="s", prefix="data/", pattern=_PATTERN
     )
@@ -1405,3 +1420,173 @@ def test_a_malformed_freshness_column_errors_only_its_own_monitor(
 
     assert [o.errored for o in out] == [False, True]
     assert out[0].metric_value == 0.0  # the valid sibling still produced a result
+
+
+# ── bounded batch listing (#943) ──
+
+
+def test_resolve_batch_consumes_a_one_shot_iterator(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The listing is streamed, so resolution gets ONE pass over it. A second pass
+    would silently see an exhausted iterator and pick from nothing."""
+    files = iter(_BATCH_FILES)
+    assert flatfile.resolve_batch(files, pattern=_PATTERN) == "data/orders_2026-06-03.csv"
+
+
+def test_resolve_batch_holds_only_the_running_best_not_the_listing() -> None:
+    """#943's actual defect: every matching object was retained in a list, on a path
+    that runs per scheduled run, for a prefix whose history only grows.
+
+    Asserted by RETENTION — weakrefs to each yielded entry, checked after the fold.
+    A correctness assertion passes either way (the answer was always right), and a
+    "did it stream?" assertion is easy to write so loosely that it measures the
+    test's own bookkeeping instead of the code's.
+    """
+    import gc
+    import weakref
+
+    seen: list[Any] = []
+    peak: list[int] = []
+
+    def _huge() -> Any:
+        for index, year in enumerate(range(2000, 4000)):
+            # Measure BEFORE creating this entry, so our own loop variable isn't
+            # counted. Measuring after the fold returns would prove nothing — every
+            # local dies at return, so even a full materialisation looks clean.
+            if index and index % 500 == 0:
+                gc.collect()
+                peak.append(sum(1 for ref in seen if ref() is not None))
+            entry = flatfile.FileRef(f"data/orders_{year}-01-01.csv", _dt(1))
+            seen.append(weakref.ref(entry))
+            yield entry
+
+    got = flatfile.resolve_batch(_huge(), pattern=_PATTERN)
+
+    assert got == "data/orders_3999-01-01.csv"
+    # The running bests, plus the entry the consumer is holding at the checkpoint.
+    assert peak and max(peak) <= 4, f"peak retention {max(peak)} of {len(seen)} listed entries"
+
+
+@pytest.mark.parametrize(
+    ("files", "kwargs"),
+    [
+        (_BATCH_FILES, {"pattern": _PATTERN}),
+        (_BATCH_FILES, {"pattern": _PATTERN, "strategy": "specific", "batch": "2026-06-02"}),
+        # No capture group → the mtime fallback, including its path tie-break.
+        (
+            [flatfile.FileRef("a/load.csv", _dt(5)), flatfile.FileRef("b/load.csv", _dt(5))],
+            {"pattern": r"load\.csv"},
+        ),
+        # An optional group that didn't participate on some files.
+        (
+            [
+                flatfile.FileRef("orders_.csv", _dt(9)),
+                flatfile.FileRef("orders_2026-06-01.csv", _dt(1)),
+            ],
+            {"pattern": r"orders_(\d{4}-\d{2}-\d{2})?\.csv"},
+        ),
+        # Two files sharing the greatest batch key — first-seen must win, as `max` did.
+        (
+            [
+                flatfile.FileRef("data/orders_2026-06-03.csv", _dt(1)),
+                flatfile.FileRef("x/data/orders_2026-06-03.csv", _dt(9)),
+            ],
+            {"pattern": _PATTERN},
+        ),
+    ],
+)
+def test_the_streaming_fold_picks_what_the_old_max_did(files: Any, kwargs: Any) -> None:
+    """Equivalence guard for the rewrite. `max()` returns the FIRST maximal element;
+    a fold using `>` keeps the first too — but only if written that way, and a
+    `>=` would silently flip every tie. Pinned against the original formulation."""
+    import re as _re
+
+    compiled = _re.compile(kwargs["pattern"])
+    matches = [(f, m) for f in files if (m := compiled.search(f.path))]
+    if kwargs.get("strategy") == "specific":
+        hits = [f for f, m in matches if m.groups() and m.group(1) == kwargs["batch"]]
+        expected = flatfile._most_recent(hits)
+    else:
+        keyed = [(f, m.group(1)) for f, m in matches if m.groups() and m.group(1) is not None]
+        expected = (
+            max(keyed, key=lambda fk: fk[1])[0].path
+            if keyed
+            else flatfile._most_recent([f for f, _ in matches])
+        )
+
+    assert flatfile.resolve_batch(iter(files), **kwargs) == expected
+
+
+def test_a_runaway_prefix_is_refused_rather_than_answered_from_a_partial_scan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Both stores list ASCENDING, so the newest key — the one `latest` wants — is
+    exactly what a truncated scan misses. Answering from a partial listing would
+    return a confidently wrong, older batch; refusing is the honest outcome."""
+    monkeypatch.setattr(flatfile, "_BATCH_LISTING_MAX", 3)
+    monkeypatch.setattr(
+        flatfile,
+        "iter_files",
+        _fake_listing([flatfile.FileRef(f"data/orders_2026-06-{i:02d}.csv") for i in range(1, 10)]),
+    )
+
+    with pytest.raises(flatfile.BatchListingTooLargeError, match="narrow the prefix"):
+        flatfile.resolve_batch_file(
+            conn_type="s3", config={}, secret="s", prefix="data/", pattern=_PATTERN
+        )
+
+
+def test_a_runaway_prefix_does_not_read_as_a_missing_batch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`BatchNotFoundError` means "the data hasn't landed" and SKIPS the run (#122).
+    A refused listing is a failure, not an absence — conflating them would turn a
+    broken target into a run that quietly reports success every night."""
+    assert not issubclass(flatfile.BatchListingTooLargeError, flatfile.BatchNotFoundError)
+
+
+def test_iter_files_releases_the_adls_client_when_abandoned_early(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The generator holds the client open across yields, so a caller that stops
+    early must still return it to the pool — otherwise a refused listing leaks a
+    connection on every scheduled run."""
+    stub = _BlobStub()
+    monkeypatch.setattr(flatfile, "_blob_service", lambda acfg, secret: stub)
+
+    stream = flatfile.iter_files(
+        conn_type="adls_gen2", config=_ADLS_CONFIG, prefix="orders/", secret="sas"
+    )
+    next(stream)  # start it, then walk away
+    assert stub.closed is False
+    stream.close()
+
+    assert stub.closed is True
+
+
+def test_resolve_batch_file_closes_the_listing_when_resolution_refuses(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The same release, through the real call path: raising mid-listing must not
+    skip the client's close().
+
+    This pins the OUTCOME, not the mechanism — and cannot distinguish them: on
+    CPython the abandoned generator is finalised by refcounting the moment
+    `resolve_batch` raises, so the client is released with or without the explicit
+    `closing()`. The explicit form is kept anyway rather than depending on a
+    refcounting detail no other implementation guarantees; verified by mutation
+    that this test does not prove it, so nobody later reads it as if it did.
+    """
+    stub = _BlobStub()
+    monkeypatch.setattr(flatfile, "_blob_service", lambda acfg, secret: stub)
+    monkeypatch.setattr(flatfile, "_BATCH_LISTING_MAX", 1)
+
+    with pytest.raises(flatfile.BatchListingTooLargeError):
+        flatfile.resolve_batch_file(
+            conn_type="adls_gen2",
+            config=_ADLS_CONFIG,
+            secret="sas",
+            prefix="orders/",
+            pattern=r"orders/(\w)\.csv",
+        )
+
+    assert stub.closed is True

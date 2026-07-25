@@ -30,6 +30,8 @@ from __future__ import annotations
 import csv
 import io
 import re
+from collections.abc import Generator, Iterable, Iterator
+from contextlib import closing
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, ClassVar
@@ -804,13 +806,29 @@ class FileRef:
     last_modified: datetime | None = None
 
 
+class BatchListingTooLargeError(ValueError):
+    """The batch prefix lists more objects than resolution will scan (#943).
+
+    Deliberately **not** a `BatchNotFoundError`: that means "the data hasn't
+    landed" and skips the run (#122). This means "we refuse to answer", which is
+    a failure — reporting a batch chosen from a partial scan would be a
+    confidently wrong answer, since both stores list ascending and the newest key
+    is at the end we did not reach.
+    """
+
+
 def _most_recent(files: list[FileRef]) -> str:
     """Path of the most recently modified file (ties broken by path; `files` non-empty)."""
     return max(files, key=lambda f: (f.last_modified or _MIN_DT, f.path)).path
 
 
+def _rank(file: FileRef) -> tuple[datetime, str]:
+    """Recency ordering key — the streaming equivalent of `_most_recent`'s."""
+    return (file.last_modified or _MIN_DT, file.path)
+
+
 def resolve_batch(
-    files: list[FileRef], *, pattern: str, strategy: str = "latest", batch: str | None = None
+    files: Iterable[FileRef], *, pattern: str, strategy: str = "latest", batch: str | None = None
 ) -> str:
     """Pick one file's path from `files` per the batch `pattern` + `strategy`.
 
@@ -823,58 +841,125 @@ def resolve_batch(
 
     Raises `BatchNotFoundError` (nothing matched / no such batch) or `ValueError`
     (bad strategy, or `specific` without `batch`).
+
+    Takes an **iterable** and consumes it in a single pass, holding only the
+    running best rather than a list of every matching object (#943): this runs on
+    every scheduled run of every batch-targeted suite, and a prefix with a long
+    history of dated files grew the retained list without bound. The three
+    running bests below reproduce the previous `max()` calls exactly, including
+    their first-wins tie-breaking (a strict ``>`` keeps the first maximal element,
+    which is what `max` returns).
     """
     try:
         compiled = re.compile(pattern)
     except re.error as exc:
         raise ValueError(f"invalid batch pattern {pattern!r}: {exc}") from exc
-    matches = [(f, m) for f in files if (m := compiled.search(f.path))]
-    if not matches:
+
+    saw_match = False
+    best_keyed: tuple[str, str] | None = None  # (batch key, path)
+    best_recent: tuple[datetime, str] | None = None  # over ALL matches
+    best_of_batch: tuple[datetime, str] | None = None  # over `specific` hits
+
+    for file in files:
+        match = compiled.search(file.path)
+        if match is None:
+            continue
+        saw_match = True
+        # A batch key is the first capture group when it *participated* in the
+        # match; an optional group that didn't (`None`) has no key, so it falls
+        # through to the modified-time ordering rather than crashing a comparison
+        # on None vs str.
+        key = match.group(1) if match.groups() else None
+        rank = _rank(file)
+        if key is not None and (best_keyed is None or key > best_keyed[0]):
+            best_keyed = (key, file.path)
+        if best_recent is None or rank > best_recent:
+            best_recent = rank
+        if key is not None and key == batch and (best_of_batch is None or rank > best_of_batch):
+            best_of_batch = rank
+
+    # Checks stay in their original order: "nothing matched" is reported before an
+    # invalid strategy, exactly as the list-building version did.
+    if not saw_match:
         raise BatchNotFoundError(f"no files matched batch pattern {pattern!r}")
 
     if strategy == "specific":
         if batch is None:
             raise ValueError("strategy 'specific' requires a batch key")
-        hits = [f for f, m in matches if m.groups() and m.group(1) == batch]
-        if not hits:
+        if best_of_batch is None:
             raise BatchNotFoundError(f"no file for batch {batch!r} under pattern {pattern!r}")
-        return _most_recent(hits)
+        return best_of_batch[1]
 
     if strategy != "latest":
         raise ValueError(f"unknown batch strategy {strategy!r}")
 
-    # A batch key is the first capture group when it *participated* in the match;
-    # an optional group that didn't (`None`) has no key, so it falls through to the
-    # modified-time ordering rather than crashing the `max` on a None vs str compare.
-    keyed = [(f, m.group(1)) for f, m in matches if m.groups() and m.group(1) is not None]
-    if keyed:
-        return max(keyed, key=lambda fk: fk[1])[0].path
-    return _most_recent([f for f, _ in matches])
+    if best_keyed is not None:
+        return best_keyed[1]
+    # `saw_match` guarantees at least one match, so this is never None here.
+    return best_recent[1] if best_recent else ""
 
 
-def list_files(
+def iter_files(
     *, conn_type: str, config: dict[str, Any], prefix: str, secret: str
-) -> list[FileRef]:
-    """List objects/blobs under `prefix` on a flat-file datasource (live seam)."""
+) -> Generator[FileRef]:
+    """Stream objects/blobs under `prefix` on a flat-file datasource (live seam).
+
+    A generator, so a caller that only needs a running maximum never holds the
+    whole listing (#943). The ADLS client is released in a ``finally``, which runs
+    on exhaustion **and** on ``close()`` — so a caller that abandons the iterator
+    early must close it (`resolve_batch_file` does, via `contextlib.closing`)
+    rather than leave the connection pool to the garbage collector.
+    """
     if conn_type == "s3":
         cfg = S3Config.model_validate(config)
         paginator = _s3_client(cfg, secret).get_paginator("list_objects_v2")
-        refs: list[FileRef] = []
         for page in paginator.paginate(Bucket=cfg.bucket, Prefix=prefix):
             for obj in page.get("Contents", []):
-                refs.append(FileRef(path=obj["Key"], last_modified=obj.get("LastModified")))
-        return refs
+                yield FileRef(path=obj["Key"], last_modified=obj.get("LastModified"))
+        return
 
     acfg = AdlsConfig.model_validate(config)
     client_az = _blob_service(acfg, secret)
     try:
         container = client_az.get_container_client(acfg.container)
-        return [
-            FileRef(path=blob.name, last_modified=getattr(blob, "last_modified", None))
-            for blob in container.list_blobs(name_starts_with=prefix)
-        ]
+        for blob in container.list_blobs(name_starts_with=prefix):
+            yield FileRef(path=blob.name, last_modified=getattr(blob, "last_modified", None))
     finally:
         client_az.close()
+
+
+def list_files(
+    *, conn_type: str, config: dict[str, Any], prefix: str, secret: str
+) -> list[FileRef]:
+    """The whole listing under `prefix` as a list (live seam).
+
+    Kept for callers that genuinely want every entry; batch resolution does not,
+    and uses `iter_files` instead (#943).
+    """
+    return list(iter_files(conn_type=conn_type, config=config, prefix=prefix, secret=secret))
+
+
+#: Object counts at which a batch prefix stops being reasonable. The soft limit
+#: only makes the cost VISIBLE — a listing that has quietly grown to six figures
+#: on a per-run path is worth knowing about before it becomes an incident (#839:
+#: a silent cost reads as no cost). The hard limit refuses: past it, resolution
+#: would spend minutes listing on every scheduled run, and answering from a
+#: partial scan is not an option because both stores list ascending, so the
+#: newest key — the one `latest` wants — is precisely what a truncated scan misses.
+_BATCH_LISTING_WARN_AT = 50_000
+_BATCH_LISTING_MAX = 500_000
+
+
+def _counted(files: Iterable[FileRef], *, prefix: str, limit: int) -> Iterator[FileRef]:
+    """Pass `files` through, refusing past `limit` objects."""
+    for index, file in enumerate(files, start=1):
+        if index > limit:
+            log.error("flatfile_batch_listing_too_large", scanned=index - 1, limit=limit)
+            raise BatchListingTooLargeError(
+                f"batch prefix {prefix!r} lists more than {limit} objects; narrow the "
+                "prefix (e.g. add a year/month segment) so resolution stays bounded"
+            )
+        yield file
 
 
 def resolve_batch_file(
@@ -887,6 +972,29 @@ def resolve_batch_file(
     strategy: str = "latest",
     batch: str | None = None,
 ) -> str:
-    """List under `prefix`, then resolve the batch file path (list + `resolve_batch`)."""
-    files = list_files(conn_type=conn_type, config=config, prefix=prefix, secret=secret)
-    return resolve_batch(files, pattern=pattern, strategy=strategy, batch=batch)
+    """Stream the listing under `prefix` and resolve the batch file path.
+
+    The listing is consumed lazily (#943) — `resolve_batch` keeps only its running
+    bests, so memory no longer grows with the prefix's history. `closing` releases
+    the ADLS client even when resolution raises part-way through.
+    """
+    scanned = 0
+
+    def _tally(files: Iterable[FileRef]) -> Iterator[FileRef]:
+        nonlocal scanned
+        for file in files:
+            scanned += 1
+            yield file
+
+    stream = iter_files(conn_type=conn_type, config=config, prefix=prefix, secret=secret)
+    try:
+        with closing(stream):
+            return resolve_batch(
+                _tally(_counted(stream, prefix=prefix, limit=_BATCH_LISTING_MAX)),
+                pattern=pattern,
+                strategy=strategy,
+                batch=batch,
+            )
+    finally:
+        if scanned >= _BATCH_LISTING_WARN_AT:
+            log.warning("flatfile_batch_listing_large", scanned=scanned, conn_type=conn_type)
