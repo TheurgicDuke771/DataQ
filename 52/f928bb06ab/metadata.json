@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "52f928bb06ab",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-987-lineage-both-fields",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/components/assets/LineageGraph.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/52/f928bb06ab/0/metadata.json",
+      "transcript": "/52/f928bb06ab/0/full.jsonl",
+      "compact_transcript": "/52/f928bb06ab/0/transcript.jsonl",
+      "content_hash": "/52/f928bb06ab/0/content_hash.txt",
+      "prompt": "/52/f928bb06ab/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 17036,
+    "cache_creation_tokens": 1713288,
+    "cache_read_tokens": 146932344,
+    "output_tokens": 253866,
+    "api_call_count": 398
+  }
+}
