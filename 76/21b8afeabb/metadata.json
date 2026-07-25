@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "7621b8afeabb",
+  "strategy": "manual-commit",
+  "branch": "feat/issue-954-datasource-connection-health",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/services/connection_service.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/76/21b8afeabb/0/metadata.json",
+      "transcript": "/76/21b8afeabb/0/full.jsonl",
+      "compact_transcript": "/76/21b8afeabb/0/transcript.jsonl",
+      "content_hash": "/76/21b8afeabb/0/content_hash.txt",
+      "prompt": "/76/21b8afeabb/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 17137,
+    "cache_creation_tokens": 1766112,
+    "cache_read_tokens": 179989373,
+    "output_tokens": 286114,
+    "api_call_count": 451
+  }
+}
