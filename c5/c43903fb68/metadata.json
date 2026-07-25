@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "c5c43903fb68",
+  "strategy": "manual-commit",
+  "branch": "ci/issue-993-mirror-service-images",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/c5/c43903fb68/0/metadata.json",
+      "transcript": "/c5/c43903fb68/0/full.jsonl",
+      "compact_transcript": "/c5/c43903fb68/0/transcript.jsonl",
+      "content_hash": "/c5/c43903fb68/0/content_hash.txt",
+      "prompt": "/c5/c43903fb68/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 22160,
+    "cache_creation_tokens": 3491253,
+    "cache_read_tokens": 303987954,
+    "output_tokens": 515509,
+    "api_call_count": 852
+  }
+}

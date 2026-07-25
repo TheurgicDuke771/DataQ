@@ -1,0 +1,42 @@
+yeah re-scope #590
+
+---
+
+We are going to keep both Azure and Snowflake one more month, also the ssnowflake PAT for both read and write role are renewed till 29th July and present in the Azure Key Vault.
+
+---
+
+okay where are we standing now w.r.t open issues?
+
+---
+
+Check how many of these we can close now, first plan out then start working anf close as many as possible.
+
+---
+
+Well, let's continue to it. First, fix whatever is broken till now, specifically in this session. Next, onto the open issue fixes. And remember, don't turn away any issue just so that it was a pre-existing one. We are in prod now. Any issue find has to be fixed or filed. Don't just simply ignore it. add it in your memory and the related documents.
+
+---
+
+So, these 70 we can't be fix now [like have some dependency, waiting for some feature to ship first or they themselves are features we are prioritizing now]?
+
+---
+
+start with the actionable 26, plan it out then start execution
+
+---
+
+continue
+
+---
+
+start with stage #2
+
+---
+
+Okay, on with #943, then continue to batch #3. 
+[P.S. - try not to break things in every step :)]
+
+---
+
+tell me more about #993
