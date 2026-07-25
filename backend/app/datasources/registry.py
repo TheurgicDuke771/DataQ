@@ -78,15 +78,17 @@ def credential_expiry(
     read failed. It never means "does not expire".
 
     Fail-soft by construction: a credential lifetime is an advisory signal, so a
-    surprising credential shape must not break the caller (connection CRUD, the
-    daily sweep). The exception is logged **without** the secret, the type, or any
-    exception text — a malformed credential's error can quote the credential (the
-    #536 precedent), and an unknown expiry is a safe answer.
+    surprising credential shape — or an unregistered type — must not break the
+    caller (connection CRUD, the daily sweep). The failure is logged with the
+    connection **type** but **without the secret and without the exception text**:
+    a malformed credential's error can quote the credential itself (the #536
+    precedent), while the type is a non-secret identifier and the only thing that
+    makes the line actionable.
     """
-    adapter = get_connection_adapter(conn_type)
-    if not isinstance(adapter, ExpiringCredentialAdapter):
-        return None
     try:
+        adapter = get_connection_adapter(conn_type)
+        if not isinstance(adapter, ExpiringCredentialAdapter):
+            return None
         return adapter.credential_expiry(config, secret, **extra_secrets)
     except Exception:
         log.warning("credential_expiry_unreadable", type=conn_type)

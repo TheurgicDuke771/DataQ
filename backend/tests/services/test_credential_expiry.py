@@ -254,6 +254,49 @@ class TestSweep:
         db_session.refresh(conn)
         assert conn.credential_expires_at == _SAS_EXPIRY
 
+    def test_each_connection_is_committed_before_the_next_is_read(
+        self, db_session: Any, monkeypatch: Any
+    ) -> None:
+        # A sweep-long transaction would mean one failure at commit time throws
+        # away every OTHER connection's freshly-read expiry — and would let a
+        # credential rotated mid-sweep (those paths commit immediately) be
+        # clobbered by the sweep's stale in-memory copy: the lost-update shape
+        # #841 already fixed once on this table. Asserting the durable state
+        # DURING the sweep is what distinguishes per-row commits from a batch;
+        # asserting only the end state passes either way.
+        first = _adls(db_session, FakeStore())
+        second = _adls(db_session, FakeStore())
+        for conn in (first, second):
+            conn.credential_expires_at = None
+        db_session.commit()
+
+        # Count commits at the moment each credential is fetched. (The durable
+        # state can't be probed from another connection here — the `db_session`
+        # fixture holds the test inside a rolled-back transaction — but the
+        # commit ORDERING is exactly what separates per-row from batch.)
+        store = FakeStore({f"conn-{first.id}": _SAS, f"conn-{second.id}": _SAS})
+        commits = 0
+        commits_before_fetch: list[int] = []
+        real_commit, real_get = db_session.commit, store.get
+
+        def _counting_commit() -> None:
+            nonlocal commits
+            real_commit()
+            commits += 1
+
+        def _observe(name: str) -> str:
+            commits_before_fetch.append(commits)
+            return real_get(name)
+
+        monkeypatch.setattr(db_session, "commit", _counting_commit)
+        monkeypatch.setattr(store, "get", _observe)
+        svc.refresh_credential_expiry(db_session, secret_store=store)
+
+        assert commits_before_fetch == [0, 1], (
+            "the first connection must be committed before the second is read; "
+            f"commits seen at each fetch: {commits_before_fetch}"
+        )
+
     def test_one_unreadable_secret_does_not_abort_the_rest_of_the_sweep(
         self, db_session: Any
     ) -> None:

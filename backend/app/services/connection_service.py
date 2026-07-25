@@ -212,31 +212,61 @@ def refresh_credential_expiry(session: Session, *, secret_store: SecretStore) ->
     without touching the secret, which would otherwise leave a date describing a
     credential we no longer use.
 
-    Fail-soft per connection: an unreadable secret (Key Vault down, secret deleted
-    underneath us) leaves that row's existing value alone and the sweep continues.
-    Deliberately NOT nulled on a read failure — "we couldn't check today" is not
-    evidence the credential stopped expiring, and blanking the date would silence
-    the warning at the worst possible moment.
+    Fail-soft **and committed per connection**, which is one property, not two.
+    Batching the whole sweep into a closing commit would mean (a) any failure at
+    commit time throws away every OTHER connection's freshly-read expiry, and
+    (b) a credential rotated through `update_connection`/`reauth_connection` —
+    which commit immediately — while the sweep held its stale in-memory copy
+    would be silently clobbered by it: the lost-update shape #841 already fixed
+    once on this very table. It also matters more here than in the sibling
+    janitors, because this is the only one doing per-row *network I/O* (a Key
+    Vault read), so a sweep-long transaction would be held open across every one
+    of them (`asset_service.sweep_orphan_assets`: "never holds … a sweep-long
+    transaction open"; `warehouse_refresh.refresh_connection_lineage` likewise
+    commits per connection).
+
+    So each connection is read, computed, and committed on its own, and any
+    failure — an unreadable secret (Key Vault down, secret deleted underneath us)
+    or a failed write — is logged and skipped, leaving that row's existing value
+    alone while the sweep continues. Deliberately NOT nulled on a read failure:
+    "we couldn't check today" is not evidence the credential stopped expiring,
+    and blanking the date would silence the warning at the worst possible moment.
     """
     changed = 0
-    for conn in session.scalars(select(Connection).where(Connection.secret_ref.isnot(None))):
-        if conn.secret_ref is None:  # pragma: no cover — narrows the column's Optional
-            continue
+    conn_ids = list(session.scalars(select(Connection.id).where(Connection.secret_ref.isnot(None))))
+    for conn_id in conn_ids:
         try:
-            secret = secret_store.get(conn.secret_ref)
+            if _refresh_one_credential_expiry(session, conn_id, secret_store):
+                changed += 1
         except Exception:
             # No exception text: a secret-store error can quote the secret name and,
             # in some SDKs, the value (#536). The connection id is enough to act on.
-            log.warning("credential_expiry_secret_unreadable", connection_id=str(conn.id))
-            continue
-        previous = conn.credential_expires_at
-        _refresh_credential_expiry(conn, secret)
-        if conn.credential_expires_at != previous:
-            changed += 1
-        _log_if_expiring(conn)
-    session.commit()
-    log.info("credential_expiry_refreshed", changed=changed)
+            session.rollback()
+            log.warning("credential_expiry_refresh_skipped", connection_id=str(conn_id))
+    log.info("credential_expiry_refreshed", changed=changed, scanned=len(conn_ids))
     return changed
+
+
+def _refresh_one_credential_expiry(
+    session: Session, conn_id: uuid.UUID, secret_store: SecretStore
+) -> bool:
+    """Re-read one connection's credential expiry and commit it. True if it moved.
+
+    Re-loaded by id rather than carried over from the outer query: the sweep
+    commits between rows, which expires the session's identity map, and a
+    connection deleted while the sweep was running should simply drop out rather
+    than be resurrected by a stale in-memory copy.
+    """
+    conn = session.get(Connection, conn_id)
+    if conn is None or conn.secret_ref is None:
+        return False
+    secret = secret_store.get(conn.secret_ref)
+    previous = conn.credential_expires_at
+    _refresh_credential_expiry(conn, secret)
+    moved = conn.credential_expires_at != previous
+    session.commit()
+    _log_if_expiring(conn)
+    return moved
 
 
 def _log_if_expiring(conn: Connection) -> None:
