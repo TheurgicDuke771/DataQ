@@ -1,0 +1,39 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "e205396a7489",
+  "session_id": "1124e5df-e050-4dd0-a205-d4dc331f0280",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-25T08:02:48.022422Z",
+  "branch": "main",
+  "checkpoints_count": 4,
+  "save_step_count": 1,
+  "files_touched": [
+    "frontend/src/components/assets/ScorecardPanel.tsx"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "542238058fce",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 1159,
+    "cache_creation_tokens": 2997774,
+    "cache_read_tokens": 259107296,
+    "output_tokens": 398606,
+    "api_call_count": 610
+  },
+  "session_metrics": {
+    "turn_count": 9
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-25T08:02:47.860596Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 103,
+    "human_modified": 1,
+    "human_removed": 0,
+    "total_committed": 103,
+    "total_lines_changed": 141,
+    "agent_percentage": 0,
+    "metric_version": 2
+  }
+}

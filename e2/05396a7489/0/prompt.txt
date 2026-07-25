@@ -1,0 +1,37 @@
+continue
+
+---
+
+Hope all the issues are fixed now and going forward, check the actual code and app. if all the pending issues and items are fixed or filed. Let's start with the group two.
+
+---
+
+Sounds good. Let's start.
+
+---
+
+Agreed. Go ahead.
+
+---
+
+* Do the live testing for ADLS container, Snowflake, or Databricks [use the PAT as required]. 
+* Existing checks are unclassified until next edited - update them with check derived dimension values.
+* Deploy the latest changes to PROD and update the docs [READMEs, GitHub pages, Progress.md, etc.)
+
+---
+
+Hey, I got a question for dataq - 
+
+```
+I came across TheurgicDuke771/DataQ and the rotating proxy piece made me curious.
+is that for real volume or mostly internal testing?
+asking because proxy logic is usually simple until volume quality starts deciding outcomes.
+```
+
+---
+
+can you do a quick check on `Isaac. Commercial OPS @ anyIP`
+
+---
+
+write me a repy [with tanking him for interest and all]
