@@ -11,12 +11,17 @@ provider in `ORCHESTRATION_PROVIDERS`.
 against each other.
 
 The third spelling, the migration, is covered by `test_migration_parity.py`
-(#990): it replays `alembic upgrade head` onto a scratch database and diffs the
-result against the model, so a provider widened in the model but not in a
-migration now fails there. Until that existed, this module could only say so in
-prose — widen the vocabulary, the model and the service correctly, ship no
-migration, and every test stayed green while production's predicate was stale and
-dedup silently lapsed for the new provider.
+(#990) — specifically by its *second* check, which compares the literals in each
+partial-index predicate against the live database. Alembic's own
+`compare_metadata` is blind to a partial index's WHERE clause, so the first
+check alone would not have caught this; that was measured, not assumed. Widen
+the model's predicate without shipping the migration and
+`uq_runs_suite_triggered_by` is reported there by name.
+
+Until that existed this module could only say so in prose: widen the vocabulary,
+the model and the service correctly, ship no migration, and every test stayed
+green while production's predicate was stale and dedup silently lapsed for the
+new provider.
 
 Adding a provider without widening them is silent: dedup simply stops applying to
 the new provider's runs, so a re-delivered webhook creates a duplicate run instead

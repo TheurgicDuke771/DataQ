@@ -13,10 +13,16 @@ missing migration for a new column, a CHECK constraint that exists only in the
 model, an `ondelete` that differs, and the partial-index predicate #457 guards in
 Python but could not guard in SQL (see `test_orchestration_predicate_drift.py`).
 
-The check itself is Alembic's own autogenerate comparison, pointed at a scratch
-database built by the real migration chain: a non-empty diff means "if you ran
-`alembic revision --autogenerate` right now, it would want to write something" —
-i.e. the model and the migrations disagree.
+There are **two** checks here, because one is not enough:
+
+* `test_the_migrations_build_the_schema_the_model_describes` — Alembic's own
+  autogenerate comparison against a scratch database built by the real migration
+  chain. A non-empty diff means "autogenerate would want to write something".
+* `test_vocabularies_in_predicates_match_between_model_and_database` — the
+  partial-index predicates and CHECK constraint bodies that `compare_metadata`
+  **does not look at**. See the comment above it; without this second check the
+  module would claim to close #990 while missing the case #990 names as its
+  minimum bar.
 
 **This test is slow by nature** (it builds a database and replays every
 migration), so it is marked and runs once per session.
@@ -25,6 +31,7 @@ migration), so it is marked and runs once per session.
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 from collections.abc import Iterator
@@ -32,7 +39,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import CheckConstraint, create_engine, text
 from sqlalchemy.engine import make_url
 
 from backend.app.db import models  # noqa: F401  (register models on Base.metadata)
@@ -127,3 +134,104 @@ def test_the_migrations_build_the_schema_the_model_describes(migrated_url: str) 
     drift = [d for d in diffs if "alembic_version" not in repr(d)]
 
     assert not drift, "model and migrations disagree:\n" + "\n".join(repr(d) for d in drift)
+
+
+# ── the drift `compare_metadata` cannot see ──────────────────────────────────
+#
+# Alembic's autogenerate comparison is thorough about columns, types and foreign
+# keys, but it does NOT inspect two things this codebase leans on heavily:
+#
+#   * a partial index's WHERE predicate — `alembic/ddl/postgresql.py` compares
+#     only `postgresql_nulls_not_distinct` among an index's dialect options, so
+#     the predicate is never looked at;
+#   * a CHECK constraint's body, or its absence from the database entirely.
+#
+# Both are exactly where this repo encodes its closed vocabularies
+# (`ORCHESTRATION_PROVIDERS`, `CONNECTION_TYPES`, `CHECK_KINDS`, the status
+# tuples). #457's whole subject — a provider widened in the model and the service
+# but never in a migration — lives in the first bullet, so a parity test that
+# stopped at `compare_metadata` would claim to cover #990's stated minimum while
+# not covering it. Verified: that scenario produces zero autogenerate diffs.
+#
+# Comparing the SQL text directly is hopeless (Postgres rewrites
+# `type IN ('adf','airflow')` into an `= ANY (ARRAY[...])` form), so this compares
+# what actually matters and survives normalisation: the set of **string literals**
+# in each predicate. A vocabulary value present on one side and not the other is
+# precisely the drift, and quoting is preserved verbatim by both renderings.
+
+_LITERAL = re.compile(r"'([^']*)'")
+
+
+def _literals(sql: str) -> set[str]:
+    return set(_LITERAL.findall(sql))
+
+
+def _model_predicates() -> dict[str, str]:
+    """`{object name: SQL text}` for every named CHECK and partial index in the model."""
+    out: dict[str, str] = {}
+    for table in Base.metadata.tables.values():
+        for constraint in table.constraints:
+            if isinstance(constraint, CheckConstraint) and constraint.name:
+                out[str(constraint.name)] = str(constraint.sqltext)
+        for index in table.indexes:
+            # `dialect_kwargs` is the flat accessor — `dialect_options` is a
+            # special mapping that does not type as a plain dict.
+            where = index.dialect_kwargs.get("postgresql_where")
+            if where is not None and index.name:
+                out[str(index.name)] = str(where)
+    return out
+
+
+def _live_predicates(conn: Any) -> dict[str, str]:
+    """`{object name: SQL text}` for the same objects, as the database has them."""
+    live: dict[str, str] = {}
+    for name, definition in conn.execute(
+        text(
+            "SELECT conname, pg_get_constraintdef(oid) FROM pg_constraint "
+            "WHERE contype = 'c' AND connamespace = 'public'::regnamespace"
+        )
+    ):
+        live[name] = definition
+    for name, definition in conn.execute(
+        text("SELECT indexname, indexdef FROM pg_indexes WHERE schemaname = 'public'")
+    ):
+        _, sep, predicate = definition.partition(" WHERE ")
+        if sep:
+            live[name] = predicate
+    return live
+
+
+def test_vocabularies_in_predicates_match_between_model_and_database(migrated_url: str) -> None:
+    """Every value a CHECK or partial-index predicate lists must match on both sides.
+
+    This is the leg `compare_metadata` is blind to, and it is #990's stated
+    minimum bar. The failure it exists to catch: add a fourth orchestration
+    provider, widen `ORCHESTRATION_PROVIDERS`, the model's `postgresql_where` and
+    the service constant — all correctly — and ship no migration. Every other
+    test stays green while production's dedup index silently stops covering the
+    new provider, so a re-delivered webhook creates a duplicate run.
+
+    An object missing from the database entirely is reported too: a CHECK declared
+    only in the model is the same defect wearing a different hat.
+    """
+    engine = create_engine(migrated_url)
+    try:
+        with engine.connect() as conn:
+            live = _live_predicates(conn)
+    finally:
+        engine.dispose()
+
+    drift: list[str] = []
+    for name, model_sql in _model_predicates().items():
+        if name not in live:
+            drift.append(f"{name}: declared in the model, absent from the migrated database")
+            continue
+        expected, actual = _literals(model_sql), _literals(live[name])
+        if expected != actual:
+            drift.append(
+                f"{name}: model has {sorted(expected)}, database has {sorted(actual)}"
+                f" (missing from the database: {sorted(expected - actual)};"
+                f" extra: {sorted(actual - expected)})"
+            )
+
+    assert not drift, "predicate drift between the model and the migrations:\n" + "\n".join(drift)
