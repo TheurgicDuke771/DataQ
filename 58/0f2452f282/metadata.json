@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "580f2452f282",
+  "strategy": "manual-commit",
+  "branch": "docs/triage-register-2026-07-25",
+  "checkpoints_count": 4,
+  "files_touched": [
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/58/0f2452f282/0/metadata.json",
+      "transcript": "/58/0f2452f282/0/full.jsonl",
+      "compact_transcript": "/58/0f2452f282/0/transcript.jsonl",
+      "content_hash": "/58/0f2452f282/0/content_hash.txt",
+      "prompt": "/58/0f2452f282/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 16803,
+    "cache_creation_tokens": 607299,
+    "cache_read_tokens": 81640347,
+    "output_tokens": 176781,
+    "api_call_count": 275
+  }
+}
