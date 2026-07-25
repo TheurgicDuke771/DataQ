@@ -570,8 +570,13 @@ def build_mcp_app() -> Any:
     # PAT), never a cookie, so the Origin/CSRF check the guard performs is moot — an
     # attacker page can't obtain the token. Allow all origins for the same reason we
     # relax the host check, so a browser-based client (e.g. claude.ai) isn't 403'd.
+    # Driven by Settings, not hardcoded (#728): the allowlist is the one
+    # deploy-target coupling that used to live in app code, contradicting the
+    # ADR 0010/0013 config guardrail. The default keeps ACA working untouched;
+    # MCP_ALLOWED_HOSTS covers EKS/GKE/on-prem/local-first, where a proxy
+    # forwarding a different upstream Host otherwise gets an unconfigurable 421.
     return mcp.http_app(
         path="/",
-        allowed_hosts=["*.azurecontainerapps.io", "api", "localhost", "127.0.0.1"],
+        allowed_hosts=get_settings().mcp_allowed_host_list,
         allowed_origins=["*"],
     )

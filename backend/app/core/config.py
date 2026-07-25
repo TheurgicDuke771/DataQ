@@ -4,6 +4,11 @@ from typing import Literal
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Default MCP transport Host allowlist: the Azure Container Apps internal-ingress
+# FQDN shape the frontend nginx proxies to, plus the compose service name and
+# loopback. Overridable via MCP_ALLOWED_HOSTS for any other deploy target (#728).
+_MCP_DEFAULT_ALLOWED_HOSTS = ("*.azurecontainerapps.io", "api", "localhost", "127.0.0.1")
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -188,6 +193,16 @@ class Settings(BaseSettings):
     #   WORKSPACE_ADMIN_EMAILS=ada@acme.io,grace@acme.io
     workspace_admin_emails: str = ""
 
+    # Host values the FastMCP transport guard accepts on `/mcp` (#728). The
+    # deploy-target coupling used to be hardcoded in `mcp/server.py`, which is the
+    # one thing ADR 0010/0013 says must never live in app code — any non-ACA
+    # deployment whose proxy forwards a different upstream Host got a 421 with no
+    # way to configure it. Comma-separated (not list[str]) for the same
+    # pydantic-settings reason as `workspace_admin_emails`; read it via
+    # `mcp_allowed_host_list`. Empty keeps the ACA-shaped default.
+    #   MCP_ALLOWED_HOSTS=*.example.internal,api,localhost
+    mcp_allowed_hosts: str = ""
+
     secret_store: Literal["env", "redis", "azure_key_vault"] = (
         "env"  # noqa: S105 — mode selector, not a password
     )
@@ -292,6 +307,16 @@ class Settings(BaseSettings):
     def cors_allow_origin_list(self) -> list[str]:
         """Parsed CORS origins (stripped, empties dropped). Empty → CORS off."""
         return [o.strip() for o in self.cors_allow_origins.split(",") if o.strip()]
+
+    @property
+    def mcp_allowed_host_list(self) -> list[str]:
+        """Parsed MCP transport Host allowlist (stripped, empties dropped).
+
+        Empty → `_MCP_DEFAULT_ALLOWED_HOSTS`, which keeps the Azure Container Apps
+        deployment working with no config. Read via this property, never the raw field.
+        """
+        parsed = [h.strip() for h in self.mcp_allowed_hosts.split(",") if h.strip()]
+        return parsed or list(_MCP_DEFAULT_ALLOWED_HOSTS)
 
     @property
     def azure_auth_configured(self) -> bool:

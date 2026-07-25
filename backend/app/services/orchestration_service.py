@@ -29,15 +29,53 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, aliased
 
+from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
-from backend.app.db.models import Connection, PipelineRun, Run, Suite, TriggerBinding
+from backend.app.db.models import (
+    ENVS,
+    ORCHESTRATION_PROVIDERS,
+    Connection,
+    PipelineRun,
+    Run,
+    Suite,
+    TriggerBinding,
+)
 from backend.app.orchestration.base import OrchestrationProvider, RunUpdate
 from backend.app.orchestration.registry import get_orchestration_provider
 from backend.app.services import run_dispatch
 from backend.app.services.failure_classifier import classify_failure_reason
 
 log = get_logger(__name__)
+
+
+class OrchestrationFilterInvalidError(DataQError):
+    status_code = 422
+    code = "orchestration_filter_invalid"
+
+
+def validate_read_filters(provider: str | None = None, env: str | None = None) -> None:
+    """422 on a filter value outside its closed vocabulary (#306).
+
+    An unrecognised `provider`/`env` used to flow straight into the `WHERE`, so a
+    typo returned `200 []` — indistinguishable from "this provider genuinely has no
+    runs", which is the confidently-empty-answer class (#828). `None` means "no
+    filter" and is left alone; only a *supplied* value is checked.
+
+    Mirrors `trigger_binding_service._validate_provider_env`, which guards the write
+    path against the same vocabularies. Kept separate because that one requires both
+    values while a read filter may supply either, neither, or both.
+    """
+    if provider is not None and provider not in ORCHESTRATION_PROVIDERS:
+        raise OrchestrationFilterInvalidError(
+            f"invalid provider {provider!r}",
+            detail={"allowed": list(ORCHESTRATION_PROVIDERS)},
+        )
+    if env is not None and env not in ENVS:
+        raise OrchestrationFilterInvalidError(
+            f"invalid env {env!r}", detail={"allowed": list(ENVS)}
+        )
+
 
 # Predicate of the partial unique index `uq_runs_suite_triggered_by` (#308) —
 # kept identical to the migration and the model's `postgresql_where`. Scopes the

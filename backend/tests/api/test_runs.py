@@ -684,6 +684,47 @@ def test_list_pipeline_runs_filters_by_provider_and_status(
     assert {p["provider"] for p in failed} == {"airflow"}
 
 
+def test_list_pipeline_runs_rejects_an_unknown_provider(
+    client: TestClient, db_session: Any
+) -> None:
+    """A typo'd provider must 422, not return a confident empty list (#306).
+
+    The pre-fix behaviour was `200 []` — indistinguishable from "this provider has
+    no runs", which is the confidently-empty-answer class (#828). Seed a real run
+    first so an empty body could ONLY come from the filter, never from an empty
+    table.
+    """
+    owner = _user(db_session, "owner@ex")
+    _pipeline_run(db_session, owner, provider="adf", status="succeeded")
+    _as(owner)
+
+    resp = client.get("/api/v1/pipeline_runs?provider=ADF")  # right name, wrong case
+    assert resp.status_code == 422
+    assert "adf" in resp.json()["error"]["detail"]["allowed"]
+
+    assert client.get("/api/v1/pipeline_runs?provider=nope").status_code == 422
+    # The valid value still works, and still returns the seeded row.
+    assert len(client.get("/api/v1/pipeline_runs?provider=adf").json()) == 1
+    # Omitting the filter is not "unknown" — it means no filter.
+    assert client.get("/api/v1/pipeline_runs").status_code == 200
+
+
+def test_list_pipelines_rejects_unknown_provider_and_env(
+    client: TestClient, db_session: Any
+) -> None:
+    """Same guard on `/orchestration/pipelines`, which takes `env` too (#306)."""
+    owner = _user(db_session, "owner@ex")
+    _pipeline_run(db_session, owner, provider="adf", status="succeeded")
+    _as(owner)
+
+    assert client.get("/api/v1/orchestration/pipelines?provider=nope").status_code == 422
+    resp = client.get("/api/v1/orchestration/pipelines?env=production")  # real env is "prod"
+    assert resp.status_code == 422
+    assert "prod" in resp.json()["error"]["detail"]["allowed"]
+    assert client.get("/api/v1/orchestration/pipelines?provider=adf&env=dev").status_code == 200
+    assert client.get("/api/v1/orchestration/pipelines").status_code == 200
+
+
 def test_list_pipeline_runs_requires_auth(db_session: Any) -> None:
     from fastapi import HTTPException
 

@@ -37,6 +37,7 @@ from backend.app.datasources.monitors import (
     FRESHNESS,
     VOLUME,
     MonitorConfigError,
+    SafeMonitorError,
     freshness_column,
     run_monitor_specs,
 )
@@ -188,7 +189,7 @@ def read_dataframe(*, conn_type: str, config: dict[str, Any], path: str, secret:
     return pd.read_parquet(raw, dtype_backend="pyarrow")
 
 
-class FlatFileReadError(RuntimeError):
+class FlatFileReadError(SafeMonitorError, RuntimeError):
     """The object couldn't be downloaded/parsed — reason CLASSIFIED, never echoed.
 
     A monitor's error message is persisted to `results` and rendered in the UI,
