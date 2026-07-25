@@ -131,6 +131,17 @@ def create_celery_app() -> Celery:
                 "task": "refresh_warehouse_lineage",
                 "schedule": 86400.0,  # 24 hours
             },
+            # Credential-expiry refresh (#838): once a day, re-read the stated
+            # expiry of every stored credential that has one (an Azure SAS prints
+            # `se=`) into `connections.credential_expires_at`, so the product can
+            # warn BEFORE a credential dies rather than after it breaks something.
+            # Daily because an expiry date moves only on a rotation, and the
+            # warning window is measured in weeks — a cache refresh, not a
+            # liveness interval.
+            "refresh-credential-expiry": {
+                "task": "refresh_credential_expiry",
+                "schedule": 86400.0,  # 24 hours
+            },
         },
     )
     # Register task modules on worker boot (looks for backend.app.worker.tasks).

@@ -28,6 +28,7 @@ from urllib.parse import urlparse
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from backend.app.core.artifacts import ArtifactTooLargeError, load_json_artifact
+from backend.app.core.credential_expiry import azure_sas_expiry
 from backend.app.core.logging import get_logger
 from backend.app.orchestration.base import MalformedEventError, RunUpdate
 
@@ -219,6 +220,21 @@ class DbtConnectionAdapter:
 
     def validate_config(self, raw: dict[str, Any]) -> DbtConfig:
         return DbtConfig.model_validate(raw)
+
+    def credential_expiry(self, raw: dict[str, Any], secret: str, **_: Any) -> datetime | None:
+        """When the artifacts-store credential stops working (#838), or ``None``.
+
+        Readable only for an ``adls://`` store, whose credential is a SAS that
+        prints its own `se=`. An ``s3://`` secret key and a ``file://`` store
+        have no lifetime to read, so they stay silent rather than guessed at.
+
+        **This is the connection that caused #828**: its SAS expired, the poll
+        failed every 10 minutes into the logs alone, and prod lineage was dark
+        for six days.
+        """
+        if urlparse(self.validate_config(raw).artifacts_uri).scheme != "adls":
+            return None
+        return azure_sas_expiry(secret)
 
     def test(self, raw: dict[str, Any], secret: str, **_: Any) -> None:
         """Read the first job's `latest/run_results.json`; raise on any failure.

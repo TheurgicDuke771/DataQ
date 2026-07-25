@@ -17,7 +17,7 @@ import uuid
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import ValidationError
@@ -30,6 +30,7 @@ from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretNotFoundError, SecretStore, SecretWriteError
 from backend.app.datasources.registry import (
     UnsupportedConnectionTypeError,
+    credential_expiry,
     get_connection_adapter,
 )
 from backend.app.db.models import ENVS, Check, Connection, ConnectionVersion, Run, Suite
@@ -180,6 +181,112 @@ def record_connection_version(
     return version
 
 
+# How far ahead the *backend* calls a credential "expiring soon" — used only for the
+# operator-facing log line the sweep emits. The UI applies its own window to the
+# stored timestamp (the API hands over a date, not a verdict), so the two are
+# independent by design: changing the badge's urgency must not require a deploy of
+# the worker, and vice versa.
+CREDENTIAL_EXPIRY_WARN_DAYS = 14
+
+
+def _refresh_credential_expiry(conn: Connection, secret: str) -> None:
+    """Recompute `credential_expires_at` from the credential just written.
+
+    Called on every path that stores a secret, so a rotation moves the date
+    immediately instead of waiting up to a day for the sweep. **Always assigns**,
+    including ``None``: rotating an expiring SAS to a non-expiring account key must
+    clear the old date, or the product would keep warning about a credential that
+    no longer exists.
+    """
+    conn.credential_expires_at = credential_expiry(conn.type, conn.config, secret)
+
+
+def refresh_credential_expiry(session: Session, *, secret_store: SecretStore) -> int:
+    """Re-read every stored credential's expiry; returns how many rows changed.
+
+    The sweep behind the daily beat task (#838). It exists for the three cases the
+    write path can't cover: credentials stored before this feature existed; a
+    credential rotated **outside** DataQ — which is exactly how the #828 SAS was
+    replaced, in the portal, with DataQ none the wiser; and a config edit that
+    changes what the credential *is* (an Iceberg `secret_property` moved off SAS)
+    without touching the secret, which would otherwise leave a date describing a
+    credential we no longer use.
+
+    Fail-soft **and committed per connection**, which is one property, not two.
+    Batching the whole sweep into a closing commit would mean (a) any failure at
+    commit time throws away every OTHER connection's freshly-read expiry, and
+    (b) a credential rotated through `update_connection`/`reauth_connection` —
+    which commit immediately — while the sweep held its stale in-memory copy
+    would be silently clobbered by it: the lost-update shape #841 already fixed
+    once on this very table. It also matters more here than in the sibling
+    janitors, because this is the only one doing per-row *network I/O* (a Key
+    Vault read), so a sweep-long transaction would be held open across every one
+    of them (`asset_service.sweep_orphan_assets`: "never holds … a sweep-long
+    transaction open"; `warehouse_refresh.refresh_connection_lineage` likewise
+    commits per connection).
+
+    So each connection is read, computed, and committed on its own, and any
+    failure — an unreadable secret (Key Vault down, secret deleted underneath us)
+    or a failed write — is logged and skipped, leaving that row's existing value
+    alone while the sweep continues. Deliberately NOT nulled on a read failure:
+    "we couldn't check today" is not evidence the credential stopped expiring,
+    and blanking the date would silence the warning at the worst possible moment.
+    """
+    changed = 0
+    conn_ids = list(session.scalars(select(Connection.id).where(Connection.secret_ref.isnot(None))))
+    for conn_id in conn_ids:
+        try:
+            if _refresh_one_credential_expiry(session, conn_id, secret_store):
+                changed += 1
+        except Exception:
+            # No exception text: a secret-store error can quote the secret name and,
+            # in some SDKs, the value (#536). The connection id is enough to act on.
+            session.rollback()
+            log.warning("credential_expiry_refresh_skipped", connection_id=str(conn_id))
+    log.info("credential_expiry_refreshed", changed=changed, scanned=len(conn_ids))
+    return changed
+
+
+def _refresh_one_credential_expiry(
+    session: Session, conn_id: uuid.UUID, secret_store: SecretStore
+) -> bool:
+    """Re-read one connection's credential expiry and commit it. True if it moved.
+
+    Re-loaded by id rather than carried over from the outer query: the sweep
+    commits between rows, which expires the session's identity map, and a
+    connection deleted while the sweep was running should simply drop out rather
+    than be resurrected by a stale in-memory copy.
+    """
+    conn = session.get(Connection, conn_id)
+    if conn is None or conn.secret_ref is None:
+        return False
+    secret = secret_store.get(conn.secret_ref)
+    previous = conn.credential_expires_at
+    _refresh_credential_expiry(conn, secret)
+    moved = conn.credential_expires_at != previous
+    session.commit()
+    _log_if_expiring(conn)
+    return moved
+
+
+def _log_if_expiring(conn: Connection) -> None:
+    """Emit an operator-facing line for a credential at or near its end.
+
+    The date only — never the credential, and never the secret ref (#838 AC 3).
+    """
+    expires_at = conn.credential_expires_at
+    if expires_at is None:
+        return
+    days_left = (expires_at - datetime.now(UTC)).total_seconds() / 86400
+    if days_left <= CREDENTIAL_EXPIRY_WARN_DAYS:
+        log.warning(
+            "credential_expiring",
+            connection_id=str(conn.id),
+            type=conn.type,
+            days_left=days_left,
+        )
+
+
 def create_connection(
     session: Session,
     *,
@@ -215,6 +322,9 @@ def create_connection(
             secret_ref = f"conn-{conn.id}"
             secret_store.set(secret_ref, secret)
             conn.secret_ref = secret_ref
+            # Read the credential's own expiry while it is in hand (#838) — the
+            # sweep would otherwise leave a brand-new connection unknown for a day.
+            _refresh_credential_expiry(conn, secret)
         # v1 snapshot — atomic with the insert (same commit).
         record_connection_version(session, conn, actor_id=created_by)
         session.commit()
@@ -401,6 +511,9 @@ def update_connection(
                 detail={"connection_id": str(connection_id)},
             ) from exc
         conn.secret_ref = secret_ref
+        # The rotated credential has its own lifetime — including "none", which
+        # must clear the previous date rather than leave a stale warning (#838).
+        _refresh_credential_expiry(conn, secret)
 
     try:
         # Snapshot the post-update state, atomic with the update (same commit).
@@ -479,6 +592,9 @@ def reauth_connection(
             detail={"connection_id": str(connection_id)},
         ) from exc
     conn.secret_ref = secret_ref
+    # The "fix an expired token" path is exactly where the new expiry matters most:
+    # the badge that prompted the rotation must clear on the same request (#838).
+    _refresh_credential_expiry(conn, secret)
     session.commit()
 
     # Verify the freshly-rotated credential through the same probe as /test;

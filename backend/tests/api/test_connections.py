@@ -439,3 +439,45 @@ def test_list_versions_requires_auth(db_session: Any) -> None:
         assert resp.status_code == 401
     finally:
         app.dependency_overrides.clear()
+
+
+# ─────────────────── credential expiry on the read API (#838) ────────────────
+
+
+_ADLS_SAS = "sv=2022-11-02&ss=b&sp=rl&se=2026-07-29T05:59:59Z&sig=notarealsignature%3D"
+
+
+def test_credential_expiry_is_served_on_create_and_list(
+    client: tuple[TestClient, FakeStore],
+) -> None:
+    """The date the UI badges on has to actually cross the API.
+
+    Everything upstream of this can be right — the SAS parsed, the column
+    written — and the warning still never reaches anyone if the response model
+    drops the field. That is the whole delivery path for #838's user-visible half.
+    """
+    api, _ = client
+    payload = {
+        "name": "adls-lake",
+        "type": "adls_gen2",
+        "env": "dev",
+        "config": {"account_url": "https://acct.blob.core.windows.net", "container": "data"},
+        "secret": _ADLS_SAS,
+    }
+    created = api.post("/api/v1/connections", json=payload)
+    assert created.status_code == 201
+    assert created.json()["credential_expires_at"].startswith("2026-07-29T05:59:59")
+
+    listed = api.get("/api/v1/connections", params={"type": "adls_gen2"})
+    assert listed.json()[0]["credential_expires_at"].startswith("2026-07-29T05:59:59")
+
+
+def test_a_credential_with_no_stated_expiry_serves_null_not_a_guess(
+    client: tuple[TestClient, FakeStore],
+) -> None:
+    # NULL is "unknown", and the UI renders unknown as silence. A fabricated date
+    # here would be a reassurance the credential never gave us.
+    api, _ = client
+    resp = api.post("/api/v1/connections", json=_create_payload())
+    assert resp.status_code == 201
+    assert resp.json()["credential_expires_at"] is None

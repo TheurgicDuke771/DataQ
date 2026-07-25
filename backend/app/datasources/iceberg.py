@@ -45,6 +45,7 @@ from typing import Any, ClassVar, Literal
 import great_expectations as gx
 from pydantic import BaseModel, ConfigDict, model_validator
 
+from backend.app.core.credential_expiry import azure_sas_expiry
 from backend.app.core.secrets import SecretStore
 from backend.app.core.uri_credentials import inject_uri_password, uri_password
 from backend.app.datasources.base import CheckOutcome, CheckSpec, MonitorSpec, SuiteOutcome
@@ -67,6 +68,11 @@ IcebergCatalogType = Literal["rest", "sql", "glue", "hive"]
 # Glue is region-scoped via ``properties`` (e.g. ``{"glue.region": "us-east-1"}``),
 # not a URI.
 _URI_REQUIRED: frozenset[str] = frozenset({"rest", "sql", "hive"})
+
+# The pyiceberg ADLS FileIO property family whose value is a SAS — and therefore
+# the only ``secret_property`` whose credential states its own expiry (#838).
+# Account-scoped in practice (``adls.sas-token.<account>``), so this is a prefix.
+_SAS_PROPERTY_PREFIX = "adls.sas-token"
 
 
 class IcebergConfig(BaseModel):
@@ -247,6 +253,21 @@ class IcebergConnectionAdapter:
 
     def validate_config(self, raw: dict[str, Any]) -> IcebergConfig:
         return IcebergConfig.model_validate(raw)
+
+    def credential_expiry(self, raw: dict[str, Any], secret: str, **_: Any) -> datetime | None:
+        """When the storage credential stops working (#838), or ``None``.
+
+        Iceberg's secret fills whichever ``secret_property`` the operator named, so
+        the shape is knowable only from that name: an ``adls.sas-token…`` property
+        holds a SAS, which prints its own `se=`. An account key, an S3 key, or a
+        catalog password have no readable lifetime and stay silent.
+
+        Only the *storage* credential is read. The SQL-catalog password (a second
+        secret, #754/#826) is not covered — a Postgres password carries no expiry.
+        """
+        if not (self.validate_config(raw).secret_property or "").startswith(_SAS_PROPERTY_PREFIX):
+            return None
+        return azure_sas_expiry(secret)
 
     def test(
         self, raw: dict[str, Any], secret: str, *, catalog_secret: str | None = None, **_: Any

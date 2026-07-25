@@ -14,6 +14,21 @@ Common problems and where to look. For deeper telemetry (logs, traces, where the
 - Use **Rotate credential** (re-auth) if the secret expired.
 - A missing/expired warehouse or role usually shows as a config/permission error.
 
+**A connection card shows "credential expires in Nd" / "credential expired".**
+
+Some credentials state their own expiry — an Azure SAS carries it in the token — so DataQ
+reads it and warns while there is still time to act. Rotate the credential (**Rotate
+credential** / re-auth) and the badge clears on the same request.
+
+The badge is **absent** for most credential types, and absence is not a clean bill of
+health: an S3 access key, a Snowflake key-pair, and a Databricks PAT carry no readable
+lifetime, so DataQ says nothing rather than guessing a date. Track those expiries wherever
+you issue them. DataQ PATs get the same warning on the **Profile → Access tokens** panel,
+where they are stored with a known expiry.
+
+The date is re-read daily, so a credential rotated outside DataQ (in the Azure portal, say)
+updates within a day rather than needing a re-save here.
+
 ## Runs
 
 **A run shows `failed` (not just failing checks).**

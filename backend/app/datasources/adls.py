@@ -21,9 +21,12 @@ other adapters it runs live and fails-soft pending real credentials.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+
+from backend.app.core.credential_expiry import azure_sas_expiry
 
 # Fail fast rather than hang the request thread on an unreachable account.
 _TEST_TIMEOUT_SECONDS = 10
@@ -65,6 +68,15 @@ class AdlsConnectionAdapter:
 
     def validate_config(self, raw: dict[str, Any]) -> AdlsConfig:
         return AdlsConfig.model_validate(raw)
+
+    def credential_expiry(self, raw: dict[str, Any], secret: str, **_: Any) -> datetime | None:
+        """When this connection's SAS stops working (#838), or ``None``.
+
+        The credential IS the expiry notice — a SAS prints `se=` in its own text —
+        so this is a read, not an estimate. It is exactly this connection type
+        whose silent expiry left prod lineage dark for six days (#828).
+        """
+        return azure_sas_expiry(secret)
 
     def test(self, raw: dict[str, Any], secret: str, **_: Any) -> None:
         """Read the container's properties via SAS; raise on any failure.

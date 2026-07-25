@@ -29,6 +29,8 @@ import {
   testConnection,
 } from '../api/connections';
 import { ConnectionTypeAvatar } from '../components/connections/connectionVisuals';
+import { formatTimestamp } from '../components/results/resultsFormat';
+import { expiryLabel, expiryStatus } from '../utils/expiry';
 import { ReauthModal } from '../components/connections/ReauthModal';
 import { Page } from '../components/layout/Page';
 import { type AsyncState, useAsyncData } from '../hooks/useAsyncData';
@@ -208,6 +210,26 @@ function HealthBadge({ health }: { health: HealthState }) {
   }
 }
 
+/**
+ * "credential expires in 5d" / "credential expired", or nothing at all (#838).
+ *
+ * Renders only for a credential whose expiry is *readable and near* — an unknown
+ * expiry produces no badge, because the alternative (a reassuring "valid" badge
+ * on a credential we cannot actually read) is how a monitoring product lies.
+ * A far-off expiry is also silent: a date on every card is noise that trains
+ * people to ignore the one card that matters.
+ */
+function CredentialExpiryBadge({ expiresAt }: { expiresAt?: string | null }) {
+  const status = expiryStatus(expiresAt);
+  const label = expiryLabel(status);
+  if (!label || !expiresAt) return null;
+  return (
+    <Tooltip title={`Credential expiry: ${formatTimestamp(expiresAt)}`}>
+      <Badge status={status.kind === 'expired' ? 'error' : 'warning'} text={label} />
+    </Tooltip>
+  );
+}
+
 function ConnectionCard({
   connection,
   actions,
@@ -305,6 +327,12 @@ function ConnectionCard({
                 failing RUN, not on the connection that caused it, and diagnosing
                 two dead prod Snowflake connections meant reading worker logs.
                 Derived from runs, so it appears without anyone clicking Test. */}
+            {/* The credential's own deadline, read from the credential (#838).
+                #828's SAS expiry was knowable for its whole lifetime and nobody
+                was told until prod lineage had been dark for six days — this is
+                the warning that arrives before the outage rather than after it.
+                Silent when the expiry is unknown: no badge is not a clean bill. */}
+            <CredentialExpiryBadge expiresAt={connection.credential_expires_at} />
             {(connection.consecutive_run_failures ?? 0) > 0 && (
               <Tooltip
                 title={
