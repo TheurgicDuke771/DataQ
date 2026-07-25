@@ -3,6 +3,13 @@
     "context7": {
       "command": "npx",
       "args": ["-y", "@upstash/context7-mcp@1"]
+    },
+    "azure": {
+      "command": "npx",
+      "args": ["-y", "@azure/mcp@3", "server", "start"],
+      "env": {
+        "AZURE_MCP_COLLECT_TELEMETRY": "false"
+      }
     }
   }
 }
