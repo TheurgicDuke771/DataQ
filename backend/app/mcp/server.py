@@ -44,6 +44,7 @@ from backend.app.services import (
     dashboard_service,
     orchestration_service,
     profile_service,
+    rollup,
     run_dispatch,
     run_service,
     run_target,
@@ -143,15 +144,41 @@ def list_suites() -> list[dict[str, Any]]:
         suites = suite_service.list_suites(
             session, user_id=user.id, include_all=is_workspace_admin(user)
         )
+        # Three per-suite queries used to run inside this loop — connection,
+        # check count, and latest run — so a 30-suite workspace issued 90 round
+        # trips for one tool call (#947). An LLM calls this tool constantly and
+        # cannot see the cost, so it is the worst place in the app to hide an N+1.
+        # All three are now one batched query each.
+        suite_ids = [s.id for s in suites]
+        connections = {
+            c.id: c
+            for c in session.scalars(
+                select(Connection).where(Connection.id.in_({s.connection_id for s in suites}))
+            )
+        }
+        check_counts: dict[uuid.UUID, int] = dict(
+            session.execute(
+                select(Check.suite_id, func.count())
+                .where(Check.suite_id.in_(suite_ids))
+                .group_by(Check.suite_id)
+            )
+            .tuples()
+            .all()
+        )
+        # The SHARED latest-run statement (#889), not a fourth hand-rolled copy.
+        # It also carries the `id` tie-break, so two runs sharing a `created_at`
+        # resolve deterministically here as they do everywhere else — the same
+        # nondeterminism #928 fixed for the pipeline-run feed.
+        last_runs = {
+            run.suite_id: run
+            for run in session.scalars(rollup.latest_runs_per_suite_stmt(suite_ids))
+        }
+
         out: list[dict[str, Any]] = []
         for s in suites:
-            connection = session.get(Connection, s.connection_id)
-            check_count = session.scalar(
-                select(func.count()).select_from(Check).where(Check.suite_id == s.id)
-            )
-            last_run = session.scalars(
-                select(Run).where(Run.suite_id == s.id).order_by(Run.created_at.desc()).limit(1)
-            ).first()
+            connection = connections.get(s.connection_id)
+            check_count = check_counts.get(s.id, 0)
+            last_run = last_runs.get(s.id)
             out.append(
                 {
                     "id": str(s.id),
@@ -185,9 +212,10 @@ def get_suite_results(suite_id: str) -> dict[str, Any]:
     sid = _parse_uuid(suite_id, field="suite_id")
     with _ctx() as (session, user), _service_errors():
         suite = require_permission(session, sid, user.id, minimum="view")
-        latest = session.scalars(
-            select(Run).where(Run.suite_id == sid).order_by(Run.created_at.desc()).limit(1)
-        ).first()
+        # The shared statement (#889/#947), not a second spelling of "latest run".
+        # Carries the `id` tie-break, so this agrees with `list_suites` and the
+        # dashboard about which run is newest when two share a timestamp.
+        latest = session.scalars(rollup.latest_runs_per_suite_stmt([sid])).first()
         if latest is None:
             return {"suite_id": suite_id, "run": None, "checks": []}
         results = run_service.list_results(session, latest.id)
