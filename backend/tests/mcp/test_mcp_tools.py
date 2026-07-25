@@ -759,3 +759,48 @@ def test_allowed_hosts_match_prod_and_compose_upstreams() -> None:
     )
     assert matches("api", hosts)  # docker-compose
     assert not matches("evil.example.com", hosts)  # still rejects the rest
+
+
+def test_allowed_hosts_come_from_settings_not_hardcoded(monkeypatch: Any) -> None:
+    """A non-ACA deployment can configure the allowlist (#728).
+
+    The list used to be a literal in `build_mcp_app`, which is the one deploy-target
+    coupling ADR 0010/0013 forbids in app code: any proxy forwarding a different
+    upstream Host (EKS/GKE, on-prem, a renamed compose service) got a 421 with no
+    way to fix it short of a code change.
+    """
+    from backend.app.core import config
+
+    captured: dict[str, Any] = {}
+    monkeypatch.setattr(server, "mcp_enabled", lambda: True)
+    monkeypatch.setattr(server.mcp, "http_app", lambda **kw: captured.update(kw) or "APP")
+
+    settings = config.get_settings()
+    monkeypatch.setattr(settings, "mcp_allowed_hosts", "*.example.internal, dataq-api ")
+    config.get_settings.cache_clear()
+    monkeypatch.setattr(config, "get_settings", lambda: settings)
+    monkeypatch.setattr(server, "get_settings", lambda: settings)
+
+    server.build_mcp_app()
+
+    # Whitespace stripped, order preserved, and the ACA default fully replaced —
+    # not merged, so an operator can genuinely narrow the allowlist.
+    assert captured["allowed_hosts"] == ["*.example.internal", "dataq-api"]
+
+
+def test_allowed_hosts_default_to_the_aca_shape_when_unset(monkeypatch: Any) -> None:
+    """Empty config keeps the deployed behaviour untouched (#728).
+
+    The setting is opt-in: an existing deployment that sets nothing must get the
+    same list the literal used to hardcode, or this refactor silently 421s prod.
+    """
+    from backend.app.core import config
+
+    settings = config.get_settings()
+    monkeypatch.setattr(settings, "mcp_allowed_hosts", "")
+    assert settings.mcp_allowed_host_list == [
+        "*.azurecontainerapps.io",
+        "api",
+        "localhost",
+        "127.0.0.1",
+    ]

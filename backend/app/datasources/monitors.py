@@ -37,6 +37,7 @@ if TYPE_CHECKING:
 
 from backend.app.datasources.base import CheckOutcome, MonitorSpec
 from backend.app.datasources.sql import core_table, folding_identifier, is_sql_identifier
+from backend.app.services.failure_classifier import classify_failure_reason
 
 FRESHNESS = "freshness"
 VOLUME = "volume"
@@ -56,8 +57,33 @@ def monitor_expectation_type(kind: str) -> str:
     return f"{_EXPECTATION_PREFIX}{kind}"
 
 
-class MonitorConfigError(ValueError):
-    """A monitor check's config is missing/invalid (bad column, range, or kind)."""
+class SafeMonitorError(Exception):
+    """Marker: ``str(exc)`` is DataQ-authored and safe to persist verbatim (#900).
+
+    The monitor loop persists a failed check's message into
+    ``results.observed_value`` -> the run-detail API -> the UI, a sink the
+    logger-level scrubber never sees. Raw driver/SDK text must never reach it (an
+    Azure storage exception embeds the full SAS-signed URL — #828), so unmarked
+    exceptions are routed through ``classify_failure_reason``.
+
+    But classifying *everything* would be its own bug: it would replace
+    "unknown freshness column 'nope'" — which we wrote, which names the user's
+    actual mistake, and which contains nothing sensitive — with a generic
+    "the run failed to execute", making a config typo undiagnosable from the UI.
+
+    So safety is declared, not guessed. Subclass this **only** when every message
+    the exception can carry is constructed by DataQ from known-safe parts. If it
+    can ever interpolate a driver message, a URL, or a connection string, leave it
+    unmarked and let it be classified.
+    """
+
+
+class MonitorConfigError(SafeMonitorError, ValueError):
+    """A monitor check's config is missing/invalid (bad column, range, or kind).
+
+    Safe-marked: these messages name the user's own config (a column name, a
+    numeric range) and are the actionable half of a failed monitor.
+    """
 
 
 def _ident(name: object, *, what: str) -> str:
@@ -438,12 +464,24 @@ def run_monitor_specs(
                 monitor_outcome(spec.kind, scalar=scalar_for(spec), config=spec.config, now=now)
             )
         except Exception as exc:  # one bad monitor errors, never its siblings
+            # Safe-marked messages persist verbatim; everything else is CLASSIFIED
+            # (#900). This message lands in `results.observed_value` -> the
+            # run-detail API -> the UI, a sink the logger-level scrubber never sees
+            # (CLAUDE.md §10 protects logs, not DB columns), and Azure storage
+            # exceptions carry the full SAS-signed URL in their text (#828) — so a
+            # raw `str(exc)` here would persist a live credential. Every sibling
+            # path already classified before persisting; this was the one that
+            # did not. See `SafeMonitorError` for why this isn't blanket.
             outcomes.append(
                 CheckOutcome(
                     expectation_type=monitor_expectation_type(spec.kind),
                     success=False,
                     errored=True,
-                    error_message=str(exc),
+                    error_message=(
+                        str(exc)
+                        if isinstance(exc, SafeMonitorError)
+                        else classify_failure_reason(exc)
+                    ),
                 )
             )
     return outcomes

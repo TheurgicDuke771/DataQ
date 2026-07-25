@@ -16,6 +16,7 @@ from backend.app.datasources.monitors import (
     evaluate_monitors,
     monitor_outcome,
 )
+from backend.app.services.failure_classifier import classify_failure_reason
 
 _NOW = datetime(2026, 6, 29, 12, 0, 0, tzinfo=UTC)
 
@@ -304,7 +305,47 @@ def test_evaluate_monitors_isolates_a_query_error() -> None:
         monitors=[MonitorSpec(kind="freshness", config={"column": "nope"})],
     )
     assert out[0].errored is True
-    assert "invalid identifier" in (out[0].error_message or "")
+    # Classified, not raw (#900) — see the leak test below for why. The message is
+    # a fixed string chosen by category, so assert it IS one of those constants
+    # rather than that it contains the driver's wording.
+    assert out[0].error_message == classify_failure_reason(RuntimeError("invalid identifier"))
+
+
+def test_monitor_error_message_never_carries_raw_exception_text() -> None:
+    """A per-monitor failure must not write the driver's message into a result row (#900).
+
+    `error_message` flows into `results.observed_value` -> the run-detail API -> the
+    UI. That sink never passes the logger-level scrubber (CLAUDE.md §10 protects
+    logs, not DB columns), and Azure storage exceptions embed the full SAS-signed
+    URL in their text (#828) — so a raw `str(exc)` here persists a live credential
+    where any viewer of the run can read it.
+
+    Asserted on the pipeline, not on the classifier: this is the #849 lesson —
+    testing the scrub helper proves nothing about the path that forgot to call it.
+    """
+    secret = "sig=abcdef1234567890SECRETSIGNATURE%3D"
+
+    def fetch(_statement: Any) -> object:
+        raise RuntimeError(
+            f"HttpResponseError: server failed to authenticate; "
+            f"https://acct.blob.core.windows.net/c/o?se=2027-01-01&{secret}"
+        )
+
+    out = evaluate_monitors(
+        fetch,
+        table="T",
+        schema=None,
+        catalog=None,
+        monitors=[MonitorSpec(kind="volume", config={"min_rows": 1})],
+    )
+
+    assert out[0].errored is True
+    message = out[0].error_message or ""
+    assert secret not in message
+    assert "sig=" not in message
+    assert "blob.core.windows.net" not in message
+    # And it still says something useful rather than being blanked.
+    assert message.strip()
 
 
 def test_freshness_accepts_a_date_column() -> None:

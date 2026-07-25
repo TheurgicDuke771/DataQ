@@ -325,6 +325,7 @@ def list_pipeline_runs(
     run_status: Annotated[str | None, Query(alias="status")] = None,
     limit: int = Query(default=_LIST_LIMIT_DEFAULT, ge=1, le=_LIST_LIMIT_MAX),
 ) -> list[PipelineRunRead]:
+    orchestration_service.validate_read_filters(provider=provider)
     pipeline_runs = orchestration_service.list_pipeline_runs(
         db, provider=provider, status=run_status, limit=limit
     )
@@ -348,6 +349,7 @@ def list_pipelines(
     first. Auth-only gated (orchestration monitoring, not suite-scoped); the
     per-run feed is `/pipeline_runs`.
     """
+    orchestration_service.validate_read_filters(provider=provider, env=env)
     pipelines = orchestration_service.list_pipelines(db, provider=provider, env=env, limit=limit)
     return [PipelineRunRead.model_validate(p) for p in pipelines]
 
