@@ -42,7 +42,7 @@ import pytest
 from sqlalchemy import CheckConstraint, create_engine, text
 from sqlalchemy.engine import make_url
 
-from backend.app.db import models  # noqa: F401  (register models on Base.metadata)
+from backend.app.db import models
 from backend.app.db.base import Base
 from backend.tests.conftest import TEST_DATABASE_URL
 
@@ -168,6 +168,14 @@ def _literals(sql: str) -> set[str]:
 
 def _model_predicates() -> dict[str, str]:
     """`{object name: SQL text}` for every named CHECK and partial index in the model."""
+    # `models` is imported for its side effect — defining the classes is what puts
+    # their tables on `Base.metadata`. Referenced here rather than left as a bare
+    # `# noqa: F401`, because a side-effect import is a standing invitation for a
+    # linter or a person to delete it, and an EMPTY metadata would make everything
+    # below pass VACUOUSLY: nothing to compare reads exactly like nothing wrong.
+    assert (
+        models.Connection.__tablename__ in Base.metadata.tables
+    ), "no model tables are registered — the comparison would have nothing to do"
     out: dict[str, str] = {}
     for table in Base.metadata.tables.values():
         for constraint in table.constraints:
