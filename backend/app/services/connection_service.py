@@ -313,9 +313,19 @@ def datasource_health(
         newest = runs[0]
         streak = 0
         reason: str | None = None
-        for run in runs:  # newest-first; stop at the first non-failure
-            if run.status != "failed":
+        # Newest-first. Only a SUCCEEDED run clears the streak — it is the one
+        # status that proves the connection is usable. `queued`/`running` have not
+        # answered yet and `cancelled` was stopped by a human, so none of them is
+        # evidence of anything; they are skipped rather than treated as recovery.
+        # Breaking on any non-failure (the first version of this) let a single
+        # cancelled or in-flight run at the head hide a real failure streak
+        # directly beneath it — and `consecutive_poll_failures`, which this
+        # mirrors, likewise resets only on a genuine successful poll.
+        for run in runs:
+            if run.status == "succeeded":
                 break
+            if run.status != "failed":
+                continue
             streak += 1
             reason = reason or run.failure_reason
         health[conn_id] = DatasourceHealth(

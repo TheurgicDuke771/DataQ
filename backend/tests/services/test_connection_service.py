@@ -816,3 +816,33 @@ def test_datasource_health_is_one_query_for_many_connections(db_session: Any) ->
     # brittle against unrelated session behaviour while proving less.
     health_queries = [s for s in statements if "row_number" in s.lower()]
     assert len(health_queries) == 1, f"expected one batched query, issued {len(health_queries)}"
+
+
+def test_datasource_health_a_cancelled_run_does_not_clear_the_streak(db_session: Any) -> None:
+    """Only a SUCCEEDED run proves the connection works (#954 review finding).
+
+    The first version broke on any non-failure, so a single cancelled or still-
+    running run at the head of the list hid a real failure streak directly
+    beneath it — the connection went quietly un-badged while every actual run
+    was failing. `queued`/`running` have not answered yet and `cancelled` was
+    stopped by a human; none of them is evidence the credential works.
+    """
+    conn = _create(db_session, FakeStore())
+    _run_on(db_session, conn, status="failed", reason="creds rejected", minutes_ago=3)
+    _run_on(db_session, conn, status="failed", reason="creds rejected", minutes_ago=2)
+    _run_on(db_session, conn, status="cancelled", minutes_ago=1)  # newest, not a success
+    db_session.commit()
+
+    health = svc.datasource_health(db_session, [conn.id])[conn.id]
+    assert health.consecutive_failures == 2
+    assert health.reason == "creds rejected"
+
+
+def test_datasource_health_an_in_flight_run_does_not_clear_the_streak(db_session: Any) -> None:
+    """Same rule for a run that simply hasn't finished yet."""
+    conn = _create(db_session, FakeStore())
+    _run_on(db_session, conn, status="failed", reason="creds rejected", minutes_ago=2)
+    _run_on(db_session, conn, status="running", minutes_ago=1)
+    db_session.commit()
+
+    assert svc.datasource_health(db_session, [conn.id])[conn.id].consecutive_failures == 1
