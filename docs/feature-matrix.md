@@ -131,6 +131,26 @@ catalog knowing about them (mechanism ④).
 | Apache Airflow | DAG callback → HMAC webhook (+10-min poll) | ✅ trigger bindings |
 | dbt | Post-build callback → HMAC webhook (+10-min `run_results.json` artifact poll) | ✅ trigger bindings |
 
+### Managed Airflow distributions
+
+The Airflow provider talks to the stock **Airflow REST API** and is not coupled to any
+particular host, so managed distributions work through the same connection type. Set
+`base_url` to the deployment's Airflow endpoint and supply the platform's API token as the
+credential (`auth_type: token`, the default — sent as `Authorization: Bearer …`).
+
+| Distribution | Expected to work | Status |
+|---|---|---|
+| Self-hosted / OSS Airflow | ✅ | **Verified** — the reference harness runs this |
+| Astronomer (Astro) | ✅ via an Astro **Deployment API token** as the Bearer credential, with `base_url` set to the deployment's Airflow URL (`https://<org>.astronomer.run/<deployment-id>`) | **Untested** — no Astro deployment has been exercised; compatible by construction, not by observation (#800) |
+| MWAA / Cloud Composer | Likely, same Bearer shape | **Untested** |
+
+The DAG-callback snippet in [`integrations/airflow/`](../integrations/airflow/) is
+host-agnostic — it POSTs an HMAC-signed event to DataQ and needs only outbound network
+access from the worker, so it applies unchanged on a managed deployment.
+
+**If you run DataQ against a managed distribution, please report back** — the honest status
+above is "should work", and only a real deployment can upgrade that to "does".
+
 ## Interfaces
 
 | Surface | What |

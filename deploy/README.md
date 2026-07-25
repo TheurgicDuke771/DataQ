@@ -309,7 +309,8 @@ route; everything is the public **frontend** host since the api has no public in
 0028 §5):
 
 ```bash
-FE=https://dataq-app-frontend.purplefield-f7322a1b.westus2.azurecontainerapps.io
+FE=https://<your-frontend-fqdn>   # e.g. az containerapp show -n dataq-app-frontend -g dataq-rg \
+                                  #        --query properties.configuration.ingress.fqdn -o tsv
 curl -s -o /dev/null -w "healthz         %{http_code}\n"        $FE/healthz       # 200
 curl -s -o /dev/null -w "api (auth)      %{http_code}\n"        $FE/api/v1/me     # 401
 curl -s -o /dev/null -w "mcp GET         %{http_code}\n"        $FE/mcp/          # 401  NOT 421

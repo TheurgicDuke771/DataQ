@@ -752,10 +752,10 @@ def test_allowed_hosts_match_prod_and_compose_upstreams() -> None:
         return any(p == "*" or fnmatchcase(host, p) for p in patterns)
 
     hosts = ["*.azurecontainerapps.io", "api", "localhost", "127.0.0.1"]
-    # The exact prod upstream nginx forwards (DATAQ_API_UPSTREAM, internal ingress);
-    # fnmatch `*` spans dots, so the wildcard matches the multi-label FQDN.
-    assert matches(
-        "dataq-app-api.internal.purplefield-f7322a1b.westus2.azurecontainerapps.io", hosts
-    )
+    # The SHAPE of the upstream Host nginx forwards (DATAQ_API_UPSTREAM, internal
+    # ingress): `<app>.internal.<env-hash>.<region>.azurecontainerapps.io`. Synthetic
+    # on purpose — what's under test is that fnmatch `*` spans dots and so matches a
+    # multi-label FQDN, not any one deployment's name (#730).
+    assert matches("dataq-app-api.internal.example-0a1b2c3d.westus2.azurecontainerapps.io", hosts)
     assert matches("api", hosts)  # docker-compose
     assert not matches("evil.example.com", hosts)  # still rejects the rest
