@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "7d0e40f71232",
+  "strategy": "manual-commit",
+  "branch": "chore/claude-automation-batch",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".mcp.json",
+    "CLAUDE.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/7d/0e40f71232/0/metadata.json",
+      "transcript": "/7d/0e40f71232/0/full.jsonl",
+      "compact_transcript": "/7d/0e40f71232/0/transcript.jsonl",
+      "content_hash": "/7d/0e40f71232/0/content_hash.txt",
+      "prompt": "/7d/0e40f71232/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 458,
+    "cache_creation_tokens": 236564,
+    "cache_read_tokens": 4788952,
+    "output_tokens": 23686,
+    "api_call_count": 24
+  }
+}
