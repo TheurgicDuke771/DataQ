@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "24dd2c409c00",
+  "strategy": "manual-commit",
+  "branch": "docs/upstream-0day-guardrails",
+  "checkpoints_count": 4,
+  "files_touched": [
+    "deploy/terraform/azure/redis.tf"
+  ],
+  "sessions": [
+    {
+      "metadata": "/24/dd2c409c00/0/metadata.json",
+      "transcript": "/24/dd2c409c00/0/full.jsonl",
+      "compact_transcript": "/24/dd2c409c00/0/transcript.jsonl",
+      "content_hash": "/24/dd2c409c00/0/content_hash.txt",
+      "prompt": "/24/dd2c409c00/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 73,
+    "cache_creation_tokens": 188144,
+    "cache_read_tokens": 6311597,
+    "output_tokens": 20185,
+    "api_call_count": 37
+  }
+}
