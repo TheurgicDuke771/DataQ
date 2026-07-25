@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "a5c12fc46d5d",
+  "strategy": "manual-commit",
+  "branch": "fix/triage-frontend-batch",
+  "checkpoints_count": 4,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/a5/c12fc46d5d/0/metadata.json",
+      "transcript": "/a5/c12fc46d5d/0/full.jsonl",
+      "compact_transcript": "/a5/c12fc46d5d/0/transcript.jsonl",
+      "content_hash": "/a5/c12fc46d5d/0/content_hash.txt",
+      "prompt": "/a5/c12fc46d5d/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 16623,
+    "cache_creation_tokens": 507247,
+    "cache_read_tokens": 43498638,
+    "output_tokens": 131262,
+    "api_call_count": 185
+  }
+}
