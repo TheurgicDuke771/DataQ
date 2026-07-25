@@ -3,7 +3,7 @@
   "checkpoint_id": "e205396a7489",
   "strategy": "manual-commit",
   "branch": "main",
-  "checkpoints_count": 4,
+  "checkpoints_count": 8,
   "files_touched": [
     "frontend/src/components/assets/ScorecardPanel.tsx"
   ],
@@ -14,13 +14,20 @@
       "compact_transcript": "/e2/05396a7489/0/transcript.jsonl",
       "content_hash": "/e2/05396a7489/0/content_hash.txt",
       "prompt": "/e2/05396a7489/0/prompt.txt"
+    },
+    {
+      "metadata": "/e2/05396a7489/1/metadata.json",
+      "transcript": "/e2/05396a7489/1/full.jsonl",
+      "compact_transcript": "/e2/05396a7489/1/transcript.jsonl",
+      "content_hash": "/e2/05396a7489/1/content_hash.txt",
+      "prompt": "/e2/05396a7489/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 1159,
-    "cache_creation_tokens": 2997774,
-    "cache_read_tokens": 259107296,
-    "output_tokens": 398606,
-    "api_call_count": 610
+    "input_tokens": 1223,
+    "cache_creation_tokens": 3044503,
+    "cache_read_tokens": 269108327,
+    "output_tokens": 417619,
+    "api_call_count": 642
   }
 }
