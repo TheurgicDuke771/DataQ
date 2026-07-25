@@ -91,9 +91,14 @@ jobs:
           SOURCE: ${{ matrix.source }}
           TARGET: ${{ matrix.target }}
         run: |
+          # The mirrored tag is the source's TAG, not its whole reference:
+          # `${SOURCE}` is `postgres:16-alpine`, so using it wholesale produced
+          # `ci-postgres:postgres:16-alpine` — two colons, "invalid reference
+          # format". Caught by dispatching the workflow rather than reading it.
+          TAG="${SOURCE##*:}"
           for attempt in 1 2 3; do
             if docker buildx imagetools create \
-                 --tag "ghcr.io/${OWNER}/${TARGET}:${SOURCE}" \
+                 --tag "ghcr.io/${OWNER}/${TARGET}:${TAG}" \
                  "docker.io/library/${SOURCE}"; then
               exit 0
             fi
@@ -111,5 +116,5 @@ jobs:
           TARGET: ${{ matrix.target }}
         run: |
           docker buildx imagetools inspect \
-            "ghcr.io/${OWNER}/${TARGET}:${SOURCE}" \
+            "ghcr.io/${OWNER}/${TARGET}:${SOURCE##*:}" \
             --format '{{ .Name }} -> {{ .Manifest.Digest }}'
