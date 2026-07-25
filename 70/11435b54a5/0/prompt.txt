@@ -1,0 +1,56 @@
+What is the current state of project?
+
+---
+
+there are bunch of open PRs and code ql issues, can you triage them
+
+---
+
+PRs - 
+Merge all 8, then make the necessary changes to the other 4. 
+
+CodeQL - 
+Resolve all 6
+
+---
+
+continue...
+
+---
+
+continue...
+
+---
+
+<task-notification>
+<task-id>bzkox98ca</task-id>
+<tool-use-id>toolu_01XVC5Ht3qaYfjug4bGquQdY</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/33af1d38-f9ba-4523-8367-e7aba99cffe4/tasks/bzkox98ca.output</output-file>
+<status>completed</status>
+<summary>Background command "Poll CI again after a pause" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bgmmi1dm8</task-id>
+<tool-use-id>toolu_013dqfpu1AZuHtJvQPAQCrmc</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/33af1d38-f9ba-4523-8367-e7aba99cffe4/tasks/bgmmi1dm8.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for all PR CI runs and report" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b7b85djs7</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/33af1d38-f9ba-4523-8367-e7aba99cffe4/tasks/b7b85djs7.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for the docs PR CI" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Change the session settings that you can call agents even if I dont ask explicitly. 
+Close the remaining Dependabot alert.
