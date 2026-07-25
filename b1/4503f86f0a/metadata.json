@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "b14503f86f0a",
+  "strategy": "manual-commit",
+  "branch": "chore/claude-automation-batch",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".claude/skills/live-verify/SKILL.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/b1/4503f86f0a/0/metadata.json",
+      "transcript": "/b1/4503f86f0a/0/full.jsonl",
+      "compact_transcript": "/b1/4503f86f0a/0/transcript.jsonl",
+      "content_hash": "/b1/4503f86f0a/0/content_hash.txt",
+      "prompt": "/b1/4503f86f0a/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 86,
+    "cache_creation_tokens": 181746,
+    "cache_read_tokens": 6315052,
+    "output_tokens": 51829,
+    "api_call_count": 44
+  }
+}
