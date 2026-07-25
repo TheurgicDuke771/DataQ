@@ -11,7 +11,7 @@
           },
           {
             "type": "command",
-            "command": "input=$(cat); fp=$(printf '%s' \"$input\" | jq -r '.tool_input.file_path // empty'); case \"$fp\" in */frontend/*.ts|*/frontend/*.tsx|*/frontend/*.css) ;; *) exit 0 ;; esac; command -v pnpm >/dev/null 2>&1 || exit 0; fe=\"${fp%%/frontend/*}/frontend\"; cd \"$fe\" || exit 0; pnpm exec prettier --write --log-level error \"$fp\" >/dev/null 2>&1; case \"$fp\" in *.ts|*.tsx) pnpm exec eslint --fix --no-warn-ignored \"$fp\" >/dev/null 2>&1 ;; esac; exit 0"
+            "command": "input=$(cat); fp=$(printf '%s' \"$input\" | jq -r '.tool_input.file_path // empty'); cwd=$(printf '%s' \"$input\" | jq -r '.cwd // empty'); case \"$fp\" in *.ts|*.tsx|*.css) ;; *) exit 0 ;; esac; command -v pnpm >/dev/null 2>&1 || exit 0; here=$(git -C \"$(dirname \"$fp\")\" rev-parse --show-toplevel 2>/dev/null); there=$(git -C \"${cwd:-.}\" rev-parse --show-toplevel 2>/dev/null); [ -n \"$here\" ] && [ \"$here\" = \"$there\" ] || exit 0; d=$(dirname \"$fp\"); while [ \"$d\" != \"/\" ] && [ ! -f \"$d/package.json\" ]; do d=$(dirname \"$d\"); done; [ -f \"$d/package.json\" ] || exit 0; cd \"$d\" || exit 0; pnpm exec prettier --write --log-level error \"$fp\" >/dev/null 2>&1; case \"$fp\" in *.ts|*.tsx) pnpm exec eslint --fix --no-warn-ignored \"$fp\" >/dev/null 2>&1 ;; esac; exit 0"
           },
           {
             "type": "command",
@@ -62,7 +62,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "input=$(cat); cmd=$(printf '%s' \"$input\" | jq -r '.tool_input.command // empty'); probe=$(printf '%s' \"$cmd\" | tr '\\n' ' ' | sed -e \"s/'[^']*'/''/g\" -e 's/\"[^\"]*\"/\"\"/g'); if printf '%s' \"$probe\" | grep -qE -- '(^|[[:space:]])--no-verify([[:space:]]|$)|git[[:space:]]+commit[[:space:]]+-n([[:space:]]|$)'; then echo 'Blocked: pre-commit bypass. CLAUDE.md section 11 forbids committing or pushing past the hooks (betterleaks secret scan, Black, Ruff, mypy, typecheck-deps-sync). Fix the failing hook instead - a secret that reaches branch history cannot be removed by a fixup commit, and force-push is blocked on this repo.' >&2; exit 2; fi"
+            "command": "python3 -c 'import json, shlex, sys\nd = json.load(sys.stdin)\ncmd = (d.get(\"tool_input\") or {}).get(\"command\") or \"\"\ncmd = cmd.split(\"<<\")[0]          # a heredoc BODY is data, not argv\ntry:\n    toks = shlex.split(cmd)       # shell-aware: a flag inside a quoted message is one token\nexcept ValueError:\n    toks = cmd.split()\nbad = \"--no-verify\" in toks\nfor i in range(len(toks) - 2):\n    if toks[i] == \"git\" and toks[i + 1] == \"commit\":\n        f = toks[i + 2]\n        if f.startswith(\"-\") and not f.startswith(\"--\") and \"n\" in f[1:]:\n            bad = True\nif bad:\n    sys.stderr.write(\n        \"Blocked: pre-commit bypass. CLAUDE.md section 11 forbids committing or pushing \"\n        \"past the hooks (betterleaks secret scan, Black, Ruff, mypy, typecheck-deps-sync). \"\n        \"Fix the failing hook instead - a secret that reaches branch history cannot be \"\n        \"removed by a fixup commit, and force-push is blocked on this repo.\"\n    )\n    sys.exit(2)\n'"
           }
         ]
       },

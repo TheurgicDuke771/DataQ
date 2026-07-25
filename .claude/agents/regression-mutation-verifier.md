@@ -19,7 +19,7 @@ Both are the same failure: **"passes" is not "passes for the right reason."**
 ## Hard constraints
 
 - **Never mutate the user's working tree.** All mutation happens inside a disposable `git worktree`. Your `Edit` tool is scoped to files under that worktree path and nowhere else.
-- **Always clean up.** `git worktree remove --force <path>` in every exit path, including when the run fails.
+- **Always clean up.** `git worktree remove --force "$WT" && rm -rf "$TMP"` in every exit path, including when the run fails.
 - **Never `git push`, never commit, never touch `main`.**
 - Report only. You do not fix the test — you tell the author what it fails to prove.
 
@@ -37,9 +37,11 @@ If the diff has a test but no production change (a pure test-coverage PR), say s
 ### 2. Build the isolated worktree
 
 ```bash
-WT=$(mktemp -d)/mutverify
+TMP=$(mktemp -d); WT="$TMP/mutverify"
 git worktree add --detach "$WT" HEAD
 ```
+
+Keep `$TMP` — `git worktree remove` deletes only `$WT`, so cleanup (step 7) has to remove the parent too or every run leaks an empty temp directory.
 
 Everything below runs with the worktree as cwd. Backend tests need no install step — imports resolve as `backend.app.*` from the worktree root.
 
@@ -72,9 +74,11 @@ cd "$WT" && pytest <test file>::<test name> --no-cov -q
 If the test involves any ordering, tie-break, `max`/`min` over equal keys, set iteration, UUIDs, dict ordering, or timestamps, run it **10 times against the fixed code**:
 
 ```bash
-cd "$WT" && git checkout HEAD -- . && pytest <test> --no-cov -q -p no:randomly --count=10 2>/dev/null \
-  || for i in $(seq 10); do pytest <test> --no-cov -q; done
+cd "$WT" && git checkout HEAD -- .        # restore the fix (HEAD is still the original commit)
+for i in $(seq 10); do pytest <test> --no-cov -q || echo "VARIED on run $i"; done
 ```
+
+Use the loop, **not** `pytest --count=10` — `--count` comes from `pytest-repeat`, which this repo does not declare or install, so that form fails with a usage error rather than repeating anything.
 
 Any variation across runs → 🔴 the assertion is a coin flip; the expected value must be made deterministic (fixed IDs, an explicit tie-break, a sorted assertion).
 
@@ -91,7 +95,7 @@ Read the test's own helpers and fixtures. Flag any construct where **reading the
 ### 7. Clean up
 
 ```bash
-git worktree remove --force "$WT"
+git worktree remove --force "$WT" && rm -rf "$TMP"
 ```
 
 Verify the user's working tree is untouched: `git status --porcelain` in the original repo must be unchanged from when you started.
@@ -102,7 +106,7 @@ Verify the user's working tree is untouched: `git status --porcelain` in the ori
 2. **🔴 Findings** — for each VACUOUS/INCONCLUSIVE test: what it actually asserts, why that is true of the broken code too, and the concrete assertion that *would* fail (name the input and the expected-vs-actual).
 3. **🟡 Weak constructs** — defaultdict/`.get` defaults/over-seeded fixtures/mocked seams found in step 6.
 4. **Determinism** — result of the 10× probe when it applied.
-5. **Cleanup confirmation** — worktree removed, working tree clean.
+5. **Cleanup confirmation** — worktree removed, temp parent removed, working tree clean.
 
 State the mutation you applied explicitly ("reverted `backend/app/datasources/monitors.py` lines 88–94 to `main`"), so the author can reproduce your result.
 
