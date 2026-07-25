@@ -11,6 +11,10 @@
           },
           {
             "type": "command",
+            "command": "input=$(cat); fp=$(printf '%s' \"$input\" | jq -r '.tool_input.file_path // empty'); case \"$fp\" in */frontend/*.ts|*/frontend/*.tsx|*/frontend/*.css) ;; *) exit 0 ;; esac; command -v pnpm >/dev/null 2>&1 || exit 0; fe=\"${fp%%/frontend/*}/frontend\"; cd \"$fe\" || exit 0; pnpm exec prettier --write --log-level error \"$fp\" >/dev/null 2>&1; case \"$fp\" in *.ts|*.tsx) pnpm exec eslint --fix --no-warn-ignored \"$fp\" >/dev/null 2>&1 ;; esac; exit 0"
+          },
+          {
+            "type": "command",
             "command": "input=$(cat); fp=$(printf '%s' \"$input\" | jq -r '.tool_input.file_path // empty'); case \"$fp\" in */docs/progress-v1.md) printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\",\"additionalContext\":\"docs/progress-v1.md is the FROZEN v1 archive (banner says do not update) - the live tracker is docs/progress.md. Make sure this edit is intentional archive maintenance, not a task tick that belongs in progress.md.\"}}';; */docs/progress.md) printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\",\"additionalContext\":\"docs/progress.md changed - keep the Snapshot counts (open PRs/issues) consistent with GitHub, and if a tracked cycle epic exists (label:epic), tick/untick its checklist to match. The v1 epics #173-#177 closed with v1.0.0; the v1 ledger is the frozen docs/progress-v1.md.\"}}';; esac"
           }
         ]
@@ -50,6 +54,15 @@
           {
             "type": "command",
             "command": "input=$(cat); file_path=$(printf '%s' \"$input\" | jq -r '.tool_input.file_path // empty'); if [ -z \"$file_path\" ]; then exit 0; fi; if printf '%s' \"$file_path\" | grep -qE '(^|/)\\.env($|\\.)' && ! printf '%s' \"$file_path\" | grep -qE '\\.env(\\.[^/]+)?\\.example$'; then echo 'Blocked: .env files must not be created or edited (public repo). Use .env.example as the template.' >&2; exit 2; fi"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "input=$(cat); cmd=$(printf '%s' \"$input\" | jq -r '.tool_input.command // empty'); probe=$(printf '%s' \"$cmd\" | tr '\\n' ' ' | sed -e \"s/'[^']*'/''/g\" -e 's/\"[^\"]*\"/\"\"/g'); if printf '%s' \"$probe\" | grep -qE -- '(^|[[:space:]])--no-verify([[:space:]]|$)|git[[:space:]]+commit[[:space:]]+-n([[:space:]]|$)'; then echo 'Blocked: pre-commit bypass. CLAUDE.md section 11 forbids committing or pushing past the hooks (betterleaks secret scan, Black, Ruff, mypy, typecheck-deps-sync). Fix the failing hook instead - a secret that reaches branch history cannot be removed by a fixup commit, and force-push is blocked on this repo.' >&2; exit 2; fi"
           }
         ]
       },
