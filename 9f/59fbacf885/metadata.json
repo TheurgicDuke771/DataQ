@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "9f59fbacf885",
+  "strategy": "manual-commit",
+  "branch": "docs/upstream-0day-guardrails",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "deploy/terraform/azure/postgres.tf",
+    "deploy/terraform/azure/redis.tf",
+    "docker-compose.yml",
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/9f/59fbacf885/0/metadata.json",
+      "transcript": "/9f/59fbacf885/0/full.jsonl",
+      "compact_transcript": "/9f/59fbacf885/0/transcript.jsonl",
+      "content_hash": "/9f/59fbacf885/0/content_hash.txt",
+      "prompt": "/9f/59fbacf885/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 104,
+    "cache_creation_tokens": 134069,
+    "cache_read_tokens": 5883097,
+    "output_tokens": 25478,
+    "api_call_count": 55
+  }
+}

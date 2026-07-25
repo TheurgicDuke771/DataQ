@@ -1,0 +1,5 @@
+Hey, can you check if we are impacted by this - https://github.com/bikini/exploitarium in any way
+
+---
+
+yeah, keep a note of both reddis and postgres [momory and related docs + issue if required]
