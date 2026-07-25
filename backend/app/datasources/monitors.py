@@ -72,9 +72,19 @@ class SafeMonitorError(Exception):
     "the run failed to execute", making a config typo undiagnosable from the UI.
 
     So safety is declared, not guessed. Subclass this **only** when every message
-    the exception can carry is constructed by DataQ from known-safe parts. If it
-    can ever interpolate a driver message, a URL, or a connection string, leave it
+    the exception can carry is built by DataQ from the user's own configuration
+    (a column name, a numeric range, a monitor kind) or from static text. If it can
+    ever interpolate a driver message, a URL, or a connection string, leave it
     unmarked and let it be classified.
+
+    **One deliberate exception, stated rather than hidden:** `_as_aware_datetime`
+    truncates and echoes the offending *cell value* when a freshness column holds
+    something unparseable. That is target data, not configuration — but it is the
+    only way to say which value broke, and the same column's value is already
+    returned as `observed_value` on the success path, so this echoes nothing a
+    reader of that check couldn't already see. Any NEW message that echoes cell
+    data needs the same explicit justification, not a silent inheritance of this
+    one.
     """
 
 
