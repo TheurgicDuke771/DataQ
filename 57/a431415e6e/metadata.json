@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "57a431415e6e",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/datasources/flatfile.py",
+    "backend/tests/datasources/test_flatfile.py",
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/57/a431415e6e/0/metadata.json",
+      "transcript": "/57/a431415e6e/0/full.jsonl",
+      "compact_transcript": "/57/a431415e6e/0/transcript.jsonl",
+      "content_hash": "/57/a431415e6e/0/content_hash.txt",
+      "prompt": "/57/a431415e6e/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 22010,
+    "cache_creation_tokens": 2871180,
+    "cache_read_tokens": 266245134,
+    "output_tokens": 460355,
+    "api_call_count": 777
+  }
+}
