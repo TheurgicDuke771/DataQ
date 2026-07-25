@@ -1,0 +1,93 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "4aad48643535",
+  "session_id": "33af1d38-f9ba-4523-8367-e7aba99cffe4",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-25T00:54:38.525218Z",
+  "branch": "fix/issue-977-loud-test-infra-degradation",
+  "checkpoints_count": 1,
+  "save_step_count": 2,
+  "files_touched": [
+    "backend/tests/conftest.py",
+    "backend/tests/test_infra_banner.py"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "febf06a193f0",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 484,
+    "cache_creation_tokens": 1007194,
+    "cache_read_tokens": 48920263,
+    "output_tokens": 134956,
+    "api_call_count": 250
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_019iEU8fgDZHkHo3SeXd1HhZ",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "update-config"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "febf06a193f0",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 612,
+        "end": 613,
+        "entry_ids": [
+          "f9ff0443-541d-4c85-a0a8-1b01ec66b430"
+        ],
+        "tool_use_id": "toolu_019iEU8fgDZHkHo3SeXd1HhZ"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_019iEU8fgDZHkHo3SeXd1HhZ"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: update-config",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 16
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-25T00:54:38.446766Z",
+    "agent_lines": 183,
+    "agent_removed": 13,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 183,
+    "total_lines_changed": 196,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 183,
+      "agent_lines_removed": 13,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}
