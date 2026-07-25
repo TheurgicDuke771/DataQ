@@ -47,7 +47,13 @@ from backend.app.core.errors import DataQError
 from backend.app.core.jsonsafe import sanitize_json
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
-from backend.app.datasources.flatfile import download_bytes, format_from_path, read_csv_bytes
+from backend.app.datasources.flatfile import (
+    RangeReader,
+    download_bytes,
+    format_from_path,
+    read_csv_bytes,
+    read_csv_head,
+)
 from backend.app.datasources.iceberg import (
     IcebergConfig,
     iceberg_credentials,
@@ -939,8 +945,13 @@ def list_file_columns(
 ) -> list[str]:
     """Column (header) names of a flat file on `connection` (ADLS Gen2 / S3).
 
-    Reads only the header (CSV `nrows=0`) or the Parquet footer schema — no data
-    scan. Raises `ProfileTargetInvalidError` (422) for an unknown format and
+    Reads only the header or the Parquet footer schema — and, since #882, only
+    the *bytes* those need: Parquet lands on its footer through `RangeReader`,
+    CSV takes a head range. This is called from the check editor on every target
+    change, so downloading a multi-GB object to list column names was full egress
+    and worker memory for a few hundred bytes of answer.
+
+    Raises `ProfileTargetInvalidError` (422) for an unknown format and
     `ProfileFailedError` (502) if the file can't be read (exception not echoed).
     """
     # secret_ref presence is guaranteed by the dispatcher (`resolve_profiler`),
@@ -948,16 +959,17 @@ def list_file_columns(
     fmt = infer_file_format(path, file_format)
     try:
         secret = secret_store.get(connection.secret_ref or "")
-        raw = io.BytesIO(
-            download_bytes(
-                conn_type=connection.type, config=connection.config, path=path, secret=secret
-            )
-        )
+        reader_args: dict[str, Any] = {
+            "conn_type": connection.type,
+            "config": connection.config,
+            "path": path,
+            "secret": secret,
+        }
         if fmt == "csv":
-            return [str(c) for c in read_csv_bytes(raw, nrows=0).columns]
+            return [str(c) for c in read_csv_head(**reader_args, rows=0).columns]
         import pyarrow.parquet as pq
 
-        return [str(name) for name in pq.ParquetFile(raw).schema.names]
+        return [str(name) for name in pq.ParquetFile(RangeReader(**reader_args)).schema.names]
     except Exception as exc:
         log.warning(
             "column_list_failed", connection_type=connection.type, error_type=type(exc).__name__

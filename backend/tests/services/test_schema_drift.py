@@ -251,9 +251,29 @@ def _file_connection(conn_type: str = "s3") -> Connection:
     )
 
 
+def _patch_object(monkeypatch: pytest.MonkeyPatch, content: bytes) -> list[tuple[int, int]]:
+    """Serve ``content`` over the BOUNDED read seam (#882) and record the ranges.
+
+    Introspection reads a Parquet footer or a bounded CSV sample, so it goes
+    through `RangeReader`/`read_range`, never the whole-object download. Stubbing
+    the range seam is what makes "it only read what it needed" observable.
+    """
+    from backend.app.datasources import flatfile
+
+    ranges: list[tuple[int, int]] = []
+
+    def _read_range(*, start: int, length: int, **_k: object) -> bytes:
+        ranges.append((start, length))
+        return content[start : start + length]
+
+    monkeypatch.setattr(flatfile, "object_size", lambda **k: len(content))
+    monkeypatch.setattr(flatfile, "read_range", _read_range)
+    return ranges
+
+
 def test_file_introspection_csv_types_from_sample(monkeypatch: pytest.MonkeyPatch) -> None:
     csv_bytes = b"id,email,amount\n1,a@x.io,10.5\n2,b@x.io,11.0\n"
-    monkeypatch.setattr(schema_drift, "download_bytes", lambda **kw: csv_bytes)
+    _patch_object(monkeypatch, csv_bytes)
     cols = introspect_columns(
         _file_connection(),
         table="landing/orders.csv",
@@ -273,7 +293,7 @@ def test_file_introspection_csv_sniffs_a_semicolon_delimiter(
     """#476: a mis-parsed `;` file collapses to one column, so drift would report
     every real column added AND removed the first time the delimiter changed."""
     csv_bytes = b"id;email;amount\n1;a@x.io;10.5\n2;b@x.io;11.0\n"
-    monkeypatch.setattr(schema_drift, "download_bytes", lambda **kw: csv_bytes)
+    _patch_object(monkeypatch, csv_bytes)
     cols = introspect_columns(
         _file_connection(),
         table="landing/orders.csv",
@@ -297,7 +317,7 @@ def test_file_introspection_parquet_types_from_footer(monkeypatch: pytest.Monkey
     # version (string vs large_string) — the footer must be deterministic.
     table = pa.table({"id": pa.array([1], pa.int64()), "name": pa.array(["x"], pa.string())})
     pq.write_table(table, buf)
-    monkeypatch.setattr(schema_drift, "download_bytes", lambda **kw: buf.getvalue())
+    _patch_object(monkeypatch, buf.getvalue())
     cols = introspect_columns(
         _file_connection("adls_gen2"),
         table="raw/orders.parquet",
@@ -353,10 +373,12 @@ def test_unsupported_connection_type_is_classified_error() -> None:
 def test_introspection_failure_message_is_classified(monkeypatch: pytest.MonkeyPatch) -> None:
     # A raw adapter exception (which can carry DSN/credential fragments) must
     # never surface — the classified reason does.
-    def boom(**kw: Any) -> bytes:
+    def boom(**kw: Any) -> int:
         raise RuntimeError("https://user:SECRET@host/path blew up")
 
-    monkeypatch.setattr(schema_drift, "download_bytes", boom)
+    from backend.app.datasources import flatfile
+
+    monkeypatch.setattr(flatfile, "object_size", boom)
     with pytest.raises(SchemaIntrospectionError) as excinfo:
         introspect_columns(
             _file_connection(), table="x.csv", schema=None, catalog=None, secret_store=_FakeStore()

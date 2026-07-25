@@ -426,10 +426,29 @@ def test_read_dataframe_parquet_projects_only_requested_columns(
 # ── list_file_columns (header/footer-only introspection, #474) ──
 
 
-def test_list_file_columns_csv_reads_header_only(monkeypatch: pytest.MonkeyPatch) -> None:
-    from backend.app.services import profile_service as svc
+def _patch_object(monkeypatch: pytest.MonkeyPatch, content: bytes) -> list[tuple[int, int]]:
+    """Serve ``content`` over the BOUNDED read seam (#882) and record the ranges.
 
-    monkeypatch.setattr(svc, "download_bytes", lambda **k: b"a,b,c\n1,2,3\n4,5,6\n")
+    Column listing reads a Parquet footer or a CSV header, so it goes through
+    `RangeReader`/`read_range` rather than pulling the object. Stubbing the range
+    seam — and NOT `download_bytes` — is what makes "it only read what it needed"
+    observable instead of assumed.
+    """
+    from backend.app.datasources import flatfile
+
+    ranges: list[tuple[int, int]] = []
+
+    def _read_range(*, start: int, length: int, **_k: object) -> bytes:
+        ranges.append((start, length))
+        return content[start : start + length]
+
+    monkeypatch.setattr(flatfile, "object_size", lambda **k: len(content))
+    monkeypatch.setattr(flatfile, "read_range", _read_range)
+    return ranges
+
+
+def test_list_file_columns_csv_reads_header_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_object(monkeypatch, b"a,b,c\n1,2,3\n4,5,6\n")
     cols = list_file_columns(
         _flatfile_conn(), path="x.csv", file_format="csv", secret_store=_FakeStore()
     )
@@ -441,9 +460,7 @@ def test_list_file_columns_csv_sniffs_a_semicolon_delimiter(
 ) -> None:
     """#476: the column dropdown used to offer one bogus column ('a;b;c') for a
     `;`-delimited file, which defeats the picker for that file entirely."""
-    from backend.app.services import profile_service as svc
-
-    monkeypatch.setattr(svc, "download_bytes", lambda **k: b"a;b;c\n1;2;3\n4;5;6\n")
+    _patch_object(monkeypatch, b"a;b;c\n1;2;3\n4;5;6\n")
     cols = list_file_columns(
         _flatfile_conn(), path="x.csv", file_format="csv", secret_store=_FakeStore()
     )
@@ -453,15 +470,17 @@ def test_list_file_columns_csv_sniffs_a_semicolon_delimiter(
 def test_list_file_columns_parquet_reads_schema_names(monkeypatch: pytest.MonkeyPatch) -> None:
     import io
 
-    from backend.app.services import profile_service as svc
-
     buf = io.BytesIO()
-    pd.DataFrame({"a": [1, 2], "b": [3, 4], "c": [5, 6]}).to_parquet(buf)
-    monkeypatch.setattr(svc, "download_bytes", lambda **k: buf.getvalue())
+    # Big enough that "read the footer" and "read the object" are distinguishable.
+    pd.DataFrame({"a": range(50_000), "b": range(50_000), "c": range(50_000)}).to_parquet(buf)
+    ranges = _patch_object(monkeypatch, buf.getvalue())
     cols = list_file_columns(
         _flatfile_conn(), path="x.parquet", file_format="parquet", secret_store=_FakeStore()
     )
     assert set(cols) == {"a", "b", "c"}
+    # #882: listing columns must not pay for the whole object. The names were
+    # always right — reading only the footer is the property under test.
+    assert ranges and sum(length for _, length in ranges) < len(buf.getvalue())
 
 
 # ── list_columns dispatch (target/type validation, no I/O) ──

@@ -206,18 +206,32 @@ def _patch_store(
     monkeypatch: pytest.MonkeyPatch,
     *,
     mtime: datetime | None = _LANDED,
-    csv: bytes = b"id,load_ts\n1,2026-06-29T00:00:00\n2,2026-06-28T00:00:00\n",
+    content: bytes = b"id,load_ts\n1,2026-06-29T00:00:00\n2,2026-06-28T00:00:00\n",
     reads: list[int] | None = None,
+    ranges: list[tuple[int, int]] | None = None,
 ) -> None:
-    """Stub both live seams: the listing (arrival time) and the download."""
+    """Stub every live seam over ONE canned object: arrival time, the whole-object
+    download, and the range reads (#882/#942).
+
+    All three serve the same bytes, so a test can assert *which* seam a code path
+    chose — the difference between "counted the rows" and "counted the rows
+    without pulling a 2 GB object" is invisible if the fake only exposes one way in.
+    """
     monkeypatch.setattr(flatfile, "file_last_modified", lambda **k: mtime)
 
     def _download(**_k: Any) -> bytes:
         if reads is not None:
             reads.append(1)
-        return csv
+        return content
+
+    def _read_range(*, start: int, length: int, **_k: Any) -> bytes:
+        if ranges is not None:
+            ranges.append((start, length))
+        return content[start : start + length]
 
     monkeypatch.setattr(flatfile, "download_bytes", _download)
+    monkeypatch.setattr(flatfile, "object_size", lambda **k: len(content))
+    monkeypatch.setattr(flatfile, "read_range", _read_range)
 
 
 def test_volume_monitor_counts_rows_of_the_resolved_batch(
@@ -400,7 +414,7 @@ def test_an_all_null_freshness_column_cannot_be_assessed(
 ) -> None:
     """An empty MAX must route through "can't be assessed", never age zero — a
     silent green on a column that carries no timestamps at all."""
-    _patch_store(monkeypatch, csv=b"id,load_ts\n1,\n2,\n")
+    _patch_store(monkeypatch, content=b"id,load_ts\n1,\n2,\n")
     out = _monitor_runner().run_monitors(
         table="raw/orders.csv", schema=None, monitors=[_spec("freshness", column="load_ts")]
     )
@@ -426,8 +440,7 @@ def test_freshness_column_works_on_a_real_parquet_round_trip(
     pd.DataFrame(
         {"id": [1, 2], "load_ts": pd.to_datetime(["2026-06-28", "2026-06-29"])}
     ).to_parquet(buf)
-    _patch_store(monkeypatch)
-    monkeypatch.setattr(flatfile, "download_bytes", lambda **k: buf.getvalue())
+    _patch_store(monkeypatch, content=buf.getvalue())
 
     out = _monitor_runner().run_monitors(
         table="raw/orders.parquet",
@@ -442,8 +455,7 @@ def test_freshness_column_works_on_a_real_parquet_round_trip(
 def test_volume_works_on_a_real_parquet_round_trip(monkeypatch: pytest.MonkeyPatch) -> None:
     buf = io.BytesIO()
     pd.DataFrame({"id": [1, 2, 3]}).to_parquet(buf)
-    _patch_store(monkeypatch)
-    monkeypatch.setattr(flatfile, "download_bytes", lambda **k: buf.getvalue())
+    _patch_store(monkeypatch, content=buf.getvalue())
     out = _monitor_runner().run_monitors(
         table="raw/orders.parquet", schema=None, monitors=[_spec("volume", min_rows=3, max_rows=5)]
     )
@@ -455,8 +467,7 @@ def test_arrow_backed_numeric_is_still_refused(monkeypatch: pytest.MonkeyPatch) 
     check must not accidentally let `int64[pyarrow]` through."""
     buf = io.BytesIO()
     pd.DataFrame({"id": [1, 2], "order_no": [1001, 1002]}).to_parquet(buf)
-    _patch_store(monkeypatch)
-    monkeypatch.setattr(flatfile, "download_bytes", lambda **k: buf.getvalue())
+    _patch_store(monkeypatch, content=buf.getvalue())
     out = _monitor_runner().run_monitors(
         table="raw/orders.parquet", schema=None, monitors=[_spec("freshness", column="order_no")]
     )
@@ -471,7 +482,7 @@ def test_a_numeric_freshness_column_is_refused_not_read_as_epoch_offsets(
     as epoch offsets, so a freshness monitor pointed at an id column would date the
     data to 1970 and fire CRITICAL staleness forever — a confident wrong answer,
     and one that looks exactly like a real incident. It must refuse instead."""
-    _patch_store(monkeypatch, csv=b"id,order_no\n1,1001\n2,1002\n")
+    _patch_store(monkeypatch, content=b"id,order_no\n1,1001\n2,1002\n")
     out = _monitor_runner().run_monitors(
         table="raw/orders.csv", schema=None, monitors=[_spec("freshness", column="order_no")]
     )
@@ -494,7 +505,7 @@ def test_csv_string_timestamps_are_parsed_not_string_compared(
     assert the parser's guess rather than our behaviour."""
     _patch_store(
         monkeypatch,
-        csv=b"id,load_ts\n1,2026-Nov-30 00:00\n2,2026-Dec-01 00:00\n",
+        content=b"id,load_ts\n1,2026-Nov-30 00:00\n2,2026-Dec-01 00:00\n",
     )
     out = _monitor_runner().run_monitors(
         table="raw/orders.csv", schema=None, monitors=[_spec("freshness", column="load_ts")]
@@ -516,7 +527,7 @@ def test_a_mostly_unparseable_freshness_column_is_refused(
     parse time, so it is dropped as a NULL long before this guard and behaves
     correctly already. Only junk pandas keeps as a string reaches the coercion."""
     rows = b"".join(b"%d,pending\n" % i for i in range(9))
-    _patch_store(monkeypatch, csv=b"id,load_ts\n" + rows + b"9,2020-01-01\n")
+    _patch_store(monkeypatch, content=b"id,load_ts\n" + rows + b"9,2020-01-01\n")
     out = _monitor_runner().run_monitors(
         table="raw/orders.csv", schema=None, monitors=[_spec("freshness", column="load_ts")]
     )
@@ -529,7 +540,7 @@ def test_a_minority_of_junk_still_parses_like_nulls(monkeypatch: pytest.MonkeyPa
     """The inverse guard: a few bad values behave like NULLs (matching `MAX` in
     SQL), so the threshold must not turn ordinary dirty data into an outage."""
     rows = b"".join(b"%d,2020-01-0%d\n" % (i, (i % 9) + 1) for i in range(9))
-    _patch_store(monkeypatch, csv=b"id,load_ts\n" + rows + b"9,n/a\n")
+    _patch_store(monkeypatch, content=b"id,load_ts\n" + rows + b"9,n/a\n")
     out = _monitor_runner().run_monitors(
         table="raw/orders.csv", schema=None, monitors=[_spec("freshness", column="load_ts")]
     )
@@ -539,7 +550,7 @@ def test_a_minority_of_junk_still_parses_like_nulls(monkeypatch: pytest.MonkeyPa
 def test_an_unparseable_text_freshness_column_cannot_be_assessed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _patch_store(monkeypatch, csv=b"id,load_ts\n1,not-a-date\n2,also-not\n")
+    _patch_store(monkeypatch, content=b"id,load_ts\n1,not-a-date\n2,also-not\n")
     out = _monitor_runner().run_monitors(
         table="raw/orders.csv", schema=None, monitors=[_spec("freshness", column="load_ts")]
     )
@@ -1076,3 +1087,321 @@ def test_blob_service_builds_against_account_url() -> None:
         assert client.account_name == "acct"
     finally:
         client.close()
+
+
+# ── bounded reads (#882 / #942) ──
+
+
+def _parquet(rows: int = 3) -> bytes:
+    buf = io.BytesIO()
+    pd.DataFrame(
+        {"id": range(rows), "load_ts": pd.date_range("2026-06-01", periods=rows)}
+    ).to_parquet(buf, index=False)
+    return buf.getvalue()
+
+
+def test_a_volume_monitor_never_materialises_the_file_as_a_dataframe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#942's headline: a nightly row count on a multi-GB Parquet used to pull the
+    whole object into worker memory and fully materialise it as a pandas frame.
+
+    Asserted by observing the SEAM taken, not the count — the count was always
+    right, which is exactly why this went unnoticed. A correctness-only assertion
+    passes with or without the fix.
+    """
+    reads: list[int] = []
+    _patch_store(monkeypatch, content=_parquet(), reads=reads)
+
+    out = _monitor_runner().run_monitors(
+        table="raw/orders.parquet", schema=None, monitors=[_spec("volume", min_rows=3, max_rows=5)]
+    )
+
+    assert out[0].errored is False and out[0].metric_value == 0.0
+    assert reads == [], "the whole object was downloaded to produce a row count"
+
+
+def test_a_parquet_row_count_reads_only_a_fraction_of_the_object(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Parquet states its own row count in the footer, so the count should cost a
+    couple of small range GETs rather than the object — whatever its size."""
+    content = _parquet(rows=20_000)
+    ranges: list[tuple[int, int]] = []
+    _patch_store(monkeypatch, content=content, ranges=ranges)
+
+    assert (
+        flatfile.row_count(conn_type="s3", config={}, path="raw/orders.parquet", secret="s")
+        == 20_000
+    )
+    assert ranges, "no range read was issued at all"
+    assert sum(length for _, length in ranges) < len(content)
+
+
+def test_a_csv_row_count_is_not_a_newline_count(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A CSV has no footer, so rows must be scanned — but counting newlines would
+    be a *plausible wrong answer*: a quoted field may legally contain one. Trading
+    an exact count for a believable one is the trade this codebase keeps paying for.
+    """
+    content = b'a,b\n1,"line one\nline two"\n2,"x"\n'
+    _patch_store(monkeypatch, content=content)
+
+    assert flatfile.row_count(conn_type="s3", config={}, path="raw/x.csv", secret="s") == 2
+
+
+def test_volume_and_column_freshness_together_read_the_object_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#942 AC 2. Column freshness genuinely needs the frame; volume must then come
+    off that frame rather than issuing a second, independent read of the same file."""
+    reads: list[int] = []
+    ranges: list[tuple[int, int]] = []
+    _patch_store(monkeypatch, content=_parquet(), reads=reads, ranges=ranges)
+
+    out = _monitor_runner().run_monitors(
+        table="raw/orders.parquet",
+        schema=None,
+        monitors=[_spec("volume", min_rows=1, max_rows=10), _spec("freshness", column="load_ts")],
+    )
+
+    assert [o.errored for o in out] == [False, False]
+    assert len(reads) == 1
+    assert ranges == [], "a second read was issued alongside the frame the run already had"
+
+
+def test_a_failing_row_count_is_attempted_once_not_once_per_monitor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The count gets the same attempt-memo the frame has. Without it, three volume
+    monitors on one target re-scan a failing object three times, and a transient
+    failure yields inconsistent outcomes inside a single run."""
+    attempts: list[int] = []
+    _patch_store(monkeypatch, content=_parquet())
+
+    def _boom(**_k: Any) -> int:
+        attempts.append(1)
+        raise RuntimeError("store unreachable")
+
+    monkeypatch.setattr(flatfile, "row_count", _boom)
+    out = _monitor_runner().run_monitors(
+        table="raw/orders.parquet",
+        schema=None,
+        monitors=[_spec("volume", min_rows=1, max_rows=2) for _ in range(3)],
+    )
+
+    assert [o.errored for o in out] == [True, True, True]
+    assert len(attempts) == 1
+
+
+def test_a_csv_head_read_drops_a_row_the_range_cut_in_half(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A byte range almost always ends mid-row, and a half-row parses as a COMPLETE
+    row with empty trailing fields — silently changing an inferred dtype. So the
+    trailing partial line is discarded before parsing."""
+    content = b"id,name\n" + b"".join(b"%d,abcdefghij\n" % i for i in range(200_000))
+    _patch_store(monkeypatch, content=content)
+    monkeypatch.setattr(flatfile, "_CSV_HEAD_BYTES", 5_000)
+
+    df = flatfile.read_csv_head(conn_type="s3", config={}, path="x.csv", secret="s", rows=100_000)
+
+    assert list(df.columns) == ["id", "name"]
+    # Every row that survived is whole — a truncated tail would show as a NaN name.
+    assert df["name"].notna().all()
+    assert len(df) < 200_000  # it really was a bounded read
+
+
+def test_a_range_reader_coalesces_small_sequential_reads(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Reading a footer apart in small steps must not become one request per step —
+    swapping one download for thousands of round trips is not an improvement."""
+    _patch_store(monkeypatch, content=b"x" * 100_000)
+    reader = flatfile.RangeReader(conn_type="s3", config={}, path="x.parquet", secret="s")
+
+    for _ in range(50):
+        reader.read(8)
+
+    assert reader.requests == 1
+
+
+# ── the range seam AT the driver boundary (#882) ──
+#
+# Every other IO primitive in this module has a test that stubs one level BELOW
+# it (`_s3_client` / `_blob_service`) and asserts the real call shape. The range
+# seam needs the same: every test above stubs `read_range`/`object_size`
+# themselves, so an off-by-one in the `Range` header — or the wrong metadata
+# field — would pass all of them and only surface against a live store. That is
+# the failure mode #953 cost us a whole feature to learn.
+
+
+class _RangeS3Stub:
+    """boto3 stand-in recording the exact Range header and serving it honestly."""
+
+    def __init__(self, content: bytes = b"0123456789") -> None:
+        self.content = content
+        self.ranges: list[str] = []
+
+    def head_object(self, Bucket: str, Key: str) -> dict[str, Any]:  # noqa: N803 — boto3 kwargs
+        assert (Bucket, Key) == ("raw", "orders/a.csv")
+        return {"ContentLength": len(self.content), "LastModified": _LANDED}
+
+    def get_object(self, Bucket: str, Key: str, Range: str) -> dict[str, Any]:  # noqa: N803
+        self.ranges.append(Range)
+        first, _, last = Range.removeprefix("bytes=").partition("-")
+        # Inclusive end, exactly as RFC 7233 (and S3) read it.
+        return {"Body": io.BytesIO(self.content[int(first) : int(last) + 1])}
+
+
+def test_read_range_s3_asks_for_an_inclusive_byte_range(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`bytes=0-3` is FOUR bytes, not three. An off-by-one here silently drops a
+    byte off every window — which, on a Parquet footer, is a corrupt read."""
+    stub = _RangeS3Stub()
+    monkeypatch.setattr(flatfile, "_s3_client", lambda cfg, secret: stub)
+
+    got = flatfile.read_range(
+        conn_type="s3", config=_S3_CONFIG, path="orders/a.csv", secret="s", start=2, length=4
+    )
+
+    assert got == b"2345"
+    assert stub.ranges == ["bytes=2-5"]
+
+
+def test_object_size_s3_reads_content_length(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(flatfile, "_s3_client", lambda cfg, secret: _RangeS3Stub(b"abcdefg"))
+    assert (
+        flatfile.object_size(conn_type="s3", config=_S3_CONFIG, path="orders/a.csv", secret="s")
+        == 7
+    )
+
+
+class _RangeBlobStub:
+    """ADLS stand-in recording (offset, length) and tracking the owed close()."""
+
+    def __init__(self, content: bytes = b"0123456789") -> None:
+        self.content = content
+        self.calls: list[tuple[int | None, int | None]] = []
+        self.closed = False
+
+    def close(self) -> None:
+        self.closed = True
+
+    def get_blob_client(self, *, container: str, blob: str) -> Any:
+        assert container == "raw"
+        outer = self
+
+        def _download(*, offset: int | None = None, length: int | None = None) -> Any:
+            outer.calls.append((offset, length))
+            start = offset or 0
+            end = start + length if length is not None else len(outer.content)
+            return SimpleNamespace(readall=lambda: outer.content[start:end])
+
+        return SimpleNamespace(
+            download_blob=_download,
+            get_blob_properties=lambda: SimpleNamespace(
+                size=len(outer.content), last_modified=_LANDED
+            ),
+        )
+
+
+def test_read_range_adls_uses_offset_length_and_closes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Azure takes offset+length, not an inclusive end — the one place the two
+    stores' range dialects differ, and the client still owes a close()."""
+    stub = _RangeBlobStub()
+    monkeypatch.setattr(flatfile, "_blob_service", lambda acfg, secret: stub)
+
+    got = flatfile.read_range(
+        conn_type="adls_gen2",
+        config=_ADLS_CONFIG,
+        path="orders/a.csv",
+        secret="sas",
+        start=2,
+        length=4,
+    )
+
+    assert got == b"2345"
+    assert stub.calls == [(2, 4)]
+    assert stub.closed
+
+
+def test_object_size_adls_reads_size_and_closes(monkeypatch: pytest.MonkeyPatch) -> None:
+    stub = _RangeBlobStub(b"abcdefg")
+    monkeypatch.setattr(flatfile, "_blob_service", lambda acfg, secret: stub)
+    assert (
+        flatfile.object_size(
+            conn_type="adls_gen2", config=_ADLS_CONFIG, path="orders/a.csv", secret="sas"
+        )
+        == 7
+    )
+    assert stub.closed  # the finally must release the connection pool
+
+
+def test_read_range_of_nothing_asks_the_store_for_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A zero-length range is a no-op, not `bytes=5-4` — which S3 rejects outright."""
+    stub = _RangeS3Stub()
+    monkeypatch.setattr(flatfile, "_s3_client", lambda cfg, secret: stub)
+    assert (
+        flatfile.read_range(
+            conn_type="s3", config=_S3_CONFIG, path="orders/a.csv", secret="s", start=5, length=0
+        )
+        == b""
+    )
+    assert stub.ranges == []
+
+
+# ── degenerate objects through the new seam ──
+
+
+def test_a_csv_with_only_a_header_counts_zero_rows(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Zero rows is a real answer — and the one a volume monitor most needs to get
+    right, since "the producer wrote a header and no data" is an incident."""
+    _patch_store(monkeypatch, content=b"id,name\n")
+    assert flatfile.row_count(conn_type="s3", config={}, path="x.csv", secret="s") == 0
+
+
+def test_a_head_read_of_a_file_smaller_than_the_window_keeps_every_row(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The trailing-partial-line trim must not fire when the range covered the whole
+    object — that would silently discard a genuinely-complete last row."""
+    _patch_store(monkeypatch, content=b"id,name\n1,a\n2,b\n3,c")  # no trailing newline
+    df = flatfile.read_csv_head(conn_type="s3", config={}, path="x.csv", secret="s", rows=100)
+    assert len(df) == 3
+
+
+def test_a_head_read_of_a_file_exactly_the_window_size_keeps_its_last_row(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The boundary the first cut of this got wrong: an object whose size EQUALS the
+    window was read completely, but "I got a full window" was taken as evidence of
+    truncation, so its real last row was dropped."""
+    content = b"id,name\n1,a\n2,bcd"
+    monkeypatch.setattr(flatfile, "_CSV_HEAD_BYTES", len(content))
+    _patch_store(monkeypatch, content=content)
+
+    df = flatfile.read_csv_head(conn_type="s3", config={}, path="x.csv", secret="s", rows=100)
+
+    assert len(df) == 2 and df["name"].tolist() == ["a", "bcd"]
+
+
+def test_a_malformed_freshness_column_errors_only_its_own_monitor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The isolation contract `run_monitor_specs` exists to keep. Deciding up front
+    whether the frame is needed must not evaluate a bad column config OUTSIDE the
+    per-monitor guard: that raises out of `run_monitors`, fails the whole run, and
+    persists nothing — so one hand-edited config would take down every sibling
+    check on the target."""
+    _patch_store(monkeypatch)
+
+    out = _monitor_runner().run_monitors(
+        table="raw/orders.csv",
+        schema=None,
+        monitors=[
+            _spec("volume", min_rows=1, max_rows=10),
+            _spec("freshness", column="not a column!"),
+        ],
+    )
+
+    assert [o.errored for o in out] == [False, True]
+    assert out[0].metric_value == 0.0  # the valid sibling still produced a result
