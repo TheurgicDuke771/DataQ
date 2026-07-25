@@ -14,7 +14,16 @@ Per working-agreements #1, #3, #5, #11, #25:
 ## Linked issue
 
 <!-- For defect fixes, use "Fixes #N" so the issue auto-closes on merge.
-     For feature work, use "Refs #N" or leave blank. -->
+     For feature work, use "Refs #N" or leave blank.
+
+     CLOSING SEVERAL ISSUES? Repeat the keyword for EACH one:
+         Fixes #1. Fixes #2. Fixes #3.
+     GitHub closes only the FIRST issue after a keyword, so "Fixes #1, #2, #3"
+     silently leaves #2 and #3 open — no warning anywhere. This has bitten the
+     repo twice (#720, and a 13-issue batch on 2026-07-25 that closed 3).
+
+     After merging, VERIFY rather than assume:
+         for n in 1 2 3; do gh issue view $n --json state --jq .state; done -->
 Fixes #
 
 ## Type of change
