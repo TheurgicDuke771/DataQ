@@ -12,6 +12,17 @@
 #
 # Runtime reachability: the ACA apps connect over the server's allow-Azure-services
 # firewall rule (the apps are Azure services), same as airflow.
+#
+# SECURITY CONSTRAINT — the single-role model is load-bearing, not just tidy.
+# PostgreSQL's referential-integrity check switches to the REFERENCED TABLE'S OWNER
+# before invoking an implicit cast on the FK value (ri_triggers.c). A role that can
+# CREATE TYPE / FUNCTION / CAST and holds REFERENCES on another owner's table can
+# therefore run its own SQL as that owner — reaching COPY ... TO PROGRAM if the owner
+# has pg_execute_server_program. Unpatched upstream as of 2026-07-24.
+# We are not exposed because there is exactly ONE app role (`dataq_app`) and it is
+# not shared with any untrusted party. Adding a second, less-trusted role to the
+# `dataq` database is what would create the exposure — so do not, without revisiting
+# this. See the guardrail row in docs/progress.md.
 
 data "azurerm_postgresql_flexible_server" "shared" {
   name                = var.shared_pg_server_name
