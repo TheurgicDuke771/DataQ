@@ -324,10 +324,17 @@ def list_pipeline_runs(
     provider: str | None = None,
     run_status: Annotated[str | None, Query(alias="status")] = None,
     limit: int = Query(default=_LIST_LIMIT_DEFAULT, ge=1, le=_LIST_LIMIT_MAX),
+    offset: int = Query(default=0, ge=0),
 ) -> list[PipelineRunRead]:
+    """Paged (#928): before this, `limit` capped at 200 with no `offset`, so the
+    200 most recent runs were the only ones any client could ever see — and a
+    caller passing `?offset=` got it silently discarded by FastAPI and re-read
+    page 1 forever. A paging loop therefore "counted" 20,200 rows against a
+    211-row table. Matches the `/assets` paging shape.
+    """
     orchestration_service.validate_read_filters(provider=provider)
     pipeline_runs = orchestration_service.list_pipeline_runs(
-        db, provider=provider, status=run_status, limit=limit
+        db, provider=provider, status=run_status, limit=limit, offset=offset
     )
     return [PipelineRunRead.model_validate(p) for p in pipeline_runs]
 
