@@ -207,4 +207,5 @@ def test_toggle_then_delete(client: TestClient, db_session: Any) -> None:
 
     deleted = client.delete(f"/api/v1/schedules/{sid}")
     assert deleted.status_code == 204
-    assert client.get(f"/api/v1/schedules/{sid}").status_code == 404
+    resp = client.get(f"/api/v1/schedules/{sid}")
+    assert resp.status_code == 404

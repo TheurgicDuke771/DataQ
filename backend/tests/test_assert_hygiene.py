@@ -14,10 +14,24 @@ as a plain test rather than by turning on the CodeQL query, for two reasons: it
 runs on every `pytest` (so a contributor sees it before pushing, not after), and
 it names the exact file and line instead of a security-tab entry.
 
-Deliberately narrow. It flags HTTP verbs that always mutate, and `get`/`request`
-only when the first argument looks like a URL path — so `dict.get(...)` and
-`Mock.get(...)`, which are pure, don't produce noise that would get the whole
-check suppressed. A guard people silence is worse than no guard.
+Narrow, but not naive — the distinction cost a review round. It flags HTTP verbs
+that always mutate, and `get`/`request` only when the first argument is
+**URL-shaped**, which means all three of the ways this suite spells a URL:
+
+    client.get("/api/v1/suites")          # a literal
+    client.get(f"/api/v1/suites/{sid}")   # an f-string
+    limiter.get(PROBE)                    # a module-level string constant
+
+The first cut recognised only the literal, so it passed green while 59 real
+instances — more than the 83 it had just fixed — sat untouched in the same files,
+some of them the sibling lines of calls that *were* hoisted. A detector that
+matches only the shape you happened to think of reports "clean" for the same
+reason it found nothing.
+
+It stays narrow where narrowness is correct: `dict.get(key)` and
+`session.get(Model, pk)` are pure, and their first argument resolves to no URL,
+so neither is flagged. A guard that cries wolf is a guard someone eventually
+silences.
 """
 
 from __future__ import annotations
@@ -33,22 +47,42 @@ _MUTATING = frozenset({"post", "put", "patch", "delete"})
 _URL_SHAPED = frozenset({"get", "request"})
 
 
-def _looks_like_a_url(call: ast.Call) -> bool:
+def _module_string_constants(tree: ast.Module) -> dict[str, str]:
+    """Module-level ``NAME = "…"`` bindings, so `limiter.get(PROBE)` resolves."""
+    out: dict[str, str] = {}
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant):
+            if isinstance(node.value.value, str):
+                for target in node.targets:
+                    if isinstance(target, ast.Name):
+                        out[target.id] = node.value.value
+    return out
+
+
+def _starts_a_path(value: object) -> bool:
+    return isinstance(value, str) and value.startswith("/")
+
+
+def _looks_like_a_url(call: ast.Call, constants: dict[str, str]) -> bool:
     first = call.args[0] if call.args else None
-    return (
-        isinstance(first, ast.Constant)
-        and isinstance(first.value, str)
-        and first.value.startswith("/")
-    )
+    if isinstance(first, ast.Constant):
+        return _starts_a_path(first.value)
+    if isinstance(first, ast.JoinedStr) and first.values:
+        # An f-string carries its path prefix in the leading literal chunk.
+        head = first.values[0]
+        return isinstance(head, ast.Constant) and _starts_a_path(head.value)
+    if isinstance(first, ast.Name):
+        return _starts_a_path(constants.get(first.id))
+    return False
 
 
-def _is_side_effecting(node: ast.AST) -> bool:
+def _is_side_effecting(node: ast.AST, constants: dict[str, str]) -> bool:
     return (
         isinstance(node, ast.Call)
         and isinstance(node.func, ast.Attribute)
         and (
             node.func.attr in _MUTATING
-            or (node.func.attr in _URL_SHAPED and _looks_like_a_url(node))
+            or (node.func.attr in _URL_SHAPED and _looks_like_a_url(node, constants))
         )
     )
 
@@ -60,10 +94,11 @@ def test_no_test_hides_a_request_inside_an_assert() -> None:
             tree = ast.parse(path.read_text())
         except SyntaxError:  # pragma: no cover — a broken file fails elsewhere, loudly
             continue
+        constants = _module_string_constants(tree)
         for node in ast.walk(tree):
             if not isinstance(node, ast.Assert):
                 continue
-            if any(_is_side_effecting(sub) for sub in ast.walk(node.test)):
+            if any(_is_side_effecting(sub, constants) for sub in ast.walk(node.test)):
                 rel = path.relative_to(_TESTS_ROOT.parent.parent)
                 offenders.append(f"{rel}:{node.lineno}")
 

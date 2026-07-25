@@ -465,7 +465,8 @@ def test_get_run_redacts_sample_failure_values(client: TestClient, db_session: A
 def test_get_run_unknown_returns_404(client: TestClient, db_session: Any) -> None:
     dev = _user(db_session, "dev@ex")
     _as(dev)
-    assert client.get(f"/api/v1/runs/{uuid.uuid4()}").status_code == 404
+    resp = client.get(f"/api/v1/runs/{uuid.uuid4()}")
+    assert resp.status_code == 404
 
 
 def test_get_run_no_access_returns_404(client: TestClient, db_session: Any) -> None:
@@ -475,7 +476,8 @@ def test_get_run_no_access_returns_404(client: TestClient, db_session: Any) -> N
     run = _run(db_session, suite)
 
     _as(stranger)
-    assert client.get(f"/api/v1/runs/{run.id}").status_code == 404
+    resp = client.get(f"/api/v1/runs/{run.id}")
+    assert resp.status_code == 404
 
 
 # ───────────────────────── GET /runs/{id}/progress ─────────────────
@@ -567,7 +569,8 @@ def test_progress_failed_run_has_terminal_status_and_no_results(
 def test_progress_unknown_run_returns_404(client: TestClient, db_session: Any) -> None:
     dev = _user(db_session, "dev@ex")
     _as(dev)
-    assert client.get(f"/api/v1/runs/{uuid.uuid4()}/progress").status_code == 404
+    resp = client.get(f"/api/v1/runs/{uuid.uuid4()}/progress")
+    assert resp.status_code == 404
 
 
 def test_progress_no_access_returns_404(client: TestClient, db_session: Any) -> None:
@@ -577,7 +580,8 @@ def test_progress_no_access_returns_404(client: TestClient, db_session: Any) -> 
     run = _run(db_session, suite, status="running")
 
     _as(stranger)
-    assert client.get(f"/api/v1/runs/{run.id}/progress").status_code == 404
+    resp = client.get(f"/api/v1/runs/{run.id}/progress")
+    assert resp.status_code == 404
 
 
 # ───────────────────────── POST /runs/{id}/cancel ──────────────────

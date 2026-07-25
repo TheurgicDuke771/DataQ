@@ -67,7 +67,8 @@ def test_rotating_bearer_hits_ip_ceiling(ip_ceiling_limiter: TestClient) -> None
     # per-token cap never fires; the per-IP ipall ceiling (4) closes the bypass.
     for i in range(4):
         h = {"Authorization": f"Bearer rotate-{i}"}
-        assert ip_ceiling_limiter.get(PROBE, headers=h).status_code != 429
+        resp = ip_ceiling_limiter.get(PROBE, headers=h)
+        assert resp.status_code != 429
     resp = ip_ceiling_limiter.get(PROBE, headers={"Authorization": "Bearer rotate-final"})
     assert resp.status_code == 429
     assert resp.headers["X-RateLimit-Limit"] == "4"  # the IP ceiling, reported
@@ -76,12 +77,17 @@ def test_rotating_bearer_hits_ip_ceiling(ip_ceiling_limiter: TestClient) -> None
 def test_two_distinct_tokens_share_ip_ceiling(ip_ceiling_limiter: TestClient) -> None:
     ha = {"Authorization": "Bearer token-AAA"}
     hb = {"Authorization": "Bearer token-BBB"}
-    assert ip_ceiling_limiter.get(PROBE, headers=ha).status_code != 429
-    assert ip_ceiling_limiter.get(PROBE, headers=hb).status_code != 429
-    assert ip_ceiling_limiter.get(PROBE, headers=ha).status_code != 429
-    assert ip_ceiling_limiter.get(PROBE, headers=hb).status_code != 429  # 4 total, at ceiling
+    resp = ip_ceiling_limiter.get(PROBE, headers=ha)
+    assert resp.status_code != 429
+    resp = ip_ceiling_limiter.get(PROBE, headers=hb)
+    assert resp.status_code != 429
+    resp = ip_ceiling_limiter.get(PROBE, headers=ha)
+    assert resp.status_code != 429
+    resp = ip_ceiling_limiter.get(PROBE, headers=hb)
+    assert resp.status_code != 429  # 4 total, at ceiling
     # 5th bearer request from the same IP (either token) → ipall ceiling 429.
-    assert ip_ceiling_limiter.get(PROBE, headers=ha).status_code == 429
+    resp = ip_ceiling_limiter.get(PROBE, headers=ha)
+    assert resp.status_code == 429
 
 
 def test_webhook_with_bearer_not_counted_against_ip_ceiling(ip_ceiling_limiter: TestClient) -> None:
@@ -93,7 +99,8 @@ def test_webhook_with_bearer_not_counted_against_ip_ceiling(ip_ceiling_limiter: 
         resp = ip_ceiling_limiter.post(path, headers=h)
         assert resp.status_code != 429
     # And a subsequent bearer request is ipall #1, not #7 → still allowed.
-    assert ip_ceiling_limiter.get(PROBE, headers=h).status_code != 429
+    resp = ip_ceiling_limiter.get(PROBE, headers=h)
+    assert resp.status_code != 429
 
 
 def test_single_token_still_capped_at_authenticated_limit(limiter: TestClient) -> None:
@@ -101,7 +108,8 @@ def test_single_token_still_capped_at_authenticated_limit(limiter: TestClient) -
     # The per-token bucket stays intact and independent of the higher ceiling.
     h = {"Authorization": "Bearer solo-token"}
     for _ in range(5):
-        assert limiter.get(PROBE, headers=h).status_code != 429
+        resp = limiter.get(PROBE, headers=h)
+        assert resp.status_code != 429
     resp = limiter.get(PROBE, headers=h)
     assert resp.status_code == 429
     assert resp.headers["X-RateLimit-Limit"] == "5"  # the token limit, not the ceiling
@@ -123,7 +131,8 @@ def _structlog_events(records: list[logging.LogRecord]) -> list[dict[str, object
 
 def test_unauth_429_at_limit_plus_one_full_contract(limiter: TestClient) -> None:
     for _ in range(3):  # UNAUTH limit = 3
-        assert limiter.get(PROBE).status_code != 429
+        resp = limiter.get(PROBE)
+        assert resp.status_code != 429
     resp = limiter.get(PROBE)
     assert resp.status_code == 429
     body = resp.json()
@@ -144,17 +153,22 @@ def test_unauth_429_at_limit_plus_one_full_contract(limiter: TestClient) -> None
 def test_per_token_buckets_are_independent(limiter: TestClient) -> None:
     ha = {"Authorization": "Bearer token-AAA"}
     for _ in range(5):  # AUTH limit = 5
-        assert limiter.get(PROBE, headers=ha).status_code != 429
-    assert limiter.get(PROBE, headers=ha).status_code == 429
+        resp = limiter.get(PROBE, headers=ha)
+        assert resp.status_code != 429
+    resp = limiter.get(PROBE, headers=ha)
+    assert resp.status_code == 429
 
     # A different token is a fresh bucket.
     hb = {"Authorization": "Bearer token-BBB"}
-    assert limiter.get(PROBE, headers=hb).status_code != 429
+    resp = limiter.get(PROBE, headers=hb)
+    assert resp.status_code != 429
 
     # And none of those bearer requests touched the unauth IP bucket.
     for _ in range(3):  # UNAUTH limit = 3, still full
-        assert limiter.get(PROBE).status_code != 429
-    assert limiter.get(PROBE).status_code == 429
+        resp = limiter.get(PROBE)
+        assert resp.status_code != 429
+    resp = limiter.get(PROBE)
+    assert resp.status_code == 429
 
 
 # ───────────────────────── 3. webhook class ─────────────────────────
@@ -268,7 +282,8 @@ def test_mcp_mount_is_covered(limiter: TestClient) -> None:
 
 def test_disabled_flag_never_throttles(client: TestClient) -> None:
     for _ in range(10):
-        assert client.get(PROBE).status_code != 429
+        resp = client.get(PROBE)
+        assert resp.status_code != 429
 
 
 # ───────────────────────── 8. fail-open ─────────────────────────
@@ -301,7 +316,8 @@ def test_fail_open_when_store_unavailable(
     caplog.set_level(logging.WARNING, logger="backend.app.core.rate_limit")
 
     for _ in range(5):  # well past limit 1 — all allowed (fail-open)
-        assert failopen_client.get(PROBE).status_code != 429
+        resp = failopen_client.get(PROBE)
+        assert resp.status_code != 429
 
     warnings = [
         e
@@ -323,14 +339,17 @@ def test_window_reset_restores_allowance(monkeypatch: pytest.MonkeyPatch) -> Non
     set_store_for_testing(InMemoryStore(clock=lambda: clock[0]))
 
     with TestClient(app) as c:
-        assert c.get(PROBE).status_code != 429
-        assert c.get(PROBE).status_code != 429
+        resp = c.get(PROBE)
+        assert resp.status_code != 429
+        resp = c.get(PROBE)
+        assert resp.status_code != 429
         resp = c.get(PROBE)
         assert resp.status_code == 429
         assert 1 <= resp.json()["error"]["detail"]["retry_after_seconds"] <= 60
         # Cross the window boundary → fresh allowance.
         clock[0] += 61
-        assert c.get(PROBE).status_code != 429
+        resp = c.get(PROBE)
+        assert resp.status_code != 429
 
 
 # ───────────────────────── 10. X-Forwarded-For keying ─────────────────────────
@@ -341,23 +360,30 @@ def test_sibling_ips_in_one_slash24_share_a_bucket(limiter: TestClient) -> None:
     # /24 — those must accumulate in ONE bucket and trip the cap together.
     for i in range(3):  # UNAUTH limit = 3
         h = {"X-Forwarded-For": f"9.9.9.{10 + i}"}  # three distinct /32s, one /24
-        assert limiter.get(PROBE, headers=h).status_code != 429
+        resp = limiter.get(PROBE, headers=h)
+        assert resp.status_code != 429
     resp = limiter.get(PROBE, headers={"X-Forwarded-For": "9.9.9.99"})
     assert resp.status_code == 429
     # A different /24 is a fresh, independent bucket.
-    assert limiter.get(PROBE, headers={"X-Forwarded-For": "9.9.8.1"}).status_code != 429
+    resp = limiter.get(PROBE, headers={"X-Forwarded-For": "9.9.8.1"})
+    assert resp.status_code != 429
 
 
 def test_ipv4_mapped_ipv6_shares_the_dotted_quad_bucket(limiter: TestClient) -> None:
     # A dual-stack chain can present the same client as `9.9.9.x` on one request
     # and `::ffff:9.9.9.x` on another — both must land in the ONE /24 bucket
     # (and never in a shared ::/64 that would collapse all IPv4 clients).
-    assert limiter.get(PROBE, headers={"X-Forwarded-For": "9.9.9.1"}).status_code != 429
-    assert limiter.get(PROBE, headers={"X-Forwarded-For": "::ffff:9.9.9.2"}).status_code != 429
-    assert limiter.get(PROBE, headers={"X-Forwarded-For": "9.9.9.3"}).status_code != 429
+    resp = limiter.get(PROBE, headers={"X-Forwarded-For": "9.9.9.1"})
+    assert resp.status_code != 429
+    resp = limiter.get(PROBE, headers={"X-Forwarded-For": "::ffff:9.9.9.2"})
+    assert resp.status_code != 429
+    resp = limiter.get(PROBE, headers={"X-Forwarded-For": "9.9.9.3"})
+    assert resp.status_code != 429
     # 4th in the same /24 (mapped form) → 429; an unrelated IPv4 /24 stays fresh.
-    assert limiter.get(PROBE, headers={"X-Forwarded-For": "::ffff:9.9.9.4"}).status_code == 429
-    assert limiter.get(PROBE, headers={"X-Forwarded-For": "7.7.7.7"}).status_code != 429
+    resp = limiter.get(PROBE, headers={"X-Forwarded-For": "::ffff:9.9.9.4"})
+    assert resp.status_code == 429
+    resp = limiter.get(PROBE, headers={"X-Forwarded-For": "7.7.7.7"})
+    assert resp.status_code != 429
 
 
 def test_bearer_ipall_ceiling_keys_on_prefix(ip_ceiling_limiter: TestClient) -> None:
@@ -367,7 +393,8 @@ def test_bearer_ipall_ceiling_keys_on_prefix(ip_ceiling_limiter: TestClient) -> 
     # bucket, not the raw /32.
     for i in range(4):
         h = {"Authorization": f"Bearer rot-{i}", "X-Forwarded-For": f"9.9.9.{10 + i}"}
-        assert ip_ceiling_limiter.get(PROBE, headers=h).status_code != 429
+        resp = ip_ceiling_limiter.get(PROBE, headers=h)
+        assert resp.status_code != 429
     resp = ip_ceiling_limiter.get(
         PROBE, headers={"Authorization": "Bearer rot-x", "X-Forwarded-For": "9.9.9.200"}
     )
@@ -388,17 +415,24 @@ def test_webhook_bucket_keys_on_prefix(limiter: TestClient) -> None:
 def test_xff_last_hop_defines_the_bucket(limiter: TestClient) -> None:
     h = {"X-Forwarded-For": "9.9.9.9"}
     for _ in range(3):
-        assert limiter.get(PROBE, headers=h).status_code != 429
-    assert limiter.get(PROBE, headers=h).status_code == 429
+        resp = limiter.get(PROBE, headers=h)
+        assert resp.status_code != 429
+    resp = limiter.get(PROBE, headers=h)
+    assert resp.status_code == 429
     # A different last hop is a fresh, independent bucket.
-    assert limiter.get(PROBE, headers={"X-Forwarded-For": "8.8.8.8"}).status_code != 429
+    resp = limiter.get(PROBE, headers={"X-Forwarded-For": "8.8.8.8"})
+    assert resp.status_code != 429
 
 
 def test_xff_spoofed_first_hop_shares_bucket_when_last_hop_matches(limiter: TestClient) -> None:
     h1 = {"X-Forwarded-For": "1.1.1.1, 9.9.9.9"}  # spoofed left, real right
     h2 = {"X-Forwarded-For": "2.2.2.2, 9.9.9.9"}
-    assert limiter.get(PROBE, headers=h1).status_code != 429
-    assert limiter.get(PROBE, headers=h2).status_code != 429
-    assert limiter.get(PROBE, headers=h1).status_code != 429
+    resp = limiter.get(PROBE, headers=h1)
+    assert resp.status_code != 429
+    resp = limiter.get(PROBE, headers=h2)
+    assert resp.status_code != 429
+    resp = limiter.get(PROBE, headers=h1)
+    assert resp.status_code != 429
     # 4th request on the shared last-hop bucket (UNAUTH limit = 3) → 429.
-    assert limiter.get(PROBE, headers=h2).status_code == 429
+    resp = limiter.get(PROBE, headers=h2)
+    assert resp.status_code == 429
