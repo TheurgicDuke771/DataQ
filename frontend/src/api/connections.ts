@@ -148,6 +148,10 @@ export interface Connection {
   last_run_at?: string | null;
   last_run_error?: string | null;
   consecutive_run_failures?: number;
+  /** When the credential itself says it stops working (#838) — a SAS prints `se=`.
+   *  NULL means UNKNOWN (no readable lifetime, or not yet read), never "does not
+   *  expire", so it must render as silence rather than reassurance. */
+  credential_expires_at?: string | null;
 }
 
 /** Human-readable labels for the connection types, for grouping + display. */

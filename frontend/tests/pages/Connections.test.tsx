@@ -99,6 +99,28 @@ describe('Connections', () => {
     expect(screen.getAllByText(/runs failing/)).toHaveLength(1);
   });
 
+  it('warns before a credential expires, and stays silent when it cannot know (#838)', async () => {
+    // The half #828 left undone: an ADLS SAS states its own expiry, so the
+    // product can say so BEFORE lineage goes dark for six days. Equally
+    // important is the third card — a credential with no readable lifetime gets
+    // no badge at all, because a reassuring badge would be worse than none.
+    const inDays = (d: number) => new Date(Date.now() + d * 86_400_000).toISOString();
+    mockList.mockResolvedValue([
+      conn({ id: 'c1', name: 'adls-soon', credential_expires_at: inDays(5) }),
+      conn({ id: 'c2', name: 'adls-dead', credential_expires_at: inDays(-1) }),
+      conn({ id: 'c3', name: 'sf-no-expiry', credential_expires_at: null }),
+      conn({ id: 'c4', name: 'adls-fine', credential_expires_at: inDays(120) }),
+    ]);
+
+    renderPage();
+
+    expect(await screen.findByText('credential expires in 5d')).toBeInTheDocument();
+    expect(screen.getByText('credential expired')).toBeInTheDocument();
+    // Exactly two badges: the unknown and the far-off credentials are unbadged,
+    // so the signal keeps meaning something.
+    expect(screen.getAllByText(/credential expire/)).toHaveLength(2);
+  });
+
   it('shows an empty state when there are no connections', async () => {
     mockList.mockResolvedValue([]);
 

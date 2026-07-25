@@ -47,6 +47,7 @@ from backend.app.orchestration.registry import get_orchestration_provider
 from backend.app.services import (
     asset_service,
     comparison_run,
+    connection_service,
     cron,
     incident_service,
     orchestration_service,
@@ -882,3 +883,39 @@ def beat_heartbeat() -> bool:
     except Exception:
         log.warning("beat_heartbeat_write_failed", exc_info=True)
         return False
+
+
+# ─────────────────── credential-expiry refresh (#838) ────────────────────────
+
+
+@celery_app.task(name="refresh_credential_expiry")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
+def refresh_credential_expiry() -> int:
+    """Celery-beat entry point — re-read every credential's stated expiry (#838).
+
+    Prod lineage was dark for six days on an expired ADLS SAS. #828 made that
+    visible once it broke something; this sweep is what lets the product warn
+    first, by keeping `connections.credential_expires_at` current for credentials
+    that state their own lifetime.
+
+    Daily, deliberately: an expiry date moves only when someone rotates a
+    credential, so this is a cache refresh of external truth on the same
+    low-urgency tick as the sample-failures and orphan-asset sweeps — not a
+    liveness interval. A day of staleness costs nothing against a warning window
+    measured in weeks.
+
+    Fail-soft like its sibling janitors: a Key Vault outage here must not fail the
+    beat tick for the tasks scheduled after it, and — since the sweep's whole job
+    is a warning signal — must not be mistaken for a credential problem. Returns
+    the number of connections whose stored expiry changed.
+    """
+    session = get_session()
+    try:
+        return connection_service.refresh_credential_expiry(
+            session, secret_store=get_secret_store()
+        )
+    except Exception:
+        session.rollback()
+        log.warning("credential_expiry_refresh_failed", exc_info=True)
+        return 0
+    finally:
+        session.close()

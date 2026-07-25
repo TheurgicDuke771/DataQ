@@ -74,7 +74,7 @@ revoking one doesn't break the others.
 |---|---|
 | At rest | SHA-256 hash only; the plaintext is never stored or logged (prefix only) |
 | Show-once | Plaintext appears solely in the creation response |
-| Expiry | Mandatory (≤ 365 days); expired keys stop authenticating |
+| Expiry | Mandatory (≤ 365 days); expired keys stop authenticating. The panel shows **Expires in Nd** for the last two weeks of a key's life (#838) — a status that reads `Active` until the instant it reads `Expired` is a warning that arrives after the breakage |
 | Revocation | Immediate, per-key, idempotent |
 | Failure mode | Unknown, revoked, and expired keys all return the **same** 401 — no probing oracle |
 | Owner lifecycle | Deleting/deactivating a user kills their keys with them |

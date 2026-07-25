@@ -16,6 +16,7 @@ never touch a live datasource.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel
@@ -161,3 +162,29 @@ class ConnectionAdapter(Protocol):
     def validate_config(self, raw: dict[str, Any]) -> BaseModel: ...
 
     def test(self, raw: dict[str, Any], secret: str, **extra_secrets: Any) -> None: ...
+
+
+@runtime_checkable
+class ExpiringCredentialAdapter(Protocol):
+    """A `ConnectionAdapter` whose credential *states its own expiry* (#838).
+
+    Optional, and deliberately narrow. An adapter implements this only when the
+    expiry is **in the credential** — an Azure storage SAS carries `se=`. An
+    adapter whose credential has no readable lifetime (an S3 access key, a
+    Snowflake key-pair, a Databricks PAT) simply does not implement it and is
+    silent: `None` and not-implemented both mean "unknown", never "never expires".
+    Guessing a lifetime would be worse than saying nothing, because a confident
+    wrong date is an outage with an alibi.
+
+    Unlike `MonitorRunner` — where the run path gates on a capability *set* rather
+    than `isinstance`, because a name-only structural match would TypeError at the
+    call — an `isinstance` gate is fine here: the caller (`registry.credential_expiry`)
+    is the only one, and it treats *any* failure as unknown, so a false structural
+    match degrades to silence instead of an exception escaping.
+
+    Implementations must not log, raise with, or otherwise echo the credential.
+    """
+
+    def credential_expiry(
+        self, raw: dict[str, Any], secret: str, **extra_secrets: Any
+    ) -> datetime | None: ...

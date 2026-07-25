@@ -20,12 +20,18 @@ const mockList = vi.mocked(listApiKeys);
 const mockCreate = vi.mocked(createApiKey);
 const mockRevoke = vi.mocked(revokeApiKey);
 
+const inDays = (d: number) => new Date(Date.now() + d * 86_400_000).toISOString();
+
 const KEY: ApiKey = {
   id: 'k1',
   name: 'ci-smoke',
   key_prefix: 'dq_live_ab12',
   created_at: '2026-07-01T10:00:00Z',
-  expires_at: '2026-10-01T10:00:00Z',
+  // Relative, not a fixed date: an "Active" fixture pinned to a hardcoded future
+  // timestamp is a test that fails on a calendar date rather than on a code
+  // change — and now that a token warns before it dies (#838), it would have
+  // started failing two weeks earlier still.
+  expires_at: inDays(60),
   revoked_at: null,
   last_used_at: null,
 };
@@ -60,6 +66,16 @@ describe('ApiKeysPanel', () => {
     mockList.mockResolvedValue([{ ...KEY, expires_at: '2020-01-01T00:00:00Z' }]);
     renderPanel();
     expect(await screen.findByText('Expired')).toBeInTheDocument();
+  });
+
+  it('warns while a token is still working, not once it has stopped (#838)', async () => {
+    // Active-until-the-instant-it-is-Expired is a warning that arrives strictly
+    // after the breakage. A PAT is a credential like a connection's SAS and gets
+    // the same window: the state between the two is the only useful one.
+    mockList.mockResolvedValue([{ ...KEY, expires_at: inDays(4) }]);
+    renderPanel();
+    expect(await screen.findByText('Expires in 4d')).toBeInTheDocument();
+    expect(screen.queryByText('Active')).not.toBeInTheDocument();
   });
 
   it('creates a token and reveals it exactly once', async () => {

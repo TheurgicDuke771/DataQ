@@ -30,6 +30,7 @@ import { useAsyncData } from '../../hooks/useAsyncData';
 import { AsyncBody } from '../AsyncBody';
 import { formatTimestamp } from '../results/resultsFormat';
 import { errorMessage } from '../../utils/errors';
+import { expiryStatus } from '../../utils/expiry';
 
 /**
  * Profile panel for the user's Personal Access Tokens (PATs, ADR 0026 phase 1,
@@ -97,10 +98,21 @@ function ApiKeysBody({
   );
 }
 
-/** Active / Expired / Revoked, derived from the metadata (no separate status field). */
+/**
+ * Revoked / Expired / Expiring / Active, derived from the metadata (no separate
+ * status field).
+ *
+ * "Expiring" exists because the two states either side of it are useless on their
+ * own: a token reads Active until the instant it reads Expired, which is a warning
+ * that arrives strictly after the breakage (#838). A PAT is a credential like a
+ * connection's SAS, so it shares the one window in `utils/expiry`.
+ */
 function keyStatus(key: ApiKey): { label: string; color: string } {
   if (key.revoked_at) return { label: 'Revoked', color: 'default' };
-  if (new Date(key.expires_at).getTime() < Date.now()) return { label: 'Expired', color: 'error' };
+  const status = expiryStatus(key.expires_at);
+  if (status.kind === 'expired') return { label: 'Expired', color: 'error' };
+  if (status.kind === 'expiring')
+    return { label: `Expires in ${status.daysLeft}d`, color: 'warning' };
   return { label: 'Active', color: 'success' };
 }
 

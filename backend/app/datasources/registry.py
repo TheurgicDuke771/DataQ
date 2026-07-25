@@ -11,12 +11,17 @@ from __future__ import annotations
 
 from collections.abc import Generator
 from contextlib import contextmanager
+from datetime import datetime
 from typing import Any, Protocol
 
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
 from backend.app.datasources.adls import AdlsConnectionAdapter
-from backend.app.datasources.base import CheckRunner, ConnectionAdapter
+from backend.app.datasources.base import (
+    CheckRunner,
+    ConnectionAdapter,
+    ExpiringCredentialAdapter,
+)
 from backend.app.datasources.flatfile import build_flatfile_runner
 from backend.app.datasources.iceberg import IcebergConnectionAdapter, build_iceberg_runner
 from backend.app.datasources.s3 import S3ConnectionAdapter
@@ -60,6 +65,32 @@ def get_connection_adapter(conn_type: str) -> ConnectionAdapter:
             f"No connection adapter registered for type {conn_type!r}"
         )
     return adapter
+
+
+def credential_expiry(
+    conn_type: str, config: dict[str, Any], secret: str, **extra_secrets: Any
+) -> datetime | None:
+    """When this connection's credential stops working (#838), or ``None``.
+
+    The one place that asks an adapter about credential lifetime, so callers never
+    branch on `connection.type`. ``None`` means **unknown** — the adapter doesn't
+    implement `ExpiringCredentialAdapter`, the credential carries no expiry, or the
+    read failed. It never means "does not expire".
+
+    Fail-soft by construction: a credential lifetime is an advisory signal, so a
+    surprising credential shape must not break the caller (connection CRUD, the
+    daily sweep). The exception is logged **without** the secret, the type, or any
+    exception text — a malformed credential's error can quote the credential (the
+    #536 precedent), and an unknown expiry is a safe answer.
+    """
+    adapter = get_connection_adapter(conn_type)
+    if not isinstance(adapter, ExpiringCredentialAdapter):
+        return None
+    try:
+        return adapter.credential_expiry(config, secret, **extra_secrets)
+    except Exception:
+        log.warning("credential_expiry_unreadable", type=conn_type)
+        return None
 
 
 # ───────────────────────── CheckRunner registry ─────────────────────

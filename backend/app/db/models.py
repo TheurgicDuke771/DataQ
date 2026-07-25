@@ -297,6 +297,25 @@ class Connection(Base):
         Integer, nullable=False, server_default=text("0")
     )
 
+    # ── Credential expiry (#838) ──────────────────────────────────────────────
+    # When this connection's credential stops working, where the credential states
+    # its own expiry (an Azure SAS prints `se=`). #828 made an expired credential
+    # visible once it BROKE something; this is what lets the product say so first.
+    #
+    # A *derived cache of the credential*, not user state: recomputed on every
+    # secret write and by the daily sweep, so a rotation moves it the same day. It
+    # is stored rather than computed per request because the source of truth lives
+    # in the SecretStore — reading it on a list endpoint would mean one Key Vault
+    # round-trip per connection, per page load. (Contrast `datasource_health`
+    # (#954), derived live because its source — `runs` — is already in this DB.)
+    #
+    # NULL means **unknown**, never "does not expire": the type's credential has no
+    # readable lifetime (an S3 access key, a Snowflake key-pair), or it has never
+    # been read. The UI must render NULL as silence, not as reassurance.
+    #
+    # A date, never the credential: this column is safe to log, list, and render.
+    credential_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
     # ── Warehouse-native lineage refresh state (#858) ────────────────────────────
     # Per-connection state for the warehouse-lineage beat (snowflake / unity_catalog).
     # All NULL on a connection never refreshed, and on every non-warehouse type.

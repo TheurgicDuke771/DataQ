@@ -74,6 +74,12 @@ class ConnectionRead(ApiModel):
     last_run_error: str | None = None
     consecutive_run_failures: int = 0
 
+    # Credential expiry (#838) — when the credential itself states one (a SAS prints
+    # `se=`). NULL means **unknown** (this credential type has no readable lifetime,
+    # or it has not been read yet), never "does not expire", so a client must render
+    # NULL as silence rather than reassurance. A date, never credential material.
+    credential_expires_at: datetime | None = None
+
     @classmethod
     def from_model(
         cls, conn: Connection, health: svc.DatasourceHealth | None = None
@@ -96,6 +102,7 @@ class ConnectionRead(ApiModel):
             last_run_at=health.last_run_at,
             last_run_error=health.reason,
             consecutive_run_failures=health.consecutive_failures,
+            credential_expires_at=conn.credential_expires_at,
         )
 
 
