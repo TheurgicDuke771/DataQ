@@ -72,6 +72,47 @@ def test_list_suites_shapes_each_accessible_suite(db_session: Any, monkeypatch: 
     assert out[0]["last_run"] is None
 
 
+def test_list_suites_query_count_does_not_grow_with_suite_count(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """`list_suites` must issue a FIXED number of queries, not O(suites) (#947).
+
+    Asserted by counting SQL statements, because the obvious test — "the output
+    is still correct" — passes just as happily with the N+1 in place. Only the
+    query count distinguishes the two, and an LLM calling this tool cannot see
+    the cost, so nothing else would ever surface a regression.
+
+    Three per-suite queries used to run in the loop (connection, check count,
+    latest run), so a 30-suite workspace issued ~90 round trips.
+    """
+    from sqlalchemy import event
+
+    user = _user(db_session)
+    for _ in range(4):
+        suite = _suite(db_session, user)
+        db_session.add(Check(suite_id=suite.id, name="c", expectation_type="expect_x", config={}))
+    db_session.commit()
+    _as(monkeypatch, db_session, user)
+
+    statements: list[str] = []
+
+    def _record(_conn: Any, _cursor: Any, statement: str, *_rest: Any) -> None:
+        statements.append(statement)
+
+    event.listen(db_session.bind, "before_cursor_execute", _record)
+    try:
+        out = server.list_suites()
+    finally:
+        event.remove(db_session.bind, "before_cursor_execute", _record)
+
+    assert len(out) == 4
+    assert {o["check_count"] for o in out} == {1}, "batching must not lose per-suite counts"
+    # 4 suites, and the whole tool stays in single digits. The pre-fix code issued
+    # 3 per suite on top of the listing, so this trips immediately if the loop
+    # regains a query — while leaving room for the shared prelude to change.
+    assert len(statements) <= 8, f"expected a fixed query count, issued {len(statements)}"
+
+
 def test_list_suites_hides_unowned_suites_from_non_admin(db_session: Any, monkeypatch: Any) -> None:
     # Baseline for the admin case below: an outsider who is not a workspace-admin
     # sees none of another user's suites.
