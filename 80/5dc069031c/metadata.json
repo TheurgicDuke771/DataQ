@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "805dc069031c",
+  "strategy": "manual-commit",
+  "branch": "docs/prod-finding-discipline",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "CLAUDE.md",
+    "CONTRIBUTING.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/80/5dc069031c/0/metadata.json",
+      "transcript": "/80/5dc069031c/0/full.jsonl",
+      "compact_transcript": "/80/5dc069031c/0/transcript.jsonl",
+      "content_hash": "/80/5dc069031c/0/content_hash.txt",
+      "prompt": "/80/5dc069031c/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 16854,
+    "cache_creation_tokens": 1086051,
+    "cache_read_tokens": 94424054,
+    "output_tokens": 195781,
+    "api_call_count": 302
+  }
+}
