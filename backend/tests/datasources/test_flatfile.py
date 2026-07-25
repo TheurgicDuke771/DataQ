@@ -1221,3 +1221,187 @@ def test_a_range_reader_coalesces_small_sequential_reads(monkeypatch: pytest.Mon
         reader.read(8)
 
     assert reader.requests == 1
+
+
+# ── the range seam AT the driver boundary (#882) ──
+#
+# Every other IO primitive in this module has a test that stubs one level BELOW
+# it (`_s3_client` / `_blob_service`) and asserts the real call shape. The range
+# seam needs the same: every test above stubs `read_range`/`object_size`
+# themselves, so an off-by-one in the `Range` header — or the wrong metadata
+# field — would pass all of them and only surface against a live store. That is
+# the failure mode #953 cost us a whole feature to learn.
+
+
+class _RangeS3Stub:
+    """boto3 stand-in recording the exact Range header and serving it honestly."""
+
+    def __init__(self, content: bytes = b"0123456789") -> None:
+        self.content = content
+        self.ranges: list[str] = []
+
+    def head_object(self, Bucket: str, Key: str) -> dict[str, Any]:  # noqa: N803 — boto3 kwargs
+        assert (Bucket, Key) == ("raw", "orders/a.csv")
+        return {"ContentLength": len(self.content), "LastModified": _LANDED}
+
+    def get_object(self, Bucket: str, Key: str, Range: str) -> dict[str, Any]:  # noqa: N803
+        self.ranges.append(Range)
+        first, _, last = Range.removeprefix("bytes=").partition("-")
+        # Inclusive end, exactly as RFC 7233 (and S3) read it.
+        return {"Body": io.BytesIO(self.content[int(first) : int(last) + 1])}
+
+
+def test_read_range_s3_asks_for_an_inclusive_byte_range(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`bytes=0-3` is FOUR bytes, not three. An off-by-one here silently drops a
+    byte off every window — which, on a Parquet footer, is a corrupt read."""
+    stub = _RangeS3Stub()
+    monkeypatch.setattr(flatfile, "_s3_client", lambda cfg, secret: stub)
+
+    got = flatfile.read_range(
+        conn_type="s3", config=_S3_CONFIG, path="orders/a.csv", secret="s", start=2, length=4
+    )
+
+    assert got == b"2345"
+    assert stub.ranges == ["bytes=2-5"]
+
+
+def test_object_size_s3_reads_content_length(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(flatfile, "_s3_client", lambda cfg, secret: _RangeS3Stub(b"abcdefg"))
+    assert (
+        flatfile.object_size(conn_type="s3", config=_S3_CONFIG, path="orders/a.csv", secret="s")
+        == 7
+    )
+
+
+class _RangeBlobStub:
+    """ADLS stand-in recording (offset, length) and tracking the owed close()."""
+
+    def __init__(self, content: bytes = b"0123456789") -> None:
+        self.content = content
+        self.calls: list[tuple[int | None, int | None]] = []
+        self.closed = False
+
+    def close(self) -> None:
+        self.closed = True
+
+    def get_blob_client(self, *, container: str, blob: str) -> Any:
+        assert container == "raw"
+        outer = self
+
+        def _download(*, offset: int | None = None, length: int | None = None) -> Any:
+            outer.calls.append((offset, length))
+            start = offset or 0
+            end = start + length if length is not None else len(outer.content)
+            return SimpleNamespace(readall=lambda: outer.content[start:end])
+
+        return SimpleNamespace(
+            download_blob=_download,
+            get_blob_properties=lambda: SimpleNamespace(
+                size=len(outer.content), last_modified=_LANDED
+            ),
+        )
+
+
+def test_read_range_adls_uses_offset_length_and_closes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Azure takes offset+length, not an inclusive end — the one place the two
+    stores' range dialects differ, and the client still owes a close()."""
+    stub = _RangeBlobStub()
+    monkeypatch.setattr(flatfile, "_blob_service", lambda acfg, secret: stub)
+
+    got = flatfile.read_range(
+        conn_type="adls_gen2",
+        config=_ADLS_CONFIG,
+        path="orders/a.csv",
+        secret="sas",
+        start=2,
+        length=4,
+    )
+
+    assert got == b"2345"
+    assert stub.calls == [(2, 4)]
+    assert stub.closed
+
+
+def test_object_size_adls_reads_size_and_closes(monkeypatch: pytest.MonkeyPatch) -> None:
+    stub = _RangeBlobStub(b"abcdefg")
+    monkeypatch.setattr(flatfile, "_blob_service", lambda acfg, secret: stub)
+    assert (
+        flatfile.object_size(
+            conn_type="adls_gen2", config=_ADLS_CONFIG, path="orders/a.csv", secret="sas"
+        )
+        == 7
+    )
+    assert stub.closed  # the finally must release the connection pool
+
+
+def test_read_range_of_nothing_asks_the_store_for_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A zero-length range is a no-op, not `bytes=5-4` — which S3 rejects outright."""
+    stub = _RangeS3Stub()
+    monkeypatch.setattr(flatfile, "_s3_client", lambda cfg, secret: stub)
+    assert (
+        flatfile.read_range(
+            conn_type="s3", config=_S3_CONFIG, path="orders/a.csv", secret="s", start=5, length=0
+        )
+        == b""
+    )
+    assert stub.ranges == []
+
+
+# ── degenerate objects through the new seam ──
+
+
+def test_a_csv_with_only_a_header_counts_zero_rows(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Zero rows is a real answer — and the one a volume monitor most needs to get
+    right, since "the producer wrote a header and no data" is an incident."""
+    _patch_store(monkeypatch, content=b"id,name\n")
+    assert flatfile.row_count(conn_type="s3", config={}, path="x.csv", secret="s") == 0
+
+
+def test_a_head_read_of_a_file_smaller_than_the_window_keeps_every_row(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The trailing-partial-line trim must not fire when the range covered the whole
+    object — that would silently discard a genuinely-complete last row."""
+    _patch_store(monkeypatch, content=b"id,name\n1,a\n2,b\n3,c")  # no trailing newline
+    df = flatfile.read_csv_head(conn_type="s3", config={}, path="x.csv", secret="s", rows=100)
+    assert len(df) == 3
+
+
+def test_a_head_read_of_a_file_exactly_the_window_size_keeps_its_last_row(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The boundary the first cut of this got wrong: an object whose size EQUALS the
+    window was read completely, but "I got a full window" was taken as evidence of
+    truncation, so its real last row was dropped."""
+    content = b"id,name\n1,a\n2,bcd"
+    monkeypatch.setattr(flatfile, "_CSV_HEAD_BYTES", len(content))
+    _patch_store(monkeypatch, content=content)
+
+    df = flatfile.read_csv_head(conn_type="s3", config={}, path="x.csv", secret="s", rows=100)
+
+    assert len(df) == 2 and df["name"].tolist() == ["a", "bcd"]
+
+
+def test_a_malformed_freshness_column_errors_only_its_own_monitor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The isolation contract `run_monitor_specs` exists to keep. Deciding up front
+    whether the frame is needed must not evaluate a bad column config OUTSIDE the
+    per-monitor guard: that raises out of `run_monitors`, fails the whole run, and
+    persists nothing — so one hand-edited config would take down every sibling
+    check on the target."""
+    _patch_store(monkeypatch)
+
+    out = _monitor_runner().run_monitors(
+        table="raw/orders.csv",
+        schema=None,
+        monitors=[
+            _spec("volume", min_rows=1, max_rows=10),
+            _spec("freshness", column="not a column!"),
+        ],
+    )
+
+    assert [o.errored for o in out] == [False, True]
+    assert out[0].metric_value == 0.0  # the valid sibling still produced a result

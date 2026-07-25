@@ -214,8 +214,15 @@ def read_range(
 
     Both stores serve HTTP range requests; this is the primitive that lets a
     Parquet footer or a CSV header be read without paying for the whole object.
-    A range past the end is served short by both stores, so callers get what
-    exists rather than an error.
+
+    A range that *starts* in bounds and *ends* past EOF is served short by both
+    stores, so asking for more than exists is safe. A range whose **start** is at
+    or past EOF is not: S3 answers 416 and Azure raises `InvalidRange`. That is
+    reachable — `RangeReader` snapshots the size once, so an object truncated by a
+    producer mid-read can push a later request past the new end. It surfaces as a
+    classified read failure at every call site rather than a wrong answer, which
+    is the right outcome; it is called out here so nobody plans around a
+    short-read that will not happen.
     """
     if length <= 0:
         return b""
@@ -413,21 +420,24 @@ def read_csv_head(
     Returns a pandas DataFrame of at most ``rows`` rows; the caller reads names
     and dtypes off it.
     """
+    # One byte MORE than the window, so a short read is unambiguous evidence the
+    # object ended. Testing `len(head) == _CSV_HEAD_BYTES` instead would call a
+    # file of exactly that size "truncated" and discard its genuinely-complete
+    # last row — a complete read mistaken for a cut one.
     head = read_range(
         conn_type=conn_type,
         config=config,
         path=path,
         secret=secret,
         start=0,
-        length=_CSV_HEAD_BYTES,
+        length=_CSV_HEAD_BYTES + 1,
     )
-    if len(head) == _CSV_HEAD_BYTES:
+    if len(head) > _CSV_HEAD_BYTES:
         cut = head.rfind(b"\n")
         # No newline at all in a full window means one enormous line; there is no
         # complete row to keep, so hand the parser what we have rather than
         # nothing and let it fail honestly.
-        if cut != -1:
-            head = head[:cut]
+        head = head[:cut] if cut != -1 else head[:_CSV_HEAD_BYTES]
     return read_csv_bytes(io.BytesIO(head), nrows=rows)
 
 
@@ -680,13 +690,23 @@ class FlatFileCheckRunner:
                 ),
             )
 
+        def _wants_frame(spec: MonitorSpec) -> bool:
+            if spec.kind != FRESHNESS:
+                return False
+            try:
+                return freshness_column(spec.config) is not None
+            except MonitorConfigError:
+                # A malformed column config is THIS monitor's error, raised inside
+                # `run_monitor_specs`' per-monitor guard so its siblings still run.
+                # Letting it escape here — outside that guard — would fail the whole
+                # run and persist nothing, which is the isolation contract
+                # `run_monitor_specs` exists to keep.
+                return False
+
         # Decided up front, not per monitor: if anything in this batch will pull
         # the frame anyway, volume should read it off that frame rather than issue
         # a second, independent read of the same object.
-        frame_is_needed = any(
-            spec.kind == FRESHNESS and freshness_column(spec.config) is not None
-            for spec in monitors
-        )
+        frame_is_needed = any(_wants_frame(spec) for spec in monitors)
 
         def rows() -> int:
             if frame_is_needed:
