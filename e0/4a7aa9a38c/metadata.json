@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "e04a7aa9a38c",
+  "strategy": "manual-commit",
+  "branch": "ci/issue-993-use-mirrored-images",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/e0/4a7aa9a38c/0/metadata.json",
+      "transcript": "/e0/4a7aa9a38c/0/full.jsonl",
+      "compact_transcript": "/e0/4a7aa9a38c/0/transcript.jsonl",
+      "content_hash": "/e0/4a7aa9a38c/0/content_hash.txt",
+      "prompt": "/e0/4a7aa9a38c/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 22190,
+    "cache_creation_tokens": 3502298,
+    "cache_read_tokens": 312456932,
+    "output_tokens": 523392,
+    "api_call_count": 867
+  }
+}
