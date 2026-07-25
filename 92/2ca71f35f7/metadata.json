@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "922ca71f35f7",
+  "strategy": "manual-commit",
+  "branch": "fix/triage-backend-batch",
+  "checkpoints_count": 4,
+  "files_touched": [
+    "backend/tests/mcp/test_mcp_tools.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/92/2ca71f35f7/0/metadata.json",
+      "transcript": "/92/2ca71f35f7/0/full.jsonl",
+      "compact_transcript": "/92/2ca71f35f7/0/transcript.jsonl",
+      "content_hash": "/92/2ca71f35f7/0/content_hash.txt",
+      "prompt": "/92/2ca71f35f7/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 16755,
+    "cache_creation_tokens": 573217,
+    "cache_read_tokens": 70540655,
+    "output_tokens": 160370,
+    "api_call_count": 251
+  }
+}
