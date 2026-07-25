@@ -109,7 +109,7 @@ export function ScorecardPanel({ scorecard }: { scorecard?: Scorecard | null }) 
           type="info"
           showIcon
           style={{ marginTop: 14 }}
-          message="Not covered"
+          title="Not covered"
           description={
             <Space size={[6, 6]} wrap>
               {uncovered.map((d) => (

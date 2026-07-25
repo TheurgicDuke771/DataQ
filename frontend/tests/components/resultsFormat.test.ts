@@ -83,11 +83,43 @@ describe('isWithinWindowDays', () => {
 });
 
 describe('status colour maps', () => {
-  it('maps every run status and result status to a colour', () => {
-    expect(RUN_STATUS_COLORS.succeeded).toBe('success');
-    expect(RUN_STATUS_COLORS.failed).toBe('error');
-    expect(RESULT_STATUS_COLORS.warn).toBe('warning');
-    expect(RESULT_STATUS_COLORS.critical).toBe('magenta');
+  // Asserted as WHOLE objects, not key-by-key (#563). The previous version claimed
+  // "every run status and result status" while asserting 4 of 11, so mutating any
+  // of the other 7 colours survived — the test's name was true of its intent and
+  // false of its assertions. Comparing the entire map also makes an added status a
+  // failing test here rather than a silently uncovered key.
+  it('maps every run status to a tag colour', () => {
+    expect(RUN_STATUS_COLORS).toEqual({
+      queued: 'default',
+      running: 'processing',
+      succeeded: 'success',
+      failed: 'error',
+      cancelled: 'warning',
+    });
+  });
+
+  it('maps every run status to a progress-bar status', () => {
+    expect(RUN_BAR_STATUS).toEqual({
+      queued: 'normal',
+      running: 'active',
+      succeeded: 'success',
+      failed: 'exception',
+      cancelled: 'exception',
+    });
+  });
+
+  it('maps every result status to a tag colour', () => {
+    // Severity tiers (ADR 0005) plus the two operational statuses (#122). `skip`
+    // and `error` are the ones an operator most needs to tell apart from a pass,
+    // so their colours are as load-bearing as the severity ones.
+    expect(RESULT_STATUS_COLORS).toEqual({
+      pass: 'success',
+      warn: 'warning',
+      fail: 'error',
+      critical: 'magenta',
+      skip: 'default',
+      error: 'volcano',
+    });
   });
 
   it('maps pipeline statuses with a default fallback', () => {
@@ -112,14 +144,6 @@ describe('status colour maps', () => {
         created_at: '2026-06-11T00:00:00Z',
       }),
     ).toBe('adf:daily_orders_load:seed-adf-0001');
-  });
-
-  it('maps every run status to a Progress bar status', () => {
-    expect(RUN_BAR_STATUS.queued).toBe('normal');
-    expect(RUN_BAR_STATUS.running).toBe('active');
-    expect(RUN_BAR_STATUS.succeeded).toBe('success');
-    expect(RUN_BAR_STATUS.failed).toBe('exception');
-    expect(RUN_BAR_STATUS.cancelled).toBe('exception');
   });
 });
 
