@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "124de2396c10",
+  "strategy": "manual-commit",
+  "branch": "fix/mcp-n1-and-monitor-echo",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/mcp/server.py",
+    "backend/tests/mcp/test_mcp_tools.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/12/4de2396c10/0/metadata.json",
+      "transcript": "/12/4de2396c10/0/full.jsonl",
+      "compact_transcript": "/12/4de2396c10/0/transcript.jsonl",
+      "content_hash": "/12/4de2396c10/0/content_hash.txt",
+      "prompt": "/12/4de2396c10/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 16999,
+    "cache_creation_tokens": 1693220,
+    "cache_read_tokens": 135164562,
+    "output_tokens": 242447,
+    "api_call_count": 378
+  }
+}
