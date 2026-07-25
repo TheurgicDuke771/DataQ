@@ -45,7 +45,9 @@ resource "azurerm_container_app" "redis" {
       # never issues VSET commands, and 7.x does not expose them at all. The
       # internal ingress + --requirepass above are the second and third layers.
       # Read #980 before bumping this to 8.x — Dependabot does not watch Docker
-      # images, so nothing else will raise it for you.
+      # images, so nothing else will raise it for you. The `redis` ignore rule in
+      # .github/dependabot.yml is NOT this: that one caps redis-py, the pip CLIENT
+      # library, per kombu's extra. Nothing automated covers this server image.
       image   = "redis:7-alpine" # public image — no registry auth
       cpu     = 0.5
       memory  = "1Gi"
