@@ -140,6 +140,19 @@ export function LineageGraph({
                 <div key={s.connection_id}>
                   <Typography.Text strong>{s.name}</Typography.Text> ({s.type}): last refresh failed
                   — {s.last_error}
+                  {/* A failing source can ALSO carry a tier note (#987): the success
+                      path records `degraded_reason`, and the error path never clears
+                      it. That note is not stale trivia — it says which tier the source
+                      is able to answer at, a property of its edition/grants that still
+                      holds while refreshes fail. Showing only the error hid the reason
+                      the graph was already thin before it went stale. */}
+                  {s.degraded_reason ? (
+                    <div style={{ marginLeft: 12 }}>
+                      <Typography.Text type="secondary">
+                        Last successful refresh also reported: {s.degraded_reason}
+                      </Typography.Text>
+                    </div>
+                  ) : null}
                 </div>
               ))}
               <div style={{ marginTop: 4 }}>
