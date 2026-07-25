@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "6d2df60cf94d",
+  "strategy": "manual-commit",
+  "branch": "test/issue-990-migration-parity",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/tests/db/test_migration_parity.py",
+    "backend/tests/db/test_orchestration_predicate_drift.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/6d/2df60cf94d/0/metadata.json",
+      "transcript": "/6d/2df60cf94d/0/full.jsonl",
+      "compact_transcript": "/6d/2df60cf94d/0/transcript.jsonl",
+      "content_hash": "/6d/2df60cf94d/0/content_hash.txt",
+      "prompt": "/6d/2df60cf94d/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 22128,
+    "cache_creation_tokens": 2947421,
+    "cache_read_tokens": 295799646,
+    "output_tokens": 499466,
+    "api_call_count": 836
+  }
+}
