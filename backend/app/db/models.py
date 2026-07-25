@@ -164,6 +164,15 @@ class ApiKey(Base):
     """
 
     __tablename__ = "api_keys"
+    # The uniqueness of `key_hash` is enforced by a unique INDEX, not a unique
+    # constraint — because that is what the migration actually created, and the
+    # model was the thing that was wrong (found by #990's parity check). The two
+    # are interchangeable for enforcement but NOT for identity: a constraint would
+    # be named `api_keys_key_hash_key` in every `create_all` test database while
+    # production carries `uq_api_keys_key_hash`, so any code keying on the
+    # constraint name — as `connection_service._conflict_from_integrity_error`
+    # does for connections — would behave differently in tests than in production.
+    __table_args__ = (Index("uq_api_keys_key_hash", "key_hash", unique=True),)
 
     id: Mapped[uuid.UUID] = _uuid_pk()
     user_id: Mapped[uuid.UUID] = mapped_column(
@@ -172,8 +181,9 @@ class ApiKey(Base):
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     # First characters of the token (e.g. `dq_live_ab12`) — safe to list/log.
     key_prefix: Mapped[str] = mapped_column(String(16), nullable=False)
-    # SHA-256 hex of the full token; unique doubles as the O(1) auth lookup index.
-    key_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    # SHA-256 hex of the full token; the unique index above doubles as the O(1)
+    # auth lookup index.
+    key_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

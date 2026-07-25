@@ -6,17 +6,17 @@ places — the model's `__table_args__`, the migration that created it, and the
 service constant used for the `ON CONFLICT` upsert — and all three must list every
 provider in `ORCHESTRATION_PROVIDERS`.
 
-**What this module checks, and what it does not.** It covers the two Python
-spellings: the model's `__table_args__` and the service constant, against
-`ORCHESTRATION_PROVIDERS` and against each other. It does **not** check the
-migration, because the test schema is built with `Base.metadata.create_all`
-(`conftest.py`), not by applying Alembic — so the model and the live index are
-never compared here. The gap that survives: widen the vocabulary, the model and
-the service correctly, but ship no migration, and these tests stay green while
-production's index predicate is stale and dedup silently lapses for the new
-provider. Adding a provider therefore still needs the migration written by hand
-and verified against a real database. Stated plainly rather than left implied —
-a guard that claims more than it checks is worse than no guard.
+**What this module checks.** The two Python spellings — the model's
+`__table_args__` and the service constant — against `ORCHESTRATION_PROVIDERS` and
+against each other.
+
+The third spelling, the migration, is covered by `test_migration_parity.py`
+(#990): it replays `alembic upgrade head` onto a scratch database and diffs the
+result against the model, so a provider widened in the model but not in a
+migration now fails there. Until that existed, this module could only say so in
+prose — widen the vocabulary, the model and the service correctly, ship no
+migration, and every test stayed green while production's predicate was stale and
+dedup silently lapsed for the new provider.
 
 Adding a provider without widening them is silent: dedup simply stops applying to
 the new provider's runs, so a re-delivered webhook creates a duplicate run instead
