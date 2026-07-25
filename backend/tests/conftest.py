@@ -204,6 +204,143 @@ def _db_engine() -> "Iterator[object]":
     engine.dispose()
 
 
+# ---------------------------------------------------------------------------
+# Local test-infra visibility (#977)
+#
+# Skipping when the compose stack is down is deliberate (resolution order above,
+# point 3) — but it must never be QUIET. With the stack down a bare `pytest -q`
+# reports "1642 passed, 943 skipped"; with it up, the same commit reports "2586
+# passed, 1 skipped". About a third of the suite silently does not run, and the
+# summary line reads as success either way.
+#
+# The per-test skip reasons are already good, but pytest only renders them under
+# `-rs`, and a bare skip count is indistinguishable from the live-datasource
+# tests that legitimately skip without credentials. Editors (VS Code, PyCharm)
+# invoke pytest directly rather than scripts/test-backend.sh, so this is the
+# common path, not an edge case.
+#
+# These hooks report the condition up front and again, loudly, at the end. They
+# are visibility only: probes are cheap, failures are swallowed, and nothing here
+# can fail a run. In CI both services are up, so the warning never fires.
+# ---------------------------------------------------------------------------
+
+_PROBE_TIMEOUT_S = 1.5
+_FIX_HINT = "docker compose up -d postgres redis  (or scripts/test-backend.sh)"
+
+
+def _probe_postgres() -> str | None:
+    """None when the test DB is reachable, else a short human reason."""
+    if not TEST_DATABASE_URL:
+        return "no TEST_DATABASE_URL and no local .env Postgres creds"
+    try:
+        from sqlalchemy import create_engine, text
+
+        engine = create_engine(
+            TEST_DATABASE_URL,
+            future=True,
+            connect_args={"connect_timeout": int(_PROBE_TIMEOUT_S)},
+        )
+        try:
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+        finally:
+            engine.dispose()
+    except Exception:
+        return "not reachable"
+    return None
+
+
+def _probe_secret_store() -> tuple[str, str | None]:
+    """(backend_name, reason_unavailable). Only the redis backend can be *down* —
+    `env` is in-process and `azure_key_vault` is never used by the local suite."""
+    try:
+        settings = get_settings()
+        mode = settings.secret_store
+    except Exception:
+        return ("unknown", None)
+    if mode != "redis":
+        return (mode, None)
+    try:
+        import redis
+
+        client = redis.Redis.from_url(
+            settings.redis_url,
+            socket_connect_timeout=_PROBE_TIMEOUT_S,
+            socket_timeout=_PROBE_TIMEOUT_S,
+        )
+        try:
+            client.ping()
+        finally:
+            client.close()
+    except Exception:
+        return (mode, "not reachable")
+    return (mode, None)
+
+
+_INFRA_STATUS_CACHE: list[tuple[str, str | None]] | None = None
+
+
+def _infra_status() -> list[tuple[str, str | None]]:
+    """[(label, reason_unavailable)] — probed once, cached for the session."""
+    global _INFRA_STATUS_CACHE
+    if _INFRA_STATUS_CACHE is None:
+        store_mode, store_reason = _probe_secret_store()
+        _INFRA_STATUS_CACHE = [
+            ("postgres (test DB)", _probe_postgres()),
+            (f"secret store ({store_mode})", store_reason),
+        ]
+    return _INFRA_STATUS_CACHE
+
+
+def pytest_report_header() -> list[str]:
+    """State infra reachability before the run, so a degraded pass is visible
+    from the first line rather than inferred from a skip count at the end."""
+    lines = []
+    for label, reason in _infra_status():
+        lines.append(f"test infra: {label} — {'OK' if reason is None else reason.upper()}")
+    if any(reason for _, reason in _infra_status()):
+        lines.append(f"test infra: DEGRADED — DB-backed tests will skip. Fix: {_FIX_HINT}")
+    return lines
+
+
+def pytest_terminal_summary(terminalreporter: object) -> None:
+    """Re-state a degraded run at the end, where the summary line is read.
+
+    The header scrolls away on a long run; this is the part that stops a
+    third-coverage pass from being mistaken for a green one.
+    """
+    down = [(label, reason) for label, reason in _infra_status() if reason]
+    if not down:
+        return
+    stats = terminalreporter.stats  # type: ignore[attr-defined]
+    skipped = len(stats.get("skipped", []))
+    broke = len(stats.get("failed", [])) + len(stats.get("error", []))
+    write = terminalreporter.write_line  # type: ignore[attr-defined]
+    write("")
+    write("!" * 79, red=True, bold=True)
+    write("DEGRADED RUN — local test infrastructure was unavailable.", red=True, bold=True)
+    for label, reason in down:
+        write(f"  unavailable: {label} — {reason}", red=True)
+    # Only state what actually happened: a missing Postgres makes DB-backed tests
+    # SKIP, while a missing secret store makes them FAIL. Claiming skips on a run
+    # that had none would be the exact defect this banner exists to prevent.
+    if skipped:
+        write(f"  {skipped} test(s) skipped — the DB-backed tests are among them.", red=True)
+    if broke:
+        write(
+            f"  {broke} test(s) failed/errored — likely for this reason, not a code defect.",
+            red=True,
+        )
+    if not skipped and not broke:
+        write(
+            "  No tests skipped or failed, but coverage of this dependency was not exercised.",
+            red=True,
+        )
+    write(f"  Fix: {_FIX_HINT}", red=True, bold=True)
+    write("A pass here does not mean what a full local run means.", red=True)
+    write("!" * 79, red=True, bold=True)
+
+
 @pytest.fixture
 def db_session(_db_engine: object) -> "Iterator[object]":
     """A transactional Session rolled back after each test for isolation.
