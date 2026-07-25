@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "20602782e1a3",
+  "strategy": "manual-commit",
+  "branch": "docs/dompurify-correction",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/20/602782e1a3/0/metadata.json",
+      "transcript": "/20/602782e1a3/0/full.jsonl",
+      "compact_transcript": "/20/602782e1a3/0/transcript.jsonl",
+      "content_hash": "/20/602782e1a3/0/content_hash.txt",
+      "prompt": "/20/602782e1a3/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 338,
+    "cache_creation_tokens": 927621,
+    "cache_read_tokens": 25594648,
+    "output_tokens": 92495,
+    "api_call_count": 173
+  }
+}
