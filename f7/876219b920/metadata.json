@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "f7876219b920",
+  "strategy": "manual-commit",
+  "branch": "perf/issue-943-bounded-batch-listing",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/datasources/flatfile.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f7/876219b920/0/metadata.json",
+      "transcript": "/f7/876219b920/0/full.jsonl",
+      "compact_transcript": "/f7/876219b920/0/transcript.jsonl",
+      "content_hash": "/f7/876219b920/0/content_hash.txt",
+      "prompt": "/f7/876219b920/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 22020,
+    "cache_creation_tokens": 2880202,
+    "cache_read_tokens": 268566347,
+    "output_tokens": 464368,
+    "api_call_count": 782
+  }
+}
