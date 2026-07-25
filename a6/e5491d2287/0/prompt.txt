@@ -1,0 +1,5 @@
+/claude-code-setup:claude-automation-recommender
+
+---
+
+implement all

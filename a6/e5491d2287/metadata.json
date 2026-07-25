@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "a6e5491d2287",
+  "strategy": "manual-commit",
+  "branch": "chore/claude-automation-batch",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".claude/agents/regression-mutation-verifier.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/a6/e5491d2287/0/metadata.json",
+      "transcript": "/a6/e5491d2287/0/full.jsonl",
+      "compact_transcript": "/a6/e5491d2287/0/transcript.jsonl",
+      "content_hash": "/a6/e5491d2287/0/content_hash.txt",
+      "prompt": "/a6/e5491d2287/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 84,
+    "cache_creation_tokens": 180122,
+    "cache_read_tokens": 6114294,
+    "output_tokens": 50541,
+    "api_call_count": 43
+  }
+}
