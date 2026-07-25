@@ -46,8 +46,10 @@ export function LineageGraph({
    *  below may be stale or missing for reasons unrelated to this asset. */
   failingSources?: LineageSourceHealth[];
   /** Warehouse-native lineage sources that are degraded (coarser tier) or failing
-   *  (#858). A degraded source is working but coarse (view-level only), so the graph
-   *  is real but incomplete — an INFO note, distinct from the failing-source warning. */
+   *  (#858). Split at render (#915): a degraded source is working but coarse
+   *  (view-level only) — the graph is real, just not the richest possible, so INFO.
+   *  A source carrying `last_error` actually FAILED its last refresh, which is an
+   *  operational problem and must not read as a mere qualifier — so WARNING. */
   warehouseStatus?: WarehouseLineageStatus[];
   onOpenAsset: (assetId: string) => void;
 }) {
@@ -56,6 +58,25 @@ export function LineageGraph({
     [center, upstream, downstream, edges],
   );
   const isolated = upstream.length === 0 && downstream.length === 0;
+  // #915: one Alert covering both states let "last refresh FAILED" render at the
+  // same INFO weight as "answers at a coarser tier". Partition on `last_error`,
+  // taking failure as the dominant state — a source that is BOTH coarse and
+  // currently failing is a failing source first.
+  //
+  // The two fields are not mutually exclusive: `warehouse_refresh` sets
+  // `degraded_reason` on a successful coarse refresh and does not clear it when a
+  // later refresh fails, so a row can carry both. Such a row shows only its error
+  // here, exactly as the single-alert version did — the tier note is not lost by
+  // this change, it was never shown alongside an error. Surfacing both is a
+  // separate improvement, filed rather than smuggled in.
+  const warehouseFailing = useMemo(
+    () => warehouseStatus.filter((s) => s.last_error),
+    [warehouseStatus],
+  );
+  const warehouseDegraded = useMemo(
+    () => warehouseStatus.filter((s) => !s.last_error),
+    [warehouseStatus],
+  );
 
   return (
     <Card
@@ -84,7 +105,7 @@ export function LineageGraph({
           type="warning"
           showIcon
           style={{ marginBottom: 12 }}
-          message="Lineage may be incomplete — a source is failing"
+          title="Lineage may be incomplete — a source is failing"
           description={
             <>
               {failingSources.map((s) => (
@@ -103,24 +124,56 @@ export function LineageGraph({
           }
         />
       )}
+      {/* A warehouse source whose last refresh FAILED. Warning, not info (#915): this
+          is an operational failure with the same consequence as a failing poll above —
+          lineage is going stale right now — and rendering it at INFO weight next to
+          tier qualifiers made a real breakage read as a footnote. */}
+      {warehouseFailing.length > 0 && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 12 }}
+          title="Warehouse lineage refresh is failing"
+          description={
+            <>
+              {warehouseFailing.map((s) => (
+                <div key={s.connection_id}>
+                  <Typography.Text strong>{s.name}</Typography.Text> ({s.type}): last refresh failed
+                  — {s.last_error}
+                </div>
+              ))}
+              <div style={{ marginTop: 4 }}>
+                Lineage from this source stops updating until it recovers, so what is drawn here may
+                already be out of date.
+              </div>
+            </>
+          }
+        />
+      )}
       {/* Warehouse-native lineage that is working but COARSE (a degraded tier — e.g.
           Snowflake view-level-only because the account isn't Enterprise) or stale. Info,
           not warning: the graph is real, just not the richest possible. Never let a
-          view-level graph read as a confident complete one (#828, #858). */}
-      {warehouseStatus.length > 0 && (
+          view-level graph read as a confident complete one (#828, #858).
+
+          Framed as WORKSPACE-level (#916): a warehouse's lineage tier is a property of
+          the source, not of this asset (see `asset_view_service.warehouse_lineage_status`),
+          so a pure-UC asset page legitimately lists Snowflake connections here. Saying so
+          up front stops that reading as a bug. */}
+      {warehouseDegraded.length > 0 && (
         <Alert
           type="info"
           showIcon
           style={{ marginBottom: 12 }}
-          message="Warehouse lineage may be coarse or stale"
+          title="Workspace lineage sources: some report at a coarser tier"
           description={
             <>
-              {warehouseStatus.map((s) => (
+              <div style={{ marginBottom: 4 }}>
+                These are workspace-wide source qualifiers, not findings about this asset:
+              </div>
+              {warehouseDegraded.map((s) => (
                 <div key={s.connection_id}>
                   <Typography.Text strong>{s.name}</Typography.Text> ({s.type}):{' '}
-                  {s.last_error
-                    ? `last refresh failed — ${s.last_error}`
-                    : (s.degraded_reason ?? 'lineage is degraded')}
+                  {s.degraded_reason ?? 'lineage is degraded'}
                 </div>
               ))}
             </>
