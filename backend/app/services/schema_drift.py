@@ -153,11 +153,12 @@ def _sql_columns(
     if catalog is not None:
         validate_identifier(catalog)
     prefix = f"{catalog}." if catalog else ""
-    # Identifiers are validated above; every value is bound. The bandit B608
-    # suppression was dropped (#806) — the CI-pinned version no longer flags this.
-    # `# noqa: S608` stays: Ruff still does, so it is live.
+    # Identifiers are validated above; every value is bound — so the Ruff S608 and
+    # bandit B608 markers on the line below are both intentional and both live. They
+    # carry only their test ids (#806): trailing prose is parsed as further ids by
+    # bandit and as a malformed directive by Ruff.
     query = text(
-        f"SELECT table_schema, table_name, column_name, data_type "  # noqa: S608
+        f"SELECT table_schema, table_name, column_name, data_type "  # noqa: S608  # nosec B608
         f"FROM {prefix}information_schema.columns "
         "WHERE UPPER(table_schema) = UPPER(:schema_name) "
         "AND UPPER(table_name) = UPPER(:table_name) "

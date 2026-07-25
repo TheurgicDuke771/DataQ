@@ -47,19 +47,22 @@ from backend.app.db.models import RESULT_SEVERITY_TIERS, Result, Run
 # all-fail scores 50, not the floor — critical stays meaningfully worse than fail.
 # Deliberately separate from `db.models.SEVERITY_RANK` (#655) — see the module
 # docstring.
-# The keys are severity tiers (ADR 0005), not credentials. Historically bandit
-# flagged the "pass": 0.0 pair as a hardcoded password purely on the key name; the
-# CI-pinned version no longer does, so the B105 suppression was dropped (#806). If a
-# later bandit bump re-flags it, CI fails loudly — re-add a BARE suppression comment
-# carrying only the test id, and keep prose like this on its own line above it.
-# Bandit parses everything after the suppression token as a test-id list, so any
-# explanation sharing that line becomes one warning per word.
+# The keys are severity tiers (ADR 0005), not credentials — bandit's B105 flags the
+# "pass": 0.0 pair as a hardcoded password purely on the key name, so the suppression
+# below is load-bearing and must stay.
+#
+# It is deliberately BARE (#806). Bandit parses everything after the suppression token
+# as a test-id list, so prose sharing that line emits one warning per word — and a
+# second copy of the marker on a line outside the flagged node's range suppresses
+# nothing while emitting "no failed test". This block previously had both: the
+# closing-brace marker did the work, the prose copy above was inert noise. Keep the
+# reason here, in prose that never spells the marker.
 _PENALTY: Mapping[str, float] = {
     "pass": 0.0,
     "warn": 0.5,
     "fail": 1.0,
     "critical": 2.0,
-}
+}  # nosec B105
 _W_MAX = 2.0
 
 # Only the four severity tiers count toward the score / pass-rate. `skip` and
