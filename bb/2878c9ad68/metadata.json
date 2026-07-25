@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "bb2878c9ad68",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-977-loud-test-infra-degradation",
+  "checkpoints_count": 9,
+  "files_touched": [
+    "backend/tests/conftest.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/bb/2878c9ad68/0/metadata.json",
+      "transcript": "/bb/2878c9ad68/0/full.jsonl",
+      "compact_transcript": "/bb/2878c9ad68/0/transcript.jsonl",
+      "content_hash": "/bb/2878c9ad68/0/content_hash.txt",
+      "prompt": "/bb/2878c9ad68/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 446,
+    "cache_creation_tokens": 986717,
+    "cache_read_tokens": 42317078,
+    "output_tokens": 122003,
+    "api_call_count": 230
+  }
+}
