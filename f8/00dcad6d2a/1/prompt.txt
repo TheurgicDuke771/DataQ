@@ -1,0 +1,13 @@
+yeah re-scope #590
+
+---
+
+We are going to keep both Azure and Snowflake one more month, also the ssnowflake PAT for both read and write role are renewed till 29th July and present in the Azure Key Vault.
+
+---
+
+okay where are we standing now w.r.t open issues?
+
+---
+
+Check how many of these we can close now, first plan out then start working anf close as many as possible.
