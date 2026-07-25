@@ -77,6 +77,28 @@ describe('Connections', () => {
     expect(screen.getByText('no credential')).toBeInTheDocument();
   });
 
+  it('flags a datasource whose recent runs are all failing, without clicking Test (#954)', async () => {
+    // The whole point: a dead credential must be visible on the LIST. Two prod
+    // Snowflake connections sat dead for weeks because this badge did not exist —
+    // the failure showed on the run, not on the connection that caused it.
+    mockList.mockResolvedValue([
+      conn({
+        id: 'c1',
+        name: 'sf-orders',
+        consecutive_run_failures: 4,
+        last_run_error: 'The datasource rejected the credentials.',
+      }),
+      conn({ id: 'c2', name: 'sf-healthy' }),
+    ]);
+
+    renderPage();
+
+    expect(await screen.findByText('runs failing (4×)')).toBeInTheDocument();
+    // …and a healthy connection stays unbadged, so the signal means something.
+    expect(screen.queryByText(/runs failing \(0/)).not.toBeInTheDocument();
+    expect(screen.getAllByText(/runs failing/)).toHaveLength(1);
+  });
+
   it('shows an empty state when there are no connections', async () => {
     mockList.mockResolvedValue([]);
 

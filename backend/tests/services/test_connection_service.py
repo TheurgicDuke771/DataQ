@@ -6,6 +6,7 @@ TEST_DATABASE_URL (CI provides an ephemeral Postgres).
 """
 
 import uuid
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -13,7 +14,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 
 from backend.app.core.secrets import SecretNotFoundError, SecretWriteError
-from backend.app.db.models import Asset, Connection, ConnectionVersion, Suite, User
+from backend.app.db.models import Asset, Connection, ConnectionVersion, Run, Suite, User
 from backend.app.services import connection_service as svc
 from backend.app.services import suite_service
 from backend.app.services.connection_service import (
@@ -701,3 +702,147 @@ def test_delete_connection_cascades_versions(db_session: Any) -> None:
     assert len(_versions(db_session, conn.id)) == 1
     svc.delete_connection(db_session, conn.id, secret_store=FakeStore(), actor_id=conn.created_by)
     assert _versions(db_session, conn.id) == []
+
+
+# ───────────────────── datasource health (#954) ─────────────────────
+
+
+def _run_on(
+    db_session: Any,
+    conn: Connection,
+    *,
+    status: str,
+    reason: str | None = None,
+    minutes_ago: int = 0,
+) -> Run:
+    """One run against a suite on `conn`, at an EXPLICIT time.
+
+    `created_at` is set rather than defaulted because Postgres' `now()` is
+    transaction-scoped: runs seeded in one test transaction otherwise share a
+    timestamp, recency falls through to the `id` tie-break, and `id` is a random
+    UUID — so "the newest run" would be arbitrary and this test would be a coin
+    flip. (The same tied-timestamp trap #928 fixed for the pipeline-run feed;
+    real runs are each their own transaction and do differ.)
+    """
+    suite = db_session.scalars(select(Suite).where(Suite.connection_id == conn.id)).first()
+    if suite is None:
+        suite = Suite(
+            name=f"s-{uuid.uuid4().hex[:6]}",
+            connection_id=conn.id,
+            created_by=conn.created_by,
+        )
+        db_session.add(suite)
+        db_session.flush()
+    run = Run(suite_id=suite.id, status=status, failure_reason=reason)
+    db_session.add(run)
+    db_session.flush()
+    run.created_at = datetime.now(UTC) - timedelta(minutes=minutes_ago)
+    db_session.flush()
+    return run
+
+
+def test_datasource_health_reports_a_failure_streak(db_session: Any) -> None:
+    """A dead credential fails every run — the connection must say so (#954)."""
+    conn = _create(db_session, FakeStore())
+    for age in (2, 1, 0):
+        _run_on(
+            db_session,
+            conn,
+            status="failed",
+            reason="The datasource rejected the credentials.",
+            minutes_ago=age,
+        )
+    db_session.commit()
+
+    health = svc.datasource_health(db_session, [conn.id])[conn.id]
+    assert health.consecutive_failures == 3
+    assert health.reason == "The datasource rejected the credentials."
+    assert health.last_run_at is not None
+
+
+def test_datasource_health_streak_resets_after_one_success(db_session: Any) -> None:
+    """The streak counts LEADING failures, so one good run clears it.
+
+    This is the case a naive `count(status='failed')` gets wrong: it would report
+    2 for a connection that is working right now, and the badge would cry wolf
+    forever after a single historical blip.
+    """
+    conn = _create(db_session, FakeStore())
+    _run_on(db_session, conn, status="failed", reason="old failure", minutes_ago=3)
+    _run_on(db_session, conn, status="failed", reason="old failure", minutes_ago=2)
+    _run_on(db_session, conn, status="succeeded", minutes_ago=1)  # most recent
+    db_session.commit()
+
+    health = svc.datasource_health(db_session, [conn.id])[conn.id]
+    assert health.consecutive_failures == 0
+    assert health.reason is None
+
+
+def test_datasource_health_omits_a_connection_with_no_runs(db_session: Any) -> None:
+    """No runs is UNKNOWN, not healthy — absent from the mapping so the UI cannot
+    render it as a green tick (the rule the poll-health columns already carry)."""
+    conn = _create(db_session, FakeStore())
+    db_session.commit()
+    assert svc.datasource_health(db_session, [conn.id]) == {}
+
+
+def test_datasource_health_is_one_query_for_many_connections(db_session: Any) -> None:
+    """Batched, not per-connection — the N+1 shape #947 just removed elsewhere."""
+    from sqlalchemy import event
+
+    conns = [_create(db_session, FakeStore(), name=f"c{i}") for i in range(4)]
+    for conn in conns:
+        _run_on(db_session, conn, status="failed", reason="boom")
+    db_session.commit()
+    # Materialise the ids BEFORE recording: reading `.id` off post-commit expired
+    # objects issues refresh SELECTs that are the test's own doing, not the
+    # function's.
+    ids = [c.id for c in conns]
+
+    statements: list[str] = []
+
+    def _record(_conn: Any, _cursor: Any, statement: str, *_rest: Any) -> None:
+        statements.append(statement)
+
+    event.listen(db_session.bind, "before_cursor_execute", _record)
+    try:
+        health = svc.datasource_health(db_session, ids)
+    finally:
+        event.remove(db_session.bind, "before_cursor_execute", _record)
+
+    assert len(health) == 4
+    # Count the HEALTH query specifically (its window function is unmistakable),
+    # not session bookkeeping like SAVEPOINTs — asserting on the total would be
+    # brittle against unrelated session behaviour while proving less.
+    health_queries = [s for s in statements if "row_number" in s.lower()]
+    assert len(health_queries) == 1, f"expected one batched query, issued {len(health_queries)}"
+
+
+def test_datasource_health_a_cancelled_run_does_not_clear_the_streak(db_session: Any) -> None:
+    """Only a SUCCEEDED run proves the connection works (#954 review finding).
+
+    The first version broke on any non-failure, so a single cancelled or still-
+    running run at the head of the list hid a real failure streak directly
+    beneath it — the connection went quietly un-badged while every actual run
+    was failing. `queued`/`running` have not answered yet and `cancelled` was
+    stopped by a human; none of them is evidence the credential works.
+    """
+    conn = _create(db_session, FakeStore())
+    _run_on(db_session, conn, status="failed", reason="creds rejected", minutes_ago=3)
+    _run_on(db_session, conn, status="failed", reason="creds rejected", minutes_ago=2)
+    _run_on(db_session, conn, status="cancelled", minutes_ago=1)  # newest, not a success
+    db_session.commit()
+
+    health = svc.datasource_health(db_session, [conn.id])[conn.id]
+    assert health.consecutive_failures == 2
+    assert health.reason == "creds rejected"
+
+
+def test_datasource_health_an_in_flight_run_does_not_clear_the_streak(db_session: Any) -> None:
+    """Same rule for a run that simply hasn't finished yet."""
+    conn = _create(db_session, FakeStore())
+    _run_on(db_session, conn, status="failed", reason="creds rejected", minutes_ago=2)
+    _run_on(db_session, conn, status="running", minutes_ago=1)
+    db_session.commit()
+
+    assert svc.datasource_health(db_session, [conn.id])[conn.id].consecutive_failures == 1

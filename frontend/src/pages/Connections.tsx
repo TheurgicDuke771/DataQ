@@ -300,6 +300,25 @@ function ConnectionCard({
                 />
               </Tooltip>
             )}
+            {/* The same fact for a DATASOURCE connection (#954). Nothing polls one,
+                so a dead credential used to be invisible here — it showed on the
+                failing RUN, not on the connection that caused it, and diagnosing
+                two dead prod Snowflake connections meant reading worker logs.
+                Derived from runs, so it appears without anyone clicking Test. */}
+            {(connection.consecutive_run_failures ?? 0) > 0 && (
+              <Tooltip
+                title={
+                  connection.last_run_error
+                    ? `Last run failed: ${connection.last_run_error}`
+                    : 'Every recent suite run on this connection failed.'
+                }
+              >
+                <Badge
+                  status="error"
+                  text={`runs failing (${connection.consecutive_run_failures}×)`}
+                />
+              </Tooltip>
+            )}
           </Flex>
           <Button
             size="small"
