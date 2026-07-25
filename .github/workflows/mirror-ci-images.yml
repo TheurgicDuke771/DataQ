@@ -1,0 +1,115 @@
+name: Mirror CI service images
+
+# Keep the two containers CI's required test jobs depend on inside GHCR, so a
+# Docker Hub outage or an anonymous-pull throttle cannot red a merge gate (#993).
+#
+# The failure this exists to prevent: `services:` containers are pulled by the
+# runner BEFORE any step runs, so a registry timeout kills the job before pytest
+# starts — indistinguishable at a glance from a real regression, and it trains the
+# "CI failed, just re-run it" reflex that eventually re-runs a genuine failure
+# away. Anonymous Docker Hub pulls are rate-limited per source IP and GitHub's
+# hosted runners share egress addresses, so this gets more likely as other
+# people's CI volume grows, not less.
+#
+# Mirroring is a copy, never a rebuild: `buildx imagetools create` copies the
+# source manifest list by digest, so the mirrored tag is the same image (all
+# architectures) rather than a re-tagged single-arch flattening.
+
+on:
+  schedule:
+    # Weekly. These are upstream patch streams, not our code — a fortnight-stale
+    # mirror is fine, and the tags below are the only thing that pins the version.
+    - cron: "0 4 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: mirror-ci-images
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  OWNER: theurgicduke771 # lowercase — GHCR paths are case-sensitive
+
+jobs:
+  mirror:
+    name: Mirror ${{ matrix.source }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - source: postgres:16-alpine
+            target: ci-postgres
+          # ⚠ redis:7 IS A SECURITY GATE, NOT A STALENESS ARTEFACT (#980).
+          # Redis 8 bundles Vector Sets — an unpatched RCE surface — so upgrading
+          # ADDS exposure. Dependabot does not watch Docker image tags, so nothing
+          # else will catch a drift here. Changing this tag is a conscious
+          # security decision, never a routine bump; the guard step below fails
+          # the job if it is edited to a different major.
+          - source: redis:7-alpine
+            target: ci-redis
+
+    steps:
+      - name: Refuse a silent major bump
+        # A mirror is exactly where a version could drift unnoticed — the CI jobs
+        # would keep passing while running a different engine. Assert the majors
+        # this repo has deliberately pinned.
+        #
+        # Matrix values reach `run:` through `env:`, never inline `${{ }}`. They
+        # are file constants here, so nothing is injectable today — but the
+        # habit is what keeps it true after someone parameterises this workflow.
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: |
+          case "$SOURCE" in
+            postgres:16-*) ;;
+            redis:7-*) ;;
+            *)
+              echo "::error::$SOURCE is not a pinned major this repo has agreed to."
+              echo "Redis must stay on 7.x (#980 — Redis 8 bundles Vector Sets, an unpatched"
+              echo "RCE surface). Postgres must stay on 16 to match compose and production."
+              exit 1
+              ;;
+          esac
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Copy the manifest list into GHCR
+        # `imagetools create` copies by digest — no pull, no rebuild, every
+        # architecture preserved. Retried because the whole point is to survive a
+        # flaky Docker Hub; a failure here is a stale mirror (harmless, CI keeps
+        # using the previous copy), never a broken CI.
+        env:
+          SOURCE: ${{ matrix.source }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          for attempt in 1 2 3; do
+            if docker buildx imagetools create \
+                 --tag "ghcr.io/${OWNER}/${TARGET}:${SOURCE}" \
+                 "docker.io/library/${SOURCE}"; then
+              exit 0
+            fi
+            echo "attempt ${attempt} failed; retrying in $((attempt * 15))s"
+            sleep $((attempt * 15))
+          done
+          echo "::error::could not mirror ${SOURCE} after 3 attempts"
+          exit 1
+
+      - name: Show what the mirrored tag now points at
+        # The digest is the only proof the copy is the image we meant; printed so
+        # a drift is visible in the run log rather than inferred from a green tick.
+        env:
+          SOURCE: ${{ matrix.source }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          docker buildx imagetools inspect \
+            "ghcr.io/${OWNER}/${TARGET}:${SOURCE}" \
+            --format '{{ .Name }} -> {{ .Manifest.Digest }}'
