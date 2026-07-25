@@ -709,7 +709,8 @@ def test_check_is_scoped_to_its_suite(client: TestClient, db_session: Any) -> No
     # the check exists, but not under suite B's path
     cross = client.get(f"/api/v1/suites/{sid_b}/checks/{cid}")
     assert cross.status_code == 404
-    assert client.get(f"/api/v1/suites/{sid_a}/checks/{cid}").status_code == 200
+    resp = client.get(f"/api/v1/suites/{sid_a}/checks/{cid}")
+    assert resp.status_code == 200
 
 
 # ───────────────────────── update / delete ─────────────────────────
@@ -750,7 +751,8 @@ def test_delete_returns_204_then_404(client: TestClient, db_session: Any) -> Non
     cid = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()["id"]
     deleted = client.delete(f"/api/v1/suites/{sid}/checks/{cid}")
     assert deleted.status_code == 204
-    assert client.get(f"/api/v1/suites/{sid}/checks/{cid}").status_code == 404
+    resp = client.get(f"/api/v1/suites/{sid}/checks/{cid}")
+    assert resp.status_code == 404
 
 
 # ───────────────────────── access enforcement (PR-E2) ──────────────
@@ -796,8 +798,10 @@ def test_viewer_reads_checks_but_cannot_write(client: TestClient, db_session: An
     cid = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()["id"]
     _grant(client, owner, sid, b, "view")
     _as(b)
-    assert client.get(f"/api/v1/suites/{sid}/checks").status_code == 200
-    assert client.get(f"/api/v1/suites/{sid}/checks/{cid}").status_code == 200
+    resp = client.get(f"/api/v1/suites/{sid}/checks")
+    assert resp.status_code == 200
+    resp = client.get(f"/api/v1/suites/{sid}/checks/{cid}")
+    assert resp.status_code == 200
     created = client.post(f"/api/v1/suites/{sid}/checks", json=_payload(name="c2"))
     assert created.status_code == 403
     patched = client.patch(f"/api/v1/suites/{sid}/checks/{cid}", json={"name": "x"})
@@ -817,7 +821,8 @@ def test_editor_can_write_checks(client: TestClient, db_session: Any) -> None:
 def test_outsider_cannot_see_checks(client: TestClient, db_session: Any) -> None:
     _owner, _b, e, sid = _owner_b_e_suite(db_session)
     _as(e)
-    assert client.get(f"/api/v1/suites/{sid}/checks").status_code == 404
+    resp = client.get(f"/api/v1/suites/{sid}/checks")
+    assert resp.status_code == 404
 
 
 # ───────────────────────── version history (#280) ──────────────────
@@ -861,13 +866,10 @@ def test_noop_update_does_not_append_a_version(client: TestClient, db_session: A
     cid = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()["id"]
     # A PATCH that changes nothing (resends the current name) must not mint a
     # duplicate version — history stays at v1.
-    assert (
-        client.patch(
-            f"/api/v1/suites/{sid}/checks/{cid}", json={"name": "orders not null"}
-        ).status_code
-        == 200
-    )
-    assert client.patch(f"/api/v1/suites/{sid}/checks/{cid}", json={}).status_code == 200
+    resp = client.patch(f"/api/v1/suites/{sid}/checks/{cid}", json={"name": "orders not null"})
+    assert resp.status_code == 200
+    resp = client.patch(f"/api/v1/suites/{sid}/checks/{cid}", json={})
+    assert resp.status_code == 200
 
     versions = client.get(f"/api/v1/suites/{sid}/checks/{cid}/versions").json()
     assert [v["version_no"] for v in versions] == [1]
@@ -939,7 +941,8 @@ def test_history_returns_results_oldest_first(client: TestClient, db_session: An
 def test_history_empty_for_check_with_no_runs(client: TestClient, db_session: Any) -> None:
     sid = _suite_id(client, db_session)
     cid = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()["id"]
-    assert client.get(f"/api/v1/suites/{sid}/checks/{cid}/history").json() == []
+    resp = client.get(f"/api/v1/suites/{sid}/checks/{cid}/history")
+    assert resp.json() == []
 
 
 def test_history_honours_limit_keeping_most_recent(client: TestClient, db_session: Any) -> None:
@@ -951,12 +954,14 @@ def test_history_honours_limit_keeping_most_recent(client: TestClient, db_sessio
     history = client.get(f"/api/v1/suites/{sid}/checks/{cid}/history?limit=2").json()
     # Latest 2 by run time, returned chronologically: age=2 then age=1.
     assert [p["metric_value"] for p in history] == [2.0, 1.0]
-    assert client.get(f"/api/v1/suites/{sid}/checks/{cid}/history?limit=0").status_code == 422
+    resp = client.get(f"/api/v1/suites/{sid}/checks/{cid}/history?limit=0")
+    assert resp.status_code == 422
 
 
 def test_history_unknown_check_returns_404(client: TestClient, db_session: Any) -> None:
     sid = _suite_id(client, db_session)
-    assert client.get(f"/api/v1/suites/{sid}/checks/{uuid.uuid4()}/history").status_code == 404
+    resp = client.get(f"/api/v1/suites/{sid}/checks/{uuid.uuid4()}/history")
+    assert resp.status_code == 404
 
 
 def test_history_outsider_cannot_read(client: TestClient, db_session: Any) -> None:
@@ -966,7 +971,8 @@ def test_history_outsider_cannot_read(client: TestClient, db_session: Any) -> No
     _as(e)  # not owner, not shared
     # An outsider gets 404, not 403 — the suite's existence is hidden from
     # non-members (same as `test_outsider_cannot_see_checks`).
-    assert client.get(f"/api/v1/suites/{sid}/checks/{cid}/history").status_code == 404
+    resp = client.get(f"/api/v1/suites/{sid}/checks/{cid}/history")
+    assert resp.status_code == 404
 
 
 def test_versions_unknown_check_returns_404(client: TestClient, db_session: Any) -> None:
@@ -982,9 +988,11 @@ def test_viewer_reads_versions_outsider_cannot(client: TestClient, db_session: A
     _grant(client, owner, sid, b, "view")
 
     _as(b)  # a viewer can read history
-    assert client.get(f"/api/v1/suites/{sid}/checks/{cid}/versions").status_code == 200
+    resp = client.get(f"/api/v1/suites/{sid}/checks/{cid}/versions")
+    assert resp.status_code == 200
     _as(e)  # an outsider sees the suite as nonexistent (404, not 403)
-    assert client.get(f"/api/v1/suites/{sid}/checks/{cid}/versions").status_code == 404
+    resp = client.get(f"/api/v1/suites/{sid}/checks/{cid}/versions")
+    assert resp.status_code == 404
 
 
 def test_import_records_initial_version_per_check(client: TestClient, db_session: Any) -> None:
@@ -1345,7 +1353,8 @@ def test_snooze_sets_future_until_and_clear_resets(client: TestClient, db_sessio
     sid = _suite_id(client, db_session)
     cid = _make_check(client, sid)
     # Fresh check is not snoozed.
-    assert client.get(f"/api/v1/suites/{sid}/checks/{cid}").json()["alert_snoozed_until"] is None
+    resp = client.get(f"/api/v1/suites/{sid}/checks/{cid}")
+    assert resp.json()["alert_snoozed_until"] is None
 
     snoozed = client.post(f"/api/v1/suites/{sid}/checks/{cid}/snooze", json={"hours": 4})
     assert snoozed.status_code == 200
@@ -1539,7 +1548,8 @@ def test_patch_rejects_a_non_canonical_dimension(client: TestClient, db_session:
     cid = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()["id"]
     resp = client.patch(f"/api/v1/suites/{sid}/checks/{cid}", json={"dimension": "nope"})
     assert resp.status_code == 422
-    assert client.get(f"/api/v1/suites/{sid}/checks/{cid}").json()["dimension"] == (
+    resp = client.get(f"/api/v1/suites/{sid}/checks/{cid}")
+    assert resp.json()["dimension"] == (
         "completeness"
     )  # unchanged — a rejected PATCH must leave nothing dirty
 

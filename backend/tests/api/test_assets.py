@@ -273,14 +273,21 @@ def test_detail_split_follows_the_grant(client: TestClient, world: dict[str, Any
 def test_garbage_uuid_is_422_not_500(client: TestClient, world: dict[str, Any]) -> None:
     """Malformed path/query input is a validation error, never a 500 (#570 class)."""
     _as(world["owner"])
-    assert client.get("/api/v1/assets/not-a-uuid").status_code == 422
-    assert client.get("/api/v1/assets/%00").status_code == 422
-    assert client.patch("/api/v1/assets/definitely-garbage", json={}).status_code in (403, 422)
+    resp = client.get("/api/v1/assets/not-a-uuid")
+    assert resp.status_code == 422
+    resp = client.get("/api/v1/assets/%00")
+    assert resp.status_code == 422
+    resp = client.patch("/api/v1/assets/definitely-garbage", json={})
+    assert resp.status_code in (403, 422)
     # List query params validate too: limit/offset outside their bounds.
-    assert client.get("/api/v1/assets", params={"limit": "abc"}).status_code == 422
-    assert client.get("/api/v1/assets", params={"limit": 0}).status_code == 422
-    assert client.get("/api/v1/assets", params={"limit": 201}).status_code == 422
-    assert client.get("/api/v1/assets", params={"offset": -1}).status_code == 422
+    resp = client.get("/api/v1/assets", params={"limit": "abc"})
+    assert resp.status_code == 422
+    resp = client.get("/api/v1/assets", params={"limit": 0})
+    assert resp.status_code == 422
+    resp = client.get("/api/v1/assets", params={"limit": 201})
+    assert resp.status_code == 422
+    resp = client.get("/api/v1/assets", params={"offset": -1})
+    assert resp.status_code == 422
 
 
 def test_list_pagination_stable_slices(client: TestClient, world: dict[str, Any]) -> None:
@@ -293,7 +300,8 @@ def test_list_pagination_stable_slices(client: TestClient, world: dict[str, Any]
     assert len(page1) == 1 and len(page2) == 1
     assert [a["id"] for a in full] == [page1[0]["id"], page2[0]["id"]]
     # Past the end → empty page, not an error.
-    assert client.get("/api/v1/assets", params={"offset": 5}).json() == []
+    resp = client.get("/api/v1/assets", params={"offset": 5})
+    assert resp.json() == []
 
 
 def test_summary_flags_failed_and_active_runs(client: TestClient, world: dict[str, Any]) -> None:
@@ -608,10 +616,13 @@ def test_patch_nul_byte_and_oversized_description_422(
     make_workspace_admin(_ADMIN_EMAIL)
     _as(admin)
     url = f"/api/v1/assets/{world['asset_x']}"
-    assert client.patch(url, json={"description": "bad\x00value"}).status_code == 422
-    assert client.patch(url, json={"description": "x" * 1025}).status_code == 422
+    resp = client.patch(url, json={"description": "bad\x00value"})
+    assert resp.status_code == 422
+    resp = client.patch(url, json={"description": "x" * 1025})
+    assert resp.status_code == 422
     # The cap boundary itself is accepted.
-    assert client.patch(url, json={"description": "x" * 1024}).status_code == 200
+    resp = client.patch(url, json={"description": "x" * 1024})
+    assert resp.status_code == 200
 
 
 # ── asset_id exposed on SuiteRead / RunRead (deferred to #760 by #764) ───────

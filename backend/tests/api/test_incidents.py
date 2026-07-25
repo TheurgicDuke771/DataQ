@@ -134,7 +134,8 @@ def test_view_share_lists_incident(client: TestClient, world: dict[str, Any]) ->
 def test_no_share_lists_nothing(client: TestClient, world: dict[str, Any]) -> None:
     outsider = _user(client_db(client), "outsider@example.com")
     _as(outsider)
-    assert client.get("/api/v1/incidents").json() == []
+    resp = client.get("/api/v1/incidents")
+    assert resp.json() == []
 
 
 def test_workspace_admin_lists_all(
@@ -150,9 +151,12 @@ def test_workspace_admin_lists_all(
 def test_list_filters_by_asset_and_state(client: TestClient, world: dict[str, Any]) -> None:
     _as(world["owner"])
     asset_id = str(world["suite"].asset_id)
-    assert len(client.get("/api/v1/incidents", params={"asset_id": asset_id}).json()) == 1
-    assert len(client.get("/api/v1/incidents", params={"state": "open"}).json()) == 1
-    assert client.get("/api/v1/incidents", params={"state": "resolved"}).json() == []
+    resp = client.get("/api/v1/incidents", params={"asset_id": asset_id})
+    assert len(resp.json()) == 1
+    resp = client.get("/api/v1/incidents", params={"state": "open"})
+    assert len(resp.json()) == 1
+    resp = client.get("/api/v1/incidents", params={"state": "resolved"})
+    assert resp.json() == []
 
 
 def test_list_invalid_state_422(client: TestClient, world: dict[str, Any]) -> None:
@@ -254,8 +258,10 @@ def test_workspace_admin_can_resolve(
 def test_double_resolve_409(client: TestClient, world: dict[str, Any]) -> None:
     _as(world["owner"])
     url = f"/api/v1/incidents/{world['incident'].id}/resolve"
-    assert client.post(url, json={}).status_code == 200
-    assert client.post(url, json={}).status_code == 409
+    resp = client.post(url, json={})
+    assert resp.status_code == 200
+    resp = client.post(url, json={})
+    assert resp.status_code == 409
 
 
 # ── adversarial input (#570 class) ────────────────────────────────────────────
@@ -263,20 +269,28 @@ def test_double_resolve_409(client: TestClient, world: dict[str, Any]) -> None:
 
 def test_garbage_uuid_is_422(client: TestClient, world: dict[str, Any]) -> None:
     _as(world["owner"])
-    assert client.get("/api/v1/incidents/not-a-uuid").status_code == 422
-    assert client.get("/api/v1/incidents/%00").status_code == 422
-    assert client.post("/api/v1/incidents/not-a-uuid/ack", json={}).status_code == 422
-    assert client.get("/api/v1/incidents", params={"limit": 0}).status_code == 422
-    assert client.get("/api/v1/incidents", params={"limit": 501}).status_code == 422
+    resp = client.get("/api/v1/incidents/not-a-uuid")
+    assert resp.status_code == 422
+    resp = client.get("/api/v1/incidents/%00")
+    assert resp.status_code == 422
+    resp = client.post("/api/v1/incidents/not-a-uuid/ack", json={})
+    assert resp.status_code == 422
+    resp = client.get("/api/v1/incidents", params={"limit": 0})
+    assert resp.status_code == 422
+    resp = client.get("/api/v1/incidents", params={"limit": 501})
+    assert resp.status_code == 422
 
 
 def test_nul_and_oversized_note_422(client: TestClient, world: dict[str, Any]) -> None:
     _as(world["owner"])
     url = f"/api/v1/incidents/{world['incident'].id}/ack"
-    assert client.post(url, json={"note": "bad\x00value"}).status_code == 422
-    assert client.post(url, json={"note": "x" * 2001}).status_code == 422
+    resp = client.post(url, json={"note": "bad\x00value"})
+    assert resp.status_code == 422
+    resp = client.post(url, json={"note": "x" * 2001})
+    assert resp.status_code == 422
     # The cap boundary itself is accepted.
-    assert client.post(url, json={"note": "x" * 2000}).status_code == 200
+    resp = client.post(url, json={"note": "x" * 2000})
+    assert resp.status_code == 200
 
 
 def test_unknown_field_rejected(client: TestClient, world: dict[str, Any]) -> None:
@@ -308,6 +322,8 @@ def test_list_pagination_limit_offset_and_truncation(
     assert len(page2) == 1
     # The pages tile the full ordering with no overlap or gap.
     assert [i["id"] for i in page1] + [i["id"] for i in page2] == [i["id"] for i in full]
-    assert client.get("/api/v1/incidents", params={"offset": 10}).json() == []
+    resp = client.get("/api/v1/incidents", params={"offset": 10})
+    assert resp.json() == []
     # Bounds still validate (#570 class).
-    assert client.get("/api/v1/incidents", params={"offset": -1}).status_code == 422
+    resp = client.get("/api/v1/incidents", params={"offset": -1})
+    assert resp.status_code == 422

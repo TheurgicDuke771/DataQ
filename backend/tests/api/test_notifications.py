@@ -129,20 +129,16 @@ def test_put_rejects_bad_slack_host_and_email(client: TestClient, db_session: An
     owner = _user(db_session, "o@ex")
     _as(owner)
     sid = _suite(db_session, owner)
-    assert (
-        client.put(
-            f"/api/v1/suites/{sid}/notifications",
-            json={"slack_webhook": "https://evil.example.com/x"},
-        ).status_code
-        == 422
+    resp = client.put(
+        f"/api/v1/suites/{sid}/notifications",
+        json={"slack_webhook": "https://evil.example.com/x"},
     )
-    assert (
-        client.put(
-            f"/api/v1/suites/{sid}/notifications",
-            json={"email_recipients": "not-an-email"},
-        ).status_code
-        == 422
+    assert resp.status_code == 422
+    resp = client.put(
+        f"/api/v1/suites/{sid}/notifications",
+        json={"email_recipients": "not-an-email"},
     )
+    assert resp.status_code == 422
 
 
 def test_put_rejects_non_https_webhook(client: TestClient, db_session: Any) -> None:

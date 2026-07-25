@@ -157,16 +157,13 @@ def test_create_with_target_dispatches_auto_classify(
     monkeypatch.setattr(run_dispatch, "dispatch_auto_classify", calls.append)
 
     conn = _connection(db_session)
-    assert (
-        client.post(
-            "/api/v1/suites", json=_payload(conn.id, target={"table": "ORDERS"})
-        ).status_code
-        == 201
-    )
+    resp = client.post("/api/v1/suites", json=_payload(conn.id, target={"table": "ORDERS"}))
+    assert resp.status_code == 201
     assert len(calls) == 1  # dispatched once for the targeted suite
 
     calls.clear()
-    assert client.post("/api/v1/suites", json=_payload(conn.id)).status_code == 201
+    resp = client.post("/api/v1/suites", json=_payload(conn.id))
+    assert resp.status_code == 201
     assert calls == []  # no target → no auto-classify
 
 
@@ -182,10 +179,8 @@ def test_update_setting_a_target_dispatches_auto_classify(
     # Created target-less (no dispatch), then given a target via PATCH.
     sid = client.post("/api/v1/suites", json=_payload(conn.id)).json()["id"]
     assert calls == []
-    assert (
-        client.patch(f"/api/v1/suites/{sid}", json={"target": {"table": "ORDERS"}}).status_code
-        == 200
-    )
+    resp = client.patch(f"/api/v1/suites/{sid}", json={"target": {"table": "ORDERS"}})
+    assert resp.status_code == 200
     assert calls == [uuid.UUID(sid)]  # dispatched on the target-set
 
     # Give it a policy, then PATCH the target again — must NOT re-derive.
@@ -194,10 +189,8 @@ def test_update_setting_a_target_dispatches_auto_classify(
     )
     db_session.commit()
     calls.clear()
-    assert (
-        client.patch(f"/api/v1/suites/{sid}", json={"target": {"table": "CUSTOMERS"}}).status_code
-        == 200
-    )
+    resp = client.patch(f"/api/v1/suites/{sid}", json={"target": {"table": "CUSTOMERS"}})
+    assert resp.status_code == 200
     assert calls == []  # existing policy → no re-derive
 
 
@@ -223,12 +216,8 @@ def test_update_repointing_policied_suite_target_logs_possibly_stale(
     calls.clear()
 
     with capture_logs() as logs:
-        assert (
-            client.patch(
-                f"/api/v1/suites/{sid}", json={"target": {"table": "CUSTOMERS"}}
-            ).status_code
-            == 200
-        )
+        resp = client.patch(f"/api/v1/suites/{sid}", json={"target": {"table": "CUSTOMERS"}})
+        assert resp.status_code == 200
     stale = [e for e in logs if e.get("event") == "suite_policy_possibly_stale"]
     assert calls == []  # no re-derive over an existing policy
     assert len(stale) == 1 and stale[0]["reason"] == "target_changed_on_policied_suite"
@@ -316,12 +305,10 @@ def test_update_target_repoints_to_new_asset(client: TestClient, db_session: Any
     first_asset = db_session.get(Suite, uuid.UUID(sid)).asset_id
     assert first_asset is not None
 
-    assert (
-        client.patch(
-            f"/api/v1/suites/{sid}", json={"target": {"table": "customers", "schema": "sales"}}
-        ).status_code
-        == 200
+    resp = client.patch(
+        f"/api/v1/suites/{sid}", json={"target": {"table": "customers", "schema": "sales"}}
     )
+    assert resp.status_code == 200
     db_session.expire_all()
     second_asset = db_session.get(Suite, uuid.UUID(sid)).asset_id
     assert second_asset is not None and second_asset != first_asset
@@ -370,7 +357,8 @@ def test_list_filters_by_connection(client: TestClient, db_session: Any) -> None
 
     all_a = client.get(f"/api/v1/suites?connection_id={conn_a.id}").json()
     assert {s["name"] for s in all_a} == {"a1", "a2"}
-    assert len(client.get("/api/v1/suites").json()) == 3  # unfiltered
+    resp = client.get("/api/v1/suites")
+    assert len(resp.json()) == 3  # unfiltered
 
 
 # ───────────────────────── update / delete ─────────────────────────
@@ -395,7 +383,8 @@ def test_delete_returns_204_then_404(client: TestClient, db_session: Any) -> Non
     sid = client.post("/api/v1/suites", json=_payload(conn.id)).json()["id"]
     deleted = client.delete(f"/api/v1/suites/{sid}")
     assert deleted.status_code == 204
-    assert client.get(f"/api/v1/suites/{sid}").status_code == 404
+    resp = client.get(f"/api/v1/suites/{sid}")
+    assert resp.status_code == 404
 
 
 def test_delete_cascades_to_checks(client: TestClient, db_session: Any) -> None:
@@ -509,7 +498,8 @@ def test_workspace_admin_can_delete(
     _owner, b, _e, sid = _owner_b_e_suite(db_session)
     make_workspace_admin(b.email)
     _as(b)  # b owns nothing, has no share — only the allowlist makes them admin
-    assert client.get(f"/api/v1/suites/{sid}").json()["my_permission"] == "admin"
+    resp = client.get(f"/api/v1/suites/{sid}")
+    assert resp.json()["my_permission"] == "admin"
     deleted = client.delete(f"/api/v1/suites/{sid}")
     assert deleted.status_code == 204
 
@@ -539,7 +529,8 @@ def test_owner_sees_owner_permission(client: TestClient, db_session: Any) -> Non
 def test_outsider_sees_404_everywhere(client: TestClient, db_session: Any) -> None:
     _owner, _b, e, sid = _owner_b_e_suite(db_session)
     _as(e)
-    assert client.get(f"/api/v1/suites/{sid}").status_code == 404
+    resp = client.get(f"/api/v1/suites/{sid}")
+    assert resp.status_code == 404
     patched = client.patch(f"/api/v1/suites/{sid}", json={"name": "x"})
     assert patched.status_code == 404
     deleted = client.delete(f"/api/v1/suites/{sid}")
@@ -555,11 +546,13 @@ def test_list_is_scoped_to_accessible_suites(client: TestClient, db_session: Any
         "/api/v1/suites", json={"name": "b-suite", "connection_id": str(conn_id)}
     ).json()["id"]
     # B sees only their own suite, not the owner's
-    assert {s["id"] for s in client.get("/api/v1/suites").json()} == {b_sid}
+    resp = client.get("/api/v1/suites")
+    assert {s["id"] for s in resp.json()} == {b_sid}
     # once shared, the owner's suite appears for B too
     _share(client, owner, owner_sid, b, "view")
     _as(b)
-    assert {s["id"] for s in client.get("/api/v1/suites").json()} == {b_sid, owner_sid}
+    resp = client.get("/api/v1/suites")
+    assert {s["id"] for s in resp.json()} == {b_sid, owner_sid}
 
 
 # ───────────────────────── export / import ─────────────────────────
@@ -628,7 +621,8 @@ def test_export_returns_document_without_db_identity(client: TestClient, db_sess
 def test_export_requires_view_access(client: TestClient, db_session: Any) -> None:
     _owner, _b, e, sid = _owner_b_e_suite(db_session)
     _as(e)
-    assert client.get(f"/api/v1/suites/{sid}/export").status_code == 404
+    resp = client.get(f"/api/v1/suites/{sid}/export")
+    assert resp.status_code == 404
 
 
 def test_import_creates_owned_suite_with_checks(client: TestClient, db_session: Any) -> None:
@@ -1407,12 +1401,10 @@ def test_column_policy_put_sets_and_reads_back(client: TestClient, db_session: A
     # de-duped + blanks dropped
     assert resp.json() == {"identifier_column": "ORDER_NUMBER", "pii_columns": ["EMAIL"]}
     # reflected on GET and on the suite read
-    assert client.get(f"/api/v1/suites/{sid}/column-policy").json()["identifier_column"] == (
-        "ORDER_NUMBER"
-    )
-    assert client.get(f"/api/v1/suites/{sid}").json()["column_policy"]["identifier_column"] == (
-        "ORDER_NUMBER"
-    )
+    resp = client.get(f"/api/v1/suites/{sid}/column-policy")
+    assert resp.json()["identifier_column"] == ("ORDER_NUMBER")
+    resp = client.get(f"/api/v1/suites/{sid}")
+    assert resp.json()["column_policy"]["identifier_column"] == ("ORDER_NUMBER")
 
 
 def test_column_policy_identifier_cannot_be_pii_422(client: TestClient, db_session: Any) -> None:

@@ -110,12 +110,12 @@ def test_summary_workspace_admin_spans_all_suites(
 
 def test_summary_honours_window_param(client: TestClient, db_session: Any) -> None:
     _as(_user(db_session))
-    assert (
-        client.get("/api/v1/dashboard/summary", params={"window_days": 30}).json()["window_days"]
-        == 30
-    )
-    assert client.get("/api/v1/dashboard/summary", params={"window_days": 0}).status_code == 422
-    assert client.get("/api/v1/dashboard/summary", params={"window_days": 91}).status_code == 422
+    resp = client.get("/api/v1/dashboard/summary", params={"window_days": 30})
+    assert resp.json()["window_days"] == 30
+    resp = client.get("/api/v1/dashboard/summary", params={"window_days": 0})
+    assert resp.status_code == 422
+    resp = client.get("/api/v1/dashboard/summary", params={"window_days": 91})
+    assert resp.status_code == 422
 
 
 def test_summary_empty_workspace_is_clean(client: TestClient, db_session: Any) -> None:

@@ -169,10 +169,12 @@ def _literals(sql: str) -> set[str]:
 def _model_predicates() -> dict[str, str]:
     """`{object name: SQL text}` for every named CHECK and partial index in the model."""
     # `models` is imported for its side effect — defining the classes is what puts
-    # their tables on `Base.metadata`. Referenced here rather than left as a bare
-    # `# noqa: F401`, because a side-effect import is a standing invitation for a
-    # linter or a person to delete it, and an EMPTY metadata would make everything
-    # below pass VACUOUSLY: nothing to compare reads exactly like nothing wrong.
+    # their tables on `Base.metadata`. Referenced here rather than left as an
+    # unused import with a lint suppression, because a bare side-effect import is
+    # a standing invitation for a linter or a person to delete it, and an EMPTY
+    # metadata would make everything below pass VACUOUSLY: nothing to compare
+    # reads exactly like nothing wrong. (The suppression code is deliberately not
+    # spelled out above — Ruff parses one inside prose as a live directive, #806.)
     assert (
         models.Connection.__tablename__ in Base.metadata.tables
     ), "no model tables are registered — the comparison would have nothing to do"
