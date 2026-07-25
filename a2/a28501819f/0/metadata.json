@@ -3,37 +3,21 @@
   "checkpoint_id": "a2a28501819f",
   "session_id": "6bce82f7-34e0-4cdf-945a-24fd53cdc914",
   "strategy": "manual-commit",
-  "created_at": "2026-07-25T11:04:37.80853Z",
+  "created_at": "2026-07-25T11:05:46.276882Z",
   "branch": "feature/issue-838-credential-expiry-warning",
   "checkpoints_count": 1,
   "save_step_count": 1,
-  "files_touched": [
-    "backend/app/api/v1/connections.py",
-    "backend/app/core/credential_expiry.py",
-    "backend/app/datasources/adls.py",
-    "backend/app/datasources/base.py",
-    "backend/app/datasources/iceberg.py",
-    "backend/app/datasources/registry.py",
-    "backend/app/db/models.py",
-    "backend/app/orchestration/dbt.py",
-    "backend/app/services/connection_service.py",
-    "backend/app/worker/celery_app.py",
-    "backend/app/worker/tasks.py",
-    "docs/progress.md",
-    "frontend/src/api/connections.ts",
-    "frontend/src/pages/Connections.tsx",
-    "frontend/tests/pages/Connections.test.tsx"
-  ],
+  "files_touched": [],
   "agent": "Claude Code",
   "model": "claude-opus-5",
   "turn_id": "e94dfa5e7598",
   "compact_transcript_start": 0,
   "token_usage": {
-    "input_tokens": 17444,
-    "cache_creation_tokens": 1976771,
-    "cache_read_tokens": 208456874,
-    "output_tokens": 348288,
-    "api_call_count": 606
+    "input_tokens": 17458,
+    "cache_creation_tokens": 1982188,
+    "cache_read_tokens": 210088585,
+    "output_tokens": 350528,
+    "api_call_count": 613
   },
   "skill_events_version": 1,
   "skill_events": [
@@ -71,29 +55,5 @@
   ],
   "session_metrics": {
     "turn_count": 8
-  },
-  "initial_attribution": {
-    "calculated_at": "2026-07-25T11:04:37.617473Z",
-    "agent_lines": 346,
-    "agent_removed": 2,
-    "human_added": 746,
-    "human_modified": 1,
-    "human_removed": 0,
-    "total_committed": 1093,
-    "total_lines_changed": 1099,
-    "agent_percentage": 31.665150136487718,
-    "metric_version": 2
-  },
-  "prompt_attributions": [
-    {
-      "checkpoint_number": 2,
-      "user_lines_added": 6,
-      "user_lines_removed": 0,
-      "agent_lines_added": 0,
-      "agent_lines_removed": 0,
-      "user_added_per_file": {
-        ".claude/settings.local.json": 6
-      }
-    }
-  ]
+  }
 }

@@ -4,23 +4,7 @@
   "strategy": "manual-commit",
   "branch": "feature/issue-838-credential-expiry-warning",
   "checkpoints_count": 1,
-  "files_touched": [
-    "backend/app/api/v1/connections.py",
-    "backend/app/core/credential_expiry.py",
-    "backend/app/datasources/adls.py",
-    "backend/app/datasources/base.py",
-    "backend/app/datasources/iceberg.py",
-    "backend/app/datasources/registry.py",
-    "backend/app/db/models.py",
-    "backend/app/orchestration/dbt.py",
-    "backend/app/services/connection_service.py",
-    "backend/app/worker/celery_app.py",
-    "backend/app/worker/tasks.py",
-    "docs/progress.md",
-    "frontend/src/api/connections.ts",
-    "frontend/src/pages/Connections.tsx",
-    "frontend/tests/pages/Connections.test.tsx"
-  ],
+  "files_touched": null,
   "sessions": [
     {
       "metadata": "/a2/a28501819f/0/metadata.json",
@@ -31,10 +15,10 @@
     }
   ],
   "token_usage": {
-    "input_tokens": 17444,
-    "cache_creation_tokens": 1976771,
-    "cache_read_tokens": 208456874,
-    "output_tokens": 348288,
-    "api_call_count": 606
+    "input_tokens": 17458,
+    "cache_creation_tokens": 1982188,
+    "cache_read_tokens": 210088585,
+    "output_tokens": 350528,
+    "api_call_count": 613
   }
 }
