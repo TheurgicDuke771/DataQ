@@ -104,7 +104,8 @@ def test_configure_tracing_turns_on_with_only_otlp_endpoint(
         return {"pong": "yes"}
 
     tracing.instrument_fastapi(app)
-    assert TestClient(app).get("/api/v1/ping").status_code == 200
+    resp = TestClient(app).get("/api/v1/ping")
+    assert resp.status_code == 200
     tracing._provider.force_flush()
     assert any(s.kind.name == "SERVER" for s in exporter.get_finished_spans())
 
@@ -141,7 +142,8 @@ def test_instrumentors_and_tagger_are_noops_when_tracing_off() -> None:
     tracing.instrument_fastapi(app)
     tracing.instrument_celery()
 
-    assert TestClient(app).get("/api/v1/ping").status_code == 200
+    resp = TestClient(app).get("/api/v1/ping")
+    assert resp.status_code == 200
     assert not getattr(app, "_is_instrumented_by_opentelemetry", False)
 
 
@@ -171,9 +173,12 @@ def test_spans_emitted_and_excluded_urls_and_query_scrubbed(
 
     tracing.instrument_fastapi(app)
     client = TestClient(app)
-    assert client.get("/api/v1/ping?q=olivia@corp.example").status_code == 200
-    assert client.get("/healthz").status_code == 200
-    assert client.post("/api/v1/orchestration/events/adf?token=supersecret").status_code == 200
+    resp = client.get("/api/v1/ping?q=olivia@corp.example")
+    assert resp.status_code == 200
+    resp = client.get("/healthz")
+    assert resp.status_code == 200
+    resp = client.post("/api/v1/orchestration/events/adf?token=supersecret")
+    assert resp.status_code == 200
 
     routes = _server_span_routes(in_memory_exporter)
     assert "/api/v1/ping" in routes
@@ -226,7 +231,8 @@ def test_shipped_main_wiring_emits_request_spans(
         reloaded = importlib.reload(main)
         # No lifespan on purpose: module-scope instrumentation must suffice.
         client = TestClient(reloaded.app, raise_server_exceptions=False)
-        assert client.get("/api/v1/nonexistent").status_code == 404
+        resp = client.get("/api/v1/nonexistent")
+        assert resp.status_code == 404
         assert tracing._provider is not None
         tracing._provider.force_flush()
         server_spans = [

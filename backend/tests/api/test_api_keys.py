@@ -82,11 +82,13 @@ def test_bad_pat_401s_instead_of_falling_through_to_bypass(client: TestClient) -
 def test_revoked_pat_stops_authenticating_immediately(client: TestClient) -> None:
     body = client.post("/api/v1/me/api-keys", json={"name": "doomed"}).json()
     token = body["token"]
-    assert client.get("/api/v1/me", headers=_pat_header(token)).status_code == 200
+    resp = client.get("/api/v1/me", headers=_pat_header(token))
+    assert resp.status_code == 200
 
     revoke = client.delete(f"/api/v1/me/api-keys/{body['id']}")
     assert revoke.status_code == 204
-    assert client.get("/api/v1/me", headers=_pat_header(token)).status_code == 401
+    resp = client.get("/api/v1/me", headers=_pat_header(token))
+    assert resp.status_code == 401
     re_revoke = client.delete(f"/api/v1/me/api-keys/{body['id']}")  # idempotent
     assert re_revoke.status_code == 204
 

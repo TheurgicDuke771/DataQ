@@ -84,7 +84,8 @@ def test_admin_email_match_is_case_insensitive(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _grant_admin(monkeypatch, DEV_BYPASS_EMAIL.upper())
-    assert client.get("/api/v1/admin/suites").status_code == 200
+    resp = client.get("/api/v1/admin/suites")
+    assert resp.status_code == 200
 
 
 # ── all suites ────────────────────────────────────────────────────────────────

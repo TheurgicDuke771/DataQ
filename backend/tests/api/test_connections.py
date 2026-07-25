@@ -376,8 +376,10 @@ def test_reauth_unknown_connection_returns_404(client: tuple[TestClient, FakeSto
 def test_reauth_requires_a_secret(client: tuple[TestClient, FakeStore]) -> None:
     api, _ = client
     cid = api.post("/api/v1/connections", json=_create_payload()).json()["id"]
-    assert api.post(f"/api/v1/connections/{cid}/reauth", json={}).status_code == 422
-    assert api.post(f"/api/v1/connections/{cid}/reauth", json={"secret": ""}).status_code == 422
+    resp = api.post(f"/api/v1/connections/{cid}/reauth", json={})
+    assert resp.status_code == 422
+    resp = api.post(f"/api/v1/connections/{cid}/reauth", json={"secret": ""})
+    assert resp.status_code == 422
 
 
 # ───────────────────────── auth gating ─────────────────────────────

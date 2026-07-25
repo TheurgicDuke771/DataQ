@@ -157,16 +157,13 @@ def test_create_with_target_dispatches_auto_classify(
     monkeypatch.setattr(run_dispatch, "dispatch_auto_classify", calls.append)
 
     conn = _connection(db_session)
-    assert (
-        client.post(
-            "/api/v1/suites", json=_payload(conn.id, target={"table": "ORDERS"})
-        ).status_code
-        == 201
-    )
+    resp = client.post("/api/v1/suites", json=_payload(conn.id, target={"table": "ORDERS"}))
+    assert resp.status_code == 201
     assert len(calls) == 1  # dispatched once for the targeted suite
 
     calls.clear()
-    assert client.post("/api/v1/suites", json=_payload(conn.id)).status_code == 201
+    resp = client.post("/api/v1/suites", json=_payload(conn.id))
+    assert resp.status_code == 201
     assert calls == []  # no target → no auto-classify
 
 
@@ -182,10 +179,8 @@ def test_update_setting_a_target_dispatches_auto_classify(
     # Created target-less (no dispatch), then given a target via PATCH.
     sid = client.post("/api/v1/suites", json=_payload(conn.id)).json()["id"]
     assert calls == []
-    assert (
-        client.patch(f"/api/v1/suites/{sid}", json={"target": {"table": "ORDERS"}}).status_code
-        == 200
-    )
+    resp = client.patch(f"/api/v1/suites/{sid}", json={"target": {"table": "ORDERS"}})
+    assert resp.status_code == 200
     assert calls == [uuid.UUID(sid)]  # dispatched on the target-set
 
     # Give it a policy, then PATCH the target again — must NOT re-derive.
@@ -194,10 +189,8 @@ def test_update_setting_a_target_dispatches_auto_classify(
     )
     db_session.commit()
     calls.clear()
-    assert (
-        client.patch(f"/api/v1/suites/{sid}", json={"target": {"table": "CUSTOMERS"}}).status_code
-        == 200
-    )
+    resp = client.patch(f"/api/v1/suites/{sid}", json={"target": {"table": "CUSTOMERS"}})
+    assert resp.status_code == 200
     assert calls == []  # existing policy → no re-derive
 
 
@@ -223,12 +216,8 @@ def test_update_repointing_policied_suite_target_logs_possibly_stale(
     calls.clear()
 
     with capture_logs() as logs:
-        assert (
-            client.patch(
-                f"/api/v1/suites/{sid}", json={"target": {"table": "CUSTOMERS"}}
-            ).status_code
-            == 200
-        )
+        resp = client.patch(f"/api/v1/suites/{sid}", json={"target": {"table": "CUSTOMERS"}})
+        assert resp.status_code == 200
     stale = [e for e in logs if e.get("event") == "suite_policy_possibly_stale"]
     assert calls == []  # no re-derive over an existing policy
     assert len(stale) == 1 and stale[0]["reason"] == "target_changed_on_policied_suite"
@@ -316,12 +305,10 @@ def test_update_target_repoints_to_new_asset(client: TestClient, db_session: Any
     first_asset = db_session.get(Suite, uuid.UUID(sid)).asset_id
     assert first_asset is not None
 
-    assert (
-        client.patch(
-            f"/api/v1/suites/{sid}", json={"target": {"table": "customers", "schema": "sales"}}
-        ).status_code
-        == 200
+    resp = client.patch(
+        f"/api/v1/suites/{sid}", json={"target": {"table": "customers", "schema": "sales"}}
     )
+    assert resp.status_code == 200
     db_session.expire_all()
     second_asset = db_session.get(Suite, uuid.UUID(sid)).asset_id
     assert second_asset is not None and second_asset != first_asset
@@ -370,7 +357,8 @@ def test_list_filters_by_connection(client: TestClient, db_session: Any) -> None
 
     all_a = client.get(f"/api/v1/suites?connection_id={conn_a.id}").json()
     assert {s["name"] for s in all_a} == {"a1", "a2"}
-    assert len(client.get("/api/v1/suites").json()) == 3  # unfiltered
+    resp = client.get("/api/v1/suites")
+    assert len(resp.json()) == 3  # unfiltered
 
 
 # ───────────────────────── update / delete ─────────────────────────
@@ -555,11 +543,13 @@ def test_list_is_scoped_to_accessible_suites(client: TestClient, db_session: Any
         "/api/v1/suites", json={"name": "b-suite", "connection_id": str(conn_id)}
     ).json()["id"]
     # B sees only their own suite, not the owner's
-    assert {s["id"] for s in client.get("/api/v1/suites").json()} == {b_sid}
+    resp = client.get("/api/v1/suites")
+    assert {s["id"] for s in resp.json()} == {b_sid}
     # once shared, the owner's suite appears for B too
     _share(client, owner, owner_sid, b, "view")
     _as(b)
-    assert {s["id"] for s in client.get("/api/v1/suites").json()} == {b_sid, owner_sid}
+    resp = client.get("/api/v1/suites")
+    assert {s["id"] for s in resp.json()} == {b_sid, owner_sid}
 
 
 # ───────────────────────── export / import ─────────────────────────

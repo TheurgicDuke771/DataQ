@@ -135,8 +135,10 @@ def test_docs_disabled_in_prod() -> None:
 
 def test_openapi_schema_served_in_test_env(client: TestClient) -> None:
     """The test env is non-prod, so the wired app exposes the schema + docs UI."""
-    assert client.get("/openapi.json").status_code == 200
-    assert client.get("/docs").status_code == 200
+    resp = client.get("/openapi.json")
+    assert resp.status_code == 200
+    resp = client.get("/docs")
+    assert resp.status_code == 200
 
 
 def test_every_api_endpoint_has_summary_and_tags() -> None:

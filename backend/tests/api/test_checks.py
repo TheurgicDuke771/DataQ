@@ -861,13 +861,10 @@ def test_noop_update_does_not_append_a_version(client: TestClient, db_session: A
     cid = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()["id"]
     # A PATCH that changes nothing (resends the current name) must not mint a
     # duplicate version — history stays at v1.
-    assert (
-        client.patch(
-            f"/api/v1/suites/{sid}/checks/{cid}", json={"name": "orders not null"}
-        ).status_code
-        == 200
-    )
-    assert client.patch(f"/api/v1/suites/{sid}/checks/{cid}", json={}).status_code == 200
+    resp = client.patch(f"/api/v1/suites/{sid}/checks/{cid}", json={"name": "orders not null"})
+    assert resp.status_code == 200
+    resp = client.patch(f"/api/v1/suites/{sid}/checks/{cid}", json={})
+    assert resp.status_code == 200
 
     versions = client.get(f"/api/v1/suites/{sid}/checks/{cid}/versions").json()
     assert [v["version_no"] for v in versions] == [1]

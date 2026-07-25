@@ -315,7 +315,8 @@ def test_list_runs_respects_limit(client: TestClient, db_session: Any) -> None:
     _as(dev)
     body = client.get("/api/v1/runs?limit=2").json()
     assert len(body) == 2
-    assert client.get("/api/v1/runs?limit=0").status_code == 422  # below ge=1
+    resp = client.get("/api/v1/runs?limit=0")
+    assert resp.status_code == 422  # below ge=1
 
 
 # ───────────────────────── GET /runs/{id} ──────────────────────────
@@ -622,7 +623,8 @@ def test_cancel_terminal_run_returns_409(client: TestClient, db_session: Any) ->
 def test_cancel_unknown_run_returns_404(client: TestClient, db_session: Any) -> None:
     dev = _user(db_session, "dev@ex")
     _as(dev)
-    assert client.post(f"/api/v1/runs/{uuid.uuid4()}/cancel").status_code == 404
+    resp = client.post(f"/api/v1/runs/{uuid.uuid4()}/cancel")
+    assert resp.status_code == 404
 
 
 def test_cancel_no_access_returns_404(client: TestClient, db_session: Any) -> None:
@@ -632,7 +634,8 @@ def test_cancel_no_access_returns_404(client: TestClient, db_session: Any) -> No
     run = _run(db_session, suite, status="queued")
 
     _as(stranger)
-    assert client.post(f"/api/v1/runs/{run.id}/cancel").status_code == 404
+    resp = client.post(f"/api/v1/runs/{run.id}/cancel")
+    assert resp.status_code == 404
 
 
 def test_cancel_requires_edit_permission(client: TestClient, db_session: Any) -> None:
@@ -784,11 +787,14 @@ def test_list_pipeline_runs_rejects_an_unknown_provider(
     assert resp.status_code == 422
     assert "adf" in resp.json()["error"]["detail"]["allowed"]
 
-    assert client.get("/api/v1/pipeline_runs?provider=nope").status_code == 422
+    resp = client.get("/api/v1/pipeline_runs?provider=nope")
+    assert resp.status_code == 422
     # The valid value still works, and still returns the seeded row.
-    assert len(client.get("/api/v1/pipeline_runs?provider=adf").json()) == 1
+    resp = client.get("/api/v1/pipeline_runs?provider=adf")
+    assert len(resp.json()) == 1
     # Omitting the filter is not "unknown" — it means no filter.
-    assert client.get("/api/v1/pipeline_runs").status_code == 200
+    resp = client.get("/api/v1/pipeline_runs")
+    assert resp.status_code == 200
 
 
 def test_list_pipelines_rejects_unknown_provider_and_env(
@@ -799,12 +805,15 @@ def test_list_pipelines_rejects_unknown_provider_and_env(
     _pipeline_run(db_session, owner, provider="adf", status="succeeded")
     _as(owner)
 
-    assert client.get("/api/v1/orchestration/pipelines?provider=nope").status_code == 422
+    resp = client.get("/api/v1/orchestration/pipelines?provider=nope")
+    assert resp.status_code == 422
     resp = client.get("/api/v1/orchestration/pipelines?env=production")  # real env is "prod"
     assert resp.status_code == 422
     assert "prod" in resp.json()["error"]["detail"]["allowed"]
-    assert client.get("/api/v1/orchestration/pipelines?provider=adf&env=dev").status_code == 200
-    assert client.get("/api/v1/orchestration/pipelines").status_code == 200
+    resp = client.get("/api/v1/orchestration/pipelines?provider=adf&env=dev")
+    assert resp.status_code == 200
+    resp = client.get("/api/v1/orchestration/pipelines")
+    assert resp.status_code == 200
 
 
 def test_list_pipeline_runs_requires_auth(db_session: Any) -> None:
@@ -817,7 +826,8 @@ def test_list_pipeline_runs_requires_auth(db_session: Any) -> None:
 
     app.dependency_overrides[get_current_user] = _reject
     try:
-        assert TestClient(app).get("/api/v1/pipeline_runs").status_code == 401
+        resp = TestClient(app).get("/api/v1/pipeline_runs")
+        assert resp.status_code == 401
     finally:
         app.dependency_overrides.clear()
 
@@ -1051,6 +1061,7 @@ def test_list_pipelines_requires_auth(db_session: Any) -> None:
 
     app.dependency_overrides[get_current_user] = _reject
     try:
-        assert TestClient(app).get("/api/v1/orchestration/pipelines").status_code == 401
+        resp = TestClient(app).get("/api/v1/orchestration/pipelines")
+        assert resp.status_code == 401
     finally:
         app.dependency_overrides.clear()

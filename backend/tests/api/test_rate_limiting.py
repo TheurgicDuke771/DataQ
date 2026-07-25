@@ -90,7 +90,8 @@ def test_webhook_with_bearer_not_counted_against_ip_ceiling(ip_ceiling_limiter: 
     # 6 webhook posts > the ipall ceiling (4); they stay in the webhook class
     # (cap 50) and never touch ipall, so none are throttled.
     for _ in range(6):
-        assert ip_ceiling_limiter.post(path, headers=h).status_code != 429
+        resp = ip_ceiling_limiter.post(path, headers=h)
+        assert resp.status_code != 429
     # And a subsequent bearer request is ipall #1, not #7 → still allowed.
     assert ip_ceiling_limiter.get(PROBE, headers=h).status_code != 429
 
@@ -162,9 +163,12 @@ def test_per_token_buckets_are_independent(limiter: TestClient) -> None:
 def test_webhook_class_is_tighter_and_ip_keyed_despite_bearer(limiter: TestClient) -> None:
     path = "/api/v1/orchestration/events/adf"
     headers = {"Authorization": "Bearer token-AAA"}  # bearer must NOT switch it off ip-keying
-    assert limiter.post(path, headers=headers).status_code != 429
-    assert limiter.post(path, headers=headers).status_code != 429
-    assert limiter.post(path, headers=headers).status_code == 429  # WEBHOOK limit = 2
+    resp = limiter.post(path, headers=headers)
+    assert resp.status_code != 429
+    resp = limiter.post(path, headers=headers)
+    assert resp.status_code != 429
+    resp = limiter.post(path, headers=headers)
+    assert resp.status_code == 429  # WEBHOOK limit = 2
 
 
 def test_webhook_burst_on_one_provider_does_not_throttle_another(limiter: TestClient) -> None:
@@ -172,18 +176,24 @@ def test_webhook_burst_on_one_provider_does_not_throttle_another(limiter: TestCl
     # past the limit must not 429 airflow's or dbt's callbacks.
     adf = "/api/v1/orchestration/events/adf"
     for _ in range(2):  # WEBHOOK limit = 2
-        assert limiter.post(adf).status_code != 429
-    assert limiter.post(adf).status_code == 429
-    assert limiter.post("/api/v1/orchestration/events/airflow").status_code != 429
-    assert limiter.post("/api/v1/orchestration/events/dbt").status_code != 429
+        resp = limiter.post(adf)
+        assert resp.status_code != 429
+    resp = limiter.post(adf)
+    assert resp.status_code == 429
+    resp = limiter.post("/api/v1/orchestration/events/airflow")
+    assert resp.status_code != 429
+    resp = limiter.post("/api/v1/orchestration/events/dbt")
+    assert resp.status_code != 429
 
 
 def test_webhook_unknown_segments_share_one_bucket(limiter: TestClient) -> None:
     # Rotating an unknown segment must not mint fresh buckets — all such requests
     # land in the shared bare-IP webhook bucket and 429 together.
     for i in range(2):  # WEBHOOK limit = 2
-        assert limiter.post(f"/api/v1/orchestration/events/scan-{i}").status_code != 429
-    assert limiter.post("/api/v1/orchestration/events/scan-99").status_code == 429
+        resp = limiter.post(f"/api/v1/orchestration/events/scan-{i}")
+        assert resp.status_code != 429
+    resp = limiter.post("/api/v1/orchestration/events/scan-99")
+    assert resp.status_code == 429
 
 
 @pytest.fixture
@@ -208,7 +218,8 @@ def test_rotating_provider_segments_hit_webhook_ip_ceiling(
     # but the aggregate per-IP ceiling (4) closes the segment-rotation multiplier.
     paths = [f"/api/v1/orchestration/events/{p}" for p in ("adf", "airflow", "dbt", "nonesuch")]
     for i in range(4):
-        assert webhook_ceiling_limiter.post(paths[i % 4]).status_code != 429
+        resp = webhook_ceiling_limiter.post(paths[i % 4])
+        assert resp.status_code != 429
     resp = webhook_ceiling_limiter.post(paths[0])
     assert resp.status_code == 429
     assert resp.headers["X-RateLimit-Limit"] == "4"  # the webhook IP ceiling, reported
@@ -219,7 +230,8 @@ def test_rotating_provider_segments_hit_webhook_ip_ceiling(
 
 def test_healthz_is_exempt(limiter: TestClient) -> None:
     for _ in range(20):
-        assert limiter.get("/healthz").status_code == 200
+        resp = limiter.get("/healthz")
+        assert resp.status_code == 200
 
 
 def test_options_preflight_is_exempt(limiter: TestClient) -> None:
@@ -245,8 +257,10 @@ def test_mcp_mount_is_covered(limiter: TestClient) -> None:
     # boundary only (never the inner status), and disable redirect-following so
     # each call is exactly one middleware pass.
     for _ in range(3):
-        assert limiter.get("/mcp", follow_redirects=False).status_code != 429
-    assert limiter.get("/mcp", follow_redirects=False).status_code == 429
+        resp = limiter.get("/mcp", follow_redirects=False)
+        assert resp.status_code != 429
+    resp = limiter.get("/mcp", follow_redirects=False)
+    assert resp.status_code == 429
 
 
 # ───────────────────────── 7. disabled flag ─────────────────────────
@@ -365,8 +379,10 @@ def test_webhook_bucket_keys_on_prefix(limiter: TestClient) -> None:
     # The per-provider webhook bucket must also accumulate across sibling /32s.
     adf = "/api/v1/orchestration/events/adf"
     for i in range(2):  # WEBHOOK limit = 2
-        assert limiter.post(adf, headers={"X-Forwarded-For": f"9.9.9.{20 + i}"}).status_code != 429
-    assert limiter.post(adf, headers={"X-Forwarded-For": "9.9.9.99"}).status_code == 429
+        resp = limiter.post(adf, headers={"X-Forwarded-For": f"9.9.9.{20 + i}"})
+        assert resp.status_code != 429
+    resp = limiter.post(adf, headers={"X-Forwarded-For": "9.9.9.99"})
+    assert resp.status_code == 429
 
 
 def test_xff_last_hop_defines_the_bucket(limiter: TestClient) -> None:
