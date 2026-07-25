@@ -49,7 +49,7 @@ def test_task_delegates_to_the_sweep_and_closes_its_session(monkeypatch: Any) ->
 def test_task_fails_soft_when_the_secret_store_is_unreachable(monkeypatch: Any) -> None:
     session = _Session()
     monkeypatch.setattr(tasks, "get_session", lambda: session)
-    monkeypatch.setattr(tasks, "get_secret_store", lambda: object())
+    monkeypatch.setattr(tasks, "get_secret_store", object)
 
     def _boom(_session: Any, *, secret_store: Any) -> int:
         raise RuntimeError("Key Vault unreachable")
