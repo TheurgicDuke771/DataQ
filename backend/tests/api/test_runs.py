@@ -684,6 +684,88 @@ def test_list_pipeline_runs_filters_by_provider_and_status(
     assert {p["provider"] for p in failed} == {"airflow"}
 
 
+def _pipeline_runs_on_one_connection(
+    db_session: Any, owner: User, *, count: int, provider: str = "adf"
+) -> list[PipelineRun]:
+    """`count` pipeline runs sharing ONE connection.
+
+    `_pipeline_run` above mints a connection per call, which trips
+    `uq_connections_orchestrator_type_env` on the second row — an orchestrator is
+    singular per (type, env). Real pipeline runs all hang off one connection
+    anyway, so this is also the more faithful shape for paging tests.
+    """
+    conn = _connection(db_session, owner, type_=provider)
+    runs = [
+        PipelineRun(
+            provider=provider,
+            connection_id=conn.id,
+            provider_run_id=uuid.uuid4().hex,
+            pipeline_or_dag_id="pipe",
+            env="dev",
+            status="succeeded",
+            started_at=datetime.now(UTC),
+        )
+        for _ in range(count)
+    ]
+    db_session.add_all(runs)
+    db_session.commit()
+    return runs
+
+
+def test_list_pipeline_runs_pages_with_offset(client: TestClient, db_session: Any) -> None:
+    """`offset` actually pages, and never returns the same row twice (#928).
+
+    Before this, `offset` was not a parameter at all — FastAPI silently discarded
+    it, so a paging client re-read page 1 forever while believing it was advancing.
+    """
+    owner = _user(db_session, "owner@ex")
+    _pipeline_runs_on_one_connection(db_session, owner, count=5)
+    _as(owner)
+
+    page1 = client.get("/api/v1/pipeline_runs?limit=2&offset=0").json()
+    page2 = client.get("/api/v1/pipeline_runs?limit=2&offset=2").json()
+    page3 = client.get("/api/v1/pipeline_runs?limit=2&offset=4").json()
+
+    assert [len(page1), len(page2), len(page3)] == [2, 2, 1]
+    ids = [p["id"] for p in page1 + page2 + page3]
+    assert len(set(ids)) == 5, "paging returned a duplicate row"
+    # And the pages together are the whole set, in order — no row skipped.
+    everything = [p["id"] for p in client.get("/api/v1/pipeline_runs?limit=200").json()]
+    assert ids == everything
+
+
+def test_pipeline_run_ordering_is_total_so_paging_cannot_skip() -> None:
+    """The paging order must be TOTAL — it ends in a unique column (#928).
+
+    Why this is a structural assertion and not a behavioural one, stated because
+    the behavioural version is tempting and worthless: the poll ingests a batch in
+    ONE transaction and Postgres' `now()` is transaction-scoped, so real batches
+    land with identical `created_at`. Ordering by that alone is not a total order,
+    and `LIMIT/OFFSET` over a non-total order may return a row on two pages while
+    never returning another.
+
+    *May.* Postgres is free to vary the order of tied rows but is not obliged to,
+    and in practice a small table with a stable plan returns them consistently. A
+    test that pages tied rows and asserts no duplicates therefore **passes against
+    the unfixed code** most of the time — verified: removing the `id` tie-break
+    left that test green. That is the #948 coin-flip lesson exactly, so this
+    asserts the invariant itself rather than waiting for the database to misbehave
+    on cue.
+    """
+    from backend.app.services.orchestration_service import pipeline_run_order_by
+
+    order = pipeline_run_order_by()
+    assert len(order) >= 2, "a single non-unique sort key cannot be a total order"
+    # Totality is exactly "the final sort key is unique", so assert that property
+    # rather than the identity of one particular column — a different unique key
+    # would be equally correct, and this stays true if the ordering is reworked.
+    final_key = order[-1].element
+    final_name = getattr(final_key, "name", final_key)
+    assert getattr(
+        final_key, "primary_key", False
+    ), f"paging order must end in a unique column; ends in {final_name!r}"
+
+
 def test_list_pipeline_runs_rejects_an_unknown_provider(
     client: TestClient, db_session: Any
 ) -> None:

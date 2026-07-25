@@ -23,6 +23,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy import func, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -502,18 +503,42 @@ def ingest_polled_runs(
 # back to a DQ run is the `triggered_by` marker on `runs`, not a column here.
 
 
+def pipeline_run_order_by() -> tuple[Any, ...]:
+    """The newest-first ordering for the pipeline-run feed — **total**, by design.
+
+    Exposed as a function rather than inlined so the totality invariant can be
+    asserted directly. It cannot be pinned behaviourally: with tied timestamps
+    Postgres is *free* to return any order but not *required* to vary, so a test
+    that pages tied rows and checks for duplicates passes on the unfixed code
+    roughly whenever the planner happens to be stable — a coin flip, which is the
+    #948 tie-break lesson exactly. So the test asserts the ordering contains a
+    unique column instead of hoping the database misbehaves on cue.
+    """
+    return (PipelineRun.created_at.desc(), PipelineRun.id.desc())
+
+
 def list_pipeline_runs(
     session: Session,
     *,
     provider: str | None = None,
     status: str | None = None,
     limit: int = 50,
+    offset: int = 0,
 ) -> list[PipelineRun]:
-    """Monitored orchestrator pipeline/DAG runs, newest first (`created_at` desc).
+    """Monitored orchestrator pipeline/DAG runs, newest first, with paging (#928).
 
-    Optionally filtered by ``provider`` (adf / airflow) and/or ``status``.
+    Optionally filtered by ``provider`` and/or ``status``.
+
+    **The `id` tie-break is load-bearing, not tidiness.** `created_at` alone is not
+    a total order — the poll ingests a batch inside one transaction, so Postgres'
+    transaction-scoped `now()` gives every row in that batch an identical
+    timestamp. Under `LIMIT/OFFSET` a non-total order lets the database return
+    tied rows in any order per query, so the same row can appear on two pages
+    while another is never returned at all. Paging without this is worse than no
+    paging: it looks complete and silently isn't (the same nondeterminism #889
+    fixed for latest-run-per-suite).
     """
-    stmt = select(PipelineRun).order_by(PipelineRun.created_at.desc()).limit(limit)
+    stmt = select(PipelineRun).order_by(*pipeline_run_order_by()).limit(limit).offset(offset)
     if provider is not None:
         stmt = stmt.where(PipelineRun.provider == provider)
     if status is not None:
