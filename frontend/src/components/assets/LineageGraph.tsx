@@ -60,7 +60,15 @@ export function LineageGraph({
   const isolated = upstream.length === 0 && downstream.length === 0;
   // #915: one Alert covering both states let "last refresh FAILED" render at the
   // same INFO weight as "answers at a coarser tier". Partition on `last_error`,
-  // which is exactly the failed-vs-degraded discriminator the API already sets.
+  // taking failure as the dominant state — a source that is BOTH coarse and
+  // currently failing is a failing source first.
+  //
+  // The two fields are not mutually exclusive: `warehouse_refresh` sets
+  // `degraded_reason` on a successful coarse refresh and does not clear it when a
+  // later refresh fails, so a row can carry both. Such a row shows only its error
+  // here, exactly as the single-alert version did — the tier note is not lost by
+  // this change, it was never shown alongside an error. Surfacing both is a
+  // separate improvement, filed rather than smuggled in.
   const warehouseFailing = useMemo(
     () => warehouseStatus.filter((s) => s.last_error),
     [warehouseStatus],
