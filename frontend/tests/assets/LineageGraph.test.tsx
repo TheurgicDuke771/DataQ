@@ -89,6 +89,30 @@ describe('LineageGraph warehouse-lineage status (#858, #915, #916)', () => {
     expect(degraded).not.toHaveTextContent('prod-uc');
   });
 
+  it('shows the tier note on a source that is BOTH degraded and failing (#987)', () => {
+    // The two fields are not mutually exclusive: the success path records
+    // `degraded_reason` and `_record_refresh_error` never clears it, so a source
+    // that answered coarsely and has since started failing carries both. The tier
+    // note describes what the source CAN answer (edition/grants), which still
+    // holds while refreshes fail — so it must not be swallowed by the error.
+    renderGraph({
+      warehouseStatus: [
+        {
+          ...FAILING,
+          degraded_reason: 'view-level lineage only — richer tiers need Enterprise',
+        },
+      ],
+    });
+
+    const alert = screen.getByText(/refresh is failing/).closest('.ant-alert');
+    expect(alert).toHaveClass('ant-alert-warning'); // failure still dominates
+    expect(alert).toHaveTextContent('the datasource could not be reached');
+    expect(alert).toHaveTextContent(/view-level lineage only/);
+    // …and it is not ALSO listed as a merely-degraded source, which would read as
+    // two different sources having two different problems.
+    expect(screen.queryByText(/Workspace lineage sources/)).toBeNull();
+  });
+
   it('frames the degraded advisory as workspace-level, not asset-scoped (#916)', () => {
     // Deliberately workspace-wide: a tier is a property of the SOURCE, not of this
     // asset, so a pure-UC asset page legitimately lists Snowflake connections. The

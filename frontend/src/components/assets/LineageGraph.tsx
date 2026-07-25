@@ -140,6 +140,26 @@ export function LineageGraph({
                 <div key={s.connection_id}>
                   <Typography.Text strong>{s.name}</Typography.Text> ({s.type}): last refresh failed
                   — {s.last_error}
+                  {/* A failing source can ALSO carry a tier note (#987): the success
+                      path records `degraded_reason`, and the error path never clears
+                      it. Showing only the error hid the reason the graph was already
+                      thin before it went stale.
+
+                      Deliberately worded as history, not current truth. The note is
+                      sometimes a durable capability fact (an edition/grant ceiling)
+                      but NOT always — the Snowflake ladder also writes it when
+                      ACCESS_HISTORY simply had no table-to-table DML in the rolling
+                      90-day window, and the UC column-pair path writes it on a bare
+                      exception that may be a transient blip. So it is reported as
+                      what the last successful refresh said, which is true regardless
+                      of which kind it is, rather than as a claim about now. */}
+                  {s.degraded_reason ? (
+                    <div style={{ marginLeft: 12 }}>
+                      <Typography.Text type="secondary">
+                        Last successful refresh also reported: {s.degraded_reason}
+                      </Typography.Text>
+                    </div>
+                  ) : null}
                 </div>
               ))}
               <div style={{ marginTop: 4 }}>
