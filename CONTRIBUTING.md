@@ -13,6 +13,14 @@
    **1c. Every PR gets an agentic code review before merge.** Spawn `/code-review` (never an inline self-review only), and post its findings to the PR as inline comments (`/code-review --comment`). Fix what it finds in the same PR where feasible; anything genuinely deferred must be filed as a GitHub issue (rule 3) — never dropped silently.
 2. **Manually test each committed change before starting the next functionality**, in addition to automated coverage. "Tested" means: the affected code path was exercised locally, not just that it compiled.
 3. **Defects → GitHub issue first, never silent fixes.** Use `gh issue create --title "fix: <desc>"`. The PR that fixes it must include `Fixes #N` in the title or body. This also covers findings deferred out of a `/code-review` pass (rule 1c).
+
+   **3a. "Pre-existing" is not a disposition.** DataQ runs in production, where the age of a defect says nothing about its blast radius — a bug that predates your change is live for users *right now*. So every finding, whoever raises it and whenever it was introduced, ends in exactly one of two states: **fixed**, or **filed**. Never a third — not "noted in the review reply", not "documented in a docstring", not "out of scope for this PR". A finding that exists only in prose is gone when the conversation ends.
+   - A reviewer's "pre-existing, not a blocker" means *file it and reference the number in your reply*, not *merge past it*.
+   - Concluding something is genuinely **not** a defect is a valid outcome — record the determination and its evidence so nobody re-litigates it. Verified-benign is fine; unexamined is not.
+   - Documenting a known limitation in a comment is necessary but **not sufficient**; the tracked issue is what keeps it work rather than folklore.
+   - Deferring scope out of a PR is fine and often right. The follow-up issue is precisely what makes it a deferral instead of a drop.
+
+   This rule exists because the expensive bugs here were all "pre-existing" the day before they cost real time: [#953](https://github.com/TheurgicDuke771/DataQ/issues/953) (UC freshness broken since #426, behind three green suites), [#954](https://github.com/TheurgicDuke771/DataQ/issues/954) (dead credentials invisible until a run failed), [#828](https://github.com/TheurgicDuke771/DataQ/issues/828) (lineage dark for six days).
 4. **Every new functionality ships with unit tests.** Tests live next to the code they cover (`backend/tests/`, `frontend/tests/`).
 
    **4a. Test for failure modes, not just the happy path.** Lesson from the column-profiler bugs ([#145](https://github.com/TheurgicDuke771/DataQ/issues/145)/[#147](https://github.com/TheurgicDuke771/DataQ/issues/147)): the profiler sat at ~94% line coverage and still `500`d on a mixed-type column — *line coverage measures lines, not input space*. So:
