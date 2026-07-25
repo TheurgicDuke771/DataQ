@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "a2ab6695ec3f",
+  "strategy": "manual-commit",
+  "branch": "chore/triage-docs-hygiene-batch",
+  "checkpoints_count": 4,
+  "files_touched": [
+    "CONTRIBUTING.md",
+    "backend/app/orchestration/dbt.py",
+    "backend/app/services/dataset_reader.py",
+    "backend/app/services/rollup.py",
+    "backend/app/services/schema_drift.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/a2/ab6695ec3f/0/metadata.json",
+      "transcript": "/a2/ab6695ec3f/0/full.jsonl",
+      "compact_transcript": "/a2/ab6695ec3f/0/transcript.jsonl",
+      "content_hash": "/a2/ab6695ec3f/0/content_hash.txt",
+      "prompt": "/a2/ab6695ec3f/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 22,
+    "cache_creation_tokens": 18997,
+    "cache_read_tokens": 3813944,
+    "output_tokens": 8225,
+    "api_call_count": 11
+  }
+}
