@@ -63,8 +63,22 @@ class ConnectionRead(ApiModel):
     last_poll_error: str | None = None
     consecutive_poll_failures: int = 0
 
+    # Run-derived health (#954) — DATASOURCE connections. Nothing polls a
+    # datasource, so a dead credential used to be invisible until a run failed,
+    # and then it showed on the RUN, not here: two prod Snowflake connections sat
+    # dead for weeks and diagnosing them meant reading worker logs. Derived from
+    # `runs`, never stored, so it cannot drift from the runs it describes.
+    # `last_run_error` is `runs.failure_reason`, already classified at the point of
+    # failure (#605) — never raw driver text.
+    last_run_at: datetime | None = None
+    last_run_error: str | None = None
+    consecutive_run_failures: int = 0
+
     @classmethod
-    def from_model(cls, conn: Connection) -> ConnectionRead:
+    def from_model(
+        cls, conn: Connection, health: svc.DatasourceHealth | None = None
+    ) -> ConnectionRead:
+        health = health or svc.DatasourceHealth()
         return cls(
             id=conn.id,
             name=conn.name,
@@ -79,6 +93,9 @@ class ConnectionRead(ApiModel):
             last_polled_at=conn.last_polled_at,
             last_poll_error=conn.last_poll_error,
             consecutive_poll_failures=conn.consecutive_poll_failures or 0,
+            last_run_at=health.last_run_at,
+            last_run_error=health.reason,
+            consecutive_run_failures=health.consecutive_failures,
         )
 
 
@@ -127,7 +144,10 @@ def list_connections(
     env: str | None = None,
 ) -> list[ConnectionRead]:
     conns = svc.list_connections(db, conn_type=type, env=env)
-    return [ConnectionRead.from_model(c) for c in conns]
+    # One batched query for the whole list, not one per connection — the N+1 that
+    # #947 just removed from the MCP surface.
+    health = svc.datasource_health(db, [c.id for c in conns])
+    return [ConnectionRead.from_model(c, health.get(c.id)) for c in conns]
 
 
 @router.get(
@@ -140,7 +160,8 @@ def get_connection(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> ConnectionRead:
-    return ConnectionRead.from_model(svc.get_connection(db, connection_id))
+    conn = svc.get_connection(db, connection_id)
+    return ConnectionRead.from_model(conn, svc.datasource_health(db, [conn.id]).get(conn.id))
 
 
 @router.patch(

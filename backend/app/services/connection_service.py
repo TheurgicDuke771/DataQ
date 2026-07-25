@@ -14,7 +14,10 @@ request/response shapes and dependency wiring.
 from __future__ import annotations
 
 import uuid
-from collections.abc import Mapping
+from collections import defaultdict
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from pydantic import ValidationError
@@ -29,7 +32,7 @@ from backend.app.datasources.registry import (
     UnsupportedConnectionTypeError,
     get_connection_adapter,
 )
-from backend.app.db.models import ENVS, Check, Connection, ConnectionVersion, Suite
+from backend.app.db.models import ENVS, Check, Connection, ConnectionVersion, Run, Suite
 from backend.app.services.asset_service import resolve_and_upsert_asset
 from backend.app.services.suite_service import accessible_suite_ids
 
@@ -231,6 +234,94 @@ def create_connection(
     session.refresh(conn)
     log.info("connection_created", connection_id=str(conn.id), type=conn_type, env=env)
     return conn
+
+
+@dataclass(frozen=True)
+class DatasourceHealth:
+    """Run-derived health for a DATASOURCE connection (#954).
+
+    #839 gave orchestration connections a health signal because something polls
+    them. Nothing polls a datasource, so a dead credential stayed invisible until
+    a suite run failed — and then surfaced only as the run's failure reason, on the
+    run, not on the connection. Two prod Snowflake connections sat dead for weeks
+    behind that gap; finding out why meant reading worker logs.
+
+    Derived rather than stored, deliberately: a datasource connection's health IS
+    its recent runs, so a second persisted copy could disagree with them (the
+    `#845`/`#847` drift class). Nothing to backfill and nothing to keep in sync.
+
+    `reason` is `runs.failure_reason`, which is already classified at the point of
+    failure (#605) — this never re-classifies and never sees raw driver text.
+    """
+
+    last_run_at: datetime | None = None
+    consecutive_failures: int = 0
+    reason: str | None = None
+
+
+# How far back the consecutive-failure streak is counted. A dead credential fails
+# every run, so the exact depth only bounds the number a long-broken connection
+# reports ("20+" is as actionable as "134"), while keeping the query bounded.
+_HEALTH_RUN_WINDOW = 20
+
+
+def datasource_health(
+    session: Session, connection_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, DatasourceHealth]:
+    """Run-derived health per connection, in ONE query for the whole set.
+
+    The streak counts *leading* failures in newest-first order, so a single failure
+    after a healthy run reads as 1 — and one success clears it, exactly like
+    `consecutive_poll_failures` resets on a good poll.
+
+    Connections with no runs are absent from the mapping. That is "unknown", which
+    the UI must not render as healthy — the same rule the poll-health columns carry.
+    """
+    if not connection_ids:
+        return {}
+    ranked = (
+        select(
+            Suite.connection_id.label("connection_id"),
+            Run.status.label("status"),
+            Run.failure_reason.label("failure_reason"),
+            Run.created_at.label("created_at"),
+            func.row_number()
+            .over(
+                partition_by=Suite.connection_id,
+                order_by=(Run.created_at.desc(), Run.id.desc()),
+            )
+            .label("rn"),
+        )
+        .join(Suite, Suite.id == Run.suite_id)
+        .where(Suite.connection_id.in_(connection_ids))
+        .subquery()
+    )
+    rows = session.execute(
+        select(
+            ranked.c.connection_id, ranked.c.status, ranked.c.failure_reason, ranked.c.created_at
+        )
+        .where(ranked.c.rn <= _HEALTH_RUN_WINDOW)
+        .order_by(ranked.c.connection_id, ranked.c.rn)
+    ).all()
+
+    by_connection: dict[uuid.UUID, list[Any]] = defaultdict(list)
+    for row in rows:
+        by_connection[row.connection_id].append(row)
+
+    health: dict[uuid.UUID, DatasourceHealth] = {}
+    for conn_id, runs in by_connection.items():
+        newest = runs[0]
+        streak = 0
+        reason: str | None = None
+        for run in runs:  # newest-first; stop at the first non-failure
+            if run.status != "failed":
+                break
+            streak += 1
+            reason = reason or run.failure_reason
+        health[conn_id] = DatasourceHealth(
+            last_run_at=newest.created_at, consecutive_failures=streak, reason=reason
+        )
+    return health
 
 
 def list_connections(

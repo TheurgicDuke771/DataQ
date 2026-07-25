@@ -141,6 +141,13 @@ export interface Connection {
   last_polled_at?: string | null;
   last_poll_error?: string | null;
   consecutive_poll_failures?: number;
+  /** Run-derived health (#954) — DATASOURCE connections. Nothing polls a datasource,
+   *  so a dead credential was invisible here until someone clicked Test: two prod
+   *  Snowflake connections sat dead for weeks. Derived from `runs`, so it cannot
+   *  disagree with them. `last_run_error` is already classified server-side (#605). */
+  last_run_at?: string | null;
+  last_run_error?: string | null;
+  consecutive_run_failures?: number;
 }
 
 /** Human-readable labels for the connection types, for grouping + display. */
