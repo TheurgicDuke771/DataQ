@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "1de45f51c181",
+  "strategy": "manual-commit",
+  "branch": "feat/issue-996-datasource-health-alerting",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/app/worker/tasks.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/1d/e45f51c181/0/metadata.json",
+      "transcript": "/1d/e45f51c181/0/full.jsonl",
+      "compact_transcript": "/1d/e45f51c181/0/transcript.jsonl",
+      "content_hash": "/1d/e45f51c181/0/content_hash.txt",
+      "prompt": "/1d/e45f51c181/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 23554,
+    "cache_creation_tokens": 8976108,
+    "cache_read_tokens": 653209623,
+    "output_tokens": 987804,
+    "api_call_count": 1551
+  }
+}
