@@ -75,9 +75,15 @@ apart.
 
 | When (UTC) | Service | Action | By | Why / expected state |
 |---|---|---|---|---|
-| 2026-07-18 19:36 | `dataq-harness-airflow` (+ `-worker`, `-trigger`) | **Stopped** | royarijit04@outlook.com | Verified from `systemData.lastModifiedAt` on 2026-07-26, not from memory. Intentional. Consequence, now understood: DataQ polls it every 10 min, ACA's ingress answers 404 for a stopped app, and the connection accumulates failures — 282 by 2026-07-26. Expected to stay down until a test window needs Airflow. |
+| 2026-07-18 19:36 | `dataq-harness-airflow` (+ `-worker`, `-trigger`) | **Stopped** | royarijit04@outlook.com | Verified from `systemData.lastModifiedAt` on 2026-07-26, not from memory. Intentional. **Why (recovered 2026-07-26 from the harness's own notes, not from Azure):** a `--dbt` window earlier that day hit Snowflake Enterprise's new **MFA-on-password-login** enforcement, killing every password-auth harness leg (`dbt-lineage` failed 19:21Z with `250001 (08001)`); the harness was stopped ~15 min after that session hit the wall. A loader PAT fixed the auth the same day, but a residual GRANT failure remains — now tracked as [#1030](https://github.com/TheurgicDuke771/DataQ/issues/1030) instead of living only in an untracked file. Consequence: DataQ polls every 10 min, ACA's ingress answers 404 for a stopped app, and the connection accumulates failures — 282 by 2026-07-26. Expected to stay down until a test window needs Airflow. |
 | 2026-07-26 06:16 | `dataq-app-{api,worker,frontend}` | Deployed `c401572d` | Deploy workflow | App stack, not harness. Recorded here because the roll restarted the worker and reset in-memory state. |
 
+> **Note on how the 2026-07-18 "why" was recovered:** Azure told us *when* and
+> *who*, and nothing about *why*. The reason lived in `HARNESS_TODO.md` in the
+> untracked harness repo — one file, one machine, no backup. That is the argument
+> for this log in one sentence: the timestamp was recoverable, the intent very
+> nearly was not.
+>
 > **Unresolved as of 2026-07-26:** 282 failures at a 10-minute cadence is ~47h,
 > but the app has been stopped since 2026-07-18 (~192h) — about a quarter of the
 > expected count. Either beat is not ticking at its scheduled rate (see
