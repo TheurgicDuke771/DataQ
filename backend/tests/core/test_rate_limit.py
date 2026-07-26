@@ -497,6 +497,10 @@ async def test_it_probes_once_the_window_passes_and_closes_on_success(
     store = rate_limit.RedisStore()
     await _hit(store, rate_limit._BREAKER_TRIP_AFTER)
     assert await store.incr_windows(["k"]) is None  # open
+    # …and asserted as GATED, not merely as another failure: without this the test
+    # passes with the breaker removed entirely, since fail-open returns None either
+    # way (review finding — the same trap the timed test above exists to avoid).
+    assert sick.calls == rate_limit._BREAKER_TRIP_AFTER
 
     # Redis recovers, and the window passes.
     healthy = _HealthyRedis()
@@ -530,3 +534,30 @@ async def test_a_failed_probe_re_opens_it_rather_than_hammering(
     # Still using the shifted clock: without a re-open, every one of these would dial.
     await _hit(store, 10)
     assert sick.calls == probed
+
+
+@pytest.mark.asyncio
+async def test_a_straggling_success_cannot_close_an_open_breaker(
+    monkeypatch: pytest.MonkeyPatch, _clean_breaker: object
+) -> None:
+    """A degraded Redis serves a MIX of slow successes and timeouts, and every
+    request is an independent asyncio task over shared module state.
+
+    So a request that passed the gate just before the trip can resolve just after
+    it — and if that straggler reset the state, it would retroactively close a
+    breaker other requests had legitimately opened, ~5s early. The breaker would
+    flap under exactly the traffic it exists to handle (review finding).
+    """
+    sick = _SickRedis()
+    monkeypatch.setattr(rate_limit, "_get_redis_client", lambda: sick)
+    store = rate_limit.RedisStore()
+    await _hit(store, rate_limit._BREAKER_TRIP_AFTER)
+    assert rate_limit._breaker_is_open()
+
+    # The straggler lands: a success recorded while the breaker is open.
+    rate_limit._breaker_record_success()
+
+    assert rate_limit._breaker_is_open(), "a late success reopened the hot path"
+    before = sick.calls
+    await _hit(store, 5)
+    assert sick.calls == before  # still gated

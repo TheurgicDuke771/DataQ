@@ -139,6 +139,14 @@ def _breaker_record_failure() -> None:
 
 def _breaker_record_success() -> None:
     global _breaker_failures, _breaker_open_until
+    if _breaker_is_open():
+        # A success arriving WHILE open is a straggler: a request that passed the
+        # gate before the trip and only resolved afterwards. Letting it reset the
+        # state would retroactively close a breaker that concurrent failures had
+        # just legitimately opened — and a degraded Redis serves exactly this mix
+        # of slow successes and timeouts, so the breaker would flap instead of
+        # holding. The window closes on time, or on a probe once it has passed.
+        return
     if _breaker_failures:
         log.info("rate_limit_store_breaker_closed", after_failures=_breaker_failures)
     _breaker_failures = 0
