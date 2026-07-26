@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "d02d882dcf71",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1024-expiry-checked-at",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/app/api/v1/connections.py",
+    "backend/app/db/models.py",
+    "frontend/src/api/connections.ts",
+    "frontend/src/pages/Connections.tsx",
+    "frontend/tests/pages/Connections.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/d0/2d882dcf71/0/metadata.json",
+      "transcript": "/d0/2d882dcf71/0/full.jsonl",
+      "compact_transcript": "/d0/2d882dcf71/0/transcript.jsonl",
+      "content_hash": "/d0/2d882dcf71/0/content_hash.txt",
+      "prompt": "/d0/2d882dcf71/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 23384,
+    "cache_creation_tokens": 8895331,
+    "cache_read_tokens": 596631898,
+    "output_tokens": 932156,
+    "api_call_count": 1466
+  }
+}
