@@ -472,3 +472,44 @@ def test_run_suite_crash_still_emits_terminal(monkeypatch: pytest.MonkeyPatch) -
     # The pair is intact even on the crash path, and the session still closed.
     assert calls == ["start", "terminal"]
     assert session.closed is True
+
+
+def test_run_suite_drives_the_datasource_health_edges(monkeypatch: Any) -> None:
+    """The run path must actually be WIRED to the health alert (#996).
+
+    Added because mutation found the hook unpinned: deleting the call from
+    `run_suite` broke no test, so the alerting could have shipped connected to
+    nothing — the same "looks wired up and isn't" shape as the dead mock in #976
+    and the unwired redaction sink in #989. Every other post-run hook here is
+    exercised through its own function; this asserts the CALL, which is the part
+    that was missing.
+    """
+    from backend.app.worker import tasks
+
+    calls: list[str] = []
+    session = FakeSession()
+    monkeypatch.setattr(tasks, "get_session", lambda: _sess(session))
+    monkeypatch.setattr(tasks, "_run_suite", lambda *_a, **_k: "succeeded")
+    from backend.app.alerting import dispatch as alert_dispatch
+    from backend.app.lineage import dispatch as lineage_dispatch
+    from backend.app.services import incident_service
+
+    monkeypatch.setattr(lineage_dispatch, "emit_run_lineage_start", lambda *_a, **_k: None)
+    monkeypatch.setattr(lineage_dispatch, "emit_run_lineage_terminal", lambda *_a, **_k: None)
+    monkeypatch.setattr(incident_service, "sync_incidents_for_run", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        alert_dispatch, "publish_run_outcome", lambda *_a, **_k: calls.append("outcome")
+    )
+    monkeypatch.setattr(
+        tasks,
+        "_alert_datasource_health_for_run",
+        lambda *_a, **_k: calls.append("health"),
+    )
+
+    tasks.run_suite(str(uuid.uuid4()))
+
+    assert "health" in calls, "run_suite must drive the datasource health edges"
+    # After the outcome publish: the run's own report goes first, the connection
+    # -level edge second, so an operator reads "this run failed" before "this
+    # connection looks dead".
+    assert calls == ["outcome", "health"]
