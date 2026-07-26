@@ -104,7 +104,7 @@ def _raise_channel_down(*_args: Any, **_kwargs: Any) -> None:
 
 @pytest.fixture
 def dispatched(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
-    """Records what `_alert_poll_health` QUEUES, without running it.
+    """Records what `_alert_connection_health` QUEUES, without running it.
 
     The publish now happens in its own task (#842), so the sweep-side unit under
     test is the decision plus the hand-off — asserting on a publisher spy here
@@ -127,7 +127,9 @@ def dispatched(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
 def test_no_alert_below_threshold(db_session: Any, spy: _SpyHealthPublisher, streak: int) -> None:
     """A transient blip (a 502, a restarting orchestrator) must not page anyone."""
     conn = _connection(db_session)
-    tasks._alert_poll_health(db_session, connection_id=conn.id, streak=streak, recovered=False)
+    tasks._alert_connection_health(
+        db_session, connection_id=conn.id, streak=streak, recovered=False
+    )
     assert spy.reports == []
 
 
@@ -135,7 +137,7 @@ def test_alerts_on_reaching_the_threshold(
     db_session: Any, dispatched: list[tuple[str, str]]
 ) -> None:
     conn = _connection(db_session, consecutive_poll_failures=3, last_poll_error="auth_failed")
-    tasks._alert_poll_health(db_session, connection_id=conn.id, streak=3, recovered=False)
+    tasks._alert_connection_health(db_session, connection_id=conn.id, streak=3, recovered=False)
     assert dispatched == [(str(conn.id), HEALTH_FAILING)]
 
 
@@ -156,7 +158,9 @@ def test_no_alert_storm_once_the_operator_has_been_told(
     this test green and only the lowered-threshold test would catch it.
     """
     conn = _connection(db_session, health_alerted_at=datetime.now(UTC))
-    tasks._alert_poll_health(db_session, connection_id=conn.id, streak=streak, recovered=False)
+    tasks._alert_connection_health(
+        db_session, connection_id=conn.id, streak=streak, recovered=False
+    )
     assert dispatched == []
 
 
@@ -168,7 +172,7 @@ def test_a_lowered_threshold_still_alerts_a_connection_already_past_it(
     never alerted at all — silently, which is the worst way to not alert."""
     monkeypatch.setattr(get_settings(), "orchestration_poll_failure_alert_threshold", 3)
     conn = _connection(db_session)  # nothing delivered yet
-    tasks._alert_poll_health(db_session, connection_id=conn.id, streak=40, recovered=False)
+    tasks._alert_connection_health(db_session, connection_id=conn.id, streak=40, recovered=False)
     assert dispatched == [(str(conn.id), HEALTH_FAILING)]
 
 
@@ -179,8 +183,8 @@ def test_threshold_zero_disables_the_push(
     badge and lineage warning are unconditional; only the notification is gated."""
     monkeypatch.setattr(get_settings(), "orchestration_poll_failure_alert_threshold", 0)
     conn = _connection(db_session, health_alerted_at=datetime.now(UTC))
-    tasks._alert_poll_health(db_session, connection_id=conn.id, streak=3, recovered=False)
-    tasks._alert_poll_health(db_session, connection_id=conn.id, streak=9, recovered=True)
+    tasks._alert_connection_health(db_session, connection_id=conn.id, streak=3, recovered=False)
+    tasks._alert_connection_health(db_session, connection_id=conn.id, streak=9, recovered=True)
     assert dispatched == []
 
 
@@ -195,7 +199,7 @@ def test_recovery_alerts_only_when_a_failing_alert_was_DELIVERED(
     having been swallowed by a down channel, an unresolved webhook or a missing
     secret, each a quiet no-op."""
     conn = _connection(db_session, health_alerted_at=datetime.now(UTC))
-    tasks._alert_poll_health(db_session, connection_id=conn.id, streak=5, recovered=True)
+    tasks._alert_connection_health(db_session, connection_id=conn.id, streak=5, recovered=True)
     assert dispatched == [(str(conn.id), HEALTH_RECOVERED)]
 
 
@@ -207,7 +211,7 @@ def test_recovery_is_silent_when_nothing_was_delivered(
     landed, not how long it failed. A blip that self-healed, or a crossing whose
     publish was swallowed, both leave nothing to sound an all-clear for."""
     conn = _connection(db_session)  # health_alerted_at is NULL
-    tasks._alert_poll_health(db_session, connection_id=conn.id, streak=streak, recovered=True)
+    tasks._alert_connection_health(db_session, connection_id=conn.id, streak=streak, recovered=True)
     assert dispatched == []
 
 
@@ -222,7 +226,7 @@ def test_the_sweep_never_waits_on_a_channel(
     outage is DataQ-side EVERY connection crosses on the same sweep, so ten of them
     bolted ~6 minutes of blocking sends onto a task that beats every 10 minutes."""
     conn = _connection(db_session, consecutive_poll_failures=3)
-    tasks._alert_poll_health(db_session, connection_id=conn.id, streak=3, recovered=False)
+    tasks._alert_connection_health(db_session, connection_id=conn.id, streak=3, recovered=False)
     assert dispatched  # it was queued…
     assert spy.reports == []  # …and nothing was published on this thread
 
@@ -588,6 +592,70 @@ def test_a_broken_decision_read_does_not_abort_the_sweep(
     conn = _connection(db_session)
     monkeypatch.setattr(db_session, "get", _raise_channel_down)
 
-    tasks._alert_poll_health(db_session, connection_id=conn.id, streak=9, recovered=True)
+    tasks._alert_connection_health(db_session, connection_id=conn.id, streak=9, recovered=True)
 
     assert dispatched == []  # nothing sent, and — crucially — nothing raised
+
+
+# ── #996: the same edges, driven by a datasource's RUN failures ──────────────
+
+
+def test_a_datasource_alerts_once_on_crossing_not_per_failing_run(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """A dead credential fails EVERY run, forever. Without the delivery flag this
+    would page on every run — #828's blindness recreated as an alert storm, which
+    is the thing #839's crossing design exists to prevent."""
+    from backend.app.worker import tasks
+
+    conn = _connection(db_session)
+    sent: list[str] = []
+
+    def _fake_dispatch(cid: Any, kind: str) -> None:
+        # Stands in for the real dispatch AND its delivery record: the flag is
+        # written by `publish_connection_health` after a successful publish. A stub
+        # that only records the call leaves `outstanding` False forever, so this
+        # test would pass against code with no de-duplication at all.
+        sent.append(kind)
+        conn.health_alerted_at = datetime.now(UTC)
+        db_session.flush()
+
+    monkeypatch.setattr(tasks, "_dispatch_health_alert", _fake_dispatch)
+
+    for _ in range(5):
+        tasks._alert_connection_health(db_session, connection_id=conn.id, streak=4, recovered=False)
+
+    assert sent == ["failing"], "one alert per transition, not per run"
+
+
+def test_a_datasource_recovery_needs_a_delivered_failure_first(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """The #843 rule, on the run path too: never tell an operator an alarm ended
+    that they were never told had begun. Publishing is best-effort, so 'we counted
+    a crossing' and 'they heard about it' are different facts."""
+    from backend.app.worker import tasks
+
+    sent: list[str] = []
+    monkeypatch.setattr(tasks, "_dispatch_health_alert", lambda cid, kind: sent.append(kind))
+
+    conn = _connection(db_session)  # health_alerted_at is NULL — nothing delivered
+    tasks._alert_connection_health(db_session, connection_id=conn.id, streak=0, recovered=True)
+
+    assert sent == []
+
+
+def test_poll_and_run_health_never_contend_for_the_same_row(db_session: Any) -> None:
+    """Both signals share `health_alerted_at`, which is only safe because they are
+    disjoint by connection TYPE: a datasource is never polled, and an orchestration
+    provider carries no suites. Pinned because sharing the column is a deliberate
+    choice, and the day a type does both, this assumption fails silently.
+    """
+    from backend.app.datasources.registry import _ADAPTERS
+    from backend.app.orchestration.registry import _PROVIDERS
+
+    polled = set(_PROVIDERS)
+    datasources = {t for t in _ADAPTERS if t not in polled}
+
+    assert polled and datasources
+    assert not (polled & datasources), "a type that is both polled and run-against breaks the share"

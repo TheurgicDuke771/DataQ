@@ -261,9 +261,45 @@ def run_suite(run_id: str) -> str:
         # an incident-engine bug must never fail the already-persisted run.
         incident_service.sync_incidents_for_run(session, run_id=rid)
         alert_dispatch.publish_run_outcome(session, run_id=rid)
+        _alert_datasource_health_for_run(session, run_id=rid)
         return outcome
     finally:
         session.close()
+
+
+def _alert_datasource_health_for_run(session: Session, *, run_id: uuid.UUID) -> None:
+    """Drive the health edges for the datasource this run used (#996).
+
+    The streak comes from `datasource_health`, the SAME derivation the connections
+    badge renders — so the alert and the badge can never disagree about whether a
+    connection is degraded. #998 made that per-suite rolled up, which is why this
+    can be an alert at all: the previous connection-wide count would have paged on
+    a healthy connection whenever one busy suite was broken.
+
+    Recovery rides the same delivery flag as the poll path, so an operator is only
+    told an alarm ended if they were told it began (#843).
+
+    Never raises: a notification decision must not fail a run that has already
+    persisted its results.
+    """
+    try:
+        run = session.get(Run, run_id)
+        suite = session.get(Suite, run.suite_id) if run is not None else None
+        connection_id = suite.connection_id if suite is not None else None
+        if connection_id is None:
+            return
+        health = connection_service.datasource_health(session, [connection_id]).get(connection_id)
+        if health is None:  # no runs in the window — nothing to say either way
+            return
+        _alert_connection_health(
+            session,
+            connection_id=connection_id,
+            streak=health.consecutive_failures,
+            recovered=health.consecutive_failures == 0,
+        )
+    except Exception:
+        session.rollback()
+        log.exception("datasource_health_alert_failed", run_id=str(run_id))
 
 
 def _auto_classify_columns(session: Session, *, suite_id: uuid.UUID) -> str:
@@ -338,10 +374,17 @@ def auto_classify_columns(suite_id: str) -> str:
         session.close()
 
 
-def _alert_poll_health(
+def _alert_connection_health(
     session: Session, *, connection_id: uuid.UUID, streak: int, recovered: bool
 ) -> None:
-    """Decide whether a poll-health edge is due, and hand the send to its own task.
+    """Decide whether a connection-health edge is due, and hand the send to its own task.
+
+    Drives BOTH health signals (#996): an orchestration connection's poll-failure
+    streak (#828) and a datasource connection's run-failure streak (#954). The two
+    never collide on one row — a datasource is never polled and an orchestration
+    provider carries no suites — so they can share `health_alerted_at` and the same
+    threshold. Sharing is the point: #996 asks for no parallel mechanism, and a
+    second copy of this would need the #843 delivery fix applied twice.
 
     **Both edges ride DELIVERY, not the counter (#843).** The old design fired the
     failure edge when the streak *equalled* the threshold and the recovery edge when
@@ -571,7 +614,7 @@ def _poll_orchestration_runs(
                 streak = orchestration_service.record_poll_failure(
                     session, connection_id=connection.id, exc=exc
                 )
-                _alert_poll_health(
+                _alert_connection_health(
                     session, connection_id=connection.id, streak=streak, recovered=False
                 )
             except Exception:
@@ -586,7 +629,7 @@ def _poll_orchestration_runs(
             # poll FAILURE — so a connection that had just polled *successfully* would be
             # marked failing, corrupting the very streak the alert keys on. The publish is
             # already fail-soft; this makes it structurally impossible for it to matter.
-            _alert_poll_health(
+            _alert_connection_health(
                 session, connection_id=connection.id, streak=recovered_from, recovered=True
             )
     log.info("orchestration_poll_completed", **summary)
