@@ -714,6 +714,7 @@ def _run_on(
     status: str,
     reason: str | None = None,
     minutes_ago: int = 0,
+    suite: Suite | None = None,
 ) -> Run:
     """One run against a suite on `conn`, at an EXPLICIT time.
 
@@ -724,7 +725,7 @@ def _run_on(
     flip. (The same tied-timestamp trap #928 fixed for the pipeline-run feed;
     real runs are each their own transaction and do differ.)
     """
-    suite = db_session.scalars(select(Suite).where(Suite.connection_id == conn.id)).first()
+    suite = suite or db_session.scalars(select(Suite).where(Suite.connection_id == conn.id)).first()
     if suite is None:
         suite = Suite(
             name=f"s-{uuid.uuid4().hex[:6]}",
@@ -846,3 +847,82 @@ def test_datasource_health_an_in_flight_run_does_not_clear_the_streak(db_session
     db_session.commit()
 
     assert svc.datasource_health(db_session, [conn.id])[conn.id].consecutive_failures == 1
+
+
+# ── #998: per-suite streaks, rolled up ───────────────────────────────────────
+
+
+def _suite_on(db_session: Any, conn: Connection, name: str) -> Suite:
+    suite = Suite(name=name, connection_id=conn.id, created_by=conn.created_by)
+    db_session.add(suite)
+    db_session.flush()
+    return suite
+
+
+def test_one_broken_suite_does_not_badge_a_working_connection(db_session: Any) -> None:
+    """The #998 false positive, pinned.
+
+    A broken suite running often used to fill the shared window and badge a
+    connection whose credential is fine — sending the operator to re-authenticate
+    something that works. A suite still succeeding proves the datasource is
+    reachable, so the CONNECTION-level signal must clear even while that other
+    suite stays broken (a per-suite problem belongs on the suite).
+    """
+    conn = _create(db_session, FakeStore())
+    broken = _suite_on(db_session, conn, "broken-hourly")
+    healthy = _suite_on(db_session, conn, "healthy-daily")
+    # The broken suite runs often and fills the head of any shared window…
+    for age in range(0, 10):
+        _run_on(
+            db_session, conn, status="failed", reason="bad check", minutes_ago=age, suite=broken
+        )
+    # …while the healthy one succeeded, less recently.
+    _run_on(db_session, conn, status="succeeded", minutes_ago=600, suite=healthy)
+    db_session.commit()
+
+    health = svc.datasource_health(db_session, [conn.id])[conn.id]
+
+    assert health.consecutive_failures == 0, "a reachable connection must not read as dead"
+    assert health.reason is None
+    assert health.last_run_at is not None  # still "known", just not degraded
+
+
+def test_a_connection_is_degraded_only_when_every_suite_is_failing(db_session: Any) -> None:
+    """The true positive: a dead credential fails every suite on the connection."""
+    conn = _create(db_session, FakeStore())
+    a = _suite_on(db_session, conn, "suite-a")
+    b = _suite_on(db_session, conn, "suite-b")
+    for age in (2, 1, 0):
+        _run_on(
+            db_session, conn, status="failed", reason="creds rejected", minutes_ago=age, suite=a
+        )
+    for age in (5, 4):
+        _run_on(
+            db_session, conn, status="failed", reason="creds rejected", minutes_ago=age, suite=b
+        )
+    db_session.commit()
+
+    health = svc.datasource_health(db_session, [conn.id])[conn.id]
+
+    # The MINIMUM across suites — the strongest claim true of all of them
+    # ("every suite has failed at least twice running"), not the loudest one.
+    assert health.consecutive_failures == 2
+    assert health.reason == "creds rejected"
+
+
+def test_a_busy_suite_cannot_crowd_a_quiet_one_out_of_the_window(db_session: Any) -> None:
+    """Each suite gets its OWN window (#998 AC 2).
+
+    With a shared 20-run window, 25 failures on a chatty suite would evict the
+    quiet suite's success entirely and the connection would read as dead. Per-suite
+    windows make the quiet suite's verdict independent of the noisy one's volume.
+    """
+    conn = _create(db_session, FakeStore())
+    noisy = _suite_on(db_session, conn, "noisy")
+    quiet = _suite_on(db_session, conn, "quiet")
+    for age in range(0, 25):
+        _run_on(db_session, conn, status="failed", reason="bad check", minutes_ago=age, suite=noisy)
+    _run_on(db_session, conn, status="succeeded", minutes_ago=999, suite=quiet)
+    db_session.commit()
+
+    assert svc.datasource_health(db_session, [conn.id])[conn.id].consecutive_failures == 0
