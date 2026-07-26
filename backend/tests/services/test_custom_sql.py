@@ -21,6 +21,7 @@ import pytest
 from backend.app.services.custom_sql import (
     _FORBIDDEN_KEYWORDS,
     CUSTOM_SQL_EXPECTATION_TYPE,
+    QUERY_KEY,
     CustomSqlInvalidError,
     is_custom_sql,
     validate_custom_sql_check,
@@ -252,3 +253,234 @@ def test_backtick_is_not_a_string_quote() -> None:
     # out before the scan (a confirmed bypass). The embedded ';' must be caught.
     with pytest.raises(CustomSqlInvalidError):
         validate_query("SELECT 1 FROM {batch} WHERE x = 1 `; DROP TABLE y; SELECT *`")
+
+
+# ── mutation-spike gaps (#278) ────────────────────────────────────────────────
+#
+# The lexer tests above pin the cases we thought of; these pin the ones a mutmut
+# spike found nothing asserting. Each corresponds to a specific surviving mutant,
+# in one of two directions:
+#
+# * FAIL-OPEN — the mutated scanner blanks out MORE of the query than it should,
+#   hiding a forbidden keyword or a `;` from the guard rather than tripping on
+#   it. These are bypasses, and they are the ones that matter most.
+# * FAIL-CLOSED — the mutated scanner rejects a perfectly legitimate query (an
+#   empty string literal, a `/**/`, a leading comment). Less dangerous, but a
+#   user who cannot write `WHERE note = ''` still has a broken product.
+#
+# Both are pinned; the docstrings say which is which.
+
+
+def test_a_line_comment_blanks_only_its_own_line_not_the_rest_of_the_query() -> None:
+    """Pins that the comment ends at the NEXT newline, not the last one.
+
+    The existing single-newline test can't tell `find` from `rfind` — with one
+    newline they agree. With two, a scanner that jumped to the last newline would
+    swallow the whole middle line, hiding the `drop` it carries.
+    """
+    with pytest.raises(CustomSqlInvalidError) as exc:
+        validate_query("SELECT 1 -- note\nFROM {batch} WHERE drop = 1\nAND y = 2")
+    assert exc.value.detail["forbidden"] == ["drop"]
+
+
+def test_a_comment_on_a_later_line_scans_forward_from_itself() -> None:
+    """The newline search must start at the comment, not at the start of the query.
+
+    Searching from position 0 finds a newline *behind* the cursor, which either
+    rewinds the scan or terminates it early — either way the tail stops being
+    examined.
+    """
+    with pytest.raises(CustomSqlInvalidError) as exc:
+        validate_query("SELECT 1\nFROM {batch} -- note\nWHERE drop = 1")
+    assert exc.value.detail["forbidden"] == ["drop"]
+
+
+def test_a_block_comment_ends_at_its_own_terminator_not_the_last_one() -> None:
+    """Two block comments with real code between them.
+
+    A scanner that ran to the LAST `*/` would blank the code in the middle —
+    including the `drop` — and pass the query. With one comment the bug is
+    invisible, which is why nothing caught it.
+    """
+    with pytest.raises(CustomSqlInvalidError) as exc:
+        validate_query("SELECT 1 /* a */ FROM {batch} WHERE drop = 1 /* b */")
+    assert exc.value.detail["forbidden"] == ["drop"]
+
+
+def test_an_empty_block_comment_is_not_read_as_unterminated() -> None:
+    """`/**/` — the terminator begins immediately after the opener.
+
+    Pins where the search for `*/` starts: one character later and this reads as
+    an unterminated comment, so a perfectly ordinary query is rejected. The
+    fail-closed direction, but a false rejection is still a bug.
+    """
+    validate_query("SELECT 1 FROM {batch} /**/")
+
+
+def test_a_short_string_literal_closes_normally() -> None:
+    """A one-character string, whose closing quote sits at an odd offset.
+
+    Pins that the in-string scan advances one character at a time: stepping two
+    at a time skips the closing quote on odd-length content, and the query is
+    then rejected as having an unterminated literal.
+    """
+    validate_query("SELECT 'a' FROM {batch}")
+
+
+def test_a_comment_touching_a_keyword_does_not_corrupt_it() -> None:
+    """A comment collapses to whitespace, not to text.
+
+    `SELECT/**/1` must still read as a SELECT. If the blanked span contributed
+    any *letters*, the leading keyword would parse as `selectsomething` and a
+    valid read-only query would be rejected as not-a-SELECT.
+    """
+    validate_query("SELECT/**/ 1 FROM {batch}")
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT {q}{q} FROM {{batch}}".format(q="'"),  # an empty string literal
+        "SELECT {q}{q}{q}{q} FROM {{batch}}".format(q="'"),  # only an escaped quote
+        "SELECT {q}a{q} FROM {{batch}}".format(q="'"),  # closer at an odd offset
+    ],
+)
+def test_short_and_empty_string_literals_close_normally(query: str) -> None:
+    """The quote scanner must step one character at a time and pair `\'\'` exactly.
+
+    Each of these is a legitimate query that an off-by-one in the in-string scan
+    reads as an UNTERMINATED literal — so the guard would reject it and a user
+    could not write `WHERE note = \'\'`.
+
+    Found by differential-testing the surviving mutants at the VERDICT level.
+    Comparing the scanner's raw output was misleading: several mutants change only
+    how many blank placeholders it appends, which no caller can observe. Four of
+    the quote-scanner mutants cannot change a verdict at all and are recorded as
+    unkillable below rather than chased.
+    """
+    validate_query(query)
+
+
+def test_a_line_comment_touching_a_keyword_does_not_corrupt_it() -> None:
+    """The line-comment branch collapses to whitespace too.
+
+    Same property as the block-comment case above, on the other branch — which
+    the block-comment test cannot reach, and nothing else asserted.
+    """
+    validate_query("SELECT--c\n 1 FROM {batch}")
+
+
+def test_a_query_may_open_with_a_block_comment() -> None:
+    """A comment at offset 0 — where the terminator search starts from nothing.
+
+    An off-by-two in that start position is invisible anywhere else in the query
+    (the search still lands on the right `*/`), but at the very beginning it
+    walks off the front and the comment reads as unterminated.
+    """
+    validate_query("/* leading note */ SELECT 1 FROM {batch}")
+
+
+def test_every_rejection_carries_the_query_key_in_its_detail() -> None:
+    """The four rejection paths whose detail carries nothing but `query_key`.
+
+    A caller keys its field-level error off `query_key`; a path that omitted it
+    would surface as an error attached to nothing. The remaining two paths — the
+    informative ones — carry `first_keyword` / `forbidden` too and are asserted
+    whole in the next test, so between them all six are covered. (The five inputs
+    below reach four distinct raise sites: empty and whitespace-only share one.)
+    """
+    for query in (
+        "",  # empty
+        "   ",  # whitespace only
+        "SELECT 1 /* unclosed",  # unterminated comment
+        "-- just a comment",  # empty after stripping
+        "SELECT 1; SELECT 2",  # multi-statement
+    ):
+        with pytest.raises(CustomSqlInvalidError) as exc:
+            validate_query(query)
+        assert exc.value.detail["query_key"] == QUERY_KEY, query
+
+
+def test_the_error_detail_is_a_stable_contract_not_just_a_message() -> None:
+    """The `detail` payload is what a client renders and acts on.
+
+    Asserted as a whole dict rather than one key: the error prose is deliberately
+    NOT pinned (see the note below), so this payload is the only part of the
+    422 a caller can rely on — which makes it the part worth pinning.
+    """
+    with pytest.raises(CustomSqlInvalidError) as exc:
+        validate_query("SELECT 1 FROM {batch} WHERE drop = 1 AND truncate = 2")
+    assert exc.value.detail == {
+        "query_key": QUERY_KEY,
+        "forbidden": ["drop", "truncate"],  # sorted, de-duplicated
+    }
+
+    with pytest.raises(CustomSqlInvalidError) as exc:
+        validate_query("SHOW TABLES")
+    assert exc.value.detail == {"query_key": QUERY_KEY, "first_keyword": "show"}
+
+
+def test_a_statement_chained_straight_after_a_closing_quote_is_caught() -> None:
+    """`SELECT 'a'; SELECT 1` — the `;` sits immediately after the closing quote.
+
+    Found by this PR's own review. The scanner resumes the outer loop at the
+    character after the closer, and an off-by-one there SKIPS that character —
+    so a `;` parked in exactly that position never reaches the multi-statement
+    check and a chained statement is accepted outright.
+
+    The existing escaped-quote test puts the `;` INSIDE the literal, which is the
+    opposite case and cannot detect this. Note the forbidden-keyword scan does not
+    save us here: `SELECT 'a'; SELECT 1` contains no forbidden keyword, so the
+    `;` guard is the only thing standing between this and a second statement.
+    """
+    with pytest.raises(CustomSqlInvalidError):
+        validate_query("SELECT 'a'; SELECT 1")
+    with pytest.raises(CustomSqlInvalidError):
+        validate_query("SELECT 'a';SELECT 1")  # no space either
+
+
+def test_a_string_literal_touching_a_keyword_does_not_corrupt_it() -> None:
+    """`SELECT'a' FROM t` — a literal may abut the keyword before it.
+
+    Same property as the two comment-adjacency tests, on the string branch: the
+    blanked span must contribute whitespace and no letters, or the leading
+    keyword parses as `selectsomething` and a valid read-only query is rejected.
+    """
+    validate_query("SELECT'a' FROM {batch}")
+
+
+# ── the survivors left standing, and why (#278 triage) ───────────────────────
+#
+# The spike went 63 survivors → 29; every remaining one was examined and falls
+# into the groups below, which are counted from the run rather than estimated —
+# an earlier draft said "~22 + 3 + 4", which silently omitted two whole
+# categories and was caught by review arithmetic. One of those two turned out to
+# be a real multi-statement bypass, now pinned above.
+#
+# 1. ERROR PROSE (22). Mutants that upper-case, lower-case, XX-wrap or None out
+#    the human-readable message. Pinning prose turns every copy edit into a test
+#    failure while proving nothing about behaviour. What a caller actually
+#    depends on — the 422, the `custom_sql_invalid` code, and the `detail`
+#    payload — IS asserted above, on all six rejection paths.
+#
+# 2. FALSY SUBSTITUTIONS (3). `well_formed = None` / `closed = None` in place of
+#    `False`. Both are only ever read through `not …`, so the mutant is
+#    behaviourally identical — an equivalent mutant, unkillable by construction.
+#
+# 3. FOUR QUOTE-SCANNER MUTANTS that shift the doubled-quote probe window
+#    (`sql[i+1:i+2]` → `[i-1:i+2]`, `[i+2:i+2]`, `[i+1:i-2]`, `[i+1:i+3]`).
+#    These looked like real gaps when the scanner's raw output was compared —
+#    and that comparison was misleading. For balanced quotes they change only how
+#    many blank placeholders get appended, never which spans are blanked, so
+#    `validate_query`'s verdict is identical for every input. Verified by
+#    exhaustively differential-testing real-vs-mutant VERDICTS over a quote-heavy
+#    alphabet rather than by reasoning about it: three sibling mutants in the same
+#    scanner DID differ, and are pinned by
+#    `test_short_and_empty_string_literals_close_normally` above.
+#
+# Score at the time of this triage: 142 killed / 29 survived / 14 timeout of 185
+# (up from 113 / 63 / 9). The three counts above sum to exactly 29 — checked,
+# not estimated, because the estimate is what hid the bypass.
+#
+# Re-run with the `[tool.mutmut]` block pointed at this module — it is a manual
+# spike, never CI (CONTRIBUTING rule 4a).
