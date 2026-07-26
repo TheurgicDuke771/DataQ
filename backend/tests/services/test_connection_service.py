@@ -812,10 +812,15 @@ def test_datasource_health_is_one_query_for_many_connections(db_session: Any) ->
         event.remove(db_session.bind, "before_cursor_execute", _record)
 
     assert len(health) == 4
-    # Count the HEALTH query specifically (its window function is unmistakable),
-    # not session bookkeeping like SAVEPOINTs — asserting on the total would be
+    # Count the HEALTH query specifically (its lateral alias is unmistakable), not
+    # session bookkeeping like SAVEPOINTs — asserting on the total would be
     # brittle against unrelated session behaviour while proving less.
-    health_queries = [s for s in statements if "row_number" in s.lower()]
+    #
+    # Keyed on `recent_runs` since #999 replaced the window function with a
+    # LATERAL top-N. A marker naming the implementation has to move when the
+    # implementation does; the alternative — matching "SELECT ... FROM runs" —
+    # would quietly match a future N+1 and pass.
+    health_queries = [s for s in statements if "recent_runs" in s.lower()]
     assert len(health_queries) == 1, f"expected one batched query, issued {len(health_queries)}"
 
 

@@ -21,7 +21,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import ValidationError
-from sqlalchemy import func, select
+from sqlalchemy import func, select, true
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -410,36 +410,44 @@ def datasource_health(
     """
     if not connection_ids:
         return {}
+    # LATERAL top-N per suite, not a window over everything (#999).
+    #
+    # The window form ranked every run of every suite and then kept `rn <= 20`,
+    # so the work grew with a suite's whole history to answer a question about 20
+    # rows — on every connections page load. Measured on a seeded table it was
+    # linear in history (8ms → 33ms → 195ms at 1k/4k/16k runs per suite), and
+    # adding the index alone only halved the constant; it does not bound the scan.
+    #
+    # `LIMIT 20` inside the lateral, backed by `ix_runs_suite_created`
+    # (suite_id, created_at DESC, id DESC), lets Postgres stop after 20 index
+    # entries per suite. Measured flat across the same sizes.
+    #
     # Partitioned by SUITE (#998), so each suite gets its own window rather than
     # competing for a shared one with whatever runs most often.
-    ranked = (
+    recent = (
         select(
-            Suite.connection_id.label("connection_id"),
             Run.suite_id.label("suite_id"),
             Run.status.label("status"),
             Run.failure_reason.label("failure_reason"),
             Run.created_at.label("created_at"),
-            func.row_number()
-            .over(
-                partition_by=Run.suite_id,
-                order_by=(Run.created_at.desc(), Run.id.desc()),
-            )
-            .label("rn"),
         )
-        .join(Suite, Suite.id == Run.suite_id)
-        .where(Suite.connection_id.in_(connection_ids))
-        .subquery()
+        .where(Run.suite_id == Suite.id)
+        .order_by(Run.created_at.desc(), Run.id.desc())
+        .limit(_HEALTH_RUN_WINDOW)
+        .lateral("recent_runs")
     )
     rows = session.execute(
         select(
-            ranked.c.connection_id,
-            ranked.c.suite_id,
-            ranked.c.status,
-            ranked.c.failure_reason,
-            ranked.c.created_at,
+            Suite.connection_id.label("connection_id"),
+            recent.c.suite_id,
+            recent.c.status,
+            recent.c.failure_reason,
+            recent.c.created_at,
         )
-        .where(ranked.c.rn <= _HEALTH_RUN_WINDOW)
-        .order_by(ranked.c.connection_id, ranked.c.suite_id, ranked.c.rn)
+        .select_from(Suite)
+        .join(recent, true())
+        .where(Suite.connection_id.in_(connection_ids))
+        .order_by(Suite.connection_id, recent.c.suite_id, recent.c.created_at.desc())
     ).all()
 
     by_suite: dict[tuple[uuid.UUID, uuid.UUID], list[Any]] = defaultdict(list)

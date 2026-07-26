@@ -634,6 +634,18 @@ class Run(Base):
         Index("ix_runs_suite_id", "suite_id"),
         Index("ix_runs_status", "status"),
         Index("ix_runs_asset_id", "asset_id"),
+        # Health ranking (#999): mirrors `datasource_health`'s LATERAL
+        # `ORDER BY created_at DESC, id DESC LIMIT 20` per suite, so Postgres
+        # stops after 20 index entries instead of walking a suite's whole
+        # history on every connections page load. `id DESC` is the tie-break —
+        # runs sharing a transaction-scoped `now()` need a total order or
+        # "newest" is arbitrary (#928).
+        Index(
+            "ix_runs_suite_created",
+            "suite_id",
+            text("created_at DESC"),
+            text("id DESC"),
+        ),
         # Trigger-dedup race guard (#308): one suite run per orchestration
         # pipeline-run event. Partial — orchestration markers only
         # (`<provider>:<pipeline>:<run_id>`); manual/probe/schedule markers
