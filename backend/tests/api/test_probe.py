@@ -182,3 +182,22 @@ def test_post_requires_auth(db_session: Any) -> None:
         assert db_session.scalars(select(Run)).all() == []
     finally:
         app.dependency_overrides.clear()
+
+
+def test_probe_run_redacts_a_sensitive_monitor_cell() -> None:
+    """This route reads the same `results` rows as `/runs/{id}/results`, so a cell
+    masked there must be masked here too (#989).
+
+    Found by the PR #1038 review: the redaction was wired at three sinks and this
+    fourth one was missed — which is the failure mode of per-sink redaction, and
+    the reason it needs a test per sink rather than one test for "the redactor".
+    """
+    from backend.app.services import run_service
+
+    observed = {"error": "…not a parseable timestamp", "unparsed_value": "x@y.z", "column": "email"}
+    redacted = run_service.redact_observed_value(observed, policy={"pii_columns": ["email"]})
+
+    assert redacted is not None
+    assert redacted["unparsed_value"] != "x@y.z"
+    # The error text itself is safe by construction and must survive intact.
+    assert redacted["error"] == "…not a parseable timestamp"
