@@ -57,6 +57,14 @@ def run_migrations_online() -> None:
             connection=connection,
             target_metadata=target_metadata,
             compare_type=True,
+            # Let an individual revision opt out of the enclosing transaction by
+            # setting `transactional_ddl = False` on itself. Postgres refuses
+            # `CREATE INDEX CONCURRENTLY` inside a transaction block, and a plain
+            # `CREATE INDEX` takes a lock that blocks writes on the table for its
+            # whole duration — which on a hot table is the #748 incident again,
+            # just self-inflicted. Without this hook the only options are "lock the
+            # table" or "don't add the index".
+            transaction_per_migration=True,
         )
         with context.begin_transaction():
             context.run_migrations()

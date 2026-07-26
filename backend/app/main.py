@@ -3,12 +3,14 @@ import time
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from typing import Final
+from typing import Annotated, Final
 
-from fastapi import FastAPI, Request, Response
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastmcp.utilities.lifespan import combine_lifespans
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 from backend.app.api.v1 import admin as admin_router
 from backend.app.api.v1 import api_keys as api_keys_router
@@ -38,6 +40,7 @@ from backend.app.core.tracing import (
     instrument_fastapi,
     tag_request_id,
 )
+from backend.app.db.session import get_db
 from backend.app.mcp import build_mcp_app
 
 REQUEST_ID_HEADER: Final = "X-Request-ID"
@@ -210,8 +213,53 @@ app.include_router(assets_router.router, prefix="/api/v1")
 app.include_router(incidents_router.router, prefix="/api/v1")
 
 
+#: Cap for the readiness DB probe. Short by design: this answers "can we serve
+#: right now", and a slow answer is already a no.
+_READYZ_TIMEOUT_MS = 2_000
+
+
 @app.get("/healthz")
 async def healthz() -> dict[str, str]:
+    """Liveness: is the process up. Deliberately does NOT touch the database.
+
+    A liveness probe that fails on a DB blip gets the container killed and
+    restarted, which cannot fix a database problem and turns a degradation into an
+    outage. Readiness is `/readyz` below.
+    """
+    return {"status": "ok"}
+
+
+@app.get("/readyz")
+def readyz(db: Annotated[Session, Depends(get_db)]) -> dict[str, str]:
+    """Readiness: can this instance actually serve — i.e. can it READ the database.
+
+    The gap this closes is a real one (#748). During the 2026-07-10 deploy a
+    queued ACCESS EXCLUSIVE lock on `connections` blocked every new reader for
+    ~25 minutes; every authenticated request hung, and `/healthz` stayed green
+    the entire time because it only proved the process was running. A health
+    signal that cannot go red during a total read degradation is not a health
+    signal.
+
+    Bounded on purpose. `SET LOCAL statement_timeout` caps the probe itself, so a
+    contended database makes this fail FAST rather than adding another hanging
+    connection to the pile — a probe that queues behind the problem becomes part
+    of it. `SELECT 1` against a real session proves pool → network → auth →
+    server, without touching a table that could itself be locked.
+
+    Sync `def` so FastAPI runs it in the threadpool: the driver is blocking and a
+    stalled probe must not occupy the event loop.
+    """
+    try:
+        db.execute(text(f"SET LOCAL statement_timeout = {_READYZ_TIMEOUT_MS}"))
+        db.execute(text("SELECT 1"))
+    except Exception:
+        # No exception text: a DSN can carry a password, and this response is
+        # unauthenticated. The reason belongs in the logs, not the body.
+        _log.warning("readyz_db_unavailable")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="database unavailable",
+        ) from None
     return {"status": "ok"}
 
 
