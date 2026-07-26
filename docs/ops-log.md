@@ -84,6 +84,14 @@ apart.
 > for this log in one sentence: the timestamp was recoverable, the intent very
 > nearly was not.
 >
+> That file has since been **removed** (2026-07-26). Reading it before deleting
+> turned up a second open item nobody had tracked — the deployed Terraform still
+> injects `SNOWFLAKE_PASSWORD`, which is dead under MFA enforcement — so both its
+> live items became issues first ([#1030](https://github.com/TheurgicDuke771/DataQ/issues/1030),
+> [#1032](https://github.com/TheurgicDuke771/DataQ/issues/1032)), with the
+> original archived verbatim in #1032. **Anything still open belongs in the
+> tracker; only settled working notes belong harness-side.**
+>
 > **Unresolved as of 2026-07-26:** 282 failures at a 10-minute cadence is ~47h,
 > but the app has been stopped since 2026-07-18 (~192h) — about a quarter of the
 > expected count. Either beat is not ticking at its scheduled rate (see

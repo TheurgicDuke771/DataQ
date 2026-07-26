@@ -324,7 +324,7 @@ Surfaced by the ACID/SCD review (single-DB ACID is sound; these close the delibe
 
 ## Theme 7 — Performance & scale
 
-Rides the harness's parameterizable volume (ADR 0021; HARNESS_TODO §6). Baseline-first, regression budget:
+Rides the harness's parameterizable volume (ADR 0021; the harness README — `HARNESS_TODO.md` was retired 2026-07-26). Baseline-first, regression budget:
 
 | # | Title |
 |---|---|
@@ -416,8 +416,8 @@ Captured in ADRs / progress.md, not yet broken into backlog issues:
 |---|---|---|
 | **DQX engine** for UC streaming/DLT | ADR [0003](../docs/adr/0003-gx-only-for-v1.md) | v1.1 — same `UnityCatalogCheckRunner` interface; UI `engine: gx \| dqx` toggle |
 | **Reconciliation two-connection model** | ADR [0014](../docs/adr/0014-reconciliation-comparison-check-kind.md) → ADR [0015](../docs/adr/0015-two-connection-comparison-check-model.md) (decided 2026-07-11) | `comparison` monitor kind unblocked — build in v1.1 W3 |
-| **HashiCorp Vault** `SecretStore` spike | HARNESS_TODO §5 | validates the ADR 0010/0013 seam (Key Vault = one impl) |
-| **Performance/scale harness** | ADR 0021 / HARNESS_TODO §6 | the script behind #327/#323 above |
+| **HashiCorp Vault** `SecretStore` spike | harness README (was HARNESS_TODO §5) | validates the ADR 0010/0013 seam (Key Vault = one impl) |
+| **Performance/scale harness** | ADR 0021 / harness README | the script behind #327/#323 above |
 | **Dark mode / marketing page** | — | prototype deferrals → **Theme 12** below |
 
 ---
