@@ -188,3 +188,41 @@ class ExpiringCredentialAdapter(Protocol):
     def credential_expiry(
         self, raw: dict[str, Any], secret: str, **extra_secrets: Any
     ) -> datetime | None: ...
+
+
+@dataclass(frozen=True)
+class BatchSpec:
+    """An unresolved flat-file batch selector (resolved live by `materialize_path`).
+
+    ``pattern`` is a regex whose first capture group is the batch key; ``strategy``
+    is ``latest`` (greatest key) or ``specific`` (``batch`` key); ``prefix`` scopes
+    the object listing.
+    """
+
+    prefix: str
+    pattern: str
+    strategy: str
+    batch: str | None
+
+
+@dataclass(frozen=True)
+class ResolvedTarget:
+    """The runner inputs a suite resolves to. ``table`` carries the file path for
+    flat-file datasources; ``catalog`` is set only for Unity Catalog. ``batch`` is
+    set only for a flat-file *batch* target, in which case ``table`` is empty until
+    `materialize_path` lists the store and resolves the concrete path."""
+
+    table: str
+    schema: str | None
+    catalog: str | None
+    batch: BatchSpec | None = None
+
+
+class TargetShapeError(ValueError):
+    """A suite target is missing or malformed for its datasource type (#727).
+
+    Raised by the per-type resolvers in `registry.py` and translated by
+    `services.run_target` into the API-facing `SuiteTargetInvalidError`. The
+    datasource layer states the shape problem; the service layer owns the HTTP
+    contract, so neither has to know the other's job.
+    """

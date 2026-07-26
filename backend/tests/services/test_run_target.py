@@ -12,9 +12,9 @@ from typing import Any
 
 import pytest
 
+from backend.app.datasources.base import ResolvedTarget  # moved in #727
 from backend.app.services import run_target
 from backend.app.services.run_target import (
-    ResolvedTarget,
     SuiteTargetInvalidError,
     resolve_target,
     validate_target,
@@ -219,3 +219,41 @@ def test_materialize_path_batch_without_secret_raises() -> None:
     resolved = resolve_target("s3", {"pattern": r"(\d+)\.csv"})
     with pytest.raises(SuiteTargetInvalidError):
         run_target.materialize_path("s3", {}, resolved, secret_ref=None, secret_store=_FakeStore())
+
+
+# ── #727: the registry is the single place a datasource is declared ──────────
+
+
+def test_every_datasource_adapter_has_a_target_resolver() -> None:
+    """The "adding a datasource is one registry entry" contract, enforced.
+
+    Target-shape resolution used to live in an `if conn_type ==` chain in
+    `run_target.py`, so a new datasource needed an edit THERE as well as an
+    adapter + runner here — and the Iceberg addition (#716) duly forgot until
+    someone noticed. Now the shape sits beside the adapter, and this test fails
+    the moment the two drift.
+
+    Orchestration providers are excluded deliberately: they share the adapter
+    registry (they are `connections` rows too) but have no run path, which is the
+    distinction `resolve_target_shape` raises on.
+    """
+    from backend.app.datasources.registry import _ADAPTERS, _TARGET_RESOLVERS
+    from backend.app.orchestration.registry import _PROVIDERS
+
+    datasources = {t for t in _ADAPTERS if t not in _PROVIDERS}
+
+    assert datasources, "no datasource types registered — the fixture is wrong, not the code"
+    assert datasources == set(_TARGET_RESOLVERS), (
+        "a datasource adapter without a target resolver saves suites that cannot run: "
+        f"missing {sorted(datasources - set(_TARGET_RESOLVERS))}"
+    )
+
+
+def test_an_orchestration_provider_still_has_no_run_path() -> None:
+    """The rejection that used to be the chain's fallthrough must survive the move."""
+    from backend.app.orchestration.registry import _PROVIDERS
+
+    for provider in _PROVIDERS:
+        with pytest.raises(SuiteTargetInvalidError) as exc:
+            resolve_target(provider, {"table": "x"})
+        assert "no run path" in str(exc.value)

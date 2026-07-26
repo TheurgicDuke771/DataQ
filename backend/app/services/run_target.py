@@ -35,48 +35,19 @@ FastAPI-free: takes a connection type + the stored dict, raises `DataQError`.
 
 from __future__ import annotations
 
-import re
-from dataclasses import dataclass
 from typing import Any
 
 from backend.app.core.errors import DataQError
 from backend.app.core.secrets import SecretStore
+from backend.app.datasources.base import ResolvedTarget, TargetShapeError
+from backend.app.datasources.registry import resolve_target_shape
 
 _FLATFILE_TYPES = {"adls_gen2", "s3"}
-_BATCH_STRATEGIES = {"latest", "specific"}
 
 
 class SuiteTargetInvalidError(DataQError):
     status_code = 422
     code = "suite_target_invalid"
-
-
-@dataclass(frozen=True)
-class BatchSpec:
-    """An unresolved flat-file batch selector (resolved live by `materialize_path`).
-
-    ``pattern`` is a regex whose first capture group is the batch key; ``strategy``
-    is ``latest`` (greatest key) or ``specific`` (``batch`` key); ``prefix`` scopes
-    the object listing.
-    """
-
-    prefix: str
-    pattern: str
-    strategy: str
-    batch: str | None
-
-
-@dataclass(frozen=True)
-class ResolvedTarget:
-    """The runner inputs a suite resolves to. ``table`` carries the file path for
-    flat-file datasources; ``catalog`` is set only for Unity Catalog. ``batch`` is
-    set only for a flat-file *batch* target, in which case ``table`` is empty until
-    `materialize_path` lists the store and resolves the concrete path."""
-
-    table: str
-    schema: str | None
-    catalog: str | None
-    batch: BatchSpec | None = None
 
 
 def resolve_target(conn_type: str, target: dict[str, Any] | None) -> ResolvedTarget:
@@ -92,49 +63,19 @@ def resolve_target(conn_type: str, target: dict[str, Any] | None) -> ResolvedTar
             "suite has no target configured", detail={"connection_type": conn_type}
         )
 
-    if conn_type in _FLATFILE_TYPES:
-        # A batch target (regex `pattern`) is resolved to a concrete path at run
-        # time; a literal target carries the `path` directly. The two are mutually
-        # exclusive — both set is an ambiguous target, not a silent batch win.
-        if "pattern" in target and target.get("path"):
-            raise SuiteTargetInvalidError(
-                "flat-file target is ambiguous: set either 'path' (literal) or "
-                "'pattern' (batch), not both",
-                detail={"connection_type": conn_type},
-            )
-        if "pattern" in target:
-            return ResolvedTarget(
-                table="", schema=None, catalog=None, batch=_batch_spec(target, conn_type)
-            )
-        path = _require(target, "path", conn_type)
-        return ResolvedTarget(table=path, schema=None, catalog=None)
-
-    if conn_type == "snowflake":
-        table = _require(target, "table", conn_type)
-        return ResolvedTarget(table=table, schema=_str_or_none(target.get("schema")), catalog=None)
-
-    if conn_type == "unity_catalog":
-        table = _require(target, "table", conn_type)
-        catalog = _require(target, "catalog", conn_type)
-        return ResolvedTarget(
-            table=table, schema=_str_or_none(target.get("schema")), catalog=catalog
-        )
-
-    if conn_type == "iceberg":
-        # Iceberg addresses a table by its ``namespace.table`` identifier (the
-        # namespace may itself be multi-level, ``a.b``). Fold the optional
-        # ``namespace`` into the identifier the native runner passes to
-        # ``catalog.load_table`` — carried in ``table``; Iceberg has no separate
-        # SQL schema, so ``schema``/``catalog`` stay None (ADR 0030).
-        table = _require(target, "table", conn_type)
-        namespace = _str_or_none(target.get("namespace"))
-        identifier = f"{namespace}.{table}" if namespace else table
-        return ResolvedTarget(table=identifier, schema=None, catalog=None)
-
-    raise SuiteTargetInvalidError(
-        f"connection type {conn_type!r} has no run path (not a datasource)",
-        detail={"connection_type": conn_type},
-    )
+    # The datasource-specific SHAPE lives with its adapter and runner (#727). This
+    # used to be an `if conn_type ==` chain — a second dispatch site outside the
+    # registry that every new datasource had to remember to edit, which quietly
+    # falsified registry.py's "adding a datasource is one entry here" contract (the
+    # Iceberg addition already had to touch it).
+    #
+    # What stays here is what is genuinely shared: the targetless check above, and
+    # translating a shape complaint into this module's 422 contract — so the
+    # datasource layer never has to know about HTTP status codes.
+    try:
+        return resolve_target_shape(conn_type, target)
+    except TargetShapeError as exc:
+        raise SuiteTargetInvalidError(str(exc), detail={"connection_type": conn_type}) from exc
 
 
 def validate_target(conn_type: str, target: dict[str, Any]) -> None:
@@ -184,67 +125,3 @@ def materialize_path(
         strategy=spec.strategy,
         batch=spec.batch,
     )
-
-
-def _batch_spec(target: dict[str, Any], conn_type: str) -> BatchSpec:
-    """Validate + build a flat-file `BatchSpec` from a batch target (422 on bad shape).
-
-    Validates at save time what would otherwise only fail (or silently skip
-    forever) at run time: the regex must compile, and a ``specific`` strategy needs
-    a capture group in the pattern to extract the batch key — without one,
-    `resolve_batch` can never match a key, so every run would skip indefinitely and
-    mask the misconfiguration.
-    """
-    pattern = _require(target, "pattern", conn_type)
-    try:
-        compiled = re.compile(pattern)
-    except re.error as exc:
-        raise SuiteTargetInvalidError(
-            f"batch 'pattern' is not a valid regex: {exc}",
-            detail={"connection_type": conn_type},
-        ) from exc
-    strategy = target.get("strategy", "latest")
-    if strategy not in _BATCH_STRATEGIES:
-        raise SuiteTargetInvalidError(
-            f"batch strategy must be one of {sorted(_BATCH_STRATEGIES)}; got {strategy!r}",
-            detail={"connection_type": conn_type, "strategy": strategy},
-        )
-    batch = target.get("batch")
-    if strategy == "specific":
-        if not isinstance(batch, str) or not batch.strip():
-            raise SuiteTargetInvalidError(
-                "batch strategy 'specific' requires a non-empty 'batch' key",
-                detail={"connection_type": conn_type, "strategy": strategy},
-            )
-        if compiled.groups < 1:
-            raise SuiteTargetInvalidError(
-                "batch strategy 'specific' needs a capture group in 'pattern' to "
-                "extract the batch key",
-                detail={"connection_type": conn_type, "pattern": pattern},
-            )
-    prefix = target.get("prefix", "")
-    if not isinstance(prefix, str):
-        raise SuiteTargetInvalidError(
-            "batch target 'prefix' must be a string",
-            detail={"connection_type": conn_type},
-        )
-    return BatchSpec(
-        prefix=prefix,
-        pattern=pattern,
-        strategy=strategy,
-        batch=batch if strategy == "specific" else None,
-    )
-
-
-def _require(target: dict[str, Any], field: str, conn_type: str) -> str:
-    value = target.get(field)
-    if not isinstance(value, str) or not value.strip():
-        raise SuiteTargetInvalidError(
-            f"target for a {conn_type!r} suite requires a non-empty {field!r}",
-            detail={"connection_type": conn_type, "missing": field},
-        )
-    return value
-
-
-def _str_or_none(value: Any) -> str | None:
-    return value if isinstance(value, str) and value.strip() else None
