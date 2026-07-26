@@ -306,6 +306,15 @@ class Connection(Base):
     consecutive_poll_failures: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default=text("0")
     )
+    # When a poll-health FAILING alert was actually DELIVERED for this connection
+    # (#843) — NULL means no alert is outstanding. Not derivable from the counter:
+    # delivery is best-effort (a channel can be down, a webhook unresolved, a
+    # secret missing — all quiet no-ops), so a recovery edge keyed on the streak
+    # could announce the end of an alarm nobody was ever told about. Both edges
+    # ride this instead, which also fixes the threshold-change caveat: a
+    # connection already past a newly-lowered threshold never lands on `==` again,
+    # so keying on the counter meant it never alerted at all.
+    health_alerted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     # ── Credential expiry (#838) ──────────────────────────────────────────────
     # When this connection's credential stops working, where the credential states
