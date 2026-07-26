@@ -18,7 +18,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from backend.app.alerting import dispatch as alert_dispatch
@@ -370,14 +370,29 @@ def _alert_poll_health(
     threshold = get_settings().orchestration_poll_failure_alert_threshold
     if threshold <= 0:  # push disabled; #828's in-app health signals still stand
         return
-    connection = session.get(Connection, connection_id)
-    if connection is None:  # deleted between the poll and the alert
+    try:
+        connection = session.get(Connection, connection_id)
+        if connection is None:  # deleted between the poll and the alert
+            return
+        outstanding = connection.health_alerted_at is not None
+    except Exception:
+        # This read runs on the SUCCESS path too, after every healthy poll — and
+        # there it sits outside the caller's try/except. A transient DB error must
+        # not abort the sweep and starve every connection after this one, which is
+        # the isolation #842 exists to strengthen (review finding).
+        session.rollback()
+        log.exception("connection_health_alert_decision_failed", connection_id=str(connection_id))
         return
-    outstanding = connection.health_alerted_at is not None
 
     if recovered:
         # Only if a failing alert was actually delivered — otherwise there is
         # nothing for the operator to recover FROM.
+        #
+        # If the RECOVERED publish itself fails, the flag stays set and the next
+        # healthy sweep retries it. Should the connection fail again first, no new
+        # FAILING alert is sent — deliberately: the operator's last delivered state
+        # is already "failing", and the connection is failing, so there is nothing
+        # new to say. Re-announcing would be the alert storm this design prevents.
         if outstanding:
             _dispatch_health_alert(connection_id, HEALTH_RECOVERED)
         return
@@ -424,16 +439,46 @@ def publish_connection_health(connection_id: str, state: str) -> bool:
     session = get_session()
     try:
         cid = uuid.UUID(connection_id)
-        published = alert_dispatch.publish_connection_health(session, connection_id=cid, state=edge)
-        if not published:
-            return False
-        connection = session.get(Connection, cid)
-        if connection is None:  # deleted while the send was in flight
-            return True
-        # FAILING opens the outstanding-alert window; RECOVERED closes it.
-        connection.health_alerted_at = datetime.now(UTC) if edge == HEALTH_FAILING else None
+        # CLAIM the edge before publishing, with one atomic conditional UPDATE.
+        # Overlapping sweeps are expected (the 10-min poll, the 30-min gap
+        # recovery and the #492 poll-now can all be in flight), and two of them can
+        # both read `health_alerted_at IS NULL` and queue a task — the old `==`
+        # design was safe against this by construction, since only one of two
+        # serialized streak values can equal the threshold, and `>=` gave that up.
+        # Whoever wins the UPDATE publishes; the loser sees zero rows and returns.
+        claimed_at = datetime.now(UTC)
+        previous: datetime | None = None
+        if edge == HEALTH_FAILING:
+            claim = update(Connection).where(
+                Connection.id == cid, Connection.health_alerted_at.is_(None)
+            )
+            won = session.execute(claim.values(health_alerted_at=claimed_at)).rowcount  # type: ignore[attr-defined]  # UPDATE always yields a CursorResult
+        else:
+            previous = session.scalar(
+                select(Connection.health_alerted_at).where(Connection.id == cid)
+            )
+            claim = update(Connection).where(
+                Connection.id == cid, Connection.health_alerted_at.is_not(None)
+            )
+            won = session.execute(claim.values(health_alerted_at=None)).rowcount  # type: ignore[attr-defined]  # UPDATE always yields a CursorResult
         session.commit()
-        return True
+        if not won:
+            # A racing task already owns this edge, or the connection is gone.
+            return False
+
+        if alert_dispatch.publish_connection_health(session, connection_id=cid, state=edge):
+            return True
+
+        # Nothing was delivered, so the claim must not stand: the flag's whole
+        # meaning is "an operator was actually told" (#843). Releasing it leaves
+        # the edge open for the next sweep to retry.
+        session.execute(
+            update(Connection)
+            .where(Connection.id == cid)
+            .values(health_alerted_at=None if edge == HEALTH_FAILING else previous)
+        )
+        session.commit()
+        return False
     except Exception:
         session.rollback()
         log.exception("connection_health_alert_failed", connection_id=connection_id, state=state)

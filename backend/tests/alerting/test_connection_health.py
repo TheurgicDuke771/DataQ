@@ -139,7 +139,7 @@ def test_alerts_on_reaching_the_threshold(
     assert dispatched == [(str(conn.id), HEALTH_FAILING)]
 
 
-@pytest.mark.parametrize("streak", [4, 5, 144, 1008])
+@pytest.mark.parametrize("streak", [3, 4, 5, 144, 1008])
 def test_no_alert_storm_once_the_operator_has_been_told(
     db_session: Any, dispatched: list[tuple[str, str]], streak: int
 ) -> None:
@@ -150,6 +150,10 @@ def test_no_alert_storm_once_the_operator_has_been_told(
     The fixture says so: `health_alerted_at` is set, because by sweep 144 an alert
     has landed. The previous version of this test left it NULL and relied on the
     equality — encoding the old model rather than the situation.
+
+    The streak EQUAL to the threshold is in the list deliberately (review finding):
+    without it, every case sits above the threshold, so a revert to `==` would keep
+    this test green and only the lowered-threshold test would catch it.
     """
     conn = _connection(db_session, health_alerted_at=datetime.now(UTC))
     tasks._alert_poll_health(db_session, connection_id=conn.id, streak=streak, recovered=False)
@@ -507,3 +511,83 @@ def test_html_body_escapes_the_connection_name() -> None:
     html = render_health_html_body(report)
     assert "<script>" not in html
     assert "&lt;script&gt;" in html
+
+
+def test_only_one_of_two_racing_tasks_publishes(
+    db_session: Any, spy: _SpyHealthPublisher, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Overlapping sweeps are expected — the 10-minute poll, the 30-minute gap
+    recovery and the #492 poll-now can all be in flight — and two of them can read
+    `health_alerted_at IS NULL` and queue a task each.
+
+    The old `==` design was safe against this by construction: only one of two
+    serialized streak values can equal the threshold. `>=` gave that up, so the task
+    claims the edge with one atomic conditional UPDATE and the loser does nothing.
+    """
+    conn = _connection(db_session, consecutive_poll_failures=3)
+    monkeypatch.setattr(tasks, "get_session", lambda: db_session)
+    monkeypatch.setattr(db_session, "close", lambda: None)
+
+    first = tasks.publish_connection_health(str(conn.id), HEALTH_FAILING)
+    second = tasks.publish_connection_health(str(conn.id), HEALTH_FAILING)
+
+    assert (first, second) == (True, False)
+    assert [r.state for r in spy.reports] == [HEALTH_FAILING]  # exactly one alert
+
+
+def test_a_failed_publish_releases_its_claim_so_the_next_sweep_retries(
+    db_session: Any, spy: _SpyHealthPublisher, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The claim is taken BEFORE publishing, so a failed send must release it —
+    otherwise the flag would read "an operator was told" when nobody was, which is
+    exactly the lie #843 removes."""
+    conn = _connection(db_session, consecutive_poll_failures=3)
+    monkeypatch.setattr(tasks, "get_session", lambda: db_session)
+    monkeypatch.setattr(db_session, "close", lambda: None)
+    monkeypatch.setattr(spy, "publish_health", _raise_channel_down)
+
+    assert tasks.publish_connection_health(str(conn.id), HEALTH_FAILING) is False
+    db_session.refresh(conn)
+    assert conn.health_alerted_at is None
+
+    # …and the retry, once the channel is back, succeeds.
+    monkeypatch.undo()
+    monkeypatch.setattr(tasks, "get_session", lambda: db_session)
+    monkeypatch.setattr(db_session, "close", lambda: None)
+    assert tasks.publish_connection_health(str(conn.id), HEALTH_FAILING) is True
+    db_session.refresh(conn)
+    assert conn.health_alerted_at is not None
+
+
+def test_a_failed_recovery_publish_restores_the_outstanding_alert(
+    db_session: Any, spy: _SpyHealthPublisher, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Symmetric to the above: clearing the flag is the RECOVERED claim, so a failed
+    recovery send must put it back. Otherwise the alarm reads as closed to us while
+    the operator was never told it ended — and the next real outage would then be
+    announced as if the first had been resolved."""
+    was = datetime.now(UTC)
+    conn = _connection(db_session, health_alerted_at=was)
+    monkeypatch.setattr(tasks, "get_session", lambda: db_session)
+    monkeypatch.setattr(db_session, "close", lambda: None)
+    monkeypatch.setattr(spy, "publish_health", _raise_channel_down)
+
+    assert tasks.publish_connection_health(str(conn.id), HEALTH_RECOVERED) is False
+
+    db_session.refresh(conn)
+    assert conn.health_alerted_at is not None  # still outstanding, still retryable
+
+
+def test_a_broken_decision_read_does_not_abort_the_sweep(
+    db_session: Any, dispatched: list[tuple[str, str]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The decision's `session.get` runs on the SUCCESS path too, after every healthy
+    poll — where it sits outside the caller's try/except. A transient DB error there
+    must not starve every connection later in the sweep, which is the isolation #842
+    exists to strengthen."""
+    conn = _connection(db_session)
+    monkeypatch.setattr(db_session, "get", _raise_channel_down)
+
+    tasks._alert_poll_health(db_session, connection_id=conn.id, streak=9, recovered=True)
+
+    assert dispatched == []  # nothing sent, and — crucially — nothing raised
