@@ -9,7 +9,8 @@ datasource is an entry here plus the adapter/runner, nothing else.
 
 from __future__ import annotations
 
-from collections.abc import Generator
+import re
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from datetime import datetime
 from typing import Any, Protocol
@@ -18,9 +19,12 @@ from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
 from backend.app.datasources.adls import AdlsConnectionAdapter
 from backend.app.datasources.base import (
+    BatchSpec,
     CheckRunner,
     ConnectionAdapter,
     ExpiringCredentialAdapter,
+    ResolvedTarget,
+    TargetShapeError,
 )
 from backend.app.datasources.flatfile import build_flatfile_runner
 from backend.app.datasources.iceberg import IcebergConnectionAdapter, build_iceberg_runner
@@ -229,3 +233,135 @@ def owned_runner(runner: CheckRunner) -> Generator[CheckRunner]:
         yield runner
     finally:
         close_check_runner(runner)
+
+
+# ───────────────── target-shape resolution (one entry per type) ──────────────
+#
+# #727: this used to be an `if conn_type ==` chain in `services/run_target.py`, a
+# second dispatch site outside this registry. Adding a datasource therefore meant
+# editing that function TOO, quietly falsifying this module's "adding a datasource
+# is one entry here" contract — the Iceberg addition (#716) already had to.
+#
+# The service layer keeps what is genuinely shared (targetless suites,
+# orchestration-provider rejection, the HTTP error contract); only the SHAPE lives
+# here, next to the adapter and runner for the same type.
+
+
+def _require(target: dict[str, Any], field: str, conn_type: str) -> str:
+    value = target.get(field)
+    if not isinstance(value, str) or not value.strip():
+        raise TargetShapeError(f"{conn_type} target requires a {field!r}")
+    return value
+
+
+def _opt(value: Any) -> str | None:
+    return value if isinstance(value, str) and value.strip() else None
+
+
+def _flatfile_target(target: dict[str, Any], conn_type: str) -> ResolvedTarget:
+    # A batch target (regex `pattern`) resolves to a concrete path at run time; a
+    # literal target carries `path`. Mutually exclusive — both set is an ambiguous
+    # target, not a silent batch win.
+    if "pattern" in target and target.get("path"):
+        raise TargetShapeError(
+            "flat-file target is ambiguous: set either 'path' (literal) or "
+            "'pattern' (batch), not both"
+        )
+    if "pattern" in target:
+        return ResolvedTarget(table="", schema=None, catalog=None, batch=_batch_spec(target))
+    return ResolvedTarget(table=_require(target, "path", conn_type), schema=None, catalog=None)
+
+
+def _snowflake_target(target: dict[str, Any], conn_type: str) -> ResolvedTarget:
+    return ResolvedTarget(
+        table=_require(target, "table", conn_type),
+        schema=_opt(target.get("schema")),
+        catalog=None,
+    )
+
+
+def _unity_catalog_target(target: dict[str, Any], conn_type: str) -> ResolvedTarget:
+    return ResolvedTarget(
+        table=_require(target, "table", conn_type),
+        schema=_opt(target.get("schema")),
+        catalog=_require(target, "catalog", conn_type),
+    )
+
+
+def _iceberg_target(target: dict[str, Any], conn_type: str) -> ResolvedTarget:
+    # Iceberg addresses a table by its ``namespace.table`` identifier (the namespace
+    # may itself be multi-level, ``a.b``). Fold the optional ``namespace`` into the
+    # identifier the native runner passes to ``catalog.load_table`` — carried in
+    # ``table``; Iceberg has no separate SQL schema, so schema/catalog stay None
+    # (ADR 0030).
+    table = _require(target, "table", conn_type)
+    namespace = _opt(target.get("namespace"))
+    return ResolvedTarget(
+        table=f"{namespace}.{table}" if namespace else table, schema=None, catalog=None
+    )
+
+
+#: Flat-file batch selection strategies. Lives beside `_batch_spec` (#727) —
+#: it is a property of the flat-file target shape, not of the service layer.
+_BATCH_STRATEGIES = {"latest", "specific"}
+
+
+def _batch_spec(target: dict[str, Any]) -> BatchSpec:
+    """Validate + build a flat-file `BatchSpec` from a batch target (422 on bad shape).
+
+    Validates at save time what would otherwise only fail (or silently skip
+    forever) at run time: the regex must compile, and a ``specific`` strategy needs
+    a capture group in the pattern to extract the batch key — without one,
+    `resolve_batch` can never match a key, so every run would skip indefinitely and
+    mask the misconfiguration.
+    """
+    pattern = _require(target, "pattern", "flat-file")
+    try:
+        compiled = re.compile(pattern)
+    except re.error as exc:
+        raise TargetShapeError(f"batch 'pattern' is not a valid regex: {exc}") from exc
+    strategy = target.get("strategy", "latest")
+    if strategy not in _BATCH_STRATEGIES:
+        raise TargetShapeError(
+            f"batch strategy must be one of {sorted(_BATCH_STRATEGIES)}; got {strategy!r}"
+        )
+    batch = target.get("batch")
+    if strategy == "specific":
+        if not isinstance(batch, str) or not batch.strip():
+            raise TargetShapeError("batch strategy 'specific' requires a non-empty 'batch' key")
+        if compiled.groups < 1:
+            raise TargetShapeError(
+                "batch strategy 'specific' needs a capture group in 'pattern' to "
+                "extract the batch key"
+            )
+    prefix = target.get("prefix", "")
+    if not isinstance(prefix, str):
+        raise TargetShapeError("batch target 'prefix' must be a string")
+    return BatchSpec(
+        prefix=prefix,
+        pattern=pattern,
+        strategy=strategy,
+        batch=batch if strategy == "specific" else None,
+    )
+
+
+_TARGET_RESOLVERS: dict[str, Callable[[dict[str, Any], str], ResolvedTarget]] = {
+    "snowflake": _snowflake_target,
+    "unity_catalog": _unity_catalog_target,
+    "iceberg": _iceberg_target,
+    "adls_gen2": _flatfile_target,
+    "s3": _flatfile_target,
+}
+
+
+def resolve_target_shape(conn_type: str, target: dict[str, Any]) -> ResolvedTarget:
+    """The datasource-specific half of target resolution, or raise.
+
+    A type with no entry has no run path — every orchestration provider, and any
+    datasource whose author forgot this registration. Raising is the point: the
+    alternative is a suite that saves and then fails at run time.
+    """
+    resolver = _TARGET_RESOLVERS.get(conn_type)
+    if resolver is None:
+        raise TargetShapeError(f"connection type {conn_type!r} has no run path (not a datasource)")
+    return resolver(target, conn_type)
