@@ -152,6 +152,10 @@ export interface Connection {
    *  NULL means UNKNOWN (no readable lifetime, or not yet read), never "does not
    *  expire", so it must render as silence rather than reassurance. */
   credential_expires_at?: string | null;
+  /** When the expiry was last READ (#1024). NULL means we have never looked, which
+   *  must render as "unknown" rather than as silence — silence reads as
+   *  reassurance, and before this field the two were indistinguishable. */
+  credential_expiry_checked_at?: string | null;
 }
 
 /** Human-readable labels for the connection types, for grouping + display. */
