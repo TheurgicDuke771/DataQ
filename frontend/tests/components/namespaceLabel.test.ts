@@ -164,3 +164,44 @@ describe('datasourceKind', () => {
     }
   });
 });
+
+// ── mutation-spike gaps (#898) ────────────────────────────────────────────────
+
+describe('namespaceLabel edges the spike found unasserted (#898)', () => {
+  it('trims surrounding whitespace before parsing', () => {
+    // Dropping the `.trim()` survived: a stored namespace with a stray leading
+    // space stops matching any scheme and falls through to the raw string, so the
+    // label silently degrades from "Snowflake · ACCT" to the whole URI.
+    expect(namespaceLabel('  snowflake://acct  ')).toBe(namespaceLabel('snowflake://acct'));
+  });
+
+  it('degrades a whitespace-only namespace to the raw string, not a blank', () => {
+    // The invariant the code comments call out: never a blank label under a lone
+    // icon. `!raw` must test the TRIMMED value while returning the ORIGINAL.
+    expect(namespaceLabel('   ')).toBe('   ');
+  });
+
+  it('reads the host as the catalog for a REST/thrift scheme', () => {
+    // The HOST_IS_THE_CATALOG entries mutate to '' unkilled — with an empty set,
+    // a REST catalog would be parsed as a driver DSN and labelled by a path
+    // segment instead of its host.
+    expect(namespaceLabel('https://rest-catalog.example.com/v1/namespaces')).toBe(
+      'rest-catalog.example.com',
+    );
+    expect(namespaceLabel('thrift://hive-metastore.internal:9083')).toBe(
+      'hive-metastore.internal:9083',
+    );
+  });
+
+  it('labels a driver DSN by its database, not its host', () => {
+    expect(
+      namespaceLabel('postgresql+psycopg2://user@db.internal:5432/iceberg_catalog?sslmode=require'),
+    ).toBe('iceberg_catalog');
+  });
+
+  it('falls back to the host when a DSN carries no database path', () => {
+    // `path.length > 0` → `>= 0` survived: the boundary is an EMPTY path list,
+    // where indexing [-1] would yield undefined and blank the label.
+    expect(namespaceLabel('postgresql://db.internal:5432')).toBe('db.internal:5432');
+  });
+});
