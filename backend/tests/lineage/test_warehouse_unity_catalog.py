@@ -242,3 +242,62 @@ def test_column_grain_failure_degrades_never_fails_table_edges() -> None:
 def test_healthy_column_grain_sets_no_degrade_note() -> None:
     result = UnityCatalogLineageProvider().fetch_edges(_FakeConn(), connection_config=_CONFIG)
     assert result.degraded_reason is None
+
+
+# ── mutation-spike gaps (#898) ────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("workspace_url", "expected_host"),
+    [
+        ("https://adb-123.4.azuredatabricks.net", "adb-123.4.azuredatabricks.net"),
+        # No scheme — `urlparse` puts the whole thing in `path`, not `netloc`, so the
+        # fallback split is the ONLY thing that finds the host. A connection saved
+        # without `https://` is an ordinary user mistake, and the mutants here
+        # (dropping the split, or its maxsplit) leave the namespace holding the
+        # trailing path too — which silently stops matching the assets the suite
+        # resolver created, exactly the #823 identity-divergence shape.
+        ("adb-123.4.azuredatabricks.net", "adb-123.4.azuredatabricks.net"),
+        ("adb-123.4.azuredatabricks.net/some/path", "adb-123.4.azuredatabricks.net"),
+    ],
+)
+def test_namespace_derives_the_host_with_or_without_a_scheme(
+    workspace_url: str, expected_host: str
+) -> None:
+    provider = UnityCatalogLineageProvider()
+    result = provider.fetch_edges(_FakeConn(), connection_config={"workspace_url": workspace_url})
+    assert all(e.upstream.namespace == f"unitycatalog://{expected_host}" for e in result.edges)
+    assert result.edges  # a namespace claim about an empty graph proves nothing
+
+
+def test_the_watermark_travels_as_a_bind_parameter_not_inline_text() -> None:
+    """`event_time > :since` must stay a BOUND parameter.
+
+    The watermark is a value we interpolate into warehouse SQL on a scheduled
+    path; formatting it into the query text would be a string-built predicate over
+    non-constant input — the shape #428's identifier allowlist exists to prevent
+    elsewhere. The spike could not kill the query-text mutants (the stub does not
+    parse SQL), but this one property is both assertable and the one that matters.
+    """
+    captured: list[tuple[str, dict[str, Any] | None]] = []
+
+    class _Recording(_FakeConn):
+        def execute(self, statement: Any, params: dict[str, Any] | None = None) -> _Result:
+            captured.append((str(statement), params))
+            return super().execute(statement, params)
+
+    since = datetime(2026, 7, 1, tzinfo=UTC)
+    UnityCatalogLineageProvider().fetch_edges(_Recording(), connection_config=_CONFIG, since=since)
+
+    table_queries = [(sql, p) for sql, p in captured if "table_lineage" in sql]
+    assert table_queries, "the table_lineage query was never issued"
+    for sql, params in table_queries:
+        assert ":since" in sql  # a placeholder, not a formatted literal
+        bound = (params or {}).get("since")
+        # Deliberately NOT `== since`: the provider re-reads a small overlap window
+        # behind the watermark, so the bound value is `since` minus that margin. The
+        # contract under test is that the value travels BOUND and never reaches the
+        # query text — not what the margin happens to be.
+        assert isinstance(bound, datetime)
+        assert bound <= since
+        assert "2026-07" not in sql  # no formatted date literal anywhere in the SQL

@@ -20,9 +20,17 @@ from typing import Any
 
 import pytest
 
-from backend.app.lineage.warehouse import LineageTier, WarehouseLineageUnavailableError
+from backend.app.lineage.warehouse import (
+    LineageEdgePair,
+    LineageTier,
+    WarehouseLineageUnavailableError,
+)
 from backend.app.lineage.warehouse_snowflake import SnowflakeLineageProvider
-from backend.app.services.asset_identity import format_snowflake_name, normalize_snowflake_account
+from backend.app.services.asset_identity import (
+    AssetIdentity,
+    format_snowflake_name,
+    normalize_snowflake_account,
+)
 
 _FIXTURES = Path(__file__).parent.parent / "fixtures" / "lineage_native"
 _ACCOUNT = "PVQSOEQ-ZGB34383"  # the demo account the payload was captured from
@@ -547,3 +555,152 @@ def test_column_pairs_capped_per_edge() -> None:
     )
     [edge] = result.edges
     assert len(edge.column_pairs) == MAX_COLUMN_PAIRS_PER_EDGE
+
+
+# ── mutation-spike gaps (#898) ────────────────────────────────────────────────
+
+
+def test_a_non_table_row_mid_stream_skips_only_itself() -> None:
+    """A FUNCTION/PROCEDURE endpoint must skip THAT ROW, not stop the scan.
+
+    The spike killed nothing when `continue` became `break` — because every
+    fixture that exercised the filter had its non-table row at the END, where the
+    two are indistinguishable. Put one in the MIDDLE and the mutant silently drops
+    every remaining edge: not an error, not an empty graph, just a lineage graph
+    quietly missing its tail. That is the #845-class omission — asserting "nothing
+    feeds this view" when we simply stopped looking.
+    """
+    rows = [
+        ("DB", "S", "UP_A", "TABLE", "DB", "S", "DOWN_A", "VIEW"),
+        # the poison pill, deliberately BETWEEN two good rows
+        ("DB", "S", "SOME_FN", "FUNCTION", "DB", "S", "DOWN_B", "TABLE"),
+        ("DB", "S", "UP_C", "TABLE", "DB", "S", "DOWN_C", "VIEW"),
+    ]
+    conn = _FakeConn(
+        results={"OBJECT_DEPENDENCIES": rows},
+        raises={
+            "GET_LINEAGE": _feature_unsupported_error(),
+            "ACCESS_HISTORY": _feature_unsupported_error(),
+        },
+    )
+    result = SnowflakeLineageProvider().fetch_edges(conn, connection_config=_CONFIG)
+
+    names = {(e.upstream.name, e.downstream.name) for e in result.edges}
+
+    def qualified(table: str) -> str:
+        return format_snowflake_name("DB", "S", table)
+
+    assert (qualified("UP_A"), qualified("DOWN_A")) in names
+    # The row AFTER the filtered one must survive — this is the whole point.
+    assert (qualified("UP_C"), qualified("DOWN_C")) in names
+    assert not any("SOME_FN" in up for up, _ in names)
+
+
+def test_both_endpoints_must_be_table_like_not_just_one() -> None:
+    """The domain guard is `or` over the NEGATIVES — i.e. both endpoints must be
+    table-like. Flipping it to `and` admits an edge with one FUNCTION endpoint,
+    which materializes a stored procedure as a data asset (the class of bug that
+    put Stages in the graph on the first live pull)."""
+    rows = [("DB", "S", "SOME_FN", "FUNCTION", "DB", "S", "DOWN", "TABLE")]
+    conn = _FakeConn(
+        results={"OBJECT_DEPENDENCIES": rows},
+        raises={
+            "GET_LINEAGE": _feature_unsupported_error(),
+            "ACCESS_HISTORY": _feature_unsupported_error(),
+        },
+    )
+    result = SnowflakeLineageProvider().fetch_edges(conn, connection_config=_CONFIG)
+    assert result.edges == ()
+
+
+def test_a_half_parseable_access_history_row_is_dropped_whole() -> None:
+    """`up is not None AND down is not None` — an `or` here emits a half-edge.
+
+    A non-3-part object name yields `None` from `_identity_from_qualified`. With
+    `or`, a row whose SOURCE parses but whose TARGET does not still passes the
+    guard and builds an edge with a None endpoint — a malformed edge written to
+    `lineage_edges`, which is worse than the dropped row it replaces.
+    """
+    rows = [
+        # target is a 2-part name → unparseable; source is fine
+        ("DB.S.GOOD_SOURCE", "NOT_THREE_PART", None),
+        ("DB.S.REAL_UP", "DB.S.REAL_DOWN", None),
+    ]
+    conn = _FakeConn(
+        results={"ACCESS_HISTORY ah": rows},
+        raises={"GET_LINEAGE": _feature_unsupported_error()},
+    )
+    result = SnowflakeLineageProvider().fetch_edges(conn, connection_config=_CONFIG)
+
+    assert all(e.upstream is not None and e.downstream is not None for e in result.edges)
+    names = {(e.upstream.name, e.downstream.name) for e in result.edges}
+    assert (
+        format_snowflake_name("DB", "S", "REAL_UP"),
+        format_snowflake_name("DB", "S", "REAL_DOWN"),
+    ) in names
+    assert not any("NOT_THREE_PART" in down for _, down in names)
+
+
+def test_the_top_tier_success_reports_its_own_tier_and_no_skips(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The ladder tests assert DESCENT; nothing asserted the shape of a top-tier win.
+
+    This branch is **unreachable in production today** — `_from_get_lineage`
+    probes the function and then always raises, because the per-seed traversal is
+    a deferred #858 slice. So its mutants (`tier=None`, `skipped_tiers=None`)
+    survive for want of a reachable path, not for want of an assertion, and the
+    honest fix is to say so rather than to leave them looking like a coverage gap.
+
+    Pinned anyway, by standing in for the deferred traversal: `tier` is rendered
+    on the asset graph ("view-level only", "current as of…"), so whoever builds
+    that slice inherits a test that fails if the success result forgets to name
+    its own tier. Testing the shape of a branch before it goes live is cheap; the
+    alternative is discovering it wrong on the day it does.
+    """
+    pair = LineageEdgePair(
+        upstream=AssetIdentity(
+            namespace=f"snowflake://{normalize_snowflake_account(_ACCOUNT)}",
+            name=format_snowflake_name("DB", "S", "UP"),
+        ),
+        downstream=AssetIdentity(
+            namespace=f"snowflake://{normalize_snowflake_account(_ACCOUNT)}",
+            name=format_snowflake_name("DB", "S", "DOWN"),
+        ),
+    )
+    monkeypatch.setattr(
+        SnowflakeLineageProvider, "_from_get_lineage", lambda self, conn, ns: (pair,)
+    )
+    result = SnowflakeLineageProvider().fetch_edges(_FakeConn(), connection_config=_CONFIG)
+
+    assert result.tier == LineageTier.SNOWFLAKE_GET_LINEAGE
+    assert result.skipped_tiers == ()  # nothing was skipped — the first tier answered
+    assert result.degraded_reason is None  # and nothing to apologise for
+    assert result.edges == (pair,)
+
+
+def test_sqlstate_is_read_through_the_sqlalchemy_wrapper() -> None:
+    """SQLAlchemy wraps the driver error; the SQLSTATE lives on `.orig`.
+
+    Untested until now, and it is the STRUCTURED half of the edition-gate check —
+    the message-text half would mask its loss on any error whose text happens to
+    match, so a broken `.orig` walk could sit here silently.
+    """
+
+    class _DriverError(Exception):
+        sqlstate = "0A000"
+
+    class _WrappedError(Exception):
+        def __init__(self) -> None:
+            super().__init__("(snowflake.connector.errors.ProgrammingError) 002139")
+            self.orig: Exception = _DriverError("002139")
+
+    # No "Unsupported feature" text anywhere — only the wrapped SQLSTATE can classify it.
+    conn = _FakeConn(
+        results={"OBJECT_DEPENDENCIES": _object_dependencies_rows()},
+        raises={"GET_LINEAGE": _WrappedError(), "ACCESS_HISTORY": _WrappedError()},
+    )
+    result = SnowflakeLineageProvider().fetch_edges(conn, connection_config=_CONFIG)
+
+    assert result.tier == LineageTier.SNOWFLAKE_OBJECT_DEPENDENCIES
+    assert "get_lineage" in " ".join(result.skipped_tiers).lower()
