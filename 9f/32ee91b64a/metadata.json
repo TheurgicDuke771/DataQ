@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "9f32ee91b64a",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-784-rate-limit-breaker",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/9f/32ee91b64a/0/metadata.json",
+      "transcript": "/9f/32ee91b64a/0/full.jsonl",
+      "compact_transcript": "/9f/32ee91b64a/0/transcript.jsonl",
+      "content_hash": "/9f/32ee91b64a/0/content_hash.txt",
+      "prompt": "/9f/32ee91b64a/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 22798,
+    "cache_creation_tokens": 6392327,
+    "cache_read_tokens": 444557968,
+    "output_tokens": 723965,
+    "api_call_count": 1172
+  }
+}
