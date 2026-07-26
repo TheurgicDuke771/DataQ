@@ -1,27 +1,38 @@
 """Week 1 exit-gate probe endpoint.
 
-POST seeds the probe fixtures, creates a queued Run, and dispatches the
-``run_suite`` Celery task (GX → Snowflake DEV). GET reads a run back with its
-results. This is a thin demonstrator of the full async path — not the general
-run API, which arrives with suite/check CRUD in Weeks 3-5.
+Seeds the probe fixtures, creates a queued Run, and dispatches the ``run_suite``
+Celery task (GX → Snowflake DEV). Kept because it does in one call what the real
+API needs an already-seeded suite for.
+
+**The companion `GET /_probe/runs/{run_id}` was removed (#1039).** It read `runs`
+and `results` with **no suite-ownership check** — only `get_current_user` — so any
+authenticated user holding a run id could read any run's results, bypassing
+ADR 0027. A UUID is not a capability token, and run ids are treated as non-secret
+everywhere else in the product.
+
+It was also a second, weaker path to rows the real API already serves, which is
+how it came to be missed by #989's redaction sweep — a forgotten sibling is
+exactly what per-sink redaction fails to reach. Two bugs on one route in one PR
+was the argument for deleting rather than gating it.
+
+Read runs through `GET /api/v1/runs/{id}` and `/runs/{id}/results`, which enforce
+suite authz and redact.
 """
 
 from __future__ import annotations
 
 import uuid
-from typing import Annotated, Any
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import ConfigDict
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.api.v1._base import ApiModel
 from backend.app.core.auth import get_current_user
 from backend.app.core.config import get_settings
-from backend.app.db.models import Result, Run, Suite, User
+from backend.app.db.models import User
 from backend.app.db.session import get_db
-from backend.app.services import run_dispatch, run_service
+from backend.app.services import run_dispatch
 from backend.app.services.probe import ensure_probe_fixtures
 
 router = APIRouter(tags=["probe"])
@@ -30,22 +41,6 @@ router = APIRouter(tags=["probe"])
 class ProbeRunResponse(ApiModel):
     run_id: uuid.UUID
     status: str
-
-
-class CheckResultResponse(ApiModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    check_id: uuid.UUID
-    status: str  # pass | warn | fail | critical (ADR 0005)
-    metric_value: float | None  # the unexpected-% badness scalar (ADR 0012)
-    observed_value: dict[str, Any] | None
-    expected_value: dict[str, Any] | None
-
-
-class RunStatusResponse(ApiModel):
-    run_id: uuid.UUID
-    status: str
-    results: list[CheckResultResponse]
 
 
 @router.post(
@@ -78,31 +73,3 @@ def trigger_snowflake_probe(
             detail="failed to dispatch run",
         )
     return ProbeRunResponse(run_id=run.id, status=run.status)
-
-
-@router.get(
-    "/_probe/runs/{run_id}",
-    response_model=RunStatusResponse,
-    summary="Read a probe run and its results",
-)
-def get_probe_run(
-    run_id: uuid.UUID,
-    current_user: Annotated[User, Depends(get_current_user)],
-    db: Annotated[Session, Depends(get_db)],
-) -> RunStatusResponse:
-    run = db.get(Run, run_id)
-    if run is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="run not found")
-    results = list(db.scalars(select(Result).where(Result.run_id == run_id)))
-    # Redact like every other Result sink (#989). This route reads the SAME rows
-    # as `/runs/{id}/results`, so a monitor that choked on a PII column would
-    # surface its cell here while being masked there — a bypass by omission, and
-    # the reason redaction belongs at each sink rather than each producer.
-    suite = db.get(Suite, run.suite_id) if run.suite_id is not None else None
-    policy = suite.column_policy if suite is not None else None
-    reads = []
-    for r in results:
-        read = CheckResultResponse.model_validate(r)
-        read.observed_value = run_service.redact_observed_value(read.observed_value, policy=policy)
-        reads.append(read)
-    return RunStatusResponse(run_id=run.id, status=run.status, results=reads)

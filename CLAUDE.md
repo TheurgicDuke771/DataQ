@@ -206,6 +206,9 @@ conda activate dataq
 docker-compose up            # Postgres + Redis + FastAPI + React + Celery worker
 # Smoke test:
 curl -X POST http://localhost:8000/api/v1/_probe/snowflake-suite
+# …then read the run through the REAL API (the probe's own reader was removed in
+# #1039 — it had no suite-ownership check):
+curl http://localhost:8000/api/v1/runs/<run_id>
 # Browse Swagger: http://localhost:8000/docs
 ```
 
