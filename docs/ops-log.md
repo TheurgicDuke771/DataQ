@@ -39,6 +39,21 @@ A rotation entry that lists *every* derived secret is the countermeasure.
    beneath it, the way [#1023](https://github.com/TheurgicDuke771/DataQ/issues/1023)
    got a correction rather than a quiet edit.
 
+## The hook
+
+A `PostToolUse:Bash` hook in `.claude/settings.json` reminds whoever runs a
+lifecycle or rotation command to write the entry. It matches `az containerapp
+start|stop` (including `job`), `--min-replicas`, `harness_window.sh`, `az keyvault
+secret set` and `/reauth`.
+
+It matches an **invoked** command, not a mention. The first version grepped the
+whole command string and fired on its own commit message — which mentioned
+`harness_window.sh` — and on any `grep` for those terms. A reminder that fires
+when nothing happened is one people learn to dismiss, so it now splits the command
+on shell separators and anchors each trigger to the start of a segment. Verified
+against five trigger and three non-trigger commands, `git commit -m "... about
+harness_window.sh ..."` among the latter.
+
 ---
 
 ## Harness lifecycle
