@@ -117,18 +117,23 @@ next reader cannot tell a complete rotation from a partial one.
 
 ### Expiring soon
 
-Keep this ordered by date. It is the one part of the file worth reading at a
-glance, and #838's automated warning does **not** cover these — a Snowflake PAT
-carries no readable expiry, so the product cannot know it (and
-[#1024](https://github.com/TheurgicDuke771/DataQ/issues/1024) notes the SAS case
-is inert for up to 24h after a deploy). Until that changes, this table is the
-only warning.
+Keep this ordered by date. **Partly automated as of 2026-07-26:** #838 reads the
+expiry of any credential that states one, #1035 makes it run at worker start
+rather than only daily, and #1024 distinguishes "checked, none stated" from "not
+looked yet". Verified live after the Tier-2 deploy — all 13 prod connections
+checked, 3 with a real expiry where every one had been NULL that morning.
+
+So the SAS rows below now maintain themselves. What still needs a human is every
+credential whose expiry is NOT in the credential — Snowflake PATs above being the
+case that bites, since the product cannot know them and will never warn.
 
 | Expires | Credential | Action needed |
 |---|---|---|
 | **2026-08-06** | Snowflake `DATAQ_LOADER_PAT` | Re-mint; write `snowflake-loader-pat`. Earlier than the reader — check this one first. |
 | **2026-08-20** | Snowflake `DATAQ_READER_PAT` | Re-mint; write **all three** `conn-snowflake-*` secrets, then test each connection. |
-| unknown | ADLS SAS (`conn-adls-*`), Databricks PAT (`conn-unity-catalog-*`) | Expiry not recorded — capture it at the next rotation. A SAS carries `se=` in the token, so #838 can read it once the sweep runs. |
+| **2027-06-28** | ADLS SAS (`ADLS — Raw`, `ADLS — landing`) | Read automatically by #838 once the sweep ran — the `se=` in the token. No manual capture needed; this row is now maintained by the product. |
+| **2027-07-12** | dbt artifacts SAS (`dbt — Retail Lineage`) | Same — read from the token. |
+| n/a | Databricks PAT (`conn-unity-catalog-*`), Snowflake key-pair, S3 keys | **Checked, and genuinely stateless** — these credential types carry no readable expiry, so #838 is correctly silent rather than unknown (#1024 made that distinction visible). Their expiry, where one exists, lives only in the issuing console. |
 
 > The two PATs now expire **two weeks apart**, which is worth noticing: rotating
 > one is no longer an occasion to rotate the other, so the "rotate everything at
