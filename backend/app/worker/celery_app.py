@@ -217,22 +217,44 @@ def _clear_request_id(task: Any = None, **_kwargs: Any) -> None:
         request_id_var.reset(token)
 
 
+#: One-off tasks dispatched when beat starts, each because its own schedule would
+#: otherwise leave a window unserved after a restart.
+_ON_BEAT_START = (
+    # Catches runs that completed while the system was down; the 30-min beat alone
+    # would leave that window unswept until its first tick (B2).
+    "recover_orchestration_gaps",
+    # Populates `credential_expires_at` for credentials that state one (#1024).
+    # Its schedule is DAILY, which is right for a value that only moves on a
+    # rotation — but wrong for a cold start: a freshly deployed instance, or any
+    # connection whose credential predates #838, shows NULL until the first tick.
+    # NULL renders as "nothing expires soon", which is indistinguishable from
+    # "we have not looked yet", so the warning surface silently reads as reassuring
+    # for up to 24h. Prod had exactly this: every connection NULL after the
+    # 2026-07-26 deploy, including SAS-bearing ones whose expiry is right there in
+    # the token.
+    "refresh_credential_expiry",
+)
+
+
 @beat_init.connect  # type: ignore[untyped-decorator]  # celery signal .connect is unannotated
-def _recover_gaps_on_beat_start(**_kwargs: Any) -> None:
-    """When the beat scheduler starts, kick a one-off gap recovery (B2).
+def _dispatch_startup_tasks(**_kwargs: Any) -> None:
+    """Kick the one-off startup tasks when the beat scheduler starts.
 
     Tied to ``beat_init`` (one beat process per deployment) rather than worker
-    boot, so it fires **once** per restart instead of once per worker — no
-    thundering herd of identical sweeps on a multi-worker deploy. Catches runs
-    that completed while the system was down; the 30-min beat alone would leave
-    that window unswept until its first tick. Enqueued by name (decoupled from
-    the task module) to the broker so a ready worker runs it. Best-effort: a
-    broker hiccup at startup must not crash beat (the schedule recovers shortly).
+    boot, so each fires **once** per restart instead of once per worker — no
+    thundering herd of identical sweeps on a multi-worker deploy. Enqueued by name
+    (decoupled from the task module) to the broker so a ready worker runs them.
+
+    Best-effort and **independently guarded**: a broker hiccup at startup must not
+    crash beat, and one task failing to enqueue must not skip the rest (the
+    schedule recovers shortly either way).
     """
-    try:
-        celery_app.send_task("recover_orchestration_gaps")
-    except Exception:  # pragma: no cover - defensive; startup must not fail on broker
-        get_logger(__name__).exception("gap_recovery_startup_dispatch_failed")
+    log = get_logger(__name__)
+    for name in _ON_BEAT_START:
+        try:
+            celery_app.send_task(name)
+        except Exception:  # pragma: no cover - defensive; startup must not fail on broker
+            log.exception("startup_task_dispatch_failed", task=name)
 
 
 @worker_ready.connect  # type: ignore[untyped-decorator]  # celery signal .connect is unannotated
