@@ -792,3 +792,56 @@ def test_redact_datasource_tag_is_a_floor_override_cannot_unmask() -> None:
         tags={"ACCOUNT_REF": "sensitive"},
     )
     assert out == {"unexpected_index_list": [{"ACCOUNT_REF": "<redacted>", "AMOUNT": -1}]}
+
+
+# ── #989: the errored-monitor cell, redacted under the same policy ───────────
+
+
+def test_redact_observed_value_passes_through_when_there_is_no_cell() -> None:
+    # A plain errored result (message only) and a non-errored one must be untouched.
+    assert run_service.redact_observed_value(None) is None
+    assert run_service.redact_observed_value({"error": "boom"}) == {"error": "boom"}
+
+
+def test_redact_observed_value_shows_a_non_sensitive_cell() -> None:
+    """The diagnostic is the whole point: "your timestamp column has junk in it" is
+    unactionable without the junk. A freshness column is the analogue of the tested
+    column in a failing sample, so it shows unless *known* sensitive."""
+    out = run_service.redact_observed_value(
+        {
+            "error": "…not a parseable timestamp",
+            "unparsed_value": "13/07/2026",
+            "column": "order_ts",
+        }
+    )
+    assert out is not None and out["unparsed_value"] == "13/07/2026"
+
+
+def test_redact_observed_value_masks_a_policy_pii_cell() -> None:
+    """The case #989 exists for. Before this, a freshness monitor pointed at a
+    column the user had declared PII echoed that column's value into
+    `results.observed_value` and out to the UI, alerts and MCP — bypassing the
+    redaction machinery that exists for exactly this."""
+    out = run_service.redact_observed_value(
+        {"unparsed_value": "not-a-date", "column": "email"},
+        policy={"pii_columns": ["email"]},
+    )
+    assert out is not None and out["unparsed_value"] != "not-a-date"
+
+
+def test_redact_observed_value_masks_on_a_governance_tag_too() -> None:
+    """Tags are the floor authority — a datasource-tagged column masks even with no
+    suite policy set, matching `redact_sample_failures`."""
+    out = run_service.redact_observed_value(
+        {"unparsed_value": "not-a-date", "column": "ssn"},
+        tags={"ssn": "pii"},
+    )
+    assert out is not None and out["unparsed_value"] != "not-a-date"
+
+
+def test_redact_observed_value_masks_when_the_column_is_unknown() -> None:
+    """No column name means no way to consult the policy, so there is no basis to
+    show the cell. Fail closed — the same default the sample path takes when it has
+    no tested-column context."""
+    out = run_service.redact_observed_value({"unparsed_value": "not-a-date", "column": None})
+    assert out is not None and out["unparsed_value"] != "not-a-date"

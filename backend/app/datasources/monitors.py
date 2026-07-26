@@ -77,14 +77,13 @@ class SafeMonitorError(Exception):
     ever interpolate a driver message, a URL, or a connection string, leave it
     unmarked and let it be classified.
 
-    **One deliberate exception, stated rather than hidden:** `_as_aware_datetime`
-    truncates and echoes the offending *cell value* when a freshness column holds
-    something unparseable. That is target data, not configuration — but it is the
-    only way to say which value broke, and the same column's value is already
-    returned as `observed_value` on the success path, so this echoes nothing a
-    reader of that check couldn't already see. Any NEW message that echoes cell
-    data needs the same explicit justification, not a silent inheritance of this
-    one.
+    **No exceptions — the rule holds as written (#989).** `_as_aware_datetime`
+    used to truncate and echo the offending *cell value*, which is target data,
+    not configuration, and the rule was stated more strictly than it was enforced.
+    It no longer does: the value rides on ``MonitorConfigError.unparsed_value``
+    and reaches the user through the read layer under the suite's column policy,
+    so the diagnostic survives without the message carrying data. A message that
+    needs to show a cell is a message that needs a structured field instead.
     """
 
 
@@ -93,7 +92,21 @@ class MonitorConfigError(SafeMonitorError, ValueError):
 
     Safe-marked: these messages name the user's own config (a column name, a
     numeric range) and are the actionable half of a failed monitor.
+
+    May also carry ``unparsed_value`` — the target cell that provoked the error.
+    It is deliberately **not** interpolated into the message: the message is
+    persisted verbatim and rendered in the UI, alerts and MCP output, none of
+    which consult the suite's column policy, whereas the cell is target DATA and
+    belongs behind it. Keeping the two apart is what lets the read layer redact
+    one without having to locate it inside prose (#989).
     """
+
+    def __init__(
+        self, message: str, *, unparsed_value: object = None, column: str | None = None
+    ) -> None:
+        super().__init__(message)
+        self.unparsed_value = unparsed_value
+        self.column = column
 
 
 def _ident(name: object, *, what: str) -> str:
@@ -163,7 +176,7 @@ def _freshness_age_hours(max_timestamp: datetime, now: datetime) -> float:
     return max((now - max_timestamp).total_seconds() / 3600.0, 0.0)
 
 
-def _as_aware_datetime(scalar: object, source: str) -> datetime:
+def _as_aware_datetime(scalar: object, source: str, *, column: str | None = None) -> datetime:
     """Normalise a freshness scalar to a tz-aware datetime for the age math.
 
     Accepts a ``datetime``, a ``date`` (a DATE column's MAX is a ``date`` — e.g.
@@ -190,8 +203,15 @@ def _as_aware_datetime(scalar: object, source: str) -> datetime:
         try:
             ts = datetime.fromisoformat(scalar)
         except ValueError:
+            # The value is NOT in the message (#989). It is target data, and this
+            # message is safe-marked — persisted verbatim and rendered wherever a
+            # result is shown, none of which consults the suite's column policy.
+            # It travels structurally instead, so the read layer can redact it the
+            # same way it already redacts a failing sample row.
             raise MonitorConfigError(
-                f"freshness value from {source} is not a parseable timestamp: {scalar[:40]!r}"
+                f"freshness value from {source} is not a parseable timestamp",
+                unparsed_value=scalar,
+                column=column,
             ) from None
     else:
         raise MonitorConfigError(
@@ -309,7 +329,7 @@ def _freshness_outcome(scalar: Any, config: dict[str, Any], now: datetime) -> Ch
             error_message=f"{source} is unavailable, freshness can't be assessed",
             expected_value=expected,
         )
-    max_ts = _as_aware_datetime(scalar, source)
+    max_ts = _as_aware_datetime(scalar, source, column=column)
     age_hours = _freshness_age_hours(max_ts, now)
     # NOTE: freshness has no in-config bound (unlike volume's min/max_rows), so
     # the binary fallback is unconditionally `success=True` — "stale" is only
@@ -482,6 +502,13 @@ def run_monitor_specs(
             # raw `str(exc)` here would persist a live credential. Every sibling
             # path already classified before persisting; this was the one that
             # did not. See `SafeMonitorError` for why this isn't blanket.
+            # A cell the error is *about* travels in `observed_value`, never in
+            # the message (#989) — the message is persisted verbatim, while this
+            # field passes through the read layer's column-policy redaction.
+            observed: dict[str, Any] | None = None
+            unparsed = getattr(exc, "unparsed_value", None)
+            if unparsed is not None:
+                observed = {"unparsed_value": unparsed, "column": getattr(exc, "column", None)}
             outcomes.append(
                 CheckOutcome(
                     expectation_type=monitor_expectation_type(spec.kind),
@@ -492,6 +519,7 @@ def run_monitor_specs(
                         if isinstance(exc, SafeMonitorError)
                         else classify_failure_reason(exc)
                     ),
+                    observed_value=observed,
                 )
             )
     return outcomes

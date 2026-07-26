@@ -87,6 +87,13 @@ def _build_result(run_id: uuid.UUID, check: Check, outcome: CheckOutcome) -> Res
         # An errored check has no observed metric and no failing-row sample; surface
         # the (schema-level, row-data-free) GX message for debugging instead.
         observed = {"error": outcome.error_message} if outcome.error_message else None
+        # An errored monitor may also carry the target cell that provoked it
+        # (#989). It rides here rather than inside the message so the read layer
+        # can redact it under the suite's column policy — the errored branch
+        # deliberately bypasses the `sample_failures` path, and that bypass is
+        # exactly what let a cell value reach the UI unmasked.
+        if outcome.observed_value and "unparsed_value" in outcome.observed_value:
+            observed = {**(observed or {}), **sanitize_json(outcome.observed_value)}
         sample = None
     else:
         observed = sanitize_json(outcome.observed_value)
@@ -715,6 +722,37 @@ def _redact_comparison_row(
         show = not hard_masked and _may_show_incidental(name, vals, policy, tags)
         out[col] = val if show else _redact_sample_value(val)
     return out
+
+
+def redact_observed_value(
+    observed: dict[str, Any] | None,
+    *,
+    policy: dict[str, Any] | None = None,
+    tags: Mapping[str, str] | None = None,
+) -> dict[str, Any] | None:
+    """Redact an errored result's `observed_value` for the read API (#989).
+
+    An errored check stores ``{"error": <message>}``, and a monitor that choked on
+    a target cell adds ``{"unparsed_value": <cell>, "column": <name>}``. The
+    message is safe by construction — it never interpolates the cell — so only the
+    cell needs masking, under the same authority the failing-sample path uses:
+    show it unless the column is **known** sensitive (a governance tag or an
+    explicit policy entry).
+
+    Deliberately the *known*-sensitive test, not the default-mask one used for
+    incidental columns: this cell is from the column the user pointed the monitor
+    at, so it is the analogue of `partial_unexpected_list`'s tested column — the
+    diagnostic is the whole point, and masking it by default would make every
+    "your timestamp column has junk in it" error unactionable.
+
+    ``None``/absent keys pass through unchanged.
+    """
+    if not observed or "unparsed_value" not in observed:
+        return observed
+    column = str(observed.get("column") or "")
+    value = observed.get("unparsed_value")
+    show = bool(column) and not _known_sensitive(column, [value], policy, tags)
+    return {**observed, "unparsed_value": value if show else _redact_sample_value(value)}
 
 
 def redact_sample_failures(
