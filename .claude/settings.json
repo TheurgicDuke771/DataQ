@@ -25,6 +25,10 @@
           {
             "type": "command",
             "command": "input=$(cat); cmd=$(printf '%s' \"$input\" | jq -r '.tool_input.command // empty'); if printf '%s' \"$cmd\" | grep -Eq '(^|[[:space:];&|])[[:space:]]*gh pr merge([[:space:]]|$)'; then printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\",\"additionalContext\":\"PR merged - per the PR-template checkbox, update docs/progress.md now: flip the cycle-plan / carried-over rows this PR implements and refresh the Snapshot counts (open PRs/issues); touch CLAUDE.md section 13 only if the headline changed. Tooling/docs PRs that ticked the N/A checkbox need no update.\"}}'; fi"
+          },
+          {
+            "type": "command",
+            "command": "input=$(cat); cmd=$(printf '%s' \"$input\" | jq -r '.tool_input.command // empty'); if printf '%s' \"$cmd\" | grep -Eq '(az[[:space:]]+containerapp([[:space:]]+job)?[[:space:]]+(start|stop)|az[[:space:]]+containerapp[[:space:]]+update.*--min-replicas|harness_window\\.sh|az[[:space:]]+keyvault[[:space:]]+secret[[:space:]]+set|/connections/[^[:space:]]*/reauth)'; then printf '%s' '{\"hookSpecificOutput\": {\"hookEventName\": \"PostToolUse\", \"additionalContext\": \"Harness/credential state just changed - append an entry to docs/ops-log.md NOW (it is append-only and git-tracked on purpose). Harness start/stop: record UTC timestamp, the service(s), the action, who, and the EXPECTED state afterwards - 'stopped' alone does not answer the question that gets asked later ('was this deliberate?'), which cost real time on 2026-07-26. Credential rotation: record the rotation date, the credential, EVERY Key Vault secret written from it, and the new expiry - a partial rotation left two Snowflake connections dead for three weeks. Never record a secret VALUE, only identifiers and dates.\"}}'; fi"
           }
         ]
       },
