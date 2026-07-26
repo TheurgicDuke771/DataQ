@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "c90d75739c40",
+  "strategy": "manual-commit",
+  "branch": "perf/issue-976-monaco-workers",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "frontend/src/components/checks/SqlEditorField.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/c9/0d75739c40/0/metadata.json",
+      "transcript": "/c9/0d75739c40/0/full.jsonl",
+      "compact_transcript": "/c9/0d75739c40/0/transcript.jsonl",
+      "content_hash": "/c9/0d75739c40/0/content_hash.txt",
+      "prompt": "/c9/0d75739c40/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 524,
+    "cache_creation_tokens": 1353903,
+    "cache_read_tokens": 55869365,
+    "output_tokens": 147300,
+    "api_call_count": 271
+  }
+}
