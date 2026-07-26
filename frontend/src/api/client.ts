@@ -27,11 +27,35 @@ export const api = axios.create({
 
 api.interceptors.request.use(attachBearerToken);
 
+/** Seconds to wait after a 429, read off an axios error — `undefined` if absent. */
+export function retryAfterSeconds(error: unknown): number | undefined {
+  const response = (error as AxiosError<RateLimitEnvelope>)?.response;
+  if (response?.status !== 429) return undefined;
+  // Prefer the envelope's own field; fall back to the standard header. Both are
+  // emitted (ADR 0035), but the header is what survives a proxy rewriting the body.
+  const fromBody = response.data?.error?.detail?.retry_after_seconds;
+  const fromHeader = Number(response.headers?.['retry-after']);
+  const seconds = typeof fromBody === 'number' ? fromBody : fromHeader;
+  return Number.isFinite(seconds) && seconds >= 0 ? Math.ceil(seconds) : undefined;
+}
+
+interface RateLimitEnvelope {
+  error?: { message?: string; detail?: { retry_after_seconds?: number } };
+}
+
 api.interceptors.response.use(
   (response) => response,
-  (error: AxiosError<{ error?: { message?: string } }>) => {
+  (error: AxiosError<RateLimitEnvelope>) => {
     const apiMessage = error.response?.data?.error?.message;
     if (apiMessage) error.message = apiMessage;
+    // A throttled user was told "Too many requests" and nothing else — no sense of
+    // whether to retry now or in a minute (#788). The backend has always sent the
+    // answer; nothing read it. Folded into the message so every existing call site
+    // shows it without each one having to learn about rate limiting.
+    const retryAfter = retryAfterSeconds(error);
+    if (retryAfter !== undefined) {
+      error.message = `${error.message} Try again in ${retryAfter}s.`;
+    }
     return Promise.reject(error);
   },
 );
