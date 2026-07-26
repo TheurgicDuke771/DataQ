@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "1f5bf5b414ac",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-998-per-suite-health-rollup",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/app/services/connection_service.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/1f/5bf5b414ac/0/metadata.json",
+      "transcript": "/1f/5bf5b414ac/0/full.jsonl",
+      "compact_transcript": "/1f/5bf5b414ac/0/transcript.jsonl",
+      "content_hash": "/1f/5bf5b414ac/0/content_hash.txt",
+      "prompt": "/1f/5bf5b414ac/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 23326,
+    "cache_creation_tokens": 8873419,
+    "cache_read_tokens": 578917616,
+    "output_tokens": 916399,
+    "api_call_count": 1437
+  }
+}
