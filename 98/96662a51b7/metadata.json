@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "9896662a51b7",
+  "strategy": "manual-commit",
+  "branch": "docs/ops-log-why",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/98/96662a51b7/0/metadata.json",
+      "transcript": "/98/96662a51b7/0/full.jsonl",
+      "compact_transcript": "/98/96662a51b7/0/transcript.jsonl",
+      "content_hash": "/98/96662a51b7/0/content_hash.txt",
+      "prompt": "/98/96662a51b7/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 23106,
+    "cache_creation_tokens": 8274121,
+    "cache_read_tokens": 520094533,
+    "output_tokens": 831723,
+    "api_call_count": 1327
+  }
+}
