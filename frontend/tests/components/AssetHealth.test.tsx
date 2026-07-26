@@ -234,3 +234,84 @@ describe('suiteHealth (#803)', () => {
     ).toBe('Critical');
   });
 });
+
+// ── mutation-spike gaps (#898) ────────────────────────────────────────────────
+
+describe('the connection-axis ladder, rung by rung (#898)', () => {
+  // Table-driven on purpose. The spike killed nothing when `has_active_run` and
+  // `last_run_at` were forced to `false`/`if (false)`, because the existing tests
+  // assert the ladder's ENDS and not each rung — a mutant that removes a middle
+  // guard falls through to a neighbour whose label happens to satisfy the loose
+  // assertion. Each row below pins one rung against the input that reaches it.
+  //
+  // The COLOUR is asserted alongside the label for the same reason #563 flagged:
+  // colour is the part a user actually reads at a glance, and `color: ''`
+  // survivors mean nothing checks it. A label-only assertion lets 'No runs' go
+  // green or 'Errors' go grey.
+  const rungs: [string, Partial<ConnInput>, string, string][] = [
+    ['operational error wins outright', { has_operational_error: true }, 'Errors', 'error'],
+    ['a skip degrades', { has_skip: true }, 'Degraded', 'warning'],
+    [
+      'an in-flight run beats any concluded evidence',
+      { has_active_run: true, checks_total: 0, last_run_at: null },
+      'Running',
+      'processing',
+    ],
+    [
+      'evaluated checks are positive evidence we connected',
+      { checks_total: 5, has_cancelled_run: true, last_run_at: null },
+      'Reachable',
+      'success',
+    ],
+    [
+      'a cancelled run with nothing evaluated',
+      { checks_total: 0, has_cancelled_run: true, last_run_at: null },
+      'Cancelled',
+      'warning',
+    ],
+    [
+      'a clean run that evaluated nothing still proves reachability',
+      { checks_total: 0, last_run_at: '2026-01-01T00:00:00Z' },
+      'Reachable',
+      'success',
+    ],
+    [
+      'never run at all is unknown, not healthy',
+      { checks_total: 0, last_run_at: null },
+      'No runs',
+      'default',
+    ],
+  ];
+
+  it.each(rungs)('%s', (_name, over, label, color) => {
+    expect(connectionHealth({ ...CONN_OK, ...over })).toEqual({ label, color });
+  });
+
+  it('orders the rungs so a higher one wins when several apply at once', () => {
+    // Every flag on at once: the ladder must return the TOP rung, not whichever
+    // guard a mutant happens to leave standing.
+    expect(
+      connectionHealth({
+        has_operational_error: true,
+        has_skip: true,
+        has_active_run: true,
+        has_cancelled_run: true,
+        checks_total: 5,
+        last_run_at: '2026-01-01T00:00:00Z',
+      }),
+    ).toEqual({ label: 'Errors', color: 'error' });
+
+    // …and with the top rung removed, the next one down — pinning the ORDER
+    // rather than just the set of reachable outcomes.
+    expect(
+      connectionHealth({
+        has_operational_error: false,
+        has_skip: true,
+        has_active_run: true,
+        has_cancelled_run: true,
+        checks_total: 5,
+        last_run_at: '2026-01-01T00:00:00Z',
+      }),
+    ).toEqual({ label: 'Degraded', color: 'warning' });
+  });
+});

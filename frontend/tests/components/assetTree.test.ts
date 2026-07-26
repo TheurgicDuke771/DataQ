@@ -121,3 +121,40 @@ describe('expandableKeys', () => {
     expect(keys).not.toContain('ns::snowflake://acct/DB/S/T');
   });
 });
+
+// ── mutation-spike gaps (#898) ────────────────────────────────────────────────
+
+describe('sibling ordering is deterministic (#898)', () => {
+  // The comparators mutated to `true`, `false` and `() => undefined` with the
+  // suite still green: nothing asserted ORDER, only membership. A browse tree
+  // that reshuffles between renders is a real defect — the user loses their place
+  // — and it is invisible to every "does the node exist" assertion.
+  it('sorts children by label', () => {
+    const tree = buildAssetTree([
+      asset({ id: '3', namespace: 'snowflake://a', name: 'DB.S.ZEBRA' }),
+      asset({ id: '1', namespace: 'snowflake://a', name: 'DB.S.APPLE' }),
+      asset({ id: '2', namespace: 'snowflake://a', name: 'DB.S.MANGO' }),
+    ]);
+    const labels = (nodes: { label: string; children?: unknown[] }[]): string[] =>
+      nodes.map((n) => n.label);
+    // Walk to the deepest level that holds the three leaves.
+    let level = tree as unknown as { label: string; children?: unknown[] }[];
+    while (level.length === 1 && (level[0].children?.length ?? 0) > 0) {
+      level = level[0].children as typeof level;
+    }
+    expect(labels(level)).toEqual([...labels(level)].sort((a, b) => a.localeCompare(b)));
+    expect(labels(level)).toEqual(['APPLE', 'MANGO', 'ZEBRA']);
+  });
+
+  it('breaks a root-label tie on the namespace, so equal labels still order', () => {
+    // Two datasources whose labels shorten to the same string — without the
+    // tie-break the order is whatever insertion happened to give.
+    const roots = buildAssetTree([
+      asset({ id: 'b', namespace: 'snowflake://zzz-acct', name: 'DB.S.T' }),
+      asset({ id: 'a', namespace: 'snowflake://aaa-acct', name: 'DB.S.T' }),
+    ]);
+    const namespaces = roots.map((r) => r.namespace ?? '');
+    expect(namespaces).toEqual([...namespaces].sort((a, b) => a.localeCompare(b)));
+    expect(namespaces[0]).toContain('aaa-acct');
+  });
+});
