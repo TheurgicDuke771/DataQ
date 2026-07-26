@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "3f2b89606d2f",
+  "strategy": "manual-commit",
+  "branch": "docs/progress-opslog",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/3f/2b89606d2f/0/metadata.json",
+      "transcript": "/3f/2b89606d2f/0/full.jsonl",
+      "compact_transcript": "/3f/2b89606d2f/0/transcript.jsonl",
+      "content_hash": "/3f/2b89606d2f/0/content_hash.txt",
+      "prompt": "/3f/2b89606d2f/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 23126,
+    "cache_creation_tokens": 8286742,
+    "cache_read_tokens": 524916016,
+    "output_tokens": 841724,
+    "api_call_count": 1337
+  }
+}
