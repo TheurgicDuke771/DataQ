@@ -50,9 +50,18 @@ It matches an **invoked** command, not a mention. The first version grepped the
 whole command string and fired on its own commit message — which mentioned
 `harness_window.sh` — and on any `grep` for those terms. A reminder that fires
 when nothing happened is one people learn to dismiss, so it now splits the command
-on shell separators and anchors each trigger to the start of a segment. Verified
-against five trigger and three non-trigger commands, `git commit -m "... about
-harness_window.sh ..."` among the latter.
+on shell separators, anchors each trigger to the start of a segment, **and
+requires whitespace-or-end after it**.
+
+That last part took two attempts. Anchoring alone still fired on a commit message
+whose prose happened to **word-wrap** so a line began `harness_window.sh.` — the
+trailing period is what tells a mention from an invocation, since a real one is
+always followed by arguments or nothing. Verified against six trigger and three
+non-trigger commands, including that exact wrapped-prose message.
+
+Residual, accepted: grep cannot parse shell quoting, so prose deliberately shaped
+like a command invocation at the start of a line would still trip it. Rare, and it
+errs toward reminding.
 
 ---
 
