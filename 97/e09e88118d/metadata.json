@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "97e09e88118d",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-989-monitor-cell-redaction",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/app/api/v1/runs.py",
+    "backend/app/datasources/monitors.py",
+    "backend/app/mcp/server.py",
+    "backend/tests/datasources/test_monitors.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/97/e09e88118d/0/metadata.json",
+      "transcript": "/97/e09e88118d/0/full.jsonl",
+      "compact_transcript": "/97/e09e88118d/0/transcript.jsonl",
+      "content_hash": "/97/e09e88118d/0/content_hash.txt",
+      "prompt": "/97/e09e88118d/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 23272,
+    "cache_creation_tokens": 8842304,
+    "cache_read_tokens": 563131173,
+    "output_tokens": 895701,
+    "api_call_count": 1410
+  }
+}
