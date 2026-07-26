@@ -219,15 +219,34 @@ function HealthBadge({ health }: { health: HealthState }) {
  * A far-off expiry is also silent: a date on every card is noise that trains
  * people to ignore the one card that matters.
  */
-function CredentialExpiryBadge({ expiresAt }: { expiresAt?: string | null }) {
+function CredentialExpiryBadge({
+  expiresAt,
+  checkedAt,
+}: {
+  expiresAt?: string | null;
+  checkedAt?: string | null;
+}) {
   const status = expiryStatus(expiresAt);
   const label = expiryLabel(status);
-  if (!label || !expiresAt) return null;
-  return (
-    <Tooltip title={`Credential expiry: ${formatTimestamp(expiresAt)}`}>
-      <Badge status={status.kind === 'expired' ? 'error' : 'warning'} text={label} />
-    </Tooltip>
-  );
+  if (label && expiresAt) {
+    return (
+      <Tooltip title={`Credential expiry: ${formatTimestamp(expiresAt)}`}>
+        <Badge status={status.kind === 'expired' ? 'error' : 'warning'} text={label} />
+      </Tooltip>
+    );
+  }
+  // No expiry to show. That means one of two very different things, and saying
+  // nothing for both is what made an unchecked credential look safe (#1024):
+  //   never checked      -> we do not know; say so
+  //   checked, no expiry -> this credential type states none; stay silent, forever
+  if (!checkedAt) {
+    return (
+      <Tooltip title="DataQ has not read this credential's expiry yet. It is checked when the credential is written and on a periodic sweep.">
+        <Badge status="default" text="expiry unknown" />
+      </Tooltip>
+    );
+  }
+  return null;
 }
 
 function ConnectionCard({
@@ -332,7 +351,10 @@ function ConnectionCard({
                 was told until prod lineage had been dark for six days — this is
                 the warning that arrives before the outage rather than after it.
                 Silent when the expiry is unknown: no badge is not a clean bill. */}
-            <CredentialExpiryBadge expiresAt={connection.credential_expires_at} />
+            <CredentialExpiryBadge
+              expiresAt={connection.credential_expires_at}
+              checkedAt={connection.credential_expiry_checked_at}
+            />
             {(connection.consecutive_run_failures ?? 0) > 0 && (
               <Tooltip
                 title={

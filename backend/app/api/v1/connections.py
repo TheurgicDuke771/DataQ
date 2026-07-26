@@ -79,6 +79,10 @@ class ConnectionRead(ApiModel):
     # or it has not been read yet), never "does not expire", so a client must render
     # NULL as silence rather than reassurance. A date, never credential material.
     credential_expires_at: datetime | None = None
+    # When the expiry was last read (#1024). NULL here means we have never looked,
+    # which the client must render as silence rather than as "nothing expires
+    # soon" — the two were indistinguishable before this field existed.
+    credential_expiry_checked_at: datetime | None = None
 
     @classmethod
     def from_model(
@@ -103,6 +107,7 @@ class ConnectionRead(ApiModel):
             last_run_error=health.reason,
             consecutive_run_failures=health.consecutive_failures,
             credential_expires_at=conn.credential_expires_at,
+            credential_expiry_checked_at=conn.credential_expiry_checked_at,
         )
 
 

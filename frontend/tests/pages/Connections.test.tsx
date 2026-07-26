@@ -121,6 +121,35 @@ describe('Connections', () => {
     expect(screen.getAllByText(/credential expire/)).toHaveLength(2);
   });
 
+  it('says "expiry unknown" when the credential has never been checked (#1024)', async () => {
+    // Saying nothing for both "no expiry" and "not looked yet" is what made an
+    // unchecked credential look safe: the absence of a warning read as
+    // reassurance. Prod showed every connection NULL after a deploy, including
+    // SAS-bearing ones whose expiry is printed in the token.
+    mockList.mockResolvedValue([conn({ id: 'c1', name: 'never-checked' })]);
+
+    renderPage();
+
+    expect(await screen.findByText('expiry unknown')).toBeInTheDocument();
+  });
+
+  it('stays silent once checked and the credential states no expiry', async () => {
+    // A Snowflake PAT or S3 key genuinely has no readable lifetime. Having looked,
+    // silence is the correct and permanent answer — not a nag we cannot resolve.
+    mockList.mockResolvedValue([
+      conn({
+        id: 'c1',
+        name: 'checked-no-expiry',
+        credential_expiry_checked_at: '2026-07-26T00:00:00Z',
+      }),
+    ]);
+
+    renderPage();
+
+    await screen.findByText('checked-no-expiry');
+    expect(screen.queryByText('expiry unknown')).not.toBeInTheDocument();
+  });
+
   it('shows an empty state when there are no connections', async () => {
     mockList.mockResolvedValue([]);
 

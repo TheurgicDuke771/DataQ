@@ -334,6 +334,12 @@ class Connection(Base):
     #
     # A date, never the credential: this column is safe to log, list, and render.
     credential_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # When the expiry was last READ — stamped on every attempt, whatever the
+    # outcome (#1024). Without it, NULL above means both "this credential states
+    # no expiry" and "nobody has looked yet", and the UI cannot tell reassurance
+    # from ignorance. With it: NULL here = never looked (stay silent); set here +
+    # NULL above = looked, genuinely no expiry (stay silent, permanently).
+    credential_expiry_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     # ── Warehouse-native lineage refresh state (#858) ────────────────────────────
     # Per-connection state for the warehouse-lineage beat (snowflake / unity_catalog).

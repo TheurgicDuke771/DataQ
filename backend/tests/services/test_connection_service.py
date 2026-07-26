@@ -926,3 +926,29 @@ def test_a_busy_suite_cannot_crowd_a_quiet_one_out_of_the_window(db_session: Any
     db_session.commit()
 
     assert svc.datasource_health(db_session, [conn.id])[conn.id].consecutive_failures == 0
+
+
+# ── #1024: NULL expiry must mean one thing ───────────────────────────────────
+
+
+def test_checked_at_is_stamped_even_when_there_is_no_readable_expiry(db_session: Any) -> None:
+    """The whole point. A Snowflake PAT states no expiry, so `credential_expires_at`
+    stays NULL — but "we looked and there is none" must be distinguishable from
+    "nobody has looked", or the absence of a warning reads as reassurance."""
+    conn = _create(db_session, FakeStore())  # a type with no readable expiry
+
+    assert conn.credential_expires_at is None
+    assert conn.credential_expiry_checked_at is not None
+
+
+def test_a_connection_written_before_the_feature_reads_as_unchecked(db_session: Any) -> None:
+    """Prod's actual state after the 2026-07-26 deploy: rows whose secret predates
+    #838. They must NOT claim to have been checked — the migration deliberately
+    does not backfill, because stamping "checked" for rows nobody read would
+    assert exactly the thing this column exists to distinguish."""
+    conn = _create(db_session, FakeStore())
+    conn.credential_expiry_checked_at = None  # simulate a pre-feature row
+    db_session.commit()
+
+    assert conn.credential_expires_at is None
+    assert conn.credential_expiry_checked_at is None

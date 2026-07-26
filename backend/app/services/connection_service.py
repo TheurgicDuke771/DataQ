@@ -199,6 +199,10 @@ def _refresh_credential_expiry(conn: Connection, secret: str) -> None:
     no longer exists.
     """
     conn.credential_expires_at = credential_expiry(conn.type, conn.config, secret)
+    # Stamped whatever the outcome, INCLUDING when the expiry is None (#1024) —
+    # "we looked and this credential has no readable lifetime" is a different
+    # fact from "we have never looked", and only this column separates them.
+    conn.credential_expiry_checked_at = datetime.now(UTC)
 
 
 def refresh_credential_expiry(session: Session, *, secret_store: SecretStore) -> int:
