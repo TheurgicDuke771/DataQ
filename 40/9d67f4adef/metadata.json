@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "409d67f4adef",
+  "strategy": "manual-commit",
+  "branch": "docs/ops-log-expiries",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/ops-log.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/40/9d67f4adef/0/metadata.json",
+      "transcript": "/40/9d67f4adef/0/full.jsonl",
+      "compact_transcript": "/40/9d67f4adef/0/transcript.jsonl",
+      "content_hash": "/40/9d67f4adef/0/content_hash.txt",
+      "prompt": "/40/9d67f4adef/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 23572,
+    "cache_creation_tokens": 8983669,
+    "cache_read_tokens": 659565986,
+    "output_tokens": 994607,
+    "api_call_count": 1560
+  }
+}
