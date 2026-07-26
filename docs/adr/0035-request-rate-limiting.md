@@ -49,6 +49,28 @@ on the parent FastAPI app as the **innermost** user middleware.
 - **Fail-open.** Any store error returns `None` → the request is allowed, logged
   once per window (`rate_limit_store_unavailable`). A Redis outage must degrade
   to "no limiting", never to a hard-down API.
+- **A breaker for a slow-but-alive Redis (#784).** The socket timeouts
+  (`socket_timeout=0.2` / `socket_connect_timeout=0.5`) bound the penalty when
+  Redis is *down*, and fail-open then kicks in fast. They do nothing when it is
+  *up and degraded* — a GC pause, a noisy neighbour: this is the innermost
+  middleware, covering `/api` + `/mcp` + the webhooks, so **every** request
+  serially waits out the full timeout and the app's p99 becomes Redis's p99,
+  while we keep hammering a server that is already struggling.
+
+  After **5 consecutive** store failures the breaker opens for **5 seconds** and
+  `incr_windows` returns the fail-open signal *without awaiting anything*.
+  Reopening is a single probe with no extra state: once the window passes the
+  next request simply goes through, re-opening on failure and resetting the
+  counter on success. The counter is *consecutive* failures, so a Redis that
+  drops one request in five never trips it — that is annoying, not degraded, and
+  opening the breaker for it would silently switch enforcement off across the
+  whole API.
+
+  Open is deliberately a short, self-clearing state. This ADR biases availability
+  over enforcement, but an open breaker **is** enforcement off, so it must never
+  be long-lived. Trips and closures are logged
+  (`rate_limit_store_breaker_open` / `_closed`) — a brownout that would otherwise
+  read as "the API got slow" becomes a named event.
 - **Endpoint classes** (per-minute, config-driven — `RATE_LIMIT_*`):
 
   | Class | Matches | Key | Default |

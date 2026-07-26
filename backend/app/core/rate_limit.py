@@ -108,14 +108,70 @@ def _get_redis_client() -> AsyncRedis[Any]:
     return _redis_client
 
 
+#: Consecutive store failures that trip the breaker, and how long it then stays
+#: open. Tuned for a brownout, not an outage: five failures is well past a single
+#: unlucky request, and five seconds is short enough that enforcement resumes
+#: promptly once Redis recovers — the deliberate bias of ADR 0035 is availability
+#: over enforcement, so an open breaker must never be a long-lived state.
+_BREAKER_TRIP_AFTER = 5
+_BREAKER_OPEN_SECONDS = 5.0
+
+_breaker_failures = 0
+_breaker_open_until = 0.0
+
+
+def _breaker_is_open() -> bool:
+    """True while the breaker is holding requests off Redis entirely."""
+    return _now() < _breaker_open_until
+
+
+def _breaker_record_failure() -> None:
+    global _breaker_failures, _breaker_open_until
+    _breaker_failures += 1
+    if _breaker_failures >= _BREAKER_TRIP_AFTER and not _breaker_is_open():
+        _breaker_open_until = _now() + _BREAKER_OPEN_SECONDS
+        log.warning(
+            "rate_limit_store_breaker_open",
+            consecutive_failures=_breaker_failures,
+            open_seconds=_BREAKER_OPEN_SECONDS,
+        )
+
+
+def _breaker_record_success() -> None:
+    global _breaker_failures, _breaker_open_until
+    if _breaker_failures:
+        log.info("rate_limit_store_breaker_closed", after_failures=_breaker_failures)
+    _breaker_failures = 0
+    _breaker_open_until = 0.0
+
+
 class RedisStore:
     """Fixed-window counter in Redis via a single INCR+EXPIRE pipeline.
 
     Stateless (the client is module-level). ANY exception → `None`, the
     fail-open signal — a Redis hiccup must never 500 or block the request.
+
+    **A breaker guards the hot path against a slow-but-alive Redis (#784).** The
+    socket timeouts bound the penalty when Redis is *down*, and fail-open kicks in
+    fast. They do nothing when it is *up and degraded* — a GC pause, a noisy
+    neighbour — because every request across /api, /mcp and the webhooks then
+    serially waits out the full timeout, so the app's p99 becomes Redis's p99
+    while we keep hammering a struggling server. After `_BREAKER_TRIP_AFTER`
+    consecutive failures the store stops calling Redis for `_BREAKER_OPEN_SECONDS`
+    and returns the fail-open signal immediately.
+
+    Reopening is a single probe, with no extra state: once the window has passed
+    the next request simply goes through. If it fails the breaker re-opens; if it
+    succeeds the counter resets. Deliberately not per-key or per-worker-coordinated
+    — this is a cheap guard against a brownout, and the counting itself must not
+    become the cost it exists to avoid.
     """
 
     async def incr_windows(self, keys: Sequence[str]) -> list[int] | None:
+        if _breaker_is_open():
+            # Fail open WITHOUT awaiting: the whole point is to stop paying the
+            # timeout on every request while Redis is unwell.
+            return None
         try:
             pipe = _get_redis_client().pipeline(transaction=True)
             for key in keys:
@@ -124,9 +180,12 @@ class RedisStore:
             results = await pipe.execute()
             # Results interleave INCR, EXPIRE per key → the even-indexed entries
             # are the INCR counts, aligned to `keys`.
-            return [int(results[i]) for i in range(0, len(results), 2)]
+            counts = [int(results[i]) for i in range(0, len(results), 2)]
         except Exception:
+            _breaker_record_failure()
             return None
+        _breaker_record_success()
+        return counts
 
 
 # ── In-memory store (test-only; never an automatic fallback) ─────────────────
@@ -177,9 +236,12 @@ def reset_rate_limit_state() -> None:
     """Test hook: clear the store override, the lazy Redis client, and the
     warn-once stamp (mirrors the reset-hook pattern in `core/secrets.py`)."""
     global _store_override, _redis_client, _store_unavailable_warned_window
+    global _breaker_failures, _breaker_open_until
     _store_override = None
     _redis_client = None
     _store_unavailable_warned_window = None
+    _breaker_failures = 0
+    _breaker_open_until = 0.0
 
 
 def _now() -> float:
