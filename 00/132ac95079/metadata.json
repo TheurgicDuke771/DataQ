@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "00132ac95079",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-788-me-429-retry",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/00/132ac95079/0/metadata.json",
+      "transcript": "/00/132ac95079/0/full.jsonl",
+      "compact_transcript": "/00/132ac95079/0/transcript.jsonl",
+      "content_hash": "/00/132ac95079/0/content_hash.txt",
+      "prompt": "/00/132ac95079/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 23016,
+    "cache_creation_tokens": 7365374,
+    "cache_read_tokens": 500975571,
+    "output_tokens": 787321,
+    "api_call_count": 1282
+  }
+}
