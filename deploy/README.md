@@ -330,6 +330,61 @@ az containerapp revision list -n dataq-app-worker -g dataq-rg --query "[?propert
 > fastmcp 3.4.3 bump, fixed via `build_mcp_app(allowed_hosts=…)`; see
 > [#706](https://github.com/TheurgicDuke771/DataQ/issues/706)).
 
+## Incident: a migration that hangs, and takes prod reads with it
+
+**This happened** (2026-07-10, deploy run 29069821010) and is the reason for the
+`lock_timeout` and `/readyz` below. Know the shape, because the symptom does not
+look like a database problem.
+
+**Symptom.** The migrate job sits in `Running`. Meanwhile authenticated requests
+start timing out (>25s) — not erroring, *hanging*. `/healthz` stays **green**
+throughout, because it only proves the process is alive.
+
+**Cause.** A migration needing `ACCESS EXCLUSIVE` (any `ALTER TABLE`) queues
+behind a long-lived lock holder from the running apps. In Postgres a *queued*
+exclusive lock blocks **all new readers** — so one waiting DDL statement stalls
+every request touching that table. Worse: killing the ACA job execution does not
+kill the Postgres backend. It stays as a zombie, still queued, still blocking, and
+a retry simply queues behind it.
+
+**Remediation, in order:**
+
+```bash
+# 1. Confirm it: anything waiting, and what holds the lock it wants.
+psql "$DATABASE_URL" -c "
+  SELECT pid, state, wait_event_type, left(query, 60) AS query, age(clock_timestamp(), query_start) AS age
+  FROM pg_stat_activity WHERE state <> 'idle' ORDER BY query_start;"
+
+# 2. Stop the migrate job execution (does NOT clear the backend).
+az containerapp job execution list -n dataq-app-migrate -g dataq-rg -o table
+az containerapp job stop -n dataq-app-migrate -g dataq-rg --job-execution-name <name>
+
+# 3. Clear the zombie backend. Terminate the specific pid…
+psql "$DATABASE_URL" -c "SELECT pg_terminate_backend(<pid>);"
+# …or, if that is not enough, restart the server (what actually recovered it):
+az postgres flexible-server restart -n <server> -g dataq-rg
+
+# 4. Re-run migrate. It took 16s once unblocked.
+```
+
+**What is in place now, so this should fail fast instead:**
+
+- `lock_timeout = 15s` on the migration engine (`backend/alembic/env.py`). A
+  contended migration now aborts loudly rather than queueing and degrading
+  readers. Longer than the app's 5s because a migration is rarer and more
+  important, and may legitimately wait out a brush.
+- `GET /readyz` exercises a real DB read with a 2s `statement_timeout`, so a read
+  degradation is *visible*. `/healthz` stays liveness-only on purpose — a
+  liveness probe that fails on a DB blip gets the container killed, which cannot
+  fix a database and turns degradation into an outage.
+- `transaction_per_migration` in `env.py`, so a revision can set
+  `transactional_ddl = False` and use `CREATE INDEX CONCURRENTLY` rather than
+  taking a write-blocking lock on a hot table.
+
+**Still your judgement:** migrations touching hot tables (`connections`, `runs`,
+`results`, `checks`) deserve an off-peak window or a quiesce. `lock_timeout` turns
+a hang into a failed deploy — better, but still a failed deploy.
+
 ## Operational notes
 
 - **Restart dependent Container Apps after a shared-Postgres delete/recreate** —
