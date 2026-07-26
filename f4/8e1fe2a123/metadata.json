@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "f48e1fe2a123",
+  "strategy": "manual-commit",
+  "branch": "test/issue-898-frontend-mutation-gaps",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/f4/8e1fe2a123/0/metadata.json",
+      "transcript": "/f4/8e1fe2a123/0/full.jsonl",
+      "compact_transcript": "/f4/8e1fe2a123/0/transcript.jsonl",
+      "content_hash": "/f4/8e1fe2a123/0/content_hash.txt",
+      "prompt": "/f4/8e1fe2a123/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 22572,
+    "cache_creation_tokens": 5407442,
+    "cache_read_tokens": 394611642,
+    "output_tokens": 649097,
+    "api_call_count": 1059
+  }
+}
