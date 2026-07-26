@@ -22,7 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.alerting import dispatch as alert_dispatch
-from backend.app.alerting.base import HEALTH_FAILING, HEALTH_RECOVERED
+from backend.app.alerting.base import HEALTH_FAILING, HEALTH_RECOVERED, HealthState
 from backend.app.core.config import get_settings
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
@@ -341,37 +341,105 @@ def auto_classify_columns(suite_id: str) -> str:
 def _alert_poll_health(
     session: Session, *, connection_id: uuid.UUID, streak: int, recovered: bool
 ) -> None:
-    """Push a poll-health alert on a **transition**, and only on a transition (#837).
+    """Decide whether a poll-health edge is due, and hand the send to its own task.
 
-    The failure edge fires when the streak *equals* the threshold — not when it exceeds
-    it. That `==` is the whole design: a connection whose credential expired keeps
-    failing every 10 minutes forever, and alerting on `>=` would send 144 notifications
-    a day until someone muted the channel — which is how you end up back at #828, blind
-    to a real outage because the alert that would have told you is in a mute rule.
+    **Both edges ride DELIVERY, not the counter (#843).** The old design fired the
+    failure edge when the streak *equalled* the threshold and the recovery edge when
+    the cleared streak had reached it. But publishing is best-effort by design — a
+    channel down, a webhook unresolved, a secret missing are all quiet no-ops — so an
+    operator could be told an alarm had *ended* that they were never told had *begun*.
+    `connections.health_alerted_at` records when a failing alert actually landed;
+    NULL means none is outstanding, and that flag is what opens and closes each edge.
 
-    The recovery edge fires only when the streak we just cleared had reached the
-    threshold, i.e. only when we actually alerted on the way down — so a connection that
-    blipped once and recovered stays silent in both directions.
+    Keying on delivery also removes the `==` the old docstring had to apologise for:
+    a connection already past a newly-lowered threshold never lands on `==` again, so
+    it never alerted at all. The test is now `>=`, and the outstanding-alert flag —
+    not the equality — is what keeps it to one alert per transition. If the publish
+    keeps failing the next sweep tries again, which is a retry of something nobody
+    received, not a storm.
 
-    Threshold changes take effect on the next streak: a connection already past a
-    newly-lowered threshold won't retro-fire (it never lands on `==` again).
+    **The send is dispatched, never awaited (#842).** It used to run synchronously
+    inside the connection loop inside the beat task: Teams (10s) + Slack (10s) + SMTP
+    (15s) per crossing. The failure mode that matters is the correlated one — when the
+    outage is DataQ-side, *every* orchestration connection crosses on the same sweep,
+    so ten connections bolted ~6 minutes of blocking sends onto a task that beats every
+    10 minutes, delaying the ingest it exists to perform and risking overlapping beats.
 
-    Never raises — `publish_connection_health` swallows its own failures, and a
-    notification problem must not break the polling sweep.
+    Never raises: a notification problem must not break the sweep reporting on it.
     """
     threshold = get_settings().orchestration_poll_failure_alert_threshold
     if threshold <= 0:  # push disabled; #828's in-app health signals still stand
         return
-    if recovered:
-        if streak >= threshold:
-            alert_dispatch.publish_connection_health(
-                session, connection_id=connection_id, state=HEALTH_RECOVERED
-            )
+    connection = session.get(Connection, connection_id)
+    if connection is None:  # deleted between the poll and the alert
         return
-    if streak == threshold:
-        alert_dispatch.publish_connection_health(
-            session, connection_id=connection_id, state=HEALTH_FAILING
+    outstanding = connection.health_alerted_at is not None
+
+    if recovered:
+        # Only if a failing alert was actually delivered — otherwise there is
+        # nothing for the operator to recover FROM.
+        if outstanding:
+            _dispatch_health_alert(connection_id, HEALTH_RECOVERED)
+        return
+    if streak >= threshold and not outstanding:
+        _dispatch_health_alert(connection_id, HEALTH_FAILING)
+
+
+def _dispatch_health_alert(connection_id: uuid.UUID, state: str) -> None:
+    """Queue the health publish, swallowing a broker failure.
+
+    `send_task` can raise if Redis is unreachable — and Redis being unreachable is
+    exactly the kind of incident that makes every connection cross at once, so this
+    must not be the thing that breaks the sweep.
+    """
+    try:
+        celery_app.send_task("publish_connection_health", args=[str(connection_id), state])
+    except Exception:
+        log.exception(
+            "connection_health_alert_dispatch_failed",
+            connection_id=str(connection_id),
+            state=state,
         )
+
+
+@celery_app.task(name="publish_connection_health")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
+def publish_connection_health(connection_id: str, state: str) -> bool:
+    """Publish one poll-health edge, and record the delivery (#842/#843).
+
+    Runs off the beat so a slow channel delays nothing shared. The
+    `health_alerted_at` write happens **here, after a successful publish** — that is
+    the whole point of #843: the flag must mean "an operator was actually told",
+    which only this side of the dispatch knows.
+
+    A failed publish writes nothing, so the next sweep re-evaluates the same edge
+    and tries again. Returns whether it published, for the test surface.
+    """
+    if state not in (HEALTH_FAILING, HEALTH_RECOVERED):
+        # Args cross the broker as plain JSON, so this is the boundary where the
+        # literal is actually established rather than assumed. A malformed message
+        # is dropped loudly instead of publishing an alert of unknown meaning.
+        log.error("connection_health_alert_bad_state", connection_id=connection_id, state=state)
+        return False
+    edge: HealthState = HEALTH_FAILING if state == HEALTH_FAILING else HEALTH_RECOVERED
+    session = get_session()
+    try:
+        cid = uuid.UUID(connection_id)
+        published = alert_dispatch.publish_connection_health(session, connection_id=cid, state=edge)
+        if not published:
+            return False
+        connection = session.get(Connection, cid)
+        if connection is None:  # deleted while the send was in flight
+            return True
+        # FAILING opens the outstanding-alert window; RECOVERED closes it.
+        connection.health_alerted_at = datetime.now(UTC) if edge == HEALTH_FAILING else None
+        session.commit()
+        return True
+    except Exception:
+        session.rollback()
+        log.exception("connection_health_alert_failed", connection_id=connection_id, state=state)
+        return False
+    finally:
+        session.close()
 
 
 def _poll_orchestration_runs(
