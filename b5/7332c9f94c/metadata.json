@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "b57332c9f94c",
+  "strategy": "manual-commit",
+  "branch": "perf/issue-999-bounded-health-query",
+  "checkpoints_count": 2,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/b5/7332c9f94c/0/metadata.json",
+      "transcript": "/b5/7332c9f94c/0/full.jsonl",
+      "compact_transcript": "/b5/7332c9f94c/0/transcript.jsonl",
+      "content_hash": "/b5/7332c9f94c/0/content_hash.txt",
+      "prompt": "/b5/7332c9f94c/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 23484,
+    "cache_creation_tokens": 8948892,
+    "cache_read_tokens": 629076682,
+    "output_tokens": 970440,
+    "api_call_count": 1516
+  }
+}
