@@ -19,9 +19,9 @@ from sqlalchemy.orm import Session
 from backend.app.api.v1._base import ApiModel
 from backend.app.core.auth import get_current_user
 from backend.app.core.config import get_settings
-from backend.app.db.models import Result, Run, User
+from backend.app.db.models import Result, Run, Suite, User
 from backend.app.db.session import get_db
-from backend.app.services import run_dispatch
+from backend.app.services import run_dispatch, run_service
 from backend.app.services.probe import ensure_probe_fixtures
 
 router = APIRouter(tags=["probe"])
@@ -94,8 +94,15 @@ def get_probe_run(
     if run is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="run not found")
     results = list(db.scalars(select(Result).where(Result.run_id == run_id)))
-    return RunStatusResponse(
-        run_id=run.id,
-        status=run.status,
-        results=[CheckResultResponse.model_validate(r) for r in results],
-    )
+    # Redact like every other Result sink (#989). This route reads the SAME rows
+    # as `/runs/{id}/results`, so a monitor that choked on a PII column would
+    # surface its cell here while being masked there — a bypass by omission, and
+    # the reason redaction belongs at each sink rather than each producer.
+    suite = db.get(Suite, run.suite_id) if run.suite_id is not None else None
+    policy = suite.column_policy if suite is not None else None
+    reads = []
+    for r in results:
+        read = CheckResultResponse.model_validate(r)
+        read.observed_value = run_service.redact_observed_value(read.observed_value, policy=policy)
+        reads.append(read)
+    return RunStatusResponse(run_id=run.id, status=run.status, results=reads)

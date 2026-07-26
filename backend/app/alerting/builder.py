@@ -127,7 +127,10 @@ def build_run_report(session: Session, run: Run) -> RunReport:
                 metric_value=(
                     float(result.metric_value) if result.metric_value is not None else None
                 ),
-                observed_value=result.observed_value,
+                observed_value=run_service.redact_observed_value(
+                    result.observed_value,
+                    policy=suite.column_policy if suite is not None else None,
+                ),
                 expected_value=result.expected_value,
                 # Column-aware redaction (#415): the tested column's failing values
                 # surface when non-PII; the suite policy + heuristics mask PII.

@@ -474,3 +474,56 @@ def test_the_error_names_the_source_not_a_fake_column() -> None:
     descriptor rendered where a column name belongs. Live output, so worth fixing."""
     with pytest.raises(MonitorConfigError, match=r"freshness value from MAX\(ts\)"):
         monitor_outcome("freshness", scalar=12345, config={"column": "ts"}, now=_NOW)
+
+
+# ── #989: a target cell must not ride out inside an error message ────────────
+
+
+def test_an_unparseable_freshness_cell_is_not_echoed_in_the_message() -> None:
+    """The message is safe-marked, so it persists VERBATIM into `results` and is
+    rendered in the UI, alerts and MCP output — none of which consult the suite's
+    column policy. The offending cell therefore must not be in it.
+
+    Asserted on the persisted text, not on the exception object: the failure mode
+    is a value reaching a sink, so the assertion has to be about the sink.
+    """
+    outcomes = monitors.run_monitor_specs(
+        lambda _spec: "not-a-timestamp-at-all",
+        monitors=[MonitorSpec(kind=monitors.FRESHNESS, config={"column": "signup_ts"})],
+        now=datetime(2026, 7, 26, tzinfo=UTC),
+    )
+
+    (outcome,) = outcomes
+    assert outcome.errored
+    assert "not-a-timestamp-at-all" not in (outcome.error_message or "")
+    # …but it is still reported, structurally, so the diagnostic isn't lost.
+    assert outcome.observed_value == {
+        "unparsed_value": "not-a-timestamp-at-all",
+        "column": "signup_ts",
+    }
+
+
+def test_the_message_still_names_the_source_so_the_error_stays_actionable() -> None:
+    """Removing the value must not turn this into "something went wrong". The user
+    needs to know WHICH column, which is config and safe to state."""
+    (outcome,) = monitors.run_monitor_specs(
+        lambda _spec: "13/07/2026",
+        monitors=[MonitorSpec(kind=monitors.FRESHNESS, config={"column": "order_ts"})],
+        now=datetime(2026, 7, 26, tzinfo=UTC),
+    )
+    assert "order_ts" in (outcome.error_message or "")
+    assert "not a parseable timestamp" in (outcome.error_message or "")
+
+
+def test_a_non_string_scalar_carries_no_cell_at_all() -> None:
+    """The type-mismatch branch names only the TYPE, never the value, so there is
+    nothing to redact and `observed_value` stays empty. Pinned so a later edit
+    doesn't quietly start echoing there instead."""
+    (outcome,) = monitors.run_monitor_specs(
+        lambda _spec: 12345,
+        monitors=[MonitorSpec(kind=monitors.FRESHNESS, config={"column": "order_ts"})],
+        now=datetime(2026, 7, 26, tzinfo=UTC),
+    )
+    assert outcome.errored
+    assert "12345" not in (outcome.error_message or "")
+    assert outcome.observed_value is None
