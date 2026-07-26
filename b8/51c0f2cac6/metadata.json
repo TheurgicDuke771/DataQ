@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "b851c0f2cac6",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1039-remove-probe-run-reader",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "CLAUDE.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/b8/51c0f2cac6/0/metadata.json",
+      "transcript": "/b8/51c0f2cac6/0/full.jsonl",
+      "compact_transcript": "/b8/51c0f2cac6/0/transcript.jsonl",
+      "content_hash": "/b8/51c0f2cac6/0/content_hash.txt",
+      "prompt": "/b8/51c0f2cac6/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 23618,
+    "cache_creation_tokens": 8999886,
+    "cache_read_tokens": 676123467,
+    "output_tokens": 1004705,
+    "api_call_count": 1583
+  }
+}
