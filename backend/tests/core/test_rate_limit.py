@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-from collections.abc import Callable
+import time
+from collections.abc import Callable, Iterator
 
 import pytest
 from starlette.requests import Request
@@ -353,3 +354,210 @@ def test_warn_store_unavailable_once_per_window(monkeypatch: pytest.MonkeyPatch)
     assert rec.events[2][1]["key_kind"] == "ip"
     _warn_store_unavailable_once(103, path="/api/v1/x", cls="default", key="tok:abcd")
     assert rec.events[3][1]["key_kind"] == "tok"
+
+
+# ── store breaker: don't pay the timeout on every request during a brownout (#784) ──
+
+
+class _SickRedis:
+    """A Redis client that is UP but slow — the case socket timeouts don't help with.
+
+    Each pipeline execute sleeps, then raises, exactly as a socket timeout does.
+    Counts its calls so a test can assert the breaker stopped making them, which is
+    the actual fix; asserting only "returns None" would pass without a breaker at
+    all, since fail-open already returns None.
+    """
+
+    def __init__(self, *, delay: float = 0.02) -> None:
+        self.delay = delay
+        self.calls = 0
+
+    def pipeline(self, transaction: bool = True) -> _SickRedis:
+        return self
+
+    def incr(self, key: str) -> None:
+        return None
+
+    def expire(self, key: str, seconds: int) -> None:
+        return None
+
+    async def execute(self) -> list[int]:
+        self.calls += 1
+        await asyncio.sleep(self.delay)
+        raise TimeoutError("redis is alive but not answering in time")
+
+
+class _HealthyRedis(_SickRedis):
+    async def execute(self) -> list[int]:
+        self.calls += 1
+        return [1, 1] * 4
+
+
+@pytest.fixture
+def _clean_breaker() -> Iterator[None]:
+    """The breaker is module-level state, so it must not leak between tests."""
+    rate_limit.reset_rate_limit_state()
+    yield
+    rate_limit.reset_rate_limit_state()
+
+
+async def _hit(store: rate_limit.RedisStore, n: int) -> None:
+    for _ in range(n):
+        await store.incr_windows(["rl:test:k:1"])
+
+
+@pytest.mark.asyncio
+async def test_the_breaker_stops_calling_a_sick_redis(
+    monkeypatch: pytest.MonkeyPatch, _clean_breaker: object
+) -> None:
+    """The fix, stated as the thing that actually changes: CALLS STOP.
+
+    Fail-open already returned None on every failure, so a test asserting None
+    would pass with no breaker at all. What #784 changes is that we stop dialling a
+    struggling Redis — and therefore stop paying its timeout on the hot path.
+    """
+    sick = _SickRedis()
+    monkeypatch.setattr(rate_limit, "_get_redis_client", lambda: sick)
+    store = rate_limit.RedisStore()
+
+    await _hit(store, rate_limit._BREAKER_TRIP_AFTER)
+    assert sick.calls == rate_limit._BREAKER_TRIP_AFTER  # every one of them tried
+
+    await _hit(store, 20)
+    assert sick.calls == rate_limit._BREAKER_TRIP_AFTER  # …and none of these did
+
+
+@pytest.mark.asyncio
+async def test_a_tripped_breaker_returns_without_awaiting_the_timeout(
+    monkeypatch: pytest.MonkeyPatch, _clean_breaker: object
+) -> None:
+    """The user-visible symptom: app p99 becomes Redis p99. Timed, because "we
+    skipped the call" and "the request got fast again" are different claims and only
+    the second one is what the incident is about."""
+    sick = _SickRedis(delay=0.05)
+    monkeypatch.setattr(rate_limit, "_get_redis_client", lambda: sick)
+    store = rate_limit.RedisStore()
+
+    await _hit(store, rate_limit._BREAKER_TRIP_AFTER)
+
+    started = asyncio.get_running_loop().time()
+    await _hit(store, 10)
+    elapsed = asyncio.get_running_loop().time() - started
+
+    # Ten requests that would each have waited 50ms: half a second, versus ~nothing.
+    assert elapsed < sick.delay, f"still paying the timeout: {elapsed:.3f}s"
+
+
+@pytest.mark.asyncio
+async def test_a_single_failure_does_not_trip_it(
+    monkeypatch: pytest.MonkeyPatch, _clean_breaker: object
+) -> None:
+    """One unlucky request is not a brownout. Tripping on the first blip would hand
+    the whole API's enforcement to a single dropped packet."""
+    sick = _SickRedis()
+    monkeypatch.setattr(rate_limit, "_get_redis_client", lambda: sick)
+    store = rate_limit.RedisStore()
+
+    await _hit(store, 1)
+    await _hit(store, 1)
+    assert sick.calls == 2  # still dialling
+
+
+@pytest.mark.asyncio
+async def test_a_success_resets_the_count_so_scattered_blips_never_trip_it(
+    monkeypatch: pytest.MonkeyPatch, _clean_breaker: object
+) -> None:
+    """The counter is CONSECUTIVE failures. A Redis that fails one request in five
+    is annoying, not degraded, and must not open the breaker — otherwise enforcement
+    lapses across the whole API for a fault nobody would call an outage."""
+    healthy, sick = _HealthyRedis(), _SickRedis()
+    current: list[object] = [sick]
+    monkeypatch.setattr(rate_limit, "_get_redis_client", lambda: current[0])
+    store = rate_limit.RedisStore()
+
+    for _ in range(4):
+        current[0] = sick
+        await store.incr_windows(["k"])
+        current[0] = healthy
+        await store.incr_windows(["k"])
+
+    current[0] = sick
+    await store.incr_windows(["k"])
+    assert sick.calls == 5  # every failure was still attempted → never tripped
+
+
+@pytest.mark.asyncio
+async def test_it_probes_once_the_window_passes_and_closes_on_success(
+    monkeypatch: pytest.MonkeyPatch, _clean_breaker: object
+) -> None:
+    """Open must be a short, self-clearing state — ADR 0035 biases to availability
+    over enforcement, and a breaker that stays open is enforcement silently off."""
+    sick = _SickRedis()
+    monkeypatch.setattr(rate_limit, "_get_redis_client", lambda: sick)
+    store = rate_limit.RedisStore()
+    await _hit(store, rate_limit._BREAKER_TRIP_AFTER)
+    assert await store.incr_windows(["k"]) is None  # open
+    # …and asserted as GATED, not merely as another failure: without this the test
+    # passes with the breaker removed entirely, since fail-open returns None either
+    # way (review finding — the same trap the timed test above exists to avoid).
+    assert sick.calls == rate_limit._BREAKER_TRIP_AFTER
+
+    # Redis recovers, and the window passes.
+    healthy = _HealthyRedis()
+    monkeypatch.setattr(rate_limit, "_get_redis_client", lambda: healthy)
+    monkeypatch.setattr(
+        rate_limit, "_now", lambda: time.time() + rate_limit._BREAKER_OPEN_SECONDS + 1
+    )
+
+    assert await store.incr_windows(["k"]) is not None  # the probe went through
+    assert healthy.calls == 1
+    # …and enforcement is back on without waiting for another window.
+    assert await store.incr_windows(["k"]) is not None
+    assert healthy.calls == 2
+
+
+@pytest.mark.asyncio
+async def test_a_failed_probe_re_opens_it_rather_than_hammering(
+    monkeypatch: pytest.MonkeyPatch, _clean_breaker: object
+) -> None:
+    sick = _SickRedis()
+    monkeypatch.setattr(rate_limit, "_get_redis_client", lambda: sick)
+    store = rate_limit.RedisStore()
+    await _hit(store, rate_limit._BREAKER_TRIP_AFTER)
+
+    monkeypatch.setattr(
+        rate_limit, "_now", lambda: time.time() + rate_limit._BREAKER_OPEN_SECONDS + 1
+    )
+    await store.incr_windows(["k"])  # the probe, which fails
+    probed = sick.calls
+
+    # Still using the shifted clock: without a re-open, every one of these would dial.
+    await _hit(store, 10)
+    assert sick.calls == probed
+
+
+@pytest.mark.asyncio
+async def test_a_straggling_success_cannot_close_an_open_breaker(
+    monkeypatch: pytest.MonkeyPatch, _clean_breaker: object
+) -> None:
+    """A degraded Redis serves a MIX of slow successes and timeouts, and every
+    request is an independent asyncio task over shared module state.
+
+    So a request that passed the gate just before the trip can resolve just after
+    it — and if that straggler reset the state, it would retroactively close a
+    breaker other requests had legitimately opened, ~5s early. The breaker would
+    flap under exactly the traffic it exists to handle (review finding).
+    """
+    sick = _SickRedis()
+    monkeypatch.setattr(rate_limit, "_get_redis_client", lambda: sick)
+    store = rate_limit.RedisStore()
+    await _hit(store, rate_limit._BREAKER_TRIP_AFTER)
+    assert rate_limit._breaker_is_open()
+
+    # The straggler lands: a success recorded while the breaker is open.
+    rate_limit._breaker_record_success()
+
+    assert rate_limit._breaker_is_open(), "a late success reopened the hot path"
+    before = sick.calls
+    await _hit(store, 5)
+    assert sick.calls == before  # still gated
