@@ -380,24 +380,44 @@ def datasource_health(
 ) -> dict[uuid.UUID, DatasourceHealth]:
     """Run-derived health per connection, in ONE query for the whole set.
 
-    The streak counts *leading* failures in newest-first order, so a single failure
-    after a healthy run reads as 1 — and one success clears it, exactly like
-    `consecutive_poll_failures` resets on a good poll.
+    **Streaks are per SUITE, rolled up (#998).** The badge claims "this connection
+    is unusable" — i.e. the credential is dead — and merging every suite's runs
+    before counting does not answer that. On a connection carrying several suites,
+    one genuinely-broken suite running hourly fills the head of the window and
+    badges a connection whose credential is fine, sending the operator to re-auth
+    something that works. Per-suite windows also remove the run-frequency skew:
+    a daily suite is no longer crowded out of a shared 20-run window by an hourly
+    one.
+
+    So each suite gets its own window and its own leading-failure streak, and the
+    connection is reported degraded **only when every suite that has run is
+    failing** — which is what "the credential is dead" actually looks like. One
+    suite still succeeding proves the connection is reachable, so it clears the
+    connection-level signal even while that other suite stays broken (a per-suite
+    problem belongs on the suite, not here).
+
+    ``consecutive_failures`` is then the **minimum** streak across those suites —
+    the strongest claim true of all of them ("every suite has failed at least N
+    times running"), rather than a maximum that would overstate the newest
+    failure's reach.
 
     Connections with no runs are absent from the mapping. That is "unknown", which
     the UI must not render as healthy — the same rule the poll-health columns carry.
     """
     if not connection_ids:
         return {}
+    # Partitioned by SUITE (#998), so each suite gets its own window rather than
+    # competing for a shared one with whatever runs most often.
     ranked = (
         select(
             Suite.connection_id.label("connection_id"),
+            Run.suite_id.label("suite_id"),
             Run.status.label("status"),
             Run.failure_reason.label("failure_reason"),
             Run.created_at.label("created_at"),
             func.row_number()
             .over(
-                partition_by=Suite.connection_id,
+                partition_by=Run.suite_id,
                 order_by=(Run.created_at.desc(), Run.id.desc()),
             )
             .label("rn"),
@@ -408,40 +428,66 @@ def datasource_health(
     )
     rows = session.execute(
         select(
-            ranked.c.connection_id, ranked.c.status, ranked.c.failure_reason, ranked.c.created_at
+            ranked.c.connection_id,
+            ranked.c.suite_id,
+            ranked.c.status,
+            ranked.c.failure_reason,
+            ranked.c.created_at,
         )
         .where(ranked.c.rn <= _HEALTH_RUN_WINDOW)
-        .order_by(ranked.c.connection_id, ranked.c.rn)
+        .order_by(ranked.c.connection_id, ranked.c.suite_id, ranked.c.rn)
     ).all()
 
-    by_connection: dict[uuid.UUID, list[Any]] = defaultdict(list)
+    by_suite: dict[tuple[uuid.UUID, uuid.UUID], list[Any]] = defaultdict(list)
     for row in rows:
-        by_connection[row.connection_id].append(row)
+        by_suite[(row.connection_id, row.suite_id)].append(row)
+
+    per_connection: dict[uuid.UUID, list[tuple[int, str | None, Any]]] = defaultdict(list)
+    for (conn_id, _suite_id), runs in by_suite.items():
+        streak, reason = _leading_failure_streak(runs)
+        per_connection[conn_id].append((streak, reason, runs[0].created_at))
 
     health: dict[uuid.UUID, DatasourceHealth] = {}
-    for conn_id, runs in by_connection.items():
-        newest = runs[0]
-        streak = 0
-        reason: str | None = None
-        # Newest-first. Only a SUCCEEDED run clears the streak — it is the one
-        # status that proves the connection is usable. `queued`/`running` have not
-        # answered yet and `cancelled` was stopped by a human, so none of them is
-        # evidence of anything; they are skipped rather than treated as recovery.
-        # Breaking on any non-failure (the first version of this) let a single
-        # cancelled or in-flight run at the head hide a real failure streak
-        # directly beneath it — and `consecutive_poll_failures`, which this
-        # mirrors, likewise resets only on a genuine successful poll.
-        for run in runs:
-            if run.status == "succeeded":
-                break
-            if run.status != "failed":
-                continue
-            streak += 1
-            reason = reason or run.failure_reason
+    for conn_id, suites in per_connection.items():
+        last_run_at = max(created for _s, _r, created in suites)
+        # Degraded only when EVERY suite that has run is failing — a single
+        # succeeding suite proves the connection itself is reachable, so the
+        # connection-level signal clears even while another suite stays broken.
+        if any(streak == 0 for streak, _r, _c in suites):
+            health[conn_id] = DatasourceHealth(last_run_at=last_run_at)
+            continue
+        # The strongest claim true of all of them, not the loudest one.
+        streak = min(streak for streak, _r, _c in suites)
+        reason = next(
+            (r for _s, r, _c in sorted(suites, key=lambda t: t[2], reverse=True) if r), None
+        )
         health[conn_id] = DatasourceHealth(
-            last_run_at=newest.created_at, consecutive_failures=streak, reason=reason
+            last_run_at=last_run_at, consecutive_failures=streak, reason=reason
         )
     return health
+
+
+def _leading_failure_streak(runs: Sequence[Any]) -> tuple[int, str | None]:
+    """Leading failures in newest-first order, plus the newest failure's reason.
+
+    Only a SUCCEEDED run clears the streak — it is the one status that proves the
+    datasource is usable. `queued`/`running` have not answered yet and `cancelled`
+    was stopped by a human, so none is evidence of anything and they are skipped
+    rather than treated as recovery. Breaking on any non-failure (the first
+    version of this) let a single cancelled or in-flight run at the head hide a
+    real failure streak directly beneath it — and `consecutive_poll_failures`,
+    which this mirrors, likewise resets only on a genuine successful poll.
+    """
+    streak = 0
+    reason: str | None = None
+    for run in runs:
+        if run.status == "succeeded":
+            break
+        if run.status != "failed":
+            continue
+        streak += 1
+        reason = reason or run.failure_reason
+    return streak, reason
 
 
 def list_connections(
