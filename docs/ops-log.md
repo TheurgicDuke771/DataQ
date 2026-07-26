@@ -112,6 +112,8 @@ next reader cannot tell a complete rotation from a partial one.
 |---|---|---|---|---|
 | 2026-07-05 | Snowflake `DATAQ_READER` / `DATAQ_LOADER` PATs | `conn-snowflake-retail` only | — | **Partial — this is the incident.** `conn-snowflake-orders` and `conn-snowflake-payments` were left on the 2026-06-28 value and stayed dead until 2026-07-25. Logged retrospectively as the worked example of why this table has a "Secrets written" column. |
 | 2026-07-25 | Snowflake `DATAQ_READER` / `DATAQ_LOADER` PATs | `conn-snowflake-retail`, `conn-snowflake-orders`, `conn-snowflake-payments` | **2026-07-29** | All three verified with a connection test after writing. `SecretStore` reads Key Vault at runtime, so **no container restart is needed** — the opposite of env-injected secrets. |
+| 2026-07-26 19:43 | Snowflake **`DATAQ_READER_PAT`** (re-minted) | `conn-snowflake-retail`, `conn-snowflake-orders`, `conn-snowflake-payments` | **2026-08-20** | All three connection-tested after writing: 200/200/200. No restart needed (runtime Key Vault read). |
+| 2026-07-26 19:43 | Snowflake **`DATAQ_LOADER_PAT`** (re-minted) | `snowflake-loader-pat` | **2026-08-06** | Harness-side loader credential. `snowflake-password-harness` deliberately NOT rotated — it is the password the MFA enforcement killed, and retiring it is #1032, not a rotation. |
 
 ### Expiring soon
 
@@ -124,5 +126,11 @@ only warning.
 
 | Expires | Credential | Action needed |
 |---|---|---|
-| **2026-07-29** | Snowflake `DATAQ_READER` / `DATAQ_LOADER` PATs | Re-mint and write **all three** `conn-snowflake-*` secrets, then test each connection. |
+| **2026-08-06** | Snowflake `DATAQ_LOADER_PAT` | Re-mint; write `snowflake-loader-pat`. Earlier than the reader — check this one first. |
+| **2026-08-20** | Snowflake `DATAQ_READER_PAT` | Re-mint; write **all three** `conn-snowflake-*` secrets, then test each connection. |
 | unknown | ADLS SAS (`conn-adls-*`), Databricks PAT (`conn-unity-catalog-*`) | Expiry not recorded — capture it at the next rotation. A SAS carries `se=` in the token, so #838 can read it once the sweep runs. |
+
+> The two PATs now expire **two weeks apart**, which is worth noticing: rotating
+> one is no longer an occasion to rotate the other, so the "rotate everything at
+> once" habit that used to cover the gap no longer applies. Check this table, not
+> memory.
