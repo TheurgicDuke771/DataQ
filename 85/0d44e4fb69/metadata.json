@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "850d44e4fb69",
+  "strategy": "manual-commit",
+  "branch": "refactor/issue-727-target-resolution-registry",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/app/datasources/base.py",
+    "backend/app/datasources/registry.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/85/0d44e4fb69/0/metadata.json",
+      "transcript": "/85/0d44e4fb69/0/full.jsonl",
+      "compact_transcript": "/85/0d44e4fb69/0/transcript.jsonl",
+      "content_hash": "/85/0d44e4fb69/0/content_hash.txt",
+      "prompt": "/85/0d44e4fb69/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 23672,
+    "cache_creation_tokens": 9028594,
+    "cache_read_tokens": 696162261,
+    "output_tokens": 1018864,
+    "api_call_count": 1610
+  }
+}
