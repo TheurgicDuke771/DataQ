@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "401ca5b8f7f9",
+  "strategy": "manual-commit",
+  "branch": "feat/issue-788-retry-after",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/40/1ca5b8f7f9/0/metadata.json",
+      "transcript": "/40/1ca5b8f7f9/0/full.jsonl",
+      "compact_transcript": "/40/1ca5b8f7f9/0/transcript.jsonl",
+      "content_hash": "/40/1ca5b8f7f9/0/content_hash.txt",
+      "prompt": "/40/1ca5b8f7f9/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 22938,
+    "cache_creation_tokens": 6941002,
+    "cache_read_tokens": 481447915,
+    "output_tokens": 761998,
+    "api_call_count": 1242
+  }
+}
