@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "ffb16e99d53a",
+  "strategy": "manual-commit",
+  "branch": "test/issue-898-warehouse-lineage-mutation-gaps",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/ff/b16e99d53a/0/metadata.json",
+      "transcript": "/ff/b16e99d53a/0/full.jsonl",
+      "compact_transcript": "/ff/b16e99d53a/0/transcript.jsonl",
+      "content_hash": "/ff/b16e99d53a/0/content_hash.txt",
+      "prompt": "/ff/b16e99d53a/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 22496,
+    "cache_creation_tokens": 5372145,
+    "cache_read_tokens": 380166490,
+    "output_tokens": 629488,
+    "api_call_count": 1021
+  }
+}
