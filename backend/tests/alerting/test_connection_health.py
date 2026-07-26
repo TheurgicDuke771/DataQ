@@ -38,6 +38,7 @@ from backend.app.alerting.slack import render_slack_health_message
 from backend.app.core.config import get_settings
 from backend.app.db.models import Connection, User
 from backend.app.worker import tasks
+from backend.app.worker.celery_app import celery_app
 
 # The exact shape of the credential that leaked in #828: an ADLS SAS whose query string
 # rides in the exception message. If any renderer ever interpolates a raw exception, this
@@ -115,7 +116,7 @@ def dispatched(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
         assert name == "publish_connection_health"
         calls.append((args[0], args[1]))
 
-    monkeypatch.setattr(tasks.celery_app, "send_task", _send_task)
+    monkeypatch.setattr(celery_app, "send_task", _send_task)
     return calls
 
 
@@ -374,7 +375,7 @@ def test_five_failing_sweeps_produce_exactly_one_alert(
     monkeypatch.setattr(tasks, "get_session", lambda: db_session)
     monkeypatch.setattr(db_session, "close", lambda: None)
     monkeypatch.setattr(
-        tasks.celery_app,
+        celery_app,
         "send_task",
         lambda _name, args, **_kw: tasks.publish_connection_health(*args),
     )
