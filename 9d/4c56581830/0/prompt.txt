@@ -1,0 +1,19 @@
+What are those `2 change`?
+
+---
+
+Do we need to update the original terraform first to reflect the current state of prod?
+
+---
+
+yeah, lets go with the suggested plan, [adopt WAREHOUSE_LINEAGE_ENABLED, remove the two Marquez vars]
+
+---
+
+<task-notification>
+<task-id>bbw5p0f3b</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/fcf147da-f22f-41ab-ae99-a0fbd9e19a4c/tasks/bbw5p0f3b.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for CI then report" completed (exit code 0)</summary>
+</task-notification>
