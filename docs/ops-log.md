@@ -354,10 +354,24 @@ profile, not by reasoning about it.
 OpenTofu (ADR 0024 amendment) and verified **plan-only**; no `apply` was run on
 either, per the standing rule that a blanket harness apply arms ADF triggers.
 
-| Stack | Verification | Result |
-|---|---|---|
-| App (`deploy/terraform/azure/`, git-tracked) | both CLIs planned against live Azure; plans exported `-out`, rendered `show -json`, `resource_changes` normalized + diffed | **byte-for-byte identical** — 40 changes, `no-op=38 update=2` |
-| Harness (`~/Coding/Python/DataQ-harness/terraform`, untracked) | `tofu init` + `validate` + `plan -refresh=false` with `secrets.sh` sourced | `validate` OK; **"No changes. Your infrastructure matches the configuration."** |
+| Stack | Verification | Result | Strength |
+|---|---|---|---|
+| App (`deploy/terraform/azure/`, git-tracked) | both CLIs planned **against live Azure** (refreshed); plans exported `-out`, rendered `show -json`, `resource_changes` normalized + diffed | **byte-for-byte identical** — 40 changes, `no-op=38 update=2` | config **vs live** — full |
+| Harness (`~/Coding/Python/DataQ-harness/terraform`, untracked) | `tofu init` + `validate` + `plan **-refresh=false**` with `secrets.sh` sourced | `validate` OK; "No changes." | config **vs stored state** — **partial, see caveat** |
+
+> **Caveat on the harness row — the two rows are NOT equally strong, and the
+> difference matters.** `-refresh=false` compares the config to the last-persisted
+> state, **not to live Azure**. It was chosen to keep the check read-only and fast,
+> but it is structurally blind to exactly the live drift the 2026-07-26 entry above
+> left open: the two ADF triggers reading `activated = false -> true` and the
+> `snowflake_warehouse.dataq` cluster-count/query-acceleration drift, which that
+> entry flagged with "Re-check these on any future apply."
+>
+> So "No changes" here means **"OpenTofu evaluates this config and state exactly as
+> Terraform did"** — which is the CLI-equivalence question this migration actually
+> needed answered. It does **not** mean the harness is free of drift, and it does not
+> discharge the 2026-07-26 re-check. **That re-check is still open**, and the ADF
+> trigger-arming hazard is unchanged.
 
 **The trap, and it is the reusable part: `tofu init` reports "The version
 selections were preserved" — but that message covers only the `hashicorp/*`

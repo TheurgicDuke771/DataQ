@@ -106,7 +106,7 @@ jobs:
           set -euo pipefail
           # Roll the job's image on the template FIRST, then start it with no
           # --image override. Passing --image to `job start` replaces the
-          # container template without the Terraform-configured command
+          # container template without the IaC-configured command
           # (`sh -c "cd backend && alembic upgrade head"`), so the execution
           # falls back to the image's default CMD (uvicorn) and never migrates.
           # Updating the template preserves that command (mirrors the api/worker
