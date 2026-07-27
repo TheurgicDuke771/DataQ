@@ -145,6 +145,13 @@ class SecretInfo:
     created_at: datetime | None
 
 
+def _ensure_aware(value: datetime | None) -> datetime | None:
+    """Treat a naive datetime as UTC. None passes through."""
+    if value is None or value.tzinfo is not None:
+        return value
+    return value.replace(tzinfo=UTC)
+
+
 def _parse_vault_timestamp(raw: object) -> datetime | None:
     """Parse a KV v2 `created_time` into an aware UTC datetime, or None.
 
@@ -300,7 +307,14 @@ class AzureKeyVaultStore:
         """
         try:
             return [
-                SecretInfo(name=prop.name, created_at=prop.created_on)
+                # `created_on` comes straight off the SDK; whether it is tz-aware is
+                # the DRIVER's choice, not ours, and a naive value would raise
+                # TypeError when the sweep subtracts it from an aware `now` — swallowed
+                # by the task's blanket except into a silent "0 orphans". Normalised
+                # here at the boundary; the sweep normalises again where it subtracts,
+                # because a fixture that hand-builds an aware datetime asserts our
+                # model rather than the driver's (#953/#823).
+                SecretInfo(name=prop.name, created_at=_ensure_aware(prop.created_on))
                 for prop in self._client_lazy().list_properties_of_secrets()
                 if prop.name
             ]
@@ -347,6 +361,13 @@ class OpenBaoSecretStore:
         GET    /v1/{mount}/data/{name}      → value at .data.data.{_KV_FIELD}
         POST   /v1/{mount}/data/{name}      → body {"data": {_KV_FIELD: value}}
         DELETE /v1/{mount}/metadata/{name}  → purges every version
+        GET    /v1/{mount}/metadata?list=true → names, for the orphan sweep (#1059)
+        GET    /v1/{mount}/metadata/{name}  → created_time, for the orphan sweep
+
+    The last two need `list` on ``<mount>/metadata/`` and `read` on
+    ``<mount>/metadata/*``. A least-privilege policy written against the first three
+    alone leaves the sweep unable to date anything, which it reports as `unknown_age`
+    rather than as a clean vault.
 
     **Failure modes stay distinguishable** (ADR 0039 decision 6). A missing secret
     is 404; a dead/expired token is 403; a sealed or unreachable vault is 503 or a

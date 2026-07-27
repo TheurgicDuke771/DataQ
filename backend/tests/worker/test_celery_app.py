@@ -71,6 +71,23 @@ def test_beat_schedule_registers_orphan_asset_sweep() -> None:
     assert schedule["sweep-orphan-assets"]["schedule"] == 86400.0
 
 
+def test_beat_schedule_registers_orphan_secret_sweep() -> None:
+    """The orphan-SECRET sweep (#1059), daily like its asset sibling.
+
+    Also asserts the task NAME resolves to a registered task: a beat entry naming a
+    task that does not exist fails silently at runtime — beat logs and moves on —
+    which is the #405/#904 shape where periodic work quietly stopped while
+    everything reported healthy.
+    """
+    app = create_celery_app()
+    schedule = app.conf.beat_schedule
+    assert schedule["sweep-orphan-secrets"]["task"] == "sweep_orphan_secrets"
+    assert schedule["sweep-orphan-secrets"]["schedule"] == 86400.0
+    import backend.app.worker.tasks  # noqa: F401  — registers the tasks
+
+    assert "sweep_orphan_secrets" in app.tasks
+
+
 # ───────────────────────── inject (publisher side) ─────────────────
 
 
