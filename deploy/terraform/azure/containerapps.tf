@@ -81,6 +81,20 @@ locals {
     { name = "EMAIL_FROM", value = var.email_from },
     { name = "EMAIL_TO", value = var.email_to },
   ]
+
+  # Worker-only env, on top of app_env.
+  #
+  # WAREHOUSE_LINEAGE_ENABLED gates the daily `refresh_warehouse_lineage` beat task
+  # (#858, ADR 0034). The backend default is `warehouse_lineage_enabled: bool = False`
+  # ("dark by default" — the ACCOUNT_USAGE / system.access views it reads need a grant
+  # the connection principal may not hold), so the sweep runs ONLY while this is set.
+  #
+  # Adopted into IaC by #1086: it was live on prod but absent from this stack, so any
+  # apply — for any unrelated reason — would have deleted it and silently stopped
+  # warehouse lineage. Worker-only because only the worker runs beat.
+  worker_env = concat(local.app_env, [
+    { name = "WAREHOUSE_LINEAGE_ENABLED", value = "true" },
+  ])
 }
 
 # ── API (FastAPI, external ingress) ──────────────────────────────────────────
@@ -191,7 +205,7 @@ resource "azurerm_container_app" "worker" {
       memory  = "2Gi"
       command = ["celery", "-A", "backend.app.worker.celery_app", "worker", "-B", "--loglevel=INFO"]
       dynamic "env" {
-        for_each = local.app_env
+        for_each = local.worker_env
         content {
           name        = env.value.name
           value       = lookup(env.value, "value", null)
