@@ -75,6 +75,7 @@ apart.
 
 | When (UTC) | Service | Action | By | Why / expected state |
 |---|---|---|---|---|
+| 2026-07-27 07:50–08:30 | **LOCAL stack only** — `dataq-harness-local` compose (Airflow scheduler/webserver/Celery worker + Postgres + Redis + MinIO) on the developer machine. **No Azure resource started; all 5 harness apps stayed `Stopped`.** | **BUILD + full live validation** of the Azure-free alternative (`local/docker-compose.yml`, `local/harness_local.sh`) | Arijit (via Claude) | Readiness exercise, **not** a wind-down — Azure is untouched and keeps running. Mirrors `terraform/airflow.tf` (same image, same DAGs, CeleryExecutor, same env var names); MinIO replaces the ADLS landing zone and DataQ reads it through the ordinary `s3` connection with the new `endpoint_url` (#1063). **Verified end to end:** 4 DAGs parsed with 0 import errors · mockdata backfilled 24 datasets to `s3://landing` · DataQ connection test `{"ok":true}` · flat-file suite **4/4 pass** (643 rows, arrival-time freshness 0.21h off MinIO's `LastModified`) · **`flow_a_snowflake_load` SUCCESS** loading live Snowflake (34,680 ORDERS_HEADER) · DataQ ingested the local DAG runs into `pipeline_runs` (success **and** failure). **The one Azure dependency left:** the runtime Snowflake PAT is still read from Key Vault at `up` — see the finding below. |
 | 2026-07-27 06:45 | Jobs only — 5× mockdata + `dbt-lineage` (+ ADF pipeline runs). **No container app started.** | **RUN (targeted)** — `harness_window.sh run --adf --dbt` | Arijit (via Claude) | Confirms the two grants applied at ~06:55 actually clear the ADF + dbt failures end to end — a privilege probe is not a live run. Deliberately skips `start`: neither ADF (managed) nor the `dbt-lineage` job depends on the Airflow apps, so all 5 apps stay **Stopped** throughout and only the jobs are briefly resumed. DAGs + iceberg are not re-run — they already passed at 06:22. **Expected state afterwards: jobs re-suspended, apps still Stopped, ADF triggers still Stopped** — verified independently after. |
 | 2026-07-27 06:36 | Full harness — 5 apps + 2 ADF triggers + all 7 jobs | **STOP** — `harness_window.sh stop` | Arijit (via Claude) | Window closed. **Verified independently: all 5 apps `Stopped` with 0 live replicas, both ADF triggers `Stopped`, and suspend re-issued on all 7 jobs with 0 executions Running.** Jobs mattered here — unlike the 04:00 window, `run` genuinely resumed them, so a `set -e` abort mid-phase could have left a cron armed. Results: mockdata ×5 Succeeded, **all 3 Airflow DAGs success**, iceberg-writer Succeeded; **ADF ×2 and dbt Failed** — see the finding below. |
 | 2026-07-27 06:15 | Full harness — 5 apps + 2 ADF triggers + all 7 jobs | **START + FULL RUN** — `harness_window.sh start` then `run --adf --dags --dbt --iceberg` | Arijit (via Claude) | **Deliberate, full-flow validation window.** First full cycle since the Airflow metadata-DB credential was fixed (05:15 row) — the 04:00 window could not exercise any flow because Airflow never served. Runs every flow: ADF Flow-A pipelines, the 3 cron DAGs, the dbt-lineage job, and the iceberg-writer job. **Expected state afterwards: everything back to Stopped/Suspended/Disabled the same session** — see the paired STOP row. Jobs are the risk here: `cmd_run` runs under `set -e`, so a mid-phase failure can leave a job RESUMED (cron armed) — suspension is therefore verified independently after, not taken from the script's exit. |
@@ -192,6 +193,43 @@ than a re-break. Done in this order, to keep the broken window to seconds:
 
 Verified end to end: Airflow `/health` 200 **on Terraform's password**, and both
 DataQ Airflow connections green from Key Vault *and* OpenBao.
+
+### Finding 2026-07-27 — the two Snowflake PATs are not interchangeable, and the wrong one fails as a *grant* error
+
+Building the local stack, every `flow_a_snowflake_load` task failed with:
+
+```
+250001 (08001): Role 'DATAQ_LOADER' specified in the connect string is not
+granted to this user, or is not permitted for the credentials being used.
+```
+
+That reads as a missing grant, and it is not one. `SHOW GRANTS TO USER ROYARIJIT04`
+confirms `DATAQ_LOADER` **is** granted (2026-06-27, by ACCOUNTADMIN). The cause is
+that a Snowflake **PAT is bound to a role**, and the harness has two of them for the
+same user — the split recorded in the 2026-07-26 23:53 rotation rows:
+
+| Credential | Scope | Purpose |
+|---|---|---|
+| `../secrets.sh` → `SNOWFLAKE_PASSWORD` | **ACCOUNTADMIN** only | Terraform provider (creates account roles; `DATAQ_LOADER` cannot create itself) |
+| KV `snowflake-password-harness` | **DATAQ_LOADER** only | The runtime credential ACA's Airflow + dbt job read |
+
+Verified both directions: the secrets.sh PAT authenticates as ACCOUNTADMIN and is
+refused for `DATAQ_LOADER` *and* `DATAQ_READER`; the Key Vault PAT is the mirror
+image. The local stack had picked up secrets.sh's copy simply because you must
+source that file to get `DATABRICKS_TOKEN`.
+
+**Why this is worth writing down.** The split is deliberate and already logged, but
+the failure it produces names the wrong thing. Anyone hitting that message will go
+hunting for a missing grant — which is exactly what #1030/#1032 were — and find one
+that is already there. The rule: **when a role error contradicts `SHOW GRANTS`,
+suspect the credential's scope, not the grant.**
+
+`local/harness_local.sh` now takes the Key Vault credential in preference to any
+inherited `$SNOWFLAKE_PASSWORD`, precisely so sourcing `secrets.sh` cannot
+reintroduce it. That is also the **one Azure dependency remaining** in the
+otherwise Azure-free local stack: before a real wind-down the DATAQ_LOADER PAT must
+be moved into `local/.env` by hand, or a local-use PAT minted. The script
+deliberately does not mint or persist credentials on its own.
 
 ### Finding 2026-07-27 — #1032's credential swap left `DATAQ_LOADER` short two grants
 
