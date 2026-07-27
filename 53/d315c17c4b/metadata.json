@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "53d315c17c4b",
+  "strategy": "manual-commit",
+  "branch": "feature/openbao-secret-backend",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "CLAUDE.md",
+    "docs/adr/0039-openbao-self-hosted-secret-backend.md",
+    "docs/adr/README.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/53/d315c17c4b/0/metadata.json",
+      "transcript": "/53/d315c17c4b/0/full.jsonl",
+      "compact_transcript": "/53/d315c17c4b/0/transcript.jsonl",
+      "content_hash": "/53/d315c17c4b/0/content_hash.txt",
+      "prompt": "/53/d315c17c4b/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 44,
+    "cache_creation_tokens": 47383,
+    "cache_read_tokens": 2345213,
+    "output_tokens": 22299,
+    "api_call_count": 23
+  }
+}

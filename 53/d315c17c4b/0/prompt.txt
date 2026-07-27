@@ -1,0 +1,1 @@
+okay, create an ADR, let's go with OpenBao. And for loacal let's replace the RedisSecretStore with OpenBao too. [reddis will still be there additionally we are adding OpenBao to the stack]
