@@ -1,0 +1,52 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "e86a0e74d8c1",
+  "session_id": "fcf147da-f22f-41ab-ae99-a0fbd9e19a4c",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-27T05:13:13.744626Z",
+  "branch": "feature/readable-secret-names",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "backend/app/core/secret_names.py",
+    "backend/tests/core/test_secret_names.py"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "a1781128bb13",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 954,
+    "cache_creation_tokens": 2553926,
+    "cache_read_tokens": 180904695,
+    "output_tokens": 386992,
+    "api_call_count": 478
+  },
+  "session_metrics": {
+    "turn_count": 18
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-27T05:13:13.60988Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 27,
+    "human_modified": 2,
+    "human_removed": 0,
+    "total_committed": 27,
+    "total_lines_changed": 29,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}
