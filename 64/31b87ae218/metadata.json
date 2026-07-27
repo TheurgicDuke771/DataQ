@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "6431b87ae218",
+  "strategy": "manual-commit",
+  "branch": "feature/readable-secret-names",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/64/31b87ae218/0/metadata.json",
+      "transcript": "/64/31b87ae218/0/full.jsonl",
+      "compact_transcript": "/64/31b87ae218/0/transcript.jsonl",
+      "content_hash": "/64/31b87ae218/0/content_hash.txt",
+      "prompt": "/64/31b87ae218/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 998,
+    "cache_creation_tokens": 2583105,
+    "cache_read_tokens": 196208203,
+    "output_tokens": 404948,
+    "api_call_count": 500
+  }
+}
