@@ -30,8 +30,10 @@ the import cost.
 
 from __future__ import annotations
 
+import math
 import os
 import threading
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Final, Protocol, runtime_checkable
@@ -58,6 +60,14 @@ _KV_FIELD: Final = "value"
 # Bounded timeout (seconds) — a degraded vault must not stall a request thread or a
 # Celery task. Mirrors marquez.py's `_TIMEOUT_SECONDS` rationale.
 _HTTP_TIMEOUT_SECONDS: Final = 5.0
+# Renew an AppRole token this many seconds BEFORE its lease actually ends (#1054).
+# Without a margin a token can expire between the staleness check and the server
+# handling the request — the mid-flight 403 this feature exists to remove. 60s
+# comfortably covers a request that queues behind a slow check run.
+_TOKEN_RENEWAL_MARGIN_SECONDS: Final = 60
+# Upper bound applied to a server-reported lease before any arithmetic, so an absurd
+# value cannot raise OverflowError out of get/set/delete — which no caller guards.
+_MAX_LEASE_SECONDS: Final = 365 * 24 * 3600
 
 
 def _explain_status(status: int) -> str:
@@ -381,15 +391,43 @@ class OpenBaoSecretStore:
     def __init__(
         self,
         addr: str,
-        token: str,
+        token: str | None = None,
         *,
+        role_id: str | None = None,
+        secret_id: str | None = None,
         mount: str = "secret",
         timeout: float = _HTTP_TIMEOUT_SECONDS,
         client: httpx.Client | None = None,
     ) -> None:
         # Trailing slash stripped so the path join is unambiguous (mirrors marquez.py).
         self._addr = addr.rstrip("/")
-        self._token = token
+        # Phase-1 static token (ADR 0039 decision 4). Kept for dev mode and for
+        # deployments that have not moved to AppRole.
+        self._static_token = token
+        # Phase-2 AppRole (#1054). `role_id` is an identifier; `secret_id` is the
+        # credential. Both or neither — a half-configured AppRole is rejected at
+        # startup rather than silently falling back to the static token, because a
+        # silent downgrade of a credential path is a security regression, not a
+        # convenience.
+        # Normalised ONCE, here, and blank collapses to None. `.env.app.example` ships
+        # these keys blank (and `setup.sh` copies that file verbatim), and
+        # pydantic-settings resolves a present-but-empty value to "" — which is not
+        # None. Without this, `_role_id = ""` engaged AppRole mode with an empty
+        # credential: the process booted clean and then EVERY secret read, write and
+        # delete failed at runtime, which is the "dies mid-run in a worker" failure the
+        # ADR 0039 startup validator exists to prevent, reintroduced one layer down.
+        # The validator strips; so must the store, or the two disagree about what is
+        # configured. Whitespace-only is the same bug wearing a hat.
+        self._role_id = (role_id or "").strip() or None
+        self._secret_id = (secret_id or "").strip() or None
+        # The AppRole-issued token and the moment it stops being usable. Guarded by
+        # `_auth_lock`, which is SEPARATE from the client lock: logging in performs a
+        # request, and holding the client-construction lock across a network call
+        # would serialise every caller behind it.
+        self._auth_token: str | None = None
+        # A `time.monotonic()` DEADLINE, not a wall-clock datetime — see `_token_is_stale`.
+        self._auth_expires_at: float | None = None
+        self._auth_lock = threading.Lock()
         self._mount = mount.strip("/")
         self._timeout = timeout
         # Injectable so tests can drive the real httpx request/response stack through
@@ -435,9 +473,7 @@ class OpenBaoSecretStore:
         """
         list_path = f"/v1/{self._mount}/metadata"
         try:
-            response = self._client_lazy().get(
-                list_path, headers=self._headers(), params={"list": "true"}
-            )
+            response = self._send("GET", list_path, params={"list": "true"})
         except httpx.HTTPError as exc:
             self._log_transport_failure("<list>", None, str(exc))
             raise SecretStoreUnavailableError(
@@ -475,10 +511,11 @@ class OpenBaoSecretStore:
         secret as too young to purge, so a metadata hiccup can never cause a delete.
         """
         try:
-            response = self._client_lazy().get(
-                self._path("metadata", name), headers=self._headers()
-            )
-        except httpx.HTTPError:
+            response = self._send("GET", self._path("metadata", name))
+        except (httpx.HTTPError, SecretStoreUnavailableError):
+            # Including the login failure: the documented degradation is "unknown
+            # age", which the sweep reads as "too young to purge". Letting this
+            # escape would abort the whole sweep instead.
             return None
         if response.status_code != 200:
             return None
@@ -520,10 +557,189 @@ class OpenBaoSecretStore:
 
         Deliberate: an injected client (tests, or any future caller supplying its own
         pool) would otherwise silently carry no credential and every call would 403.
-        Binding auth to the request rather than the transport makes that impossible.
+        Binding auth to the request rather than the transport makes that impossible —
+        and with AppRole it is now also *required*, since the token changes over the
+        process's life and a client-level header would pin the first one forever.
         OpenBao keeps Vault's `X-Vault-Token` header name for API compatibility.
         """
-        return {"X-Vault-Token": self._token}
+        token, _fresh = self._current_token()
+        return {"X-Vault-Token": token}
+
+    def _current_token(self) -> tuple[str, bool]:
+        """The token to present: the static one, or a live AppRole token (#1054).
+
+        AppRole tokens are renewed **proactively at request time** rather than by a
+        background thread. A thread would have to exist in both the API and every
+        Celery worker, would need its own shutdown path, and could wedge silently —
+        the #904 shape, where periodic work stopped while everything reported
+        healthy. Checking an expiry immediately before use cannot wedge: if the check
+        never runs, no request is being made either.
+        """
+        if self._role_id is None:
+            # Static-token mode. `_build_store` and the Settings validator both
+            # guarantee one of the two is configured, so this cannot be None here.
+            return self._static_token or "", False
+        with self._auth_lock:
+            if self._auth_token is None or self._token_is_stale():
+                self._login_locked()
+                # Freshly minted: a 403 on THIS request cannot mean "token expired",
+                # so `_send` must not spend another login trying to fix it.
+                return self._auth_token or "", True
+            return self._auth_token or "", False
+
+    def _token_is_stale(self) -> bool:
+        """True when the cached token is inside the renewal margin.
+
+        The margin exists because a token that expires between this check and the
+        server handling the request would 403 — the exact mid-flight failure #1054
+        was filed about. An unknown expiry (`lease_duration: 0`, which is how a vault
+        reports a non-expiring token, or a lease we could not read) is treated as NOT
+        stale: re-logging in on every request would turn a root-equivalent token into
+        a login storm.
+
+        Measured on `time.monotonic()`, not the wall clock: this is a DURATION, and an
+        NTP step backwards would otherwise make an expired token read as fresh while a
+        step forwards forces a spurious login.
+        """
+        if self._auth_expires_at is None:
+            return False
+        return time.monotonic() >= self._auth_expires_at
+
+    def _lease_seconds(self, lease: object) -> float | None:
+        """Seconds until this token should be REPLACED, or None for "never expires".
+
+        `lease_duration` crosses a **driver boundary** — the value is whatever the
+        server (or a proxy in front of it) put in the JSON — so every plausible shape
+        is handled explicitly rather than by `isinstance(lease, int)`:
+
+        * a float or a numeric string (a proxy, or a non-OpenBao Vault build) must NOT
+          fall through to None, which would silently disable proactive renewal for the
+          whole process and degrade back to the reactive 403 path this feature
+          replaces — with nothing in the log saying so;
+        * `True` is an `int` in Python, so a bool must be rejected explicitly or it
+          becomes a 1-second lease, i.e. a login per request;
+        * an absurd value must not raise `OverflowError` out of `get`/`set`/`delete`,
+          which no caller guards — it would break the exception-type contract ADR 0039
+          decision 6 rests on.
+
+        The result is also floored at half the lease, so a short-TTL AppRole (a
+        hardened `token_ttl=60s` is a reasonable production setting) renews once
+        mid-life instead of before every single request.
+        """
+        if isinstance(lease, bool) or lease is None:
+            return None
+        try:
+            seconds = float(lease)  # type: ignore[arg-type]  # narrowed by the except below
+        except (TypeError, ValueError):
+            log.warning("openbao_lease_unreadable", lease_type=type(lease).__name__)
+            return None
+        # `math.isfinite` rather than the `x != x` NaN idiom: it says what is meant
+        # and CodeQL correctly reads the hand-rolled form as comparing identical
+        # values. Covers NaN and both infinities in one check.
+        if not math.isfinite(seconds) or seconds <= 0:
+            return None
+        # Cap before arithmetic so a nonsense value cannot overflow the clock.
+        seconds = min(seconds, _MAX_LEASE_SECONDS)
+        return max(seconds - _TOKEN_RENEWAL_MARGIN_SECONDS, seconds / 2, 1.0)
+
+    def _login_locked(self) -> None:
+        """POST the AppRole login and cache the issued token. Caller holds `_auth_lock`.
+
+        Must never route through `_send`/`_headers`: both call `_current_token`, which
+        takes `_auth_lock`, and this is a plain `Lock`. A future refactor reaching for
+        the shared helper here deadlocks instantly.
+
+        Failure raises `SecretStoreUnavailableError`, never `SecretNotFoundError`: a
+        login that cannot complete is an outage or a bad credential, and reporting
+        either as "the secret is not there" is precisely the masquerade ADR 0039
+        decision 6 exists to prevent.
+        """
+        try:
+            response = self._client_lazy().post(
+                "/v1/auth/approle/login",
+                json={"role_id": self._role_id, "secret_id": self._secret_id},
+            )
+        except httpx.HTTPError as exc:
+            raise SecretStoreUnavailableError(
+                f"OpenBao at {self._addr} unreachable during AppRole login ({exc})"
+            ) from exc
+        if response.status_code != 200:
+            # NEVER `response.text` here: a login error body can echo the submitted
+            # secret_id back, so only the status and its explanation are surfaced —
+            # in the log AND in the exception message, which ends up in tracebacks.
+            log.warning(
+                "openbao_approle_login_failed",
+                status=response.status_code,
+                error=_explain_status(response.status_code),
+            )
+            raise SecretStoreUnavailableError(
+                f"OpenBao AppRole login failed: {response.status_code} — "
+                f"{_explain_status(response.status_code)}"
+            )
+        try:
+            auth = response.json()["auth"]
+            token = auth["client_token"]
+        except (ValueError, KeyError, TypeError) as exc:
+            raise SecretStoreUnavailableError(
+                f"OpenBao AppRole login returned an unreadable body ({exc})"
+            ) from exc
+        lease = auth.get("lease_duration")
+        # Expiry computed BEFORE the token is cached: if the lease is unreadable the
+        # store must not be left holding a new token against a previous token's expiry.
+        remaining = self._lease_seconds(lease)
+        self._auth_expires_at = None if remaining is None else time.monotonic() + remaining
+        self._auth_token = token
+        # Never log the token, only that one was obtained and for how long.
+        log.info("openbao_approle_login", lease_duration=lease, renewable=auth.get("renewable"))
+
+    def _forget_token_if_current(self, sent: str) -> None:
+        """Drop the cached token only if it is still the one that just got a 403.
+
+        Compare-and-swap, not an unconditional clear. The store is a process-wide
+        singleton shared by FastAPI request threads and Celery workers, so N threads
+        hitting a 403 together would otherwise each discard the token a peer had just
+        obtained and each log in again — N logins, and the "exactly one retry" bound
+        holds per call while failing per store, which is the case that matters.
+        """
+        with self._auth_lock:
+            if self._auth_token == sent:
+                self._auth_token = None
+                self._auth_expires_at = None
+
+    def _send(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
+        """One request, with a single re-login retry on 403 (#1054).
+
+        Every vault call goes through here so the recovery is uniform. Before this,
+        a token that died mid-flight — revoked, or expired past its lease — 403'd
+        every subsequent request until the process was RESTARTED, which is what
+        #1054 was filed about.
+
+        Exactly one retry, and only in AppRole mode:
+
+        * more than one would turn a genuinely bad `secret_id` into a login storm
+          against the vault, which is a worse failure than the one being fixed;
+        * in static-token mode there is nothing to re-acquire, so a 403 there is
+          the operator's answer and must surface unchanged.
+
+        A 403 that survives the retry falls through to the caller's existing status
+        handling, which logs `openbao_permission_denied` and raises
+        `SecretStoreUnavailableError` — never `SecretNotFoundError`.
+        """
+        token, fresh = self._current_token()
+        client = self._client_lazy()
+        response = client.request(method, path, headers={"X-Vault-Token": token}, **kwargs)
+        if response.status_code != 403 or self._role_id is None:
+            return response
+        if fresh:
+            # The token was minted for THIS request, so a 403 cannot mean "expired" —
+            # it means the AppRole's policy does not cover this path. Re-logging in
+            # would buy nothing and, on a least-privilege vault, would cost one login
+            # per secret for the whole of a sweep. Surface it instead.
+            return response
+        log.info("openbao_token_rejected_relogin", path=path)
+        self._forget_token_if_current(token)
+        retry_token, _ = self._current_token()
+        return client.request(method, path, headers={"X-Vault-Token": retry_token}, **kwargs)
 
     def _path(self, kind: str, name: str) -> str:
         """KV v2 splits the value plane (`data`) from the version plane (`metadata`).
@@ -563,7 +779,7 @@ class OpenBaoSecretStore:
 
     def get(self, name: str) -> str:
         try:
-            response = self._client_lazy().get(self._path("data", name), headers=self._headers())
+            response = self._send("GET", self._path("data", name))
         except httpx.HTTPError as exc:
             self._log_transport_failure(name, None, str(exc))
             raise SecretStoreUnavailableError(
@@ -615,12 +831,17 @@ class OpenBaoSecretStore:
 
     def set(self, name: str, value: str) -> None:
         try:
-            response = self._client_lazy().post(
-                self._path("data", name),
-                headers=self._headers(),
-                json={"data": {_KV_FIELD: value}},
+            response = self._send(
+                "POST", self._path("data", name), json={"data": {_KV_FIELD: value}}
             )
             response.raise_for_status()
+        except SecretStoreUnavailableError as exc:
+            # `set` promises `SecretWriteError`, which connection_service maps to a
+            # 502 `ConnectionSecretWriteError`. A login failure arriving as a
+            # different type would bypass that mapping and surface as a bare 500.
+            raise SecretWriteError(
+                f"OpenBao at {self._addr} could not be authenticated to write {name!r}"
+            ) from exc
         except httpx.HTTPStatusError as exc:
             status = exc.response.status_code
             self._log_transport_failure(name, status, exc.response.text)
@@ -644,9 +865,17 @@ class OpenBaoSecretStore:
         soft-deletes because purge protection is a vault-level policy there, not ours.)
         """
         try:
-            response = self._client_lazy().delete(
-                self._path("metadata", name), headers=self._headers()
-            )
+            response = self._send("DELETE", self._path("metadata", name))
+        except SecretStoreUnavailableError as exc:
+            # An AppRole login failure surfaces as this, NOT as an httpx error, so it
+            # would otherwise escape the handler below and break `delete`'s fail-soft
+            # contract — which three call sites depend on by name
+            # (`connection_service` post-commit cleanup, the #1059 purge loop,
+            # `notification_service`). A vault outage must not 500 a delete whose row
+            # is already committed. Same "callers branch on exception TYPE" lesson as
+            # ADR 0039 decision 6, one seam further out.
+            log.warning("secret_delete_failed", name=name, error=str(exc))
+            return
         except httpx.HTTPError as exc:
             # Route through the shared handler as well as the delete-specific line: a
             # connection delete is often the FIRST vault call after a token expires,
@@ -685,11 +914,20 @@ def _build_store(settings: Settings) -> SecretStore:
     if settings.secret_store == _OPENBAO_MODE:
         if not settings.openbao_addr:
             raise RuntimeError(f"secret_store={_OPENBAO_MODE!r} requires OPENBAO_ADDR")
-        if not settings.openbao_token:
-            raise RuntimeError(f"secret_store={_OPENBAO_MODE!r} requires OPENBAO_TOKEN")
+        if not settings.openbao_token and not settings.openbao_role_id:
+            raise RuntimeError(
+                f"secret_store={_OPENBAO_MODE!r} requires OPENBAO_TOKEN, or "
+                "OPENBAO_ROLE_ID + OPENBAO_SECRET_ID for AppRole auth"
+            )
+        if bool(settings.openbao_role_id) != bool(settings.openbao_secret_id):
+            raise RuntimeError(
+                "OPENBAO_ROLE_ID and OPENBAO_SECRET_ID must be set together (AppRole)"
+            )
         return OpenBaoSecretStore(
             settings.openbao_addr,
             settings.openbao_token,
+            role_id=settings.openbao_role_id,
+            secret_id=settings.openbao_secret_id,
             mount=settings.openbao_mount,
         )
     if settings.secret_store == _REDIS_MODE:

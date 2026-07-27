@@ -253,6 +253,14 @@ class Settings(BaseSettings):
     # KV v2 mount point. `secret` is what dev mode mounts; a production vault often
     # mounts per-team paths instead.
     openbao_mount: str = "secret"
+    # AppRole auth (ADR 0039 phase 2, #1054) — what a production self-hosted
+    # deployment should run instead of a static token. `role_id` is an IDENTIFIER
+    # (safe in config); `secret_id` is the credential. Set BOTH or neither: a partial
+    # config is rejected at startup rather than silently falling back to
+    # OPENBAO_TOKEN, because quietly downgrading a credential path is a security
+    # regression, not a convenience.
+    openbao_role_id: str | None = None
+    openbao_secret_id: str | None = None
 
     # SecretStore key holding the ADF webhook shared secret (ADR 0006). Resolved
     # via SecretStore.get → EnvSecretStore maps it to KV_SECRET_ADF_WEBHOOK_SECRET
@@ -396,14 +404,29 @@ class Settings(BaseSettings):
             # `.strip()` because a whitespace-only value is not a value: it would pass
             # a bare truthiness check and then fail much later as "vault unreachable"
             # or a 403, pointing the operator at the network instead of the env file.
-            missing = [
-                name
-                for name, value in (
-                    ("OPENBAO_ADDR", self.openbao_addr),
-                    ("OPENBAO_TOKEN", self.openbao_token),
+            role_id = (self.openbao_role_id or "").strip()
+            secret_id = (self.openbao_secret_id or "").strip()
+            if bool(role_id) != bool(secret_id):
+                # Half an AppRole. Falling back to the token here would be the
+                # dangerous reading: an operator who set ROLE_ID meant to stop using
+                # the static token, and a silent downgrade is exactly the failure the
+                # harness webserver_config guards against on the auth side.
+                supplied, absent = (
+                    ("OPENBAO_ROLE_ID", "OPENBAO_SECRET_ID")
+                    if role_id
+                    else ("OPENBAO_SECRET_ID", "OPENBAO_ROLE_ID")
                 )
-                if not (value or "").strip()
-            ]
+                raise ValueError(
+                    f"{supplied} is set without {absent} — AppRole auth needs both. "
+                    "Set both, or neither and use OPENBAO_TOKEN."
+                )
+            # Collected, not short-circuited: an operator missing both should learn
+            # both in one run rather than fix one, re-run, and discover the other.
+            missing = []
+            if not (self.openbao_addr or "").strip():
+                missing.append("OPENBAO_ADDR")
+            if not role_id and not (self.openbao_token or "").strip():
+                missing.append("OPENBAO_TOKEN (or OPENBAO_ROLE_ID + OPENBAO_SECRET_ID)")
             if missing:
                 raise ValueError(f"SECRET_STORE='openbao' requires {' and '.join(missing)}")
             addr = (self.openbao_addr or "").strip()

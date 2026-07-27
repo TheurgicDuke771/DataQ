@@ -1,10 +1,13 @@
+import contextlib
 import json
 import os
+import threading
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import ClassVar
+from unittest import mock
 
 import httpx
 import pytest
@@ -247,6 +250,8 @@ def _settings(**overrides: object) -> object:
         "openbao_addr": None,
         "openbao_token": None,
         "openbao_mount": "secret",
+        "openbao_role_id": None,
+        "openbao_secret_id": None,
     }
     base.update(overrides)
     return SimpleNamespace(**base)
@@ -264,6 +269,11 @@ def _settings_from_env(monkeypatch: pytest.MonkeyPatch, **env: str) -> Settings:
         "OPENBAO_ADDR",
         "OPENBAO_TOKEN",
         "OPENBAO_MOUNT",
+        # Added with #1054. Omitting these let an ambient OPENBAO_ROLE_ID decide the
+        # outcome of the validator tests — the environment answering for the test,
+        # which is how the blank-role-id defect got through in the first place.
+        "OPENBAO_ROLE_ID",
+        "OPENBAO_SECRET_ID",
         "AZURE_KEY_VAULT_URL",
     ):
         monkeypatch.delenv(key, raising=False)
@@ -312,10 +322,40 @@ def test_build_store_raises_when_openbao_addr_missing() -> None:
         _build_store(_settings(secret_store="openbao", openbao_token="tok"))  # type: ignore[arg-type]
 
 
-def test_build_store_raises_when_openbao_token_missing() -> None:
-    with pytest.raises(RuntimeError, match="requires OPENBAO_TOKEN"):
+def test_build_store_raises_when_no_openbao_credential_at_all() -> None:
+    """Neither a static token nor an AppRole pair — the message must name BOTH ways
+    out, or an operator moving to AppRole reads it as "you must use a token"."""
+    with pytest.raises(RuntimeError, match="OPENBAO_TOKEN") as exc:
         _build_store(
             _settings(secret_store="openbao", openbao_addr="http://openbao:8200")  # type: ignore[arg-type]
+        )
+    assert "OPENBAO_ROLE_ID" in str(exc.value)
+
+
+def test_build_store_accepts_approle_without_a_static_token() -> None:
+    store = _build_store(
+        _settings(  # type: ignore[arg-type]
+            secret_store="openbao",
+            openbao_addr="http://openbao:8200",
+            openbao_role_id="role",
+            openbao_secret_id="sid",
+        )
+    )
+    assert isinstance(store, OpenBaoSecretStore)
+
+
+def test_build_store_rejects_half_an_approle() -> None:
+    """A partial AppRole must not silently fall back to the static token: an operator
+    who set ROLE_ID meant to stop using it, and a quiet downgrade of a credential
+    path is a security regression."""
+    with pytest.raises(RuntimeError, match="must be set together"):
+        _build_store(
+            _settings(  # type: ignore[arg-type]
+                secret_store="openbao",
+                openbao_addr="http://openbao:8200",
+                openbao_token="tok",
+                openbao_role_id="role",
+            )
         )
 
 
@@ -362,6 +402,11 @@ def _real_settings(monkeypatch: pytest.MonkeyPatch, **env: str) -> None:
         "OPENBAO_ADDR",
         "OPENBAO_TOKEN",
         "OPENBAO_MOUNT",
+        # Added with #1054. Omitting these let an ambient OPENBAO_ROLE_ID decide the
+        # outcome of the validator tests — the environment answering for the test,
+        # which is how the blank-role-id defect got through in the first place.
+        "OPENBAO_ROLE_ID",
+        "OPENBAO_SECRET_ID",
         "AZURE_KEY_VAULT_URL",
     ):
         monkeypatch.delenv(key, raising=False)
@@ -380,6 +425,61 @@ def test_settings_rejects_openbao_without_addr_at_startup(monkeypatch: pytest.Mo
 def test_settings_rejects_openbao_without_token_at_startup(monkeypatch: pytest.MonkeyPatch) -> None:
     with pytest.raises(ValidationError, match="requires OPENBAO_TOKEN"):
         _real_settings(monkeypatch, SECRET_STORE="openbao", OPENBAO_ADDR="http://openbao:8200")
+
+
+def test_settings_accepts_approle_without_a_static_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _real_settings(
+        monkeypatch,
+        SECRET_STORE="openbao",
+        OPENBAO_ADDR="http://openbao:8200",
+        OPENBAO_ROLE_ID="role",
+        OPENBAO_SECRET_ID="sid",
+    )  # must not raise
+
+
+@pytest.mark.parametrize("half", ["OPENBAO_ROLE_ID", "OPENBAO_SECRET_ID"])
+def test_settings_rejects_half_an_approle_at_startup(
+    monkeypatch: pytest.MonkeyPatch, half: str
+) -> None:
+    """A partial AppRole must not silently fall back to the static token: an operator
+    who set ROLE_ID meant to stop using it."""
+    with pytest.raises(ValidationError, match="AppRole auth needs both"):
+        _real_settings(
+            monkeypatch,
+            SECRET_STORE="openbao",
+            OPENBAO_ADDR="http://openbao:8200",
+            OPENBAO_TOKEN="tok",
+            **{half: "x"},
+        )
+
+
+def test_settings_treats_blank_approle_values_as_absent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The real pydantic path, which the SimpleNamespace factory stand-in cannot
+    reproduce: blank env values arrive as `""`, and a token-only config that also
+    carries the blank AppRole keys (as `.env.app.example` ships them) must validate."""
+    _real_settings(
+        monkeypatch,
+        SECRET_STORE="openbao",
+        OPENBAO_ADDR="http://openbao:8200",
+        OPENBAO_TOKEN="tok",
+        OPENBAO_ROLE_ID="",
+        OPENBAO_SECRET_ID="",
+    )  # must not raise
+
+
+def test_settings_names_every_missing_openbao_value_at_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Collected, not short-circuited: an operator missing both should not fix one,
+    re-run, and only then learn about the other."""
+    with pytest.raises(ValidationError) as exc:
+        _real_settings(monkeypatch, SECRET_STORE="openbao")
+    assert "OPENBAO_ADDR" in str(exc.value)
+    assert "OPENBAO_TOKEN" in str(exc.value)
 
 
 def test_settings_rejects_whitespace_only_openbao_values(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -844,6 +944,386 @@ def test_openbao_close_is_idempotent_and_reusable() -> None:
     rebuilt = store._client_lazy()  # rebuilt for continued use
     assert not rebuilt.is_closed
     rebuilt.close()
+
+
+# ── AppRole auth (#1054, ADR 0039 phase 2) ───────────────────────────────────
+
+
+def _approle_store(handler: Callable[[httpx.Request], httpx.Response]) -> OpenBaoSecretStore:
+    return OpenBaoSecretStore(
+        "http://openbao:8200",
+        None,
+        role_id="role",
+        secret_id="sid",
+        client=httpx.Client(base_url="http://openbao:8200", transport=httpx.MockTransport(handler)),
+    )
+
+
+def test_approle_logs_in_lazily_and_uses_the_issued_token() -> None:
+    """No login at construction — the store must stay cheap to build (it is created
+    per process at import-adjacent time), and a vault that is down must not make
+    building it fail."""
+    seen: list[tuple[str, str | None]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.url.path, request.headers.get("X-Vault-Token")))
+        if request.url.path == "/v1/auth/approle/login":
+            return httpx.Response(
+                200, json={"auth": {"client_token": "issued-token", "lease_duration": 3600}}
+            )
+        return httpx.Response(200, json={"data": {"data": {"value": "s3cr3t"}}})
+
+    store = _approle_store(handler)
+    assert seen == []  # nothing on construction
+    assert store.get("conn-a") == "s3cr3t"
+    assert seen[0][0] == "/v1/auth/approle/login"
+    # The KV read carries the token the login issued, not a static one.
+    assert seen[1] == ("/v1/secret/data/conn-a", "issued-token")
+
+
+def test_approle_token_is_reused_across_calls() -> None:
+    """One login per token lifetime, not one per request: every check run resolves a
+    credential, so a login on the hot path would double the vault traffic."""
+    logins = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal logins
+        if request.url.path == "/v1/auth/approle/login":
+            logins += 1
+            return httpx.Response(200, json={"auth": {"client_token": "t", "lease_duration": 3600}})
+        return httpx.Response(200, json={"data": {"data": {"value": "v"}}})
+
+    store = _approle_store(handler)
+    store.get("a")
+    store.get("b")
+    store.get("c")
+    assert logins == 1
+
+
+def test_approle_renews_inside_the_margin_while_still_within_lease() -> None:
+    """The margin's actual semantics: token NOT yet expired, but inside the renewal
+    window, must renew.
+
+    Driven by a fake `time.monotonic`, because the previous version of this test used
+    `lease_duration: 30` against a 60s margin — which makes the token already expired
+    at issue, so it could not distinguish "renews inside the margin" from "renews only
+    once expired". It passed without testing the thing it named.
+    """
+    clock = [1000.0]
+    logins = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal logins
+        if request.url.path == "/v1/auth/approle/login":
+            logins += 1
+            return httpx.Response(
+                200, json={"auth": {"client_token": f"t{logins}", "lease_duration": 600}}
+            )
+        return httpx.Response(200, json={"data": {"data": {"value": "v"}}})
+
+    with mock.patch("backend.app.core.secrets.time.monotonic", lambda: clock[0]):
+        store = _approle_store(handler)
+        store.get("a")
+        assert logins == 1
+        # 500s in: still 100s of lease left, but inside the 60s margin? No — renewal
+        # is due at 1000 + max(600-60, 300, 1) = 1540.
+        after_first = logins
+        clock[0] = 1500.0
+        store.get("b")
+        assert logins == after_first, "renewed too early"
+        clock[0] = 1545.0
+        store.get("c")
+        assert logins == 2, "did not renew inside the margin"
+
+
+def test_approle_short_lease_does_not_log_in_on_every_request() -> None:
+    """A hardened AppRole with `token_ttl=60s` is a reasonable production setting, and
+    a bare `lease - margin` would put its expiry in the past at issue: two round-trips
+    per credential resolution, forever, on the documented hot path. The lease is
+    floored at half its length so a short token renews once mid-life instead."""
+    clock = [1000.0]
+    logins = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal logins
+        if request.url.path == "/v1/auth/approle/login":
+            logins += 1
+            return httpx.Response(
+                200, json={"auth": {"client_token": f"t{logins}", "lease_duration": 60}}
+            )
+        return httpx.Response(200, json={"data": {"data": {"value": "v"}}})
+
+    with mock.patch("backend.app.core.secrets.time.monotonic", lambda: clock[0]):
+        store = _approle_store(handler)
+        store.get("a")
+        store.get("b")
+        store.get("c")
+    assert logins == 1
+
+
+@pytest.mark.parametrize(
+    ("lease", "renews"),
+    [
+        (3600, True),
+        (3600.0, True),  # a float from a proxy must not disable renewal silently
+        ("3600", True),  # nor a numeric string
+        (0, False),  # "never expires"
+        (True, False),  # bool is an int in Python — must NOT become a 1s lease
+        (10**19, True),  # must not raise OverflowError out of get/set/delete
+        ("nonsense", False),
+        (None, False),
+    ],
+)
+def test_lease_duration_crosses_a_driver_boundary(lease: object, renews: bool) -> None:
+    """`lease_duration` is whatever the SERVER put in the JSON. Every fixture in the
+    first version of this feature handed in a clean int, which is the #953/#823 shape:
+    the test asserts our model rather than the driver's."""
+    store = OpenBaoSecretStore("http://openbao:8200", None, role_id="r", secret_id="s")
+    remaining = store._lease_seconds(lease)
+    assert (remaining is not None) is renews
+
+
+def test_approle_never_re_logs_in_for_a_non_expiring_token() -> None:
+    """`lease_duration: 0` is how a vault reports a token that does not expire.
+    Treating that as "stale" would turn it into a login storm."""
+    logins = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal logins
+        if request.url.path == "/v1/auth/approle/login":
+            logins += 1
+            return httpx.Response(200, json={"auth": {"client_token": "t", "lease_duration": 0}})
+        return httpx.Response(200, json={"data": {"data": {"value": "v"}}})
+
+    store = _approle_store(handler)
+    store.get("a")
+    store.get("b")
+    assert logins == 1
+
+
+def test_approle_re_logs_in_once_when_a_CACHED_token_is_revoked() -> None:
+    """The whole point of #1054: a token revoked mid-flight used to 403 every
+    subsequent request until the process was RESTARTED.
+
+    The first call must SUCCEED so a token is cached — a 403 on a freshly-minted token
+    means the policy is wrong, not the token, and is deliberately not retried.
+    """
+    logins = 0
+    reads = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal logins, reads
+        if request.url.path == "/v1/auth/approle/login":
+            logins += 1
+            return httpx.Response(
+                200, json={"auth": {"client_token": f"t{logins}", "lease_duration": 3600}}
+            )
+        reads += 1
+        if reads == 2:  # the cached token has been revoked out from under us
+            return httpx.Response(403, json={"errors": ["permission denied"]})
+        return httpx.Response(200, json={"data": {"data": {"value": "recovered"}}})
+
+    store = _approle_store(handler)
+    assert store.get("a") == "recovered"  # caches t1
+    assert store.get("b") == "recovered"  # 403 -> re-login -> retry succeeds
+    assert logins == 2
+    assert reads == 3
+
+
+def test_approle_does_not_retry_a_403_on_a_freshly_minted_token() -> None:
+    """A 403 on a token minted for THIS request means the AppRole's policy does not
+    cover the path — re-logging in buys nothing, and on a least-privilege vault it
+    would cost one extra login per secret for the whole of an orphan sweep."""
+    logins = 0
+    reads = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal logins, reads
+        if request.url.path == "/v1/auth/approle/login":
+            logins += 1
+            return httpx.Response(200, json={"auth": {"client_token": "t", "lease_duration": 3600}})
+        reads += 1
+        return httpx.Response(403, json={"errors": ["permission denied"]})
+
+    store = _approle_store(handler)
+    with pytest.raises(SecretStoreUnavailableError):
+        store.get("a")
+    assert logins == 1  # NOT 2 — no wasted re-login
+    assert reads == 1
+
+
+def test_approle_403_relogin_is_compare_and_swap_under_concurrency() -> None:
+    """N threads whose CACHED token is revoked together must not each log in.
+
+    The scenario matters: an earlier version of this test raced threads on a *fresh*
+    token, where the fresh-token suppression already prevents a stampede — so it
+    passed with CAS reverted and proved nothing. A mutation check caught that. The
+    token must be cached and then revoked, which is the only path that reaches the
+    compare-and-swap at all.
+
+    With an unconditional `_forget_token()`, each thread discards a peer's
+    freshly-obtained token and logs in again — one per thread.
+    """
+    logins = 0
+    revoked = False
+    lock = threading.Lock()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal logins
+        if request.url.path == "/v1/auth/approle/login":
+            with lock:
+                logins += 1
+                issued = logins
+            return httpx.Response(
+                200, json={"auth": {"client_token": f"t{issued}", "lease_duration": 3600}}
+            )
+        if revoked:
+            return httpx.Response(403, json={"errors": ["permission denied"]})
+        return httpx.Response(200, json={"data": {"data": {"value": "v"}}})
+
+    store = _approle_store(handler)
+    store.get("warm")  # caches t1 — now every thread below takes the non-fresh path
+    assert logins == 1
+    revoked = True
+
+    threads = [threading.Thread(target=_ignore_unavailable(store)) for _ in range(8)]
+    barrier = threading.Barrier(len(threads))
+    store._test_barrier = barrier  # type: ignore[attr-defined]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    # 1 warm-up login + a small constant. Unconditional clearing gives one per thread.
+    assert logins <= 3, f"login stampede: {logins} logins for {len(threads)} threads"
+
+
+def _ignore_unavailable(store: OpenBaoSecretStore) -> Callable[[], None]:
+    def run() -> None:
+        barrier = getattr(store, "_test_barrier", None)
+        if barrier is not None:
+            barrier.wait()
+        with contextlib.suppress(SecretStoreUnavailableError):
+            store.get("a")
+
+    return run
+
+
+def test_static_token_mode_does_not_retry_a_403() -> None:
+    """With no AppRole there is nothing to re-acquire, so a 403 is the operator's
+    answer and must surface unchanged rather than doubling every failing request."""
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(403, json={"errors": ["permission denied"]})
+
+    store = OpenBaoSecretStore(
+        "http://openbao:8200",
+        "static",
+        client=httpx.Client(base_url="http://openbao:8200", transport=httpx.MockTransport(handler)),
+    )
+    with pytest.raises(SecretStoreUnavailableError):
+        store.get("a")
+    assert calls == 1
+
+
+def test_blank_approle_env_does_not_engage_approle_mode() -> None:
+    """`.env.app.example` ships these keys BLANK and `setup.sh` copies it verbatim,
+    and pydantic-settings resolves a present-but-empty value to `""`, not `None`.
+
+    Treating `""` as "AppRole configured" made the process boot clean and then fail
+    EVERY secret operation at runtime — the "dies mid-run in a worker" failure the
+    ADR 0039 startup validator exists to prevent, reintroduced one layer down. The
+    `SimpleNamespace` factory stand-in cannot produce `""` the way real pydantic does,
+    which is exactly how this got through (#124's "missed it by construction" shape).
+    """
+    for blank in ("", "   "):
+        store = OpenBaoSecretStore(
+            "http://openbao:8200", "static-token", role_id=blank, secret_id=blank
+        )
+        assert store._role_id is None
+        assert store._current_token() == ("static-token", False)
+
+
+def test_delete_stays_fail_soft_when_the_login_fails() -> None:
+    """`delete`'s fail-soft contract is depended on BY NAME at three call sites — the
+    post-commit cleanup in connection_service, the #1059 purge loop, and
+    notification_service. A login failure arrives as `SecretStoreUnavailableError`,
+    not an httpx error, so it would sail past the old handler and 500 a delete whose
+    row is already committed."""
+    store = _approle_store(lambda _r: httpx.Response(503))
+    store.delete("conn-a")  # must not raise
+
+
+def test_set_still_raises_secret_write_error_when_the_login_fails() -> None:
+    """`set` promises `SecretWriteError`, which connection_service maps to a 502
+    `ConnectionSecretWriteError`. A different type bypasses that mapping and becomes
+    a bare 500."""
+    store = _approle_store(lambda _r: httpx.Response(503))
+    with pytest.raises(SecretWriteError):
+        store.set("conn-a", "v")
+
+
+def test_created_at_degrades_to_none_when_the_login_fails() -> None:
+    """The documented degradation is "unknown age", which the sweep reads as "too
+    young to purge". Letting the login failure escape would abort the whole sweep."""
+    store = _approle_store(lambda _r: httpx.Response(503))
+    assert store._created_at("conn-a") is None
+
+
+def test_failed_login_never_logs_the_response_body() -> None:
+    """The NON-200 path is the one that matters: a login error body can echo the
+    submitted secret_id back. The previous version of this test exercised only the
+    200 path, so adding `body=response.text` to the warning would have failed
+    nothing."""
+    canary = "SECRET-ID-CANARY-8f3a9c"
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, json={"errors": [f"invalid secret_id {canary}"]})
+
+    store = OpenBaoSecretStore(
+        "http://openbao:8200",
+        None,
+        role_id="role",
+        secret_id=canary,
+        client=httpx.Client(base_url="http://openbao:8200", transport=httpx.MockTransport(handler)),
+    )
+    with capture_logs() as logs:
+        with pytest.raises(SecretStoreUnavailableError) as exc:
+            store.get("conn-a")
+    # Not in the log, and not in the exception message either — that ends up in
+    # tracebacks and error responses.
+    assert canary not in json.dumps(logs)
+    assert canary not in str(exc.value)
+
+
+def test_approle_login_failure_is_unavailable_not_missing() -> None:
+    """A login that cannot complete is an outage or a bad credential. Reporting it as
+    `SecretNotFoundError` would make callers degrade silently — ADR 0039 decision 6."""
+    store = _approle_store(lambda _r: httpx.Response(400, json={"errors": ["invalid role"]}))
+    with pytest.raises(SecretStoreUnavailableError):
+        store.get("a")
+
+
+def test_approle_login_never_logs_the_token_or_the_body() -> None:
+    """The login body can echo the submitted secret_id on some error paths, and the
+    response carries a live token. Neither may reach the log."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/auth/approle/login":
+            return httpx.Response(
+                200, json={"auth": {"client_token": "super-secret-token", "lease_duration": 60}}
+            )
+        return httpx.Response(200, json={"data": {"data": {"value": "v"}}})
+
+    with capture_logs() as logs:
+        _approle_store(handler).get("a")
+    rendered = json.dumps(logs)
+    assert "super-secret-token" not in rendered
+    assert "sid" not in json.dumps(
+        [entry for entry in logs if entry.get("event") != "openbao_approle_login"]
+    )
 
 
 # ── listing, for the orphan sweep (#1059) ─────────────────────────────────────

@@ -26,6 +26,15 @@ _PII_KEYS: frozenset[str] = frozenset(
         "access_key",
         "private_key",
         "passphrase",
+        # Vault/OpenBao (ADR 0039, #1054). The key set is the sturdier of the two
+        # mechanisms here — it cannot be fooled by a token SHAPE nobody anticipated —
+        # and an OpenBao token (`hvs.…` / `s.…`) matches none of the bare-token
+        # regexes. #849's lesson is that a DEPENDENCY does the logging, so auditing
+        # our own call sites is the half that fails.
+        "x-vault-token",
+        "client_token",
+        "secret_id",
+        "role_id",
         # Personal contact
         "email",
         "phone",

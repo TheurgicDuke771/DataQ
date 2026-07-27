@@ -56,7 +56,22 @@ dev mode mounts kv-v2 at secret/, listens on :8200
 
    They are, however, **purged rather than abandoned**. Switching modes does not delete anything: the live migration of the dev stack left **1392 `dataq:secret:*` keys** — plaintext warehouse credentials — sitting in Redis, readable by anything with access to the broker, and nothing in the app would ever touch them again. A migration away from plaintext storage that leaves the plaintext in place is half a fix, so the `RuntimeError` carries the purge command (`redis-cli --scan --pattern 'dataq:secret:*' | xargs -r redis-cli del`). It is not run automatically — deleting a user's data on startup is not this code's call.
 
-**4. Token auth only in phase 1.** `OPENBAO_TOKEN` is sent as `X-Vault-Token`. AppRole (`role_id`/`secret_id` → login → renewable token), which is what a production self-hosted deployment should use, is **deferred and filed**, not silently omitted — see Related. The token is never logged: it is not in the request path or query string, and the logger-level redactor (ADR-independent, `backend/app/core/logging.py`) covers `token` keys and bare token shapes. No credential enters a git-tracked file — `scripts/setup.sh` generates the local dev-mode root token into the gitignored `.env`, exactly as it already does for the local Postgres password (CLAUDE.md §11).
+**4. Token auth in phase 1; AppRole shipped in phase 2 (#1054, 2026-07-27).** `OPENBAO_TOKEN` is sent as `X-Vault-Token`. AppRole (`role_id`/`secret_id` → login → renewable token), which is what a production self-hosted deployment should use, was filed as #1054 — see Related.
+
+  **Phase 2 has since landed.** `OPENBAO_ROLE_ID` + `OPENBAO_SECRET_ID` log in at
+  `POST /v1/auth/approle/login` and the issued token is cached, renewed proactively
+  before its lease ends, and re-acquired once on a 403 — so a revoked or expired
+  token self-heals instead of 403ing every request until the process is restarted.
+  Renewal happens **at request time, not on a background thread**: a thread would
+  need to exist in the API and every worker, would need its own shutdown path, and
+  could wedge silently (the #904 shape), whereas a check immediately before use
+  cannot wedge without also stopping the requests it guards. Exactly one retry, and
+  only in AppRole mode — more would turn a bad `secret_id` into a login storm, and
+  in static-token mode a 403 is the operator's answer and must surface unchanged.
+  `hvac` was reconsidered here as #1054 suggested and **still declined**: AppRole is
+  one more endpoint, and the reason for speaking the wire contract (one mode serving
+  OpenBao / Vault / HCP) is unchanged by adding it. A partial AppRole config is
+  rejected at startup rather than falling back to the token. The token is never logged: it is not in the request path or query string, and the logger-level redactor (ADR-independent, `backend/app/core/logging.py`) covers it — as of #1054 by KEY (`x-vault-token`, `client_token`, `secret_id`, `role_id`), which is the sturdier half: an OpenBao token (`hvs.…` / `s.…`) matches none of the bare-token SHAPE regexes, so the earlier claim held only for the `token=` query-param form. No credential enters a git-tracked file — `scripts/setup.sh` generates the local dev-mode root token into the gitignored `.env`, exactly as it already does for the local Postgres password (CLAUDE.md §11).
 
 **5. Azure Key Vault remains the production default for DataQ's own Azure deployment.** Managed identity means no bootstrap credential at all, which is strictly better than a token DataQ has to hold, and the Terraform stack (ADR 0024) already provisions it. OpenBao is the **cloud-neutral option for BYOL deployments**, not a replacement for Key Vault on Azure. One store implementation covering AWS + GCP + on-prem beats building and maintaining AWS Secrets Manager and GCP Secret Manager adapters separately.
 
