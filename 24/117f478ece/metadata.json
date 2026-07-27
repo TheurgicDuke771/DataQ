@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "24117f478ece",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1057-publish-on-merge",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/24/117f478ece/0/metadata.json",
+      "transcript": "/24/117f478ece/0/full.jsonl",
+      "compact_transcript": "/24/117f478ece/0/transcript.jsonl",
+      "content_hash": "/24/117f478ece/0/content_hash.txt",
+      "prompt": "/24/117f478ece/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 12022,
+    "cache_creation_tokens": 1032900,
+    "cache_read_tokens": 92426130,
+    "output_tokens": 270294,
+    "api_call_count": 402
+  }
+}
