@@ -1,0 +1,7 @@
+Can we host the airflow in local now, mirroring what we have in azure container app. 
+Also for the flat file can we have a SFTP or something similar in local docker? [open to ideas here]
+[so when we wind down azure, we can keep the job running.]
+
+---
+
+can we add a similar backup method for snowflake using localstack for snowflake [again open to ideas]?

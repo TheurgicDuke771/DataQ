@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "e5f53c625ec0",
+  "strategy": "manual-commit",
+  "branch": "feature/1063-s3-compatible-endpoints",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/e5/f53c625ec0/0/metadata.json",
+      "transcript": "/e5/f53c625ec0/0/full.jsonl",
+      "compact_transcript": "/e5/f53c625ec0/0/transcript.jsonl",
+      "content_hash": "/e5/f53c625ec0/0/content_hash.txt",
+      "prompt": "/e5/f53c625ec0/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 11834,
+    "cache_creation_tokens": 536126,
+    "cache_read_tokens": 69727408,
+    "output_tokens": 220270,
+    "api_call_count": 308
+  }
+}
