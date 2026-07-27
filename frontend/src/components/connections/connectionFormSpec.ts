@@ -89,10 +89,25 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
     secretLabel: 'SAS token',
   },
   s3: {
+    // AWS by default; setting an endpoint points the same connection at any
+    // S3-compatible store — MinIO, Ceph, R2, Wasabi, Backblaze (#1063).
     textFields: [
       { name: 'bucket', label: 'Bucket' },
       { name: 'region', label: 'Region' },
       { name: 'access_key_id', label: 'Access key ID' },
+      {
+        name: 'endpoint_url',
+        label: 'Endpoint URL',
+        optional: true,
+        extra: 'S3-compatible store, e.g. https://minio.example.com:9000 — leave blank for AWS',
+      },
+      {
+        name: 'addressing_style',
+        label: 'Addressing style',
+        optional: true,
+        extra:
+          'auto (default) · path · virtual — auto uses path addressing when an endpoint is set',
+      },
     ],
     secretLabel: 'Secret access key',
   },
@@ -177,6 +192,22 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
       },
       { name: 'region', label: 'Region (S3 only)', optional: true },
       { name: 'access_key_id', label: 'Access key ID (S3 only)', optional: true },
+      // Same pair as the s3 datasource (#1063) — without these the artifacts poll
+      // would be the one S3 path pinned to AWS, so a project whose artifacts sit in
+      // MinIO/Ceph would look configured and silently report no runs.
+      {
+        name: 'endpoint_url',
+        label: 'Endpoint URL (S3 only)',
+        optional: true,
+        extra: 'S3-compatible store, e.g. https://minio.example.com:9000 — blank for AWS',
+      },
+      {
+        name: 'addressing_style',
+        label: 'Addressing style (S3 only)',
+        optional: true,
+        extra:
+          'auto (default) · path · virtual — auto uses path addressing when an endpoint is set',
+      },
     ],
     secretLabel: 'Artifacts read credential (ADLS SAS / S3 secret key)',
     optionalSecret: true,

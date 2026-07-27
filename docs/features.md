@@ -14,7 +14,7 @@ Stores you write checks **against** (see [Datasources & checks](datasources-chec
 
 - **Snowflake** (DEV / QA / UAT) — key-pair or password auth.
 - **Unity Catalog (Databricks)** — three-level `catalog.schema.table`.
-- **ADLS Gen2** and **AWS S3** — flat files, a single object or a **batch** pattern
+- **ADLS Gen2** and **AWS S3 (or any S3-compatible store)** — flat files, a single object or a **batch** pattern
   (`orders_*.csv`, latest-or-specific) in **CSV** or **Parquet**.
 - **Apache Iceberg** — native `pyiceberg` read straight from object storage, no query
   engine in front: `namespace.table` addressing, REST / SQL / Glue / Hive catalogs,

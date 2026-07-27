@@ -30,6 +30,12 @@ from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 from backend.app.core.artifacts import ArtifactTooLargeError, load_json_artifact
 from backend.app.core.credential_expiry import azure_sas_expiry
 from backend.app.core.logging import get_logger
+from backend.app.core.s3_endpoint import (
+    S3AddressingStyle,
+    addressing_config_kwargs,
+    normalize_addressing_style,
+    normalize_endpoint_url,
+)
 from backend.app.orchestration.base import MalformedEventError, RunUpdate
 
 log = get_logger(__name__)
@@ -83,9 +89,14 @@ class DbtConfig(BaseModel):
     project_name: str
     artifacts_uri: str
     jobs: list[str]
-    # S3-only (non-secret half of the credential).
+    # S3-only (non-secret half of the credential). ``endpoint_url``/
+    # ``addressing_style`` address an S3-compatible store (#1063) and carry the
+    # same meaning as on the S3 *datasource* connection — shared validation and
+    # resolution, so the artifacts poll can reach exactly the stores a check can.
     region: str | None = None
     access_key_id: str | None = None
+    endpoint_url: str | None = None
+    addressing_style: S3AddressingStyle = "auto"
     # Optional operator override for the lineage anchor namespace (ADR 0034, #759):
     # dbt's manifest has no namespace, so DataQ normally infers it from existing
     # assets. Set this (the OpenLineage namespace, e.g. `snowflake://<account>`) to
@@ -100,6 +111,16 @@ class DbtConfig(BaseModel):
         if scheme not in ("adls", "s3", "file"):
             raise ValueError("artifacts_uri must start with adls://, s3://, or file://")
         return value.rstrip("/")
+
+    @field_validator("endpoint_url")
+    @classmethod
+    def _endpoint(cls, value: str | None) -> str | None:
+        return normalize_endpoint_url(value)
+
+    @field_validator("addressing_style", mode="before")
+    @classmethod
+    def _style(cls, value: Any) -> Any:
+        return normalize_addressing_style(value)
 
     @field_validator("lineage_namespace")
     @classmethod
@@ -183,10 +204,16 @@ def _read_artifact(
         region_name=config.region,
         aws_access_key_id=config.access_key_id,
         aws_secret_access_key=secret,
+        # S3-compatible store when set, AWS when None (#1063) — same resolution as
+        # the datasource adapter, so a dbt project whose artifacts sit next to the
+        # data in MinIO/Ceph polls as readily as one on AWS.
+        endpoint_url=config.endpoint_url,
         # Bound connect/read like the S3 datasource adapter — `test()` runs this in
         # the request thread; boto3's ~60s defaults would hang on a blackholed host.
         config=Config(
-            connect_timeout=int(_READ_TIMEOUT_SECONDS), read_timeout=int(_READ_TIMEOUT_SECONDS)
+            connect_timeout=int(_READ_TIMEOUT_SECONDS),
+            read_timeout=int(_READ_TIMEOUT_SECONDS),
+            **addressing_config_kwargs(config.endpoint_url, config.addressing_style),
         ),
     )
     try:

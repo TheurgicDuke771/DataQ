@@ -85,6 +85,92 @@ describe('ConnectionNew', () => {
     expect(payload.secret ?? '').toBe(''); // no secret required for file://
   }, 15_000);
 
+  // The backend's blank-coercion design (#1063) rests on a claim about THIS form:
+  // that a cleared optional field submits "" rather than being omitted. That claim
+  // was asserted only in a backend docstring, so a change here could invalidate the
+  // backend's rationale with nothing failing. These two pin both halves.
+  it('omits an untouched optional S3 endpoint, and submits "" for a cleared one', async () => {
+    const user = userEvent.setup();
+    mockCreate.mockResolvedValue({
+      id: 'c7',
+      name: 's3-local',
+      type: 's3',
+      env: 'dev',
+      config: {},
+      has_secret: true,
+      created_by: 'u1',
+    });
+    renderPage();
+
+    await user.click(screen.getByText('AWS S3'));
+    await user.type(screen.getByLabelText('Name'), 's3-local');
+    await user.click(screen.getByLabelText('Environment'));
+    await user.click(await screen.findByText('DEV'));
+    await user.type(screen.getByLabelText('Bucket'), 'landing');
+    await user.type(screen.getByLabelText('Region'), 'us-east-1');
+    await user.type(screen.getByLabelText('Access key ID'), 'AKIA');
+    await user.type(screen.getByLabelText('Secret access key'), 'sekret');
+
+    // Addressing style: never touched → antd carries the key with `undefined`,
+    // which JSON serialization drops, so the backend never sees it and the model
+    // default (`auto`) applies.
+    // Endpoint URL: typed then cleared → antd yields "", which is precisely the
+    // value `normalize_endpoint_url` has to collapse back to "AWS".
+    await user.type(screen.getByLabelText(/^Endpoint URL/), 'http://minio:9000');
+    await user.clear(screen.getByLabelText(/^Endpoint URL/));
+
+    await user.click(screen.getByRole('button', { name: 'Create' }));
+
+    await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1));
+    const { config } = mockCreate.mock.calls[0][0];
+    expect(config.endpoint_url).toBe('');
+    expect(config.addressing_style).toBeUndefined();
+    // Assert on the WIRE, not the in-memory object: `undefined` is dropped by JSON
+    // serialization, so what the API actually receives has no `addressing_style`
+    // key at all — which is why the backend can rely on its model default, while
+    // the cleared `endpoint_url` really does arrive as "".
+    expect(JSON.parse(JSON.stringify(config))).toEqual({
+      bucket: 'landing',
+      region: 'us-east-1',
+      access_key_id: 'AKIA',
+      endpoint_url: '',
+    });
+  }, 15_000);
+
+  it('submits a filled S3 endpoint and addressing style verbatim', async () => {
+    const user = userEvent.setup();
+    mockCreate.mockResolvedValue({
+      id: 'c8',
+      name: 's3-minio',
+      type: 's3',
+      env: 'dev',
+      config: {},
+      has_secret: true,
+      created_by: 'u1',
+    });
+    renderPage();
+
+    await user.click(screen.getByText('AWS S3'));
+    await user.type(screen.getByLabelText('Name'), 's3-minio');
+    await user.click(screen.getByLabelText('Environment'));
+    await user.click(await screen.findByText('DEV'));
+    await user.type(screen.getByLabelText('Bucket'), 'landing');
+    await user.type(screen.getByLabelText('Region'), 'us-east-1');
+    await user.type(screen.getByLabelText('Access key ID'), 'AKIA');
+    await user.type(screen.getByLabelText('Secret access key'), 'sekret');
+    await user.type(screen.getByLabelText(/^Endpoint URL/), 'http://minio:9000');
+    await user.type(screen.getByLabelText(/^Addressing style/), 'path');
+
+    await user.click(screen.getByRole('button', { name: 'Create' }));
+
+    await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1));
+    expect(mockCreate.mock.calls[0][0].config).toMatchObject({
+      bucket: 'landing',
+      endpoint_url: 'http://minio:9000',
+      addressing_style: 'path',
+    });
+  }, 15_000);
+
   it('does not leak name/env when re-picking a different type', async () => {
     const user = userEvent.setup();
     renderPage();

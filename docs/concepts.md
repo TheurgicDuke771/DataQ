@@ -5,7 +5,8 @@ A few terms make the rest of the docs click.
 ## The one distinction: datasource vs orchestration
 
 - **Datasources** are stores you write data-quality checks *against*: **Snowflake**,
-  **ADLS Gen2**, **AWS S3**, **Unity Catalog (Databricks)**, **Apache Iceberg** (native read).
+  **ADLS Gen2**, **AWS S3** (or any S3-compatible store — MinIO, Ceph, R2, Wasabi, Backblaze),
+  **Unity Catalog (Databricks)**, **Apache Iceberg** (native read).
 - **Orchestration providers** are workflow engines DataQ *observes* — **Azure Data
   Factory (ADF)**, **Apache Airflow**, and **dbt**. DataQ does three things with them: monitor
   pipeline/DAG/build runs, detect failures in near-real-time, and **trigger a check suite when a
