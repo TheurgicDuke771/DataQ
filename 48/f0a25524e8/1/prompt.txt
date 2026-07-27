@@ -1,0 +1,2 @@
+Hey if we add Hashicorp valut (community Edition), will it replace reddis for secret management for the local installation?
+And which hashicorp valut edition will you suggest for DataQ?
