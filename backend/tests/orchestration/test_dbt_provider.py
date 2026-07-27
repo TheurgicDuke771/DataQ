@@ -332,6 +332,68 @@ def test_read_artifact_s3_builds_key_and_reads(monkeypatch: pytest.MonkeyPatch) 
     assert seen["key"] == "dbt/lineage_build/latest/run_results.json"
 
 
+def test_read_artifact_s3_reaches_a_compatible_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The artifacts poll must reach the same stores a datasource check can (#1063).
+
+    Without this the poller is the one S3 path pinned to AWS, so a dbt project
+    whose artifacts sit beside its data in MinIO/Ceph would silently never poll —
+    the connection would look configured and simply report no runs.
+    """
+    seen: dict[str, Any] = {}
+
+    class _Body:
+        def read(self) -> bytes:
+            return _run_results("success")
+
+    class _S3:
+        def get_object(self, **kw: str) -> dict[str, Any]:
+            return {"Body": _Body()}
+
+    def fake_client(*a: Any, **kw: Any) -> _S3:
+        seen["client_kwargs"] = kw
+        return _S3()
+
+    monkeypatch.setattr("boto3.client", fake_client)
+    cfg = DbtConfig.model_validate(
+        _cfg(
+            artifacts_uri="s3://bucket/dbt",
+            access_key_id="AK",
+            region="us-east-1",
+            endpoint_url="http://minio:9000",
+        )
+    )
+    assert dbt_mod._read_artifact(cfg, "lineage_build", "secret-key") is not None
+    assert seen["client_kwargs"]["endpoint_url"] == "http://minio:9000"
+    assert seen["client_kwargs"]["config"].s3 == {"addressing_style": "path"}
+
+
+def test_read_artifact_s3_without_an_endpoint_still_targets_aws(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression guard: an existing AWS dbt connection is built as it always was."""
+    seen: dict[str, Any] = {}
+
+    class _Body:
+        def read(self) -> bytes:
+            return _run_results("success")
+
+    class _S3:
+        def get_object(self, **kw: str) -> dict[str, Any]:
+            return {"Body": _Body()}
+
+    def fake_client(*a: Any, **kw: Any) -> _S3:
+        seen["client_kwargs"] = kw
+        return _S3()
+
+    monkeypatch.setattr("boto3.client", fake_client)
+    cfg = DbtConfig.model_validate(
+        _cfg(artifacts_uri="s3://bucket/dbt", access_key_id="AK", region="us-east-1")
+    )
+    assert dbt_mod._read_artifact(cfg, "lineage_build", "secret-key") is not None
+    assert seen["client_kwargs"]["endpoint_url"] is None
+    assert seen["client_kwargs"]["config"].s3 is None
+
+
 def test_read_artifact_s3_missing_returns_none(monkeypatch: pytest.MonkeyPatch) -> None:
     from botocore.exceptions import ClientError
 

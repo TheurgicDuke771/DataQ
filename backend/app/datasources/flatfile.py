@@ -39,6 +39,7 @@ from typing import Any, ClassVar
 import great_expectations as gx
 
 from backend.app.core.logging import get_logger
+from backend.app.core.s3_endpoint import addressing_config_kwargs
 from backend.app.core.secrets import SecretStore
 from backend.app.datasources.adls import AdlsConfig
 from backend.app.datasources.base import CheckOutcome, CheckSpec, MonitorSpec, SuiteOutcome
@@ -149,7 +150,12 @@ def read_csv_bytes(raw: io.BytesIO, **kwargs: Any) -> Any:
 
 
 def _s3_client(cfg: S3Config, secret: str) -> Any:
-    """A boto3 S3 client for `cfg` with the standard fail-fast timeouts."""
+    """A boto3 S3 client for `cfg` with the standard fail-fast timeouts.
+
+    The one client every S3 read path is built on — `download_bytes`,
+    `object_size`, `read_range`, `iter_files` and the schema/count reads — so the
+    S3-compatible endpoint (#1063) reaches all of them from here.
+    """
     import boto3
     from botocore.config import Config
 
@@ -158,7 +164,12 @@ def _s3_client(cfg: S3Config, secret: str) -> Any:
         region_name=cfg.region,
         aws_access_key_id=cfg.access_key_id,
         aws_secret_access_key=secret,
-        config=Config(connect_timeout=_CONNECT_TIMEOUT, read_timeout=_READ_TIMEOUT),
+        endpoint_url=cfg.endpoint_url,
+        config=Config(
+            connect_timeout=_CONNECT_TIMEOUT,
+            read_timeout=_READ_TIMEOUT,
+            **addressing_config_kwargs(cfg.endpoint_url, cfg.addressing_style),
+        ),
     )
 
 

@@ -89,10 +89,25 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
     secretLabel: 'SAS token',
   },
   s3: {
+    // AWS by default; setting an endpoint points the same connection at any
+    // S3-compatible store — MinIO, Ceph, R2, Wasabi, Backblaze (#1063).
     textFields: [
       { name: 'bucket', label: 'Bucket' },
       { name: 'region', label: 'Region' },
       { name: 'access_key_id', label: 'Access key ID' },
+      {
+        name: 'endpoint_url',
+        label: 'Endpoint URL',
+        optional: true,
+        extra: 'S3-compatible store, e.g. https://minio.example.com:9000 — leave blank for AWS',
+      },
+      {
+        name: 'addressing_style',
+        label: 'Addressing style',
+        optional: true,
+        extra:
+          'auto (default) · path · virtual — auto uses path addressing when an endpoint is set',
+      },
     ],
     secretLabel: 'Secret access key',
   },

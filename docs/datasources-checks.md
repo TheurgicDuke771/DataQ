@@ -6,7 +6,7 @@
 |---|---|---|---|
 | Snowflake (DEV/QA/UAT) | account + user + key/PAT | ✅ | ✅ |
 | ADLS Gen2 (flat files) | account URL + container, SAS | ✅ | ✅ |
-| AWS S3 (flat files) | bucket + region, access key | ✅ | ✅ |
+| AWS S3 **and S3-compatible** (flat files) | bucket + region, access key (+ optional endpoint) | ✅ | ✅ |
 | Unity Catalog (Databricks) | workspace URL + warehouse + PAT | ✅ | ✅ |
 | Apache Iceberg | catalog URI + catalog type (REST/SQL/Glue/Hive) + optional storage credential | ✅ | ✅ |
 
@@ -22,6 +22,26 @@ paste the PEM private key; if the key is passphrase-protected (PKCS#8), fill the
 atomically via **Re-auth**. Leave the passphrase blank for an unencrypted key.
 Key-pair connections also require **Role** (the GX key-pair form mandates one for suite
 runs, so it is validated when the connection is saved).
+
+### S3-compatible object stores
+
+The **S3** connection is not AWS-only. Leave **Endpoint URL** blank and it addresses AWS
+exactly as before; set it to a store that speaks the S3 API — MinIO, Ceph/RadosGW,
+Cloudflare R2, Wasabi, Backblaze B2, SeaweedFS, or an on-prem gateway — and the same
+connection, checks and monitors work unchanged.
+
+- **Endpoint URL** — the full base URL including scheme, e.g.
+  `https://minio.example.com:9000`. A URL without `http://`/`https://` is rejected at
+  save time rather than failing later as an opaque connection error.
+- **Addressing style** — `auto` (default), `path` or `virtual`. `auto` uses **path**
+  addressing whenever an endpoint is set, which is what MinIO and SeaweedFS require;
+  with no endpoint it leaves AWS's default untouched. Override it only if your store
+  needs the other form (R2 and Wasabi accept virtual-host addressing).
+- **Region** is still required — S3-compatible stores generally ignore it, but the AWS
+  SDK requires a value. `us-east-1` is the conventional filler.
+
+The same two fields exist on a **dbt** orchestration connection whose `artifacts_uri` is
+`s3://…`, so the artifacts poll can read from the same store.
 
 ### Identifier casing (Snowflake / Unity Catalog)
 

@@ -1094,6 +1094,36 @@ def test_s3_client_builds_with_failfast_timeouts() -> None:
     assert client.meta.region_name == "us-west-2"
 
 
+def test_s3_client_resolves_a_compatible_endpoint() -> None:
+    """A real boto3 client, so this proves boto3 *honoured* the kwargs (#1063).
+
+    Asserting on a recorded kwarg would only prove we passed something; the
+    question that matters is what the client ends up addressing, and that is
+    botocore's answer, not ours. Construction only — no network.
+    """
+    from backend.app.datasources.s3 import S3Config
+
+    client = flatfile._s3_client(
+        S3Config.model_validate({**_S3_CONFIG, "endpoint_url": "http://minio:9000"}), "secret"
+    )
+    assert client.meta.endpoint_url == "http://minio:9000"
+    assert client.meta.config.s3 == {"addressing_style": "path"}
+
+
+def test_s3_client_without_an_endpoint_still_resolves_aws() -> None:
+    """The regression guard for every existing AWS connection (#1063).
+
+    If `auto` ever started pinning an addressing style unconditionally, this is
+    what would catch it — the AWS client must resolve the regional endpoint and
+    leave `config.s3` unset.
+    """
+    from backend.app.datasources.s3 import S3Config
+
+    client = flatfile._s3_client(S3Config.model_validate(_S3_CONFIG), "secret")
+    assert client.meta.endpoint_url == "https://s3.us-west-2.amazonaws.com"
+    assert client.meta.config.s3 is None
+
+
 def test_blob_service_builds_against_account_url() -> None:
     from backend.app.datasources.adls import AdlsConfig
 

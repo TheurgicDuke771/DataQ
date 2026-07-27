@@ -50,8 +50,46 @@ def test_validate_config_rejects_access_key_without_key_id() -> None:
 
 
 def test_validate_config_rejects_unknown_field() -> None:
+    # `endpoint` is deliberately the near-miss of the real `endpoint_url` field:
+    # extra="forbid" must still reject it rather than silently ignoring a typo
+    # that would leave the connection quietly pointing at AWS.
     with pytest.raises(ValidationError):
         S3ConnectionAdapter().validate_config({**_ACCESS_KEY_CONFIG, "endpoint": "x"})
+
+
+def test_validate_config_defaults_to_aws_with_auto_addressing() -> None:
+    cfg = S3ConnectionAdapter().validate_config(dict(_ACCESS_KEY_CONFIG))
+    assert cfg.endpoint_url is None
+    assert cfg.addressing_style == "auto"
+
+
+def test_validate_config_normalizes_the_endpoint_url() -> None:
+    cfg = S3ConnectionAdapter().validate_config(
+        {**_ACCESS_KEY_CONFIG, "endpoint_url": " http://minio:9000/ "}
+    )
+    assert cfg.endpoint_url == "http://minio:9000"
+
+
+def test_validate_config_treats_a_cleared_endpoint_as_aws() -> None:
+    """The connection form submits "" for an optional field the user cleared."""
+    cfg = S3ConnectionAdapter().validate_config({**_ACCESS_KEY_CONFIG, "endpoint_url": ""})
+    assert cfg.endpoint_url is None
+
+
+def test_validate_config_rejects_a_schemeless_endpoint_url() -> None:
+    with pytest.raises(ValidationError, match="must start with http:// or https://"):
+        S3ConnectionAdapter().validate_config({**_ACCESS_KEY_CONFIG, "endpoint_url": "minio:9000"})
+
+
+def test_validate_config_treats_a_cleared_addressing_style_as_auto() -> None:
+    """Same cleared-field shape — but "" would be rejected by the Literal."""
+    cfg = S3ConnectionAdapter().validate_config({**_ACCESS_KEY_CONFIG, "addressing_style": ""})
+    assert cfg.addressing_style == "auto"
+
+
+def test_validate_config_rejects_an_unknown_addressing_style() -> None:
+    with pytest.raises(ValidationError):
+        S3ConnectionAdapter().validate_config({**_ACCESS_KEY_CONFIG, "addressing_style": "pth"})
 
 
 # ───────────────────────── test() connectivity ─────────────────────
@@ -77,6 +115,57 @@ def test_test_head_buckets_with_access_key(monkeypatch: pytest.MonkeyPatch) -> N
     assert calls["client_kwargs"]["aws_access_key_id"] == "AKIAEXAMPLE"
     assert calls["client_kwargs"]["aws_secret_access_key"] == "sekret-access-key"
     assert calls["head_bucket"] == {"Bucket": "dataq-lake"}
+
+
+def test_test_targets_a_compatible_endpoint_with_path_addressing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A MinIO-shaped config must reach boto3 as endpoint + path addressing (#1063).
+
+    Both halves matter: without the endpoint the probe hits AWS, and without path
+    addressing boto3 resolves ``dataq-lake.minio:9000`` — a host that does not
+    exist — so head_bucket fails for a reason that looks like a network fault.
+    """
+    calls: dict[str, Any] = {}
+
+    class _FakeClient:
+        def head_bucket(self, **kwargs: Any) -> None:
+            calls["head_bucket"] = kwargs
+
+    def fake_client(service: str, **kwargs: Any) -> _FakeClient:
+        calls["client_kwargs"] = kwargs
+        return _FakeClient()
+
+    monkeypatch.setattr(boto3, "client", fake_client)
+    S3ConnectionAdapter().test(
+        {**_ACCESS_KEY_CONFIG, "endpoint_url": "http://minio:9000"}, "sekret"
+    )
+
+    assert calls["client_kwargs"]["endpoint_url"] == "http://minio:9000"
+    assert calls["client_kwargs"]["config"].s3 == {"addressing_style": "path"}
+
+
+def test_test_leaves_the_aws_client_untouched(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The no-endpoint path must be byte-identical to pre-#1063.
+
+    `endpoint_url=None` is boto3's own default, and `config.s3` stays unset rather
+    than being pinned to an addressing style — so adding S3-compatible support
+    cannot change how an existing AWS connection resolves.
+    """
+    calls: dict[str, Any] = {}
+
+    class _FakeClient:
+        def head_bucket(self, **kwargs: Any) -> None: ...
+
+    def fake_client(service: str, **kwargs: Any) -> _FakeClient:
+        calls["client_kwargs"] = kwargs
+        return _FakeClient()
+
+    monkeypatch.setattr(boto3, "client", fake_client)
+    S3ConnectionAdapter().test(dict(_ACCESS_KEY_CONFIG), "sekret")
+
+    assert calls["client_kwargs"]["endpoint_url"] is None
+    assert calls["client_kwargs"]["config"].s3 is None
 
 
 def test_test_raises_when_head_bucket_fails(monkeypatch: pytest.MonkeyPatch) -> None:
