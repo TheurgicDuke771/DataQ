@@ -13,6 +13,7 @@ import pytest
 from pydantic import BaseModel
 from sqlalchemy import func, select
 
+from backend.app.core.secret_names import connection_secret_ref
 from backend.app.core.secrets import SecretNotFoundError, SecretWriteError
 from backend.app.db.models import Asset, Connection, ConnectionVersion, Run, Suite, User
 from backend.app.services import connection_service as svc
@@ -117,8 +118,13 @@ def test_create_persists_row_and_writes_secret(db_session: Any) -> None:
     assert conn.id is not None
     assert conn.type == "snowflake"
     assert conn.config["account"] == "ab12345.eu-west-1"
-    # secret written under conn-<id>, only the ref is on the row
-    assert conn.secret_ref == f"conn-{conn.id}"
+    # The ref is READABLE (ADR 0039 / #1060) — an operator has to find this entry
+    # in the vault by eye to rotate it. Asserted via the generator rather than a
+    # literal so a format tweak doesn't break unrelated tests.
+    assert conn.secret_ref == connection_secret_ref(
+        connection_id=conn.id, env=conn.env, name=conn.name
+    )
+    assert "finance" in conn.secret_ref  # the human-meaningful part actually survives
     assert store.data[conn.secret_ref] == "p@ss"
 
 
@@ -652,7 +658,7 @@ def test_secret_only_update_records_no_version(db_session: Any) -> None:
     """Credential rotation is not config history — no new snapshot (mirrors reauth)."""
     conn = _create(db_session, FakeStore())
     store = FakeStore()
-    store.set(f"conn-{conn.id}", "old")
+    store.set(str(conn.secret_ref), "old")
     svc.update_connection(db_session, conn.id, secret="rotated", secret_store=store)
     assert [v.version_no for v in _versions(db_session, conn.id)] == [1]  # still just the create
 

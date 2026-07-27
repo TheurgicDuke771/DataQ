@@ -223,7 +223,7 @@ class TestSweep:
         db_session.commit()
 
         changed = svc.refresh_credential_expiry(
-            db_session, secret_store=FakeStore({f"conn-{conn.id}": _SAS})
+            db_session, secret_store=FakeStore({str(conn.secret_ref): _SAS})
         )
 
         db_session.refresh(conn)
@@ -235,7 +235,7 @@ class TestSweep:
         # saw the write, so only a re-read can move the date.
         store = FakeStore()
         conn = _adls(db_session, store)
-        store.data[f"conn-{conn.id}"] = _LATER_SAS
+        store.data[str(conn.secret_ref)] = _LATER_SAS
 
         svc.refresh_credential_expiry(db_session, secret_store=store)
 
@@ -274,7 +274,7 @@ class TestSweep:
         # state can't be probed from another connection here — the `db_session`
         # fixture holds the test inside a rolled-back transaction — but the
         # commit ORDERING is exactly what separates per-row from batch.)
-        store = FakeStore({f"conn-{first.id}": _SAS, f"conn-{second.id}": _SAS})
+        store = FakeStore({str(first.secret_ref): _SAS, str(second.secret_ref): _SAS})
         commits = 0
         commits_before_fetch: list[int] = []
         real_commit, real_get = db_session.commit, store.get
@@ -309,12 +309,12 @@ class TestSweep:
 
         good = _adls(db_session, FakeStore())
         bad = _adls(db_session, FakeStore())
-        bad_ref = f"conn-{bad.id}"
+        bad_ref = str(bad.secret_ref)
         good.credential_expires_at = None
         db_session.commit()
 
         svc.refresh_credential_expiry(
-            db_session, secret_store=_OneBadStore({f"conn-{good.id}": _SAS, bad_ref: _SAS})
+            db_session, secret_store=_OneBadStore({str(good.secret_ref): _SAS, bad_ref: _SAS})
         )
 
         db_session.refresh(good)
