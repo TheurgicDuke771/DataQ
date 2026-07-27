@@ -1,0 +1,38 @@
+What are those `2 change`?
+
+---
+
+Do we need to update the original terraform first to reflect the current state of prod?
+
+---
+
+yeah, lets go with the suggested plan, [adopt WAREHOUSE_LINEAGE_ENABLED, remove the two Marquez vars]
+
+---
+
+<task-notification>
+<task-id>bbw5p0f3b</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/fcf147da-f22f-41ab-ae99-a0fbd9e19a4c/tasks/bbw5p0f3b.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for CI then report" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+apply and deploy the changes. 
+Then do a one off for the 2 marquez specific vars [I belive these are the 2 outliers, and remaining are covers in IaC]
+
+---
+
+<task-notification>
+<task-id>bgzevq9hd</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/fcf147da-f22f-41ab-ae99-a0fbd9e19a4c/tasks/bgzevq9hd.output</output-file>
+<status>failed</status>
+<summary>Background command "Milestone and watch CI on 1092" failed with exit code 1</summary>
+</task-notification>
+
+---
+
+For #1087 -> can't we keep the encryption key in .env file [same as token of open bao]? Or will this be considered as a security risk?
