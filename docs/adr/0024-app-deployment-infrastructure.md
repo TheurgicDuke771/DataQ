@@ -1,6 +1,12 @@
 # ADR 0024 — App deployment infrastructure: Terraform (ACA + SWA + KV + self-hosted Redis), sharing the Container Apps environment with the harness
 
-- **Status:** Accepted
+> **Amendment (2026-07-27, in place — no new ADR):** the IaC **CLI** is now **OpenTofu**
+> (`tofu`), not Terraform. The stack, state, providers, and every decision below are
+> otherwise unchanged — only the binary that reads them differs. See
+> [§ Amendment — OpenTofu replaces Terraform as the IaC CLI](#amendment-2026-07-27--opentofu-replaces-terraform-as-the-iac-cli)
+> at the foot of this ADR. Read "Terraform" in the original text below as "the IaC CLI".
+
+- **Status:** Accepted (amended 2026-07-27 — OpenTofu replaces Terraform as the IaC CLI)
 - **Date:** 2026-06-27
 - **Deciders:** @TheurgicDuke771
 - **Related:** ADR [0010](0010-provider-agnostic-infrastructure-seams.md) (Azure = one impl behind each
@@ -108,3 +114,116 @@ everything else is a separate `dataq-app-*` resource.**
   baseURL) and re-introduces CORS; linked backend is the same-origin design already committed.
 - **User-assigned identity + federated cred for CI** (instead of an app registration). Viable and needs
   no app-reg rights; the app registration was chosen for a cleaner separation of the CI principal.
+
+---
+
+## Amendment (2026-07-27) — OpenTofu replaces Terraform as the IaC CLI
+
+- **Status:** Accepted
+- **Date:** 2026-07-27
+- **Amends:** this ADR's choice of IaC **CLI** only. Every other decision above stands.
+- **Related:** ADR [0031](0031-oss-byol-distribution-licensing.md) (MIT distribution + the
+  standing no-source-available dependency guardrail, CONTRIBUTING rule 40),
+  ADR [0021](0021-demo-test-data-environment-strategy.md) (the out-of-repo harness stack).
+
+### Context
+
+Terraform has been **BUSL-1.1** since v1.6; the stack's floor (`>= 1.9`) and the version
+actually in use (1.15.x) are both under it. ADR 0031 put DataQ on record rejecting
+BSL-style licensing *for itself* and set a standing guardrail keeping source-available
+licenses (explicitly naming BUSL) out of the dependency tree.
+
+**Terraform did not violate that guardrail.** Rule 40 governs the *dependency tree* — what
+DataQ ships — and the CLI is a build-time tool that never enters an image or a release
+artifact. BUSL-1.1's additional use grant permits using it to deploy your own product;
+there is **no legal exposure and nothing was out of compliance.** This amendment is about
+*coherence*: the deploy toolchain was the one place a BUSL binary still touched a project
+that is explicit about not shipping one.
+
+The practical trigger is [#505](https://github.com/TheurgicDuke771/DataQ/issues/505)
+(AWS + GCP deploy IaC, post-v1). Converting one Azure stack is a contained change;
+converting three, after they are written against a second CLI, is not. This is the
+cheapest this decision will ever be.
+
+### Decision
+
+**Use OpenTofu (`tofu`) as the IaC CLI for every DataQ-owned stack — the in-repo
+`deploy/terraform/azure/` stack and the out-of-repo harness stack (ADR 0021) — converted
+together.**
+
+- **Directory path and file extensions are unchanged.** `deploy/terraform/<cloud>/` and
+  `*.tf` stay. `terraform {}` is OpenTofu's own block name and `.tf` its own format; they
+  are not Terraform leftovers. Renaming would churn every doc link, the `.gitignore`
+  path-independent globs, the `docs/compliance-posture.md` evidence links, and the
+  `aws/`/`gcp/` sibling convention #505 will follow, for zero functional gain.
+- **State carries over untouched.** Local backend, state format version 4, gitignored. No
+  migration step, no re-import, no `state mv`.
+- **Providers resolve from `registry.opentofu.org`.** `tofu init` rewrites
+  `.terraform.lock.hcl` accordingly; the tracked lock is the record. Provider *versions*
+  are preserved exactly — only the registry host and the hashes change (the OpenTofu
+  project's provider builds are not byte-identical to HashiCorp's).
+- **Both stacks convert; neither is applied as part of the change.** The harness stack is
+  verified **plan-only** — a blanket harness `apply` arms ADF triggers and drifts the
+  warehouse (see `docs/ops-log.md`).
+
+### Evidence — how this was verified
+
+A clean plan was **not** the acceptance bar, because the stack already carries pre-existing
+drift (config env vars added by ADR 0035 and ADR 0029 that were only ever set via `az`,
+never applied). The bar was **equivalence**: the same config and the same state must
+produce the *same plan* under both CLIs.
+
+Both CLIs were run against live Azure with identical inputs, their plans exported with
+`-out` and rendered via `show -json`, and the `resource_changes` projection normalized
+(sorted by address, rendering stripped) and diffed:
+
+| | Terraform 1.15.8 | OpenTofu 1.12.5 |
+|---|---|---|
+| resource_changes | 40 | 40 |
+| action summary | `no-op=38 update=2` | `no-op=38 update=2` |
+| normalized diff | — | **byte-for-byte identical** |
+| provider versions | azuread 3.9.0 · azurerm 4.79.0 · null 3.3.0 · random 3.9.0 · time 0.14.0 | identical |
+
+The *rendered* text plans differ (branding prose, refresh-line ordering, column alignment,
+and how each CLI counts `# (N unchanged attributes hidden)`). Those are presentation
+artifacts; the semantic comparison is the one that carries weight, and eyeballing the
+rendered diff would not have settled it.
+
+### Consequences
+
+**Positive**
+- The deploy toolchain matches the project's stated licensing posture end to end.
+- No BUSL binary anywhere in the workflow; no future HCP Terraform upsell surface.
+- Unlocks OpenTofu **state encryption** — a real gain here, since the local state holds the
+  generated Postgres password and secret values in plaintext on one machine. Tracked as a
+  deliberate follow-up, not folded into this change.
+- Done while there is exactly one stack pair, before #505 adds two more.
+
+**Negative / watch**
+- **The swap is convention, not enforcement — for now.** Nothing in the config is
+  OpenTofu-exclusive, so `terraform` would still parse and apply it. That is deliberate:
+  it keeps this change reversible. Adding the `encryption {}` block is what makes it
+  structural (Terraform cannot parse that block) — and is therefore a **one-way door**,
+  which is why it is a separate follow-up rather than part of this amendment.
+- **Two stacks, one resource group.** The app and harness stacks share `dataq-rg`.
+  Converting only one would have left two CLIs and a wrong-binary hazard on shared
+  resources; they were converted together for that reason.
+- Ecosystem material (module docs, tutorials, assistant output) still defaults to
+  `terraform`; occasional mental translation on `deploy/` contributions.
+- The pre-existing drift found while establishing the baseline is **unrelated to this
+  change** and is filed separately — it is not resolved here, and this amendment
+  deliberately does not apply the stack.
+
+### Alternatives considered
+
+- **Stay on Terraform.** Zero work, zero risk, and *no compliance problem to fix* — the
+  honest null option. Rejected on coherence plus the #505 timing argument, not on
+  necessity.
+- **A new ADR (0040) instead of amending in place.** The index convention pairs an
+  amendment with a *new* ADR, but that convention exists for decisions large enough to
+  stand alone. This changes one tool in one decision and would read as an orphan record;
+  amending 0024 keeps the rationale where a reader of the deploy ADR will actually find
+  it. Precedent: ADR 0038 §5, amended in place by #952.
+- **Rename `deploy/terraform/` → `deploy/opentofu/`.** Rejected — see Decision above.
+- **Fold state encryption into the same change.** Rejected: it mixes a
+  provably-zero-diff swap with a state-rewriting change and burns the rollback path.
