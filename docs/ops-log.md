@@ -75,6 +75,7 @@ apart.
 
 | When (UTC) | Service | Action | By | Why / expected state |
 |---|---|---|---|---|
+| 2026-07-27 06:36 | Full harness — 5 apps + 2 ADF triggers + all 7 jobs | **STOP** — `harness_window.sh stop` | Arijit (via Claude) | Window closed. **Verified independently: all 5 apps `Stopped` with 0 live replicas, both ADF triggers `Stopped`, and suspend re-issued on all 7 jobs with 0 executions Running.** Jobs mattered here — unlike the 04:00 window, `run` genuinely resumed them, so a `set -e` abort mid-phase could have left a cron armed. Results: mockdata ×5 Succeeded, **all 3 Airflow DAGs success**, iceberg-writer Succeeded; **ADF ×2 and dbt Failed** — see the finding below. |
 | 2026-07-27 06:15 | Full harness — 5 apps + 2 ADF triggers + all 7 jobs | **START + FULL RUN** — `harness_window.sh start` then `run --adf --dags --dbt --iceberg` | Arijit (via Claude) | **Deliberate, full-flow validation window.** First full cycle since the Airflow metadata-DB credential was fixed (05:15 row) — the 04:00 window could not exercise any flow because Airflow never served. Runs every flow: ADF Flow-A pipelines, the 3 cron DAGs, the dbt-lineage job, and the iceberg-writer job. **Expected state afterwards: everything back to Stopped/Suspended/Disabled the same session** — see the paired STOP row. Jobs are the risk here: `cmd_run` runs under `set -e`, so a mid-phase failure can leave a job RESUMED (cron armed) — suspension is therefore verified independently after, not taken from the script's exit. |
 | 2026-07-27 05:15–05:45 | Shared Postgres `dataq-pg-wus3-3erlgd` (admin role only) + `dataq-harness-airflow` | **Long-term fix** — reset the server's `airflowadmin` password to Terraform's value, aligned every consumer, verified, stopped | Arijit (via Claude) | Removes the drift the 04:40 hotfix left behind. **Safety gate first: DataQ prod uses the separate `dataq_app` role** (checked the live `database-url` secret), so resetting the server ADMIN password cannot affect the product — verified 200 on prod `/healthz` and a control connection after. **Final state: all 5 harness apps `Stopped`, 0 replicas, both ADF triggers `Stopped`.** |
 | 2026-07-27 04:40–05:05 | `dataq-harness-airflow` only | **FIX + verify window** — repointed the PG credential, started, verified, stopped | Arijit (via Claude) | Fixed the metadata-DB auth failure below. Started ONLY the airflow app (not the full harness) to keep the window minimal. `/health` 200 after ~2 min; both DataQ Airflow connections `{"ok":true}` from Key Vault AND from OpenBao. **Verified afterwards: all 5 apps `Stopped`, 0 live replicas.** |
@@ -190,6 +191,42 @@ than a re-break. Done in this order, to keep the broken window to seconds:
 
 Verified end to end: Airflow `/health` 200 **on Terraform's password**, and both
 DataQ Airflow connections green from Key Vault *and* OpenBao.
+
+### Finding 2026-07-27 — #1032's credential swap left `DATAQ_LOADER` short two grants
+
+The first full-flow window since the Airflow fix ran every flow. Airflow is healthy:
+all three DAGs (`flow_a_snowflake_load`, `flow_a_uc_reference`, `flow_b_medallion`)
+**succeeded**, `flow_a_payments_event` fired naturally off the Event Grid blob
+trigger, the 5 mockdata jobs and `iceberg-writer` succeeded, and DataQ ingested
+runs from **both** providers through the renamed `conn-*` secrets on the freshly
+deployed image.
+
+Two Snowflake-**writing** paths failed, and for the same reason — not a credential
+fault, an authorisation one. Both authenticated fine as `DATAQ_LOADER`:
+
+| Path | Missing grant |
+|---|---|
+| ADF `pl_flow_a_customers` / `pl_flow_a_orders` | `CREATE STAGE` on `SCHEMA DATAQ_DB.RETAIL` (the Copy activity stages through an internal stage) |
+| `dbt-lineage` job | `MANAGE GRANTS` on `ACCOUNT IWB83668` (the `on-run-end` grant hook) |
+
+dbt's models themselves built — `PASS=14 ERROR=1 SKIP=2` — so only the trailing
+grant hook failed, not the transformation.
+
+**Cause:** #1032 replaced the ADF/dbt Snowflake password with `DATAQ_LOADER_PAT`.
+The previous principal carried privileges `DATAQ_LOADER` does not, so the swap
+silently narrowed what those two paths could do. Nothing surfaced it until a flow
+actually ran, because the harness is stopped by default — the same invisibility
+that hid the Airflow metadata-DB break.
+
+**Fix (needs ACCOUNTADMIN — the PAT expires 2026-08-10):**
+
+```sql
+GRANT CREATE STAGE ON SCHEMA DATAQ_DB.RETAIL TO ROLE DATAQ_LOADER;
+GRANT MANAGE GRANTS ON ACCOUNT TO ROLE DATAQ_LOADER;   -- or drop dbt's grant hook
+```
+
+`MANAGE GRANTS` is account-wide and broad; narrowing dbt's `on-run-end` hook
+instead is the tighter option and worth weighing before granting it.
 
 ## Credential rotation
 
