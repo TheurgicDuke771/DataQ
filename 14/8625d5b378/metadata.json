@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "148625d5b378",
+  "strategy": "manual-commit",
+  "branch": "feature/readable-secret-names",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "CLAUDE.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/14/8625d5b378/0/metadata.json",
+      "transcript": "/14/8625d5b378/0/full.jsonl",
+      "compact_transcript": "/14/8625d5b378/0/transcript.jsonl",
+      "content_hash": "/14/8625d5b378/0/content_hash.txt",
+      "prompt": "/14/8625d5b378/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 924,
+    "cache_creation_tokens": 2539944,
+    "cache_read_tokens": 170852311,
+    "output_tokens": 376907,
+    "api_call_count": 463
+  }
+}
