@@ -143,7 +143,11 @@ tmp/
 .azure/
 azure.json
 
-# ---- Terraform (deploy/terraform/<cloud>/ — azure/ today; aws/, gcp/ post-v1) ----
+# ---- OpenTofu (deploy/terraform/<cloud>/ — azure/ today; aws/, gcp/ post-v1) ----
+# The CLI is OpenTofu (`tofu`) since the 2026-07-27 ADR 0024 amendment. These
+# rules are UNCHANGED by that swap and must stay as-is: OpenTofu reuses the same
+# on-disk names (.terraform/, *.tfstate, .terraform.lock.hcl, *.tfvars), and the
+# directory path deliberately keeps the `terraform` segment.
 # State holds the generated Postgres password + secret values — never commit it.
 # The provider lock (.terraform.lock.hcl) and *.example ARE tracked. Rules are
 # path-independent globs, so they apply under any deploy/terraform/<cloud>/ dir.
