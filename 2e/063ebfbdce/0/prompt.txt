@@ -1,0 +1,70 @@
+<task-notification>
+<task-id>b3sp30ghz</task-id>
+<tool-use-id>toolu_012cqfKoufM5JY4tsASM7uib</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/fcf147da-f22f-41ab-ae99-a0fbd9e19a4c/tasks/b3sp30ghz.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for CI to complete" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Are we storing the cred for openbao?
+
+---
+
+why the key name itself stored as a secret?
+
+---
+
+What I ment was key name like [demo-adf-sp-client-secret] is stored as a sceret along with its actual value as seperate secret. 
+So I'm trying to understand how the secrerts are linked, for example how will you fetch the snowflake dataq_reader_pat
+
+---
+
+not in azure key vault, in the open bao
+
+---
+
+Instead of those seeded secrets, can you actually copy the secrets already present in the Azure Key Vault and test it against the live prod?
+
+---
+
+try to get the `az keyvault secret list` now
+
+---
+
+fetch the secrets from az kv store it in a file [preferabelly in /tmp] then populate the open bao from the file and then delete the file. don't revel the values directly in this chat transcribe. 
+Keep the naming smae between all the secretstores, so if we rotate a secret we can find the secret name in all the secret stores and update them.
+
+---
+
+so, what is the naming convention we are following now? and what is live in prod?
+
+---
+
+Let's go with option 3. 
+keep convention 3 and rename all 13, check E2E with one secret first then update the rmaining 12.
+
+---
+
+fix the slug generation, then go with `az containerapp exec`
+
+---
+
+let's run the `/Users/arijit/Coding/Python/DataQ-harness/scripts/harness_window.sh`, that will live test the secrets. BUT MAKE SURE EVERY RESOURCE IS DISABLED/STOPPED AFTER TESTING.
+
+---
+
+fix the airflow connection
+
+---
+
+do the long term fix [reset the server]
+
+---
+
+how are you swtching the secret store?
+
+---
+
+great, now merge the PR
