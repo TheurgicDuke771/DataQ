@@ -1,0 +1,75 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "97ef9144fcaf",
+  "session_id": "3577d6f5-2e75-42b2-a327-294abe25939e",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-27T16:50:21.636231Z",
+  "branch": "chore/opentofu-iac-migration",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/adr/README.md",
+    "docs/ops-log.md"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "1e598ab38661",
+  "checkpoint_transcript_start": 394,
+  "transcript_lines_at_start": 394,
+  "compact_transcript_start": 97,
+  "token_usage": {
+    "input_tokens": 42,
+    "cache_creation_tokens": 41915,
+    "cache_read_tokens": 4405083,
+    "output_tokens": 23379,
+    "api_call_count": 21
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01Bc6k2Me1yw5nyf1s731etc",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review:code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "1e598ab38661",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 421,
+        "end": 422,
+        "entry_ids": [
+          "e4becbc4-e4e1-49b0-a441-df6cecc904d8"
+        ],
+        "tool_use_id": "toolu_01Bc6k2Me1yw5nyf1s731etc"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01Bc6k2Me1yw5nyf1s731etc"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review:code-review",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-27T16:50:21.584616Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 25,
+    "human_modified": 5,
+    "human_removed": 0,
+    "total_committed": 25,
+    "total_lines_changed": 33,
+    "agent_percentage": 0,
+    "metric_version": 2
+  }
+}
