@@ -54,9 +54,6 @@ _ID_CHARS: Final = 8
 # unconditional. Generous vs the 128-char API cap, and far below the slug cap.
 _MAX_INPUT: Final = 256
 
-# Parenthesised commentary — "(DATAQ_READER)", "(flat files)", "(harness)".
-_PARENS: Final = re.compile(r"\([^)]*\)")
-
 # How a connection type appears in a vault key. Mirrors the hand-chosen prod names
 # (`conn-adls-landing`, not `conn-adls-gen2-landing`).
 _TYPE_SLUGS: Final = {
@@ -77,6 +74,31 @@ _TYPE_WORDS: Final = {
     "dbt": ("dbt",),
     "s3": ("s3", "aws", "amazon"),
 }
+
+
+def _split_parentheticals(text: str) -> tuple[str, str]:
+    r"""Split `text` into (outside-parens, inside-parens) in ONE linear pass.
+
+    A regex (`\([^)]*\)`) is the obvious way and is quadratic: it rescans to the
+    end from every "(", so N unmatched "(" costs O(N^2) — 20k chars measured at
+    ~115 ms, and connection names are user text. A scan is linear by construction,
+    which is a property of the code rather than of an input bound someone might
+    later remove. Unbalanced "(" simply runs to the end, which is the same result
+    the regex gave for the balanced case and harmless for a display name.
+    """
+    outside: list[str] = []
+    inside: list[str] = []
+    depth = 0
+    for ch in text:
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth = max(0, depth - 1)
+        elif depth:
+            inside.append(ch)
+        else:
+            outside.append(ch)
+    return "".join(outside), "".join(inside)
 
 
 def slugify(text: str) -> str:
@@ -135,17 +157,18 @@ def connection_secret_ref(
     # reading the connection list, not identity.
     bounded = name[:_MAX_INPUT]
     noise = set(_TYPE_WORDS.get(conn_type, ())) | set(type_slug.split("-"))
+    outside, inside = _split_parentheticals(bounded)
 
     def _qualify(text: str) -> list[str]:
         return [t for t in slugify(text).split("-") if t and t not in noise]
 
-    qualifier = _qualify(_PARENS.sub(" ", bounded))
+    qualifier = _qualify(outside)
     if not qualifier:
         # Everything distinguishing lived inside the parentheses. Dropping it would
         # reduce "Snowflake (Retail)" and "Snowflake (Payments)" to two keys differing
         # only by 8 hex chars — reinstating the very "find the right entry" problem
         # (#954) this module exists to remove. Fall back to the parenthetical content.
-        qualifier = _qualify(" ".join(_PARENS.findall(bounded)))
+        qualifier = _qualify(inside)
 
     parts = ["conn"]
     parts += type_slug.split("-") if type_slug else []
