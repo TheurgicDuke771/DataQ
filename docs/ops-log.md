@@ -348,6 +348,41 @@ profile, so a `${VAR:?}` required-guard on an opt-in service fails the plain
 `up` for the whole stack. Caught by testing the default path after adding the
 profile, not by reasoning about it.
 
+### Finding 2026-07-27 — IaC CLI moved to OpenTofu; regenerating a lock file re-resolves every loose pin
+
+**No Azure resource was modified.** Both stacks were converted Terraform →
+OpenTofu (ADR 0024 amendment) and verified **plan-only**; no `apply` was run on
+either, per the standing rule that a blanket harness apply arms ADF triggers.
+
+| Stack | Verification | Result |
+|---|---|---|
+| App (`deploy/terraform/azure/`, git-tracked) | both CLIs planned against live Azure; plans exported `-out`, rendered `show -json`, `resource_changes` normalized + diffed | **byte-for-byte identical** — 40 changes, `no-op=38 update=2` |
+| Harness (`~/Coding/Python/DataQ-harness/terraform`, untracked) | `tofu init` + `validate` + `plan -refresh=false` with `secrets.sh` sourced | `validate` OK; **"No changes. Your infrastructure matches the configuration."** |
+
+**The trap, and it is the reusable part: `tofu init` reports "The version
+selections were preserved" — but that message covers only the `hashicorp/*`
+entries it rewrites. Third-party providers are re-resolved from scratch.** On the
+harness that silently moved **databricks 1.119.0 → 1.122.0**. Reaching for
+`-upgrade` to correct it then floated **azurerm 4.79.0 → 4.81.0**, because
+`-upgrade` re-resolves *everything* against its `~>` range.
+
+The general rule: **regenerating a lock file re-resolves every loose constraint**,
+and a registry change forces a lock regeneration. A `~> X.Y` constraint is not a
+pin — the *lock* was the pin, and the lock is exactly what a CLI migration
+invalidates.
+
+Resolved by pinning all four harness providers to the **exact versions in use
+immediately before the migration** (azurerm 4.79.0, databricks 1.119.0,
+snowflake 1.2.3, random 3.9.0), which is also what the harness `versions.tf`
+comment already asked for ("Pin providers; do not float to latest"). The app
+stack needed no such correction — all five of its providers are `hashicorp/*`,
+so the version-preserving rewrite covered them; that it came out clean was luck
+of namespace, not diligence, and would not have survived one third-party
+provider.
+
+Verified afterwards: the harness lock lists exactly the four pre-migration
+versions, and the plan is clean.
+
 ## Credential rotation
 
 One credential typically becomes **several** Key Vault secrets — one per
