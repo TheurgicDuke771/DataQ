@@ -17,6 +17,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from backend.app.core.auth import get_current_user
+from backend.app.core.secret_names import connection_secret_ref
 from backend.app.core.secrets import get_secret_store
 from backend.app.db.models import Connection
 from backend.app.db.session import get_db
@@ -134,7 +135,7 @@ def test_create_returns_201_and_hides_secret(
     # persisted + written through to the store
     conn = db_session.get(Connection, uuid.UUID(body["id"]))
     assert conn is not None
-    assert store.data[f"conn-{conn.id}"] == "p@ss"
+    assert store.data[conn.secret_ref] == "p@ss"
 
 
 def test_create_unknown_type_returns_422(client: tuple[TestClient, FakeStore]) -> None:
@@ -322,6 +323,22 @@ def test_test_endpoint_failure_returns_502(
     assert resp.json()["error"]["code"] == "connection_test_failed"
 
 
+def _ref(cid: str, payload: dict[str, object] | None = None) -> str:
+    """The vault key the service mints for a connection created from `_create_payload`.
+
+    Derived rather than hardcoded: `secret_ref` is deliberately not exposed on the
+    API response, and pinning a literal here is what made these tests break on a
+    naming change they have nothing to do with.
+    """
+    body = payload or _create_payload()
+    return connection_secret_ref(
+        connection_id=cid,
+        env=str(body["env"]),
+        name=str(body["name"]),
+        conn_type=str(body["type"]),
+    )
+
+
 # ───────────────────────── re-auth (rotate + verify) ───────────────
 
 
@@ -330,13 +347,13 @@ def test_reauth_rotates_credential_and_verifies(
 ) -> None:
     api, store = client
     cid = api.post("/api/v1/connections", json=_create_payload()).json()["id"]
-    assert store.data[f"conn-{cid}"] == "p@ss"  # original credential
+    assert store.data[_ref(cid)] == "p@ss"  # original credential
 
     monkeypatch.setattr(svc, "get_connection_adapter", lambda t: _PassAdapter())
     resp = api.post(f"/api/v1/connections/{cid}/reauth", json={"secret": "rotated"})
     assert resp.status_code == 200
     assert resp.json() == {"ok": True}
-    assert store.data[f"conn-{cid}"] == "rotated"  # credential rotated in the store
+    assert store.data[_ref(cid)] == "rotated"  # credential rotated in the store
 
 
 def test_reauth_failed_verify_returns_502_but_rotation_persists(
@@ -351,7 +368,7 @@ def test_reauth_failed_verify_returns_502_but_rotation_persists(
     resp = api.post(f"/api/v1/connections/{cid}/reauth", json={"secret": "still-bad"})
     assert resp.status_code == 502
     assert resp.json()["error"]["code"] == "connection_test_failed"
-    assert store.data[f"conn-{cid}"] == "still-bad"
+    assert store.data[_ref(cid)] == "still-bad"
 
 
 def test_reauth_secret_write_failure_returns_502(

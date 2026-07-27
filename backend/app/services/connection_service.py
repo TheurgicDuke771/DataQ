@@ -27,6 +27,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
+from backend.app.core.secret_names import connection_secret_ref
 from backend.app.core.secrets import SecretNotFoundError, SecretStore, SecretWriteError
 from backend.app.datasources.registry import (
     UnsupportedConnectionTypeError,
@@ -304,7 +305,9 @@ def create_connection(
 ) -> Connection:
     """Validate, persist, and (if a secret is given) write its credential.
 
-    The secret_ref is derived from the row's own id (``conn-<uuid>``) — unique
+    The secret_ref is a READABLE, STORED name (``conn-<type>-<qualifier>-<env>-<id>``,
+    ADR 0039) — minted once here and never recomputed, since a later rename would
+    otherwise repoint at a key that does not exist. Unique
     and safe as a Key Vault secret name. The credential is written through the
     store; only the ref is persisted on the row.
     """
@@ -323,7 +326,9 @@ def create_connection(
     try:
         session.flush()  # assign conn.id + surface the (name, env) unique violation
         if secret is not None:
-            secret_ref = f"conn-{conn.id}"
+            secret_ref = connection_secret_ref(
+                connection_id=conn.id, env=conn.env, name=conn.name, conn_type=conn.type
+            )
             secret_store.set(secret_ref, secret)
             conn.secret_ref = secret_ref
             # Read the credential's own expiry while it is in hand (#838) — the
@@ -558,7 +563,12 @@ def update_connection(
     # not counted as config history (a secret-only update records no version).
     versioned_change = session.is_modified(conn)
     if secret is not None:
-        secret_ref = conn.secret_ref or f"conn-{conn.id}"
+        # `or` — not a recompute. An existing ref is authoritative: the row may have
+        # been renamed since, and rebuilding the name from the CURRENT name would
+        # write to a key nothing points at while the live credential goes stale.
+        secret_ref = conn.secret_ref or connection_secret_ref(
+            connection_id=conn.id, env=conn.env, name=conn.name, conn_type=conn.type
+        )
         try:
             secret_store.set(secret_ref, secret)
         except SecretWriteError as exc:
@@ -639,7 +649,9 @@ def reauth_connection(
     existing credential is left untouched.
     """
     conn = get_connection(session, connection_id)
-    secret_ref = conn.secret_ref or f"conn-{conn.id}"
+    secret_ref = conn.secret_ref or connection_secret_ref(
+        connection_id=conn.id, env=conn.env, name=conn.name, conn_type=conn.type
+    )
     try:
         secret_store.set(secret_ref, secret)
     except SecretWriteError as exc:

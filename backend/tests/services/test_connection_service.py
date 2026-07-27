@@ -13,6 +13,7 @@ import pytest
 from pydantic import BaseModel
 from sqlalchemy import func, select
 
+from backend.app.core.secret_names import connection_secret_ref
 from backend.app.core.secrets import SecretNotFoundError, SecretWriteError
 from backend.app.db.models import Asset, Connection, ConnectionVersion, Run, Suite, User
 from backend.app.services import connection_service as svc
@@ -117,8 +118,13 @@ def test_create_persists_row_and_writes_secret(db_session: Any) -> None:
     assert conn.id is not None
     assert conn.type == "snowflake"
     assert conn.config["account"] == "ab12345.eu-west-1"
-    # secret written under conn-<id>, only the ref is on the row
-    assert conn.secret_ref == f"conn-{conn.id}"
+    # The ref is READABLE (ADR 0039 / #1060) — an operator has to find this entry
+    # in the vault by eye to rotate it. Asserted via the generator rather than a
+    # literal so a format tweak doesn't break unrelated tests.
+    assert conn.secret_ref == connection_secret_ref(
+        connection_id=conn.id, env=conn.env, name=conn.name, conn_type=conn.type
+    )
+    assert "finance" in conn.secret_ref  # the human-meaningful part actually survives
     assert store.data[conn.secret_ref] == "p@ss"
 
 
@@ -652,7 +658,7 @@ def test_secret_only_update_records_no_version(db_session: Any) -> None:
     """Credential rotation is not config history — no new snapshot (mirrors reauth)."""
     conn = _create(db_session, FakeStore())
     store = FakeStore()
-    store.set(f"conn-{conn.id}", "old")
+    store.set(str(conn.secret_ref), "old")
     svc.update_connection(db_session, conn.id, secret="rotated", secret_store=store)
     assert [v.version_no for v in _versions(db_session, conn.id)] == [1]  # still just the create
 
@@ -957,3 +963,49 @@ def test_a_connection_written_before_the_feature_reads_as_unchecked(db_session: 
 
     assert conn.credential_expires_at is None
     assert conn.credential_expiry_checked_at is None
+
+
+def test_renaming_a_connection_never_moves_its_secret_ref(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """THE invariant of readable names, and the one the suite could not express.
+
+    `secret_ref` is stored, never recomputed. Rename a connection and the generated
+    name changes — but the credential still lives under the ORIGINAL key, so
+    recomputing would point at a key that does not exist and the credential would
+    read as missing: "#954 again, self-inflicted", as the module docstring puts it.
+
+    Every existing rotate/reauth test creates a connection and never renames it, so
+    the recomputed ref is byte-identical to the stored one and a recompute passes
+    unnoticed — the "fixture encodes our model" shape. Removing the `conn.secret_ref
+    or` guard from update AND reauth left all 2828 tests green; this is the test that
+    fails.
+    """
+    store = FakeStore()
+    conn = _create(db_session, store)
+    original_ref = conn.secret_ref
+    assert original_ref is not None
+
+    # Rename so the GENERATED name would now differ from the stored one.
+    svc.update_connection(db_session, conn.id, name="Renamed Warehouse", secret_store=store)
+    would_be = connection_secret_ref(
+        connection_id=conn.id, env=conn.env, name="Renamed Warehouse", conn_type=conn.type
+    )
+    assert would_be != original_ref, "test is vacuous unless the generated name moved"
+    assert conn.secret_ref == original_ref, "a rename must not move the stored ref"
+
+    # Rotating afterwards must write to the ORIGINAL key, not the recomputed one.
+    # reauth probes the datasource; stub it so this asserts the ref, not the network.
+    class _PassAdapter:
+        def validate_config(self, raw: dict[str, Any]) -> Any:
+            return None
+
+        def test(self, raw: dict[str, Any], secret: str) -> None:
+            return None
+
+    monkeypatch.setattr(svc, "get_connection_adapter", lambda t: _PassAdapter())
+    svc.reauth_connection(db_session, conn.id, secret="rotated", secret_store=store)
+    db_session.refresh(conn)
+    assert conn.secret_ref == original_ref
+    assert store.data[original_ref] == "rotated"
+    assert would_be not in store.data, "rotation wrote to a second, orphaned key"

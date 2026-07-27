@@ -75,6 +75,10 @@ apart.
 
 | When (UTC) | Service | Action | By | Why / expected state |
 |---|---|---|---|---|
+| 2026-07-27 05:15–05:45 | Shared Postgres `dataq-pg-wus3-3erlgd` (admin role only) + `dataq-harness-airflow` | **Long-term fix** — reset the server's `airflowadmin` password to Terraform's value, aligned every consumer, verified, stopped | Arijit (via Claude) | Removes the drift the 04:40 hotfix left behind. **Safety gate first: DataQ prod uses the separate `dataq_app` role** (checked the live `database-url` secret), so resetting the server ADMIN password cannot affect the product — verified 200 on prod `/healthz` and a control connection after. **Final state: all 5 harness apps `Stopped`, 0 replicas, both ADF triggers `Stopped`.** |
+| 2026-07-27 04:40–05:05 | `dataq-harness-airflow` only | **FIX + verify window** — repointed the PG credential, started, verified, stopped | Arijit (via Claude) | Fixed the metadata-DB auth failure below. Started ONLY the airflow app (not the full harness) to keep the window minimal. `/health` 200 after ~2 min; both DataQ Airflow connections `{"ok":true}` from Key Vault AND from OpenBao. **Verified afterwards: all 5 apps `Stopped`, 0 live replicas.** |
+| 2026-07-27 04:15 | All 5 harness apps + both ADF triggers + all 7 jobs | **STOP** — `harness_window.sh stop` | Arijit (via Claude) | **Window closed. Expected + VERIFIED state: every app `Stopped`, every job suspended, both ADF triggers `Stopped`, and — checked separately — 0 live replicas.** The script's own success message is not sufficient evidence: `cmd_stop` runs under `set -e` and calls `wait_app`, which returns 1 on timeout, so a single slow app would abort the loop and silently leave the rest running. Immediately after the script reported success, `replica list` still showed airflow=1, worker=2, marquez=1 (draining); polled to 0 before declaring the window closed. |
+| 2026-07-27 03:57 | All 5 harness apps (marquez, redis, airflow, airflow-worker, airflow-trigger) + both ADF triggers | **START** — `harness_window.sh start` | Arijit (via Claude) | **Deliberate, short window.** Purpose: live-test the 13 renamed `conn-*` secrets through the real orchestration path. The two Airflow connections were the ONLY ones the 2026-07-27 02:45 rename could not verify — their connection test 502s whenever the harness is down, so a stopped harness and a broken credential look identical from DataQ. **Expected state afterwards: everything back to Stopped/Suspended/Disabled the same session** — see the paired STOP row below. If that row is missing, the window did not close cleanly and the harness is burning ~CAD 17/day. |
 | 2026-07-18 19:36 | `dataq-harness-airflow` (+ `-worker`, `-trigger`) | **Stopped** | royarijit04@outlook.com | Verified from `systemData.lastModifiedAt` on 2026-07-26, not from memory. Intentional. **Why (recovered 2026-07-26 from the harness's own notes, not from Azure):** a `--dbt` window earlier that day hit Snowflake Enterprise's new **MFA-on-password-login** enforcement, killing every password-auth harness leg (`dbt-lineage` failed 19:21Z with `250001 (08001)`); the harness was stopped ~15 min after that session hit the wall. A loader PAT fixed the auth the same day, but a residual GRANT failure remains — now tracked as [#1030](https://github.com/TheurgicDuke771/DataQ/issues/1030) instead of living only in an untracked file. Consequence: DataQ polls every 10 min, ACA's ingress answers 404 for a stopped app, and the connection accumulates failures — 282 by 2026-07-26. Expected to stay down until a test window needs Airflow. |
 | 2026-07-26 06:16 | `dataq-app-{api,worker,frontend}` | Deployed `c401572d` | Deploy workflow | App stack, not harness. Recorded here because the roll restarted the worker and reset in-memory state. |
 | 2026-07-26 23:5x | harness Airflow + worker + `dbt-lineage` + `iceberg-writer` + ADF `ls_snowflake` | **terraform apply (targeted)** — credential propagation only | terraform | First apply since 2026-07-18. Ran `-target` on those five so the new `DATAQ_LOADER` PAT reaches the containers (#1032). Everything stayed **Stopped**; verified after. |
@@ -125,6 +129,67 @@ apart.
 
 ---
 
+### Finding 2026-07-27 — harness Airflow cannot reach its metadata DB (pre-dates the rename)
+
+Airflow never served during the 04:00 window. Root cause, from the container log:
+
+    psycopg2.OperationalError: FATAL: password authentication failed for user "airflowadmin"
+
+**Not the DataQ secret rename.** Every secret on `dataq-harness-airflow` is an
+*inline* container-app secret (`keyVaultUrl = None`) — the app references no Key
+Vault secret at all, so nothing deleted at 02:45–03:10 could reach it. The active
+revision `--0000010` was created **2026-07-27 00:07:08 UTC**, ~2.5 h before the
+first vault operation (00:39).
+
+**Actual cause: the 2026-07-26 23:5x targeted apply (#1032, row above).**
+`local.airflow_pg_conn` (airflow.tf:26) is built from `random_password.pg.result`,
+and the apply was `-target`ed at the container apps — **not** at
+`azurerm_postgresql_flexible_server.airflow`. So the new revision's `pg-conn`
+carries Terraform's password while the server still has its previous one. One side
+updated, the other not: the #954 shape, in the harness this time.
+
+This went unnoticed because the harness is stopped by default — nothing exercises
+Airflow between windows, so a broken metadata DB looks exactly like a sleeping one.
+
+**FIXED 2026-07-27 04:40.** The obvious fix — reset the server's password to
+`random_password.pg.result` — would have been **wrong, and would have broken a
+working connection.** DataQ's iceberg connection authenticates as `airflowadmin`
+using KV `iceberg-catalog-password` and passes, which makes *that* value the
+server's truth and Terraform's the drifted one. Direction established by comparing
+hashes, never values:
+
+    server truth (iceberg-catalog-password) : 42b5d90e7cd6
+    what the containers held                : dcb6371cdbb5   MISMATCH
+
+So the containers were repointed at the server's password, not the reverse. Three
+carried the bad value — `dataq-harness-airflow`/`pg-conn`,
+`dataq-harness-airflow-worker`/`pg-conn`, and the **`iceberg-writer` job**'s
+`iceberg-catalog-uri`, which had been silently broken since the apply (last run
+2026-07-12) with nothing to notice it. Password percent-encoded on the way in:
+Terraform concatenates it raw, so a special character corrupts the DSN silently
+rather than failing loudly. Verified: Airflow `/health` 200, and both DataQ Airflow
+connections green from Key Vault *and* OpenBao.
+
+**Drift RESOLVED 2026-07-27 05:15** — the server was reset to Terraform's value and
+every consumer aligned, so the two sides now agree and an apply is a no-op rather
+than a re-break. Done in this order, to keep the broken window to seconds:
+
+1. **Safety gate.** DataQ prod authenticates as `dataq_app`, not `airflowadmin`
+   (checked the live `database-url` secret) — so resetting the server ADMIN
+   password cannot reach the product. Confirmed after: prod `/healthz` 200.
+2. Server `airflowadmin` password → `random_password.pg.result`.
+3. KV `iceberg-catalog-password` → same value (DataQ reads Key Vault at runtime,
+   so its iceberg connection recovered with no restart — verified `{"ok":true}`).
+4. The three container secrets → same value, by swapping the password *into* the
+   existing DSN rather than rebuilding it, so the rest stays byte-identical to
+   Terraform's output. `random_password.pg` is `special = false`, so the raw
+   concatenation Terraform performs is safe and no percent-encoding is introduced
+   — encoding it would itself have shown up as drift on the next plan.
+5. OpenBao re-synced, or the two stores would have silently diverged again.
+
+Verified end to end: Airflow `/health` 200 **on Terraform's password**, and both
+DataQ Airflow connections green from Key Vault *and* OpenBao.
+
 ## Credential rotation
 
 One credential typically becomes **several** Key Vault secrets — one per
@@ -140,6 +205,7 @@ next reader cannot tell a complete rotation from a partial one.
 
 | 2026-07-26 23:53 | Snowflake **ACCOUNTADMIN PAT** (new) | harness `secrets.sh` → `SNOWFLAKE_PASSWORD` (Terraform provider only) | **2026-08-10** | Replaces the password MFA enforcement killed on 2026-07-18. Needed because the provider creates account ROLES and grants — `DATAQ_LOADER` cannot create itself. `SNOWFLAKE_ROLE` set to ACCOUNTADMIN to match. Verified: authenticates as ACCOUNTADMIN. **Short-lived by design — 15 days.** |
 | 2026-07-26 23:53 | Snowflake **`DATAQ_LOADER_PAT`** | `snowflake-password-harness` (the KV secret Airflow + the dbt job read) | 2026-08-06 | The RUNTIME half of #1032. Verified: authenticates as DATAQ_LOADER. **Not live until `terraform apply`** — the ACA container secret is materialised from this KV value at apply time, so the containers still hold the old password until then. |
+| 2026-07-27 02:45–03:10 | **No credential changed — a RENAME of all 13 `conn-*` Key Vault keys** | old → new: `conn-snowflake-retail`→`conn-snowflake-retail-dev-6729c4f9`, `conn-snowflake-orders`→`conn-snowflake-orders-dev-1c62b0c3`, `conn-snowflake-payments`→`conn-snowflake-payments-dev-f53de47d`, `conn-adls-landing`→`conn-adls-landing-dev-47161adc`, `conn-adls-raw`→`conn-adls-raw-dev-c6af82cf`, `conn-unity-catalog-retail`→`conn-unity-catalog-dataq-retail-dev-ae7b09b7`, `conn-unity-catalog-qa`→`conn-unity-catalog-qa-5135eb21`, `conn-adf-factory`→`conn-adf-dev-5f2a3c17`, `conn-adf-qa`→`conn-adf-qa-e032e40b`, `conn-airflow`→`conn-airflow-dev-b2a13125`, `conn-airflow-qa`→`conn-airflow-qa-94c4894a`, `conn-97324ba4-…`→`conn-iceberg-harness-dev-97324ba4`, `conn-bcdcad4f-…`→`conn-dbt-retail-lineage-dev-bcdcad4f` | unchanged | **Values are untouched — every expiry above still applies.** Naming converged on one generated convention (ADR 0039 / #1060): `conn-<type>-<qualifier>-<env>-<shortid>`. Prod had been running two conventions — 11 hand-named, 2 app-generated UUIDs. Order per key: copy → **read-back verify** → repoint `connections.secret_ref` → re-test → purge old. Piloted on `conn-snowflake-orders` alone and verified end-to-end before the other 12. **Verified after: 11/11 reachable connections `{"ok":true}`.** Airflow ×2 not testable — the harness Container App was already `Stopped` at 00:07 UTC, *before* this work (`systemData.lastModifiedAt`), so its 502 is the stopped harness, not this change. Old names are soft-deleted, so recoverable. |
 
 ### Expiring soon
 
@@ -157,7 +223,7 @@ case that bites, since the product cannot know them and will never warn.
 |---|---|---|
 | **2026-08-06** | Snowflake `DATAQ_LOADER_PAT` | Re-mint; write **both** `snowflake-loader-pat` and `snowflake-password-harness`, then `terraform apply` so the containers pick it up. |
 | **2026-08-10** | Snowflake **ACCOUNTADMIN PAT** | Deliberately short (15d). Re-mint into harness `secrets.sh` only if a `terraform apply` is needed; otherwise let it lapse — nothing runs on it day to day, and `harness_window.sh` only calls `terraform output`, which needs no credential. |
-| **2026-08-20** | Snowflake `DATAQ_READER_PAT` | Re-mint; write **all three** `conn-snowflake-*` secrets, then test each connection. |
+| **2026-08-20** | Snowflake `DATAQ_READER_PAT` | Re-mint; write **all three**: `conn-snowflake-retail-dev-6729c4f9`, `conn-snowflake-orders-dev-1c62b0c3`, `conn-snowflake-payments-dev-f53de47d` — then test each connection. (Renamed 2026-07-27; the old `conn-snowflake-*` keys no longer exist.) |
 | **2027-06-28** | ADLS SAS (`ADLS — Raw`, `ADLS — landing`) | Read automatically by #838 once the sweep ran — the `se=` in the token. No manual capture needed; this row is now maintained by the product. |
 | **2027-07-12** | dbt artifacts SAS (`dbt — Retail Lineage`) | Same — read from the token. |
 | n/a | Databricks PAT (`conn-unity-catalog-*`), Snowflake key-pair, S3 keys | **Checked, and genuinely stateless** — these credential types carry no readable expiry, so #838 is correctly silent rather than unknown (#1024 made that distinction visible). Their expiry, where one exists, lives only in the issuing console. |

@@ -367,7 +367,8 @@ class ConnectionVersion(Base):
     config history, not the cross-entity audit log (deferred — see #310).
 
     Deliberately omits the credential: the secret lives only in the SecretStore
-    (referenced by `secret_ref`, which is the constant `conn-<id>` pointer, not the
+    (referenced by `secret_ref`, a STORED pointer minted once and never recomputed
+    — readable since ADR 0039, no longer derivable from the id — not the
     value), so it is never copied here. A credential rotation (`reauth`, or an
     update that only changes the secret) therefore records **no** version — that is
     an audit-log concern, not config history.
