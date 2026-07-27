@@ -10,9 +10,34 @@ name: Publish images (GHCR, multi-arch)
 # under a moving `:latest` stable pointer for `docker compose ... up`-from-image
 # users. The two never both fire on the same event (deploy is manual-dispatch).
 #
-# Stable tag to pull = `:latest` (moving). The immutable per-deploy `:vN` backend
-# tags (v7, v10, …) stay owned by deploy.yml — this workflow never writes them.
+# Stable tag to pull = `:latest` (moving). Since #1057 it means **tip of `main`**,
+# gated only by each PR's pre-merge CI — not by a post-merge run — so two PRs that
+# merge in quick succession can publish a semantic conflict to the tag evaluators
+# pull. That is the accepted trade for closing the compose/image skew; a
+# `workflow_run`-on-CI-success gate is the option if the pointer must be stricter.
+# The immutable per-deploy `:vN` backend tags (v7, v10, …) and the bare `:<sha>`
+# tag stay owned by deploy.yml — this workflow never writes them (see the tag step).
 # A release-tag push (vX.Y.Z) additionally publishes that semver tag.
+#
+# ── Why this also runs on merge to `main` (#1057) ─────────────────────────────
+# `docker-compose.ghcr.yml` is fetched by evaluators from **main** (README +
+# docs/getting-started.md say so), while `:latest` used to move only on manual
+# dispatch. Those two versioned independently, so any merge that made the compose
+# file depend on new backend behaviour broke the documented eval flow until
+# someone remembered to dispatch this workflow.
+#
+# That is exactly what #1056 did: it set `SECRET_STORE: "openbao"` in the compose
+# file while the published image still validated against
+# `Literal["env", "redis", "azure_key_vault"]`, so a first-time evaluator — the
+# person least able to debug it — would have hit a pydantic error naming neither
+# the cause nor the fix. It was caught and dispatched by hand within 36 seconds
+# that time; the structure, not the vigilance, is what needed fixing.
+#
+# So: if the compose comes from `main`, the image it names must come from `main`
+# too. The `paths` filter keeps the cost off docs-only merges. Pinning a released
+# tag in the compose file was the considered alternative and is rejected — it just
+# inverts the skew, since a compose edit on `main` would then reference an image
+# built before that edit.
 
 on:
   workflow_dispatch:
@@ -23,9 +48,40 @@ on:
   push:
     tags:
       - "v*"
+    branches:
+      - main
+    # NOTE: `paths` is IGNORED for tag pushes — GitHub applies path filters to
+    # branch pushes only (github/community discussion #165354 is an open request
+    # to make them apply to tags, which is the proof they currently do not). So a
+    # `vX.Y.Z` release tag still publishes unconditionally, exactly as before this
+    # filter was added; the filter only ever narrows the `main` trigger. Verified
+    # before adding it, because the plausible-but-wrong reading — that a release
+    # touching no listed path would stop publishing — would have silently broken
+    # releases. Do not "fix" this by splitting the workflow in two.
+    paths:
+      # Anything that changes what the images CONTAIN…
+      - "backend/**"
+      - "frontend/**"
+      # backend/Dockerfile COPYs this into the image, so it is image content too.
+      - "pyproject.toml"
+      # …and BOTH halves of the eval contract, each of which docs tell evaluators
+      # to fetch from `main`: the compose file, and the env template. A merge that
+      # adds or renames a setting in the template against a `:latest` whose
+      # `Settings` has extra="forbid" and closed Literals reproduces the #1056
+      # failure verbatim — same skew, different file.
+      - "docker-compose.ghcr.yml"
+      - ".env.app.example"
+      # …plus this workflow, so a change to how images are built takes effect.
+      - ".github/workflows/publish-images.yml"
 
 concurrency:
-  group: publish-images
+  # Keyed by ref TYPE, not one global group. With `cancel-in-progress: false`
+  # GitHub still cancels the *pending* entry when a newer run queues, so a single
+  # group would let an ordinary merge cancel a queued `vX.Y.Z` release publish —
+  # silently, leaving that version tag nonexistent. Splitting them keeps one
+  # writer per class (main-pushes serialize with each other, tags with each
+  # other) without letting the two classes evict one another.
+  group: publish-images-${{ github.ref_type }}
   cancel-in-progress: false
 
 # GITHUB_TOKEN needs packages:write to push to the repo-linked GHCR packages
@@ -84,8 +140,24 @@ jobs:
         run: |
           set -euo pipefail
           image="${REGISTRY}/${OWNER}/dataq-${IMAGE_NAME}"
-          # The moving stable pointer + the immutable commit SHA.
-          tags="${image}:latest"$'\n'"${image}:${GITHUB_SHA}"
+          # The moving stable pointer + a per-commit tag.
+          #
+          # On a BRANCH push the per-commit tag is prefixed `main-`, because
+          # deploy.yml already writes a bare `:<sha>` for the same commit and the
+          # two are NOT the same artifact: this workflow builds multi-arch, deploy
+          # builds amd64-only. Sharing the name made it last-writer-wins, so
+          # pulling `:<sha>` to reproduce prod would succeed or fail with
+          # "no matching manifest for linux/arm64" depending purely on whether a
+          # deploy had run since. The bare `:<sha>` stays solely deploy.yml's,
+          # which is what this file's header already claims about tag ownership.
+          sha_tag="${GITHUB_SHA}"
+          if [ "${GITHUB_REF_TYPE}" = "branch" ]; then
+            # `/` is legal in a branch name and illegal in a Docker tag. Only
+            # `main` can reach here today, but a later `release/*` in the filter
+            # would otherwise produce an invalid ref at push time.
+            sha_tag="${GITHUB_REF_NAME//\//-}-${GITHUB_SHA}"
+          fi
+          tags="${image}:latest"$'\n'"${image}:${sha_tag}"
           # On a release-tag push, github.ref_name is the tag (vX.Y.Z); on a
           # manual run, the optional `tag` input. Publish it as a third tag.
           extra="${INPUT_TAG}"
@@ -121,3 +193,11 @@ jobs:
           # (no extra unknown/attestation entries) so anonymous ACA/compose pulls
           # resolve cleanly.
           provenance: false
+          # Layer cache, added with the per-merge trigger (#1057): this build is
+          # now paid on every qualifying merge rather than on the occasional
+          # dispatch, and the backend's arm64 leg still runs under QEMU emulation
+          # (only the frontend got the #518 `--platform=$BUILDPLATFORM` fix). The
+          # cache also shrinks the window in which two publishes overlap.
+          # Scoped per image so backend and frontend don't evict each other.
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}

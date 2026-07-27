@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import os
 import threading
-from typing import TYPE_CHECKING, Final, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Final, Protocol, runtime_checkable
 from urllib.parse import quote
 
 import httpx
@@ -177,6 +177,11 @@ class AzureKeyVaultStore:
     def __init__(self, vault_url: str) -> None:
         self._vault_url = vault_url
         self._client: SecretClient | None = None
+        # Retained solely so `close()` can release it. The credential owns its OWN
+        # transport session per chained credential, separate from the SecretClient's
+        # pipeline — closing only the client would free half the sockets and leave
+        # the token-acquisition sessions open, i.e. the same leak class this fixes.
+        self._credential: Any = None
         self._lock = threading.Lock()
 
     def _client_lazy(self) -> SecretClient:
@@ -187,9 +192,10 @@ class AzureKeyVaultStore:
                 from azure.identity import DefaultAzureCredential
                 from azure.keyvault.secrets import SecretClient
 
+                self._credential = DefaultAzureCredential()
                 self._client = SecretClient(
                     vault_url=self._vault_url,
-                    credential=DefaultAzureCredential(),
+                    credential=self._credential,
                 )
             return self._client
 
@@ -240,6 +246,31 @@ class AzureKeyVaultStore:
         except Exception as exc:
             log.warning("secret_delete_failed", name=name, error=str(exc))
 
+    def close(self) -> None:
+        """Release the pooled client AND the credential (#1058). Idempotent.
+
+        Both, because they hold **separate** transport sessions: `SecretClient.close()`
+        closes only its own pipeline, while `DefaultAzureCredential` opens a session
+        per credential in its chain. Closing just the client would free half the
+        sockets — the same leak this method exists to fix.
+
+        Client first, then the credential it authenticates with, so nothing is asked
+        to use an already-closed credential on the way down.
+
+        Note the cost of the rebuild this permits: the next use re-runs the whole
+        `DefaultAzureCredential` discovery/token chain. Fine for a test reset; worth
+        weighing if the config hot-reload caller the reset docstring anticipates
+        ever lands. Same shape and same reasoning as `OpenBaoSecretStore.close` —
+        see there for why this is not on the Protocol.
+        """
+        with self._lock:
+            client, self._client = self._client, None
+            credential, self._credential = self._credential, None
+        if client is not None:
+            client.close()
+        if credential is not None:
+            credential.close()
+
 
 class OpenBaoSecretStore:
     """Resolves secrets over the KV v2 HTTP API — OpenBao, Vault, or HCP (ADR 0039).
@@ -281,6 +312,10 @@ class OpenBaoSecretStore:
         # a MockTransport — the URL building, header encoding, status handling and
         # JSON decoding below are then genuinely exercised, not stubbed past.
         self._client = client
+        # Ownership, tracked at construction: `close()` may only close a pool this
+        # store built. An injected client belongs to its caller, and closing it would
+        # break a caller that reuses it (or a test that asserts on it afterwards).
+        self._owns_client = client is None
         self._lock = threading.Lock()
 
     def _client_lazy(self) -> httpx.Client:
@@ -298,6 +333,34 @@ class OpenBaoSecretStore:
             if self._client is None:
                 self._client = httpx.Client(base_url=self._addr, timeout=self._timeout)
             return self._client
+
+    def close(self) -> None:
+        """Release the pooled client, if this store built it (#1058).
+
+        Deliberately NOT on the `SecretStore` Protocol. 32 test doubles implement
+        that Protocol structurally and the `backend/tests` mypy gate (#418) checks
+        them, so adding a method there would force 32 no-op `close()` bodies to buy
+        one real one — churn out of proportion to the fix. `reset_secret_store_cache`
+        therefore duck-types it, which is also what lets any future store opt in
+        without touching the seam.
+
+        Idempotent, and safe to call on a store that is used again afterwards: an
+        owned handle is cleared, so `_client_lazy` rebuilds a fresh pool on next use.
+
+        A NOT-owned client is left entirely alone — not closed *and not detached*.
+        Detaching looks harmless but is worse than closing: the next call would
+        quietly build a real `httpx.Client(base_url=self._addr)` and open live
+        sockets to the vault, so a store injected with a `MockTransport` would
+        start doing real network I/O after any reset instead of failing loudly.
+        `reset_secret_store_cache` runs from an autouse fixture, so that would have
+        been a whole-suite hazard.
+        """
+        with self._lock:
+            if not self._owns_client:
+                return
+            client, self._client = self._client, None
+        if client is not None:
+            client.close()
 
     def _headers(self) -> dict[str, str]:
         """Auth travels **per request**, not baked into the client.
@@ -501,7 +564,36 @@ def get_secret_store() -> SecretStore:
 
 
 def reset_secret_store_cache() -> None:
-    """Test-only: clear the cached store so the next call rebuilds it."""
+    """Test-only: clear the cached store so the next call rebuilds it.
+
+    Closes the outgoing store's connection pool first (#1058). Test-only today, so
+    each leaked pool was one idle connection — but the leak is in the *reset*, not
+    in the tests, so it would become real the moment this is reused for config
+    hot-reload, which is exactly the plausible next caller.
+
+    `close()` is duck-typed rather than declared on the Protocol (see
+    `OpenBaoSecretStore.close`), and is called OUTSIDE the lock: it does socket I/O,
+    and the singleton is already detached, so *rebuilding* is independent of how
+    long the close takes.
+
+    That safety is about rebuilds, not about requests already in flight. Callers
+    hold a local reference to the store (`worker/tasks.py` resolves one per task),
+    and `_client_lazy` reads the handle outside the lock, so a concurrent `close()`
+    can still shut a pool between that read and the request. Harmless while this is
+    test-only and single-threaded; it is a genuine constraint for the config
+    hot-reload caller named above, which would be the multithreaded case.
+
+    **Fail-soft**, mirroring `SecretStore.delete`: this runs from an autouse test
+    fixture on every setup and teardown, so letting a store's `close()` raise would
+    turn one transport hiccup into a suite-wide cascade of errors. Releasing a pool
+    is cleanup; cleanup must not be the thing that fails.
+    """
     global _store_singleton
     with _store_lock:
-        _store_singleton = None
+        store, _store_singleton = _store_singleton, None
+    close = getattr(store, "close", None)
+    if callable(close):
+        try:
+            close()
+        except Exception as exc:
+            log.warning("secret_store_close_failed", error=str(exc))

@@ -13,7 +13,7 @@ from structlog.testing import capture_logs
 from structlog.typing import EventDict
 
 from backend.app.core import secrets
-from backend.app.core.config import Settings
+from backend.app.core.config import Settings, get_settings
 from backend.app.core.secrets import (
     AzureKeyVaultStore,
     EnvSecretStore,
@@ -131,7 +131,18 @@ def test_akv_store_set_wraps_sdk_exception(monkeypatch: pytest.MonkeyPatch) -> N
 
 
 class _StubCredential:
-    """Stands in for DefaultAzureCredential — records that it was constructed."""
+    """Stands in for DefaultAzureCredential — records construction and close.
+
+    `close()` is real SDK surface (`ChainedTokenCredential.close` closes the
+    transport session of each credential in the chain), so the stub carries it —
+    otherwise the store's close path would be untestable for the production store.
+    """
+
+    def __init__(self) -> None:
+        self.closed = False
+
+    def close(self) -> None:
+        self.closed = True
 
 
 class _StubSecretClient:
@@ -143,7 +154,11 @@ class _StubSecretClient:
         self.vault_url = vault_url
         self.credential = credential
         self.set_calls: list[tuple[str, str]] = []
+        self.closed = False
         _StubSecretClient.instances.append(self)
+
+    def close(self) -> None:
+        self.closed = True
 
     def get_secret(self, name: str) -> SimpleNamespace:
         return SimpleNamespace(value=f"value-of-{name}")
@@ -202,6 +217,18 @@ def test_akv_store_set_reaches_sdk_through_lazy_branch(
 
 
 def _settings(**overrides: object) -> object:
+    """Hand-rolled stand-in for the states a REAL `Settings` cannot reach.
+
+    Kept deliberately, and only for the backstop tests below (#1058 item 3). Those
+    assert that `_build_store` still raises on an openbao config with no addr/token,
+    or on `redis` — but `Settings` now rejects exactly those at construction, so a
+    real model can never be put into that state. Using one here would silently test
+    the validator instead of the backstop, i.e. assert nothing about `_build_store`.
+
+    Every test that CAN use a real `Settings` now does (`_settings_from_env`), so
+    drift between `config.py`'s field names/Literal and what `_build_store` reads is
+    caught where it is catchable.
+    """
     base: dict[str, object] = {
         "secret_store": "env",
         "azure_key_vault_url": None,
@@ -214,17 +241,38 @@ def _settings(**overrides: object) -> object:
     return SimpleNamespace(**base)
 
 
-def test_build_store_returns_env_store_by_default() -> None:
-    store = _build_store(_settings())  # type: ignore[arg-type]
+def _settings_from_env(monkeypatch: pytest.MonkeyPatch, **env: str) -> Settings:
+    """A REAL `Settings` built from env alone, ignoring any developer .env.app.
+
+    Same construction as `_real_settings` below, but returns the model so the
+    factory tests can feed it to `_build_store` — that pairing is what makes a
+    renamed config field or a changed `Literal` fail a test instead of passing one.
+    """
+    for key in (
+        "SECRET_STORE",
+        "OPENBAO_ADDR",
+        "OPENBAO_TOKEN",
+        "OPENBAO_MOUNT",
+        "AZURE_KEY_VAULT_URL",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+    return Settings(_env_file=None)
+
+
+def test_build_store_returns_env_store_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = _build_store(_settings_from_env(monkeypatch))
     assert isinstance(store, EnvSecretStore)
 
 
-def test_build_store_returns_akv_store_when_configured() -> None:
+def test_build_store_returns_akv_store_when_configured(monkeypatch: pytest.MonkeyPatch) -> None:
     store = _build_store(
-        _settings(
-            secret_store="azure_key_vault",
-            azure_key_vault_url="https://example.vault.azure.net/",
-        )  # type: ignore[arg-type]
+        _settings_from_env(
+            monkeypatch,
+            SECRET_STORE="azure_key_vault",
+            AZURE_KEY_VAULT_URL="https://example.vault.azure.net/",
+        )
     )
     assert isinstance(store, AzureKeyVaultStore)
 
@@ -234,13 +282,16 @@ def test_build_store_raises_when_akv_url_missing() -> None:
         _build_store(_settings(secret_store="azure_key_vault"))  # type: ignore[arg-type]
 
 
-def test_build_store_returns_openbao_store_when_configured() -> None:
+def test_build_store_returns_openbao_store_when_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     store = _build_store(
-        _settings(
-            secret_store="openbao",
-            openbao_addr="http://openbao:8200",
-            openbao_token="tok",
-        )  # type: ignore[arg-type]
+        _settings_from_env(
+            monkeypatch,
+            SECRET_STORE="openbao",
+            OPENBAO_ADDR="http://openbao:8200",
+            OPENBAO_TOKEN="tok",
+        )
     )
     assert isinstance(store, OpenBaoSecretStore)
 
@@ -257,16 +308,17 @@ def test_build_store_raises_when_openbao_token_missing() -> None:
         )
 
 
-def test_build_store_passes_configured_mount_through() -> None:
+def test_build_store_passes_configured_mount_through(monkeypatch: pytest.MonkeyPatch) -> None:
     """A non-default mount must reach the store — a prod vault rarely uses `secret/`,
     and silently reading from the wrong mount looks exactly like a missing secret."""
     store = _build_store(
-        _settings(
-            secret_store="openbao",
-            openbao_addr="http://openbao:8200",
-            openbao_token="tok",
-            openbao_mount="dataq-kv",
-        )  # type: ignore[arg-type]
+        _settings_from_env(
+            monkeypatch,
+            SECRET_STORE="openbao",
+            OPENBAO_ADDR="http://openbao:8200",
+            OPENBAO_TOKEN="tok",
+            OPENBAO_MOUNT="dataq-kv",
+        )
     )
     assert isinstance(store, OpenBaoSecretStore)
     assert store._path("data", "x") == "/v1/dataq-kv/data/x"
@@ -697,10 +749,121 @@ def test_openbao_set_then_get_roundtrips_through_a_fake_vault() -> None:
 
 
 def test_get_secret_store_caches_singleton(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The identity assertion alone passes for ANY cached object, so also pin the
+    type (#1058).
+
+    The `cache_clear()` is what makes the setenv mean anything, and it is required,
+    not defensive. `get_settings()` is `lru_cache`d; the autouse `_reset_caches`
+    clears it, but the autouse `stub_run_dispatch` then imports `run_dispatch` →
+    `create_celery_app()` → `get_settings()`, repopulating it from the AMBIENT
+    environment. That import happens once per process, so in a whole-file run the
+    cache is empty here by luck of ordering and the setenv wins; run this test alone
+    against a developer `.env.app` (which ships `SECRET_STORE=openbao`) and it loses.
+
+    Without the clear, this test asserts what the developer's env file says rather
+    than what the test says — green in CI, red alone, which is precisely the
+    single-test loop the local-verification rule depends on.
+    """
     monkeypatch.setenv("SECRET_STORE", "env")
+    get_settings.cache_clear()
     first = get_secret_store()
     second = get_secret_store()
     assert first is second
+    assert isinstance(first, EnvSecretStore)
+
+
+def test_reset_secret_store_cache_closes_the_outgoing_store(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The reset must release the outgoing store's pool, not just drop the reference
+    (#1058). Asserted through the module-level singleton — the leak was in the reset,
+    so testing `close()` directly would not have caught it."""
+    closed: list[bool] = []
+    monkeypatch.setattr(
+        secrets, "_store_singleton", SimpleNamespace(close=lambda: closed.append(True))
+    )
+    secrets.reset_secret_store_cache()
+    assert closed == [True]
+    assert secrets._store_singleton is None
+
+
+def test_reset_secret_store_cache_tolerates_a_store_without_close(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`close()` is duck-typed, not on the Protocol, so a store lacking it (every
+    test double, and `EnvSecretStore`) must still reset rather than AttributeError."""
+    monkeypatch.setattr(secrets, "_store_singleton", SimpleNamespace())
+    secrets.reset_secret_store_cache()
+    assert secrets._store_singleton is None
+
+
+def test_openbao_close_releases_a_client_it_built() -> None:
+    store = OpenBaoSecretStore("http://openbao:8200", "tok")
+    client = store._client_lazy()
+    store.close()
+    assert client.is_closed
+    # Cleared, not merely closed — otherwise a store used after a reset would keep
+    # handing out a dead pool.
+    assert store._client is None
+
+
+def test_openbao_close_leaves_an_injected_client_attached_and_open() -> None:
+    """An injected client belongs to its caller, so `close()` must be a full no-op.
+
+    Both halves matter. Closing it would break a caller reusing the pool. But merely
+    DETACHING it is worse: the store would then build a real
+    `httpx.Client(base_url=addr)` on next use, so a MockTransport-backed store would
+    silently start opening live sockets to the vault after any reset — and the reset
+    runs from an autouse fixture. Asserting only `not is_closed` would miss that, so
+    the association is pinned too."""
+    injected = httpx.Client(transport=httpx.MockTransport(lambda _r: httpx.Response(200)))
+    store = OpenBaoSecretStore("http://openbao:8200", "tok", client=injected)
+    store.close()
+    assert not injected.is_closed
+    assert store._client is injected
+    assert store._client_lazy() is injected  # still the mock, not a fresh real pool
+    injected.close()
+
+
+def test_openbao_close_is_idempotent_and_reusable() -> None:
+    store = OpenBaoSecretStore("http://openbao:8200", "tok")
+    store._client_lazy()
+    store.close()
+    store.close()  # must not raise on an already-closed store
+    rebuilt = store._client_lazy()  # rebuilt for continued use
+    assert not rebuilt.is_closed
+    rebuilt.close()
+
+
+def test_akv_close_releases_both_the_client_and_the_credential(
+    stub_azure_sdk: type[_StubSecretClient],
+) -> None:
+    """The PRODUCTION store (ADR 0024 runs `azure_key_vault`) must close BOTH.
+
+    They hold separate transport sessions: `SecretClient.close()` frees only its own
+    pipeline, while `DefaultAzureCredential` opens one per credential in its chain.
+    Closing just the client leaves the token-acquisition sockets open — the same leak
+    #1058 is about, half-fixed.
+    """
+    store = AzureKeyVaultStore("https://example.vault.azure.net/")
+    store._client_lazy()
+    # Read the client off the stub registry, not `store._client`: the attribute is
+    # declared `SecretClient | None`, whose real type has no `closed` flag.
+    (client,) = stub_azure_sdk.instances
+    credential = store._credential
+    store.close()
+    assert client.closed
+    assert credential is not None and credential.closed
+    assert store._client is None and store._credential is None
+
+
+def test_akv_close_is_idempotent_and_rebuilds(stub_azure_sdk: type[_StubSecretClient]) -> None:
+    store = AzureKeyVaultStore("https://example.vault.azure.net/")
+    store._client_lazy()
+    store.close()
+    store.close()  # no second close, no AttributeError on the cleared handles
+    store._client_lazy()
+    assert len(stub_azure_sdk.instances) == 2  # a genuinely fresh client
 
 
 def test_reset_secret_store_cache_rebuilds(monkeypatch: pytest.MonkeyPatch) -> None:
