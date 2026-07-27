@@ -12,4 +12,5 @@
 pytest==9.1.1                     # CVE-2025-71176 (was 8.4.2)
 pytest-asyncio==1.4.0
 pytest-cov==7.1.0
-httpx==0.28.1                     # async test client for FastAPI
+# httpx is the ASGI test client here too, but it is a RUNTIME dep (six app modules
+# import it) — declared in requirements.txt, which this file already -r's (#1055).

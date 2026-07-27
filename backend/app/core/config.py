@@ -203,10 +203,26 @@ class Settings(BaseSettings):
     #   MCP_ALLOWED_HOSTS=*.example.internal,api,localhost
     mcp_allowed_hosts: str = ""
 
-    secret_store: Literal["env", "redis", "azure_key_vault"] = (
+    # 'redis' is REMOVED (ADR 0039 — it kept credentials in plaintext) but stays in
+    # the Literal for one cycle so `_build_store` can answer with a migration path
+    # instead of pydantic emitting a bare "Input should be …" that names no cause.
+    secret_store: Literal["env", "openbao", "redis", "azure_key_vault"] = (
         "env"  # noqa: S105 — mode selector, not a password
     )
     azure_key_vault_url: str | None = None
+
+    # OpenBao / Vault KV v2 (ADR 0039). The contract is the API, not the vendor —
+    # OPENBAO_ADDR may point at OpenBao (what we ship), Vault Community/Enterprise,
+    # or HCP Vault. Required when SECRET_STORE=openbao; validated in `_build_store`
+    # rather than here so the other modes don't have to carry them.
+    openbao_addr: str | None = None
+    # Phase-1 auth is a raw token (ADR 0039 decision 4; AppRole is #1054). A secret —
+    # never logged: it travels in the X-Vault-Token header, and the logger-level
+    # redactor covers `token` keys and bare token shapes.
+    openbao_token: str | None = None
+    # KV v2 mount point. `secret` is what dev mode mounts; a production vault often
+    # mounts per-team paths instead.
+    openbao_mount: str = "secret"
 
     # SecretStore key holding the ADF webhook shared secret (ADR 0006). Resolved
     # via SecretStore.get → EnvSecretStore maps it to KV_SECRET_ADF_WEBHOOK_SECRET

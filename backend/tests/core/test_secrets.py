@@ -1,14 +1,18 @@
+import json
 import os
+from collections.abc import Callable, Mapping, Sequence
 from types import SimpleNamespace
 from typing import ClassVar
 
+import httpx
 import pytest
+from structlog.testing import capture_logs
 
 from backend.app.core import secrets
 from backend.app.core.secrets import (
     AzureKeyVaultStore,
     EnvSecretStore,
-    RedisSecretStore,
+    OpenBaoSecretStore,
     SecretNotFoundError,
     SecretWriteError,
     _build_store,
@@ -192,6 +196,9 @@ def _settings(**overrides: object) -> object:
         "secret_store": "env",
         "azure_key_vault_url": None,
         "redis_url": "redis://localhost:6379/0",
+        "openbao_addr": None,
+        "openbao_token": None,
+        "openbao_mount": "secret",
     }
     base.update(overrides)
     return SimpleNamespace(**base)
@@ -217,97 +224,267 @@ def test_build_store_raises_when_akv_url_missing() -> None:
         _build_store(_settings(secret_store="azure_key_vault"))  # type: ignore[arg-type]
 
 
-def test_build_store_returns_redis_store_when_configured() -> None:
-    store = _build_store(_settings(secret_store="redis"))  # type: ignore[arg-type]
-    assert isinstance(store, RedisSecretStore)
+def test_build_store_returns_openbao_store_when_configured() -> None:
+    store = _build_store(
+        _settings(
+            secret_store="openbao",
+            openbao_addr="http://openbao:8200",
+            openbao_token="tok",
+        )  # type: ignore[arg-type]
+    )
+    assert isinstance(store, OpenBaoSecretStore)
 
 
-# ───────────────────────── RedisSecretStore ────────────────────────
+def test_build_store_raises_when_openbao_addr_missing() -> None:
+    with pytest.raises(RuntimeError, match="requires OPENBAO_ADDR"):
+        _build_store(_settings(secret_store="openbao", openbao_token="tok"))  # type: ignore[arg-type]
 
 
-def test_redis_store_lazy_client_not_built_on_init() -> None:
-    """Constructing the store must not connect to Redis."""
-    store = RedisSecretStore("redis://localhost:6379/0")
+def test_build_store_raises_when_openbao_token_missing() -> None:
+    with pytest.raises(RuntimeError, match="requires OPENBAO_TOKEN"):
+        _build_store(
+            _settings(secret_store="openbao", openbao_addr="http://openbao:8200")  # type: ignore[arg-type]
+        )
+
+
+def test_build_store_passes_configured_mount_through() -> None:
+    """A non-default mount must reach the store — a prod vault rarely uses `secret/`,
+    and silently reading from the wrong mount looks exactly like a missing secret."""
+    store = _build_store(
+        _settings(
+            secret_store="openbao",
+            openbao_addr="http://openbao:8200",
+            openbao_token="tok",
+            openbao_mount="dataq-kv",
+        )  # type: ignore[arg-type]
+    )
+    assert isinstance(store, OpenBaoSecretStore)
+    assert store._path("data", "x") == "/v1/dataq-kv/data/x"
+
+
+def test_build_store_redis_mode_raises_with_migration_path() -> None:
+    """ADR 0039 removed the plaintext store. The failure must NAME the replacement —
+    a bare pydantic Literal rejection would say what is valid but not what happened."""
+    with pytest.raises(RuntimeError, match="ADR 0039") as exc:
+        _build_store(_settings(secret_store="redis"))  # type: ignore[arg-type]
+    assert "SECRET_STORE=openbao" in str(exc.value)
+
+
+# ───────────────────────── OpenBaoSecretStore ──────────────────────
+#
+# Driven through a real `httpx.Client` over `MockTransport`: the URL building,
+# header encoding, status handling and JSON decoding under test are genuinely
+# executed, and only the socket is faked. Stubbing `_client_lazy` instead would
+# mock the very seam these tests exist to check.
+
+
+def _bao(
+    handler: Callable[[httpx.Request], httpx.Response],
+    *,
+    addr: str = "http://openbao:8200",
+    mount: str = "secret",
+) -> OpenBaoSecretStore:
+    return OpenBaoSecretStore(
+        addr,
+        "s3cr3t-token",
+        mount=mount,
+        client=httpx.Client(base_url=addr, transport=httpx.MockTransport(handler)),
+    )
+
+
+def _events(logs: Sequence[Mapping[str, object]]) -> list[str]:
+    """Event names captured by structlog, in order. `capture_logs` is used rather
+    than `caplog` because the stdlib bridge is only installed by `configure_logging`
+    at app startup, which a bare unit test never runs — asserting on `caplog.text`
+    silently passes an empty string."""
+    return [str(entry["event"]) for entry in logs]
+
+
+def _kv_payload(value: object) -> dict[str, object]:
+    """The KV v2 read envelope, as captured from openbao/openbao v2.6.1."""
+    return {"data": {"data": {"value": value}, "metadata": {"version": 1}}}
+
+
+def test_openbao_lazy_client_not_built_on_init() -> None:
+    """Constructing the store must not open a connection."""
+    store = OpenBaoSecretStore("http://openbao:8200", "tok")
     assert store._client is None
 
 
-def test_redis_store_get_returns_value(monkeypatch: pytest.MonkeyPatch) -> None:
-    store = RedisSecretStore("redis://localhost:6379/0")
-    fake_client = SimpleNamespace(get=lambda key: "redis-value")
-    monkeypatch.setattr(store, "_client_lazy", lambda: fake_client)
-    assert store.get("snowflake-uat-finance") == "redis-value"
+def test_openbao_get_returns_value() -> None:
+    store = _bao(lambda _r: httpx.Response(200, json=_kv_payload("p@ss")))
+    assert store.get("conn-1") == "p@ss"
 
 
-def test_redis_store_get_namespaces_the_key(monkeypatch: pytest.MonkeyPatch) -> None:
-    store = RedisSecretStore("redis://localhost:6379/0")
-    seen: list[str] = []
+def test_openbao_get_hits_the_kv_v2_data_path_with_the_token_header() -> None:
+    seen: list[httpx.Request] = []
 
-    def _get(key: str) -> str:
-        seen.append(key)
-        return "v"
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json=_kv_payload("v"))
 
-    monkeypatch.setattr(store, "_client_lazy", lambda: SimpleNamespace(get=_get))
-    store.get("conn-1")
-    assert seen == ["dataq:secret:conn-1"]
+    _bao(handler).get("snowflake-uat-finance")
+    assert seen[0].url.path == "/v1/secret/data/snowflake-uat-finance"
+    # OpenBao keeps Vault's header name; getting this wrong 403s every read.
+    assert seen[0].headers["X-Vault-Token"] == "s3cr3t-token"
 
 
-def test_redis_store_get_raises_when_missing(monkeypatch: pytest.MonkeyPatch) -> None:
-    store = RedisSecretStore("redis://localhost:6379/0")
-    monkeypatch.setattr(store, "_client_lazy", lambda: SimpleNamespace(get=lambda key: None))
+def test_openbao_get_quotes_a_name_containing_a_slash() -> None:
+    """`secret_ref` is caller data. An unescaped `/` would retarget the read at a
+    different KV path — silently reading someone else's secret, or a 404."""
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json=_kv_payload("v"))
+
+    _bao(handler).get("evil/../other")
+    # raw_path is what goes on the wire. `.url.path` DECODES %2F back to '/', so
+    # asserting on it would still pass with the escaping removed.
+    assert seen[0].url.raw_path == b"/v1/secret/data/evil%2F..%2Fother"
+
+
+def test_openbao_get_uses_the_configured_mount() -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json=_kv_payload("v"))
+
+    _bao(handler, mount="dataq-kv").get("conn-1")
+    assert seen[0].url.path == "/v1/dataq-kv/data/conn-1"
+
+
+def test_openbao_get_raises_not_found_on_404() -> None:
+    store = _bao(lambda _r: httpx.Response(404, json={"errors": []}))
     with pytest.raises(SecretNotFoundError, match="not set"):
         store.get("missing")
 
 
-def test_redis_store_get_wraps_client_exception(monkeypatch: pytest.MonkeyPatch) -> None:
-    store = RedisSecretStore("redis://localhost:6379/0")
-
-    def _boom(key: str) -> None:
-        raise RuntimeError("connection refused")
-
-    monkeypatch.setattr(store, "_client_lazy", lambda: SimpleNamespace(get=_boom))
-    with pytest.raises(SecretNotFoundError, match="connection refused"):
-        store.get("x")
+def test_openbao_get_raises_not_found_on_soft_deleted_secret() -> None:
+    """KV v2 answers 404 for a soft-deleted secret too (verified against v2.6.1),
+    so no body inspection is needed to tell 'deleted' from 'never existed'."""
+    body = {"data": {"data": None, "metadata": {"deletion_time": "2026-07-26T00:00:00Z"}}}
+    store = _bao(lambda _r: httpx.Response(404, json=body))
+    with pytest.raises(SecretNotFoundError, match="not set"):
+        store.get("soft-deleted")
 
 
-def test_redis_store_set_calls_set_with_namespaced_key(monkeypatch: pytest.MonkeyPatch) -> None:
-    store = RedisSecretStore("redis://localhost:6379/0")
-    calls: list[tuple[str, str]] = []
-    monkeypatch.setattr(
-        store, "_client_lazy", lambda: SimpleNamespace(set=lambda k, v: calls.append((k, v)))
-    )
-    store.set("conn-1", "p@ss")
-    assert calls == [("dataq:secret:conn-1", "p@ss")]
+def test_openbao_get_403_is_not_reported_as_a_missing_secret() -> None:
+    """A dead/expired token must be distinguishable from an absent credential —
+    the #954 failure where dead PATs had no visible state anywhere (ADR 0039 §6)."""
+    store = _bao(lambda _r: httpx.Response(403, json={"errors": ["permission denied"]}))
+    with pytest.raises(SecretNotFoundError) as exc:
+        store.get("conn-1")
+    message = str(exc.value)
+    assert "permission denied" in message
+    assert "token invalid, expired" in message
+    assert "not set" not in message  # must NOT read as "no such secret"
 
 
-def test_redis_store_set_wraps_client_exception(monkeypatch: pytest.MonkeyPatch) -> None:
-    store = RedisSecretStore("redis://localhost:6379/0")
+def test_openbao_get_503_names_the_sealed_vault() -> None:
+    store = _bao(lambda _r: httpx.Response(503, json={"errors": ["Vault is sealed"]}))
+    with pytest.raises(SecretNotFoundError, match="sealed or standby"):
+        store.get("conn-1")
 
-    def _boom(key: str, value: str) -> None:
-        raise RuntimeError("write failed")
 
-    monkeypatch.setattr(store, "_client_lazy", lambda: SimpleNamespace(set=_boom))
-    with pytest.raises(SecretWriteError, match="write failed"):
+def test_openbao_get_403_logs_a_warning() -> None:
+    """The exception reaches the caller, but only a LOG reaches the operator."""
+    store = _bao(lambda _r: httpx.Response(403, json={"errors": ["permission denied"]}))
+    with capture_logs() as logs, pytest.raises(SecretNotFoundError):
+        store.get("conn-1")
+    assert _events(logs) == ["openbao_permission_denied"]
+
+
+def test_openbao_get_503_logs_unreachable() -> None:
+    store = _bao(lambda _r: httpx.Response(503, json={"errors": ["Vault is sealed"]}))
+    with capture_logs() as logs, pytest.raises(SecretNotFoundError):
+        store.get("conn-1")
+    assert _events(logs) == ["openbao_unreachable"]
+
+
+def test_openbao_get_wraps_transport_error() -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused")
+
+    with pytest.raises(SecretNotFoundError, match="vault unreachable"):
+        _bao(handler).get("conn-1")
+
+
+def test_openbao_get_transport_error_logs_unreachable() -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused")
+
+    with capture_logs() as logs, pytest.raises(SecretNotFoundError):
+        _bao(handler).get("conn-1")
+    assert _events(logs) == ["openbao_unreachable"]
+
+
+def test_openbao_get_raises_when_field_absent() -> None:
+    """A secret written by something other than DataQ (different field name) must
+    fail loudly rather than return the wrong string."""
+    store = _bao(lambda _r: httpx.Response(200, json={"data": {"data": {"password": "x"}}}))
+    with pytest.raises(SecretNotFoundError, match="has no 'value' field"):
+        store.get("foreign")
+
+
+def test_openbao_get_raises_when_body_is_not_json() -> None:
+    store = _bao(lambda _r: httpx.Response(200, content=b"<html>gateway</html>"))
+    with pytest.raises(SecretNotFoundError, match="has no 'value' field"):
+        store.get("conn-1")
+
+
+def test_openbao_get_raises_when_value_is_null() -> None:
+    store = _bao(lambda _r: httpx.Response(200, json=_kv_payload(None)))
+    with pytest.raises(SecretNotFoundError, match="has no value"):
+        store.get("conn-1")
+
+
+def test_openbao_set_posts_the_kv_v2_envelope() -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={"data": {"version": 1}})
+
+    _bao(handler).set("conn-1", "p@ss")
+    assert seen[0].method == "POST"
+    assert seen[0].url.path == "/v1/secret/data/conn-1"
+    # KV v2 nests the map under "data" — a flat body writes nothing readable back.
+    assert json.loads(seen[0].content) == {"data": {"value": "p@ss"}}
+
+
+def test_openbao_set_raises_write_error_on_403() -> None:
+    store = _bao(lambda _r: httpx.Response(403, json={"errors": ["permission denied"]}))
+    with pytest.raises(SecretWriteError, match="token invalid, expired"):
         store.set("conn-1", "p@ss")
 
 
-def test_redis_store_set_in_one_instance_is_visible_to_another() -> None:
-    """The cross-process property #86 needs: a write through one store instance
-    (≈ the API) is readable through a separate instance (≈ the Celery worker).
-    Uses a real Redis; skipped when unreachable (CI provides one)."""
-    url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
-    writer = RedisSecretStore(url, key_prefix="dataq:test-secret:")
-    reader = RedisSecretStore(url, key_prefix="dataq:test-secret:")
-    try:
-        writer._client_lazy().ping()
-    except Exception:  # pragma: no cover - environment-dependent
-        pytest.skip(f"Redis not reachable at {url}")
+def test_openbao_set_raises_write_error_on_transport_error() -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused")
 
-    name = f"conn-{os.getpid()}-xprocess"
-    try:
-        writer.set(name, "shared-secret")
-        assert reader.get(name) == "shared-secret"  # separate instance sees it
-    finally:
-        writer._client_lazy().delete(f"dataq:test-secret:{name}")
+    with pytest.raises(SecretWriteError, match="vault unreachable"):
+        _bao(handler).set("conn-1", "p@ss")
+
+
+def test_openbao_set_then_get_roundtrips_through_a_fake_vault() -> None:
+    """The #86 property: a value written through the store reads back through it,
+    end-to-end over the real httpx stack, with only the socket faked."""
+    vault: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        name = request.url.path.rsplit("/", 1)[-1]
+        if request.method == "POST":
+            vault[name] = json.loads(request.content)["data"]["value"]
+            return httpx.Response(200, json={"data": {"version": 1}})
+        if name not in vault:
+            return httpx.Response(404, json={"errors": []})
+        return httpx.Response(200, json=_kv_payload(vault[name]))
+
+    store = _bao(handler)
+    store.set("conn-1", "shared-secret")
+    assert store.get("conn-1") == "shared-secret"
 
 
 def test_get_secret_store_caches_singleton(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -372,19 +549,40 @@ def test_akv_store_delete_fails_soft_on_error(monkeypatch: pytest.MonkeyPatch) -
     store.delete("conn-x")  # fail-soft: logged, never raised (#372)
 
 
-def test_redis_store_delete_namespaces_the_key(monkeypatch: pytest.MonkeyPatch) -> None:
-    store = RedisSecretStore("redis://localhost:6379/0")
-    calls: list[str] = []
-    monkeypatch.setattr(store, "_client_lazy", lambda: SimpleNamespace(delete=calls.append))
-    store.delete("conn-1")
-    assert calls == ["dataq:secret:conn-1"]
+def test_openbao_delete_targets_the_metadata_path() -> None:
+    """Must purge every version via `metadata/`, NOT soft-delete via `data/`: the
+    caller is orphan cleanup after a connection was deleted, and a recoverable
+    warehouse credential behind a deleted entity is the wrong default (ADR 0039 §7)."""
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(204)
+
+    _bao(handler).delete("conn-1")
+    assert seen[0].method == "DELETE"
+    assert seen[0].url.path == "/v1/secret/metadata/conn-1"
 
 
-def test_redis_store_delete_fails_soft(monkeypatch: pytest.MonkeyPatch) -> None:
-    store = RedisSecretStore("redis://localhost:6379/0")
+def test_openbao_delete_of_absent_secret_is_a_clean_noop() -> None:
+    """KV v2 answers 204 even for a name that never existed — nothing to log."""
+    store = _bao(lambda _r: httpx.Response(204))
+    with capture_logs() as logs:
+        store.delete("never-existed")
+    assert _events(logs) == []
 
-    def _boom(key: str) -> None:
-        raise RuntimeError("connection refused")
 
-    monkeypatch.setattr(store, "_client_lazy", lambda: SimpleNamespace(delete=_boom))
-    store.delete("x")  # fail-soft: no raise
+def test_openbao_delete_fails_soft_on_transport_error() -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused")
+
+    with capture_logs() as logs:
+        _bao(handler).delete("conn-1")  # fail-soft: logged, never raised (#372)
+    assert _events(logs) == ["secret_delete_failed"]
+
+
+def test_openbao_delete_fails_soft_on_error_status() -> None:
+    store = _bao(lambda _r: httpx.Response(403, json={"errors": ["permission denied"]}))
+    with capture_logs() as logs:
+        store.delete("conn-1")  # fail-soft: an entity delete must not 500 on this
+    assert _events(logs) == ["secret_delete_failed"]
