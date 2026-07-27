@@ -1,0 +1,112 @@
+Can we host the airflow in local now, mirroring what we have in azure container app. 
+Also for the flat file can we have a SFTP or something similar in local docker? [open to ideas here]
+[so when we wind down azure, we can keep the job running.]
+
+---
+
+can we add a similar backup method for snowflake using localstack for snowflake [again open to ideas]?
+
+---
+
+let's kill the localstack [ I don't want any more non OSS license resources even if it's just for harness]. Just keep a record what we evaluated so far somewhere. and merge the changes, and sync main.
+
+---
+
+Okay, let's close them out. Also can you check #435 once
+
+---
+
+<task-notification>
+<task-id>a166c786b75a84e90</task-id>
+<tool-use-id>toolu_01A1R26LNfFVJDuMusyqRM4b</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/fcf147da-f22f-41ab-ae99-a0fbd9e19a4c/tasks/a166c786b75a84e90.output</output-file>
+<status>completed</status>
+<summary>Agent "Review PR 1069" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Reviewed
+
+`git diff origin/main...HEAD` on `fix/issue-1057-publish-on-merge` (2 commits): `.github/workflows/publish-images.yml`, `backend/app/core/secrets.py`, `backend/tests/core/test_secrets.py`. No files modified, no git state changed.
+
+**First, the claim you asked me to verify: it holds.** GitHub's workflow-syntax reference states verbatim *"Path filters are not evaluated for pushes of tags"* and *"If you define both `branches`/`branches-ignore` and `paths`/`paths-ignore`, the workflow will only run when both filters are satisfied."* A `v*` tag push still publishes unconditionally; the filter only narrows the `main` trigger. The config is right and the comment at `.github/workflows/publish-images.yml:47-55` is accurate. Also checked: on a push event `inputs.tag` is empty, `GITHUB_REF_TYPE=branch`, so the tag-computation step correctly yields just `:latest` + `:${GITHUB_SHA}`. No untrusted input reaches the workflow on the new trigger (`github.actor` for login, no `pull_request_target`), and `permissions` is unchanged and minimal.
+
+---
+
+## Critical (90-100)
+
+### 1. The new assertion makes `test_get_secret_store_caches_singleton` fail outside a full-suite run — real defect, reproduced
+`backend/tests/core/test_secrets.py:736-745`
+
+```
+$ python -m pytest backend/tests/core/test_secrets.py::test_get_secret_store_caches_singleton -q --no-cov
+E  where False = isinstance(&lt;...OpenBaoSecretStore object...&gt;, EnvSecretStore)
+1 failed
+```
+
+That is on this machine, with no ambient overrides — just the developer's `.env.app` (`SECRET_STORE=openbao`, which is what `.env.app.example:77` ships). The whole file passes (`80 passed`); the single test alone fails. It also fails with `SECRET_STORE=azure_key_vault` exported, even in a multi-test selection. Pre-PR the test passed in all three.
+
+Root cause, traced: the docstring's premise is correct — `monkeypatch.setenv` at line 741 is inert because `get_settings()` is already cached by the time the body runs. The autouse `_reset_caches` clears the cache, then the autouse `stub_run_dispatch` (`backend/tests/conftest.py:68`) imports `run_dispatch` → `celery_app.create_celery_app()` → `get_settings()`, re-populating the cache from the **ambient** environment. That import only happens once per process, so in a full-file run the cache is empty at the test body and the monkeypatch wins by accident of ordering; when this test runs first, it loses.
+
+So the PR correctly diagnosed that the setenv decides nothing, then added an assertion whose value is decided by `.env.app` instead of by the test. CI stays green (`pytest backend/tests/`, no `.env.app`, default `secret_store="env"`), so the gate will not catch it — it breaks the single-test loop locally, which is the CLAUDE.md "verify locally before push" path.
+
+Fix: make the setenv actually decide, e.g. `monkeypatch.setenv("SECRET_STORE", "env"); get_settings.cache_clear()` before the first `get_secret_store()`. (Verified env vars beat `.env.app` in `Settings`, so that makes it hermetic.)
+
+---
+
+## Important (80-89)
+
+### 2. A release-tag publish can now be silently cancelled by a merge — real defect (latent)
+`.github/workflows/publish-images.yml:66-68`
+
+`main` pushes now enter the same `group: publish-images` as `v*` tag pushes. GitHub's documented behaviour with `cancel-in-progress: false`: *"any existing `pending` job or workflow in the same concurrency group will be canceled and the new queued job or workflow will take its place."* So: tag `v1.2.0` pushed while a main-push run is in progress → the tag run goes pending → the next merge to `main` queues → **the tag run is cancelled**, and `ghcr.io/.../dataq-backend:v1.2.0` never exists. Nothing fails loudly; you get a cancelled run in the list.
+
+Before this PR that collision was impossible, because main pushes never entered the group. The window is wide because these are uncached multi-arch QEMU builds (see nit 10). Suggested fix: `group: publish-images-${{ github.ref_type }}` (keeps main-pushes serialized with each other and tag-pushes with each other, so `:latest` still has a single writer per class), or gate the tag leg into its own job/workflow-level group.
+
+### 3. `AzureKeyVaultStore.close()` has no test at all — delete it and the suite stays green
+`backend/app/core/secrets.py:243-253`
+
+`reset_secret_store_cache` reaches it via `getattr`, so removing the method entirely produces no AttributeError and no failing test. Every new test covers the OpenBao store; the **production** store (ADR 0024 — prod runs `azure_key_vault`) is the untested half of the fix. This is exactly the "would it still pass if the fix were reverted" criterion, and for this store the answer is yes. A `monkeypatch`ed fake `SecretClient` recording `close()` (the file already fakes the SDK elsewhere, e.g. `test_akv_store_set_reaches_sdk_through_lazy_branch`) plus an idempotency assertion would close it.
+
+### 4. `publish-images` and `deploy.yml` now both write `:${github.sha}`, with different contents — real defect
+`.github/workflows/publish-images.yml:127` vs `.github/workflows/deploy.yml:37,92,247`
+
+publish-images pushes `dataq-{backend,frontend}:${GITHUB_SHA}` **multi-arch**; deploy.yml pushes `dataq-{backend,frontend}:${{ github.sha }}` **amd64-only** (plain `docker build`, no buildx). The two workflows are in *different* concurrency groups (`publish-images` vs `deploy-production`), so they can also run simultaneously. Before this PR, publish-images only wrote a SHA tag on tag pushes/dispatch; now every merge writes it, and every subsequent deploy of that commit overwrites it.
+
+Consequence: the tag the header comment calls the "immutable commit SHA" is last-writer-wins and changes its architecture set. A dev on Apple Silicon pulling `:&lt;sha&gt;` to reproduce prod gets a working image before the deploy and `no matching manifest for linux/arm64` after. Suggested fix: on branch pushes emit `main-${GITHUB_SHA}` (or drop the SHA tag entirely for the `main` trigger) so `&lt;sha&gt;` stays solely owned by deploy.yml — which is what the workflow header already claims about tag ownership.
+
+### 5. `AzureKeyVaultStore.close()` doesn't release the credential's sockets — real defect, undercuts the fix's own goal
+`backend/app/core/secrets.py:243-253`, credential built at `:192`
+
+`SecretClient.close()` is `self._client.close()` — it closes the KV client's pipeline transport only. `DefaultAzureCredential` is constructed inline at line 192, never retained, and owns a **separate** transport session per chained credential (`ChainedTokenCredential.close`: *"Close the transport session of each credential in the chain"*). So `close()` releases half the pool and leaves the token-acquisition sessions open — the same leak class #1058 is about. Fix: keep the credential on the instance and close it in `close()` (after the client). Secondary effect worth a comment: after `close()`, the next use rebuilds `DefaultAzureCredential`, re-running the whole discovery/token chain — fine for a test reset, expensive if the hot-reload caller the docstring anticipates ever lands.
+
+### 6. `close()` on an injected-client store detaches it and silently upgrades the store to real network I/O
+`backend/app/core/secrets.py:317-334`; test at `backend/tests/core/test_secrets.py:783-792`
+
+The ownership model is right in intent, but the implementation clears `self._client` and sets `self._owns_client = True` **unconditionally**, including for a client it does not own. A store built with a `MockTransport` client therefore stops using the mock after `close()` and, on the next call, builds a real `httpx.Client(base_url=self._addr)` — i.e. it does exactly what the docstring says it must not do ("would break a caller that reuses it"), just with a different symptom: real sockets to `OPENBAO_ADDR` instead of a closed-client error. Combined with the `reset_secret_store_cache` path (which is called from the autouse conftest fixture), a test that injects a client into the singleton store and touches it after a reset would silently hit the network.
+
+The new test asserts only `not injected.is_closed`; it never asserts `store._client is injected`, so the detach is unpinned and would not be noticed. Fix: return early when not owned (leave `self._client` and `_owns_client` untouched), and add the association assertion to the test.
+
+### 7. `paths` filter misses two files that participate in the same skew it's fixing — real defect (same class as #1057)
+`.github/workflows/publish-images.yml:56-65`
+
+- **`.env.app.example`** — `docs/getting-started.md:76` sends evaluators to fetch it **from `main`**, exactly like the compose file. It is the second half of the eval contract: a merge that adds/renames a setting there, against a `:latest` whose `Settings` has `extra="forbid"` and closed `Literal`s, reproduces the #1056 failure mode verbatim (pydantic error naming neither cause nor fix).
+- **`pyproject.toml`** — `backend/Dockerfile:53` does `COPY pyproject.toml ./`, so it is image content, yet a change to it does not republish.
+
+Both are one-line additions to the list.
+
+---
+
+## Nits / lower confidence
+
+8. **`reset_secret_store_cache` propagates exceptions from `close()`** (`backend/app/core/secrets.py:551-553`). It is called from the autouse `_reset_caches` fixture on **every** test, setup and teardown; a store whose `close()` raises (transport error, Azure SDK hiccup) would convert the whole suite into errors. `SecretStore.delete` is deliberately fail-soft for precisely this reason — consider `try/except Exception: log.warning(...)` for symmetry.
+
+9. **The "concurrent rebuild is safe" claim is narrower than it reads** (`backend/app/core/secrets.py:545-548`). Rebuild-safety is true; *in-flight* safety is not. `_client_lazy` reads `self._client` outside the lock, and every `get_secret_store()` consumer (`backend/app/worker/tasks.py` ×9) holds a local reference to the store, so a concurrent `close()` can close a pool between the read and the request → `RuntimeError: Cannot send a request, as the client has been closed`. Harmless while reset is test-only, but the docstring names config hot-reload as the plausible next caller — which is the multithreaded case. Worth stating the constraint explicitly so it isn't inherited as a safety guarantee.
+
+10. **No build cache on a now-per-merge multi-arch build** (`.github/workflows/publish-images.yml:150-161`). Every qualifying merge does an uncached two-image build, with the backend's arm64 leg under QEMU emulation (only the frontend got the `--platform=$BUILDPLATFORM` treatment in #518). Adding `cache-from: type=gha` / `cache-to: type=gha,mode=max` cuts wall clock and shrinks the overlap window that makes finding 2 possible.
+
+11. **`:latest` is now "tip of `main`", gated only by the PR's pre-merge CI.** The push trigger fires regardless of whether `main`'s own post-merge CI run passes, so a semantic conflict between two PRs merged in quick succession is published to the tag evaluators pull. That is the accepted trade for #1057, but the header line "Stable tag to pull = `:latest` (moving)" now means something materially different and deserves the one-word update — or a `workflow_run`-on-CI-success gate if you want the stable pointer to stay gated.
+
+12. **`test_openbao_close_is_idempotent_and_reusable`** (`backend/tests/core/test_secrets.py:794-800`) leaks the pool it rebuilds — `_client_lazy()` is called in the final assertion and never closed. The sibling test at :783 does close its client. Ironic in a leak-fix PR; one line.
+
+13. **The Protocol decision is sound.** `SecretStore` is `@runtime_checkable`, 32 structural doubles are checked by the `backend/tests` mypy gate (#418), and Protocols give no default implementations — so adding `close()` there really would cost 32 no-op bodies and also change `isinstance` semantics for every existing check. Duck-typing via `getattr` is the right call. Two things it gives up, worth knowing rather than changing: mypy cannot verify the call (a typo'd method name would just never fire — mitigated by the test at :748), and nothing guards a *future* pooled store from forgetting `close()`. A cheap backstop: one parametrized test asserting each concrete store `_build_store` can return either exposes `close` or provably holds no pool.</result>
+<usage><subagent_tokens>116213</subagent_tokens><tool_uses>35</tool_uses><duration_ms>613485</duration_ms></usage>
+</task-notification>
