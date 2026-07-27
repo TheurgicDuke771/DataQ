@@ -67,7 +67,12 @@ services:
       BAO_DEV_ROOT_TOKEN_ID: ${OPENBAO_TOKEN:?run ./scripts/setup.sh (or set OPENBAO_TOKEN) — ADR 0039}
       BAO_DEV_LISTEN_ADDRESS: "0.0.0.0:8200"
     ports:
-      - "8200:8200"
+      # Loopback ONLY — unlike the postgres/redis lines above, this holds the real
+      # warehouse credentials a developer entered, behind nothing but a root token
+      # sitting in .env on the same machine. Binding it to 0.0.0.0 would expose that
+      # to the LAN and invert the point of putting an auth boundary in front of the
+      # values (ADR 0039). Matches docker-compose.ghcr.yml.
+      - "127.0.0.1:8200:8200"
     cap_add:
       # OpenBao locks its memory so secrets cannot be swapped to disk.
       - IPC_LOCK

@@ -1,8 +1,20 @@
 from functools import lru_cache
-from typing import Literal
+from typing import Final, Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Migration message for the secret store ADR 0039 removed. Lives here (not in
+# `secrets.py`, which imports this module) so the startup validator and the
+# `_build_store` fallback cannot drift apart.
+_REDIS_STORE_REMOVED: Final = (
+    "SECRET_STORE='redis' was removed in ADR 0039 — the store kept credentials in "
+    "plaintext. Use SECRET_STORE=openbao (set OPENBAO_ADDR + OPENBAO_TOKEN; "
+    "`docker compose up` starts the vault) and re-enter connection credentials. "
+    "Then PURGE the old plaintext values, which outlive the switch: "
+    "redis-cli --scan --pattern 'dataq:secret:*' | xargs -r redis-cli del. See "
+    "docs/adr/0039-openbao-self-hosted-secret-backend.md"
+)
 
 # Default MCP transport Host allowlist: the Azure Container Apps internal-ingress
 # FQDN shape the frontend nginx proxies to, plus the compose service name and
@@ -343,6 +355,54 @@ class Settings(BaseSettings):
         if not self.azure_api_client_id:
             return None
         return f"api://{self.azure_api_client_id}/{self.azure_api_scope}"
+
+    @model_validator(mode="after")
+    def _validate_secret_store(self) -> "Settings":
+        """Reject an unusable secret-store config **at startup**, not on first use.
+
+        `_build_store` is reached lazily — through a FastAPI `Depends` or a Celery
+        task — so without this the api boots, answers `/healthz`, and only dies when
+        something reaches for a credential: in the worker, mid-run, reported as a
+        connection failure. That is the #954 shape the store's own error handling
+        exists to prevent, and it would be perverse to reproduce it in the config
+        that configures it.
+
+        Gated on the selected mode so the other modes carry no required fields
+        (a Key Vault deploy must not have to set `OPENBAO_*`, and vice versa).
+        """
+        # Bound to a local whose name has no "secret" in it: both Ruff S105 and
+        # Bandit B105 flag `secret_store == "<literal>"` as a hardcoded password,
+        # and one local reads better than stacking two suppressions on three lines.
+        mode = self.secret_store
+        if mode == "openbao":
+            # `.strip()` because a whitespace-only value is not a value: it would pass
+            # a bare truthiness check and then fail much later as "vault unreachable"
+            # or a 403, pointing the operator at the network instead of the env file.
+            missing = [
+                name
+                for name, value in (
+                    ("OPENBAO_ADDR", self.openbao_addr),
+                    ("OPENBAO_TOKEN", self.openbao_token),
+                )
+                if not (value or "").strip()
+            ]
+            if missing:
+                raise ValueError(f"SECRET_STORE='openbao' requires {' and '.join(missing)}")
+            addr = (self.openbao_addr or "").strip()
+            if not addr.startswith(("http://", "https://")):
+                # httpx raises UnsupportedProtocol, which is an HTTPError, so the store
+                # would report this as `openbao_unreachable` — a network diagnosis for
+                # a one-word config typo.
+                raise ValueError(f"OPENBAO_ADDR must start with http:// or https:// (got {addr!r})")
+            if not self.openbao_mount.strip().strip("/"):
+                # An empty mount builds `/v1//data/<name>`, which the vault 404s —
+                # i.e. every credential in the workspace reports as missing.
+                raise ValueError("OPENBAO_MOUNT must not be empty")
+        elif mode == "azure_key_vault" and not self.azure_key_vault_url:
+            raise ValueError("SECRET_STORE='azure_key_vault' requires AZURE_KEY_VAULT_URL")
+        elif mode == "redis":
+            raise ValueError(_REDIS_STORE_REMOVED)
+        return self
 
 
 @lru_cache(maxsize=1)

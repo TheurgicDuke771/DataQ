@@ -8,15 +8,18 @@ from typing import ClassVar
 import httpx
 import pytest
 import structlog
+from pydantic import ValidationError
 from structlog.testing import capture_logs
 from structlog.typing import EventDict
 
 from backend.app.core import secrets
+from backend.app.core.config import Settings
 from backend.app.core.secrets import (
     AzureKeyVaultStore,
     EnvSecretStore,
     OpenBaoSecretStore,
     SecretNotFoundError,
+    SecretStoreUnavailableError,
     SecretWriteError,
     _build_store,
     _env_key,
@@ -88,8 +91,12 @@ def test_akv_store_get_wraps_sdk_exception(
 
     fake_client = SimpleNamespace(get_secret=_boom)
     monkeypatch.setattr(store, "_client_lazy", lambda: fake_client)
-    with pytest.raises(SecretNotFoundError, match="network down"):
+    # NOT SecretNotFoundError: callers degrade on that ("no webhook configured"), so
+    # a Key Vault outage would render as "nothing is set" across the workspace. This
+    # store made that mistake from the start; ADR 0039 fixes it for both backends.
+    with pytest.raises(SecretStoreUnavailableError, match="network down"):
         store.get("snowflake-uat-finance")
+    assert not isinstance(SecretStoreUnavailableError("x"), SecretNotFoundError)
 
 
 def test_akv_store_get_raises_when_secret_value_none(
@@ -273,6 +280,105 @@ def test_build_store_redis_mode_raises_with_migration_path() -> None:
     assert "SECRET_STORE=openbao" in str(exc.value)
 
 
+# ── startup validation (review finding: the "raises at startup" claim was false) ──
+#
+# These build the REAL `Settings` model, not the `SimpleNamespace` the factory tests
+# use — so they catch drift between config.py's field names/Literal and the store,
+# which a hand-rolled stand-in cannot see.
+
+
+def _real_settings(monkeypatch: pytest.MonkeyPatch, **env: str) -> None:
+    """Build Settings from env alone, ignoring any developer .env.app on disk.
+
+    Env vars rather than kwargs: `Settings` runs `extra="forbid"`, and the
+    case-insensitive mapping applies to the ENVIRONMENT, not to constructor
+    arguments — so `Settings(SECRET_STORE=...)` is rejected as an unknown field.
+    """
+    for key in (
+        "SECRET_STORE",
+        "OPENBAO_ADDR",
+        "OPENBAO_TOKEN",
+        "OPENBAO_MOUNT",
+        "AZURE_KEY_VAULT_URL",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+    Settings(_env_file=None)
+
+
+def test_settings_rejects_openbao_without_addr_at_startup(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Lazily-built stores fail on FIRST USE — in a Celery task, mid-run, reported as
+    a connection failure. That is the #954 shape; config must fail at boot instead."""
+    with pytest.raises(ValidationError, match="requires OPENBAO_ADDR"):
+        _real_settings(monkeypatch, SECRET_STORE="openbao", OPENBAO_TOKEN="tok")
+
+
+def test_settings_rejects_openbao_without_token_at_startup(monkeypatch: pytest.MonkeyPatch) -> None:
+    with pytest.raises(ValidationError, match="requires OPENBAO_TOKEN"):
+        _real_settings(monkeypatch, SECRET_STORE="openbao", OPENBAO_ADDR="http://openbao:8200")
+
+
+def test_settings_rejects_whitespace_only_openbao_values(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A blank-but-present value passes a bare truthiness check and then fails much
+    later as "vault unreachable" — pointing at the network, not the env file."""
+    with pytest.raises(ValidationError, match="requires OPENBAO_TOKEN"):
+        _real_settings(
+            monkeypatch,
+            SECRET_STORE="openbao",
+            OPENBAO_ADDR="http://openbao:8200",
+            OPENBAO_TOKEN="   ",
+        )
+
+
+def test_settings_rejects_openbao_addr_without_a_scheme(monkeypatch: pytest.MonkeyPatch) -> None:
+    """httpx raises UnsupportedProtocol (an HTTPError), so the store would report a
+    one-word config typo as `openbao_unreachable` — a network diagnosis."""
+    with pytest.raises(ValidationError, match="must start with http"):
+        _real_settings(
+            monkeypatch, SECRET_STORE="openbao", OPENBAO_ADDR="openbao:8200", OPENBAO_TOKEN="tok"
+        )
+
+
+def test_settings_rejects_an_empty_mount(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An empty mount builds `/v1//data/<name>`, which the vault 404s — i.e. every
+    credential in the workspace reports as missing."""
+    with pytest.raises(ValidationError, match="OPENBAO_MOUNT"):
+        _real_settings(
+            monkeypatch,
+            SECRET_STORE="openbao",
+            OPENBAO_ADDR="http://openbao:8200",
+            OPENBAO_TOKEN="tok",
+            OPENBAO_MOUNT="/",
+        )
+
+
+def test_settings_rejects_the_removed_redis_mode_at_startup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with pytest.raises(ValidationError, match="ADR 0039") as exc:
+        _real_settings(monkeypatch, SECRET_STORE="redis")
+    assert "SECRET_STORE=openbao" in str(exc.value)
+
+
+def test_settings_accepts_a_complete_openbao_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    _real_settings(
+        monkeypatch, SECRET_STORE="openbao", OPENBAO_ADDR="http://openbao:8200", OPENBAO_TOKEN="tok"
+    )
+
+
+def test_settings_does_not_require_openbao_fields_in_other_modes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The gate must stay mode-scoped: a Key Vault deploy carries no OPENBAO_*."""
+    _real_settings(monkeypatch, SECRET_STORE="env")
+    _real_settings(
+        monkeypatch,
+        SECRET_STORE="azure_key_vault",
+        AZURE_KEY_VAULT_URL="https://v.vault.azure.net/",
+    )
+
+
 # ───────────────────────── OpenBaoSecretStore ──────────────────────
 #
 # Driven through a real `httpx.Client` over `MockTransport`: the URL building,
@@ -391,42 +497,48 @@ def test_openbao_get_raises_not_found_on_soft_deleted_secret() -> None:
 
 def test_openbao_get_403_is_not_reported_as_a_missing_secret() -> None:
     """A dead/expired token must be distinguishable from an absent credential —
-    the #954 failure where dead PATs had no visible state anywhere (ADR 0039 §6)."""
+    the #954 failure where dead PATs had no visible state anywhere (ADR 0039 §6).
+
+    The distinction must live in the exception TYPE, not the message: every caller
+    branches on the class and none reads the text, so raising `SecretNotFoundError`
+    here would make an admin page render "not set" and alert delivery skip silently
+    during a vault outage.
+    """
     store = _bao(lambda _r: httpx.Response(403, json={"errors": ["permission denied"]}))
-    with pytest.raises(SecretNotFoundError) as exc:
+    with pytest.raises(SecretStoreUnavailableError) as exc:
         store.get("conn-1")
-    message = str(exc.value)
-    assert "permission denied" in message
-    assert "token invalid, expired" in message
-    assert "not set" not in message  # must NOT read as "no such secret"
+    assert "token invalid, expired" in str(exc.value)
+    # The load-bearing assertion: callers that degrade on "not found" must NOT catch it.
+    assert not issubclass(SecretStoreUnavailableError, SecretNotFoundError)
 
 
 def test_openbao_get_503_names_the_sealed_vault() -> None:
     store = _bao(lambda _r: httpx.Response(503, json={"errors": ["Vault is sealed"]}))
-    with pytest.raises(SecretNotFoundError, match="sealed or standby"):
+    with pytest.raises(SecretStoreUnavailableError, match="sealed or standby"):
         store.get("conn-1")
 
 
 def test_openbao_get_403_logs_a_warning(monkeypatch: pytest.MonkeyPatch) -> None:
     """The exception reaches the caller, but only a LOG reaches the operator."""
     store = _bao(lambda _r: httpx.Response(403, json={"errors": ["permission denied"]}))
-    with _captured_secret_logs(monkeypatch) as logs, pytest.raises(SecretNotFoundError):
+    with _captured_secret_logs(monkeypatch) as logs, pytest.raises(SecretStoreUnavailableError):
         store.get("conn-1")
     assert _events(logs) == ["openbao_permission_denied"]
 
 
 def test_openbao_get_503_logs_unreachable(monkeypatch: pytest.MonkeyPatch) -> None:
     store = _bao(lambda _r: httpx.Response(503, json={"errors": ["Vault is sealed"]}))
-    with _captured_secret_logs(monkeypatch) as logs, pytest.raises(SecretNotFoundError):
+    with _captured_secret_logs(monkeypatch) as logs, pytest.raises(SecretStoreUnavailableError):
         store.get("conn-1")
-    assert _events(logs) == ["openbao_unreachable"]
+    # The vault ANSWERED — a different investigation from a refused connection.
+    assert _events(logs) == ["openbao_server_error"]
 
 
 def test_openbao_get_wraps_transport_error() -> None:
     def handler(_request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("connection refused")
 
-    with pytest.raises(SecretNotFoundError, match="vault unreachable"):
+    with pytest.raises(SecretStoreUnavailableError, match="unreachable"):
         _bao(handler).get("conn-1")
 
 
@@ -434,7 +546,7 @@ def test_openbao_get_transport_error_logs_unreachable(monkeypatch: pytest.Monkey
     def handler(_request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("connection refused")
 
-    with _captured_secret_logs(monkeypatch) as logs, pytest.raises(SecretNotFoundError):
+    with _captured_secret_logs(monkeypatch) as logs, pytest.raises(SecretStoreUnavailableError):
         _bao(handler).get("conn-1")
     assert _events(logs) == ["openbao_unreachable"]
 
@@ -447,15 +559,93 @@ def test_openbao_get_raises_when_field_absent() -> None:
         store.get("foreign")
 
 
-def test_openbao_get_raises_when_body_is_not_json() -> None:
-    store = _bao(lambda _r: httpx.Response(200, content=b"<html>gateway</html>"))
-    with pytest.raises(SecretNotFoundError, match="has no 'value' field"):
+def test_openbao_get_non_json_200_is_an_availability_fault_not_a_foreign_secret() -> None:
+    """A 200 whose body is not JSON means we are not talking to the vault at all —
+    a proxy error page, a captive portal, another service on :8200. Reporting that
+    as "not written by DataQ" sends the operator to the wrong layer entirely."""
+    store = _bao(lambda _r: httpx.Response(200, content=b"<html>502 Bad Gateway</html>"))
+    with pytest.raises(SecretStoreUnavailableError, match="non-JSON 200"):
         store.get("conn-1")
 
 
 def test_openbao_get_raises_when_value_is_null() -> None:
     store = _bao(lambda _r: httpx.Response(200, json=_kv_payload(None)))
     with pytest.raises(SecretNotFoundError, match="has no value"):
+        store.get("conn-1")
+
+
+# ── the silent band (review finding): every non-success status must signal ──
+
+
+@pytest.mark.parametrize(
+    ("status", "why"),
+    [
+        (400, "what a KV **v1** mount answers for a versioned path"),
+        (401, "what a gateway in front of the vault returns when its 403 never reaches us"),
+        (429, "HCP rate-limiting under check-run load — every run resolves a credential"),
+        (500, "the vault answered, but failed"),
+        (502, "a proxy between us and the vault"),
+    ],
+)
+def test_openbao_get_never_fails_silently(
+    monkeypatch: pytest.MonkeyPatch, status: int, why: str
+) -> None:
+    """An earlier version logged only 403 and 5xx, leaving 400-499 completely silent —
+    and that band is exactly where the likely misconfigurations live ({why})."""
+    store = _bao(lambda _r: httpx.Response(status, json={"errors": ["nope"]}))
+    with _captured_secret_logs(monkeypatch) as logs, pytest.raises(SecretStoreUnavailableError):
+        store.get("conn-1")
+    assert len(_events(logs)) == 1, f"HTTP {status} produced no operator signal"
+
+
+@pytest.mark.parametrize("status", [400, 401, 429, 500, 502, 503])
+def test_openbao_set_never_fails_silently(monkeypatch: pytest.MonkeyPatch, status: int) -> None:
+    """The write path's half of ADR 0039 §6 had NO regression cover: deleting the
+    warning from `set` left all 53 tests green (found by mutation in review)."""
+    store = _bao(lambda _r: httpx.Response(status, json={"errors": ["nope"]}))
+    with _captured_secret_logs(monkeypatch) as logs, pytest.raises(SecretWriteError):
+        store.set("conn-1", "p@ss")
+    assert len(_events(logs)) == 1, f"HTTP {status} on write produced no operator signal"
+
+
+def test_openbao_set_transport_error_logs(monkeypatch: pytest.MonkeyPatch) -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused")
+
+    with _captured_secret_logs(monkeypatch) as logs, pytest.raises(SecretWriteError):
+        _bao(handler).set("conn-1", "p@ss")
+    assert _events(logs) == ["openbao_unreachable"]
+
+
+# ── a typo'd mount must not report every credential as missing ──
+
+
+def _missing_mount_404() -> httpx.Response:
+    """The shape openbao/openbao v2.6.1 returns for a route that does not exist —
+    distinct from an absent secret's `{"errors": []}`."""
+    return httpx.Response(
+        404, json={"errors": ['no handler for route "typo/data/conn-1". route entry not found.']}
+    )
+
+
+def test_openbao_missing_mount_is_not_reported_as_a_missing_secret(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`OPENBAO_MOUNT` is operator-settable and production vaults commonly mount
+    per-team paths. One typo would otherwise report EVERY credential in the
+    workspace as "not set" — the precise masquerade ADR 0039 §6 forbids."""
+    store = _bao(lambda _r: _missing_mount_404(), mount="typo")
+    with _captured_secret_logs(monkeypatch) as logs, pytest.raises(SecretStoreUnavailableError):
+        store.get("conn-1")
+    assert _events(logs) == ["openbao_mount_missing"]
+
+
+def test_openbao_kv_v1_envelope_is_a_config_fault_not_a_foreign_secret() -> None:
+    """A KV **v1** mount answers `{"data": {...}}` with no inner `data`. That is a
+    misconfigured mount, not somebody else's secret, and saying otherwise sends the
+    operator hunting for a secret that is sitting right there."""
+    store = _bao(lambda _r: httpx.Response(200, json={"data": {"value": "x"}}))
+    with pytest.raises(SecretStoreUnavailableError, match="KV v2 mount"):
         store.get("conn-1")
 
 
@@ -590,7 +780,10 @@ def test_openbao_delete_of_absent_secret_is_a_clean_noop(
     store = _bao(lambda _r: httpx.Response(204))
     with _captured_secret_logs(monkeypatch) as logs:
         store.delete("never-existed")
-    assert _events(logs) == []
+        # Positive control: this is the one assertion in the file whose PASS would
+        # otherwise be indistinguishable from a capture that records nothing at all.
+        secrets.log.warning("canary")
+    assert _events(logs) == ["canary"]
 
 
 def test_openbao_delete_fails_soft_on_transport_error(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -599,11 +792,14 @@ def test_openbao_delete_fails_soft_on_transport_error(monkeypatch: pytest.Monkey
 
     with _captured_secret_logs(monkeypatch) as logs:
         _bao(handler).delete("conn-1")  # fail-soft: logged, never raised (#372)
-    assert _events(logs) == ["secret_delete_failed"]
+    assert _events(logs) == ["openbao_unreachable", "secret_delete_failed"]
 
 
 def test_openbao_delete_fails_soft_on_error_status(monkeypatch: pytest.MonkeyPatch) -> None:
     store = _bao(lambda _r: httpx.Response(403, json={"errors": ["permission denied"]}))
     with _captured_secret_logs(monkeypatch) as logs:
         store.delete("conn-1")  # fail-soft: an entity delete must not 500 on this
-    assert _events(logs) == ["secret_delete_failed"]
+    # A connection delete is often the FIRST vault call after a token expires, so it
+    # must emit the dead-token event an operator alerts on — not only the generic one.
+    assert _events(logs) == ["openbao_permission_denied", "secret_delete_failed"]
+    assert logs[1]["credential_still_present"] is True  # the purge did NOT happen

@@ -141,8 +141,11 @@ step "Installing frontend dependencies (pnpm)"
 ok "Frontend dependencies installed"
 
 # ── Docker services ───────────────────────────────────────────────────────────
-step "Starting Docker services (Postgres, Redis)"
-docker compose up -d postgres redis
+# OpenBao is NOT optional here: the seed step below writes connection credentials
+# through the SecretStore (seed_dev → demo_data → connection_service.set), so with
+# SECRET_STORE=openbao a missing vault fails the whole bootstrap on a fresh clone.
+step "Starting Docker services (Postgres, Redis, OpenBao)"
+docker compose up -d postgres redis openbao
 ok "Docker services started"
 
 # ── Database migrations ───────────────────────────────────────────────────────
@@ -153,6 +156,18 @@ for i in $(seq 1 30); do
     break
   fi
   [ "$i" -eq 30 ] && die "Postgres did not become ready in time"
+  sleep 1
+done
+
+# Same gate for the vault — the seed races a cold OpenBao otherwise, and the
+# failure surfaces as an opaque "failed to store connection credential".
+step "Waiting for OpenBao to be ready"
+for i in $(seq 1 30); do
+  if curl -sf -o /dev/null "${OPENBAO_ADDR:-http://localhost:8200}/v1/sys/health"; then
+    ok "OpenBao ready"
+    break
+  fi
+  [ "$i" -eq 30 ] && die "OpenBao did not become ready in time"
   sleep 1
 done
 
