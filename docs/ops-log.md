@@ -291,6 +291,53 @@ throughout and only jobs were briefly resumed.
 > `on-run-end` grant hook so the role does not need it remains the tighter
 > long-term fix.
 
+### Finding 2026-07-27 — a Snowflake emulator spike, and what it says about evidence
+
+Readiness exercise, not a wind-down: **no Azure resource was touched and all five
+harness apps stayed `Stopped`.** Question asked — can the local stack keep a
+warehouse when Snowflake lapses, the way MinIO keeps the landing zone when Azure
+does. Answered by spiking before building, which was the right order.
+
+**LocalStack for Snowflake is licensed and cannot be evaluated without an
+account.** `localstack/snowflake:2026.6.0` exits **55, "License activation
+failed"** with no token; there is no community tier, only a free non-commercial
+OSS licence by application. Same shape as the Databricks Free-Edition gap (G-h):
+fine for demo/eval, decided again before anything commercial.
+
+So the spike was split into **our plumbing** vs **their fidelity**, and the first
+half was settled for free against **fakesnow** (Apache-2.0, DuckDB-backed).
+`local/snowflake_probe.py` runs DataQ's *real* functions, not equivalents —
+**6/6**: driver, DataQ's DSN through `connect_args`, volume + freshness monitors,
+the profiler aggregate, and the full GX `add_snowflake` → `run_expectations`
+chain with three expectations.
+
+What that fixes in advance: the redirect **must** ride in SQLAlchemy
+`connect_args`. snowflake-sqlalchemy blocks `host` and `protocol` as URL query
+params ("they change the connection target"), and GX threads
+`kwargs['connect_args']` into its own `create_engine`. Anyone reaching for a
+query-string override would have lost a day to it.
+
+**The probe found a live defect no test could — [#1067](https://github.com/TheurgicDuke771/DataQ/issues/1067).**
+GX's `REQUIRED_QUERY_PARAMS` is `{"warehouse", "role"}`, but DataQ makes `role`
+optional for password auth and the connection test is deliberately GX-free. A
+role-less Snowflake connection therefore **tests green and fails every suite
+run** — and only the expectation half, since monitors never touch GX, so it looks
+partly alive. This is the #828/#954 blindness again: a connection whose state the
+product reports as healthy while it cannot do its job.
+
+**The rule this leaves behind — an emulator is CONTINUITY, not COVERAGE.** A green
+suite against one is not evidence the Snowflake integration works: its
+`information_schema`, timestamp types and identifier folding are its own
+implementation. That is exactly the driver-boundary shape that hid UC freshness
+returning a `str` (#953) and Parquet's Arrow dtypes (#520) — and it is *worse*
+than a fixture, because it looks like a live run. Anything sourced from an
+emulator gets labelled as such, in the probe, the compose file and the README.
+
+Also recorded: `docker compose` interpolates **every** service regardless of
+profile, so a `${VAR:?}` required-guard on an opt-in service fails the plain
+`up` for the whole stack. Caught by testing the default path after adding the
+profile, not by reasoning about it.
+
 ## Credential rotation
 
 One credential typically becomes **several** Key Vault secrets — one per
