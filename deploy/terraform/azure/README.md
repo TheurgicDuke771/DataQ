@@ -1,4 +1,4 @@
-# DataQ — app infra (Terraform)
+# DataQ — app infra (OpenTofu)
 
 Provisions the DataQ **application's own** production resources into the existing
 `dataq-rg`. Separate from the harness stack
@@ -10,7 +10,7 @@ resources forced by free/trial subscription caps (1 Container App Environment an
 - the **Container Apps environment** `dataq-cae` (neutral name, `purpose=dataq-shared`),
 - the **Postgres Flexible Server** `dataq-pg-wus3-*` (neutral, `purpose=dataq-shared`).
 
-Both shared resources are **owned by the harness Terraform**; this stack only
+Both shared resources are **owned by the harness stack**; this stack only
 *references* them (data sources). Everything the app creates is `dataq-app-*` /
 `purpose=dataq-app`; the harness's `dataq-harness-*` resources are untouched.
 
@@ -40,9 +40,13 @@ before apply):
 
 ## Prerequisites
 
+- **OpenTofu** (`tofu`), not Terraform — ADR 0024 amendment (2026-07-27). Install with
+  `brew install opentofu` (or see opentofu.org). The directory path and the `.tf`
+  extension keep the `terraform` name deliberately: `terraform {}` is OpenTofu's own
+  block name and `.tf` its own format. Validated on OpenTofu 1.12.5.
 - `az login` as a subscription **Owner** (registers RPs; creates role assignments,
   AAD app registrations, and Key Vault secrets). **Do not** `source` the harness
-  `secrets.sh` — that switches Terraform to the harness SP, which lacks Key Vault
+  `secrets.sh` — that switches the CLI to the harness SP, which lacks Key Vault
   data-plane rights (403) and isn't the right identity for this stack.
 - The shared `dataq-cae` env + `dataq-pg-wus3-*` server already exist (harness).
 - The GHCR backend **and** frontend images pushed + public.
@@ -73,9 +77,9 @@ at runtime over the server's allow-Azure-services firewall rule.
 
 ```bash
 cd deploy/terraform/azure
-terraform init
-TF_VAR_app_db_password='<the dataq_app password>' terraform plan    # review
-TF_VAR_app_db_password='<the dataq_app password>' terraform apply
+tofu init
+TF_VAR_app_db_password='<the dataq_app password>' tofu plan    # review
+TF_VAR_app_db_password='<the dataq_app password>' tofu apply
 ```
 
 ## After apply — wire the Deploy workflow
@@ -83,14 +87,14 @@ TF_VAR_app_db_password='<the dataq_app password>' terraform apply
 `.github/workflows/deploy.yml` reads these. Push them with `gh` from the outputs:
 
 ```bash
-gh secret  set AZURE_CLIENT_ID       -b "$(terraform output -raw github_actions_client_id)"
-gh secret  set AZURE_TENANT_ID       -b "$(terraform output -raw azure_tenant_id)"
-gh secret  set AZURE_SUBSCRIPTION_ID -b "$(terraform output -raw azure_subscription_id)"
-gh variable set AZURE_RESOURCE_GROUP -b "$(terraform output -raw resource_group)"
-gh variable set API_APP_NAME         -b "$(terraform output -raw api_app_name)"
-gh variable set WORKER_APP_NAME      -b "$(terraform output -raw worker_app_name)"
-gh variable set FRONTEND_APP_NAME    -b "$(terraform output -raw frontend_app_name)"
-gh variable set MIGRATE_JOB_NAME     -b "$(terraform output -raw migrate_job_name)"
+gh secret  set AZURE_CLIENT_ID       -b "$(tofu output -raw github_actions_client_id)"
+gh secret  set AZURE_TENANT_ID       -b "$(tofu output -raw azure_tenant_id)"
+gh secret  set AZURE_SUBSCRIPTION_ID -b "$(tofu output -raw azure_subscription_id)"
+gh variable set AZURE_RESOURCE_GROUP -b "$(tofu output -raw resource_group)"
+gh variable set API_APP_NAME         -b "$(tofu output -raw api_app_name)"
+gh variable set WORKER_APP_NAME      -b "$(tofu output -raw worker_app_name)"
+gh variable set FRONTEND_APP_NAME    -b "$(tofu output -raw frontend_app_name)"
+gh variable set MIGRATE_JOB_NAME     -b "$(tofu output -raw migrate_job_name)"
 ```
 
 Since the ADR 0028 §5 cutover there are **no `VITE_*` build vars and no SWA API
@@ -114,7 +118,7 @@ az resource list -g dataq-rg --query "[?tags.purpose=='dataq-app'].name" -o tsv
 # ADR 0028 §5, so it's verified THROUGH the frontend, not directly (curl on
 # api_url from outside the env will not connect). /healthz (proxied) = 200 the api
 # is live; /api/v1/runs = 401 healthy + auth-enforced.
-curl -s -o /dev/null -w "%{http_code}\n" "$(terraform output -raw frontend_url)/"
-curl -s -w "\n" "$(terraform output -raw frontend_url)/healthz"
-curl -s -o /dev/null -w "%{http_code}\n" "$(terraform output -raw frontend_url)/api/v1/runs"
+curl -s -o /dev/null -w "%{http_code}\n" "$(tofu output -raw frontend_url)/"
+curl -s -w "\n" "$(tofu output -raw frontend_url)/healthz"
+curl -s -o /dev/null -w "%{http_code}\n" "$(tofu output -raw frontend_url)/api/v1/runs"
 ```

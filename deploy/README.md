@@ -1,6 +1,6 @@
 # DataQ — deployment guide
 
-How DataQ v1 is deployed to Azure. Infrastructure is **in-repo Terraform**
+How DataQ v1 is deployed to Azure. Infrastructure is **in-repo OpenTofu**
 (`deploy/terraform/azure/`, applied — [ADR 0024](../docs/adr/0024-app-deployment-infrastructure.md));
 the app rolls out via the **`Deploy`** workflow
 ([.github/workflows/deploy.yml](../.github/workflows/deploy.yml), `workflow_dispatch`).
@@ -10,7 +10,7 @@ deploy a new image. Related: [ADR 0025](../docs/adr/0025-production-image-pip-sl
 
 Azure is **one** deploy target behind the app's seams (ADR 0010/0013) — the
 manifests here are infra config, not business logic. No Azure resource names are
-hardcoded in app code; they live only as Terraform vars + workflow `vars`/`secrets`.
+hardcoded in app code; they live only as OpenTofu vars + workflow `vars`/`secrets`.
 
 ## Before you deploy: production prerequisites
 
@@ -41,12 +41,12 @@ loopback. A production deployment must flip all of the following. Values live in
 | `RATE_LIMIT_WEBHOOK_IP_PER_MINUTE` | `240` | per-IP ceiling across **all** webhook buckets from one IP (#785) — bounds the aggregate a single IP can spend by rotating provider segments; without it, per-provider buckets would multiply the per-IP webhook budget. |
 | `RATE_LIMIT_IP_PER_MINUTE` | `1200` | per-IP ceiling across **all** bearer buckets from one IP — the rotated-token backstop (a client cycling a fresh random `Bearer` per request can't mint unlimited fresh per-token buckets to dodge the cap). Applies only to the `default` (bearer) class; the unauth class is already per-IP, the webhook class has its own ceiling above. |
 | `RATE_LIMIT_IPV4_PREFIX` / `RATE_LIMIT_IPV6_PREFIX` | `24` / `64` | per-IP buckets key on this address **prefix**, not the full address (#789) — a rotating NAT/proxy pool inside one allocation shares a bucket instead of diluting the cap across sibling /32s. `/32` / `/128` disable grouping; widen or narrow per deployment (a CGNAT-heavy user base may warrant `/32`). |
-| `RATE_LIMIT_XFF_TRUSTED_HOPS` | `1` | number of trusted proxies that append `X-Forwarded-For` in your deployment — the real client is the entry that many hops from the right. **`1`** for a single-proxy / compose setup (rightmost); **`3`** for the ACA public-envoy→nginx→internal-envoy chain (set in Terraform). A chain shorter than this falls back to the socket peer. |
+| `RATE_LIMIT_XFF_TRUSTED_HOPS` | `1` | number of trusted proxies that append `X-Forwarded-For` in your deployment — the real client is the entry that many hops from the right. **`1`** for a single-proxy / compose setup (rightmost); **`3`** for the ACA public-envoy→nginx→internal-envoy chain (set in the IaC stack). A chain shorter than this falls back to the socket peer. |
 | `COMPARISON_MAX_ROWS` | `100000` | default per-side row cap for `comparison` checks (ADR 0015) — both sides materialize in worker memory for the diff, so this is a memory guardrail; over-cap runs **fail fast** (never a silently truncated diff). A check's `config.max_rows` overrides it. |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | unset | Azure Monitor / App Insights backend for spans + logs (observability, OTel — ADR 0010). |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | unset | generic OTLP/HTTP backend for spans + logs (#589) — any OTLP consumer (Tempo/Jaeger/Datadog/Collector); set alongside App Insights for parity, or alone for a non-Azure deploy. |
 | `OPENLINEAGE_URL` | unset | OpenLineage emission (ADR 0034, #758) — **dark by default**: unset ⇒ zero emission. Point at an OL receiver (Marquez, DataHub's OL endpoint) and every suite run emits START + terminal RunEvents with DQ facets (5s emit timeout, fail-open, no sample rows ever). Advanced transports via the library-owned `OPENLINEAGE__TRANSPORT__*` / `OPENLINEAGE_CONFIG`; `OPENLINEAGE_DISABLED=true` forces dark. |
-| `key_vault_purge_protection` (Terraform) | `false` (bring-up) | **`true`** for a hardened vault (irreversible). |
+| `key_vault_purge_protection` (OpenTofu var) | `false` (bring-up) | **`true`** for a hardened vault (irreversible). |
 | Interactive API docs | served | **404 in prod** via the prod-docs gate (`ENVIRONMENT=prod`). |
 
 ### 2. Access you need
@@ -60,7 +60,7 @@ loopback. A production deployment must flip all of the following. Values live in
   credentials at runtime, but not the broader built-in Secrets Officer; #622).
 - **Azure AD (Entra ID)** — `Application Administrator` (or Global Admin) to create the
   **two app registrations** (API + SPA) and **grant admin consent** for the API scope.
-- **Subscription resource-provider registration** — the app's Terraform registers
+- **Subscription resource-provider registration** — the app's OpenTofu stack registers
   `Microsoft.App`, `Microsoft.Cache`, `Microsoft.KeyVault`, `Microsoft.Web` (see
   [rp.tf](terraform/azure/rp.tf)); the PostgreSQL + monitoring providers
   (`Microsoft.DBforPostgreSQL`, `Microsoft.Insights`, `Microsoft.OperationalInsights`)
@@ -70,7 +70,8 @@ loopback. A production deployment must flip all of the following. Values live in
   and create the OIDC **federated credential** (subject = the repo's `production`
   environment). The GHCR image push uses the built-in `GITHUB_TOKEN` (`packages: write`);
   the package must be **public** so Container Apps pulls it anonymously (ADR 0023).
-- **Tooling** — Terraform + the `az` CLI, authenticated to the subscription.
+- **Tooling** — **OpenTofu** (`tofu`; `brew install opentofu`) + the `az` CLI,
+  authenticated to the subscription. Not Terraform — ADR 0024 amendment (2026-07-27).
 
 ### 3. Cloud prerequisites
 
@@ -132,7 +133,7 @@ eval stack (`DATAQ_AUTH_MODE=bypass`) and prod (`=oidc`).
 
 ## One-time provisioning
 
-The datasource + compute infra is stood up by the external Terraform harness
+The datasource + compute infra is stood up by the external OpenTofu harness
 (ADR 0021) — see the harness repo's `README.md` (not git-tracked here). Beyond
 that, this app needs:
 
@@ -169,7 +170,7 @@ that, this app needs:
    > ```
    > az containerapp auth update -n dataq-app-api -g dataq-rg --enabled false
    > ```
-   > It's durable (nothing in Terraform re-enables it — the old `staticwebapp backends link`
+   > It's durable (nothing in the IaC stack re-enables it — the old `staticwebapp backends link`
    > is gone). A fresh deploy that never had an SWA won't have EasyAuth, so this only applies
    > when cutting over from the SWA topology.
 5. **Azure Monitor → ADF webhook** alert rule (Week-7 task) — targets the public
@@ -414,8 +415,8 @@ a hang into a failed deploy — better, but still a failed deploy.
   still exist in DataQ's user model to see anything (suite-scoped authz applies as
   normal — a token for an unknown/unshared user reads an empty workspace). The
   grant was first applied manually via Graph on 2026-07-03; if your state predates
-  it, `terraform import` the existing grant instead of recreating:
-  `terraform import azuread_application_pre_authorized.azure_cli_on_api <api-application-object-id>/preAuthorizedApplication/04b07795-8ddb-461a-bbee-02f9e1bf7b46`.
+  it, `tofu import` the existing grant instead of recreating:
+  `tofu import azuread_application_pre_authorized.azure_cli_on_api <api-application-object-id>/preAuthorizedApplication/04b07795-8ddb-461a-bbee-02f9e1bf7b46`.
   Interim posture per [ADR 0026](../docs/adr/0026-auth-api-keys-and-principal-seam.md)
   (DataQ-issued API keys) — build deferred to post-v1 (decided 2026-07-03).
 - **Workspace-admins are superusers over every suite** ([ADR 0027](../docs/adr/0027-suite-permission-model-workspace-admin.md) / #482):

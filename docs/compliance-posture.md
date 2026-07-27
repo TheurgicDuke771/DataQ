@@ -117,7 +117,7 @@ in code when that feature lands.
 
 ### G5 — 🟡 Assert encryption-at-rest & offer CMK — #435
 **Requirement:** GDPR Art 32 / HIPAA §164.312(a)(2)(iv) addressable encryption.
-**Current state:** satisfied by Azure platform-managed keys (default), but our Terraform
+**Current state:** satisfied by Azure platform-managed keys (default), but our OpenTofu
 neither asserts it nor offers customer-managed keys, and it's undocumented (no evidence
 for a customer security review).
 **v2.x target:** assert at-rest encryption in IaC, document it, and offer a CMK

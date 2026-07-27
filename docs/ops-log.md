@@ -100,7 +100,7 @@ apart.
 >   `query_acceleration_max_scale_factor 8 -> -1`. Provider-version drift, not an
 >   intended change; applying it would silently alter the warehouse.
 >
-> Re-check these on any future apply: a plain `terraform apply` here is not safe.
+> Re-check these on any future apply: a plain `tofu apply` here is not safe.
 
 > **Observed, unexplained (2026-07-26).** The mockdata / `dbt-lineage` /
 > `iceberg-writer` ACA jobs still carry live cron expressions (`0 2 * * *` etc.),
@@ -378,8 +378,8 @@ case that bites, since the product cannot know them and will never warn.
 
 | Expires | Credential | Action needed |
 |---|---|---|
-| **2026-08-06** | Snowflake `DATAQ_LOADER_PAT` | Re-mint; write **both** `snowflake-loader-pat` and `snowflake-password-harness`, then `terraform apply` so the containers pick it up. |
-| **2026-08-10** | Snowflake **ACCOUNTADMIN PAT** | Deliberately short (15d). Re-mint into harness `secrets.sh` only if a `terraform apply` is needed; otherwise let it lapse — nothing runs on it day to day, and `harness_window.sh` only calls `terraform output`, which needs no credential. |
+| **2026-08-06** | Snowflake `DATAQ_LOADER_PAT` | Re-mint; write **both** `snowflake-loader-pat` and `snowflake-password-harness`, then `tofu apply` so the containers pick it up. |
+| **2026-08-10** | Snowflake **ACCOUNTADMIN PAT** | Deliberately short (15d). Re-mint into harness `secrets.sh` only if a `tofu apply` is needed; otherwise let it lapse — nothing runs on it day to day, and `harness_window.sh` only calls `tofu output`, which needs no credential. |
 | **2026-08-20** | Snowflake `DATAQ_READER_PAT` | Re-mint; write **all three**: `conn-snowflake-retail-dev-6729c4f9`, `conn-snowflake-orders-dev-1c62b0c3`, `conn-snowflake-payments-dev-f53de47d` — then test each connection. (Renamed 2026-07-27; the old `conn-snowflake-*` keys no longer exist.) |
 | **2027-06-28** | ADLS SAS (`ADLS — Raw`, `ADLS — landing`) | Read automatically by #838 once the sweep ran — the `se=` in the token. No manual capture needed; this row is now maintained by the product. |
 | **2027-07-12** | dbt artifacts SAS (`dbt — Retail Lineage`) | Same — read from the token. |
