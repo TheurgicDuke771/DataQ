@@ -56,7 +56,7 @@ snowflake-connector-python==4.7.1  # 3→4: drops cffi<2 / pyOpenSSL<26 caps →
 cryptography==49.0.0               # direct floor — transitive (snowflake/pyOpenSSL/azure/GX); pins past GHSA-537c-gmf6-5ccf in 46.0.7 (#274)
 azure-storage-blob==12.30.0       # ADLS Gen2
 boto3==1.43.46                    # S3
-databricks-sql-connector==4.3.0   # Unity Catalog
+databricks-sql-connector==4.4.0   # Unity Catalog
 databricks-sqlalchemy==2.0.10      # the SQLAlchemy 'databricks' dialect — SPLIT OUT of the connector in 4.x (#535); bump the pair together
 pyarrow==24.0.0                   # Parquet flat-file IO (read_parquet/profiler) — was a databricks-sql-connector transitive until its 4.x dropped it (#201)
 pyiceberg[pyarrow]==0.11.1        # native Iceberg read (ADR 0030, #716) — v2 baseline; spike-verified compatible with pyarrow 24 + GX 1.17.2 (#286); its rich<15/cachetools<7 transitives were unpinned, CVE-clean per pip-audit
