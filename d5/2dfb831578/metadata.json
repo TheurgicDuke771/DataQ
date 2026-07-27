@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "d52dfb831578",
+  "strategy": "manual-commit",
+  "branch": "feature/readable-secret-names",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/scripts/migrate_secret_names.py",
+    "backend/tests/scripts/test_migrate_secret_names.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/d5/2dfb831578/0/metadata.json",
+      "transcript": "/d5/2dfb831578/0/full.jsonl",
+      "compact_transcript": "/d5/2dfb831578/0/transcript.jsonl",
+      "content_hash": "/d5/2dfb831578/0/content_hash.txt",
+      "prompt": "/d5/2dfb831578/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 990,
+    "cache_creation_tokens": 2578945,
+    "cache_read_tokens": 193388805,
+    "output_tokens": 401559,
+    "api_call_count": 496
+  }
+}
