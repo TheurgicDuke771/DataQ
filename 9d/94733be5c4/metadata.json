@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "9d94733be5c4",
+  "strategy": "manual-commit",
+  "branch": "chore/opentofu-iac-migration",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/ops-log.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/9d/94733be5c4/0/metadata.json",
+      "transcript": "/9d/94733be5c4/0/full.jsonl",
+      "compact_transcript": "/9d/94733be5c4/0/transcript.jsonl",
+      "content_hash": "/9d/94733be5c4/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 34,
+    "cache_creation_tokens": 19428,
+    "cache_read_tokens": 2981209,
+    "output_tokens": 12048,
+    "api_call_count": 17
+  }
+}
