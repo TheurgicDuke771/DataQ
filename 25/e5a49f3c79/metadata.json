@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "25e5a49f3c79",
+  "strategy": "manual-commit",
+  "branch": "feature/openbao-secret-backend",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/tests/core/test_local_first_posture.py",
+    "backend/tests/core/test_secrets.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/25/e5a49f3c79/0/metadata.json",
+      "transcript": "/25/e5a49f3c79/0/full.jsonl",
+      "compact_transcript": "/25/e5a49f3c79/0/transcript.jsonl",
+      "content_hash": "/25/e5a49f3c79/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 36,
+    "cache_creation_tokens": 21211,
+    "cache_read_tokens": 4566823,
+    "output_tokens": 11609,
+    "api_call_count": 18
+  }
+}

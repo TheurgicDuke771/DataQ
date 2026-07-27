@@ -1,0 +1,41 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "25e5a49f3c79",
+  "session_id": "fcf147da-f22f-41ab-ae99-a0fbd9e19a4c",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-27T01:12:22.149949Z",
+  "branch": "feature/openbao-secret-backend",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/tests/core/test_local_first_posture.py",
+    "backend/tests/core/test_secrets.py"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "1ba16dad01f3",
+  "checkpoint_transcript_start": 492,
+  "transcript_lines_at_start": 492,
+  "compact_transcript_start": 140,
+  "token_usage": {
+    "input_tokens": 36,
+    "cache_creation_tokens": 21211,
+    "cache_read_tokens": 4566823,
+    "output_tokens": 11609,
+    "api_call_count": 18
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-27T01:12:22.09763Z",
+    "agent_lines": 38,
+    "agent_removed": 15,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 38,
+    "total_lines_changed": 53,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
