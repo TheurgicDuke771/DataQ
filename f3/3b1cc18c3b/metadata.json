@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "f33b1cc18c3b",
+  "strategy": "manual-commit",
+  "branch": "feature/1054-openbao-approle",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/app/core/secrets.py",
+    "backend/tests/core/test_secrets.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f3/3b1cc18c3b/0/metadata.json",
+      "transcript": "/f3/3b1cc18c3b/0/full.jsonl",
+      "compact_transcript": "/f3/3b1cc18c3b/0/transcript.jsonl",
+      "content_hash": "/f3/3b1cc18c3b/0/content_hash.txt",
+      "prompt": "/f3/3b1cc18c3b/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 12442,
+    "cache_creation_tokens": 2566645,
+    "cache_read_tokens": 185746861,
+    "output_tokens": 433368,
+    "api_call_count": 612
+  }
+}
