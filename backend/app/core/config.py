@@ -404,8 +404,6 @@ class Settings(BaseSettings):
             # `.strip()` because a whitespace-only value is not a value: it would pass
             # a bare truthiness check and then fail much later as "vault unreachable"
             # or a 403, pointing the operator at the network instead of the env file.
-            if not (self.openbao_addr or "").strip():
-                raise ValueError("SECRET_STORE='openbao' requires OPENBAO_ADDR")
             role_id = (self.openbao_role_id or "").strip()
             secret_id = (self.openbao_secret_id or "").strip()
             if bool(role_id) != bool(secret_id):
@@ -422,11 +420,15 @@ class Settings(BaseSettings):
                     f"{supplied} is set without {absent} — AppRole auth needs both. "
                     "Set both, or neither and use OPENBAO_TOKEN."
                 )
+            # Collected, not short-circuited: an operator missing both should learn
+            # both in one run rather than fix one, re-run, and discover the other.
+            missing = []
+            if not (self.openbao_addr or "").strip():
+                missing.append("OPENBAO_ADDR")
             if not role_id and not (self.openbao_token or "").strip():
-                raise ValueError(
-                    "SECRET_STORE='openbao' requires OPENBAO_TOKEN, or "
-                    "OPENBAO_ROLE_ID + OPENBAO_SECRET_ID for AppRole auth"
-                )
+                missing.append("OPENBAO_TOKEN (or OPENBAO_ROLE_ID + OPENBAO_SECRET_ID)")
+            if missing:
+                raise ValueError(f"SECRET_STORE='openbao' requires {' and '.join(missing)}")
             addr = (self.openbao_addr or "").strip()
             if not addr.startswith(("http://", "https://")):
                 # httpx raises UnsupportedProtocol, which is an HTTPError, so the store
