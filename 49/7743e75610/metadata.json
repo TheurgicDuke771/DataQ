@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "497743e75610",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1086-lineage-env-reconcile",
+  "checkpoints_count": 2,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/49/7743e75610/0/metadata.json",
+      "transcript": "/49/7743e75610/0/full.jsonl",
+      "compact_transcript": "/49/7743e75610/0/transcript.jsonl",
+      "content_hash": "/49/7743e75610/0/content_hash.txt",
+      "prompt": "/49/7743e75610/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 308,
+    "cache_creation_tokens": 581186,
+    "cache_read_tokens": 28763679,
+    "output_tokens": 133316,
+    "api_call_count": 155
+  }
+}
