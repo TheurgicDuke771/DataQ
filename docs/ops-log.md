@@ -115,6 +115,9 @@ next reader cannot tell a complete rotation from a partial one.
 | 2026-07-26 19:43 | Snowflake **`DATAQ_READER_PAT`** (re-minted) | `conn-snowflake-retail`, `conn-snowflake-orders`, `conn-snowflake-payments` | **2026-08-20** | All three connection-tested after writing: 200/200/200. No restart needed (runtime Key Vault read). |
 | 2026-07-26 19:43 | Snowflake **`DATAQ_LOADER_PAT`** (re-minted) | `snowflake-loader-pat` | **2026-08-06** | Harness-side loader credential. `snowflake-password-harness` deliberately NOT rotated — it is the password the MFA enforcement killed, and retiring it is #1032, not a rotation. |
 
+| 2026-07-26 23:53 | Snowflake **ACCOUNTADMIN PAT** (new) | harness `secrets.sh` → `SNOWFLAKE_PASSWORD` (Terraform provider only) | **2026-08-10** | Replaces the password MFA enforcement killed on 2026-07-18. Needed because the provider creates account ROLES and grants — `DATAQ_LOADER` cannot create itself. `SNOWFLAKE_ROLE` set to ACCOUNTADMIN to match. Verified: authenticates as ACCOUNTADMIN. **Short-lived by design — 15 days.** |
+| 2026-07-26 23:53 | Snowflake **`DATAQ_LOADER_PAT`** | `snowflake-password-harness` (the KV secret Airflow + the dbt job read) | 2026-08-06 | The RUNTIME half of #1032. Verified: authenticates as DATAQ_LOADER. **Not live until `terraform apply`** — the ACA container secret is materialised from this KV value at apply time, so the containers still hold the old password until then. |
+
 ### Expiring soon
 
 Keep this ordered by date. **Partly automated as of 2026-07-26:** #838 reads the
@@ -129,7 +132,8 @@ case that bites, since the product cannot know them and will never warn.
 
 | Expires | Credential | Action needed |
 |---|---|---|
-| **2026-08-06** | Snowflake `DATAQ_LOADER_PAT` | Re-mint; write `snowflake-loader-pat`. Earlier than the reader — check this one first. |
+| **2026-08-06** | Snowflake `DATAQ_LOADER_PAT` | Re-mint; write **both** `snowflake-loader-pat` and `snowflake-password-harness`, then `terraform apply` so the containers pick it up. |
+| **2026-08-10** | Snowflake **ACCOUNTADMIN PAT** | Deliberately short (15d). Re-mint into harness `secrets.sh` only if a `terraform apply` is needed; otherwise let it lapse — nothing runs on it day to day, and `harness_window.sh` only calls `terraform output`, which needs no credential. |
 | **2026-08-20** | Snowflake `DATAQ_READER_PAT` | Re-mint; write **all three** `conn-snowflake-*` secrets, then test each connection. |
 | **2027-06-28** | ADLS SAS (`ADLS — Raw`, `ADLS — landing`) | Read automatically by #838 once the sweep ran — the `se=` in the token. No manual capture needed; this row is now maintained by the product. |
 | **2027-07-12** | dbt artifacts SAS (`dbt — Retail Lineage`) | Same — read from the token. |
