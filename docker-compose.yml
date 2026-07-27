@@ -43,6 +43,47 @@ services:
       timeout: 3s
       retries: 10
 
+  # Credential store for the api + worker (ADR 0039), replacing the plaintext
+  # RedisSecretStore. Runs in DEV MODE: auto-unsealed, in-memory, KV v2 mounted at
+  # secret/ — so restarting it DROPS every stored credential and connections must be
+  # re-entered. That is the deliberate dev trade (a persistent vault needs a storage
+  # backend and a manual unseal on every boot); production uses a real vault, or
+  # Azure Key Vault on the Azure deploy.
+  #
+  # OpenBao, not HashiCorp Vault: Vault Community has been BUSL-1.1 since 1.15, which
+  # CONTRIBUTING rule 40 / ADR 0031 forbid us to DISTRIBUTE. OpenBao is the Linux
+  # Foundation fork at the pre-BUSL point, MPL-2.0. The app speaks the KV v2 API, so
+  # pointing OPENBAO_ADDR at a real Vault or HCP instead works unchanged.
+  #
+  # Pinned, not :latest — same rule as the GX and redis:7 pins.
+  openbao:
+    image: openbao/openbao:2.6.1
+    restart: unless-stopped
+    # BAO_DEV_ROOT_TOKEN_ID is a CREDENTIAL, so it is never defaulted in this
+    # tracked file (CLAUDE.md §11) — scripts/setup.sh generates it into the
+    # gitignored .env, exactly as it does the local Postgres password. `:?` fails
+    # the stack with this message rather than starting an unreachable vault.
+    environment:
+      BAO_DEV_ROOT_TOKEN_ID: ${OPENBAO_TOKEN:?run ./scripts/setup.sh (or set OPENBAO_TOKEN) — ADR 0039}
+      BAO_DEV_LISTEN_ADDRESS: "0.0.0.0:8200"
+    ports:
+      # Loopback ONLY — unlike the postgres/redis lines above, this holds the real
+      # warehouse credentials a developer entered, behind nothing but a root token
+      # sitting in .env on the same machine. Binding it to 0.0.0.0 would expose that
+      # to the LAN and invert the point of putting an auth boundary in front of the
+      # values (ADR 0039). Matches docker-compose.ghcr.yml.
+      - "127.0.0.1:8200:8200"
+    cap_add:
+      # OpenBao locks its memory so secrets cannot be swapped to disk.
+      - IPC_LOCK
+    healthcheck:
+      # 200 = initialized+unsealed+active. Dev mode unseals itself, but gating on
+      # health keeps api/worker from racing the vault on a cold start.
+      test: ["CMD", "bao", "status", "-address=http://127.0.0.1:8200"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   # One-shot: applies Alembic migrations then exits 0. api/worker wait on it via
   # service_completed_successfully so `docker compose up` never serves an
   # un-migrated schema (#156). Mirrors setup.sh's `cd backend && alembic ...`
@@ -82,10 +123,13 @@ services:
       DATABASE_URL: *database-url
       REDIS_URL: redis://redis:6379/0
       # Shared across api + worker so a credential the API writes at runtime is
-      # readable by connection-driven worker runs (#86). Dev only — plaintext in
-      # Redis. NOTE: in redis mode KV_SECRET_* env vars are NOT consulted (that's
-      # `env` mode); set SECRET_STORE=env if you rely on env-provided creds.
-      SECRET_STORE: ${SECRET_STORE:-redis}
+      # readable by connection-driven worker runs (#86) — EnvSecretStore is
+      # per-process and cannot do that. NOTE: in openbao mode KV_SECRET_* env vars
+      # are NOT consulted (that's `env` mode); set SECRET_STORE=env if you rely on
+      # env-provided creds.
+      SECRET_STORE: ${SECRET_STORE:-openbao}
+      OPENBAO_ADDR: http://openbao:8200
+      OPENBAO_TOKEN: ${OPENBAO_TOKEN:?run ./scripts/setup.sh (or set OPENBAO_TOKEN) — ADR 0039}
       # The dev-bypass identity is the workspace admin locally (non-secret dev
       # default; ADR 0027) so /admin + /settings are drivable in dev and E2E.
       # No-colon form: WORKSPACE_ADMIN_EMAILS="" in .env opts back OUT (to a
@@ -105,6 +149,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      openbao:
+        condition: service_healthy
       migrate:
         condition: service_completed_successfully
 
@@ -123,13 +169,17 @@ services:
       DATABASE_URL: *database-url
       REDIS_URL: redis://redis:6379/0
       # Must match the api service so secrets the API writes are visible here (#86).
-      SECRET_STORE: ${SECRET_STORE:-redis}
+      SECRET_STORE: ${SECRET_STORE:-openbao}
+      OPENBAO_ADDR: http://openbao:8200
+      OPENBAO_TOKEN: ${OPENBAO_TOKEN:?run ./scripts/setup.sh (or set OPENBAO_TOKEN) — ADR 0039}
     volumes:
       - ./backend:/workspace/backend
     depends_on:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      openbao:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully

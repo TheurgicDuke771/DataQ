@@ -31,7 +31,7 @@ loopback. A production deployment must flip all of the following. Values live in
 | `AUTH_DEV_BYPASS` | `true` | **`false`** — this is the master auth switch; leaving it on means **no authentication at all**. |
 | `AZURE_TENANT_ID` / `AZURE_API_CLIENT_ID` / `AZURE_SPA_CLIENT_ID` | empty | your Azure AD tenant + the two app registrations (API + SPA). |
 | **Frontend auth config** | `DATAQ_AUTH_MODE=bypass` (eval) | the **same generic image**, reconfigured at **runtime** — `DATAQ_AUTH_MODE=oidc` + `DATAQ_AUTH_AUTHORITY` / `DATAQ_AUTH_CLIENT_ID` / `DATAQ_AUTH_API_SCOPE` (ADR 0028). **No rebuild** — nginx injects `/config.js` from env. See [frontend/Dockerfile](../frontend/Dockerfile). |
-| `SECRET_STORE` | `redis` (eval) | **`azure_key_vault`** + `AZURE_KEY_VAULT_URL` + the managed identity's `AZURE_CLIENT_ID` (#408). |
+| `SECRET_STORE` | `openbao` (local/eval — ADR 0039) | **`azure_key_vault`** + `AZURE_KEY_VAULT_URL` + the managed identity's `AZURE_CLIENT_ID` (#408). |
 | `DATABASE_URL` / `REDIS_URL` | inline, passwordless | Key Vault-backed Container Apps secrets — **never literals**; real credentials. |
 | `CORS_ALLOW_ORIGINS` | n/a (same-origin) | empty — the frontend Container App proxies `/api` same-origin (ADR 0028); set the SPA origin only if you split them. |
 | `PUBLIC_BASE_URL` | n/a | the public origin — used to assemble inbound webhook URLs **and** the "View run" deep links in Slack/email alerts (#416); unset → alerts omit the link. |

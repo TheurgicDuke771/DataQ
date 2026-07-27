@@ -31,11 +31,13 @@ def test_env_template_selects_local_implementations() -> None:
     template to a cloud default, `setup.sh` starts handing new contributors a
     stack they cannot boot without credentials."""
     values = _template()
-    assert values["SECRET_STORE"] == "redis"  # not azure_key_vault
+    assert values["SECRET_STORE"] == "openbao"  # local vault in compose, not azure_key_vault
     assert values["AUTH_DEV_BYPASS"] == "true"
     # Every cloud-specific knob ships blank — present for discoverability, unset
     # so nothing reaches for a cloud SDK by default.
     for key in (
+        # A credential, so it ships blank and setup.sh generates it (ADR 0039).
+        "OPENBAO_TOKEN",
         "AZURE_TENANT_ID",
         "AZURE_API_CLIENT_ID",
         "AZURE_KEY_VAULT_URL",
@@ -78,5 +80,5 @@ def test_deployment_guide_documents_the_azure_free_path() -> None:
     the deliverable for anyone picking this up after the subscription ends."""
     guide = (_ROOT / "docs" / "deployment.md").read_text()
     assert "## Running DataQ without Azure" in guide
-    assert "SECRET_STORE=redis" in guide
+    assert "SECRET_STORE=openbao" in guide
     assert "AUTH_DEV_BYPASS" in guide

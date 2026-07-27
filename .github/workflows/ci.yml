@@ -334,8 +334,12 @@ jobs:
       DATABASE_URL: postgresql+psycopg2://dataq:dataq@localhost:5432/dataq_e2e
       REDIS_URL: redis://localhost:6379/0
       # api + seed must share the secret store so secrets the seed writes are
-      # readable by the api (compose parity). dev-bypass removes the auth wall.
-      SECRET_STORE: redis
+      # readable by the api (compose parity) — EnvSecretStore is per-process and
+      # they are separate processes here. dev-bypass removes the auth wall.
+      # OPENBAO_TOKEN is generated per-run into $GITHUB_ENV by the step below:
+      # no credential, not even a throwaway CI one, lives in a tracked file.
+      SECRET_STORE: openbao
+      OPENBAO_ADDR: http://localhost:8200
       AUTH_DEV_BYPASS: "true"
       ENVIRONMENT: dev
       # dev-bypass identity is workspace admin (compose parity, ADR 0027) so
@@ -357,6 +361,28 @@ jobs:
         run: |
           python -m pip install -U pip
           pip install -r backend/requirements-dev.txt
+
+      - name: Start OpenBao (secret store)
+        # A step rather than a `services:` container because the root token is
+        # generated per run — service containers start before any step, so their
+        # env cannot come from $GITHUB_ENV, and the alternative (a literal token
+        # in this file) is exactly what CLAUDE.md §11 forbids. Dev mode is
+        # in-memory and auto-unsealed, which is all a single CI run needs.
+        run: |
+          token="$(openssl rand -hex 16)"
+          echo "::add-mask::$token"
+          echo "OPENBAO_TOKEN=$token" >> "$GITHUB_ENV"
+          docker run -d --name openbao -p 8200:8200 \
+            -e BAO_DEV_ROOT_TOKEN_ID="$token" \
+            -e BAO_DEV_LISTEN_ADDRESS="0.0.0.0:8200" \
+            --cap-add IPC_LOCK openbao/openbao:2.6.1
+          for i in $(seq 1 30); do
+            if curl -sf -o /dev/null http://localhost:8200/v1/sys/health; then
+              echo "openbao up"; exit 0
+            fi
+            sleep 2
+          done
+          echo "openbao did not come up"; docker logs openbao; exit 1
 
       - name: Run migrations + seed demo data
         # alembic.ini's script_location is relative to backend/ (compose parity).

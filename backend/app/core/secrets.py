@@ -3,25 +3,29 @@
 Three backends are supported, picked from `settings.secret_store`:
 
 - **EnvSecretStore** — reads secrets from env vars prefixed `KV_SECRET_`.
-  Local dev only — convenient when running against `docker-compose` without
-  an Azure tenant. Name normalisation: `snowflake-uat-finance` →
-  env var `KV_SECRET_SNOWFLAKE_UAT_FINANCE`. **Per-process**: a secret written
-  via `set` is only visible to the writing process (#86).
+  Host-only dev — convenient when running without a vault or an Azure tenant.
+  Name normalisation: `snowflake-uat-finance` → env var
+  `KV_SECRET_SNOWFLAKE_UAT_FINANCE`. **Per-process**: a secret written via
+  `set` is only visible to the writing process (#86), so it cannot serve a
+  compose stack where the API and the Celery worker are separate containers.
 
-- **RedisSecretStore** — reads/writes secrets in Redis (already in the dev
-  stack). **Dev/test only** and **plaintext** — but, unlike EnvSecretStore, a
-  secret `set` by the API process is visible to the Celery worker, so
-  connection-driven worker runs can resolve a credential the API just wrote
-  (#86). Not for production (no encryption) — production uses Key Vault.
+- **OpenBaoSecretStore** — reads/writes secrets over the **KV v2 HTTP API**
+  (ADR 0039). The default for both compose stacks: it is shared across
+  processes (the API writes a credential, the worker reads it — #86) and,
+  unlike the plaintext Redis store it replaced, it encrypts at rest and puts
+  an auth boundary and an audit log in front of the values.
+
+  The contract is the *API*, not a vendor: the same mode works against
+  OpenBao (what we ship — MPL-2.0), Vault Community/Enterprise, or HCP Vault.
+  DataQ never distributes a BUSL-licensed server (CONTRIBUTING rule 40).
 
 - **AzureKeyVaultStore** — reads from Azure Key Vault via
   `azure-identity` (DefaultAzureCredential) + `azure-keyvault-secrets`.
-  Production / staging. Real vault provisioning + tenant config land in
-  Week 7 (deployment hardening); the code path is wired now so callers
-  can take a dependency on `SecretStore` without waiting.
+  The production default for DataQ's own Azure deployment (ADR 0024), where
+  managed identity means there is no bootstrap credential to hold at all.
 
-The Azure SDK and the redis client are **lazy-imported** so deployments that
-don't use them don't pay the import cost.
+The Azure SDK is **lazy-imported** so deployments that don't use it don't pay
+the import cost.
 """
 
 from __future__ import annotations
@@ -29,10 +33,11 @@ from __future__ import annotations
 import os
 import threading
 from typing import TYPE_CHECKING, Final, Protocol, runtime_checkable
+from urllib.parse import quote
 
-import redis
+import httpx
 
-from backend.app.core.config import Settings, get_settings
+from backend.app.core.config import _REDIS_STORE_REMOVED, Settings, get_settings
 from backend.app.core.logging import get_logger
 
 if TYPE_CHECKING:
@@ -42,14 +47,82 @@ log = get_logger(__name__)
 
 ENV_PREFIX: Final = "KV_SECRET_"
 _AKV_MODE: Final = "azure_key_vault"
-_REDIS_MODE: Final = "redis"
-# Namespace for secret keys in the shared dev Redis (keeps them clear of Celery's
-# own keys on the same instance).
-_REDIS_KEY_PREFIX: Final = "dataq:secret:"
+_OPENBAO_MODE: Final = "openbao"
+_REDIS_MODE: Final = "redis"  # removed — ADR 0039; retained only for the shim below
+
+# KV v2 stores a MAP per path; DataQ's model is one opaque string per name, so every
+# value lives under one fixed field. Changing this orphans every existing secret.
+_KV_FIELD: Final = "value"
+# Bounded timeout (seconds) — a degraded vault must not stall a request thread or a
+# Celery task. Mirrors marquez.py's `_TIMEOUT_SECONDS` rationale.
+_HTTP_TIMEOUT_SECONDS: Final = 5.0
+
+
+def _explain_status(status: int) -> str:
+    """Turn a KV v2 status into a cause an operator can act on.
+
+    The point is that these are NOT "secret missing" — see `OpenBaoSecretStore`.
+    """
+    if status == 403:
+        return "permission denied — token invalid, expired, or lacking a policy for this path"
+    if status == 503:
+        return "vault sealed or standby — unseal it, or point OPENBAO_ADDR at the active node"
+    if status == 404:
+        # On write/delete a 404 cannot mean "absent" — it means the ROUTE is absent.
+        return "no such KV mount — check OPENBAO_MOUNT"
+    return "unexpected vault response"
+
+
+def _is_missing_mount(response: httpx.Response) -> bool:
+    """Distinguish the two things KV v2 answers 404 to.
+
+    An absent (or soft-deleted) secret under a live mount returns an EMPTY error
+    list; a mount that does not exist returns a populated one::
+
+        secret absent   → {"errors": []}
+        mount not found → {"errors": ["no handler for route \\"typo/data/x\\". …"]}
+
+    Both shapes captured from openbao/openbao v2.6.1. The distinction matters
+    because `OPENBAO_MOUNT` is operator-settable and production vaults commonly
+    mount per-team paths: one typo would otherwise report EVERY credential in the
+    workspace as "not set" — the exact masquerade this class exists to prevent
+    (#954). A body we cannot parse is treated as the benign case, since only the
+    populated-errors shape is positive evidence of a bad route.
+    """
+    try:
+        errors = response.json().get("errors")
+    except (ValueError, AttributeError):
+        return False
+    return bool(errors)
 
 
 class SecretNotFoundError(Exception):
-    """Raised when the requested secret is missing or unreadable."""
+    """Raised when the secret genuinely is not there — and ONLY then.
+
+    Callers legitimately treat this as a *state* ("no webhook configured", "this
+    connection has no extra credential") and degrade gracefully. That is only safe
+    while the store never raises it for anything else — see
+    `SecretStoreUnavailableError`.
+    """
+
+
+class SecretStoreUnavailableError(Exception):
+    """Raised when the store could not answer — deliberately NOT a subclass.
+
+    The distinction that matters is at the **type**, not in the message. Every
+    caller branches on the exception class and none reads the text
+    (`admin_service._safe_secret`, `notification_service._resolve_webhook_url`,
+    `connection_service._extra_secrets`, `alerting/email.py`), so a store that
+    folds "the vault is sealed" into `SecretNotFoundError` makes an admin page
+    render "not set", makes alert delivery skip silently, and makes a connection
+    run with a credential quietly omitted — during an outage, across every
+    connection at once.
+
+    ADR 0039 §6 originally claimed the Protocol forced a single exception type.
+    It does not: the Protocol below declares no exceptions at all. That premise
+    was wrong, and this class is the correction — it is what actually makes the
+    ADR's promise true, rather than true-in-the-log-message-only.
+    """
 
 
 class SecretWriteError(Exception):
@@ -121,11 +194,24 @@ class AzureKeyVaultStore:
             return self._client
 
     def get(self, name: str) -> str:
+        from azure.core.exceptions import ResourceNotFoundError
+
         try:
             secret = self._client_lazy().get_secret(name)
-        except Exception as exc:
+        except ResourceNotFoundError as exc:
             raise SecretNotFoundError(
-                f"Key Vault secret {name!r} at {self._vault_url}: {exc}"
+                f"Key Vault secret {name!r} at {self._vault_url} not set"
+            ) from exc
+        except Exception as exc:
+            # Throttling, an expired managed identity, a network fault, a vault
+            # firewall rule — none of these mean the secret is absent. This store
+            # wrapped them ALL in `SecretNotFoundError` before ADR 0039, so callers
+            # that degrade on "not found" have been silently mistaking a Key Vault
+            # outage for "nothing configured" in production. Same bug the OpenBao
+            # store would have shipped; fixed for both here.
+            log.warning("keyvault_unavailable", name=name, error=str(exc))
+            raise SecretStoreUnavailableError(
+                f"Key Vault at {self._vault_url} could not serve {name!r}: {exc}"
             ) from exc
         value = secret.value
         if value is None:
@@ -155,53 +241,220 @@ class AzureKeyVaultStore:
             log.warning("secret_delete_failed", name=name, error=str(exc))
 
 
-class RedisSecretStore:
-    """Resolves secrets from Redis — dev/test only, plaintext, shared across processes.
+class OpenBaoSecretStore:
+    """Resolves secrets over the KV v2 HTTP API — OpenBao, Vault, or HCP (ADR 0039).
 
-    The point (vs `EnvSecretStore`): Redis is shared, so a secret `set` by the API
-    process is visible to the Celery worker, which is what connection-driven worker
-    runs need (#86). Values are stored in **plaintext** — never use in production;
-    production uses `AzureKeyVaultStore`. The redis client is lazy-built.
+    Deliberately speaks the **API and not a vendor SDK**: the three endpoints DataQ
+    needs are small and stable, and binding to the wire contract is what lets one
+    mode serve OpenBao (what we ship), Vault Community/Enterprise, and HCP Vault
+    without DataQ taking a position on the operator's server. Trading Azure lock-in
+    for HashiCorp lock-in would have missed the point of ADR 0010.
+
+        GET    /v1/{mount}/data/{name}      → value at .data.data.{_KV_FIELD}
+        POST   /v1/{mount}/data/{name}      → body {"data": {_KV_FIELD: value}}
+        DELETE /v1/{mount}/metadata/{name}  → purges every version
+
+    **Failure modes stay distinguishable** (ADR 0039 decision 6). A missing secret
+    is 404; a dead/expired token is 403; a sealed or unreachable vault is 503 or a
+    transport error. The Protocol only lets us raise `SecretNotFoundError` here, so
+    the last two additionally emit a WARNING and name the cause in the message —
+    reporting "credential missing" for what is really "cannot reach the vault" is
+    precisely how #954's two dead Snowflake PATs stayed invisible until someone
+    read worker logs.
     """
 
-    def __init__(self, redis_url: str, *, key_prefix: str = _REDIS_KEY_PREFIX) -> None:
-        self._url = redis_url
-        self._key_prefix = key_prefix
-        self._client: redis.Redis[str] | None = None
+    def __init__(
+        self,
+        addr: str,
+        token: str,
+        *,
+        mount: str = "secret",
+        timeout: float = _HTTP_TIMEOUT_SECONDS,
+        client: httpx.Client | None = None,
+    ) -> None:
+        # Trailing slash stripped so the path join is unambiguous (mirrors marquez.py).
+        self._addr = addr.rstrip("/")
+        self._token = token
+        self._mount = mount.strip("/")
+        self._timeout = timeout
+        # Injectable so tests can drive the real httpx request/response stack through
+        # a MockTransport — the URL building, header encoding, status handling and
+        # JSON decoding below are then genuinely exercised, not stubbed past.
+        self._client = client
         self._lock = threading.Lock()
 
-    def _key(self, name: str) -> str:
-        return f"{self._key_prefix}{name}"
+    def _client_lazy(self) -> httpx.Client:
+        """One pooled client, built on first use (house pattern — see the AKV store).
 
-    def _client_lazy(self) -> redis.Redis[str]:
+        A connection pool matters here: every check run resolves its connection's
+        credential, so a fresh TCP+TLS handshake per secret would be paid on the hot
+        path. The token is a client-level header — it travels in `X-Vault-Token`,
+        never the URL, since a query-string credential lands in access logs (the
+        ADR 0006 `?token=` shape the logging redactor exists to cover).
+        """
         if self._client is not None:
             return self._client
         with self._lock:
             if self._client is None:
-                self._client = redis.Redis.from_url(self._url, decode_responses=True)
+                self._client = httpx.Client(base_url=self._addr, timeout=self._timeout)
             return self._client
+
+    def _headers(self) -> dict[str, str]:
+        """Auth travels **per request**, not baked into the client.
+
+        Deliberate: an injected client (tests, or any future caller supplying its own
+        pool) would otherwise silently carry no credential and every call would 403.
+        Binding auth to the request rather than the transport makes that impossible.
+        OpenBao keeps Vault's `X-Vault-Token` header name for API compatibility.
+        """
+        return {"X-Vault-Token": self._token}
+
+    def _path(self, kind: str, name: str) -> str:
+        """KV v2 splits the value plane (`data`) from the version plane (`metadata`).
+
+        `name` is path-quoted with no safe characters: a secret name is caller data
+        (`Connection.secret_ref`), and an unescaped `/` would silently retarget the
+        read/write at a different KV path.
+        """
+        return f"/v1/{self._mount}/{kind}/{quote(name, safe='')}"
+
+    def _log_transport_failure(self, name: str, status: int | None, error: str) -> None:
+        """Emit an operator-visible signal for every not-a-missing-secret failure.
+
+        Reached with a 404 only when the MOUNT is missing — `get` returns before this
+        for an absent secret, and on write/delete a 404 can only ever be the route.
+
+        The final `else` is load-bearing: an earlier version logged only 403 and 5xx,
+        which left the whole 400-499 band silent — and that band is where the likely
+        misconfigurations live. **400** is what a KV **v1** mount answers ("Invalid
+        path for a versioned K/V secrets engine"), **401** is what a gateway in front
+        of the vault returns when the vault's own 403 never reaches us, and **429** is
+        HCP rate-limiting under check-run load, where every connection resolves a
+        credential on the hot path. Silent is the one thing none of them may be.
+        """
+        if status == 403:
+            log.warning("openbao_permission_denied", name=name, status=status)
+        elif status == 404:
+            log.warning("openbao_mount_missing", name=name, mount=self._mount, status=status)
+        elif status is None:
+            log.warning("openbao_unreachable", name=name, status=status, error=error)
+        elif status >= 500:
+            # The vault ANSWERED — a different investigation from a refused
+            # connection, so it does not share the `unreachable` event name.
+            log.warning("openbao_server_error", name=name, status=status, error=error)
+        else:
+            log.warning("openbao_unexpected_status", name=name, status=status, error=error)
 
     def get(self, name: str) -> str:
         try:
-            value = self._client_lazy().get(self._key(name))
-        except Exception as exc:
-            raise SecretNotFoundError(f"Redis secret {name!r}: {exc}") from exc
+            response = self._client_lazy().get(self._path("data", name), headers=self._headers())
+        except httpx.HTTPError as exc:
+            self._log_transport_failure(name, None, str(exc))
+            raise SecretStoreUnavailableError(
+                f"OpenBao at {self._addr} unreachable while reading {name!r} ({exc})"
+            ) from exc
+        if response.status_code == 404 and not _is_missing_mount(response):
+            # Genuinely absent, or soft-deleted — KV v2 returns 404 for both, so no
+            # further body inspection is needed to tell THOSE apart. This is the ONLY
+            # path in this method that may raise `SecretNotFoundError`; a 404 from a
+            # missing mount falls through, because reporting a typo'd OPENBAO_MOUNT as
+            # "credential missing" is the failure this class exists to prevent.
+            raise SecretNotFoundError(f"OpenBao secret {name!r} not set")
+        if response.status_code != 200:
+            self._log_transport_failure(name, response.status_code, response.text)
+            raise SecretStoreUnavailableError(
+                f"OpenBao at {self._addr} could not serve {name!r} "
+                f"(HTTP {response.status_code} — {_explain_status(response.status_code)})"
+            )
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            # A 200 whose body is not JSON means we are not talking to the vault at
+            # all — a proxy error page, a captive portal, something else on :8200.
+            # That is an availability fault, not a malformed secret.
+            self._log_transport_failure(name, response.status_code, "non-JSON body")
+            raise SecretStoreUnavailableError(
+                f"OpenBao at {self._addr} returned a non-JSON 200 for {name!r} "
+                f"— is OPENBAO_ADDR pointing at the vault? ({exc})"
+            ) from exc
+        try:
+            data = payload["data"]["data"]
+        except (KeyError, TypeError) as exc:
+            # The KV **v1** envelope is `{"data": {...}}` with no inner "data", so this
+            # is the shape a v1 mount produces — a configuration fault, not a foreign
+            # secret, and it must not be reported as one.
+            self._log_transport_failure(name, response.status_code, "unexpected envelope")
+            raise SecretStoreUnavailableError(
+                f"OpenBao at {self._addr} returned an unexpected envelope for {name!r} "
+                f"— is {self._mount!r} a KV v2 mount? ({exc})"
+            ) from exc
+        if not isinstance(data, dict) or _KV_FIELD not in data:
+            raise SecretNotFoundError(
+                f"OpenBao secret {name!r} has no {_KV_FIELD!r} field (not written by DataQ?)"
+            )
+        value = data[_KV_FIELD]
         if value is None:
-            raise SecretNotFoundError(f"Redis secret {name!r} not set")
+            raise SecretNotFoundError(f"OpenBao secret {name!r} has no value")
         return str(value)
 
     def set(self, name: str, value: str) -> None:
         try:
-            self._client_lazy().set(self._key(name), value)
-        except Exception as exc:
-            raise SecretWriteError(f"Redis secret {name!r}: {exc}") from exc
+            response = self._client_lazy().post(
+                self._path("data", name),
+                headers=self._headers(),
+                json={"data": {_KV_FIELD: value}},
+            )
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code
+            self._log_transport_failure(name, status, exc.response.text)
+            raise SecretWriteError(
+                f"OpenBao secret {name!r} at {self._addr}: unwritable "
+                f"(HTTP {status} — {_explain_status(status)})"
+            ) from exc
+        except httpx.HTTPError as exc:
+            self._log_transport_failure(name, None, str(exc))
+            raise SecretWriteError(
+                f"OpenBao secret {name!r} at {self._addr}: vault unreachable ({exc})"
+            ) from exc
 
     def delete(self, name: str) -> None:
-        """Best-effort delete (#372); a missing key is a no-op, failures are logged."""
+        """Best-effort **purge** of every version (#372); missing is a no-op, fail-soft.
+
+        Targets `metadata/` rather than `data/` deliberately: `data/` soft-deletes only
+        the latest version and leaves the value recoverable, and the caller here is
+        orphan cleanup after the owning connection was deleted — leaving a recoverable
+        warehouse credential behind a deleted entity is the wrong default. (Key Vault
+        soft-deletes because purge protection is a vault-level policy there, not ours.)
+        """
         try:
-            self._client_lazy().delete(self._key(name))
-        except Exception as exc:
+            response = self._client_lazy().delete(
+                self._path("metadata", name), headers=self._headers()
+            )
+        except httpx.HTTPError as exc:
+            # Route through the shared handler as well as the delete-specific line: a
+            # connection delete is often the FIRST vault call after a token expires,
+            # which makes it the cheapest early warning available — and an operator
+            # alerting on `openbao_permission_denied` would never see it if this path
+            # only ever emitted `secret_delete_failed`.
+            self._log_transport_failure(name, None, str(exc))
             log.warning("secret_delete_failed", name=name, error=str(exc))
+            return
+        # KV v2 answers 204 even for a name that never existed — deletion is already
+        # idempotent, so only a real error is worth a line.
+        if response.status_code not in (200, 204, 404):
+            self._log_transport_failure(name, response.status_code, response.text)
+            log.warning(
+                "secret_delete_failed",
+                name=name,
+                status=response.status_code,
+                error=_explain_status(response.status_code),
+                # The purge did NOT happen, so the credential is still live in the
+                # vault behind a now-deleted entity — the exact state ADR 0039 §7
+                # chose the metadata delete to avoid. Fail-soft keeps the entity
+                # delete working; this flag is what makes the leftover findable.
+                credential_still_present=True,
+            )
 
 
 _store_singleton: SecretStore | None = None
@@ -213,8 +466,24 @@ def _build_store(settings: Settings) -> SecretStore:
         if not settings.azure_key_vault_url:
             raise RuntimeError(f"secret_store={_AKV_MODE!r} requires AZURE_KEY_VAULT_URL")
         return AzureKeyVaultStore(settings.azure_key_vault_url)
+    if settings.secret_store == _OPENBAO_MODE:
+        if not settings.openbao_addr:
+            raise RuntimeError(f"secret_store={_OPENBAO_MODE!r} requires OPENBAO_ADDR")
+        if not settings.openbao_token:
+            raise RuntimeError(f"secret_store={_OPENBAO_MODE!r} requires OPENBAO_TOKEN")
+        return OpenBaoSecretStore(
+            settings.openbao_addr,
+            settings.openbao_token,
+            mount=settings.openbao_mount,
+        )
     if settings.secret_store == _REDIS_MODE:
-        return RedisSecretStore(settings.redis_url)
+        # ADR 0039 removed the plaintext Redis store. `Settings` already rejects this
+        # at startup with the same message; this is the backstop for a caller that
+        # hand-builds a settings object (tests, scripts) and so never ran that
+        # validator. The mode stays in the Literal for one cycle purely so operators
+        # get THIS message instead of a bare "Input should be 'env', 'openbao' or
+        # 'azure_key_vault'" that names no cause.
+        raise RuntimeError(_REDIS_STORE_REMOVED)
     return EnvSecretStore()
 
 
