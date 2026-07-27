@@ -77,7 +77,7 @@ configuration** (#591):
 
 | Seam | Azure implementation | Local / non-Azure implementation |
 |---|---|---|
-| Secrets | Key Vault (`SECRET_STORE=azure_key_vault`) | `SECRET_STORE=redis` (the default in `.env.app.example`), or `env` |
+| Secrets | Key Vault (`SECRET_STORE=azure_key_vault`) | `SECRET_STORE=openbao` — OpenBao in compose (the default in `.env.app.example`), or `env` for host-only dev. ADR [0039](adr/0039-openbao-self-hosted-secret-backend.md); the store speaks the KV v2 API, so the same mode also serves Vault or HCP |
 | Auth | Entra SSO (`AZURE_*`) | `AUTH_DEV_BYPASS=true` for local dev; **PATs** (`dq_live_…`) for headless REST/MCP — see [API keys](api-keys.md) |
 | Observability | App Insights connection string | `OTEL_EXPORTER_OTLP_ENDPOINT` → any OTLP consumer; `docker-compose --profile telemetry up` starts a local Jaeger (UI on `:16686`). Unset ⇒ telemetry off, which is a supported posture, not a degraded one |
 | Queue / cache | — | Redis in compose (same image as prod) |
@@ -87,11 +87,11 @@ configuration** (#591):
 ```bash
 git clone <repo> && cd DataQ
 ./scripts/setup.sh          # conda env, hooks, images, migrations, seed data
-docker-compose up           # postgres + redis + api + worker + frontend
+docker-compose up           # postgres + redis + openbao + api + worker + frontend
 ```
 
 `.env.app.example` ships with the local-first values already selected
-(`SECRET_STORE=redis`, `AUTH_DEV_BYPASS=true`, both telemetry endpoints blank);
+(`SECRET_STORE=openbao`, `AUTH_DEV_BYPASS=true`, both telemetry endpoints blank);
 every `AZURE_*` key may stay empty. Nothing in the app reads an Azure SDK unless
 the corresponding seam is explicitly pointed at Azure.
 

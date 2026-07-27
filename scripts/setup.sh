@@ -46,6 +46,18 @@ if [ -z "${local_pg_password}" ]; then
   local_pg_password="$(openssl rand -hex 16 2>/dev/null || date +%s | shasum | cut -c1-32)"
 fi
 
+# Same story for the OpenBao dev-mode root token (ADR 0039), except it must match
+# across .env (compose starts the vault with it) AND .env.app (the app authenticates
+# with it) — a mismatch 403s every credential read. Reuse whichever file already has
+# one so re-runs stay consistent.
+local_bao_token="$(sed -n 's/^OPENBAO_TOKEN=\(..*\)$/\1/p' .env 2>/dev/null | head -n1 || true)"
+if [ -z "${local_bao_token}" ]; then
+  local_bao_token="$(sed -n 's/^OPENBAO_TOKEN=\(..*\)$/\1/p' .env.app 2>/dev/null | head -n1 || true)"
+fi
+if [ -z "${local_bao_token}" ]; then
+  local_bao_token="$(openssl rand -hex 16 2>/dev/null || date +%s | shasum | cut -c1-32)"
+fi
+
 # Create each file from its template if missing, then BACK-FILL the local-dev
 # creds whenever the key is still blank — covers a fresh copy AND a pre-existing
 # file left blank (e.g. a manual `cp` of the now-blank template). Without the
@@ -59,12 +71,20 @@ if ! grep -qE '^POSTGRES_PASSWORD=..*$' .env; then
     -e "s|^POSTGRES_DB=.*|POSTGRES_DB=${local_pg_db}|" .env && rm -f .env.bak
   ok ".env local Postgres creds generated"
 fi
+if ! grep -qE '^OPENBAO_TOKEN=..*$' .env; then
+  sed -i.bak -e "s|^OPENBAO_TOKEN=.*|OPENBAO_TOKEN=${local_bao_token}|" .env && rm -f .env.bak
+  ok ".env OpenBao dev root token generated"
+fi
 
 [ -f .env.app ] || { cp .env.app.example .env.app; ok ".env.app created from .env.app.example"; }
 if ! grep -qE '^DATABASE_URL=..*$' .env.app; then
   db_url="postgresql+psycopg2://${local_pg_user}:${local_pg_password}@localhost:5432/${local_pg_db}"
   sed -i.bak -e "s|^DATABASE_URL=.*|DATABASE_URL=${db_url}|" .env.app && rm -f .env.app.bak
   ok ".env.app host DATABASE_URL set"
+fi
+if ! grep -qE '^OPENBAO_TOKEN=..*$' .env.app; then
+  sed -i.bak -e "s|^OPENBAO_TOKEN=.*|OPENBAO_TOKEN=${local_bao_token}|" .env.app && rm -f .env.app.bak
+  ok ".env.app OpenBao token set (matches .env)"
 fi
 set -a
 # shellcheck disable=SC1091

@@ -12,6 +12,7 @@ tenant.
 
 ```bash
 curl -O https://raw.githubusercontent.com/TheurgicDuke771/DataQ/main/docker-compose.ghcr.yml
+export OPENBAO_TOKEN=$(openssl rand -hex 16)   # root token for the bundled vault
 docker compose -f docker-compose.ghcr.yml up
 ```
 

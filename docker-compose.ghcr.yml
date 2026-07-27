@@ -1,5 +1,6 @@
 # DataQ — run from prebuilt GHCR images, NO source checkout required (#472).
 #
+#   export OPENBAO_TOKEN=$(openssl rand -hex 16)   # one-off; see "Secret store" below
 #   docker compose -f docker-compose.ghcr.yml up
 #
 # Brings up Postgres + Redis + the API + Celery worker + the UI, runs migrations
@@ -15,6 +16,14 @@
 # Override the tags to pin a release instead of the moving stable pointers:
 #   DATAQ_BACKEND_TAG=v1.0.0 DATAQ_FRONTEND_TAG=v1.0.0 docker compose -f ... up
 #
+# Secret store: connection credentials go to OpenBao (ADR 0039), which replaced the
+# plaintext RedisSecretStore — an evaluator following this file used to put real
+# warehouse credentials into an unencrypted key-value store. A vault has no
+# "no auth" mode, so unlike Postgres/Redis below it needs ONE value from you, and
+# generating it here rather than defaulting it keeps every credential out of this
+# tracked file (CLAUDE.md §11). The vault runs in dev mode: in-memory, so a restart
+# drops stored credentials and connections must be re-entered.
+#
 # NOT for production: auth is disabled (AUTH_DEV_BYPASS), Postgres runs trust-auth
 # (no password — so no credential ships in this tracked file) and Redis has none.
 # Because of that, every published port binds to 127.0.0.1 (loopback) ONLY — the
@@ -26,13 +35,15 @@ x-backend-image: &backend-image "ghcr.io/theurgicduke771/dataq-backend:${DATAQ_B
 
 # Shared app env for api/worker/migrate. No .env files are read on this path, so
 # every key is inline. dataq@postgres has no password (trust auth); user + db
-# names are non-secret identifiers. SECRET_STORE=redis (NOT env): api and worker
+# names are non-secret identifiers. SECRET_STORE=openbao (NOT env): api and worker
 # are separate containers, and EnvSecretStore is per-process — a credential the
-# api writes at runtime would be invisible to the worker (#86). Redis shares it.
+# api writes at runtime would be invisible to the worker (#86). The vault shares it.
 x-app-env: &app-env
   DATABASE_URL: "postgresql+psycopg2://dataq@postgres:5432/dataq"
   REDIS_URL: "redis://redis:6379/0"
-  SECRET_STORE: "redis"
+  SECRET_STORE: "openbao"
+  OPENBAO_ADDR: "http://openbao:8200"
+  OPENBAO_TOKEN: ${OPENBAO_TOKEN:?required — see the header of this file (ADR 0039)}
   AUTH_DEV_BYPASS: "true"
 
 services:
@@ -69,11 +80,33 @@ services:
       timeout: 3s
       retries: 10
 
+  # Credential store (ADR 0039). Dev mode: auto-unsealed, in-memory, KV v2 at
+  # secret/. OpenBao rather than HashiCorp Vault because Vault Community is BUSL-1.1,
+  # which CONTRIBUTING rule 40 / ADR 0031 forbid us to distribute; OpenBao is the
+  # Linux Foundation fork at the pre-BUSL point (MPL-2.0). The app speaks the KV v2
+  # API, so OPENBAO_ADDR can point at a real Vault or HCP instead.
+  openbao:
+    image: openbao/openbao:2.6.1
+    restart: unless-stopped
+    environment:
+      # No default: a credential must never ship in a tracked file (CLAUDE.md §11).
+      BAO_DEV_ROOT_TOKEN_ID: ${OPENBAO_TOKEN:?required — see the header of this file (ADR 0039)}
+      BAO_DEV_LISTEN_ADDRESS: "0.0.0.0:8200"
+    ports:
+      - "127.0.0.1:8200:8200"
+    cap_add:
+      - IPC_LOCK           # lock memory so secrets cannot be swapped to disk
+    healthcheck:
+      test: ["CMD", "bao", "status", "-address=http://127.0.0.1:8200"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   # One-shot: migrate to head THEN seed the dev user + probe fixtures + demo data
   # (seed_dev is idempotent, safe to re-run on every `up`). api/worker gate on its
   # successful completion so the stack never serves an un-migrated/empty schema.
   # Gets the full app env because the seed writes connection secrets via the
-  # (redis-backed) SecretStore.
+  # (OpenBao-backed) SecretStore — hence the vault gate in depends_on.
   migrate:
     image: *backend-image
     restart: "no"
@@ -83,6 +116,8 @@ services:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      openbao:
         condition: service_healthy
 
   api:
@@ -96,6 +131,8 @@ services:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      openbao:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
@@ -111,6 +148,8 @@ services:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      openbao:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
