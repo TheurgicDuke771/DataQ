@@ -259,3 +259,15 @@ if you need harness you can use this script - `/Users/arijit/Coding/Python/DataQ
 ---
 
 why you are stopping at every turn, it is yours to complete, run through the full TODO list, the day is just started.
+
+---
+
+for the terraform is DATAQ_LOADER role is sufficient or higher privilages required?
+
+---
+
+Do we need the terraform provider, at this point, it was an one time infra creation, I belive it is no longer needed, But check once and let me know?
+
+---
+
+I've created an Account Admin PAT - `/Users/arijit/Downloads/DATAQ_ADMIN_PAT-token-secret.txt` valid for next 15 days. use it instead of sf_password. rest replace it with LOADER_PAT
