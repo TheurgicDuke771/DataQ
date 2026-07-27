@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "f769af4c0b89",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1059-orphan-secret-sweep",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "backend/app/core/secrets.py",
+    "backend/app/services/secret_sweep_service.py",
+    "backend/tests/services/test_secret_sweep_service.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f7/69af4c0b89/0/metadata.json",
+      "transcript": "/f7/69af4c0b89/0/full.jsonl",
+      "compact_transcript": "/f7/69af4c0b89/0/transcript.jsonl",
+      "content_hash": "/f7/69af4c0b89/0/content_hash.txt",
+      "prompt": "/f7/69af4c0b89/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 12298,
+    "cache_creation_tokens": 1961681,
+    "cache_read_tokens": 146845650,
+    "output_tokens": 371468,
+    "api_call_count": 540
+  }
+}
