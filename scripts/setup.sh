@@ -10,6 +10,24 @@ step() { echo -e "${CYAN}▶ $1${NC}"; }
 ok()   { echo -e "${GREEN}✓ $1${NC}"; }
 die()  { echo -e "${RED}✗ $1${NC}" >&2; exit 1; }
 
+# set_env_kv <file> <key> <value> — set KEY=value, leaving an already-non-blank
+# value alone. Substitutes when the key is present (blank or not) and APPENDS when
+# it is absent: a plain `sed s|^KEY=.*|` is a silent no-op on a .env that predates
+# the key, which would leave the file short of a value compose then refuses to
+# start without — telling the user to run this script, which they just did.
+set_env_kv() {
+  local file="$1" key="$2" value="$3"
+  grep -qE "^${key}=..*$" "${file}" && return 0        # already set — keep it
+  if grep -qE "^${key}=" "${file}"; then
+    sed -i.bak -e "s|^${key}=.*|${key}=${value}|" "${file}" && rm -f "${file}.bak"
+  else
+    # A hand-edited file may lack a trailing newline; appending blind would splice
+    # the key onto the last line and corrupt both.
+    [ -s "${file}" ] && [ "$(tail -c1 "${file}" | wc -l)" -eq 0 ] && printf '\n' >> "${file}"
+    printf '%s=%s\n' "${key}" "${value}" >> "${file}"
+  fi
+}
+
 # ── Prerequisites ─────────────────────────────────────────────────────────────
 step "Checking prerequisites"
 command -v conda  >/dev/null || die "conda not found — install miniconda or miniforge first"
@@ -72,7 +90,7 @@ if ! grep -qE '^POSTGRES_PASSWORD=..*$' .env; then
   ok ".env local Postgres creds generated"
 fi
 if ! grep -qE '^OPENBAO_TOKEN=..*$' .env; then
-  sed -i.bak -e "s|^OPENBAO_TOKEN=.*|OPENBAO_TOKEN=${local_bao_token}|" .env && rm -f .env.bak
+  set_env_kv .env OPENBAO_TOKEN "${local_bao_token}"
   ok ".env OpenBao dev root token generated"
 fi
 
@@ -83,9 +101,16 @@ if ! grep -qE '^DATABASE_URL=..*$' .env.app; then
   ok ".env.app host DATABASE_URL set"
 fi
 if ! grep -qE '^OPENBAO_TOKEN=..*$' .env.app; then
-  sed -i.bak -e "s|^OPENBAO_TOKEN=.*|OPENBAO_TOKEN=${local_bao_token}|" .env.app && rm -f .env.app.bak
+  set_env_kv .env.app OPENBAO_TOKEN "${local_bao_token}"
   ok ".env.app OpenBao token set (matches .env)"
 fi
+# Host-side dev (uvicorn/celery on your machine) reads these from .env.app; the
+# compose api/worker override the address to the in-network hostname. Appended for
+# a .env.app that predates ADR 0039 so a re-run leaves a complete file. SECRET_STORE
+# is deliberately NOT rewritten — an existing `redis` value raises at startup with
+# the migration path, and silently changing someone's configured mode is worse.
+set_env_kv .env.app OPENBAO_ADDR "http://localhost:8200"
+set_env_kv .env.app OPENBAO_MOUNT "secret"
 set -a
 # shellcheck disable=SC1091
 . ./.env

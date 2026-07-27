@@ -366,8 +366,9 @@ def _build_store(settings: Settings) -> SecretStore:
         raise RuntimeError(
             "secret_store='redis' was removed in ADR 0039 — the store kept credentials "
             "in plaintext. Use SECRET_STORE=openbao (set OPENBAO_ADDR + OPENBAO_TOKEN; "
-            "`docker compose up` starts the vault) and re-enter connection credentials, "
-            "which were never persisted beyond the dev Redis. See "
+            "`docker compose up` starts the vault) and re-enter connection credentials. "
+            "Then PURGE the old plaintext values, which outlive the switch: "
+            "redis-cli --scan --pattern 'dataq:secret:*' | xargs -r redis-cli del. See "
             "docs/adr/0039-openbao-self-hosted-secret-backend.md"
         )
     return EnvSecretStore()
