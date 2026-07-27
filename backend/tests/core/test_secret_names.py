@@ -126,6 +126,31 @@ def test_env_is_never_duplicated() -> None:
     assert ref.count("qa") == 1
 
 
+def test_a_parenthetical_only_qualifier_is_kept_not_dropped() -> None:
+    """When the parentheses hold the ONLY distinguishing content, dropping them
+    would reduce two live warehouse credentials to keys differing by 8 hex chars —
+    reinstating the "find the right entry" problem (#954) this module removes."""
+    a = connection_secret_ref(
+        connection_id=uuid.uuid4(), env="dev", name="Snowflake (Retail)", conn_type="snowflake"
+    )
+    b = connection_secret_ref(
+        connection_id=uuid.uuid4(), env="dev", name="Snowflake (Payments)", conn_type="snowflake"
+    )
+    assert "retail" in a and "payments" in b
+
+
+@pytest.mark.parametrize("bad_id", ["", "---", "!!!", "@@@@"])
+def test_a_junk_connection_id_still_yields_a_key_vault_valid_name(bad_id: str) -> None:
+    """`short_id` is the one input that never passes through `slugify`, and the
+    signature advertises `UUID | str`. An id filtering down to nothing must not leave
+    a trailing dash — Key Vault rejects that at the API, i.e. a 500 on save."""
+    ref = connection_secret_ref(
+        connection_id=bad_id, env="dev", name="warehouse", conn_type="snowflake"
+    )
+    assert KEY_VAULT_NAME.match(ref), ref
+    assert not ref.endswith("-") and not ref.startswith("-")
+
+
 def test_parenthetical_commentary_is_dropped() -> None:
     ref = connection_secret_ref(
         connection_id=uuid.uuid4(), env="dev", name="Retail (DATAQ_READER)", conn_type="snowflake"

@@ -8,8 +8,8 @@ when every name is a UUID.
 
 The generated shape is::
 
-    conn-<env>-<name-slug>-<short-id>
-    conn-dev-finance-warehouse-05c77ce3
+    conn-<type>-<qualifier>-<env>-<short-id>
+    conn-snowflake-retail-dev-6729c4f9
 
 **Both halves earn their place.** The slug is what makes it findable. The short
 id is what makes a rename free: `secret_ref` is a STORED column, never
@@ -124,14 +124,28 @@ def connection_secret_ref(
     would point at a key that does not exist, and the credential would read as
     missing (the #954 shape again, self-inflicted).
     """
-    short_id = str(connection_id).replace("-", "")[:_ID_CHARS]
+    # The ONE input that never passes through `slugify`, while the signature invites
+    # `str`. An empty or dash-only id would emit `conn-…-dev-` — a trailing dash, which
+    # Key Vault rejects at the API. Every output of this module must be writable, so
+    # the id is filtered to the same alphabet and the whole ref is stripped below.
+    short_id = _ALLOWED.sub("", str(connection_id).replace("-", ""))[:_ID_CHARS]
     type_slug = _TYPE_SLUGS.get(conn_type, slugify(conn_type))
 
     # Drop parenthesised commentary before slugging: it is detail for humans
     # reading the connection list, not identity.
-    bare_name = _PARENS.sub(" ", name[:_MAX_INPUT])
+    bounded = name[:_MAX_INPUT]
     noise = set(_TYPE_WORDS.get(conn_type, ())) | set(type_slug.split("-"))
-    qualifier = [t for t in slugify(bare_name).split("-") if t and t not in noise]
+
+    def _qualify(text: str) -> list[str]:
+        return [t for t in slugify(text).split("-") if t and t not in noise]
+
+    qualifier = _qualify(_PARENS.sub(" ", bounded))
+    if not qualifier:
+        # Everything distinguishing lived inside the parentheses. Dropping it would
+        # reduce "Snowflake (Retail)" and "Snowflake (Payments)" to two keys differing
+        # only by 8 hex chars — reinstating the very "find the right entry" problem
+        # (#954) this module exists to remove. Fall back to the parenthetical content.
+        qualifier = _qualify(" ".join(_PARENS.findall(bounded)))
 
     parts = ["conn"]
     parts += type_slug.split("-") if type_slug else []
@@ -144,20 +158,25 @@ def connection_secret_ref(
     # guarantees uniqueness, so truncation costs readability, never correctness.
     ordered = list(dict.fromkeys(parts))  # dedupe, order-preserving
     slug = "-".join(ordered)[:_MAX_SLUG].strip("-")
-    return f"{slug}-{short_id}" if slug else f"conn-{short_id}"
+    # `.strip("-")` on the JOINED result, not on the halves: an id that filtered down
+    # to nothing would otherwise leave a trailing dash, and Key Vault rejects that at
+    # the API — a 500 on save rather than a test failure.
+    return "-".join(part for part in (slug, short_id) if part).strip("-") or "conn"
 
 
 def is_readable_ref(ref: str) -> bool:
-    """True when `ref` was minted by this module rather than the old UUID scheme.
+    """True only when `ref` has the shape THIS module mints.
 
-    Used by the migration to stay idempotent: the legacy shape is
-    ``conn-<36-char uuid>``, which is exactly 5 dash-separated groups after the
-    prefix and carries no slug.
+    Deliberately not "does not parse as a UUID". That weaker test counted every
+    hand-curated legacy name — `conn-snowflake-retail`, `conn-adf-qa`,
+    `conn-adls-landing` — as already-migrated, so a migration run would have
+    skipped 11 of the 13 production keys and reported success. The predicate is
+    what the migration keys its idempotency off, so it has to mean what it says.
+
+    The generated shape always ends in `-<short_id>`: up to 8 chars from a UUID's
+    hex, i.e. lowercase hex. A hand-named key ends in a word.
     """
     if not ref.startswith("conn-"):
         return False
-    try:
-        UUID(ref.removeprefix("conn-"))
-    except ValueError:
-        return True
-    return False
+    tail = ref.rsplit("-", 1)[-1]
+    return bool(tail) and len(tail) <= _ID_CHARS and all(c in "0123456789abcdef" for c in tail)

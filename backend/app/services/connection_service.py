@@ -305,7 +305,9 @@ def create_connection(
 ) -> Connection:
     """Validate, persist, and (if a secret is given) write its credential.
 
-    The secret_ref is derived from the row's own id (``conn-<uuid>``) — unique
+    The secret_ref is a READABLE, STORED name (``conn-<type>-<qualifier>-<env>-<id>``,
+    ADR 0039) — minted once here and never recomputed, since a later rename would
+    otherwise repoint at a key that does not exist. Unique
     and safe as a Key Vault secret name. The credential is written through the
     store; only the ref is persisted on the row.
     """

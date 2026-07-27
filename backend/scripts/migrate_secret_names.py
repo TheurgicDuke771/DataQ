@@ -1,4 +1,4 @@
-"""Rename legacy ``conn-<uuid>`` vault keys to the readable ``conn-<env>-<slug>-<id>``.
+"""Rename legacy vault keys to the readable ``conn-<type>-<qualifier>-<env>-<id>``.
 
 **ONE-SHOT — DELETE ME (#1060).** This is not product code. The rename is optional:
 `Connection.secret_ref` is a stored column that is never recomputed, so a legacy
@@ -94,16 +94,30 @@ def _migrate_one(
 
     # 3. VERIFY — do not trust the write. A silent mismatch here is exactly the
     #    #954 shape: a rename that reports success while the credential is wrong.
+    # Both failures below leave the NEW key written and unreferenced. The old key
+    # still resolves, so the connection works — but the leftover holds a real
+    # credential, so it must be named in the error or nobody can find it to purge it.
     try:
         written = store.get(new_ref)
     except (SecretNotFoundError, SecretStoreUnavailableError) as exc:
-        raise MigrationError(f"new key unreadable after write: {exc}") from exc
+        raise MigrationError(
+            f"new key unreadable after write — {new_ref!r} may hold a live credential "
+            f"and is unreferenced; purge it by hand: {exc}"
+        ) from exc
     if written != value:
-        raise MigrationError("read-back mismatch — new key does NOT hold the old value")
+        raise MigrationError(
+            f"read-back mismatch — {new_ref!r} does NOT hold the old value and is "
+            f"unreferenced; purge it by hand"
+        )
 
     # 4. repoint the row, and commit BEFORE deleting anything
     conn.secret_ref = new_ref
-    session.commit()
+    try:
+        session.commit()
+    except Exception as exc:  # DB errors are per-connection, not fatal to the run
+        # Without this, an OperationalError escapes main() and the `migrated` list —
+        # the only record of which keys were already renamed and purged — is lost.
+        raise MigrationError(f"DB commit failed, {new_ref!r} left unreferenced: {exc}") from exc
 
     # 5. purge the old copy. A failure here leaves a duplicate, not a broken
     #    connection — logged by name so it can be cleaned up by hand.

@@ -963,3 +963,49 @@ def test_a_connection_written_before_the_feature_reads_as_unchecked(db_session: 
 
     assert conn.credential_expires_at is None
     assert conn.credential_expiry_checked_at is None
+
+
+def test_renaming_a_connection_never_moves_its_secret_ref(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """THE invariant of readable names, and the one the suite could not express.
+
+    `secret_ref` is stored, never recomputed. Rename a connection and the generated
+    name changes — but the credential still lives under the ORIGINAL key, so
+    recomputing would point at a key that does not exist and the credential would
+    read as missing: "#954 again, self-inflicted", as the module docstring puts it.
+
+    Every existing rotate/reauth test creates a connection and never renames it, so
+    the recomputed ref is byte-identical to the stored one and a recompute passes
+    unnoticed — the "fixture encodes our model" shape. Removing the `conn.secret_ref
+    or` guard from update AND reauth left all 2828 tests green; this is the test that
+    fails.
+    """
+    store = FakeStore()
+    conn = _create(db_session, store)
+    original_ref = conn.secret_ref
+    assert original_ref is not None
+
+    # Rename so the GENERATED name would now differ from the stored one.
+    svc.update_connection(db_session, conn.id, name="Renamed Warehouse", secret_store=store)
+    would_be = connection_secret_ref(
+        connection_id=conn.id, env=conn.env, name="Renamed Warehouse", conn_type=conn.type
+    )
+    assert would_be != original_ref, "test is vacuous unless the generated name moved"
+    assert conn.secret_ref == original_ref, "a rename must not move the stored ref"
+
+    # Rotating afterwards must write to the ORIGINAL key, not the recomputed one.
+    # reauth probes the datasource; stub it so this asserts the ref, not the network.
+    class _PassAdapter:
+        def validate_config(self, raw: dict[str, Any]) -> Any:
+            return None
+
+        def test(self, raw: dict[str, Any], secret: str) -> None:
+            return None
+
+    monkeypatch.setattr(svc, "get_connection_adapter", lambda t: _PassAdapter())
+    svc.reauth_connection(db_session, conn.id, secret="rotated", secret_store=store)
+    db_session.refresh(conn)
+    assert conn.secret_ref == original_ref
+    assert store.data[original_ref] == "rotated"
+    assert would_be not in store.data, "rotation wrote to a second, orphaned key"

@@ -101,8 +101,12 @@ def test_a_read_back_mismatch_aborts_before_the_row_is_repointed(conn: Connectio
     store = FakeStore({OLD: "p@ss"})
     store.corrupt_on_write = True
     session = FakeSession()
-    with pytest.raises(MigrationError, match="read-back mismatch"):
+    with pytest.raises(MigrationError, match="read-back mismatch") as exc:
         _migrate_one(session, conn, store, apply=True)  # type: ignore[arg-type]
+    # The new key is left written and unreferenced. It holds a real credential, so
+    # the error MUST name it — otherwise nobody can find it to purge it, and the
+    # module docstring's "logged by name for manual cleanup" promise is false.
+    assert NEW in str(exc.value)
     assert conn.secret_ref == OLD  # still resolvable
     assert store.data[OLD] == "p@ss"  # original intact
     assert store.deleted == []  # nothing destroyed
@@ -169,7 +173,24 @@ def test_verify_step_failure_does_not_repoint_the_row(conn: Connection) -> None:
     session = FakeSession()
     store.fail_verify = SecretNotFoundError("gone")
     store.fail_verify_on = NEW
-    with pytest.raises(MigrationError, match="unreadable after write"):
+    with pytest.raises(MigrationError, match="unreadable after write") as exc:
         _migrate_one(session, conn, store, apply=True)  # type: ignore[arg-type]
+    assert NEW in str(exc.value), "the abandoned key must be named"
     assert conn.secret_ref == OLD
     assert session.commits == 0
+
+
+def test_a_db_commit_failure_is_per_connection_not_fatal(conn: Connection) -> None:
+    """A commit error must become a MigrationError, or it escapes main() and the
+    record of which keys were already renamed AND PURGED is lost — in a script whose
+    whole point is that the vault can be reconciled afterwards."""
+
+    class BadSession(FakeSession):
+        def commit(self) -> None:
+            raise RuntimeError("deadlock detected")
+
+    store = FakeStore({OLD: "p@ss"})
+    with pytest.raises(MigrationError, match="DB commit failed") as exc:
+        _migrate_one(BadSession(), conn, store, apply=True)  # type: ignore[arg-type]
+    assert NEW in str(exc.value)
+    assert store.deleted == [], "the old key must survive a failed commit"
