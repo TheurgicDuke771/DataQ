@@ -218,15 +218,25 @@ silently narrowed what those two paths could do. Nothing surfaced it until a flo
 actually ran, because the harness is stopped by default — the same invisibility
 that hid the Airflow metadata-DB break.
 
-**Fix (needs ACCOUNTADMIN — the PAT expires 2026-08-10):**
+**GRANTED 2026-07-27 ~06:55 (by @TheurgicDuke771):**
 
 ```sql
 GRANT CREATE STAGE ON SCHEMA DATAQ_DB.RETAIL TO ROLE DATAQ_LOADER;
-GRANT MANAGE GRANTS ON ACCOUNT TO ROLE DATAQ_LOADER;   -- or drop dbt's grant hook
+GRANT MANAGE GRANTS ON ACCOUNT TO ROLE DATAQ_LOADER;
 ```
 
-`MANAGE GRANTS` is account-wide and broad; narrowing dbt's `on-run-end` hook
-instead is the tighter option and worth weighing before granting it.
+Verified **effective**, not merely present: `SHOW GRANTS TO ROLE DATAQ_LOADER`
+returns both rows, and — because a grant row is not proof the privilege applies —
+each was exercised as `DATAQ_LOADER` against the exact operation that failed. A
+temporary stage was created and dropped in `DATAQ_DB.RETAIL`, and a `GRANT`
+statement executed successfully.
+
+> **Not yet re-run end to end.** The privilege probe covers the two errors seen,
+> but a flow can fail for a *second* reason once the first clears — this project's
+> standing lesson is that only a live run is evidence. Re-running `--adf --dbt`
+> (the two that failed; DAGs and iceberg already passed) is the outstanding
+> confirmation. `MANAGE GRANTS` is account-wide and broad — narrowing dbt's
+> `on-run-end` hook remains the tighter long-term option.
 
 ## Credential rotation
 
