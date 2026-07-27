@@ -30,6 +30,7 @@ the import cost.
 
 from __future__ import annotations
 
+import math
 import os
 import threading
 import time
@@ -632,7 +633,10 @@ class OpenBaoSecretStore:
         except (TypeError, ValueError):
             log.warning("openbao_lease_unreadable", lease_type=type(lease).__name__)
             return None
-        if seconds <= 0 or seconds != seconds or seconds == float("inf"):
+        # `math.isfinite` rather than the `x != x` NaN idiom: it says what is meant
+        # and CodeQL correctly reads the hand-rolled form as comparing identical
+        # values. Covers NaN and both infinities in one check.
+        if not math.isfinite(seconds) or seconds <= 0:
             return None
         # Cap before arithmetic so a nonsense value cannot overflow the clock.
         seconds = min(seconds, _MAX_LEASE_SECONDS)

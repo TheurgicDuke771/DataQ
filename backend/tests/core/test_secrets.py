@@ -1027,9 +1027,10 @@ def test_approle_renews_inside_the_margin_while_still_within_lease() -> None:
         assert logins == 1
         # 500s in: still 100s of lease left, but inside the 60s margin? No — renewal
         # is due at 1000 + max(600-60, 300, 1) = 1540.
+        after_first = logins
         clock[0] = 1500.0
         store.get("b")
-        assert logins == 1, "renewed too early"
+        assert logins == after_first, "renewed too early"
         clock[0] = 1545.0
         store.get("c")
         assert logins == 2, "did not renew inside the margin"
