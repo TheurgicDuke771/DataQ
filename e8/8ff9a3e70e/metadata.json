@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "e88ff9a3e70e",
+  "strategy": "manual-commit",
+  "branch": "chore/opentofu-iac-migration",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "deploy/terraform/azure/README.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/e8/8ff9a3e70e/0/metadata.json",
+      "transcript": "/e8/8ff9a3e70e/0/full.jsonl",
+      "compact_transcript": "/e8/8ff9a3e70e/0/transcript.jsonl",
+      "content_hash": "/e8/8ff9a3e70e/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 32,
+    "cache_creation_tokens": 29687,
+    "cache_read_tokens": 2349383,
+    "output_tokens": 10284,
+    "api_call_count": 16
+  }
+}
