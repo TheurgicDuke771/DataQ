@@ -240,6 +240,17 @@ class AzureKeyVaultStore:
         except Exception as exc:
             log.warning("secret_delete_failed", name=name, error=str(exc))
 
+    def close(self) -> None:
+        """Release the pooled `SecretClient` (#1058). Idempotent; rebuilt on next use.
+
+        Same shape and same reasoning as `OpenBaoSecretStore.close` — see there for
+        why this is not on the Protocol.
+        """
+        with self._lock:
+            client, self._client = self._client, None
+        if client is not None:
+            client.close()
+
 
 class OpenBaoSecretStore:
     """Resolves secrets over the KV v2 HTTP API — OpenBao, Vault, or HCP (ADR 0039).
@@ -281,6 +292,10 @@ class OpenBaoSecretStore:
         # a MockTransport — the URL building, header encoding, status handling and
         # JSON decoding below are then genuinely exercised, not stubbed past.
         self._client = client
+        # Ownership, tracked at construction: `close()` may only close a pool this
+        # store built. An injected client belongs to its caller, and closing it would
+        # break a caller that reuses it (or a test that asserts on it afterwards).
+        self._owns_client = client is None
         self._lock = threading.Lock()
 
     def _client_lazy(self) -> httpx.Client:
@@ -298,6 +313,25 @@ class OpenBaoSecretStore:
             if self._client is None:
                 self._client = httpx.Client(base_url=self._addr, timeout=self._timeout)
             return self._client
+
+    def close(self) -> None:
+        """Release the pooled client, if this store built it (#1058).
+
+        Deliberately NOT on the `SecretStore` Protocol. 32 test doubles implement
+        that Protocol structurally and the `backend/tests` mypy gate (#418) checks
+        them, so adding a method there would force 32 no-op `close()` bodies to buy
+        one real one — churn out of proportion to the fix. `reset_secret_store_cache`
+        therefore duck-types it, which is also what lets any future store opt in
+        without touching the seam.
+
+        Idempotent, and safe to call on a store that is used again afterwards: the
+        handle is cleared, so `_client_lazy` rebuilds a fresh pool on next use.
+        """
+        with self._lock:
+            client, self._client = self._client, None
+            owned, self._owns_client = self._owns_client, True
+        if client is not None and owned:
+            client.close()
 
     def _headers(self) -> dict[str, str]:
         """Auth travels **per request**, not baked into the client.
@@ -501,7 +535,21 @@ def get_secret_store() -> SecretStore:
 
 
 def reset_secret_store_cache() -> None:
-    """Test-only: clear the cached store so the next call rebuilds it."""
+    """Test-only: clear the cached store so the next call rebuilds it.
+
+    Closes the outgoing store's connection pool first (#1058). Test-only today, so
+    each leaked pool was one idle connection — but the leak is in the *reset*, not
+    in the tests, so it would become real the moment this is reused for config
+    hot-reload, which is exactly the plausible next caller.
+
+    `close()` is duck-typed rather than declared on the Protocol (see
+    `OpenBaoSecretStore.close`), and is called OUTSIDE the lock: it does socket I/O,
+    and the singleton is already detached, so a concurrent rebuild is both safe and
+    independent of how long the close takes.
+    """
     global _store_singleton
     with _store_lock:
-        _store_singleton = None
+        store, _store_singleton = _store_singleton, None
+    close = getattr(store, "close", None)
+    if callable(close):
+        close()
