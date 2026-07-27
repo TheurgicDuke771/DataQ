@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "a0d29b1ffbfd",
+  "strategy": "manual-commit",
+  "branch": "feature/1063-s3-compatible-endpoints",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/core/s3_endpoint.py",
+    "backend/tests/datasources/test_flatfile.py",
+    "backend/tests/datasources/test_s3.py",
+    "backend/tests/orchestration/test_dbt_provider.py",
+    "docs/datasources-checks.md",
+    "frontend/src/components/connections/connectionFormSpec.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/a0/d29b1ffbfd/0/metadata.json",
+      "transcript": "/a0/d29b1ffbfd/0/full.jsonl",
+      "compact_transcript": "/a0/d29b1ffbfd/0/transcript.jsonl",
+      "content_hash": "/a0/d29b1ffbfd/0/content_hash.txt",
+      "prompt": "/a0/d29b1ffbfd/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 8357,
+    "cache_creation_tokens": 284878,
+    "cache_read_tokens": 32905462,
+    "output_tokens": 112762,
+    "api_call_count": 159
+  }
+}
