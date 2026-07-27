@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "e9abf845a9c5",
+  "strategy": "manual-commit",
+  "branch": "docs/1065-post-merge-progress",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/e9/abf845a9c5/0/metadata.json",
+      "transcript": "/e9/abf845a9c5/0/full.jsonl",
+      "compact_transcript": "/e9/abf845a9c5/0/transcript.jsonl",
+      "content_hash": "/e9/abf845a9c5/0/content_hash.txt",
+      "prompt": "/e9/abf845a9c5/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 11928,
+    "cache_creation_tokens": 751758,
+    "cache_read_tokens": 79939354,
+    "output_tokens": 242963,
+    "api_call_count": 355
+  }
+}
