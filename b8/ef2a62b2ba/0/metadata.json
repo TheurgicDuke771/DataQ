@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "b8ef2a62b2ba",
+  "session_id": "fcf147da-f22f-41ab-ae99-a0fbd9e19a4c",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-27T01:15:50.0336Z",
+  "branch": "feature/openbao-secret-backend",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "1ba16dad01f3",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 330,
+    "cache_creation_tokens": 260310,
+    "cache_read_tokens": 31490745,
+    "output_tokens": 120022,
+    "api_call_count": 166
+  },
+  "session_metrics": {
+    "turn_count": 1
+  }
+}
