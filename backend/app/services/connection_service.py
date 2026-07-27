@@ -324,7 +324,9 @@ def create_connection(
     try:
         session.flush()  # assign conn.id + surface the (name, env) unique violation
         if secret is not None:
-            secret_ref = connection_secret_ref(connection_id=conn.id, env=conn.env, name=conn.name)
+            secret_ref = connection_secret_ref(
+                connection_id=conn.id, env=conn.env, name=conn.name, conn_type=conn.type
+            )
             secret_store.set(secret_ref, secret)
             conn.secret_ref = secret_ref
             # Read the credential's own expiry while it is in hand (#838) — the
@@ -563,7 +565,7 @@ def update_connection(
         # been renamed since, and rebuilding the name from the CURRENT name would
         # write to a key nothing points at while the live credential goes stale.
         secret_ref = conn.secret_ref or connection_secret_ref(
-            connection_id=conn.id, env=conn.env, name=conn.name
+            connection_id=conn.id, env=conn.env, name=conn.name, conn_type=conn.type
         )
         try:
             secret_store.set(secret_ref, secret)
@@ -646,7 +648,7 @@ def reauth_connection(
     """
     conn = get_connection(session, connection_id)
     secret_ref = conn.secret_ref or connection_secret_ref(
-        connection_id=conn.id, env=conn.env, name=conn.name
+        connection_id=conn.id, env=conn.env, name=conn.name, conn_type=conn.type
     )
     try:
         secret_store.set(secret_ref, secret)

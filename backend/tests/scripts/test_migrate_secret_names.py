@@ -70,7 +70,7 @@ def conn() -> Connection:
 
 
 OLD = "conn-491f23e3-fd3a-4ff1-97d1-572f740ade3d"
-NEW = "conn-dev-finance-warehouse-491f23e3"
+NEW = "conn-snowflake-finance-warehouse-dev-491f23e3"
 
 
 def test_dry_run_changes_absolutely_nothing(conn: Connection) -> None:

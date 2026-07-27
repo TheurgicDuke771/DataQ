@@ -45,6 +45,30 @@ _MAX_SLUG: Final = 60
 # connections that share a slug — collision is not a practical concern.
 _ID_CHARS: Final = 8
 
+# Parenthesised commentary — "(DATAQ_READER)", "(flat files)", "(harness)".
+_PARENS: Final = re.compile(r"\([^)]*\)")
+
+# How a connection type appears in a vault key. Mirrors the hand-chosen prod names
+# (`conn-adls-landing`, not `conn-adls-gen2-landing`).
+_TYPE_SLUGS: Final = {
+    "adls_gen2": "adls",
+    "unity_catalog": "unity-catalog",
+}
+
+# The words a DISPLAY NAME uses for each type, stripped from the qualifier so the
+# type is not repeated. Rarely a literal match for the type key — a user writes
+# "Azure Data Factory", the type is `adf` — which is why this table exists.
+_TYPE_WORDS: Final = {
+    "adf": ("azure", "data", "factory"),
+    "adls_gen2": ("adls", "gen2", "azure", "storage"),
+    "airflow": ("apache", "airflow"),
+    "unity_catalog": ("unity", "catalog", "databricks"),
+    "snowflake": ("snowflake",),
+    "iceberg": ("iceberg", "apache"),
+    "dbt": ("dbt",),
+    "s3": ("s3", "aws", "amazon"),
+}
+
 
 def slugify(text: str) -> str:
     """Reduce free text to Key Vault's ``[0-9a-zA-Z-]`` alphabet.
@@ -62,8 +86,29 @@ def slugify(text: str) -> str:
     return slug[:_MAX_SLUG].strip("-")
 
 
-def connection_secret_ref(*, connection_id: UUID | str, env: str, name: str) -> str:
+def connection_secret_ref(
+    *, connection_id: UUID | str, env: str, name: str, conn_type: str = ""
+) -> str:
     """Build the vault key for a connection's primary credential.
+
+    Shape: ``conn-<type>-<qualifier>-<env>-<shortid>``, with redundant parts
+    dropped. Modelled on the names an operator had already chosen by hand for 11
+    of the 13 production secrets (`conn-snowflake-retail`, `conn-adf-qa`, …) —
+    those were curated, so the generator earns its keep only by reproducing that
+    quality automatically.
+
+    Three rules do the work, and each exists because the naive version produced a
+    name *worse* than what it replaced:
+
+    1. **Type leads.** Grouping by type is what makes a vault listing scannable
+       (`conn-adf-*`, `conn-snowflake-*`), and it is what the hand-naming did.
+    2. **Type words are stripped from the qualifier.** "Snowflake — Retail" under
+       type `snowflake` must not yield `snowflake-snowflake-retail`. `_TYPE_WORDS`
+       maps a type to the words a display name uses for it, because the overlap is
+       rarely literal (`adf` ↔ "Azure Data Factory").
+    3. **Parentheticals are dropped and `env` is deduplicated.** "(DATAQ_READER)"
+       is commentary, and "Azure Data Factory — QA" in env `qa` must not become
+       `…-qa-qa-…`.
 
     Call this ONLY when minting a new ref. An existing `Connection.secret_ref` is
     authoritative and must be reused verbatim — recomputing it after a rename
@@ -71,12 +116,26 @@ def connection_secret_ref(*, connection_id: UUID | str, env: str, name: str) -> 
     missing (the #954 shape again, self-inflicted).
     """
     short_id = str(connection_id).replace("-", "")[:_ID_CHARS]
-    slug = slugify(name)
+    type_slug = _TYPE_SLUGS.get(conn_type, slugify(conn_type))
+
+    # Drop parenthesised commentary before slugging: it is detail for humans
+    # reading the connection list, not identity.
+    bare_name = _PARENS.sub(" ", name)
+    noise = set(_TYPE_WORDS.get(conn_type, ())) | set(type_slug.split("-"))
+    qualifier = [t for t in slugify(bare_name).split("-") if t and t not in noise]
+
+    parts = ["conn"]
+    parts += type_slug.split("-") if type_slug else []
+    parts += qualifier
     env_slug = slugify(env)
-    # A name that slugs to nothing (e.g. entirely non-transliterable script) still
-    # has to produce a valid, unique key — the id carries it.
-    parts = [p for p in ("conn", env_slug, slug, short_id) if p]
-    return "-".join(parts)
+    if env_slug and env_slug not in parts:
+        parts.append(env_slug)
+
+    # Dedupe while preserving order, then bound the readable half — the id is what
+    # guarantees uniqueness, so truncation costs readability, never correctness.
+    ordered = list(dict.fromkeys(parts))  # dedupe, order-preserving
+    slug = "-".join(ordered)[:_MAX_SLUG].strip("-")
+    return f"{slug}-{short_id}" if slug else f"conn-{short_id}"
 
 
 def is_readable_ref(ref: str) -> bool:

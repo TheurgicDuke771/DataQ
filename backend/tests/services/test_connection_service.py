@@ -122,7 +122,7 @@ def test_create_persists_row_and_writes_secret(db_session: Any) -> None:
     # in the vault by eye to rotate it. Asserted via the generator rather than a
     # literal so a format tweak doesn't break unrelated tests.
     assert conn.secret_ref == connection_secret_ref(
-        connection_id=conn.id, env=conn.env, name=conn.name
+        connection_id=conn.id, env=conn.env, name=conn.name, conn_type=conn.type
     )
     assert "finance" in conn.secret_ref  # the human-meaningful part actually survives
     assert store.data[conn.secret_ref] == "p@ss"

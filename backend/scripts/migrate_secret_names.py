@@ -66,7 +66,9 @@ def _migrate_one(
     """Return (old_ref, new_ref). Raises `MigrationError` on any unsafe condition."""
     old_ref = conn.secret_ref
     assert old_ref is not None  # caller filters
-    new_ref = connection_secret_ref(connection_id=conn.id, env=conn.env, name=conn.name)
+    new_ref = connection_secret_ref(
+        connection_id=conn.id, env=conn.env, name=conn.name, conn_type=conn.type
+    )
 
     if new_ref == old_ref:  # pragma: no cover — defensive
         raise MigrationError("computed ref equals the existing one")

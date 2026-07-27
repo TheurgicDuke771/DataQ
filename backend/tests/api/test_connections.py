@@ -331,7 +331,12 @@ def _ref(cid: str, payload: dict[str, object] | None = None) -> str:
     naming change they have nothing to do with.
     """
     body = payload or _create_payload()
-    return connection_secret_ref(connection_id=cid, env=str(body["env"]), name=str(body["name"]))
+    return connection_secret_ref(
+        connection_id=cid,
+        env=str(body["env"]),
+        name=str(body["name"]),
+        conn_type=str(body["type"]),
+    )
 
 
 # ───────────────────────── re-auth (rotate + verify) ───────────────
