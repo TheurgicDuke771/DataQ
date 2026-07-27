@@ -171,9 +171,21 @@ together.**
 ### Evidence — how this was verified
 
 A clean plan was **not** the acceptance bar, because the stack already carries pre-existing
-drift (config env vars added by ADR 0035 and ADR 0029 that were only ever set via `az`,
-never applied). The bar was **equivalence**: the same config and the same state must
-produce the *same plan* under both CLIs.
+drift — the ADR 0034 lineage env vars (`LINEAGE_PROVIDER`, `MARQUEZ_URL`,
+`WAREHOUSE_LINEAGE_ENABLED`) are live on prod but absent from `containerapps.tf`, so an
+apply would *delete* them, while `DBT_WEBHOOK_SECRET_NAME` (ADR 0029) is in config but not
+live. Filed as #1086; unrelated to this change and reproducing identically on both CLIs.
+The bar was therefore **equivalence**: the same config and the same state must produce the
+*same plan* under both CLIs.
+
+> Worth recording, because it nearly went in wrong: the azurerm provider diffs a container
+> app's `env` block **positionally**, so the rendered plan reads as a 14-line shuffle of
+> variable names and the actual content is invisible. Read from the rendering alone, the
+> drift looks like "config vars that were never applied" — including
+> `RATE_LIMIT_XFF_TRUSTED_HOPS`, which is in fact present on both sides and merely moves
+> index. Only the `show -json` set-difference gives the real answer (2 removals + 1
+> addition per app, 28 unchanged). Another instance of the standing rule: the rendered
+> form is not the evidence.
 
 Both CLIs were run against live Azure with identical inputs, their plans exported with
 `-out` and rendered via `show -json`, and the `resource_changes` projection normalized
