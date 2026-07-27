@@ -33,7 +33,7 @@ from __future__ import annotations
 import os
 import threading
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, Final, Protocol, runtime_checkable
 from urllib.parse import quote
 
@@ -58,6 +58,11 @@ _KV_FIELD: Final = "value"
 # Bounded timeout (seconds) — a degraded vault must not stall a request thread or a
 # Celery task. Mirrors marquez.py's `_TIMEOUT_SECONDS` rationale.
 _HTTP_TIMEOUT_SECONDS: Final = 5.0
+# Renew an AppRole token this many seconds BEFORE its lease actually ends (#1054).
+# Without a margin a token can expire between the staleness check and the server
+# handling the request — the mid-flight 403 this feature exists to remove. 60s
+# comfortably covers a request that queues behind a slow check run.
+_TOKEN_RENEWAL_MARGIN_SECONDS: Final = 60
 
 
 def _explain_status(status: int) -> str:
@@ -381,15 +386,33 @@ class OpenBaoSecretStore:
     def __init__(
         self,
         addr: str,
-        token: str,
+        token: str | None = None,
         *,
+        role_id: str | None = None,
+        secret_id: str | None = None,
         mount: str = "secret",
         timeout: float = _HTTP_TIMEOUT_SECONDS,
         client: httpx.Client | None = None,
     ) -> None:
         # Trailing slash stripped so the path join is unambiguous (mirrors marquez.py).
         self._addr = addr.rstrip("/")
-        self._token = token
+        # Phase-1 static token (ADR 0039 decision 4). Kept for dev mode and for
+        # deployments that have not moved to AppRole.
+        self._static_token = token
+        # Phase-2 AppRole (#1054). `role_id` is an identifier; `secret_id` is the
+        # credential. Both or neither — a half-configured AppRole is rejected at
+        # startup rather than silently falling back to the static token, because a
+        # silent downgrade of a credential path is a security regression, not a
+        # convenience.
+        self._role_id = role_id
+        self._secret_id = secret_id
+        # The AppRole-issued token and the moment it stops being usable. Guarded by
+        # `_auth_lock`, which is SEPARATE from the client lock: logging in performs a
+        # request, and holding the client-construction lock across a network call
+        # would serialise every caller behind it.
+        self._auth_token: str | None = None
+        self._auth_expires_at: datetime | None = None
+        self._auth_lock = threading.Lock()
         self._mount = mount.strip("/")
         self._timeout = timeout
         # Injectable so tests can drive the real httpx request/response stack through
@@ -435,9 +458,7 @@ class OpenBaoSecretStore:
         """
         list_path = f"/v1/{self._mount}/metadata"
         try:
-            response = self._client_lazy().get(
-                list_path, headers=self._headers(), params={"list": "true"}
-            )
+            response = self._send("GET", list_path, params={"list": "true"})
         except httpx.HTTPError as exc:
             self._log_transport_failure("<list>", None, str(exc))
             raise SecretStoreUnavailableError(
@@ -475,9 +496,7 @@ class OpenBaoSecretStore:
         secret as too young to purge, so a metadata hiccup can never cause a delete.
         """
         try:
-            response = self._client_lazy().get(
-                self._path("metadata", name), headers=self._headers()
-            )
+            response = self._send("GET", self._path("metadata", name))
         except httpx.HTTPError:
             return None
         if response.status_code != 200:
@@ -520,10 +539,122 @@ class OpenBaoSecretStore:
 
         Deliberate: an injected client (tests, or any future caller supplying its own
         pool) would otherwise silently carry no credential and every call would 403.
-        Binding auth to the request rather than the transport makes that impossible.
+        Binding auth to the request rather than the transport makes that impossible —
+        and with AppRole it is now also *required*, since the token changes over the
+        process's life and a client-level header would pin the first one forever.
         OpenBao keeps Vault's `X-Vault-Token` header name for API compatibility.
         """
-        return {"X-Vault-Token": self._token}
+        return {"X-Vault-Token": self._current_token()}
+
+    def _current_token(self) -> str:
+        """The token to present: the static one, or a live AppRole token (#1054).
+
+        AppRole tokens are renewed **proactively at request time** rather than by a
+        background thread. A thread would have to exist in both the API and every
+        Celery worker, would need its own shutdown path, and could wedge silently —
+        the #904 shape, where periodic work stopped while everything reported
+        healthy. Checking an expiry immediately before use cannot wedge: if the check
+        never runs, no request is being made either.
+        """
+        if self._role_id is None:
+            # Static-token mode. `_build_store` and the Settings validator both
+            # guarantee one of the two is configured, so this cannot be None here.
+            return self._static_token or ""
+        with self._auth_lock:
+            if self._auth_token is None or self._token_is_stale():
+                self._login_locked()
+            return self._auth_token or ""
+
+    def _token_is_stale(self) -> bool:
+        """True when the cached token is inside the renewal margin (or undated).
+
+        The margin exists because a token that expires between this check and the
+        server handling the request would 403 — the exact mid-flight failure #1054
+        was filed about. An unknown expiry (`lease_duration: 0`, which is how a vault
+        reports a non-expiring token) is treated as NOT stale: re-logging in on every
+        request would turn a root-equivalent token into a login storm.
+        """
+        if self._auth_expires_at is None:
+            return False
+        return datetime.now(UTC) >= self._auth_expires_at
+
+    def _login_locked(self) -> None:
+        """POST the AppRole login and cache the issued token. Caller holds `_auth_lock`.
+
+        Failure raises `SecretStoreUnavailableError`, never `SecretNotFoundError`: a
+        login that cannot complete is an outage or a bad credential, and reporting
+        either as "the secret is not there" is precisely the masquerade ADR 0039
+        decision 6 exists to prevent.
+        """
+        try:
+            response = self._client_lazy().post(
+                "/v1/auth/approle/login",
+                json={"role_id": self._role_id, "secret_id": self._secret_id},
+            )
+        except httpx.HTTPError as exc:
+            raise SecretStoreUnavailableError(
+                f"OpenBao at {self._addr} unreachable during AppRole login ({exc})"
+            ) from exc
+        if response.status_code != 200:
+            # The body can echo the submitted secret_id on some error paths, so only
+            # the status and its explanation are surfaced — never `response.text`.
+            log.warning(
+                "openbao_approle_login_failed",
+                status=response.status_code,
+                error=_explain_status(response.status_code),
+            )
+            raise SecretStoreUnavailableError(
+                f"OpenBao AppRole login failed: {response.status_code} — "
+                f"{_explain_status(response.status_code)}"
+            )
+        try:
+            auth = response.json()["auth"]
+            token = auth["client_token"]
+        except (ValueError, KeyError, TypeError) as exc:
+            raise SecretStoreUnavailableError(
+                f"OpenBao AppRole login returned an unreadable body ({exc})"
+            ) from exc
+        lease = auth.get("lease_duration")
+        self._auth_token = token
+        self._auth_expires_at = (
+            datetime.now(UTC) + timedelta(seconds=int(lease) - _TOKEN_RENEWAL_MARGIN_SECONDS)
+            if isinstance(lease, int) and lease > 0
+            else None
+        )
+        # Never log the token, only that one was obtained and for how long.
+        log.info("openbao_approle_login", lease_duration=lease, renewable=auth.get("renewable"))
+
+    def _forget_token(self) -> None:
+        """Drop the cached AppRole token so the next call logs in again."""
+        with self._auth_lock:
+            self._auth_token = None
+            self._auth_expires_at = None
+
+    def _send(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
+        """One request, with a single re-login retry on 403 (#1054).
+
+        Every vault call goes through here so the recovery is uniform. Before this,
+        a token that died mid-flight — revoked, or expired past its lease — 403'd
+        every subsequent request until the process was RESTARTED, which is what
+        #1054 was filed about.
+
+        Exactly one retry, and only in AppRole mode:
+
+        * more than one would turn a genuinely bad `secret_id` into a login storm
+          against the vault, which is a worse failure than the one being fixed;
+        * in static-token mode there is nothing to re-acquire, so a 403 there is
+          the operator's answer and must surface unchanged.
+
+        A 403 that survives the retry falls through to the caller's existing status
+        handling, which logs `openbao_permission_denied` and raises
+        `SecretStoreUnavailableError` — never `SecretNotFoundError`.
+        """
+        response = self._client_lazy().request(method, path, headers=self._headers(), **kwargs)
+        if response.status_code == 403 and self._role_id is not None:
+            log.info("openbao_token_rejected_relogin", path=path)
+            self._forget_token()
+            response = self._client_lazy().request(method, path, headers=self._headers(), **kwargs)
+        return response
 
     def _path(self, kind: str, name: str) -> str:
         """KV v2 splits the value plane (`data`) from the version plane (`metadata`).
@@ -563,7 +694,7 @@ class OpenBaoSecretStore:
 
     def get(self, name: str) -> str:
         try:
-            response = self._client_lazy().get(self._path("data", name), headers=self._headers())
+            response = self._send("GET", self._path("data", name))
         except httpx.HTTPError as exc:
             self._log_transport_failure(name, None, str(exc))
             raise SecretStoreUnavailableError(
@@ -615,10 +746,8 @@ class OpenBaoSecretStore:
 
     def set(self, name: str, value: str) -> None:
         try:
-            response = self._client_lazy().post(
-                self._path("data", name),
-                headers=self._headers(),
-                json={"data": {_KV_FIELD: value}},
+            response = self._send(
+                "POST", self._path("data", name), json={"data": {_KV_FIELD: value}}
             )
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
@@ -644,9 +773,7 @@ class OpenBaoSecretStore:
         soft-deletes because purge protection is a vault-level policy there, not ours.)
         """
         try:
-            response = self._client_lazy().delete(
-                self._path("metadata", name), headers=self._headers()
-            )
+            response = self._send("DELETE", self._path("metadata", name))
         except httpx.HTTPError as exc:
             # Route through the shared handler as well as the delete-specific line: a
             # connection delete is often the FIRST vault call after a token expires,
@@ -685,11 +812,20 @@ def _build_store(settings: Settings) -> SecretStore:
     if settings.secret_store == _OPENBAO_MODE:
         if not settings.openbao_addr:
             raise RuntimeError(f"secret_store={_OPENBAO_MODE!r} requires OPENBAO_ADDR")
-        if not settings.openbao_token:
-            raise RuntimeError(f"secret_store={_OPENBAO_MODE!r} requires OPENBAO_TOKEN")
+        if not settings.openbao_token and not settings.openbao_role_id:
+            raise RuntimeError(
+                f"secret_store={_OPENBAO_MODE!r} requires OPENBAO_TOKEN, or "
+                "OPENBAO_ROLE_ID + OPENBAO_SECRET_ID for AppRole auth"
+            )
+        if bool(settings.openbao_role_id) != bool(settings.openbao_secret_id):
+            raise RuntimeError(
+                "OPENBAO_ROLE_ID and OPENBAO_SECRET_ID must be set together (AppRole)"
+            )
         return OpenBaoSecretStore(
             settings.openbao_addr,
             settings.openbao_token,
+            role_id=settings.openbao_role_id,
+            secret_id=settings.openbao_secret_id,
             mount=settings.openbao_mount,
         )
     if settings.secret_store == _REDIS_MODE:

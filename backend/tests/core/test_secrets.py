@@ -247,6 +247,8 @@ def _settings(**overrides: object) -> object:
         "openbao_addr": None,
         "openbao_token": None,
         "openbao_mount": "secret",
+        "openbao_role_id": None,
+        "openbao_secret_id": None,
     }
     base.update(overrides)
     return SimpleNamespace(**base)
@@ -312,10 +314,40 @@ def test_build_store_raises_when_openbao_addr_missing() -> None:
         _build_store(_settings(secret_store="openbao", openbao_token="tok"))  # type: ignore[arg-type]
 
 
-def test_build_store_raises_when_openbao_token_missing() -> None:
-    with pytest.raises(RuntimeError, match="requires OPENBAO_TOKEN"):
+def test_build_store_raises_when_no_openbao_credential_at_all() -> None:
+    """Neither a static token nor an AppRole pair — the message must name BOTH ways
+    out, or an operator moving to AppRole reads it as "you must use a token"."""
+    with pytest.raises(RuntimeError, match="OPENBAO_TOKEN") as exc:
         _build_store(
             _settings(secret_store="openbao", openbao_addr="http://openbao:8200")  # type: ignore[arg-type]
+        )
+    assert "OPENBAO_ROLE_ID" in str(exc.value)
+
+
+def test_build_store_accepts_approle_without_a_static_token() -> None:
+    store = _build_store(
+        _settings(  # type: ignore[arg-type]
+            secret_store="openbao",
+            openbao_addr="http://openbao:8200",
+            openbao_role_id="role",
+            openbao_secret_id="sid",
+        )
+    )
+    assert isinstance(store, OpenBaoSecretStore)
+
+
+def test_build_store_rejects_half_an_approle() -> None:
+    """A partial AppRole must not silently fall back to the static token: an operator
+    who set ROLE_ID meant to stop using it, and a quiet downgrade of a credential
+    path is a security regression."""
+    with pytest.raises(RuntimeError, match="must be set together"):
+        _build_store(
+            _settings(  # type: ignore[arg-type]
+                secret_store="openbao",
+                openbao_addr="http://openbao:8200",
+                openbao_token="tok",
+                openbao_role_id="role",
+            )
         )
 
 
@@ -844,6 +876,192 @@ def test_openbao_close_is_idempotent_and_reusable() -> None:
     rebuilt = store._client_lazy()  # rebuilt for continued use
     assert not rebuilt.is_closed
     rebuilt.close()
+
+
+# ── AppRole auth (#1054, ADR 0039 phase 2) ───────────────────────────────────
+
+
+def _approle_store(handler: Callable[[httpx.Request], httpx.Response]) -> OpenBaoSecretStore:
+    return OpenBaoSecretStore(
+        "http://openbao:8200",
+        None,
+        role_id="role",
+        secret_id="sid",
+        client=httpx.Client(base_url="http://openbao:8200", transport=httpx.MockTransport(handler)),
+    )
+
+
+def test_approle_logs_in_lazily_and_uses_the_issued_token() -> None:
+    """No login at construction — the store must stay cheap to build (it is created
+    per process at import-adjacent time), and a vault that is down must not make
+    building it fail."""
+    seen: list[tuple[str, str | None]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.url.path, request.headers.get("X-Vault-Token")))
+        if request.url.path == "/v1/auth/approle/login":
+            return httpx.Response(
+                200, json={"auth": {"client_token": "issued-token", "lease_duration": 3600}}
+            )
+        return httpx.Response(200, json={"data": {"data": {"value": "s3cr3t"}}})
+
+    store = _approle_store(handler)
+    assert seen == []  # nothing on construction
+    assert store.get("conn-a") == "s3cr3t"
+    assert seen[0][0] == "/v1/auth/approle/login"
+    # The KV read carries the token the login issued, not a static one.
+    assert seen[1] == ("/v1/secret/data/conn-a", "issued-token")
+
+
+def test_approle_token_is_reused_across_calls() -> None:
+    """One login per token lifetime, not one per request: every check run resolves a
+    credential, so a login on the hot path would double the vault traffic."""
+    logins = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal logins
+        if request.url.path == "/v1/auth/approle/login":
+            logins += 1
+            return httpx.Response(200, json={"auth": {"client_token": "t", "lease_duration": 3600}})
+        return httpx.Response(200, json={"data": {"data": {"value": "v"}}})
+
+    store = _approle_store(handler)
+    store.get("a")
+    store.get("b")
+    store.get("c")
+    assert logins == 1
+
+
+def test_approle_renews_before_the_lease_expires() -> None:
+    """Proactive renewal inside the margin. A token that expires between the check
+    and the server handling the request is the mid-flight 403 #1054 is about, so the
+    store must not wait for the lease to actually end."""
+    logins = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal logins
+        if request.url.path == "/v1/auth/approle/login":
+            logins += 1
+            # Shorter than the renewal margin, so the very next call is already stale.
+            return httpx.Response(
+                200, json={"auth": {"client_token": f"t{logins}", "lease_duration": 30}}
+            )
+        return httpx.Response(200, json={"data": {"data": {"value": "v"}}})
+
+    store = _approle_store(handler)
+    store.get("a")
+    store.get("b")
+    assert logins == 2
+
+
+def test_approle_never_re_logs_in_for_a_non_expiring_token() -> None:
+    """`lease_duration: 0` is how a vault reports a token that does not expire.
+    Treating that as "stale" would turn it into a login storm."""
+    logins = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal logins
+        if request.url.path == "/v1/auth/approle/login":
+            logins += 1
+            return httpx.Response(200, json={"auth": {"client_token": "t", "lease_duration": 0}})
+        return httpx.Response(200, json={"data": {"data": {"value": "v"}}})
+
+    store = _approle_store(handler)
+    store.get("a")
+    store.get("b")
+    assert logins == 1
+
+
+def test_approle_re_logs_in_once_on_403_and_recovers() -> None:
+    """The whole point of #1054: a token revoked mid-flight used to 403 every
+    subsequent request until the process was RESTARTED. One retry, and the call
+    succeeds."""
+    logins = 0
+    reads = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal logins, reads
+        if request.url.path == "/v1/auth/approle/login":
+            logins += 1
+            return httpx.Response(
+                200, json={"auth": {"client_token": f"t{logins}", "lease_duration": 3600}}
+            )
+        reads += 1
+        if reads == 1:
+            return httpx.Response(403, json={"errors": ["permission denied"]})
+        return httpx.Response(200, json={"data": {"data": {"value": "recovered"}}})
+
+    store = _approle_store(handler)
+    assert store.get("a") == "recovered"
+    assert logins == 2
+    assert reads == 2
+
+
+def test_approle_gives_up_after_one_retry() -> None:
+    """A genuinely bad secret_id must surface, not become a login storm against the
+    vault — a worse failure than the one being fixed. And it surfaces as
+    unavailable, never as "secret not found"."""
+    logins = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal logins
+        if request.url.path == "/v1/auth/approle/login":
+            logins += 1
+            return httpx.Response(200, json={"auth": {"client_token": "t", "lease_duration": 3600}})
+        return httpx.Response(403, json={"errors": ["permission denied"]})
+
+    store = _approle_store(handler)
+    with pytest.raises(SecretStoreUnavailableError):
+        store.get("a")
+    assert logins == 2  # the initial login + exactly one re-login
+
+
+def test_static_token_mode_does_not_retry_a_403() -> None:
+    """With no AppRole there is nothing to re-acquire, so a 403 is the operator's
+    answer and must surface unchanged rather than doubling every failing request."""
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(403, json={"errors": ["permission denied"]})
+
+    store = OpenBaoSecretStore(
+        "http://openbao:8200",
+        "static",
+        client=httpx.Client(base_url="http://openbao:8200", transport=httpx.MockTransport(handler)),
+    )
+    with pytest.raises(SecretStoreUnavailableError):
+        store.get("a")
+    assert calls == 1
+
+
+def test_approle_login_failure_is_unavailable_not_missing() -> None:
+    """A login that cannot complete is an outage or a bad credential. Reporting it as
+    `SecretNotFoundError` would make callers degrade silently — ADR 0039 decision 6."""
+    store = _approle_store(lambda _r: httpx.Response(400, json={"errors": ["invalid role"]}))
+    with pytest.raises(SecretStoreUnavailableError):
+        store.get("a")
+
+
+def test_approle_login_never_logs_the_token_or_the_body() -> None:
+    """The login body can echo the submitted secret_id on some error paths, and the
+    response carries a live token. Neither may reach the log."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/auth/approle/login":
+            return httpx.Response(
+                200, json={"auth": {"client_token": "super-secret-token", "lease_duration": 60}}
+            )
+        return httpx.Response(200, json={"data": {"data": {"value": "v"}}})
+
+    with capture_logs() as logs:
+        _approle_store(handler).get("a")
+    rendered = json.dumps(logs)
+    assert "super-secret-token" not in rendered
+    assert "sid" not in json.dumps(
+        [entry for entry in logs if entry.get("event") != "openbao_approle_login"]
+    )
 
 
 # ── listing, for the orphan sweep (#1059) ─────────────────────────────────────
