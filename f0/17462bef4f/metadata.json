@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "f017462bef4f",
+  "strategy": "manual-commit",
+  "branch": "feature/1054-openbao-approle",
+  "checkpoints_count": 2,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/f0/17462bef4f/0/metadata.json",
+      "transcript": "/f0/17462bef4f/0/full.jsonl",
+      "compact_transcript": "/f0/17462bef4f/0/transcript.jsonl",
+      "content_hash": "/f0/17462bef4f/0/content_hash.txt",
+      "prompt": "/f0/17462bef4f/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 12458,
+    "cache_creation_tokens": 2574511,
+    "cache_read_tokens": 190513159,
+    "output_tokens": 438603,
+    "api_call_count": 620
+  }
+}
