@@ -1,0 +1,54 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "0e490869de89",
+  "session_id": "fcf147da-f22f-41ab-ae99-a0fbd9e19a4c",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-27T01:32:07.262216Z",
+  "branch": "feature/openbao-secret-backend",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "backend/app/core/config.py",
+    "backend/app/core/secrets.py",
+    "backend/tests/core/test_secrets.py",
+    "scripts/setup.sh"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "4dc6b791c339",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 444,
+    "cache_creation_tokens": 591791,
+    "cache_read_tokens": 49318453,
+    "output_tokens": 162708,
+    "api_call_count": 223
+  },
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-27T01:32:07.195185Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 403,
+    "human_modified": 54,
+    "human_removed": 0,
+    "total_committed": 403,
+    "total_lines_changed": 460,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}

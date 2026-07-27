@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>b3sp30ghz</task-id>
+<tool-use-id>toolu_012cqfKoufM5JY4tsASM7uib</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/fcf147da-f22f-41ab-ae99-a0fbd9e19a4c/tasks/b3sp30ghz.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for CI to complete" completed (exit code 0)</summary>
+</task-notification>
