@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "5c98e9e1c7f4",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1057-publish-on-merge",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".github/workflows/publish-images.yml",
+    "backend/app/core/secrets.py",
+    "backend/tests/core/test_secrets.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/5c/98e9e1c7f4/0/metadata.json",
+      "transcript": "/5c/98e9e1c7f4/0/full.jsonl",
+      "compact_transcript": "/5c/98e9e1c7f4/0/transcript.jsonl",
+      "content_hash": "/5c/98e9e1c7f4/0/content_hash.txt",
+      "prompt": "/5c/98e9e1c7f4/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 12110,
+    "cache_creation_tokens": 1401143,
+    "cache_read_tokens": 106805242,
+    "output_tokens": 299512,
+    "api_call_count": 446
+  }
+}
