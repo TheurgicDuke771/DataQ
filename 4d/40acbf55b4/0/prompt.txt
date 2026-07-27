@@ -1,0 +1,9 @@
+What are those `2 change`?
+
+---
+
+Do we need to update the original terraform first to reflect the current state of prod?
+
+---
+
+yeah, lets go with the suggested plan, [adopt WAREHOUSE_LINEAGE_ENABLED, remove the two Marquez vars]
