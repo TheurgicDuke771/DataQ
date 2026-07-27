@@ -75,6 +75,7 @@ apart.
 
 | When (UTC) | Service | Action | By | Why / expected state |
 |---|---|---|---|---|
+| 2026-07-27 14:35–14:50 | **DataQ PROD app stack** — `dataq-app-api` + `dataq-app-worker` (revisions `--0000066` / `--0000064`) | **`tofu apply`** — the #1089 lineage-env reconciliation. First apply of the app stack since the OpenTofu migration (#1088), and the first in this stack for some time | Arijit (via Claude) | **Product change, not harness.** Applied a reviewed saved plan (`plan -out` → `apply <file>`), so what shipped is exactly what was inspected: `LINEAGE_PROVIDER` + `MARQUEZ_URL` **removed** from both apps, `DBT_WEBHOOK_SECRET_NAME` **added** to both, `WAREHOUSE_LINEAGE_ENABLED=true` **retained** on the worker only. Plan was `0 to add, 2 to change, 0 to destroy`; **post-apply `plan -detailed-exitcode` = 0, "No changes"** — the stack now truthfully describes prod for the first time in weeks. Images untouched (`ignore_changes`, #510). **Smoke after: frontend `/` 200, proxied `/healthz` `{"status":"ok"}`, `/api/v1/runs` 401.** Harness untouched throughout — all 5 apps stayed `Stopped`. |
 | 2026-07-27 07:50–08:30 | **LOCAL stack only** — `dataq-harness-local` compose (Airflow scheduler/webserver/Celery worker + Postgres + Redis + MinIO) on the developer machine. **No Azure resource started; all 5 harness apps stayed `Stopped`.** | **BUILD + full live validation** of the Azure-free alternative (`local/docker-compose.yml`, `local/harness_local.sh`) | Arijit (via Claude) | Readiness exercise, **not** a wind-down — Azure is untouched and keeps running. Mirrors `terraform/airflow.tf` (same image, same DAGs, CeleryExecutor, same env var names); MinIO replaces the ADLS landing zone and DataQ reads it through the ordinary `s3` connection with the new `endpoint_url` (#1063). **Verified end to end:** 4 DAGs parsed with 0 import errors · mockdata backfilled 24 datasets to `s3://landing` · DataQ connection test `{"ok":true}` · flat-file suite **4/4 pass** (643 rows, arrival-time freshness 0.21h off MinIO's `LastModified`) · **`flow_a_snowflake_load` SUCCESS** loading live Snowflake (34,680 ORDERS_HEADER) · DataQ ingested the local DAG runs into `pipeline_runs` (success **and** failure). **The one Azure dependency left:** the runtime Snowflake PAT is still read from Key Vault at `up` — see the finding below. |
 | 2026-07-27 06:45 | Jobs only — 5× mockdata + `dbt-lineage` (+ ADF pipeline runs). **No container app started.** | **RUN (targeted)** — `harness_window.sh run --adf --dbt` | Arijit (via Claude) | Confirms the two grants applied at ~06:55 actually clear the ADF + dbt failures end to end — a privilege probe is not a live run. Deliberately skips `start`: neither ADF (managed) nor the `dbt-lineage` job depends on the Airflow apps, so all 5 apps stay **Stopped** throughout and only the jobs are briefly resumed. DAGs + iceberg are not re-run — they already passed at 06:22. **Expected state afterwards: jobs re-suspended, apps still Stopped, ADF triggers still Stopped** — verified independently after. |
 | 2026-07-27 06:36 | Full harness — 5 apps + 2 ADF triggers + all 7 jobs | **STOP** — `harness_window.sh stop` | Arijit (via Claude) | Window closed. **Verified independently: all 5 apps `Stopped` with 0 live replicas, both ADF triggers `Stopped`, and suspend re-issued on all 7 jobs with 0 executions Running.** Jobs mattered here — unlike the 04:00 window, `run` genuinely resumed them, so a `set -e` abort mid-phase could have left a cron armed. Results: mockdata ×5 Succeeded, **all 3 Airflow DAGs success**, iceberg-writer Succeeded; **ADF ×2 and dbt Failed** — see the finding below. |
@@ -396,6 +397,35 @@ provider.
 
 Verified afterwards: the harness lock lists exactly the four pre-migration
 versions, and the plan is clean.
+
+### Follow-on, same day — the apply, and what querying prod turned up
+
+The reconciliation (#1089) was applied to prod at 14:35 (see the lifecycle row above).
+Post-apply the app stack plans **clean** for the first time in weeks.
+
+Then, checking whether the removed Marquez config had orphaned any cached edges (#1090),
+two things came out of one query — neither of which any test could have shown:
+
+- **There were no `source='marquez'` edges at all.** The catalog pull was *configured* in
+  prod but its target (`dataq-harness-marquez`) was `Stopped`, so it never cached anything.
+  Nothing to purge. We were lucky on the data, not right by design — the code path that
+  would strand edges is still there (#1090).
+- **Warehouse lineage has been stale since 2026-07-18** — nine days — despite
+  `WAREHOUSE_LINEAGE_ENABLED=true` and a daily sweep. The tell is the two Unity Catalog
+  connections: **zero errors, zero degraded reasons, and no refresh**. Had the task run,
+  UC would either have refreshed or recorded a classified error. Neither happened, so the
+  task did not run. Suspected cause: every daily task uses an **interval** schedule
+  (`86400.0`) under an embedded beat (`worker -B`) in a container with no persistent beat
+  state, so each worker restart resets the countdown — and ACA restarts far more often
+  than daily. Six tasks share that schedule, including `refresh_credential_expiry`, whose
+  entire purpose is to warn *before* a credential dies (and #954 records two that died
+  without warning). Filed as **#1091**.
+
+**The lesson repeats the migration's own:** a feature flag being *set* is not evidence the
+feature *runs*. `WAREHOUSE_LINEAGE_ENABLED=true` was adopted into IaC on the correct
+reasoning that removing it would break something — and it turned out the thing it gates had
+already not run for nine days, invisibly, because the health surface only reports *errors*,
+never *silence*.
 
 ## Credential rotation
 
