@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "b9f8ba20441e",
+  "strategy": "manual-commit",
+  "branch": "chore/opentofu-iac-migration",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "deploy/terraform/azure/.terraform.lock.hcl",
+    "deploy/terraform/azure/versions.tf"
+  ],
+  "sessions": [
+    {
+      "metadata": "/b9/f8ba20441e/0/metadata.json",
+      "transcript": "/b9/f8ba20441e/0/full.jsonl",
+      "compact_transcript": "/b9/f8ba20441e/0/transcript.jsonl",
+      "content_hash": "/b9/f8ba20441e/0/content_hash.txt",
+      "prompt": "/b9/f8ba20441e/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 84,
+    "cache_creation_tokens": 176906,
+    "cache_read_tokens": 4371620,
+    "output_tokens": 37711,
+    "api_call_count": 43
+  }
+}

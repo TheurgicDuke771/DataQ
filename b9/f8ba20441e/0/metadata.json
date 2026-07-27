@@ -1,0 +1,40 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "b9f8ba20441e",
+  "session_id": "3577d6f5-2e75-42b2-a327-294abe25939e",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-27T16:26:08.371092Z",
+  "branch": "chore/opentofu-iac-migration",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "deploy/terraform/azure/.terraform.lock.hcl",
+    "deploy/terraform/azure/versions.tf"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "1e598ab38661",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 84,
+    "cache_creation_tokens": 176906,
+    "cache_read_tokens": 4371620,
+    "output_tokens": 37711,
+    "api_call_count": 43
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-27T16:26:08.350436Z",
+    "agent_lines": 167,
+    "agent_removed": 75,
+    "human_added": 5,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 172,
+    "total_lines_changed": 248,
+    "agent_percentage": 97.58064516129032,
+    "metric_version": 2
+  }
+}
