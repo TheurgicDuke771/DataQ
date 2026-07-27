@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "c2ae6ed60be0",
+  "strategy": "manual-commit",
+  "branch": "docs/1072-snapshot-and-template-defect",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/c2/ae6ed60be0/0/metadata.json",
+      "transcript": "/c2/ae6ed60be0/0/full.jsonl",
+      "compact_transcript": "/c2/ae6ed60be0/0/transcript.jsonl",
+      "content_hash": "/c2/ae6ed60be0/0/content_hash.txt",
+      "prompt": "/c2/ae6ed60be0/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 12466,
+    "cache_creation_tokens": 2576395,
+    "cache_read_tokens": 192914734,
+    "output_tokens": 440898,
+    "api_call_count": 624
+  }
+}
