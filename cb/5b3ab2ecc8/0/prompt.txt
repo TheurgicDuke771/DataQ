@@ -1,0 +1,371 @@
+Can we host the airflow in local now, mirroring what we have in azure container app. 
+Also for the flat file can we have a SFTP or something similar in local docker? [open to ideas here]
+[so when we wind down azure, we can keep the job running.]
+
+---
+
+can we add a similar backup method for snowflake using localstack for snowflake [again open to ideas]?
+
+---
+
+let's kill the localstack [ I don't want any more non OSS license resources even if it's just for harness]. Just keep a record what we evaluated so far somewhere. and merge the changes, and sync main.
+
+---
+
+Okay, let's close them out. Also can you check #435 once
+
+---
+
+<task-notification>
+<task-id>a166c786b75a84e90</task-id>
+<tool-use-id>toolu_01A1R26LNfFVJDuMusyqRM4b</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/fcf147da-f22f-41ab-ae99-a0fbd9e19a4c/tasks/a166c786b75a84e90.output</output-file>
+<status>completed</status>
+<summary>Agent "Review PR 1069" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Reviewed
+
+`git diff origin/main...HEAD` on `fix/issue-1057-publish-on-merge` (2 commits): `.github/workflows/publish-images.yml`, `backend/app/core/secrets.py`, `backend/tests/core/test_secrets.py`. No files modified, no git state changed.
+
+**First, the claim you asked me to verify: it holds.** GitHub's workflow-syntax reference states verbatim *"Path filters are not evaluated for pushes of tags"* and *"If you define both `branches`/`branches-ignore` and `paths`/`paths-ignore`, the workflow will only run when both filters are satisfied."* A `v*` tag push still publishes unconditionally; the filter only narrows the `main` trigger. The config is right and the comment at `.github/workflows/publish-images.yml:47-55` is accurate. Also checked: on a push event `inputs.tag` is empty, `GITHUB_REF_TYPE=branch`, so the tag-computation step correctly yields just `:latest` + `:${GITHUB_SHA}`. No untrusted input reaches the workflow on the new trigger (`github.actor` for login, no `pull_request_target`), and `permissions` is unchanged and minimal.
+
+---
+
+## Critical (90-100)
+
+### 1. The new assertion makes `test_get_secret_store_caches_singleton` fail outside a full-suite run — real defect, reproduced
+`backend/tests/core/test_secrets.py:736-745`
+
+```
+$ python -m pytest backend/tests/core/test_secrets.py::test_get_secret_store_caches_singleton -q --no-cov
+E  where False = isinstance(&lt;...OpenBaoSecretStore object...&gt;, EnvSecretStore)
+1 failed
+```
+
+That is on this machine, with no ambient overrides — just the developer's `.env.app` (`SECRET_STORE=openbao`, which is what `.env.app.example:77` ships). The whole file passes (`80 passed`); the single test alone fails. It also fails with `SECRET_STORE=azure_key_vault` exported, even in a multi-test selection. Pre-PR the test passed in all three.
+
+Root cause, traced: the docstring's premise is correct — `monkeypatch.setenv` at line 741 is inert because `get_settings()` is already cached by the time the body runs. The autouse `_reset_caches` clears the cache, then the autouse `stub_run_dispatch` (`backend/tests/conftest.py:68`) imports `run_dispatch` → `celery_app.create_celery_app()` → `get_settings()`, re-populating the cache from the **ambient** environment. That import only happens once per process, so in a full-file run the cache is empty at the test body and the monkeypatch wins by accident of ordering; when this test runs first, it loses.
+
+So the PR correctly diagnosed that the setenv decides nothing, then added an assertion whose value is decided by `.env.app` instead of by the test. CI stays green (`pytest backend/tests/`, no `.env.app`, default `secret_store="env"`), so the gate will not catch it — it breaks the single-test loop locally, which is the CLAUDE.md "verify locally before push" path.
+
+Fix: make the setenv actually decide, e.g. `monkeypatch.setenv("SECRET_STORE", "env"); get_settings.cache_clear()` before the first `get_secret_store()`. (Verified env vars beat `.env.app` in `Settings`, so that makes it hermetic.)
+
+---
+
+## Important (80-89)
+
+### 2. A release-tag publish can now be silently cancelled by a merge — real defect (latent)
+`.github/workflows/publish-images.yml:66-68`
+
+`main` pushes now enter the same `group: publish-images` as `v*` tag pushes. GitHub's documented behaviour with `cancel-in-progress: false`: *"any existing `pending` job or workflow in the same concurrency group will be canceled and the new queued job or workflow will take its place."* So: tag `v1.2.0` pushed while a main-push run is in progress → the tag run goes pending → the next merge to `main` queues → **the tag run is cancelled**, and `ghcr.io/.../dataq-backend:v1.2.0` never exists. Nothing fails loudly; you get a cancelled run in the list.
+
+Before this PR that collision was impossible, because main pushes never entered the group. The window is wide because these are uncached multi-arch QEMU builds (see nit 10). Suggested fix: `group: publish-images-${{ github.ref_type }}` (keeps main-pushes serialized with each other and tag-pushes with each other, so `:latest` still has a single writer per class), or gate the tag leg into its own job/workflow-level group.
+
+### 3. `AzureKeyVaultStore.close()` has no test at all — delete it and the suite stays green
+`backend/app/core/secrets.py:243-253`
+
+`reset_secret_store_cache` reaches it via `getattr`, so removing the method entirely produces no AttributeError and no failing test. Every new test covers the OpenBao store; the **production** store (ADR 0024 — prod runs `azure_key_vault`) is the untested half of the fix. This is exactly the "would it still pass if the fix were reverted" criterion, and for this store the answer is yes. A `monkeypatch`ed fake `SecretClient` recording `close()` (the file already fakes the SDK elsewhere, e.g. `test_akv_store_set_reaches_sdk_through_lazy_branch`) plus an idempotency assertion would close it.
+
+### 4. `publish-images` and `deploy.yml` now both write `:${github.sha}`, with different contents — real defect
+`.github/workflows/publish-images.yml:127` vs `.github/workflows/deploy.yml:37,92,247`
+
+publish-images pushes `dataq-{backend,frontend}:${GITHUB_SHA}` **multi-arch**; deploy.yml pushes `dataq-{backend,frontend}:${{ github.sha }}` **amd64-only** (plain `docker build`, no buildx). The two workflows are in *different* concurrency groups (`publish-images` vs `deploy-production`), so they can also run simultaneously. Before this PR, publish-images only wrote a SHA tag on tag pushes/dispatch; now every merge writes it, and every subsequent deploy of that commit overwrites it.
+
+Consequence: the tag the header comment calls the "immutable commit SHA" is last-writer-wins and changes its architecture set. A dev on Apple Silicon pulling `:&lt;sha&gt;` to reproduce prod gets a working image before the deploy and `no matching manifest for linux/arm64` after. Suggested fix: on branch pushes emit `main-${GITHUB_SHA}` (or drop the SHA tag entirely for the `main` trigger) so `&lt;sha&gt;` stays solely owned by deploy.yml — which is what the workflow header already claims about tag ownership.
+
+### 5. `AzureKeyVaultStore.close()` doesn't release the credential's sockets — real defect, undercuts the fix's own goal
+`backend/app/core/secrets.py:243-253`, credential built at `:192`
+
+`SecretClient.close()` is `self._client.close()` — it closes the KV client's pipeline transport only. `DefaultAzureCredential` is constructed inline at line 192, never retained, and owns a **separate** transport session per chained credential (`ChainedTokenCredential.close`: *"Close the transport session of each credential in the chain"*). So `close()` releases half the pool and leaves the token-acquisition sessions open — the same leak class #1058 is about. Fix: keep the credential on the instance and close it in `close()` (after the client). Secondary effect worth a comment: after `close()`, the next use rebuilds `DefaultAzureCredential`, re-running the whole discovery/token chain — fine for a test reset, expensive if the hot-reload caller the docstring anticipates ever lands.
+
+### 6. `close()` on an injected-client store detaches it and silently upgrades the store to real network I/O
+`backend/app/core/secrets.py:317-334`; test at `backend/tests/core/test_secrets.py:783-792`
+
+The ownership model is right in intent, but the implementation clears `self._client` and sets `self._owns_client = True` **unconditionally**, including for a client it does not own. A store built with a `MockTransport` client therefore stops using the mock after `close()` and, on the next call, builds a real `httpx.Client(base_url=self._addr)` — i.e. it does exactly what the docstring says it must not do ("would break a caller that reuses it"), just with a different symptom: real sockets to `OPENBAO_ADDR` instead of a closed-client error. Combined with the `reset_secret_store_cache` path (which is called from the autouse conftest fixture), a test that injects a client into the singleton store and touches it after a reset would silently hit the network.
+
+The new test asserts only `not injected.is_closed`; it never asserts `store._client is injected`, so the detach is unpinned and would not be noticed. Fix: return early when not owned (leave `self._client` and `_owns_client` untouched), and add the association assertion to the test.
+
+### 7. `paths` filter misses two files that participate in the same skew it's fixing — real defect (same class as #1057)
+`.github/workflows/publish-images.yml:56-65`
+
+- **`.env.app.example`** — `docs/getting-started.md:76` sends evaluators to fetch it **from `main`**, exactly like the compose file. It is the second half of the eval contract: a merge that adds/renames a setting there, against a `:latest` whose `Settings` has `extra="forbid"` and closed `Literal`s, reproduces the #1056 failure mode verbatim (pydantic error naming neither cause nor fix).
+- **`pyproject.toml`** — `backend/Dockerfile:53` does `COPY pyproject.toml ./`, so it is image content, yet a change to it does not republish.
+
+Both are one-line additions to the list.
+
+---
+
+## Nits / lower confidence
+
+8. **`reset_secret_store_cache` propagates exceptions from `close()`** (`backend/app/core/secrets.py:551-553`). It is called from the autouse `_reset_caches` fixture on **every** test, setup and teardown; a store whose `close()` raises (transport error, Azure SDK hiccup) would convert the whole suite into errors. `SecretStore.delete` is deliberately fail-soft for precisely this reason — consider `try/except Exception: log.warning(...)` for symmetry.
+
+9. **The "concurrent rebuild is safe" claim is narrower than it reads** (`backend/app/core/secrets.py:545-548`). Rebuild-safety is true; *in-flight* safety is not. `_client_lazy` reads `self._client` outside the lock, and every `get_secret_store()` consumer (`backend/app/worker/tasks.py` ×9) holds a local reference to the store, so a concurrent `close()` can close a pool between the read and the request → `RuntimeError: Cannot send a request, as the client has been closed`. Harmless while reset is test-only, but the docstring names config hot-reload as the plausible next caller — which is the multithreaded case. Worth stating the constraint explicitly so it isn't inherited as a safety guarantee.
+
+10. **No build cache on a now-per-merge multi-arch build** (`.github/workflows/publish-images.yml:150-161`). Every qualifying merge does an uncached two-image build, with the backend's arm64 leg under QEMU emulation (only the frontend got the `--platform=$BUILDPLATFORM` treatment in #518). Adding `cache-from: type=gha` / `cache-to: type=gha,mode=max` cuts wall clock and shrinks the overlap window that makes finding 2 possible.
+
+11. **`:latest` is now "tip of `main`", gated only by the PR's pre-merge CI.** The push trigger fires regardless of whether `main`'s own post-merge CI run passes, so a semantic conflict between two PRs merged in quick succession is published to the tag evaluators pull. That is the accepted trade for #1057, but the header line "Stable tag to pull = `:latest` (moving)" now means something materially different and deserves the one-word update — or a `workflow_run`-on-CI-success gate if you want the stable pointer to stay gated.
+
+12. **`test_openbao_close_is_idempotent_and_reusable`** (`backend/tests/core/test_secrets.py:794-800`) leaks the pool it rebuilds — `_client_lazy()` is called in the final assertion and never closed. The sibling test at :783 does close its client. Ironic in a leak-fix PR; one line.
+
+13. **The Protocol decision is sound.** `SecretStore` is `@runtime_checkable`, 32 structural doubles are checked by the `backend/tests` mypy gate (#418), and Protocols give no default implementations — so adding `close()` there really would cost 32 no-op bodies and also change `isinstance` semantics for every existing check. Duck-typing via `getattr` is the right call. Two things it gives up, worth knowing rather than changing: mypy cannot verify the call (a typo'd method name would just never fire — mitigated by the test at :748), and nothing guards a *future* pooled store from forgetting `close()`. A cheap backstop: one parametrized test asserting each concrete store `_build_store` can return either exposes `close` or provably holds no pool.</result>
+<usage><subagent_tokens>116213</subagent_tokens><tool_uses>35</tool_uses><duration_ms>613485</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bv44bt0z0</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/fcf147da-f22f-41ab-ae99-a0fbd9e19a4c/tasks/bv44bt0z0.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for the triggered publish run to finish" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>blcg8y5nf</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/fcf147da-f22f-41ab-ae99-a0fbd9e19a4c/tasks/blcg8y5nf.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for CI on PR 1070" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>afb0ba78a478ae14c</task-id>
+<tool-use-id>toolu_013abcaoGcECoFHLPKg1jyW9</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/fcf147da-f22f-41ab-ae99-a0fbd9e19a4c/tasks/afb0ba78a478ae14c.output</output-file>
+<status>completed</status>
+<summary>Agent "Review PR 1070" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Reviewed
+
+PR #1070, `fix/issue-1059-orphan-secret-sweep` (1 commit, 8 files, +840). New files `backend/app/services/secret_sweep_service.py`, `backend/tests/services/test_secret_sweep_service.py`; changes to `backend/app/core/secrets.py`, `core/config.py`, `worker/{celery_app,tasks}.py`, `.env.app.example`, `backend/tests/core/test_secrets.py`. I ran the two test files: **111 passed**. No files modified, no git state touched.
+
+I audited the registry against every secret-name holder I could find: all `*secret_ref*` columns in `backend/app/db/models.py` and in `backend/alembic/versions/` (three, all registered), every `secret_store.set(...)` call site (`connection_service.py:332,573,656`, `notification_service.py:171` — `beat_watchdog.py:127` is Redis, not the store), every `secret_store.get(...)` call site, and every `_secret_name` occurrence in `backend/app`.
+
+---
+
+## Critical (would arm a delete on live credentials)
+
+**1. The introspection guard is a tautology — a new *model* with a `secret_ref` column is not caught. Real defect.**
+`backend/tests/services/test_secret_sweep_service.py:206` — `for model in (Connection, SuiteNotification):` is exactly the set already in `_OWNER_COLUMNS`. Adding `class ExternalCatalog(Base)` with a `secret_ref` column leaves the test green and its secrets purgeable. The sibling it claims to mirror does it correctly: `backend/tests/services/test_asset_sweep.py:270-273` iterates `Asset.metadata.tables.values()` — *all* tables. The `"secret_ref" in column.key` predicate is also spelling-bound (misses `credential_ref`, `signing_key_name`, `*_secret_name`). Fix: iterate `Base.metadata.tables.values()` with a broader predicate. This is the guard standing between live credentials and a delete, so it is the highest-value line in the PR.
+
+**2. `_OWNER_JSON_PATHS` hardcodes one key against an open-ended convention. Real defect (latent).**
+`backend/app/services/secret_sweep_service.py:100` registers only `catalog_secret_name`. But `backend/app/services/connection_service.py:77-99` resolves **any** config key ending in `_secret_name`, and its own docstring says *"Generic on purpose: no branching on `connection.type` … no matter how many credentials a future type needs."* The next connection type that adds `foo_secret_name` silently arms a delete and nothing fails. I verified only `catalog_secret_name` exists today (Iceberg), so it is latent, not live. Fix: make the scan follow the convention, not an instance — `jsonb_each_text(connections.config)` filtered on `key LIKE '%\_secret\_name'`. That would also give `test_json_registry_is_not_empty` (line 215) something real to assert.
+
+**3. Workspace-level secret names in `Settings` are not owners at all. Real defect (latent).**
+`backend/app/core/config.py:260-307` holds six live SecretStore names that **no DB row references**: `adf/airflow/dbt_webhook_secret_name`, `teams_webhook_secret_name`, `slack_webhook_secret_name`, `email_password_secret_name`. The registry's docstring scopes itself to "the schema", so these fall through to the prefix filter alone. The three alerting names are operator-chosen with blank defaults (`.env.app.example:142,144,153`); an operator naming the workspace Teams webhook `suite-notif-teams-workspace` — natural, given DataQ mints `suite-notif-*` itself — gets it purged. Shipped defaults (`adf-webhook-secret`, …) don't collide, hence latent. One-line fix: union the non-`None` settings names into `_owned_secret_refs`.
+
+---
+
+## Important
+
+**4. Naive `created_at` from the Azure driver kills the sweep — the fixture-encodes-our-model shape again. Real defect.**
+`secret_sweep_service.py:145` computes `moment - info.created_at` with an aware `moment`. The OpenBao path normalises naive→UTC (`secrets.py:148` `_parse_vault_timestamp`); the Azure path passes `prop.created_on` straight through unnormalised (`secrets.py:303`). A naive value raises `TypeError`, swallowed by the task's blanket `except` into `return 0` + one warning — the janitor silently stops. The covering test hand-builds `SimpleNamespace(created_on=datetime(..., tzinfo=UTC))` (`backend/tests/core/test_secrets.py:975`), i.e. it asserts our assumption, not the driver's — the #953/#823 shape. Direction is fail-safe, but normalise at the boundary.
+
+**5. "Unknown age" and "inside grace" share one bucket, so a permission gap makes the sweep a silent no-op. Real defect.**
+`secret_sweep_service.py:145` folds `created_at is None` into `too_young`. For OpenBao, `created_at` is `None` whenever the metadata GET is denied — and this PR adds two capabilities no shipped doc mentions: `list` on `{mount}/metadata/` and `read` on `{mount}/metadata/{name}`. ADR 0039 documents only three endpoints (`docs/adr/0039-…md:37`; same stale list in the class docstring at `secrets.py:346-349`), so an operator's least-privilege policy written from it grants neither. Outcome on a correctly-locked-down vault: LIST 403s (→ `return 0` daily) or every secret reads `created_at=None` → "0 orphans, N too young" forever. Both are indistinguishable from a clean vault — the "an outage must never be reportable as a state" lesson from #1056, one level up. Fix: split `unknown_age` out of `too_young` in `OrphanSweepResult`, and document the new capabilities. *Azure is fine and I verified it:* the custom role already grants `readMetadata/action` (`deploy/terraform/azure/keyvault.tf:55`), which covers listing.
+
+**6. Nothing scopes the store to one DataQ deployment. Real gap.**
+ADR 0039 explicitly supports pointing at an operator's existing Vault/mount. Two DataQ instances sharing one mount (staging + prod is the common case) → each sees the other's `conn-*` entries as unowned and, with purge on, deletes the other's live credentials. The prefix guard is per-*product*, not per-*install*. Minimum: a documented constraint. Better: an install-scoped prefix.
+
+**7. The truncated-listing rationale is inverted. Real (reasoning) defect.**
+`secrets.py:293-296`, `secrets.py:410-413` and `secret_sweep_service.py:178-181` all argue "absent from the listing means purge, so a partial list is dangerous." For this sweep the opposite holds: a name is purged only if it **is** in the listing and **not** in the DB, so a short listing under-reports orphans (safe) — the dangerous incompleteness is on the **DB** side, which has no equivalent guard. Directly answering your question: yes, one path does mistake a partial listing for a complete one — an unparseable 404 body on LIST falls to `_is_missing_mount → False` → `return []` (`secrets.py:425-428`) — but the consequence is under-deletion, not over-deletion. The strict listing is still worth keeping for detection accuracy; the comments just point the safety argument at the wrong side of the join, which is likely why the DB side got a hand-maintained registry and no query-level guard.
+
+**8. `purged` records intent, not outcome. Real (minor) defect.**
+`secret_sweep_service.py:192-193`. The comment claims "the count reflects what was actually deleted, not what was intended", but `delete` is fail-soft by contract (`secrets.py:177-183`, `274-286`) — it swallows and logs — so `purged.append(name)` runs unconditionally after a failed delete. No test covers a failing delete (`_FakeStore.delete` at test line 46 cannot fail). Either have `delete` report success or reword the comment.
+
+---
+
+## Nits
+
+9. `_DATAQ_PREFIXES = ("conn-", "suite-notif")` (`secret_sweep_service.py:63`) — no trailing separator on the second, so it also claims `suite-notification-*`. Every mint site uses `suite-notif-` (`notification_service.py:235,242`); tighten it.
+10. No beat-wiring test. Every sibling entry has one (`backend/tests/worker/test_celery_app.py:65-72`) and the asset sweep has `backend/tests/worker/test_asset_sweep_task.py`; this PR adds neither. So the task-name string, the rollback/close path, and `purge=settings.secret_orphan_purge` — the single flag whose inversion is catastrophic — are untested. Cheap, and #904/#905 is precisely the "beat entry silently never runs" history.
+11. `scanned` (`secret_sweep_service.py:196`) counts foreign entries too, so on a shared vault it reads as "DataQ secrets scanned" when it isn't.
+12. `ConnectionVersion.config` (`backend/app/db/models.py:399`) snapshots a historical `catalog_secret_name`. It isn't an owner and there's no restore endpoint, so a superseded catalog secret becomes purgeable — arguably correct, but it's operator-provisioned and DataQ never wrote it. Worth an explicit verified-benign note rather than leaving it unexamined (CONTRIBUTING 3a).
+13. Docs: no `docs/progress.md` row; ADR 0039's endpoint table (line 37) and the `OpenBaoSecretStore` docstring (`secrets.py:346-349`) still list three endpoints.
+
+---
+
+## Verified clean
+
+- **No secret value can be read or logged.** AKV uses `list_properties_of_secrets` (properties only, never `get_secret`); OpenBao touches only `metadata`, never `data`; the log line (`secret_sweep_service.py:196-207`) carries counts plus names. `store.delete` never surfaces a value.
+- **Pagination.** Azure `list_properties_of_secrets` returns `ItemPaged` and the comprehension iterates it fully — a mid-iteration page failure is inside the `try`, so it raises rather than truncating. KV v2 LIST is not paginated. Both correct.
+- **Ordering is the safe direction** — store listed first, DB read second, so a connection created mid-sweep can never be a candidate.
+- **Future-dated `created_at`** yields a negative delta `&lt; grace` → `too_young`. Cannot purge.
+- **OpenBao `delete` purges metadata** (`secrets.py:349`), so correctly-deleted secrets vanish from LIST — no phantom orphans accumulating.
+- Beat entry name matches the task name; settings defaults (`grace_days=30`, `purge=False`) match `.env.app.example`; the three `*secret_ref*` columns in the migrations match the models and are all registered.</result>
+<usage><subagent_tokens>130657</subagent_tokens><tool_uses>35</tool_uses><duration_ms>433048</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>beax0rz66</task-id>
+<tool-use-id>toolu_01RwSqvrrCbvxtYUBqCx9H4p</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/fcf147da-f22f-41ab-ae99-a0fbd9e19a4c/tasks/beax0rz66.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for CI on PR 1071" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a979130799a8a63ca</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/fcf147da-f22f-41ab-ae99-a0fbd9e19a4c/tasks/a979130799a8a63ca.output</output-file>
+<status>completed</status>
+<summary>Agent "Review PR 1071" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I reviewed the diff for PR #1071 (`feature/1054-openbao-approle`, 1 commit `290bf916`) — `backend/app/core/secrets.py`, `backend/app/core/config.py`, `backend/tests/core/test_secrets.py`, `.env.app.example`, plus the ADR/progress/CLAUDE.md prose. Every finding below was reproduced against the branch code with `httpx.MockTransport`; I changed no files and no git state.
+
+Answering the direct questions up front, then the findings.
+
+**Deadlock: no.** Lock order is always `_auth_lock` → `_lock` and never the reverse. In `_send` (`/Users/arijit/Coding/Python/DataQ/backend/app/core/secrets.py:652`) Python evaluates `self._client_lazy()` *before* the `headers=self._headers()` argument, so `_lock` is acquired and released before `_auth_lock` is taken; `close()` takes only `_lock`. **Token read-while-replaced: not possible** — the token is returned as an immutable `str` under `_auth_lock`. **First-use stampede: correctly prevented** — losers block on `_auth_lock`, then re-check and find a fresh token. The stampede exists only on the 403 path (finding 3).
+
+---
+
+## Critical
+
+### 1. A blank `OPENBAO_ROLE_ID=` silently switches the store into AppRole mode with an empty credential — every secret operation fails. **Real defect.**
+
+`/Users/arijit/Coding/Python/DataQ/backend/app/core/secrets.py:559` uses `if self._role_id is None:` as the mode discriminator, but `/Users/arijit/Coding/Python/DataQ/.env.app.example:98-99` (added by this PR) ships `OPENBAO_ROLE_ID=` / `OPENBAO_SECRET_ID=` blank, and pydantic-settings resolves a present-but-empty env/dotenv value to `""`, not `None`. `_build_store` (`secrets.py:820-829`) passes it straight through.
+
+This is the exact question you asked about the validator vs `_build_store` agreeing: **they do not.** The `Settings` validator `.strip()`s (`/Users/arijit/Coding/Python/DataQ/backend/app/core/config.py:409-410`), so `""` passes as "no AppRole"; `_build_store` uses bare truthiness and the store uses `is None`. Reproduced through the real dotenv path a fresh `scripts/setup.sh` produces (`setup.sh:103` does `cp .env.app.example .env.app`):
+
+```
+openbao_role_id = ''  | openbao_secret_id = ''
+store._role_id  = ''  -&gt; AppRole mode engaged? True
+GET conn-x -&gt; RAISED SecretStoreUnavailableError: OpenBao AppRole login failed: 400
+```
+
+The process **boots clean** and then every credential read, write and delete fails at runtime — the "dies mid-run in a worker" failure the ADR-0039 validator was added to prevent, reintroduced one layer down. It also hits the compose stack (api/worker take `OPENBAO_ROLE_ID` from `env_file: .env.app`). A whitespace-only pair (`"  "`) is a second flavour of the same bug: the validator strips it to "no AppRole", `_build_store`'s truthiness check sees two truthy values and passes.
+
+Fix: normalise once at the boundary — `self._role_id = (role_id or "").strip() or None` (same for `secret_id`) in `__init__` — and make `_build_store` and the validator share that normalisation rather than each re-deriving it.
+
+### 2. `delete()` is no longer fail-soft — a login failure escapes and can 500 a connection delete that already succeeded. **Real defect.**
+
+`secrets.py:776` now routes through `_send` → `_headers` → `_current_token` → `_login_locked`, which raises `SecretStoreUnavailableError` (`secrets.py:606`, `614`). That is not an `httpx.HTTPError`, so `delete`'s `except httpx.HTTPError` (`secrets.py:777`) does not catch it. Reproduced with a sealed vault (503 on login):
+
+```
+delete:      RAISED SecretStoreUnavailableError: ... login failed: 503 — vault sealed
+set:         RAISED SecretStoreUnavailableError  (not SecretWriteError)
+_created_at: RAISED SecretStoreUnavailableError  (not None)
+```
+
+Three call sites document and depend on the fail-soft contract this breaks:
+- `/Users/arijit/Coding/Python/DataQ/backend/app/services/connection_service.py:840-842` — *"fail-soft (delete never raises), so a store hiccup can't 500 a successful delete."* Now false: the row is already deleted and committed, so the user gets a 500 on a delete that succeeded.
+- `/Users/arijit/Coding/Python/DataQ/backend/app/services/secret_sweep_service.py:301` — *"`delete` is fail-soft BY CONTRACT"*. The purge loop now aborts on the first orphan.
+- `/Users/arijit/Coding/Python/DataQ/backend/app/services/notification_service.py:255,272` — post-commit orphan cleanup, same shape.
+
+Two siblings of the same root cause:
+- **`set()`** now raises `SecretStoreUnavailableError` where it used to raise `SecretWriteError`, so `connection_service.py:343/574/657` stop mapping it to the 502 `ConnectionSecretWriteError` and it becomes a generic 500.
+- **`_created_at()`** (`secrets.py:498-501`) no longer degrades to `created_at=None`. Its docstring promises *"a metadata hiccup can never cause a delete"* — the safe direction is preserved by accident (the sweep aborts), but the documented degradation is gone.
+
+This is the same family as the lesson recorded in the ADR-0039 review: callers branch on exception **type**, and a new type crossing a seam that previously only emitted two types breaks them silently.
+
+---
+
+## Important
+
+### 3. The 403 re-login is not compare-and-swap — N concurrent threads produce N logins. **Real defect.**
+
+`secrets.py:653-656` unconditionally calls `_forget_token()` on any 403. Measured with 8 threads released from a barrier against a permanently-403ing path: **9 logins**. Each thread also discards the token a peer just obtained. The `_send` docstring (`secrets.py:641-646`) promises *"exactly one retry ... more would turn a genuinely bad `secret_id` into a login storm against the vault"* — but that bound is per-call, not per-store, and the class is explicitly a process-wide singleton shared by FastAPI request threads and Celery workers, i.e. precisely the case where the promise fails.
+
+Fix: capture the token value actually sent, and only clear if `self._auth_token` is still that value:
+```python
+sent = self._current_token()
+response = self._client_lazy().request(method, path, headers={"X-Vault-Token": sent}, **kwargs)
+if response.status_code == 403 and self._role_id is not None:
+    self._forget_token_if_still(sent)   # CAS under _auth_lock
+```
+
+### 4. A least-privilege AppRole policy makes the orphan sweep re-login on every secret. **Real defect.**
+
+Vault answers **403 for insufficient policy**, not only for a dead token — and the class docstring at `secrets.py:372-375` explicitly anticipates a policy lacking `read` on `&lt;mount&gt;/metadata/*`. `_send` treats every 403 as "token dead", so each `_created_at` costs an extra login plus an extra GET. Measured over 3 secrets:
+
+```
+list_secrets() -&gt; 3 x created_at=None
+logins: 4  |  metadata GETs: 6     (expected: 1 login, 3 GETs)
+```
+
+Linear in mount size, and permanent for that deployment. Same root cause as finding 3; a CAS plus not retrying when the previous attempt already used a freshly-issued token fixes both.
+
+### 5. Any lease ≤ 60s means a login on **every** request, forever — and a test enshrines it. **Real defect.**
+
+`secrets.py:619-623` computes `expires_at = now + (lease - 60)`. For a hardened AppRole with `token_ttl=60s` (a reasonable production setting) that is already in the past at issue time, so `_token_is_stale()` is `True` on the very next call: 2 HTTP round-trips per credential resolution, permanently, on the hot path the `_client_lazy` docstring says matters.
+
+`test_approle_renews_before_the_lease_expires` (`/Users/arijit/Coding/Python/DataQ/backend/tests/core/test_secrets.py`, the `lease_duration: 30` / `assert logins == 2` test) asserts this degenerate behaviour as correct. Fix: clamp, e.g. `effective = max(lease - MARGIN, lease // 2, 1)`.
+
+### 6. `lease_duration` crosses a driver boundary and `isinstance(lease, int)` is too narrow. **Real defect (three variants, all reproduced, none tested).**
+
+At `secrets.py:621`:
+- `lease_duration: 3600.0` (a JSON float from a proxy or a non-OpenBao Vault build) → `isinstance(..., int)` is False → `_auth_expires_at = None` → **proactive renewal silently disabled for the whole process**. The feature degrades back to the reactive 403-retry it was built to replace, with no log line saying so. A string `"3600"` does the same.
+- `lease_duration: true` → `isinstance(True, int)` is True, `int(True) == 1` → expires 59s in the past → login per request.
+- `lease_duration: 10**19` → bare **`OverflowError`** propagates out of `get`/`set`/`delete`, caught by nobody (every caller guards `httpx.HTTPError`), breaking the type contract ADR 0039 decision 6 rests on. Worse, because `self._auth_token = token` is assigned at `secrets.py:618` *before* the expiry is computed at `:619`, the store is left caching a token against a stale `_auth_expires_at`.
+
+This is the repo's own #953/#823 shape — the type comes from the server, and every fixture in this PR hands in a clean `int`. Fix: coerce inside a `try` accepting `int | float | str`, compute the expiry *before* assigning the token, and clamp to a sane range.
+
+### 7. The redactor covers neither the vault token nor `secret_id` — and the ADR now asserts that it does. **Real defect (defence-in-depth + inaccurate doc).**
+
+Measured against `/Users/arijit/Coding/Python/DataQ/backend/app/core/logging.py`:
+
+```
+key 'x-vault-token' in _PII_KEYS: False     key 'client_token': False
+key 'secret_id'     in _PII_KEYS: False     key 'role_id':      False
+scrub bare: 'X-Vault-Token: REDACTED'   -&gt; UNCHANGED
+_redact_pii({'headers': {'X-Vault-Token': 'hvs.…'}, 'secret_id': 'abc123456'}) -&gt; UNCHANGED
+```
+
+`_BEARER_TOKEN_RE` matches `dq_live_`, JWTs and `bearer &lt;tok&gt;`, but an OpenBao token (`hvs.…` / `s.…`) matches none of them. The ADR text this PR edits retains *"the logger-level redactor ... covers `token` keys and bare token shapes"* — true only for the `token=` query-param form, which is not how this credential travels.
+
+The store's own call sites are clean (`_login_locked` deliberately never logs `response.text`, and `show_locals=False` at `logging.py:135-136` closes the #536 traceback-locals vector). But #849's whole lesson is that call-site discipline is the half that fails, because a dependency does the logging. Adding `x-vault-token`, `client_token`, `secret_id` to `_PII_KEYS` — the mechanism that file itself calls *"the sturdier of the two … it cannot be fooled by a token SHAPE nobody anticipated"* — is a two-line change this PR should carry, and the ADR sentence should be narrowed to what is actually true.
+
+---
+
+## Test quality
+
+### 8. The single most security-relevant line in the diff is untested. **Real gap.**
+
+`secrets.py:598-609` deliberately logs only status/explanation because *"the body can echo the submitted secret_id on some error paths"*. `test_approle_login_never_logs_the_token_or_the_body` exercises only the **200** path — adding `body=response.text` to the `openbao_approle_login_failed` warning would fail nothing. Two further weaknesses in that test: the `secret_id` sentinel is `"sid"` (3 chars, collides trivially), and the assertion excludes the `openbao_approle_login` event from the haystack. Use a distinctive canary, assert over the full capture, and add a non-200 login case.
+
+### 9. `test_approle_renews_before_the_lease_expires` passes, but not for the reason it claims.
+
+With `lease_duration: 30` against a 60s margin the token is *already expired* at issue, so the test cannot distinguish "renews inside the margin" from "renews only once actually expired". It is not vacuous (setting the margin to 0 fails it), but the margin semantics — token still within lease, inside the margin, must renew — have **no** test, because `datetime.now(UTC)` (`secrets.py:579`, `620`) is called directly with no injectable clock. Same "passes, not for the right reason" shape as the five cases recorded in CLAUDE.md's lesson-of-the-week.
+
+### 10. Nothing covers the contracts findings 1, 2, 3 break.
+
+No test that `delete` stays fail-soft when the vault is down under AppRole; none that `set` still raises `SecretWriteError`; none that `_created_at` still degrades to `None`; **no concurrency test at all**, despite thread safety being the central design claim and the store being a documented process-wide singleton.
+
+### 11. New validator branches untested, and existing validator tests are now partly environment-decided. **Real gap — this is how finding 1 got through.**
+
+`_real_settings` (`/Users/arijit/Coding/Python/DataQ/backend/tests/core/test_secrets.py:392-398`) `delenv`s `SECRET_STORE`, `OPENBAO_ADDR`, `OPENBAO_TOKEN`, `OPENBAO_MOUNT`, `AZURE_KEY_VAULT_URL` — but **not** the two keys this PR adds. A developer or CI environment exporting `OPENBAO_ROLE_ID` would flip `test_settings_rejects_openbao_without_token_at_startup` from pass to fail: an outcome decided by the environment, not the test. Separately, none of the new `config.py:407-428` branches (partial AppRole → `ValueError`, AppRole-without-token accepted, blank-string role id) has a `Settings`-level test; only `_build_store` is covered, through a `SimpleNamespace` stand-in that by construction cannot produce the `""` real pydantic produces — the exact "the tests missed it by construction" pattern already recorded for #124.
+
+**Boot-compat answer:** no existing deployment newly fails to *boot* — the validator is strictly more permissive than before except for the partial-AppRole rejection, and nothing had `OPENBAO_ROLE_ID` set before this PR. But finding 1 means deployments newly fail at *runtime*, which is the worse direction.
+
+---
+
+## Nits
+
+12. **`config.py:407-408`** — message regression. The old code collected every missing name into one error (`"requires OPENBAO_ADDR and OPENBAO_TOKEN"`); the addr check now short-circuits, so an operator missing both fixes one, re-runs, and only then learns about the other.
+13. **`secrets.py:749-751`** — the 403 retry re-POSTs `set`, and KV v2 `set` creates a new version, so it is not idempotent in version count. Benign in practice (a 403 means the write did not happen), but the `_send` docstring discusses the retry *bound* without saying anything about mutating-request safety; one sentence would close it.
+14. **`secrets.py:581`** — `_auth_lock` is a plain `Lock`, so a future refactor routing the login through `_send`/`_headers` (a natural thing to reach for when fixing finding 2) deadlocks instantly. Either say "never call `_send`/`_headers` from here" explicitly, or use an `RLock`.
+15. **`secrets.py:579`, `:620`** — interval math on wall-clock. An NTP step backwards makes an expired token read as fresh (self-heals via the retry); forwards forces a spurious login. `time.monotonic()` is the right clock for a duration.
+16. **ADR 0039 decision 4** — now reads *"AppRole … is **deferred and filed**, not silently omitted — see Related"* immediately followed by *"**Phase 2 has since landed.**"* The first clause should go.
+
+---
+
+**Bottom line:** findings 1 and 2 are merge-blockers — 1 breaks every OpenBao deployment built from this PR's own `.env.app.example`, and 2 turns a vault outage into a 500 on an already-committed delete. 3–7 are real and worth fixing in this PR since they are all in the same 120 lines. The design choices you asked me to scrutinise — request-time renewal over a background thread, one retry, the static-token exclusion, login under a lock — are sound; the defects are all in the boundary handling around them.</result>
+<usage><subagent_tokens>124705</subagent_tokens><tool_uses>38</tool_uses><duration_ms>494892</duration_ms></usage>
+</task-notification>
+
+---
+
+sync to main, prune all the unwanted local and remote branches
+
+---
+
+for #617 & #622 add the images directly and remove the branches.

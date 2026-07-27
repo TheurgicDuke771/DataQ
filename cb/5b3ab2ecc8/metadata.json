@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "cb5b3ab2ecc8",
+  "strategy": "manual-commit",
+  "branch": "docs/host-issue-screenshots-on-main",
+  "checkpoints_count": 2,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/cb/5b3ab2ecc8/0/metadata.json",
+      "transcript": "/cb/5b3ab2ecc8/0/full.jsonl",
+      "compact_transcript": "/cb/5b3ab2ecc8/0/transcript.jsonl",
+      "content_hash": "/cb/5b3ab2ecc8/0/content_hash.txt",
+      "prompt": "/cb/5b3ab2ecc8/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 12513,
+    "cache_creation_tokens": 3186247,
+    "cache_read_tokens": 207680559,
+    "output_tokens": 457393,
+    "api_call_count": 649
+  }
+}
