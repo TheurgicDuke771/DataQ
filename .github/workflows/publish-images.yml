@@ -13,6 +13,26 @@ name: Publish images (GHCR, multi-arch)
 # Stable tag to pull = `:latest` (moving). The immutable per-deploy `:vN` backend
 # tags (v7, v10, …) stay owned by deploy.yml — this workflow never writes them.
 # A release-tag push (vX.Y.Z) additionally publishes that semver tag.
+#
+# ── Why this also runs on merge to `main` (#1057) ─────────────────────────────
+# `docker-compose.ghcr.yml` is fetched by evaluators from **main** (README +
+# docs/getting-started.md say so), while `:latest` used to move only on manual
+# dispatch. Those two versioned independently, so any merge that made the compose
+# file depend on new backend behaviour broke the documented eval flow until
+# someone remembered to dispatch this workflow.
+#
+# That is exactly what #1056 did: it set `SECRET_STORE: "openbao"` in the compose
+# file while the published image still validated against
+# `Literal["env", "redis", "azure_key_vault"]`, so a first-time evaluator — the
+# person least able to debug it — would have hit a pydantic error naming neither
+# the cause nor the fix. It was caught and dispatched by hand within 36 seconds
+# that time; the structure, not the vigilance, is what needed fixing.
+#
+# So: if the compose comes from `main`, the image it names must come from `main`
+# too. The `paths` filter keeps the cost off docs-only merges. Pinning a released
+# tag in the compose file was the considered alternative and is rejected — it just
+# inverts the skew, since a compose edit on `main` would then reference an image
+# built before that edit.
 
 on:
   workflow_dispatch:
@@ -23,6 +43,25 @@ on:
   push:
     tags:
       - "v*"
+    branches:
+      - main
+    # NOTE: `paths` is IGNORED for tag pushes — GitHub applies path filters to
+    # branch pushes only (github/community discussion #165354 is an open request
+    # to make them apply to tags, which is the proof they currently do not). So a
+    # `vX.Y.Z` release tag still publishes unconditionally, exactly as before this
+    # filter was added; the filter only ever narrows the `main` trigger. Verified
+    # before adding it, because the plausible-but-wrong reading — that a release
+    # touching no listed path would stop publishing — would have silently broken
+    # releases. Do not "fix" this by splitting the workflow in two.
+    paths:
+      # Anything that changes what the images CONTAIN…
+      - "backend/**"
+      - "frontend/**"
+      # …the eval compose itself, so a file that starts depending on new
+      # behaviour republishes the images in the same breath…
+      - "docker-compose.ghcr.yml"
+      # …and this workflow, so a change to how images are built takes effect.
+      - ".github/workflows/publish-images.yml"
 
 concurrency:
   group: publish-images
