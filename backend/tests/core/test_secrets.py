@@ -1,12 +1,15 @@
 import json
 import os
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from types import SimpleNamespace
 from typing import ClassVar
 
 import httpx
 import pytest
+import structlog
 from structlog.testing import capture_logs
+from structlog.typing import EventDict
 
 from backend.app.core import secrets
 from backend.app.core.secrets import (
@@ -300,6 +303,22 @@ def _events(logs: Sequence[Mapping[str, object]]) -> list[str]:
     return [str(entry["event"]) for entry in logs]
 
 
+@contextmanager
+def _captured_secret_logs(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[EventDict]]:
+    """`capture_logs`, with the module logger rebound INSIDE the capture.
+
+    Necessary because `configure_logging()` sets `cache_logger_on_first_use=True`,
+    and once some earlier test in the suite has run it, `secrets.log` caches its
+    bound logger and bypasses the processors `capture_logs` installs. The capture
+    then yields an EMPTY list and every assertion here passes vacuously — these
+    tests were green in isolation and failed only in the full suite, which is the
+    same "passes for the wrong reason" shape the project keeps hitting.
+    """
+    with capture_logs() as logs:
+        monkeypatch.setattr(secrets, "log", structlog.get_logger("backend.app.core.secrets"))
+        yield logs
+
+
 def _kv_payload(value: object) -> dict[str, object]:
     """The KV v2 read envelope, as captured from openbao/openbao v2.6.1."""
     return {"data": {"data": {"value": value}, "metadata": {"version": 1}}}
@@ -388,17 +407,17 @@ def test_openbao_get_503_names_the_sealed_vault() -> None:
         store.get("conn-1")
 
 
-def test_openbao_get_403_logs_a_warning() -> None:
+def test_openbao_get_403_logs_a_warning(monkeypatch: pytest.MonkeyPatch) -> None:
     """The exception reaches the caller, but only a LOG reaches the operator."""
     store = _bao(lambda _r: httpx.Response(403, json={"errors": ["permission denied"]}))
-    with capture_logs() as logs, pytest.raises(SecretNotFoundError):
+    with _captured_secret_logs(monkeypatch) as logs, pytest.raises(SecretNotFoundError):
         store.get("conn-1")
     assert _events(logs) == ["openbao_permission_denied"]
 
 
-def test_openbao_get_503_logs_unreachable() -> None:
+def test_openbao_get_503_logs_unreachable(monkeypatch: pytest.MonkeyPatch) -> None:
     store = _bao(lambda _r: httpx.Response(503, json={"errors": ["Vault is sealed"]}))
-    with capture_logs() as logs, pytest.raises(SecretNotFoundError):
+    with _captured_secret_logs(monkeypatch) as logs, pytest.raises(SecretNotFoundError):
         store.get("conn-1")
     assert _events(logs) == ["openbao_unreachable"]
 
@@ -411,11 +430,11 @@ def test_openbao_get_wraps_transport_error() -> None:
         _bao(handler).get("conn-1")
 
 
-def test_openbao_get_transport_error_logs_unreachable() -> None:
+def test_openbao_get_transport_error_logs_unreachable(monkeypatch: pytest.MonkeyPatch) -> None:
     def handler(_request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("connection refused")
 
-    with capture_logs() as logs, pytest.raises(SecretNotFoundError):
+    with _captured_secret_logs(monkeypatch) as logs, pytest.raises(SecretNotFoundError):
         _bao(handler).get("conn-1")
     assert _events(logs) == ["openbao_unreachable"]
 
@@ -564,25 +583,27 @@ def test_openbao_delete_targets_the_metadata_path() -> None:
     assert seen[0].url.path == "/v1/secret/metadata/conn-1"
 
 
-def test_openbao_delete_of_absent_secret_is_a_clean_noop() -> None:
+def test_openbao_delete_of_absent_secret_is_a_clean_noop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """KV v2 answers 204 even for a name that never existed — nothing to log."""
     store = _bao(lambda _r: httpx.Response(204))
-    with capture_logs() as logs:
+    with _captured_secret_logs(monkeypatch) as logs:
         store.delete("never-existed")
     assert _events(logs) == []
 
 
-def test_openbao_delete_fails_soft_on_transport_error() -> None:
+def test_openbao_delete_fails_soft_on_transport_error(monkeypatch: pytest.MonkeyPatch) -> None:
     def handler(_request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("connection refused")
 
-    with capture_logs() as logs:
+    with _captured_secret_logs(monkeypatch) as logs:
         _bao(handler).delete("conn-1")  # fail-soft: logged, never raised (#372)
     assert _events(logs) == ["secret_delete_failed"]
 
 
-def test_openbao_delete_fails_soft_on_error_status() -> None:
+def test_openbao_delete_fails_soft_on_error_status(monkeypatch: pytest.MonkeyPatch) -> None:
     store = _bao(lambda _r: httpx.Response(403, json={"errors": ["permission denied"]}))
-    with capture_logs() as logs:
+    with _captured_secret_logs(monkeypatch) as logs:
         store.delete("conn-1")  # fail-soft: an entity delete must not 500 on this
     assert _events(logs) == ["secret_delete_failed"]
