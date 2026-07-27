@@ -39,6 +39,20 @@ connection, checks and monitors work unchanged.
   needs the other form (R2 and Wasabi accept virtual-host addressing).
 - **Region** is still required — S3-compatible stores generally ignore it, but the AWS
   SDK requires a value. `us-east-1` is the conventional filler.
+- The endpoint must **not** embed a credential (`https://key:secret@host`). Connection
+  `config` is stored and returned in plaintext, so a credential there would live outside
+  the secret store; it is rejected at save time. Put the key in **Access key ID** and the
+  secret in the credential field.
+- An `http://` endpoint is accepted (in-cluster MinIO usually has no TLS), but object
+  bytes and request signatures then travel **cleartext** — prefer `https://` for anything
+  crossing a network you don't control.
+
+**Known limitation.** An asset's identity is currently derived from the bucket name
+alone, which was unique while every S3 connection was AWS. Two connections pointing at
+different stores that share a bucket name therefore resolve to the *same* asset, merging
+their scorecards, lineage and incidents — tracked as
+[#1064](https://github.com/TheurgicDuke771/DataQ/issues/1064). Until it is fixed, keep
+bucket names distinct across endpoints.
 
 The same two fields exist on a **dbt** orchestration connection whose `artifacts_uri` is
 `s3://…`, so the artifacts poll can read from the same store.

@@ -1110,14 +1110,24 @@ def test_s3_client_resolves_a_compatible_endpoint() -> None:
     assert client.meta.config.s3 == {"addressing_style": "path"}
 
 
-def test_s3_client_without_an_endpoint_still_resolves_aws() -> None:
+def test_s3_client_without_an_endpoint_still_resolves_aws(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """The regression guard for every existing AWS connection (#1063).
 
     If `auto` ever started pinning an addressing style unconditionally, this is
     what would catch it — the AWS client must resolve the regional endpoint and
     leave `config.s3` unset.
+
+    The ambient endpoint vars are cleared first: botocore >= 1.31 honours
+    `AWS_ENDPOINT_URL[_S3]`, so on a developer machine that exports one (which is
+    exactly what someone working against MinIO would do) this would otherwise fail
+    for a reason that has nothing to do with the code under test.
     """
     from backend.app.datasources.s3 import S3Config
+
+    monkeypatch.delenv("AWS_ENDPOINT_URL", raising=False)
+    monkeypatch.delenv("AWS_ENDPOINT_URL_S3", raising=False)
 
     client = flatfile._s3_client(S3Config.model_validate(_S3_CONFIG), "secret")
     assert client.meta.endpoint_url == "https://s3.us-west-2.amazonaws.com"

@@ -81,6 +81,24 @@ def test_validate_config_rejects_a_schemeless_endpoint_url() -> None:
         S3ConnectionAdapter().validate_config({**_ACCESS_KEY_CONFIG, "endpoint_url": "minio:9000"})
 
 
+def test_validate_config_rejects_a_credential_in_the_endpoint_url() -> None:
+    """`config` is plaintext JSONB — a credential here would be persisted outside
+    the secret store (#754/#826; same rule as `IcebergConfig.catalog_uri`)."""
+    with pytest.raises(ValidationError, match="must not embed a credential"):
+        S3ConnectionAdapter().validate_config(
+            {**_ACCESS_KEY_CONFIG, "endpoint_url": "https://AKIAKEY:secretkey@minio:9000"}
+        )
+
+
+def test_validate_config_allows_a_username_only_endpoint_url() -> None:
+    """A bare username is an identifier, not a credential — `uri_password` says so,
+    and rejecting it would be a false positive on a legitimate URL."""
+    cfg = S3ConnectionAdapter().validate_config(
+        {**_ACCESS_KEY_CONFIG, "endpoint_url": "https://tenant@minio:9000"}
+    )
+    assert cfg.endpoint_url == "https://tenant@minio:9000"
+
+
 def test_validate_config_treats_a_cleared_addressing_style_as_auto() -> None:
     """Same cleared-field shape — but "" would be rejected by the Literal."""
     cfg = S3ConnectionAdapter().validate_config({**_ACCESS_KEY_CONFIG, "addressing_style": ""})

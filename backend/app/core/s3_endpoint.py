@@ -17,6 +17,8 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
+from backend.app.core.uri_credentials import uri_password
+
 #: Where the bucket goes in a request: in the host (``virtual``,
 #: ``<bucket>.<host>/<key>``) or in the path (``path``, ``<host>/<bucket>/<key>``).
 #: ``auto`` is DataQ's inference, not botocore's — see `resolve_addressing_style`.
@@ -39,6 +41,19 @@ def normalize_endpoint_url(value: str | None) -> str | None:
         return None
     if not stripped.startswith(("http://", "https://")):
         raise ValueError("endpoint_url must start with http:// or https://")
+    # Refuse a credential smuggled into the URL, the settled rule for a URL-shaped
+    # *non-secret* config field (#754/#826, and `IcebergConfig._uri_carries_no_password`
+    # for the precedent). `config` is persisted as plaintext JSONB, so a password here
+    # would be written to Postgres instead of the secret store. Redaction is not a
+    # substitute: the read API returns the STRIPPED url, the edit form prefills from
+    # it, and saving would write the credential-less form back — the connection then
+    # dies with no explanation. Refuse at the door instead.
+    if uri_password(stripped):
+        raise ValueError(
+            "endpoint_url must not embed a credential (config is stored and returned "
+            "in plaintext). Put the access key id in 'access_key_id' and the secret "
+            "access key in the secret store."
+        )
     return stripped.rstrip("/")
 
 

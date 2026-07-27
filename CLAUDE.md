@@ -10,7 +10,7 @@
 
 | Layer | Components |
 |---|---|
-| **Datasources (you can write checks against)** | Snowflake (DEV/QA/UAT), ADLS Gen2, AWS S3, Unity Catalog (Databricks), Apache Iceberg (native `pyiceberg` read — ADR 0030) |
+| **Datasources (you can write checks against)** | Snowflake (DEV/QA/UAT), ADLS Gen2, AWS S3 **and any S3-compatible store** (MinIO/Ceph/R2/Wasabi/Backblaze, via the optional `endpoint_url` — #1063), Unity Catalog (Databricks), Apache Iceberg (native `pyiceberg` read — ADR 0030) |
 | **Orchestration providers (monitor + trigger only — NOT datasources)** | Azure Data Factory (ADF), Apache Airflow, dbt (ADR 0029) |
 | **Backend** | FastAPI + Celery + Redis + PostgreSQL + Alembic |
 | **Frontend** | React + Vite + Ant Design + Monaco editor (generic OIDC — `oidc-client-ts`) |
@@ -96,7 +96,7 @@ DataQ/
 **Datasources** are stores you write DQ checks against:
 - Snowflake (DEV/QA/UAT)
 - ADLS Gen2 (flat files)
-- AWS S3 (flat files)
+- AWS S3 — and any S3-compatible store, via the connection's optional `endpoint_url` (#1063)
 - Unity Catalog / Databricks
 - Apache Iceberg (native `pyiceberg` read — ADR 0030; engine-registered Iceberg tables also work zero-code under the `snowflake`/`unity_catalog` connections)
 
