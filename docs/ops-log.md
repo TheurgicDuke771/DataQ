@@ -75,6 +75,7 @@ apart.
 
 | When (UTC) | Service | Action | By | Why / expected state |
 |---|---|---|---|---|
+| 2026-07-27 04:15 | All 5 harness apps + both ADF triggers + all 7 jobs | **STOP** — `harness_window.sh stop` | Arijit (via Claude) | **Window closed. Expected + VERIFIED state: every app `Stopped`, every job suspended, both ADF triggers `Stopped`, and — checked separately — 0 live replicas.** The script's own success message is not sufficient evidence: `cmd_stop` runs under `set -e` and calls `wait_app`, which returns 1 on timeout, so a single slow app would abort the loop and silently leave the rest running. Immediately after the script reported success, `replica list` still showed airflow=1, worker=2, marquez=1 (draining); polled to 0 before declaring the window closed. |
 | 2026-07-27 03:57 | All 5 harness apps (marquez, redis, airflow, airflow-worker, airflow-trigger) + both ADF triggers | **START** — `harness_window.sh start` | Arijit (via Claude) | **Deliberate, short window.** Purpose: live-test the 13 renamed `conn-*` secrets through the real orchestration path. The two Airflow connections were the ONLY ones the 2026-07-27 02:45 rename could not verify — their connection test 502s whenever the harness is down, so a stopped harness and a broken credential look identical from DataQ. **Expected state afterwards: everything back to Stopped/Suspended/Disabled the same session** — see the paired STOP row below. If that row is missing, the window did not close cleanly and the harness is burning ~CAD 17/day. |
 | 2026-07-18 19:36 | `dataq-harness-airflow` (+ `-worker`, `-trigger`) | **Stopped** | royarijit04@outlook.com | Verified from `systemData.lastModifiedAt` on 2026-07-26, not from memory. Intentional. **Why (recovered 2026-07-26 from the harness's own notes, not from Azure):** a `--dbt` window earlier that day hit Snowflake Enterprise's new **MFA-on-password-login** enforcement, killing every password-auth harness leg (`dbt-lineage` failed 19:21Z with `250001 (08001)`); the harness was stopped ~15 min after that session hit the wall. A loader PAT fixed the auth the same day, but a residual GRANT failure remains — now tracked as [#1030](https://github.com/TheurgicDuke771/DataQ/issues/1030) instead of living only in an untracked file. Consequence: DataQ polls every 10 min, ACA's ingress answers 404 for a stopped app, and the connection accumulates failures — 282 by 2026-07-26. Expected to stay down until a test window needs Airflow. |
 | 2026-07-26 06:16 | `dataq-app-{api,worker,frontend}` | Deployed `c401572d` | Deploy workflow | App stack, not harness. Recorded here because the roll restarted the worker and reset in-memory state. |
@@ -125,6 +126,35 @@ apart.
 > settle it.
 
 ---
+
+### Finding 2026-07-27 — harness Airflow cannot reach its metadata DB (pre-dates the rename)
+
+Airflow never served during the 04:00 window. Root cause, from the container log:
+
+    psycopg2.OperationalError: FATAL: password authentication failed for user "airflowadmin"
+
+**Not the DataQ secret rename.** Every secret on `dataq-harness-airflow` is an
+*inline* container-app secret (`keyVaultUrl = None`) — the app references no Key
+Vault secret at all, so nothing deleted at 02:45–03:10 could reach it. The active
+revision `--0000010` was created **2026-07-27 00:07:08 UTC**, ~2.5 h before the
+first vault operation (00:39).
+
+**Actual cause: the 2026-07-26 23:5x targeted apply (#1032, row above).**
+`local.airflow_pg_conn` (airflow.tf:26) is built from `random_password.pg.result`,
+and the apply was `-target`ed at the container apps — **not** at
+`azurerm_postgresql_flexible_server.airflow`. So the new revision's `pg-conn`
+carries Terraform's password while the server still has its previous one. One side
+updated, the other not: the #954 shape, in the harness this time.
+
+This went unnoticed because the harness is stopped by default — nothing exercises
+Airflow between windows, so a broken metadata DB looks exactly like a sleeping one.
+
+**Fix options (not applied — needs a decision):** reconcile the two sides, either
+by resetting the server's `airflowadmin` password to `random_password.pg.result`,
+or by re-applying with the Postgres server resource included. Note the server is
+**shared**; DataQ's app uses the separate `dataq_app` role and is unaffected either
+way. This is the concrete case behind the standing warning below that a `-target`ed
+apply here is not safe.
 
 ## Credential rotation
 
