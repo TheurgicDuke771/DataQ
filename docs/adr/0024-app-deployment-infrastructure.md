@@ -2,9 +2,11 @@
 
 > **Amendment (2026-07-27, in place — no new ADR):** the IaC **CLI** is now **OpenTofu**
 > (`tofu`), not Terraform. The stack, state, providers, and every decision below are
-> otherwise unchanged — only the binary that reads them differs. See
-> [§ Amendment — OpenTofu replaces Terraform as the IaC CLI](#amendment-2026-07-27--opentofu-replaces-terraform-as-the-iac-cli)
+> otherwise unchanged — only the binary that reads them differs. See the
+> **"Amendment (2026-07-27) — OpenTofu replaces Terraform as the IaC CLI"** section
 > at the foot of this ADR. Read "Terraform" in the original text below as "the IaC CLI".
+> (Deliberately not an anchor link: MkDocs and GitHub slugify the em dash in that
+> heading differently, so any fragment is broken in one of the two renderers.)
 
 - **Status:** Accepted (amended 2026-07-27 — OpenTofu replaces Terraform as the IaC CLI)
 - **Date:** 2026-06-27
