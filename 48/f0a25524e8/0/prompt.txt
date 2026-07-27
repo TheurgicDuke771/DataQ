@@ -1,0 +1,278 @@
+yeah re-scope #590
+
+---
+
+We are going to keep both Azure and Snowflake one more month, also the ssnowflake PAT for both read and write role are renewed till 29th July and present in the Azure Key Vault.
+
+---
+
+okay where are we standing now w.r.t open issues?
+
+---
+
+Check how many of these we can close now, first plan out then start working anf close as many as possible.
+
+---
+
+Well, let's continue to it. First, fix whatever is broken till now, specifically in this session. Next, onto the open issue fixes. And remember, don't turn away any issue just so that it was a pre-existing one. We are in prod now. Any issue find has to be fixed or filed. Don't just simply ignore it. add it in your memory and the related documents.
+
+---
+
+So, these 70 we can't be fix now [like have some dependency, waiting for some feature to ship first or they themselves are features we are prioritizing now]?
+
+---
+
+start with the actionable 26, plan it out then start execution
+
+---
+
+continue
+
+---
+
+start with stage #2
+
+---
+
+Okay, on with #943, then continue to batch #3. 
+[P.S. - try not to break things in every step :)]
+
+---
+
+tell me more about #993
+
+---
+
+let's continue on batch #3
+
+---
+
+continue, pick up the issue based on priority and dependencies
+
+---
+
+continue...
+
+---
+
+<task-notification>
+<task-id>a1632cb73eb3d096c</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/6bce82f7-34e0-4cdf-945a-24fd53cdc914/tasks/a1632cb73eb3d096c.output</output-file>
+<status>completed</status>
+<summary>Agent "Agent 4 prior PR comments" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Findings
+
+**Prior PRs touching these files:** only one — PR #258 (`feat(checks): custom-SQL checks via GX UnexpectedRowsExpectation`, merged 2026-06-14/15), which created `custom_sql.py` and `test_custom_sql.py`. PR #1009 is the only other PR to touch either file since. There is no other history to mine.
+
+**Review comments on PR #258:** No human review comments exist. The only two review items were automated CodeQL alerts (#15, #16, `py/polynomial-redos`) flagging `re.sub(r"[;\s]+$", ...)` as a ReDoS sink on user-supplied SQL. Both were already fixed **within PR #258 itself** (before merge) by replacing the regex with a linear `str.rstrip(_TRAILING_CHARS)` — visible today at `backend/app/services/custom_sql.py:32-35,186`, with a comment crediting CodeQL for the finding. PR #1009 doesn't touch production code (it's test-only, 189 additions / 0 deletions in `test_custom_sql.py`, confirmed via `gh pr view 1009 --json files`), so this fixed finding isn't reopened or at risk.
+
+I checked whether the current `_LEADING_KEYWORD`/`_WORD` regexes (lines 92-93) reintroduce the same ReDoS class — they don't; both are simple non-overlapping character-class repetitions with no backtracking ambiguity, so no new instance of the #15/#16 pattern exists.
+
+**Issue #278** (`test-hardening: triage the 63 mutmut survivors in custom_sql.py`, which this PR fixes) has explicit acceptance criteria: "All 63 survivors triaged: test added or wontfix rationale" + "mutmut re-run, score recorded." PR #1009 satisfies both — 32 new tests close real gaps, and the remaining 31 survivors are documented inline in the test file with three categorized wontfix rationales (error-prose mutations, falsy-substitution equivalents, unkillable quote-scanner probe-window shifts verified by exhaustive verdict-level differential testing). The score (139/31/15, 83.2%) is recorded in the PR body.
+
+**Cross-checked prior mutation-spike guidance** (#277 mutmut adoption, #563 W8 spike, #898 v1.1 spike) for house conventions this PR should follow:
+- Equivalent/stub-seam mutants classified as "no action" rather than chased — PR #1009 follows this exactly (falsy substitutions, error prose).
+- "Findings filed, not required fixed" was the #563/#898 norm for spike survivors — PR #1009 goes further by actually fixing the real gaps and only leaving genuinely-equivalent ones, consistent with #278's stricter AC (not merely "filed").
+- #563 flagged a specific anti-pattern (pinning colour-map/UI-contract *data* that nothing else asserts) — not applicable here; this PR pins the `detail` payload contract, which is the equivalent "part that matters" for this module.
+
+**Other recent working-agreement checks:**
+- The `#1008`/`#787` fix (hoist side-effecting calls out of `assert`, since `python -O` strips them) — I checked the new test bodies; all `validate_query(...)` calls are either inside `with pytest.raises(...)` blocks or standalone statements before an `assert`, never embedded inside an `assert` itself. No regression of that pattern.
+- `pyproject.toml`'s `[tool.mutmut]` spike config — PR #1009's file list confirms it is **not** touched, consistent with the PR body's claim that the spike config was reverted.
+
+**Conclusion:** No unresolved prior review guidance applies to this PR. The one substantive finding in this file's history (CodeQL ReDoS, PR #258 review comments on alerts #15/#16) was already fixed before merge and is untouched by this test-only PR. PR #1009's methodology (equivalent-mutant triage, verdict-level differential testing over raw-output comparison, fail-open-direction test framing) is consistent with — and in places more rigorous than — the precedent set in #563 and #898.</result>
+<usage><subagent_tokens>92311</subagent_tokens><tool_uses>16</tool_uses><duration_ms>92477</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a8492cceea7c7481d</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/6bce82f7-34e0-4cdf-945a-24fd53cdc914/tasks/a8492cceea7c7481d.output</output-file>
+<status>completed</status>
+<summary>Agent "Agent 2 shallow bug scan" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Review of PR #1009 (backend/tests/services/test_custom_sql.py)
+
+I read the diff (`gh pr diff 1009`) and cross-checked every new test against the real `validate_query`/`_strip_noncode` implementation in `backend/app/services/custom_sql.py`, then ran the file with pytest and with per-test coverage instrumentation.
+
+**1. Does any test assert something dangerous is accepted?** No. I traced `_strip_noncode` by hand for every "accept" test and confirmed with `pytest` (98/98 pass, no unexpected raises):
+- `test_short_and_empty_string_literals_close_normally` — verified the `.format(q="'")` parametrize actually produces `"SELECT '' FROM {batch}"`, `"SELECT '''' FROM {batch}"`, `"SELECT 'a' FROM {batch}"` (printed them directly — matches the inline comments exactly). None contain a forbidden keyword; the doubled-quote escaping resolves correctly in all three (traced the scanner index arithmetic by hand for the 4-quote case).
+- `test_an_empty_block_comment_is_not_read_as_unterminated` (`/**/`), `test_a_query_may_open_with_a_block_comment`, and the two comment-touching-a-keyword tests — all benign strings with no forbidden keyword anywhere; they exercise the fail-open→false-rejection direction only, not a fail-closed→bypass direction.
+
+None of these smuggle a keyword or a second statement past the guard. Clean.
+
+**2. Vacuous tests / does the loop exercise what it claims?**
+- Every input in `test_every_rejection_carries_the_query_key_in_its_detail`'s loop does actually raise (confirmed by the passing `pytest.raises` blocks) and does carry `query_key`.
+- However, the docstring's claim is **not accurate as written**. I isolated coverage for just that one test:
+  ```
+  pytest backend/tests/services/test_custom_sql.py::test_every_rejection_carries_the_query_key_in_its_detail \
+    --cov=backend.app.services.custom_sql --cov-report=term-missing
+  → custom_sql.py 62% covered, missing lines 199-209, 223-233
+  ```
+  Lines 199–209 in `backend/app/services/custom_sql.py` are the "not select/with" rejection and the "forbidden keyword" rejection — i.e. 2 of the 6 raise sites are **not** hit by this test's loop. The loop's 5 inputs actually collapse to only 4 distinct raise sites (the empty-string and whitespace-only cases both hit the same top-of-function branch at line 171-172). The docstring "All six rejection paths, not just the two informative ones" is technically describing the union of this test plus the adjacent `test_the_error_detail_is_a_stable_contract_not_just_a_message` (which does cover the missing two, with `first_keyword`/`forbidden` detail). Combined, all six paths are covered across the two tests — but read literally, this one test's own docstring overclaims what its own loop exercises. Minor doc-accuracy nit, not a functional gap (both missing paths are independently tested elsewhere with equally strong `query_key` assertions).
+
+**3. `.format(q="'")` construction** — confirmed by direct execution, produces exactly the three queries the inline comments describe (empty literal / doubled-escaped-quote literal / odd-offset one-char literal). No mismatch.
+
+**Overall:** No dangerous-accept bugs, no truly vacuous assertions, all 98 tests pass against the real implementation, and the `.format()` construction is correct. The only thing worth a note (not a blocker) is the docstring overclaim on `test_every_rejection_carries_the_query_key_in_its_detail` ("all six paths") when its own loop only reaches 4 of the 6 raise sites — the other 2 are covered by the very next test in the same file, so there's no actual coverage gap, just an imprecise comment.</result>
+<usage><subagent_tokens>74467</subagent_tokens><tool_uses>7</tool_uses><duration_ms>137498</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a5b29d95587e4a516</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/6bce82f7-34e0-4cdf-945a-24fd53cdc914/tasks/a5b29d95587e4a516.output</output-file>
+<status>completed</status>
+<summary>Agent "Agent 5 code comment compliance" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Findings — PR #1009 review of `custom_sql.py` guardrail comments vs. the new tests
+
+**Scope confirmed:** `git diff main...3272d6b8` touches only `backend/tests/services/test_custom_sql.py` (+189 lines). `backend/app/services/custom_sql.py` and `pyproject.toml` are untouched by this PR.
+
+### 1. `_strip_noncode` docstring contract — compliant
+Checked all new tests against the three documented decisions:
+- **Single left-to-right pass**: `test_a_block_comment_ends_at_its_own_terminator_not_the_last_one` and `test_a_line_comment_blanks_only_its_own_line_not_the_rest_of_the_query` pin exactly the "nearest terminator, not last" behavior the real (unmutated) code already has (`sql.find(...)` always finds the nearest match) — verified by tracing, not asserting mutant behavior.
+- **Backtick NOT a quote**: unchanged pre-existing test (`test_backtick_is_not_a_string_quote`) is untouched by this PR; no new test treats backtick as a quote.
+- **Fail-closed on unterminated string/comment**: `test_unterminated_block_comment_is_rejected` / `test_unterminated_string_is_rejected` (pre-existing) plus the new `test_an_empty_block_comment_is_not_read_as_unterminated` and `test_a_query_may_open_with_a_block_comment` all assert **accept** only for genuinely well-formed cases (`/**/`, `/* leading */ SELECT...`) — none weaken or contradict fail-closed. Ran `python3 -m pytest backend/tests/services/test_custom_sql.py -q --no-cov`: **98 passed**, confirming the new tests match real (not hypothetical) behavior.
+
+### 2. `_FORBIDDEN_KEYWORDS` `replace`/`comment` exclusion — compliant
+`test_each_forbidden_keyword_is_rejected` is parametrized over the actual `_FORBIDDEN_KEYWORDS` set, which correctly excludes `replace`/`comment`, so it can't assert either is forbidden. `VALID_QUERIES` still includes the pre-existing `replace(name, 'a', 'b')` case proving it's allowed. No new test assumes `replace`/`comment` are rejected.
+
+### 3. `[tool.mutmut]` reversion — compliant
+No diff to `pyproject.toml` at all; the block currently (and still) points at `dashboard_service.py` / `test_dashboard_service.py`, not `custom_sql.py`. The commit message's "spike config is reverted" claim is trivially true since it was never committed pointed elsewhere in this PR.
+
+### 4. Triage-comment verification (the part worth the effort)
+
+**a) "falsy substitution" mutants only read via `not …` — TRUE.** Grepped every use of `well_formed`/`closed` in `custom_sql.py`: `well_formed = False` appears at exactly 2 sites (unterminated block comment; unterminated string via `if not closed`), and is read only at `if not well_formed:` in `validate_query`. `closed = False`/`= True` is read only at `if not closed:`. That's exactly 3 `False`-literal assignment sites in the whole function — matching the claimed "(3)" falsy-substitution mutant count exactly.
+
+**b) "4 quote-scanner mutants can't change `validate_query`'s verdict" — tried hard to refute, could not.** I reimplemented `_strip_noncode` + the verdict logic with the doubled-quote probe window parameterized, then ran the real `sql[i+1:i+2]` window against all four claimed mutants (`[i-1:i+2]`, `[i+2:i+2]`, `[i+1:i-2]`, `[i+1:i+3]`):
+- ~37,600 random fuzz strings over a SQL-relevant alphabet (quotes, `;`, `-`, `/`, `*`, `\n`, `drop` letters), length ≤9
+- exhaustive enumeration over 3–4 symbol alphabets (incl. exact `drop` spelling) up to length 9–12
+- all-quote strings up to length 16, and single-marker-insertion sweeps up to length 10
+
+**Zero verdict divergences found in any of it.** Hand-derivation explains why: `[i-1:i+2]` and `[i+2:i+2]` can never produce a length-1 slice while the loop invariant `1 ≤ i &lt; n` holds, so both always evaluate "not doubled" — but a genuine doubled-quote's second character is by definition adjacent, so treating it as an early close just makes the very next outer-loop iteration reopen the literal on that same character (zero-width gap, nothing leaks). `[i+1:i-2]` is empty for `i≥2`, and its one reachable case (`i=1`, via negative-index wraparound) coincides exactly with the real `[i+1:i+2]` window's bounds. `[i+1:i+3]` only shrinks to length 1 when `i+2==n` (last char), and in that exact case the real window lands on the same character too. I could not construct a counterexample by any method — the "unkillable" claim holds.
+
+**c) Score arithmetic — a real inconsistency.** `139 + 31 + 15 = 185` ✓ (total reconciles). But the three stated categories — "~22" (error prose) + "3" (falsy substitution) + "4" (quote-scanner) — sum to **29, not the claimed 31 survivors**, a gap of 2. The comment asserts "every remaining one was examined and falls into three groups," which implies completeness, yet the explicit numbers don't add up. The "~22" is flagged as approximate so this *could* just mean the real prose count is 24, but as written it's unverifiable and worth a fix — either tighten "~22" to the exact count, or account for the 2 missing survivors. I did not re-run mutmut to get ground truth (expensive, and it's explicitly a manual, non-CI spike per CONTRIBUTING rule 4a) — flagging this as something the PR author should reconcile rather than asserting a miscategorization.
+
+### Bottom line
+Everything in the triage comment checks out **except the category-count arithmetic (29 vs. 31 claimed survivors)**, which should be tightened before merge — either correct the "~22" or account for the 2 unexplained survivors. All docstring-contract compliance checks (fail-closed, backtick, single-pass, `replace`/`comment` exclusion, mutmut config reversion) pass, and the headline claim — that the 4 quote-scanner probe-window mutants are genuinely unkillable at the verdict level — survived a real attempt to break it.</result>
+<usage><subagent_tokens>111725</subagent_tokens><tool_uses>21</tool_uses><duration_ms>450872</duration_ms></usage>
+</task-notification>
+
+---
+
+continue on #898. 
+Next start with batch #4
+
+---
+
+continue...
+
+---
+
+continue...
+
+---
+
+Start with batch #5
+
+---
+
+Continue with batch #5, deploy the changes to prod, if required for testing.
+
+---
+
+continue with batch #5
+
+---
+
+do the live testing whever applicable, and continue with batch #5
+
+---
+
+continue...
+
+---
+
+Continue, fix the prod issues first
+
+---
+
+Airflow is a harness job. Did you check if it is, stopped deliberately?
+
+---
+
+Ignore this for now, but let's start maintaining a log [repurspose the HARNESS_TODO maybe] when we starting/stopping the harness jobs, which services are kept alive which were disabled with date-time. 
+same with cred rotation - which day which cred get rotated, and what is the expiery day. 
+And add a hook to ensure the log kept up-to-date.
+
+---
+
+Can you check if HARNESS_TODO still needed, if not remove it. 
+then continue
+
+---
+
+continue
+
+---
+
+close #1023 with the generic msg. [that's okay because dataq not able to reach it beacuse the service is stopped] 
+what do we need to close out #1024? 
+Then close out remaining of batch #5 & #6, also try to close the issues we filed during this exerise. 
+Plan first then start execution, this is gonna be a long haul.
+
+---
+
+list the items/decision you need from me
+
+---
+
+* Snowflake access granted, 
+And both tokens are rotated [you can update the kv]. [/Users/arijit/Downloads/DATAQ_READER_PAT_ROTATED_1785094071464-token-secret.txt, /Users/arijit/Downloads/REDACTED.txt]
+
+* Yes, run the ad-hoc harness job, [BUT AFTER YOUR TESTING MAKE SURE ALL THE RESOURCES ARE STOPPED OR DISABLED] 
+
+* #998 - per-suite health rolled up
+
+* #989 - go with option #c
+
+* Are #925 / #919 / #912 / #892 actually in this burn-down?  -> Yes close them out.  
+
+* #748 / #999 / #685 -> Also keep it part of this exerise. 
+
+* Depploy credence -> deploy after each completed tier, not per PR.
+
+
+
+Now, re-visit and update the plan if required, otherwise start execution.
+
+---
+
+plan looks good. continue
+if you need harness you can use this script - `/Users/arijit/Coding/Python/DataQ-harness/scripts/harness_window.sh` [BUT MAKE SURE EVERYTHING IS STOPPED/DISABLED AFTERWARDS, don't solely rely on the script]
+
+---
+
+why you are stopping at every turn, it is yours to complete, run through the full TODO list, the day is just started.
+
+---
+
+for the terraform is DATAQ_LOADER role is sufficient or higher privilages required?
+
+---
+
+Do we need the terraform provider, at this point, it was an one time infra creation, I belive it is no longer needed, But check once and let me know?
+
+---
+
+I've created an Account Admin PAT - `/Users/arijit/Downloads/DATAQ_ADMIN_PAT-token-secret.txt` valid for next 15 days. use it instead of sf_password. rest replace it with LOADER_PAT
+
+---
+
+do the terraform plan/apply. 
+Then continue on the remaining items from the TODO list
