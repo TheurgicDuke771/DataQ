@@ -67,7 +67,7 @@ five mechanisms:
    dbt hop. Daily beat, **dark by default** (`WAREHOUSE_LINEAGE_ENABLED` — the views need a
    grant); the tier that answered and any degraded/failing state surface on the asset's
    lineage graph so a view-level-only or stale graph never reads as a confident complete
-   one ([details](orchestration.md#lineage-from-the-warehouse-warehouselineageprovider-858)).
+   one ([details](orchestration.md#lineage-from-the-warehouse-the-warehouselineageprovider-seam-858)).
    **Column grain (#901):** where the warehouse offers it (UC
    `system.access.column_lineage` — live-verified), the pull refines each table edge with
    `upstream column → downstream column` pairs, shown on the asset page to every

@@ -390,6 +390,20 @@ a hang into a failed deploy — better, but still a failed deploy.
 
 ## Operational notes
 
+- **Env vars set out-of-band must be reconciled back into the stack (#1086).** The Deploy
+  workflow is `az`-only — it never runs `tofu` — so it is easy to set a container env var
+  with `az containerapp update` and never land it in `containerapps.tf`. When that happens
+  the stack silently stops describing production, and **the next `tofu apply`, for any
+  unrelated reason, deletes the var.** This has already bitten once: `LINEAGE_PROVIDER`,
+  `MARQUEZ_URL` and `WAREHOUSE_LINEAGE_ENABLED` were live but absent from the stack.
+  - Treat `az containerapp update --set-env-vars` as a **temporary** measure only, and
+    land the same change in `containerapps.tf` in the same session.
+  - Before any apply, read the plan with `tofu show -json` and diff the env **name sets** —
+    the azurerm provider renders the `env` block **positionally**, so the human-readable
+    plan looks like a large shuffle and hides what actually changes. Rendered plans have
+    misread this drift before.
+  - `tofu plan` returning `No changes` is the check that the stack is still truthful. Run
+    it periodically, not only when you intend to apply.
 - **Restart dependent Container Apps after a shared-Postgres delete/recreate** —
   the DB host is injected as a start-time secret snapshot, so every dependent
   revision must be restarted or it keeps resolving the old/dead host.
