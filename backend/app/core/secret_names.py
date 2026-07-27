@@ -45,6 +45,15 @@ _MAX_SLUG: Final = 60
 # connections that share a slug — collision is not a practical concern.
 _ID_CHARS: Final = 8
 
+# Hard bound on the free-text we run regexes over. `_PARENS` is polynomial —
+# `\([^)]*\)` rescans to the end from every "(", so a string of N unmatched "("
+# costs O(N²) (measured: 20k chars ≈ 115 ms). The API caps `name` at 128 today, so
+# this is not reachable through it — but that makes the safety a property of the
+# CALLER's validation rather than of this function, and this function is a library
+# any future caller may reach with unvalidated text. Bounding here makes the cost
+# unconditional. Generous vs the 128-char API cap, and far below the slug cap.
+_MAX_INPUT: Final = 256
+
 # Parenthesised commentary — "(DATAQ_READER)", "(flat files)", "(harness)".
 _PARENS: Final = re.compile(r"\([^)]*\)")
 
@@ -79,7 +88,7 @@ def slugify(text: str) -> str:
     """
     # NFKD splits accented characters into base + combining mark; dropping the
     # marks leaves the recognisable ASCII base letter.
-    decomposed = unicodedata.normalize("NFKD", text)
+    decomposed = unicodedata.normalize("NFKD", text[:_MAX_INPUT])
     ascii_only = decomposed.encode("ascii", "ignore").decode("ascii")
     slug = _ALLOWED.sub("-", ascii_only)
     slug = _DASHES.sub("-", slug).strip("-").lower()
@@ -120,7 +129,7 @@ def connection_secret_ref(
 
     # Drop parenthesised commentary before slugging: it is detail for humans
     # reading the connection list, not identity.
-    bare_name = _PARENS.sub(" ", name)
+    bare_name = _PARENS.sub(" ", name[:_MAX_INPUT])
     noise = set(_TYPE_WORDS.get(conn_type, ())) | set(type_slug.split("-"))
     qualifier = [t for t in slugify(bare_name).split("-") if t and t not in noise]
 

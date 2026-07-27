@@ -62,6 +62,24 @@ def test_slugify_is_bounded() -> None:
     assert len(slugify("a" * 500)) <= 60
 
 
+def test_regex_work_is_bounded_on_hostile_input() -> None:
+    """`_PARENS` is polynomial — it rescans to the end from every "(", so N
+    unmatched "(" costs O(N^2) (20k chars measured at ~115 ms). The API caps `name`
+    at 128, but that makes the safety the CALLER's property, not this function's.
+    Asserted as a time bound because that is the actual claim; a length assertion
+    would pass even if the bound were removed."""
+    import time
+
+    hostile = "(" * 200_000
+    start = time.perf_counter()
+    ref = connection_secret_ref(
+        connection_id=uuid.uuid4(), env="dev", name=hostile, conn_type="snowflake"
+    )
+    elapsed = time.perf_counter() - start
+    assert elapsed < 0.5, f"took {elapsed:.2f}s — the input bound is not being applied"
+    assert KEY_VAULT_NAME.match(ref)
+
+
 @pytest.mark.parametrize(
     ("name", "conn_type", "env", "expected"),
     [
