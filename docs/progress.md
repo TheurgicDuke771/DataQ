@@ -333,10 +333,11 @@ Cloud-independent from here on. Engine follow-ups land first — they touch the 
 flat-file + UC + local SQL; monitor kinds no longer SQL-only (#520); engine follow-ups closed;
 baseline-persistence shape documented for W5 anomaly reuse.
 
-### v1.1 W5 — `anomaly` monitor kind + metric trends (due 2026-08-08) — 0/8
+### v1.1 W5 — `anomaly` monitor kind + metric trends (due 2026-08-08) — 0/8 (+1 unplanned: ADR 0039 secret backend)
 
 | Status | Task | Theme / gap |
 |---|---|---|
+| 🟡 | [#1056](https://github.com/TheurgicDuke771/DataQ/pull/1056) **OpenBao secret backend (ADR [0039](adr/0039-openbao-self-hosted-secret-backend.md))** — fourth `SecretStore` over the **KV v2 API, not a vendor SDK** (one mode serves OpenBao / Vault Community / Enterprise / HCP); **`SECRET_STORE=openbao` replaces `redis`, `RedisSecretStore` deleted** — the plaintext store was the default of the published eval stack. Redis stays (broker + ADR 0035 rate limits). Vault Community is BUSL-1.1 → rule-40-forbidden as a *distributed* component, so we ship the MPL-2.0 LF fork and no license exception is needed. 403/503 never masquerade as "secret missing" (#954/#828 shape). Live-verified: api writes → **worker reads**, nothing in Redis, all three failure modes distinct. Unplanned — closes the last single-cloud seam ahead of #505. Follow-ups: AppRole [#1054](https://github.com/TheurgicDuke771/DataQ/issues/1054); fixes undeclared-httpx [#1055](https://github.com/TheurgicDuke771/DataQ/issues/1055) | Theme 12 / anti-lock-in |
 | ⬜ | [#593](https://github.com/TheurgicDuke771/DataQ/issues/593) `anomaly` kind — rolling z-score + seasonality baseline over `metric_value` history; `skip` on cold start | Theme 1 / G-a |
 | ⬜ | [#594](https://github.com/TheurgicDuke771/DataQ/issues/594) Per-check `metric_value` trend view with threshold bands (+ anomaly-baseline overlay — doubles as #593's visual debugger) | Theme 9 |
 | ⬜ | [#568](https://github.com/TheurgicDuke771/DataQ/issues/568) Validate severity-threshold ordering at authoring time | Theme 1 |
