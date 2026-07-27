@@ -82,6 +82,12 @@ fi
 # back-fill, a blank POSTGRES_PASSWORD trips compose's `${VAR:?}` guard / mismatches
 # the host DATABASE_URL.
 [ -f .env ] || { cp .env.example .env; ok ".env created from .env.example"; }
+# Owner-only. `cp` inherits the umask (typically 644 = world-readable), which was
+# tolerable when these files held a local Postgres password and is not now: .env
+# carries the OpenBao root token, i.e. the key to EVERY credential in the vault
+# (ADR 0039). Applied to both files on every run, so an existing 644 file is
+# tightened too, not just a freshly-copied one.
+chmod 600 .env 2>/dev/null || true
 if ! grep -qE '^POSTGRES_PASSWORD=..*$' .env; then
   sed -i.bak \
     -e "s|^POSTGRES_USER=.*|POSTGRES_USER=${local_pg_user}|" \
@@ -95,6 +101,7 @@ if ! grep -qE '^OPENBAO_TOKEN=..*$' .env; then
 fi
 
 [ -f .env.app ] || { cp .env.app.example .env.app; ok ".env.app created from .env.app.example"; }
+chmod 600 .env.app 2>/dev/null || true  # same reasoning as .env above
 if ! grep -qE '^DATABASE_URL=..*$' .env.app; then
   db_url="postgresql+psycopg2://${local_pg_user}:${local_pg_password}@localhost:5432/${local_pg_db}"
   sed -i.bak -e "s|^DATABASE_URL=.*|DATABASE_URL=${db_url}|" .env.app && rm -f .env.app.bak
