@@ -232,12 +232,26 @@ each was exercised as `DATAQ_LOADER` against the exact operation that failed. A
 temporary stage was created and dropped in `DATAQ_DB.RETAIL`, and a `GRANT`
 statement executed successfully.
 
-> **Not yet re-run end to end.** The privilege probe covers the two errors seen,
-> but a flow can fail for a *second* reason once the first clears — this project's
-> standing lesson is that only a live run is evidence. Re-running `--adf --dbt`
-> (the two that failed; DAGs and iceberg already passed) is the outstanding
-> confirmation. `MANAGE GRANTS` is account-wide and broad — narrowing dbt's
-> `on-run-end` hook remains the tighter long-term option.
+**CONFIRMED end to end 2026-07-27 06:46–06:52** by re-running `--adf --dbt`,
+because a privilege probe proves the privilege and not that the flow completes:
+
+| Flow | 06:32–06:34 (before) | 06:46–06:52 (after) |
+|---|---|---|
+| `pl_flow_a_customers` | Failed | **Succeeded** |
+| `pl_flow_a_orders` | Failed | **Succeeded** |
+| `dbt-lineage` | Failed | **Succeeded** |
+
+DataQ then ingested both ADF runs as `succeeded` on the next 10-minute poll —
+the full chain (grant → flow → orchestration poll → `pipeline_runs`) verified
+through the product, on the freshly deployed image and the renamed secrets.
+
+The confirmation run started **no container app**: neither ADF (managed) nor the
+`dbt-lineage` job depends on the Airflow apps, so all five stayed `Stopped`
+throughout and only jobs were briefly resumed.
+
+> Still worth doing: `MANAGE GRANTS` is account-wide and broad. Narrowing dbt's
+> `on-run-end` grant hook so the role does not need it remains the tighter
+> long-term fix.
 
 ## Credential rotation
 
