@@ -77,6 +77,29 @@ apart.
 |---|---|---|---|---|
 | 2026-07-18 19:36 | `dataq-harness-airflow` (+ `-worker`, `-trigger`) | **Stopped** | royarijit04@outlook.com | Verified from `systemData.lastModifiedAt` on 2026-07-26, not from memory. Intentional. **Why (recovered 2026-07-26 from the harness's own notes, not from Azure):** a `--dbt` window earlier that day hit Snowflake Enterprise's new **MFA-on-password-login** enforcement, killing every password-auth harness leg (`dbt-lineage` failed 19:21Z with `250001 (08001)`); the harness was stopped ~15 min after that session hit the wall. A loader PAT fixed the auth the same day, but a residual GRANT failure remains — now tracked as [#1030](https://github.com/TheurgicDuke771/DataQ/issues/1030) instead of living only in an untracked file. Consequence: DataQ polls every 10 min, ACA's ingress answers 404 for a stopped app, and the connection accumulates failures — 282 by 2026-07-26. Expected to stay down until a test window needs Airflow. |
 | 2026-07-26 06:16 | `dataq-app-{api,worker,frontend}` | Deployed `c401572d` | Deploy workflow | App stack, not harness. Recorded here because the roll restarted the worker and reset in-memory state. |
+| 2026-07-26 23:5x | harness Airflow + worker + `dbt-lineage` + `iceberg-writer` + ADF `ls_snowflake` | **terraform apply (targeted)** — credential propagation only | terraform | First apply since 2026-07-18. Ran `-target` on those five so the new `DATAQ_LOADER` PAT reaches the containers (#1032). Everything stayed **Stopped**; verified after. |
+
+> **Deliberately NOT applied (2026-07-26).** The full plan wanted 8 changes; only
+> 5 were applied. The other three would have been actively wrong right now:
+>
+> * `azurerm_data_factory_trigger_blob_event.orders_landed` and
+>   `..._schedule.customers_daily` — both `activated = false -> true`. A blanket
+>   apply **arms the ADF triggers**, starting pipelines against Snowflake on a
+>   harness that is meant to be asleep. This is the specific outcome the
+>   stop-everything rule exists to prevent, and it is invisible unless you read
+>   the plan.
+> * `snowflake_warehouse.dataq` — `min/max_cluster_count -> null`,
+>   `query_acceleration_max_scale_factor 8 -> -1`. Provider-version drift, not an
+>   intended change; applying it would silently alter the warehouse.
+>
+> Re-check these on any future apply: a plain `terraform apply` here is not safe.
+
+> **Observed, unexplained (2026-07-26).** The mockdata / `dbt-lineage` /
+> `iceberg-writer` ACA jobs still carry live cron expressions (`0 2 * * *` etc.),
+> yet **no execution has run since 2026-07-18** on any of them. So nothing is
+> costing anything — but "the cron is armed" and "the cron fires" evidently
+> disagree, and I have not established why. Worth knowing before assuming a
+> future window's schedule will fire on its own.
 
 > **Note on how the 2026-07-18 "why" was recovered:** Azure told us *when* and
 > *who*, and nothing about *why*. The reason lived in `HARNESS_TODO.md` in the
