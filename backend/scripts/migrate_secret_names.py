@@ -164,6 +164,18 @@ def main(argv: list[str] | None = None) -> int:
         f"{len(failures)} failed\n"
     )
     for old_ref, new_ref in migrated:
+        # CodeQL py/clear-text-logging-sensitive-data fires here and is a FALSE
+        # POSITIVE (alert 65, dismissed with this reasoning). These are Key Vault
+        # key NAMES — `conn-snowflake-retail` -> `conn-snowflake-retail-dev-6729c4f9`
+        # — not credentials. The taint is a name heuristic: they flow from
+        # `Connection.secret_ref`, whose identifier contains "secret", but a
+        # secret_ref is a POINTER; the value it addresses is read into `value` above
+        # and is never printed, logged, or written to disk.
+        #
+        # Printing them is the point. After a rename you must know which keys moved
+        # to reconcile the vault, and #954 — two dead PATs, three weeks — is what
+        # not knowing costs. docs/ops-log.md rule 1 says the same: "A name like
+        # conn-snowflake-retail is a Key Vault *key*, not a credential."
         print(f"  {old_ref}\n    -> {new_ref}")
     for conn_id, why in failures:
         print(f"  FAILED connection {conn_id}: {why}")
