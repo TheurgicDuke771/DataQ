@@ -1,5 +1,11 @@
 """Rename legacy ``conn-<uuid>`` vault keys to the readable ``conn-<env>-<slug>-<id>``.
 
+**ONE-SHOT — DELETE ME (#1060).** This is not product code. The rename is optional:
+`Connection.secret_ref` is a stored column that is never recomputed, so a legacy
+`conn-<uuid>` ref resolves indefinitely and nothing breaks if this never runs. It
+is tracked only so the run that rewrites production Key Vault is a reviewed and
+tested one; remove it (and its tests) once prod has been migrated.
+
 Run against whatever `SECRET_STORE` the environment selects, so the same script
 serves the local OpenBao and production Key Vault.
 
