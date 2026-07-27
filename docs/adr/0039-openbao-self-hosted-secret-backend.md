@@ -8,7 +8,7 @@ Extends the `SecretStore` seam of ADR [0010](0010-provider-agnostic-infrastructu
 
 ## Context
 
-`SecretStore` ([`backend/app/core/secrets.py`](../../backend/app/core/secrets.py)) has carried three implementations since Week 2:
+`SecretStore` ([`backend/app/core/secrets.py`](https://github.com/TheurgicDuke771/DataQ/blob/main/backend/app/core/secrets.py)) has carried three implementations since Week 2:
 
 | Mode | Backend | Used by |
 |---|---|---|
