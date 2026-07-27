@@ -13,7 +13,7 @@ from structlog.testing import capture_logs
 from structlog.typing import EventDict
 
 from backend.app.core import secrets
-from backend.app.core.config import Settings
+from backend.app.core.config import Settings, get_settings
 from backend.app.core.secrets import (
     AzureKeyVaultStore,
     EnvSecretStore,
@@ -131,7 +131,18 @@ def test_akv_store_set_wraps_sdk_exception(monkeypatch: pytest.MonkeyPatch) -> N
 
 
 class _StubCredential:
-    """Stands in for DefaultAzureCredential — records that it was constructed."""
+    """Stands in for DefaultAzureCredential — records construction and close.
+
+    `close()` is real SDK surface (`ChainedTokenCredential.close` closes the
+    transport session of each credential in the chain), so the stub carries it —
+    otherwise the store's close path would be untestable for the production store.
+    """
+
+    def __init__(self) -> None:
+        self.closed = False
+
+    def close(self) -> None:
+        self.closed = True
 
 
 class _StubSecretClient:
@@ -143,7 +154,11 @@ class _StubSecretClient:
         self.vault_url = vault_url
         self.credential = credential
         self.set_calls: list[tuple[str, str]] = []
+        self.closed = False
         _StubSecretClient.instances.append(self)
+
+    def close(self) -> None:
+        self.closed = True
 
     def get_secret(self, name: str) -> SimpleNamespace:
         return SimpleNamespace(value=f"value-of-{name}")
@@ -735,10 +750,22 @@ def test_openbao_set_then_get_roundtrips_through_a_fake_vault() -> None:
 
 def test_get_secret_store_caches_singleton(monkeypatch: pytest.MonkeyPatch) -> None:
     """The identity assertion alone passes for ANY cached object, so also pin the
-    type (#1058). `get_settings()` is lru_cached, so the setenv here decides nothing
-    — it stayed only as a decorative claim that this exercised `env` mode. Asserting
-    the resulting store is what actually ties the test to a mode."""
+    type (#1058).
+
+    The `cache_clear()` is what makes the setenv mean anything, and it is required,
+    not defensive. `get_settings()` is `lru_cache`d; the autouse `_reset_caches`
+    clears it, but the autouse `stub_run_dispatch` then imports `run_dispatch` →
+    `create_celery_app()` → `get_settings()`, repopulating it from the AMBIENT
+    environment. That import happens once per process, so in a whole-file run the
+    cache is empty here by luck of ordering and the setenv wins; run this test alone
+    against a developer `.env.app` (which ships `SECRET_STORE=openbao`) and it loses.
+
+    Without the clear, this test asserts what the developer's env file says rather
+    than what the test says — green in CI, red alone, which is precisely the
+    single-test loop the local-verification rule depends on.
+    """
     monkeypatch.setenv("SECRET_STORE", "env")
+    get_settings.cache_clear()
     first = get_secret_store()
     second = get_secret_store()
     assert first is second
@@ -780,14 +807,21 @@ def test_openbao_close_releases_a_client_it_built() -> None:
     assert store._client is None
 
 
-def test_openbao_close_does_not_touch_an_injected_client() -> None:
-    """An injected client belongs to its caller. Closing it would break a caller that
-    reuses the pool — and would break the MockTransport doubles this suite relies on
-    the moment a reset happens mid-test."""
+def test_openbao_close_leaves_an_injected_client_attached_and_open() -> None:
+    """An injected client belongs to its caller, so `close()` must be a full no-op.
+
+    Both halves matter. Closing it would break a caller reusing the pool. But merely
+    DETACHING it is worse: the store would then build a real
+    `httpx.Client(base_url=addr)` on next use, so a MockTransport-backed store would
+    silently start opening live sockets to the vault after any reset — and the reset
+    runs from an autouse fixture. Asserting only `not is_closed` would miss that, so
+    the association is pinned too."""
     injected = httpx.Client(transport=httpx.MockTransport(lambda _r: httpx.Response(200)))
     store = OpenBaoSecretStore("http://openbao:8200", "tok", client=injected)
     store.close()
     assert not injected.is_closed
+    assert store._client is injected
+    assert store._client_lazy() is injected  # still the mock, not a fresh real pool
     injected.close()
 
 
@@ -796,7 +830,40 @@ def test_openbao_close_is_idempotent_and_reusable() -> None:
     store._client_lazy()
     store.close()
     store.close()  # must not raise on an already-closed store
-    assert not store._client_lazy().is_closed  # rebuilt for continued use
+    rebuilt = store._client_lazy()  # rebuilt for continued use
+    assert not rebuilt.is_closed
+    rebuilt.close()
+
+
+def test_akv_close_releases_both_the_client_and_the_credential(
+    stub_azure_sdk: type[_StubSecretClient],
+) -> None:
+    """The PRODUCTION store (ADR 0024 runs `azure_key_vault`) must close BOTH.
+
+    They hold separate transport sessions: `SecretClient.close()` frees only its own
+    pipeline, while `DefaultAzureCredential` opens one per credential in its chain.
+    Closing just the client leaves the token-acquisition sockets open — the same leak
+    #1058 is about, half-fixed.
+    """
+    store = AzureKeyVaultStore("https://example.vault.azure.net/")
+    store._client_lazy()
+    # Read the client off the stub registry, not `store._client`: the attribute is
+    # declared `SecretClient | None`, whose real type has no `closed` flag.
+    (client,) = stub_azure_sdk.instances
+    credential = store._credential
+    store.close()
+    assert client.closed
+    assert credential is not None and credential.closed
+    assert store._client is None and store._credential is None
+
+
+def test_akv_close_is_idempotent_and_rebuilds(stub_azure_sdk: type[_StubSecretClient]) -> None:
+    store = AzureKeyVaultStore("https://example.vault.azure.net/")
+    store._client_lazy()
+    store.close()
+    store.close()  # no second close, no AttributeError on the cleared handles
+    store._client_lazy()
+    assert len(stub_azure_sdk.instances) == 2  # a genuinely fresh client
 
 
 def test_reset_secret_store_cache_rebuilds(monkeypatch: pytest.MonkeyPatch) -> None:
