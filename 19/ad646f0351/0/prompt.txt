@@ -1,0 +1,36 @@
+Hey can you check this and let me know what you think about this - 
+```
+## High-Level Migration Summary
+
+Moving `deploy/terraform/azure/` from Terraform to OpenTofu is a **binary swap, not a redesign**:
+
+1. Swap `hashicorp/setup-terraform` → `opentofu/setup-opentofu` in the `Deploy` GitHub Actions workflow; rename `terraform` commands to `tofu`
+2. State file, provider blocks (`azurerm`, `azuread`), and the OIDC federated-credential auth flow carry over unchanged — OpenTofu reads Terraform state and the standard registry natively
+3. The documented manual `terraform import` step (the `azuread_application_pre_authorized` grant) becomes `tofu import` with identical syntax
+4. Validate with a `tofu plan` against the live Azure state before trusting it in production — this is a deployed system, not greenfield
+5. Optionally add OpenTofu's native state encryption afterward, and a short ADR documenting the change for consistency with your existing ADR trail
+
+No Sentinel, no Terraform Stacks, no HCP Terraform dependency anywhere in the current setup, so nothing structurally blocks the move in either direction.
+
+## Pros for DataQ
+
+- **Consistency with ADR 0031** — this is the strongest argument. DataQ's standing dependency guardrail explicitly names **BUSL** (Terraform's license since v1.6) as a category the project keeps out of its tree, and the ADR separately rejected a BSL-style license for DataQ itself as incoherent with its MIT/free-OSS stance. Terraform-as-deploy-tool falls outside that guardrail's literal scope (it's never distributed in the images), but it's the one place a BUSL tool still touches the project. Closing that gap is about narrative coherence for an OSS project that's explicit about this stance, not fixing a violation.
+- **No BSL ambiguity for an OSS-distributed project** — matches the MIT/free-distribution posture end to end, repo to deploy tooling.
+- **State encryption at rest** — a real, usable win given your state tracks Key Vault refs, DB/Redis connection info, and the ADF webhook-secret pattern.
+- **No HCP Terraform paywall exposure** — you're not on it today; staying on OpenTofu means you never get nudged toward it later.
+- **Cheapest to do now** — one environment, one workflow file, no external contributor dependency yet. Cost only grows as AWS/GCP targets and more contributors show up.
+
+## Cons / friction points
+
+- **No functional unblock today** — your single-environment Azure stack doesn't need any OpenTofu-exclusive feature to function; the win is posture and consistency, not new capability.
+- **Ecosystem lag** — some modules, registry pages, and AI-assistant tutorials still default to `terraform`; occasional mental translation.
+- **Real validation work, not a no-op** — a live production deployment means a `tofu plan` dry-run against current state is mandatory before cutover, even though the syntax swap itself is trivial.
+- **Slightly smaller contributor pool familiarity** — Terraform is still more widely known than OpenTofu if DataQ ever gets external `deploy/` contributions.
+- **No forcing function** — you're not paying for HCP, not using Sentinel, not commercially exposed to the BSL — so this remains a "cheap insurance, low urgency" call rather than a must-fix.
+
+**Bottom line:** the technical migration is low-effort and low-risk. What tips this from "nice to have" to "worth doing" is ADR 0031 — a project that's gone on record rejecting BSL-style licensing for itself has a coherence reason, not just a cost/benefit reason, to not run its deploy tooling on a BUSL-licensed CLI. Doing it now, while the stack is small and singular, is the cheapest this will ever be.
+```
+
+---
+
+Great, lets plan it out then start working on it - first ADRs then the actual coding and documentations.
