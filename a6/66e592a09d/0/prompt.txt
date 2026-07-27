@@ -1,0 +1,28 @@
+<task-notification>
+<task-id>b3sp30ghz</task-id>
+<tool-use-id>toolu_012cqfKoufM5JY4tsASM7uib</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/fcf147da-f22f-41ab-ae99-a0fbd9e19a4c/tasks/b3sp30ghz.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for CI to complete" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Are we storing the cred for openbao?
+
+---
+
+why the key name itself stored as a secret?
+
+---
+
+What I ment was key name like [demo-adf-sp-client-secret] is stored as a sceret along with its actual value as seperate secret. 
+So I'm trying to understand how the secrerts are linked, for example how will you fetch the snowflake dataq_reader_pat
+
+---
+
+not in azure key vault, in the open bao
+
+---
+
+Instead of those seeded secrets, can you actually copy the secrets already present in the Azure Key Vault and test it against the live prod?

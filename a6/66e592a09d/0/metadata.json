@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "a666e592a09d",
+  "session_id": "fcf147da-f22f-41ab-ae99-a0fbd9e19a4c",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-27T02:13:39.395989Z",
+  "branch": "feature/readable-secret-names",
+  "checkpoints_count": 3,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "d2549691943a",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 594,
+    "cache_creation_tokens": 693544,
+    "cache_read_tokens": 79627858,
+    "output_tokens": 224611,
+    "api_call_count": 298
+  },
+  "session_metrics": {
+    "turn_count": 6
+  }
+}
