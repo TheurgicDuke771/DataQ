@@ -298,14 +298,24 @@ harness apps stayed `Stopped`.** Question asked — can the local stack keep a
 warehouse when Snowflake lapses, the way MinIO keeps the landing zone when Azure
 does. Answered by spiking before building, which was the right order.
 
-**LocalStack for Snowflake is licensed and cannot be evaluated without an
-account.** `localstack/snowflake:2026.6.0` exits **55, "License activation
-failed"** with no token; there is no community tier, only a free non-commercial
-OSS licence by application. Same shape as the Databricks Free-Edition gap (G-h):
-fine for demo/eval, decided again before anything commercial.
+**LocalStack for Snowflake was evaluated and REJECTED on licensing.**
+`localstack/snowflake:2026.6.0` exits **55, "License activation failed"** with no
+token; there is no community tier, only a free non-commercial OSS licence by
+application. Its fidelity was therefore never observed — it cannot start.
 
-So the spike was split into **our plumbing** vs **their fidelity**, and the first
-half was settled for free against **fakesnow** (Apache-2.0, DuckDB-backed).
+That produced a **standing rule, adopted 2026-07-27: nothing in the harness may
+require a commercial licence**, even though the harness is untracked and
+undistributed. CONTRIBUTING rule 40 / ADR 0031 govern what DataQ *ships*; this is
+the stricter harness-side rule. The reasoning is that a licence gate on a
+contingency stack defeats the contingency — the point of an offline harness is to
+keep running when accounts lapse, and a licence is one more account that can
+lapse. Trading an Azure subscription for a LocalStack one is not a wind-down.
+Full evaluation record, including the two integration details worth keeping, is
+in the harness README.
+
+The spike was therefore split into **our plumbing** vs **their fidelity**, and the
+first half was settled for free against **fakesnow** (Apache-2.0, DuckDB-backed) —
+which is now the only stand-in.
 `local/snowflake_probe.py` runs DataQ's *real* functions, not equivalents —
 **6/6**: driver, DataQ's DSN through `connect_args`, volume + freshness monitors,
 the profiler aggregate, and the full GX `add_snowflake` → `run_expectations`
