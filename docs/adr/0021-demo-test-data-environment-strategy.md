@@ -1,6 +1,14 @@
 # ADR 0021 — Live test/demo-data environment (retail model) lives outside the repo
 
-- **Status:** Accepted
+> **Amendment (2026-07-27, in place — no new ADR):** the harness's IaC **CLI** is now
+> **OpenTofu** (`tofu`), not Terraform, converted in the same pass as the app stack.
+> Rationale, evidence and consequences are recorded once in the ADR 0024 amendment
+> ("Amendment (2026-07-27) — OpenTofu replaces Terraform as the IaC CLI"); this note
+> exists so the change is visible to anyone reading the harness decision. Nothing else
+> in this ADR changes — the harness stack is still out-of-repo and not git-tracked, and
+> "Terraform" below should be read as "the IaC CLI".
+
+- **Status:** Accepted (amended 2026-07-27 — harness IaC CLI is OpenTofu; see ADR 0024)
 - **Date:** 2026-06-21
 - **Deciders:** @TheurgicDuke771
 - **Related:** ADR [0004](0004-orchestration-abstraction.md) (orchestration abstraction — the flows exercise it), [0010](0010-provider-agnostic-infrastructure-seams.md) / [0013](0013-marketplace-distribution-and-anti-lock-in.md) (Azure/Key Vault is one impl behind each seam; no Azure resource names in the repo), [0003](0003-gx-only-for-v1.md) (GX run paths the flows feed), [0012](0012-monitor-kind-seam.md) (the reserved freshness/volume/anomaly/schema-drift kinds the harness shapes data for), [0014](0014-reconciliation-comparison-check-kind.md) (the cross-platform `comparison` target the route map sets up). Discharges the standing **"live warehouse/file run — deferred Week-1 smoke"** caveat carried in CLAUDE.md §13 and `docs/progress-v1.md`.

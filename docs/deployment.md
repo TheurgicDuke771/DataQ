@@ -1,7 +1,7 @@
 # Production deployment
 
 How to stand DataQ up in production. This is the operator's overview; the exhaustive
-provisioning runbook, the Terraform, and the complete env-var reference live in
+provisioning runbook, the OpenTofu stack, and the complete env-var reference live in
 [`deploy/README.md`](https://github.com/TheurgicDuke771/DataQ/blob/main/deploy/README.md) and
 [`deploy/terraform/azure/`](https://github.com/TheurgicDuke771/DataQ/tree/main/deploy/terraform/azure).
 Azure is the supported target today; AWS/GCP are planned behind the same seams.
@@ -34,7 +34,7 @@ frontend proxy (ADR 0028 §5).
 
 ## 1. Provision
 
-Use the in-repo Terraform ([`deploy/terraform/azure/`](https://github.com/TheurgicDuke771/DataQ/tree/main/deploy/terraform/azure),
+Use the in-repo OpenTofu stack ([`deploy/terraform/azure/`](https://github.com/TheurgicDuke771/DataQ/tree/main/deploy/terraform/azure),
 ADR 0024) to stand up the app stack — the Container Apps, the migrate job, Redis, Key Vault +
 managed identity, App Insights, and the SSO app registrations — plus a dedicated database and
 least-priv role on your Postgres server. Set the required **GitHub environment variables and
