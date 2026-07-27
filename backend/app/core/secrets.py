@@ -32,6 +32,8 @@ from __future__ import annotations
 
 import os
 import threading
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Final, Protocol, runtime_checkable
 from urllib.parse import quote
 
@@ -127,6 +129,50 @@ class SecretStoreUnavailableError(Exception):
 
 class SecretWriteError(Exception):
     """Raised when a secret cannot be written to the backing store."""
+
+
+@dataclass(frozen=True)
+class SecretInfo:
+    """One entry from a store listing: the name, and when the store first saw it.
+
+    `created_at` is what makes an orphan sweep safe (#1059) — it is the only signal
+    that separates "abandoned months ago" from "being written right now by a
+    connection-create that has not committed yet". A store that cannot supply it
+    reports ``None``, and the sweep must then refuse to purge rather than guess.
+    """
+
+    name: str
+    created_at: datetime | None
+
+
+def _ensure_aware(value: datetime | None) -> datetime | None:
+    """Treat a naive datetime as UTC. None passes through."""
+    if value is None or value.tzinfo is not None:
+        return value
+    return value.replace(tzinfo=UTC)
+
+
+def _parse_vault_timestamp(raw: object) -> datetime | None:
+    """Parse a KV v2 `created_time` into an aware UTC datetime, or None.
+
+    OpenBao/Vault emit RFC 3339 with **nanosecond** precision
+    (``2026-07-27T04:53:23.123456789Z``). Verified against the pinned interpreter
+    rather than assumed: Python 3.13's `fromisoformat` accepts both the `Z` suffix
+    and >6 fractional digits, truncating to microseconds — so no pre-processing is
+    needed, and an earlier hand-rolled truncation here was dead code justified by a
+    false premise. If the Python pin ever moves backwards, this is the seam to fix.
+
+    What IS load-bearing is returning None rather than raising: this value crosses a
+    **driver boundary**, and the caller reads an unknown age as "too young to touch".
+    Any surprise from the server therefore fails towards *not deleting* a credential.
+    """
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw.strip())
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
 @runtime_checkable
@@ -246,6 +292,37 @@ class AzureKeyVaultStore:
         except Exception as exc:
             log.warning("secret_delete_failed", name=name, error=str(exc))
 
+    def list_secrets(self) -> list[SecretInfo]:
+        """Enumerate the vault's secrets for the orphan sweep (#1059).
+
+        Uses `list_properties_of_secrets`, which returns names and `created_on`
+        WITHOUT the values — deliberately: a sweep has no business reading
+        credentials, and fetching them would put every secret in the workspace
+        through this process's memory once a day for no reason.
+
+        Raises `SecretStoreUnavailableError` on failure rather than returning a
+        partial list. A truncated listing is indistinguishable from "these secrets
+        no longer exist", which in a sweep means "purge them" — so a half-answer
+        here is far more dangerous than no answer.
+        """
+        try:
+            return [
+                # `created_on` comes straight off the SDK; whether it is tz-aware is
+                # the DRIVER's choice, not ours, and a naive value would raise
+                # TypeError when the sweep subtracts it from an aware `now` — swallowed
+                # by the task's blanket except into a silent "0 orphans". Normalised
+                # here at the boundary; the sweep normalises again where it subtracts,
+                # because a fixture that hand-builds an aware datetime asserts our
+                # model rather than the driver's (#953/#823).
+                SecretInfo(name=prop.name, created_at=_ensure_aware(prop.created_on))
+                for prop in self._client_lazy().list_properties_of_secrets()
+                if prop.name
+            ]
+        except Exception as exc:
+            raise SecretStoreUnavailableError(
+                f"Key Vault at {self._vault_url} could not be listed ({exc})"
+            ) from exc
+
     def close(self) -> None:
         """Release the pooled client AND the credential (#1058). Idempotent.
 
@@ -284,6 +361,13 @@ class OpenBaoSecretStore:
         GET    /v1/{mount}/data/{name}      → value at .data.data.{_KV_FIELD}
         POST   /v1/{mount}/data/{name}      → body {"data": {_KV_FIELD: value}}
         DELETE /v1/{mount}/metadata/{name}  → purges every version
+        GET    /v1/{mount}/metadata?list=true → names, for the orphan sweep (#1059)
+        GET    /v1/{mount}/metadata/{name}  → created_time, for the orphan sweep
+
+    The last two need `list` on ``<mount>/metadata/`` and `read` on
+    ``<mount>/metadata/*``. A least-privilege policy written against the first three
+    alone leaves the sweep unable to date anything, which it reports as `unknown_age`
+    rather than as a clean vault.
 
     **Failure modes stay distinguishable** (ADR 0039 decision 6). A missing secret
     is 404; a dead/expired token is 403; a sealed or unreachable vault is 503 or a
@@ -333,6 +417,75 @@ class OpenBaoSecretStore:
             if self._client is None:
                 self._client = httpx.Client(base_url=self._addr, timeout=self._timeout)
             return self._client
+
+    def list_secrets(self) -> list[SecretInfo]:
+        """Enumerate the mount's secrets for the orphan sweep (#1059).
+
+        Two calls per secret, unavoidably: KV v2's LIST returns names only, so the
+        creation time needs a metadata GET each. That is N+1, and acceptable only
+        because this runs from a daily janitor over a workspace-sized set — never on
+        a request path. The values are never fetched (`metadata`, not `data`), so a
+        sweep cannot leak a credential into this process.
+
+        Raises `SecretStoreUnavailableError` on any failure of the LIST rather than
+        returning a partial list: to a sweep, "absent from the listing" means
+        "purge", so a truncated answer is worse than none. A per-name metadata
+        failure degrades to `created_at=None` instead, which the sweep reads as
+        "too young to touch" — the same safe direction.
+        """
+        list_path = f"/v1/{self._mount}/metadata"
+        try:
+            response = self._client_lazy().get(
+                list_path, headers=self._headers(), params={"list": "true"}
+            )
+        except httpx.HTTPError as exc:
+            self._log_transport_failure("<list>", None, str(exc))
+            raise SecretStoreUnavailableError(
+                f"OpenBao at {self._addr} unreachable while listing ({exc})"
+            ) from exc
+        if response.status_code == 404 and not _is_missing_mount(response):
+            # An empty KV mount answers 404 with no errors — genuinely zero secrets,
+            # not a fault. Distinct from a missing mount, which falls through below.
+            return []
+        if response.status_code != 200:
+            self._log_transport_failure("<list>", response.status_code, response.text)
+            raise SecretStoreUnavailableError(
+                f"OpenBao at {self._addr} could not be listed: "
+                f"{response.status_code} — {_explain_status(response.status_code)}"
+            )
+        try:
+            keys = response.json()["data"]["keys"]
+        except (ValueError, KeyError, TypeError) as exc:
+            raise SecretStoreUnavailableError(
+                f"OpenBao at {self._addr} returned an unreadable listing ({exc})"
+            ) from exc
+        return [
+            SecretInfo(name=key, created_at=self._created_at(key))
+            for key in keys
+            # KV v2 lists nested paths as a trailing-slash "directory" entry. DataQ
+            # writes flat names, so those are somebody else's secrets — skip rather
+            # than report them as orphan candidates.
+            if isinstance(key, str) and not key.endswith("/")
+        ]
+
+    def _created_at(self, name: str) -> datetime | None:
+        """`created_time` from a secret's metadata, or None if it can't be read.
+
+        Fail-soft on purpose — see `list_secrets`. None means the sweep treats the
+        secret as too young to purge, so a metadata hiccup can never cause a delete.
+        """
+        try:
+            response = self._client_lazy().get(
+                self._path("metadata", name), headers=self._headers()
+            )
+        except httpx.HTTPError:
+            return None
+        if response.status_code != 200:
+            return None
+        try:
+            return _parse_vault_timestamp(response.json()["data"]["created_time"])
+        except (ValueError, KeyError, TypeError):
+            return None
 
     def close(self) -> None:
         """Release the pooled client, if this store built it (#1058).

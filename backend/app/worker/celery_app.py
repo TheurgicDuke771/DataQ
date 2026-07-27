@@ -103,6 +103,15 @@ def create_celery_app() -> Celery:
                 "task": "sweep_orphan_assets",
                 "schedule": 86400.0,  # 24 hours
             },
+            # Orphan-SECRET sweep (#1059): once a day, reconcile the secret store
+            # against the rows that should own its entries. Daily and low-urgency for
+            # the same reason as the asset sweep — and REPORTING-ONLY unless
+            # SECRET_ORPHAN_PURGE is set, because the thing it would delete is a live
+            # warehouse credential.
+            "sweep-orphan-secrets": {
+                "task": "sweep_orphan_secrets",
+                "schedule": 86400.0,  # 24 hours
+            },
             # Catalog lineage pull (#762, ADR 0034): once a day, pull lineage from the
             # configured `LineageProvider` (Marquez) into the `lineage_edges` cache.
             # Dark by default — the task no-ops (zero queries) unless LINEAGE_PROVIDER
