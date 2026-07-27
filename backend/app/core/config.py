@@ -109,6 +109,24 @@ class Settings(BaseSettings):
     # swept and immediately re-created on the next refresh. <=0 disables the sweep.
     asset_orphan_retention_days: int = 30
 
+    # Orphan-SECRET sweep (#1059). A credential write is not part of the DB
+    # transaction that creates the row referencing it, so any failure after the
+    # write leaves the credential in the vault forever, unreferenced. Nothing else
+    # cleans these up: `SecretStore.delete` runs only on an explicit entity delete,
+    # and the #838 expiry sweep is driven off connection rows, so an orphan is
+    # invisible to it too.
+    #
+    # `secret_orphan_grace_days` must comfortably exceed the longest window in which
+    # a secret legitimately exists without its row committed. <=0 disables the sweep.
+    #
+    # `secret_orphan_purge` is the destructive half and is OFF by default,
+    # deliberately breaking the pattern of the other janitors: what gets deleted here
+    # is a live warehouse credential, unrecoverable once purged, so the first release
+    # must make the problem visible rather than act on it. Turn it on once the
+    # reported counts have been reviewed on a real vault.
+    secret_orphan_grace_days: int = 30
+    secret_orphan_purge: bool = False
+
     # Beat liveness watchdog (#904). Three post-deploy rolls have left the worker
     # "alive but doing nothing" — container Healthy, Celery ready, zero scheduled
     # tasks executed, only the DB telling the truth — each cleared by a manual

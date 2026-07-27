@@ -2,6 +2,7 @@ import json
 import os
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import ClassVar
 
@@ -155,10 +156,20 @@ class _StubSecretClient:
         self.credential = credential
         self.set_calls: list[tuple[str, str]] = []
         self.closed = False
+        # Listing surface for the orphan sweep (#1059). `properties` is what the SDK
+        # returns from `list_properties_of_secrets`; `list_raises` simulates an
+        # outage, which the store must surface rather than answer with a short list.
+        self.properties: list[SimpleNamespace] = []
+        self.list_raises = False
         _StubSecretClient.instances.append(self)
 
     def close(self) -> None:
         self.closed = True
+
+    def list_properties_of_secrets(self) -> list[SimpleNamespace]:
+        if self.list_raises:
+            raise RuntimeError("vault unreachable")
+        return self.properties
 
     def get_secret(self, name: str) -> SimpleNamespace:
         return SimpleNamespace(value=f"value-of-{name}")
@@ -833,6 +844,150 @@ def test_openbao_close_is_idempotent_and_reusable() -> None:
     rebuilt = store._client_lazy()  # rebuilt for continued use
     assert not rebuilt.is_closed
     rebuilt.close()
+
+
+# ── listing, for the orphan sweep (#1059) ─────────────────────────────────────
+
+
+def test_vault_timestamp_parses_nanosecond_precision() -> None:
+    """Characterisation test: the REAL payload shape, nine fractional digits.
+
+    Kept even though Python 3.13's `fromisoformat` handles it natively — that is a
+    property of the pinned interpreter, not of our code, and this is what would fail
+    if the pin moved or the parser were reimplemented. It is here because the
+    opposite belief (that `fromisoformat` raises on nanoseconds) produced a
+    truncation branch that a mutation check then proved to be dead code.
+    """
+    parsed = secrets._parse_vault_timestamp("2026-07-27T04:53:23.123456789Z")
+    assert parsed == datetime(2026, 7, 27, 4, 53, 23, 123456, tzinfo=UTC)
+
+
+@pytest.mark.parametrize(
+    "raw",
+    ["", "   ", "not-a-time", None, 12345, "2026-13-45T99:99:99Z"],
+)
+def test_vault_timestamp_returns_none_rather_than_raising(raw: object) -> None:
+    """None is the SAFE direction: the sweep reads an unknown age as "too young to
+    purge", so a malformed timestamp can never cause a delete."""
+    assert secrets._parse_vault_timestamp(raw) is None
+
+
+def test_vault_timestamp_assumes_utc_when_naive() -> None:
+    parsed = secrets._parse_vault_timestamp("2026-07-27T04:53:23")
+    assert parsed is not None and parsed.tzinfo is UTC
+
+
+def test_openbao_list_secrets_returns_names_and_creation_times() -> None:
+    """Drives the real request/response stack: LIST for names, then one metadata GET
+    per name for `created_time`."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.params.get("list") == "true":
+            return httpx.Response(200, json={"data": {"keys": ["conn-a", "nested/"]}})
+        return httpx.Response(
+            200, json={"data": {"created_time": "2026-07-27T04:53:23.123456789Z"}}
+        )
+
+    store = OpenBaoSecretStore(
+        "http://openbao:8200",
+        "tok",
+        client=httpx.Client(base_url="http://openbao:8200", transport=httpx.MockTransport(handler)),
+    )
+    listed = store.list_secrets()
+    # The trailing-slash entry is a KV v2 "directory", not a secret DataQ wrote.
+    assert [info.name for info in listed] == ["conn-a"]
+    assert listed[0].created_at == datetime(2026, 7, 27, 4, 53, 23, 123456, tzinfo=UTC)
+
+
+def test_openbao_list_secrets_treats_an_empty_mount_as_empty_not_an_error() -> None:
+    """KV v2 answers 404 with no errors for a mount holding nothing."""
+    store = OpenBaoSecretStore(
+        "http://openbao:8200",
+        "tok",
+        client=httpx.Client(
+            base_url="http://openbao:8200",
+            transport=httpx.MockTransport(lambda _r: httpx.Response(404, json={"errors": []})),
+        ),
+    )
+    assert store.list_secrets() == []
+
+
+def test_openbao_list_secrets_raises_on_a_missing_mount() -> None:
+    """A typo'd OPENBAO_MOUNT must not read as "no secrets" — to a sweep that means
+    "everything is an orphan"."""
+    store = OpenBaoSecretStore(
+        "http://openbao:8200",
+        "tok",
+        client=httpx.Client(
+            base_url="http://openbao:8200",
+            transport=httpx.MockTransport(
+                lambda _r: httpx.Response(404, json={"errors": ["no handler for route"]})
+            ),
+        ),
+    )
+    with pytest.raises(SecretStoreUnavailableError):
+        store.list_secrets()
+
+
+def test_openbao_list_secrets_raises_when_the_vault_is_sealed() -> None:
+    store = OpenBaoSecretStore(
+        "http://openbao:8200",
+        "tok",
+        client=httpx.Client(
+            base_url="http://openbao:8200",
+            transport=httpx.MockTransport(lambda _r: httpx.Response(503)),
+        ),
+    )
+    with pytest.raises(SecretStoreUnavailableError):
+        store.list_secrets()
+
+
+def test_openbao_created_at_degrades_to_none_on_a_metadata_failure() -> None:
+    """Per-name metadata failure must NOT fail the whole listing — but the secret
+    then has an unknown age, which the sweep treats as too young to purge."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.params.get("list") == "true":
+            return httpx.Response(200, json={"data": {"keys": ["conn-a"]}})
+        return httpx.Response(500)
+
+    store = OpenBaoSecretStore(
+        "http://openbao:8200",
+        "tok",
+        client=httpx.Client(base_url="http://openbao:8200", transport=httpx.MockTransport(handler)),
+    )
+    (info,) = store.list_secrets()
+    assert info.created_at is None
+
+
+def test_akv_list_secrets_reads_properties_without_fetching_values(
+    stub_azure_sdk: type[_StubSecretClient],
+) -> None:
+    """`list_properties_of_secrets`, never `get_secret`: a sweep has no business
+    pulling every credential in the workspace through this process."""
+    created = datetime(2026, 5, 1, tzinfo=UTC)
+    store = AzureKeyVaultStore("https://example.vault.azure.net/")
+    store._client_lazy()
+    # Off the stub registry, not `store._client`: the attribute is declared
+    # `SecretClient | None`, and the real type has no `properties` hook.
+    (client,) = stub_azure_sdk.instances
+    client.properties = [
+        SimpleNamespace(name="conn-a", created_on=created),
+        SimpleNamespace(name=None, created_on=created),
+    ]
+    listed = store.list_secrets()
+    assert [(i.name, i.created_at) for i in listed] == [("conn-a", created)]
+
+
+def test_akv_list_secrets_raises_rather_than_returning_a_partial_list(
+    stub_azure_sdk: type[_StubSecretClient],
+) -> None:
+    store = AzureKeyVaultStore("https://example.vault.azure.net/")
+    store._client_lazy()
+    (client,) = stub_azure_sdk.instances
+    client.list_raises = True
+    with pytest.raises(SecretStoreUnavailableError):
+        store.list_secrets()
 
 
 def test_akv_close_releases_both_the_client_and_the_credential(

@@ -56,6 +56,7 @@ from backend.app.services import (
     run_service,
     run_target,
     schema_drift,
+    secret_sweep_service,
     suite_service,
 )
 from backend.app.services.failure_classifier import classify_failure_reason
@@ -933,6 +934,42 @@ def sweep_orphan_assets() -> int:
     except Exception:
         session.rollback()
         log.warning("orphan_asset_sweep_failed", exc_info=True)
+        return 0
+    finally:
+        session.close()
+
+
+# ─────────────────────── orphan-secret sweep (#1059) ─────────────────────────
+
+
+@celery_app.task(name="sweep_orphan_secrets")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
+def sweep_orphan_secrets() -> int:
+    """Celery-beat entry point — reconcile the secret store against its owners (#1059).
+
+    Reports by default and purges only when `SECRET_ORPHAN_PURGE` is set; see
+    `secret_sweep_service` for why that asymmetry is deliberate. Returns the number
+    of orphans FOUND (not purged) so the signal is the same whether or not deletion
+    is enabled — a count that silently became 0 when purging was switched on would
+    be indistinguishable from a clean vault.
+
+    Wrapped like its asset sibling: the ownership registry is hand-maintained, and a
+    surprise here must not take down the beat tick for the janitors after it. The
+    store's own unavailability is included in that — a vault that cannot be listed
+    logs and yields, rather than being reported as "no orphans".
+    """
+    session = get_session()
+    try:
+        settings = get_settings()
+        result = secret_sweep_service.sweep_orphan_secrets(
+            session,
+            store=get_secret_store(),
+            grace_days=settings.secret_orphan_grace_days,
+            purge=settings.secret_orphan_purge,
+        )
+        return len(result.orphans)
+    except Exception:
+        session.rollback()
+        log.warning("orphan_secret_sweep_failed", exc_info=True)
         return 0
     finally:
         session.close()
