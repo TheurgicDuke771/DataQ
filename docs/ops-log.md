@@ -75,6 +75,7 @@ apart.
 
 | When (UTC) | Service | Action | By | Why / expected state |
 |---|---|---|---|---|
+| 2026-07-27 05:15–05:45 | Shared Postgres `dataq-pg-wus3-3erlgd` (admin role only) + `dataq-harness-airflow` | **Long-term fix** — reset the server's `airflowadmin` password to Terraform's value, aligned every consumer, verified, stopped | Arijit (via Claude) | Removes the drift the 04:40 hotfix left behind. **Safety gate first: DataQ prod uses the separate `dataq_app` role** (checked the live `database-url` secret), so resetting the server ADMIN password cannot affect the product — verified 200 on prod `/healthz` and a control connection after. **Final state: all 5 harness apps `Stopped`, 0 replicas, both ADF triggers `Stopped`.** |
 | 2026-07-27 04:40–05:05 | `dataq-harness-airflow` only | **FIX + verify window** — repointed the PG credential, started, verified, stopped | Arijit (via Claude) | Fixed the metadata-DB auth failure below. Started ONLY the airflow app (not the full harness) to keep the window minimal. `/health` 200 after ~2 min; both DataQ Airflow connections `{"ok":true}` from Key Vault AND from OpenBao. **Verified afterwards: all 5 apps `Stopped`, 0 live replicas.** |
 | 2026-07-27 04:15 | All 5 harness apps + both ADF triggers + all 7 jobs | **STOP** — `harness_window.sh stop` | Arijit (via Claude) | **Window closed. Expected + VERIFIED state: every app `Stopped`, every job suspended, both ADF triggers `Stopped`, and — checked separately — 0 live replicas.** The script's own success message is not sufficient evidence: `cmd_stop` runs under `set -e` and calls `wait_app`, which returns 1 on timeout, so a single slow app would abort the loop and silently leave the rest running. Immediately after the script reported success, `replica list` still showed airflow=1, worker=2, marquez=1 (draining); polled to 0 before declaring the window closed. |
 | 2026-07-27 03:57 | All 5 harness apps (marquez, redis, airflow, airflow-worker, airflow-trigger) + both ADF triggers | **START** — `harness_window.sh start` | Arijit (via Claude) | **Deliberate, short window.** Purpose: live-test the 13 renamed `conn-*` secrets through the real orchestration path. The two Airflow connections were the ONLY ones the 2026-07-27 02:45 rename could not verify — their connection test 502s whenever the harness is down, so a stopped harness and a broken credential look identical from DataQ. **Expected state afterwards: everything back to Stopped/Suspended/Disabled the same session** — see the paired STOP row below. If that row is missing, the window did not close cleanly and the harness is burning ~CAD 17/day. |
@@ -169,13 +170,25 @@ Terraform concatenates it raw, so a special character corrupts the DSN silently
 rather than failing loudly. Verified: Airflow `/health` 200, and both DataQ Airflow
 connections green from Key Vault *and* OpenBao.
 
-> **⚠ Terraform state is still drifted, and a future apply WILL re-break this.**
-> `local.airflow_pg_conn` is built from `random_password.pg.result`, which no longer
-> matches the server. The next `terraform apply` touching these resources rewrites
-> the containers with the stale password — exactly what happened on 2026-07-26.
-> The durable fix is to reconcile state (either import the real password into
-> `random_password.pg`, or reset the server AND update `iceberg-catalog-password`
-> together). Until then, treat any apply here as requiring this check afterwards.
+**Drift RESOLVED 2026-07-27 05:15** — the server was reset to Terraform's value and
+every consumer aligned, so the two sides now agree and an apply is a no-op rather
+than a re-break. Done in this order, to keep the broken window to seconds:
+
+1. **Safety gate.** DataQ prod authenticates as `dataq_app`, not `airflowadmin`
+   (checked the live `database-url` secret) — so resetting the server ADMIN
+   password cannot reach the product. Confirmed after: prod `/healthz` 200.
+2. Server `airflowadmin` password → `random_password.pg.result`.
+3. KV `iceberg-catalog-password` → same value (DataQ reads Key Vault at runtime,
+   so its iceberg connection recovered with no restart — verified `{"ok":true}`).
+4. The three container secrets → same value, by swapping the password *into* the
+   existing DSN rather than rebuilding it, so the rest stays byte-identical to
+   Terraform's output. `random_password.pg` is `special = false`, so the raw
+   concatenation Terraform performs is safe and no percent-encoding is introduced
+   — encoding it would itself have shown up as drift on the next plan.
+5. OpenBao re-synced, or the two stores would have silently diverged again.
+
+Verified end to end: Airflow `/health` 200 **on Terraform's password**, and both
+DataQ Airflow connections green from Key Vault *and* OpenBao.
 
 ## Credential rotation
 
