@@ -491,11 +491,16 @@ class SnowflakeLineageProvider:
             # text() statement as a format placeholder and raises
             # ProgrammingError (#1111 — found live; the fake-conn tests cannot
             # execute real SQL, the #823 driver-boundary class again).
-            " AND table_name NOT LIKE :ephemeral ESCAPE '\\'"
+            " AND table_name NOT LIKE :ephemeral ESCAPE '!'"
             " AND table_type IN ('BASE TABLE', 'VIEW', 'MATERIALIZED VIEW', 'EXTERNAL TABLE')"
             " ORDER BY table_schema, table_name"
         )
-        params: dict[str, object] = {"db": database, "ephemeral": "SNOWPARK\\_TEMP\\_%"}
+        # `!` as the LIKE escape char: backslash is an escape in BOTH the
+        # connector's param pipeline AND Snowflake's string parser, and the
+        # review of #1112 proved the literal `ESCAPE '\'` never closed its
+        # quote server-side ( \' is an escaped quote to Snowflake) — `!` has
+        # no escaping semantics in either layer, so what you read is what runs.
+        params: dict[str, object] = {"db": database, "ephemeral": "SNOWPARK!_TEMP!_%"}
         if limit is not None:
             sql += " LIMIT :lim"
             params["lim"] = int(limit)

@@ -1075,7 +1075,7 @@ def test_get_lineage_seed_cap_truncates_loudly(monkeypatch: pytest.MonkeyPatch) 
     assert conn.params_by_query["INFORMATION_SCHEMA.TABLES"] == {
         "db": "DATAQ_DB",
         "lim": 2,
-        "ephemeral": "SNOWPARK\\_TEMP\\_%",  # bound, never a literal (#1111)
+        "ephemeral": "SNOWPARK!_TEMP!_%",  # bound + bang-escaped (#1111/#1112)
     }
     assert len([sql for sql in conn.executed if "GET_LINEAGE" in sql]) == 2
     truncation = next(e for e in logs if e["event"] == "get_lineage_seeds_truncated")
