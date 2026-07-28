@@ -7,6 +7,11 @@ import { activeAuthOption, CONNECTION_FORM_SPECS, type TextField } from './conne
  * Renders the type-specific config + secret form fields from CONNECTION_FORM_SPECS.
  * Config fields are namespaced under `config` (name={['config','account']}) so the
  * drawer submits `config` as one object; the write-only credential is `secret`.
+ *
+ * None of the fields below append their own "(optional)" suffix — the enclosing
+ * `Form`s (ConnectionForm, ReauthModal) render with `requiredMark="optional"`,
+ * which already appends the marker to every field with no `required` rule. Doing
+ * both doubles it (#1066).
  */
 
 const requiredRule = [{ required: true }];
@@ -22,7 +27,7 @@ function ConfigTextField({
   return (
     <Form.Item
       name={['config', field.name]}
-      label={optional ? `${field.label} (optional)` : field.label}
+      label={field.label}
       rules={optional ? undefined : requiredRule}
       extra={field.extra}
     >
@@ -51,7 +56,7 @@ export function SecretField({
   return (
     <Form.Item
       name="secret"
-      label={optional ? `${label} (optional)` : label}
+      label={label}
       rules={optional ? undefined : requiredRule}
       extra={extra}
     >
