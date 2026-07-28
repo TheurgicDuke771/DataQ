@@ -359,3 +359,13 @@ Verified programmatically across all 42 migration files on the PR branch: no dup
 But in `frontend/src/components/assets/LineageGraph.tsx`, sources are partitioned once: `warehouseFailing = filter(s =&gt; s.last_error)`, `warehouseDegraded = filter(s =&gt; !s.last_error)`. The new `stale` composite message (`no refresh since … — lineage from this source is stale; last refresh also reported: …`) is only rendered inside the `warehouseDegraded` block. A connection that is **both currently failing (`last_error` set) and stale** (plausible: refresh attempt failed at T0, beat then starved, so `lineage_last_refresh_at` — which `warehouse_refresh.py` updates on both success and failure — never advances past T0, and if `now - T0 &gt; 48h` it's `stale=true` too) routes entirely into `warehouseFailing` and never surfaces `s.stale` or the "no refresh since …" timestamp at all — only the generic "stops updating until it recovers" prose. This is the same shape #987 explicitly fixed ("a card asserting what the field below it denied" / one field silently suppressing another). No test in the PR's `LineageGraph.test.tsx` diff covers the failing+stale combination (only degraded+stale is tested, via the second new `it(...)`). Worth filing or fixing: surface `s.stale`/last-refresh-timestamp inside the `warehouseFailing` alert too, consistent with how `degraded_reason` is already composited there.</result>
 <usage><subagent_tokens>115466</subagent_tokens><tool_uses>33</tool_uses><duration_ms>316629</duration_ms></usage>
 </task-notification>
+
+---
+
+<task-notification>
+<task-id>bcbxazo9y</task-id>
+<tool-use-id>toolu_017rhXm2r7XvZEoLXfz1WXz7</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/bcbxazo9y.output</output-file>
+<status>completed</status>
+<summary>Background command "Run full backend suite" completed (exit code 0)</summary>
+</task-notification>
