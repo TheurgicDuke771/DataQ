@@ -373,3 +373,71 @@ def test_identityless_dataset_node_is_not_bridged() -> None:
         edges=(("d:a", "d:ghost"), ("d:ghost", "d:b")),
     )
     assert pull_mod._collapse_to_datasets(graph) == set()  # A→B is NOT synthesized
+
+
+class TestPurgeOrphanedPulledEdges:
+    """#1090: de-configuring the provider must not freeze cached pulled edges forever."""
+
+    def test_purge_sweeps_marquez_edges_but_never_dbt_rows(self, db_session: Any) -> None:
+        from backend.app.lineage.pull import purge_orphaned_pulled_edges
+
+        _seed_pulled_edge(db_session)
+        conn = _dbt_connection(db_session)
+        up = _seed_asset(db_session, name="dbt-up", namespace="mz://dbt")
+        down = _seed_asset(db_session, name="dbt-down", namespace="mz://dbt")
+        dbt_edge = LineageEdge(
+            upstream_asset_id=up.id,
+            downstream_asset_id=down.id,
+            source="dbt",
+            connection_id=conn.id,
+        )
+        db_session.add(dbt_edge)
+        db_session.commit()
+
+        assert purge_orphaned_pulled_edges(db_session) == 1
+        assert _marquez_edges(db_session) == []
+        remaining = db_session.scalars(select(LineageEdge)).all()
+        assert [e.source for e in remaining] == ["dbt"]
+
+    def test_purge_of_an_empty_cache_is_a_quiet_zero(self, db_session: Any) -> None:
+        from backend.app.lineage.pull import purge_orphaned_pulled_edges
+
+        assert purge_orphaned_pulled_edges(db_session) == 0
+
+    def test_purge_is_fail_open_on_a_db_error(self) -> None:
+        """A DB hiccup during the janitor sweep logs and returns 0 — it must never
+        escape the beat task (the module's uniform fail-open contract; review
+        finding on this PR). The orphans are still there next tick."""
+        from unittest.mock import MagicMock
+
+        from backend.app.lineage.pull import purge_orphaned_pulled_edges
+
+        session = MagicMock()
+        session.execute.side_effect = RuntimeError("connection dropped")
+        assert purge_orphaned_pulled_edges(session) == 0
+        session.rollback.assert_called_once()
+
+
+class TestLineageProviderUnsetDistinction:
+    """The purge gate must separate 'removed' from 'broken' — deleting the cache over
+    a one-character typo would be data loss, not hygiene (#1090)."""
+
+    def test_blank_and_whitespace_mean_unset(self, monkeypatch: Any) -> None:
+        from backend.app.core.config import get_settings
+        from backend.app.lineage.pull import lineage_provider_unset
+
+        for value in ("", "   "):
+            monkeypatch.setenv("LINEAGE_PROVIDER", value)
+            get_settings.cache_clear()
+            assert lineage_provider_unset() is True
+
+    def test_a_typoed_provider_is_configured_not_unset(self, monkeypatch: Any) -> None:
+        from backend.app.core.config import get_settings
+        from backend.app.lineage.pull import lineage_provider_unset
+
+        monkeypatch.setenv("LINEAGE_PROVIDER", "marqez")  # typo — still a config
+        get_settings.cache_clear()
+        assert lineage_provider_unset() is False
+        # And the provider itself is unusable, which is the pair of states the task
+        # distinguishes: unset → purge; set-but-broken → keep the cache.
+        assert get_lineage_provider() is None

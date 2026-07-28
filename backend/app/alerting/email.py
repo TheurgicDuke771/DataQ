@@ -18,7 +18,12 @@ from email.message import EmailMessage
 from sqlalchemy.orm import Session
 
 from backend.app.alerting import render
-from backend.app.alerting.base import CheckReport, ConnectionHealthReport, RunReport
+from backend.app.alerting.base import (
+    CheckReport,
+    ConnectionHealthReport,
+    PollStalenessReport,
+    RunReport,
+)
 from backend.app.alerting.routing import route_for
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretNotFoundError, SecretStore
@@ -184,6 +189,35 @@ def render_health_html_body(report: ConnectionHealthReport) -> str:
     )
 
 
+def render_staleness_subject(report: PollStalenessReport) -> str:
+    """Subject line for the workspace poll-staleness edge (#1052)."""
+    return f"[DataQ] {render.staleness_headline(report).removeprefix('DataQ — ')}"
+
+
+def render_staleness_text_body(report: PollStalenessReport) -> str:
+    """Plain-text body for the workspace poll-staleness edge."""
+    lines = [render.staleness_headline(report), ""]
+    lines.extend(f"{label}: {value}" for label, value in render.staleness_facts(report))
+    lines += ["", render.staleness_impact(report)]
+    return "\n".join(lines)
+
+
+def render_staleness_html_body(report: PollStalenessReport) -> str:
+    """Minimal HTML body for the workspace poll-staleness edge (same table style)."""
+    colour = "#dc2626" if report.is_failing else "#16a34a"
+    rows = "".join(
+        f"<tr><td style='{_TD};font-weight:600;'>{_esc(label)}</td>"
+        f"<td style='{_TD}'>{_esc(value)}</td></tr>"
+        for label, value in render.staleness_facts(report)
+    )
+    return (
+        f"<div style='font-family:system-ui,Arial,sans-serif;'>"
+        f"<h2 style='color:{colour};margin:0 0 4px;'>{_esc(render.staleness_headline(report))}</h2>"
+        f"<p style='margin:0 0 12px;color:#4b5563;'>{_esc(render.staleness_impact(report))}</p>"
+        f"<table style='border-collapse:collapse;'>{rows}</table></div>"
+    )
+
+
 def _check_line(check: CheckReport) -> str:
     detail = render.check_detail(check)
     return f"  - [{check.status}] {check.check_name}" + (f" — {detail}" if detail else "")
@@ -295,6 +329,34 @@ class EmailPublisher:
             state=report.state,
             recipients=len(self._recipients),
         )
+
+    def publish_poll_staleness(self, session: Session, report: PollStalenessReport) -> bool:
+        """Email the workspace poll-staleness edge (#1052) to the workspace
+        recipients — same transport gating as :meth:`publish_health`, but returning
+        whether a message was actually sent (``False`` on any quiet-skip gate,
+        including an unresolvable password — nothing left this process)."""
+        if not (self._username and self._password_secret_name and self._sender):
+            return False
+        if not self._recipients:
+            return False
+        try:
+            password = self._secret_store.get(self._password_secret_name)
+        except SecretNotFoundError:
+            log.warning("email_password_unresolved", secret_name=self._password_secret_name)
+            return False
+        message = self._message(
+            subject=render_staleness_subject(report),
+            recipients=self._recipients,
+            text=render_staleness_text_body(report),
+            html=render_staleness_html_body(report),
+        )
+        self._send(message, password=password)
+        log.info(
+            "email_staleness_alert_sent",
+            state=report.state,
+            recipients=len(self._recipients),
+        )
+        return True
 
     def _message(
         self, *, subject: str, recipients: tuple[str, ...], text: str, html: str

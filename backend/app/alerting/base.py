@@ -32,10 +32,12 @@ __all__ = [
     "HEALTH_FAILING",
     "HEALTH_RECOVERED",
     "AlertPublisher",
+    "AlertUndeliverableError",
     "CheckReport",
     "ConnectionHealthReport",
     "HealthPublisher",
     "IncidentCard",
+    "PollStalenessReport",
     "ResultPublisher",
     "RunReport",
 ]
@@ -50,6 +52,14 @@ __all__ = [
 # two values mean opposite things must not admit a third, so mypy rejects it at the call
 # site rather than the operator discovering it at 3am.
 HealthState = Literal["failing", "recovered"]
+
+
+class AlertUndeliverableError(RuntimeError):
+    """Raised by the composite when a workspace-level edge reached NO channel —
+    every channel either failed or quietly skipped as unconfigured. Callers doing
+    #843 delivered-first bookkeeping catch this to leave the flag unset (retry next
+    tick) instead of recording a delivery that never happened."""
+
 
 HEALTH_FAILING: Final[HealthState] = "failing"
 HEALTH_RECOVERED: Final[HealthState] = "recovered"
@@ -195,6 +205,36 @@ class ConnectionHealthReport:
         return self.state == HEALTH_FAILING
 
 
+@dataclass(frozen=True)
+class PollStalenessReport:
+    """Workspace-wide orchestration-poll staleness (#1052) — the signal that cannot lie.
+
+    Deliberately **not** a ``ConnectionHealthReport``: this is not a property of any
+    connection. Every incident in the #905 class (#852 exporter starvation, #854
+    row-lock wait, a wedged broker reconnect) had a worker that looked alive and wrote
+    nothing — so a per-connection edge computed from worker writes structurally cannot
+    fire. This report is derived from the DB alone (``max(last_polled_at)`` across all
+    orchestration connections) and published from the API process, and its card must
+    say "the polling loop is dead", not "a connection is failing".
+
+    ``most_recent_polled_at`` is the workspace's freshest poll write — ``None`` when
+    no connection has ever been polled (the reference moment is then the oldest
+    connection's creation). ``threshold_seconds`` is carried so the card can say what
+    "stale" meant when the edge fired. ``None`` reason fields on recovery, as on the
+    connection-health edge.
+    """
+
+    state: HealthState
+    connection_count: int
+    most_recent_polled_at: datetime | None
+    threshold_seconds: int
+
+    @property
+    def is_failing(self) -> bool:
+        """Whether this is the failure edge (vs the recovery edge)."""
+        return self.state == HEALTH_FAILING
+
+
 @runtime_checkable
 class ResultPublisher(Protocol):
     """Sends a completed run's redacted ``RunReport`` to an external channel.
@@ -225,6 +265,27 @@ class HealthPublisher(Protocol):
     """
 
     def publish_health(self, session: Session, report: ConnectionHealthReport) -> None: ...
+
+    def publish_poll_staleness(self, session: Session, report: PollStalenessReport) -> bool:
+        """Deliver the workspace-wide poll-staleness edge (#1052); return whether a
+        message actually left this process (``False`` = quietly skipped, e.g. the
+        channel is unconfigured — a skip must never read as delivered).
+
+        On the same seam as ``publish_health`` (same channels, same workspace-level
+        routing, same "whether was decided upstream" contract) rather than a parallel
+        mechanism — the caller is ``workspace_health_service``, which owns the
+        threshold decision and the #843 delivered-first bookkeeping.
+
+        One deliberate divergence from ``publish_health`` at the COMPOSITE level:
+        this method raises when **nothing was sent** — every channel failed (the
+        last error) or every channel skipped (:class:`AlertUndeliverableError`) —
+        where the composite's other methods never raise. The caller records
+        "delivered" on return, and a total non-delivery recorded as delivered
+        would silence the one alert whose whole point is to fire when everything
+        else is silent. A partial failure (one channel down, another delivered)
+        still returns normally.
+        """
+        ...
 
 
 @runtime_checkable

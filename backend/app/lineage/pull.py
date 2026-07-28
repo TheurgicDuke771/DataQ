@@ -81,6 +81,56 @@ def get_lineage_provider() -> LineageProvider | None:
     return None
 
 
+def lineage_provider_unset() -> bool:
+    """Whether the pull is UNSET — as opposed to configured-but-unusable (#1090).
+
+    The distinction is load-bearing for the purge below: an operator who *removed*
+    ``LINEAGE_PROVIDER`` has said "there is no catalog", so cached pulled edges are
+    orphans that would otherwise render as current forever. But a provider that is
+    set and merely *broken* (unknown name — likely a typo — or ``marquez`` without a
+    URL) must NOT purge: `get_lineage_provider` returns ``None`` for both cases, and
+    deleting the cache over a misconfiguration would turn a one-character typo into
+    data loss. Those cases keep the cache and keep warning until fixed.
+    """
+    return not (get_settings().lineage_provider or "").strip()
+
+
+def purge_orphaned_pulled_edges(session: Session) -> int:
+    """Delete every pulled edge once the provider is de-configured (#1090 disposition).
+
+    The chosen disposition is **sweep, not badge**: with ``LINEAGE_PROVIDER`` unset the
+    pull task short-circuits before `_prune_stale` can ever run, so ``source='marquez'``
+    rows would sit in the asset graph looking exactly like current data, forever, with
+    no health surface able to speak for them (the pull has no ``Connection`` row). The
+    cache is recoverable — re-configuring the provider re-pulls on the next tick — so
+    deleting is honest where a frozen graph is a lie by omission. Scoped exactly like
+    `_prune_stale`: ``(source='marquez', connection_id IS NULL)`` — it can never touch a
+    dbt or warehouse row. The assets the pull materialized are left to the orphan-asset
+    sweep (#770), which already owns unreferenced-asset lifecycle.
+
+    Caller gates on :func:`lineage_provider_unset` — never call this for a provider
+    that is configured but broken.
+
+    Fail-open like everything else in this module (review finding on this PR): a DB
+    hiccup logs and returns 0 rather than escaping the beat task — the orphans are
+    still there next tick, and a purge is a janitor, never a liveness path.
+    """
+    try:
+        purged = session.execute(
+            delete(LineageEdge).where(
+                LineageEdge.source == _SOURCE, LineageEdge.connection_id.is_(None)
+            )
+        ).rowcount  # type: ignore[attr-defined]  # DELETE always yields a CursorResult
+        session.commit()
+    except Exception:
+        session.rollback()
+        log.warning("lineage_pull_orphan_purge_failed", source=_SOURCE, exc_info=True)
+        return 0
+    if purged:
+        log.warning("lineage_pull_orphans_purged", source=_SOURCE, edges=int(purged))
+    return int(purged or 0)
+
+
 def refresh_pulled_edges(
     session: Session, *, provider: LineageProvider, depth: int = _PULL_DEPTH
 ) -> int | None:

@@ -994,6 +994,16 @@ def refresh_lineage_pull() -> int:
     """
     provider = lineage_pull.get_lineage_provider()
     if provider is None:
+        # #1090: distinguish UNSET (operator removed the catalog — cached pulled
+        # edges are orphans that would render as current forever; sweep them) from
+        # configured-but-broken (typo'd name / missing URL — keep the cache, keep
+        # warning; a purge here would turn a one-character typo into data loss).
+        if lineage_pull.lineage_provider_unset():
+            session = get_session()
+            try:
+                lineage_pull.purge_orphaned_pulled_edges(session)
+            finally:
+                session.close()
         return 0
     session = get_session()
     try:

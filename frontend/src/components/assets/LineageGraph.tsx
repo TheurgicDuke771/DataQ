@@ -63,12 +63,11 @@ export function LineageGraph({
   // taking failure as the dominant state — a source that is BOTH coarse and
   // currently failing is a failing source first.
   //
-  // The two fields are not mutually exclusive: `warehouse_refresh` sets
-  // `degraded_reason` on a successful coarse refresh and does not clear it when a
-  // later refresh fails, so a row can carry both. Such a row shows only its error
-  // here, exactly as the single-alert version did — the tier note is not lost by
-  // this change, it was never shown alongside an error. Surfacing both is a
-  // separate improvement, filed rather than smuggled in.
+  // The three qualifiers are not mutually exclusive, and the failing branch must
+  // render ALL that apply (#987, and the #1091 review): `degraded_reason` survives
+  // a later failure, and `stale` composes with an error when the refresh loop died
+  // after a failing attempt. The partition decides the alert's WEIGHT, never which
+  // facts get told.
   const warehouseFailing = useMemo(
     () => warehouseStatus.filter((s) => s.last_error),
     [warehouseStatus],
@@ -160,6 +159,24 @@ export function LineageGraph({
                       </Typography.Text>
                     </div>
                   ) : null}
+                  {/* Staleness composes here too (#1091 review): the error path bumps
+                      `lineage_last_refresh_at` on every ATTEMPT, so error + stale can
+                      only co-occur when the refresh loop itself stopped running after
+                      a failing attempt — the worker-died case this signal exists for.
+                      Prod's dead-PAT connections are exactly this shape. Dropping the
+                      stale note in the failing branch would repeat #987: one field
+                      silently suppressing another. */}
+                  {s.stale ? (
+                    <div style={{ marginLeft: 12 }}>
+                      <Typography.Text type="secondary">
+                        No refresh attempt since{' '}
+                        {s.last_refreshed_at
+                          ? new Date(s.last_refreshed_at).toLocaleString()
+                          : 'unknown'}{' '}
+                        — this error is old and the source has stopped refreshing entirely.
+                      </Typography.Text>
+                    </div>
+                  ) : null}
                 </div>
               ))}
               <div style={{ marginTop: 4 }}>
@@ -184,7 +201,7 @@ export function LineageGraph({
           type="info"
           showIcon
           style={{ marginBottom: 12 }}
-          title="Workspace lineage sources: some report at a coarser tier"
+          title="Workspace lineage sources: some report at a coarser tier or are stale"
           description={
             <>
               <div style={{ marginBottom: 4 }}>
@@ -193,7 +210,22 @@ export function LineageGraph({
               {warehouseDegraded.map((s) => (
                 <div key={s.connection_id}>
                   <Typography.Text strong>{s.name}</Typography.Text> ({s.type}):{' '}
-                  {s.degraded_reason ?? 'lineage is degraded'}
+                  {/* #1091: staleness is its own message, never folded into "degraded" —
+                      a source with NO error and NO tier note can still have silently
+                      stopped refreshing (the prod incident: 9 days old, zero errors),
+                      and "lineage is degraded" would misname what is wrong. A source
+                      that is both coarse and stale shows both. */}
+                  {s.stale
+                    ? `no refresh since ${
+                        s.last_refreshed_at
+                          ? new Date(s.last_refreshed_at).toLocaleString()
+                          : 'unknown'
+                      } — lineage from this source is stale${
+                        s.degraded_reason
+                          ? `; last refresh also reported: ${s.degraded_reason}`
+                          : ''
+                      }`
+                    : (s.degraded_reason ?? 'lineage is degraded')}
                 </div>
               ))}
             </>

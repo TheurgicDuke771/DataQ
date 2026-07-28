@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from backend.app.alerting.base import ConnectionHealthReport, RunReport
+from backend.app.alerting.base import ConnectionHealthReport, PollStalenessReport, RunReport
 from backend.app.core.logging import get_logger
 
 if TYPE_CHECKING:
@@ -37,3 +37,14 @@ class NoopPublisher:
             state=report.state,
             consecutive_failures=report.consecutive_failures,
         )
+
+    def publish_poll_staleness(self, session: Session, report: PollStalenessReport) -> bool:
+        log.debug(
+            "staleness_publish_noop",
+            state=report.state,
+            connection_count=report.connection_count,
+        )
+        # The explicit test double COUNTS as delivered — it exists so tests can
+        # exercise the stamped path; the real "nothing was sent" case is a real
+        # channel returning False.
+        return True

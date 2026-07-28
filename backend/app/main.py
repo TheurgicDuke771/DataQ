@@ -1,3 +1,4 @@
+import asyncio
 import re
 import time
 import uuid
@@ -52,6 +53,44 @@ _REQUEST_ID_RE: Final = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 _log = get_logger(__name__)
 
 
+def _poll_staleness_tick() -> str:
+    """One synchronous staleness check with its own short-lived session (#1052).
+
+    Runs via ``asyncio.to_thread`` from the lifespan loop below. Lives here (not in
+    the service) so the service stays session-in, side-effect-out and unit-testable.
+    """
+    from backend.app.db.session import get_session
+    from backend.app.services.workspace_health_service import run_poll_staleness_check
+
+    session = get_session()
+    try:
+        return run_poll_staleness_check(session)
+    finally:
+        session.close()
+
+
+async def _poll_staleness_loop(stop: asyncio.Event, interval_s: float) -> None:
+    """The API-side poll-staleness watchdog loop (#1052).
+
+    Deliberately in the API process: every #905-class incident had a worker that
+    looked alive and wrote nothing, so the check must not live in (or be scheduled
+    by) the process it monitors — a Celery beat entry here would be the dead loop
+    asking itself whether it is dead. Errors are logged and the loop continues; a
+    broken tick must not take the API down, and the next tick retries.
+    """
+    logger = get_logger(__name__)
+    while not stop.is_set():
+        try:
+            outcome = await asyncio.to_thread(_poll_staleness_tick)
+            logger.debug("poll_staleness_tick", outcome=outcome)
+        except Exception:  # pragma: no cover - defensive; the loop must survive
+            logger.exception("poll_staleness_tick_failed")
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=interval_s)
+        except TimeoutError:
+            continue
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     configure_logging(service_name="dataq-api")
@@ -64,7 +103,20 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         app_insights_enabled=bool(settings.applicationinsights_connection_string),
     )
     await init_auth()
+    # Workspace poll-staleness watchdog (#1052) — check at a third of the alert
+    # threshold so a staleness edge is seen within ~1.3x the threshold worst-case
+    # (the 60s floor stretches that ratio for thresholds under ~180s; at such
+    # values the alert is near-realtime anyway). 0 disables (and tests/dev
+    # stacks run without the loop).
+    staleness_stop = asyncio.Event()
+    staleness_task: asyncio.Task[None] | None = None
+    if settings.poll_staleness_alert_after_s > 0:
+        interval = max(60.0, settings.poll_staleness_alert_after_s / 3)
+        staleness_task = asyncio.create_task(_poll_staleness_loop(staleness_stop, interval))
     yield
+    if staleness_task is not None:
+        staleness_stop.set()
+        await staleness_task
     logger.info("app_shutdown")
 
 

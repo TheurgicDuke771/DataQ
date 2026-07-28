@@ -181,6 +181,10 @@ class WarehouseLineageStatusRead(ApiModel):
     degraded_reason: str | None = None
     last_error: str | None = None
     last_refreshed_at: datetime | None = None
+    # #1091: the refresh loop silently stopped — no error, no degradation, just no
+    # refresh within LINEAGE_STALE_AFTER_HOURS. Rendered as its own qualifier so a
+    # frozen graph never reads as a current one.
+    stale: bool = False
 
 
 class DimensionScoreRead(ApiModel):

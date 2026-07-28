@@ -173,6 +173,9 @@ export interface WarehouseLineageStatus {
   /** A classified refresh failure — never raw exception text. */
   last_error: string | null;
   last_refreshed_at: string | null;
+  /** #1091: the refresh loop silently stopped — last refresh is older than the
+   *  staleness window, with no error and no degradation recorded. */
+  stale: boolean;
 }
 
 /** Metadata mutation payload — mirrors `AssetMetadataUpdate` (admin-only). */

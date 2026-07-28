@@ -1112,6 +1112,32 @@ class Incident(Base):
     updated_at: Mapped[datetime] = _updated_at()
 
 
+class WorkspaceHealth(Base):
+    """Workspace-level delivered-alert flags (#1052) — one row per signal key.
+
+    The workspace-wide poll-staleness alert has no ``Connection`` row to carry its
+    ``health_alerted_at``, so the #843 delivered-first discipline needs a home of its
+    own: ``alerted_at`` is written **after** a FAILING publish succeeds and cleared
+    after the RECOVERED publish — the same *state contract* as its per-connection
+    sibling, via a deliberately different *mechanism*. The sibling claims with a
+    conditional UPDATE and hands the slow send to a Celery task (#842); here the
+    send CANNOT go to Celery — the worker is the process whose deadness this signal
+    reports, and a worker-dispatched alert never fires during the exact incident it
+    exists for. So the API-side check holds this row ``FOR UPDATE SKIP LOCKED``
+    across the synchronous send instead. That #842-shaped lock-across-send is safe
+    HERE and only here: it is one dedicated row no other query touches, contending
+    replicas skip rather than queue, the loop runs off the request path, and the
+    hold is bounded by the channels' own timeouts. Keyed by signal name (not a
+    singleton row) so a future workspace-level flag adds a row, not a table.
+    """
+
+    __tablename__ = "workspace_health"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    alerted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = _updated_at()
+
+
 __all__ = [
     "Asset",
     "Base",
@@ -1128,4 +1154,5 @@ __all__ = [
     "SuiteNotification",
     "TriggerBinding",
     "User",
+    "WorkspaceHealth",
 ]
