@@ -17,6 +17,7 @@ from backend.app.alerting.base import (
     CheckReport,
     ConnectionHealthReport,
     IncidentCard,
+    PollStalenessReport,
     RunReport,
 )
 
@@ -200,6 +201,49 @@ def health_impact(report: ConnectionHealthReport) -> str:
     return (
         "While this poll is down, pipeline runs are not ingested, suites bound to this "
         "connection are not triggered, and any lineage it feeds goes stale."
+    )
+
+
+def staleness_headline(report: PollStalenessReport) -> str:
+    """One-line summary of the workspace poll-staleness edge (#1052) — shared by all
+    channels, like :func:`health_headline`.
+
+    Deliberately workspace-phrased: this edge means the polling LOOP is dead (worker
+    starved, broker wedged, beat gone), not that any one connection is failing — the
+    per-connection edge (#837) covers that and fires from the worker, which is exactly
+    the process this signal must not trust.
+    """
+    if not report.is_failing:
+        return "DataQ — orchestration polling recovered (workspace-wide)"
+    return "DataQ — orchestration polling appears DEAD (workspace-wide)"
+
+
+def staleness_facts(report: PollStalenessReport) -> list[tuple[str, str]]:
+    """``(label, value)`` pairs for the poll-staleness edge, mirroring
+    :func:`health_facts`."""
+    pairs: list[tuple[str, str | None]] = [
+        ("Orchestration connections", str(report.connection_count)),
+        (
+            "Most recent poll (any connection)",
+            _format_timestamp(report.most_recent_polled_at) or "never",
+        ),
+        (
+            "Staleness threshold",
+            format_duration(float(report.threshold_seconds)) if report.is_failing else None,
+        ),
+    ]
+    return [(label, value) for label, value in pairs if value]
+
+
+def staleness_impact(report: PollStalenessReport) -> str:
+    """What a dead polling loop costs, or the all-clear."""
+    if not report.is_failing:
+        return "Poll writes are current again; the worker loop is executing."
+    return (
+        "No orchestration connection has been polled within the threshold. This is a "
+        "worker/broker/beat liveness failure, not a single connection: pipeline runs are "
+        "not ingested, bound suites are not triggered, and per-connection health alerts "
+        "cannot fire — this alert comes from the API process for exactly that reason."
     )
 
 

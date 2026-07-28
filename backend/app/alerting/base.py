@@ -36,6 +36,7 @@ __all__ = [
     "ConnectionHealthReport",
     "HealthPublisher",
     "IncidentCard",
+    "PollStalenessReport",
     "ResultPublisher",
     "RunReport",
 ]
@@ -195,6 +196,36 @@ class ConnectionHealthReport:
         return self.state == HEALTH_FAILING
 
 
+@dataclass(frozen=True)
+class PollStalenessReport:
+    """Workspace-wide orchestration-poll staleness (#1052) — the signal that cannot lie.
+
+    Deliberately **not** a ``ConnectionHealthReport``: this is not a property of any
+    connection. Every incident in the #905 class (#852 exporter starvation, #854
+    row-lock wait, a wedged broker reconnect) had a worker that looked alive and wrote
+    nothing — so a per-connection edge computed from worker writes structurally cannot
+    fire. This report is derived from the DB alone (``max(last_polled_at)`` across all
+    orchestration connections) and published from the API process, and its card must
+    say "the polling loop is dead", not "a connection is failing".
+
+    ``most_recent_polled_at`` is the workspace's freshest poll write — ``None`` when
+    no connection has ever been polled (the reference moment is then the oldest
+    connection's creation). ``threshold_seconds`` is carried so the card can say what
+    "stale" meant when the edge fired. ``None`` reason fields on recovery, as on the
+    connection-health edge.
+    """
+
+    state: HealthState
+    connection_count: int
+    most_recent_polled_at: datetime | None
+    threshold_seconds: int
+
+    @property
+    def is_failing(self) -> bool:
+        """Whether this is the failure edge (vs the recovery edge)."""
+        return self.state == HEALTH_FAILING
+
+
 @runtime_checkable
 class ResultPublisher(Protocol):
     """Sends a completed run's redacted ``RunReport`` to an external channel.
@@ -225,6 +256,16 @@ class HealthPublisher(Protocol):
     """
 
     def publish_health(self, session: Session, report: ConnectionHealthReport) -> None: ...
+
+    def publish_poll_staleness(self, session: Session, report: PollStalenessReport) -> None:
+        """Deliver the workspace-wide poll-staleness edge (#1052).
+
+        On the same seam as ``publish_health`` (same channels, same workspace-level
+        routing, same "whether was decided upstream" contract) rather than a parallel
+        mechanism — the caller is ``workspace_health_service``, which owns the
+        threshold decision and the #843 delivered-first bookkeeping.
+        """
+        ...
 
 
 @runtime_checkable

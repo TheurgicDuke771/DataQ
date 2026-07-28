@@ -90,6 +90,27 @@ class Settings(BaseSettings):
     #   WAREHOUSE_LINEAGE_ENABLED=true
     warehouse_lineage_enabled: bool = False
 
+    # Lineage staleness surface (#1091): a warehouse lineage source whose last
+    # refresh is older than this many hours is surfaced as STALE in the asset view,
+    # independently of error/degraded. The gap this closes: a refresh loop that
+    # silently STOPS (no error, no degradation — beat starved, feature later
+    # disabled, task deleted) previously rendered as healthy while serving
+    # 9-day-old lineage. 2x the daily beat cadence by default, so one skipped
+    # wall-clock tick (beat down at the moment) never flags; 0 disables.
+    #   LINEAGE_STALE_AFTER_HOURS=48
+    lineage_stale_after_hours: int = 48
+
+    # Workspace-wide orchestration-poll staleness alert (#1052): alert when
+    # max(last_polled_at) over ALL orchestration connections is older than this.
+    # Deliberately derived from DB writes alone and checked from the API process
+    # (main.py lifespan loop), NOT the worker: every incident in the #905 class
+    # (#852 exporter starvation, #854 row-lock wait, the wedged broker reconnect)
+    # had a worker that looked alive and wrote nothing — a per-connection signal
+    # computed by the worker cannot fire when the worker is what died. 3x the
+    # 10-min poll interval by default; 0 disables the loop entirely.
+    #   POLL_STALENESS_ALERT_AFTER_S=1800
+    poll_staleness_alert_after_s: int = 1800
+
     sample_failures_retention_days: int = 30
 
     # Stuck-run reaper (#309): a run committed `queued` (before `send_task`) — or

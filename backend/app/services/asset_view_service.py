@@ -33,11 +33,12 @@ from __future__ import annotations
 import uuid
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import func, or_, select, tuple_
+from sqlalchemy import ColumnElement, func, or_, select, tuple_
 from sqlalchemy.orm import Session
 
+from backend.app.core.config import get_settings
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.db.models import (
@@ -242,6 +243,11 @@ class WarehouseLineageStatus:
     degraded_reason: str | None
     last_error: str | None
     last_refreshed_at: datetime | None
+    # #1091: the refresh loop silently STOPPED — no error, no degradation, just no
+    # refresh within the staleness window. The prod incident this encodes: beat
+    # starvation left warehouse lineage 9 days old while two UC connections carried
+    # zero errors and zero degraded reasons and therefore matched nothing above.
+    stale: bool = False
 
 
 @dataclass(frozen=True)
@@ -614,23 +620,43 @@ def get_visible_asset(
 
 
 def warehouse_lineage_status(session: Session) -> list[WarehouseLineageStatus]:
-    """Warehouse-native lineage sources that are degraded or failing (#858 slice 4).
+    """Warehouse-native lineage sources that are degraded, failing — or STALE (#1091).
 
     Workspace-wide (like `failing_lineage_sources`): a warehouse's lineage tier is a
-    property of the source, not the asset. Lists only Snowflake / Unity Catalog
-    connections that have refreshed at least once AND are either degraded (a coarser
-    tier — e.g. Snowflake OBJECT_DEPENDENCIES because the account isn't Enterprise) or
-    errored (the last refresh failed). A healthy full-tier source is omitted — no banner
-    over a clean, current graph.
+    property of the source, not the asset. Lists Snowflake / Unity Catalog connections
+    that have refreshed at least once AND are degraded (a coarser tier — e.g. Snowflake
+    OBJECT_DEPENDENCIES because the account isn't Enterprise), errored (the last refresh
+    failed), or **stale** — last refreshed longer ago than `LINEAGE_STALE_AFTER_HOURS`
+    (default 48h = 2x the daily beat cadence). A healthy full-tier CURRENT source is
+    omitted — no banner over a clean graph.
+
+    Staleness is independent of error/degraded, and that independence is the point:
+    the #1091 incident starved beat, so the refresh loop stopped WITHOUT recording
+    anything — two UC connections with zero errors and zero degraded reasons served
+    9-day-old lineage and matched none of the conditions above. Staleness is only
+    asserted while `WAREHOUSE_LINEAGE_ENABLED` is on: with the feature off there is no
+    refresh expectation to be stale against (and the cached edges' disposition is the
+    orphan-sweep's concern, not a per-source banner).
     """
+    settings = get_settings()
+    stale_after_hours = settings.lineage_stale_after_hours
+    stale_before = (
+        datetime.now(UTC) - timedelta(hours=stale_after_hours)
+        if settings.warehouse_lineage_enabled and stale_after_hours > 0
+        else None
+    )
+    conditions: list[ColumnElement[bool]] = [
+        Connection.lineage_degraded_reason.is_not(None),
+        Connection.lineage_last_error.is_not(None),
+    ]
+    if stale_before is not None:
+        conditions.append(Connection.lineage_last_refresh_at < stale_before)
+
     rows = session.scalars(
         select(Connection).where(
             Connection.type.in_(("snowflake", "unity_catalog")),
             Connection.lineage_last_refresh_at.is_not(None),
-            or_(
-                Connection.lineage_degraded_reason.is_not(None),
-                Connection.lineage_last_error.is_not(None),
-            ),
+            or_(*conditions),
         )
     ).all()
     return [
@@ -642,6 +668,11 @@ def warehouse_lineage_status(session: Session) -> list[WarehouseLineageStatus]:
             degraded_reason=c.lineage_degraded_reason,
             last_error=c.lineage_last_error,
             last_refreshed_at=c.lineage_last_refresh_at,
+            stale=bool(
+                stale_before is not None
+                and c.lineage_last_refresh_at is not None
+                and c.lineage_last_refresh_at < stale_before
+            ),
         )
         for c in rows
     ]

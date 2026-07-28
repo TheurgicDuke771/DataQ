@@ -18,7 +18,12 @@ import httpx
 from sqlalchemy.orm import Session
 
 from backend.app.alerting import render
-from backend.app.alerting.base import CheckReport, ConnectionHealthReport, RunReport
+from backend.app.alerting.base import (
+    CheckReport,
+    ConnectionHealthReport,
+    PollStalenessReport,
+    RunReport,
+)
 from backend.app.alerting.routing import CRITICAL, Route, route_for
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
@@ -143,6 +148,26 @@ def render_slack_health_message(report: ConnectionHealthReport) -> dict[str, obj
     return {"text": headline, "blocks": blocks}
 
 
+def render_slack_staleness_message(report: PollStalenessReport) -> dict[str, object]:
+    """The Slack payload for the workspace poll-staleness edge (#1052). No action
+    button — there is no single connection to link; the signal is that none of them
+    are being polled."""
+    headline = render.staleness_headline(report)
+    emoji = ":rotating_light:" if report.is_failing else ":white_check_mark:"
+    blocks: list[dict[str, object]] = [
+        {"type": "header", "text": {"type": "plain_text", "text": f"{emoji} {headline}"[:150]}},
+        {
+            "type": "section",
+            "fields": [
+                {"type": "mrkdwn", "text": f"*{label}:*\n{value}"}
+                for label, value in render.staleness_facts(report)
+            ],
+        },
+        {"type": "section", "text": {"type": "mrkdwn", "text": render.staleness_impact(report)}},
+    ]
+    return {"text": headline, "blocks": blocks}
+
+
 def _check_line(check: CheckReport) -> str:
     """One failing check as a Slack mrkdwn bullet: name · status · expected-vs-
     observed · redacted sample (via the shared :mod:`render` formatter)."""
@@ -232,6 +257,29 @@ class SlackPublisher:
             connection_id=str(report.connection_id),
             state=report.state,
             consecutive_failures=report.consecutive_failures,
+        )
+
+    def publish_poll_staleness(self, session: Session, report: PollStalenessReport) -> None:
+        """Post the workspace poll-staleness edge (#1052) to the workspace Slack
+        webhook — same resolution and deliver-only contract as :meth:`publish_health`."""
+        webhook = notification_service.resolve_slack_webhook(
+            None,
+            secret_store=self._secret_store,
+            workspace_secret_name=self._webhook_secret_name,
+        )
+        if not webhook:
+            return
+        if not self._webhook_allowed(webhook):
+            log.warning("slack_webhook_not_allowed", signal="poll_staleness")
+            return
+        response = httpx.post(
+            webhook, json=render_slack_staleness_message(report), timeout=self._timeout
+        )
+        response.raise_for_status()
+        log.info(
+            "slack_staleness_alert_sent",
+            state=report.state,
+            connection_count=report.connection_count,
         )
 
     def _webhook_allowed(self, webhook: str) -> bool:

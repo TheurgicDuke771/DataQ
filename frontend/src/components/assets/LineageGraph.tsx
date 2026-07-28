@@ -184,7 +184,7 @@ export function LineageGraph({
           type="info"
           showIcon
           style={{ marginBottom: 12 }}
-          title="Workspace lineage sources: some report at a coarser tier"
+          title="Workspace lineage sources: some report at a coarser tier or are stale"
           description={
             <>
               <div style={{ marginBottom: 4 }}>
@@ -193,7 +193,22 @@ export function LineageGraph({
               {warehouseDegraded.map((s) => (
                 <div key={s.connection_id}>
                   <Typography.Text strong>{s.name}</Typography.Text> ({s.type}):{' '}
-                  {s.degraded_reason ?? 'lineage is degraded'}
+                  {/* #1091: staleness is its own message, never folded into "degraded" —
+                      a source with NO error and NO tier note can still have silently
+                      stopped refreshing (the prod incident: 9 days old, zero errors),
+                      and "lineage is degraded" would misname what is wrong. A source
+                      that is both coarse and stale shows both. */}
+                  {s.stale
+                    ? `no refresh since ${
+                        s.last_refreshed_at
+                          ? new Date(s.last_refreshed_at).toLocaleString()
+                          : 'unknown'
+                      } — lineage from this source is stale${
+                        s.degraded_reason
+                          ? `; last refresh also reported: ${s.degraded_reason}`
+                          : ''
+                      }`
+                    : (s.degraded_reason ?? 'lineage is degraded')}
                 </div>
               ))}
             </>

@@ -245,6 +245,10 @@ erDiagram
         string webhook_secret_ref "per-suite Teams webhook, SecretStore key"
         bool auto_resolve_incidents "auto-resolve on pass (default true, ADR 0034)"
     }
+    workspace_health {
+        string key PK "signal name, e.g. orchestration_poll_staleness (#1052)"
+        timestamptz alerted_at "delivered-first flag - set only after a publish succeeded (#843)"
+    }
     incidents {
         uuid id PK
         uuid asset_id FK "CASCADE (ADR 0034)"

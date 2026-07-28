@@ -231,6 +231,10 @@ class _Boom:
         self._calls.append("boom")
         raise RuntimeError("channel down")
 
+    def publish_poll_staleness(self, session, report):  # type: ignore[no-untyped-def]
+        self._calls.append("boom")
+        raise RuntimeError("channel down")
+
 
 class _Ok:
     def __init__(self, calls: list[str]) -> None:
@@ -240,6 +244,9 @@ class _Ok:
         self._calls.append("ok")
 
     def publish_health(self, session, report):  # type: ignore[no-untyped-def]
+        self._calls.append("ok")
+
+    def publish_poll_staleness(self, session, report):  # type: ignore[no-untyped-def]
         self._calls.append("ok")
 
 

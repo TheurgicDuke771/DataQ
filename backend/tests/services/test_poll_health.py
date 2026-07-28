@@ -265,3 +265,99 @@ class TestWarehouseLineageStatusStopsLying:
         status = warehouse_lineage_status(db_session)
         assert len(status) == 1
         assert status[0].last_error == "the datasource could not be reached"
+
+
+class TestWarehouseLineageStalenessSurface:
+    """#1091's second defect: a source that simply STOPS refreshing — no error, no
+    degraded reason — matched nothing above and rendered as healthy while serving
+    9-day-old lineage. Staleness must surface independently of error/degraded."""
+
+    def _enable(self, monkeypatch: pytest.MonkeyPatch, hours: str = "48") -> None:
+        from backend.app.core.config import get_settings
+
+        monkeypatch.setenv("WAREHOUSE_LINEAGE_ENABLED", "true")
+        monkeypatch.setenv("LINEAGE_STALE_AFTER_HOURS", hours)
+        get_settings.cache_clear()
+
+    def test_a_silently_stopped_source_is_surfaced_as_stale(
+        self, db_session: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from datetime import UTC, datetime, timedelta
+
+        from backend.app.services.asset_view_service import warehouse_lineage_status
+
+        self._enable(monkeypatch)
+        conn = _warehouse_connection(db_session, "unity_catalog")
+        # The prod shape verbatim: refreshed 9 days ago, zero errors, zero degraded.
+        conn.lineage_last_refresh_at = datetime.now(UTC) - timedelta(days=9)
+        db_session.flush()
+
+        status = warehouse_lineage_status(db_session)
+        assert len(status) == 1
+        assert status[0].stale is True
+        assert status[0].last_error is None
+        assert status[0].degraded_reason is None
+
+    def test_a_current_source_is_not_flagged_stale(
+        self, db_session: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from datetime import UTC, datetime, timedelta
+
+        from backend.app.services.asset_view_service import warehouse_lineage_status
+
+        self._enable(monkeypatch)
+        conn = _warehouse_connection(db_session)
+        conn.lineage_last_refresh_at = datetime.now(UTC) - timedelta(hours=20)
+        db_session.flush()
+        assert warehouse_lineage_status(db_session) == []
+
+    def test_staleness_is_not_asserted_while_the_feature_is_off(
+        self, db_session: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """With WAREHOUSE_LINEAGE_ENABLED off there is no refresh expectation to be
+        stale against — an old-but-cached refresh stamp must not banner."""
+        from datetime import UTC, datetime, timedelta
+
+        from backend.app.core.config import get_settings
+
+        monkeypatch.setenv("LINEAGE_STALE_AFTER_HOURS", "48")
+        monkeypatch.delenv("WAREHOUSE_LINEAGE_ENABLED", raising=False)
+        get_settings.cache_clear()
+
+        from backend.app.services.asset_view_service import warehouse_lineage_status
+
+        conn = _warehouse_connection(db_session)
+        conn.lineage_last_refresh_at = datetime.now(UTC) - timedelta(days=30)
+        db_session.flush()
+        assert warehouse_lineage_status(db_session) == []
+
+    def test_a_degraded_and_stale_source_reports_both(
+        self, db_session: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from datetime import UTC, datetime, timedelta
+
+        from backend.app.services.asset_view_service import warehouse_lineage_status
+
+        self._enable(monkeypatch)
+        conn = _warehouse_connection(db_session)
+        conn.lineage_last_refresh_at = datetime.now(UTC) - timedelta(days=3)
+        conn.lineage_degraded_reason = "view-level lineage only"
+        db_session.flush()
+
+        status = warehouse_lineage_status(db_session)
+        assert len(status) == 1
+        assert status[0].stale is True
+        assert status[0].degraded_reason == "view-level lineage only"
+
+    def test_zero_window_disables_the_staleness_condition(
+        self, db_session: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from datetime import UTC, datetime, timedelta
+
+        from backend.app.services.asset_view_service import warehouse_lineage_status
+
+        self._enable(monkeypatch, hours="0")
+        conn = _warehouse_connection(db_session)
+        conn.lineage_last_refresh_at = datetime.now(UTC) - timedelta(days=30)
+        db_session.flush()
+        assert warehouse_lineage_status(db_session) == []

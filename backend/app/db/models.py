@@ -1112,6 +1112,25 @@ class Incident(Base):
     updated_at: Mapped[datetime] = _updated_at()
 
 
+class WorkspaceHealth(Base):
+    """Workspace-level delivered-alert flags (#1052) — one row per signal key.
+
+    The workspace-wide poll-staleness alert has no ``Connection`` row to carry its
+    ``health_alerted_at``, so the #843 delivered-first discipline needs a home of its
+    own: ``alerted_at`` is written **after** a FAILING publish succeeds and cleared
+    after the RECOVERED publish, exactly like its per-connection sibling. Keyed by
+    signal name (not a singleton row) so a future workspace-level flag adds a row,
+    not a table. The row also serves as the cross-replica claim: the API-side check
+    takes it ``FOR UPDATE SKIP LOCKED``, so two API replicas never double-send.
+    """
+
+    __tablename__ = "workspace_health"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    alerted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = _updated_at()
+
+
 __all__ = [
     "Asset",
     "Base",
@@ -1128,4 +1147,5 @@ __all__ = [
     "SuiteNotification",
     "TriggerBinding",
     "User",
+    "WorkspaceHealth",
 ]
