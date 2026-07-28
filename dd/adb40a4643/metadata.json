@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "ddadb40a4643",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1067-snowflake-role-required",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/dd/adb40a4643/0/metadata.json",
+      "transcript": "/dd/adb40a4643/0/full.jsonl",
+      "compact_transcript": "/dd/adb40a4643/0/transcript.jsonl",
+      "content_hash": "/dd/adb40a4643/0/content_hash.txt",
+      "prompt": "/dd/adb40a4643/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 676,
+    "cache_creation_tokens": 1476817,
+    "cache_read_tokens": 104185167,
+    "output_tokens": 275619,
+    "api_call_count": 340
+  }
+}
