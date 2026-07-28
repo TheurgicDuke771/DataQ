@@ -1,0 +1,53 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "f1b1e49a8c9e",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1052-staleness-signals",
+  "checkpoints_count": 5,
+  "files_touched": [
+    ".env.app.example",
+    "backend/alembic/versions/70a054d4c469_add_workspace_health.py",
+    "backend/app/alerting/base.py",
+    "backend/app/alerting/card.py",
+    "backend/app/alerting/composite.py",
+    "backend/app/alerting/email.py",
+    "backend/app/alerting/noop.py",
+    "backend/app/alerting/render.py",
+    "backend/app/alerting/slack.py",
+    "backend/app/alerting/teams.py",
+    "backend/app/api/v1/assets.py",
+    "backend/app/core/config.py",
+    "backend/app/db/models.py",
+    "backend/app/lineage/pull.py",
+    "backend/app/main.py",
+    "backend/app/services/asset_view_service.py",
+    "backend/app/services/workspace_health_service.py",
+    "backend/app/worker/tasks.py",
+    "backend/tests/alerting/test_poll_staleness_publish.py",
+    "backend/tests/alerting/test_slack_email_publishers.py",
+    "backend/tests/lineage/test_pull.py",
+    "backend/tests/services/test_poll_health.py",
+    "backend/tests/services/test_workspace_health.py",
+    "backend/tests/worker/test_lineage_pull_task.py",
+    "deploy/README.md",
+    "frontend/src/api/assets.ts",
+    "frontend/src/components/assets/LineageGraph.tsx",
+    "frontend/tests/assets/LineageGraph.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f1/b1e49a8c9e/0/metadata.json",
+      "transcript": "/f1/b1e49a8c9e/0/full.jsonl",
+      "compact_transcript": "/f1/b1e49a8c9e/0/transcript.jsonl",
+      "content_hash": "/f1/b1e49a8c9e/0/content_hash.txt",
+      "prompt": "/f1/b1e49a8c9e/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1742,
+    "cache_creation_tokens": 1137526,
+    "cache_read_tokens": 59521808,
+    "output_tokens": 180335,
+    "api_call_count": 216
+  }
+}

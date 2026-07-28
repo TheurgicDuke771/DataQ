@@ -1,0 +1,102 @@
+<task-notification>
+<task-id>a929750c5d0247acd</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/a929750c5d0247acd.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix CodeQL unused-global alert" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>PR #1097 is open, milestoned, not merged (as instructed).
+
+## Summary
+
+**PR:** [#1097](https://github.com/TheurgicDuke771/DataQ/pull/1097) — `chore/codeql-64-unused-global`, not merged, milestoned to "v1.1 Week 5 — anomaly monitor kind + metric trends".
+
+**Cause of deadness (one line):** PR #1049 (`refactor(datasources): move target-shape resolution into the registry`, closing #727) moved all per-datasource target-shape dispatch — including the `adls_gen2`/`s3` flat-file grouping — into `backend/app/datasources/registry.py`'s `resolve_target_shape` (via its `_TARGET_RESOLVERS` dict mapping both types to `_flatfile_target`), leaving `_FLATFILE_TYPES` in `run_target.py` orphaned with zero remaining references.
+
+**Verification:**
+- `grep -rn "_FLATFILE_TYPES" backend/` — matched only the definition line itself, nowhere else in app or tests.
+- `git log -S _FLATFILE_TYPES --oneline -- backend/` confirmed the introducing commit (#215/#224) and the orphaning commit (#1049).
+- Deleted the single line (`backend/app/services/run_target.py:45`).
+- Local checks (all in the `dataq` conda env): `black --check` pass; `ruff check` pass (all checks passed); `mypy backend/app backend/tests` — success, no issues in 301 source files; `bandit -r` on the file — no issues identified; `pytest backend/tests -k "run_target" -q` — 36 passed, 2 skipped (Postgres-dependent, unrelated), `run_target.py` at 100% line coverage in that run (the overall coverage-gate failure in that run is expected for a `-k`-filtered subset vs. the full-suite 80% gate, not a real regression).
+
+One commit (`33824978`), conventional message, pre-commit hooks ran (no `--no-verify`), pushed and PR opened with the template filled in honestly (docs N/A, no linked GH issue — closes the CodeQL alert directly).</result>
+<usage><subagent_tokens>103225</subagent_tokens><tool_uses>29</tool_uses><duration_ms>186581</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-a929750c5d0247acd</worktreePath><worktreeBranch>worktree-agent-a929750c5d0247acd</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bqhfnrxzb</task-id>
+<tool-use-id>toolu_01CvkGLoWy5HptEjDmfjQook</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/bqhfnrxzb.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for main CI runs to complete" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Okay, then Batch #2 of track 1 then
+
+---
+
+<task-notification>
+<task-id>aa10767d2771977f4</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/aa10767d2771977f4.output</output-file>
+<status>completed</status>
+<summary>Agent "1099 review: bug scan" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Findings — shallow scan of PR #1099 (`backend/app/worker/celery_app.py`, `backend/tests/worker/test_celery_app.py`):
+
+No large bugs found. Specifically checked and cleared:
+
+1. **Timezone correctness**: `celery_app.py` sets `timezone="UTC"` and `enable_utc=True` in `app.conf` (unchanged, outside the diff but visible in context), so `crontab(hour=..., minute=...)` fires in UTC as the new comments claim. No UTC/local mismatch.
+
+2. **Crontab argument semantics**: `crontab(hour="1", minute="17")` etc. — verified with celery's own `crontab` that string hour/minute values parse correctly (`hour={1}, minute={17}`). Not a bug.
+
+3. **Stagger claim**: the six new fire times (01:17, 01:37, 01:57, 02:17, 02:37, 02:57) are all distinct with 20-minute gaps, matching the "not a thundering herd" comment and the new `test_daily_crontabs_are_staggered_not_a_midnight_herd` regression test.
+
+4. **`test_no_beat_entry_uses_an_interval_a_restart_can_starve`**: checked against the remaining non-crontab entries left in the schedule (`poll-orchestration-runs`=600s, `recover-orchestration-gaps`=1800s, `dispatch-due-schedules`=60s, `reap-stuck-runs`=600s, `beat-heartbeat`=60s) — all ≤ the 1800s ceiling, so the new guard passes truthfully rather than vacuously.
+
+5. **No stale test assertions**: fetched the full PR-branch copy of `test_celery_app.py` — confirmed no leftover `== 86400.0` assertions remain for `purge_sample_failures`, `refresh_lineage_pull`, `refresh_warehouse_lineage`, or `refresh_credential_expiry` (they were never individually asserted pre-PR, only implicitly via the class-level tests now added), so nothing was left broken by the rename.
+
+6. **Corrected comment about beat topology**: verified against `docker-compose.yml:164` (`worker -B`) and `deploy/terraform/azure/containerapps.tf:197` (comment: "the worker also runs celery-beat (-B)") — confirms embedded beat in both dev and prod, matching the PR's corrected comment (the old comment claiming a separate prod beat process was indeed wrong).
+
+7. **Task name typos**: none — all six `"task"` strings in the beat schedule match the existing task names unchanged by this PR.
+
+No issues to report.</result>
+<usage><subagent_tokens>70989</subagent_tokens><tool_uses>10</tool_uses><duration_ms>81594</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ac6df89bb8824f723</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/ac6df89bb8824f723.output</output-file>
+<status>completed</status>
+<summary>Agent "1099 review: code comments" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Findings
+
+**1. New header comment contradicts docker-compose.yml's unchanged `-B` comment (both describe prod's beat topology, and now disagree).**
+
+New comment in `backend/app/worker/celery_app.py` (PR #1099):
+&gt; "Beat runs EMBEDDED in the worker (`worker -B`) in dev AND prod alike (docker-compose.yml + deploy/terraform/azure/containerapps.tf) — there is no separate beat process, and beat state does not survive a restart."
+
+This is contradicted by the comment sitting a few lines above the `-B` flag in `docker-compose.yml` (untouched by this PR), which the new comment itself cites as corroborating evidence:
+&gt; "`-B` runs celery-beat embedded in the worker (the #171 orchestration polling schedule). Fine for the single-worker dev stack; prod runs a separate beat."
+
+`docker-compose.yml` explicitly says "prod runs a separate beat" — the opposite of "in dev AND prod alike ... there is no separate beat process." Checking `deploy/terraform/azure/containerapps.tf` confirms the *new* celery_app.py comment is the accurate one (worker `command = ["celery", ..., "worker", "-B", ...]`, with `min_replicas = 1` specifically justified by "the worker also runs celery-beat (-B)"). This PR correctly fixed the stale claim in `celery_app.py` (the pre-PR text there also said "prod uses a separate beat process") but left the matching stale claim in `docker-compose.yml` unfixed, so the two files now actively disagree instead of agreeing-but-wrong. Since the new comment cites `docker-compose.yml` by name as one of the two sources backing its claim, this is worth fixing in the same PR (or filing per the "fixed or filed" rule) rather than shipping a self-contradicting pair of comments.
+
+**2. New header comment's restart-cause list includes "scaling," which the cited `containerapps.tf` config forecloses.**
+
+New comment:
+&gt; "the prod worker restarts more often than daily (ACA revision rolls, scaling, the #904 watchdog)"
+
+`containerapps.tf`'s worker block sets `min_replicas = 1` and `max_replicas = 1` (comment: "min_replicas = 1: the worker also runs celery-beat (-B) for the schedule dispatcher + orchestration polling, so it can't scale to zero"). With min == max == 1, there is no horizontal scale-out/scale-in event possible for the worker app — "scaling" cannot be a restart cause for the very container this comment is about. The other two causes (revision rolls, the #904 watchdog) are real and already independently documented elsewhere in the file (`_start_beat_watchdog`'s docstring, the `#: One-off tasks...` block). "Scaling" appears to be an inaccurate addition to the list.
+
+No other issues found: the six `crontab(hour=…, minute=…)` inline comments (`# daily, 01:17 UTC` etc.) all match their `hour`/`minute` args; the "staggered ... and UTC (timezone above)" claim matches the existing `timezone="UTC"` / `enable_utc=True` config; the watchdog docstrings (`_start_beat_watchdog`, `beat_heartbeat` entry comment) and the `_ON_BEAT_START` rationale are untouched and remain internally consistent with the new header text; and the new test-file comments (`_INTERVAL_CEILING_S` rationale, the two new test docstrings) accurately describe the surviving sub-hourly intervals (600s, 1800s, 60s — all ≤ 1800s) and the staggering behavior they assert.</result>
+<usage><subagent_tokens>79962</subagent_tokens><tool_uses>11</tool_uses><duration_ms>101099</duration_ms></usage>
+</task-notification>
