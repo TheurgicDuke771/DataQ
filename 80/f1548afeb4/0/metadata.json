@@ -1,0 +1,40 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "80f1548afeb4",
+  "session_id": "3b5d274f-6eb6-49cf-aaac-8b1562e69e56",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-28T06:09:57.684256Z",
+  "branch": "dependabot/pip/types-openpyxl-3.1.5.20260724",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".pre-commit-config.yaml"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "4b76d675edcb",
+  "checkpoint_transcript_start": 158,
+  "transcript_lines_at_start": 158,
+  "compact_transcript_start": 39,
+  "token_usage": {
+    "input_tokens": 14,
+    "cache_creation_tokens": 11641,
+    "cache_read_tokens": 930319,
+    "output_tokens": 8085,
+    "api_call_count": 7
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-28T06:09:57.651719Z",
+    "agent_lines": 1,
+    "agent_removed": 1,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 1,
+    "total_lines_changed": 2,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
