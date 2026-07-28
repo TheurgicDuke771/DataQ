@@ -160,7 +160,8 @@ services:
       dockerfile: backend/Dockerfile
     restart: unless-stopped
     # -B runs celery-beat embedded in the worker (the #171 orchestration polling
-    # schedule). Fine for the single-worker dev stack; prod runs a separate beat.
+    # schedule) — dev AND prod alike (containerapps.tf runs the same `worker -B`;
+    # there is no separate beat process anywhere, #1091).
     command: celery -A backend.app.worker.celery_app worker -B --loglevel=INFO
     env_file:
       - path: .env.app

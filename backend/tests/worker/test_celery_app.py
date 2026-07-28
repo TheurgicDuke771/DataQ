@@ -13,6 +13,7 @@ from typing import Any
 
 import pytest
 from billiard.exceptions import WorkerLostError
+from celery.schedules import crontab
 
 from backend.app.core.logging import request_id_var
 from backend.app.worker import celery_app
@@ -72,7 +73,7 @@ def test_beat_schedule_registers_orphan_asset_sweep() -> None:
     disabling the janitor."""
     schedule = create_celery_app().conf.beat_schedule
     assert schedule["sweep-orphan-assets"]["task"] == "sweep_orphan_assets"
-    assert schedule["sweep-orphan-assets"]["schedule"] == 86400.0
+    assert isinstance(schedule["sweep-orphan-assets"]["schedule"], crontab)
 
 
 def test_beat_schedule_registers_orphan_secret_sweep() -> None:
@@ -86,10 +87,77 @@ def test_beat_schedule_registers_orphan_secret_sweep() -> None:
     app = create_celery_app()
     schedule = app.conf.beat_schedule
     assert schedule["sweep-orphan-secrets"]["task"] == "sweep_orphan_secrets"
-    assert schedule["sweep-orphan-secrets"]["schedule"] == 86400.0
+    assert isinstance(schedule["sweep-orphan-secrets"]["schedule"], crontab)
     import backend.app.worker.tasks  # noqa: F401  — registers the tasks
 
     assert "sweep_orphan_secrets" in app.tasks
+
+
+# Sub-hourly liveness intervals are fine: a beat restart resetting a countdown of
+# minutes delays a tick by minutes. Anything slower would cross the restart cadence
+# of the embedded-beat deployment and belongs on a wall clock instead.
+_INTERVAL_CEILING_S = 1800.0
+
+
+def test_no_beat_entry_uses_an_interval_a_restart_can_starve() -> None:
+    """Every beat entry is either a short liveness interval or a wall-clock crontab.
+
+    The #1091 class: beat runs embedded in the worker (`worker -B`) with no
+    persisted state, so an INTERVAL schedule restarts its countdown on every
+    worker restart — and prod restarts more often than daily (revision rolls,
+    scaling, the #904 watchdog). A 24h interval therefore never fired: warehouse
+    lineage sat 10 days stale while beat's every-minute tasks ran fine, and the
+    only daily task that executed at all was the one #1024 kicks on beat start.
+
+    Guarding the CLASS, not the six names: any future beat entry added with a
+    slow interval re-introduces the bug, so the ceiling applies to every entry.
+    A `crontab` fires at a wall-clock moment and is indifferent to restarts.
+    """
+    schedule = create_celery_app().conf.beat_schedule
+    assert schedule, "beat schedule unexpectedly empty"
+    for name, entry in schedule.items():
+        sched = entry["schedule"]
+        if isinstance(sched, crontab):
+            continue
+        assert isinstance(sched, float), f"{name}: unexpected schedule type {type(sched)!r}"
+        assert sched <= _INTERVAL_CEILING_S, (
+            f"{name}: {sched}s interval would reset on every worker restart and can "
+            f"starve forever under embedded beat (#1091) — use crontab() instead"
+        )
+
+
+def test_every_beat_entry_names_a_registered_task() -> None:
+    """Every beat entry's task NAME resolves to a registered task — generalized from
+    the single #1070 assertion to the whole schedule (review finding on this PR).
+
+    A beat entry naming a task that does not exist fails SILENTLY at runtime — beat
+    logs and moves on, the #405/#904 shape — and this PR edits the task/schedule
+    pair of six entries at once, exactly where a typo would slip in unseen.
+    """
+    app = create_celery_app()
+    import backend.app.worker.tasks  # noqa: F401  — registers the tasks
+
+    for name, entry in app.conf.beat_schedule.items():
+        assert entry["task"] in app.tasks, f"{name}: task {entry['task']!r} is not registered"
+
+
+def test_daily_crontabs_are_staggered_not_a_midnight_herd() -> None:
+    """No two wall-clock entries share a fire minute (and none sits at 00:00).
+
+    The stagger is deliberate — six tasks include warehouse queries and vault
+    sweeps, and firing them as one batch turns a cheap daily cadence into a
+    thundering herd on the worker, the DB and the warehouses.
+    """
+    schedule = create_celery_app().conf.beat_schedule
+    moments = []
+    for entry in schedule.values():
+        sched = entry["schedule"]
+        if isinstance(sched, crontab):
+            moment = (frozenset(sched.hour), frozenset(sched.minute))
+            assert moment != (frozenset({0}), frozenset({0}))
+            moments.append(moment)
+    assert moments, "expected at least one crontab entry"
+    assert len(moments) == len(set(moments)), f"duplicate crontab fire times: {moments}"
 
 
 # ───────────────────────── inject (publisher side) ─────────────────

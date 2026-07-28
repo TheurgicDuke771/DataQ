@@ -16,6 +16,7 @@ from typing import Any
 
 from billiard.exceptions import Terminated, WorkerLostError
 from celery import Celery
+from celery.schedules import crontab
 from celery.signals import (
     beat_init,
     before_task_publish,
@@ -74,8 +75,23 @@ def create_celery_app() -> Celery:
         # Celery-beat schedule. The orchestration polling fallback (#171) runs
         # every 10 min as the success channel for runs that produced no webhook;
         # the task looks back further than the interval so nothing slips the gap.
-        # Beat runs embedded in the dev worker (`worker -B`); prod uses a separate
-        # beat process.
+        # Beat runs EMBEDDED in the worker (`worker -B`) in dev AND prod alike
+        # (docker-compose.yml + deploy/terraform/azure/containerapps.tf) — there
+        # is no separate beat process, and beat state does not survive a restart.
+        #
+        # That is why every daily task below is a `crontab`, never an interval
+        # (#1091): an interval restarts its countdown when beat restarts, and the
+        # prod worker restarts more often than daily (ACA revision rolls, image
+        # deploys, the #904 watchdog), so a 24h interval NEVER fired — prod's warehouse
+        # lineage sat 10 days stale with beat's every-minute tasks running fine.
+        # A crontab fires at a wall-clock moment, indifferent to restarts. The
+        # times are staggered (not one thundering 00:00 batch) and UTC (timezone
+        # above). Trade-off, accepted: if beat happens to be DOWN at the moment,
+        # that day's tick is skipped rather than made up — restarts are seconds
+        # long so the window is tiny, and the staleness surface (#1052) reports
+        # a miss instead of leaving it invisible. Sub-hourly liveness intervals
+        # are unaffected — a reset countdown of minutes is noise.
+        #
         # Gap recovery (B2) sweeps a wider 1-hour window every 30 min (plus once
         # on beat startup, via the beat_init signal below) to re-ingest runs
         # missed while the system was down — idempotent with the 10-min poll.
@@ -102,7 +118,7 @@ def create_celery_app() -> Celery:
             # survive (ADR 0012); this is PII minimisation, not a history delete.
             "purge-sample-failures": {
                 "task": "purge_sample_failures",
-                "schedule": 86400.0,  # 24 hours
+                "schedule": crontab(hour="1", minute="17"),  # daily, 01:17 UTC
             },
             # Stuck-run reaper (#309): every 10 min, fail runs orphaned in a
             # non-terminal state past `stuck_run_threshold_minutes` (a run committed
@@ -120,7 +136,7 @@ def create_celery_app() -> Celery:
             # suite/run/lineage_edge still references.
             "sweep-orphan-assets": {
                 "task": "sweep_orphan_assets",
-                "schedule": 86400.0,  # 24 hours
+                "schedule": crontab(hour="1", minute="37"),  # daily, 01:37 UTC
             },
             # Orphan-SECRET sweep (#1059): once a day, reconcile the secret store
             # against the rows that should own its entries. Daily and low-urgency for
@@ -129,7 +145,7 @@ def create_celery_app() -> Celery:
             # warehouse credential.
             "sweep-orphan-secrets": {
                 "task": "sweep_orphan_secrets",
-                "schedule": 86400.0,  # 24 hours
+                "schedule": crontab(hour="1", minute="57"),  # daily, 01:57 UTC
             },
             # Catalog lineage pull (#762, ADR 0034): once a day, pull lineage from the
             # configured `LineageProvider` (Marquez) into the `lineage_edges` cache.
@@ -138,7 +154,7 @@ def create_celery_app() -> Celery:
             # whose freshness is deliberately bounded by the catalog's own cadence.
             "refresh-lineage-pull": {
                 "task": "refresh_lineage_pull",
-                "schedule": 86400.0,  # 24 hours
+                "schedule": crontab(hour="2", minute="17"),  # daily, 02:17 UTC
             },
             # Beat liveness heartbeat (#904): every minute, a task whose only job is
             # to prove the beat→broker→worker loop still EXECUTES. The watchdog
@@ -157,7 +173,7 @@ def create_celery_app() -> Celery:
             # warehouse view's own latency, not a liveness interval.
             "refresh-warehouse-lineage": {
                 "task": "refresh_warehouse_lineage",
-                "schedule": 86400.0,  # 24 hours
+                "schedule": crontab(hour="2", minute="37"),  # daily, 02:37 UTC
             },
             # Credential-expiry refresh (#838): once a day, re-read the stated
             # expiry of every stored credential that has one (an Azure SAS prints
@@ -168,7 +184,7 @@ def create_celery_app() -> Celery:
             # liveness interval.
             "refresh-credential-expiry": {
                 "task": "refresh_credential_expiry",
-                "schedule": 86400.0,  # 24 hours
+                "schedule": crontab(hour="2", minute="57"),  # daily, 02:57 UTC
             },
         },
     )
