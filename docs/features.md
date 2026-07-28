@@ -79,6 +79,12 @@ Four ways a suite runs (all the same authz — [feature matrix](feature-matrix.m
   severity-weighted **health score**, pass rate, run counts, average duration, per-day
   trends, and per-suite performance. Assets are the primary lens (ADR 0034 nav inversion):
   the sidebar leads with **Assets** above Suites, and every suite/run links back to its asset.
+- **Warehouse inventory sync** (ADR 0040) — an opt-in per-connection toggle
+  (Snowflake / Unity Catalog connection forms) that enumerates every table the
+  connection can see into the asset view daily, so a table with no suite, run,
+  or lineage signal is **visible as unmonitored** instead of invisible. Synced
+  tables age out automatically once dropped from the warehouse. Unity Catalog
+  needs `SELECT` on `system.information_schema` for the connection's principal.
 - **Asset DQ scorecard** — per-dimension coverage and score on the asset page: which
   quality dimensions have checks, how they scored on the latest run, and — the part
   worth acting on — which dimensions have **no checks at all**. Three states are kept
