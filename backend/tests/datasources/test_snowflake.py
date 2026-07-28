@@ -273,12 +273,25 @@ def test_dsn_omits_role_when_absent_which_is_why_it_must_be_required() -> None:
     Asserted on the builder directly, bypassing the model validator, so the
     mechanism stays pinned even though the validator now prevents reaching it.
     """
+    # Explicit kwargs, not **dict: the tests tree is mypy-gated (#418) and a
+    # `**dict[str, str]` cannot satisfy the Literal-typed auth_type parameter.
     role_less = SnowflakeConfig.model_construct(
-        **{k: v for k, v in _CONFIG.items() if k != "role"}, role=None
+        account=_CONFIG["account"],
+        user=_CONFIG["user"],
+        database=_CONFIG["database"],
+        schema_=_CONFIG["schema"],  # model_construct bypasses the alias
+        warehouse=_CONFIG["warehouse"],
+        role=None,
     )
     dsn = build_connection_string(role_less, "pw")
     assert "role=" not in dsn
+    # The DSN must be well-formed in every OTHER respect — otherwise this test
+    # could pass because the config was malformed rather than because `role` is
+    # absent. (mypy caught exactly that: `schema=` silently sets a stray attribute
+    # under model_construct, which bypasses the alias, leaving schema_ unset.)
     assert "warehouse=" in dsn
+    assert _CONFIG["database"] in dsn
+    assert _CONFIG["schema"] in dsn
 
 
 def test_run_checks_password_keeps_connection_string(monkeypatch: pytest.MonkeyPatch) -> None:
