@@ -160,3 +160,21 @@ variable "github_environment" {
   type        = string
   default     = "production"
 }
+
+# ── State encryption (OpenTofu, #1087) ───────────────────────────────────────
+variable "state_encryption_passphrase" {
+  description = <<-DESC
+    Passphrase for OpenTofu state encryption (versions.tf `encryption` block).
+
+    Supplied from the gitignored terraform.tfvars — deliberately NOT .env, because
+    scripts/setup.sh regenerates .env and regenerating this value would make the
+    state permanently unreadable.
+
+    This is a DATA-AT-REST KEY, not a credential: it cannot be revoked and it cannot
+    be re-minted. Losing it means terraform.tfstate is unrecoverable, which is worse
+    than the plaintext exposure encryption removes — so a second copy must live off
+    this machine. See deploy/README.md.
+  DESC
+  type        = string
+  sensitive   = true
+}

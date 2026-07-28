@@ -390,6 +390,12 @@ a hang into a failed deploy — better, but still a failed deploy.
 
 ## Operational notes
 
+- **The OpenTofu state passphrase is a data-at-rest key, not a credential (#1087).** State is
+  encrypted (AES-GCM / PBKDF2); the passphrase lives in the gitignored
+  `deploy/terraform/azure/terraform.tfvars`. It **cannot be revoked and cannot be re-minted** —
+  losing it makes `terraform.tfstate` unrecoverable, which is worse than the plaintext exposure
+  encryption removes. **Keep a second copy off the machine.** Full note, including what this does
+  and does not protect against, in [terraform/azure/README.md](terraform/azure/README.md).
 - **Env vars set out-of-band must be reconciled back into the stack (#1086).** The Deploy
   workflow is `az`-only — it never runs `tofu` — so it is easy to set a container env var
   with `az containerapp update` and never land it in `containerapps.tf`. When that happens

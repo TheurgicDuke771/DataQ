@@ -214,11 +214,18 @@ rendered diff would not have settled it.
 - Done while there is exactly one stack pair, before #505 adds two more.
 
 **Negative / watch**
-- **The swap is convention, not enforcement — for now.** Nothing in the config is
-  OpenTofu-exclusive, so `terraform` would still parse and apply it. That is deliberate:
-  it keeps this change reversible. Adding the `encryption {}` block is what makes it
-  structural (Terraform cannot parse that block) — and is therefore a **one-way door**,
-  which is why it is a separate follow-up rather than part of this amendment.
+- **The swap was convention, not enforcement — until #1087 closed that.** As written, this
+  amendment left the config Terraform-parseable so the change stayed reversible, and named
+  state encryption as the separate one-way door.
+  > **Update (2026-07-27, #1093, closes #1087):** that door is now closed. `versions.tf`
+  > carries an `encryption {}` block (AES-GCM + PBKDF2 over state *and* plan files), which
+  > Terraform cannot parse — so **the stack can no longer be run with `terraform`, and the
+  > OpenTofu migration is now structural rather than conventional.** The passphrase lives
+  > in the gitignored `terraform.tfvars`, deliberately not in Key Vault (which this state
+  > manages, making it circular) and not in `.env` (which `scripts/setup.sh` regenerates).
+  > Two operational consequences: the state can no longer be grepped — use
+  > `tofu show -json` — and `-input=false` is mandatory, since a missing required variable
+  > otherwise prompts on stdin and hangs invisibly when stdout is redirected.
 - **Two stacks, one resource group.** The app and harness stacks share `dataq-rg`.
   Converting only one would have left two CLIs and a wrong-binary hazard on shared
   resources; they were converted together for that reason.

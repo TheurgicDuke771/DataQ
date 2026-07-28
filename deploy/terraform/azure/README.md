@@ -108,6 +108,78 @@ Create the `production` GitHub environment (federated-credential subject
 **write** access so the workflow's `GITHUB_TOKEN` can push (label-linking alone
 doesn't grant it for user-scoped packages).
 
+## State encryption (#1087)
+
+State is **encrypted at rest** (OpenTofu `encryption` block in
+[versions.tf](versions.tf), AES-GCM with a PBKDF2-derived key). It holds the generated
+Postgres password, the Redis password and webhook secret values; unencrypted it is a
+plaintext credential file sitting on one laptop.
+
+### Read this before you touch it
+
+**The passphrase is a data-at-rest key, not a credential.** The distinction is the whole
+operational story:
+
+|  | A credential (e.g. the OpenBao token) | This passphrase |
+|---|---|---|
+| Leaked | revoke it; blast radius bounded by policy + TTL | decrypts **every copy of the state that ever existed** — no revocation |
+| **Lost** | re-mint it; no data impact | **`terraform.tfstate` is unrecoverable** |
+
+So losing it is worse than the exposure encryption removes. **Keep a second copy off this
+machine** (password manager). Recovering from total loss means rebuilding the stack by
+`tofu import`, resource by resource, against live Azure.
+
+### Where it lives, and why not `.env`
+
+`state_encryption_passphrase` in the gitignored `terraform.tfvars`, which OpenTofu loads
+automatically — no wrapper, no sourcing step.
+
+Deliberately **not** `.env`: `scripts/setup.sh` regenerates `.env` on first run, and
+regenerating this value would silently make the state permanently unreadable.
+`terraform.tfvars` is never written by tooling.
+
+### What it does and does not protect against
+
+The passphrase sits beside the ciphertext, so against **host compromise it buys little** —
+anyone who can read `terraform.tfstate` can read `terraform.tfvars` next to it.
+
+It buys a great deal against **accidental disclosure**, which is the failure that actually
+happens: a state file committed by a `.gitignore` slip, a `*.tfstate.backup` swept into a
+backup or disk image, a state pasted into a support ticket. In each case encryption turns
+"every production credential leaked" into "an opaque blob leaked."
+
+### Behaviour to expect
+
+- A wrong or missing passphrase **fails closed** — `decryption failed: cipher: message
+  authentication failed` — and does **not** corrupt the state file.
+- Plan files are encrypted too (they embed resolved sensitive values).
+- This is what makes the ADR 0024 OpenTofu amendment **structural**: Terraform cannot parse
+  an `encryption` block, so the stack can no longer be run with `terraform`.
+
+### Practical consequence: you can no longer grep the state
+
+`terraform.tfstate` is ciphertext, so anything that read values straight out of it now
+fails silently or returns nothing. Use `tofu show -json`, which decrypts on the way out:
+
+```bash
+# was: jq ... terraform.tfstate
+tofu show -json | jq -r '.values.root_module.resources[]
+  | select(.address=="azurerm_container_app.api")
+  | .values.secret[] | select(.name=="database-url") | .value'
+```
+
+This bites immediately, because `app_db_password` is a required variable with no default
+and the usual way to recover it is out of the state. **Always pass `-input=false`**: without
+it, a missing required variable makes OpenTofu prompt on stdin, and if stdout is redirected
+the prompt is invisible — the command simply hangs forever rather than failing. That cost
+several hours here before it was diagnosed.
+
+### Rotating the passphrase
+
+Re-encryption is a migration, not an edit — put the *old* key back as a `fallback` on the
+`state` block, set the new one as primary, `tofu apply`, then remove the fallback. Update
+the off-machine copy in the same session.
+
 ## Verify
 
 ```bash

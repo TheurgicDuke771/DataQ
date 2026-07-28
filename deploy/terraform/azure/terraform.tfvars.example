@@ -1,9 +1,25 @@
 # Copy to terraform.tfvars (gitignored) and fill in. Values here are NON-SECRET
-# (identifiers + sizing). The one SECRET input — app_db_password — must NOT go in
-# this file; pass it at apply time:
-#   TF_VAR_app_db_password=... terraform apply
-# (it's the password for the dataq_app role provisioned out-of-band on the shared
-# Postgres server — see README "Shared Postgres").
+# (identifiers + sizing).
+#
+# TWO REQUIRED INPUTS HAVE NO DEFAULT. Miss either and OpenTofu prompts on stdin —
+# which, with stdout redirected, looks exactly like a hang. ALWAYS pass -input=false
+# so a missing value fails fast instead.
+#
+#   1. app_db_password — SECRET. Do NOT put it in this file; pass it at apply time:
+#        TF_VAR_app_db_password=... tofu apply
+#      (password for the dataq_app role provisioned out-of-band on the shared
+#      Postgres server — see README "Shared Postgres"). Once the state exists it can
+#      be recovered with `tofu show -json`, NOT by grepping terraform.tfstate, which
+#      is encrypted.
+#
+#   2. state_encryption_passphrase — SECRET, and unlike the above it is a
+#      DATA-AT-REST KEY: it cannot be revoked or re-minted, and losing it makes
+#      terraform.tfstate unrecoverable. It DOES belong in your real terraform.tfvars
+#      (gitignored) so OpenTofu loads it automatically — deliberately not .env, which
+#      scripts/setup.sh regenerates. Keep a second copy off the machine.
+#      See README "State encryption". Generate with e.g.
+#        python3 -c "import secrets; print(secrets.token_urlsafe(48))"
+#   state_encryption_passphrase = "..."   # 16 chars minimum; never commit
 
 # image_tag          = "v10"       # backend  — bump per deploy (immutable tag, not "latest")
 # frontend_image_tag = "v1"        # frontend — bump per deploy (immutable tag, not "latest")
