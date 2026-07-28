@@ -1,0 +1,47 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "5e5a1edaf5c0",
+  "strategy": "manual-commit",
+  "branch": "feature/adr-0040-inventory-sync",
+  "checkpoints_count": 9,
+  "files_touched": [
+    ".env.app.example",
+    "backend/app/core/config.py",
+    "backend/app/datasources/snowflake.py",
+    "backend/app/datasources/unity_catalog.py",
+    "backend/app/lineage/warehouse.py",
+    "backend/app/lineage/warehouse_snowflake.py",
+    "backend/app/lineage/warehouse_unity_catalog.py",
+    "backend/app/services/inventory_service.py",
+    "backend/app/worker/celery_app.py",
+    "backend/app/worker/tasks.py",
+    "backend/tests/fixtures/lineage_native/.gitignore",
+    "backend/tests/fixtures/lineage_native/snowflake_tables_casing.json",
+    "backend/tests/fixtures/lineage_native/uc_tables_casing.json",
+    "backend/tests/lineage/test_warehouse_inventory.py",
+    "backend/tests/lineage/test_warehouse_refresh.py",
+    "backend/tests/services/test_inventory_service.py",
+    "deploy/README.md",
+    "docs/adr/0040-warehouse-inventory-sync-table-enumeration-seam.md",
+    "docs/adr/README.md",
+    "frontend/src/components/connections/ConnectionTypeFields.tsx",
+    "frontend/src/components/connections/connectionFormSpec.ts",
+    "frontend/tests/pages/ConnectionNew.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/5e/5a1edaf5c0/0/metadata.json",
+      "transcript": "/5e/5a1edaf5c0/0/full.jsonl",
+      "compact_transcript": "/5e/5a1edaf5c0/0/transcript.jsonl",
+      "content_hash": "/5e/5a1edaf5c0/0/content_hash.txt",
+      "prompt": "/5e/5a1edaf5c0/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2072,
+    "cache_creation_tokens": 2551709,
+    "cache_read_tokens": 125720600,
+    "output_tokens": 319591,
+    "api_call_count": 387
+  }
+}
