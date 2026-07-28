@@ -54,6 +54,11 @@ class _StubProvider:
             raise self._result
         return self._result
 
+    def enumerate_tables(
+        self, conn: object, *, connection_config: dict[str, object], limit: int | None = None
+    ) -> tuple[Any, ...]:
+        return ()  # Protocol conformance (ADR 0040); the refresh tests never enumerate
+
 
 @pytest.fixture
 def sf_connection(db_session: Session) -> Connection:

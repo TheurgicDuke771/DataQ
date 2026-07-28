@@ -185,6 +185,48 @@ class SnowflakeLineageProvider:
         )
 
     # ── identity ──────────────────────────────────────────────────────────────
+    def enumerate_tables(
+        self,
+        conn: object,
+        *,
+        connection_config: dict[str, object],
+        limit: int | None = None,
+    ) -> tuple[AssetIdentity, ...]:
+        """ADR 0040 — enumerate the connection database's tables from
+        ``INFORMATION_SCHEMA.TABLES``.
+
+        Scope mirrors the lineage pull (#908/#911): ONE database (bound param on
+        ``table_catalog`` — the session already runs in the connection's database,
+        the predicate makes the boundary explicit), the same object vocabulary the
+        lineage domains accept (temporaries excluded by TABLE_TYPE allowlist;
+        dynamic tables arrive as ``BASE TABLE``), ``INFORMATION_SCHEMA`` itself and
+        Snowpark session scratch (``SNOWPARK_TEMP_*``) excluded. Identities are
+        built from the catalog's own strings — no fold (the #823-safe path).
+        """
+        namespace = self._namespace(connection_config)
+        database = self._database(connection_config)
+        sql = (
+            "SELECT table_schema, table_name FROM INFORMATION_SCHEMA.TABLES"
+            " WHERE table_catalog = :db"
+            " AND table_schema != 'INFORMATION_SCHEMA'"
+            " AND table_type IN ('BASE TABLE', 'VIEW', 'MATERIALIZED VIEW', 'EXTERNAL TABLE')"
+            " ORDER BY table_schema, table_name"
+        )
+        params: dict[str, object] = {"db": database}
+        if limit is not None:
+            sql += " LIMIT :lim"
+            params["lim"] = int(limit)
+        rows = conn.execute(text(sql), params).all()  # type: ignore[attr-defined]
+        # The falsy-guard is fixture-justified, not speculative: the real
+        # account-wide capture (snowflake_tables_casing.json) contains rows with
+        # NULL catalog — a row the driver nulls must be skipped, never become a
+        # "DATAQ_DB.None.None" asset.
+        return tuple(
+            self._identity(namespace, database, schema, table)
+            for schema, table in rows
+            if schema and table and not self._is_ephemeral(table)
+        )
+
     def _namespace(self, config: dict[str, object]) -> str:
         account = config.get("account")
         if not isinstance(account, str) or not account.strip():

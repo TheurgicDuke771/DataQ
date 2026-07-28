@@ -15,3 +15,9 @@
 # only (incl. quoted-lowercase workout tables — real identity shapes); every
 # directSources is empty (the whole point of the fixture: no fabrication).
 !sf_access_history_columns_projected.json
+# #919 inventory enumeration — reviewed 2026-07-29: catalog/schema/table identifiers
+# only (SF INFORMATION_SCHEMA.TABLES account-wide capture incl. SNOWFLAKE system db;
+# UC system.information_schema capture incl. samples + information_schema rows —
+# the noise the enumerator's scope predicates exist to exclude).
+!snowflake_tables_casing.json
+!uc_tables_casing.json

@@ -1,4 +1,4 @@
-import { Form, Input, Select, type FormInstance } from 'antd';
+import { Form, Input, Select, Switch, type FormInstance } from 'antd';
 
 import type { ConnectionType } from '../../api/connections';
 import { activeAuthOption, CONNECTION_FORM_SPECS, type TextField } from './connectionFormSpec';
@@ -24,6 +24,21 @@ function ConfigTextField({
   forceRequired?: boolean;
 }) {
   const optional = field.optional && !forceRequired;
+  if (field.type === 'toggle') {
+    // A boolean config flag (e.g. `inventory_sync`, ADR 0040). `valuePropName`
+    // wires the Switch's `checked` into the form value; an untouched toggle
+    // simply omits the key, which the backend defaults to false.
+    return (
+      <Form.Item
+        name={['config', field.name]}
+        label={field.label}
+        extra={field.extra}
+        valuePropName="checked"
+      >
+        <Switch />
+      </Form.Item>
+    );
+  }
   return (
     <Form.Item
       name={['config', field.name]}

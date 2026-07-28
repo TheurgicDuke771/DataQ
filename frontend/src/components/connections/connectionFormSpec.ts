@@ -15,9 +15,11 @@ export interface TextField {
   optional?: boolean;
   /**
    * `tags` renders a free-entry multi-value input whose config value is a
-   * `string[]` (e.g. dbt's `jobs`); default `text` is a single-line string.
+   * `string[]` (e.g. dbt's `jobs`); `toggle` renders a Switch whose config
+   * value is a boolean (e.g. `inventory_sync`, ADR 0040); default `text` is a
+   * single-line string.
    */
-  type?: 'text' | 'tags';
+  type?: 'text' | 'tags' | 'toggle';
   /** Helper text under the field. */
   extra?: string;
 }
@@ -68,6 +70,13 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
       { name: 'schema', label: 'Schema' },
       { name: 'warehouse', label: 'Warehouse' },
       { name: 'role', label: 'Role' },
+      {
+        name: 'inventory_sync',
+        label: 'Inventory sync',
+        type: 'toggle',
+        optional: true,
+        extra: 'Daily sync of every table in this database into the asset view (ADR 0040).',
+      },
     ],
     auth: [
       { value: 'password', label: 'Password', secretLabel: 'Password' },
@@ -115,6 +124,13 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
     textFields: [
       { name: 'workspace_url', label: 'Workspace URL' },
       { name: 'warehouse_id', label: 'Warehouse ID' },
+      {
+        name: 'inventory_sync',
+        label: 'Inventory sync',
+        type: 'toggle',
+        optional: true,
+        extra: 'Daily sync of every table this workspace exposes into the asset view (ADR 0040).',
+      },
     ],
     secretLabel: 'Personal access token (PAT)',
   },

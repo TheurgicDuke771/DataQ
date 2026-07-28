@@ -186,6 +186,17 @@ def create_celery_app() -> Celery:
                 "task": "refresh_credential_expiry",
                 "schedule": crontab(hour="2", minute="57"),  # daily, 02:57 UTC
             },
+            # Warehouse inventory sync (#919, ADR 0040): once a day, enumerate every
+            # OPTED-IN connection's tables into `assets` so an unmonitored table is
+            # visible instead of nonexistent. Dark by default at the connection
+            # grain (per-connection `inventory_sync` config flag) — no global env
+            # gate. Daily like the other catalog-cadence refreshes; runs after the
+            # lineage refreshes so a first joint tick discovers tables before the
+            # NEXT lineage pass rather than racing this one.
+            "sync-asset-inventory": {
+                "task": "sync_asset_inventory",
+                "schedule": crontab(hour="3", minute="17"),  # daily, 03:17 UTC
+            },
         },
     )
     # Register task modules on worker boot (looks for backend.app.worker.tasks).

@@ -910,6 +910,28 @@ def reap_stuck_runs() -> int:
 # ──────────────────────── orphan-asset sweep (#770) ──────────────────────────
 
 
+@celery_app.task(name="sync_asset_inventory")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
+def sync_asset_inventory() -> int:
+    """Celery-beat entry point — warehouse inventory sync (#919, ADR 0040).
+
+    Materializes every table an opted-in Snowflake/UC connection can see as an
+    asset row, so "no suite, no run, no edge" stops meaning INVISIBLE. Dark by
+    default at the connection grain: only connections whose config sets
+    ``inventory_sync: true`` are enumerated — there is no global gate to leave
+    on by accident, and no query runs for a workspace with nothing opted in.
+    Daily wall-clock cadence (a catalog changes on DDL cadence, not per-run);
+    the sync's `last_seen` advancement is also what keeps discovered assets out
+    of `sweep_orphan_assets`' candidate set while their tables still exist.
+    """
+    from backend.app.services import inventory_service
+
+    session = get_session()
+    try:
+        return inventory_service.sync_asset_inventory(session, secret_store=get_secret_store())
+    finally:
+        session.close()
+
+
 @celery_app.task(name="sweep_orphan_assets")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
 def sweep_orphan_assets() -> int:
     """Celery-beat entry point — delete unreferenced, stale `assets` rows (#770).
