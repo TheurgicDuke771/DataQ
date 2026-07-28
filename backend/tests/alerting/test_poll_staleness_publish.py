@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from backend.app.alerting.base import (
     HEALTH_FAILING,
     HEALTH_RECOVERED,
+    AlertUndeliverableError,
     PollStalenessReport,
 )
 from backend.app.alerting.composite import CompositePublisher
@@ -34,18 +35,22 @@ def _report(state: str = HEALTH_FAILING) -> PollStalenessReport:
 
 
 class _Channel:
-    def __init__(self, fail: bool = False) -> None:
+    def __init__(self, fail: bool = False, unconfigured: bool = False) -> None:
         self.fail = fail
+        self.unconfigured = unconfigured
         self.staleness_reports: list[PollStalenessReport] = []
 
     def publish(self, session: Any, report: Any) -> None: ...
 
     def publish_health(self, session: Any, report: Any) -> None: ...
 
-    def publish_poll_staleness(self, session: Any, report: PollStalenessReport) -> None:
+    def publish_poll_staleness(self, session: Any, report: PollStalenessReport) -> bool:
         if self.fail:
             raise RuntimeError("channel down")
+        if self.unconfigured:
+            return False  # the real channels' quiet-skip: nothing left the process
         self.staleness_reports.append(report)
+        return True
 
 
 class TestCompositeStalenessContract:
@@ -66,6 +71,57 @@ class TestCompositeStalenessContract:
             CompositePublisher([_Channel(fail=True), _Channel(fail=True)]).publish_poll_staleness(
                 _SESSION, _report()
             )
+
+    def test_all_channels_unconfigured_raises_undeliverable(self) -> None:
+        """The fresh-install trap (review finding): every real channel quietly
+        no-ops when unconfigured, so counting a returned call as delivered would
+        stamp the flag with ZERO notifications sent — and when an operator later
+        wires up Slack, the still-outstanding incident would never fire."""
+        with pytest.raises(AlertUndeliverableError):
+            CompositePublisher(
+                [_Channel(unconfigured=True), _Channel(unconfigured=True)]
+            ).publish_poll_staleness(_SESSION, _report())
+
+    def test_one_configured_channel_is_enough(self) -> None:
+        skipped, alive = _Channel(unconfigured=True), _Channel()
+        CompositePublisher([skipped, alive]).publish_poll_staleness(_SESSION, _report())
+        assert len(alive.staleness_reports) == 1
+
+    def test_unconfigured_real_channels_report_not_delivered(self) -> None:
+        """The real channels (not just the fake) must return False on their quiet
+        skips — Teams/Slack resolve no webhook, email has no transport config."""
+        from backend.app.alerting.email import EmailPublisher
+        from backend.app.alerting.slack import SlackPublisher
+        from backend.app.alerting.teams import TeamsPublisher
+
+        class _EmptyStore:
+            def get(self, name: str) -> str:
+                from backend.app.core.secrets import SecretNotFoundError
+
+                raise SecretNotFoundError(name)
+
+        store = _EmptyStore()
+        teams = TeamsPublisher(
+            secret_store=store,  # type: ignore[arg-type]
+            workspace_secret_name=None,
+        )
+        slack = SlackPublisher(
+            secret_store=store,  # type: ignore[arg-type]
+            webhook_secret_name=None,
+            allowed_hosts=("hooks.slack.com",),
+        )
+        email = EmailPublisher(
+            secret_store=store,  # type: ignore[arg-type]
+            smtp_host="localhost",
+            smtp_port=25,
+            username=None,
+            password_secret_name=None,
+            sender=None,
+            recipients=(),
+        )
+        assert teams.publish_poll_staleness(_SESSION, _report()) is False
+        assert slack.publish_poll_staleness(_SESSION, _report()) is False
+        assert email.publish_poll_staleness(_SESSION, _report()) is False
 
 
 class TestStalenessRenders:

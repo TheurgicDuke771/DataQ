@@ -25,7 +25,12 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
-from backend.app.alerting.base import HEALTH_FAILING, HEALTH_RECOVERED, PollStalenessReport
+from backend.app.alerting.base import (
+    HEALTH_FAILING,
+    HEALTH_RECOVERED,
+    AlertUndeliverableError,
+    PollStalenessReport,
+)
 from backend.app.alerting.registry import get_health_publisher
 from backend.app.core.config import get_settings
 from backend.app.core.logging import get_logger
@@ -43,11 +48,14 @@ def evaluate_poll_staleness(
     """Pure decision: is the workspace's polling loop stale, and the report to say so.
 
     Returns ``(stale, report)`` — the report carries the FAILING state; the caller
-    flips it to RECOVERED for the recovery edge. Reference moment per connection is
-    ``last_polled_at``; a connection that has **never** been polled falls back to its
-    ``created_at``, so a poller that never ran at all (wrong image, task never
-    registered) still goes stale once the oldest connection has waited out the
-    threshold — "we have not looked yet" must not read as "nothing to report" (#828).
+    flips it to RECOVERED for the recovery edge. The workspace reference moment is
+    the **MAX** over connections of ``last_polled_at`` (falling back to
+    ``created_at`` for a connection never polled at all — wrong image, task never
+    registered — so "we have not looked yet" cannot read as "nothing to report",
+    #828). MAX is deliberate: this signal fires when the *whole loop* is dead —
+    i.e. when even the freshest activity across the fleet has aged out — not when
+    one connection lags (that is the per-connection #837 edge's job). One recently
+    created connection therefore masks the fleet for at most one threshold window.
 
     No orchestration connections ⇒ not stale (nothing to poll is not a dead loop).
     """
@@ -80,7 +88,8 @@ def run_poll_staleness_check(session: Session, *, now: datetime | None = None) -
     """One tick of the API-side staleness check; returns the outcome for logs/tests.
 
     Outcomes: ``disabled`` · ``skipped`` (another replica holds the claim) ·
-    ``ok`` (nothing to say) · ``alerted`` · ``recovered``.
+    ``ok`` (nothing to say) · ``alerted`` · ``recovered`` · ``undeliverable``
+    (an edge was due but reached no channel — flag untouched, retried next tick).
 
     #843 delivered-first, both edges: ``alerted_at`` is written only **after**
     ``publish_poll_staleness`` returned (the composite raises when every channel
@@ -94,6 +103,16 @@ def run_poll_staleness_check(session: Session, *, now: datetime | None = None) -
     # Claim the signal row (creating it on first use). SKIP LOCKED: with N API
     # replicas each running this loop, one claims, the rest skip the tick — the
     # cadence is minutes, so a skipped tick costs nothing and can never double-send.
+    #
+    # The lock is then deliberately held ACROSS the synchronous publish below —
+    # the #842 shape that the per-connection path eliminated by handing the send
+    # to a Celery task. That hand-off is structurally unavailable here: the
+    # worker is the process whose deadness this signal reports, so a
+    # worker-dispatched alert never fires during the exact incident it exists
+    # for. Holding the lock is safe in THIS one spot because the row is
+    # dedicated (no other query touches workspace_health), contenders skip
+    # rather than queue, the loop runs off the request path, and the hold is
+    # bounded by the channels' own HTTP/SMTP timeouts.
     _ensure_row(session)
     flag = session.execute(
         select(WorkspaceHealth)
@@ -108,7 +127,20 @@ def run_poll_staleness_check(session: Session, *, now: datetime | None = None) -
     outstanding = flag.alerted_at is not None
 
     if stale and not outstanding:
-        get_health_publisher().publish_poll_staleness(session, report)
+        try:
+            get_health_publisher().publish_poll_staleness(session, report)
+        except AlertUndeliverableError:
+            # No channel configured — nothing was sent, so the flag stays unset
+            # and every later tick retries; the moment an operator wires a
+            # channel, the still-outstanding edge goes out (review finding: a
+            # fresh install stamping the flag silently would bury the incident).
+            session.rollback()
+            log.warning(
+                "workspace_poll_staleness_undeliverable",
+                connection_count=report.connection_count,
+                threshold_s=report.threshold_seconds,
+            )
+            return "undeliverable"
         flag.alerted_at = now or datetime.now(UTC)
         session.commit()
         log.warning(
@@ -128,7 +160,16 @@ def run_poll_staleness_check(session: Session, *, now: datetime | None = None) -
             most_recent_polled_at=report.most_recent_polled_at,
             threshold_seconds=report.threshold_seconds,
         )
-        get_health_publisher().publish_poll_staleness(session, recovery)
+        try:
+            get_health_publisher().publish_poll_staleness(session, recovery)
+        except AlertUndeliverableError:
+            # Channels got UNconfigured while an alert was outstanding. Leave the
+            # flag set: the operator was told about a failure and has not been
+            # told it recovered — clearing silently would strand a stale alarm
+            # as the last delivered word.
+            session.rollback()
+            log.warning("workspace_poll_staleness_recovery_undeliverable")
+            return "undeliverable"
         flag.alerted_at = None
         session.commit()
         log.info("workspace_poll_staleness_recovered", connection_count=report.connection_count)

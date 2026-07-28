@@ -176,4 +176,29 @@ describe('LineageGraph staleness surface (#1091)', () => {
     expect(note).toHaveTextContent(/no refresh since/);
     expect(note).toHaveTextContent('view-level lineage only');
   });
+
+  it('a source that is both FAILING and stale keeps the staleness note (#987 shape)', () => {
+    // Error + stale co-occur only when the refresh loop died after a failing
+    // attempt (the error path bumps the stamp per attempt) — prod's dead-PAT
+    // connections during #1091. The row routes to the WARNING alert; the review
+    // caught that branch dropping `stale` entirely, so the error masked the
+    // far worse fact that the source had stopped refreshing at all.
+    render(
+      <LineageGraph
+        center={center}
+        upstream={[]}
+        downstream={[]}
+        edges={[]}
+        onOpenAsset={() => {}}
+        warehouseStatus={[{ ...FAILING, stale: true }]}
+      />,
+    );
+    const alert = screen.getByText(/refresh is failing/).closest('.ant-alert');
+    expect(alert).toHaveClass('ant-alert-warning');
+    expect(alert).toHaveTextContent('the datasource could not be reached');
+    expect(alert).toHaveTextContent(/No refresh attempt since/);
+    // And the qualifier must NOT leak into the info alert: the row is failing,
+    // not merely coarse.
+    expect(screen.queryByText(/Workspace lineage sources/)).toBeNull();
+  });
 });

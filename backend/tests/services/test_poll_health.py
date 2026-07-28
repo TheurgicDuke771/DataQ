@@ -361,3 +361,26 @@ class TestWarehouseLineageStalenessSurface:
         conn.lineage_last_refresh_at = datetime.now(UTC) - timedelta(days=30)
         db_session.flush()
         assert warehouse_lineage_status(db_session) == []
+
+    def test_a_failing_and_stale_source_reports_both(
+        self, db_session: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Error + stale co-occur when the refresh loop died AFTER a failing attempt
+        (the error path bumps the refresh stamp per attempt, so an old stamp means no
+        attempts at all since) — prod's dead-PAT connections during #1091 were exactly
+        this. Both qualifiers must survive to the DTO; the error must not mask the
+        staleness (the #987 shape)."""
+        from datetime import UTC, datetime, timedelta
+
+        from backend.app.services.asset_view_service import warehouse_lineage_status
+
+        self._enable(monkeypatch)
+        conn = _warehouse_connection(db_session, "snowflake")
+        conn.lineage_last_refresh_at = datetime.now(UTC) - timedelta(days=10)
+        conn.lineage_last_error = "The run failed to execute."
+        db_session.flush()
+
+        status = warehouse_lineage_status(db_session)
+        assert len(status) == 1
+        assert status[0].stale is True
+        assert status[0].last_error == "The run failed to execute."

@@ -104,8 +104,10 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     )
     await init_auth()
     # Workspace poll-staleness watchdog (#1052) — check at a third of the alert
-    # threshold so a staleness edge is seen within ~1.3x the threshold worst-case.
-    # 0 disables (and tests/dev stacks run without the loop).
+    # threshold so a staleness edge is seen within ~1.3x the threshold worst-case
+    # (the 60s floor stretches that ratio for thresholds under ~180s; at such
+    # values the alert is near-realtime anyway). 0 disables (and tests/dev
+    # stacks run without the loop).
     staleness_stop = asyncio.Event()
     staleness_task: asyncio.Task[None] | None = None
     if settings.poll_staleness_alert_after_s > 0:

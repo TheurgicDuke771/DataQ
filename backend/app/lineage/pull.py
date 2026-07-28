@@ -110,13 +110,22 @@ def purge_orphaned_pulled_edges(session: Session) -> int:
 
     Caller gates on :func:`lineage_provider_unset` — never call this for a provider
     that is configured but broken.
+
+    Fail-open like everything else in this module (review finding on this PR): a DB
+    hiccup logs and returns 0 rather than escaping the beat task — the orphans are
+    still there next tick, and a purge is a janitor, never a liveness path.
     """
-    purged = session.execute(
-        delete(LineageEdge).where(
-            LineageEdge.source == _SOURCE, LineageEdge.connection_id.is_(None)
-        )
-    ).rowcount  # type: ignore[attr-defined]  # DELETE always yields a CursorResult
-    session.commit()
+    try:
+        purged = session.execute(
+            delete(LineageEdge).where(
+                LineageEdge.source == _SOURCE, LineageEdge.connection_id.is_(None)
+            )
+        ).rowcount  # type: ignore[attr-defined]  # DELETE always yields a CursorResult
+        session.commit()
+    except Exception:
+        session.rollback()
+        log.warning("lineage_pull_orphan_purge_failed", source=_SOURCE, exc_info=True)
+        return 0
     if purged:
         log.warning("lineage_pull_orphans_purged", source=_SOURCE, edges=int(purged))
     return int(purged or 0)

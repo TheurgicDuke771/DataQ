@@ -111,19 +111,22 @@ class TeamsPublisher:
             consecutive_failures=report.consecutive_failures,
         )
 
-    def publish_poll_staleness(self, session: Session, report: PollStalenessReport) -> None:
+    def publish_poll_staleness(self, session: Session, report: PollStalenessReport) -> bool:
         """Post the workspace poll-staleness edge (#1052) to the workspace webhook —
-        same resolution and same deliver-only contract as :meth:`publish_health`."""
+        same resolution as :meth:`publish_health`, but returning **whether a message
+        was actually posted**: an unconfigured/ineligible webhook is ``False``, never
+        a quiet success (review finding — the delivered-first flag must not be
+        stamped by a channel that sent nothing)."""
         webhook = notification_service.resolve_webhook(
             None,
             secret_store=self._secret_store,
             workspace_secret_name=self._workspace_secret_name,
         )
         if not webhook:
-            return
+            return False
         if not _webhook_allowed(webhook):
             log.warning("teams_webhook_host_not_allowed", signal="poll_staleness")
-            return
+            return False
         response = httpx.post(
             webhook, json=render_teams_staleness_message(report), timeout=self._timeout
         )
@@ -133,6 +136,7 @@ class TeamsPublisher:
             state=report.state,
             connection_count=report.connection_count,
         )
+        return True
 
 
 def _webhook_allowed(webhook: str) -> bool:

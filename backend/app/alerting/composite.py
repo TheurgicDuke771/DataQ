@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.alerting.base import (
     AlertPublisher,
+    AlertUndeliverableError,
     ConnectionHealthReport,
     PollStalenessReport,
     RunReport,
@@ -55,19 +56,25 @@ class CompositePublisher:
                     connection_id=str(report.connection_id),
                 )
 
-    def publish_poll_staleness(self, session: Session, report: PollStalenessReport) -> None:
+    def publish_poll_staleness(self, session: Session, report: PollStalenessReport) -> bool:
         """Fan the workspace poll-staleness edge (#1052) out to every channel with the
         same isolation contract as the other two seam methods — with one difference
-        that the caller relies on: **at least one channel must succeed** for the edge
-        to count as delivered (#843's delivered-first rule needs a truthful answer),
-        so this re-raises when every channel failed. Partial delivery counts as
-        delivered, exactly like the per-connection edge's single-channel semantics."""
+        that the caller relies on: **at least one channel must actually send** for
+        the edge to count as delivered (#843's delivered-first rule needs a truthful
+        answer), so this raises when nothing went out. Two ways to send nothing,
+        both fatal here (review finding): every channel FAILED (re-raise the last
+        error), or every channel quietly SKIPPED because none is configured (raise
+        :class:`AlertUndeliverableError` — on a fresh install with blank channels a
+        quiet return would stamp the flag with zero notifications sent, and the one
+        alert whose job is to fire when everything else is silent would lie).
+        Partial delivery counts as delivered, exactly like the per-connection edge's
+        single-channel semantics."""
         delivered = 0
         last_error: Exception | None = None
         for publisher in self._publishers:
             try:
-                publisher.publish_poll_staleness(session, report)
-                delivered += 1
+                if publisher.publish_poll_staleness(session, report):
+                    delivered += 1
             except Exception as exc:
                 last_error = exc
                 log.exception(
@@ -75,5 +82,10 @@ class CompositePublisher:
                     channel=type(publisher).__name__,
                     state=report.state,
                 )
-        if delivered == 0 and last_error is not None:
-            raise last_error
+        if delivered == 0:
+            if last_error is not None:
+                raise last_error
+            raise AlertUndeliverableError(
+                "no alert channel is configured — the poll-staleness edge was not delivered"
+            )
+        return True

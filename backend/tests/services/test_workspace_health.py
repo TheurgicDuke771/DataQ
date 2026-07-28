@@ -20,7 +20,7 @@ from typing import Any, cast
 import pytest
 from sqlalchemy import select
 
-from backend.app.alerting.base import PollStalenessReport
+from backend.app.alerting.base import AlertUndeliverableError, PollStalenessReport
 from backend.app.core.config import get_settings
 from backend.app.db.models import Connection, User, WorkspaceHealth
 from backend.app.services import workspace_health_service as svc
@@ -59,14 +59,18 @@ def _orch_connection(
 
 
 class _CapturingPublisher:
-    def __init__(self, fail: bool = False) -> None:
+    def __init__(self, fail: bool = False, undeliverable: bool = False) -> None:
         self.reports: list[PollStalenessReport] = []
         self.fail = fail
+        self.undeliverable = undeliverable
 
-    def publish_poll_staleness(self, session: Any, report: PollStalenessReport) -> None:
+    def publish_poll_staleness(self, session: Any, report: PollStalenessReport) -> bool:
         if self.fail:
             raise RuntimeError("every channel failed")
+        if self.undeliverable:
+            raise AlertUndeliverableError("no alert channel is configured")
         self.reports.append(report)
+        return True
 
 
 @pytest.fixture
@@ -176,6 +180,56 @@ class TestDeliveredFirst:
 
         flag = _flag(db_session)
         assert flag is None or flag.alerted_at is None
+
+    def test_no_configured_channel_leaves_the_flag_unset_and_retries(
+        self, db_session: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The fresh-install trap (review finding): every channel unconfigured must
+        NOT stamp the flag — the incident stays outstanding, and the first tick
+        after an operator wires a channel delivers the original edge."""
+        undeliverable = _CapturingPublisher(undeliverable=True)
+        monkeypatch.setattr(svc, "get_health_publisher", lambda: undeliverable)
+        _orch_connection(db_session, last_polled_at=NOW - timedelta(hours=2))
+
+        assert svc.run_poll_staleness_check(db_session, now=NOW) == "undeliverable"
+        flag = _flag(db_session)
+        assert flag is None or flag.alerted_at is None
+
+        # The undeliverable path's rollback discarded this test's UNCOMMITTED
+        # fixture row (prod connections are long-committed); re-seed the same
+        # still-dead state before the second tick.
+        _orch_connection(db_session, last_polled_at=NOW - timedelta(hours=2))
+
+        # The operator wires up a channel; the loop is STILL dead — the edge
+        # must now actually go out.
+        configured = _CapturingPublisher()
+        monkeypatch.setattr(svc, "get_health_publisher", lambda: configured)
+        assert svc.run_poll_staleness_check(db_session, now=NOW + timedelta(minutes=10)) == (
+            "alerted"
+        )
+        assert [r.state for r in configured.reports] == ["failing"]
+
+    def test_undeliverable_recovery_keeps_the_flag_set(
+        self, db_session: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Channels unconfigured AFTER a delivered failing edge: the operator was
+        told about a failure and must not have the recovery silently dropped —
+        the flag stays set until a recovery actually goes out."""
+        delivered = _CapturingPublisher()
+        monkeypatch.setattr(svc, "get_health_publisher", lambda: delivered)
+        _orch_connection(db_session, last_polled_at=NOW - timedelta(hours=2))
+        assert svc.run_poll_staleness_check(db_session, now=NOW) == "alerted"
+
+        conn = db_session.execute(select(Connection)).scalars().first()
+        conn.last_polled_at = NOW + timedelta(minutes=1)
+        db_session.flush()
+
+        undeliverable = _CapturingPublisher(undeliverable=True)
+        monkeypatch.setattr(svc, "get_health_publisher", lambda: undeliverable)
+        outcome = svc.run_poll_staleness_check(db_session, now=NOW + timedelta(minutes=2))
+        assert outcome == "undeliverable"
+        flag = _flag(db_session)
+        assert flag is not None and flag.alerted_at is not None
 
     def test_recovery_fires_only_after_a_delivered_failing_edge(
         self, db_session: Any, publisher: _CapturingPublisher

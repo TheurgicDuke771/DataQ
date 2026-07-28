@@ -259,19 +259,21 @@ class SlackPublisher:
             consecutive_failures=report.consecutive_failures,
         )
 
-    def publish_poll_staleness(self, session: Session, report: PollStalenessReport) -> None:
+    def publish_poll_staleness(self, session: Session, report: PollStalenessReport) -> bool:
         """Post the workspace poll-staleness edge (#1052) to the workspace Slack
-        webhook — same resolution and deliver-only contract as :meth:`publish_health`."""
+        webhook — same resolution as :meth:`publish_health`, but returning whether a
+        message was actually posted (``False`` when unconfigured/ineligible — a quiet
+        skip must not read as delivered)."""
         webhook = notification_service.resolve_slack_webhook(
             None,
             secret_store=self._secret_store,
             workspace_secret_name=self._webhook_secret_name,
         )
         if not webhook:
-            return
+            return False
         if not self._webhook_allowed(webhook):
             log.warning("slack_webhook_not_allowed", signal="poll_staleness")
-            return
+            return False
         response = httpx.post(
             webhook, json=render_slack_staleness_message(report), timeout=self._timeout
         )
@@ -281,6 +283,7 @@ class SlackPublisher:
             state=report.state,
             connection_count=report.connection_count,
         )
+        return True
 
     def _webhook_allowed(self, webhook: str) -> bool:
         """SSRF guard at the request sink: only POST to an https URL on an allowlisted

@@ -404,6 +404,19 @@ class TestPurgeOrphanedPulledEdges:
 
         assert purge_orphaned_pulled_edges(db_session) == 0
 
+    def test_purge_is_fail_open_on_a_db_error(self) -> None:
+        """A DB hiccup during the janitor sweep logs and returns 0 — it must never
+        escape the beat task (the module's uniform fail-open contract; review
+        finding on this PR). The orphans are still there next tick."""
+        from unittest.mock import MagicMock
+
+        from backend.app.lineage.pull import purge_orphaned_pulled_edges
+
+        session = MagicMock()
+        session.execute.side_effect = RuntimeError("connection dropped")
+        assert purge_orphaned_pulled_edges(session) == 0
+        session.rollback.assert_called_once()
+
 
 class TestLineageProviderUnsetDistinction:
     """The purge gate must separate 'removed' from 'broken' — deleting the cache over

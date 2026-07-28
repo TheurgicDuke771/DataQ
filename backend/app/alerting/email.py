@@ -330,18 +330,20 @@ class EmailPublisher:
             recipients=len(self._recipients),
         )
 
-    def publish_poll_staleness(self, session: Session, report: PollStalenessReport) -> None:
+    def publish_poll_staleness(self, session: Session, report: PollStalenessReport) -> bool:
         """Email the workspace poll-staleness edge (#1052) to the workspace
-        recipients — same transport gating as :meth:`publish_health`."""
+        recipients — same transport gating as :meth:`publish_health`, but returning
+        whether a message was actually sent (``False`` on any quiet-skip gate,
+        including an unresolvable password — nothing left this process)."""
         if not (self._username and self._password_secret_name and self._sender):
-            return
+            return False
         if not self._recipients:
-            return
+            return False
         try:
             password = self._secret_store.get(self._password_secret_name)
         except SecretNotFoundError:
             log.warning("email_password_unresolved", secret_name=self._password_secret_name)
-            return
+            return False
         message = self._message(
             subject=render_staleness_subject(report),
             recipients=self._recipients,
@@ -354,6 +356,7 @@ class EmailPublisher:
             state=report.state,
             recipients=len(self._recipients),
         )
+        return True
 
     def _message(
         self, *, subject: str, recipients: tuple[str, ...], text: str, html: str
