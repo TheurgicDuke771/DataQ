@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "5357897147d3",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1064-s3-endpoint-namespace",
+  "checkpoints_count": 4,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/53/57897147d3/0/metadata.json",
+      "transcript": "/53/57897147d3/0/full.jsonl",
+      "compact_transcript": "/53/57897147d3/0/transcript.jsonl",
+      "content_hash": "/53/57897147d3/0/content_hash.txt",
+      "prompt": "/53/57897147d3/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2190,
+    "cache_creation_tokens": 3159606,
+    "cache_read_tokens": 157485304,
+    "output_tokens": 381422,
+    "api_call_count": 449
+  }
+}
