@@ -47,12 +47,15 @@ connection, checks and monitors work unchanged.
   bytes and request signatures then travel **cleartext** — prefer `https://` for anything
   crossing a network you don't control.
 
-**Known limitation.** An asset's identity is currently derived from the bucket name
-alone, which was unique while every S3 connection was AWS. Two connections pointing at
-different stores that share a bucket name therefore resolve to the *same* asset, merging
-their scorecards, lineage and incidents — tracked as
-[#1064](https://github.com/TheurgicDuke771/DataQ/issues/1064). Until it is fixed, keep
-bucket names distinct across endpoints.
+**Asset identity.** With no **Endpoint URL** (AWS), the asset namespace is exactly
+`s3://{bucket}` — unchanged, since AWS bucket names are globally unique and this form
+is already persisted on every S3 asset in production. With an **Endpoint URL** set, the
+namespace becomes `s3://{host[:port]}/{bucket}` — the endpoint's authority (scheme
+stripped, default port elided, host lower-cased) joins the bucket, so two stores that
+happen to share a bucket name (an AWS bucket and a MinIO bucket both named `landing`,
+say) resolve to *different* assets instead of merging their scorecards, lineage and
+incidents ([#1064](https://github.com/TheurgicDuke771/DataQ/issues/1064), decided in
+[ADR 0040](adr/0040-warehouse-inventory-sync-table-enumeration-seam.md) §6).
 
 The same two fields exist on a **dbt** orchestration connection whose `artifacts_uri` is
 `s3://…`, so the artifacts poll can read from the same store.

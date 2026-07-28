@@ -220,6 +220,73 @@ def test_s3_bucket_namespace() -> None:
     assert identity.name == "retail/orders.csv"
 
 
+def test_s3_no_endpoint_url_namespace_is_byte_stable() -> None:
+    # ADR 0040 §6 / #1064: an AWS connection (no endpoint_url) MUST keep resolving to
+    # exactly `s3://{bucket}` — this form is already persisted on prod `assets` rows,
+    # and changing it forks every existing S3 asset's lineage/incidents. Pinned
+    # explicitly (not just covered by test_s3_bucket_namespace above) so a future edit
+    # that starts consulting `endpoint_url` can't silently drift this byte-for-byte.
+    identity = resolve_asset_identity(
+        "s3", {"bucket": "my-bucket", "endpoint_url": None}, {"path": "orders.csv"}
+    )
+    assert identity.namespace == "s3://my-bucket"
+
+
+def test_s3_same_bucket_different_endpoints_resolve_to_different_namespaces() -> None:
+    # The #1064 collision this ADR fixes: an AWS bucket and a MinIO bucket sharing a
+    # name must NOT merge into one asset (scorecards/lineage/incidents would merge too).
+    aws = resolve_asset_identity("s3", {"bucket": "landing"}, {"path": "orders.csv"})
+    minio = resolve_asset_identity(
+        "s3",
+        {"bucket": "landing", "endpoint_url": "https://minio.internal:9000"},
+        {"path": "orders.csv"},
+    )
+    ceph = resolve_asset_identity(
+        "s3",
+        {"bucket": "landing", "endpoint_url": "https://ceph.internal:9000"},
+        {"path": "orders.csv"},
+    )
+    assert aws.namespace == "s3://landing"
+    assert minio.namespace == "s3://minio.internal:9000/landing"
+    assert ceph.namespace == "s3://ceph.internal:9000/landing"
+    assert len({aws.namespace, minio.namespace, ceph.namespace}) == 3
+
+
+def test_s3_endpoint_default_port_and_case_do_not_fork_namespace() -> None:
+    # https default port 443 elided; host lower-cased — hostnames are case-insensitive,
+    # so a case difference in how an operator typed the endpoint must not fork the
+    # asset (ADR 0040 §6).
+    with_default_port = resolve_asset_identity(
+        "s3",
+        {"bucket": "landing", "endpoint_url": "https://Minio.Internal:443"},
+        {"path": "orders.csv"},
+    )
+    without_port = resolve_asset_identity(
+        "s3",
+        {"bucket": "landing", "endpoint_url": "https://minio.internal"},
+        {"path": "orders.csv"},
+    )
+    assert with_default_port.namespace == without_port.namespace == "s3://minio.internal/landing"
+
+
+def test_s3_endpoint_non_default_port_preserved() -> None:
+    identity = resolve_asset_identity(
+        "s3",
+        {"bucket": "landing", "endpoint_url": "https://minio.internal:9000"},
+        {"path": "orders.csv"},
+    )
+    assert identity.namespace == "s3://minio.internal:9000/landing"
+
+
+def test_s3_endpoint_http_default_port_elided() -> None:
+    identity = resolve_asset_identity(
+        "s3",
+        {"bucket": "landing", "endpoint_url": "http://minio.internal:80"},
+        {"path": "orders.csv"},
+    )
+    assert identity.namespace == "s3://minio.internal/landing"
+
+
 def test_s3_pattern_metachar_mid_filename_yields_parent_dir() -> None:
     # `pattern` is a regex: the literal prefix before the first metachar (`*`) is
     # `retail/orders/2026-`, truncated at the last `/` → the directory.

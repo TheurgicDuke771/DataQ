@@ -16,7 +16,8 @@ Per-datasource identity (see docs/post-v1-assets-lineage-incidents-notes.md
                      catalog.schema.table (lower unless quoted)
     adls_gen2      → abfss://{container}@{account}.dfs.core.windows.net
                      {path or pattern base dir}
-    s3             → s3://{bucket}
+    s3             → s3://{bucket}                              (no endpoint_url — AWS)
+                     s3://{endpoint host[:port]}/{bucket}        (endpoint_url set — #1064)
                      {path or pattern base dir}
     iceberg        → {catalog_uri with any password stripped, or "file"}
                      {namespace.table verbatim}
@@ -166,9 +167,48 @@ def _resolve_adls_gen2(config: dict[str, Any], target: dict[str, Any]) -> AssetI
 
 def _resolve_s3(config: dict[str, Any], target: dict[str, Any]) -> AssetIdentity:
     bucket = _require(config, "bucket", "s3", "config")
-    namespace = f"s3://{bucket}"
+    endpoint_url = _str_or_none(config.get("endpoint_url"))
+    # No endpoint_url means AWS: keep the namespace byte-stable at `s3://{bucket}` —
+    # this form is the OpenLineage naming-spec convention and is already persisted
+    # on `assets` rows in production; changing it forks every existing S3 asset
+    # and orphans its lineage/incidents. See ADR 0040 §6 / #1064.
+    #
+    # An endpoint_url set (#1063 — MinIO/Ceph/R2/Wasabi/Backblaze) means bucket
+    # names are only unique *within that endpoint*, so the endpoint authority joins
+    # the namespace: `s3://{host[:port]}/{bucket}`. `_s3_endpoint_authority` reads
+    # only `.hostname`/`.port` off the parsed URL, which never include userinfo —
+    # so even a credential-bearing endpoint_url (rejected at connection validation
+    # per #754/#826, but defend anyway per the `_resolve_iceberg` precedent) can't
+    # leak into a namespace that is persisted, returned by the read API, and
+    # rendered in the UI.
+    namespace = (
+        f"s3://{_s3_endpoint_authority(endpoint_url)}/{bucket}"
+        if endpoint_url
+        else f"s3://{bucket}"
+    )
     name = _flatfile_name(target, "s3")
     return AssetIdentity(namespace=namespace, name=name)
+
+
+#: Ports implied by the scheme, so an explicit `:443` on `https://` (or `:80` on
+#: `http://`) doesn't fork the namespace from the equivalent endpoint written
+#: without a port.
+_S3_DEFAULT_PORTS = {"http": 80, "https": 443}
+
+
+def _s3_endpoint_authority(endpoint_url: str) -> str:
+    """``endpoint_url``'s host[:port] — scheme stripped, default port elided, lowercased.
+
+    Hostnames are case-insensitive, so a case difference in how an operator typed
+    the endpoint must not fork the asset identity into two rows for the same store
+    (ADR 0040 §6). ``urlparse().hostname`` already lower-cases and excludes any
+    userinfo, so this never re-derives a password into the namespace.
+    """
+    parsed = urlparse(endpoint_url)
+    host = parsed.hostname or ""
+    port = parsed.port
+    default_port = _S3_DEFAULT_PORTS.get(parsed.scheme)
+    return f"{host}:{port}" if port is not None and port != default_port else host
 
 
 def _resolve_iceberg(config: dict[str, Any], target: dict[str, Any]) -> AssetIdentity:
