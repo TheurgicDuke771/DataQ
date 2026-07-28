@@ -184,12 +184,26 @@ export interface AssetMetadataUpdate {
   description?: string | null;
 }
 
+/** One page of `GET /assets` — the body (`items`) plus the workspace-wide
+ *  `total` read off the `X-Total-Count` header (#925). `total` is the SAME
+ *  unfiltered population `items` slices into (ADR 0037), so a caller can always
+ *  tell `items.length < total` apart from "that's everything". */
+export interface AssetListPage {
+  items: AssetSummary[];
+  total: number;
+}
+
 export async function listAssets(params?: {
   limit?: number;
   offset?: number;
-}): Promise<AssetSummary[]> {
-  const { data } = await api.get<AssetSummary[]>('/assets', { params });
-  return data;
+}): Promise<AssetListPage> {
+  const { data, headers } = await api.get<AssetSummary[]>('/assets', { params });
+  // axios lowercases response header keys. Fall back to the page length (never
+  // undefined/NaN) so a deploy-skew backend without the header degrades to "no
+  // known truncation" rather than breaking the page.
+  const rawTotal = headers?.['x-total-count'];
+  const total = rawTotal !== undefined ? Number(rawTotal) : data.length;
+  return { items: data, total: Number.isFinite(total) ? total : data.length };
 }
 
 export async function getAsset(assetId: string): Promise<AssetDetail> {

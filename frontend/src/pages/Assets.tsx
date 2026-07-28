@@ -5,14 +5,14 @@ import {
   GoldOutlined,
   ThunderboltOutlined,
 } from '@ant-design/icons';
-import { Empty, Flex, Segmented, Table, Tag, Tooltip, Tree, Typography } from 'antd';
-import type { ColumnsType } from 'antd/es/table';
+import { Alert, Empty, Flex, Segmented, Table, Tag, Tooltip, Tree, Typography } from 'antd';
+import type { ColumnsType, TablePaginationConfig } from 'antd/es/table';
 import type { DataNode } from 'antd/es/tree';
 import type { ReactNode } from 'react';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-import { type AssetSummary, listAssets } from '../api/assets';
+import { type AssetListPage, type AssetSummary, listAssets } from '../api/assets';
 import { namespaceLabel } from '../components/assets/namespaceLabel';
 import { AssetHealthTag } from '../components/assets/AssetHealthTag';
 import {
@@ -28,18 +28,21 @@ import { useAsyncData } from '../hooks/useAsyncData';
 
 /**
  * Assets list (`/assets`, ADR 0034 gap G-d phase 2, #760; hierarchical browse
- * #802) — the read-only browse/reason surface over data assets. Every member
- * sees every asset (ADR 0037 — identity is workspace knowledge), with health
- * rolled up workspace-true across ALL composing suites.
+ * #802; server-side paging #925) — the read-only browse/reason surface over
+ * data assets. Every member sees every asset (ADR 0037 — identity is workspace
+ * knowledge), with health rolled up workspace-true across ALL composing suites.
  *
- * Two lenses over the same data:
- * - **By source** (default) — a connection-rooted drill-down
- *   (namespace → database/catalog → schema → table); the leaves open the detail.
- * - **All assets** — the flat, searchable table (retained per #802).
+ * Two lenses over the same data, each fetching independently now that the
+ * workspace can exceed one page (#925):
+ * - **By source** (default) — a connection-rooted drill-down (namespace →
+ *   database/catalog → schema → table); the leaves open the detail. Walks
+ *   pages up to `TREE_HARD_BOUND` and renders an explicit truncation note if
+ *   the workspace is bigger than that — never a silently partial tree.
+ * - **All assets** — the flat table, real server-side paging (antd `Table`
+ *   `pagination`, `PAGE_SIZE` rows/page) driven by the `X-Total-Count` total.
  */
 export function Assets() {
   const navigate = useNavigate();
-  const { state, reload } = useAsyncData(listAssets);
   const [view, setView] = useState<'tree' | 'table'>('tree');
   const onOpen = (id: string) => navigate(`/assets/${id}`);
 
@@ -52,37 +55,130 @@ export function Assets() {
         The tables and files DataQ knows about. Health is rolled up across every suite that targets
         the asset.
       </Typography.Paragraph>
-      <AsyncBody
-        state={state}
-        loadingText="Loading assets…"
-        errorTitle="Failed to load assets"
-        page
-        onRetry={reload}
-      >
-        {(assets) =>
-          assets.length === 0 ? (
-            <Empty description="No assets yet — give a suite a run target and it will appear here." />
-          ) : (
-            <Flex vertical gap={16} align="stretch">
-              <Segmented<'tree' | 'table'>
-                value={view}
-                onChange={setView}
-                style={{ alignSelf: 'flex-start' }}
-                options={[
-                  { label: 'By source', value: 'tree' },
-                  { label: 'All assets', value: 'table' },
-                ]}
-              />
-              {view === 'tree' ? (
-                <AssetsTree assets={assets} onOpen={onOpen} />
-              ) : (
-                <AssetsTable assets={assets} onOpen={onOpen} />
-              )}
-            </Flex>
-          )
-        }
-      </AsyncBody>
+      <Flex vertical gap={16} align="stretch">
+        <Segmented<'tree' | 'table'>
+          value={view}
+          onChange={setView}
+          style={{ alignSelf: 'flex-start' }}
+          options={[
+            { label: 'By source', value: 'tree' },
+            { label: 'All assets', value: 'table' },
+          ]}
+        />
+        {view === 'tree' ? <AssetsTreeView onOpen={onOpen} /> : <AssetsTableView onOpen={onOpen} />}
+      </Flex>
     </Page>
+  );
+}
+
+const EMPTY_DESCRIPTION = 'No assets yet — give a suite a run target and it will appear here.';
+
+/** Hard cap on how many rows the tree view will walk pages for (#925) — a tree
+ *  render over an unbounded workspace would eventually hang the browser tab;
+ *  this bounds the work and the truncation note below says so honestly rather
+ *  than rendering a silently partial tree. Comfortably above any real
+ *  workspace seen so far, and well past the point where a flat tree stops
+ *  being a useful browse UI anyway — "All assets" paging is the answer beyond it. */
+const TREE_HARD_BOUND = 2000;
+/** One walked page — the server's own max (`_LIST_LIMIT_MAX` in
+ *  `backend/app/api/v1/assets.py`), so the walk takes the fewest round trips. */
+const TREE_PAGE_SIZE = 200;
+
+/** Walk `/assets` pages until every asset is fetched, `TREE_HARD_BOUND` is hit,
+ *  or the server stops returning rows — whichever comes first. The last guard
+ *  is defensive: a `total` that the walk can never reach must not spin forever. */
+async function fetchAllAssetsForTree(): Promise<AssetListPage> {
+  const items: AssetSummary[] = [];
+  let total = 0;
+  let offset = 0;
+  while (items.length < TREE_HARD_BOUND) {
+    const page = await listAssets({ limit: TREE_PAGE_SIZE, offset });
+    total = page.total;
+    items.push(...page.items);
+    if (page.items.length === 0) break;
+    offset += page.items.length;
+    if (items.length >= total) break;
+  }
+  return { items, total };
+}
+
+function AssetsTreeView({ onOpen }: { onOpen: (id: string) => void }) {
+  const { state, reload } = useAsyncData(fetchAllAssetsForTree);
+  return (
+    <AsyncBody
+      state={state}
+      loadingText="Loading assets…"
+      errorTitle="Failed to load assets"
+      page
+      onRetry={reload}
+    >
+      {({ items, total }) =>
+        items.length === 0 ? (
+          <Empty description={EMPTY_DESCRIPTION} />
+        ) : (
+          <Flex vertical gap={16} align="stretch">
+            {/* Honest truncation (#925): never render a tree that silently
+                dropped assets — say exactly how many are missing. */}
+            {items.length < total && (
+              <Alert
+                type="warning"
+                showIcon
+                message={`Showing ${items.length} of ${total} assets`}
+                description={
+                  'The tree view is capped so the browser stays responsive — switch to ' +
+                  '"All assets" to page through the rest.'
+                }
+              />
+            )}
+            <AssetsTree assets={items} onOpen={onOpen} />
+          </Flex>
+        )
+      }
+    </AsyncBody>
+  );
+}
+
+const TABLE_PAGE_SIZE = 50;
+
+function AssetsTableView({ onOpen }: { onOpen: (id: string) => void }) {
+  const [page, setPage] = useState(1);
+  const { state, reload } = useAsyncData(() =>
+    listAssets({ limit: TABLE_PAGE_SIZE, offset: (page - 1) * TABLE_PAGE_SIZE }),
+  );
+  // useAsyncData only re-fetches on `reload()` (its effect keys off a nonce, not
+  // the fetcher identity — see its doc), so a page change must bump it
+  // explicitly, same pattern as Dashboard's range selector.
+  const onPageChange = (nextPage: number) => {
+    setPage(nextPage);
+    reload();
+  };
+
+  return (
+    <AsyncBody
+      state={state}
+      loadingText="Loading assets…"
+      errorTitle="Failed to load assets"
+      page
+      onRetry={reload}
+    >
+      {({ items, total }) =>
+        total === 0 ? (
+          <Empty description={EMPTY_DESCRIPTION} />
+        ) : (
+          <AssetsTable
+            assets={items}
+            onOpen={onOpen}
+            pagination={{
+              current: page,
+              pageSize: TABLE_PAGE_SIZE,
+              total,
+              onChange: onPageChange,
+              showSizeChanger: false,
+            }}
+          />
+        )
+      }
+    </AsyncBody>
   );
 }
 
@@ -163,7 +259,20 @@ function toDataNode(node: AssetTreeNode): DataNode {
   };
 }
 
-function AssetsTable({ assets, onOpen }: { assets: AssetSummary[]; onOpen: (id: string) => void }) {
+function AssetsTable({
+  assets,
+  onOpen,
+  pagination = false,
+}: {
+  assets: AssetSummary[];
+  onOpen: (id: string) => void;
+  /** Server-side pagination config (#925) — `dataSource` is already the
+   *  current page's rows, so `Table` must NOT re-slice it client-side; `false`
+   *  keeps the pre-#925 unpaginated rendering for callers that pass a
+   *  already-complete list (none left in this file, but the prop stays
+   *  optional so the component doesn't force paging on every caller). */
+  pagination?: TablePaginationConfig | false;
+}) {
   const columns: ColumnsType<AssetSummary> = [
     {
       title: 'Asset',
@@ -218,7 +327,7 @@ function AssetsTable({ assets, onOpen }: { assets: AssetSummary[]; onOpen: (id: 
       size="middle"
       columns={columns}
       dataSource={assets}
-      pagination={false}
+      pagination={pagination}
       onRow={(asset) => ({
         onClick: () => onOpen(asset.id),
         style: { cursor: 'pointer' },

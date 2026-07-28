@@ -21,7 +21,7 @@ import uuid
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from pydantic import ConfigDict, Field
 from sqlalchemy.orm import Session
 
@@ -265,16 +265,43 @@ class AssetMetadataUpdate(ApiModel):
 _LIST_LIMIT_DEFAULT = 200
 _LIST_LIMIT_MAX = 200
 
+TOTAL_COUNT_HEADER = "X-Total-Count"
 
-@router.get("/assets", response_model=list[AssetSummaryRead], summary="List assets")
+
+@router.get(
+    "/assets",
+    response_model=list[AssetSummaryRead],
+    summary="List assets",
+    responses={
+        200: {
+            "headers": {
+                TOTAL_COUNT_HEADER: {
+                    "description": (
+                        "Total assets in the workspace (#925) — the same "
+                        "unfiltered population this page's limit/offset slice "
+                        "into. A page shorter than `limit` doesn't by itself "
+                        "prove there's no more; compare against this header."
+                    ),
+                    "schema": {"type": "integer"},
+                }
+            }
+        }
+    },
+)
 def list_assets(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
+    response: Response,
     limit: int = Query(default=_LIST_LIMIT_DEFAULT, ge=1, le=_LIST_LIMIT_MAX),
     offset: int = Query(default=0, ge=0),
 ) -> list[svc.AssetSummary]:
     # Workspace-true (ADR 0037): identical rows for every member — the service
     # takes no user. Auth still required (the dependency), like every surface.
+    # The header carries the total (#925) — the response BODY stays a bare list
+    # so every existing caller (incl. old frontend bundles across a deploy
+    # window) keeps parsing it unchanged; only a caller that reads the header
+    # gains truncation visibility.
+    response.headers[TOTAL_COUNT_HEADER] = str(svc.count_assets(db))
     return svc.list_visible_assets(db, limit=limit, offset=offset)
 
 

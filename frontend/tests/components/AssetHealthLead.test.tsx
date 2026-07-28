@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { type AssetSummary, listAssets } from '../../src/api/assets';
+import { type AssetListPage, type AssetSummary, listAssets } from '../../src/api/assets';
 import { AssetHealthLead } from '../../src/components/dashboard/AssetHealthLead';
 
 vi.mock('../../src/api/assets', async (importOriginal) => {
@@ -36,6 +36,12 @@ function asset(overrides: Partial<AssetSummary> = {}): AssetSummary {
   };
 }
 
+/** Build the `AssetListPage` the mocked `listAssets` resolves — `total`
+ *  defaults to the fetched length (an untruncated fetch) unless overridden. */
+function page(items: AssetSummary[], total?: number): AssetListPage {
+  return { items, total: total ?? items.length };
+}
+
 function renderLead() {
   return render(
     <MemoryRouter initialEntries={['/dashboard']}>
@@ -52,20 +58,22 @@ afterEach(() => vi.clearAllMocks());
 
 describe('AssetHealthLead (#773)', () => {
   it('summarises monitored / attention / in-progress counts and lists failing assets', async () => {
-    mockListAssets.mockResolvedValue([
-      asset({ id: 'a1', name: 'HEALTHY.ORDERS' }),
-      asset({ id: 'a2', name: 'FAILING.ORDERS', worst_severity: 'fail' }),
-      // A run that failed operationally: the backend rolls that up as BOTH a
-      // failed run and an operational error (the #803 connection axis), and it
-      // still "needs attention" — DataQ couldn't evaluate the asset at all.
-      asset({
-        id: 'a3',
-        name: 'RUNFAIL.ORDERS',
-        has_failed_run: true,
-        has_operational_error: true,
-      }),
-      asset({ id: 'a4', name: 'INFLIGHT.ORDERS', has_active_run: true }),
-    ]);
+    mockListAssets.mockResolvedValue(
+      page([
+        asset({ id: 'a1', name: 'HEALTHY.ORDERS' }),
+        asset({ id: 'a2', name: 'FAILING.ORDERS', worst_severity: 'fail' }),
+        // A run that failed operationally: the backend rolls that up as BOTH a
+        // failed run and an operational error (the #803 connection axis), and it
+        // still "needs attention" — DataQ couldn't evaluate the asset at all.
+        asset({
+          id: 'a3',
+          name: 'RUNFAIL.ORDERS',
+          has_failed_run: true,
+          has_operational_error: true,
+        }),
+        asset({ id: 'a4', name: 'INFLIGHT.ORDERS', has_active_run: true }),
+      ]),
+    );
     renderLead();
 
     expect(await screen.findByText('Asset health')).toBeInTheDocument();
@@ -81,10 +89,12 @@ describe('AssetHealthLead (#773)', () => {
   });
 
   it('counts only suite-bearing assets in the Monitored tile (ADR 0037 browse includes unmonitored)', async () => {
-    mockListAssets.mockResolvedValue([
-      asset({ id: 'a1', name: 'MONITORED.T' }), // suite_count 1 (factory default)
-      asset({ id: 'a2', name: 'UNMONITORED.T', suite_count: 0 }), // browse-only row
-    ]);
+    mockListAssets.mockResolvedValue(
+      page([
+        asset({ id: 'a1', name: 'MONITORED.T' }), // suite_count 1 (factory default)
+        asset({ id: 'a2', name: 'UNMONITORED.T', suite_count: 0 }), // browse-only row
+      ]),
+    );
     renderLead();
     await screen.findByText('Monitored');
     // Two assets in browse, but only one is monitored.
@@ -93,26 +103,26 @@ describe('AssetHealthLead (#773)', () => {
   });
 
   it('says all healthy when nothing needs attention', async () => {
-    mockListAssets.mockResolvedValue([asset(), asset({ id: 'a2', name: 'OTHER' })]);
+    mockListAssets.mockResolvedValue(page([asset(), asset({ id: 'a2', name: 'OTHER' })]));
     renderLead();
     expect(await screen.findByText('All monitored assets are healthy.')).toBeInTheDocument();
   });
 
   it('shows an empty state when there are no monitored assets', async () => {
-    mockListAssets.mockResolvedValue([]);
+    mockListAssets.mockResolvedValue(page([]));
     renderLead();
     expect(await screen.findByText(/No monitored assets yet/)).toBeInTheDocument();
   });
 
   it('navigates to the assets list from the header link', async () => {
-    mockListAssets.mockResolvedValue([asset()]);
+    mockListAssets.mockResolvedValue(page([asset()]));
     renderLead();
     await userEvent.click(await screen.findByText(/View all assets/));
     expect(await screen.findByText('assets list')).toBeInTheDocument();
   });
 
   it('opens an individual asset from the attention list', async () => {
-    mockListAssets.mockResolvedValue([asset({ worst_severity: 'critical' })]);
+    mockListAssets.mockResolvedValue(page([asset({ worst_severity: 'critical' })]));
     renderLead();
     await userEvent.click(await screen.findByText('ANALYTICS.PUBLIC.ORDERS'));
     expect(await screen.findByText('asset page')).toBeInTheDocument();
@@ -121,13 +131,15 @@ describe('AssetHealthLead (#773)', () => {
   it('sorts the attention preview by severity so a critical never hides behind warns', async () => {
     // Backend order is (namespace, name)-alphabetical: five warns first, then a
     // fail and a critical that would fall past the 5-row preview unsorted.
-    mockListAssets.mockResolvedValue([
-      ...[1, 2, 3, 4, 5].map((n) =>
-        asset({ id: `w${n}`, name: `A${n}.WARN`, worst_severity: 'warn' }),
-      ),
-      asset({ id: 'f1', name: 'Y.FAIL', worst_severity: 'fail' }),
-      asset({ id: 'c1', name: 'Z.CRITICAL', worst_severity: 'critical' }),
-    ]);
+    mockListAssets.mockResolvedValue(
+      page([
+        ...[1, 2, 3, 4, 5].map((n) =>
+          asset({ id: `w${n}`, name: `A${n}.WARN`, worst_severity: 'warn' }),
+        ),
+        asset({ id: 'f1', name: 'Y.FAIL', worst_severity: 'fail' }),
+        asset({ id: 'c1', name: 'Z.CRITICAL', worst_severity: 'critical' }),
+      ]),
+    );
     renderLead();
 
     // Critical + fail lead the preview; the overflow fold holds two warns.
@@ -140,18 +152,43 @@ describe('AssetHealthLead (#773)', () => {
     expect(screen.queryByText('A5.WARN')).not.toBeInTheDocument();
   });
 
-  it('flags a possibly-truncated list at the backend 200-row cap', async () => {
+  it('flags a truncated fetch using the real X-Total-Count total, with "of N" (#925)', async () => {
+    // 200 fetched (the old page-size cap) but the workspace actually has 240 —
+    // exactly the shape #925 fixes: the old heuristic (fetched >= 200) couldn't
+    // tell "capped at 200, more exist" apart from "workspace has exactly 200".
     mockListAssets.mockResolvedValue(
-      Array.from({ length: 200 }, (_, i) => asset({ id: `a${i}`, name: `T.ASSET_${i}` })),
+      page(
+        Array.from({ length: 200 }, (_, i) => asset({ id: `a${i}`, name: `T.ASSET_${i}` })),
+        240,
+      ),
     );
     renderLead();
     expect(
-      await screen.findByText(/Showing the first 200 assets — open Assets for the full list/),
+      await screen.findByText(
+        /Showing the first 200 of 240 assets — open Assets for the full list/,
+      ),
     ).toBeInTheDocument();
+    // The tiles are qualified as lower bounds — each carries a trailing "+".
+    expect(screen.getAllByText('+').length).toBeGreaterThan(0);
+  });
+
+  it('shows no truncation note when the fetch covers the whole workspace, even exactly at 200', async () => {
+    // #925 regression: total === fetched (workspace really does have exactly
+    // 200 assets) must NOT be reported as truncated — the old `>= LIST_CAP`
+    // heuristic would have flagged this false positive.
+    mockListAssets.mockResolvedValue(
+      page(
+        Array.from({ length: 200 }, (_, i) => asset({ id: `a${i}`, name: `T.ASSET_${i}` })),
+        200,
+      ),
+    );
+    renderLead();
+    await screen.findByText('Monitored');
+    expect(screen.queryByText(/Showing the first/)).not.toBeInTheDocument();
   });
 
   it('shows no truncation note below the cap', async () => {
-    mockListAssets.mockResolvedValue([asset()]);
+    mockListAssets.mockResolvedValue(page([asset()]));
     renderLead();
     await screen.findByText('All monitored assets are healthy.');
     expect(screen.queryByText(/Showing the first/)).not.toBeInTheDocument();

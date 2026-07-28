@@ -11,17 +11,23 @@ const mockGet = vi.mocked(api.get);
 const mockPatch = vi.mocked(api.patch);
 
 describe('assets client', () => {
-  it('lists assets', async () => {
+  it('lists assets and reads the total off X-Total-Count (#925)', async () => {
     const rows = [{ id: 'a1' }];
-    mockGet.mockResolvedValueOnce({ data: rows });
-    await expect(listAssets()).resolves.toBe(rows);
+    mockGet.mockResolvedValueOnce({ data: rows, headers: { 'x-total-count': '37' } });
+    await expect(listAssets()).resolves.toEqual({ items: rows, total: 37 });
     expect(mockGet).toHaveBeenCalledWith('/assets', { params: undefined });
   });
 
   it('passes pagination params through', async () => {
-    mockGet.mockResolvedValueOnce({ data: [] });
+    mockGet.mockResolvedValueOnce({ data: [], headers: { 'x-total-count': '0' } });
     await listAssets({ limit: 50, offset: 100 });
     expect(mockGet).toHaveBeenCalledWith('/assets', { params: { limit: 50, offset: 100 } });
+  });
+
+  it('falls back to the page length when the header is absent (deploy-skew backend)', async () => {
+    const rows = [{ id: 'a1' }, { id: 'a2' }];
+    mockGet.mockResolvedValueOnce({ data: rows, headers: {} });
+    await expect(listAssets()).resolves.toEqual({ items: rows, total: 2 });
   });
 
   it('gets one asset', async () => {
