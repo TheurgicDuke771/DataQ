@@ -269,6 +269,38 @@ def test_s3_endpoint_default_port_and_case_do_not_fork_namespace() -> None:
     assert with_default_port.namespace == without_port.namespace == "s3://minio.internal/landing"
 
 
+def test_s3_ipv6_endpoints_stay_distinct_and_bracketed() -> None:
+    """`urlparse().hostname` strips IPv6 brackets; re-gluing with a bare `:`
+    made `[2001:db8::1]:9000` and `[2001:db8::1:9000]` — two different hosts —
+    collide into one namespace (review finding, verified live). Brackets are
+    restored so the authority stays injective."""
+    a = resolve_asset_identity(
+        "s3",
+        {"bucket": "landing", "endpoint_url": "https://[2001:db8::1]:9000"},
+        {"path": "orders.csv"},
+    )
+    b = resolve_asset_identity(
+        "s3",
+        {"bucket": "landing", "endpoint_url": "https://[2001:db8::1:9000]"},
+        {"path": "orders.csv"},
+    )
+    assert a.namespace == "s3://[2001:db8::1]:9000/landing"
+    assert b.namespace == "s3://[2001:db8::1:9000]/landing"
+    assert a.namespace != b.namespace
+
+
+def test_s3_endpoint_path_never_leaks_into_the_namespace() -> None:
+    """A path-bearing endpoint_url must contribute host[:port] only — pinned so
+    a refactor toward `.netloc`/`.geturl()` cannot silently persist a path
+    segment into asset identity (review finding)."""
+    ident = resolve_asset_identity(
+        "s3",
+        {"bucket": "landing", "endpoint_url": "https://minio.internal:9000/some/path"},
+        {"path": "orders.csv"},
+    )
+    assert ident.namespace == "s3://minio.internal:9000/landing"
+
+
 def test_s3_endpoint_non_default_port_preserved() -> None:
     identity = resolve_asset_identity(
         "s3",

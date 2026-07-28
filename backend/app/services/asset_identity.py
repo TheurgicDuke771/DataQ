@@ -206,6 +206,13 @@ def _s3_endpoint_authority(endpoint_url: str) -> str:
     """
     parsed = urlparse(endpoint_url)
     host = parsed.hostname or ""
+    # `urlparse().hostname` STRIPS the brackets off an IPv6 literal; re-gluing a
+    # port with a bare `:` would then collide with another address's own groups
+    # (`[2001:db8::1]:9000` vs `[2001:db8::1:9000]` — different hosts, same
+    # string; review finding, verified live). Restore the brackets whenever the
+    # host itself contains `:` so the authority stays injective.
+    if ":" in host:
+        host = f"[{host}]"
     port = parsed.port
     default_port = _S3_DEFAULT_PORTS.get(parsed.scheme)
     return f"{host}:{port}" if port is not None and port != default_port else host
