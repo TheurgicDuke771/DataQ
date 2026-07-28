@@ -129,7 +129,9 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
         label: 'Inventory sync',
         type: 'toggle',
         optional: true,
-        extra: 'Daily sync of every table this workspace exposes into the asset view (ADR 0040).',
+        extra:
+          'Daily sync of every table this workspace exposes into the asset view (ADR 0040). ' +
+          'Needs SELECT on system.information_schema for this PAT.',
       },
     ],
     secretLabel: 'Personal access token (PAT)',

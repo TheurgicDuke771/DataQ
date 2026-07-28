@@ -918,7 +918,8 @@ def sync_asset_inventory() -> int:
     asset row, so "no suite, no run, no edge" stops meaning INVISIBLE. Dark by
     default at the connection grain: only connections whose config sets
     ``inventory_sync: true`` are enumerated — there is no global gate to leave
-    on by accident, and no query runs for a workspace with nothing opted in.
+    on by accident, and no WAREHOUSE query runs for a connection that has not
+    opted in (the task's own cheap Postgres scan over connections always runs).
     Daily wall-clock cadence (a catalog changes on DDL cadence, not per-run);
     the sync's `last_seen` advancement is also what keeps discovered assets out
     of `sweep_orphan_assets`' candidate set while their tables still exist.

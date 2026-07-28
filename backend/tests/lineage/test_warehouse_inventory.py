@@ -89,8 +89,16 @@ class TestSnowflakeEnumeration:
         assert "table_catalog = :db" in conn.sql
         assert conn.params["db"] == "DATAQ_DB"
         assert "table_schema != 'INFORMATION_SCHEMA'" in conn.sql
-        assert "'BASE TABLE'" in conn.sql and "'LOCAL TEMPORARY'" not in conn.sql
+        # Positive allowlist present; TEMPORARY TABLE (Snowflake's actual temp
+        # vocabulary — review fix, the earlier 'LOCAL TEMPORARY' string tested
+        # nothing real) must not be an allowed type.
+        assert "'BASE TABLE'" in conn.sql and "'TEMPORARY TABLE'" not in conn.sql
         assert "ORDER BY table_schema, table_name" in conn.sql
+        # Budget-correctness (review finding): every exclusion must precede the
+        # LIMIT, or excluded rows consume the cap+1 budget and truncation
+        # detection silently never fires. ESCAPE makes the underscores literal.
+        assert "table_name NOT LIKE 'SNOWPARK\\_TEMP\\_%' ESCAPE '\\'" in conn.sql
+        assert "table_schema IS NOT NULL AND table_name IS NOT NULL" in conn.sql
 
     def test_limit_is_pushed_into_the_query(self) -> None:
         conn = _FakeConn([])
@@ -123,6 +131,7 @@ class TestUnityCatalogEnumeration:
         assert "system.information_schema.tables" in conn.sql
         assert "table_catalog NOT IN ('system', 'samples', '__databricks_internal')" in conn.sql
         assert "table_schema != 'information_schema'" in conn.sql
+        assert "table_catalog IS NOT NULL" in conn.sql  # budget-correct NULL exclusion
         assert "'STREAMING_TABLE'" in conn.sql
 
     def test_null_rows_are_skipped(self) -> None:

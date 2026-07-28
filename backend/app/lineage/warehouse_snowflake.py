@@ -205,10 +205,18 @@ class SnowflakeLineageProvider:
         """
         namespace = self._namespace(connection_config)
         database = self._database(connection_config)
+        # Every exclusion lives in the WHERE clause, BEFORE the LIMIT (review
+        # finding on this PR): a Python-side filter after a SQL LIMIT lets
+        # excluded rows consume the cap+1 budget, so the caller's overflow
+        # detection can never fire and the sync silently under-covers — the
+        # exact silent-cap the ADR forbids. ESCAPE makes the underscores in
+        # the Snowpark prefix literal (LIKE's bare `_` matches any character).
         sql = (
             "SELECT table_schema, table_name FROM INFORMATION_SCHEMA.TABLES"
             " WHERE table_catalog = :db"
+            " AND table_schema IS NOT NULL AND table_name IS NOT NULL"
             " AND table_schema != 'INFORMATION_SCHEMA'"
+            " AND table_name NOT LIKE 'SNOWPARK\\_TEMP\\_%' ESCAPE '\\'"
             " AND table_type IN ('BASE TABLE', 'VIEW', 'MATERIALIZED VIEW', 'EXTERNAL TABLE')"
             " ORDER BY table_schema, table_name"
         )
@@ -217,10 +225,10 @@ class SnowflakeLineageProvider:
             sql += " LIMIT :lim"
             params["lim"] = int(limit)
         rows = conn.execute(text(sql), params).all()  # type: ignore[attr-defined]
-        # The falsy-guard is fixture-justified, not speculative: the real
-        # account-wide capture (snowflake_tables_casing.json) contains rows with
-        # NULL catalog — a row the driver nulls must be skipped, never become a
-        # "DATAQ_DB.None.None" asset.
+        # The SQL predicates above are the budget-correct filter; this residual
+        # guard only catches driver weirdness the WHERE clause could not (the
+        # real account-wide capture contains NULL-catalog rows, so nulls are a
+        # fixture-proven possibility) — post-LIMIT it can no longer eat budget.
         return tuple(
             self._identity(namespace, database, schema, table)
             for schema, table in rows

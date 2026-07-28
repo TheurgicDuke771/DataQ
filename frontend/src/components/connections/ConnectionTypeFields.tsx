@@ -28,6 +28,12 @@ function ConfigTextField({
     // A boolean config flag (e.g. `inventory_sync`, ADR 0040). `valuePropName`
     // wires the Switch's `checked` into the form value; an untouched toggle
     // simply omits the key, which the backend defaults to false.
+    //
+    // No `rules`, so the form's requiredMark="optional" appends "(optional)" —
+    // deliberate: it is true (unchecked is always valid) and consistent with
+    // every other rule-less field (#1066's rule bans DOUBLING the marker, not
+    // showing it). `forceRequired` is a text-field concept and is intentionally
+    // not honored here — a toggle is never required.
     return (
       <Form.Item
         name={['config', field.name]}

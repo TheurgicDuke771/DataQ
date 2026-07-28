@@ -1,6 +1,6 @@
 # ADR 0040 — Warehouse inventory sync + the table-enumeration seam
 
-- **Status:** Accepted (2026-07-29)
+- **Status:** Accepted (2026-07-28)
 - **Issues:** [#919](https://github.com/TheurgicDuke771/DataQ/issues/919) (inventory sync), [#892](https://github.com/TheurgicDuke771/DataQ/issues/892) (GET_LINEAGE seeds), [#466](https://github.com/TheurgicDuke771/DataQ/issues/466) (interactive pickers, future), [#1064](https://github.com/TheurgicDuke771/DataQ/issues/1064) (S3-compatible namespace)
 - **Builds on:** ADR 0034 (assets / "future catalog sync"), ADR 0037 (workspace-visible asset identity), the #911 scoped-pull discipline, the #823 identity discipline
 
@@ -28,20 +28,25 @@ enumerate_tables(conn_type, config, secret) -> tuple[AssetIdentity, ...]
 implemented for `snowflake` and `unity_catalog` in v1 of this slice (the
 "warehouse inventory" of #919's title; flat-file/iceberg are §7 non-goals).
 It reads the engine's own catalog views —
-`{db}.INFORMATION_SCHEMA.TABLES` (Snowflake) and
-`{catalog}.information_schema.tables` (Unity Catalog) — scoped exactly like the
-#911 lineage pull: **the connection's one configured database/catalog**, table
-types restricted to the same domain vocabulary the lineage pull accepts
+`INFORMATION_SCHEMA.TABLES` bound to the connection's one database (Snowflake)
+and `system.information_schema.tables` (Unity Catalog) — scoped to **the
+connection's own boundary, exactly like its lineage pull** (#911): one database
+for Snowflake; the workspace for UC, whose connections carry no catalog field
+(minus the `system`/`samples`/`__databricks_internal` catalogs). Table types are
+restricted to the same domain vocabulary the lineage pull accepts
 (base/view/materialized/dynamic/external), system schemas
-(`INFORMATION_SCHEMA`) and Snowpark ephemera (`SNOWPARK_TEMP_*`) excluded.
+(`INFORMATION_SCHEMA`) and Snowpark ephemera (`SNOWPARK_TEMP_*`) excluded —
+every exclusion in the WHERE clause itself, so a bounded read's LIMIT budget is
+never consumed by rows that were going to be discarded.
 
 Consumers:
 
 1. **Inventory sync (#919, this slice):** a new daily beat task
    (`sync_asset_inventory`, wall-clock crontab per #1091) upserts the
    enumeration into `assets` for every **opted-in** connection.
-2. **GET_LINEAGE seeds (#892, this batch):** the Snowflake lineage provider's
-   per-seed traversal walks the same enumeration — no second discovery path.
+2. **GET_LINEAGE seeds (#892, next slice of this batch — not wired yet):**
+   the Snowflake per-seed traversal will walk the same enumeration — no second
+   discovery path.
 3. **Interactive pickers (#466, future):** the picker endpoint wraps the same
    seam live; nothing here forecloses it.
 
@@ -87,6 +92,13 @@ runs, so its scorecard shows coverage gaps, never a score.
   reads as "covered everything" (the no-silent-caps rule).
 - **Fail-soft per connection**, like the lineage refresh: one unreachable
   warehouse logs and never aborts the sweep of the others.
+- **UC grant prerequisite:** `system.information_schema` is not implicitly
+  readable — the connection's PAT needs an explicit `SELECT` grant on it (the
+  same class of prerequisite as the lineage pull's `system.access` grant). The
+  toggle's form hint and deploy/README say so; a failed sync today is visible
+  only in worker logs (`inventory_sync_connection_failed`) — a user-facing
+  per-connection inventory health signal is filed as a follow-up, not silently
+  absent.
 
 ## 6. S3-compatible namespace (#1064, decided here)
 

@@ -141,7 +141,9 @@ class UnityCatalogLineageProvider:
         sql = (
             "SELECT table_catalog, table_schema, table_name"
             " FROM system.information_schema.tables"
-            " WHERE table_schema != 'information_schema'"
+            " WHERE table_catalog IS NOT NULL AND table_schema IS NOT NULL"
+            " AND table_name IS NOT NULL"
+            " AND table_schema != 'information_schema'"
             " AND table_catalog NOT IN ('system', 'samples', '__databricks_internal')"
             " AND table_type IN ('MANAGED', 'EXTERNAL', 'VIEW', 'MATERIALIZED_VIEW',"
             " 'STREAMING_TABLE')"
