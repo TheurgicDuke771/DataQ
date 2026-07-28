@@ -1,0 +1,11 @@
+Hey, there are 3 tracks - 
+* Handover from last session
+* Burn the backlogs [can be close now, not a new feature, not tied to a week, etc.] 
+* Dependabot PRs and CodeQL isuue [triage -> fix -> merge] 
+
+Can you plan this session for this 3 tracks and create the execution route - 
+You can be the orchestrator and deligate the work to other model [haiku, sonet or opus] bases on complexity and nature of the task.
+
+---
+
+yeah, go ahead
