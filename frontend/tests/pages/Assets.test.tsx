@@ -179,15 +179,10 @@ describe('Assets page — tree view (default)', () => {
       })),
       repeated,
     ];
-    mockList
-      .mockResolvedValueOnce({ items: firstPage, total: 201 })
-      .mockResolvedValueOnce({
-        items: [
-          repeated,
-          { ...ASSET, id: 'z', name: 'ANALYTICS.PUBLIC.LAST', worst_severity: null },
-        ],
-        total: 202,
-      });
+    mockList.mockResolvedValueOnce({ items: firstPage, total: 201 }).mockResolvedValueOnce({
+      items: [repeated, { ...ASSET, id: 'z', name: 'ANALYTICS.PUBLIC.LAST', worst_severity: null }],
+      total: 202,
+    });
     renderPage();
 
     expect(await screen.findByText('LAST')).toBeInTheDocument();
@@ -196,6 +191,9 @@ describe('Assets page — tree view (default)', () => {
     expect(screen.queryByText(/Showing \d+ of \d+ assets/)).not.toBeInTheDocument();
   });
 
+  // 20s explicit budget: ten 200-row pages + a 2000-node antd Tree render
+  // sits near vitest's 5s default on CI runners (timed out there once) —
+  // the size IS the point of this test, so the budget moves, not the load.
   it('renders an explicit truncation note rather than a silently partial tree (#925)', async () => {
     // The workspace has 2100 assets — past the 2000-row hard bound — so the
     // walk stops at 10 pages (2000 rows) and MUST say so, never render a tree
@@ -215,7 +213,7 @@ describe('Assets page — tree view (default)', () => {
     // Walked exactly to the bound: 2000 / 200 per page = 10 calls, not 11 — the
     // walk must stop AT the bound, not one page past it.
     expect(mockList).toHaveBeenCalledTimes(10);
-  });
+  }, 20_000);
 });
 
 describe('Assets page — table view (#925 server-side paging)', () => {
