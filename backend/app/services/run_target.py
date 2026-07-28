@@ -42,8 +42,6 @@ from backend.app.core.secrets import SecretStore
 from backend.app.datasources.base import ResolvedTarget, TargetShapeError
 from backend.app.datasources.registry import resolve_target_shape
 
-_FLATFILE_TYPES = {"adls_gen2", "s3"}
-
 
 class SuiteTargetInvalidError(DataQError):
     status_code = 422
