@@ -1,0 +1,152 @@
+[
+ {
+  "table_catalog": "workspace",
+  "table_schema": "information_schema",
+  "table_name": "schema_tags"
+ },
+ {
+  "table_catalog": "workspace",
+  "table_schema": "information_schema",
+  "table_name": "volume_tags"
+ },
+ {
+  "table_catalog": "samples",
+  "table_schema": "bakehouse",
+  "table_name": "media_gold_reviews_chunked"
+ },
+ {
+  "table_catalog": "samples",
+  "table_schema": "accuweather",
+  "table_name": "historical_hourly_imperial"
+ },
+ {
+  "table_catalog": "workspace",
+  "table_schema": "information_schema",
+  "table_name": "information_schema_catalog_name"
+ },
+ {
+  "table_catalog": "dataq_retail",
+  "table_schema": "reference",
+  "table_name": "suppliers"
+ },
+ {
+  "table_catalog": "dbacademy",
+  "table_schema": "information_schema",
+  "table_name": "routine_tags"
+ },
+ {
+  "table_catalog": "samples",
+  "table_schema": "tpch",
+  "table_name": "supplier"
+ },
+ {
+  "table_catalog": "samples",
+  "table_schema": "information_schema",
+  "table_name": "catalog_properties"
+ },
+ {
+  "table_catalog": "samples",
+  "table_schema": "information_schema",
+  "table_name": "catalogs"
+ },
+ {
+  "table_catalog": "samples",
+  "table_schema": "information_schema",
+  "table_name": "volume_privileges"
+ },
+ {
+  "table_catalog": "dbacademy",
+  "table_schema": "information_schema",
+  "table_name": "routine_columns"
+ },
+ {
+  "table_catalog": "dataq_retail",
+  "table_schema": "raw",
+  "table_name": "sales_events"
+ },
+ {
+  "table_catalog": "workspace",
+  "table_schema": "information_schema",
+  "table_name": "column_tags"
+ },
+ {
+  "table_catalog": "dbacademy",
+  "table_schema": "information_schema",
+  "table_name": "catalogs"
+ },
+ {
+  "table_catalog": "samples",
+  "table_schema": "information_schema",
+  "table_name": "routine_columns"
+ },
+ {
+  "table_catalog": "dataq_retail",
+  "table_schema": "reference",
+  "table_name": "channels"
+ },
+ {
+  "table_catalog": "samples",
+  "table_schema": "nyctaxi",
+  "table_name": "trips"
+ },
+ {
+  "table_catalog": "dataq_retail",
+  "table_schema": "reference",
+  "table_name": "fulfillment_nodes"
+ },
+ {
+  "table_catalog": "dataq_retail",
+  "table_schema": "information_schema",
+  "table_name": "table_constraints"
+ },
+ {
+  "table_catalog": "samples",
+  "table_schema": "information_schema",
+  "table_name": "tables"
+ },
+ {
+  "table_catalog": "dbacademy",
+  "table_schema": "information_schema",
+  "table_name": "tables"
+ },
+ {
+  "table_catalog": "samples",
+  "table_schema": "accuweather",
+  "table_name": "forecast_daily_calendar_imperial"
+ },
+ {
+  "table_catalog": "samples",
+  "table_schema": "information_schema",
+  "table_name": "table_tags"
+ },
+ {
+  "table_catalog": "dataq_retail",
+  "table_schema": "information_schema",
+  "table_name": "abac_policy_definitions"
+ },
+ {
+  "table_catalog": "samples",
+  "table_schema": "information_schema",
+  "table_name": "table_privileges"
+ },
+ {
+  "table_catalog": "samples",
+  "table_schema": "accuweather",
+  "table_name": "historical_daynight_imperial"
+ },
+ {
+  "table_catalog": "dataq_retail",
+  "table_schema": "gold",
+  "table_name": "feedback_sentiment"
+ },
+ {
+  "table_catalog": "samples",
+  "table_schema": "information_schema",
+  "table_name": "volumes"
+ },
+ {
+  "table_catalog": "dbacademy",
+  "table_schema": "information_schema",
+  "table_name": "column_tags"
+ }
+]

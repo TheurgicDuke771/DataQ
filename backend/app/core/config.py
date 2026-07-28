@@ -135,6 +135,11 @@ class Settings(BaseSettings):
     # swept and immediately re-created on the next refresh. <=0 disables the sweep.
     asset_orphan_retention_days: int = 30
 
+    # Warehouse inventory sync (#919, ADR 0040): per-connection cap on tables
+    # synced per tick. Overflow syncs the first N in catalog order and logs
+    # `inventory_sync_truncated` — never a silent cap. <=0 removes the bound.
+    asset_inventory_max_tables: int = 2000
+
     # Orphan-SECRET sweep (#1059). A credential write is not part of the DB
     # transaction that creates the row referencing it, so any failure after the
     # write leaves the credential in the vault forever, unreferenced. Nothing else

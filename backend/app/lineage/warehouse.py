@@ -144,6 +144,28 @@ class WarehouseLineageProvider(Protocol):
     source: str
     is_incremental: bool
 
+    def enumerate_tables(
+        self,
+        conn: object,
+        *,
+        connection_config: dict[str, object],
+        limit: int | None = None,
+    ) -> tuple[AssetIdentity, ...]:
+        """Enumerate the tables this connection can see, as OpenLineage identities
+        (ADR 0040 — the table-enumeration seam). Reads the engine's own catalog
+        views in the engine's own case — the #823-safe path, so an enumerated
+        table joins `assets` byte-for-byte with what a suite target or lineage
+        edge produces. Deterministic catalog order (each impl's full identifier
+        tuple); ``limit`` bounds the read so a caller can detect overflow with
+        ``limit=cap+1`` — the caller owns the honesty of any truncation (no
+        silent caps).
+
+        Consumers: the #919 inventory sync (this slice); #892's GET_LINEAGE
+        seed list and the #466 pickers are DESIGNED to ride it but not wired
+        yet — one seam, so discovery can never fork.
+        """
+        ...
+
     def fetch_edges(
         self,
         conn: object,

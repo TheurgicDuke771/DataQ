@@ -1,4 +1,4 @@
-import { Form, Input, Select, type FormInstance } from 'antd';
+import { Form, Input, Select, Switch, type FormInstance } from 'antd';
 
 import type { ConnectionType } from '../../api/connections';
 import { activeAuthOption, CONNECTION_FORM_SPECS, type TextField } from './connectionFormSpec';
@@ -24,6 +24,27 @@ function ConfigTextField({
   forceRequired?: boolean;
 }) {
   const optional = field.optional && !forceRequired;
+  if (field.type === 'toggle') {
+    // A boolean config flag (e.g. `inventory_sync`, ADR 0040). `valuePropName`
+    // wires the Switch's `checked` into the form value; an untouched toggle
+    // simply omits the key, which the backend defaults to false.
+    //
+    // No `rules`, so the form's requiredMark="optional" appends "(optional)" —
+    // deliberate: it is true (unchecked is always valid) and consistent with
+    // every other rule-less field (#1066's rule bans DOUBLING the marker, not
+    // showing it). `forceRequired` is a text-field concept and is intentionally
+    // not honored here — a toggle is never required.
+    return (
+      <Form.Item
+        name={['config', field.name]}
+        label={field.label}
+        extra={field.extra}
+        valuePropName="checked"
+      >
+        <Switch />
+      </Form.Item>
+    );
+  }
   return (
     <Form.Item
       name={['config', field.name]}

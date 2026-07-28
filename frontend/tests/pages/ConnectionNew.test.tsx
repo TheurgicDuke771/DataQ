@@ -244,6 +244,37 @@ describe('ConnectionNew', () => {
     expect(await screen.findByText('Connections list')).toBeInTheDocument();
   });
 
+  it('submits inventory_sync=true when the toggle is switched on (ADR 0040)', async () => {
+    const user = userEvent.setup();
+    mockCreate.mockResolvedValue({
+      id: 'c1',
+      name: 'sf-inv',
+      type: 'snowflake',
+      env: 'dev',
+      config: {},
+      has_secret: true,
+      created_by: 'u1',
+    });
+    renderPage();
+
+    await user.click(screen.getByText('Snowflake'));
+    await user.type(screen.getByLabelText('Name'), 'sf-inv');
+    await user.click(screen.getByLabelText('Environment'));
+    await user.click(await screen.findByText('DEV'));
+    for (const label of ['Account', 'User', 'Database', 'Schema', 'Warehouse', 'Role']) {
+      await user.type(screen.getByLabelText(label), `${label.toLowerCase()}-val`);
+    }
+    // The toggle renders as an antd Switch (role=switch), default off.
+    const toggle = screen.getByRole('switch', { name: /Inventory sync/ });
+    expect(toggle).not.toBeChecked();
+    await user.click(toggle);
+    await user.type(screen.getByLabelText('Password'), 'sekret');
+
+    await user.click(screen.getByRole('button', { name: 'Create' }));
+    await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1));
+    expect(mockCreate.mock.calls[0][0].config).toMatchObject({ inventory_sync: true });
+  });
+
   // The Snowflake create-form boilerplate shared by the key-pair tests: mock the
   // response, pick the type, fill name + env + required fields, switch to key pair.
   async function startSnowflakeKeyPair(user: ReturnType<typeof userEvent.setup>, name: string) {

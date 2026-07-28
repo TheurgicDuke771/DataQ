@@ -118,6 +118,48 @@ class UnityCatalogLineageProvider:
         )
 
     # ── identity ──────────────────────────────────────────────────────────────
+    def enumerate_tables(
+        self,
+        conn: object,
+        *,
+        connection_config: dict[str, object],
+        limit: int | None = None,
+    ) -> tuple[AssetIdentity, ...]:
+        """ADR 0040 — enumerate the workspace's tables from
+        ``system.information_schema.tables``.
+
+        A UC connection's boundary is the WORKSPACE (there is no per-connection
+        catalog, exactly like the lineage pull over ``system.access``), so scope
+        here means excluding what is categorically not user data: the ``system``
+        and ``__databricks_internal`` catalogs, Databricks' bundled ``samples``,
+        and every ``information_schema``. Managed/external tables, views,
+        materialized views and streaming tables are all real assets (the same
+        breadth the lineage domains accept). Identities use the catalog's own
+        lower-case strings verbatim — no fold (the #823-safe path).
+        """
+        namespace = self._namespace(connection_config)
+        sql = (
+            "SELECT table_catalog, table_schema, table_name"
+            " FROM system.information_schema.tables"
+            " WHERE table_catalog IS NOT NULL AND table_schema IS NOT NULL"
+            " AND table_name IS NOT NULL"
+            " AND table_schema != 'information_schema'"
+            " AND table_catalog NOT IN ('system', 'samples', '__databricks_internal')"
+            " AND table_type IN ('MANAGED', 'EXTERNAL', 'VIEW', 'MATERIALIZED_VIEW',"
+            " 'STREAMING_TABLE')"
+            " ORDER BY table_catalog, table_schema, table_name"
+        )
+        params: dict[str, object] = {}
+        if limit is not None:
+            sql += " LIMIT :lim"
+            params["lim"] = int(limit)
+        rows = conn.execute(text(sql), params).all()  # type: ignore[attr-defined]
+        return tuple(
+            self._identity(namespace, catalog, schema, table)
+            for catalog, schema, table in rows
+            if catalog and schema and table  # same NULL-row guard as the SF seam
+        )
+
     def _namespace(self, config: dict[str, object]) -> str:
         workspace_url = config.get("workspace_url")
         if not isinstance(workspace_url, str) or not workspace_url.strip():
