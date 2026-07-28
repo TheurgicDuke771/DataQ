@@ -248,7 +248,7 @@ schema disclosure) and renders as a locked box. Snowflake's column grain lives i
 
 | Tier | Grain | Edition | Notes |
 |---|---|---|---|
-| `GET_LINEAGE` | object-level traversal | Enterprise+ | Tried first: its absence is a clean, catchable `0A000`, the best preflight signal. Per-seed traversal is a follow-up (no Enterprise account to test against). |
+| `GET_LINEAGE` | object-level traversal (+ column grain) | Enterprise+ | Tried first: its absence is a clean, catchable `0A000`, the best preflight signal. Since #892 it is a real **per-seed traversal** — seeds come from the ADR 0040 enumeration seam (`WAREHOUSE_LINEAGE_MAX_SEEDS`, default 500, loud truncation), each walked upstream **and** downstream at distance 2. Every returned row is a DIRECT source→target edge (`distance` is hops-from-seed, not a claim about the seed); MASKED (`***`) endpoints and non-table domains (STAGE) are dropped. A tier that enumerates no seeds, or observes no rows, **descends** rather than returning a confident empty — this tier prunes. |
 | `ACCESS_HISTORY` | column/statement | Enterprise+ | **Present-but-empty on Standard** — so emptiness is corroborated against `QUERY_HISTORY` (edition-gated vs genuinely idle), never read as "no lineage". ~2–3h lag. |
 | `OBJECT_DEPENDENCIES` | view-level | all editions | The floor — live-verified on the demo account (RETAIL→STG→ANALYTICS chain). Views/matviews/dynamic-tables; no column detail. |
 
@@ -264,12 +264,24 @@ fact, not a removed dependency. A 6h safety window before the watermark absorbs 
 ingestion lag so a late-arriving row is never lost to a strict `>`. Only rows with **both** a source
 and a target table are edges (most rows are pure read-access with a null target).
 
-**Verified against real captured payloads (2026-07-17 spike), not against a deployed app.** The
-providers' parse + identity are pinned byte-for-byte against `asset_identity` using the actual
-`OBJECT_DEPENDENCIES` / `table_lineage` payloads captured from the live demo account/workspace; the
-edition-gated Snowflake tiers (Enterprise) have no live payload yet and their descent is exercised by
-fakes reproducing the connector's observed `0A000` / silent-empty. Enabling it against a deployed
-warehouse + the per-seed `GET_LINEAGE` traversal are follow-ups.
+**Snowpark scratch is stitched, not dropped (#912).** A pipeline that materializes through
+`SNOWPARK_TEMP_*` session scratch (`A → TEMP → B`) used to lose the dependency entirely — both rows
+were dropped edge-wise, so `B` rendered with zero upstreams, indistinguishable from genuinely
+unlineaged. Both Snowflake tiers that can observe scratch now collapse such chains transitively into
+the real `A → B` (bounded depth, column pairs composed over the bridging column only when *both*
+hops evidence them), and never emit a scratch identity. Over-depth and dead-end chains are dropped
+**and counted** (`ephemeral_rows_seen` / `stitched_edges` / `ephemeral_chains_dropped` in the refresh
+log) — the pre-#912 drop was silent, which is why establishing whether it was biting took manual
+archaeology against prod.
+
+**Verified against real captured payloads, not against a deployed app.** The providers' parse +
+identity are pinned byte-for-byte against `asset_identity` using the actual `OBJECT_DEPENDENCIES` /
+`table_lineage` payloads captured from the live demo account/workspace (2026-07-17 spike), and — for
+the Enterprise-only `GET_LINEAGE` traversal and the Snowpark stitch — against captures taken from
+live **prod Enterprise** on 2026-07-28. Where a capture cannot express a case (the surviving Snowpark
+rows are TEMP→TEMP only; their physical endpoints aged out of ACCESS_HISTORY's retention), the real
+rows are augmented with minimal same-shaped synthetic rows and the test says so. The `0A000` /
+silent-empty descents stay fake-driven — a live Enterprise account cannot produce them.
 
 ## Wiring a trigger
 

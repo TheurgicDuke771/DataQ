@@ -44,9 +44,12 @@ Consumers:
 1. **Inventory sync (#919, this slice):** a new daily beat task
    (`sync_asset_inventory`, wall-clock crontab per #1091) upserts the
    enumeration into `assets` for every **opted-in** connection.
-2. **GET_LINEAGE seeds (#892, next slice of this batch — not wired yet):**
-   the Snowflake per-seed traversal will walk the same enumeration — no second
-   discovery path.
+2. **GET_LINEAGE seeds (#892, shipped 2026-07-28):** the Snowflake per-seed
+   traversal walks the same enumeration — no second discovery path. Its own cap
+   is separate (`WAREHOUSE_LINEAGE_MAX_SEEDS`, default 500) because the costs
+   differ by an order of magnitude: the sync does one catalog read per
+   connection, the traversal does **two round trips per seed**. Same
+   loud-truncation rule (`get_lineage_seeds_truncated`).
 3. **Interactive pickers (#466, future):** the picker endpoint wraps the same
    seam live; nothing here forecloses it.
 

@@ -21,3 +21,16 @@
 # the noise the enumerator's scope predicates exist to exclude).
 !snowflake_tables_casing.json
 !uc_tables_casing.json
+# #892 GET_LINEAGE traversal (live prod Enterprise capture) — reviewed 2026-07-28:
+# catalog identifiers + object domains/statuses only, three `SELECT *` results kept
+# verbatim (incl. the capture harness's `str()` of NULLs as the literal "None" — the
+# loader maps them back). Contains one MASKED row whose name parts are `***` (the
+# whole point of the fixture: a redacted endpoint must never become an asset) and one
+# `process` blob carrying a Snowflake `query_id` — an opaque execution identifier, no
+# SQL text, no data values, no principal names.
+!sf_get_lineage_projected.json
+# #912 Snowpark-scratch stitch (365d ACCESS_HISTORY capture) — reviewed 2026-07-28:
+# six rows, table names + column names/ids only. Every `directSources` is empty (these
+# are COPY-from-stage writes), and three rows have a NULL source (a stage upload with
+# no table-lineage source at all) — both are real shapes the parser must survive.
+!sf_access_history_snowpark_projected.json

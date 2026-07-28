@@ -1,0 +1,32 @@
+[
+ [
+  null,
+  "DATAQ_DB.PERF.SNOWPARK_TEMP_STAGE_5G3D7DHWSF",
+  null
+ ],
+ [
+  null,
+  "DATAQ_DB.PERF.SNOWPARK_TEMP_STAGE_V3EKDCVVP7",
+  null
+ ],
+ [
+  null,
+  "DATAQ_DB.PERF.SNOWPARK_TEMP_STAGE_TV3UJWGFTG",
+  null
+ ],
+ [
+  "DATAQ_DB.PERF.SNOWPARK_TEMP_STAGE_TV3UJWGFTG",
+  "DATAQ_DB.PERF.SNOWPARK_TEMP_TABLE_KJ20JIM48W",
+  "[{\"baseSources\":[],\"columnId\":36923,\"columnName\":\"SUBTOTAL\",\"directSources\":[]},{\"baseSources\":[],\"columnId\":36921,\"columnName\":\"ORDER_TS\",\"directSources\":[]},{\"baseSources\":[],\"columnId\":36916,\"columnName\":\"ORDER_NUMBER\",\"directSources\":[]},{\"baseSources\":[],\"columnId\":36922,\"columnName\":\"STATUS\",\"directSources\":[]},{\"baseSources\":[],\"columnId\":36925,\"columnName\":\"ORDER_TOTAL\",\"directSources\":[]},{\"baseSources\":[],\"columnId\":36920,\"columnName\":\"PROMO_ID\",\"directSources\":[]},{\"baseSources\":[],\"columnId\":36918,\"columnName\":\"CHANNEL\",\"directSources\":[]},{\"baseSources\":[],\"columnId\":36926,\"columnName\":\"CURRENCY\",\"directSources\":[]},{\"baseSources\":[],\"columnId\":36919,\"columnName\":\"STORE_ID\",\"directSources\":[]},{\"baseSources\":[],\"columnId\":36924,\"columnName\":\"TAX\",\"directSources\":[]},{\"baseSources\":[],\"columnId\":36917,\"columnName\":\"CUSTOMER_ID\",\"directSources\":[]}]"
+ ],
+ [
+  "DATAQ_DB.PERF.SNOWPARK_TEMP_STAGE_V3EKDCVVP7",
+  "DATAQ_DB.PERF.SNOWPARK_TEMP_TABLE_K0ADU7Z7AS",
+  "[{\"baseSources\":[],\"columnId\":37938,\"columnName\":\"SKU_ID\",\"directSources\":[]},{\"baseSources\":[],\"columnId\":37936,\"columnName\":\"LINE_ID\",\"directSources\":[]},{\"baseSources\":[],\"columnId\":37939,\"columnName\":\"QTY\",\"directSources\":[]},{\"baseSources\":[],\"columnId\":37940,\"columnName\":\"UNIT_PRICE\",\"directSources\":[]},{\"baseSources\":[],\"columnId\":37937,\"columnName\":\"ORDER_NUMBER\",\"directSources\":[]},{\"baseSources\":[],\"columnId\":37941,\"columnName\":\"LINE_TOTAL\",\"directSources\":[]}]"
+ ],
+ [
+  "DATAQ_DB.PERF.SNOWPARK_TEMP_STAGE_5G3D7DHWSF",
+  "DATAQ_DB.PERF.SNOWPARK_TEMP_TABLE_RKL1UPG49H",
+  "[{\"baseSources\":[],\"columnId\":38945,\"columnName\":\"STATUS\",\"directSources\":[]},{\"baseSources\":[],\"columnId\":38943,\"columnName\":\"PROMO_ID\",\"directSources\":[]},{\"baseSources\":[],\"columnId\":38939,\"columnName\":\"ORDER_NUMBER\",\"directSources\":[]},{\"baseSources\":[],\"columnId\":38948,\"columnName\":\"ORDER_TOTAL\",\"directSources\":[]},{\"baseSources\":[],\"columnId\":38944,\"columnName\":\"ORDER_TS\",\"directSources\":[]},{\"baseSources\":[],\"columnId\":38940,\"columnName\":\"CUSTOMER_ID\",\"directSources\":[]},{\"baseSources\":[],\"columnId\":38941,\"columnName\":\"CHANNEL\",\"directSources\":[]},{\"baseSources\":[],\"columnId\":38947,\"columnName\":\"TAX\",\"directSources\":[]},{\"baseSources\":[],\"columnId\":38946,\"columnName\":\"SUBTOTAL\",\"directSources\":[]},{\"baseSources\":[],\"columnId\":38949,\"columnName\":\"CURRENCY\",\"directSources\":[]},{\"baseSources\":[],\"columnId\":38942,\"columnName\":\"STORE_ID\",\"directSources\":[]}]"
+ ]
+]
