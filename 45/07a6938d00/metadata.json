@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "4507a6938d00",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1091-crontab-daily-beat",
+  "checkpoints_count": 5,
+  "files_touched": [
+    "backend/app/worker/celery_app.py",
+    "backend/tests/worker/test_celery_app.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/45/07a6938d00/0/metadata.json",
+      "transcript": "/45/07a6938d00/0/full.jsonl",
+      "compact_transcript": "/45/07a6938d00/0/transcript.jsonl",
+      "content_hash": "/45/07a6938d00/0/content_hash.txt",
+      "prompt": "/45/07a6938d00/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1752,
+    "cache_creation_tokens": 1154491,
+    "cache_read_tokens": 61836322,
+    "output_tokens": 185048,
+    "api_call_count": 221
+  }
+}
