@@ -65,6 +65,9 @@ _CONNECTIONS: list[tuple[str, str, str, dict[str, Any], str]] = [
             "database": "ANALYTICS",
             "schema": "PUBLIC",
             "warehouse": "COMPUTE_WH",
+            # Required: GX mandates `role` for every suite run, so a role-less
+            # demo connection would test green and fail every run (#1067).
+            "role": "DATAQ_ANALYST",
             "auth_type": "password",
         },
         "demo-snowflake-dev-password",
@@ -79,6 +82,9 @@ _CONNECTIONS: list[tuple[str, str, str, dict[str, Any], str]] = [
             "database": "ANALYTICS_QA",
             "schema": "PUBLIC",
             "warehouse": "COMPUTE_WH",
+            # Required: GX mandates `role` for every suite run, so a role-less
+            # demo connection would test green and fail every run (#1067).
+            "role": "DATAQ_ANALYST",
             "auth_type": "password",
         },
         "demo-snowflake-qa-password",
