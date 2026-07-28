@@ -45,18 +45,6 @@ def test_cors_off_by_default() -> None:
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
-# What scripts/setup.sh writes into .env.app after copying the template. The
-# template ships these blank ON PURPOSE (CLAUDE.md: templates ship secret keys
-# blank, setup.sh generates them on first run), so a faithful guard supplies them
-# rather than asserting the raw template loads.
-_SETUP_SH_FILLS = {
-    "database_url": "postgresql+psycopg2://u:p@localhost:5432/dataq",
-    "openbao_token": "dev-root-token",
-    "openbao_addr": "http://localhost:8200",
-    "openbao_mount": "secret",
-}
-
-
 def test_env_app_template_plus_setup_sh_values_constructs_settings() -> None:
     """The .env.app that setup.sh actually produces must load into Settings.
 
@@ -72,7 +60,16 @@ def test_env_app_template_plus_setup_sh_values_constructs_settings() -> None:
     This is the whole-class guard behind #1072 — it catches any unloadable value
     in the shipped template, including on field types nobody has added yet.
     """
-    Settings(_env_file=str(_REPO_ROOT / ".env.app.example"), **_SETUP_SH_FILLS)
+    # These four are what scripts/setup.sh writes into .env.app after copying the
+    # template; passed explicitly rather than as **dict so mypy can check them
+    # against Settings' typed __init__ (the tests tree is mypy-gated, #418).
+    Settings(
+        _env_file=str(_REPO_ROOT / ".env.app.example"),
+        database_url="postgresql+psycopg2://u:p@localhost:5432/dataq",
+        openbao_token="dev-root-token",
+        openbao_addr="http://localhost:8200",
+        openbao_mount="secret",
+    )
 
 
 def test_blank_valued_template_keys_are_parseable_types() -> None:
