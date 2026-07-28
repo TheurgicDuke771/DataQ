@@ -23,6 +23,15 @@ the floor and UNIONS the scoped DML edges in. The reported ``tier`` names the ri
 source that contributed; emptiness on the DML side degrades the union to the floor,
 never to a confident empty.
 
+**Tier 1 is unioned with the floor too, the same way (#1110):** GET_LINEAGE's traversal
+is bounded (500 seeds, distance 2) while OBJECT_DEPENDENCIES is not, so a database over
+the seed cap has real view dependencies GET_LINEAGE never walked to. A successful
+GET_LINEAGE result no longer wins the floor exclusively — it is unioned with
+``_from_object_dependencies`` (GET_LINEAGE edges win per pair), tier still reports as
+``SNOWFLAKE_GET_LINEAGE``. Combined with checking the STITCHED result (not the
+pre-stitch raw rows) for emptiness, an empty-but-successful traversal degrades to the
+floor's answer under the top tier's name rather than a confident, prunable ``()``.
+
 Identities are built with :func:`asset_identity.format_snowflake_name` +
 :func:`normalize_snowflake_account`, the SAME functions the suite-target resolver and
 the dbt canonicalizer use, so a pulled edge endpoint joins an existing `assets` row
@@ -187,15 +196,24 @@ def _compose_pairs(
     table-grain (no pairs), the composition is table-grain too — inventing a pair from a
     hop that never reported one would fabricate column lineage, which is exactly what the
     real captured payload (every ``directSources`` empty) exists to forbid.
+
+    Capped at ``_MAX_COLUMN_PAIRS_PER_EDGE`` DURING composition (review finding, #1110):
+    a wide table chained through up to ``_EPHEMERAL_STITCH_MAX_DEPTH`` scratch hops can
+    build a first-hop x second-hop cross product far larger than the cap before
+    `_EdgeSet.add` ever gets a chance to trim it — the cap belongs at the point the set
+    grows, not only at the end.
     """
     if not first or not second:
         return frozenset()
     by_bridge: dict[str, list[str]] = {}
     for bridge, out_col in second:
         by_bridge.setdefault(bridge, []).append(out_col)
-    composed = {
-        (in_col, out_col) for in_col, bridge in first for out_col in by_bridge.get(bridge, ())
-    }
+    composed: set[tuple[str, str]] = set()
+    for in_col, bridge in first:
+        for out_col in by_bridge.get(bridge, ()):
+            if len(composed) >= _MAX_COLUMN_PAIRS_PER_EDGE:
+                return frozenset(composed)
+            composed.add((in_col, out_col))
     return frozenset(composed)
 
 
@@ -225,6 +243,11 @@ class _EphemeralStitch:
             if _is_ephemeral(up.name):
                 self._out.setdefault(up.name, []).append((down, pairs))
         self._memo: dict[str, list[tuple[AssetIdentity, frozenset[tuple[str, str]], int]]] = {}
+        # Whether resolving `node` encountered (directly or transitively through a
+        # child) at least one over-depth cut that already accounted for `node` coming
+        # back empty — see `stitched_edges` (#1110 review: without this, an over-depth
+        # chain was counted twice, once here and once again there).
+        self._had_depth_drop: dict[str, bool] = {}
         self.rows_seen = 0
         self.stitched = 0
         self.dropped = 0
@@ -243,6 +266,7 @@ class _EphemeralStitch:
             return cached
         self._memo[node] = []  # cycle guard: a back-edge to `node` sees this empty seed
         out: list[tuple[AssetIdentity, frozenset[tuple[str, str]], int]] = []
+        had_drop = False
         for child, pairs in self._out.get(node, ()):
             if not _is_ephemeral(child.name):
                 out.append((child, pairs, 1))
@@ -250,9 +274,13 @@ class _EphemeralStitch:
             for ident, onward, hops in self._resolve(child.name):
                 if hops + 1 > _EPHEMERAL_STITCH_MAX_DEPTH:
                     self.dropped += 1  # over-depth: dropped, but never silently
+                    had_drop = True
                     continue
                 out.append((ident, _compose_pairs(pairs, onward), hops + 1))
+            if self._had_depth_drop.get(child.name):
+                had_drop = True  # propagate: the cut happened deeper in this branch
         self._memo[node] = out
+        self._had_depth_drop[node] = had_drop
         return out
 
     def stitched_edges(self) -> _EdgeSet:
@@ -272,7 +300,14 @@ class _EphemeralStitch:
                 continue
             resolved = self._resolve(down.name)
             if not resolved:
-                self.dropped += 1  # dead-ends in scratch — nothing real to attach to
+                # Only count here when `_resolve` did NOT already count this — a chain
+                # cut for depth is counted once, at the point `_resolve` observed the
+                # cut; a chain that dead-ends in scratch WITHOUT ever hitting the depth
+                # cap (a genuine dead end, or a cycle exhausting the memo) has never
+                # been counted yet and belongs here (#1110 review: the two sites used
+                # to double-count the same over-depth chain).
+                if not self._had_depth_drop.get(down.name, False):
+                    self.dropped += 1  # dead-ends in scratch — nothing real to attach to
                 continue
             for ident, onward, _hops in resolved:
                 stitched.add(up, ident, _compose_pairs(pairs, onward))
@@ -321,13 +356,36 @@ class SnowflakeLineageProvider:
         # skip for reasons that have nothing to do with edition (no seeds enumerable,
         # a traversal that observed nothing), and an Enterprise operator must never see
         # a false "unsupported on this edition" for one of those.
+        #
+        # A SUCCESSFUL traversal does NOT return early any more (#1110 review, one tier
+        # up from #911's floor+ACCESS_HISTORY union): GET_LINEAGE is bounded (500 seeds,
+        # distance 2) while OBJECT_DEPENDENCIES is not, so on a >500-table database a
+        # view dependency past the seed cap would have been silently pruned by an
+        # exclusive win. GET_LINEAGE edges still win per-pair (it is the richer source),
+        # but the floor is always read underneath it and unioned in.
         try:
-            edges = self._from_get_lineage(conn, namespace, connection_config=connection_config)
-            return WarehouseLineageResult(
-                edges=edges, tier=LineageTier.SNOWFLAKE_GET_LINEAGE, skipped_tiers=tuple(skipped)
-            )
+            top_edges = self._from_get_lineage(conn, namespace, connection_config=connection_config)
         except _FeatureUnsupportedError as exc:
             skipped.append(f"get_lineage: {exc}")
+            top_edges = None
+
+        if top_edges is not None:
+            try:
+                floor_for_top = self._from_object_dependencies(conn, namespace, database)
+            except Exception as exc:
+                raise WarehouseLineageUnavailableError(
+                    "snowflake lineage unavailable: could not read OBJECT_DEPENDENCIES "
+                    f"({type(exc).__name__})"
+                ) from exc
+            merged_top: dict[tuple[str, str], LineageEdgePair] = {
+                (e.upstream.name, e.downstream.name): e for e in floor_for_top
+            }
+            merged_top.update({(e.upstream.name, e.downstream.name): e for e in top_edges})
+            return WarehouseLineageResult(
+                edges=tuple(merged_top.values()),
+                tier=LineageTier.SNOWFLAKE_GET_LINEAGE,
+                skipped_tiers=(),
+            )
 
         # The two remaining sources are COMPLEMENTARY truths, not alternatives (#911
         # review — the exclusive ladder was the deep defect): OBJECT_DEPENDENCIES is
@@ -706,8 +764,14 @@ class SnowflakeLineageProvider:
         :func:`_reraise_if_feature_unsupported` exactly as the old probe did. After one
         call has succeeded the feature demonstrably exists, so a later seed's failure
         is a per-object problem — skipped and counted, never an aborted pull. A
-        traversal that yields nothing descends too: under the snapshot-prune regime a
-        confident empty at the top tier would wipe the floor's real view graph (#911).
+        traversal that yields nothing (checked on the STITCHED result, not the
+        pre-stitch raw rows — #1110 review: `raw` can be non-empty purely from
+        ephemeral rows the stitch then collapses to `()`) descends too: under the
+        snapshot-prune regime a confident empty at the top tier would wipe the floor's
+        real view graph (#911). A traversal that yields SOMETHING is no longer an
+        exclusive win either — `fetch_edges` unions it with the OBJECT_DEPENDENCIES
+        floor (#1110), since the 500-seed/distance-2 bound means a >500-table database
+        has real view dependencies this traversal never reached.
         """
         cap = get_settings().warehouse_lineage_max_seeds
         try:
@@ -772,15 +836,21 @@ class SnowflakeLineageProvider:
                 seeds=len(seeds),
                 failed_calls=seed_failures,
             )
-        if not len(raw):
-            # Nothing observed. Descend to the union rather than claim a confident
-            # empty from the pruning tier (#911: a confident empty needs the
+        edges = _stitch_ephemera(raw, path="get_lineage")
+        if not edges:
+            # Nothing observed, checked on the POST-stitch physical edge set (#1110
+            # review): `raw` can be non-empty purely from ephemeral (SNOWPARK_TEMP_*)
+            # rows the stitch then collapses to nothing, and checking `raw` would have
+            # returned this confident-but-wrong `()` as a top-tier success instead of
+            # descending — which prunes the floor's real graph outright under this
+            # snapshot-regime provider. Descend to the union rather than claim a
+            # confident empty from the pruning tier (#911: a confident empty needs the
             # current-state authority to have answered it).
             raise _FeatureUnsupportedError(
                 f"no lineage rows for {len(seeds)} seed table(s)"
                 + (f" ({seed_failures} failed call(s))" if seed_failures else "")
             )
-        return _stitch_ephemera(raw, path="get_lineage")
+        return edges
 
     def _collect_get_lineage_rows(
         self, rows: Iterable[Any], *, namespace: str, into: _EdgeSet

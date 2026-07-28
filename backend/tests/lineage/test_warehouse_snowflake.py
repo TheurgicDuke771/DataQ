@@ -807,8 +807,11 @@ def test_the_top_tier_success_reports_its_own_tier_and_no_skips() -> None:
     assert result.skipped_tiers == ()  # nothing was skipped — the first tier answered
     assert result.degraded_reason is None  # and nothing to apologise for
     assert result.edges
-    # The top tier RETURNS EARLY: the lower tiers must not even be consulted.
-    assert not any("OBJECT_DEPENDENCIES" in sql for sql in conn.executed)
+    # The top tier no longer returns early (#1110 review): GET_LINEAGE is bounded
+    # (500 seeds, distance 2) while OBJECT_DEPENDENCIES is not, so the floor IS always
+    # consulted and unioned in underneath a top-tier win — the fake's floor answers
+    # empty here, so the union changes nothing about the asserted edges above.
+    assert any("OBJECT_DEPENDENCIES" in sql for sql in conn.executed)
 
 
 def test_sqlstate_is_read_through_the_sqlalchemy_wrapper() -> None:
@@ -1125,6 +1128,33 @@ def test_a_later_seed_failure_is_skipped_not_fatal() -> None:
     assert len(result.edges) == 3
 
 
+def test_get_lineage_only_scratch_traversal_descends_not_a_confident_empty() -> None:
+    """#1110 review, item 1: the PRE-stitch raw GET_LINEAGE rows can be non-empty purely
+    from a dead-end SNOWPARK_TEMP_* hop (a real row, gone before the stitch completes),
+    while the POST-stitch edge set is empty. The emptiness check must run on the
+    post-stitch set — checking `raw` passes the `not len(raw)` guard and returns a
+    confident `()` as a top-tier win, which under this snapshot-regime provider prunes
+    the floor's persisted graph on the next refresh (exactly what the guard exists to
+    prevent).
+    """
+    rows = [
+        (
+            "DATAQ_DB", "RETAIL", "ORDERS", "TABLE", "ACTIVE", None,
+            "DATAQ_DB", "PERF", "SNOWPARK_TEMP_TABLE_DEAD_END", "TABLE", "ACTIVE", None,
+        ),
+    ]  # fmt: skip
+    conn = _GetLineageConn(
+        {("DATAQ_DB.RETAIL.ORDERS_HEADER", "DOWNSTREAM"): rows},
+        results={"OBJECT_DEPENDENCIES": _object_dependencies_rows()},
+    )
+    result = SnowflakeLineageProvider().fetch_edges(conn, connection_config=_CONFIG)
+    # Descended: the tier must report the floor's answer with an honest reason, not a
+    # confident GET_LINEAGE empty win — and the floor's real chain must survive.
+    assert result.tier == LineageTier.SNOWFLAKE_OBJECT_DEPENDENCIES
+    assert any("get_lineage" in s and "no lineage rows" in s for s in result.skipped_tiers)
+    assert result.edges  # the floor's real graph, not wiped by a top-tier confident empty
+
+
 def test_get_lineage_stitches_the_scratch_it_traverses_through() -> None:
     """GET_LINEAGE can walk straight through Snowpark scratch too, so the #912 stitch
     runs on BOTH tiers — a per-tier copy is how the two column-pair caps drifted apart
@@ -1276,7 +1306,14 @@ def test_a_chain_past_the_depth_cap_is_dropped_and_counted(
 ) -> None:
     """Bounded against scratch chains (#912 AC-2). Over-depth drops the edge — but the
     COUNTER is the point: the pre-#912 drop was silent, and establishing whether it was
-    biting took manual archaeology against prod."""
+    biting took manual archaeology against prod.
+
+    The count is pinned EXACTLY at 1 (#1110 review): this is a single linear chain with
+    one over-depth path, so it must be counted once — `_resolve` used to count it when
+    the depth cap was exceeded, and `stitched_edges` counted it AGAIN when that same
+    chain then resolved to nothing, logging 2 for one dropped chain. A `>= 1` assertion
+    cannot see that regression; only the exact count can.
+    """
     with _captured_lineage_logs(monkeypatch) as logs:
         result = SnowflakeLineageProvider().fetch_edges(
             _access_history_conn(_chain(_EPHEMERAL_STITCH_MAX_DEPTH + 1)),
@@ -1284,7 +1321,7 @@ def test_a_chain_past_the_depth_cap_is_dropped_and_counted(
         )
     assert result.edges == ()
     counters = next(e for e in logs if e["event"] == "warehouse_lineage_ephemeral_stitch")
-    assert counters["ephemeral_chains_dropped"] >= 1
+    assert counters["ephemeral_chains_dropped"] == 1
     assert counters["stitched_edges"] == 0
 
 
