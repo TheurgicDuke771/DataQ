@@ -945,3 +945,46 @@ This is not a theoretical edge case: the real captured fixture this PR ships (`s
 - **Lint/format/types/security:** ruff, black, mypy, and bandit all pass clean locally on every new/touched backend file; frontend eslint/prettier pass on the touched files; the new toggle test and all new backend test files pass (27/27 + 21/21 + 11/11 frontend).</result>
 <usage><subagent_tokens>149551</subagent_tokens><tool_uses>42</tool_uses><duration_ms>426419</duration_ms></usage>
 </task-notification>
+
+---
+
+<task-notification>
+<task-id>a8d54b0e4f353c470</task-id>
+<tool-use-id>toolu_019SiA3y5jHqZuYgHYWfJgHs</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/a8d54b0e4f353c470.output</output-file>
+<status>completed</status>
+<summary>Agent "1103 review: history + comments" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Findings — PR #1103 (feat/ADR-0040 warehouse inventory sync)
+
+Reviewed via `gh pr diff 1103` + an isolated worktree on `pr-1103-review` (94cab2b0). Note: the shared main working tree (`/Users/arijit/Coding/Python/DataQ`) is currently mid-flight on `feature/adr-0040-inventory-sync` with **uncommitted local changes** (visible via `git diff --stat` there) — evidently a concurrent reviewer/session already fixing some findings live (e.g. moving the `SNOWPARK_TEMP_*`/NULL filters into the SQL `WHERE` clause, ahead of `LIMIT`, plus a UC PAT-grant note). I did not touch that working tree beyond read-only `git status`/`log`/`diff`; all my own file reads came from the isolated worktree I created and removed. Flagging this so the state isn't mistaken for something I caused.
+
+### 1. `enumerate_tables` scope vs #911/#908 — no conflict, actually stricter
+
+- Both `warehouse_snowflake.py::enumerate_tables` and `warehouse_unity_catalog.py::enumerate_tables` reuse the *same* `_namespace`/`_database` helpers `fetch_edges` uses — including the #911-review "quote-strip-else-UPPER" database-casing rule (`warehouse_snowflake.py` `_database`, comment citing "#911 review" explicitly) and the shared `_is_ephemeral` (`SNOWPARK_TEMP_*`) guard.
+- It's **narrower**, not equally-or-looser: SF's lineage pull (`_from_access_history`) scopes with `OR` ("≥1 endpoint in-db" — a deliberate #911-review widening, since AND was found to drop real cross-db lineage), while `enumerate_tables` uses a strict `table_catalog = :db` equality — single-database only, matching ADR 0040 §7's stated non-goal ("scope stays the connection's one database").
+- For UC, `fetch_edges`'s `system.access.table_lineage` pull has **no catalog exclusion at all** (any workspace-visible edge, including `samples`/`system` catalogs, would materialize via lineage), whereas `enumerate_tables` explicitly excludes `system`, `samples`, `__databricks_internal`, `information_schema`. So enumeration is again stricter than the lineage pull it's modeled on — correct direction for avoiding a #908-class junk-asset repeat.
+- Verified via Snowflake docs that `INFORMATION_SCHEMA.TABLES.TABLE_TYPE` values are `BASE TABLE / TEMPORARY TABLE / EXTERNAL TABLE / EVENT TABLE / VIEW / MATERIALIZED VIEW`, and dynamic tables surface via a separate `IS_DYNAMIC` flag, not a distinct `TABLE_TYPE` — so the docstring claim "dynamic tables arrive as BASE TABLE" is accurate.
+- Minor nit: `test_warehouse_inventory.py::test_sql_scope_predicates_are_present` asserts `"'LOCAL TEMPORARY' not in conn.sql"` — but Snowflake's actual value is `TEMPORARY TABLE`, not `LOCAL TEMPORARY`. Since the allowlist is positive (`IN (...)`), the functional exclusion is still correct regardless of what the negative-check string says, but the assertion itself doesn't test anything real (it would pass unchanged even against an unrelated/wrong vocabulary). Cosmetic, not a functional bug.
+
+### 2. #770 sweep interplay / `last_seen` advancement — claim holds
+
+- `asset_service._conflict_set(preserve_provenance=True)` returns `{"last_seen": func.now(), "env": COALESCE(...), "connection_id": COALESCE(...)}` inside `ON CONFLICT DO UPDATE SET` — Postgres fires this `SET` on every conflicting row regardless of whether `env`/`connection_id` actually changed, so `last_seen` **does** advance on an unchanged-identity re-sync, as the PR claims.
+- This is genuinely tested, not just asserted: `test_inventory_service.py::TestSweepInterplay` backdates `last_seen` by 40 days, re-runs `sync_asset_inventory`, then calls the real `asset_service.sweep_orphan_assets(retention_days=30)` and asserts `swept == 0` for a still-present table vs `swept == 1` for one the enumerator stopped returning — the two tests are mutually falsifying (a sweep that always/never deletes fails one), matching the PR body's own stated bar.
+- `_SWEEP_REFERENCE_GUARDS` / chunked-delete comments from the #770 commit (4501d785) don't require anything new here — inventory sync adds no new FK into `assets`, so no guard-registry entry was needed, and none was added incorrectly.
+
+### 3. Comment/docstring accuracy — one real discrepancy
+
+- `backend/app/lineage/warehouse.py`'s `WarehouseLineageProvider.enumerate_tables` protocol docstring and ADR 0040 §2 both list, present-tense, three "consumers": "#919 inventory sync... **#892's GET_LINEAGE seed list**... and the future #466 pickers." This implies #892 is wired up now (only #466 is qualified as "future").
+- That's not true of the shipped code: `SnowflakeLineageProvider._from_get_lineage` (untouched by this diff) still unconditionally does `raise _FeatureUnsupportedError("get_lineage supported but per-seed traversal not yet built")` — the per-seed GET_LINEAGE traversal doesn't exist, so nothing calls `enumerate_tables` for #892 today. The PR *description* is more honest ("#892's GET_LINEAGE seeds next PR"), but that qualifier never made it into the docstring or the ADR body — a reader of the seam's own docstring would reasonably conclude #892 already consumes it.
+- Minor: the same protocol docstring says "Deterministic (schema, name) order" generically; the UC impl actually orders by `(catalog, schema, name)` — three keys, not two. Harmless imprecision in a shared docstring covering two different-shaped implementations.
+- `.gitignore` review-note discipline: the new entry ("`#919 inventory enumeration — reviewed 2026-07-29: catalog/schema/table identifiers only...`") matches the established per-file format (cf. #901/#908 entries) and I confirmed the fixture content actually is catalog/schema/table triples only — no additional PII. The reused `PVQSOEQ-ZGB34383` demo account id is pre-existing (already used in `test_warehouse_snowflake.py`/`test_identity_alignment.py`), not newly exposed.
+
+### 4. Toggle field vs `requiredMark="optional"` (#1066/#1098) — spurious marker, untested
+
+- Commit `92aa6540` (fixing #1066) established the rule: don't manually append `"(optional)"` — antd's `requiredMark="optional"` (set on both `ConnectionForm.tsx:95` and `ReauthModal.tsx:77`) already appends it to **any** `Form.Item` with no `required` rule. `ConnectionNew.test.tsx:179` ("renders exactly one `(optional)` marker on an optional field label") is the regression test proving this mechanism fires for a field with no `rules` prop.
+- The new toggle branch in `ConnectionTypeFields.tsx` (`ConfigTextField`, lines ~27-40) builds its `Form.Item` with **no `rules` prop at all** — so by the exact mechanism #1098 relies on, antd will render `"Inventory sync (optional)"`, not `"Inventory sync"`.
+- Whether that's desired is a judgment call (a Switch is arguably self-evidently optional — unchecked is always a valid state), but it's an **unaddressed interaction**: the file's header comment about the #1066/#1098 convention doesn't mention toggles, and the PR's own new test (`ConnectionNew.test.tsx`, "submits inventory_sync=true when the toggle is switched on") locates the control via `getByRole('switch', { name: /Inventory sync/ })` — a substring regex that passes identically whether or not `"(optional)"` is appended, so it provides zero signal on this either way.
+- Related, lower-severity: the toggle branch returns before the `forceRequired`/`optional` logic that the text-field path uses, so a toggle field can never be forced-required via `activeAuth.requiredFields` (silently ignored, not surfaced). Currently unreachable in practice — no auth option lists `inventory_sync` in `requiredFields` — but a latent gap if a future toggle needed that.</result>
+<usage><subagent_tokens>187432</subagent_tokens><tool_uses>52</tool_uses><duration_ms>610594</duration_ms></usage>
+</task-notification>
