@@ -1,0 +1,41 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "f1a3cf95c305",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1052-staleness-signals",
+  "checkpoints_count": 5,
+  "files_touched": [
+    "backend/app/alerting/base.py",
+    "backend/app/alerting/composite.py",
+    "backend/app/alerting/email.py",
+    "backend/app/alerting/noop.py",
+    "backend/app/alerting/slack.py",
+    "backend/app/alerting/teams.py",
+    "backend/app/db/models.py",
+    "backend/app/lineage/pull.py",
+    "backend/app/main.py",
+    "backend/app/services/workspace_health_service.py",
+    "backend/tests/alerting/test_poll_staleness_publish.py",
+    "backend/tests/lineage/test_pull.py",
+    "backend/tests/services/test_poll_health.py",
+    "backend/tests/services/test_workspace_health.py",
+    "frontend/src/components/assets/LineageGraph.tsx",
+    "frontend/tests/assets/LineageGraph.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f1/a3cf95c305/0/metadata.json",
+      "transcript": "/f1/a3cf95c305/0/full.jsonl",
+      "compact_transcript": "/f1/a3cf95c305/0/transcript.jsonl",
+      "content_hash": "/f1/a3cf95c305/0/content_hash.txt",
+      "prompt": "/f1/a3cf95c305/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1890,
+    "cache_creation_tokens": 1522069,
+    "cache_read_tokens": 85459092,
+    "output_tokens": 239273,
+    "api_call_count": 296
+  }
+}
