@@ -486,11 +486,16 @@ class SnowflakeLineageProvider:
             " WHERE table_catalog = :db"
             " AND table_schema IS NOT NULL AND table_name IS NOT NULL"
             " AND table_schema != 'INFORMATION_SCHEMA'"
-            " AND table_name NOT LIKE 'SNOWPARK\\_TEMP\\_%' ESCAPE '\\'"
+            # The ephemera pattern is a BOUND PARAM, never a literal: the
+            # snowflake connector's pyformat paramstyle reads a raw % in a
+            # text() statement as a format placeholder and raises
+            # ProgrammingError (#1111 — found live; the fake-conn tests cannot
+            # execute real SQL, the #823 driver-boundary class again).
+            " AND table_name NOT LIKE :ephemeral ESCAPE '\\'"
             " AND table_type IN ('BASE TABLE', 'VIEW', 'MATERIALIZED VIEW', 'EXTERNAL TABLE')"
             " ORDER BY table_schema, table_name"
         )
-        params: dict[str, object] = {"db": database}
+        params: dict[str, object] = {"db": database, "ephemeral": "SNOWPARK\\_TEMP\\_%"}
         if limit is not None:
             sql += " LIMIT :lim"
             params["lim"] = int(limit)

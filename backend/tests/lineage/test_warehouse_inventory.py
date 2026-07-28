@@ -97,7 +97,12 @@ class TestSnowflakeEnumeration:
         # Budget-correctness (review finding): every exclusion must precede the
         # LIMIT, or excluded rows consume the cap+1 budget and truncation
         # detection silently never fires. ESCAPE makes the underscores literal.
-        assert "table_name NOT LIKE 'SNOWPARK\\_TEMP\\_%' ESCAPE '\\'" in conn.sql
+        assert "table_name NOT LIKE :ephemeral ESCAPE '\\'" in conn.sql
+        assert conn.params.get("ephemeral") == "SNOWPARK\\_TEMP\\_%"
+        # The pyformat guard (#1111): the snowflake driver reads a raw % in the
+        # statement as a format placeholder — the pattern must arrive as a bound
+        # param, so the emitted SQL text may never contain a literal %.
+        assert "%" not in conn.sql
         assert "table_schema IS NOT NULL AND table_name IS NOT NULL" in conn.sql
 
     def test_limit_is_pushed_into_the_query(self) -> None:
