@@ -304,6 +304,53 @@ def test_list_pagination_stable_slices(client: TestClient, world: dict[str, Any]
     assert resp.json() == []
 
 
+def test_total_count_header_matches_full_population(
+    client: TestClient, world: dict[str, Any]
+) -> None:
+    """#925: `X-Total-Count` is the unfiltered population `list_visible_assets`
+    pages through — with no limit/offset, the world fixture's 2 assets."""
+    _as(world["owner"])
+    resp = client.get("/api/v1/assets")
+    assert resp.status_code == 200
+    assert resp.headers["x-total-count"] == "2"
+    assert len(resp.json()) == 2
+
+
+def test_total_count_header_pins_truncation_beyond_the_page(
+    client: TestClient, world: dict[str, Any]
+) -> None:
+    """#925's actual defect: a page shorter than the full population must still
+    report the TRUE total via the header, so a client whose `limit` is smaller
+    than the workspace can tell a truncated page from a complete one — the body
+    alone (2 rows on a `limit=1` page) can't distinguish "that's everything" from
+    "there's more"."""
+    db = client_db(client)
+    # 3 more bare (suite-less) assets — count_assets counts identity rows, not
+    # composing suites, so these are enough to push the population past a small
+    # page without seeding any suite/run machinery.
+    for i in range(3):
+        db.add(Asset(namespace="snowflake://ab12345.eu-west-1", name=f"EXTRA.T{i}"))
+    db.commit()
+
+    _as(world["owner"])
+    resp = client.get("/api/v1/assets", params={"limit": 1, "offset": 0})
+    assert resp.status_code == 200
+    assert len(resp.json()) == 1  # the page is small…
+    assert resp.headers["x-total-count"] == "5"  # …but the header says the truth
+
+    # The header is stable across the whole page walk — not itself paginated.
+    resp2 = client.get("/api/v1/assets", params={"limit": 1, "offset": 4})
+    assert resp2.status_code == 200
+    assert len(resp2.json()) == 1
+    assert resp2.headers["x-total-count"] == "5"
+
+    # Walking one past the end: an empty page still reports the real total.
+    resp3 = client.get("/api/v1/assets", params={"limit": 1, "offset": 5})
+    assert resp3.status_code == 200
+    assert resp3.json() == []
+    assert resp3.headers["x-total-count"] == "5"
+
+
 def test_summary_flags_failed_and_active_runs(client: TestClient, world: dict[str, Any]) -> None:
     """An operationally-failed latest run (no results → no severity) and an
     in-flight run surface as summary flags so the UI never rolls them up green."""

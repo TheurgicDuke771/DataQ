@@ -41,6 +41,20 @@ def test_list_empty_when_no_assets_exist(db_session: Any) -> None:
     assert svc.list_visible_assets(db_session) == []
 
 
+def test_count_assets_matches_population_not_a_page(db_session: Any) -> None:
+    """#925: `count_assets` is the same unfiltered population `list_visible_assets`
+    slices — it must report the true total even when a caller's `limit` is
+    smaller than it, since that's the exact case the count exists to disambiguate."""
+    assert svc.count_assets(db_session) == 0
+    for i in range(3):
+        db_session.add(Asset(namespace="snowflake://x", name=f"T{i}"))
+    db_session.commit()
+    assert svc.count_assets(db_session) == 3
+    # A capped page doesn't change the count — it's over the whole population.
+    assert len(svc.list_visible_assets(db_session, limit=1)) == 1
+    assert svc.count_assets(db_session) == 3
+
+
 def test_summarize_asset_with_no_suites(db_session: Any) -> None:
     """An orphan asset (e.g. a dbt-lineage-only node) summarizes to an empty,
     no-run health — never raises, so the admin PATCH response works on it."""

@@ -44,11 +44,6 @@ function attentionRank(a: AssetSummary): number {
 /** How many attention rows to surface inline before deferring to the full list. */
 const ATTENTION_PREVIEW = 5;
 
-/** The backend caps `GET /assets` at 200 rows (its default == its max). A result
- *  exactly at the cap means the widget may be looking at a truncated slice — the
- *  counts must say so rather than silently undercount. */
-const LIST_CAP = 200;
-
 export function AssetHealthLead() {
   const navigate = useNavigate();
   const { state } = useAsyncData(() => listAssets());
@@ -75,7 +70,8 @@ export function AssetHealthLead() {
       )}
       {state.status === 'ok' && (
         <AssetHealthBody
-          assets={state.data}
+          assets={state.data.items}
+          total={state.data.total}
           onOpenList={() => navigate('/assets')}
           onOpenAsset={(id) => navigate(`/assets/${id}`)}
         />
@@ -86,10 +82,16 @@ export function AssetHealthLead() {
 
 function AssetHealthBody({
   assets,
+  total,
   onOpenList,
   onOpenAsset,
 }: {
   assets: AssetSummary[];
+  /** Workspace-wide total from `X-Total-Count` (#925) — may exceed
+   *  `assets.length` when the workspace has more assets than this one fetch
+   *  covers, which is exactly what makes the tiles below a lower bound rather
+   *  than a true workspace verdict (out of scope for this fix; see #925). */
+  total: number;
   onOpenList: () => void;
   onOpenAsset: (id: string) => void;
 }) {
@@ -111,7 +113,9 @@ function AssetHealthBody({
     .filter(needsAttention)
     .sort((x, y) => attentionRank(y) - attentionRank(x));
   const active = assets.filter((a) => !needsAttention(a) && a.has_active_run);
-  const truncated = assets.length >= LIST_CAP;
+  // #925: the true test for "did this fetch see everything" is the real
+  // workspace total, not a guess against the backend's page-size cap.
+  const truncated = total > assets.length;
 
   const tiles: { label: string; value: number; tone: string }[] = [
     // Browse now includes unmonitored assets too (ADR 0037) — "Monitored" means
@@ -146,20 +150,29 @@ function AssetHealthBody({
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                 {t.label}
               </Typography.Text>
-              <Typography.Text strong style={{ fontSize: 22, color: t.tone }}>
-                {t.value}
-              </Typography.Text>
+              <Tooltip
+                title={
+                  truncated
+                    ? `Computed over the first ${assets.length} of ${total} assets — the true workspace count may be higher.`
+                    : undefined
+                }
+              >
+                <Typography.Text strong style={{ fontSize: 22, color: t.tone }}>
+                  {t.value}
+                  {truncated && <Typography.Text style={{ fontSize: 13 }}>+</Typography.Text>}
+                </Typography.Text>
+              </Tooltip>
             </Flex>
           </Card>
         ))}
       </Flex>
 
-      {/* Honest truncation: at the cap we can't know how many assets exist
-          beyond this slice, so the tiles above are a lower bound — say so
-          explicitly instead of silently undercounting. */}
+      {/* Honest truncation (#925): the tiles above are a lower bound whenever
+          this fetch didn't cover the whole workspace — say so with the real
+          numbers, not a guess against the backend's page-size cap. */}
       {truncated && (
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          Showing the first {LIST_CAP} assets — open Assets for the full list.
+          Showing the first {assets.length} of {total} assets — open Assets for the full list.
         </Typography.Text>
       )}
 

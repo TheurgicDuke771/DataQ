@@ -34,7 +34,7 @@ vi.mock('../../src/api/assets', async (importOriginal) => {
 const mockGet = vi.mocked(getDashboardSummary);
 vi.mocked(listRuns).mockResolvedValue([]);
 vi.mocked(listSuites).mockResolvedValue([]);
-vi.mocked(listAssets).mockResolvedValue([]);
+vi.mocked(listAssets).mockResolvedValue({ items: [], total: 0 });
 
 const summary: DashboardSummary = {
   window_days: 7,

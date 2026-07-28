@@ -174,7 +174,12 @@ if _cors_origins:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
-        expose_headers=[REQUEST_ID_HEADER],
+        # X-Total-Count (#925): the /assets list's total, over its CORS-headers
+        # allowlist — the browser drops any response header not listed here on a
+        # cross-origin fetch, so a same-origin dev proxy can see it fine while a
+        # cross-origin deploy (or the frontend's own axios client, generally)
+        # would silently read `undefined` without this entry.
+        expose_headers=[REQUEST_ID_HEADER, assets_router.TOTAL_COUNT_HEADER],
     )
 
 

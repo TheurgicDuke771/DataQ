@@ -87,8 +87,10 @@ Four ways a suite runs (all the same authz — [feature matrix](feature-matrix.m
   numbers are workspace-wide, so two people looking at one asset see one verdict.
 - **Asset browse** — two lenses over the same assets: a **By source** drill-down
   (datasource → database/catalog → schema → table, with env + health on each leaf) and a
-  flat, searchable **All assets** table. Both open the asset detail (health across suites,
-  lineage, incidents).
+  flat, searchable **All assets** table (real server-side paging, 50 rows/page). Both open
+  the asset detail (health across suites, lineage, incidents). A workspace bigger than the
+  tree view can comfortably render (2000 assets) shows an explicit "showing N of M" note
+  rather than a silently partial tree — switch to **All assets** to page through the rest.
 - **Datasources read as names, not connection strings** — an asset is *identified* by its
   OpenLineage namespace (the physical location, so DataQ's identifiers join byte-for-byte
   with dbt/Spark emissions), but it is *displayed* as a human label: `Snowflake · ACCT`,

@@ -526,6 +526,14 @@ def _roll_up(asset: Asset, suite_outcomes: list[RunOutcome]) -> AssetSummary:
 # ── public API ───────────────────────────────────────────────────────────────
 
 
+def count_assets(session: Session) -> int:
+    """Total assets over the same population `list_visible_assets` pages through
+    (#925) — unfiltered (ADR 0037: identity is workspace knowledge, not
+    grant-scoped), so the count a client divides its `limit`/`offset` paging
+    against always matches what the list endpoint can actually return."""
+    return session.scalar(select(func.count()).select_from(Asset)) or 0
+
+
 def list_visible_assets(
     session: Session,
     *,
@@ -539,7 +547,9 @@ def list_visible_assets(
 
     Pagination is applied at the SQL level over the *asset* page (not the suite
     rows), so a page is a stable, deterministic slice regardless of how many
-    suites compose each asset."""
+    suites compose each asset. Callers that need to know whether this page is
+    truncated should pair this with `count_assets` (#925) — the total isn't
+    derivable from a page's length alone."""
     assets = list(
         session.scalars(
             select(Asset).order_by(Asset.namespace, Asset.name).limit(limit).offset(offset)
