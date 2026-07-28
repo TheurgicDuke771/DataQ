@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "951499fbe253",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1111-pyformat-enumerate",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/95/1499fbe253/0/metadata.json",
+      "transcript": "/95/1499fbe253/0/full.jsonl",
+      "compact_transcript": "/95/1499fbe253/0/transcript.jsonl",
+      "content_hash": "/95/1499fbe253/0/content_hash.txt",
+      "prompt": "/95/1499fbe253/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2276,
+    "cache_creation_tokens": 3210390,
+    "cache_read_tokens": 181845954,
+    "output_tokens": 405559,
+    "api_call_count": 492
+  }
+}
