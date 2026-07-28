@@ -160,9 +160,9 @@ class WarehouseLineageProvider(Protocol):
         ``limit=cap+1`` — the caller owns the honesty of any truncation (no
         silent caps).
 
-        Consumers: the #919 inventory sync (this slice); #892's GET_LINEAGE
-        seed list and the #466 pickers are DESIGNED to ride it but not wired
-        yet — one seam, so discovery can never fork.
+        Consumers: the #919 inventory sync and (since #892) the Snowflake
+        GET_LINEAGE per-seed traversal; the #466 pickers are DESIGNED to ride it
+        but not wired yet — one seam, so discovery can never fork.
         """
         ...
 

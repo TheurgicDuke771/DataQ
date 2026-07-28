@@ -90,6 +90,16 @@ class Settings(BaseSettings):
     #   WAREHOUSE_LINEAGE_ENABLED=true
     warehouse_lineage_enabled: bool = False
 
+    # Snowflake GET_LINEAGE per-seed traversal (#892, ADR 0040): how many enumerated
+    # tables the Enterprise tier walks per refresh. Each seed costs TWO round trips
+    # (upstream + downstream), so this is a latency/cost bound, not a safety one.
+    # Overflow walks the first N in catalog order and logs `get_lineage_seeds_truncated`
+    # — never a silent cap (a partial traversal reads as a complete graph). <=0 removes
+    # the bound. Only the Snowflake GET_LINEAGE tier reads it; the ACCESS_HISTORY /
+    # OBJECT_DEPENDENCIES tiers are single set-based queries with no seed list.
+    #   WAREHOUSE_LINEAGE_MAX_SEEDS=500
+    warehouse_lineage_max_seeds: int = 500
+
     # Lineage staleness surface (#1091): a warehouse lineage source whose last
     # refresh is older than this many hours is surfaced as STALE in the asset view,
     # independently of error/degraded. The gap this closes: a refresh loop that

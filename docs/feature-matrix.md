@@ -72,12 +72,14 @@ five mechanisms:
    `system.access.column_lineage` — live-verified), the pull refines each table edge with
    `upstream column → downstream column` pairs, shown on the asset page to every
    workspace member (ADR 0037 — column names are schema metadata, i.e. identity).
-   Snowflake's column grain lives in `ACCESS_HISTORY` (Enterprise) and reports honestly
-   unavailable on Standard.
+   Snowflake's column grain lives in `ACCESS_HISTORY` and `GET_LINEAGE` (Enterprise) and reports
+   honestly unavailable on Standard. **Snowpark scratch is stitched, not dropped** (#912): a
+   pipeline that materializes through `SNOWPARK_TEMP_*` yields the real `A → B` edge, with the
+   scratch object never materialized as an asset.
 
 | Datasource | Asset entity | ① Run-stamping | ② dbt manifest | ③ OL emission | ④ Catalog pull | ⑤ Warehouse-native |
 |---|---|:-:|:-:|:-:|:-:|:-:|
-| Snowflake | `snowflake://{org}-{account}` / `DB.SCHEMA.TABLE` | ✅ | ✅ (live-verified) | ✅ | ✅ | ✅ (OBJECT_DEPENDENCIES live; ACCESS_HISTORY/GET_LINEAGE Enterprise) |
+| Snowflake | `snowflake://{org}-{account}` / `DB.SCHEMA.TABLE` | ✅ | ✅ (live-verified) | ✅ | ✅ | ✅ (OBJECT_DEPENDENCIES live; ACCESS_HISTORY + **GET_LINEAGE per-seed traversal** Enterprise, both **+ column grain**, built on a live prod-Enterprise capture) |
 | Unity Catalog | `unitycatalog://{host}` / `catalog.schema.table` | ✅ | ✅ (adapter-aware) | ✅ | ✅ | ✅ (system.access.table_lineage, incremental; **+ column grain, live-verified**) |
 | ADLS Gen2 (files) | `abfss://{container}@{account}.dfs.core.windows.net` / pattern **base prefix** | ✅ | — | ✅ | ✅ | — |
 | S3 (files) | `s3://{bucket}` / base prefix | ✅ | — | ✅ | ✅ | — |
