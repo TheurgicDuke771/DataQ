@@ -171,6 +171,24 @@ describe('ConnectionNew', () => {
     });
   }, 15_000);
 
+  // #1066: ConfigTextField used to append its own "(optional)" suffix on top of
+  // the one antd's `requiredMark="optional"` already renders for any field with
+  // no `required` rule, so every optional field doubled up
+  // ("Endpoint URL (optional)(optional)"). Assert the label carries the marker
+  // exactly once — this fails on the pre-fix code, which renders it twice.
+  it('renders exactly one "(optional)" marker on an optional field label', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByText('AWS S3'));
+    const endpointLabel = screen.getByText(
+      (content, element) => element?.tagName === 'LABEL' && content.startsWith('Endpoint URL'),
+    );
+
+    expect(endpointLabel.textContent).toContain('(optional)');
+    expect(endpointLabel.textContent).not.toMatch(/\(optional\).*\(optional\)/);
+  });
+
   it('does not leak name/env when re-picking a different type', async () => {
     const user = userEvent.setup();
     renderPage();
