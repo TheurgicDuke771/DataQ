@@ -1,0 +1,381 @@
+<task-notification>
+<task-id>a929750c5d0247acd</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/a929750c5d0247acd.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix CodeQL unused-global alert" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>PR #1097 is open, milestoned, not merged (as instructed).
+
+## Summary
+
+**PR:** [#1097](https://github.com/TheurgicDuke771/DataQ/pull/1097) — `chore/codeql-64-unused-global`, not merged, milestoned to "v1.1 Week 5 — anomaly monitor kind + metric trends".
+
+**Cause of deadness (one line):** PR #1049 (`refactor(datasources): move target-shape resolution into the registry`, closing #727) moved all per-datasource target-shape dispatch — including the `adls_gen2`/`s3` flat-file grouping — into `backend/app/datasources/registry.py`'s `resolve_target_shape` (via its `_TARGET_RESOLVERS` dict mapping both types to `_flatfile_target`), leaving `_FLATFILE_TYPES` in `run_target.py` orphaned with zero remaining references.
+
+**Verification:**
+- `grep -rn "_FLATFILE_TYPES" backend/` — matched only the definition line itself, nowhere else in app or tests.
+- `git log -S _FLATFILE_TYPES --oneline -- backend/` confirmed the introducing commit (#215/#224) and the orphaning commit (#1049).
+- Deleted the single line (`backend/app/services/run_target.py:45`).
+- Local checks (all in the `dataq` conda env): `black --check` pass; `ruff check` pass (all checks passed); `mypy backend/app backend/tests` — success, no issues in 301 source files; `bandit -r` on the file — no issues identified; `pytest backend/tests -k "run_target" -q` — 36 passed, 2 skipped (Postgres-dependent, unrelated), `run_target.py` at 100% line coverage in that run (the overall coverage-gate failure in that run is expected for a `-k`-filtered subset vs. the full-suite 80% gate, not a real regression).
+
+One commit (`33824978`), conventional message, pre-commit hooks ran (no `--no-verify`), pushed and PR opened with the template filled in honestly (docs N/A, no linked GH issue — closes the CodeQL alert directly).</result>
+<usage><subagent_tokens>103225</subagent_tokens><tool_uses>29</tool_uses><duration_ms>186581</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-a929750c5d0247acd</worktreePath><worktreeBranch>worktree-agent-a929750c5d0247acd</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bqhfnrxzb</task-id>
+<tool-use-id>toolu_01CvkGLoWy5HptEjDmfjQook</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/bqhfnrxzb.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for main CI runs to complete" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Okay, then Batch #2 of track 1 then
+
+---
+
+<task-notification>
+<task-id>aa10767d2771977f4</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/aa10767d2771977f4.output</output-file>
+<status>completed</status>
+<summary>Agent "1099 review: bug scan" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Findings — shallow scan of PR #1099 (`backend/app/worker/celery_app.py`, `backend/tests/worker/test_celery_app.py`):
+
+No large bugs found. Specifically checked and cleared:
+
+1. **Timezone correctness**: `celery_app.py` sets `timezone="UTC"` and `enable_utc=True` in `app.conf` (unchanged, outside the diff but visible in context), so `crontab(hour=..., minute=...)` fires in UTC as the new comments claim. No UTC/local mismatch.
+
+2. **Crontab argument semantics**: `crontab(hour="1", minute="17")` etc. — verified with celery's own `crontab` that string hour/minute values parse correctly (`hour={1}, minute={17}`). Not a bug.
+
+3. **Stagger claim**: the six new fire times (01:17, 01:37, 01:57, 02:17, 02:37, 02:57) are all distinct with 20-minute gaps, matching the "not a thundering herd" comment and the new `test_daily_crontabs_are_staggered_not_a_midnight_herd` regression test.
+
+4. **`test_no_beat_entry_uses_an_interval_a_restart_can_starve`**: checked against the remaining non-crontab entries left in the schedule (`poll-orchestration-runs`=600s, `recover-orchestration-gaps`=1800s, `dispatch-due-schedules`=60s, `reap-stuck-runs`=600s, `beat-heartbeat`=60s) — all ≤ the 1800s ceiling, so the new guard passes truthfully rather than vacuously.
+
+5. **No stale test assertions**: fetched the full PR-branch copy of `test_celery_app.py` — confirmed no leftover `== 86400.0` assertions remain for `purge_sample_failures`, `refresh_lineage_pull`, `refresh_warehouse_lineage`, or `refresh_credential_expiry` (they were never individually asserted pre-PR, only implicitly via the class-level tests now added), so nothing was left broken by the rename.
+
+6. **Corrected comment about beat topology**: verified against `docker-compose.yml:164` (`worker -B`) and `deploy/terraform/azure/containerapps.tf:197` (comment: "the worker also runs celery-beat (-B)") — confirms embedded beat in both dev and prod, matching the PR's corrected comment (the old comment claiming a separate prod beat process was indeed wrong).
+
+7. **Task name typos**: none — all six `"task"` strings in the beat schedule match the existing task names unchanged by this PR.
+
+No issues to report.</result>
+<usage><subagent_tokens>70989</subagent_tokens><tool_uses>10</tool_uses><duration_ms>81594</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ac6df89bb8824f723</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/ac6df89bb8824f723.output</output-file>
+<status>completed</status>
+<summary>Agent "1099 review: code comments" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Findings
+
+**1. New header comment contradicts docker-compose.yml's unchanged `-B` comment (both describe prod's beat topology, and now disagree).**
+
+New comment in `backend/app/worker/celery_app.py` (PR #1099):
+&gt; "Beat runs EMBEDDED in the worker (`worker -B`) in dev AND prod alike (docker-compose.yml + deploy/terraform/azure/containerapps.tf) — there is no separate beat process, and beat state does not survive a restart."
+
+This is contradicted by the comment sitting a few lines above the `-B` flag in `docker-compose.yml` (untouched by this PR), which the new comment itself cites as corroborating evidence:
+&gt; "`-B` runs celery-beat embedded in the worker (the #171 orchestration polling schedule). Fine for the single-worker dev stack; prod runs a separate beat."
+
+`docker-compose.yml` explicitly says "prod runs a separate beat" — the opposite of "in dev AND prod alike ... there is no separate beat process." Checking `deploy/terraform/azure/containerapps.tf` confirms the *new* celery_app.py comment is the accurate one (worker `command = ["celery", ..., "worker", "-B", ...]`, with `min_replicas = 1` specifically justified by "the worker also runs celery-beat (-B)"). This PR correctly fixed the stale claim in `celery_app.py` (the pre-PR text there also said "prod uses a separate beat process") but left the matching stale claim in `docker-compose.yml` unfixed, so the two files now actively disagree instead of agreeing-but-wrong. Since the new comment cites `docker-compose.yml` by name as one of the two sources backing its claim, this is worth fixing in the same PR (or filing per the "fixed or filed" rule) rather than shipping a self-contradicting pair of comments.
+
+**2. New header comment's restart-cause list includes "scaling," which the cited `containerapps.tf` config forecloses.**
+
+New comment:
+&gt; "the prod worker restarts more often than daily (ACA revision rolls, scaling, the #904 watchdog)"
+
+`containerapps.tf`'s worker block sets `min_replicas = 1` and `max_replicas = 1` (comment: "min_replicas = 1: the worker also runs celery-beat (-B) for the schedule dispatcher + orchestration polling, so it can't scale to zero"). With min == max == 1, there is no horizontal scale-out/scale-in event possible for the worker app — "scaling" cannot be a restart cause for the very container this comment is about. The other two causes (revision rolls, the #904 watchdog) are real and already independently documented elsewhere in the file (`_start_beat_watchdog`'s docstring, the `#: One-off tasks...` block). "Scaling" appears to be an inaccurate addition to the list.
+
+No other issues found: the six `crontab(hour=…, minute=…)` inline comments (`# daily, 01:17 UTC` etc.) all match their `hour`/`minute` args; the "staggered ... and UTC (timezone above)" claim matches the existing `timezone="UTC"` / `enable_utc=True` config; the watchdog docstrings (`_start_beat_watchdog`, `beat_heartbeat` entry comment) and the `_ON_BEAT_START` rationale are untouched and remain internally consistent with the new header text; and the new test-file comments (`_INTERVAL_CEILING_S` rationale, the two new test docstrings) accurately describe the surviving sub-hourly intervals (600s, 1800s, 60s — all ≤ 1800s) and the staggering behavior they assert.</result>
+<usage><subagent_tokens>79962</subagent_tokens><tool_uses>11</tool_uses><duration_ms>101099</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bjb9y4nbm</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/bjb9y4nbm.output</output-file>
+<status>completed</status>
+<summary>Background command "Re-run full backend suite" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a203f1ccd3fda9e28</task-id>
+<tool-use-id>toolu_015oG1buTzdKYeUB7gabQW4T</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/a203f1ccd3fda9e28.output</output-file>
+<status>failed</status>
+<summary>Agent "1100 review: prior PR comments" failed: Agent terminated early due to an API error: You've hit your monthly spend limit · raise it at claude.ai/settings/usage?from=cc_cli_limit_message</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Now let's check #996 (datasource health edges) and #837, #762/#776, #915/#987, #783.</result>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a39cda01d117442a1</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/a39cda01d117442a1.output</output-file>
+<status>failed</status>
+<summary>Agent "1100 review: git history" failed: Agent terminated early due to an API error: You've hit your monthly spend limit · raise it at claude.ai/settings/usage?from=cc_cli_limit_message</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a5ab5b4d5ddf91f9a</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/a5ab5b4d5ddf91f9a.output</output-file>
+<status>failed</status>
+<summary>Agent "1100 review: bug scan" failed: Agent terminated early due to an API error: You've hit your monthly spend limit · raise it at claude.ai/settings/usage?from=cc_cli_limit_message</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b1mcydgme</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/b1mcydgme.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch CI on #1099 and #1100" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a7301d888494c86ca</task-id>
+<tool-use-id>toolu_01HwvxvSuq1Vzq4qiJa1bpB2</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/a7301d888494c86ca.output</output-file>
+<status>failed</status>
+<summary>Agent "1100 review: CLAUDE.md audit" failed: Agent terminated early due to an API error: You've hit your monthly spend limit · raise it at claude.ai/settings/usage?from=cc_cli_limit_message</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Good — single head confirmed, no branching. Now let me check a few remaining items: the `card.py` line length/style, the `PollStalenessReport.is_failing` duplicate property pattern, and whether `_ensure_row`'s rollback-discards-insert behavior is actually a defect worth flagging, plus verify `render.py`'s `_format_timestamp` and `format_duration` helpers exist and behave as expected (no raw value leakage).</result>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>aa2d3932d27483b52</task-id>
+<tool-use-id>toolu_01PFNYFR2gtDgrAU6SLXkuor</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/aa2d3932d27483b52.output</output-file>
+<status>failed</status>
+<summary>Agent "1100 review: code comments" failed: Agent terminated early due to an API error: You've hit your monthly spend limit · raise it at claude.ai/settings/usage?from=cc_cli_limit_message</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+</task-notification>
+
+---
+
+continue...
+
+---
+
+<task-notification>
+<task-id>a69c8a40a7470337b</task-id>
+<tool-use-id>toolu_0191msN5DSRFEappEbqWDESi</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/a69c8a40a7470337b.output</output-file>
+<status>completed</status>
+<summary>Agent "1100 review: CLAUDE.md audit" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Code-review findings — PR #1100 (`fix/issue-1052-staleness-signals`) vs CLAUDE.md
+
+**Scope audited:** migration backward-compatibility, Azure lock-in, PII/redaction in alert payloads, secrets-in-tracked-files, orchestration-provider abstraction. Reviewed via `gh pr diff 1100` (full diff read) plus targeted checks against the actual repo state (`alembic heads`, `ORCHESTRATION_PROVIDERS` definition, `docs/architecture.md` ER conventions).
+
+### Issues found
+
+**None.** Every rule category in scope checked out. Details below (raw verification, not just a conclusion) since "verified-benign is valid, unexamined is not":
+
+1. **Backward-compatible migrations only** (CLAUDE.md §10, §11: "Don't drop columns... Two-step it" / migration PR checklist).
+   - `backend/alembic/versions/70a054d4c469_add_workspace_health.py` is purely additive (`op.create_table`, no `ALTER`/`DROP`). `downgrade()` does a clean `op.drop_table`.
+   - Verified `down_revision = "00a938b64317"` is in fact the single current head: ran `alembic heads` from `backend/` → `00a938b64317 (head)` — no branch collision (relevant given the standing memory note that revision-id collisions have bitten this repo before).
+   - No existing read path touched; `workspace_health` has no FK into it from elsewhere, so downgrade is safe.
+
+2. **No Azure lock-in** (CLAUDE.md §11: no Azure-only assumptions in business logic).
+   - `backend/app/main.py`'s new `_poll_staleness_loop`/`_poll_staleness_tick` is plain `asyncio` + a SQLAlchemy session — no Azure SDK, no Azure resource names.
+   - All new alerting code (`base.py`, `card.py`, `slack.py`, `teams.py`, `email.py`, `noop.py`, `composite.py`) extends the existing provider-neutral `HealthPublisher` seam; nothing Azure-specific added.
+
+3. **PII/redaction — do new alert payloads leak raw values?** (CLAUDE.md §6 Observability: "PII redaction at the logger level").
+   - `PollStalenessReport` (`backend/app/alerting/base.py`) carries only `state`, `connection_count` (int), `most_recent_polled_at` (timestamp), `threshold_seconds` (int) — no connection names, no raw errors, no credentials.
+   - `render.staleness_facts`/`staleness_headline`/`staleness_impact` (`backend/app/alerting/render.py`) format only those four fields; the log calls in `workspace_health_service.py` (`workspace_poll_staleness_alerted`/`_recovered`) log `connection_count`, `most_recent_polled_at.isoformat()`, `threshold_s` — again no raw values.
+   - Confirmed against the task's specific concern: yes, this report structurally cannot carry a connection name/secret since the dataclass has no field for one.
+
+4. **Secrets — no credentials in tracked files** (CLAUDE.md §11, and #1072 template-bootability rule referenced in the PR itself).
+   - `.env.app.example` additions (`LINEAGE_STALE_AFTER_HOURS`, `POLL_STALENESS_ALERT_AFTER_S`) are non-secret ints shipped **commented out** with the default value in the comment (`# LINEAGE_STALE_AFTER_HOURS=48`), matching the pattern the PR describes as the #1094-guard fix. No secret values anywhere in the diff.
+
+5. **Provider abstraction — does orchestration-connection selection hardcode providers?** (CLAUDE.md §4: "Never hardcode ADF-only logic; always go through the abstraction").
+   - `workspace_health_service.evaluate_poll_staleness` filters `Connection.type.in_(ORCHESTRATION_PROVIDERS)`.
+   - Verified `ORCHESTRATION_PROVIDERS = ("adf", "airflow", "dbt")` in `backend/app/db/models.py:99` — the existing three-provider seam, not a two-provider (ADF/Airflow-only) hardcode. The new alert correctly rides the existing abstraction rather than reimplementing it.
+   - `record_poll_success`/`record_poll_failure` in `backend/app/services/orchestration_service.py` (unchanged by this PR) already write `last_polled_at` generically for whichever provider's poll ran, so the new workspace-wide MAX query is reading a field that's populated uniformly across all three providers, not just ADF/Airflow.
+
+### One non-blocking design nuance examined and dispositioned (not filed — not a rule violation)
+
+`evaluate_poll_staleness` computes the workspace "reference moment" as `MAX(coalesce(last_polled_at, created_at))` across all orchestration connections, not `MIN`. Effect: if one orchestration connection has been polled/created recently while all *other* connections have gone stale, the fresh one's timestamp masks the others for up to one threshold window. Traced this through and concluded it's an intentional, self-bounding tradeoff (the masking connection's own reference ages out after `threshold` seconds, at which point the alert fires normally) consistent with the PR's stated scope ("workspace-wide loop-dead" vs. the pre-existing per-connection #837 signal covering individual failures) — not a "signal that cannot lie" violation, and not a CLAUDE.md rule breach. Noting it here for visibility, not as a finding to fix/file.</result>
+<usage><subagent_tokens>120602</subagent_tokens><tool_uses>16</tool_uses><duration_ms>254847</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a2426d912d74de7f9</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/a2426d912d74de7f9.output</output-file>
+<status>completed</status>
+<summary>Agent "1100 review: code comments" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Findings — PR #1100 comment-accuracy review
+
+### 1. `backend/app/lineage/pull.py` — module docstring / fail-open contract vs `purge_orphaned_pulled_edges`
+
+The module docstring states (unchanged by this PR):
+
+&gt; "**Fail-open** (mirrors `lineage.edges.refresh_dbt_edges`): a dead provider, a garbage payload, or a DB hiccup logs a warning and returns `None` — pull is a browse/reason convenience, never a liveness path."
+
+Every existing public function in the file honors this: `get_lineage_provider` swallows bad config to `None`+log, and `refresh_pulled_edges` explicitly wraps `_refresh_pulled_edges` in `try/except Exception` (fail-open, returns `None`, rolls back).
+
+`purge_orphaned_pulled_edges` (new) does **not** follow this pattern — it has no internal `try/except`:
+```python
+def purge_orphaned_pulled_edges(session: Session) -&gt; int:
+    ...
+    purged = session.execute(
+        delete(LineageEdge).where(
+            LineageEdge.source == _SOURCE, LineageEdge.connection_id.is_(None)
+        )
+    ).rowcount
+    session.commit()
+```
+And its caller in `backend/app/worker/tasks.py::refresh_lineage_pull` also doesn't wrap it:
+```python
+if lineage_pull.lineage_provider_unset():
+    session = get_session()
+    try:
+        lineage_pull.purge_orphaned_pulled_edges(session)
+    finally:
+        session.close()
+return 0
+```
+This is a real gap relative to the sibling sweep task two functions above it in the same file (`sweep_orphan_secrets`'s beat entry point), which does `except Exception: session.rollback(); log.warning(...); return 0`. A DB hiccup during the purge will now propagate out of the Celery beat task instead of degrading fail-open the way the module docstring promises for the rest of the file. Not literally false (the docstring's "fail-open" claim is scoped to the functions it was written for), but the new function is an unflagged exception to a contract the module otherwise holds uniformly, and nothing in either docstring calls that out.
+
+The **prune-scope** and **"prune only on evidence"** language, by contrast, checks out: `purge_orphaned_pulled_edges`'s `(source='marquez', connection_id IS NULL)` filter is copied verbatim from `_prune_stale`'s scope, and the docstring's claim that it "can never touch a dbt or warehouse row" is correct — warehouse-native edges always carry a non-NULL `connection_id` (`warehouse_refresh.py`), so they're structurally excluded.
+
+### 2. `backend/app/services/asset_view_service.py` — `warehouse_lineage_status` docstring
+
+Accurate. The docstring's claims were checked line-for-line against the implementation:
+- "Staleness is only asserted while `WAREHOUSE_LINEAGE_ENABLED` is on" — matches `stale_before = ... if settings.warehouse_lineage_enabled and stale_after_hours &gt; 0 else None`.
+- The independence of stale/degraded/error and the #1091 prod shape (zero errors, zero degraded reasons, 9-day-old refresh) is faithfully described and matches the test `test_a_silently_stopped_source_is_surfaced_as_stale`.
+
+No issues found here.
+
+### 3. `backend/app/alerting/base.py` — `HealthPublisher` docstring vs `publish_poll_staleness`
+
+The `publish_poll_staleness` Protocol stub says:
+&gt; "On the same seam as `publish_health` (same channels, same workspace-level routing, same "whether was decided upstream" contract)..."
+
+This is misleading by omission when read against `composite.py`, whose own docstring says the opposite in plain terms:
+&gt; "The composite's contract here is deliberately STRONGER than its other two methods" (from `test_poll_staleness_publish.py`'s module docstring, echoing `composite.py`'s `publish_poll_staleness`: "with one difference that the caller relies on: **at least one channel must succeed**... so this re-raises when every channel failed.")
+
+`composite.publish_health` **never** raises (isolates every failure, even a total one, and silently returns). `composite.publish_poll_staleness` **does** raise when every channel fails. `base.py`'s class-level `HealthPublisher` docstring ("Implementations may raise — the composite isolates a broken channel, exactly as on the run path") and the `publish_poll_staleness` stub's "same ... contract" framing don't surface this divergence at all — a reader of the seam definition (`base.py`) would reasonably conclude the two methods behave identically at the composite level, which they don't. The accurate description of the difference lives only in `composite.py` and the test docstring, not in the seam's own `base.py` declaration.
+
+### 4. `backend/app/main.py` — middleware/instrumentation ordering comments vs the new lifespan loop
+
+No violation found. The load-bearing ordering comment:
+&gt; "Spans (A3): no-op unless APPLICATIONINSIGHTS_CONNECTION_STRING is set. MUST stay at module scope — Starlette builds its middleware stack on the first ASGI call (the lifespan scope itself), so instrumenting from inside the lifespan handler is too late..."
+
+`configure_tracing`/`instrument_fastapi`/`instrument_celery` remain at module scope, untouched by this PR. The new `_poll_staleness_loop` task is created *inside* `lifespan()` via `asyncio.create_task`, which is unrelated to middleware-stack construction — it doesn't touch instrumentation and doesn't need module scope. The loop's own comment ("Deliberately in the API process: every #905-class incident had a worker that looked alive and wrote nothing, so the check must not live in (or be scheduled by) the process it monitors") is accurate and consistent with `config.py`'s parallel comment and the PR description.
+
+One minor nit (not a comment-accuracy defect, just worth flagging): the comment "check at a third of the alert threshold so a staleness edge is seen within ~1.3x the threshold worst-case" is exact for the documented default (1800s → 600s interval → 1.33x), but `interval = max(60.0, threshold/3)` means for a custom threshold under ~180s the 60s floor pushes the worst-case ratio above 1.3x. The comment doesn't caveat the floor.
+
+### 5. `frontend/src/components/assets/LineageGraph.tsx` — #915 partition comments vs a row that is both stale AND errored
+
+This is a real defect the comments don't own up to. The partition comment says:
+&gt; "Split at render (#915): a degraded source is working but coarse (view-level only) — the graph is real, just not the richest possible, so INFO. A source carrying `last_error` actually FAILED its last refresh... so WARNING."
+
+and further down, discussing the overlap with `degraded_reason`:
+&gt; "A failing source can ALSO carry a tier note (#987)... Showing only the error hid the reason the graph was already thin before it went stale."
+
+That comment explicitly reasons through the `last_error` + `degraded_reason` overlap and folds `degraded_reason` into the warning alert. But it says **nothing** about the new `stale` field, and the partition is:
+```ts
+const warehouseFailing = warehouseStatus.filter((s) =&gt; s.last_error);
+const warehouseDegraded = warehouseStatus.filter((s) =&gt; !s.last_error);
+```
+A row with both `last_error` set and `stale: true` lands in `warehouseFailing`, whose JSX only renders `last_error` and `degraded_reason` — `s.stale` is never read in that branch. The `stale` qualifier is silently dropped for exactly the row that most needs it: `_record_refresh_error` in `backend/app/lineage/warehouse_refresh.py` bumps `lineage_last_refresh_at` to "now" on every *attempted* (even failing) refresh, so `last_error` + `stale` can only co-occur when the refresh loop itself stopped running altogether (the worker-died scenario this whole PR is about) — leaving a row with a **stale** `last_error` from the last attempt before the loop died, and `lineage_last_refresh_at` correspondingly old. That row surfaces only as "Warehouse lineage refresh is failing" with no staleness callout, directly contradicting the sibling comment two blocks below it:
+&gt; "#1091: staleness is its own message, never folded into 'degraded' ... and 'lineage is degraded' would misname what is wrong."
+
+Staleness *is* effectively folded away (dropped, not even mentioned) in the failing branch. Neither the backend tests (`test_poll_health.py`'s `TestWarehouseLineageStalenessSurface` only combines stale+degraded, never stale+error) nor the frontend tests (`LineageGraph.test.tsx` only exercises stale+degraded_reason, never stale+last_error) cover this combination, so it shipped unverified.
+
+### 6. `backend/app/db/models.py` — `WorkspaceHealth` docstring vs actual service behavior
+
+&gt; "`alerted_at` is written **after** a FAILING publish succeeds and cleared after the RECOVERED publish, **exactly like its per-connection sibling**. ... The row also serves as the cross-replica claim: the API-side check takes it `FOR UPDATE SKIP LOCKED`, so two API replicas never double-send."
+
+The "written after a FAILING publish succeeds / cleared after RECOVERED" half checks out against `workspace_health_service.run_poll_staleness_check` (publish happens, *then* `flag.alerted_at` is mutated, *then* commit — an exception from publish leaves the flag untouched).
+
+But **"exactly like its per-connection sibling" is not accurate as a mechanism claim**, and the difference matters. The per-connection sibling (`backend/app/worker/tasks.py`, `_alert_on_health_change` / `publish_connection_health`) deliberately does NOT hold a lock across the publish call — its own docstring explains why:
+&gt; "**The send is dispatched, never awaited (#842).** It used to run synchronously inside the connection loop inside the beat task: Teams (10s) + Slack (10s) + SMTP (15s) per crossing... ten connections bolted ~6 minutes of blocking sends onto a task that beats every 10 minutes, delaying the ingest it exists to perform and risking overlapping beats."
+
+It claims the edge with a fast atomic conditional `UPDATE ... WHERE health_alerted_at IS NULL` (commits immediately), then *dispatches a separate Celery task* to do the actual (slow, network-bound) publish; if that publish fails, a follow-up statement clears the claim.
+
+The new `workspace_health_service.run_poll_staleness_check`, by contrast, takes `WorkspaceHealth` via `SELECT ... FOR UPDATE SKIP LOCKED` and holds that row lock **across the synchronous, multi-channel `publish_poll_staleness` call** (sequential `httpx.post` to Teams/Slack + SMTP send in `email.py`) before committing — i.e., it holds a Postgres row lock open for however long three network sends take, inside the same DB transaction, which is exactly the blocking-inside-a-transaction shape #842 was written to eliminate for the per-connection path. The end *state* (alerted_at set iff a publish actually succeeded) is equivalent, but the claiming/locking *mechanism* is materially different — "exactly like" overstates the equivalence and glosses over a design regression relative to the precedent the docstring cites as its model.</result>
+<usage><subagent_tokens>150909</subagent_tokens><tool_uses>21</tool_uses><duration_ms>298827</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a6538b58bb3e3d2ae</task-id>
+<tool-use-id>toolu_01DQ4UXA1qaXX4LUb9BU1fmg</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/a6538b58bb3e3d2ae.output</output-file>
+<status>completed</status>
+<summary>Agent "1100 review: history + delivered-first precedent" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Findings — PR #1100 (`fix/issue-1052-staleness-signals`)
+
+**(1) `backend/app/lineage/pull.py` purge-on-unset — no conflict with #823. Verified benign.**
+`git log` on this file shows only two prior commits: `94c175cd` (#776, original) and `d6668d62` (#823/#828, "prune only on evidence"). That fixup's rule was specifically: don't prune the pulled-lineage cache when the catalog is *reachable but doesn't recognize our identities* (`resolved == 0`), because that's indistinguishable from a naming mismatch/misconfiguration — deleting there would turn a typo into data loss. The new `purge_orphaned_pulled_edges` in the PR is gated by `lineage_provider_unset()`, a *different* predicate: `LINEAGE_PROVIDER` is empty/unset (an operator explicitly removed the catalog), not "set but broken." The PR's own docstring explicitly reasons through the #823 footgun and deliberately excludes the broken/typo case (`get_lineage_provider()` returning `None` for a bad name also returns `None`, and the code is careful to distinguish `lineage_provider_unset()` from that). Scoping (`source='marquez', connection_id IS NULL`) matches `_prune_stale`'s scope exactly, so dbt/warehouse rows are untouched. This is correctly scoped as a genuinely different case, not a violation.
+
+**(2) `workspace_health_service.run_poll_staleness_check` — repeats the resource-holding shape #842 fixed, not the #843/#420 race.**
+The double-send race itself is *not* repeated: `publish_connection_health` in `worker/tasks.py` uses an optimistic conditional `UPDATE ... WHERE health_alerted_at IS NULL` (commit-before-publish, release-on-failure); the new code uses `SELECT ... FOR UPDATE SKIP LOCKED` (pessimistic, commit-after-publish) — a different but also race-safe mechanism, since concurrent replicas just skip the locked row rather than blocking.
+
+However, `run_poll_staleness_check` (`backend/app/services/workspace_health_service.py`) calls `get_health_publisher().publish_poll_staleness(session, report)` **synchronously, inline, while still holding the `FOR UPDATE SKIP LOCKED` row lock and open transaction** — the composite fan-out (`composite.py::publish_poll_staleness`) loops over Teams/Slack/email sequentially, the same channels the #842 commit measured at "Teams (10s) + Slack (10s) + SMTP (15s)". Commit-of-flag only happens after the publish returns. This is precisely the pattern #842 eliminated ("The send is now its own Celery task; the sweep decides and hands off... A broker failure on the hand-off is swallowed"). Here there's no hand-off: the DB session/connection and row lock are held for up to ~35s of blocking network I/O. `asyncio.to_thread` (in `main.py`) solves the "don't block the event loop" problem but not the "don't hold shared DB state across a slow channel send" problem #842 was actually about. Blast radius is smaller than the original bug (one workspace-level row per tick, not N connections looped inside one task), so this is not clearly broken, but it is an architectural regression against a recorded, hard-won decision and should be called out — either dispatch the publish to its own task the same way `_dispatch_health_alert`/`publish_connection_health` do, or explicitly document why the single-row case is exempt from that rule.
+
+**(3) Migration `70a054d4c469_add_workspace_health.py` — clean.**
+Verified programmatically across all 42 migration files on the PR branch: no duplicate revision ids, single head (`70a054d4c469`), full down_revision chain resolves with no missing links, and `down_revision = "00a938b64317"` matches `origin/main`'s actual single head. Content is additive only (`op.create_table`, no `ALTER`/`DROP` on existing tables), `alerted_at` nullable with no backfill needed (absent row = no alert outstanding = correct cold-start default), `downgrade()` is a clean `drop_table`. Old code never references `workspace_health`, so it runs unaffected against the new schema — satisfies the two-step-deploy backward-compatibility rule.
+
+**(4) `asset_view_service.py` stale widening — consistent with #915/#987, but the frontend consumer reintroduces the exact defect class #987 fixed for the failing+stale combination.**
+`git log` shows `asset_view_service.py` was never touched by #915/#987 commits (`6e558cc7`, `6fa95fb1` — those are frontend-only + comment fixups); the relevant backend ancestor is `92feb515` (#858/#891, degraded/failing surfacing). The new `stale` field is added as a third, independent boolean alongside `degraded_reason`/`last_error` (not folded into either) — directly matching the #915 rationale (severity/meaning must not be conflated) and the #987 fix (a source that is both degraded and failing must show both notes, not have one crowd out the other).
+
+But in `frontend/src/components/assets/LineageGraph.tsx`, sources are partitioned once: `warehouseFailing = filter(s =&gt; s.last_error)`, `warehouseDegraded = filter(s =&gt; !s.last_error)`. The new `stale` composite message (`no refresh since … — lineage from this source is stale; last refresh also reported: …`) is only rendered inside the `warehouseDegraded` block. A connection that is **both currently failing (`last_error` set) and stale** (plausible: refresh attempt failed at T0, beat then starved, so `lineage_last_refresh_at` — which `warehouse_refresh.py` updates on both success and failure — never advances past T0, and if `now - T0 &gt; 48h` it's `stale=true` too) routes entirely into `warehouseFailing` and never surfaces `s.stale` or the "no refresh since …" timestamp at all — only the generic "stops updating until it recovers" prose. This is the same shape #987 explicitly fixed ("a card asserting what the field below it denied" / one field silently suppressing another). No test in the PR's `LineageGraph.test.tsx` diff covers the failing+stale combination (only degraded+stale is tested, via the second new `it(...)`). Worth filing or fixing: surface `s.stale`/last-refresh-timestamp inside the `warehouseFailing` alert too, consistent with how `degraded_reason` is already composited there.</result>
+<usage><subagent_tokens>115466</subagent_tokens><tool_uses>33</tool_uses><duration_ms>316629</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bcbxazo9y</task-id>
+<tool-use-id>toolu_017rhXm2r7XvZEoLXfz1WXz7</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/bcbxazo9y.output</output-file>
+<status>completed</status>
+<summary>Background command "Run full backend suite" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bwqyy7vli</task-id>
+<tool-use-id>toolu_015oXAWeRdUWQRtM5SuzRAKM</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/bwqyy7vli.output</output-file>
+<status>completed</status>
+<summary>Background command "Post review comment; wait for CI on #1100" completed (exit code 0)</summary>
+</task-notification>
