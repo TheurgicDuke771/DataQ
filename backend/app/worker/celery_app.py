@@ -11,13 +11,16 @@ same ``request_id_var`` ContextVar the structlog processor chain reads from, so
 worker log lines correlate with the request that triggered them.
 """
 
+import uuid
 from typing import Any
 
+from billiard.exceptions import Terminated, WorkerLostError
 from celery import Celery
 from celery.signals import (
     beat_init,
     before_task_publish,
     setup_logging,
+    task_failure,
     task_postrun,
     task_prerun,
     worker_process_init,
@@ -52,6 +55,22 @@ def create_celery_app() -> Celery:
         # Surface a 'started' state so the run-status read-back can distinguish
         # queued from running without waiting for completion.
         task_track_started=True,
+        # Recycle a prefork child once it has grown past this resident size, so a
+        # big materialisation cannot ratchet the baseline up run-over-run and drop
+        # the effective ceiling for everything after it (#755 measured 956 -> 1188
+        # -> 1666 MiB across three runs). The child is replaced BETWEEN tasks, so
+        # this never interrupts a run in flight; it only stops memory creep.
+        # 0 disables.
+        worker_max_memory_per_child=settings.worker_max_memory_per_child_kb or None,
+        # Deliberately NOT acks_late. With early ack (the default) a task the broker
+        # has already delivered is not redelivered when the child dies — which is
+        # exactly what stops an OOM-killing run from being handed straight back to a
+        # fresh child and killing it too (#755's poison-pill ask; a local crash loop
+        # of 25 restarts). Late ack would trade that for at-least-once delivery we
+        # do not want here: a half-executed suite re-run is worse than a failed one,
+        # and the run row is already driven to a terminal state by the
+        # `task_failure` handler below.
+        task_acks_late=False,
         # Celery-beat schedule. The orchestration polling fallback (#171) runs
         # every 10 min as the success channel for runs that produced no webhook;
         # the task looks back further than the interval so nothing slips the gap.
@@ -299,3 +318,75 @@ def _start_beat_watchdog(**_kwargs: Any) -> None:
         )
     except Exception:  # pragma: no cover - defensive; startup must not fail on this
         get_logger(__name__).exception("beat_watchdog_start_failed")
+
+
+@task_failure.connect  # type: ignore[untyped-decorator]  # celery signal .connect is unannotated
+def _fail_run_on_worker_lost(
+    task_id: str | None = None,
+    exception: BaseException | None = None,
+    sender: Any = None,
+    **_kwargs: Any,
+) -> None:
+    """Close a `run_suite` run whose worker child was killed mid-execution (#755).
+
+    Runs in the **parent** process. When the OOM killer SIGKILLs a prefork child,
+    nothing inside the task executes — not its `except`, not its `finally` — so the
+    run row would stay `running` until the stuck-run reaper fails it up to
+    `stuck_run_threshold_minutes` (default 60) later, with a reason that can only
+    say "did not complete in time". Celery, however, *knows* the child was lost and
+    raises `WorkerLostError` here, so the run can be failed immediately and the
+    reason can name memory rather than leave the user guessing.
+
+    Scoped narrowly on purpose:
+
+    * only `run_suite` — other tasks have no run row to close;
+    * only worker-death exceptions (`WorkerLostError` / `Terminated`). An ordinary
+      exception inside the task means the task's own handlers already ran and drove
+      the run to a terminal state with a properly classified reason; overwriting
+      that with the generic memory text would make real failures *less* diagnosable.
+
+    Fail-soft: this is a best-effort closer on an already-failing path, so it must
+    never raise out of the signal and mask the original error.
+    """
+    if getattr(sender, "name", None) != "run_suite":
+        return
+    if not isinstance(exception, (WorkerLostError, Terminated)):
+        return
+    run_id = _run_id_from_task_args(sender, task_id)
+    if run_id is None:
+        return
+    try:
+        from backend.app.db.session import get_session
+        from backend.app.services import run_service
+
+        session = get_session()
+        try:
+            run_service.fail_run_worker_lost(session, run_id=run_id)
+        finally:
+            session.close()
+    except Exception:  # pragma: no cover - defensive; never mask the original failure
+        get_logger(__name__).exception("worker_lost_run_close_failed", task_id=task_id)
+
+
+def _run_id_from_task_args(sender: Any, task_id: str | None) -> uuid.UUID | None:
+    """Recover the run id from the failed task's request, tolerating both call forms.
+
+    `run_suite` takes a single `run_id` string, dispatched positionally today — but
+    reading only `args[0]` would break silently the day someone calls it by keyword,
+    so both are accepted.
+    """
+    request = getattr(sender, "request", None)
+    raw: Any = None
+    args = getattr(request, "args", None) or ()
+    if args:
+        raw = args[0]
+    else:
+        kwargs = getattr(request, "kwargs", None) or {}
+        raw = kwargs.get("run_id")
+    if not raw:
+        return None
+    try:
+        return uuid.UUID(str(raw))
+    except ValueError:
+        get_logger(__name__).warning("worker_lost_unparseable_run_id", task_id=task_id)
+        return None

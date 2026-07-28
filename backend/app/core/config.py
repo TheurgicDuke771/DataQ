@@ -99,6 +99,11 @@ class Settings(BaseSettings):
     # never reaped (a false reap self-corrects when the worker later commits its
     # real outcome, but would emit a spurious alert).
     stuck_run_threshold_minutes: int = 60
+    # Recycle a Celery prefork child once its resident size passes this (KiB), so a
+    # large materialisation cannot ratchet the worker baseline up run-over-run
+    # (#755). 0 disables. 1_500_000 KiB (~1.4 GiB) sits under the 2 GiB prod worker
+    # with headroom for the parent + a starting child.
+    worker_max_memory_per_child_kb: int = 1_500_000
 
     # Orphan-asset sweep (#770, ADR 0034 — "asset rows accrete; last_seen + a
     # sweep, not deletes, is the cleanup posture"). An asset whose `last_seen`

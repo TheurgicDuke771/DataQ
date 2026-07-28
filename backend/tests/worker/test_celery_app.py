@@ -6,12 +6,16 @@ to assert propagation. The eager-mode case guards the bug fixed pre-merge —
 a blanket clear in task_postrun would drop the caller's request_id.
 """
 
+import uuid
 from collections.abc import Iterator
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
+from billiard.exceptions import WorkerLostError
 
 from backend.app.core.logging import request_id_var
+from backend.app.worker import celery_app
 from backend.app.worker.celery_app import (
     REQUEST_ID_HEADER,
     _clear_request_id,
@@ -151,3 +155,122 @@ def test_restore_handles_missing_task() -> None:
     # Defensive: Celery always passes task, but the guard must hold regardless.
     _restore_request_id(task=None)
     assert request_id_var.get() is None
+
+
+# ───────────────── worker-loss run closure (#755) ─────────────────
+#
+# When the OOM killer SIGKILLs a prefork child mid-`run_suite`, nothing inside the
+# task runs — so the run row can only be closed from the PARENT, via task_failure.
+# These pin the handler's scoping, because the failure mode of getting it wrong is
+# silent: too broad and it overwrites well-classified failures with generic memory
+# text; too narrow and the run sits `running` for an hour.
+
+
+class _Sender:
+    def __init__(self, name: str, args: tuple[Any, ...] = (), kwargs: dict[str, Any] | None = None):
+        self.name = name
+        self.request = SimpleNamespace(args=args, kwargs=kwargs or {})
+
+
+def _closed_run_ids(monkeypatch: pytest.MonkeyPatch) -> list[uuid.UUID]:
+    """Capture what the handler asks run_service to close, without a DB."""
+    seen: list[uuid.UUID] = []
+
+    class _FakeSession:
+        def close(self) -> None: ...
+
+    monkeypatch.setattr("backend.app.db.session.get_session", lambda: _FakeSession())
+
+    def _capture(_session: Any, *, run_id: uuid.UUID, **_k: Any) -> bool:
+        seen.append(run_id)
+        return True
+
+    monkeypatch.setattr("backend.app.services.run_service.fail_run_worker_lost", _capture)
+    return seen
+
+
+def test_worker_lost_closes_the_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen = _closed_run_ids(monkeypatch)
+    rid = uuid.uuid4()
+    celery_app._fail_run_on_worker_lost(
+        task_id="t1",
+        exception=WorkerLostError("signal 9 (SIGKILL)"),
+        sender=_Sender("run_suite", args=(str(rid),)),
+    )
+    assert seen == [rid]
+
+
+def test_worker_lost_accepts_the_keyword_call_form(monkeypatch: pytest.MonkeyPatch) -> None:
+    # run_suite is dispatched positionally today; reading only args[0] would break
+    # silently the day someone calls it by keyword.
+    seen = _closed_run_ids(monkeypatch)
+    rid = uuid.uuid4()
+    celery_app._fail_run_on_worker_lost(
+        task_id="t1",
+        exception=WorkerLostError("boom"),
+        sender=_Sender("run_suite", kwargs={"run_id": str(rid)}),
+    )
+    assert seen == [rid]
+
+
+def test_ordinary_exceptions_are_left_to_the_task(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The task's own handlers already ran and classified the failure (#605).
+
+    Overwriting that with the generic memory reason would make real failures LESS
+    diagnosable — the opposite of what #755 is for.
+    """
+    seen = _closed_run_ids(monkeypatch)
+    celery_app._fail_run_on_worker_lost(
+        task_id="t1",
+        exception=ValueError("a normal bug"),
+        sender=_Sender("run_suite", args=(str(uuid.uuid4()),)),
+    )
+    assert seen == []
+
+
+def test_other_tasks_are_ignored(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Only run_suite has a run row to close.
+
+    The arg is a VALID uuid on purpose: an unparseable one would make this pass via
+    the run-id guard instead of the task-name guard, so deleting the name check
+    would not fail anything. (It did exactly that until a mutation check caught it.)
+    """
+    seen = _closed_run_ids(monkeypatch)
+    celery_app._fail_run_on_worker_lost(
+        task_id="t1",
+        exception=WorkerLostError("boom"),
+        sender=_Sender("poll_orchestration_runs", args=(str(uuid.uuid4()),)),
+    )
+    assert seen == []
+
+
+def test_unparseable_or_missing_run_id_is_survivable(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen = _closed_run_ids(monkeypatch)
+    for sender in (_Sender("run_suite", args=("not-a-uuid",)), _Sender("run_suite")):
+        celery_app._fail_run_on_worker_lost(
+            task_id="t1", exception=WorkerLostError("boom"), sender=sender
+        )
+    assert seen == []
+
+
+def test_handler_never_raises_out_of_the_signal(monkeypatch: pytest.MonkeyPatch) -> None:
+    """It runs on an already-failing path; raising here would mask the real error."""
+
+    def _explode() -> Any:
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr("backend.app.db.session.get_session", _explode)
+    celery_app._fail_run_on_worker_lost(
+        task_id="t1",
+        exception=WorkerLostError("boom"),
+        sender=_Sender("run_suite", args=(str(uuid.uuid4()),)),
+    )  # must not raise
+
+
+def test_acks_late_stays_off_so_an_oom_run_is_not_redelivered() -> None:
+    """Early ack is what stops #755's poison-pill crash loop (25 local restarts).
+
+    Pinned as a test because it is a *default* we are relying on: flipping it to
+    late-ack would silently hand an OOM-killing run straight back to a fresh child.
+    """
+    assert celery_app.celery_app.conf.task_acks_late is False

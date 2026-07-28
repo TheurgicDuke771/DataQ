@@ -981,3 +981,43 @@ def reap_stuck_runs(
         for run_id in started_ids:
             lineage_dispatch.emit_run_lineage_terminal(session, run_id=run_id)
     return stuck
+
+
+def fail_run_worker_lost(
+    session: Session, *, run_id: uuid.UUID, now: datetime | None = None
+) -> bool:
+    """Drive a single run to ``failed`` after its worker process died (#755).
+
+    Called from the **parent** worker process via Celery's ``task_failure`` signal.
+    That indirection is the whole point: when the OOM killer SIGKILLs a prefork
+    child mid-``run_suite``, no code inside the task runs — not the ``except``, not
+    the ``finally`` — so the run row can only be closed by something that outlived
+    the child.
+
+    Without this the run sits ``running`` until :func:`reap_stuck_runs` catches it
+    ``stuck_run_threshold_minutes`` later (default **60**), with a reason that says
+    only "did not complete in time". Here Celery has already told us the child was
+    lost, so the failure is immediate and the reason names memory as the likely
+    cause instead of leaving the user to guess.
+
+    Idempotent and non-clobbering: a run that already reached a terminal status is
+    left alone and ``False`` is returned. This matters because the signal can fire
+    for a task whose run was cancelled, or which finished and died afterwards —
+    neither should be rewritten to ``failed``.
+    """
+    run = session.get(Run, run_id)
+    if run is None or run.status not in _NON_TERMINAL_STATUSES:
+        return False
+    moment = now or _now()
+    was_running = run.status == "running"
+    run_dispatch.mark_dispatch_failed(run, at=moment, reason=run_dispatch.WORKER_LOST_REASON)
+    session.commit()
+    log.warning("run_failed_worker_lost", run_id=str(run_id), was_running=was_running)
+    # Same contract as the reaper: a `running` run emitted an OpenLineage START that
+    # would otherwise dangle forever; a `queued` one never did. Lazy import breaks
+    # the lineage<->run_service cycle; fail-open and dark by default.
+    if was_running:
+        from backend.app.lineage import dispatch as lineage_dispatch
+
+        lineage_dispatch.emit_run_lineage_terminal(session, run_id=run_id)
+    return True

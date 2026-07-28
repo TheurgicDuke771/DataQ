@@ -61,6 +61,9 @@ plugins = ["sqlalchemy.ext.mypy.plugin", "pydantic.mypy"]
 module = [
     "great_expectations.*",
     "celery.*",
+    # Celery's prefork pool. WorkerLostError/Terminated are imported to detect a
+    # SIGKILLed child (#755); the package ships no py.typed marker.
+    "billiard.*",
     "snowflake.*",
     "databricks.*",
     "azure.storage.*",

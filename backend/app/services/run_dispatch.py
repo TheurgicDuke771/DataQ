@@ -85,6 +85,16 @@ REAPED_REASON = (
     "The run did not complete in time and was marked failed — the worker may have "
     "stopped mid-execution."
 )
+#: The worker process executing this run died outright (SIGKILL) — overwhelmingly
+#: the OOM killer on a large materialisation (#755). Distinct from REAPED_REASON:
+#: the reaper only knows "this sat non-terminal too long", whereas Celery told us
+#: the child was lost, so the run is failed IMMEDIATELY instead of up to
+#: `stuck_run_threshold_minutes` later, and the cause is named rather than guessed.
+WORKER_LOST_REASON = (
+    "The worker process running this suite was terminated before it finished — "
+    "most often because the dataset did not fit in worker memory. Try a smaller "
+    "batch or a narrower run target."
+)
 
 
 def mark_dispatch_failed(
