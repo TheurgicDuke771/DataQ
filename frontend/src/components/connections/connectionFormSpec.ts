@@ -67,7 +67,7 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
       { name: 'database', label: 'Database' },
       { name: 'schema', label: 'Schema' },
       { name: 'warehouse', label: 'Warehouse' },
-      { name: 'role', label: 'Role', optional: true },
+      { name: 'role', label: 'Role' },
     ],
     auth: [
       { value: 'password', label: 'Password', secretLabel: 'Password' },

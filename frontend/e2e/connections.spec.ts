@@ -60,7 +60,10 @@ test.describe('Connections page', () => {
     await env.click();
     await env.press('ArrowDown');
     await env.press('Enter');
-    for (const label of ['Account', 'User', 'Database', 'Schema', 'Warehouse']) {
+    // Role is required since #1067 — GX mandates it for every suite run, so the
+    // form blocks submit without it (a role-less connection would test green and
+    // fail every run).
+    for (const label of ['Account', 'User', 'Database', 'Schema', 'Warehouse', 'Role']) {
       await page.getByLabel(label, { exact: true }).fill(`${label.toLowerCase()}-val`);
     }
     await page.getByLabel('Password').fill('sekret');

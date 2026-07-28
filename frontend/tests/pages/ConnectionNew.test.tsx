@@ -207,7 +207,7 @@ describe('ConnectionNew', () => {
     await user.type(screen.getByLabelText('Name'), 'sf-dev');
     await user.click(screen.getByLabelText('Environment'));
     await user.click(await screen.findByText('DEV'));
-    for (const label of ['Account', 'User', 'Database', 'Schema', 'Warehouse']) {
+    for (const label of ['Account', 'User', 'Database', 'Schema', 'Warehouse', 'Role']) {
       await user.type(screen.getByLabelText(label), `${label.toLowerCase()}-val`);
     }
     await user.type(screen.getByLabelText('Password'), 'sekret');
@@ -244,7 +244,7 @@ describe('ConnectionNew', () => {
     await user.type(screen.getByLabelText('Name'), name);
     await user.click(screen.getByLabelText('Environment'));
     await user.click(await screen.findByText('DEV'));
-    for (const label of ['Account', 'User', 'Database', 'Schema', 'Warehouse']) {
+    for (const label of ['Account', 'User', 'Database', 'Schema', 'Warehouse', 'Role']) {
       await user.type(screen.getByLabelText(label), `${label.toLowerCase()}-val`);
     }
     // Switch auth to key pair → PEM textarea + optional passphrase appear,

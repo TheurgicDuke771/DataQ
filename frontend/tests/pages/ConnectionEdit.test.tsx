@@ -38,6 +38,9 @@ const existing: Connection = {
     database: 'DB',
     schema: 'SC',
     warehouse: 'WH',
+    // Required since #1067 — GX mandates a role for every suite run, so the
+    // prefilled edit form must carry one or submit is blocked.
+    role: 'ANALYST',
     auth_type: 'password',
   },
   has_secret: true,

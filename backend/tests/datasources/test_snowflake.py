@@ -107,11 +107,6 @@ def test_config_maps_schema_alias() -> None:
     assert cfg.role == "DQ_ROLE"
 
 
-def test_config_role_optional() -> None:
-    cfg = SnowflakeConfig.model_validate({k: v for k, v in _CONFIG.items() if k != "role"})
-    assert cfg.role is None
-
-
 def test_config_rejects_unknown_keys() -> None:
     with pytest.raises(ValidationError):
         SnowflakeConfig.model_validate({**_CONFIG, "bogus": "x"})
@@ -133,13 +128,6 @@ def test_connection_string_url_encodes_credentials() -> None:
     assert "@ab12345.eu-west-1/ANALYTICS/FINANCE?" in cs
     assert "warehouse=WH_DQ" in cs
     assert "role=DQ_ROLE" in cs
-
-
-def test_connection_string_omits_role_when_absent() -> None:
-    cfg = SnowflakeConfig.model_validate({k: v for k, v in _CONFIG.items() if k != "role"})
-    cs = build_connection_string(cfg, "pw")
-    assert "role=" not in cs
-    assert "warehouse=WH_DQ" in cs
 
 
 # ───────────────────────── key-pair auth ───────────────────────────
@@ -249,18 +237,61 @@ def test_run_checks_key_pair_uses_gx_kwargs_form(monkeypatch: pytest.MonkeyPatch
     assert der and b"-----BEGIN" not in der
 
 
-def test_config_key_pair_requires_role() -> None:
-    # GX's key-pair form mandates a role, so a role-less key-pair config could
-    # never run a suite — rejected at validation (create/edit/test time), not
-    # at run time (#195).
-    config = {k: v for k, v in _CONFIG.items() if k != "role"} | {"auth_type": "key_pair"}
+@pytest.mark.parametrize("auth_type", ["password", "key_pair"])
+def test_config_requires_role_for_every_auth_type(auth_type: str) -> None:
+    """A role-less config is rejected at validation, whatever the auth type (#1067).
+
+    Previously scoped to key_pair only. The reasoning was right — GX mandates a
+    role — but the scope was wrong: the requirement is GX's, not the auth
+    method's. A role-less PASSWORD connection therefore tested green (the
+    connection test is GX-free) and failed every suite run at `add_snowflake`.
+    """
+    config = {k: v for k, v in _CONFIG.items() if k != "role"} | {"auth_type": auth_type}
     with pytest.raises(ValidationError, match="role"):
         SnowflakeConfig.model_validate(config)
 
 
-def test_config_password_role_stays_optional() -> None:
-    cfg = SnowflakeConfig.model_validate({k: v for k, v in _CONFIG.items() if k != "role"})
-    assert cfg.role is None
+def test_gx_still_requires_role_in_the_dsn() -> None:
+    """Pin GX's contract instead of re-deriving it (#1067).
+
+    Our validator exists ONLY because GX rejects a DSN without `role`. If GX ever
+    relaxes `REQUIRED_QUERY_PARAMS`, this fails and the validator should be
+    revisited — rather than the requirement quietly outliving its reason.
+    """
+    from great_expectations.datasource.fluent.snowflake_datasource import (
+        REQUIRED_QUERY_PARAMS,
+    )
+
+    assert "role" in REQUIRED_QUERY_PARAMS
+    assert "warehouse" in REQUIRED_QUERY_PARAMS
+
+
+def test_dsn_omits_role_when_absent_which_is_why_it_must_be_required() -> None:
+    """The mechanism behind the defect: the DSN builder only emits `role=` when
+    the config carries one, so a role-less config yields a DSN GX rejects.
+
+    Asserted on the builder directly, bypassing the model validator, so the
+    mechanism stays pinned even though the validator now prevents reaching it.
+    """
+    # Explicit kwargs, not **dict: the tests tree is mypy-gated (#418) and a
+    # `**dict[str, str]` cannot satisfy the Literal-typed auth_type parameter.
+    role_less = SnowflakeConfig.model_construct(
+        account=_CONFIG["account"],
+        user=_CONFIG["user"],
+        database=_CONFIG["database"],
+        schema_=_CONFIG["schema"],  # model_construct bypasses the alias
+        warehouse=_CONFIG["warehouse"],
+        role=None,
+    )
+    dsn = build_connection_string(role_less, "pw")
+    assert "role=" not in dsn
+    # The DSN must be well-formed in every OTHER respect — otherwise this test
+    # could pass because the config was malformed rather than because `role` is
+    # absent. (mypy caught exactly that: `schema=` silently sets a stray attribute
+    # under model_construct, which bypasses the alias, leaving schema_ unset.)
+    assert "warehouse=" in dsn
+    assert _CONFIG["database"] in dsn
+    assert _CONFIG["schema"] in dsn
 
 
 def test_run_checks_password_keeps_connection_string(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -691,7 +722,7 @@ def test_close_disposes_and_is_idempotent(monkeypatch: pytest.MonkeyPatch, tmp_p
 
 def test_close_before_any_use_is_a_noop() -> None:
     config = SnowflakeConfig.model_validate(
-        {"account": "a", "user": "u", "database": "d", "schema": "s", "warehouse": "w"}
+        {"account": "a", "user": "u", "database": "d", "schema": "s", "warehouse": "w", "role": "r"}
     )
     runner = SnowflakeCheckRunner(config, "pw")
     runner.close()  # never built an engine — must not raise

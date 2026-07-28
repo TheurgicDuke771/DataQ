@@ -79,16 +79,28 @@ class SnowflakeConfig(BaseModel):
     auth_type: Literal["password", "key_pair"] = "password"
 
     @model_validator(mode="after")
-    def _key_pair_requires_role(self) -> SnowflakeConfig:
-        """Key-pair connections must carry a role.
+    def _requires_role(self) -> SnowflakeConfig:
+        """Every Snowflake connection must carry a role, whatever the auth type.
 
-        GX's key-pair form (`KeyPairConnectionDetails`, #195) mandates one, so a
-        role-less key-pair connection could never run a suite. Enforcing it here
-        makes the failure a clear 422 at create/edit/test time instead of an
-        opaque failed run later. Password auth keeps role optional.
+        GX mandates it: `REQUIRED_QUERY_PARAMS` in its snowflake datasource is
+        `{"warehouse", "role"}`, and `build_connection_string` only emits `role=`
+        when the config has one — so a role-less connection produces a DSN GX
+        rejects at `add_snowflake`, before any check evaluates.
+
+        This was previously scoped to `key_pair` only, on the reasoning that GX's
+        key-pair form mandates a role. The reasoning was right; the scope was
+        wrong — the requirement is GX's, not the auth method's (#1067). A
+        role-less password connection therefore **tested green and failed every
+        suite run**, because the connection test is deliberately GX-free (a plain
+        SQLAlchemy `SELECT 1`) and never sees the problem. Monitors kept working
+        (they bypass GX entirely), so the connection looked *partly* alive, which
+        made it harder to diagnose rather than easier.
+
+        Enforcing here makes it a 422 at create/edit/test time instead of an
+        opaque operational run failure later.
         """
-        if self.auth_type == "key_pair" and not self.role:
-            raise ValueError("key-pair auth requires 'role' (suite runs mandate it)")
+        if not self.role:
+            raise ValueError("'role' is required (GX mandates it for every suite run)")
         return self
 
 

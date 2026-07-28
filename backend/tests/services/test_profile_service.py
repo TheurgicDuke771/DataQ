@@ -169,6 +169,8 @@ def test_engine_args_snowflake_url() -> None:
             "database": "d",
             "schema": "s",
             "warehouse": "wh",
+            # role is required for every Snowflake config (#1067)
+            "role": "r",
         },
     )
     url, connect_args = _engine_args(conn, "pw")  # type: ignore[arg-type]
