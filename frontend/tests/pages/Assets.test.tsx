@@ -130,10 +130,13 @@ describe('Assets page — tree view (default)', () => {
   it('walks pages until the workspace is fully fetched (#925)', async () => {
     // The tree fetch walks in pages of 200; a 250-asset workspace takes two
     // calls (200 + 50) before it stops.
+    // `gen${i}` ids: the previous `a${i}` collided with ASSET's own id 'a1'
+    // at i=1 — an accidental duplicate the walk's id-dedupe (review fix) now
+    // collapses, which is correct behavior but wrong fixture intent.
     const firstPage = Array.from({ length: 200 }, (_, i) =>
       i === 0
         ? ASSET
-        : { ...ASSET, id: `a${i}`, name: `ANALYTICS.PUBLIC.T${i}`, worst_severity: null },
+        : { ...ASSET, id: `gen${i}`, name: `ANALYTICS.PUBLIC.T${i}`, worst_severity: null },
     );
     const secondPage = Array.from({ length: 50 }, (_, i) => ({
       ...ASSET,
@@ -153,6 +156,43 @@ describe('Assets page — tree view (default)', () => {
     expect(mockList).toHaveBeenNthCalledWith(1, { limit: 200, offset: 0 });
     expect(mockList).toHaveBeenNthCalledWith(2, { limit: 200, offset: 200 });
     // The walk covered the whole workspace (200 + 50 === 250) — no truncation note.
+    expect(screen.queryByText(/Showing \d+ of \d+ assets/)).not.toBeInTheDocument();
+  });
+
+  it('collapses a row repeated across pages by a concurrent insert (review fix)', async () => {
+    // Offset paging races live writes: an insert below the cursor shifts rows
+    // so the last row of page one reappears at the top of page two. The walk
+    // dedupes by id — the repeated asset renders once, and the pinned
+    // first-page total keeps the walk's target stable.
+    const repeated = {
+      ...ASSET,
+      id: 'dup',
+      name: 'ANALYTICS.PUBLIC.REPEATED',
+      worst_severity: null,
+    };
+    const firstPage = [
+      ...Array.from({ length: 199 }, (_, i) => ({
+        ...ASSET,
+        id: `a${i}`,
+        name: `ANALYTICS.PUBLIC.T${i}`,
+        worst_severity: null,
+      })),
+      repeated,
+    ];
+    mockList
+      .mockResolvedValueOnce({ items: firstPage, total: 201 })
+      .mockResolvedValueOnce({
+        items: [
+          repeated,
+          { ...ASSET, id: 'z', name: 'ANALYTICS.PUBLIC.LAST', worst_severity: null },
+        ],
+        total: 202,
+      });
+    renderPage();
+
+    expect(await screen.findByText('LAST')).toBeInTheDocument();
+    expect(screen.getAllByText('REPEATED')).toHaveLength(1);
+    // 199 unique + dup + z = 201 == pinned first-page total → complete, no note.
     expect(screen.queryByText(/Showing \d+ of \d+ assets/)).not.toBeInTheDocument();
   });
 
@@ -183,7 +223,7 @@ describe('Assets page — table view (#925 server-side paging)', () => {
     await userEvent.click(await screen.findByText('All assets'));
   }
 
-  it('switches to the flat "All assets" table and back', async () => {
+  it('switches to the flat "All assets" table', async () => {
     mockList.mockResolvedValue(page([ASSET]));
     renderPage();
     await screen.findByText('Snowflake · acct');

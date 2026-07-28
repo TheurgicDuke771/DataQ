@@ -39,7 +39,7 @@ import { useAsyncData } from '../hooks/useAsyncData';
  *   pages up to `TREE_HARD_BOUND` and renders an explicit truncation note if
  *   the workspace is bigger than that — never a silently partial tree.
  * - **All assets** — the flat table, real server-side paging (antd `Table`
- *   `pagination`, `PAGE_SIZE` rows/page) driven by the `X-Total-Count` total.
+ *   `pagination`, `TABLE_PAGE_SIZE` rows/page) driven by the `X-Total-Count` total.
  */
 export function Assets() {
   const navigate = useNavigate();
@@ -88,18 +88,28 @@ const TREE_PAGE_SIZE = 200;
  *  or the server stops returning rows — whichever comes first. The last guard
  *  is defensive: a `total` that the walk can never reach must not spin forever. */
 async function fetchAllAssetsForTree(): Promise<AssetListPage> {
-  const items: AssetSummary[] = [];
-  let total = 0;
+  // Offset paging over a live population races concurrent writes (review
+  // finding): a delete below the cursor shifts later rows down (one is
+  // skipped), an insert shifts them up (one repeats), and a shrinking total
+  // could end the walk early AND suppress the truncation Alert. Mitigations,
+  // in order: duplicates are collapsed by id; `total` is pinned from the
+  // FIRST page so the loop's target cannot shrink mid-walk; the Alert
+  // compares against that same pinned total. A skipped row remains possible —
+  // inherent to offset paging without a server-side snapshot/cursor — and
+  // self-heals on the next visit; the sweep/lineage writers that make this
+  // real run on daily beats, so the window is narrow.
+  const byId = new Map<string, AssetSummary>();
+  let total: number | null = null;
   let offset = 0;
-  while (items.length < TREE_HARD_BOUND) {
+  while (byId.size < TREE_HARD_BOUND) {
     const page = await listAssets({ limit: TREE_PAGE_SIZE, offset });
-    total = page.total;
-    items.push(...page.items);
+    total = total ?? page.total;
+    for (const item of page.items) byId.set(item.id, item);
     if (page.items.length === 0) break;
     offset += page.items.length;
-    if (items.length >= total) break;
+    if (byId.size >= total) break;
   }
-  return { items, total };
+  return { items: [...byId.values()], total: total ?? byId.size };
 }
 
 function AssetsTreeView({ onOpen }: { onOpen: (id: string) => void }) {
@@ -148,6 +158,10 @@ function AssetsTableView({ onOpen }: { onOpen: (id: string) => void }) {
   // useAsyncData only re-fetches on `reload()` (its effect keys off a nonce, not
   // the fetcher identity — see its doc), so a page change must bump it
   // explicitly, same pattern as Dashboard's range selector.
+  // setPage + reload land in ONE render because React batches event-handler
+  // state updates — the effect behind the bumped nonce then sees the new page.
+  // That coupling breaks if this ever moves behind an await/timeout (review
+  // note): keep both calls synchronous in the handler.
   const onPageChange = (nextPage: number) => {
     setPage(nextPage);
     reload();

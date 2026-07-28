@@ -179,7 +179,7 @@ if _cors_origins:
         # cross-origin fetch, so a same-origin dev proxy can see it fine while a
         # cross-origin deploy (or the frontend's own axios client, generally)
         # would silently read `undefined` without this entry.
-        expose_headers=[REQUEST_ID_HEADER, "X-Total-Count"],
+        expose_headers=[REQUEST_ID_HEADER, assets_router.TOTAL_COUNT_HEADER],
     )
 
 

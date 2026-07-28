@@ -67,6 +67,18 @@ def test_middleware_absent_when_unconfigured(no_cors_client: TestClient) -> None
     assert "access-control-allow-origin" not in resp.headers
 
 
+def test_total_count_header_is_exposed_cross_origin(cors_client: TestClient) -> None:
+    """#925's paging total travels as a response header, and a cross-origin
+    SPA can only read headers listed in Access-Control-Expose-Headers — an
+    unexposed X-Total-Count would silently break paging exactly (and only) on
+    the split-origin deploy shape. Pins the request-id header for the same
+    reason; both were previously asserted nowhere (review finding)."""
+    resp = cors_client.get("/healthz", headers={"Origin": ALLOWED})
+    exposed = {h.strip().lower() for h in resp.headers["access-control-expose-headers"].split(",")}
+    assert "x-total-count" in exposed
+    assert "x-request-id" in exposed
+
+
 def test_configured_origin_is_echoed_never_star(cors_client: TestClient) -> None:
     resp = cors_client.get("/healthz", headers={"Origin": ALLOWED})
     assert resp.status_code == 200
