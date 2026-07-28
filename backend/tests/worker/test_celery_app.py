@@ -126,6 +126,21 @@ def test_no_beat_entry_uses_an_interval_a_restart_can_starve() -> None:
         )
 
 
+def test_every_beat_entry_names_a_registered_task() -> None:
+    """Every beat entry's task NAME resolves to a registered task — generalized from
+    the single #1070 assertion to the whole schedule (review finding on this PR).
+
+    A beat entry naming a task that does not exist fails SILENTLY at runtime — beat
+    logs and moves on, the #405/#904 shape — and this PR edits the task/schedule
+    pair of six entries at once, exactly where a typo would slip in unseen.
+    """
+    app = create_celery_app()
+    import backend.app.worker.tasks  # noqa: F401  — registers the tasks
+
+    for name, entry in app.conf.beat_schedule.items():
+        assert entry["task"] in app.tasks, f"{name}: task {entry['task']!r} is not registered"
+
+
 def test_daily_crontabs_are_staggered_not_a_midnight_herd() -> None:
     """No two wall-clock entries share a fire minute (and none sits at 00:00).
 

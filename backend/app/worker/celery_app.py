@@ -81,8 +81,8 @@ def create_celery_app() -> Celery:
         #
         # That is why every daily task below is a `crontab`, never an interval
         # (#1091): an interval restarts its countdown when beat restarts, and the
-        # prod worker restarts more often than daily (ACA revision rolls, scaling,
-        # the #904 watchdog), so a 24h interval NEVER fired — prod's warehouse
+        # prod worker restarts more often than daily (ACA revision rolls, image
+        # deploys, the #904 watchdog), so a 24h interval NEVER fired — prod's warehouse
         # lineage sat 10 days stale with beat's every-minute tasks running fine.
         # A crontab fires at a wall-clock moment, indifferent to restarts. The
         # times are staggered (not one thundering 00:00 batch) and UTC (timezone

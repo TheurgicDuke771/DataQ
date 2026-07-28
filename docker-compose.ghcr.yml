@@ -140,8 +140,8 @@ services:
   worker:
     image: *backend-image
     restart: unless-stopped
-    # -B runs celery-beat embedded (orchestration polling, scheduled dispatch).
-    # Fine for the single-worker eval stack; prod runs a separate beat.
+    # -B runs celery-beat embedded (orchestration polling, scheduled dispatch) —
+    # the same topology every deployment uses, prod included (#1091).
     command: celery -A backend.app.worker.celery_app worker -B --loglevel=INFO
     environment: *app-env
     depends_on:
