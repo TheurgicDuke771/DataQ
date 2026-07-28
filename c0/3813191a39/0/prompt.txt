@@ -1,0 +1,1207 @@
+<task-notification>
+<task-id>a929750c5d0247acd</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/a929750c5d0247acd.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix CodeQL unused-global alert" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>PR #1097 is open, milestoned, not merged (as instructed).
+
+## Summary
+
+**PR:** [#1097](https://github.com/TheurgicDuke771/DataQ/pull/1097) — `chore/codeql-64-unused-global`, not merged, milestoned to "v1.1 Week 5 — anomaly monitor kind + metric trends".
+
+**Cause of deadness (one line):** PR #1049 (`refactor(datasources): move target-shape resolution into the registry`, closing #727) moved all per-datasource target-shape dispatch — including the `adls_gen2`/`s3` flat-file grouping — into `backend/app/datasources/registry.py`'s `resolve_target_shape` (via its `_TARGET_RESOLVERS` dict mapping both types to `_flatfile_target`), leaving `_FLATFILE_TYPES` in `run_target.py` orphaned with zero remaining references.
+
+**Verification:**
+- `grep -rn "_FLATFILE_TYPES" backend/` — matched only the definition line itself, nowhere else in app or tests.
+- `git log -S _FLATFILE_TYPES --oneline -- backend/` confirmed the introducing commit (#215/#224) and the orphaning commit (#1049).
+- Deleted the single line (`backend/app/services/run_target.py:45`).
+- Local checks (all in the `dataq` conda env): `black --check` pass; `ruff check` pass (all checks passed); `mypy backend/app backend/tests` — success, no issues in 301 source files; `bandit -r` on the file — no issues identified; `pytest backend/tests -k "run_target" -q` — 36 passed, 2 skipped (Postgres-dependent, unrelated), `run_target.py` at 100% line coverage in that run (the overall coverage-gate failure in that run is expected for a `-k`-filtered subset vs. the full-suite 80% gate, not a real regression).
+
+One commit (`33824978`), conventional message, pre-commit hooks ran (no `--no-verify`), pushed and PR opened with the template filled in honestly (docs N/A, no linked GH issue — closes the CodeQL alert directly).</result>
+<usage><subagent_tokens>103225</subagent_tokens><tool_uses>29</tool_uses><duration_ms>186581</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-a929750c5d0247acd</worktreePath><worktreeBranch>worktree-agent-a929750c5d0247acd</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bqhfnrxzb</task-id>
+<tool-use-id>toolu_01CvkGLoWy5HptEjDmfjQook</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/bqhfnrxzb.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for main CI runs to complete" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Okay, then Batch #2 of track 1 then
+
+---
+
+<task-notification>
+<task-id>aa10767d2771977f4</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/aa10767d2771977f4.output</output-file>
+<status>completed</status>
+<summary>Agent "1099 review: bug scan" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Findings — shallow scan of PR #1099 (`backend/app/worker/celery_app.py`, `backend/tests/worker/test_celery_app.py`):
+
+No large bugs found. Specifically checked and cleared:
+
+1. **Timezone correctness**: `celery_app.py` sets `timezone="UTC"` and `enable_utc=True` in `app.conf` (unchanged, outside the diff but visible in context), so `crontab(hour=..., minute=...)` fires in UTC as the new comments claim. No UTC/local mismatch.
+
+2. **Crontab argument semantics**: `crontab(hour="1", minute="17")` etc. — verified with celery's own `crontab` that string hour/minute values parse correctly (`hour={1}, minute={17}`). Not a bug.
+
+3. **Stagger claim**: the six new fire times (01:17, 01:37, 01:57, 02:17, 02:37, 02:57) are all distinct with 20-minute gaps, matching the "not a thundering herd" comment and the new `test_daily_crontabs_are_staggered_not_a_midnight_herd` regression test.
+
+4. **`test_no_beat_entry_uses_an_interval_a_restart_can_starve`**: checked against the remaining non-crontab entries left in the schedule (`poll-orchestration-runs`=600s, `recover-orchestration-gaps`=1800s, `dispatch-due-schedules`=60s, `reap-stuck-runs`=600s, `beat-heartbeat`=60s) — all ≤ the 1800s ceiling, so the new guard passes truthfully rather than vacuously.
+
+5. **No stale test assertions**: fetched the full PR-branch copy of `test_celery_app.py` — confirmed no leftover `== 86400.0` assertions remain for `purge_sample_failures`, `refresh_lineage_pull`, `refresh_warehouse_lineage`, or `refresh_credential_expiry` (they were never individually asserted pre-PR, only implicitly via the class-level tests now added), so nothing was left broken by the rename.
+
+6. **Corrected comment about beat topology**: verified against `docker-compose.yml:164` (`worker -B`) and `deploy/terraform/azure/containerapps.tf:197` (comment: "the worker also runs celery-beat (-B)") — confirms embedded beat in both dev and prod, matching the PR's corrected comment (the old comment claiming a separate prod beat process was indeed wrong).
+
+7. **Task name typos**: none — all six `"task"` strings in the beat schedule match the existing task names unchanged by this PR.
+
+No issues to report.</result>
+<usage><subagent_tokens>70989</subagent_tokens><tool_uses>10</tool_uses><duration_ms>81594</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ac6df89bb8824f723</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/ac6df89bb8824f723.output</output-file>
+<status>completed</status>
+<summary>Agent "1099 review: code comments" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Findings
+
+**1. New header comment contradicts docker-compose.yml's unchanged `-B` comment (both describe prod's beat topology, and now disagree).**
+
+New comment in `backend/app/worker/celery_app.py` (PR #1099):
+&gt; "Beat runs EMBEDDED in the worker (`worker -B`) in dev AND prod alike (docker-compose.yml + deploy/terraform/azure/containerapps.tf) — there is no separate beat process, and beat state does not survive a restart."
+
+This is contradicted by the comment sitting a few lines above the `-B` flag in `docker-compose.yml` (untouched by this PR), which the new comment itself cites as corroborating evidence:
+&gt; "`-B` runs celery-beat embedded in the worker (the #171 orchestration polling schedule). Fine for the single-worker dev stack; prod runs a separate beat."
+
+`docker-compose.yml` explicitly says "prod runs a separate beat" — the opposite of "in dev AND prod alike ... there is no separate beat process." Checking `deploy/terraform/azure/containerapps.tf` confirms the *new* celery_app.py comment is the accurate one (worker `command = ["celery", ..., "worker", "-B", ...]`, with `min_replicas = 1` specifically justified by "the worker also runs celery-beat (-B)"). This PR correctly fixed the stale claim in `celery_app.py` (the pre-PR text there also said "prod uses a separate beat process") but left the matching stale claim in `docker-compose.yml` unfixed, so the two files now actively disagree instead of agreeing-but-wrong. Since the new comment cites `docker-compose.yml` by name as one of the two sources backing its claim, this is worth fixing in the same PR (or filing per the "fixed or filed" rule) rather than shipping a self-contradicting pair of comments.
+
+**2. New header comment's restart-cause list includes "scaling," which the cited `containerapps.tf` config forecloses.**
+
+New comment:
+&gt; "the prod worker restarts more often than daily (ACA revision rolls, scaling, the #904 watchdog)"
+
+`containerapps.tf`'s worker block sets `min_replicas = 1` and `max_replicas = 1` (comment: "min_replicas = 1: the worker also runs celery-beat (-B) for the schedule dispatcher + orchestration polling, so it can't scale to zero"). With min == max == 1, there is no horizontal scale-out/scale-in event possible for the worker app — "scaling" cannot be a restart cause for the very container this comment is about. The other two causes (revision rolls, the #904 watchdog) are real and already independently documented elsewhere in the file (`_start_beat_watchdog`'s docstring, the `#: One-off tasks...` block). "Scaling" appears to be an inaccurate addition to the list.
+
+No other issues found: the six `crontab(hour=…, minute=…)` inline comments (`# daily, 01:17 UTC` etc.) all match their `hour`/`minute` args; the "staggered ... and UTC (timezone above)" claim matches the existing `timezone="UTC"` / `enable_utc=True` config; the watchdog docstrings (`_start_beat_watchdog`, `beat_heartbeat` entry comment) and the `_ON_BEAT_START` rationale are untouched and remain internally consistent with the new header text; and the new test-file comments (`_INTERVAL_CEILING_S` rationale, the two new test docstrings) accurately describe the surviving sub-hourly intervals (600s, 1800s, 60s — all ≤ 1800s) and the staggering behavior they assert.</result>
+<usage><subagent_tokens>79962</subagent_tokens><tool_uses>11</tool_uses><duration_ms>101099</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bjb9y4nbm</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/bjb9y4nbm.output</output-file>
+<status>completed</status>
+<summary>Background command "Re-run full backend suite" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a203f1ccd3fda9e28</task-id>
+<tool-use-id>toolu_015oG1buTzdKYeUB7gabQW4T</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/a203f1ccd3fda9e28.output</output-file>
+<status>failed</status>
+<summary>Agent "1100 review: prior PR comments" failed: Agent terminated early due to an API error: You've hit your monthly spend limit · raise it at claude.ai/settings/usage?from=cc_cli_limit_message</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Now let's check #996 (datasource health edges) and #837, #762/#776, #915/#987, #783.</result>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a39cda01d117442a1</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/a39cda01d117442a1.output</output-file>
+<status>failed</status>
+<summary>Agent "1100 review: git history" failed: Agent terminated early due to an API error: You've hit your monthly spend limit · raise it at claude.ai/settings/usage?from=cc_cli_limit_message</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a5ab5b4d5ddf91f9a</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/a5ab5b4d5ddf91f9a.output</output-file>
+<status>failed</status>
+<summary>Agent "1100 review: bug scan" failed: Agent terminated early due to an API error: You've hit your monthly spend limit · raise it at claude.ai/settings/usage?from=cc_cli_limit_message</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b1mcydgme</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/b1mcydgme.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch CI on #1099 and #1100" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a7301d888494c86ca</task-id>
+<tool-use-id>toolu_01HwvxvSuq1Vzq4qiJa1bpB2</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/a7301d888494c86ca.output</output-file>
+<status>failed</status>
+<summary>Agent "1100 review: CLAUDE.md audit" failed: Agent terminated early due to an API error: You've hit your monthly spend limit · raise it at claude.ai/settings/usage?from=cc_cli_limit_message</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Good — single head confirmed, no branching. Now let me check a few remaining items: the `card.py` line length/style, the `PollStalenessReport.is_failing` duplicate property pattern, and whether `_ensure_row`'s rollback-discards-insert behavior is actually a defect worth flagging, plus verify `render.py`'s `_format_timestamp` and `format_duration` helpers exist and behave as expected (no raw value leakage).</result>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>aa2d3932d27483b52</task-id>
+<tool-use-id>toolu_01PFNYFR2gtDgrAU6SLXkuor</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/aa2d3932d27483b52.output</output-file>
+<status>failed</status>
+<summary>Agent "1100 review: code comments" failed: Agent terminated early due to an API error: You've hit your monthly spend limit · raise it at claude.ai/settings/usage?from=cc_cli_limit_message</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+</task-notification>
+
+---
+
+continue...
+
+---
+
+<task-notification>
+<task-id>a69c8a40a7470337b</task-id>
+<tool-use-id>toolu_0191msN5DSRFEappEbqWDESi</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/a69c8a40a7470337b.output</output-file>
+<status>completed</status>
+<summary>Agent "1100 review: CLAUDE.md audit" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Code-review findings — PR #1100 (`fix/issue-1052-staleness-signals`) vs CLAUDE.md
+
+**Scope audited:** migration backward-compatibility, Azure lock-in, PII/redaction in alert payloads, secrets-in-tracked-files, orchestration-provider abstraction. Reviewed via `gh pr diff 1100` (full diff read) plus targeted checks against the actual repo state (`alembic heads`, `ORCHESTRATION_PROVIDERS` definition, `docs/architecture.md` ER conventions).
+
+### Issues found
+
+**None.** Every rule category in scope checked out. Details below (raw verification, not just a conclusion) since "verified-benign is valid, unexamined is not":
+
+1. **Backward-compatible migrations only** (CLAUDE.md §10, §11: "Don't drop columns... Two-step it" / migration PR checklist).
+   - `backend/alembic/versions/70a054d4c469_add_workspace_health.py` is purely additive (`op.create_table`, no `ALTER`/`DROP`). `downgrade()` does a clean `op.drop_table`.
+   - Verified `down_revision = "00a938b64317"` is in fact the single current head: ran `alembic heads` from `backend/` → `00a938b64317 (head)` — no branch collision (relevant given the standing memory note that revision-id collisions have bitten this repo before).
+   - No existing read path touched; `workspace_health` has no FK into it from elsewhere, so downgrade is safe.
+
+2. **No Azure lock-in** (CLAUDE.md §11: no Azure-only assumptions in business logic).
+   - `backend/app/main.py`'s new `_poll_staleness_loop`/`_poll_staleness_tick` is plain `asyncio` + a SQLAlchemy session — no Azure SDK, no Azure resource names.
+   - All new alerting code (`base.py`, `card.py`, `slack.py`, `teams.py`, `email.py`, `noop.py`, `composite.py`) extends the existing provider-neutral `HealthPublisher` seam; nothing Azure-specific added.
+
+3. **PII/redaction — do new alert payloads leak raw values?** (CLAUDE.md §6 Observability: "PII redaction at the logger level").
+   - `PollStalenessReport` (`backend/app/alerting/base.py`) carries only `state`, `connection_count` (int), `most_recent_polled_at` (timestamp), `threshold_seconds` (int) — no connection names, no raw errors, no credentials.
+   - `render.staleness_facts`/`staleness_headline`/`staleness_impact` (`backend/app/alerting/render.py`) format only those four fields; the log calls in `workspace_health_service.py` (`workspace_poll_staleness_alerted`/`_recovered`) log `connection_count`, `most_recent_polled_at.isoformat()`, `threshold_s` — again no raw values.
+   - Confirmed against the task's specific concern: yes, this report structurally cannot carry a connection name/secret since the dataclass has no field for one.
+
+4. **Secrets — no credentials in tracked files** (CLAUDE.md §11, and #1072 template-bootability rule referenced in the PR itself).
+   - `.env.app.example` additions (`LINEAGE_STALE_AFTER_HOURS`, `POLL_STALENESS_ALERT_AFTER_S`) are non-secret ints shipped **commented out** with the default value in the comment (`# LINEAGE_STALE_AFTER_HOURS=48`), matching the pattern the PR describes as the #1094-guard fix. No secret values anywhere in the diff.
+
+5. **Provider abstraction — does orchestration-connection selection hardcode providers?** (CLAUDE.md §4: "Never hardcode ADF-only logic; always go through the abstraction").
+   - `workspace_health_service.evaluate_poll_staleness` filters `Connection.type.in_(ORCHESTRATION_PROVIDERS)`.
+   - Verified `ORCHESTRATION_PROVIDERS = ("adf", "airflow", "dbt")` in `backend/app/db/models.py:99` — the existing three-provider seam, not a two-provider (ADF/Airflow-only) hardcode. The new alert correctly rides the existing abstraction rather than reimplementing it.
+   - `record_poll_success`/`record_poll_failure` in `backend/app/services/orchestration_service.py` (unchanged by this PR) already write `last_polled_at` generically for whichever provider's poll ran, so the new workspace-wide MAX query is reading a field that's populated uniformly across all three providers, not just ADF/Airflow.
+
+### One non-blocking design nuance examined and dispositioned (not filed — not a rule violation)
+
+`evaluate_poll_staleness` computes the workspace "reference moment" as `MAX(coalesce(last_polled_at, created_at))` across all orchestration connections, not `MIN`. Effect: if one orchestration connection has been polled/created recently while all *other* connections have gone stale, the fresh one's timestamp masks the others for up to one threshold window. Traced this through and concluded it's an intentional, self-bounding tradeoff (the masking connection's own reference ages out after `threshold` seconds, at which point the alert fires normally) consistent with the PR's stated scope ("workspace-wide loop-dead" vs. the pre-existing per-connection #837 signal covering individual failures) — not a "signal that cannot lie" violation, and not a CLAUDE.md rule breach. Noting it here for visibility, not as a finding to fix/file.</result>
+<usage><subagent_tokens>120602</subagent_tokens><tool_uses>16</tool_uses><duration_ms>254847</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a2426d912d74de7f9</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/a2426d912d74de7f9.output</output-file>
+<status>completed</status>
+<summary>Agent "1100 review: code comments" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Findings — PR #1100 comment-accuracy review
+
+### 1. `backend/app/lineage/pull.py` — module docstring / fail-open contract vs `purge_orphaned_pulled_edges`
+
+The module docstring states (unchanged by this PR):
+
+&gt; "**Fail-open** (mirrors `lineage.edges.refresh_dbt_edges`): a dead provider, a garbage payload, or a DB hiccup logs a warning and returns `None` — pull is a browse/reason convenience, never a liveness path."
+
+Every existing public function in the file honors this: `get_lineage_provider` swallows bad config to `None`+log, and `refresh_pulled_edges` explicitly wraps `_refresh_pulled_edges` in `try/except Exception` (fail-open, returns `None`, rolls back).
+
+`purge_orphaned_pulled_edges` (new) does **not** follow this pattern — it has no internal `try/except`:
+```python
+def purge_orphaned_pulled_edges(session: Session) -&gt; int:
+    ...
+    purged = session.execute(
+        delete(LineageEdge).where(
+            LineageEdge.source == _SOURCE, LineageEdge.connection_id.is_(None)
+        )
+    ).rowcount
+    session.commit()
+```
+And its caller in `backend/app/worker/tasks.py::refresh_lineage_pull` also doesn't wrap it:
+```python
+if lineage_pull.lineage_provider_unset():
+    session = get_session()
+    try:
+        lineage_pull.purge_orphaned_pulled_edges(session)
+    finally:
+        session.close()
+return 0
+```
+This is a real gap relative to the sibling sweep task two functions above it in the same file (`sweep_orphan_secrets`'s beat entry point), which does `except Exception: session.rollback(); log.warning(...); return 0`. A DB hiccup during the purge will now propagate out of the Celery beat task instead of degrading fail-open the way the module docstring promises for the rest of the file. Not literally false (the docstring's "fail-open" claim is scoped to the functions it was written for), but the new function is an unflagged exception to a contract the module otherwise holds uniformly, and nothing in either docstring calls that out.
+
+The **prune-scope** and **"prune only on evidence"** language, by contrast, checks out: `purge_orphaned_pulled_edges`'s `(source='marquez', connection_id IS NULL)` filter is copied verbatim from `_prune_stale`'s scope, and the docstring's claim that it "can never touch a dbt or warehouse row" is correct — warehouse-native edges always carry a non-NULL `connection_id` (`warehouse_refresh.py`), so they're structurally excluded.
+
+### 2. `backend/app/services/asset_view_service.py` — `warehouse_lineage_status` docstring
+
+Accurate. The docstring's claims were checked line-for-line against the implementation:
+- "Staleness is only asserted while `WAREHOUSE_LINEAGE_ENABLED` is on" — matches `stale_before = ... if settings.warehouse_lineage_enabled and stale_after_hours &gt; 0 else None`.
+- The independence of stale/degraded/error and the #1091 prod shape (zero errors, zero degraded reasons, 9-day-old refresh) is faithfully described and matches the test `test_a_silently_stopped_source_is_surfaced_as_stale`.
+
+No issues found here.
+
+### 3. `backend/app/alerting/base.py` — `HealthPublisher` docstring vs `publish_poll_staleness`
+
+The `publish_poll_staleness` Protocol stub says:
+&gt; "On the same seam as `publish_health` (same channels, same workspace-level routing, same "whether was decided upstream" contract)..."
+
+This is misleading by omission when read against `composite.py`, whose own docstring says the opposite in plain terms:
+&gt; "The composite's contract here is deliberately STRONGER than its other two methods" (from `test_poll_staleness_publish.py`'s module docstring, echoing `composite.py`'s `publish_poll_staleness`: "with one difference that the caller relies on: **at least one channel must succeed**... so this re-raises when every channel failed.")
+
+`composite.publish_health` **never** raises (isolates every failure, even a total one, and silently returns). `composite.publish_poll_staleness` **does** raise when every channel fails. `base.py`'s class-level `HealthPublisher` docstring ("Implementations may raise — the composite isolates a broken channel, exactly as on the run path") and the `publish_poll_staleness` stub's "same ... contract" framing don't surface this divergence at all — a reader of the seam definition (`base.py`) would reasonably conclude the two methods behave identically at the composite level, which they don't. The accurate description of the difference lives only in `composite.py` and the test docstring, not in the seam's own `base.py` declaration.
+
+### 4. `backend/app/main.py` — middleware/instrumentation ordering comments vs the new lifespan loop
+
+No violation found. The load-bearing ordering comment:
+&gt; "Spans (A3): no-op unless APPLICATIONINSIGHTS_CONNECTION_STRING is set. MUST stay at module scope — Starlette builds its middleware stack on the first ASGI call (the lifespan scope itself), so instrumenting from inside the lifespan handler is too late..."
+
+`configure_tracing`/`instrument_fastapi`/`instrument_celery` remain at module scope, untouched by this PR. The new `_poll_staleness_loop` task is created *inside* `lifespan()` via `asyncio.create_task`, which is unrelated to middleware-stack construction — it doesn't touch instrumentation and doesn't need module scope. The loop's own comment ("Deliberately in the API process: every #905-class incident had a worker that looked alive and wrote nothing, so the check must not live in (or be scheduled by) the process it monitors") is accurate and consistent with `config.py`'s parallel comment and the PR description.
+
+One minor nit (not a comment-accuracy defect, just worth flagging): the comment "check at a third of the alert threshold so a staleness edge is seen within ~1.3x the threshold worst-case" is exact for the documented default (1800s → 600s interval → 1.33x), but `interval = max(60.0, threshold/3)` means for a custom threshold under ~180s the 60s floor pushes the worst-case ratio above 1.3x. The comment doesn't caveat the floor.
+
+### 5. `frontend/src/components/assets/LineageGraph.tsx` — #915 partition comments vs a row that is both stale AND errored
+
+This is a real defect the comments don't own up to. The partition comment says:
+&gt; "Split at render (#915): a degraded source is working but coarse (view-level only) — the graph is real, just not the richest possible, so INFO. A source carrying `last_error` actually FAILED its last refresh... so WARNING."
+
+and further down, discussing the overlap with `degraded_reason`:
+&gt; "A failing source can ALSO carry a tier note (#987)... Showing only the error hid the reason the graph was already thin before it went stale."
+
+That comment explicitly reasons through the `last_error` + `degraded_reason` overlap and folds `degraded_reason` into the warning alert. But it says **nothing** about the new `stale` field, and the partition is:
+```ts
+const warehouseFailing = warehouseStatus.filter((s) =&gt; s.last_error);
+const warehouseDegraded = warehouseStatus.filter((s) =&gt; !s.last_error);
+```
+A row with both `last_error` set and `stale: true` lands in `warehouseFailing`, whose JSX only renders `last_error` and `degraded_reason` — `s.stale` is never read in that branch. The `stale` qualifier is silently dropped for exactly the row that most needs it: `_record_refresh_error` in `backend/app/lineage/warehouse_refresh.py` bumps `lineage_last_refresh_at` to "now" on every *attempted* (even failing) refresh, so `last_error` + `stale` can only co-occur when the refresh loop itself stopped running altogether (the worker-died scenario this whole PR is about) — leaving a row with a **stale** `last_error` from the last attempt before the loop died, and `lineage_last_refresh_at` correspondingly old. That row surfaces only as "Warehouse lineage refresh is failing" with no staleness callout, directly contradicting the sibling comment two blocks below it:
+&gt; "#1091: staleness is its own message, never folded into 'degraded' ... and 'lineage is degraded' would misname what is wrong."
+
+Staleness *is* effectively folded away (dropped, not even mentioned) in the failing branch. Neither the backend tests (`test_poll_health.py`'s `TestWarehouseLineageStalenessSurface` only combines stale+degraded, never stale+error) nor the frontend tests (`LineageGraph.test.tsx` only exercises stale+degraded_reason, never stale+last_error) cover this combination, so it shipped unverified.
+
+### 6. `backend/app/db/models.py` — `WorkspaceHealth` docstring vs actual service behavior
+
+&gt; "`alerted_at` is written **after** a FAILING publish succeeds and cleared after the RECOVERED publish, **exactly like its per-connection sibling**. ... The row also serves as the cross-replica claim: the API-side check takes it `FOR UPDATE SKIP LOCKED`, so two API replicas never double-send."
+
+The "written after a FAILING publish succeeds / cleared after RECOVERED" half checks out against `workspace_health_service.run_poll_staleness_check` (publish happens, *then* `flag.alerted_at` is mutated, *then* commit — an exception from publish leaves the flag untouched).
+
+But **"exactly like its per-connection sibling" is not accurate as a mechanism claim**, and the difference matters. The per-connection sibling (`backend/app/worker/tasks.py`, `_alert_on_health_change` / `publish_connection_health`) deliberately does NOT hold a lock across the publish call — its own docstring explains why:
+&gt; "**The send is dispatched, never awaited (#842).** It used to run synchronously inside the connection loop inside the beat task: Teams (10s) + Slack (10s) + SMTP (15s) per crossing... ten connections bolted ~6 minutes of blocking sends onto a task that beats every 10 minutes, delaying the ingest it exists to perform and risking overlapping beats."
+
+It claims the edge with a fast atomic conditional `UPDATE ... WHERE health_alerted_at IS NULL` (commits immediately), then *dispatches a separate Celery task* to do the actual (slow, network-bound) publish; if that publish fails, a follow-up statement clears the claim.
+
+The new `workspace_health_service.run_poll_staleness_check`, by contrast, takes `WorkspaceHealth` via `SELECT ... FOR UPDATE SKIP LOCKED` and holds that row lock **across the synchronous, multi-channel `publish_poll_staleness` call** (sequential `httpx.post` to Teams/Slack + SMTP send in `email.py`) before committing — i.e., it holds a Postgres row lock open for however long three network sends take, inside the same DB transaction, which is exactly the blocking-inside-a-transaction shape #842 was written to eliminate for the per-connection path. The end *state* (alerted_at set iff a publish actually succeeded) is equivalent, but the claiming/locking *mechanism* is materially different — "exactly like" overstates the equivalence and glosses over a design regression relative to the precedent the docstring cites as its model.</result>
+<usage><subagent_tokens>150909</subagent_tokens><tool_uses>21</tool_uses><duration_ms>298827</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a6538b58bb3e3d2ae</task-id>
+<tool-use-id>toolu_01DQ4UXA1qaXX4LUb9BU1fmg</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/a6538b58bb3e3d2ae.output</output-file>
+<status>completed</status>
+<summary>Agent "1100 review: history + delivered-first precedent" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Findings — PR #1100 (`fix/issue-1052-staleness-signals`)
+
+**(1) `backend/app/lineage/pull.py` purge-on-unset — no conflict with #823. Verified benign.**
+`git log` on this file shows only two prior commits: `94c175cd` (#776, original) and `d6668d62` (#823/#828, "prune only on evidence"). That fixup's rule was specifically: don't prune the pulled-lineage cache when the catalog is *reachable but doesn't recognize our identities* (`resolved == 0`), because that's indistinguishable from a naming mismatch/misconfiguration — deleting there would turn a typo into data loss. The new `purge_orphaned_pulled_edges` in the PR is gated by `lineage_provider_unset()`, a *different* predicate: `LINEAGE_PROVIDER` is empty/unset (an operator explicitly removed the catalog), not "set but broken." The PR's own docstring explicitly reasons through the #823 footgun and deliberately excludes the broken/typo case (`get_lineage_provider()` returning `None` for a bad name also returns `None`, and the code is careful to distinguish `lineage_provider_unset()` from that). Scoping (`source='marquez', connection_id IS NULL`) matches `_prune_stale`'s scope exactly, so dbt/warehouse rows are untouched. This is correctly scoped as a genuinely different case, not a violation.
+
+**(2) `workspace_health_service.run_poll_staleness_check` — repeats the resource-holding shape #842 fixed, not the #843/#420 race.**
+The double-send race itself is *not* repeated: `publish_connection_health` in `worker/tasks.py` uses an optimistic conditional `UPDATE ... WHERE health_alerted_at IS NULL` (commit-before-publish, release-on-failure); the new code uses `SELECT ... FOR UPDATE SKIP LOCKED` (pessimistic, commit-after-publish) — a different but also race-safe mechanism, since concurrent replicas just skip the locked row rather than blocking.
+
+However, `run_poll_staleness_check` (`backend/app/services/workspace_health_service.py`) calls `get_health_publisher().publish_poll_staleness(session, report)` **synchronously, inline, while still holding the `FOR UPDATE SKIP LOCKED` row lock and open transaction** — the composite fan-out (`composite.py::publish_poll_staleness`) loops over Teams/Slack/email sequentially, the same channels the #842 commit measured at "Teams (10s) + Slack (10s) + SMTP (15s)". Commit-of-flag only happens after the publish returns. This is precisely the pattern #842 eliminated ("The send is now its own Celery task; the sweep decides and hands off... A broker failure on the hand-off is swallowed"). Here there's no hand-off: the DB session/connection and row lock are held for up to ~35s of blocking network I/O. `asyncio.to_thread` (in `main.py`) solves the "don't block the event loop" problem but not the "don't hold shared DB state across a slow channel send" problem #842 was actually about. Blast radius is smaller than the original bug (one workspace-level row per tick, not N connections looped inside one task), so this is not clearly broken, but it is an architectural regression against a recorded, hard-won decision and should be called out — either dispatch the publish to its own task the same way `_dispatch_health_alert`/`publish_connection_health` do, or explicitly document why the single-row case is exempt from that rule.
+
+**(3) Migration `70a054d4c469_add_workspace_health.py` — clean.**
+Verified programmatically across all 42 migration files on the PR branch: no duplicate revision ids, single head (`70a054d4c469`), full down_revision chain resolves with no missing links, and `down_revision = "00a938b64317"` matches `origin/main`'s actual single head. Content is additive only (`op.create_table`, no `ALTER`/`DROP` on existing tables), `alerted_at` nullable with no backfill needed (absent row = no alert outstanding = correct cold-start default), `downgrade()` is a clean `drop_table`. Old code never references `workspace_health`, so it runs unaffected against the new schema — satisfies the two-step-deploy backward-compatibility rule.
+
+**(4) `asset_view_service.py` stale widening — consistent with #915/#987, but the frontend consumer reintroduces the exact defect class #987 fixed for the failing+stale combination.**
+`git log` shows `asset_view_service.py` was never touched by #915/#987 commits (`6e558cc7`, `6fa95fb1` — those are frontend-only + comment fixups); the relevant backend ancestor is `92feb515` (#858/#891, degraded/failing surfacing). The new `stale` field is added as a third, independent boolean alongside `degraded_reason`/`last_error` (not folded into either) — directly matching the #915 rationale (severity/meaning must not be conflated) and the #987 fix (a source that is both degraded and failing must show both notes, not have one crowd out the other).
+
+But in `frontend/src/components/assets/LineageGraph.tsx`, sources are partitioned once: `warehouseFailing = filter(s =&gt; s.last_error)`, `warehouseDegraded = filter(s =&gt; !s.last_error)`. The new `stale` composite message (`no refresh since … — lineage from this source is stale; last refresh also reported: …`) is only rendered inside the `warehouseDegraded` block. A connection that is **both currently failing (`last_error` set) and stale** (plausible: refresh attempt failed at T0, beat then starved, so `lineage_last_refresh_at` — which `warehouse_refresh.py` updates on both success and failure — never advances past T0, and if `now - T0 &gt; 48h` it's `stale=true` too) routes entirely into `warehouseFailing` and never surfaces `s.stale` or the "no refresh since …" timestamp at all — only the generic "stops updating until it recovers" prose. This is the same shape #987 explicitly fixed ("a card asserting what the field below it denied" / one field silently suppressing another). No test in the PR's `LineageGraph.test.tsx` diff covers the failing+stale combination (only degraded+stale is tested, via the second new `it(...)`). Worth filing or fixing: surface `s.stale`/last-refresh-timestamp inside the `warehouseFailing` alert too, consistent with how `degraded_reason` is already composited there.</result>
+<usage><subagent_tokens>115466</subagent_tokens><tool_uses>33</tool_uses><duration_ms>316629</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bcbxazo9y</task-id>
+<tool-use-id>toolu_017rhXm2r7XvZEoLXfz1WXz7</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/bcbxazo9y.output</output-file>
+<status>completed</status>
+<summary>Background command "Run full backend suite" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bwqyy7vli</task-id>
+<tool-use-id>toolu_015oXAWeRdUWQRtM5SuzRAKM</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/bwqyy7vli.output</output-file>
+<status>completed</status>
+<summary>Background command "Post review comment; wait for CI on #1100" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+On the suite-less-asset lineage did you check the databricks `reference` schema, that doesn't appear at all in asset page. 
+You can rub the gh workflows yourself
+
+---
+
+<task-notification>
+<task-id>bqn2jphz8</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/bqn2jphz8.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch the deploy run to completion" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Lets start with #919/#925/#912. 
+Before we start lets check is there any other lineage related open issues present
+
+---
+
+Okay, let's go with the suggested plan. 
+You can be the orchestrator, and deligate the task to other models [haiku/sonet/opus] based on complexity and nature of the task.
+
+---
+
+<task-notification>
+<task-id>a9fb31807db1742e8</task-id>
+<tool-use-id>toolu_01Ao556BASTcNnckyM6wphFg</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/a9fb31807db1742e8.output</output-file>
+<status>completed</status>
+<summary>Agent "Fetch issue corpus for the batch" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>---
+
+## **Issue 919**
+
+**Title:** assets: warehouse inventory/catalog sync — tables with no suite/run/lineage signal (e.g. UC reference schema) never appear in the asset view
+
+**Body:**
+
+User question from the 2026-07-18 live session: why is UC's `reference` schema absent from the asset view? Root cause is structural, not a bug: assets materialize only from three signals — a suite targets the table, a run stamps it, or a lineage edge touches it. `dataq_retail.reference.*` tables are loaded via pandas→SQL-warehouse writes (no table-grain lineage source) and are never read by any table-writing query (`flow_b_medallion` only transforms raw.feedback/raw.sales_events), so no signal ever creates them.
+
+Enhancement: an opt-in per-connection **inventory sync** (information_schema / UC catalog enumeration on the lineage-refresh beat) that materializes existing-but-unmonitored tables as assets, clearly badged "unmonitored / discovered", schema-scoped like #908's lineage pull (connection database/catalog only, ephemera filtered), and swept by the same orphan sweep when they disappear. ADR 0034 anticipated a "future catalog sync" — this is that slice.
+
+Acceptance criteria:
+- [ ] Per-connection opt-in flag; discovered assets carry a provenance marker (no fake health)
+- [ ] Same scope hygiene as #908 (connection DB only, domain-filtered, SNOWPARK/temp ephemera excluded)
+- [ ] Disappeared tables age out via the existing orphan sweep
+- [ ] Browse/tree renders discovered assets distinctly from monitored ones
+
+**Comments:**
+
+TheurgicDuke771: **Reframed by ADR 0037 (#923, 2026-07-18).** Asset identity is now workspace-visible to every member and browse includes unmonitored (suite-less) assets as ordinary full rows — so this issue reduces to pure **inventory sync**: enumerate warehouse tables (UC `information_schema`/Snowflake `INFORMATION_SCHEMA.TABLES`) into `assets` rows. No visibility/redaction design remains to solve; synced-but-unmonitored tables will surface exactly like today's lineage-discovered ones (neutral, no health). This is also the missing half of the new-user onboarding story ADR 0037 opens (a fresh member can now see and target any *known* asset — this issue makes ALL warehouse tables known).
+
+TheurgicDuke771: Concrete user report (2026-07-28): the Databricks `dataq_retail.reference` schema does not appear in the asset page at all. Confirmed mechanism: prod's 22 assets all trace to a suite target, a run, or a lineage edge — the reference tables have none of the three (static lookup tables; nothing writes them, so `system.access` has no edges for them either), so they never materialize. This is the exact gap this issue tracks; noting that the Batch-2 staleness work (#1100) does NOT cover it — a table with no signal is invisible, not stale. Scheduled as Batch 3 together with #925 (the browse cap must move with the widened population).
+
+---
+
+## **Issue 925**
+
+**Title:** assets: the 200-row browse cap now binds against the widened all-assets population — needs paging + honest dashboard truncation
+
+**Body:**
+
+Found by the #924 agentic review (removed-behavior finder).
+
+ADR 0037 widens `GET /assets` from the viewer's granted assets to the WHOLE workspace (and #919 catalog sync will widen it further to every warehouse table), but the clients still consume a single default page:
+
+- `Assets.tsx` fetches `listAssets()` once (server cap `_LIST_LIMIT_MAX = 200`) with `pagination={false}` and no offset paging or truncation indicator — past 200 assets, browse silently shows the alphabetically-first 200 with no hint more exist, breaking ADR 0037's "day-one member can browse the full estate" promise invisibly.
+- `AssetHealthLead.tsx` computes the Monitored / Need-attention tiles from the same capped fetch; its "Showing the first 200 assets" note covers the attention list but the tiles still present a confidently-wrong workspace verdict when a failing asset sorts after row 200 — the exact class the workspace-true redesign exists to eliminate.
+
+## Acceptance criteria
+- [ ] Assets page pages through the full population (offset paging or infinite scroll) or the API grows a count/total so truncation is impossible to miss
+- [ ] Dashboard tiles either aggregate server-side (count endpoint) or clearly label themselves as computed over a truncated slice
+- [ ] Test pinning behavior at &gt;200 assets
+
+**Comments:**
+
+(No comments)
+
+---
+
+## **Issue 892**
+
+**Title:** warehouse lineage: Snowflake GET_LINEAGE per-seed traversal (Enterprise)
+
+**Body:**
+
+Follow-up from #858. The Snowflake `GET_LINEAGE` tier's preflight descent is built and tested (a clean `0A000` on a non-Enterprise account descends the ladder), but the per-seed traversal that turns a supported `GET_LINEAGE` into edges is deferred: the demo account is Standard, so there is no live payload to build+test against (the #823 discipline — real payloads, not hand-authored). When an Enterprise account is available, implement `SnowflakeLineageProvider._from_get_lineage` to walk each seed via `SNOWFLAKE.CORE.GET_LINEAGE`, capture a real fixture, and pin identity byte-for-byte like the OBJECT_DEPENDENCIES tier.
+
+**Comments:**
+
+(No comments)
+
+---
+
+## **Issue 1064**
+
+**Title:** S3 asset identity collides across endpoints once S3-compatible stores are supported
+
+**Body:**
+
+Found while implementing #1063 (S3-compatible endpoints). Filing rather than fixing inside that PR: the fix changes an **asset namespace**, which is a persisted identity that lineage, incidents and scorecards hang off, so the convention deserves its own decision rather than riding along.
+
+## The defect
+
+`_resolve_s3` in `backend/app/services/asset_identity.py` derives the asset namespace from the bucket alone:
+
+```python
+namespace = f"s3://{bucket}"
+```
+
+That was **sound before #1063**, because every `s3` connection was AWS and AWS bucket names are globally unique — the bucket *was* a global identity.
+
+Once a connection can carry an `endpoint_url`, bucket names are only unique **within an endpoint**. Two different stores with the same bucket name now resolve to the same `AssetIdentity`:
+
+- AWS bucket `landing` → `s3://landing`
+- MinIO at `https://minio.internal:9000`, bucket `landing` → `s3://landing`
+
+## Failure scenario
+
+An operator monitors an AWS bucket `analytics` and an on-prem MinIO bucket also named `analytics`. Both connections resolve to the asset `s3://analytics`, so DataQ merges them into **one** asset row. The consequences are all silent:
+
+- the asset scorecard aggregates checks from two unrelated datasets into one score;
+- lineage edges from both stores land on the same node, producing a graph that shows a dependency that does not exist;
+- an incident raised on one store is attributed to the asset the other store also owns.
+
+Nothing errors — the platform simply reports confidently about a dataset that is two datasets.
+
+## Constraints on the fix
+
+- **The AWS namespace must not change.** `s3://{bucket}` is the OpenLineage naming-spec form for AWS and is already persisted on `assets` rows in production; changing it would fork every existing S3 asset and orphan its lineage and incidents — the stability property `_resolve_iceberg` documents in the same module.
+- So the endpoint host should only participate when `endpoint_url` is **set**, which is also why fixing it early is cheap: no S3-compatible connection exists yet, so there is nothing to migrate today. That window closes as soon as anyone creates one.
+- The convention needs picking deliberately (OpenLineage does not standardise the S3-compatible case; candidates include folding the endpoint host/port into the namespace).
+
+## Scope
+
+- `backend/app/services/asset_identity.py::_resolve_s3`
+- a test asserting that two connections with the same bucket and **different** endpoints resolve to different identities, and that an endpoint-less AWS connection still resolves to exactly `s3://{bucket}`.
+
+**Comments:**
+
+(No comments)
+
+---
+
+## **Issue 466**
+
+**Title:** Interactive datasource browsing: container browser (ADLS/S3) + 3-level catalog picker (Unity Catalog)
+
+**Body:**
+
+## Why
+
+Captured from the **Week 1–6 not-started triage**. Two Week-2 roadmap tasks described GX-native datasource *enumeration/browsing* that was superseded by the **explicit-target** design (the user types the table name / file path / batch regex):
+
+- *GX `pandas_abs`/`pandas_s3` — list **containers**, list files* (progress.md W2)
+- *GX Spark/JDBC for UC — list **catalogs / schemas / tables*** (progress.md W2)
+
+The **connection + check-run paths shipped** for all of ADLS/S3/UC (adapters + `FlatFileCheckRunner` + `UnityCatalogCheckRunner`; `flatfile.list_files` already enumerates blobs for batch resolution). What's **not** built is the *interactive browsing* in the connection/check editors:
+
+1. **Container browser** for ADLS Gen2 / S3 — list containers/prefixes and pick a path in the UI (today: typed path / batch regex).
+2. **3-level catalog → schema → table picker** for Unity Catalog — needs the Databricks catalog-listing API (today: typed `catalog.schema.table`).
+
+These were noted only in passing in epic #173's deferral notes; this issue makes them first-class so they aren't lost.
+
+## Scope
+
+- A listing/enumeration API per datasource (ADLS/S3 containers+prefixes; UC catalogs/schemas/tables via Databricks SQL/REST), behind the existing connection adapters.
+- Cascading pickers in the New-Connection / check-editor run-target UI, with the typed-target path kept as a fallback.
+
+Post-v1, Theme 8 (datasource / connection depth). Non-blocking — the explicit-target flow fully covers v1.
+
+## Acceptance criteria
+
+- [ ] S3 container/prefix browser + UC catalog→schema→table picker in the connection/suite-target UX (ADLS documented-blocked post-Azure)
+- [ ] Listing is authz-safe and paginated; explicit-target entry still works
+
+_(AC added at v1.1 planning, 2026-07-04.)_
+
+**Comments:**
+
+(No comments)</result>
+<usage><subagent_tokens>46470</subagent_tokens><tool_uses>5</tool_uses><duration_ms>64658</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ac5ed583156550a6b</task-id>
+<tool-use-id>toolu_016qdB2q7nzdzuYe2SVdyRKT</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/ac5ed583156550a6b.output</output-file>
+<status>completed</status>
+<summary>Agent "Map warehouse_snowflake for 892/912" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result># Map: `backend/app/lineage/warehouse_snowflake.py` for #892 and #912
+
+All line numbers against current `main` (`46870f3e`).
+
+---
+
+## 1. The tier ladder
+
+`SnowflakeLineageProvider.fetch_edges` (`backend/app/lineage/warehouse_snowflake.py:97-185`) is NOT an exclusive ladder — only tier 1 (GET_LINEAGE) is a true try-then-descend probe; tiers 2/3 are always both read and **unioned** (this was the #911 fix, see module docstring lines 18-22).
+
+- **Tier 1 — `SNOWFLAKE.CORE.GET_LINEAGE`** (`_from_get_lineage`, line 428-446). Tried first inside a `try/except _FeatureUnsupportedError` (lines 112-118). On success it would `return` immediately with `tier=LineageTier.SNOWFLAKE_GET_LINEAGE` (line 114-116) and empty `skipped_tiers` — but this branch is **unreachable in production today** (confirmed by the dedicated test at line 644, `test_the_top_tier_success_reports_its_own_tier_and_no_skips`, whose docstring says so explicitly).
+- **Tiers 2+3 union** — `_from_object_dependencies` (the floor, line 222-261, tier name `SNOWFLAKE_OBJECT_DEPENDENCIES`) is ALWAYS read (line 132); `_from_access_history` (line 264-365, tier name `SNOWFLAKE_ACCESS_HISTORY`) is ALWAYS attempted too (line 141), and its edges win per-pair in a merge dict keyed `(upstream.name, downstream.name)` (lines 157-160). Reported `tier` is `SNOWFLAKE_ACCESS_HISTORY` if `dml` is non-empty, else `SNOWFLAKE_OBJECT_DEPENDENCIES` (lines 161-165).
+- Tier names live in `backend/app/lineage/warehouse.py:48-50` (`LineageTier` StrEnum): `SNOWFLAKE_GET_LINEAGE`, `SNOWFLAKE_ACCESS_HISTORY`, `SNOWFLAKE_OBJECT_DEPENDENCIES` (+ `UNITY_CATALOG_SYSTEM_ACCESS`, `NONE`). `.is_column_level` (line 56-58) is `True` for GET_LINEAGE and ACCESS_HISTORY only.
+
+**Where "get_lineage: get_lineage supported but per-seed traversal not yet built" is composed:**
+- The probe itself (`_from_get_lineage`, lines 428-446) runs `SELECT 1 FROM TABLE(SNOWFLAKE.CORE.GET_LINEAGE('SNOWFLAKE.ACCOUNT_USAGE.TABLES', 'TABLE', 'UPSTREAM', 1)) LIMIT 1` (lines 436-439) — a trivial call against a fixed, always-present object (`SNOWFLAKE.ACCOUNT_USAGE.TABLES`), not a per-seed call. If that SQL doesn't raise, GET_LINEAGE **is** supported on this edition/grant, but the function unconditionally raises `_FeatureUnsupportedError("get_lineage supported but per-seed traversal not yet built")` at line 446 — i.e. the probe only ever proves the function *exists*; it never builds a real traversal or edges.
+- The caller catches this at line 117-118 and does `skipped.append(f"get_lineage: {exc}")`, which is where the `"get_lineage: "` prefix gets glued on — the docstring at lines 108-111 explains why the reason is carried from the exception rather than hard-coded (so a real edition-gate 0A000 vs "supported but deferred" aren't conflated into one false label).
+- Contrast: an actual edition gate produces `_UNSUPPORTED_EDITION_MSG = "unsupported on this edition"` (line 462) or `_NOT_AUTHORIZED_MSG = "not authorized (role lacks the ACCOUNT_USAGE / GET_LINEAGE grant)"` (line 465), both raised from `_reraise_if_feature_unsupported` (lines 468-487) based on SQLSTATE `0A000` or message-text matching — a materially different (and more honest) skip reason than the deferred-traversal one.
+
+## 2. The ACCESS_HISTORY path (#911 scoping)
+
+`_from_access_history` (lines 264-365), SQL at lines 298-319:
+```
+SELECT bo.value:objectName::string AS source_name,
+       om.value:objectName::string AS target_name,
+       TO_JSON(om.value:columns)   AS target_columns
+FROM SNOWFLAKE.ACCOUNT_USAGE.ACCESS_HISTORY ah,
+LATERAL FLATTEN(input =&gt; ah.base_objects_accessed) bo,
+LATERAL FLATTEN(input =&gt; ah.objects_modified) om
+WHERE ah.objects_modified IS NOT NULL
+  AND ARRAY_SIZE(ah.objects_modified) &gt; 0
+  AND ah.query_start_time &gt; DATEADD('day', -:lookback, CURRENT_TIMESTAMP())
+  AND bo.value:objectDomain IN ('Table','View','Materialized view','Dynamic table','External table')
+  AND om.value:objectDomain IN ('Table','View','Materialized view','Dynamic table','External table')
+  AND bo.value:objectName IS NOT NULL
+  AND om.value:objectName IS NOT NULL
+  AND (SPLIT_PART(bo.value:objectName::string,'.',1) = :db OR SPLIT_PART(om.value:objectName::string,'.',1) = :db)
+```
+Bound params: `{"db": database, "lookback": _ACCESS_HISTORY_LOOKBACK_DAYS}` — `_ACCESS_HISTORY_LOOKBACK_DAYS = 90` (line 73). Scoping rationale: title-case domain set mirrors `_TABLE_DOMAINS` but is a distinct constant `_ACCESS_HISTORY_TABLE_DOMAINS` (lines 83-85, "distinct from OBJECT_DEPENDENCIES' UPPER domain vocabulary"); OR-scope (not AND) on database so a cross-database edge survives (#845-class-omission avoidance, lines 278-283); bounded lookback is a deliberate freshness semantic (lines 284-288, "never the whole 365d retention").
+
+**Row shape:** 3-tuple `(source_name, target_name, target_columns)` — `source_name`/`target_name` are qualified `DB.SCHEMA.TABLE` strings, `target_columns` is a JSON string (`TO_JSON(om.value:columns)`) or `None`.
+
+**`_identity_from_qualified`** (lines 414-425): splits on `.`, requires exactly 3 parts, else returns `None` (a stage or column-qualified ref is not a table).
+
+**`_is_ephemeral`** (lines 407-412), **exact pattern**:
+```python
+last = qualified_name.rsplit(".", 1)[-1]
+return last.startswith("SNOWPARK_TEMP_")
+```
+Only the final (table/stage) segment is checked, prefix-match on `SNOWPARK_TEMP_`. Applied at line 338: `if self._is_ephemeral(up.name) or self._is_ephemeral(down.name): continue` — **this is the exact spot #912 targets**: today either endpoint being ephemeral drops the *whole row* (both the A→TEMP and TEMP→B rows are silently discarded, no stitching, no counter — see the #912 issue text below).
+
+**Edge/pairs building loop** (lines 330-357): for each row, build `up`/`down` identities → drop on unparseable name (`dropped_names += 1`, line 334) → drop self-edges (line 336-337) → drop ephemeral endpoints (line 338-339, silent, uncounted) → key `(up.name, down.name)` into `edges` dict (overwrite-per-key) and, if `target_columns` present, memoize-parse the blob once per distinct JSON text (`parsed_pairs_by_blob`, lines 342-346) and accumulate `(source_col, written_col)` pairs into a `set` bucket per edge key (lines 347-351).
+
+**`_MAX_COLUMN_PAIRS_PER_EDGE`** (line 76) = `MAX_COLUMN_PAIRS_PER_EDGE` re-exported from `backend/app/lineage/warehouse.py:65` (value `500`, shared cap doc at lines 61-65 there: "the SF port initially shipped uncapped; #911 review"). Enforced at line 349 (`if len(bucket) &gt;= _MAX_COLUMN_PAIRS_PER_EDGE: break`).
+
+**`dropped_names` counter precedent** (lines 329, 334, 352-357): a plain `int` counter incremented per unparseable name, logged once at the end via `log.info("warehouse_lineage_unparseable_names_dropped", source=self.source, rows=dropped_names)` — this is the exact precedent the #912 PR review comment (below) points at for an `ephemeral_rows_dropped` counter, since today the ephemeral `continue` at line 338-339 has **no** matching counter/log at all.
+
+## 3. The GET_LINEAGE probe and per-seed traversal
+
+Today's probe is `_from_get_lineage` (lines 428-446) — see §1. It is a single fixed-object preflight call, not a traversal. Its own docstring (lines 429-433) states: *"When supported, the per-object traversal is the build's next slice (the demo account is Standard, so there is no live payload to test the traversal against yet); this slice establishes the clean-preflight descent that the spike proved."*
+
+**Function signature referenced in the probe SQL** (line 437-438): `SNOWFLAKE.CORE.GET_LINEAGE('SNOWFLAKE.ACCOUNT_USAGE.TABLES', 'TABLE', 'UPSTREAM', 1)` — i.e. `(object_name, object_domain, direction, distance)`. No other file in the repo documents the full argument contract beyond this call site; `docs/orchestration.md:251` just says *"object-level traversal... Per-seed traversal is a follow-up (no Enterprise account to test against)."*
+
+**What "per-seed traversal" means / where seeds would come from — the load-bearing gap:** there is **no existing per-connection seed-listing mechanism for warehouse-native providers**. The only "seed" concept in the codebase is in the *catalog* (Marquez) pull path, a structurally different seam:
+- `backend/app/lineage/pull.py:150-158` (`_refresh_pulled_edges`): seeds = `session.execute(select(Asset.namespace, Asset.name)).all()` — **every** `Asset` row in the whole DB (not connection-scoped), because "Marquez's lineage API is node-anchored, so a pull needs seeds" (line 151-152 comment).
+- Warehouse-native providers (`warehouse_refresh.py`, `warehouse_snowflake.py`, `warehouse_unity_catalog.py`) currently need **no seeds at all** — OBJECT_DEPENDENCIES and ACCESS_HISTORY are both database-wide scoped SQL queries (bound on `:db`), not per-table calls. GET_LINEAGE is the first tier that would need one call per seed object, and nothing in `warehouse_refresh.py` (`refresh_warehouse_edges`/`refresh_connection_lineage`, lines 66-264) enumerates candidate tables for a connection — `fetch_edges` is called once per connection with only `connection_config` (a dict of non-secret connection settings, e.g. `account`/`database`), no table list.
+- There IS a raw, gitignored fixture `backend/tests/fixtures/lineage_native/snowflake_tables_casing.json` (30 rows, columns `TABLE_CATALOG`/`TABLE_SCHEMA`/`TABLE_NAME` — i.e. an `INFORMATION_SCHEMA.TABLES`-shaped capture) that is **not read by any code today** (confirmed: no `grep` hit anywhere under `backend/`) — plausibly captured during the #858 spike as a candidate seed-source but never wired up. Implementing #892 will need either (a) a new `INFORMATION_SCHEMA.TABLES`/`ACCOUNT_USAGE.TABLES` seed query scoped to `database` (mirroring this orphaned fixture's shape), or (b) reusing the OBJECT_DEPENDENCIES/ACCESS_HISTORY floor's own discovered table names as seeds for a GET_LINEAGE enrichment pass.
+
+## 4. How edges flow out
+
+- **`LineageEdgePair`** (`backend/app/lineage/warehouse.py:68-82`): `upstream: AssetIdentity`, `downstream: AssetIdentity`, `column_pairs: tuple[tuple[str,str],...] = ()`.
+- **Persistence**: `backend/app/lineage/warehouse_refresh.py`, entry points:
+  - `refresh_warehouse_edges` (lines 66-121) — calls `provider.fetch_edges`, fail-soft on `WarehouseLineageUnavailableError`/any `Exception` (never prunes on failure), then calls `_persist`.
+  - `_persist` (lines 123-206) — materializes every edge endpoint via `upsert_assets(..., preserve_provenance=True)` (line 149), builds edge rows via `_edge_rows` (lines 311-346, which unions `column_pairs` with any prior-persisted columns for incremental sources but replaces verbatim for snapshot sources — see lines 328-334 and `_upsert_edges` docstring lines 349-364), upserts via `pg_insert(...).on_conflict_do_update(constraint="uq_lineage_edges_up_down_source_conn", ...)` (lines 365-378), then **prunes** stale rows only for snapshot (`is_incremental=False`) providers: `delete(LineageEdge).where(source==source, connection_id==connection.id, last_seen &lt; refresh_started_at)` (lines 176-183). Snowflake's `is_incremental = False` (declared on `SnowflakeLineageProvider`, `warehouse_snowflake.py:95`) means **every** Snowflake refresh is a full snapshot-diff prune — relevant to #912: a stitched composite edge must still be re-derivable each pass, since nothing carries forward except via the `columns` merge-base read in `_existing_columns` (only used when `provider.is_incremental`, i.e. never for Snowflake — so stitched column pairs would need to be recomputed fresh from ACCESS_HISTORY every refresh, not accreted).
+  - `refresh_connection_lineage` (lines 209-264) — the per-connection unit called by the beat task; stamps `connection.lineage_last_tier = str(outcome.tier)` (line 254), `connection.lineage_degraded_reason` (clipped to 512 chars, lines 258-259), `lineage_last_refresh_at`, `lineage_watermark` (only if `new_watermark` set — never for Snowflake, a snapshot source).
+- **Beat task**: `backend/app/worker/tasks.py:1015-1045` (`refresh_warehouse_lineage`), gated by `settings.warehouse_lineage_enabled` (dark by default), selects `Connection.type.in_(("snowflake","unity_catalog"))` (line 1035) and calls `refresh_connection_lineage` per connection, fail-soft per-connection.
+- **Connection model fields** (`backend/app/db/models.py:350-360`): `lineage_watermark` (DateTime, nullable), `lineage_last_refresh_at`, `lineage_last_tier: str | None` (`String(64)`), `lineage_degraded_reason: str | None` (`String(512)`), `lineage_last_error: str | None` (`String(512)`). A tier upgrade (e.g. #892 landing GET_LINEAGE) surfaces purely by `lineage_last_tier` changing value to `"snowflake_get_lineage"` on the next refresh — no other plumbing needed; the UI/health surface reads this column (per `warehouse.py` and `warehouse_refresh.py` docstrings, #828 discipline).
+
+## 5. Tests
+
+`backend/tests/lineage/test_warehouse_snowflake.py` (707 lines), fixtures at `backend/tests/fixtures/lineage_native/`:
+
+**Real-captured (committed, per the `.gitignore` allowlist at `backend/tests/fixtures/lineage_native/.gitignore`):**
+- `snowflake_object_dependencies.json` — 200 rows, real demo-account payload (2026-07-17 spike), columns `REFERENCED_DATABASE/SCHEMA/OBJECT_NAME/OBJECT_ID/OBJECT_DOMAIN`, `REFERENCING_*`, `DEPENDENCY_TYPE`. Read via `_object_dependencies_rows()` (test file lines 40-56). Drives `test_object_dependencies_builds_real_dbt_chain` (line 114) and others in that section.
+- `sf_access_history_columns_projected.json` — 40 rows, real Enterprise ACCESS_HISTORY payload (2026-07-18), keys `tgt_name`/`tgt_columns`. Drives `test_real_capture_empty_direct_sources_yield_no_pairs` (line 478-486) — asserts every historical `directSources` is empty (real COPY-from-stage writes) so the extractor must yield zero pairs, "never fabricate (the #823 discipline)".
+
+**NOT committed (raw, gitignored, local-only per the discipline note in that `.gitignore`):**
+- `snowflake_access_history.json` — **0 rows** (empty list) — the real captured Standard-edition silent-empty payload. Not read by any committed test (the `_FakeConn` fabricates equivalent shapes for ladder-descent tests instead).
+- `snowflake_tables_casing.json` — 30 rows, `INFORMATION_SCHEMA.TABLES`-shaped, **unused by any code or test today** (candidate seed source for #892, see §3).
+
+**Everything else is hand-built via `_FakeConn`** (test file lines 70-98) — a substring-routed SQLAlchemy-connection double keyed on `"ACCESS_HISTORY ah"` / `"OBJECT_DEPENDENCIES"` / `"GET_LINEAGE"` markers in the SQL text, with `raises={marker: exc}` to simulate edition gates. This is explicitly justified in the module docstring (lines 6-8): *"The edition-gated tiers (GET_LINEAGE 0A000, ACCESS_HISTORY silent-empty) are driven by fakes that reproduce the connector's observed behaviour, since the Standard demo account cannot emit their payloads."*
+
+**Existing ephemeral test**: `test_snowpark_ephemera_rows_never_become_edges` (line 427-443) — **hand-built rows**, not a real fixture:
+```python
+rows = [
+    ("DATAQ_DB.PERF.SNOWPARK_TEMP_TABLE_K0ADU7Z7AS", "DATAQ_DB.RETAIL.ORDERS", None),
+    ("DATAQ_DB.RETAIL.ORDERS", "DATAQ_DB.PERF.SNOWPARK_TEMP_STAGE_5G3D7DHWSF", None),
+    ("DATAQ_DB.RETAIL.ORDERS_HEADER", "DATAQ_DB.ANALYTICS_STG.STG_ORDERS", None),
+]
+```
+Asserts only the third (non-ephemeral) row survives — the two ephemeral-touching rows vanish with zero trace, which is exactly the behavior #912's AC wants replaced with a stitched `A→B` edge. This test will need rewriting/superseding once transitive stitching lands (a hand-built A→TEMP→B chain currently has no assertion that A→B should exist). Per #912's own AC #3, the real fix's test must "ride a real captured Snowpark payload (#823 discipline)" — meaning a fresh, reviewed fixture capturing an actual `A→SNOWPARK_TEMP_X→B` chain is required, not an extension of this hand-built test.
+
+Other notable tests for context: `test_column_pairs_capped_per_edge` (line 533) pins `_MAX_COLUMN_PAIRS_PER_EDGE`; `test_a_half_parseable_access_history_row_is_dropped_whole` (line 616) and `test_a_non_table_row_mid_stream_skips_only_itself` (line 563) are mutation-spike (#898) regression tests relevant to any loop rewrite for #912 — they pin that a bad row mid-stream must not `break` the scan and that `up is None or down is None` (not `and`) is the correct guard, both patterns the stitching rewrite must preserve.
+
+## 6. The #911 review history (deferred angles, depth caps, memoization)
+
+- **#912's own origin comment**, from module docstring lines 289-291: *"Snowpark ephemera dropped edge-level in Python (`SNOWPARK_TEMP_*` session scratch — a pipeline that materializes THROUGH scratch loses the hop; transitive stitching is a filed follow-up)."* This is "angle A, deferred" referenced by the issue title.
+- **The GitHub issue #912 body** (fetched via `gh issue view 912`): fix shape prescribed — *"within a pull, collapse ephemeral intermediates transitively (union of `up(TEMP) × down(TEMP)` per scratch object, bounded depth), attaching the composed edge with provenance. Column pairs can compose too when both hops carry directSources."* AC: (1) A→TEMP→B in the captured window yields edge A→B with no TEMP asset materialized; (2) bounded against scratch chains TEMP1→TEMP2→… via a depth cap + counter log; (3) test rides a real captured Snowpark payload (#823 discipline).
+- **#912's own comment** (posted after a live-prod check, same author): the defect is real in code but currently **latent** in prod — all three live Snowflake connections report `access_history: no table-to-table DML in the scoped 90d window`, so the ephemeral drop (lines 338-339) is dropping nothing today; the known Snowpark-scratch producer lives outside the scoped 90-day window. Two notes for the fix, explicitly flagged "Batch 4, with #892":
+  1. The drop is silent — `dropped_names` (line 329/334) logs, but the ephemeral `continue` (line 338-339) has no matching counter; add an `ephemeral_rows_dropped`-style count to the refresh log.
+  2. **The transitive-collapse shape already exists in this codebase**: `backend/app/lineage/dbt_manifest.py::_build_edges` (lines 193-219) plus its helpers `_physical_ancestors` (lines 222-236) and `_ephemeral_ancestors` (lines 239-264) recurse through ephemeral hops so a middle node's children reattach to its physical ancestors — memoized per-uid (`memo: dict[str, list[str]]`) with an explicit cycle guard (`memo[uid] = []` seeded *before* recursing, lines 253-256, so a self/mutual-referential ephemeral chain resolves to nothing at the back-edge rather than infinite-looping). The comment states the ACCESS_HISTORY stitch "can follow the same pattern (bounded depth per the AC)" — this is the direct precedent to port for #912's depth cap and memoization requirement.
+- **Depth caps elsewhere in this file**: none currently exist in `warehouse_snowflake.py` itself (its only caps are `_MAX_COLUMN_PAIRS_PER_EDGE` for column-pair count and `_ACCESS_HISTORY_LOOKBACK_DAYS` for time window) — the depth-cap precedent to reuse is purely the dbt_manifest.py recursion-with-memo pattern above, not anything already in the Snowflake provider.
+- **Memoized blob parsing precedent already in this file**: `parsed_pairs_by_blob` (line 328, populated lines 342-346) — parses each distinct `target_columns` JSON string once regardless of how many `(bo × om)` rows repeat it, per the #911-review comment at lines 325-327: *"the un-memoized parse was O(rows x columns x sources)"*. Any #912 stitching implementation that also needs to compose column pairs across two hops should follow this same per-blob memoization discipline rather than reparsing per edge.</result>
+<usage><subagent_tokens>85825</subagent_tokens><tool_uses>37</tool_uses><duration_ms>221726</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a12c396bcaa8ed9c5</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/a12c396bcaa8ed9c5.output</output-file>
+<status>completed</status>
+<summary>Agent "Map asset subsystem for 919/925" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Not critical. Final report follows.
+
+---
+
+# Asset Subsystem Map — #919 (inventory sync) &amp; #925 (browse cap/truncation)
+
+## 1. Asset model + lifecycle
+
+**`backend/app/db/models.py:194-240`** — `class Asset`:
+- `__tablename__ = "assets"`, unique constraint `("namespace", "name")` (`uq_assets_namespace_name`, line 217).
+- Fields: `id` (uuid pk), `namespace: Text NOT NULL`, `name: Text NOT NULL`, `env: str|None`, `connection_id: uuid|None` FK→`connections.id` **ON DELETE SET NULL** (line 225-227 — "provenance hint, not identity"; asset outlives the connection), `owner_user_id: uuid|None` FK→`users.id` SET NULL, `description: Text|None` (admin-only PATCH), `first_seen`/`last_seen` (`DateTime(timezone=True)`, `server_default=func.now()`).
+- Identity = OpenLineage `(namespace, name)` verbatim, byte-compatible with `openlineage-dbt`/Spark (docstring lines 203-208). DEV/QA are **distinct assets** — no cross-env identity merge.
+- Docstring explicitly states the "accrete-not-delete" posture bounded by `first_seen`/`last_seen`.
+
+**Every writer of `assets` rows** — `backend/app/services/asset_service.py`:
+- `upsert_asset` (single row, lines 103-137) — used by `resolve_and_upsert_asset` (suite-target resolution path, line 184-229), called from suite save (fail-soft, swallows exceptions, logs `asset_resolution_failed`/`asset_upsert_failed`, returns `None`).
+- `upsert_assets` (batch, lines 140-181) — callers:
+  - `backend/app/lineage/pull.py:240` (Marquez/catalog lineage pull) — `preserve_provenance=True`
+  - `backend/app/lineage/warehouse_refresh.py:149` (Snowflake/UC warehouse-native lineage refresh) — `preserve_provenance=True`
+  - `backend/app/lineage/edges.py:121` (dbt-manifest lineage materialization) — `preserve_provenance=True`
+  - `backend/scripts/demo_data.py:821` (seed script)
+- **No OL-emission writer** found (`#758` OL emission goes to Marquez, not directly into `assets`; it's pulled back via `lineage/pull.py`).
+- **`preserve_provenance` semantics** (`_conflict_set`, lines 79-100): `False` (suite-resolution path, `resolve_and_upsert_asset`) → overwrite `env`/`connection_id` with resolving connection's values (last-writer-wins). `True` (every lineage caller) → `COALESCE(existing, new)`, i.e. never clobber an already-set `env`/`connection_id`. **An inventory sync (#919) should almost certainly call `upsert_assets(..., preserve_provenance=True)`** since it, like lineage, must not steal provenance from a datasource-resolved asset.
+- **`first_seen`/`last_seen`**: `first_seen` set only at INSERT (`server_default`, never touched by the conflict-update `set_`). `last_seen` is refreshed to `func.now()` on every upsert conflict (both branches of `_conflict_set`) — this is the liveness signal the orphan sweep reads.
+
+## 2. The orphan-asset sweep (#770) — CRITICAL for #919
+
+**`backend/app/services/asset_service.py:232-310`**, `sweep_orphan_assets(session, *, retention_days, now=None, chunk_size=500)`. Wired via **`backend/app/worker/tasks.py:913-933`** (`@celery_app.task(name="sweep_orphan_assets")`, daily beat entry `backend/app/worker/celery_app.py:138`).
+
+**Exact deletion predicate** (line 286-291):
+```python
+candidate_chunk = (
+    select(Asset.id)
+    .where(Asset.last_seen &lt; cutoff, *_sweep_guard_clauses())
+    .limit(chunk_size)
+    .scalar_subquery()
+)
+```
+where `cutoff = now - timedelta(days=retention_days)` and `_sweep_guard_clauses()` (lines 66-72) builds one `NOT EXISTS` per registry row in `_SWEEP_REFERENCE_GUARDS` (lines 55-63):
+```
+("suites", "asset_id")
+("runs", "asset_id")
+("lineage_edges", "upstream_asset_id")
+("lineage_edges", "downstream_asset_id")
+("incidents", "asset_id")   # #761
+```
+So a row is swept iff: `last_seen &lt; cutoff` **AND** it has zero rows in suites/runs/lineage_edges(either end)/incidents referencing it. `retention_days &lt;= 0` disables the sweep entirely (line 279-280, returns 0).
+
+**Answer for #919**: **Yes** — an inventory-synced asset with no suite, no run, and no lineage edge is architecturally indistinguishable from an orphan by this predicate; it *is* a sweep candidate. It is **not** deleted immediately, and it is **not permanently safe by omission** either — it survives only as long as the inventory sync keeps re-upserting it (refreshing `last_seen`) more often than `retention_days` (default 30, see §7). If the inventory sync job is periodic and outlives `ASSET_ORPHAN_RETENTION_DAYS`, the row stays alive indefinitely via `last_seen` refresh; if the sync stops (e.g. the table is dropped, or the sync itself breaks), the row ages out and is swept after 30 days — same fate as any other now-unreferenced asset, which is the intended accrete/retire posture. **Design implication**: #919 needs its own periodic re-sync cadence (or the sweep needs a 6th guard, e.g. an `assets.source = 'inventory'` flag) if inventory-only assets should be exempt from ever expiring even when the source table has been dropped from the warehouse but not yet detected as such. Currently there is no such flag/guard — the registry (`_SWEEP_REFERENCE_GUARDS`) is enforced by a schema-introspection test (`test_every_asset_fk_has_a_sweep_guard`) that fails the build if a new FK into `assets.id` lacks a guard, but a non-FK provenance tag (like "this came from inventory sync") would need a deliberate design decision, not just a new column.
+
+## 3. Asset read surface
+
+**`backend/app/services/asset_view_service.py:529-557`**, `list_visible_assets(session, *, limit=200, offset=0)`:
+```python
+assets = session.scalars(
+    select(Asset).order_by(Asset.namespace, Asset.name).limit(limit).offset(offset)
+)
+```
+Sorted `(namespace, name)`, per-page suite/run rollup computed only over the page's asset ids (no N+1 across the whole table).
+
+**API**: `backend/app/api/v1/assets.py`
+- Constants: `_LIST_LIMIT_DEFAULT = 200`, `_LIST_LIMIT_MAX = 200` (lines 265-266) — **default equals the hard max**, so a client cannot ask for more than 200 in one page.
+- Route (lines 269-278): `GET /assets?limit=&lt;1..200&gt;&amp;offset=&lt;0..&gt;` — **paging DOES exist at the API level** (`limit`/`offset` query params both wired through to `list_visible_assets`), it is just capped at 200 rows/page. There is no `total_count` in the response — a page is just `list[AssetSummaryRead]`, so a client cannot tell if it's at the end without fetching an empty/partial page.
+- `GET /assets/{asset_id}` (line 281) — full detail, no pagination concerns (single row).
+
+**Frontend does not use the offset param at all**:
+- `frontend/src/api/assets.ts:187-193` — `listAssets(params?: {limit, offset})` supports it, but:
+- `frontend/src/pages/Assets.tsx:42` — `useAsyncData(listAssets)` called with **no params**, i.e. always page 1 of 200, and:
+- `frontend/src/pages/Assets.tsx:215-227` — `AssetsTable` renders with **`pagination={false}`** on the antd `Table`. So today: the browse page fetches exactly the first 200 (alphabetical by namespace,name) assets and never requests page 2 — this is the literal #925 bug. There is no "N of M" or "load more" affordance anywhere in `Assets.tsx`.
+
+**Assets.tsx page** (`frontend/src/pages/Assets.tsx:40-87`): a `Segmented&lt;'tree'|'table'&gt;` control (lines 67-75) toggles between:
+- `AssetsTree` (default, "By source") — connection-rooted drill-down built purely client-side from each asset's OL `(namespace, name)` via `buildAssetTree` (`frontend/src/components/assets/assetTree.ts`), using `namespaceLabel`/`datasourceKind` from `frontend/src/components/assets/namespaceLabel.ts` to classify namespace scheme → `DatasourceKind` (`snowflake | unity_catalog | adls_gen2 | s3 | iceberg | other`) for icons.
+- `AssetsTable` ("All assets") — flat antd `Table`, columns: Asset(name+namespace tooltip)/Env/Suites/Health/Last seen; `pagination={false}`.
+- Both views operate over the **same single fetched array** (max 200 rows) — so the tree view is equally capped, just not visibly "truncated" the way a flat table would look.
+
+**Dashboard truncation** — `frontend/src/components/dashboard/AssetHealthLead.tsx`:
+- `LIST_CAP = 200` (line 50, comment: "The backend caps `GET /assets` at 200 rows (its default == its max). A result exactly at the cap means the widget may be looking at a truncated slice").
+- `truncated = assets.length &gt;= LIST_CAP` (line 114); when true, renders (lines 160-164): *"Showing the first {LIST_CAP} assets — open Assets for the full list."* This is the **already-shipped "honest truncation" half of #925** (per `docs/progress.md` log — the tile-truncation banner shipped; the actual **paging fix is still open/deferred as #925**).
+- Tiles ("Monitored", "Need attention", "In progress") are computed only over the fetched (≤200) page — so at the cap they are a **lower bound**, not a true count.
+
+**Conclusion for #925**: paging plumbing exists end-to-end at the API (`limit`/`offset`, capped at 200/page) but the frontend never uses `offset`, and there's no `total_count`/`has_more` in the wire response to drive a "load more"/paged UI. A design pass needs either (a) a `total_count` header/field plus real pagination in `AssetsTable`/`AssetsTree`, or (b) server-side filtering/search to make a single 200-row page sufficient in practice.
+
+## 4. Scorecard/coverage (#889)
+
+**`backend/app/services/asset_view_service.py:402-469`**, `_scorecard(session, suite_ids, run_ids)`:
+- Two separate queries by design (docstring lines 402-424): **coverage** comes from `Check.dimension` grouped over `suite_ids` (what checks *exist*); **score** comes from `Result.status` joined to `Check.dimension` over `run_ids` (how the latest run went). Deliberately decoupled so a check authored today (not yet run) still counts as coverage.
+- `DimensionScore` (lines 253-278): `checks_total`, `checks_passing`, `checks_evaluated` (excludes skip/error), `score: float|None` — `None` means "no signal" (never rendered as 0).
+- `Scorecard` (lines 281-299): `covered: list[DimensionScore]`, `uncovered: list[str]` (dimensions with zero checks — `sorted(set(DQ_DIMENSIONS) - set(checks_by_dimension))`, line 468), `unclassified_checks: int`.
+- Computed workspace-true, over **all** composing suites regardless of caller's grants (`get_visible_asset`, lines 595-599).
+
+**Zero-checks rendering** — `frontend/src/components/assets/ScorecardPanel.tsx:40-67`:
+```tsx
+const noChecksAtAll = covered.length === 0 &amp;&amp; unclassified === 0;
+...
+covered.length === 0 ? &lt;Empty description={
+  noChecksAtAll
+    ? 'No checks on this asset yet — every dimension is uncovered.'
+    : 'No checks here carry a dimension yet, so there is nothing to score.'
+} /&gt; : ...
+```
+This is **exactly the "coverage gap" story #919 feeds**: an inventory-synced table with zero suites/checks/runs will have `suite_count: 0`, `worst_severity: null`, `scorecard.covered = []`, `scorecard.uncovered = ALL_DIMENSIONS`, rendering the `Empty` state above. It is visually and semantically distinct from a "healthy" asset (no green, no false pass) — good precedent for #919's design (an inventory row is "known but unmonitored", not "passing").
+
+## 5. Existing datasource introspection (does a list-tables seam exist?)
+
+**No `catalog_service.py` exists.** No `list_tables`/`list_schemas`/`list_databases` function exists anywhere in `backend/app` for SQL/warehouse datasources.
+
+**`ConnectionAdapter` protocol** (`backend/app/datasources/base.py:138-164`) only has `validate_config` and `test` (connectivity check) — **no table/schema enumeration method** at all, per type or otherwise.
+
+What **does** exist (all narrower than table listing):
+- `backend/app/datasources/flatfile.py:942-950` — `list_files(*, conn_type, config, prefix, secret) -&gt; list[FileRef]` — object listing under a prefix for ADLS/S3 (used for batch pattern resolution, not a table catalog).
+- `backend/app/datasources/iceberg.py:236-248` — `list_iceberg_columns(config, secret, identifier, catalog_secret) -&gt; list[str]` — **column** names of an *already-known* Iceberg table (metadata-only, no data scan). Requires the table identifier already.
+- `backend/app/services/profile_service.py` — `list_columns` API route (`backend/app/api/v1/suites.py:466-508`, "feeds the check editor's column dropdown (#474)") and `build_columns_query` (`profile_service.py:226`, dialect-agnostic `SELECT ... LIMIT 0` + `result.keys()`). This is **column** introspection of a **known** table/schema/catalog — never table/schema discovery.
+  - `_PROFILERS` registry (`profile_service.py:326-332`): `snowflake`/`unity_catalog` → `_SqlProfiler`, `s3`/`adls_gen2` → `_FileProfiler`, `iceberg` → `_IcebergProfiler`.
+  - `resolve_profiler` (lines 369-399) validates target shape per type (SQL needs `table`; UC additionally needs `catalog`; flat-file needs `path`) — **the caller must already know the table name**, there is no browse/enumerate step.
+
+**Frontend confirms**: `frontend/src/components/suites/suiteTarget.ts` — the suite-target editor is **free-text entry** (`target_table`, `target_schema`, `target_catalog`, `target_namespace` inputs), not a catalog-driven dropdown. Comment at line 6 documents the shape (`table` + optional `schema`; UC adds required `catalog`; Iceberg is `namespace.table`) but nothing populates these fields from a live listing.
+
+**Conclusion for #919**: **No list-tables seam exists per datasource type today.** The only "browse" capability is flat-file object listing (S3/ADLS) and iceberg-column introspection of an already-named table. An inventory/catalog sync would need to build new per-type table-enumeration methods from scratch — e.g. `SHOW TABLES`/`INFORMATION_SCHEMA` for Snowflake, Databricks UC's `information_schema` or REST catalog API for Unity Catalog, prefix-listing (reusing `list_files`) for S3/ADLS, and the Iceberg REST/Hive catalog's `list_tables(namespace)` for Iceberg. None of this exists; it is 100% net-new.
+
+**#466 UC 3-level picker overlap** (found in `docs/progress.md`, not code comments): #466 is explicitly the "Interactive datasource browsing — ADLS/S3 container browser + UC 3-level catalog→schema→table picker" deferred v1 roadmap item, still open (⬜) at Theme 8, description: "ADLS half blocked post-Azure; S3 + UC picker remain." This is the **UI-picker** half of the same underlying capability #919 needs on the backend (a live browse), so a design pass should treat #919 (persistent inventory) and #466 (live picker for suite-target entry) as sharing one enumeration seam if built — but no code currently implements either.
+
+## 6. Asset identity construction
+
+**`backend/app/services/asset_identity.py`** — pure resolver, `resolve_asset_identity(conn_type, config, target) -&gt; AssetIdentity(namespace, name)`:
+
+| Type | namespace | name |
+|---|---|---|
+| `snowflake` | `snowflake://{normalize_snowflake_account(account)}` (lines 137, 81-103) | `DB.SCHEMA.TABLE`, case-folded via `_normalize_part` (Snowflake upper unless quoted) (`format_snowflake_name`, lines 106-114, 130-139) |
+| `unity_catalog` | `unitycatalog://{workspace host[:port]}` (lines 143-152) | `catalog.schema.table`, lower-folded unless quoted (`format_unity_catalog_name`, lines 117-127) |
+| `adls_gen2` | `abfss://{container}@{account}.dfs.core.windows.net` (lines 155-164) | flat-file path or regex-pattern literal-prefix (`_flatfile_name`/`_pattern_base_prefix`, lines 196-225) |
+| `s3` | `s3://{bucket}` (lines 167-171) | same flat-file name logic |
+| `iceberg` | `catalog_uri` with credentials stripped, or `"file"` if absent (lines 174-193, `strip_uri_credentials`) | `{namespace}.{table}` or bare `table` |
+
+Orchestration types (`adf`/`airflow`/`dbt`) raise `ValueError` (line 78) — no identity, since they're never suite datasources; callers wrap this fail-soft.
+
+**Case-folding rule** (`_normalize_part`, lines 228-247): a double-quote-wrapped (Snowflake) or double-quote/backtick-wrapped (UC) segment keeps its inner case verbatim once quotes are stripped ("engine-returned case for a quoted identifier"); unquoted folds to the engine's default (Snowflake upper, UC lower). This is the **same function** used by both the suite-target resolver here and the dbt-manifest canonicalizer (`lineage/edges.py`) and the warehouse-native pull (`lineage/warehouse_snowflake.py:_identity`/`_database`, lines 196-219) — "so identifiers match byte-for-byte" — this is the shared discipline #823 established (see below). **An inventory sync must reuse this exact module** (`resolve_asset_identity` or its per-type helpers) to avoid forking identity rules a second time.
+
+**#823 identity-resolution discipline** (from `docs/progress.md`, not inline comments): #823 proved the OpenLineage "byte-for-byte join" premise was *half* wrong — feeding a real dbt `manifest.json` through real `openlineage-dbt` into real Marquez emits `DATAQ_DB.ANALYTICS.mart_order_revenue` (lower table name) while DataQ's asset identity resolver produces `DATAQ_DB.ANALYTICS.MART_ORDER_REVENUE` (upper) — **namespace joins, name does not**. This is why `WarehouseLineageProvider` (Snowflake/UC native pull, `warehouse_snowflake.py`) was built as a **separate seam** from the catalog `LineageProvider` (dbt/Marquez pull) — the warehouse path returns identifiers already in the engine's own case (straight from `ACCOUNT_USAGE`/`information_schema`), so there is "no fold/enumerate step and the #823 identity-drift class cannot arise there." **Design implication for #919**: an inventory sync reading directly from the warehouse's own catalog views (like the warehouse-lineage provider does) would be immune to the #823 drift; one built by re-deriving names through `asset_identity.py`'s fold rules from a config-driven target would need the same scrutiny #823 gave the dbt-manifest path.
+
+**Where would an inventory-synced table get its identity from?** Two options visible in the codebase's own precedent: (a) mirror `warehouse_snowflake.py`'s pattern — read `database`/`schema`/`table` straight off `INFORMATION_SCHEMA`/`ACCOUNT_USAGE` in the engine's native case and build `AssetIdentity` directly (no fold), or (b) call `resolve_asset_identity(conn_type, connection.config, {"schema":..., "table":...})` per discovered table, which folds case per the OL rules. (a) is what #823 already validated as safe; (b) risks the same class of drift #823 found if the discovered case doesn't match what the engine's catalog actually returns.
+
+**#1064 S3 endpoint-collision — confirmed, lives in this exact code**: `_resolve_s3` (`asset_identity.py:167-171`):
+```python
+def _resolve_s3(config, target) -&gt; AssetIdentity:
+    bucket = _require(config, "bucket", "s3", "config")
+    namespace = f"s3://{bucket}"
+    ...
+```
+The namespace is keyed **only on bucket name** — no `endpoint_url` (added in #1065 for MinIO/Ceph/R2/Wasabi/Backblaze support) is folded into identity. Documented explicitly in `docs/datasources-checks.md:49-55`: *"An asset's identity is currently derived from the bucket name alone... Two connections pointing at different stores that share a bucket name therefore resolve to the same asset, merging their scorecards, lineage and incidents — tracked as #1064. Until it is fixed, keep bucket names distinct across endpoints."* Relevant to #919 if inventory sync widens S3/MinIO table discovery — the collision risk scales with however many buckets-with-same-name-different-endpoint exist.
+
+## 7. Existing config/settings — retention, lineage scoping
+
+**`backend/app/core/config.py`**:
+- `asset_orphan_retention_days: int = 30` (line 136) — env var `ASSET_ORPHAN_RETENTION_DAYS`, consumed by `tasks.sweep_orphan_assets` (line 933, `backend/app/worker/tasks.py`). `&lt;=0` disables the sweep.
+- `warehouse_lineage_enabled: bool = False` (line 91, `WAREHOUSE_LINEAGE_ENABLED`) — gates the Snowflake/UC native lineage refresh (`warehouse_refresh.py`) entirely.
+- `lineage_stale_after_hours: int = 48` (line 101, `LINEAGE_STALE_AFTER_HOURS`) — staleness banner threshold for `warehouse_lineage_status` (`asset_view_service.py:622-678`), not a retention/deletion knob.
+- `lineage_provider: str = ""` (line 81) — selects the catalog (Marquez) lineage provider.
+- `sample_failures_retention_days: int = 30` (line 114) — unrelated janitor (sample-failure PII sweep), same beat-janitor pattern.
+
+**No dedicated "databases/schemas in scope" setting exists.** The #911 "scoped pull" (fix for #908's "browse flooded with junk" incident — `SNOWPARK_TEMP_*`, dropped `PERF` schema, `adf_stage_import_*` landing tables materializing as assets) is implemented as **implicit connection-grain scoping**, not a configurable allow/deny list:
+- `warehouse_snowflake.py:_database` (lines 201-219): *"a datasource connection speaks for ONE database, and the first unscoped live pull proved why"* — the pull is bound to `connection.config["database"]` (folded per the same quote-strip-else-UPPER rule as identity), used as an exact-match SQL bound param (`WHERE referenced_database = :db OR referencing_database = :db`, lines 236-238 — OR, not AND, so cross-database dependencies touching this DB are still captured; #845-class omission avoided).
+- `_is_ephemeral` (lines 408-412) — Snowpark scratch objects (`SNOWPARK_TEMP_*`) dropped edge-level in Python, not via a config exclude-list.
+- **Design implication for #919**: there is no existing per-connection "schemas in scope" setting to extend — an inventory sync would need to invent its own scoping story (reuse the connection's single `database` the way lineage does, and probably its own ephemeral/system-object exclusion list mirroring `_is_ephemeral`), since #911's precedent is "scope = the one database the connection is configured for," not a general filterable list.</result>
+<usage><subagent_tokens>98862</subagent_tokens><tool_uses>56</tool_uses><duration_ms>240483</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bv9an555e</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/bv9an555e.output</output-file>
+<status>completed</status>
+<summary>Background command "Frontend lint, format, full tests" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bt9b1savd</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/bt9b1savd.output</output-file>
+<status>completed</status>
+<summary>Background command "Full backend suite" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a29d5827892a99628</task-id>
+<tool-use-id>toolu_01TRYtCyeU3evoiCFCLsBbv3</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/a29d5827892a99628.output</output-file>
+<status>completed</status>
+<summary>Agent "1103 review: CLAUDE.md + design audit" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Findings — PR #1103 (ADR 0040 / #919 inventory sync)
+
+### 1. HIGH — filter-after-LIMIT ordering defect silently breaks the cap-honesty guarantee (violates ADR 0040 §5's "no-silent-caps rule")
+
+**Files:** `backend/app/lineage/warehouse_snowflake.py` lines 206–227 (`enumerate_tables`), `backend/app/lineage/warehouse_unity_catalog.py` lines 128–158 (`enumerate_tables`)
+
+Both enumerators push `LIMIT :lim` into the SQL (`limit = cap+1`, per `inventory_service.sync_connection_inventory`), then apply the NULL-row guard (`if schema and table` / `if catalog and schema and table`) — and, for Snowflake, the Snowpark-ephemera guard (`not self._is_ephemeral(table)`) — **in Python, after the SQL has already truncated the row set**. Any ephemeral/NULL rows that sort into the first `cap+1` catalog-ordered rows silently consume budget that never gets replaced, so `len(identities)` can undercount the true number of real tables, and `inventory_service.py`'s truncation check (`truncated = cap &gt; 0 and len(identities) &gt; cap`) evaluates on the **post-filter** count — never firing, never logging `inventory_sync_truncated`.
+
+Reproduced directly against the shipped code:
+```python
+# cap=2 → limit=3 requested. DB actually has 3 REAL tables + 2 ephemeral rows
+# that sort ahead of them in catalog order.
+rows = [("A","SNOWPARK_TEMP_TABLE_1"), ("A","SNOWPARK_TEMP_TABLE_2"),
+        ("B","REAL_TABLE_1"), ("B","REAL_TABLE_2"), ("B","REAL_TABLE_3")]
+# → enumerate_tables(..., limit=3) returns ONLY ['DB.B.REAL_TABLE_1']
+# → len(identities)=1, so `1 &gt; 2` is False: truncated=False, no log, 2 real
+#   tables silently never synced.
+```
+This is not a theoretical edge case: the real captured fixture this PR ships (`snowflake_tables_casing.json`, an account-wide `INFORMATION_SCHEMA.TABLES` pull) contains actual NULL-catalog rows — the exact row shape that eats into the LIMIT budget and then gets dropped. ADR §5 explicitly says "a silent cap reads as 'covered everything' (the no-silent-caps rule)" and promises the overflow is "said out loud" — this code path can under-sync below the cap with zero signal. No test in `backend/tests/lineage/test_warehouse_inventory.py` combines `limit=` with ephemeral/NULL rows, so the interaction is untested.
+
+**Fix direction:** either push the ephemeral/NULL exclusion into the SQL `WHERE` clause (NULL rows can be excluded with `IS NOT NULL`; Snowpark ephemera would need a `NOT LIKE 'SNOWPARK\_TEMP\_%'` predicate) so `LIMIT` operates on the already-filtered set, or over-fetch/filter-then-slice in Python instead of pushing `LIMIT` to the driver.
+
+### 2. LOW — docstring overstates what "no query" means
+
+**File:** `backend/app/worker/tasks.py`, `sync_asset_inventory` docstring
+
+&gt; "there is no global gate to leave on by accident, and no query runs for a workspace with nothing opted in."
+
+`inventory_service.sync_asset_inventory` always issues a Postgres `SELECT` over every `snowflake`/`unity_catalog` `Connection` row before checking `inventory_opted_in()` per row. Only the warehouse-side catalog query (the expensive/permission-sensitive part) is actually gated by opt-in. The claim is misleading as written, though the underlying behavior (no warehouse query for a non-opted-in connection) is correct and matches the ADR.
+
+### 3. Informational, verified-benign — no action needed
+- **ADR §6 (S3-compatible namespace)** is recorded as a decision but `_resolve_s3` in `backend/app/services/asset_identity.py` is unchanged (`namespace = f"s3://{bucket}"` unconditionally) — consistent with the ADR's own text ("the inventory slice does not enumerate object stores") and issue #1064 remains **open** tracking the actual `_resolve_s3` fix, so nothing is silently dropped.
+- **ADR §2** claims scope is "the connection's one configured database/catalog" universally, but UC's `enumerate_tables` scopes the whole **workspace** (no per-connection catalog field exists on `UnityCatalogConfig`) — this matches the pre-existing warehouse-lineage-pull precedent and is candidly documented in the method's own docstring ("there is no per-connection catalog, exactly like the lineage pull"). Wording imprecision in the ADR, not a code defect.
+- ADR status date "Accepted (2026-07-29)" and the `.gitignore` fixture-review comment "reviewed 2026-07-29" are one day ahead of the session's current date (2026-07-28) — presumably the intended merge date; flagged only for awareness.
+
+### Verified clean (no findings)
+- **Secrets/fixtures:** both `snowflake_tables_casing.json` and `uc_tables_casing.json` contain only `table_catalog`/`table_schema`/`table_name` string fields — no credentials, hostnames-with-secrets, or PII. `.gitignore` review comment accurately describes the content.
+- **SQL injection surface:** both new catalog queries use bound params (`:db`, `:lim`) for all variable input; the only string-literal content is static allowlists (table types, excluded catalogs/schema names) — no f-string-built identifiers anywhere.
+- **Opt-in default-off:** `inventory_sync: bool = False` on both `SnowflakeConfig`/`UnityCatalogConfig`; frontend `Switch` defaults unchecked (test asserts `not.toBeChecked()`); no global env gate.
+- **Cap default/config:** `asset_inventory_max_tables: int = 2000` matches ADR + `.env.app.example` + `deploy/README.md` documentation consistently.
+- **Sweep lifecycle:** `upsert_assets(..., preserve_provenance=True)` uses `COALESCE(existing, new)` on `env`/`connection_id` — verified in `asset_service._conflict_set`, matches the ADR's "never stolen from a datasource-resolved asset" claim exactly; two mutually-falsifying tests (`TestSweepInterplay`) pin the "live table never swept / dropped table ages out" claim.
+- **#823-safe identity:** both enumerators build `AssetIdentity` directly from catalog-case strings via the shared `_identity`/`format_snowflake_name`/`format_unity_catalog_name` helpers already used by the lineage-pull path — no fold/re-derive step, consistent with ADR §3.
+- **Beat-task discipline (#1091):** new entry uses `crontab(hour="3", minute="17")` (wall-clock, not interval); the repo's generic `test_no_beat_entry_uses_an_interval_a_restart_can_starve`, `test_every_beat_entry_names_a_registered_task`, and `test_daily_crontabs_are_staggered_not_a_midnight_herd` guards all pass against the new entry with no PR-specific test needed; task name `sync_asset_inventory` matches between `celery_app.py` and the `@celery_app.task(name=...)` decorator in `tasks.py`.
+- **No Azure lock-in / orchestration-abstraction:** no Azure-specific code, no ADF/Airflow branching — this is purely datasource-side.
+- **No migration:** `Connection.config` is free-form JSONB; no new Alembic revision, matches ADR §5 ("No migration").
+- **Lint/format/types/security:** ruff, black, mypy, and bandit all pass clean locally on every new/touched backend file; frontend eslint/prettier pass on the touched files; the new toggle test and all new backend test files pass (27/27 + 21/21 + 11/11 frontend).</result>
+<usage><subagent_tokens>149551</subagent_tokens><tool_uses>42</tool_uses><duration_ms>426419</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a8d54b0e4f353c470</task-id>
+<tool-use-id>toolu_019SiA3y5jHqZuYgHYWfJgHs</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/a8d54b0e4f353c470.output</output-file>
+<status>completed</status>
+<summary>Agent "1103 review: history + comments" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Findings — PR #1103 (feat/ADR-0040 warehouse inventory sync)
+
+Reviewed via `gh pr diff 1103` + an isolated worktree on `pr-1103-review` (94cab2b0). Note: the shared main working tree (`/Users/arijit/Coding/Python/DataQ`) is currently mid-flight on `feature/adr-0040-inventory-sync` with **uncommitted local changes** (visible via `git diff --stat` there) — evidently a concurrent reviewer/session already fixing some findings live (e.g. moving the `SNOWPARK_TEMP_*`/NULL filters into the SQL `WHERE` clause, ahead of `LIMIT`, plus a UC PAT-grant note). I did not touch that working tree beyond read-only `git status`/`log`/`diff`; all my own file reads came from the isolated worktree I created and removed. Flagging this so the state isn't mistaken for something I caused.
+
+### 1. `enumerate_tables` scope vs #911/#908 — no conflict, actually stricter
+
+- Both `warehouse_snowflake.py::enumerate_tables` and `warehouse_unity_catalog.py::enumerate_tables` reuse the *same* `_namespace`/`_database` helpers `fetch_edges` uses — including the #911-review "quote-strip-else-UPPER" database-casing rule (`warehouse_snowflake.py` `_database`, comment citing "#911 review" explicitly) and the shared `_is_ephemeral` (`SNOWPARK_TEMP_*`) guard.
+- It's **narrower**, not equally-or-looser: SF's lineage pull (`_from_access_history`) scopes with `OR` ("≥1 endpoint in-db" — a deliberate #911-review widening, since AND was found to drop real cross-db lineage), while `enumerate_tables` uses a strict `table_catalog = :db` equality — single-database only, matching ADR 0040 §7's stated non-goal ("scope stays the connection's one database").
+- For UC, `fetch_edges`'s `system.access.table_lineage` pull has **no catalog exclusion at all** (any workspace-visible edge, including `samples`/`system` catalogs, would materialize via lineage), whereas `enumerate_tables` explicitly excludes `system`, `samples`, `__databricks_internal`, `information_schema`. So enumeration is again stricter than the lineage pull it's modeled on — correct direction for avoiding a #908-class junk-asset repeat.
+- Verified via Snowflake docs that `INFORMATION_SCHEMA.TABLES.TABLE_TYPE` values are `BASE TABLE / TEMPORARY TABLE / EXTERNAL TABLE / EVENT TABLE / VIEW / MATERIALIZED VIEW`, and dynamic tables surface via a separate `IS_DYNAMIC` flag, not a distinct `TABLE_TYPE` — so the docstring claim "dynamic tables arrive as BASE TABLE" is accurate.
+- Minor nit: `test_warehouse_inventory.py::test_sql_scope_predicates_are_present` asserts `"'LOCAL TEMPORARY' not in conn.sql"` — but Snowflake's actual value is `TEMPORARY TABLE`, not `LOCAL TEMPORARY`. Since the allowlist is positive (`IN (...)`), the functional exclusion is still correct regardless of what the negative-check string says, but the assertion itself doesn't test anything real (it would pass unchanged even against an unrelated/wrong vocabulary). Cosmetic, not a functional bug.
+
+### 2. #770 sweep interplay / `last_seen` advancement — claim holds
+
+- `asset_service._conflict_set(preserve_provenance=True)` returns `{"last_seen": func.now(), "env": COALESCE(...), "connection_id": COALESCE(...)}` inside `ON CONFLICT DO UPDATE SET` — Postgres fires this `SET` on every conflicting row regardless of whether `env`/`connection_id` actually changed, so `last_seen` **does** advance on an unchanged-identity re-sync, as the PR claims.
+- This is genuinely tested, not just asserted: `test_inventory_service.py::TestSweepInterplay` backdates `last_seen` by 40 days, re-runs `sync_asset_inventory`, then calls the real `asset_service.sweep_orphan_assets(retention_days=30)` and asserts `swept == 0` for a still-present table vs `swept == 1` for one the enumerator stopped returning — the two tests are mutually falsifying (a sweep that always/never deletes fails one), matching the PR body's own stated bar.
+- `_SWEEP_REFERENCE_GUARDS` / chunked-delete comments from the #770 commit (4501d785) don't require anything new here — inventory sync adds no new FK into `assets`, so no guard-registry entry was needed, and none was added incorrectly.
+
+### 3. Comment/docstring accuracy — one real discrepancy
+
+- `backend/app/lineage/warehouse.py`'s `WarehouseLineageProvider.enumerate_tables` protocol docstring and ADR 0040 §2 both list, present-tense, three "consumers": "#919 inventory sync... **#892's GET_LINEAGE seed list**... and the future #466 pickers." This implies #892 is wired up now (only #466 is qualified as "future").
+- That's not true of the shipped code: `SnowflakeLineageProvider._from_get_lineage` (untouched by this diff) still unconditionally does `raise _FeatureUnsupportedError("get_lineage supported but per-seed traversal not yet built")` — the per-seed GET_LINEAGE traversal doesn't exist, so nothing calls `enumerate_tables` for #892 today. The PR *description* is more honest ("#892's GET_LINEAGE seeds next PR"), but that qualifier never made it into the docstring or the ADR body — a reader of the seam's own docstring would reasonably conclude #892 already consumes it.
+- Minor: the same protocol docstring says "Deterministic (schema, name) order" generically; the UC impl actually orders by `(catalog, schema, name)` — three keys, not two. Harmless imprecision in a shared docstring covering two different-shaped implementations.
+- `.gitignore` review-note discipline: the new entry ("`#919 inventory enumeration — reviewed 2026-07-29: catalog/schema/table identifiers only...`") matches the established per-file format (cf. #901/#908 entries) and I confirmed the fixture content actually is catalog/schema/table triples only — no additional PII. The reused `PVQSOEQ-ZGB34383` demo account id is pre-existing (already used in `test_warehouse_snowflake.py`/`test_identity_alignment.py`), not newly exposed.
+
+### 4. Toggle field vs `requiredMark="optional"` (#1066/#1098) — spurious marker, untested
+
+- Commit `92aa6540` (fixing #1066) established the rule: don't manually append `"(optional)"` — antd's `requiredMark="optional"` (set on both `ConnectionForm.tsx:95` and `ReauthModal.tsx:77`) already appends it to **any** `Form.Item` with no `required` rule. `ConnectionNew.test.tsx:179` ("renders exactly one `(optional)` marker on an optional field label") is the regression test proving this mechanism fires for a field with no `rules` prop.
+- The new toggle branch in `ConnectionTypeFields.tsx` (`ConfigTextField`, lines ~27-40) builds its `Form.Item` with **no `rules` prop at all** — so by the exact mechanism #1098 relies on, antd will render `"Inventory sync (optional)"`, not `"Inventory sync"`.
+- Whether that's desired is a judgment call (a Switch is arguably self-evidently optional — unchecked is always a valid state), but it's an **unaddressed interaction**: the file's header comment about the #1066/#1098 convention doesn't mention toggles, and the PR's own new test (`ConnectionNew.test.tsx`, "submits inventory_sync=true when the toggle is switched on") locates the control via `getByRole('switch', { name: /Inventory sync/ })` — a substring regex that passes identically whether or not `"(optional)"` is appended, so it provides zero signal on this either way.
+- Related, lower-severity: the toggle branch returns before the `forceRequired`/`optional` logic that the text-field path uses, so a toggle field can never be forced-required via `activeAuth.requiredFields` (silently ignored, not surfaced). Currently unreachable in practice — no auth option lists `inventory_sync` in `requiredFields` — but a latent gap if a future toggle needed that.</result>
+<usage><subagent_tokens>187432</subagent_tokens><tool_uses>52</tool_uses><duration_ms>610594</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bqfvc6c16</task-id>
+<tool-use-id>toolu_01Do1a7rhfQsUJch8VwNgfor</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/bqfvc6c16.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch CI on #1103" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ac4a8dfe8e1ad72ae</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/ac4a8dfe8e1ad72ae.output</output-file>
+<status>completed</status>
+<summary>Agent "Build #925 asset paging" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Summary
+
+**PR:** https://github.com/TheurgicDuke771/DataQ/pull/1105 (branch `fix/issue-925-asset-paging`, milestone "v1.1 Week 5 — anomaly monitor kind + metric trends"). Not merged, per instructions.
+
+**What was built (issue #925):**
+
+- **Backend** (`backend/app/api/v1/assets.py`, `backend/app/services/asset_view_service.py`, `backend/app/main.py`): `GET /assets` now sets an `X-Total-Count` header via a new `svc.count_assets()` (`select(func.count()).select_from(Asset)`, same unfiltered population `list_visible_assets` pages through). Body shape is unchanged (still a bare list) so old frontend bundles keep working. Documented in the route's `responses=`, and added to CORS `expose_headers` in `main.py` for cross-origin deploys.
+- **Frontend API client** (`frontend/src/api/assets.ts`): `listAssets()` now returns `{ items, total }`, reading `total` off `x-total-count` (falls back to `items.length` if a deploy-skew backend omits it).
+- **Assets page** (`frontend/src/pages/Assets.tsx`): split into `AssetsTreeView` and `AssetsTableView`, each with its own fetch. Table view is real server-side paging (antd `Table` pagination, 50 rows/page, driven by the total). Tree view walks pages (200/call, the server's own max) up to a 2000-row hard bound and renders an explicit `Alert` ("Showing N of M assets") when the workspace exceeds it — never a silently partial tree.
+- **Dashboard** (`frontend/src/components/dashboard/AssetHealthLead.tsx`): replaced the old `assets.length &gt;= 200` heuristic (which false-positived at exactly 200 and couldn't tell "capped, more exist" from "that's everything") with the real `total`; the note now says "of M" and tiles get a "+" qualifier when truncated (lower bound).
+- **Docs**: `docs/features.md`'s Asset browse bullet updated to mention the paging + truncation behavior.
+
+**Tests:** new/updated backend tests pin the header against the population (including a `limit=1` walk across three offsets) plus a service-level `count_assets` test; frontend tests cover the header→total conversion (and its fallback), the tree's multi-page walk with exact `limit`/`offset` assertions, the 2000-row truncation bound, table page-2 fetch offset, and the dashboard's "of M" note including the `total === fetched` non-truncation case.
+
+**Mutation check** (both truncation-note conditions): forcing each to `false` made the corresponding test fail via `findByText` timeout (`Assets.test.tsx`'s tree Alert test, `AssetHealthLead.test.tsx`'s "of 240" test) — confirmed failing for the right reason, then reverted.
+
+**Gates run locally, all green:** backend Black/Ruff/mypy/Bandit clean; `pytest backend/tests` → 2986 passed, 1 skipped (only the pre-flagged `test_poll_lock_timeout` local-env failure, unrelated); frontend lint/format/typecheck clean; `vitest run` → 684 passed (79 files); `pnpm test:coverage` exit 0 (90.29% lines, `Assets.tsx` itself 100%).
+
+**Deviations:** none from the brief. One environment note: this worktree had no `.env`, so I copied the (gitignored) root `.env` into it to run DB-backed backend tests locally — not committed, confirmed via `git status`.</result>
+<usage><subagent_tokens>260452</subagent_tokens><tool_uses>130</tool_uses><duration_ms>1260741</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-ac4a8dfe8e1ad72ae</worktreePath><worktreeBranch>worktree-agent-ac4a8dfe8e1ad72ae</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ac690d1f3271fbce8</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/ac690d1f3271fbce8.output</output-file>
+<status>completed</status>
+<summary>Agent "1105 review: bug scan + design" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Findings — PR #1105 (fix/issue-925-asset-paging)
+
+**1. Count vs page population — no drift found.** `count_assets` (`backend/app/services/asset_view_service.py`) is `select(func.count()).select_from(Asset)` with zero filters; `list_visible_assets` is `select(Asset).order_by(...).limit().offset()`, also zero filters. Both are genuinely unscoped per ADR 0037 (workspace-true, no owner/grant join). Confirmed matching population — not a bug.
+
+**2. Real TOCTOU bug: offset-based paging under concurrent asset mutation can silently skip or duplicate rows, and can suppress the truncation Alert.**
+`fetchAllAssetsForTree` (`frontend/src/pages/Assets.tsx`) walks pages with `offset += page.items.length` across N *separate* HTTP requests with no snapshot/cursor. Classic offset-pagination race:
+- If an asset **is deleted** from an already-fetched region (position &lt; current offset) between two page fetches, all later rows shift down by one position — the row that would have landed exactly at the new page's start is skipped and never fetched (a genuine silent drop of an asset from the tree).
+- If an asset **is inserted** before the current offset boundary between fetches, the row at `offset-1` from the prior page reappears at `offset` in the next page — a duplicate `AssetSummary` entered into `items`, which flows into `buildAssetTree`/`toDataNode` and can produce a duplicate tree key.
+- Worse, `total` is re-read every iteration (`total = page.total`) and can **shrink** between iterations (deletes). Since the loop's terminal check is `if (items.length &gt;= total) break`, a `total` that dropped due to concurrent deletion can make `items.length &gt;= total` true even though `items` contains a stale duplicate rather than every real asset — the walk stops, and the Alert condition (`items.length &lt; total`) is then **false**, so the "Showing N of M" truncation note does NOT fire even though the tree is missing/duplicating rows. This is exactly the silent-partial-tree case the PR's own commit message says it's eliminating, but only for the "hit-the-hard-bound" path — not for the "population changed mid-walk" path.
+- No infinite loop, confirmed: `TREE_HARD_BOUND` (2000) bounds the `while` unconditionally, so growth-without-bound in `total` just walks to the cap and stops (test confirms 10 calls = exactly 2000/200).
+
+This is a narrow window (multi-request client-side walk racing live writes) but real, and there is a `dbt`/lineage sweep + orchestration-triggered asset creation path in this codebase that runs on a schedule, so "assets created mid-walk" is not a hypothetical for a large workspace.
+
+**3. Antd Table server-pagination wiring — correct, but relies on same-tick batching that isn't guaranteed by React semantics in general.**
+`onPageChange` calls `setPage(nextPage)` then `reload()` (bumps `useAsyncData`'s nonce) in the same synchronous handler. Because both calls happen inside a React event handler, React batches them into one re-render, so the `fetcher` closure passed to `useAsyncData` captures the *new* `page` value by the time the effect actually re-runs off the bumped nonce. This works today, but it is an implicit coupling between two independently-named state setters that happens to be correct only because of automatic-batching behavior — a future refactor that moves `onPageChange`'s logic behind an `await`/`setTimeout`/promise callback (common when adding a "confirm navigation" or optimistic-update step) would silently break it back to fetching with the stale `page`. Not a currently-live bug, but fragile enough to flag as a real footgun rather than a nitpick, since `useAsyncData`'s own doc comment explicitly calls out "fetcher identity is intentionally not a dependency" — the pattern invites exactly this kind of drift.
+
+**4. `X-Total-Count` header name duplicated as a raw string literal in `backend/app/main.py`, not sourced from `TOTAL_COUNT_HEADER`.**
+`backend/app/api/v1/assets.py` defines `TOTAL_COUNT_HEADER = "X-Total-Count"` and uses it consistently; `backend/app/main.py`'s CORS `expose_headers=[REQUEST_ID_HEADER, "X-Total-Count"]` hardcodes the same string instead of importing the constant. Two sources of truth for one header name — a future rename of `TOTAL_COUNT_HEADER` silently breaks CORS exposure without any compile-time signal. Not a runtime bug today (values match), but a real, easily-avoided conformance gap given the constant already exists for this exact purpose.
+
+**5. CORS `expose_headers` change is correctly scoped** — only adds `"X-Total-Count"` to the existing exposed-headers allowlist; `allow_headers`, `allow_origins`, `allow_credentials`, `allow_methods` are untouched. No widening beyond what was asked.
+
+**6. Header parsing robustness — solid.** `frontend/src/api/assets.ts`'s `listAssets` handles: header absent → falls back to `data.length` (deploy-skew case, tested); header present but somehow non-numeric → `Number.isFinite` guard falls back to `data.length` rather than propagating `NaN` into `AssetListPage.total`. No gap found here.
+
+**7. Dashboard tile truncation math (`AssetHealthLead.tsx`) — correct, including the exactly-200 edge case.** `truncated = total &gt; assets.length` (strict `&gt;`) correctly avoids the old bug's false positive when `total === 200 === assets.length` (explicitly regression-tested). The "+" qualifier is applied uniformly to every tile when `truncated` is true, which is appropriate since every tile's count is computed over the same single truncated fetch (all become lower bounds together, not per-tile).
+
+**8. Old `&gt;= 200` heuristic removal — no orphaned reference.** Grepped every frontend caller of `listAssets`; only `AssetHealthLead.tsx` and `Assets.tsx` call it, and both were updated to the new `{items, total}` shape and the real-total truncation logic. No stale caller left assuming the old array-return signature or the removed `LIST_CAP` constant.
+
+**9. Minor inconsistency in empty-state gating between the two Assets views** (not a functional bug, worth a note): `AssetsTreeView` gates its `Empty` state on `items.length === 0`, while `AssetsTableView` gates on `total === 0`. If a client is parked on a table page beyond the live range (e.g., total shrank after a delete elsewhere while the user was sitting on page 3), `total &gt; 0` but the fetched page could return zero rows — `AssetsTableView` would fall through to render `AssetsTable` with an empty `dataSource` (antd's own "No data" placeholder) rather than the app's custom `Empty` message. Low severity, plausible only when assets are deleted concurrently with a paged session; flagging since asset deletion via lineage sweep is a real background process in this codebase (ADR 0034 gap G-d sweep).
+
+**Not reproduced / verified benign:**
+- Authz scoping of `GET /assets` (ADR 0037) — confirmed genuinely unscoped, count and list match.
+- Response header ordering (`count_assets` runs before `list_visible_assets` in the same request) — theoretically a few-millisecond race window against concurrent writes, but bounded to the single request and not distinguishable from ordinary read-committed drift; not flagged as a defect.
+- `AssetsTable`'s `pagination?: TablePaginationConfig | false = false` default is currently unused dead code (only caller always passes an explicit config) — cosmetic, not flagged as a bug.</result>
+<usage><subagent_tokens>99193</subagent_tokens><tool_uses>9</tool_uses><duration_ms>181305</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a96ff84b2d6d7a7c4</task-id>
+<tool-use-id>toolu_01VKMaLaK7JFUPyFvMYTBMio</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/a96ff84b2d6d7a7c4.output</output-file>
+<status>completed</status>
+<summary>Agent "Build #1064 S3 endpoint namespace" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>PR #1106 is open with the milestone set correctly, not merged.
+
+## Summary
+
+Implemented issue #1064 exactly per the ADR 0040 §6 convention, on branch `fix/issue-1064-s3-endpoint-namespace`, in one commit.
+
+**Change** — `backend/app/services/asset_identity.py::_resolve_s3` (line ~168):
+- No `endpoint_url`: namespace stays exactly `s3://{bucket}` (byte-stable, unchanged).
+- `endpoint_url` set: namespace becomes `s3://{host[:port]}/{bucket}` via new helper `_s3_endpoint_authority`, which uses `urlparse().hostname`/`.port` only (structurally excludes userinfo — defends against a credential-bearing endpoint even though connection validation already rejects one per #754/#826). Default ports (443/80) elided, host lower-cased.
+- Module docstring's S3 identity row and `docs/datasources-checks.md` (the "Known limitation" workaround passage) both updated to describe the new convention rather than the old caveat.
+
+**Tests** — added to `backend/tests/services/test_asset_identity.py`: byte-stability pin for AWS, same-bucket-different-endpoints collision test, default-port/case-insensitivity test, non-default-port and http-default-port tests.
+
+**Mutation-check evidence** (reverted `_resolve_s3` to bucket-only, reran the new tests):
+```
+FAILED test_s3_same_bucket_different_endpoints_resolve_to_different_namespaces
+FAILED test_s3_endpoint_default_port_and_case_do_not_fork_namespace
+FAILED test_s3_endpoint_non_default_port_preserved
+FAILED test_s3_endpoint_http_default_port_elided
+AssertionError: assert 's3://landing' == 's3://minio.internal/landing'
+4 failed, 10 passed, 43 deselected
+```
+Fix restored afterward; all 82 tests in the file pass green.
+
+**Local gates**: black --check, ruff, mypy (`backend/app backend/tests`), bandit all clean; full `pytest backend/tests -q --no-cov` → 1978 passed, 1030 skipped (no local Postgres), 0 failed.
+
+**Deviations**: none from the spec. `docs/progress.md` marked N/A in the PR (straightforward bug fix implementing an already-decided ADR, not a new roadmap line item).
+
+**PR**: https://github.com/TheurgicDuke771/DataQ/pull/1106 — milestone "v1.1 Week 5 — anomaly monitor kind + metric trends" set, `Fixes #1064` in the body, not merged per instructions.</result>
+<usage><subagent_tokens>138809</subagent_tokens><tool_uses>41</tool_uses><duration_ms>324992</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-a96ff84b2d6d7a7c4</worktreePath><worktreeBranch>worktree-agent-a96ff84b2d6d7a7c4</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>aea6e8b5e8e03342a</task-id>
+<tool-use-id>toolu_01NQLPoJU5pQLFWZM5R8wjhN</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/aea6e8b5e8e03342a.output</output-file>
+<status>failed</status>
+<summary>Agent "Build 892+912 GET_LINEAGE + stitch" failed: Agent terminated early due to an API error: You've hit your monthly spend limit · raise it at claude.ai/settings/usage?from=cc_cli_limit_message</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Now I have the full picture. Let me set up the branch and write the implementation.</result>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a0777b67c176364a1</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/a0777b67c176364a1.output</output-file>
+<status>failed</status>
+<summary>Agent "1106 review: full audit" failed: Agent terminated early due to an API error: You've hit your monthly spend limit · raise it at claude.ai/settings/usage?from=cc_cli_limit_message</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a395d28c2ed24ad61</task-id>
+<tool-use-id>toolu_01Q1b3aL6uUMZZXCtBpxonRD</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/a395d28c2ed24ad61.output</output-file>
+<status>completed</status>
+<summary>Agent "1105 review: history + tests" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Note: claude-sonnet-5[1m] (the safety classifier) was unavailable when reviewing this subagent's work. Please carefully verify the subagent's actions and output before acting on them.
+
+## Findings — PR #1105 (`fix/issue-925-asset-paging`)
+
+### 1. History / regression check against #924 (ADR 0037) and prior decisions
+
+No regression found in the recorded decisions:
+- `AssetsTree` (namespace-based client-side tree build via `buildAssetTree`) is untouched — still receives a plain `assets: AssetSummary[]` and builds identically. The tree-building logic itself did not move.
+- `AssetHealthLead`'s "Monitored" (`suite_count &gt; 0`) / "Need attention" tile semantics are untouched — only the truncation heuristic (`LIST_CAP` → `total`) changed, and the ADR-0037 comment above the tiles ("Browse now includes unmonitored assets too…") is preserved verbatim.
+- ADR 0037 itself (`docs/adr/0037-workspace-visible-asset-identity.md`) makes no commitment about pagination shape, so nothing there is violated.
+
+New regression introduced by the `AssetsTreeView`/`AssetsTableView` split (not present pre-#925):
+- **Unbounded background fetch after unmount.** `useAsyncData` (`frontend/src/hooks/useAsyncData.ts:35-59`) only guards against a late `setState` via a `cancelled` flag — it never aborts the underlying promise. `fetchAllAssetsForTree` (`frontend/src/pages/Assets.tsx`, new) is a `while` loop issuing up to 10 sequential network calls (2000/200). Because the Segmented control conditionally unmounts the losing view (`{view === 'tree' ? &lt;AssetsTreeView/&gt; : &lt;AssetsTableView/&gt;}`), switching to "All assets" mid-walk does **not** stop the walk — it keeps firing requests against the backend in the background, it just silently drops the resulting `setState`. Rapid toggling compounds this (each remount starts a fresh independent walk). Pre-#925 this was a single fetch dropped safely on unmount; now it's a variable-length request burst with no cancellation. Worth at least a follow-up issue.
+- Splitting into two independently-fetching views also means every toggle back to "By source" now **always** re-walks the full population (up to 10 requests) even if nothing changed, versus the old single-shared-fetch model where toggling the `Segmented` control was free. The PR's own doc-comment acknowledges the independent-fetch design but doesn't call out the unmount-doesn't-cancel gap.
+
+### 2. `X-Total-Count` vs existing repo conventions — inconsistent, and directly contradicts a 3-day-old sibling fix
+
+- `/runs` (`backend/app/api/v1/runs.py:159-165`) has `limit` only, no `offset`, no total — can't be walked at all.
+- `/incidents` (`backend/app/api/v1/incidents.py:171-181`) has `limit`+`offset` but **no total exposed anywhere** — the exact "page shorter than limit ≠ complete" defect #925 fixes for `/assets` still exists here, untouched by this PR.
+- `/pipeline_runs` (`backend/app/api/v1/runs.py:316-335`) — fixed 3 days earlier in commit `8d4d78a6` ("fix(api): page GET /pipeline_runs...", closing **issue #928**, 2026-07-25) — added `limit`+`offset` but **still has no total**. Its own docstring says "Matches the `/assets` paging shape," and issue #928's text explicitly says: *"the same silent-truncation class as #925"* and lists as an AC: *"offset supported on `/pipeline_runs` (mirroring `/assets`), **or** the response carries a total/next cursor so truncation is visible."* #928 satisfied only the offset half.
+- #928's AC #3 — *"Results page pipeline-runs tab either pages or states it is showing the most recent N"* — is also unaddressed: `frontend/src/pages/Results.tsx:331` (`PipelineRunsTab`) still does a single `listPipelineRuns({ limit: LIST_LIMIT })` (200) fetch with client-side `Table` pagination and no "showing N of M" note anywhere in that file.
+- Net effect: three sibling issues (#925, #928, and the still-open incidents gap) describe the identical defect class, and this PR fixes it for `/assets` only, via a mechanism (`X-Total-Count` header) that has no precedent anywhere else in the codebase and isn't applied to `/pipeline_runs` even though #928's own issue text drew the direct parallel. This is a real inconsistency worth flagging/filing, not resolved by this PR.
+- Minor: `backend/app/main.py:74` hardcodes the literal string `"X-Total-Count"` in `expose_headers` rather than importing `TOTAL_COUNT_HEADER` from `assets.py` — the two constants can silently drift.
+- The claim in the new `backend/app/api/v1/assets.py` docstring/comment about needing `expose_headers` for cross-origin CORS visibility is asserted but **untested** — `backend/tests/core/test_cors.py` has no test asserting `expose_headers` contents (not even for the pre-existing `REQUEST_ID_HEADER`), so this PR adds an unverified CORS claim rather than pinning it.
+
+### 3. Test quality
+
+- **Backend `test_total_count_header_pins_truncation_beyond_the_page`** (`backend/tests/api/test_assets.py`): meaningful — walks `limit=1` at offset 0, 4 (last item), and 5 (past-end), asserting `x-total-count == "5"` at every position including the empty-page case. This is exactly the shape that would fail against a naive "count = len(page)" implementation.
+- **Frontend page-walk tests assert exact offsets**: `expect(mockList).toHaveBeenNthCalledWith(1, { limit: 200, offset: 0 })` / `(2, { limit: 200, offset: 200 })` for the tree walk, and `expect(mockList).toHaveBeenCalledWith({ limit: 50, offset: 50 })` for the table's page 2 — these are real, not tautological.
+- **`limit=1` offset-walk AC coverage**: satisfies the "&gt;200 assets" spirit of issue #925's AC functionally (the header logic has no special-case at 200, so testing at 5 exercises the same code path as testing at 201) — but frontend tests do literally exceed 200 (240, 250, 2100 in `AssetHealthLead.test.tsx` and `Assets.test.tsx`), while the **backend** tests never seed &gt;200 real rows. Given there's no branch keyed on the literal value 200 in the new backend code, this is a reasonable proxy, not a gap — noting it since the issue AC says "at &gt;200 assets" literally.
+- **Stale test title carried forward unchanged**: `frontend/tests/pages/Assets.test.tsx` — `it('switches to the flat "All assets" table and back', ...)` (pre-existing since before this PR, confirmed via `git log -p`) never actually switches back to the tree view; it only asserts the one-way switch + row click. Not introduced by this PR, but this PR touched and relocated this exact test (into the new `describe('Assets page — table view (#925...)')` block) without fixing the misleading title.
+- No tautologies found — the AssetHealthLead "exactly at 200, not truncated" test and the tree "walked to bound, not one page past" test (`expect(mockList).toHaveBeenCalledTimes(10)`, not 11) both specifically pin behavior that the old/naive implementation would get wrong.
+
+### 4. In-code comment accuracy
+
+- Removed `LIST_CAP` comment ("The backend caps `GET /assets` at 200 rows... exactly at the cap means... truncated") was accurate pre-PR and is correctly retired along with the code it described.
+- New `TREE_PAGE_SIZE` comment — *"the server's own max (`_LIST_LIMIT_MAX` in `backend/app/api/v1/assets.py`)"* — accurate; `_LIST_LIMIT_MAX = 200` unchanged.
+- **Stale identifier in the module docstring**: `frontend/src/pages/Assets.tsx` top-of-file doc comment says *"the flat table, real server-side paging (antd `Table` `pagination`, `PAGE_SIZE` rows/page)…"* — the actual constant is `TABLE_PAGE_SIZE = 50`, not `PAGE_SIZE`. Minor but a genuine inaccuracy in a touched comment.
+- `AssetsTable`'s new `pagination` prop doc says *"none left in this file [callers passing an already-complete list]"* — verified true (`AssetsTable` is now only called once, from `AssetsTableView`, always with a real pagination config).</result>
+<usage><subagent_tokens>128786</subagent_tokens><tool_uses>46</tool_uses><duration_ms>342129</duration_ms></usage>
+</task-notification>
+
+---
+
+continue...
+
+---
+
+<task-notification>
+<task-id>bxjpwoxsj</task-id>
+<tool-use-id>toolu_01NEXQ2nFjRWEsRcD8joMX2U</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/3b5d274f-6eb6-49cf-aaac-8b1562e69e56/tasks/bxjpwoxsj.output</output-file>
+<status>failed</status>
+<summary>Background command "Watch CI on both PRs" failed with exit code 1</summary>
+</task-notification>
