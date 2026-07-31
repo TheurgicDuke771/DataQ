@@ -30,7 +30,7 @@ import {
 } from '../api/triggerBindings';
 import { Page } from '../components/layout/Page';
 import { RunNowPanel } from '../components/runs/RunNowPanel';
-import { useAsyncData } from '../hooks/useAsyncData';
+import { useAsyncData, type AsyncState } from '../hooks/useAsyncData';
 import {
   formatDuration,
   formatTimestamp,
@@ -41,6 +41,7 @@ import {
   RUN_STATUS_COLORS,
 } from '../components/results/resultsFormat';
 import { PageError } from '../components/feedback/PageError';
+import { WINDOW_PRESETS } from '../components/shared/windowPresets';
 
 const LIST_LIMIT = 200;
 
@@ -56,13 +57,9 @@ const tablePagination = (noun: string) => ({
 });
 
 /** Date-window presets for the Results date filter (no true range picker → no
- *  dayjs dependency; mirrors the dashboard's 24h/7d/30d window control). */
-const DATE_WINDOWS = [
-  { value: 'all', label: 'All time' },
-  { value: '1', label: 'Last 24h' },
-  { value: '7', label: 'Last 7 days' },
-  { value: '30', label: 'Last 30 days' },
-] as const;
+ *  dayjs dependency): Results' own 'all' option prepended to the presets
+ *  shared with the Dashboard range selector (`WINDOW_PRESETS`). */
+const DATE_WINDOWS = [{ value: 'all', label: 'All time' }, ...WINDOW_PRESETS] as const;
 type DateWindow = (typeof DATE_WINDOWS)[number]['value'];
 
 /** A labelled filter control — one `secondary` caption above each Select so the
@@ -80,6 +77,15 @@ function Filter({ label, children }: { label: string; children: React.ReactNode 
 
 export function Results() {
   const [runNowOpen, setRunNowOpen] = useState(false);
+  // Runs fetch lifted from the tabs (#349): RunsTab and PipelineRunsTab both
+  // need the same `listRuns` page — the latter only to correlate triggered DQ
+  // runs — so fetching once here and passing it down avoids two independent
+  // `listRuns` calls (antd Tabs lazy-mounts panes, so switching tabs used to
+  // mean a second, fresh fetch). This does mean the fetch now starts on page
+  // mount rather than on first visit to a given tab — the intended change.
+  const { state: runsState, reload: reloadRuns } = useAsyncData(() =>
+    listRuns({ limit: LIST_LIMIT }),
+  );
   return (
     <Page>
       <Flex justify="space-between" align="center" gap={12} wrap>
@@ -94,8 +100,12 @@ export function Results() {
       <Tabs
         defaultActiveKey="runs"
         items={[
-          { key: 'runs', label: 'Runs', children: <RunsTab /> },
-          { key: 'pipelines', label: 'Pipeline runs', children: <PipelineRunsTab /> },
+          { key: 'runs', label: 'Runs', children: <RunsTab runsState={runsState} /> },
+          {
+            key: 'pipelines',
+            label: 'Pipeline runs',
+            children: <PipelineRunsTab runsState={runsState} reloadRuns={reloadRuns} />,
+          },
         ]}
       />
     </Page>
@@ -112,12 +122,12 @@ interface SuiteMeta {
   category: DatasourceCategory | null;
 }
 
-function RunsTab() {
-  // Fetch a page of runs + the accessible suites + connections (for id→name and
-  // the env / datasource of each suite), then filter client-side — cheap at this
-  // volume and avoids a refetch per filter change.
+function RunsTab({ runsState: state }: { runsState: AsyncState<Run[]> }) {
+  // Runs come from the parent (shared with PipelineRunsTab, #349); fetch the
+  // accessible suites + connections locally (for id→name and the env /
+  // datasource of each suite), then filter everything client-side — cheap at
+  // this volume and avoids a refetch per filter change.
   const navigate = useNavigate();
-  const { state } = useAsyncData(() => listRuns({ limit: LIST_LIMIT }));
   const { state: suitesState } = useAsyncData(listSuites);
   const { state: connectionsState } = useAsyncData(() => listConnections());
 
@@ -324,14 +334,21 @@ function RunsTab() {
  *  so 30s keeps the panel near-live without hammering the API. */
 const PIPELINE_POLL_MS = 30_000;
 
-function PipelineRunsTab({ pollMs = PIPELINE_POLL_MS }: { pollMs?: number }) {
+function PipelineRunsTab({
+  runsState,
+  reloadRuns,
+  pollMs = PIPELINE_POLL_MS,
+}: {
+  runsState: AsyncState<Run[]>;
+  reloadRuns: () => void;
+  pollMs?: number;
+}) {
   const navigate = useNavigate();
-  // Pipeline runs + the DQ runs they triggered, both auto-refreshed so a newly
-  // triggered run shows up against its pipeline run without a manual reload.
+  // Pipeline runs fetched locally; the DQ runs they may have triggered come
+  // from the parent (shared with RunsTab, #349). Both auto-refreshed so a
+  // newly triggered run shows up against its pipeline run without a manual
+  // reload.
   const { state, reload } = useAsyncData(() => listPipelineRuns({ limit: LIST_LIMIT }));
-  const { state: runsState, reload: reloadRuns } = useAsyncData(() =>
-    listRuns({ limit: LIST_LIMIT }),
-  );
   const [provider, setProvider] = useState<'all' | OrchestrationProvider>('all');
   const [dateWindow, setDateWindow] = useState<DateWindow>('all');
 

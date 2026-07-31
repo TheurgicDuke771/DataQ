@@ -7,6 +7,7 @@ import { type Connection, listConnections } from '../../src/api/connections';
 import { listPipelineRuns, listRuns, type PipelineRun, type Run } from '../../src/api/runs';
 import { ORCHESTRATION_PROVIDERS, PROVIDER_LABELS } from '../../src/api/triggerBindings';
 import { type Suite, listSuites } from '../../src/api/suites';
+import { WINDOW_PRESETS } from '../../src/components/shared/windowPresets';
 import { Results } from '../../src/pages/Results';
 import { selectOption } from '../support/antd';
 
@@ -348,5 +349,72 @@ describe('Results page', () => {
     await user.click(within(row).getByText('failed'));
 
     expect(await screen.findByText('run-detail:rdq')).toBeInTheDocument();
+  });
+
+  it('fetches runs once and shares them across both tabs (#349)', async () => {
+    // A run stamped with the pipeline run's marker so the Pipeline runs tab
+    // actually exercises the shared data (the "DQ run" column), not just an
+    // empty join.
+    const triggeredRun: Run = {
+      ...failedRun,
+      id: 'rdq',
+      suite_id: 's1',
+      triggered_by: 'adf:daily_orders_load:seed-adf-0001',
+    };
+    mockListRuns.mockResolvedValue([succeededRun, triggeredRun]);
+    mockListSuites.mockResolvedValue([ordersSuite]);
+    mockListConnections.mockResolvedValue([snowflakeConn]);
+    mockListPipelineRuns.mockResolvedValue([pipelineRun]);
+
+    renderResults();
+    const user = userEvent.setup();
+
+    // Runs tab renders first (default active) — the shared fetch already ran.
+    await waitFor(() => expect(screen.getAllByText('Orders quality').length).toBe(2));
+    expect(mockListRuns).toHaveBeenCalledTimes(1);
+
+    // Switching to the Pipeline runs tab must reuse the same runs data rather
+    // than issuing a second `listRuns` call (that's the whole point of #349 —
+    // antd's lazy pane mount used to make this a fresh fetch).
+    await user.click(screen.getByRole('tab', { name: 'Pipeline runs' }));
+    await waitFor(() => expect(screen.getByText('daily_orders_load')).toBeInTheDocument());
+    // The correlated DQ run tag proves the shared data actually reached this
+    // tab, not just that no second fetch happened. (The Runs tab, still
+    // mounted-but-hidden behind this one, also renders a 'failed' tag for the
+    // same run — scope to this row to disambiguate.)
+    const row = screen.getByText('daily_orders_load').closest('tr') as HTMLElement;
+    expect(within(row).getByText('failed')).toBeInTheDocument();
+
+    expect(mockListRuns).toHaveBeenCalledTimes(1);
+  });
+
+  it('shares date-window presets with the Dashboard (#349)', async () => {
+    mockListRuns.mockResolvedValue([]);
+    mockListSuites.mockResolvedValue([]);
+    mockListConnections.mockResolvedValue([]);
+    mockListPipelineRuns.mockResolvedValue([]);
+
+    renderResults();
+    const user = userEvent.setup();
+
+    // Wait for the Runs tab to render past its loading Spin (the filter bar,
+    // including the Date Select, only mounts once the shared runs fetch
+    // resolves) before opening the Date filter.
+    await waitFor(async () => expect((await screen.findAllByRole('combobox')).length).toBe(5));
+
+    // Open the Date filter and confirm it offers exactly Results' own 'All
+    // time' entry plus every shared WINDOW_PRESETS label — so a change to the
+    // shared module (or a re-introduced local copy that drifts from it) shows
+    // up here. Match against the dropdown option content, not `title` — the
+    // currently-selected value ('All time') also carries a `title` on the
+    // closed Select, which would otherwise match twice.
+    await user.click((await screen.findAllByRole('combobox'))[FILTER.date]);
+    const optionSelector = '.ant-select-item-option-content';
+    expect(await screen.findByText('All time', { selector: optionSelector })).toBeInTheDocument();
+    for (const preset of WINDOW_PRESETS) {
+      expect(
+        await screen.findByText(preset.label, { selector: optionSelector }),
+      ).toBeInTheDocument();
+    }
   });
 });

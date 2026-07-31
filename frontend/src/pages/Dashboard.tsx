@@ -16,6 +16,7 @@ import { formatDurationMs } from '../components/results/resultsFormat';
 import { QualityTrends } from '../components/dashboard/QualityTrends';
 import { RecentRuns } from '../components/dashboard/RecentRuns';
 import { SuitePerformance } from '../components/dashboard/SuitePerformance';
+import { WINDOW_PRESETS } from '../components/shared/windowPresets';
 import { useAsyncData } from '../hooks/useAsyncData';
 
 /**
@@ -28,21 +29,18 @@ import { useAsyncData } from '../hooks/useAsyncData';
  * (no query backs them yet; KPI honesty, ADR 0022 / 0018).
  */
 
-/** Range option label → trailing window in days for the summary query. */
-const RANGES = [
-  { label: 'Last 24h', days: 1 },
-  { label: '7d', days: 7 },
-  { label: '30d', days: 30 },
-] as const;
-type RangeLabel = (typeof RANGES)[number]['label'];
+/** Range option label → trailing window in days for the summary query, shared
+ *  with the Results date filter (`WINDOW_PRESETS`, #349) so the two surfaces'
+ *  24h/7d/30d presets can't drift. Dashboard has no 'all' option. */
+type RangeLabel = (typeof WINDOW_PRESETS)[number]['label'];
 
 function pct(value: number | null): string | null {
   return value === null ? null : `${value}`;
 }
 
 export function Dashboard() {
-  const [range, setRange] = useState<RangeLabel>('7d');
-  const days = RANGES.find((r) => r.label === range)?.days ?? 7;
+  const [range, setRange] = useState<RangeLabel>('Last 7 days');
+  const days = WINDOW_PRESETS.find((r) => r.label === range)?.days ?? 7;
   // Re-fetch when the range changes: bump the fetcher via `reload` after the
   // range state updates (both batch into one render → the effect re-runs with
   // the new window).
@@ -69,7 +67,7 @@ export function Dashboard() {
         <Segmented<RangeLabel>
           value={range}
           onChange={onRangeChange}
-          options={RANGES.map((r) => r.label)}
+          options={WINDOW_PRESETS.map((r) => r.label)}
         />
       </Flex>
 
