@@ -4,15 +4,16 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { createConnection } from '../../src/api/connections';
+import { createConnection, testDraftConnection } from '../../src/api/connections';
 import { ConnectionNew } from '../../src/pages/ConnectionNew';
 
 vi.mock('../../src/api/connections', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/api/connections')>();
-  return { ...actual, createConnection: vi.fn() };
+  return { ...actual, createConnection: vi.fn(), testDraftConnection: vi.fn() };
 });
 
 const mockCreate = vi.mocked(createConnection);
+const mockTestDraft = vi.mocked(testDraftConnection);
 
 // Render the page and a stub /connections route so the post-create navigation
 // has somewhere to land.
@@ -343,4 +344,91 @@ describe('ConnectionNew', () => {
     // The stale passphrase must NOT wrap the password into a JSON payload.
     expect(await submittedSecret(user)).toBe('sekret');
   }, 15_000);
+
+  // ───────────────────── Test connection button (#351) ─────────────────────
+
+  async function fillSnowflakeDraft(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByText('Snowflake'));
+    await user.type(screen.getByLabelText('Name'), 'sf-dev');
+    await user.click(screen.getByLabelText('Environment'));
+    await user.click(await screen.findByText('DEV'));
+    for (const label of ['Account', 'User', 'Database', 'Schema', 'Warehouse', 'Role']) {
+      await user.type(screen.getByLabelText(label), `${label.toLowerCase()}-val`);
+    }
+    await user.type(screen.getByLabelText('Password'), 'sekret');
+  }
+
+  it('tests the draft config/secret and shows a Connected badge on success', async () => {
+    const user = userEvent.setup();
+    mockTestDraft.mockResolvedValue({ ok: true });
+    renderPage();
+    await fillSnowflakeDraft(user);
+
+    await user.click(screen.getByRole('button', { name: 'Test connection' }));
+
+    await waitFor(() => expect(mockTestDraft).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText('Connected')).toBeInTheDocument();
+    // Create is untouched — the probe never persists anything.
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it('composes the SAME payload shape as Create — type/env/config/secret', async () => {
+    const user = userEvent.setup();
+    mockTestDraft.mockResolvedValue({ ok: true });
+    renderPage();
+    await fillSnowflakeDraft(user);
+
+    await user.click(screen.getByRole('button', { name: 'Test connection' }));
+
+    await waitFor(() => expect(mockTestDraft).toHaveBeenCalledTimes(1));
+    expect(mockTestDraft).toHaveBeenCalledWith({
+      type: 'snowflake',
+      env: 'dev',
+      config: expect.objectContaining({
+        account: 'account-val',
+        user: 'user-val',
+        database: 'database-val',
+        schema: 'schema-val',
+        warehouse: 'warehouse-val',
+        role: 'role-val',
+      }),
+      secret: 'sekret',
+    });
+  });
+
+  it('surfaces a failed test inline without blocking Create', async () => {
+    const user = userEvent.setup();
+    mockTestDraft.mockRejectedValue(new Error('connection test failed'));
+    mockCreate.mockResolvedValue({
+      id: 'c1',
+      name: 'sf-dev',
+      type: 'snowflake',
+      env: 'dev',
+      config: {},
+      has_secret: true,
+      created_by: 'u1',
+    });
+    renderPage();
+    await fillSnowflakeDraft(user);
+
+    await user.click(screen.getByRole('button', { name: 'Test connection' }));
+
+    await waitFor(() => expect(mockTestDraft).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText('connection test failed')).toBeInTheDocument();
+
+    // A failed test does not block Save — the saved-connection flow already
+    // allows an untested save today.
+    await user.click(screen.getByRole('button', { name: 'Create' }));
+    await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1));
+  });
+
+  it('does not call the draft-test API when required fields are missing', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByText('Snowflake'));
+
+    await user.click(screen.getByRole('button', { name: 'Test connection' }));
+
+    expect(mockTestDraft).not.toHaveBeenCalled();
+  });
 });

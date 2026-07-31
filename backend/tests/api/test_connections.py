@@ -399,6 +399,142 @@ def test_reauth_requires_a_secret(client: tuple[TestClient, FakeStore]) -> None:
     assert resp.status_code == 422
 
 
+# ───────────────────────── draft connection test (#351) ────────────
+
+
+def _draft_payload(**overrides: Any) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "type": "snowflake",
+        "env": "dev",
+        "config": dict(_SF_CONFIG),
+        "secret": "p@ss",
+    }
+    payload.update(overrides)
+    return payload
+
+
+def test_draft_test_ok(
+    client: tuple[TestClient, FakeStore], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    api, _ = client
+    monkeypatch.setattr(svc, "get_connection_adapter", lambda t: _PassAdapter())
+    resp = api.post("/api/v1/connections/test", json=_draft_payload())
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True}
+
+
+def test_draft_test_failure_returns_502(
+    client: tuple[TestClient, FakeStore], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    api, _ = client
+    monkeypatch.setattr(svc, "get_connection_adapter", lambda t: _FailAdapter())
+    resp = api.post("/api/v1/connections/test", json=_draft_payload())
+    assert resp.status_code == 502
+    assert resp.json()["error"]["code"] == "connection_test_failed"
+
+
+def test_draft_test_missing_secret_returns_502(
+    client: tuple[TestClient, FakeStore], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # An adapter that would happily pass never even runs — no credential means
+    # nothing to probe with, same as the saved-connection contract.
+    api, _ = client
+    monkeypatch.setattr(svc, "get_connection_adapter", lambda t: _PassAdapter())
+    resp = api.post("/api/v1/connections/test", json=_draft_payload(secret=None))
+    assert resp.status_code == 502
+    assert resp.json()["error"]["code"] == "connection_test_failed"
+
+
+def test_draft_test_unknown_type_returns_422(client: tuple[TestClient, FakeStore]) -> None:
+    api, _ = client
+    resp = api.post("/api/v1/connections/test", json=_draft_payload(type="mssql"))
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "connection_config_invalid"
+
+
+def test_draft_test_invalid_config_returns_422(client: tuple[TestClient, FakeStore]) -> None:
+    api, _ = client
+    bad = {k: v for k, v in _SF_CONFIG.items() if k != "account"}
+    resp = api.post("/api/v1/connections/test", json=_draft_payload(config=bad))
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "connection_config_invalid"
+
+
+def test_draft_test_env_is_optional(
+    client: tuple[TestClient, FakeStore], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # env plays no role in the probe itself — a caller that hasn't picked one
+    # yet still gets a full connectivity check, not a 422.
+    api, _ = client
+    monkeypatch.setattr(svc, "get_connection_adapter", lambda t: _PassAdapter())
+    payload = _draft_payload()
+    del payload["env"]
+    resp = api.post("/api/v1/connections/test", json=payload)
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True}
+
+
+def test_draft_test_invalid_env_returns_422(client: tuple[TestClient, FakeStore]) -> None:
+    api, _ = client
+    resp = api.post("/api/v1/connections/test", json=_draft_payload(env="staging"))
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "connection_config_invalid"
+
+
+def test_draft_test_persists_nothing(
+    client: tuple[TestClient, FakeStore], db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The whole point of the endpoint: no `connections` row, no SecretStore
+    write — a failed OR a successful probe must leave both untouched."""
+    api, store = client
+    monkeypatch.setattr(svc, "get_connection_adapter", lambda t: _PassAdapter())
+    ok = api.post("/api/v1/connections/test", json=_draft_payload())
+    assert ok.status_code == 200
+
+    monkeypatch.setattr(svc, "get_connection_adapter", lambda t: _FailAdapter())
+    failed = api.post("/api/v1/connections/test", json=_draft_payload())
+    assert failed.status_code == 502
+
+    assert db_session.scalars(select(Connection)).all() == []
+    assert store.data == {}
+
+
+def test_draft_test_requires_auth(db_session: Any) -> None:
+    store = FakeStore()
+    app.dependency_overrides[get_db] = lambda: db_session
+    app.dependency_overrides[get_secret_store] = lambda: store
+
+    def _reject() -> None:
+        raise HTTPException(status_code=401, detail="unauthorized")
+
+    app.dependency_overrides[get_current_user] = _reject
+    try:
+        resp = TestClient(app).post("/api/v1/connections/test", json=_draft_payload())
+        assert resp.status_code == 401
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_both_test_routes_resolve(
+    client: tuple[TestClient, FakeStore], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The static `/connections/test` and the parameterized
+    `/connections/{connection_id}/test` are different path shapes (two segments
+    vs three) — this pins down that both resolve to their own handler rather
+    than one shadowing the other."""
+    api, _ = client
+    monkeypatch.setattr(svc, "get_connection_adapter", lambda t: _PassAdapter())
+    cid = api.post("/api/v1/connections", json=_create_payload()).json()["id"]
+
+    saved = api.post(f"/api/v1/connections/{cid}/test")
+    assert saved.status_code == 200
+    assert saved.json() == {"ok": True}
+
+    draft = api.post("/api/v1/connections/test", json=_draft_payload())
+    assert draft.status_code == 200
+    assert draft.json() == {"ok": True}
+
+
 # ───────────────────────── auth gating ─────────────────────────────
 
 

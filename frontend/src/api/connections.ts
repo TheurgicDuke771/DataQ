@@ -212,6 +212,24 @@ export async function createConnection(payload: ConnectionCreate): Promise<Conne
   return data;
 }
 
+/**
+ * A draft-test payload is exactly a create payload minus `name` — a draft has
+ * no row and needs none (#351). Derived via `Omit` rather than redeclared, so
+ * the two shapes can't drift apart.
+ */
+export type ConnectionDraftTest = Omit<ConnectionCreate, 'name'>;
+
+/**
+ * Live connectivity test for an UNSAVED draft — the config/secret the user
+ * just typed on `/connections/new`, probed before Create is pressed. Nothing
+ * is persisted: no `connections` row, no SecretStore write. Same `{ ok }`
+ * shape as the saved-connection `testConnection` above.
+ */
+export async function testDraftConnection(payload: ConnectionDraftTest): Promise<{ ok: boolean }> {
+  const { data } = await api.post<{ ok: boolean }>('/connections/test', payload);
+  return data;
+}
+
 /** Mirrors the backend `ConnectionUpdate` schema — type/env are immutable. */
 export interface ConnectionUpdate {
   name?: string;

@@ -5,8 +5,10 @@ current user + db session + secret store, and maps models onto responses. All
 business logic (validation dispatch, secret write-through, connectivity probe)
 lives in the service. Responses never carry secret material — only `has_secret`.
 
-The `/test` route is a sync ``def`` so FastAPI runs it in a worker thread; the
-Snowflake connect is blocking and must not stall the event loop.
+Both `/test` routes (the saved-connection `/connections/{id}/test` and the
+draft `/connections/test`, #351) are sync ``def`` so FastAPI runs them in a
+worker thread; the datasource connect is blocking and must not stall the
+event loop.
 """
 
 from __future__ import annotations
@@ -119,6 +121,20 @@ class ConnectionTestResult(ApiModel):
     ok: bool
 
 
+class ConnectionDraftTest(ApiModel):
+    """The payload for `/connections/test` — everything `ConnectionCreate` needs
+    to probe connectivity, minus `name` (a draft has no row and needs none).
+    `env` is optional: it plays no role in the probe itself (only in the
+    orchestrator-singleton uniqueness check a real create enforces), so a caller
+    that hasn't picked one yet still gets a full connectivity check.
+    """
+
+    type: str
+    env: str | None = None
+    config: dict[str, Any] = Field(default_factory=dict)
+    secret: str | None = Field(default=None, description="Credential to test; write-only")
+
+
 @router.post(
     "/connections",
     response_model=ConnectionRead,
@@ -142,6 +158,39 @@ def create_connection(
         secret_store=secret_store,
     )
     return ConnectionRead.from_model(conn)
+
+
+@router.post(
+    "/connections/test",
+    response_model=ConnectionTestResult,
+    summary="Test live connectivity for an unsaved draft connection",
+)
+def test_draft_connection(
+    payload: ConnectionDraftTest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    secret_store: Annotated[SecretStore, Depends(get_secret_store)],
+) -> ConnectionTestResult:
+    """Probe the config/secret the user just typed — before Create is pressed.
+
+    Registered ahead of `/connections/{connection_id}/test` in file order, but
+    the two never actually collide: `/connections/test` is two path segments
+    (`connections`, `test`) and `/connections/{connection_id}/test` is three
+    (`connections`, `{connection_id}`, `test`), so Starlette can't route a
+    `/connections/test` request to the parameterized handler regardless of
+    registration order — `test_both_test_routes_resolve` pins this down.
+    Nothing is persisted: no `connections` row, no `SecretStore` write. Same
+    auth gate as `create_connection` — a credential-carrying probe must not be
+    more permissive than the endpoint that actually stores one. Sync `def` like
+    the saved-connection `/test`: the datasource connect is blocking.
+    """
+    svc.test_draft_connection(
+        payload.type,
+        env=payload.env,
+        config=payload.config,
+        secret=payload.secret,
+        secret_store=secret_store,
+    )
+    return ConnectionTestResult(ok=True)
 
 
 @router.get(

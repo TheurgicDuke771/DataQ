@@ -885,3 +885,64 @@ def test_connection(
         ) from exc
 
     log.info("connection_test_succeeded", connection_id=str(connection_id))
+
+
+def test_draft_connection(
+    conn_type: str,
+    *,
+    env: str | None,
+    config: dict[str, Any],
+    secret: str | None,
+    secret_store: SecretStore,
+) -> None:
+    """Probe connectivity for an UNSAVED draft (#351) — no `connections` row, no
+    `SecretStore` write, ever.
+
+    The "test before you save" counterpart to `create_connection` +
+    `test_connection`: it runs the SAME type/config validation
+    `create_connection` runs (an invalid type or config 422s exactly like a real
+    create would — `_validated_config`) and then the SAME adapter `.test()` call
+    `test_connection` makes, but against the config/secret straight off the
+    request instead of a persisted `Connection` row and a SecretStore read.
+    `env`, when given, is validated the same way `create_connection` validates
+    it, but plays no role in the probe itself (no adapter's `test()` takes it —
+    the (type, env) orchestrator-singleton check it feeds is a CREATE-time
+    constraint, not a connectivity fact), so a caller that hasn't picked one yet
+    still gets a full connectivity check.
+
+    `_extra_secrets` still resolves `config`'s `_secret_name` fields — those
+    name EXISTING secrets already in the store (e.g. an Iceberg catalog
+    password), not something this call writes; `secret_store.set` is never
+    called anywhere on this path.
+
+    Raises `ConnectionConfigInvalidError` (422) for an unknown type or invalid
+    config, and `ConnectionTestFailedError` (502) for a missing credential or
+    any adapter-reported connectivity failure — matching `test_connection`'s
+    contract exactly, so the frontend's failure handling doesn't fork per route.
+    """
+    _validated_config(conn_type, config)
+    if env is not None:
+        _validate_env(env)
+    adapter = get_connection_adapter(conn_type)
+
+    if not secret:
+        raise ConnectionTestFailedError(
+            "a credential is required to test this connection", detail={"type": conn_type}
+        )
+
+    try:
+        adapter.test(dict(config), secret, **_extra_secrets(config, secret_store))
+    except Exception as exc:
+        log.warning(
+            "connection_draft_test_failed",
+            type=conn_type,
+            error_type=type(exc).__name__,
+        )
+        # Same rationale as `test_connection`: never echo the adapter exception
+        # to the client (DSN/credential fragments), original kept as __cause__
+        # for the server-side traceback only.
+        raise ConnectionTestFailedError(
+            "connection test failed", detail={"type": conn_type}
+        ) from exc
+
+    log.info("connection_draft_test_succeeded", type=conn_type)

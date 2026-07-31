@@ -9,6 +9,7 @@ import {
   type ConnectionVersion,
   getConnection,
   listConnectionVersions,
+  testConnection,
   updateConnection,
 } from '../../src/api/connections';
 import { ConnectionEdit } from '../../src/pages/ConnectionEdit';
@@ -20,12 +21,14 @@ vi.mock('../../src/api/connections', async (importOriginal) => {
     getConnection: vi.fn(),
     updateConnection: vi.fn(),
     listConnectionVersions: vi.fn(),
+    testConnection: vi.fn(),
   };
 });
 
 const mockGet = vi.mocked(getConnection);
 const mockUpdate = vi.mocked(updateConnection);
 const mockVersions = vi.mocked(listConnectionVersions);
+const mockTest = vi.mocked(testConnection);
 
 const existing: Connection = {
   id: 'c1',
@@ -207,5 +210,43 @@ describe('ConnectionEdit', () => {
     // The key remounts the view → c2 is fetched and the form reseeds.
     await waitFor(() => expect(screen.getByLabelText('Account')).toHaveValue('acc2'));
     expect(screen.getByLabelText('Name')).toHaveValue('sf-qa');
+  });
+
+  // ───────────────── Test saved connection button (#351) ─────────────────
+  // Edit mode has no secret field (rotation is the Re-auth flow) and any
+  // config edits here are unsaved, so this deliberately tests the SAVED
+  // connection — the identical call the Connections list page's Test button
+  // makes — rather than the (possibly half-edited) form state.
+
+  it('tests the SAVED connection by id, not the unsaved form edits', async () => {
+    const user = userEvent.setup();
+    mockGet.mockResolvedValue(existing);
+    mockTest.mockResolvedValue({ ok: true });
+    renderPage();
+
+    await waitFor(() => expect(screen.getByLabelText('Account')).toHaveValue('acc1'));
+    // Edit a field without saving — the test call must still target the id,
+    // never these unsaved edits (there is no draft-test payload to build here).
+    await user.clear(screen.getByLabelText('Account'));
+    await user.type(screen.getByLabelText('Account'), 'unsaved-edit');
+
+    await user.click(screen.getByRole('button', { name: 'Test saved connection' }));
+
+    await waitFor(() => expect(mockTest).toHaveBeenCalledWith('c1'));
+    expect(await screen.findByText('Connected')).toBeInTheDocument();
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  it('surfaces a failed saved-connection test inline', async () => {
+    const user = userEvent.setup();
+    mockGet.mockResolvedValue(existing);
+    mockTest.mockRejectedValue(new Error('connection test failed'));
+    renderPage();
+
+    await waitFor(() => expect(screen.getByLabelText('Account')).toHaveValue('acc1'));
+    await user.click(screen.getByRole('button', { name: 'Test saved connection' }));
+
+    await waitFor(() => expect(mockTest).toHaveBeenCalledWith('c1'));
+    expect(await screen.findByText('connection test failed')).toBeInTheDocument();
   });
 });
