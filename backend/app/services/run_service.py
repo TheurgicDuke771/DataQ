@@ -16,9 +16,9 @@ from __future__ import annotations
 import uuid
 from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from sqlalchemy import CursorResult, func, null, select, update
 from sqlalchemy.orm import Session
@@ -655,6 +655,54 @@ def _values_by_column(rows: Sequence[Any]) -> dict[str, list[Any]]:
     return dict(out)
 
 
+# Tri-state redaction summary the read API surfaces alongside `sample_failures`
+# (#424 — the header used to unconditionally claim "values redacted", which lies
+# once #415 started letting non-PII columns through).
+RedactionState = Literal["full", "partial", "none"]
+
+
+@dataclass
+class _RedactionTracker:
+    """Accumulates per-column show/mask decisions across one `redact_sample_failures`
+    call, so the caller can report an honest summary instead of re-sniffing the
+    redacted output for the `"<redacted>"` sentinel (fragile — a genuine cell value
+    equal to the sentinel would misreport, and it can't see counts).
+
+    ``column_state[name]`` is "was this column ever SHOWN anywhere in the sample" —
+    a column can appear in more than one bucket (e.g. both `unexpected_index_list`
+    and a comparison bucket); OR-ing keeps the summary matching what a viewer
+    actually saw. ``anonymous_masked`` covers the one path with no column name to
+    attribute to: a masked `partial_unexpected_list` with no ``tested_column``
+    context — still real masking, so it must not silently vanish from the summary.
+    """
+
+    column_state: dict[str, bool] = field(default_factory=dict)
+    anonymous_masked: bool = False
+
+    def record(self, column: str | None, shown: bool) -> None:
+        if column:
+            self.column_state[column] = self.column_state.get(column, False) or shown
+        elif not shown:
+            self.anonymous_masked = True
+
+    def summary(self) -> tuple[RedactionState | None, list[str]]:
+        """`(state, redacted_columns)`. ``state`` is ``None`` when nothing
+        data-bearing was seen (e.g. only aggregate counts, or an empty sample) —
+        there is nothing true to claim either way, so the caller should omit any
+        redaction label rather than guess. ``redacted_columns`` lists columns that
+        were masked everywhere they appeared (never shown)."""
+        shown_any = any(self.column_state.values())
+        masked_any = any(not shown for shown in self.column_state.values()) or self.anonymous_masked
+        redacted_columns = sorted(name for name, shown in self.column_state.items() if not shown)
+        if not shown_any and not masked_any:
+            return None, []
+        if masked_any and not shown_any:
+            return "full", redacted_columns
+        if shown_any and not masked_any:
+            return "none", redacted_columns
+        return "partial", redacted_columns
+
+
 def _redact_row(
     row: Any,
     *,
@@ -662,6 +710,7 @@ def _redact_row(
     policy: Mapping[str, Any] | None,
     tags: Mapping[str, str] | None,
     values_by_column: Mapping[str, list[Any]],
+    tracker: _RedactionTracker | None = None,
 ) -> Any:
     """Mask a failing-row dict per column: the tested column shows unless *known*
     sensitive; every other column shows only if affirmatively identifier/safe
@@ -680,6 +729,8 @@ def _redact_row(
         else:
             show = _may_show_incidental(name, vals, policy, tags)
         out[col] = val if show else _redact_sample_value(val)
+        if tracker is not None:
+            tracker.record(name, show)
     return out
 
 
@@ -701,6 +752,7 @@ def _redact_comparison_row(
     policy: Mapping[str, Any] | None,
     tags: Mapping[str, str] | None,
     values_by_column: Mapping[str, list[Any]],
+    tracker: _RedactionTracker | None = None,
 ) -> Any:
     """Per-column masking for a comparison sample row, matching policy and
     classifier on the suffix-stripped column name (both sides of a PII column
@@ -721,6 +773,8 @@ def _redact_comparison_row(
         hard_masked = _tag_sensitive(raw, tags) or _policy_pii(raw, policy)
         show = not hard_masked and _may_show_incidental(name, vals, policy, tags)
         out[col] = val if show else _redact_sample_value(val)
+        if tracker is not None:
+            tracker.record(raw, show)
     return out
 
 
@@ -761,6 +815,7 @@ def redact_sample_failures(
     tested_column: str | None = None,
     policy: dict[str, Any] | None = None,
     tags: Mapping[str, str] | None = None,
+    tracker: _RedactionTracker | None = None,
 ) -> dict[str, Any] | None:
     """Redact a result's `sample_failures` for safe surfacing on the read API.
 
@@ -783,6 +838,11 @@ def redact_sample_failures(
       are redacted **per column** — the tested column + identifiers + safe values shown,
       PII + unclassified masked;
     * everything else default-masks. ``None`` sample passes through unchanged.
+
+    ``tracker`` is an optional accumulator (#424) — pass a fresh `_RedactionTracker`
+    to also learn *which* columns were shown vs masked, via `tracker.summary()`.
+    Internal (leading underscore); external callers use
+    `redact_sample_failures_with_state` instead of touching the tracker directly.
     """
     if not sample:
         return None
@@ -800,6 +860,7 @@ def redact_sample_failures(
                     policy=policy,
                     tags=tags,
                     values_by_column=index_vbc,
+                    tracker=tracker,
                 )
                 for row in value
             ]
@@ -813,6 +874,7 @@ def redact_sample_failures(
                         policy=policy,
                         tags=tags,
                         values_by_column=vbc,
+                        tracker=tracker,
                     )
                     for row in value
                 ]
@@ -820,8 +882,12 @@ def redact_sample_failures(
                 tested_column, value, policy, tags
             ):
                 out[key] = value  # the tested column's failing values — surfaced
+                if tracker is not None:
+                    tracker.record(tested_column, True)
             else:
                 out[key] = _redact_sample_value(value)
+                if tracker is not None:
+                    tracker.record(tested_column, False)
         elif key in _COMPARISON_SAMPLE_KEYS and isinstance(value, list):
             # Comparison buckets (ADR 0015, #794): rows carry `<col>_src` /
             # `<col>_tgt` pairs plus unsuffixed key columns. Policy/classifier
@@ -830,12 +896,43 @@ def redact_sample_failures(
             # the default-mask posture.
             vbc = _values_by_column(value)
             out[key] = [
-                _redact_comparison_row(row, policy=policy, tags=tags, values_by_column=vbc)
+                _redact_comparison_row(
+                    row, policy=policy, tags=tags, values_by_column=vbc, tracker=tracker
+                )
                 for row in value
             ]
         else:
             out[key] = _redact_sample_value(value)
     return out
+
+
+def redact_sample_failures_with_state(
+    sample: dict[str, Any] | None,
+    *,
+    tested_column: str | None = None,
+    policy: dict[str, Any] | None = None,
+    tags: Mapping[str, str] | None = None,
+) -> tuple[dict[str, Any] | None, RedactionState | None, list[str]]:
+    """`redact_sample_failures` plus an honest redaction summary (#424).
+
+    Returns ``(redacted_sample, state, redacted_columns)``:
+
+    * ``state`` — ``"full"`` when every data-bearing column was masked, ``"none"``
+      when every one was shown, ``"partial"`` when it's a mix, or ``None`` when the
+      sample carried no data-bearing content at all (only aggregate counts, or
+      empty) — there is nothing true to claim either way.
+    * ``redacted_columns`` — the columns masked everywhere they appeared.
+
+    Redaction happens at **read time** (this is called from the API route on every
+    GET, not from the run/write path), so it derives correctly for old, already
+    persisted results too — there is nothing to backfill.
+    """
+    tracker = _RedactionTracker()
+    redacted = redact_sample_failures(
+        sample, tested_column=tested_column, policy=policy, tags=tags, tracker=tracker
+    )
+    state, redacted_columns = tracker.summary()
+    return redacted, state, redacted_columns
 
 
 def _is_safe_summary(key: str, value: Any) -> bool:

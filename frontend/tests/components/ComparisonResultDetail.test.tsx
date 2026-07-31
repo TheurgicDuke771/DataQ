@@ -31,6 +31,8 @@ const result: Result = {
     mismatched: [{ order_id: '3', amount_src: '30', amount_tgt: '31' }],
     additional_in_source: [{ order_id: '1', amount_src: '10' }],
   },
+  redaction: 'none',
+  redacted_columns: [],
 };
 
 describe('ComparisonResultDetail', () => {

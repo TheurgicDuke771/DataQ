@@ -17,10 +17,10 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from pydantic import ConfigDict
+from pydantic import ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -87,7 +87,16 @@ class ResultRead(ApiModel):
     so it is **redacted at the boundary** before it leaves DataQ (the numeric
     counts are kept; the offending cell values are masked). See
     `run_service.redact_sample_failures` for the policy and `_result_read` below
-    for why it is never auto-populated from the ORM object (#226)."""
+    for why it is never auto-populated from the ORM object (#226).
+
+    `redaction` / `redacted_columns` (#424) make the redaction state explicit
+    metadata rather than something the frontend has to sniff from the values
+    (sniffing for a `"<redacted>"` sentinel breaks the moment a genuine cell
+    value equals it): `"full"` when every data-bearing column was masked,
+    `"none"` when every one was shown, `"partial"` for a mix, and `None` when
+    the sample carried no data-bearing content to redact one way or the other
+    (only aggregate counts, or no sample at all). `redacted_columns` names the
+    columns masked everywhere they appeared."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -99,6 +108,8 @@ class ResultRead(ApiModel):
     observed_value: dict[str, Any] | None
     expected_value: dict[str, Any] | None
     sample_failures: dict[str, Any] | None  # redacted (counts kept, values masked)
+    redaction: Literal["full", "partial", "none"] | None = None
+    redacted_columns: list[str] = Field(default_factory=list)
 
 
 class RunDetailRead(RunRead):
@@ -200,7 +211,13 @@ def _result_read(
     raw, PII-bearing `sample_failures` can never be auto-copied onto the wire —
     redaction is the only path it can take out of here (#226). ``tested_column`` +
     the suite ``policy`` drive column-aware redaction (#415): a non-PII tested
-    column's failing values surface; PII stays masked."""
+    column's failing values surface; PII stays masked. Also grafts the
+    `redaction` state summary (#424), derived in the same pass over the same
+    already-persisted `sample_failures` — old rows get it for free at read time,
+    nothing to backfill."""
+    sample, redaction, redacted_columns = svc.redact_sample_failures_with_state(
+        result.sample_failures, tested_column=tested_column, policy=policy
+    )
     return ResultRead(
         id=result.id,
         check_id=result.check_id,
@@ -209,9 +226,9 @@ def _result_read(
         duration_ms=result.duration_ms,
         observed_value=svc.redact_observed_value(result.observed_value, policy=policy),
         expected_value=result.expected_value,
-        sample_failures=svc.redact_sample_failures(
-            result.sample_failures, tested_column=tested_column, policy=policy
-        ),
+        sample_failures=sample,
+        redaction=redaction,
+        redacted_columns=redacted_columns,
     )
 
 

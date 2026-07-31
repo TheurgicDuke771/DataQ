@@ -41,7 +41,12 @@ export interface Run {
 
 /** Mirrors `ResultRead`. `sample_failures` is the GX failing-row sample, redacted
  *  at the API boundary (#226): the numeric counts are kept; the raw cell values
- *  are masked to `"<redacted>"`. */
+ *  are masked to `"<redacted>"`. `redaction` / `redacted_columns` (#424) are the
+ *  authoritative signal for *how much* of that sample is masked — read these
+ *  instead of sniffing `sample_failures` for the `"<redacted>"` sentinel, which
+ *  breaks the moment a genuine value equals it. `redaction` is null when the
+ *  sample carried no data-bearing content to redact one way or the other (only
+ *  aggregate counts, or no sample at all). */
 export interface Result {
   id: string;
   check_id: string;
@@ -51,6 +56,8 @@ export interface Result {
   observed_value: Record<string, unknown> | null;
   expected_value: Record<string, unknown> | null;
   sample_failures: Record<string, unknown> | null;
+  redaction: 'full' | 'partial' | 'none' | null;
+  redacted_columns: string[];
 }
 
 /** Mirrors `RunDetailRead` — a run plus its result rows. */

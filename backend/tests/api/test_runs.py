@@ -460,6 +460,119 @@ def test_get_run_redacts_sample_failure_values(client: TestClient, db_session: A
     serialized = json.dumps(body)
     assert "alice@example.com" not in serialized
     assert "bob@example.com" not in serialized
+    # #424: the wire payload also carries an honest, explicit redaction summary —
+    # `id` shown + `email` masked is a partial mix.
+    result = body["results"][0]
+    assert result["redaction"] == "partial"
+    assert result["redacted_columns"] == ["email"]
+
+
+# ── #424: the read API's `redaction` state must match reality per result ──────
+
+
+def test_get_run_reports_full_redaction_state_when_every_column_masked(
+    client: TestClient, db_session: Any
+) -> None:
+    dev = _user(db_session, "dev@ex")
+    suite = _suite(db_session, dev, target={"table": "T"})
+    # A PII tested column: the whole scalar list masks, and there is nothing else
+    # in the sample to surface.
+    check = Check(
+        suite_id=suite.id, name="c", expectation_type="expect_x", config={"column": "EMAIL"}
+    )
+    db_session.add(check)
+    db_session.flush()
+    run = _run(db_session, suite, status="succeeded")
+    db_session.add(
+        Result(
+            run_id=run.id,
+            check_id=check.id,
+            status="fail",
+            sample_failures={"partial_unexpected_list": ["alice@example.com", "bob@example.com"]},
+        )
+    )
+    db_session.commit()
+
+    _as(dev)
+    result = client.get(f"/api/v1/runs/{run.id}").json()["results"][0]
+    assert result["redaction"] == "full"
+    assert result["redacted_columns"] == ["EMAIL"]
+    assert result["sample_failures"] == {"partial_unexpected_list": ["<redacted>", "<redacted>"]}
+
+
+def test_get_run_reports_none_redaction_state_when_every_column_shown(
+    client: TestClient, db_session: Any
+) -> None:
+    dev = _user(db_session, "dev@ex")
+    suite = _suite(db_session, dev, target={"table": "T"})
+    # A non-PII tested column (#417): its failing values surface untouched.
+    check = Check(
+        suite_id=suite.id, name="c", expectation_type="expect_x", config={"column": "LINE_TOTAL"}
+    )
+    db_session.add(check)
+    db_session.flush()
+    run = _run(db_session, suite, status="succeeded")
+    db_session.add(
+        Result(
+            run_id=run.id,
+            check_id=check.id,
+            status="fail",
+            sample_failures={"partial_unexpected_list": [-12.5, -5.0]},
+        )
+    )
+    db_session.commit()
+
+    _as(dev)
+    result = client.get(f"/api/v1/runs/{run.id}").json()["results"][0]
+    assert result["redaction"] == "none"
+    assert result["redacted_columns"] == []
+    assert result["sample_failures"] == {"partial_unexpected_list": [-12.5, -5.0]}
+
+
+def test_get_run_reports_null_redaction_state_when_sample_has_no_data_bearing_content(
+    client: TestClient, db_session: Any
+) -> None:
+    """Only aggregate counts (no row/value data at all) — there is nothing to have
+    redacted one way or the other, so the state must be null, not a guess."""
+    dev = _user(db_session, "dev@ex")
+    suite = _suite(db_session, dev, target={"table": "T"})
+    check = Check(suite_id=suite.id, name="c", expectation_type="expect_x", config={})
+    db_session.add(check)
+    db_session.flush()
+    run = _run(db_session, suite, status="succeeded")
+    db_session.add(
+        Result(
+            run_id=run.id,
+            check_id=check.id,
+            status="fail",
+            sample_failures={"unexpected_count": 3, "unexpected_percent": 12.5},
+        )
+    )
+    db_session.commit()
+
+    _as(dev)
+    result = client.get(f"/api/v1/runs/{run.id}").json()["results"][0]
+    assert result["redaction"] is None
+    assert result["redacted_columns"] == []
+
+
+def test_get_run_reports_null_redaction_state_when_no_sample(
+    client: TestClient, db_session: Any
+) -> None:
+    dev = _user(db_session, "dev@ex")
+    suite = _suite(db_session, dev, target={"table": "T"})
+    check = Check(suite_id=suite.id, name="c", expectation_type="expect_x", config={})
+    db_session.add(check)
+    db_session.flush()
+    run = _run(db_session, suite, status="succeeded")
+    db_session.add(Result(run_id=run.id, check_id=check.id, status="pass"))
+    db_session.commit()
+
+    _as(dev)
+    result = client.get(f"/api/v1/runs/{run.id}").json()["results"][0]
+    assert result["sample_failures"] is None
+    assert result["redaction"] is None
+    assert result["redacted_columns"] == []
 
 
 def test_get_run_unknown_returns_404(client: TestClient, db_session: Any) -> None:

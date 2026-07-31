@@ -241,10 +241,21 @@ function DownloadMenu({
   );
 }
 
-/** Redacted failing-row sample for a check (#226). The API masks every cell
- *  value to "<redacted>"; we surface the counts and the row/column *shape* so a
- *  reviewer sees how much (and structurally what) failed without seeing PII. */
-function SampleFailures({ sample }: { sample: Record<string, unknown> | null }) {
+/** Failing-row sample for a check (#226). The API masks PII/unclassified cell
+ *  values to "<redacted>" per column (#415) — some columns can surface
+ *  genuinely (e.g. a non-PII tested column like `line_total`), so the header
+ *  reports the actual `redaction` state (#424) rather than always claiming
+ *  "values redacted": full masking, a partial mix, all-shown, or (when the
+ *  sample had nothing data-bearing to redact either way) no claim at all. */
+function SampleFailures({
+  sample,
+  redaction,
+  redactedColumns,
+}: {
+  sample: Record<string, unknown> | null;
+  redaction: 'full' | 'partial' | 'none' | null;
+  redactedColumns: string[];
+}) {
   if (!sample) return null;
   const count = typeof sample.unexpected_count === 'number' ? sample.unexpected_count : null;
   const percent = typeof sample.unexpected_percent === 'number' ? sample.unexpected_percent : null;
@@ -273,13 +284,26 @@ function SampleFailures({ sample }: { sample: Record<string, unknown> | null }) 
     ),
   }));
 
+  // #424: the redaction claim must match reality — "values redacted" only when
+  // the whole sample was masked; a partial mix names how many columns were, and
+  // an all-shown or no-data-bearing-content sample makes no redaction claim.
+  const redactionLabel =
+    redaction === 'full'
+      ? 'values redacted'
+      : redaction === 'none'
+        ? 'values shown'
+        : redaction === 'partial'
+          ? `${redactedColumns.length} column${redactedColumns.length === 1 ? '' : 's'} redacted`
+          : null;
+
   return (
     <Flex vertical gap={8}>
       <Typography.Text strong style={{ fontSize: 13 }}>
         Failing rows{' '}
         <Typography.Text type="secondary" style={{ fontWeight: 'normal' }}>
           {count !== null && `· ${count} row${count === 1 ? '' : 's'}`}
-          {percent !== null && ` · ${percent}%`} · values redacted
+          {percent !== null && ` · ${percent}%`}
+          {redactionLabel !== null && ` · ${redactionLabel}`}
         </Typography.Text>
       </Typography.Text>
       {rows.length > 0 ? (
@@ -379,7 +403,11 @@ function ResultsTable({
           ) : (
             <Flex vertical gap={16}>
               <CheckTrend key={record.check_id} suiteId={suiteId} checkId={record.check_id} />
-              <SampleFailures sample={record.sample_failures} />
+              <SampleFailures
+                sample={record.sample_failures}
+                redaction={record.redaction}
+                redactedColumns={record.redacted_columns}
+              />
             </Flex>
           ),
         // Expandable when we can show a trend (known check) or a failing sample.
