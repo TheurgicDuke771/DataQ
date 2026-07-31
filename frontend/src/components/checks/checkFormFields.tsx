@@ -181,6 +181,36 @@ export function SeverityThresholdFields({ monitor }: { monitor?: MonitorThreshol
         ? Promise.resolve()
         : Promise.reject(new Error('Set a fail or critical threshold')),
   });
+  // #568: mirror the backend's ordering guard (`check_service.
+  // validate_threshold_ordering`) so an inverted set (e.g. warn=90/fail=50/
+  // critical=10) 422s here instead of round-tripping to the server. Only pairs
+  // that are BOTH set are compared — an unset threshold has no bound, same as
+  // the backend. Each pairwise check lives on the "upper" field of the pair
+  // (matching the `failOrCriticalRule` placement above), so exactly one message
+  // renders per violation instead of one under every field.
+  const failOrderRule: Rule = ({ getFieldValue }) => ({
+    validator: () => {
+      const warn = getFieldValue('warn_threshold');
+      const fail = getFieldValue('fail_threshold');
+      return warn != null && fail != null && warn > fail
+        ? Promise.reject(new Error('Fail must be ≥ Warn'))
+        : Promise.resolve();
+    },
+  });
+  const criticalOrderRule: Rule = ({ getFieldValue }) => ({
+    validator: () => {
+      const warn = getFieldValue('warn_threshold');
+      const fail = getFieldValue('fail_threshold');
+      const critical = getFieldValue('critical_threshold');
+      if (fail != null && critical != null && fail > critical) {
+        return Promise.reject(new Error('Critical must be ≥ Fail'));
+      }
+      if (warn != null && critical != null && warn > critical) {
+        return Promise.reject(new Error('Critical must be ≥ Warn'));
+      }
+      return Promise.resolve();
+    },
+  });
   return (
     <>
       <Divider style={{ margin: '8px 0 16px' }}>{heading}</Divider>
@@ -195,12 +225,18 @@ export function SeverityThresholdFields({ monitor }: { monitor?: MonitorThreshol
           name="fail_threshold"
           label="Fail ≥"
           style={{ flex: 1 }}
-          dependencies={['critical_threshold']}
-          rules={required ? [failOrCriticalRule] : []}
+          dependencies={['warn_threshold', 'critical_threshold']}
+          rules={required ? [failOrCriticalRule, failOrderRule] : [failOrderRule]}
         >
           <InputNumber min={0} max={monitor?.max} style={{ width: '100%' }} />
         </Form.Item>
-        <Form.Item name="critical_threshold" label="Critical ≥" style={{ flex: 1 }}>
+        <Form.Item
+          name="critical_threshold"
+          label="Critical ≥"
+          style={{ flex: 1 }}
+          dependencies={['warn_threshold', 'fail_threshold']}
+          rules={[criticalOrderRule]}
+        >
           <InputNumber min={0} max={monitor?.max} style={{ width: '100%' }} />
         </Form.Item>
       </Flex>

@@ -40,6 +40,7 @@ from backend.app.services.check_service import (
     validate_kind,
     validate_lengths,
     validate_monitor_check,
+    validate_threshold_ordering,
 )
 from backend.app.services.custom_sql import is_custom_sql, validate_custom_sql_check
 
@@ -177,6 +178,13 @@ def import_suite(
         # (the same reasoning as the MCP `create_check` fix, #813) rather than
         # relying solely on the caller.
         validate_lengths(name=c["name"], expectation_type=c["expectation_type"])
+        # #568: an imported document must not smuggle in what a direct POST
+        # would 422 — same shared validator create_check/update_check use.
+        validate_threshold_ordering(
+            warn_threshold=c["warn_threshold"],
+            fail_threshold=c["fail_threshold"],
+            critical_threshold=c["critical_threshold"],
+        )
         source_ids.append(
             _resolve_source_connection(session, c) if c["kind"] == COMPARISON_KIND else None
         )

@@ -192,6 +192,55 @@ def validate_lengths(*, name: str | None, expectation_type: str | None) -> None:
         )
 
 
+def validate_threshold_ordering(
+    *,
+    warn_threshold: Decimal | None,
+    fail_threshold: Decimal | None,
+    critical_threshold: Decimal | None,
+) -> None:
+    """Reject negative or out-of-order severity thresholds at author time (422).
+
+    #568: `severity.derive_status` assumes thresholds are ordered ``warn <= fail
+    <= critical`` (higher `metric_value` is worse) and skips any unset threshold
+    as if it were +infinity — it has no ordering guard of its own, so nothing
+    upstream of it ever rejected an inverted (e.g. 90/50/10) or negative set.
+    Runtime tolerance if a bad row still slips through (a pre-existing row is
+    NOT migrated by this fix): `derive_status` checks `critical` first, so an
+    inverted set degrades to a surprising-but-defined band rather than a crash —
+    see the comment there.
+
+    Shared by every kind (`create_check`, `update_check`, suite import) because
+    the tier derivation is kind-agnostic — a monitor's freshness/positive-value
+    gate (`validate_monitor_check`) is a narrower, kind-specific rule and does
+    not overlap with this one. Compares only the pairs that are both set: an
+    unset threshold is "no bound", not "0", so it never participates in the
+    ordering check (only in the non-negative one, and only if actually set).
+    """
+    for field, value in (
+        ("warn_threshold", warn_threshold),
+        ("fail_threshold", fail_threshold),
+        ("critical_threshold", critical_threshold),
+    ):
+        if value is not None and value < 0:
+            raise CheckConfigInvalidError(
+                f"{field} must be non-negative, not {value}",
+                detail={"field": field, "value": str(value)},
+            )
+    pairs = (
+        ("warn_threshold", warn_threshold, "fail_threshold", fail_threshold),
+        ("fail_threshold", fail_threshold, "critical_threshold", critical_threshold),
+        ("warn_threshold", warn_threshold, "critical_threshold", critical_threshold),
+    )
+    for lower_field, lower, upper_field, upper in pairs:
+        if lower is not None and upper is not None and lower > upper:
+            raise CheckConfigInvalidError(
+                f"{lower_field} ({lower}) must be <= {upper_field} ({upper}) — "
+                "severity thresholds band an increasingly bad metric, so they "
+                "must be non-decreasing",
+                detail={lower_field: str(lower), upper_field: str(upper)},
+            )
+
+
 def validate_monitor_check(
     kind: str,
     config: dict[str, Any],
@@ -574,6 +623,11 @@ def create_check(
     suite = get_suite(session, suite_id)  # 404 if the suite is missing
     validate_kind(kind)
     validate_lengths(name=name, expectation_type=expectation_type)
+    validate_threshold_ordering(
+        warn_threshold=warn_threshold,
+        fail_threshold=fail_threshold,
+        critical_threshold=critical_threshold,
+    )
     if kind != COMPARISON_KIND and source_connection_id is not None:
         raise CheckConfigInvalidError(
             "only comparison checks carry a source connection (ADR 0015)",
@@ -689,9 +743,18 @@ def update_check(
         expectation_type if expectation_type is not None else check.expectation_type
     )
     new_config = config if config is not None else check.config
+    new_warn = warn_threshold if warn_threshold is not None else check.warn_threshold
     new_fail = fail_threshold if fail_threshold is not None else check.fail_threshold
     new_critical = (
         critical_threshold if critical_threshold is not None else check.critical_threshold
+    )
+    # #568: validate the EFFECTIVE post-patch thresholds, not just the ones this
+    # PATCH touches — same merge-then-validate shape as the monitor guard below.
+    # A pre-existing out-of-order row (not migrated by this fix) therefore needs
+    # its thresholds fixed before any further edit persists, same as an
+    # already-invalid config under the GX gate a few lines down.
+    validate_threshold_ordering(
+        warn_threshold=new_warn, fail_threshold=new_fail, critical_threshold=new_critical
     )
     if check.kind in MONITOR_KINDS:
         suite = get_suite(session, suite_id)

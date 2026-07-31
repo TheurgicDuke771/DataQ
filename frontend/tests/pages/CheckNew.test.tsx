@@ -122,6 +122,71 @@ describe('CheckNew', () => {
   });
 });
 
+// Issue #568 — the check editor must reject an inverted threshold set (warn >
+// fail, or fail > critical) client-side, mirroring the backend's
+// `validate_threshold_ordering` 422 (`check_service.py`) so a bad set never
+// round-trips to the server just to be told no.
+describe('CheckNew — threshold ordering (issue #568)', () => {
+  const fillBasicCheck = async (user: ReturnType<typeof userEvent.setup>, name: string) => {
+    await user.click(screen.getByText('Column values'));
+    await user.click(await screen.findByText('Column values in set'));
+    await user.type(await screen.findByLabelText('Name'), name);
+    await user.type(screen.getByLabelText('Column'), 'status');
+    await user.type(screen.getByLabelText('Allowed values'), 'active, closed');
+  };
+
+  it('blocks warn > fail with a clear inline error', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await fillBasicCheck(user, 'inverted warn/fail');
+    await user.type(screen.getByLabelText('Warn ≥'), '90');
+    await user.type(screen.getByLabelText('Fail ≥'), '50');
+
+    await user.click(screen.getByRole('button', { name: 'Create check' }));
+
+    expect(await screen.findByText('Fail must be ≥ Warn')).toBeInTheDocument();
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it('blocks fail > critical with a clear inline error', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await fillBasicCheck(user, 'inverted fail/critical');
+    await user.type(screen.getByLabelText('Fail ≥'), '50');
+    await user.type(screen.getByLabelText('Critical ≥'), '10');
+
+    await user.click(screen.getByRole('button', { name: 'Create check' }));
+
+    expect(await screen.findByText('Critical must be ≥ Fail')).toBeInTheDocument();
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it('allows equal, ascending, and partially-set thresholds', async () => {
+    const user = userEvent.setup();
+    mockCreate.mockResolvedValue({} as Check);
+    renderPage();
+
+    await fillBasicCheck(user, 'valid thresholds');
+    await user.type(screen.getByLabelText('Warn ≥'), '10');
+    await user.type(screen.getByLabelText('Fail ≥'), '10');
+    await user.type(screen.getByLabelText('Critical ≥'), '20');
+
+    await user.click(screen.getByRole('button', { name: 'Create check' }));
+
+    await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1));
+    expect(mockCreate).toHaveBeenCalledWith(
+      's1',
+      expect.objectContaining({
+        warn_threshold: 10,
+        fail_threshold: 10,
+        critical_threshold: 20,
+      }),
+    );
+  });
+});
+
 // Issue #768 — expect_column_values_to_be_of_type's `type_` field needs a
 // datasource-tailored hint (GX compares against different type vocabularies per
 // execution engine): the dialect's fully-qualified type on SQL-backed Snowflake,

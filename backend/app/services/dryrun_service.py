@@ -36,6 +36,7 @@ from backend.app.datasources.registry import (
 )
 from backend.app.db.models import Connection
 from backend.app.services import run_target
+from backend.app.services.check_service import validate_threshold_ordering
 from backend.app.services.custom_sql import validate_custom_sql_check
 from backend.app.services.failure_classifier import classify_failure_reason
 from backend.app.services.severity import resolve_status
@@ -103,6 +104,15 @@ def dry_run_check(
             f"dry-run supports only 'expectation' and 'schema_drift' checks; got {kind!r}",
             detail={"kind": kind},
         )
+    # #568: a preview must never accept a threshold set that a save would
+    # reject — same shared validator create_check/update_check use. Checked
+    # before the (slow, live) datasource connect below, like the custom-SQL
+    # guardrail just after it.
+    validate_threshold_ordering(
+        warn_threshold=warn_threshold,
+        fail_threshold=fail_threshold,
+        critical_threshold=critical_threshold,
+    )
     # Resolve the target the same way the run path does. Raises
     # SuiteTargetInvalidError (422) for a targetless suite, a malformed target, or
     # an orchestration-provider connection (never a datasource) — so the old
