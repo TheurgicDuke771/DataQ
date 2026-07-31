@@ -411,7 +411,18 @@ def create_check(
     ``kind="comparison"`` with ``expectation_type="comparison:records"``,
     ``source_connection_id`` (the baseline connection to compare against) and a
     config carrying ``source`` (the baseline dataset spec) + ``keys`` (join key
-    columns). ``dimension`` optionally overrides the DQ dimension (one of
+    columns). For a monitor rather than a rule, set ``kind`` and pair it with
+    ``expectation_type="monitor:<kind>"``: ``freshness`` (hours since
+    ``MAX(column)``), ``volume`` (row count vs ``min_rows``/``max_rows``),
+    ``schema_drift`` (columns added/removed/retyped vs a learned baseline), or
+    ``anomaly`` — "tell me when this looks unusual compared to normal", which
+    learns a rolling mean/stddev of the table's own ``row_count`` or
+    ``freshness_age_hours`` and scores each run's z-score; its config takes
+    ``target_metric`` (required), plus optional ``column`` (for
+    ``freshness_age_hours``), ``window``, ``min_points`` and ``seasonality``
+    (day-of-week), and it needs a positive fail/critical threshold, which is the
+    z-score sensitivity (3 is a common starting point). ``dimension``
+    optionally overrides the DQ dimension (one of
     accuracy, completeness, consistency, integrity, timeliness, uniqueness,
     validity); leave it unset and DataQ derives it from the check type — only set
     it when the user names a dimension explicitly. Requires edit access. Returns

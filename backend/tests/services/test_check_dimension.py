@@ -70,6 +70,16 @@ def test_custom_sql_has_no_derived_dimension() -> None:
     )
 
 
+def test_anomaly_has_no_derived_dimension() -> None:
+    """ADR 0038 §3, applied to #593. An anomaly's honest dimension depends on WHAT
+    it watches — `row_count` is completeness, `freshness_age_hours` is timeliness —
+    and derivation is handed only (expectation_type, kind), never the config. Both
+    plausible answers are wrong half the time, so the map deliberately omits the
+    kind: NULL renders as a coverage gap the author can fill, which is a true
+    statement, where a coin-flip guess would be a confident false one."""
+    assert derive_dimension(expectation_type="monitor:anomaly", kind="anomaly") is None
+
+
 def test_accuracy_and_integrity_are_never_derived() -> None:
     """ADR 0038 §3. Whether data matches reality, or a relationship holds, is not
     knowable from a rule shape — these two exist only for the author to pick, and
@@ -88,6 +98,7 @@ def test_accuracy_and_integrity_are_never_derived() -> None:
             ("monitor:freshness", "freshness"),
             ("monitor:volume", "volume"),
             ("monitor:schema_drift", "schema_drift"),
+            ("monitor:anomaly", "anomaly"),
             ("comparison:records", "comparison"),
         ]
     }

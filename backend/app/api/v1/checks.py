@@ -29,7 +29,7 @@ from backend.app.db.models import Connection, User
 from backend.app.db.session import get_db
 from backend.app.services import check_service as svc
 from backend.app.services import dryrun_service as dryrun
-from backend.app.services import schema_drift as schema_drift_service
+from backend.app.services import monitor_baseline
 from backend.app.services.check_service import CheckConfigInvalidError
 from backend.app.services.suite_authz import require_permission
 
@@ -203,7 +203,7 @@ def delete_check(
 @router.post(
     "/suites/{suite_id}/checks/{check_id}/rebaseline",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Drop a schema_drift check's stored baseline (recaptured on the next run)",
+    summary="Drop a stateful monitor check's baseline (recaptured on the next run)",
 )
 def rebaseline_check(
     suite_id: uuid.UUID,
@@ -212,9 +212,17 @@ def rebaseline_check(
     db: Annotated[Session, Depends(get_db)],
 ) -> None:
     """Deliberately a delete-then-recapture-next-run, not an immediate recapture:
-    recapturing here would run datasource introspection on the API request
-    thread. 204 whether or not a baseline existed (idempotent); 422 for a
-    non-stateful kind (nothing to re-baseline)."""
+    recapturing here would run datasource introspection (schema_drift) or a target
+    query (anomaly) on the API request thread. 204 whether or not a baseline
+    existed (idempotent); 422 for a non-stateful kind (nothing to re-baseline).
+
+    Kind-agnostic by construction: the gate is `STATEFUL_MONITOR_KINDS` (derived
+    from the registry) and the delete targets the row, so an `anomaly` check
+    re-baselines here too — its next run starts learning from scratch, which
+    means the cold-start `skip` applies again. That is the intended, explainable
+    behaviour: after a deliberate step change (a backfill, a new feed) the old
+    history is misleading, and pretending otherwise would fire a critical every
+    night until the window rolled over."""
     require_permission(db, suite_id, current_user.id, minimum="edit")
     check = svc.get_check(db, suite_id, check_id)
     if check.kind not in STATEFUL_MONITOR_KINDS:
@@ -222,7 +230,7 @@ def rebaseline_check(
             f"only stateful monitor checks hold a baseline; {check.kind!r} does not",
             detail={"kind": check.kind},
         )
-    schema_drift_service.rebaseline(db, check)
+    monitor_baseline.rebaseline(db, check)
     db.commit()
     log.info("check_rebaselined", check_id=str(check_id), suite_id=str(suite_id))
 

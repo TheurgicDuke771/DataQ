@@ -117,6 +117,34 @@ def test_status_histograms_groups_by_run_and_status(db_session: Any) -> None:
     assert status_histograms(db_session, [run.id]) == {run.id: {"pass": 2, "fail": 1, "skip": 1}}
 
 
+def test_a_partly_skipped_run_rolls_up_as_evaluated_only(db_session: Any) -> None:
+    """A per-check `skip` (#593 anomaly cold start) among normal siblings must not
+    corrupt the run's outcome: `checks_total` counts only evaluated checks, so the
+    run reads 2/2 rather than a misleading 2/3, and the skip surfaces separately as
+    an operational flag. Pinned because #593 is the first producer of a per-check
+    skip alongside real results — before it, `skip` only ever arrived run-wide."""
+    from backend.app.services.run_service import check_outcome_counts, operational_result_flags
+
+    suite = _suite(db_session)
+    run = _seed_run(
+        db_session, suite=suite, created_at=datetime.now(UTC), statuses=["pass", "pass", "skip"]
+    )
+    assert check_outcome_counts(db_session, [run.id]) == {run.id: (2, 2, None)}
+    assert operational_result_flags(db_session, [run.id]) == {run.id: (False, True)}
+
+
+def test_a_skipped_check_never_ranks_as_a_severity(db_session: Any) -> None:
+    """The worst-severity fold must ignore `skip`, or a cold-start anomaly would
+    look like the run's worst outcome."""
+    from backend.app.services.run_service import check_outcome_counts
+
+    suite = _suite(db_session)
+    run = _seed_run(
+        db_session, suite=suite, created_at=datetime.now(UTC), statuses=["skip", "warn"]
+    )
+    assert check_outcome_counts(db_session, [run.id]) == {run.id: (1, 0, "warn")}
+
+
 def test_status_histograms_empty_input_does_no_query(db_session: Any) -> None:
     assert status_histograms(db_session, []) == {}
 

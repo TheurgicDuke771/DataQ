@@ -10,8 +10,9 @@ that the persisted run path uses.
 The runner and the target are resolved exactly like the worker run path
 (`build_check_runner` registry + `run_target`), so dry-run works on every
 datasource that has a `CheckRunner` — Snowflake, Unity Catalog, and flat files
-(ADLS / S3 / local) — with no per-type branching here (#532). Only
-`expectation` checks are previewable (ADR 0012); other kinds are a 422.
+(ADLS / S3 / local) — with no per-type branching here (#532). Previewable kinds
+are `expectation`, `schema_drift` (#592) and `anomaly` (#593), each with its own
+preview shape; any other kind is a 422 rather than a silent fall-through.
 
 Synchronous + blocking (datasource connect + GX): the API runs it in a threadpool.
 """
@@ -19,6 +20,7 @@ Synchronous + blocking (datasource connect + GX): the API runs it in a threadpoo
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -28,7 +30,7 @@ from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
 from backend.app.datasources.base import CheckSpec
 from backend.app.datasources.flatfile import BatchNotFoundError
-from backend.app.datasources.monitors import SCHEMA_DRIFT
+from backend.app.datasources.monitors import ANOMALY, SCHEMA_DRIFT
 from backend.app.datasources.registry import (
     UnsupportedConnectionTypeError,
     build_check_runner,
@@ -62,7 +64,10 @@ class DryRunFailedError(DataQError):
 
 @dataclass(frozen=True)
 class DryRunOutcome:
-    status: str  # pass | warn | fail | critical | error (#122 — unevaluable check)
+    # pass | warn | fail | critical, plus the operational statuses (#122/#593):
+    # `error` (unevaluable) and `skip` (precondition unmet — an anomaly preview,
+    # which has no check row and so can never have learned a baseline).
+    status: str
     metric_value: Decimal | None
     observed_value: dict[str, Any] | None
     expected_value: dict[str, Any] | None
@@ -86,7 +91,7 @@ def dry_run_check(
     the same way a persisted run does, so the preview runs against exactly what a
     saved run would.
 
-    Clean 422s (not 500s): a non-`expectation` kind, a targetless suite, an
+    Clean 422s (not 500s): a kind with no preview shape, a targetless suite, an
     orchestration-provider connection (no runner), a malformed target, or a
     non-read-only custom-SQL query (ADR 0019). A flat-file *batch* target whose
     file hasn't landed yet is `DryRunNoDataError` (422). `DryRunFailedError`
@@ -98,9 +103,12 @@ def dry_run_check(
         return _dry_run_schema_drift(
             connection, config=config, target=target, secret_store=secret_store
         )
+    if kind == ANOMALY:
+        return _dry_run_anomaly(connection, config=config, target=target, secret_store=secret_store)
     if kind != _EXPECTATION_KIND:
         raise DryRunUnsupportedError(
-            f"dry-run supports only 'expectation' and 'schema_drift' checks; got {kind!r}",
+            f"dry-run supports only 'expectation', 'schema_drift' and 'anomaly' checks; "
+            f"got {kind!r}",
             detail={"kind": kind},
         )
     # Resolve the target the same way the run path does. Raises
@@ -280,4 +288,78 @@ def _dry_run_schema_drift(
             ),
         },
         expected_value={"monitor": SCHEMA_DRIFT},
+    )
+
+
+def _dry_run_anomaly(
+    connection: Connection,
+    *,
+    config: dict[str, Any],
+    target: dict[str, Any] | None,
+    secret_store: SecretStore,
+) -> DryRunOutcome:
+    """Preview an anomaly check (#593): take the live measurement, score it against
+    the history the check would have, and report the outcome — writing nothing.
+
+    A dry-run has **no check row**, so there is no baseline to read and none may
+    be written; the preview is therefore always the cold-start `skip`. That is the
+    point rather than a limitation: it shows the author the real measured value
+    (is `row_count` 32,840 or 0?) and states plainly that the check stays silent
+    until it has `min_points` of history. Reporting a z-score off an empty
+    baseline would be exactly the silent-green this kind is designed not to emit.
+    """
+    from backend.app.datasources.monitors import (
+        ANOMALY,
+        MonitorConfigError,
+        anomaly_params,
+        monitor_outcome,
+    )
+    from backend.app.services import anomaly as anomaly_service
+
+    try:
+        params = anomaly_params(config)
+    except MonitorConfigError as exc:
+        raise DryRunUnsupportedError(str(exc), detail={"kind": ANOMALY}) from exc
+    resolved = run_target.resolve_target(connection.type, target)
+    now = datetime.now(UTC)
+    try:
+        value = anomaly_service.measure_metric(
+            connection,
+            table=resolved.table,
+            schema=resolved.schema,
+            catalog=resolved.catalog,
+            params=params,
+            secret_store=secret_store,
+            now=now,
+        )
+    except MonitorConfigError as exc:
+        # DataQ-authored and safe to echo (a bad column, a non-SQL datasource, an
+        # empty table) — the actionable half of a failed preview.
+        raise DryRunFailedError(str(exc), detail={"table": resolved.table}) from exc
+    except Exception as exc:
+        log.warning(
+            "dry_run_failed", connection_type=connection.type, error_type=type(exc).__name__
+        )
+        raise DryRunFailedError(
+            "dry run could not measure the anomaly target metric",
+            detail={"table": resolved.table, "reason": classify_failure_reason(exc)},
+        ) from exc
+    payload = anomaly_service.build_score_payload(value, [], params)
+    payload["dry_run"] = True
+    payload["preview"] = (
+        "the baseline is learned from persisted runs; this check stays skipped until it "
+        f"has {params.min_points} observations"
+    )
+    outcome = monitor_outcome(ANOMALY, scalar=payload, config=config, now=now)
+    # No thresholds: the preview's status comes from the outcome's own operational
+    # state (`skip`), and going through `resolve_status` is what guarantees the
+    # preview matches what a persisted run would record.
+    status, metric = resolve_status(
+        outcome, warn_threshold=None, fail_threshold=None, critical_threshold=None
+    )
+    return DryRunOutcome(
+        status=status,
+        metric_value=metric,
+        observed_value=sanitize_json(outcome.observed_value),
+        expected_value=sanitize_json(outcome.expected_value),
     )

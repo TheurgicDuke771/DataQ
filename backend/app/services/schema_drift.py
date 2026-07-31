@@ -21,6 +21,9 @@ The pieces:
   ``CheckOutcome`` per check via the registry's outcome strategy. Runners never
   see stateful kinds — they have no DB.
 
+The `monitor_baselines` row itself is read/written through
+`services/monitor_baseline.py`, shared with the `anomaly` kind (#593).
+
 Type strings are the datasource's own spelling (``NUMBER(38,0)``, ``int64``,
 ``string``): they are compared for equality within one datasource, never across
 datasources, so no cross-dialect normalisation is attempted. Baselines are
@@ -37,13 +40,11 @@ GETs and a CSV sample a single head read — neither downloads the object.
 
 from __future__ import annotations
 
-import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import select, text
-from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from backend.app.core.logging import get_logger
@@ -60,8 +61,9 @@ from backend.app.datasources.monitors import (
     monitor_expectation_type,
     monitor_outcome,
 )
-from backend.app.db.models import Check, Connection, MonitorBaseline
+from backend.app.db.models import Check, Connection
 from backend.app.services.failure_classifier import classify_failure_reason
+from backend.app.services.monitor_baseline import get_baseline, insert_baseline_if_absent
 from backend.app.services.profile_service import (
     _open_connection,
     infer_file_format,
@@ -284,25 +286,6 @@ def introspect_columns(
 # ───────────────────── baseline store + executor ─────────────────────
 
 
-def get_baseline(session: Session, check_id: uuid.UUID) -> MonitorBaseline | None:
-    return session.scalars(
-        select(MonitorBaseline).where(MonitorBaseline.check_id == check_id)
-    ).first()
-
-
-def rebaseline(session: Session, check: Check) -> bool:
-    """Drop the check's stored baseline so the NEXT run recaptures it live.
-
-    Deliberately a delete, not an immediate recapture: recapturing here would run
-    datasource introspection on the API request thread with the caller's
-    patience as the timeout. Returns whether a baseline existed."""
-    row = get_baseline(session, check.id)
-    if row is None:
-        return False
-    session.delete(row)
-    return True
-
-
 def build_schema_drift_executor(
     session: Session,
     *,
@@ -350,21 +333,14 @@ def build_schema_drift_executor(
                 "columns_checked": len(current),
             }
             if persist:
-                # ON CONFLICT DO NOTHING: two concurrent first runs of one suite
-                # both see no baseline (READ COMMITTED) and both insert — the
-                # loser must NOT blow up the whole run's commit with an
-                # IntegrityError (discarding every sibling result row, #122).
-                # Whichever run wins captured the same live schema moments apart;
-                # the loser's "baseline captured" report stays truthful. Rides
-                # the run's transaction, so a rolled-back run strands nothing.
-                session.execute(
-                    pg_insert(MonitorBaseline)
-                    .values(
-                        check_id=check.id,
-                        kind=SCHEMA_DRIFT,
-                        baseline={"columns": current},
-                    )
-                    .on_conflict_do_nothing(constraint="uq_monitor_baselines_check")
+                # Concurrency (two first runs of one suite racing) is handled by
+                # the shared store's ON CONFLICT DO NOTHING — see
+                # `monitor_baseline.insert_baseline_if_absent`.
+                insert_baseline_if_absent(
+                    session,
+                    check_id=check.id,
+                    kind=SCHEMA_DRIFT,
+                    baseline={"columns": current},
                 )
             else:
                 payload["dry_run"] = True

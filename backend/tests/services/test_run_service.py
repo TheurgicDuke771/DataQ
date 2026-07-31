@@ -268,11 +268,14 @@ def test_run_outcomes_gate_is_per_kind_not_per_runner() -> None:
 
 
 def test_run_outcomes_unsupported_kind_raises() -> None:
-    # `anomaly` (#593) is the one still-reserved kind with no run path.
+    # Every kind in CHECK_KINDS now has a run path (#593 closed the last reserved
+    # one), so this pins the guard itself with a kind that exists nowhere: a check
+    # row whose kind the dispatcher cannot place must raise, never silently run as
+    # an expectation or vanish from the outcome list.
     runner = FakeRunner(outcome=SuiteOutcome(success=True, checks=[]))
-    with pytest.raises(NotImplementedError, match="anomaly"):
+    with pytest.raises(NotImplementedError, match="not_a_kind"):
         run_service._run_outcomes(
-            runner, table="T", schema=None, checks=[_monitor_check("anomaly", {})]
+            runner, table="T", schema=None, checks=[_monitor_check("not_a_kind", {})]
         )
 
 
@@ -536,6 +539,48 @@ def test_errored_check_with_thresholds_is_still_error_not_banded() -> None:
     assert persisted.status == "error"
     assert persisted.metric_value is None
     assert persisted.observed_value is None  # no message → no observed payload
+
+
+def test_skipped_check_maps_to_skip_status_among_normal_siblings() -> None:
+    """A per-check `skip` (#593 cold start) is the third operational outcome: it
+    persists as `skip` with a NULL metric and its own explanatory payload, while
+    its siblings still band normally and the RUN still succeeds.
+
+    Until now `skip` only ever arrived run-wide via `skip_run`, so this pins that
+    a mixed run persists cleanly (the status is a valid per-row value) rather than
+    tripping the CHECK constraint or being coerced to pass/fail."""
+    session = FakeSession()
+    run = _run()
+    checks = _checks(3)
+    checks[1].fail_threshold = Decimal("3")
+    outcome = SuiteOutcome(
+        success=True,
+        checks=[
+            CheckOutcome("expect_ok", success=True),
+            CheckOutcome(
+                "monitor:anomaly",
+                success=True,
+                skipped=True,
+                observed_value={"insufficient_history": True, "points": 2},
+            ),
+            CheckOutcome("expect_ok2", success=True),
+        ],
+    )
+
+    result = run_service.execute_run(
+        _sess(session), run=run, checks=checks, runner=FakeRunner(outcome=outcome), table="T"
+    )
+
+    assert result.status == "succeeded"
+    by_check = {r.check_id: r for r in session.added}
+    skipped = by_check[checks[1].id]
+    assert skipped.status == "skip"
+    # Never a fabricated z-score: a cold-start number would be trended and
+    # baselined as if it were a measurement.
+    assert skipped.metric_value is None
+    assert skipped.observed_value == {"insufficient_history": True, "points": 2}
+    assert by_check[checks[0].id].status == "pass"
+    assert by_check[checks[2].id].status == "pass"
 
 
 def test_skip_run_marks_all_checks_skip_and_run_succeeded() -> None:

@@ -16,6 +16,37 @@
 > the check-authoring path (lifting `_V1_SUPPORTED_KINDS` + create-time config
 > validation, incl. **a required freshness threshold**) and editor UI follow.
 
+> **Amendment (2026-07-31, v1.1 W5) — the reserved set is now empty.** `anomaly`
+> ships (#593), joining `schema_drift` (#592) as the second **stateful** kind:
+> `build_statement=None` in `MONITOR_KIND_REGISTRY`, so the registry alone routes
+> it to the baseline-backed executor path rather than to a runner's
+> `run_monitors`. Its model is deliberately simple and explainable — a rolling
+> window of the check's OWN raw measurements (`row_count` or
+> `freshness_age_hours`, measured self-contained against the suite's target, not
+> read from a sibling check), an optional day-of-week seasonality filter, and the
+> absolute z-score as the ADR-0016-banded `metric_value`. No ML dependency; every
+> number behind a verdict is persisted in `observed_value`.
+>
+> Two consequences worth recording against this ADR's own claims. First, the
+> `metric_value` column pays off exactly as predicted here ("v1.1 anomaly
+> baselines read one indexed NUMERIC column") — but the baseline is stored as a
+> rolling observation window in `monitor_baselines`, not recomputed from
+> `results`, so a retention purge or a suite edit can't silently move the band.
+> Second, the seam needed one genuinely new result semantic: **a per-check
+> `skip`** (`CheckOutcome.skipped`, resolved in `services/severity.py`). Cold
+> start — fewer than `min_points` usable observations — has no honest verdict,
+> and the alternative (a synthetic `pass`) would count as a clean check in the
+> health score and hide that the monitor is not yet watching anything. `skip` was
+> already a valid per-row status (#122); until now only `run_service.skip_run`
+> produced it, run-wide.
+>
+> `anomaly` is **SQL-datasource only** at ship (Snowflake / Unity Catalog): the
+> executor takes its own measurement over a live SQLAlchemy connection, whereas
+> Iceberg and flat files compute their monitor scalars natively *inside their
+> runners*, which a stateful kind never reaches. Widening it is a per-datasource
+> measurement seam, not an allowlist edit — refused at author time so it can't
+> save clean and error nightly.
+
 ## Context
 
 Every v1 check is a Great Expectations expectation (ADR 0003): a value-level

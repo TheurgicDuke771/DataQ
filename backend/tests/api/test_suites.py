@@ -738,6 +738,108 @@ def test_import_preserves_an_explicitly_unclassified_check(
     assert {c["dimension"] for c in checks} == {None}
 
 
+def _suite_with_anomaly_check(client: TestClient, db_session: Any) -> str:
+    conn = _connection(db_session)
+    sid = client.post("/api/v1/suites", json=_payload(conn.id, name="anom")).json()["id"]
+    db_session.add(
+        Check(
+            suite_id=uuid.UUID(sid),
+            name="volume anomaly",
+            kind="anomaly",
+            expectation_type="monitor:anomaly",
+            config={"target_metric": "row_count", "window": 21, "seasonality": True},
+            fail_threshold=Decimal("3"),
+        )
+    )
+    db_session.commit()
+    return str(sid)
+
+
+def test_import_leaves_an_anomaly_check_unclassified_when_the_key_is_absent(
+    client: TestClient, db_session: Any
+) -> None:
+    """ADR 0038: `anomaly` is deliberately NOT in the derivation map — its honest
+    dimension depends on the target metric (completeness for row_count, timeliness
+    for freshness age), which derivation keys (expectation_type, kind) cannot see.
+    So an import that omits the key must still land NULL — a coverage gap, not a
+    confident guess. This is the half the #124 trap hides: for an underivable kind,
+    absent and present-null agree, so the *derivable* present-null case above is
+    what proves import distinguishes them at all. Both are needed."""
+    src = _suite_with_anomaly_check(client, db_session)
+    document = client.get(f"/api/v1/suites/{src}/export").json()
+    assert document["checks"][0]["dimension"] is None  # nothing was derived on create
+    for c in document["checks"]:
+        c.pop("dimension", None)
+    target = _connection(db_session)
+    new_id = client.post(
+        "/api/v1/suites/import",
+        json={"connection_id": str(target.id), "document": document},
+    ).json()["id"]
+    checks = client.get(f"/api/v1/suites/{new_id}/checks").json()
+    assert [c["dimension"] for c in checks] == [None]
+
+
+def test_import_preserves_an_anomaly_checks_explicit_dimension(
+    client: TestClient, db_session: Any
+) -> None:
+    """Underivable is not unclassifiable — an author's choice must survive."""
+    src = _suite_with_anomaly_check(client, db_session)
+    document = client.get(f"/api/v1/suites/{src}/export").json()
+    document["checks"][0]["dimension"] = "completeness"
+    target = _connection(db_session)
+    new_id = client.post(
+        "/api/v1/suites/import",
+        json={"connection_id": str(target.id), "document": document},
+    ).json()["id"]
+    checks = client.get(f"/api/v1/suites/{new_id}/checks").json()
+    assert [c["dimension"] for c in checks] == ["completeness"]
+
+
+def test_import_round_trips_an_anomaly_checks_config(client: TestClient, db_session: Any) -> None:
+    src = _suite_with_anomaly_check(client, db_session)
+    document = client.get(f"/api/v1/suites/{src}/export").json()
+    target = _connection(db_session)
+    new_id = client.post(
+        "/api/v1/suites/import",
+        json={"connection_id": str(target.id), "document": document},
+    ).json()["id"]
+    (check,) = client.get(f"/api/v1/suites/{new_id}/checks").json()
+    assert check["kind"] == "anomaly"
+    assert check["config"] == {"target_metric": "row_count", "window": 21, "seasonality": True}
+
+
+def test_import_validates_an_anomaly_checks_config(client: TestClient, db_session: Any) -> None:
+    """Import routes every monitor kind through the SAME author-time gate, so a
+    document can't smuggle in a config the editor would refuse — validation is
+    atomic, so nothing is written."""
+    src = _suite_with_anomaly_check(client, db_session)
+    document = client.get(f"/api/v1/suites/{src}/export").json()
+    document["checks"][0]["config"] = {"target_metric": "not_a_metric"}
+    target = _connection(db_session)
+    resp = client.post(
+        "/api/v1/suites/import",
+        json={"connection_id": str(target.id), "document": document},
+    )
+    assert resp.status_code == 422
+
+
+def test_import_rejects_an_anomaly_check_without_a_threshold(
+    client: TestClient, db_session: Any
+) -> None:
+    """The silent-green guard applies on import too — otherwise a document is a
+    way around it."""
+    src = _suite_with_anomaly_check(client, db_session)
+    document = client.get(f"/api/v1/suites/{src}/export").json()
+    document["checks"][0]["fail_threshold"] = None
+    document["checks"][0]["critical_threshold"] = None
+    target = _connection(db_session)
+    resp = client.post(
+        "/api/v1/suites/import",
+        json={"connection_id": str(target.id), "document": document},
+    )
+    assert resp.status_code == 422
+
+
 def test_import_rejects_a_non_canonical_dimension(client: TestClient, db_session: Any) -> None:
     src = _suite_with_checks(client, db_session)
     document = client.get(f"/api/v1/suites/{src}/export").json()

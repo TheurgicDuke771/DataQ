@@ -76,6 +76,12 @@ def _build_result(run_id: uuid.UUID, check: Check, outcome: CheckOutcome) -> Res
     banded as `fail`. The error message lands in `observed_value` for debugging —
     GX exception messages are schema-level (no row data), so they don't go through
     the `sample_failures` retention/PII path.
+
+    A check whose *precondition* wasn't met (`outcome.skipped`, #593) is the other
+    operational status, ``skip`` — resolved in `severity.resolve_status` so the
+    dry-run preview agrees. Its `observed_value` is a normal (DataQ-authored,
+    row-data-free) payload explaining what was missing, so it takes the ordinary
+    sanitise path rather than the errored branch's message-only one.
     """
     status, metric = resolve_status(
         outcome,
@@ -129,16 +135,17 @@ def _run_outcomes(
     * scalar monitor kinds (``freshness``/``volume``) → `run_monitors` on a
       runner that advertises the kind (#429); an unsupported kind raises here,
       never silently mis-runs.
-    * stateful monitor kinds (``schema_drift``, #592) → the injected
-      ``stateful_monitor_executor`` (the worker builds one via
-      `schema_drift.build_schema_drift_executor` — it owns the session and the
-      baseline store, which runners must never see). A caller that supplies
-      none gets a per-check operational ``error`` outcome (#122).
+    * stateful monitor kinds (``schema_drift`` #592, ``anomaly`` #593) → the
+      injected ``stateful_monitor_executor`` (the worker builds one via
+      `stateful_monitors.build_stateful_monitor_executor`, which dispatches per
+      kind — each engine owns the session and the baseline store, which runners
+      must never see). A caller that supplies none gets a per-check operational
+      ``error`` outcome (#122).
     * ``comparison`` → the injected ``comparison_executor`` (the worker builds
       one via `comparison_run.build_comparison_executor`, #794); same
       no-executor semantics.
-    * any other reserved kind (`anomaly`) has no run path *or* authoring path
-      → `NotImplementedError` (unreachable via CRUD).
+    * a kind with no run path at all → `NotImplementedError` (unreachable via
+      CRUD, which refuses to author one).
 
     This composes with the connection-type runner selection (ADR 0011): `kind`
     chooses the *monitor*, `connection.type` chose the *adapter* (the runner)."""
