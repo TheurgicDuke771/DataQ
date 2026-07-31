@@ -1238,6 +1238,26 @@ def test_dryrun_rejects_inverted_thresholds(
     assert resp.json()["error"]["code"] == "check_config_invalid"
 
 
+def test_dryrun_rejects_inverted_thresholds_for_schema_drift(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # #568 follow-up (code review on PR #1113): schema_drift dry-run branches to
+    # `_dry_run_schema_drift` BEFORE the ordering guard used to run, so this kind
+    # slipped through with a 200 "pass" preview even though create/update band
+    # schema_drift's thresholds like any other kind and would 422 the save. The
+    # guard now sits above that branch — no runner/introspection mock needed,
+    # since a rejected threshold set never reaches the live datasource connect.
+    sid = _suite_id(client, db_session, target=_SF_TARGET)
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks/dryrun",
+        json=_dryrun_body(
+            kind="schema_drift", warn_threshold=90, fail_threshold=50, critical_threshold=10
+        ),
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "check_config_invalid"
+
+
 def test_dryrun_derives_tier_from_thresholds(
     client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:

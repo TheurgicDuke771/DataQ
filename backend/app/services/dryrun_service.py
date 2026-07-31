@@ -95,6 +95,18 @@ def dry_run_check(
     expectation). The adapter exception is never echoed — it can carry
     DSN/credential fragments.
     """
+    # #568: a preview must never accept a threshold set that a save would
+    # reject — same shared validator create_check/update_check use. Checked
+    # for EVERY kind this endpoint accepts (schema_drift's thresholds are
+    # banded on its persisted run path same as any other kind, even though
+    # its own dry-run preview never reaches the severity derivation below),
+    # so this sits above the schema_drift early return and the kind-gate,
+    # before the (slow, live) datasource connect.
+    validate_threshold_ordering(
+        warn_threshold=warn_threshold,
+        fail_threshold=fail_threshold,
+        critical_threshold=critical_threshold,
+    )
     if kind == SCHEMA_DRIFT:
         return _dry_run_schema_drift(
             connection, config=config, target=target, secret_store=secret_store
@@ -104,15 +116,6 @@ def dry_run_check(
             f"dry-run supports only 'expectation' and 'schema_drift' checks; got {kind!r}",
             detail={"kind": kind},
         )
-    # #568: a preview must never accept a threshold set that a save would
-    # reject — same shared validator create_check/update_check use. Checked
-    # before the (slow, live) datasource connect below, like the custom-SQL
-    # guardrail just after it.
-    validate_threshold_ordering(
-        warn_threshold=warn_threshold,
-        fail_threshold=fail_threshold,
-        critical_threshold=critical_threshold,
-    )
     # Resolve the target the same way the run path does. Raises
     # SuiteTargetInvalidError (422) for a targetless suite, a malformed target, or
     # an orchestration-provider connection (never a datasource) — so the old
