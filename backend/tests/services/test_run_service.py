@@ -840,6 +840,29 @@ def test_redact_state_full_for_anonymous_masked_scalar_list_with_no_tested_colum
     assert sample == {"partial_unexpected_list": ["<redacted>", "<redacted>"]}
 
 
+def test_redact_state_partial_with_no_nameable_column_from_anonymous_mask() -> None:
+    """#1115 review: an anonymous mask (no `tested_column`) can coincide with a
+    DIFFERENT column being shown elsewhere in the same sample — both real GX
+    buckets, `unexpected_index_list` (row dicts, redacted per column) and
+    `partial_unexpected_list` (the tested column's scalar list), can be present
+    together. That combination reports "partial" with an EMPTY `redacted_columns`
+    (there is a real mask, but nothing nameable for it) — the API/frontend must
+    not read empty `redacted_columns` as "nothing was masked" when state is
+    "partial"."""
+    sample, state, cols = run_service.redact_sample_failures_with_state(
+        {
+            "unexpected_index_list": [{"ORDER_ID": "ORD-1"}],  # shown: identifier
+            "partial_unexpected_list": ["a@x.com"],  # masked, but no tested_column
+        }
+    )
+    assert state == "partial"
+    assert cols == []  # nothing nameable for the anonymous mask
+    assert sample == {
+        "unexpected_index_list": [{"ORDER_ID": "ORD-1"}],
+        "partial_unexpected_list": ["<redacted>"],
+    }
+
+
 def test_redact_state_none_when_every_column_shown() -> None:
     # The tested column's non-PII values surface (#417) and nothing else is masked.
     sample, state, cols = run_service.redact_sample_failures_with_state(

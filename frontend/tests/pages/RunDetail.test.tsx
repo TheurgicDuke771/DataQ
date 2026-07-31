@@ -283,6 +283,40 @@ describe('RunDetail page', () => {
     expect(screen.queryByText(/values shown/)).not.toBeInTheDocument();
   });
 
+  it('falls back to "partially redacted" when partial has no nameable column (#1115)', async () => {
+    // Reachable when an anonymous mask (a scalar partial_unexpected_list with no
+    // tested_column) coincides with some other column being shown: the tracker
+    // reports "partial" but has no column name to attribute the mask to, so
+    // redacted_columns is empty. "0 columns redacted" would be false-adjacent.
+    mockGetRun.mockResolvedValue({
+      ...runDetail,
+      results: [
+        {
+          ...runDetail.results[0],
+          sample_failures: {
+            unexpected_index_list: [{ order_id: 'ORD-1' }],
+            partial_unexpected_list: ['a@x.com'],
+          },
+          redaction: 'partial',
+          redacted_columns: [],
+        },
+      ],
+    });
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]);
+    renderAt('r1');
+    const user = userEvent.setup();
+
+    await screen.findByText('order_id not null');
+    await user.click(screen.getByRole('button', { name: /expand row/i }));
+
+    expect(await screen.findByText(/Failing rows/)).toBeInTheDocument();
+    expect(screen.getByText(/partially redacted/)).toBeInTheDocument();
+    expect(screen.queryByText(/column.*redacted/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^values redacted$/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/values shown/)).not.toBeInTheDocument();
+  });
+
   it('omits any redaction claim when the sample has no data-bearing content', async () => {
     mockGetRun.mockResolvedValue({
       ...runDetail,

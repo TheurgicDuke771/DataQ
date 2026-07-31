@@ -287,13 +287,20 @@ function SampleFailures({
   // #424: the redaction claim must match reality — "values redacted" only when
   // the whole sample was masked; a partial mix names how many columns were, and
   // an all-shown or no-data-bearing-content sample makes no redaction claim.
+  // A partial state can carry an EMPTY redactedColumns list (#1115 review): the
+  // backend tracker also reports "partial" when an anonymous mask (a scalar
+  // partial_unexpected_list with no tested_column — nothing nameable) coincides
+  // with some other column being shown, so "0 columns redacted" would be
+  // false-adjacent — fall back to the unquantified phrasing instead.
   const redactionLabel =
     redaction === 'full'
       ? 'values redacted'
       : redaction === 'none'
         ? 'values shown'
         : redaction === 'partial'
-          ? `${redactedColumns.length} column${redactedColumns.length === 1 ? '' : 's'} redacted`
+          ? redactedColumns.length > 0
+            ? `${redactedColumns.length} column${redactedColumns.length === 1 ? '' : 's'} redacted`
+            : 'partially redacted'
           : null;
 
   return (
