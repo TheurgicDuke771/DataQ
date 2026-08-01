@@ -125,6 +125,11 @@ class CheckConfigInvalidError(DataQError):
     code = "check_config_invalid"
 
 
+class CheckVersionNotFoundError(DataQError):
+    status_code = 404
+    code = "check_version_not_found"
+
+
 # The unique-constraint name on `check_versions(check_id, version_no)` — the
 # concurrency backstop a racing double-edit trips. Matched against the DB error
 # so only that collision becomes a 409 (see `update_check`).
@@ -728,6 +733,95 @@ def get_check(session: Session, suite_id: uuid.UUID, check_id: uuid.UUID) -> Che
     return check
 
 
+def _validate_kind_specific_config(
+    session: Session,
+    suite_id: uuid.UUID,
+    check: Check,
+    *,
+    expectation_type: str,
+    config: dict[str, Any],
+    fail_threshold: Decimal | None,
+    critical_threshold: Decimal | None,
+    source_connection_id: uuid.UUID | None,
+    validate_expectation_config: bool,
+) -> None:
+    """The kind-specific validation branch shared by `update_check` and
+    `restore_check_version` (#283) — factored out to ONE place so a check kind
+    added later, or a validator tightened, updates both callers instead of
+    restore silently falling behind whichever hand-picked subset it called.
+    `kind` is immutable, so the branch is keyed on the LIVE check's `kind`.
+
+    `validate_expectation_config` preserves `update_check`'s pre-#651 escape
+    valve: GX-validate a plain expectation only when the caller is actually
+    changing `expectation_type`/`config` (a rename/threshold-only PATCH must
+    stay possible on a pre-#651 check whose stored config today's pinned GX
+    would reject — there is no config backfill). `restore_check_version`
+    always re-applies both fields, so it always passes `True`.
+    """
+    if check.kind in MONITOR_KINDS:
+        suite = get_suite(session, suite_id)
+        validate_monitor_check(
+            check.kind,
+            config,
+            expectation_type=expectation_type,
+            connection_type=_connection_type(session, suite),
+            fail_threshold=fail_threshold,
+            critical_threshold=critical_threshold,
+        )
+    elif check.kind == COMPARISON_KIND:
+        suite = get_suite(session, suite_id)
+        validate_comparison_check(
+            session,
+            config=config,
+            expectation_type=expectation_type,
+            source_connection_id=source_connection_id,
+            suite_connection_type=_connection_type(session, suite),
+        )
+    elif is_custom_sql(expectation_type):
+        suite = get_suite(session, suite_id)
+        validate_custom_sql_check(
+            expectation_type=expectation_type,
+            config=config,
+            connection_type=_connection_type(session, suite),
+        )
+    elif validate_expectation_config:
+        validate_expectation_check(expectation_type, config)
+
+
+def _record_version_and_commit(
+    session: Session, check: Check, check_id: uuid.UUID, actor_id: uuid.UUID | None
+) -> Check:
+    """Snapshot-if-modified + commit + the concurrent-edit-race → 409 mapping
+    shared by `update_check` and `restore_check_version` (#283): both are a
+    read-modify-write against the same `(check_id, version_no)` backstop, so
+    both need the identical race handling, not two copies that can drift.
+    """
+    # Only snapshot a real change: a no-op write (identical fields, or restoring
+    # the already-current version) must not mint a duplicate version — that
+    # would fill the history drawer with noise and defeat "see previous config".
+    # SQLAlchemy reports net changes, so setting a field to its existing value
+    # isn't dirty.
+    if session.is_modified(check):
+        record_check_version(session, check, actor_id=actor_id)
+    try:
+        session.commit()
+    except IntegrityError as exc:
+        # Roll back the poisoned tx, then map ONLY the version-snapshot collision to
+        # a 409 (reload + retry): two concurrent edits computed the same next
+        # `version_no` and raced on the `uq_check_versions_check_version` backstop.
+        # Any other IntegrityError (a different constraint) is not a concurrency
+        # conflict — re-raise it rather than mislabel it "edited concurrently".
+        session.rollback()
+        if _VERSION_UNIQUE_CONSTRAINT not in str(exc.orig):
+            raise
+        raise CheckEditConflictError(
+            "this check was edited concurrently — reload and retry",
+            detail={"check_id": str(check_id)},
+        ) from exc
+    session.refresh(check)
+    return check
+
+
 def update_check(
     session: Session,
     suite_id: uuid.UUID,
@@ -784,42 +878,23 @@ def update_check(
     validate_threshold_ordering(
         warn_threshold=new_warn, fail_threshold=new_fail, critical_threshold=new_critical
     )
-    if check.kind in MONITOR_KINDS:
-        suite = get_suite(session, suite_id)
-        validate_monitor_check(
-            check.kind,
-            new_config,
-            expectation_type=new_expectation_type,
-            connection_type=_connection_type(session, suite),
-            fail_threshold=new_fail,
-            critical_threshold=new_critical,
-        )
-    elif check.kind == COMPARISON_KIND:
-        suite = get_suite(session, suite_id)
-        validate_comparison_check(
-            session,
-            config=new_config,
-            expectation_type=new_expectation_type,
-            source_connection_id=(
-                source_connection_id
-                if source_connection_id is not None
-                else check.source_connection_id
-            ),
-            suite_connection_type=_connection_type(session, suite),
-        )
-    elif is_custom_sql(new_expectation_type):
-        suite = get_suite(session, suite_id)
-        validate_custom_sql_check(
-            expectation_type=new_expectation_type,
-            config=new_config,
-            connection_type=_connection_type(session, suite),
-        )
-    elif expectation_type is not None or config is not None:
-        # GX-validate only when the PATCH touches the expectation itself: a
+    _validate_kind_specific_config(
+        session,
+        suite_id,
+        check,
+        expectation_type=new_expectation_type,
+        config=new_config,
+        fail_threshold=new_fail,
+        critical_threshold=new_critical,
+        source_connection_id=(
+            source_connection_id if source_connection_id is not None else check.source_connection_id
+        ),
+        # GX-validate a plain expectation only when the PATCH touches it: a
         # rename or threshold tweak must stay possible on a pre-#651 check whose
         # stored config today's pinned GX rejects (there is no config backfill —
         # such a row would otherwise be un-editable until delete-and-recreate).
-        validate_expectation_check(new_expectation_type, new_config)
+        validate_expectation_config=(expectation_type is not None or config is not None),
+    )
 
     if name is not None:
         check.name = name
@@ -837,28 +912,7 @@ def update_check(
         check.critical_threshold = critical_threshold
     if dimension is not None:
         check.dimension = dimension
-    # Only snapshot a real change: a no-op PATCH (empty body, or fields set to
-    # their current values) must not mint a duplicate version — that would fill
-    # the history drawer with noise and defeat "see previous config". SQLAlchemy
-    # reports net changes, so setting a field to its existing value isn't dirty.
-    if session.is_modified(check):
-        record_check_version(session, check, actor_id=actor_id)
-    try:
-        session.commit()
-    except IntegrityError as exc:
-        # Roll back the poisoned tx, then map ONLY the version-snapshot collision to
-        # a 409 (reload + retry): two concurrent edits computed the same next
-        # `version_no` and raced on the `uq_check_versions_check_version` backstop.
-        # Any other IntegrityError (a different constraint) is not a concurrency
-        # conflict — re-raise it rather than mislabel it "edited concurrently".
-        session.rollback()
-        if _VERSION_UNIQUE_CONSTRAINT not in str(exc.orig):
-            raise
-        raise CheckEditConflictError(
-            "this check was edited concurrently — reload and retry",
-            detail={"check_id": str(check_id)},
-        ) from exc
-    session.refresh(check)
+    check = _record_version_and_commit(session, check, check_id, actor_id)
     log.info("check_updated", check_id=str(check.id))
     return check
 
@@ -918,6 +972,96 @@ def list_check_versions(
             .order_by(CheckVersion.version_no.desc())
         )
     )
+
+
+def restore_check_version(
+    session: Session,
+    suite_id: uuid.UUID,
+    check_id: uuid.UUID,
+    version_no: int,
+    *,
+    actor_id: uuid.UUID | None = None,
+) -> Check:
+    """Restore a check to a previous version (#283) by re-validating its frozen
+    snapshot through the SAME validators `update_check` uses (`validate_lengths`,
+    `validate_dimension`, `validate_threshold_ordering`,
+    `_validate_kind_specific_config`) and then applying it. That matters
+    because the snapshot may predate a validator that ships later (e.g. #568's
+    threshold-ordering gate, or a tightened ADR-0019 custom-SQL rule):
+    re-validating means a snapshot no longer valid under CURRENT rules is
+    rejected (422) with the live check left untouched, instead of silently
+    reinstating something today's authoring path would refuse to create.
+
+    Deliberately does NOT delegate to `update_check` itself: `update_check`'s
+    `None`-means-"not provided" PATCH convention has no way to clear a
+    threshold/dimension back to NULL, but restoring a version that WAS null
+    there (while the check has since had it set to a real value) must reproduce
+    the snapshot exactly — restore always applies every field unconditionally,
+    including a `None`.
+
+    404s if the check is missing/cross-suite (`get_check`) or `version_no`
+    doesn't exist for it. `kind` is immutable — asserted equal to the live
+    check's rather than applied, since `CheckVersion.kind` is captured for a
+    self-contained history record, never to drive a restore.
+
+    Snapshots the restored state as a brand-new version on success (history is
+    additive — nothing is renumbered or deleted) unless the live check is
+    already identical to the target snapshot, in which case
+    `_record_version_and_commit`'s no-op gating (`session.is_modified`) skips
+    the snapshot — restoring the already-current version is a no-op.
+    """
+    check = get_check(session, suite_id, check_id)  # 404 / cross-suite guard
+    version = session.scalar(
+        select(CheckVersion).where(
+            CheckVersion.check_id == check_id, CheckVersion.version_no == version_no
+        )
+    )
+    if version is None:
+        raise CheckVersionNotFoundError(
+            "check version not found",
+            detail={"check_id": str(check_id), "version_no": version_no},
+        )
+    assert version.kind == check.kind, "a check's kind is immutable; a version can't disagree"
+    assert (
+        version.source_connection_id is None or check.kind == COMPARISON_KIND
+    ), "only a comparison check's snapshot carries a source connection (ADR 0015)"
+
+    validate_lengths(name=version.name, expectation_type=version.expectation_type)
+    validate_dimension(version.dimension)
+    validate_threshold_ordering(
+        warn_threshold=version.warn_threshold,
+        fail_threshold=version.fail_threshold,
+        critical_threshold=version.critical_threshold,
+    )
+    _validate_kind_specific_config(
+        session,
+        suite_id,
+        check,
+        expectation_type=version.expectation_type,
+        config=version.config,
+        fail_threshold=version.fail_threshold,
+        critical_threshold=version.critical_threshold,
+        source_connection_id=version.source_connection_id,
+        # Restore always re-applies both fields (never a partial touch), so
+        # always GX-validate — no PATCH-style "only if touched" escape valve.
+        validate_expectation_config=True,
+    )
+
+    # Apply the FULL snapshot unconditionally (unlike update_check's merge):
+    # restore's entire point is to reproduce the version exactly, including
+    # clearing a threshold/dimension back to NULL if that's what it held.
+    check.name = version.name
+    check.expectation_type = version.expectation_type
+    check.config = version.config
+    check.source_connection_id = version.source_connection_id
+    check.warn_threshold = version.warn_threshold
+    check.fail_threshold = version.fail_threshold
+    check.critical_threshold = version.critical_threshold
+    check.dimension = version.dimension
+
+    check = _record_version_and_commit(session, check, check_id, actor_id)
+    log.info("check_restored", check_id=str(check.id), version_no=version_no)
+    return check
 
 
 @dataclass(frozen=True)

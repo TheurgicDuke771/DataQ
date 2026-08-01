@@ -1,30 +1,68 @@
-import { Descriptions } from 'antd';
+import { App, Button, Descriptions, Popconfirm } from 'antd';
+import { useState } from 'react';
 
-import { type CheckVersion, listCheckVersions } from '../../api/suites';
+import { type CheckVersion, listCheckVersions, restoreCheckVersion } from '../../api/suites';
+import { errorMessage } from '../../utils/errors';
 import { ConfigJson, HistoryDrawer } from '../HistoryDrawer';
 import { EXPECTATION_BY_TYPE } from './expectationCatalog';
 
 /**
- * Check version history (#280) — "see previous config before overwriting", on
- * the shared `HistoryDrawer` shell (also used by connections, #654).
+ * Check version history (#280) — "see previous config before overwriting" —
+ * plus restore (#283), on the shared `HistoryDrawer` shell (also used
+ * read-only by connections, #654). Restore re-validates the snapshot against
+ * TODAY's rules server-side and can 422 (e.g. a pre-#568 snapshot with
+ * reversed thresholds); the confirm stays open on failure, mirroring the
+ * suite delete/re-baseline confirm pattern.
  */
 export function CheckHistoryDrawer({
   open,
   suiteId,
   check,
+  canRestore = false,
+  onRestored,
   onClose,
 }: {
   open: boolean;
   suiteId: string;
   /** The check whose history to show; null while none is selected. */
   check: { id: string; name: string } | null;
+  /** Whether the caller may restore a version — mirrors the editor's edit gate
+   *  (`canRunSuite`); a viewer sees history exactly as read-only as v1 did.
+   *  Defaults to false so an existing render site stays view-only. */
+  canRestore?: boolean;
+  /** Called after a successful restore so the editor reloads the check (the
+   *  live config just changed underneath it). Required only when `canRestore`
+   *  is true — a view-only drawer never fires it. */
+  onRestored?: () => void;
   onClose: () => void;
 }) {
+  const { message } = App.useApp();
+  const [restoringVersion, setRestoringVersion] = useState<number | null>(null);
+  // Bumped after a successful restore to force the version list to refetch
+  // (the drawer stays open so the new row is visible immediately).
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const handleRestore = async (versionNo: number) => {
+    if (!check) return;
+    setRestoringVersion(versionNo);
+    try {
+      await restoreCheckVersion(suiteId, check.id, versionNo);
+      message.success(`Restored v${versionNo}`);
+      setRefreshKey((k) => k + 1);
+      onRestored?.();
+    } catch (err) {
+      message.error(`Restore failed: ${errorMessage(err)}`);
+    } finally {
+      setRestoringVersion(null);
+    }
+  };
+
   return (
     <HistoryDrawer<CheckVersion>
       open={open}
       subject={check}
       onClose={onClose}
+      refreshKey={refreshKey}
       // The body only mounts with a subject, so the null branch never fetches.
       fetchVersions={() => (check ? listCheckVersions(suiteId, check.id) : Promise.resolve([]))}
       renderDetails={(version) => (
@@ -38,6 +76,23 @@ export function CheckHistoryDrawer({
           <Descriptions.Item label="Thresholds">{formatThresholds(version)}</Descriptions.Item>
         </Descriptions>
       )}
+      renderActions={
+        canRestore
+          ? (version, isCurrent) =>
+              !isCurrent && (
+                <Popconfirm
+                  title={`Restore v${version.version_no}?`}
+                  description="Creates a new version with this snapshot's config; nothing is deleted."
+                  okText="Restore"
+                  onConfirm={() => handleRestore(version.version_no)}
+                >
+                  <Button size="small" loading={restoringVersion === version.version_no}>
+                    Restore this version
+                  </Button>
+                </Popconfirm>
+              )
+          : undefined
+      }
     />
   );
 }

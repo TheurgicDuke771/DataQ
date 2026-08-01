@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import { type ConnectionType, getConnection } from '../api/connections';
-import { type Check, getCheck, getSuite, updateCheck } from '../api/suites';
+import { canRunSuite, type Check, getCheck, getSuite, updateCheck } from '../api/suites';
 import { buildCheckPayload, configToForm } from '../components/checks/checkForm';
 import {
   ConfigFieldItem,
@@ -30,7 +30,9 @@ import { useAsyncData } from '../hooks/useAsyncData';
  * submitted `config` is rebuilt from only the selected expectation's declared
  * fields, so switching types never leaks stale kwargs. Creating a check is the
  * dedicated `/suites/:suiteId/checks/new` page. Version history is still a drawer
- * (the surviving read-only drawer alongside Share). The fetch + form live in a
+ * (the surviving drawer alongside Share) and now offers Restore (#283) when the
+ * caller can edit — a successful restore reloads the page's suite/check/connection
+ * fetch so the form re-seeds from the restored state. The fetch + form live in a
  * view keyed on the check id so a param-only route change reloads cleanly.
  */
 export function CheckEdit() {
@@ -45,7 +47,7 @@ function CheckEditView({ suiteId, checkId }: { suiteId?: string; checkId?: strin
   // drives the dry-run preview, the connection type gates Custom SQL (ADR 0019),
   // and the check seeds the form. The connection only depends on the suite, so it
   // chains off getSuite while getCheck runs alongside (not serially after both).
-  const { state } = useAsyncData(async () => {
+  const { state, reload } = useAsyncData(async () => {
     if (!suiteId || !checkId) throw new Error('no check');
     const suiteP = getSuite(suiteId);
     // Best-effort: a suite may be readable while its connection isn't (shared
@@ -84,6 +86,10 @@ function CheckEditView({ suiteId, checkId }: { suiteId?: string; checkId?: strin
             check={state.data.check}
             target={state.data.suite.target}
             connectionType={state.data.connection?.type}
+            // History's Restore action is edit-gated the same way the rest of
+            // the suite's write actions are (Suites.tsx `canRun`).
+            canRestore={canRunSuite(state.data.suite)}
+            onRestored={reload}
             onCancel={back}
             onSaved={back}
           />
@@ -98,6 +104,8 @@ function CheckEditForm({
   check,
   target,
   connectionType,
+  canRestore,
+  onRestored,
   onCancel,
   onSaved,
 }: {
@@ -105,6 +113,12 @@ function CheckEditForm({
   check: Check;
   target: Record<string, unknown> | null;
   connectionType?: ConnectionType;
+  /** Whether the caller may restore a version (#283) — passed straight through
+   *  to `CheckHistoryDrawer`. */
+  canRestore: boolean;
+  /** Refetches the suite/check/connection after a successful restore, so the
+   *  form re-seeds from the restored (live) state. */
+  onRestored: () => void;
   onCancel: () => void;
   onSaved: () => void;
 }) {
@@ -262,6 +276,8 @@ function CheckEditForm({
         open={historyOpen}
         suiteId={suiteId}
         check={check}
+        canRestore={canRestore}
+        onRestored={onRestored}
         onClose={() => setHistoryOpen(false)}
       />
     </>
