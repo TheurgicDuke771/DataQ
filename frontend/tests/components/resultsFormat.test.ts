@@ -11,6 +11,7 @@ import {
   pipelineStatusColor,
   RESULT_STATUS_COLORS,
   RUN_BAR_STATUS,
+  runReportTitle,
   RUN_STATUS_COLORS,
 } from '../../src/components/results/resultsFormat';
 
@@ -193,6 +194,20 @@ describe('anomalyColdStartHint (#593 cold start)', () => {
 
   it('is not fooled by a truthy-but-not-true insufficient_history', () => {
     expect(anomalyColdStartHint({ insufficient_history: 1, points: 3, min_points: 7 })).toBeNull();
+  });
+});
+
+describe('runReportTitle (#345 — PDF report title / Save-as-PDF filename)', () => {
+  it('leads with the suite name and includes a short run id', () => {
+    const title = runReportTitle('Orders quality', { id: 'r1234567890', suite_id: 's1' });
+    expect(title.startsWith('Orders quality')).toBe(true);
+    expect(title).toContain('r1234567');
+    expect(title).toContain('DataQ');
+  });
+
+  it('falls back to a suite-id stub when the suite name is unknown', () => {
+    const title = runReportTitle(null, { id: 'r1', suite_id: 's1234567890' });
+    expect(title).toContain('s1234567');
   });
 });
 

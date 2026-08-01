@@ -1,7 +1,7 @@
 import { ArrowLeftOutlined, DownloadOutlined } from '@ant-design/icons';
 import { Alert, Button, Card, Dropdown, Empty, Flex, Spin, Table, Tag, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import { getRun, type Result, type ResultStatus } from '../api/runs';
@@ -16,8 +16,10 @@ import {
   formatTimestamp,
   RESULT_STATUS_COLORS,
   RUN_STATUS_COLORS,
+  runReportTitle,
 } from '../components/results/resultsFormat';
 import { Page } from '../components/layout/Page';
+import { RunReport } from '../components/results/RunReport';
 import { ScalarValue } from '../components/results/ScalarValue';
 import { useAsyncData } from '../hooks/useAsyncData';
 import { downloadCsv, downloadJson, toFilenameStem } from '../utils/download';
@@ -52,31 +54,63 @@ export function RunDetail() {
 
   const back = () => navigate('/results');
 
-  return (
-    <Page width={1000} gap={16}>
-      <div>
-        <Button type="text" icon={<ArrowLeftOutlined />} onClick={back} style={{ paddingLeft: 0 }}>
-          Results
-        </Button>
-      </div>
+  // The tab title (and the filename a browser's Save-as-PDF dialog suggests)
+  // identifies the run while it's loaded (#345 a11y ask), restored on
+  // navigating away rather than left stuck on a stale run's title.
+  useEffect(() => {
+    if (state.status !== 'ok') return;
+    const previous = document.title;
+    document.title = runReportTitle(state.data.suiteName, state.data.run);
+    return () => {
+      document.title = previous;
+    };
+  }, [state]);
 
-      {state.status === 'loading' && <Spin description="Loading run…" size="large" />}
-      {state.status === 'error' && (
-        <PageError
-          error={state.error}
-          kind={state.kind}
-          httpStatus={state.httpStatus}
-          requestId={state.requestId}
-        />
-      )}
+  return (
+    <>
+      {/* `.no-print` (styles.css) hides the whole interactive page — including
+          the app header/sider — when the "Print / Save as PDF" download-menu
+          item calls `window.print()`; the parallel `RunReport` below is the
+          only thing a print/PDF context renders (#345). */}
+      <div className="no-print" data-testid="rd-screen">
+        <Page width={1000} gap={16}>
+          <div>
+            <Button
+              type="text"
+              icon={<ArrowLeftOutlined />}
+              onClick={back}
+              style={{ paddingLeft: 0 }}
+            >
+              Results
+            </Button>
+          </div>
+
+          {state.status === 'loading' && <Spin description="Loading run…" size="large" />}
+          {state.status === 'error' && (
+            <PageError
+              error={state.error}
+              kind={state.kind}
+              httpStatus={state.httpStatus}
+              requestId={state.requestId}
+            />
+          )}
+          {state.status === 'ok' && (
+            <RunDetailBody
+              run={state.data.run}
+              suiteName={state.data.suiteName}
+              checks={state.data.checks}
+            />
+          )}
+        </Page>
+      </div>
       {state.status === 'ok' && (
-        <RunDetailBody
+        <RunReport
           run={state.data.run}
           suiteName={state.data.suiteName}
           checks={state.data.checks}
         />
       )}
-    </Page>
+    </>
   );
 }
 
@@ -227,12 +261,20 @@ function DownloadMenu({
     });
   };
 
+  // The PDF "export" is the browser's own print-to-PDF: `RunReport` (rendered
+  // once, always, in `RunDetail`) is a chrome-free print-only twin of this
+  // page, hidden on screen and shown only in a print context (`.print-only` /
+  // `.no-print` in styles.css) — so triggering it is just `window.print()`,
+  // zero new dependency (#345).
+  const exportPdf = () => window.print();
+
   return (
     <Dropdown
       menu={{
         items: [
           { key: 'csv', label: 'Download CSV', onClick: exportCsv },
           { key: 'json', label: 'Download JSON', onClick: exportJson },
+          { key: 'pdf', label: 'Print / Save as PDF', onClick: exportPdf },
         ],
       }}
       disabled={run.results.length === 0}

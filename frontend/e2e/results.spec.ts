@@ -30,12 +30,17 @@ test.describe('Results page', () => {
       .first()
       .click();
     await expect(page).toHaveURL(/\/results\/[0-9a-f-]+$/);
-    await expect(page.getByText('order_id not null')).toBeVisible();
-    await expect(page.getByText('amount in range')).toBeVisible();
-    await expect(page.getByText('expect_column_values_to_be_between').first()).toBeVisible();
+    // Scoped to the interactive region (#345): the print-only PDF report
+    // renders a parallel copy of the check names/statuses (hidden outside a
+    // print context, but still in the DOM), which makes an unscoped
+    // page.getByText ambiguous under Playwright's strict-mode locators.
+    const runDetail = page.getByTestId('rd-screen');
+    await expect(runDetail.getByText('order_id not null')).toBeVisible();
+    await expect(runDetail.getByText('amount in range')).toBeVisible();
+    await expect(runDetail.getByText('expect_column_values_to_be_between').first()).toBeVisible();
     // The warn + fail severity tiers from the seeded spread are visible.
-    await expect(page.getByText('warn').first()).toBeVisible();
-    await expect(page.getByText('fail').first()).toBeVisible();
+    await expect(runDetail.getByText('warn').first()).toBeVisible();
+    await expect(runDetail.getByText('fail').first()).toBeVisible();
   });
 
   test('expands the failed check to its redacted failing-value sample', async ({ page }) => {
@@ -60,10 +65,13 @@ test.describe('Results page', () => {
     // doesn't: a critical breach, an error (evaluation threw), and a skip.
     await page.locator('tr.ant-table-row').filter({ hasText: 'seed:run:mixed' }).first().click();
     await expect(page).toHaveURL(/\/results\/[0-9a-f-]+$/);
-    await expect(page.getByText('status in set')).toBeVisible();
-    await expect(page.getByText('critical').first()).toBeVisible();
-    await expect(page.getByText('error').first()).toBeVisible();
-    await expect(page.getByText('skip').first()).toBeVisible();
+    // Scoped to the interactive region (#345) — see the comment in the
+    // previous test.
+    const runDetail = page.getByTestId('rd-screen');
+    await expect(runDetail.getByText('status in set')).toBeVisible();
+    await expect(runDetail.getByText('critical').first()).toBeVisible();
+    await expect(runDetail.getByText('error').first()).toBeVisible();
+    await expect(runDetail.getByText('skip').first()).toBeVisible();
   });
 
   test('shows the orchestration pipeline-runs monitoring feed', async ({ page }) => {
