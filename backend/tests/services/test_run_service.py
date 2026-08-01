@@ -794,6 +794,197 @@ def test_redact_datasource_tag_is_a_floor_override_cannot_unmask() -> None:
     assert out == {"unexpected_index_list": [{"ACCOUNT_REF": "<redacted>", "AMOUNT": -1}]}
 
 
+# ── redact_sample_failures_with_state (#424) ──────────────────────────────────
+# The header lied whenever ANY value surfaced after #415's column-aware masking:
+# it always said "values redacted". These test the tri-state summary the read
+# API now derives instead of the frontend sniffing for the "<redacted>" sentinel
+# (which breaks if a genuine value equals it).
+
+
+def test_redact_state_none_for_a_none_sample() -> None:
+    sample, state, cols = run_service.redact_sample_failures_with_state(None)
+    assert sample is None
+    assert state is None
+    assert cols == []
+
+
+def test_redact_state_null_when_sample_has_no_data_bearing_content() -> None:
+    # Only aggregate counts — nothing was ever shown or masked, so there is
+    # nothing true to claim either way.
+    sample, state, cols = run_service.redact_sample_failures_with_state(
+        {"unexpected_count": 3, "unexpected_percent": 12.5}
+    )
+    assert sample == {"unexpected_count": 3, "unexpected_percent": 12.5}
+    assert state is None
+    assert cols == []
+
+
+def test_redact_state_full_when_every_column_masked() -> None:
+    sample, state, cols = run_service.redact_sample_failures_with_state(
+        {"unexpected_index_list": [{"EMAIL": "a@x.com", "SSN": "111-22-3333"}]},
+    )
+    assert state == "full"
+    assert cols == ["EMAIL", "SSN"]
+    assert sample == {"unexpected_index_list": [{"EMAIL": "<redacted>", "SSN": "<redacted>"}]}
+
+
+def test_redact_state_full_for_anonymous_masked_scalar_list_with_no_tested_column() -> None:
+    # No tested_column context → the scalar list masks with no column name to
+    # attribute the decision to. The mask must still register as "full" — the
+    # anonymous-masked path must not silently disappear from the summary.
+    sample, state, cols = run_service.redact_sample_failures_with_state(
+        {"partial_unexpected_list": ["a@x.com", "b@y.com"]}
+    )
+    assert state == "full"
+    assert cols == []  # nothing nameable, but the mask is still counted
+    assert sample == {"partial_unexpected_list": ["<redacted>", "<redacted>"]}
+
+
+def test_redact_state_partial_with_no_nameable_column_from_anonymous_mask() -> None:
+    """#1115 review: an anonymous mask (no `tested_column`) can coincide with a
+    DIFFERENT column being shown elsewhere in the same sample — both real GX
+    buckets, `unexpected_index_list` (row dicts, redacted per column) and
+    `partial_unexpected_list` (the tested column's scalar list), can be present
+    together. That combination reports "partial" with an EMPTY `redacted_columns`
+    (there is a real mask, but nothing nameable for it) — the API/frontend must
+    not read empty `redacted_columns` as "nothing was masked" when state is
+    "partial"."""
+    sample, state, cols = run_service.redact_sample_failures_with_state(
+        {
+            "unexpected_index_list": [{"ORDER_ID": "ORD-1"}],  # shown: identifier
+            "partial_unexpected_list": ["a@x.com"],  # masked, but no tested_column
+        }
+    )
+    assert state == "partial"
+    assert cols == []  # nothing nameable for the anonymous mask
+    assert sample == {
+        "unexpected_index_list": [{"ORDER_ID": "ORD-1"}],
+        "partial_unexpected_list": ["<redacted>"],
+    }
+
+
+def test_redact_state_none_when_every_column_shown() -> None:
+    # The tested column's non-PII values surface (#417) and nothing else is masked.
+    sample, state, cols = run_service.redact_sample_failures_with_state(
+        {"unexpected_count": 2, "partial_unexpected_list": [-12.5, -5.0]},
+        tested_column="LINE_TOTAL",
+    )
+    assert state == "none"
+    assert cols == []
+    assert sample == {"unexpected_count": 2, "partial_unexpected_list": [-12.5, -5.0]}
+
+
+def test_redact_state_partial_when_some_columns_shown_some_masked() -> None:
+    sample, state, cols = run_service.redact_sample_failures_with_state(
+        {
+            "unexpected_index_list": [
+                {"ORDER_NUMBER": "ORD-1041", "LINE_TOTAL": -12.5, "EMAIL": "a@x.com"},
+            ]
+        },
+        tested_column="LINE_TOTAL",
+        policy={"identifier_column": "ORDER_NUMBER"},
+    )
+    assert state == "partial"
+    assert cols == ["EMAIL"]
+    assert sample == {
+        "unexpected_index_list": [
+            {"ORDER_NUMBER": "ORD-1041", "LINE_TOTAL": -12.5, "EMAIL": "<redacted>"},
+        ]
+    }
+
+
+def test_redact_state_partial_across_comparison_buckets() -> None:
+    # Comparison rows (ADR 0015): an explicit `pii_columns` entry masks both sides
+    # of STATUS while the unsuffixed, non-PII ORDER_ID join key surfaces.
+    sample, state, cols = run_service.redact_sample_failures_with_state(
+        {
+            "mismatched": [
+                {"ORDER_ID": "ORD-1", "STATUS_src": "shipped", "STATUS_tgt": "returned"},
+            ]
+        },
+        policy={"pii_columns": ["STATUS"]},
+    )
+    assert state == "partial"
+    assert cols == ["STATUS_src", "STATUS_tgt"]
+    assert sample == {
+        "mismatched": [
+            {"ORDER_ID": "ORD-1", "STATUS_src": "<redacted>", "STATUS_tgt": "<redacted>"}
+        ]
+    }
+
+
+def test_redact_state_a_column_shown_anywhere_counts_as_shown() -> None:
+    # A column masked in one bucket but shown in another (rare, but the buckets are
+    # independent) must not report as "redacted" — OR-of-shown matches what a
+    # viewer actually saw somewhere in the sample.
+    tracker = run_service._RedactionTracker()
+    tracker.record("QTY", shown=False)
+    tracker.record("QTY", shown=True)
+    state, cols = tracker.summary()
+    assert state == "none"
+    assert cols == []
+
+
+# ── #1115 review: the catch-all masked branches must also register with the
+# tracker, or `summary()` UNDER-claims redaction — the mirror image of the bug
+# #424 fixed. Unreachable with today's two writers (gx_runner / comparison_run
+# only ever emit the recognized keys/shapes), but these are public helpers, so
+# an unrecognized key or a malformed row shape must not silently vanish.
+
+
+def test_redact_state_full_for_an_unrecognized_key_with_no_column_context() -> None:
+    # A key the redactor doesn't recognize is masked (default-mask, #415) but has
+    # no column name to attribute the mask to — must still register as a real
+    # (anonymous) mask, not "nothing happened".
+    sample, state, cols = run_service.redact_sample_failures_with_state(
+        {"some_future_bucket": ["secret@x.com"]}
+    )
+    assert state == "full"
+    assert cols == []
+    assert sample == {"some_future_bucket": ["<redacted>"]}
+
+
+def test_redact_state_partial_when_unrecognized_key_masks_alongside_a_shown_column() -> None:
+    sample, state, cols = run_service.redact_sample_failures_with_state(
+        {
+            "unexpected_index_list": [{"ORDER_ID": "ORD-1"}],  # shown: identifier
+            "some_future_bucket": ["secret@x.com"],  # masked, unrecognized key
+        }
+    )
+    assert state == "partial"
+    assert cols == []  # nothing nameable for the unrecognized-key mask
+    assert sample == {
+        "unexpected_index_list": [{"ORDER_ID": "ORD-1"}],
+        "some_future_bucket": ["<redacted>"],
+    }
+
+
+def test_redact_state_full_for_a_malformed_non_dict_row_in_index_list() -> None:
+    # `unexpected_index_list` is documented as row-dicts; a malformed non-dict
+    # entry still masks (via `_redact_row`'s non-dict fallback) but has no column
+    # identity — must still register as an anonymous mask.
+    sample, state, cols = run_service.redact_sample_failures_with_state(
+        {"unexpected_index_list": ["not-a-row-dict"]}
+    )
+    assert state == "full"
+    assert cols == []
+    assert sample == {"unexpected_index_list": ["<redacted>"]}
+
+
+def test_redact_state_partial_for_a_malformed_non_dict_comparison_row() -> None:
+    sample, state, cols = run_service.redact_sample_failures_with_state(
+        {
+            "mismatched": [
+                {"ORDER_ID": "ORD-1"},  # shown: unsuffixed, non-PII join key
+                "not-a-row-dict",  # malformed — masks anonymously
+            ]
+        }
+    )
+    assert state == "partial"
+    assert cols == []
+    assert sample == {"mismatched": [{"ORDER_ID": "ORD-1"}, "<redacted>"]}
+
+
 # ── #989: the errored-monitor cell, redacted under the same policy ───────────
 
 
