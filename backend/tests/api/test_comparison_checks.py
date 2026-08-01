@@ -342,6 +342,66 @@ def test_source_connection_delete_blocked_then_allowed(client: TestClient, db_se
     assert delete_connection.status_code == 204
 
 
+# ───────────────────────── restore (#283) ────────────────────────────
+
+
+def test_restore_a_comparison_check_to_a_prior_source(client: TestClient, db_session: Any) -> None:
+    """The happy path: restoring an older version repoints the source back,
+    same as a manual PATCH would, and records a new (additive) version."""
+    suite_conn = _connection(db_session)
+    source_a = _connection(db_session)
+    source_b = _connection(db_session)
+    sid = _suite_id(client, suite_conn)
+    cid = client.post(f"/api/v1/suites/{sid}/checks", json=_payload(str(source_a.id))).json()["id"]
+    client.patch(
+        f"/api/v1/suites/{sid}/checks/{cid}",
+        json={"source_connection_id": str(source_b.id)},
+    )  # v2 — repointed to source_b
+
+    resp = client.post(f"/api/v1/suites/{sid}/checks/{cid}/versions/1/restore")
+
+    assert resp.status_code == 200
+    assert resp.json()["source_connection_id"] == str(source_a.id)
+    versions = client.get(f"/api/v1/suites/{sid}/checks/{cid}/versions").json()
+    assert [v["version_no"] for v in versions] == [3, 2, 1]
+    assert versions[0]["source_connection_id"] == str(source_a.id)
+
+
+def test_restore_of_a_repointed_source_after_its_connection_is_deleted_returns_422(
+    client: TestClient, db_session: Any
+) -> None:
+    """`CheckVersion.source_connection_id` carries NO FK by design (ADR 0015/0020
+    — "a snapshot must outlive a later repoint + delete of the old source
+    connection"). Once a check is repointed away from `source_a`, the RESTRICT
+    delete-guard no longer blocks deleting `source_a` (it only protects a
+    connection still referenced by a check's CURRENT state) — but v1's
+    snapshot still names it. Restoring v1 must re-validate through
+    `validate_comparison_check` (the same 404-on-missing-connection gate a
+    fresh create/update would hit) and 422, leaving the live check's current,
+    still-valid source (`source_b`) untouched — not resurrect a dangling
+    reference today's authoring path would refuse to create.
+    """
+    suite_conn = _connection(db_session)
+    source_a = _connection(db_session)
+    source_b = _connection(db_session)
+    sid = _suite_id(client, suite_conn)
+    cid = client.post(f"/api/v1/suites/{sid}/checks", json=_payload(str(source_a.id))).json()["id"]
+    client.patch(
+        f"/api/v1/suites/{sid}/checks/{cid}",
+        json={"source_connection_id": str(source_b.id)},
+    )  # v2 — source_a is no longer the live source
+    delete_resp = client.delete(f"/api/v1/connections/{source_a.id}")
+    assert delete_resp.status_code == 204  # allowed now that nothing live references it
+
+    resp = client.post(f"/api/v1/suites/{sid}/checks/{cid}/versions/1/restore")
+
+    assert resp.status_code == 422
+    check = client.get(f"/api/v1/suites/{sid}/checks/{cid}").json()
+    assert check["source_connection_id"] == str(source_b.id)  # untouched
+    versions = client.get(f"/api/v1/suites/{sid}/checks/{cid}/versions").json()
+    assert [v["version_no"] for v in versions] == [2, 1]  # no v3 minted
+
+
 # ───────────────────────── export / import round-trip ───────────────
 
 

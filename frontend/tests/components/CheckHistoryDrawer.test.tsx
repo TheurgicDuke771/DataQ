@@ -154,11 +154,41 @@ describe('CheckHistoryDrawer — restore', () => {
     mockRestore.mockRejectedValue(new Error('snapshot no longer valid'));
     renderDrawer(undefined, { canRestore: true });
 
-    await user.click(await screen.findByRole('button', { name: /Restore this version/ }));
-    await user.click(await screen.findByRole('button', { name: 'Restore' }));
+    // Rethrowing to keep the Popconfirm open (the fix under test) is exactly
+    // what makes antd's own ActionButton produce a SECOND, internal derived
+    // promise it deliberately never catches (ant-design/ant-design#6183) — the
+    // library's own documented signal, not a bug in this component. Vitest's
+    // unhandled-rejection reporter skips an event that has more than its own
+    // listener attached, so register a no-op one for this window only.
+    const swallowExpectedRejection = () => {};
+    process.on('unhandledRejection', swallowExpectedRejection);
+    try {
+      await user.click(await screen.findByRole('button', { name: /Restore this version/ }));
+      await user.click(await screen.findByRole('button', { name: 'Restore' }));
 
-    expect(await screen.findByText(/Restore failed: snapshot no longer valid/)).toBeInTheDocument();
+      expect(
+        await screen.findByText(/Restore failed: snapshot no longer valid/),
+      ).toBeInTheDocument();
+    } finally {
+      process.off('unhandledRejection', swallowExpectedRejection);
+    }
     // No refetch on failure — still the one initial load.
     expect(mockList).toHaveBeenCalledTimes(1);
+    // The Popconfirm itself must stay OPEN on failure (its OK button re-throws
+    // into antd's ActionButton, which only closes on a resolved promise) — a
+    // silent close here would read as "restored" when it wasn't (#204 drift).
+    // The OK button (matched loosely: its own internal loading spinner is
+    // mid-exit-transition and still contributes a "loading " prefix to its
+    // accessible name) must still be present AND not mid-close: jsdom never
+    // fires a real CSS transitionend, so a genuinely-closing Popconfirm's
+    // buttons keep rendering (in an `ant-zoom-big-leave` shell) long after
+    // `close()` was called — the one signal set SYNCHRONOUSLY the moment it
+    // closes, before any animation, is `pointer-events: none` on the popover
+    // container, so check that instead of presence alone.
+    const okButton = screen.getByRole('button', { name: /^(loading )?Restore$/ });
+    const popover = okButton.closest<HTMLElement>('.ant-popover');
+    expect(popover).not.toBeNull();
+    expect(popover?.style.pointerEvents).not.toBe('none');
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
   });
 });

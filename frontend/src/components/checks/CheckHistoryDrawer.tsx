@@ -52,6 +52,10 @@ export function CheckHistoryDrawer({
       onRestored?.();
     } catch (err) {
       message.error(`Restore failed: ${errorMessage(err)}`);
+      // Re-throw so antd's Popconfirm ActionButton keeps the confirm OPEN on
+      // failure — resolving here would close it exactly like a success (the
+      // same #204 drift useConfirmDelete's `modal.confirm` guards against).
+      throw err;
     } finally {
       setRestoringVersion(null);
     }
