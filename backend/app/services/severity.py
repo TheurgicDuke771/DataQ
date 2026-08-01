@@ -108,6 +108,15 @@ def derive_status(
     critical) and any unset threshold is skipped (treated as +∞). Falls back to
     binary pass/fail when the check carries no thresholds, or carries thresholds
     but produced no bandable metric.
+
+    Authoring-time ordering/sign validation lives in
+    `check_service.validate_threshold_ordering` (#568), not here — this function
+    stays pure and has no DB access to enforce it against. Its own tolerance for
+    a bad set that predates that guard (or is written directly, bypassing it):
+    the cascade below checks `critical` FIRST, then `fail`, then `warn`, so an
+    inverted set (e.g. warn=90/fail=50/critical=10) doesn't crash — it just
+    degrades to a surprising-but-defined band (a metric of 60 hits `critical`
+    here even though a human reading "critical=10" alone wouldn't expect it).
     """
     no_thresholds = warn_threshold is None and fail_threshold is None and critical_threshold is None
     if no_thresholds or metric_value is None:

@@ -36,6 +36,7 @@ from backend.app.datasources.registry import (
 )
 from backend.app.db.models import Connection
 from backend.app.services import run_target
+from backend.app.services.check_service import validate_threshold_ordering
 from backend.app.services.custom_sql import validate_custom_sql_check
 from backend.app.services.failure_classifier import classify_failure_reason
 from backend.app.services.severity import resolve_status
@@ -94,6 +95,18 @@ def dry_run_check(
     expectation). The adapter exception is never echoed — it can carry
     DSN/credential fragments.
     """
+    # #568: a preview must never accept a threshold set that a save would
+    # reject — same shared validator create_check/update_check use. Checked
+    # for EVERY kind this endpoint accepts (schema_drift's thresholds are
+    # banded on its persisted run path same as any other kind, even though
+    # its own dry-run preview never reaches the severity derivation below),
+    # so this sits above the schema_drift early return and the kind-gate,
+    # before the (slow, live) datasource connect.
+    validate_threshold_ordering(
+        warn_threshold=warn_threshold,
+        fail_threshold=fail_threshold,
+        critical_threshold=critical_threshold,
+    )
     if kind == SCHEMA_DRIFT:
         return _dry_run_schema_drift(
             connection, config=config, target=target, secret_store=secret_store

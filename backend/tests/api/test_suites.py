@@ -814,6 +814,41 @@ def test_import_unsupported_kind_is_atomic(client: TestClient, db_session: Any) 
     assert after == before
 
 
+def test_import_rejects_inverted_thresholds_and_is_atomic(
+    client: TestClient, db_session: Any
+) -> None:
+    # #568: import must not persist what a direct POST would reject — the same
+    # validator (`check_service.validate_threshold_ordering`) is wired into
+    # `suite_io_service.import_suite`.
+    target = _connection(db_session)
+    before = db_session.scalar(select(func.count()).select_from(Suite))
+    resp = client.post(
+        "/api/v1/suites/import",
+        json={
+            "connection_id": str(target.id),
+            "document": {
+                "name": "smuggled-thresholds",
+                "checks": [
+                    {
+                        "name": "inverted",
+                        "expectation_type": "expect_column_values_to_not_be_null",
+                        "config": {"column": "id"},
+                        "warn_threshold": 90,
+                        "fail_threshold": 50,
+                        "critical_threshold": 10,
+                    }
+                ],
+            },
+        },
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "check_config_invalid"
+    after = db_session.scalar(select(func.count()).select_from(Suite))
+    assert after == before
+    names = [s["name"] for s in client.get("/api/v1/suites").json()]
+    assert "smuggled-thresholds" not in names
+
+
 # ───────────────────────── column profiler ─────────────────────────
 
 

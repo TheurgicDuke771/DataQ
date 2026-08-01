@@ -91,13 +91,13 @@ def test_create_stores_thresholds_as_numbers(client: TestClient, db_session: Any
     sid = _suite_id(client, db_session)
     resp = client.post(
         f"/api/v1/suites/{sid}/checks",
-        json=_payload(warn_threshold=0.95, fail_threshold=0.9, critical_threshold=0.5),
+        json=_payload(warn_threshold=0.5, fail_threshold=0.9, critical_threshold=0.95),
     )
     assert resp.status_code == 201
     body = resp.json()
-    assert body["warn_threshold"] == 0.95
+    assert body["warn_threshold"] == 0.5
     assert body["fail_threshold"] == 0.9
-    assert body["critical_threshold"] == 0.5
+    assert body["critical_threshold"] == 0.95
 
 
 def test_create_rejects_still_reserved_kind(client: TestClient, db_session: Any) -> None:
@@ -121,6 +121,118 @@ def test_create_blank_name_or_expectation_returns_422(client: TestClient, db_ses
     assert blank_name.status_code == 422
     blank_type = client.post(f"/api/v1/suites/{sid}/checks", json=_payload(expectation_type=""))
     assert blank_type.status_code == 422
+
+
+# ───────────────────────── threshold ordering (#568) ───────────────
+
+
+def test_create_rejects_inverted_thresholds(client: TestClient, db_session: Any) -> None:
+    # derive_status assumes warn <= fail <= critical; a fully inverted set
+    # (90/50/10) must 422 at author time, not silently persist as 201.
+    sid = _suite_id(client, db_session)
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks",
+        json=_payload(warn_threshold=90, fail_threshold=50, critical_threshold=10),
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "check_config_invalid"
+
+
+def test_create_rejects_fail_greater_than_critical(client: TestClient, db_session: Any) -> None:
+    sid = _suite_id(client, db_session)
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks",
+        json=_payload(fail_threshold=10, critical_threshold=5),
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "check_config_invalid"
+
+
+def test_create_rejects_negative_threshold(client: TestClient, db_session: Any) -> None:
+    sid = _suite_id(client, db_session)
+    resp = client.post(f"/api/v1/suites/{sid}/checks", json=_payload(warn_threshold=-1))
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "check_config_invalid"
+
+
+def test_create_accepts_equal_thresholds(client: TestClient, db_session: Any) -> None:
+    # Equal is a valid (if unusual) boundary, not "inverted".
+    sid = _suite_id(client, db_session)
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks",
+        json=_payload(warn_threshold=5, fail_threshold=5, critical_threshold=5),
+    )
+    assert resp.status_code == 201
+
+
+def test_create_accepts_partially_set_ascending_thresholds(
+    client: TestClient, db_session: Any
+) -> None:
+    # warn unset — only fail <= critical needs to hold, and does.
+    sid = _suite_id(client, db_session)
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks",
+        json=_payload(fail_threshold=5, critical_threshold=20),
+    )
+    assert resp.status_code == 201
+
+
+def test_update_rejects_inverted_thresholds(client: TestClient, db_session: Any) -> None:
+    sid = _suite_id(client, db_session)
+    cid = client.post(
+        f"/api/v1/suites/{sid}/checks",
+        json=_payload(warn_threshold=1, fail_threshold=5, critical_threshold=20),
+    ).json()["id"]
+    resp = client.patch(
+        f"/api/v1/suites/{sid}/checks/{cid}",
+        json={"warn_threshold": 25},  # merged: 25 > fail(5) and 25 > critical(20)
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "check_config_invalid"
+    # The rejected PATCH must not have persisted the bad value.
+    unchanged = client.get(f"/api/v1/suites/{sid}/checks/{cid}")
+    assert unchanged.json()["warn_threshold"] == 1
+
+
+def test_update_rejects_when_only_touching_one_field_breaks_the_merged_state(
+    client: TestClient, db_session: Any
+) -> None:
+    # A PATCH that never mentions warn_threshold can still violate ordering once
+    # merged with the check's EXISTING warn_threshold — the effective post-patch
+    # state is what's validated, same pattern as the monitor guard's new_fail/
+    # new_critical merge.
+    sid = _suite_id(client, db_session)
+    cid = client.post(
+        f"/api/v1/suites/{sid}/checks",
+        json=_payload(warn_threshold=10, fail_threshold=20),
+    ).json()["id"]
+    resp = client.patch(f"/api/v1/suites/{sid}/checks/{cid}", json={"fail_threshold": 5})
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "check_config_invalid"
+
+
+def test_update_accepts_valid_ordering(client: TestClient, db_session: Any) -> None:
+    sid = _suite_id(client, db_session)
+    cid = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()["id"]
+    resp = client.patch(
+        f"/api/v1/suites/{sid}/checks/{cid}",
+        json={"warn_threshold": 1, "fail_threshold": 5, "critical_threshold": 20},
+    )
+    assert resp.status_code == 200
+
+
+def test_create_freshness_monitor_rejects_inverted_thresholds(
+    client: TestClient, db_session: Any
+) -> None:
+    # The generic ordering guard is kind-agnostic — it applies to freshness/
+    # volume monitor checks too, not just plain expectations.
+    sid = _suite_id(client, db_session, conn_type="snowflake")
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks",
+        json=_freshness_payload(fail_threshold=50, critical_threshold=10),
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "check_config_invalid"
 
 
 # ───────────────────────── expectation-kind validation (#651) ──────
@@ -1109,6 +1221,41 @@ def test_dryrun_returns_pass_preview(
     body = resp.json()
     assert body["status"] == "pass"
     assert body["observed_value"] == {"observed_value": 5}
+
+
+def test_dryrun_rejects_inverted_thresholds(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # #568: a preview must never accept a threshold set a save would reject.
+    # Validated before the (live) datasource connect, so no runner mock is
+    # needed here — a mocked runner would prove nothing about this guard.
+    sid = _suite_id(client, db_session, target=_SF_TARGET)
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks/dryrun",
+        json=_dryrun_body(warn_threshold=90, fail_threshold=50, critical_threshold=10),
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "check_config_invalid"
+
+
+def test_dryrun_rejects_inverted_thresholds_for_schema_drift(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # #568 follow-up (code review on PR #1113): schema_drift dry-run branches to
+    # `_dry_run_schema_drift` BEFORE the ordering guard used to run, so this kind
+    # slipped through with a 200 "pass" preview even though create/update band
+    # schema_drift's thresholds like any other kind and would 422 the save. The
+    # guard now sits above that branch — no runner/introspection mock needed,
+    # since a rejected threshold set never reaches the live datasource connect.
+    sid = _suite_id(client, db_session, target=_SF_TARGET)
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks/dryrun",
+        json=_dryrun_body(
+            kind="schema_drift", warn_threshold=90, fail_threshold=50, critical_threshold=10
+        ),
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "check_config_invalid"
 
 
 def test_dryrun_derives_tier_from_thresholds(
