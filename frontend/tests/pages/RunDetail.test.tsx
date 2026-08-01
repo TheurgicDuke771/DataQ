@@ -175,6 +175,37 @@ describe('RunDetail page', () => {
     await waitFor(() => expect(screen.getByText('warn')).toBeInTheDocument());
   });
 
+  it('falls back to just the failing-sample (no CheckTrend) for a result whose check was deleted', async () => {
+    // check_id 'chk-gone' has no matching entry in listChecks (e.g. the check
+    // was deleted after the run). `checks.has(...)` is false, so the expanded
+    // row must skip CheckTrend entirely (it has no thresholds/kind to render
+    // against) and fall back to the failing-sample alone — never render a
+    // trend for an unknown check, and never lose the sample either.
+    mockGetRun.mockResolvedValue({
+      ...runDetail,
+      results: [
+        {
+          ...runDetail.results[0],
+          check_id: 'chk-gone',
+        },
+      ],
+    });
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]); // 'chk1' only — 'chk-gone' is absent
+    renderAt('r1');
+    const user = userEvent.setup();
+
+    await screen.findByText('Orders quality');
+    // The row still shows (by id) and is still expandable via sample_failures.
+    expect(screen.getByText('chk-gone'.slice(0, 8))).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /expand row/i }));
+
+    expect(await screen.findByText(/Failing rows/)).toBeInTheDocument();
+    // No CheckTrend: its Chart/Table view toggle never renders.
+    expect(screen.queryByText('Chart')).not.toBeInTheDocument();
+    expect(screen.queryByText('Table')).not.toBeInTheDocument();
+  });
+
   it('shows an error when the run fails to load', async () => {
     mockGetRun.mockRejectedValue(new Error('boom'));
     renderAt('rX');

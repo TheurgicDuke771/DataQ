@@ -285,8 +285,12 @@ function CheckEditForm({
 
       {/* Metric trend (#594) — linked from the check editor as well as run-detail,
           so a user chasing a threshold/anomaly question doesn't have to find a
-          past run first. Only mounted while open: recharts (imported by
-          CheckTrend) never loads until the drawer is actually opened. */}
+          past run first. `CheckTrend` is a static import above (same as
+          RunDetail's), so recharts loads with THIS PAGE's route chunk, not on
+          drawer open — the ADR 0022 lazy boundary is the route, not this
+          drawer. Gating the render on `trendOpen` only defers mounting
+          `CheckTrend` (and its history/baseline fetches) until the drawer is
+          actually opened. */}
       <Drawer
         title={`${check.name} — trend`}
         open={trendOpen}

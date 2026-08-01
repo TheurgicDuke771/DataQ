@@ -1,5 +1,5 @@
 import { Alert, Empty, Segmented, Spin, Table, Tag, Typography } from 'antd';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import {
   CartesianGrid,
   Line,
@@ -129,12 +129,55 @@ function parseObservations(baseline: CheckBaseline | null): Observation[] {
 }
 
 /** Sample mean/stddev (n-1) — mirrors `anomaly.py`'s `score()`, which needs at
- *  least 2 points for a defined stddev. */
+ *  least 2 points for a defined stddev. Callers must pass it the ELIGIBLE
+ *  subset (see `eligibleValues` below), not every retained observation, or the
+ *  "mirrors score()" claim is only half true. */
 function meanStddev(values: number[]): { mean: number; stddev: number } | null {
   if (values.length < 2) return null;
   const mean = values.reduce((sum, v) => sum + v, 0) / values.length;
   const variance = values.reduce((sum, v) => sum + (v - mean) ** 2, 0) / (values.length - 1);
   return { mean, stddev: Math.sqrt(variance) };
+}
+
+/** The `window`/`seasonality` a baseline was captured with — `dump_baseline`
+ *  (anomaly.py) always writes both, so this is a straight read; the fallback
+ *  (`_ANOMALY_DEFAULT_WINDOW` = 14, seasonality off) only covers a malformed
+ *  or pre-#593 payload. */
+interface AnomalyBaselineMeta {
+  window: number;
+  seasonality: boolean;
+}
+
+const DEFAULT_ANOMALY_WINDOW = 14;
+
+function parseAnomalyMeta(baseline: CheckBaseline | null): AnomalyBaselineMeta {
+  const payload = baseline?.kind === 'anomaly' ? baseline.baseline : undefined;
+  const window = payload?.window;
+  const seasonality = payload?.seasonality;
+  return {
+    window: typeof window === 'number' && window > 0 ? window : DEFAULT_ANOMALY_WINDOW,
+    seasonality: seasonality === true,
+  };
+}
+
+/** The prior values a run happening right now (`now`) would actually be scored
+ *  against — mirrors `anomaly.py`'s `eligible_values(observations, now,
+ *  params)` exactly: with seasonality on, only observations sharing `now`'s
+ *  UTC weekday count (a seasonal baseline retains `window * 7` observations
+ *  precisely so this filter has enough to work with), then the last `window`
+ *  of those; without it, simply the last `window` observations. Without this
+ *  filter a seasonal check's debugger band is computed from a mix of
+ *  every weekday, which is not what the check itself compares against.
+ *  `now` is a parameter (not read inline) so a test can pin it. */
+function eligibleValues(
+  observations: Observation[],
+  meta: AnomalyBaselineMeta,
+  now: Date,
+): number[] {
+  const considered = meta.seasonality
+    ? observations.filter((o) => new Date(o.ts).getUTCDay() === now.getUTCDay())
+    : observations;
+  return considered.slice(-meta.window).map((o) => o.value);
 }
 
 export function CheckTrend({ suiteId, check, limit = 90 }: CheckTrendProps) {
@@ -161,6 +204,7 @@ export function CheckTrend({ suiteId, check, limit = 90 }: CheckTrendProps) {
   const withMetric = history.filter((p) => p.metric_value !== null);
   const bands = thresholdBands(check);
   const observations = parseObservations(baseline);
+  const anomalyMeta = parseAnomalyMeta(baseline);
 
   return (
     <div>
@@ -189,7 +233,9 @@ export function CheckTrend({ suiteId, check, limit = 90 }: CheckTrendProps) {
       {view === 'chart' ? (
         <>
           <MetricChart points={withMetric} bands={bands} />
-          {isAnomaly && <AnomalyBaselinePanel observations={observations} check={check} />}
+          {isAnomaly && (
+            <AnomalyBaselinePanel observations={observations} meta={anomalyMeta} check={check} />
+          )}
         </>
       ) : (
         <TrendTable points={history} observations={isAnomaly ? observations : null} />
@@ -273,28 +319,49 @@ const DEFAULT_BAND_K = 2;
 
 function AnomalyBaselinePanel({
   observations,
+  meta,
   check,
 }: {
   observations: Observation[];
+  meta: AnomalyBaselineMeta;
   check: CheckTrendCheck;
 }) {
-  const stats = useMemo(() => meanStddev(observations.map((o) => o.value)), [observations]);
+  // "Right now" — the same instant a run happening this moment would be
+  // measured against (`eligible_values(now)` in anomaly.py). Plain consts, not
+  // memoized: both are cheap array scans over at most a few hundred points,
+  // and there's no correctness reason to pin `now` across renders here (unlike
+  // the backend, which pins it once per run).
+  const now = new Date();
+  const eligible = eligibleValues(observations, meta, now);
+  const stats = meanStddev(eligible);
   const k =
     check.fail_threshold !== null && check.fail_threshold > 0
       ? check.fail_threshold
       : DEFAULT_BAND_K;
+  // UTC to match the `getUTCDay()` filter in `eligibleValues` — a local-zone
+  // label could name a different day than the one actually filtered on.
+  const weekdayName = now.toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' });
+  const weekdaySuffix = meta.seasonality ? ` for ${weekdayName}s` : '';
 
   const data = observations.map((o) => ({ label: shortDay(o.ts), value: o.value }));
 
   return (
     <div style={{ marginTop: 12 }}>
       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-        Anomaly baseline — learned band (mean ± {k}σ)
-        {stats && (
+        {stats ? (
           <>
-            {' · '}μ={stats.mean.toFixed(2)} · σ={stats.stddev.toFixed(2)} · {observations.length}{' '}
-            points
+            Anomaly baseline — learned band{weekdaySuffix} (mean ± {k}σ) · μ={stats.mean.toFixed(2)}{' '}
+            · σ={stats.stddev.toFixed(2)} · {eligible.length} points
           </>
+        ) : observations.length === 0 ? (
+          // Matches the empty chart below it (#594 review): no observations at
+          // all is never "learned band", it's simply nothing yet.
+          'Anomaly baseline — no observations captured yet.'
+        ) : (
+          // At least one observation exists, but not the 2 the eligible
+          // (weekday-filtered, for a seasonal check) subset needs for a
+          // defined stddev — still not a band, just not-enough-yet.
+          `Anomaly baseline — collecting observations${weekdaySuffix} (${eligible.length} so far; need at least 2 for a learned band).`
         )}
       </Typography.Text>
       <ResponsiveChart

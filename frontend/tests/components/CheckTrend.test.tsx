@@ -47,6 +47,7 @@ const anomalyCheck = {
 
 afterEach(() => {
   vi.clearAllMocks();
+  vi.useRealTimers();
 });
 
 describe('CheckTrend', () => {
@@ -128,6 +129,89 @@ describe('CheckTrend', () => {
     // uses the check's own fail_threshold (3) as k rather than the mean±2σ default.
     expect(screen.getByText(/mean ± 3σ/)).toBeInTheDocument();
     expect(screen.getByText(/3 points/)).toBeInTheDocument();
+  });
+
+  it('computes the seasonal anomaly band from only the current UTC weekday, mirroring eligible_values', async () => {
+    // Pin "now" to a Friday (UTC) so the weekday filter is deterministic. Fake
+    // only `Date` (not timers): RTL's `findByText`/`waitFor` polling relies on
+    // real `setTimeout`, which faking wholesale would stall against forever.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-07-31T12:00:00Z'));
+
+    mockHistory.mockResolvedValue([
+      { run_id: 'r1', status: 'pass', metric_value: 0.4, created_at: '2026-07-31T00:00:00Z' },
+    ]);
+    mockBaseline.mockResolvedValue({
+      kind: 'anomaly',
+      captured_at: '2026-07-31T00:00:00Z',
+      baseline: {
+        version: 1,
+        target_metric: 'row_count',
+        window: 2,
+        seasonality: true,
+        observations: [
+          { ts: '2026-07-10T00:00:00Z', value: 110 }, // Friday — dropped by the window=2 slice
+          { ts: '2026-07-15T00:00:00Z', value: 9999 }, // Wednesday — must be excluded
+          { ts: '2026-07-17T00:00:00Z', value: 130 }, // Friday — kept
+          { ts: '2026-07-24T00:00:00Z', value: 150 }, // Friday — kept
+          { ts: '2026-07-29T00:00:00Z', value: 8888 }, // Wednesday — must be excluded
+        ],
+      },
+    });
+    render(<CheckTrend suiteId="s1" check={anomalyCheck} />);
+
+    // Hand-computed over the Friday-only, last-2 subset [130, 150] — NOT all 5
+    // observations, and NOT the naive last-2-of-any-weekday [150, 8888]:
+    // mean = 140; sample stddev (n-1) = sqrt(((130-140)^2 + (150-140)^2) / 1) = sqrt(200) ≈ 14.142.
+    expect(
+      await screen.findByText(/Anomaly baseline — learned band for Fridays/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/μ=140\.00/)).toBeInTheDocument();
+    expect(screen.getByText(/σ=14\.14/)).toBeInTheDocument();
+    expect(screen.getByText(/2 points/)).toBeInTheDocument();
+    // The excluded Wednesday value (8888) must not leak into the mean/stddev —
+    // if it had, μ would be nowhere near 140.
+    expect(screen.queryByText(/μ=3049/)).not.toBeInTheDocument();
+  });
+
+  it('shows honest "no observations" copy (never "learned band") when the check has no baseline yet', async () => {
+    mockHistory.mockResolvedValue([
+      { run_id: 'r1', status: 'pass', metric_value: 0.4, created_at: '2026-06-10T00:00:00Z' },
+    ]);
+    mockBaseline.mockResolvedValue(null);
+    render(<CheckTrend suiteId="s1" check={anomalyCheck} />);
+
+    expect(
+      await screen.findByText('Anomaly baseline — no observations captured yet.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/learned band/)).not.toBeInTheDocument();
+  });
+
+  it('shows honest "collecting observations" copy (never "learned band") with only 1 observation', async () => {
+    mockHistory.mockResolvedValue([
+      { run_id: 'r1', status: 'pass', metric_value: 0.4, created_at: '2026-06-10T00:00:00Z' },
+    ]);
+    mockBaseline.mockResolvedValue({
+      kind: 'anomaly',
+      captured_at: '2026-06-10T00:00:00Z',
+      baseline: {
+        version: 1,
+        target_metric: 'row_count',
+        window: 14,
+        seasonality: false,
+        observations: [{ ts: '2026-06-09T00:00:00Z', value: 100 }],
+      },
+    });
+    render(<CheckTrend suiteId="s1" check={anomalyCheck} />);
+
+    expect(
+      await screen.findByText(/Anomaly baseline — collecting observations \(1 so far/),
+    ).toBeInTheDocument();
+    // The dishonest phrasing this replaces was "learned band (mean ± …σ)"
+    // unconditionally; that specific claim must not appear here (the copy's own
+    // "need at least 2 for a learned band" mention doesn't count — it's the
+    // honest disclaimer, not the claim).
+    expect(screen.queryByText(/learned band \(mean/)).not.toBeInTheDocument();
   });
 
   it('does not fetch or render a baseline overlay for a non-anomaly check', async () => {
