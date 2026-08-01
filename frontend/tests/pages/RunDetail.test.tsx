@@ -213,17 +213,21 @@ describe('RunDetail page', () => {
     mockGetSuite.mockResolvedValue(suite);
     mockListChecks.mockResolvedValue([check]); // 'chk1' only — 'chk-gone' is absent
     renderAt('r1');
+    // Scoped (#345): the print-only RunReport also renders the (fallback,
+    // unresolved-id) check name, which for this fixture happens to render the
+    // same 8-char string as the interactive table's sliced-id fallback.
+    const region = screenRegion();
     const user = userEvent.setup();
 
-    await screen.findByText('Orders quality');
+    await region.findByText('Orders quality');
     // The row still shows (by id) and is still expandable via sample_failures.
-    expect(screen.getByText('chk-gone'.slice(0, 8))).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /expand row/i }));
+    expect(region.getByText('chk-gone'.slice(0, 8))).toBeInTheDocument();
+    await user.click(region.getByRole('button', { name: /expand row/i }));
 
-    expect(await screen.findByText(/Failing rows/)).toBeInTheDocument();
+    expect(await region.findByText(/Failing rows/)).toBeInTheDocument();
     // No CheckTrend: its Chart/Table view toggle never renders.
-    expect(screen.queryByText('Chart')).not.toBeInTheDocument();
-    expect(screen.queryByText('Table')).not.toBeInTheDocument();
+    expect(region.queryByText('Chart')).not.toBeInTheDocument();
+    expect(region.queryByText('Table')).not.toBeInTheDocument();
   });
 
   it('shows an error when the run fails to load', async () => {
