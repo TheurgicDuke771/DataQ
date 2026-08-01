@@ -15,7 +15,16 @@ from fastapi.testclient import TestClient
 
 from backend.app.core.auth import get_current_user
 from backend.app.datasources.base import CheckOutcome, SuiteOutcome
-from backend.app.db.models import Check, Connection, MonitorBaseline, Result, Run, Suite, User
+from backend.app.db.models import (
+    Check,
+    CheckVersion,
+    Connection,
+    MonitorBaseline,
+    Result,
+    Run,
+    Suite,
+    User,
+)
 from backend.app.db.session import get_db
 from backend.app.main import app
 from backend.app.services import dryrun_service
@@ -1148,6 +1157,156 @@ def test_version_records_its_author(client: TestClient, db_session: Any) -> None
     assert v1["changed_by_name"] == "Ed Editor"
 
 
+# ───────────────────────── restore a version (#283) ─────────────────
+
+
+def test_restore_creates_a_new_version_with_the_snapshotted_config(
+    client: TestClient, db_session: Any
+) -> None:
+    sid = _suite_id(client, db_session)
+    cid = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()["id"]
+    client.patch(
+        f"/api/v1/suites/{sid}/checks/{cid}",
+        json={"config": {"column": "amount"}, "warn_threshold": 0.9},
+    )  # -> v2: current config is now {"column": "amount"}, warn 0.9
+
+    resp = client.post(f"/api/v1/suites/{sid}/checks/{cid}/versions/1/restore")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["config"] == {"column": "order_id"}
+    assert body["warn_threshold"] is None
+
+    # Restore is additive: v1 and v2 both survive, and a NEW v3 (identical to
+    # v1's content) is appended — never a renumber/overwrite of history.
+    versions = client.get(f"/api/v1/suites/{sid}/checks/{cid}/versions").json()
+    assert [v["version_no"] for v in versions] == [3, 2, 1]
+    assert versions[0]["config"] == {"column": "order_id"}
+    assert versions[0]["warn_threshold"] is None
+    assert versions[1]["config"] == {"column": "amount"}
+    assert versions[2]["config"] == {"column": "order_id"}
+
+
+def test_restore_of_the_current_version_is_a_noop(client: TestClient, db_session: Any) -> None:
+    """Restoring the already-current version mints no duplicate — the same
+    `session.is_modified` no-op-PATCH gating `update_check` already applies to a
+    manual no-op edit (see `test_noop_update_does_not_append_a_version`)."""
+    sid = _suite_id(client, db_session)
+    cid = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()["id"]
+
+    resp = client.post(f"/api/v1/suites/{sid}/checks/{cid}/versions/1/restore")
+    assert resp.status_code == 200
+
+    versions = client.get(f"/api/v1/suites/{sid}/checks/{cid}/versions").json()
+    assert [v["version_no"] for v in versions] == [1]
+
+
+def test_restore_unknown_version_returns_404(client: TestClient, db_session: Any) -> None:
+    sid = _suite_id(client, db_session)
+    cid = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()["id"]
+    resp = client.post(f"/api/v1/suites/{sid}/checks/{cid}/versions/99/restore")
+    assert resp.status_code == 404
+    assert resp.json()["error"]["code"] == "check_version_not_found"
+
+
+def test_restore_unknown_check_returns_404(client: TestClient, db_session: Any) -> None:
+    sid = _suite_id(client, db_session)
+    resp = client.post(f"/api/v1/suites/{sid}/checks/{uuid.uuid4()}/versions/1/restore")
+    assert resp.status_code == 404
+
+
+def test_restore_requires_edit_permission(client: TestClient, db_session: Any) -> None:
+    owner, b, e, sid = _owner_b_e_suite(db_session)
+    _as(owner)
+    cid = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()["id"]
+    client.patch(f"/api/v1/suites/{sid}/checks/{cid}", json={"config": {"column": "amount"}})
+    _grant(client, owner, sid, b, "view")
+    _as(b)
+    resp = client.post(f"/api/v1/suites/{sid}/checks/{cid}/versions/1/restore")
+    assert resp.status_code == 403
+
+    _as(e)  # not owner, not shared — existence is hidden
+    resp = client.post(f"/api/v1/suites/{sid}/checks/{cid}/versions/1/restore")
+    assert resp.status_code == 404
+
+
+def test_editor_can_restore(client: TestClient, db_session: Any) -> None:
+    owner, b, _e, sid = _owner_b_e_suite(db_session)
+    _as(owner)
+    cid = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()["id"]
+    client.patch(f"/api/v1/suites/{sid}/checks/{cid}", json={"config": {"column": "amount"}})
+    _grant(client, owner, sid, b, "edit")
+    _as(b)
+    resp = client.post(f"/api/v1/suites/{sid}/checks/{cid}/versions/1/restore")
+    assert resp.status_code == 200
+    assert resp.json()["config"] == {"column": "order_id"}
+
+
+def test_restore_rejects_a_snapshot_invalid_under_current_threshold_ordering(
+    client: TestClient, db_session: Any
+) -> None:
+    """A version recorded before #568's ordering gate existed could hold reversed
+    thresholds. Restoring it must re-validate against TODAY's rules and 422,
+    leaving the live check exactly as it was — not silently reinstate a
+    configuration today's authoring path would refuse to create."""
+    sid = _suite_id(client, db_session)
+    cid = client.post(
+        f"/api/v1/suites/{sid}/checks",
+        json=_payload(warn_threshold=1, fail_threshold=5, critical_threshold=10),
+    ).json()["id"]
+    db_session.add(
+        CheckVersion(
+            check_id=uuid.UUID(cid),
+            version_no=2,
+            name="orders not null",
+            kind="expectation",
+            expectation_type="expect_column_values_to_not_be_null",
+            config={"column": "order_id"},
+            warn_threshold=90,
+            fail_threshold=50,
+            critical_threshold=10,
+        )
+    )
+    db_session.commit()
+
+    resp = client.post(f"/api/v1/suites/{sid}/checks/{cid}/versions/2/restore")
+    assert resp.status_code == 422
+
+    check = client.get(f"/api/v1/suites/{sid}/checks/{cid}").json()
+    assert check["warn_threshold"] == 1.0
+    assert check["fail_threshold"] == 5.0
+    assert check["critical_threshold"] == 10.0
+    versions = client.get(f"/api/v1/suites/{sid}/checks/{cid}/versions").json()
+    assert [v["version_no"] for v in versions] == [2, 1]  # no v3 minted
+
+
+def test_restore_rejects_a_snapshot_invalid_under_current_custom_sql_gating(
+    client: TestClient, db_session: Any
+) -> None:
+    """A legacy snapshot with a non-read-only query must not be reinstated —
+    ADR 0019 gating is re-applied by the same `update_check` path a manual PATCH
+    goes through (see `test_update_custom_sql_to_non_readonly_query_rejected`)."""
+    sid = _suite_id(client, db_session, conn_type="snowflake")
+    cid = client.post(f"/api/v1/suites/{sid}/checks", json=_custom_sql_payload()).json()["id"]
+    db_session.add(
+        CheckVersion(
+            check_id=uuid.UUID(cid),
+            version_no=2,
+            name="no negative totals",
+            kind="expectation",
+            expectation_type="unexpected_rows_expectation",
+            config={"unexpected_rows_query": "DELETE FROM {batch}"},
+        )
+    )
+    db_session.commit()
+
+    resp = client.post(f"/api/v1/suites/{sid}/checks/{cid}/versions/2/restore")
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "custom_sql_invalid"
+
+    versions = client.get(f"/api/v1/suites/{sid}/checks/{cid}/versions").json()
+    assert [v["version_no"] for v in versions] == [2, 1]  # untouched, no v3 minted
+
+
 # ───────────────────────── result history (trend, ADR 0022) ─────────
 
 
@@ -1863,7 +2022,6 @@ def test_concurrent_check_edit_returns_409_not_500(
     `version_no`, so the commit trips `uq_check_versions_check_version` exactly as
     a concurrent writer would. The handler must surface 409 `check_edit_conflict`.
     """
-    from backend.app.db.models import CheckVersion
     from backend.app.services import check_service
 
     sid = _suite_id(client, db_session)
@@ -1901,7 +2059,6 @@ def test_update_check_other_integrity_error_not_mislabelled_409(
     concurrently'), exercising the narrowed `except` branch."""
     from sqlalchemy.exc import IntegrityError
 
-    from backend.app.db.models import CheckVersion
     from backend.app.services import check_service
 
     sid = _suite_id(client, db_session)

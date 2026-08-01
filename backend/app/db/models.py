@@ -572,9 +572,11 @@ class MonitorBaseline(Base):
 class CheckVersion(Base):
     """An immutable snapshot of a check's editable state, written on create and
     after every successful update — the source for the "version history" drawer
-    ("see previous config before overwriting"). v1 is view-only; restore is a
-    deferred follow-up. This is per-check config history, not the cross-entity
-    audit log (deferred to v1.1).
+    ("see previous config before overwriting") and for restore (#283):
+    `check_service.restore_check_version` re-validates a chosen snapshot against
+    CURRENT rules and applies it, itself recording a new version (history is
+    additive — a restored row is never renumbered or deleted). This is per-check
+    config history, not the cross-entity audit log (deferred to v1.1).
 
     `version_no` is a per-check sequence starting at 1 (unique with `check_id`).
     Rows survive the check (`ondelete=SET NULL` on `changed_by` for a deleted

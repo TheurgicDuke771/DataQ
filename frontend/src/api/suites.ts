@@ -237,6 +237,23 @@ export async function listCheckVersions(suiteId: string, checkId: string): Promi
 }
 
 /**
+ * Restore a check to a previous version (#283; edit-gated). Re-validates the
+ * snapshot against TODAY's rules server-side — a version that predates a
+ * validator added since (e.g. threshold ordering) can 422 — and records the
+ * restored state as a brand-new version (history is additive, never rewound).
+ */
+export async function restoreCheckVersion(
+  suiteId: string,
+  checkId: string,
+  versionNo: number,
+): Promise<Check> {
+  const { data } = await api.post<Check>(
+    `/suites/${suiteId}/checks/${checkId}/versions/${versionNo}/restore`,
+  );
+  return data;
+}
+
+/**
  * Mirrors the backend `CheckResultPointRead` — one past result of a check
  * (status + `metric_value` + run time), the datum behind the per-check trend
  * chart (ADR 0022). `metric_value` is null for checks that record no metric.

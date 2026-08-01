@@ -12,6 +12,7 @@ import {
   getSuite,
   listCheckHistory,
   listCheckVersions,
+  restoreCheckVersion,
   type Suite,
   updateCheck,
 } from '../../src/api/suites';
@@ -32,6 +33,7 @@ vi.mock('../../src/api/suites', async (importOriginal) => {
     listCheckVersions: vi.fn(),
     listCheckHistory: vi.fn(),
     getCheckBaseline: vi.fn(),
+    restoreCheckVersion: vi.fn(),
   };
 });
 
@@ -42,6 +44,7 @@ const mockUpdate = vi.mocked(updateCheck);
 const mockVersions = vi.mocked(listCheckVersions);
 const mockHistory = vi.mocked(listCheckHistory);
 const mockBaseline = vi.mocked(getCheckBaseline);
+const mockRestore = vi.mocked(restoreCheckVersion);
 
 const suite: Suite = {
   id: 's1',
@@ -153,6 +156,9 @@ describe('CheckEdit', () => {
     expect(await screen.findByText(/History — /)).toBeInTheDocument();
     await waitFor(() => expect(mockVersions).toHaveBeenCalledWith('s1', 'chk1'));
     expect(await screen.findByText('v1')).toBeInTheDocument();
+    // The fixture suite carries no `my_permission` (absent = not edit-capable,
+    // same as a viewer) — #283's Restore action must not appear.
+    expect(screen.queryByRole('button', { name: /Restore this version/ })).not.toBeInTheDocument();
   });
 
   it('opens the metric-trend drawer from the Trend button, mounting CheckTrend only while open (#594)', async () => {
@@ -187,6 +193,61 @@ describe('CheckEdit', () => {
 
     // The form renders from the check even though the connection 403s.
     await waitFor(() => expect(screen.getByLabelText('Column')).toHaveValue('amount'));
+  });
+});
+
+describe('CheckEdit — restore a version (#283)', () => {
+  const editableSuite: Suite = { ...suite, my_permission: 'edit' };
+  const versionRow = {
+    version_no: 1,
+    name: 'amount range v0',
+    kind: 'expectation',
+    expectation_type: 'expect_column_values_to_be_between',
+    config: { column: 'amount' },
+    warn_threshold: null,
+    fail_threshold: null,
+    critical_threshold: null,
+    changed_by: 'u1',
+    changed_by_name: 'Ed Editor',
+    created_at: '2026-06-15T10:00:00Z',
+  };
+
+  it('offers Restore on a non-current row when the caller can edit', async () => {
+    const user = userEvent.setup();
+    mockGetSuite.mockResolvedValue(editableSuite);
+    mockGetCheck.mockResolvedValue(existing);
+    mockGetConnection.mockResolvedValue(connection);
+    mockVersions.mockResolvedValue([{ ...versionRow, version_no: 2 }, versionRow]);
+    renderPage();
+    await waitFor(() => expect(screen.getByLabelText('Column')).toHaveValue('amount'));
+
+    await user.click(screen.getByRole('button', { name: /History/ }));
+    await screen.findByText('v2');
+
+    expect(screen.getAllByRole('button', { name: /Restore this version/ })).toHaveLength(1);
+  });
+
+  it('restoring reloads the suite/check so the form re-seeds from the restored state', async () => {
+    const user = userEvent.setup();
+    mockGetSuite.mockResolvedValue(editableSuite);
+    mockGetCheck.mockResolvedValueOnce(existing);
+    mockGetConnection.mockResolvedValue(connection);
+    mockVersions.mockResolvedValue([{ ...versionRow, version_no: 2 }, versionRow]);
+    mockRestore.mockResolvedValue({ ...existing, name: 'amount range v0' });
+    // The reload after restore refetches the check — return the restored name.
+    mockGetCheck.mockResolvedValueOnce({ ...existing, name: 'amount range v0' });
+    renderPage();
+    await waitFor(() => expect(screen.getByLabelText('Column')).toHaveValue('amount'));
+
+    await user.click(screen.getByRole('button', { name: /History/ }));
+    await user.click(await screen.findByRole('button', { name: /Restore this version/ }));
+    await user.click(await screen.findByRole('button', { name: 'Restore' }));
+
+    await waitFor(() => expect(mockRestore).toHaveBeenCalledWith('s1', 'chk1', 1));
+    // The page's own fetch re-ran (suite + check + connection), not just the
+    // drawer's own version list.
+    await waitFor(() => expect(mockGetCheck).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText('Edit “amount range v0”')).toBeInTheDocument();
   });
 });
 
