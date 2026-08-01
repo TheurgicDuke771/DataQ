@@ -60,6 +60,7 @@ from backend.app.services.custom_sql import (
     validate_custom_sql_check,
     validate_query,
 )
+from backend.app.services.monitor_baseline import get_baseline as _get_monitor_baseline
 from backend.app.services.run_target import SuiteTargetInvalidError, resolve_target
 from backend.app.services.suite_service import get_suite
 
@@ -961,3 +962,36 @@ def list_check_result_history(
     ]
     rows.reverse()  # chronological for the chart x-axis
     return rows
+
+
+@dataclass(frozen=True)
+class CheckBaselinePoint:
+    """A stateful monitor's stored baseline row (#594) — the raw payload the
+    trend chart overlays. `kind` is denormalized on the row (see
+    `MonitorBaseline`) rather than re-read off the check, so this stays a
+    single-row lookup."""
+
+    kind: str
+    baseline: dict[str, Any]
+    captured_at: datetime
+
+
+def get_check_baseline(
+    session: Session, suite_id: uuid.UUID, check_id: uuid.UUID
+) -> CheckBaselinePoint | None:
+    """A check's current stored baseline (#594), or `None` when absent — a check
+    that has never run, isn't a stateful kind (`schema_drift`/`anomaly`), or was
+    just re-baselined (#592, delete-then-recapture) all read as "no baseline yet"
+    rather than an error; the caller (API) renders that as an empty overlay, not
+    a 404. 404 / cross-suite guard matches `list_check_result_history`.
+
+    Deliberately generic: the payload shape is kind-specific (schema_drift's
+    column snapshot vs. anomaly's observation window) and this module doesn't
+    interpret it — same "don't decode the JSONB" boundary `monitor_baseline.py`
+    itself holds. The UI decides what to draw from `kind` + `baseline`.
+    """
+    get_check(session, suite_id, check_id)  # 404 / cross-suite guard
+    row = _get_monitor_baseline(session, check_id)
+    if row is None:
+        return None
+    return CheckBaselinePoint(kind=row.kind, baseline=row.baseline, captured_at=row.captured_at)

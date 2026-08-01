@@ -1,5 +1,5 @@
-import { HistoryOutlined } from '@ant-design/icons';
-import { App, Button, Card, Flex, Form, Input, Select, Spin, Typography } from 'antd';
+import { HistoryOutlined, LineChartOutlined } from '@ant-design/icons';
+import { App, Button, Card, Drawer, Flex, Form, Input, Select, Spin, Typography } from 'antd';
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
@@ -12,6 +12,7 @@ import {
   SeverityThresholdFields,
 } from '../components/checks/checkFormFields';
 import { CheckHistoryDrawer } from '../components/checks/CheckHistoryDrawer';
+import { CheckTrend } from '../components/checks/CheckTrend';
 import { ColumnProfilePanel } from '../components/checks/ColumnProfilePanel';
 import { DryRunPreview } from '../components/checks/DryRunPreview';
 import {
@@ -113,6 +114,7 @@ function CheckEditForm({
   const [form] = Form.useForm();
   const { run, loading: submitting } = useAsyncAction('Save failed');
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [trendOpen, setTrendOpen] = useState(false);
   const selectedType = Form.useWatch('expectation_type', form) as string | undefined;
   const column = Form.useWatch(['config', 'column'], form) as string | undefined;
   // Drives which conditional fields render (anomaly's `column`, #593 —
@@ -257,9 +259,14 @@ function CheckEditForm({
         )}
 
         <Flex justify="space-between" align="center" gap={8}>
-          <Button icon={<HistoryOutlined />} onClick={() => setHistoryOpen(true)}>
-            History
-          </Button>
+          <Flex gap={8}>
+            <Button icon={<HistoryOutlined />} onClick={() => setHistoryOpen(true)}>
+              History
+            </Button>
+            <Button icon={<LineChartOutlined />} onClick={() => setTrendOpen(true)}>
+              Trend
+            </Button>
+          </Flex>
           <Flex gap={8}>
             <Button onClick={onCancel}>Cancel</Button>
             <Button type="primary" htmlType="submit" loading={submitting}>
@@ -275,6 +282,19 @@ function CheckEditForm({
         check={check}
         onClose={() => setHistoryOpen(false)}
       />
+
+      {/* Metric trend (#594) — linked from the check editor as well as run-detail,
+          so a user chasing a threshold/anomaly question doesn't have to find a
+          past run first. Only mounted while open: recharts (imported by
+          CheckTrend) never loads until the drawer is actually opened. */}
+      <Drawer
+        title={`${check.name} — trend`}
+        open={trendOpen}
+        onClose={() => setTrendOpen(false)}
+        width={520}
+      >
+        {trendOpen && <CheckTrend suiteId={suiteId} check={check} />}
+      </Drawer>
     </>
   );
 }

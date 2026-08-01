@@ -355,6 +355,45 @@ def list_check_result_history(
     ]
 
 
+# ───────────────────── baseline read (metric trend overlay, #594) ───
+
+
+class CheckBaselineRead(ApiModel):
+    """A stateful monitor's stored baseline — `schema_drift`'s column snapshot or
+    `anomaly`'s observation window (`monitor_baselines.baseline`, kind-shaped
+    JSONB; see `backend/app/services/anomaly.py` for the payload's documented
+    shape). Returned generically: this endpoint doesn't interpret `baseline`,
+    the frontend trend chart does, keyed on `kind`.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    kind: str
+    baseline: dict[str, Any]
+    captured_at: datetime
+
+
+@router.get(
+    "/suites/{suite_id}/checks/{check_id}/baseline",
+    response_model=CheckBaselineRead | None,
+    summary="A stateful monitor check's current stored baseline, or null if absent",
+)
+def get_check_baseline(
+    suite_id: uuid.UUID,
+    check_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> CheckBaselineRead | None:
+    """Null (not 404) when the check has no baseline yet — a fresh check, a
+    non-stateful kind, or one just re-baselined (#592) via delete-then-recapture
+    are all "nothing to overlay" for the trend chart (#594), not an error state.
+    404 still applies for a missing/cross-suite check (`svc.get_check_baseline`).
+    """
+    require_permission(db, suite_id, current_user.id, minimum="view")
+    point = svc.get_check_baseline(db, suite_id, check_id)
+    return CheckBaselineRead.model_validate(point) if point is not None else None
+
+
 # ───────────────────────── dry-run (preview, no persistence) ────────
 
 
