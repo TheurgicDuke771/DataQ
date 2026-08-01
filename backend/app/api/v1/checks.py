@@ -372,7 +372,11 @@ class CheckDryRunRequest(ApiModel):
 
 
 class CheckDryRunResult(ApiModel):
-    status: str  # pass | warn | fail | critical (ADR 0005) | error (#122)
+    # pass | warn | fail | critical (ADR 0005), plus the two OPERATIONAL statuses:
+    # `error` (the check could not be evaluated, #122) and `skip` (its precondition
+    # was not met, #593). An `anomaly` preview is always `skip` — a dry-run has no
+    # check row, so it can never have a learned baseline to score against.
+    status: str
     metric_value: float | None
     observed_value: dict[str, Any] | None
     expected_value: dict[str, Any] | None

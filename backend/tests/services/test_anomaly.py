@@ -11,6 +11,7 @@ from decimal import Decimal
 from typing import Any
 
 import pytest
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from backend.app.datasources.monitors import (
@@ -477,6 +478,37 @@ def _stored_values(session: Session, check: Check) -> list[float]:
     return [o["value"] for o in row.baseline["observations"]]
 
 
+@contextmanager
+def _captured_sql(session: Session) -> Any:
+    """Record every statement the session actually sends to Postgres.
+
+    Asserting against the EMITTED SQL rather than a mocked call is what makes the
+    locking test mean something: `with_for_update()` is only worth anything if it
+    reaches the wire, and a spy on our own helper would pass even if the clause
+    were silently dropped by a query rewrite."""
+    from sqlalchemy import event
+
+    statements: list[str] = []
+    bind = session.get_bind()
+
+    def record(conn: Any, cursor: Any, statement: str, *args: Any) -> None:
+        statements.append(statement)
+
+    event.listen(bind, "before_cursor_execute", record)
+    try:
+        yield statements
+    finally:
+        event.remove(bind, "before_cursor_execute", record)
+
+
+def _baseline_selects(statements: list[str]) -> list[str]:
+    return [
+        s
+        for s in statements
+        if "monitor_baselines" in s and s.lstrip().upper().startswith("SELECT")
+    ]
+
+
 def test_first_run_skips_and_still_records_the_observation(
     graph: tuple[Session, Connection, Check], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -614,6 +646,115 @@ def test_a_bad_config_errors_the_check_with_an_actionable_message(
     assert outcome.errored is True
     # Safe-marked: it names the user's own config, so it persists verbatim.
     assert "nonsense" in (outcome.error_message or "")
+
+
+def test_the_executor_locks_the_baseline_row_before_rewriting_it(
+    graph: tuple[Session, Connection, Check], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The lost-update guard. The executor reads the observation list and writes
+    that list plus one entry, so two overlapping runs of the SAME check (an
+    overdue schedule firing while a Run-Now is in flight) would both read the same
+    list and the second commit would silently drop the first's measurement — a gap
+    nothing downstream can detect, since a rolling window has no per-observation
+    identity. `FOR UPDATE` serialises them for the rest of the transaction.
+
+    Asserted against the SQL that reaches Postgres, not a call spy."""
+    session, conn, check = graph
+    _executor(session, conn, 100, monkeypatch)(check)  # establish the row
+    session.flush()
+    with _captured_sql(session) as statements:
+        _executor(session, conn, 110, monkeypatch)(check)
+        session.flush()
+    selects = _baseline_selects(statements)
+    assert selects, "the executor must read the baseline row"
+    assert any("FOR UPDATE" in s.upper() for s in selects)
+
+
+def test_a_dry_run_takes_no_write_lock(
+    graph: tuple[Session, Connection, Check], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A preview writes nothing, so locking would let a check-editor preview block
+    a real scheduled run for the length of its transaction."""
+    session, conn, check = graph
+    _executor(session, conn, 100, monkeypatch)(check)
+    session.flush()
+    with _captured_sql(session) as statements:
+        _executor(session, conn, 110, monkeypatch, persist=False)(check)
+    selects = _baseline_selects(statements)
+    assert selects, "the preview must still read the baseline row"
+    assert not any("FOR UPDATE" in s.upper() for s in selects)
+
+
+def test_the_result_reports_when_learning_started_and_when_it_last_updated(
+    graph: tuple[Session, Connection, Check], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two different questions, and only one of the timestamps moves. This kind
+    rewrites its baseline on EVERY run, so reporting `captured_at` alone would
+    show day 1 forever — six months in, a payload claiming the baseline was
+    captured in January is indistinguishable from a monitor that stopped
+    learning. `captured_at` has no `onupdate`; `updated_at` does."""
+    session, conn, check = graph
+    _executor(session, conn, 100, monkeypatch)(check)  # first capture
+    session.flush()
+    row = get_baseline(session, check.id)
+    assert row is not None
+    # Backdate the whole row so "learning started" is unambiguously in the past.
+    session.execute(
+        text(
+            "UPDATE monitor_baselines SET captured_at = captured_at - interval '30 days', "
+            "updated_at = updated_at - interval '30 days' WHERE id = :i"
+        ),
+        {"i": row.id},
+    )
+    session.expire_all()
+    backdated_capture = get_baseline(session, check.id)
+    assert backdated_capture is not None
+    captured_iso = backdated_capture.captured_at.isoformat()
+
+    _executor(session, conn, 110, monkeypatch)(check)  # rewrites the row → bumps updated_at
+    session.flush()
+    session.expire_all()
+    outcome = _executor(session, conn, 120, monkeypatch)(check)
+    observed = outcome.observed_value
+    assert observed is not None
+    # Learning started 30 days ago and has NOT been re-stamped…
+    assert observed["baseline_captured_at"] == captured_iso
+    # …while the window was last written by the preceding run.
+    assert observed["baseline_updated_at"] > observed["baseline_captured_at"]
+
+
+def test_an_unparseable_timestamp_cell_travels_structurally_not_in_the_message(
+    graph: tuple[Session, Connection, Check], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#989, applied to this kind. An anomaly over `freshness_age_hours` hits the
+    exact same garbage-cell case a plain freshness monitor does, and
+    `run_monitor_specs` puts the offending cell on `observed_value` — never in the
+    message, which is persisted verbatim and rendered wherever a result is shown,
+    while `observed_value` passes through the read layer's column-policy
+    redaction. Dropping it here would make the same error diagnosable on one kind
+    and undiagnosable on the other."""
+    session, conn, check = graph
+    check.config = {"target_metric": "freshness_age_hours", "column": "order_ts"}
+    outcome = _executor(session, conn, "13/07/2026", monkeypatch)(check)
+    assert outcome.errored is True
+    assert "13/07/2026" not in (outcome.error_message or "")
+    assert outcome.observed_value == {"unparsed_value": "13/07/2026", "column": "order_ts"}
+    # …and the message still names the column, so the error stays actionable.
+    assert "order_ts" in (outcome.error_message or "")
+
+
+def test_an_error_without_a_cell_carries_no_observed_value(
+    graph: tuple[Session, Connection, Check], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The type-mismatch branch names only the TYPE, so there is nothing to
+    redact and `observed_value` must stay empty — pinned so a later edit doesn't
+    quietly start echoing there instead."""
+    session, conn, check = graph
+    check.config = {"target_metric": "freshness_age_hours", "column": "order_ts"}
+    outcome = _executor(session, conn, 12345, monkeypatch)(check)
+    assert outcome.errored is True
+    assert "12345" not in (outcome.error_message or "")
+    assert outcome.observed_value is None
 
 
 def test_rebaseline_restarts_the_cold_start(

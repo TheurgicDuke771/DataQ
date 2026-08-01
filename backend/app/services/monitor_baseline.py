@@ -27,10 +27,30 @@ from backend.app.db.models import Check, MonitorBaseline
 BASELINE_UNIQUE_CONSTRAINT = "uq_monitor_baselines_check"
 
 
-def get_baseline(session: Session, check_id: uuid.UUID) -> MonitorBaseline | None:
-    return session.scalars(
-        select(MonitorBaseline).where(MonitorBaseline.check_id == check_id)
-    ).first()
+def get_baseline(
+    session: Session, check_id: uuid.UUID, *, for_update: bool = False
+) -> MonitorBaseline | None:
+    """The check's current baseline row, or ``None``.
+
+    ``for_update`` emits ``SELECT ... FOR UPDATE``, serialising concurrent runs of
+    the SAME check against each other for the rest of the caller's transaction.
+    Read-modify-write callers **must** pass it: `anomaly` appends this run's
+    measurement to the observation list it just read, so two overlapping runs (an
+    overdue schedule firing while a Run-Now is in flight) would otherwise both
+    read the same list and the second commit would silently drop the first's
+    measurement — a lost update that leaves no trace anywhere, because the
+    baseline is a rolling window with no per-observation identity to notice a gap
+    in. `schema_drift` never updates a row (it captures or diffs), so it reads
+    unlocked and pays nothing.
+
+    Deliberately opt-in rather than always-on: this is the same row the
+    read-only paths (`rebaseline`'s existence check, a diff) touch, and taking a
+    write lock there would serialise runs that never conflict.
+    """
+    stmt = select(MonitorBaseline).where(MonitorBaseline.check_id == check_id)
+    if for_update:
+        stmt = stmt.with_for_update()
+    return session.scalars(stmt).first()
 
 
 def rebaseline(session: Session, check: Check) -> bool:
@@ -60,6 +80,12 @@ def insert_baseline_if_absent(
     result row (#122). Whichever run wins captured the same live state moments
     apart, so the loser's report stays truthful. Rides the caller's transaction,
     so a rolled-back run strands nothing.
+
+    This is the FIRST-capture race; the update race is a different problem with a
+    different answer, because a row that doesn't exist yet cannot be locked. See
+    `get_baseline(for_update=True)`. Losing one observation on the very first run
+    is harmless (the window is empty either way); losing one on an established
+    baseline is a silent measurement gap.
     """
     session.execute(
         pg_insert(MonitorBaseline)

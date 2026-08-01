@@ -39,6 +39,14 @@ Baseline payload (JSONB, `monitor_baselines.baseline`), version 1::
 Observations are raw measurements in chronological order, trimmed on every
 update to `AnomalyParams.retained_observations`. They are metadata about a
 measurement, never row data — no PII, no retention-sweep involvement.
+
+The row's two timestamps mean different things and BOTH are reported on the
+result: ``captured_at`` is when learning started (set once, never bumped) and
+``updated_at`` is when the window last took a measurement. Because this kind
+rewrites its baseline every run, reporting only the first would show day 1
+forever. The read is taken ``FOR UPDATE`` when persisting — this is a
+read-modify-write of one rolling list, so two overlapping runs of the same check
+would otherwise silently drop a measurement.
 """
 
 from __future__ import annotations
@@ -309,9 +317,15 @@ def build_anomaly_executor(
     any run still short of ``min_points``) report `skip` while still **recording**
     the observation — that is how the history accrues.
 
-    ``persist=False`` is the dry-run mode: measure and score, write nothing.
-    A measurement or config failure is the CHECK's operational error (#122),
-    never the run's — one unreachable target must not fail sibling checks.
+    The read-modify-write of the observation window is serialised per check with
+    ``SELECT ... FOR UPDATE`` (see `monitor_baseline.get_baseline`); the
+    first-capture race is handled separately by ON CONFLICT DO NOTHING, since a
+    row that does not exist yet cannot be locked.
+
+    ``persist=False`` is the dry-run mode: measure and score, write nothing — and
+    take no lock, so a preview can never block a real run. A measurement or config
+    failure is the CHECK's operational error (#122), never the run's — one
+    unreachable target must not fail sibling checks.
     """
 
     def executor(check: Check) -> CheckOutcome:
@@ -339,6 +353,18 @@ def build_anomaly_executor(
                 connection_type=connection.type,
                 error_type=type(exc).__name__,
             )
+            # The offending CELL travels structurally, never inside the message
+            # (#989) — the message is persisted verbatim and rendered wherever a
+            # result is shown, while `observed_value` passes through the read
+            # layer's column-policy redaction. Mirrors `run_monitor_specs`: an
+            # anomaly over `freshness_age_hours` hits exactly the same
+            # unparseable-timestamp case a plain freshness monitor does, and
+            # dropping the cell here would make that error undiagnosable on the
+            # one kind and diagnosable on the other.
+            observed: dict[str, Any] | None = None
+            unparsed = getattr(exc, "unparsed_value", None)
+            if unparsed is not None:
+                observed = {"unparsed_value": unparsed, "column": getattr(exc, "column", None)}
             return CheckOutcome(
                 expectation_type=monitor_expectation_type(ANOMALY),
                 success=False,
@@ -346,13 +372,26 @@ def build_anomaly_executor(
                 error_message=(
                     str(exc) if isinstance(exc, SafeMonitorError) else classify_failure_reason(exc)
                 ),
+                observed_value=observed,
             )
-        row = get_baseline(session, check.id)
+        # Read-modify-write: the observation list this run appends to must not be
+        # read by a concurrent run of the same check, or one measurement is
+        # silently lost. Locked only when persisting — a dry-run writes nothing,
+        # so making it block a real run would be a preview taking a write lock.
+        row = get_baseline(session, check.id, for_update=persist)
         observations = load_observations(row, params)
         priors = eligible_values(observations, now=now, params=params)
         payload = build_score_payload(value, priors, params)
         if row is not None:
+            # BOTH timestamps, because they answer different questions and only
+            # one of them moves: `captured_at` is when learning STARTED (the row's
+            # first capture — no `onupdate`, never bumped), `updated_at` is when
+            # the history THIS run was scored against was last written. Reporting
+            # only the former would show "day 1" forever on a baseline rewritten
+            # every night. Read before this run's own write lands, deliberately:
+            # it dates the priors, not the row's final state.
             payload["baseline_captured_at"] = row.captured_at.isoformat()
+            payload["baseline_updated_at"] = row.updated_at.isoformat()
         if persist:
             kept = trim([*observations, Observation(ts=now, value=value)], params)
             baseline = dump_baseline(kept, params)
