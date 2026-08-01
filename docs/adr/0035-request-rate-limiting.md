@@ -76,6 +76,7 @@ on the parent FastAPI app as the **innermost** user middleware.
   | Class | Matches | Key | Default |
   |---|---|---|---|
   | `webhook` | `/api/v1/orchestration/events/*` | per provider **+** client-IP (**even with a bearer** — machine path), **plus** a per-IP `ipall` ceiling. The known provider segment (adf/airflow/dbt, from the shared `ORCHESTRATION_PROVIDERS` vocabulary) is folded into the key so one noisy orchestrator can't crowd out another's callbacks from the same egress IP (#785); an *unknown* segment shares one bare-IP bucket, so a path scanner can't mint fresh buckets by rotating the segment; and the `rl:webhook:ipall:{ip}` ceiling (`RATE_LIMIT_WEBHOOK_IP_PER_MINUTE`) bounds the **aggregate** one IP can spend across provider buckets — without it, per-provider folding would quietly multiply the per-IP webhook budget by (providers + 1). Ops note: provider-folded keys match `rl:webhook:*:ip:*` in a Redis SCAN, not the pre-#785 `rl:webhook:ip:*` — and since #789 the ip component is the **folded network** (`ip:2.57.171.0/24`), so an exact-address lookup (`MATCH *ip:203.0.113.7*`) returns nothing even at /32 (`ip:203.0.113.7/32`); SCAN with the folded form | 120 (per provider bucket) / 240 (`ipall`) |
+  | `auth` | `/api/v1/auth/*` | per client-IP (**even with a bearer** — matched before the bearer branch, like `webhook`, so a token can't dodge it) | 10 |
   | `default` | any request with a bearer | per `sha256(token)[:32]` **plus** a per-IP `ipall` ceiling | 300 (token) / 1200 (`ipall`) |
   | `unauth` | everything else | per client-IP | 120 |
 
@@ -95,13 +96,18 @@ on the parent FastAPI app as the **innermost** user middleware.
     SECOND `rl:default:ipall:{ip}:{window}` bucket counting ALL bearer traffic
     from one IP; a request is throttled when the token bucket OR the `ipall`
     ceiling is exceeded (both counters move in one pipelined round trip; when both
-    exceed, the 429 reports the token limit). The `webhook`/`unauth` classes stay
-    single-key — each is already IP-capped on its own bucket, and dropping the
-    bearer only demotes an attacker to the lower `unauth` per-IP cap. The class table is the
-  **extension point** for ADR 0032's future per-email OTP class (a fourth row,
-  keyed on the normalized email). **`/mcp` shares the `default` class** — it is a
-  bearer-authenticated surface like the REST API, so per-token buckets apply
-  uniformly; no separate policy needed.
+    exceed, the 429 reports the token limit). The `webhook`/`unauth`/`auth`
+    classes stay single-key — each is already IP-capped on its own bucket, and
+    dropping the bearer only demotes an attacker to the lower `unauth` per-IP cap.
+    **The `auth` class (per-IP half) shipped with #1127** — the class table's
+    former "extension point" row for ADR 0032's OTP surface. It covers only what
+    the middleware CAN see (path + IP): the per-email counters ADR 0032 §8 also
+    calls for are a separate, service-level layer keyed on the normalized email
+    from the parsed request body, which a `BaseHTTPMiddleware` dispatch cannot
+    read without draining/replaying the receive channel on the hot path — that
+    half lands in the OTP service itself, with or before #734. **`/mcp` shares
+    the `default` class** — it is a bearer-authenticated surface like the REST
+    API, so per-token buckets apply uniformly; no separate policy needed.
 - **Headers on the 429 only:** `Retry-After`, `X-RateLimit-Limit`,
   `X-RateLimit-Remaining: 0`, with `error_envelope("rate_limited", …,
   {"retry_after_seconds": N})`. We do not spend a header budget on every 200.

@@ -89,6 +89,39 @@ def test_webhook_providers_match_orchestration_registry() -> None:
     assert rate_limit._WEBHOOK_PROVIDERS == frozenset(_PROVIDERS)
 
 
+def test_auth_prefix_resolves_to_auth_class() -> None:
+    s = _settings()
+    cls, limit, key = _resolve_policy("/api/v1/auth/otp/request", None, "9.9.9.9", s)
+    assert cls == "auth"
+    assert limit == s.rate_limit_auth_per_minute
+    assert key == "ip:9.9.9.9"
+
+
+def test_auth_prefix_wins_even_with_bearer() -> None:
+    # #1127: a bearer-carrying request must NOT dodge the strict auth cap — the
+    # prefix is matched before the bearer branch, exactly like `webhook`.
+    s = _settings()
+    cls, limit, key = _resolve_policy("/api/v1/auth/otp/request", "sometoken", "9.9.9.9", s)
+    assert cls == "auth"
+    assert limit == s.rate_limit_auth_per_minute
+    assert key == "ip:9.9.9.9"
+
+
+def test_non_auth_path_with_bearer_still_resolves_default() -> None:
+    s = _settings()
+    cls, limit, _key = _resolve_policy("/api/v1/suites", "sometoken", "9.9.9.9", s)
+    assert cls == "default"
+    assert limit == s.rate_limit_authenticated_per_minute
+
+
+def test_orchestration_events_path_still_resolves_webhook() -> None:
+    # Sanity check that the new auth prefix didn't shadow the webhook prefix.
+    s = _settings()
+    cls, limit, _key = _resolve_policy("/api/v1/orchestration/events/adf", None, "9.9.9.9", s)
+    assert cls == "webhook"
+    assert limit == s.rate_limit_webhook_per_minute
+
+
 def test_bearer_keys_by_sha256_prefix() -> None:
     s = _settings()
     cls, limit, key = _resolve_policy("/api/v1/suites", "sometoken", "9.9.9.9", s)

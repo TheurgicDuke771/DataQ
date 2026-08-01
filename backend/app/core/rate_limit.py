@@ -63,6 +63,12 @@ _GC_SECONDS: Final = WINDOW_SECONDS * 2  # EXPIRE horizon — pure GC, never the
 # counted like any other request.
 _EXEMPT_PATHS: Final = frozenset({"/healthz"})
 _WEBHOOK_PREFIX: Final = "/api/v1/orchestration/events/"
+# Unauthenticated auth-surface endpoints (OTP mint/verify, #1127) — matched on
+# the path PREFIX before the bearer branch, like `webhook`, so a bearer-carrying
+# request cannot dodge the strict cap by presenting a token. Per-IP only; the
+# per-email counters (ADR 0032 §8, #734) are a separate, service-level layer
+# this middleware cannot implement (it has no access to the parsed body).
+_AUTH_PREFIX: Final = "/api/v1/auth/"
 
 # The provider segments that get their OWN per-IP webhook bucket (#785), so a
 # burst from one provider can't crowd out another's callbacks when both egress
@@ -337,18 +343,21 @@ def _resolve_policy(
 ) -> tuple[str, int, str]:
     """Resolve (class, per-minute limit, bucket key) for a request.
 
-    Order matters: the webhook (machine) path is keyed per-IP EVEN when a bearer
-    is present, so an orchestrator's callbacks share one bucket regardless of any
-    token they carry. A known provider segment (adf/airflow/dbt) is folded into
-    the webhook key so each provider gets an independent per-IP bucket (#785).
-    Otherwise a bearer buckets per sha256(token) and the unauthenticated path per
-    client-IP. The raw token is never used as a key — only its hash — so it is
-    never logged or stored.
+    Order matters: the webhook (machine) path and the auth (OTP mint/verify)
+    path are BOTH keyed per-IP EVEN when a bearer is present, checked before the
+    bearer branch, so neither can be dodged by presenting a token. A known
+    provider segment (adf/airflow/dbt) is folded into the webhook key so each
+    provider gets an independent per-IP bucket (#785). Otherwise a bearer
+    buckets per sha256(token) and the unauthenticated path per client-IP. The
+    raw token is never used as a key — only its hash — so it is never logged or
+    stored.
     """
     if path.startswith(_WEBHOOK_PREFIX):
         provider = path[len(_WEBHOOK_PREFIX) :].split("/", 1)[0]
         prefix = f"{provider}:" if provider in _WEBHOOK_PROVIDERS else ""
         return "webhook", settings.rate_limit_webhook_per_minute, f"{prefix}ip:{ip}"
+    if path.startswith(_AUTH_PREFIX):
+        return "auth", settings.rate_limit_auth_per_minute, f"ip:{ip}"
     if bearer is not None:
         digest = hashlib.sha256(bearer.encode()).hexdigest()[:32]
         return "default", settings.rate_limit_authenticated_per_minute, f"tok:{digest}"

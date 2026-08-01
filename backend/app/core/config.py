@@ -228,6 +228,13 @@ class Settings(BaseSettings):
         240  # per-IP ceiling across ALL webhook buckets from one IP (#785) — bounds
         # the aggregate a single IP can spend across provider buckets.
     )
+    rate_limit_auth_per_minute: int = (
+        10  # per-IP bucket for /api/v1/auth/* (#1127) — a strict cap on the
+        # unauthenticated OTP mint/verify surface, checked before the bearer
+        # branch so a token can't dodge it. The per-email counters (ADR 0032
+        # §8, #734) are a separate, service-level layer this middleware can't
+        # implement (no access to the parsed request body).
+    )
     rate_limit_ip_per_minute: int = (
         1200  # per-IP ceiling across all bearer buckets (rotated-token backstop)
     )
