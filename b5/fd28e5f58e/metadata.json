@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "b5fd28e5f58e",
+  "strategy": "manual-commit",
+  "branch": "chore/hook-matchers-harness-rename",
+  "checkpoints_count": 2,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/b5/fd28e5f58e/0/metadata.json",
+      "transcript": "/b5/fd28e5f58e/0/full.jsonl",
+      "compact_transcript": "/b5/fd28e5f58e/0/transcript.jsonl",
+      "content_hash": "/b5/fd28e5f58e/0/content_hash.txt",
+      "prompt": "/b5/fd28e5f58e/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 437,
+    "cache_creation_tokens": 3967105,
+    "cache_read_tokens": 72404042,
+    "output_tokens": 179190,
+    "api_call_count": 222
+  }
+}
