@@ -140,3 +140,17 @@ export function formatDurationMs(ms: number): string {
   const seconds = totalSeconds % 60;
   return `${minutes}m ${seconds}s`;
 }
+
+/**
+ * The document title (and the filename a browser's Save-as-PDF dialog
+ * suggests) while a run is loaded (#345): suite + short run id + today's
+ * date, so the artifact is identifiable without opening it.
+ */
+export function runReportTitle(
+  suiteName: string | null,
+  run: { id: string; suite_id: string },
+): string {
+  const subject = suiteName ?? `Run ${run.suite_id.slice(0, 8)}`;
+  const date = new Date().toLocaleDateString();
+  return `${subject} — Run ${run.id.slice(0, 8)} — ${date} · DataQ`;
+}

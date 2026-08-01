@@ -103,6 +103,74 @@ a:focus-visible,
   transform: translateY(0.5px);
 }
 
+/* ── Print (PDF report export, #345) ──────────────────────────────────────
+   The run-detail page renders two parallel trees: the normal interactive
+   view (`.no-print`) and a static, chrome-free report (`.print-only`, see
+   `RunReport.tsx`). "Download → Print / Save as PDF" is just `window.print()`
+   — the browser's own print-to-PDF is the whole export mechanism, so this
+   stylesheet is the entire client cost (zero new dependency). Outside a print
+   context `.print-only` stays out of flow entirely so it never affects layout
+   or is reachable by assistive tech browsing the page normally. */
+.print-only {
+  display: none;
+}
+
+@media print {
+  /* Hide the app shell (header/sider/nav-drawer) and every `.no-print` block
+     so the artifact is the report alone, not the app around it. */
+  .no-print,
+  .ant-layout-header,
+  .ant-layout-sider,
+  .ant-drawer {
+    display: none !important;
+  }
+  /* The shell pins itself to the viewport height with `overflow: hidden` so
+     only <Content> scrolls on screen; printing needs the opposite — the page
+     must lay out to its natural (paginated) height, and the screen padding
+     would otherwise just be blank margin around a hidden `.no-print` tree. */
+  .ant-layout,
+  .ant-layout-content {
+    height: auto !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+
+  .rd-report table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-block: 8px 16px;
+  }
+  .rd-report th,
+  .rd-report td {
+    border: 1px solid #999;
+    padding: 4px 8px;
+    text-align: left;
+    font-size: 12px;
+    vertical-align: top;
+  }
+  .rd-report-subtitle,
+  .rd-report-footnote {
+    color: #555;
+    font-size: 12px;
+  }
+  .rd-report-failure {
+    color: #a8071a;
+  }
+  /* A results table may run past one page — let the TABLE break, but never
+     split a single check's ROW across the page boundary. */
+  .rd-report table {
+    break-inside: auto;
+  }
+  .rd-report tr {
+    break-inside: avoid;
+  }
+}
+
 /* ── Reduced motion ────────────────────────────────────────────────────────
    Respect users who prefer reduced motion — keep the elevation/tint, drop every
    transform and transition so nothing slides or nudges. */

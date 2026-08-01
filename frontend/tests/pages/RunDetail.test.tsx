@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -95,6 +95,21 @@ function renderAt(runId: string) {
   );
 }
 
+/**
+ * Scoped query bound to the interactive on-screen region (`data-testid`
+ * `rd-screen`) — since the print-only `RunReport` (#345) renders a parallel
+ * copy of the suite name / check names / statuses, plain `screen.getByText`
+ * now matches twice for anything the report also shows. Tests asserting on
+ * the *interactive page* scope through this helper; tests asserting on the
+ * *report* scope through `screen.findByTestId('run-report')` instead. The
+ * `rd-screen` wrapper itself renders synchronously (loading/error/ok are all
+ * inside it), so this needs no `await` — callers still `await` the first
+ * `findBy*` query on the returned bindings for the data to land.
+ */
+function screenRegion() {
+  return within(screen.getByTestId('rd-screen'));
+}
+
 afterEach(() => {
   vi.clearAllMocks();
 });
@@ -106,14 +121,15 @@ describe('RunDetail page', () => {
     mockListChecks.mockResolvedValue([check]);
 
     renderAt('r1');
+    const region = screenRegion();
 
-    expect(await screen.findByText('Orders quality')).toBeInTheDocument();
+    expect(await region.findByText('Orders quality')).toBeInTheDocument();
     // check_id → name + expectation + severity tag.
-    expect(screen.getByText('order_id not null')).toBeInTheDocument();
-    expect(screen.getByText('expect_column_values_to_not_be_null')).toBeInTheDocument();
-    expect(screen.getByText('warn')).toBeInTheDocument();
+    expect(region.getByText('order_id not null')).toBeInTheDocument();
+    expect(region.getByText('expect_column_values_to_not_be_null')).toBeInTheDocument();
+    expect(region.getByText('warn')).toBeInTheDocument();
     // Checks-passed stat: 0 of 1 passed (the one result is a warn).
-    expect(screen.getByText('0 / 1')).toBeInTheDocument();
+    expect(region.getByText('0 / 1')).toBeInTheDocument();
     expect(mockGetRun).toHaveBeenCalledWith('r1');
   });
 
@@ -133,8 +149,9 @@ describe('RunDetail page', () => {
     mockGetSuite.mockResolvedValue(suite);
     mockListChecks.mockResolvedValue([check]);
     renderAt('r1');
-    await screen.findByText('Orders quality');
-    expect(screen.queryByText('Asset')).not.toBeInTheDocument();
+    const region = screenRegion();
+    expect(await region.findByText('Orders quality')).toBeInTheDocument();
+    expect(region.queryByText('Asset')).not.toBeInTheDocument();
   });
 
   it('surfaces the failure reason for a failed run (#605)', async () => {
@@ -148,9 +165,10 @@ describe('RunDetail page', () => {
     mockListChecks.mockResolvedValue([check]);
 
     renderAt('r1');
+    const region = screenRegion();
 
-    expect(await screen.findByText('This run failed to execute')).toBeInTheDocument();
-    expect(screen.getByText(/The datasource rejected the credentials/)).toBeInTheDocument();
+    expect(await region.findByText('This run failed to execute')).toBeInTheDocument();
+    expect(region.getByText(/The datasource rejected the credentials/)).toBeInTheDocument();
   });
 
   it('marks a snoozed check in the results table (#653 — triage surface)', async () => {
@@ -159,9 +177,10 @@ describe('RunDetail page', () => {
     mockListChecks.mockResolvedValue([{ ...check, alert_snoozed_until: '2099-01-01T00:00:00Z' }]);
 
     renderAt('r1');
+    const region = screenRegion();
 
-    expect(await screen.findByText('order_id not null')).toBeInTheDocument();
-    expect(screen.getByText(/Snoozed until/)).toBeInTheDocument();
+    expect(await region.findByText('order_id not null')).toBeInTheDocument();
+    expect(region.getByText(/Snoozed until/)).toBeInTheDocument();
   });
 
   it('still renders when the suite name and checks fail to load', async () => {
@@ -170,9 +189,10 @@ describe('RunDetail page', () => {
     mockListChecks.mockRejectedValue(new Error('forbidden'));
 
     renderAt('r1');
+    const region = screenRegion();
 
     // Falls back to a suite-id stub heading; the result row still shows (by id).
-    await waitFor(() => expect(screen.getByText('warn')).toBeInTheDocument());
+    await waitFor(() => expect(region.getByText('warn')).toBeInTheDocument());
   });
 
   it('shows an error when the run fails to load', async () => {
@@ -212,20 +232,26 @@ describe('RunDetail page', () => {
     mockGetSuite.mockResolvedValue(suite);
     mockListChecks.mockResolvedValue([check]);
     renderAt('r1');
+    const region = screenRegion();
     const user = userEvent.setup();
 
-    await screen.findByText('order_id not null');
-    await user.click(screen.getByRole('button', { name: /expand row/i }));
+    await region.findByText('order_id not null');
+    await user.click(region.getByRole('button', { name: /expand row/i }));
 
     // Count is surfaced; the masked cell value shows the shape, not real data.
-    expect(await screen.findByText(/Failing rows/)).toBeInTheDocument();
-    expect(screen.getByText(/2 rows/)).toBeInTheDocument();
-    expect(screen.getAllByText('<redacted>').length).toBeGreaterThan(0);
-    // #424: every column masked → the header must say so, honestly.
-    expect(screen.getByText(/values redacted/)).toBeInTheDocument();
+    expect(await region.findByText(/Failing rows/)).toBeInTheDocument();
+    expect(region.getByText(/2 rows/)).toBeInTheDocument();
+    expect(region.getAllByText('<redacted>').length).toBeGreaterThan(0);
+    // #424: every column masked -> the header must say so, honestly.
+    expect(region.getByText(/values redacted/)).toBeInTheDocument();
   });
 
-  // ── #424: the sample header must match the actual per-column redaction state ──
+  // -- #424: the sample header must match the actual per-column redaction state --
+  // Scoped to the on-screen region throughout (`screenRegion()`) -- since the
+  // print-only `RunReport` (#345) also renders the check name "order_id not
+  // null", the unscoped `screen.findByText` these started as would now match
+  // twice; the redaction-label assertions after each expand aren't duplicated
+  // (the report omits samples entirely) but stay scoped for consistency.
 
   it('says "values shown" when the API reports no columns were redacted', async () => {
     mockGetRun.mockResolvedValue({
@@ -245,14 +271,15 @@ describe('RunDetail page', () => {
     mockGetSuite.mockResolvedValue(suite);
     mockListChecks.mockResolvedValue([check]);
     renderAt('r1');
+    const region = screenRegion();
     const user = userEvent.setup();
 
-    await screen.findByText('order_id not null');
-    await user.click(screen.getByRole('button', { name: /expand row/i }));
+    await region.findByText('order_id not null');
+    await user.click(region.getByRole('button', { name: /expand row/i }));
 
-    expect(await screen.findByText(/Failing rows/)).toBeInTheDocument();
-    expect(screen.getByText(/values shown/)).toBeInTheDocument();
-    expect(screen.queryByText(/values redacted/)).not.toBeInTheDocument();
+    expect(await region.findByText(/Failing rows/)).toBeInTheDocument();
+    expect(region.getByText(/values shown/)).toBeInTheDocument();
+    expect(region.queryByText(/values redacted/)).not.toBeInTheDocument();
   });
 
   it('names the redacted columns when the API reports a partial mix', async () => {
@@ -272,15 +299,15 @@ describe('RunDetail page', () => {
     mockGetSuite.mockResolvedValue(suite);
     mockListChecks.mockResolvedValue([check]);
     renderAt('r1');
+    const region = screenRegion();
     const user = userEvent.setup();
 
-    await screen.findByText('order_id not null');
-    await user.click(screen.getByRole('button', { name: /expand row/i }));
+    await region.findByText('order_id not null');
+    await user.click(region.getByRole('button', { name: /expand row/i }));
 
-    expect(await screen.findByText(/Failing rows/)).toBeInTheDocument();
-    expect(screen.getByText(/1 column redacted/)).toBeInTheDocument();
-    expect(screen.queryByText(/values redacted/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/values shown/)).not.toBeInTheDocument();
+    expect(await region.findByText(/Failing rows/)).toBeInTheDocument();
+    expect(region.getByText(/1 column redacted/)).toBeInTheDocument();
+    expect(region.queryByText(/values redacted/)).not.toBeInTheDocument();
   });
 
   it('falls back to "partially redacted" when partial has no nameable column (#1115)', async () => {
@@ -305,16 +332,17 @@ describe('RunDetail page', () => {
     mockGetSuite.mockResolvedValue(suite);
     mockListChecks.mockResolvedValue([check]);
     renderAt('r1');
+    const region = screenRegion();
     const user = userEvent.setup();
 
-    await screen.findByText('order_id not null');
-    await user.click(screen.getByRole('button', { name: /expand row/i }));
+    await region.findByText('order_id not null');
+    await user.click(region.getByRole('button', { name: /expand row/i }));
 
-    expect(await screen.findByText(/Failing rows/)).toBeInTheDocument();
-    expect(screen.getByText(/partially redacted/)).toBeInTheDocument();
-    expect(screen.queryByText(/column.*redacted/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/^values redacted$/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/values shown/)).not.toBeInTheDocument();
+    expect(await region.findByText(/Failing rows/)).toBeInTheDocument();
+    expect(region.getByText(/partially redacted/)).toBeInTheDocument();
+    expect(region.queryByText(/column.*redacted/)).not.toBeInTheDocument();
+    expect(region.queryByText(/^values redacted$/)).not.toBeInTheDocument();
+    expect(region.queryByText(/values shown/)).not.toBeInTheDocument();
   });
 
   it('omits any redaction claim when the sample has no data-bearing content', async () => {
@@ -332,15 +360,16 @@ describe('RunDetail page', () => {
     mockGetSuite.mockResolvedValue(suite);
     mockListChecks.mockResolvedValue([check]);
     renderAt('r1');
+    const region = screenRegion();
     const user = userEvent.setup();
 
-    await screen.findByText('order_id not null');
-    await user.click(screen.getByRole('button', { name: /expand row/i }));
+    await region.findByText('order_id not null');
+    await user.click(region.getByRole('button', { name: /expand row/i }));
 
-    expect(await screen.findByText(/Failing rows/)).toBeInTheDocument();
-    expect(screen.queryByText(/values redacted/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/values shown/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/column.*redacted/)).not.toBeInTheDocument();
+    expect(await region.findByText(/Failing rows/)).toBeInTheDocument();
+    expect(region.queryByText(/values redacted/)).not.toBeInTheDocument();
+    expect(region.queryByText(/values shown/)).not.toBeInTheDocument();
+    expect(region.queryByText(/column.*redacted/)).not.toBeInTheDocument();
   });
 
   it('exports the run as JSON (failing-row sample omitted from the payload)', async () => {
@@ -359,6 +388,111 @@ describe('RunDetail page', () => {
     const body = payload as { run: { suite_name: string }; checks: unknown[] };
     expect(body.run.suite_name).toBe('Orders quality');
     expect(body.checks).toHaveLength(1);
+  });
+
+  // ── PDF report export (#345) ───────────────────────────────────────────
+  describe('PDF report export (#345)', () => {
+    it('offers a Print / Save as PDF option in the download menu', async () => {
+      mockGetRun.mockResolvedValue(runDetail);
+      mockGetSuite.mockResolvedValue(suite);
+      mockListChecks.mockResolvedValue([check]);
+      renderAt('r1');
+      const user = userEvent.setup();
+
+      await user.click(await screen.findByRole('button', { name: /download/i }));
+
+      expect(await screen.findByText('Print / Save as PDF')).toBeInTheDocument();
+    });
+
+    it('invokes window.print() — the browser IS the PDF export, zero new deps', async () => {
+      mockGetRun.mockResolvedValue(runDetail);
+      mockGetSuite.mockResolvedValue(suite);
+      mockListChecks.mockResolvedValue([check]);
+      const printSpy = vi.fn();
+      vi.stubGlobal('print', printSpy);
+      renderAt('r1');
+      const user = userEvent.setup();
+
+      await user.click(await screen.findByRole('button', { name: /download/i }));
+      await user.click(await screen.findByText('Print / Save as PDF'));
+
+      expect(printSpy).toHaveBeenCalledTimes(1);
+      vi.unstubAllGlobals();
+    });
+
+    it('disables Print / Save as PDF alongside CSV/JSON when the run has no results', async () => {
+      mockGetRun.mockResolvedValue({ ...runDetail, results: [] });
+      mockGetSuite.mockResolvedValue(suite);
+      mockListChecks.mockResolvedValue([check]);
+      renderAt('r1');
+
+      // The whole Dropdown trigger is disabled (same gate as CSV/JSON) — no
+      // menu opens, so "Print / Save as PDF" never renders.
+      expect(await screen.findByRole('button', { name: /download/i })).toBeDisabled();
+    });
+
+    it('renders the print-only report with the run meta + per-check table', async () => {
+      mockGetRun.mockResolvedValue(runDetail);
+      mockGetSuite.mockResolvedValue(suite);
+      mockListChecks.mockResolvedValue([check]);
+      renderAt('r1');
+
+      const report = await screen.findByTestId('run-report');
+      // Suite header, run meta, and the per-check row all present — the report
+      // renders unconditionally (hidden by print CSS, not by React) so
+      // `window.print()` has no async data-fetch to race.
+      expect(within(report).getByText('Orders quality')).toBeInTheDocument();
+      expect(within(report).getByText(/Run r1/)).toBeInTheDocument();
+      expect(within(report).getByText('manual:u1')).toBeInTheDocument();
+      expect(within(report).getByText('order_id not null')).toBeInTheDocument();
+      expect(within(report).getByText('expect_column_values_to_not_be_null')).toBeInTheDocument();
+      expect(within(report).getByText('warn')).toBeInTheDocument();
+      expect(within(report).getByText('2')).toBeInTheDocument();
+    });
+
+    it('em-dashes a null triggered_by / metric_value in the report', async () => {
+      mockGetRun.mockResolvedValue({
+        ...runDetail,
+        triggered_by: null,
+        results: [{ ...runDetail.results[0], metric_value: null }],
+      });
+      mockGetSuite.mockResolvedValue(suite);
+      mockListChecks.mockResolvedValue([check]);
+      renderAt('r1');
+
+      const report = await screen.findByTestId('run-report');
+      const emDashes = within(report).getAllByText('—');
+      // One for "Triggered by", one for the check row's "Metric" cell.
+      expect(emDashes.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('omits sample failing rows from the report (redaction parity with CSV/JSON, #226)', async () => {
+      mockGetRun.mockResolvedValue(runDetail);
+      mockGetSuite.mockResolvedValue(suite);
+      mockListChecks.mockResolvedValue([check]);
+      renderAt('r1');
+
+      const report = await screen.findByTestId('run-report');
+      // The fixture's sample_failures carries a partial_unexpected_list (even
+      // though every cell is already API-redacted to "<redacted>"); the report
+      // must not surface it at all — not the masked placeholder, not a count,
+      // not a "Failing rows" section. Omission, not re-redaction, is the
+      // chosen parity strategy (matches the existing CSV/JSON export).
+      expect(within(report).queryByText(/Failing rows/)).not.toBeInTheDocument();
+      expect(within(report).queryByText('<redacted>')).not.toBeInTheDocument();
+      expect(within(report).queryByText(/unexpected_count/)).not.toBeInTheDocument();
+    });
+
+    it('sets the tab title to suite + short run id (#345 a11y ask)', async () => {
+      mockGetRun.mockResolvedValue(runDetail);
+      mockGetSuite.mockResolvedValue(suite);
+      mockListChecks.mockResolvedValue([check]);
+      renderAt('r1');
+
+      await screenRegion().findByText('Orders quality');
+      expect(document.title).toContain('Orders quality');
+      expect(document.title).toContain('r1');
+    });
   });
 });
 
@@ -408,12 +542,14 @@ describe('RunDetail — anomaly cold-start hint (#593)', () => {
     mockGetSuite.mockResolvedValue(suite);
     mockListChecks.mockResolvedValue([anomalyCheck]);
     renderAt('r1');
+    // Scoped (#345): the print-only RunReport also renders the check name.
+    const region = screenRegion();
     const user = userEvent.setup();
 
-    await screen.findByText('orders volume anomaly');
-    await user.click(screen.getByRole('button', { name: /expand row/i }));
+    await region.findByText('orders volume anomaly');
+    await user.click(region.getByRole('button', { name: /expand row/i }));
 
-    expect(await screen.findByText('Collecting history: 3 of 7 points')).toBeInTheDocument();
+    expect(await region.findByText('Collecting history: 3 of 7 points')).toBeInTheDocument();
   });
 
   it('does not show the hint for a scored (non-cold-start) anomaly result', async () => {
@@ -455,13 +591,15 @@ describe('RunDetail — anomaly cold-start hint (#593)', () => {
     mockGetSuite.mockResolvedValue(suite);
     mockListChecks.mockResolvedValue([anomalyCheck]);
     renderAt('r1');
+    // Scoped (#345): the print-only RunReport also renders the check name.
+    const region = screenRegion();
     const user = userEvent.setup();
 
-    await screen.findByText('orders volume anomaly');
-    await user.click(screen.getByRole('button', { name: /expand row/i }));
+    await region.findByText('orders volume anomaly');
+    await user.click(region.getByRole('button', { name: /expand row/i }));
 
-    expect(await screen.findByText('No sample rows captured.')).toBeInTheDocument();
-    expect(screen.queryByText(/Collecting history/)).not.toBeInTheDocument();
+    expect(await region.findByText('No sample rows captured.')).toBeInTheDocument();
+    expect(region.queryByText(/Collecting history/)).not.toBeInTheDocument();
   });
 
   it('does not show the hint for a non-anomaly check even if a cold-start-shaped payload appears', async () => {
@@ -482,12 +620,14 @@ describe('RunDetail — anomaly cold-start hint (#593)', () => {
     mockGetSuite.mockResolvedValue(suite);
     mockListChecks.mockResolvedValue([check]); // kind: 'expectation'
     renderAt('r1');
+    // Scoped (#345): the print-only RunReport also renders the check name.
+    const region = screenRegion();
     const user = userEvent.setup();
 
-    await screen.findByText('order_id not null');
-    await user.click(screen.getByRole('button', { name: /expand row/i }));
+    await region.findByText('order_id not null');
+    await user.click(region.getByRole('button', { name: /expand row/i }));
 
-    await screen.findByText('No sample rows captured.');
-    expect(screen.queryByText(/Collecting history/)).not.toBeInTheDocument();
+    await region.findByText('No sample rows captured.');
+    expect(region.queryByText(/Collecting history/)).not.toBeInTheDocument();
   });
 });
