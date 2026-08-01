@@ -107,7 +107,7 @@ class ResultRead(ApiModel):
     duration_ms: int | None
     observed_value: dict[str, Any] | None
     expected_value: dict[str, Any] | None
-    sample_failures: dict[str, Any] | None  # redacted (counts kept, values masked)
+    sample_failures: dict[str, Any] | None  # column-aware redaction (#415); see `redaction` below
     redaction: Literal["full", "partial", "none"] | None = None
     redacted_columns: list[str] = Field(default_factory=list)
 

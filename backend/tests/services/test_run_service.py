@@ -925,6 +925,66 @@ def test_redact_state_a_column_shown_anywhere_counts_as_shown() -> None:
     assert cols == []
 
 
+# ── #1115 review: the catch-all masked branches must also register with the
+# tracker, or `summary()` UNDER-claims redaction — the mirror image of the bug
+# #424 fixed. Unreachable with today's two writers (gx_runner / comparison_run
+# only ever emit the recognized keys/shapes), but these are public helpers, so
+# an unrecognized key or a malformed row shape must not silently vanish.
+
+
+def test_redact_state_full_for_an_unrecognized_key_with_no_column_context() -> None:
+    # A key the redactor doesn't recognize is masked (default-mask, #415) but has
+    # no column name to attribute the mask to — must still register as a real
+    # (anonymous) mask, not "nothing happened".
+    sample, state, cols = run_service.redact_sample_failures_with_state(
+        {"some_future_bucket": ["secret@x.com"]}
+    )
+    assert state == "full"
+    assert cols == []
+    assert sample == {"some_future_bucket": ["<redacted>"]}
+
+
+def test_redact_state_partial_when_unrecognized_key_masks_alongside_a_shown_column() -> None:
+    sample, state, cols = run_service.redact_sample_failures_with_state(
+        {
+            "unexpected_index_list": [{"ORDER_ID": "ORD-1"}],  # shown: identifier
+            "some_future_bucket": ["secret@x.com"],  # masked, unrecognized key
+        }
+    )
+    assert state == "partial"
+    assert cols == []  # nothing nameable for the unrecognized-key mask
+    assert sample == {
+        "unexpected_index_list": [{"ORDER_ID": "ORD-1"}],
+        "some_future_bucket": ["<redacted>"],
+    }
+
+
+def test_redact_state_full_for_a_malformed_non_dict_row_in_index_list() -> None:
+    # `unexpected_index_list` is documented as row-dicts; a malformed non-dict
+    # entry still masks (via `_redact_row`'s non-dict fallback) but has no column
+    # identity — must still register as an anonymous mask.
+    sample, state, cols = run_service.redact_sample_failures_with_state(
+        {"unexpected_index_list": ["not-a-row-dict"]}
+    )
+    assert state == "full"
+    assert cols == []
+    assert sample == {"unexpected_index_list": ["<redacted>"]}
+
+
+def test_redact_state_partial_for_a_malformed_non_dict_comparison_row() -> None:
+    sample, state, cols = run_service.redact_sample_failures_with_state(
+        {
+            "mismatched": [
+                {"ORDER_ID": "ORD-1"},  # shown: unsuffixed, non-PII join key
+                "not-a-row-dict",  # malformed — masks anonymously
+            ]
+        }
+    )
+    assert state == "partial"
+    assert cols == []
+    assert sample == {"mismatched": [{"ORDER_ID": "ORD-1"}, "<redacted>"]}
+
+
 # ── #989: the errored-monitor cell, redacted under the same policy ───────────
 
 

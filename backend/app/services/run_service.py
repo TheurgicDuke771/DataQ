@@ -716,6 +716,11 @@ def _redact_row(
     sensitive; every other column shows only if affirmatively identifier/safe
     (default-mask). Non-dict rows fall back to full masking."""
     if not isinstance(row, dict):
+        if tracker is not None:
+            # No column identity for a malformed/non-dict row shape — still a real
+            # mask, so it must count as anonymous (#1115 review), not vanish from
+            # the summary.
+            tracker.record(None, False)
         return _redact_sample_value(row)
     # Case-insensitive tested-column match: GX returns the warehouse's column casing
     # (Snowflake upper-cases), which need not match the check config's `column`.
@@ -764,6 +769,11 @@ def _redact_comparison_row(
     `tested_column` in a comparison — every column is incidental, so
     everything not affirmatively identifier/safe default-masks (#415)."""
     if not isinstance(row, dict):
+        if tracker is not None:
+            # No column identity for a malformed/non-dict row shape — still a real
+            # mask, so it must count as anonymous (#1115 review), not vanish from
+            # the summary.
+            tracker.record(None, False)
         return _redact_sample_value(row)
     out: dict[Any, Any] = {}
     for col, val in row.items():
@@ -902,7 +912,14 @@ def redact_sample_failures(
                 for row in value
             ]
         else:
+            # An unrecognized key is treated as data and fully masked (default-mask
+            # posture) — but it has no column identity to attribute the mask to, so
+            # it must still register as an anonymous mask (#1115 review): otherwise
+            # `summary()` under-reports this masking as "nothing happened" instead
+            # of "full"/"partial", the mirror image of the bug #424 fixed.
             out[key] = _redact_sample_value(value)
+            if tracker is not None:
+                tracker.record(None, False)
     return out
 
 
