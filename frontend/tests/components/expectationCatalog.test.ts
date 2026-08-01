@@ -2,16 +2,26 @@ import { describe, expect, it } from 'vitest';
 
 import type { ConnectionType } from '../../src/api/connections';
 import {
+  type ConfigField,
   configFieldsFor,
   EXPECTATION_BY_TYPE,
   EXPECTATION_CATALOG,
   EXPECTATIONS_BY_CATEGORY,
   expectationsByCategoryFor,
+  fieldVisible,
   typeFieldHint,
 } from '../../src/components/checks/expectationCatalog';
 
 const categoryNames = (groups: { category: string; specs: unknown[] }[]): string[] =>
   groups.map((g) => g.category);
+
+/** Look up a catalog spec's config field by name, failing loudly (not via a
+ *  non-null assertion) if it's missing. */
+function requiredField(specType: string, fieldName: string): ConfigField {
+  const field = EXPECTATION_BY_TYPE[specType]?.fields.find((f) => f.name === fieldName);
+  if (!field) throw new Error(`no ${fieldName} field on ${specType}`);
+  return field;
+}
 
 describe('expectationCatalog', () => {
   // EXPECTATIONS_BY_CATEGORY filters the catalog by the categories listed in
@@ -107,6 +117,81 @@ describe('expectationsByCategoryFor (freshness/volume monitor gating, ADR 0012)'
     expect(byType['monitor:volume'].kind).toBe('volume');
     // No max bound — a volume spike's deviation-% is unbounded (can exceed 100).
     expect(byType['monitor:volume'].thresholds?.max).toBeUndefined();
+  });
+});
+
+describe('expectationsByCategoryFor (anomaly monitor gating, #593 — SQL-only, stricter than freshness/volume)', () => {
+  it.each<ConnectionType>(['snowflake', 'unity_catalog'])(
+    'offers Anomaly for SQL-queryable datasource %s',
+    (type) => {
+      expect(categoryNames(expectationsByCategoryFor(type))).toContain('Anomaly');
+    },
+  );
+
+  it.each<ConnectionType>(['iceberg', 's3', 'adls_gen2', 'adf', 'airflow'])(
+    'hides Anomaly for non-SQL-queryable datasource %s (Iceberg/flat-files DO get Freshness/Volume, but not Anomaly — it measures over a live SQL connection)',
+    (type) => {
+      const names = categoryNames(expectationsByCategoryFor(type));
+      expect(names).not.toContain('Anomaly');
+    },
+  );
+
+  it('hides Anomaly while the connection type is still unknown', () => {
+    expect(categoryNames(expectationsByCategoryFor(undefined))).not.toContain('Anomaly');
+  });
+
+  it('keeps Anomaly when editing one even if the connection type is unknown', () => {
+    expect(categoryNames(expectationsByCategoryFor(undefined, 'monitor:anomaly'))).toContain(
+      'Anomaly',
+    );
+  });
+
+  it('models anomaly as kind=anomaly requiring a threshold, with NO derived dimension', () => {
+    const spec = EXPECTATION_BY_TYPE['monitor:anomaly'];
+    expect(spec.kind).toBe('anomaly');
+    expect(spec.thresholds?.requireFailOrCritical).toBe(true);
+    // Mirrors the backend `check_dimension._BY_KIND`, which has no 'anomaly'
+    // entry (pinned by the backend catalog-contract test) — the metric anomaly
+    // watches (row_count vs freshness_age_hours) isn't derivable from the kind
+    // alone.
+    expect(spec.dimension).toBeUndefined();
+  });
+
+  it('offers exactly the two documented target metrics', () => {
+    const spec = EXPECTATION_BY_TYPE['monitor:anomaly'];
+    const targetMetric = spec.fields.find((f) => f.name === 'target_metric');
+    expect(targetMetric?.type).toBe('select');
+    expect(targetMetric?.options?.map((o) => o.value)).toEqual([
+      'row_count',
+      'freshness_age_hours',
+    ]);
+  });
+});
+
+describe('fieldVisible / anomaly conditional column field (#593)', () => {
+  const columnField = () => requiredField('monitor:anomaly', 'column');
+
+  it('the column field declares showWhen target_metric=freshness_age_hours', () => {
+    expect(columnField().showWhen).toEqual({
+      field: 'target_metric',
+      equals: 'freshness_age_hours',
+    });
+  });
+
+  it('is hidden for row_count and shown for freshness_age_hours', () => {
+    expect(fieldVisible(columnField(), { target_metric: 'row_count' })).toBe(false);
+    expect(fieldVisible(columnField(), { target_metric: 'freshness_age_hours' })).toBe(true);
+  });
+
+  it('is hidden when no target_metric has been chosen yet', () => {
+    expect(fieldVisible(columnField(), undefined)).toBe(false);
+    expect(fieldVisible(columnField(), {})).toBe(false);
+  });
+
+  it('an unconditional field (no showWhen) is always visible', () => {
+    const windowField = requiredField('monitor:anomaly', 'window');
+    expect(fieldVisible(windowField, undefined)).toBe(true);
+    expect(fieldVisible(windowField, { target_metric: 'row_count' })).toBe(true);
   });
 });
 

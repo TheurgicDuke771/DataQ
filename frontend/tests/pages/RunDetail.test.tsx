@@ -361,3 +361,133 @@ describe('RunDetail page', () => {
     expect(body.checks).toHaveLength(1);
   });
 });
+
+describe('RunDetail — anomaly cold-start hint (#593)', () => {
+  const anomalyCheck: Check = {
+    id: 'chk2',
+    suite_id: 's1',
+    name: 'orders volume anomaly',
+    kind: 'anomaly',
+    expectation_type: 'monitor:anomaly',
+    config: { target_metric: 'row_count', window: 14, min_points: 7, seasonality: false },
+    warn_threshold: null,
+    fail_threshold: 3,
+    critical_threshold: null,
+    alert_snoozed_until: null,
+  };
+
+  const coldStartRun: RunDetailType = {
+    ...runDetail,
+    results: [
+      {
+        id: 'res2',
+        check_id: 'chk2',
+        status: 'skip',
+        metric_value: null,
+        duration_ms: null,
+        observed_value: {
+          target_metric: 'row_count',
+          value: 32840,
+          points: 3,
+          window: 14,
+          min_points: 7,
+          seasonality: false,
+          insufficient_history: true,
+          reason: 'insufficient_history',
+        },
+        expected_value: null,
+        sample_failures: null,
+        redaction: null,
+        redacted_columns: [],
+      },
+    ],
+  };
+
+  it('shows a friendly "collecting history" hint instead of the raw observed_value JSON', async () => {
+    mockGetRun.mockResolvedValue(coldStartRun);
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([anomalyCheck]);
+    renderAt('r1');
+    const user = userEvent.setup();
+
+    await screen.findByText('orders volume anomaly');
+    await user.click(screen.getByRole('button', { name: /expand row/i }));
+
+    expect(await screen.findByText('Collecting history: 3 of 7 points')).toBeInTheDocument();
+  });
+
+  it('does not show the hint for a scored (non-cold-start) anomaly result', async () => {
+    const scoredRun: RunDetailType = {
+      ...runDetail,
+      results: [
+        {
+          id: 'res3',
+          check_id: 'chk2',
+          status: 'fail',
+          metric_value: 4.2,
+          duration_ms: null,
+          observed_value: {
+            target_metric: 'row_count',
+            value: 32840,
+            points: 14,
+            z_score: 4.2,
+            mean: 30000,
+            stddev: 600,
+            deviation: 2840,
+            degenerate_stddev: false,
+          },
+          expected_value: null,
+          redaction: null,
+          redacted_columns: [],
+          // Non-null with zero rows (unlike a raw GX sample, an anomaly result
+          // never carries one — this shape just gives the "No sample rows
+          // captured." branch something concrete to render so the test can
+          // confirm the row actually expanded).
+          sample_failures: {
+            unexpected_count: 0,
+            unexpected_percent: 0,
+            partial_unexpected_list: [],
+          },
+        },
+      ],
+    };
+    mockGetRun.mockResolvedValue(scoredRun);
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([anomalyCheck]);
+    renderAt('r1');
+    const user = userEvent.setup();
+
+    await screen.findByText('orders volume anomaly');
+    await user.click(screen.getByRole('button', { name: /expand row/i }));
+
+    expect(await screen.findByText('No sample rows captured.')).toBeInTheDocument();
+    expect(screen.queryByText(/Collecting history/)).not.toBeInTheDocument();
+  });
+
+  it('does not show the hint for a non-anomaly check even if a cold-start-shaped payload appears', async () => {
+    mockGetRun.mockResolvedValue({
+      ...runDetail,
+      results: [
+        {
+          ...coldStartRun.results[0],
+          check_id: 'chk1',
+          sample_failures: {
+            unexpected_count: 0,
+            unexpected_percent: 0,
+            partial_unexpected_list: [],
+          },
+        },
+      ],
+    });
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]); // kind: 'expectation'
+    renderAt('r1');
+    const user = userEvent.setup();
+
+    await screen.findByText('order_id not null');
+    await user.click(screen.getByRole('button', { name: /expand row/i }));
+
+    await screen.findByText('No sample rows captured.');
+    expect(screen.queryByText(/Collecting history/)).not.toBeInTheDocument();
+  });
+});

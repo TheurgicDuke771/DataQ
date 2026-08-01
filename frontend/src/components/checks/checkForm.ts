@@ -1,6 +1,6 @@
 import type { CheckCreate } from '../../api/suites';
 
-import { COMPARISON_EXPECTATION_TYPE } from './expectationCatalog';
+import { COMPARISON_EXPECTATION_TYPE, fieldVisible } from './expectationCatalog';
 import { EXPECTATION_BY_TYPE, type DqDimension, type ExpectationSpec } from './expectationCatalog';
 
 /**
@@ -30,6 +30,11 @@ function formToConfig(
   const config: Record<string, unknown> = {};
   if (!spec) return config;
   for (const field of spec.fields) {
+    // A conditionally-hidden field (anomaly's `column`, #593) must never be
+    // submitted even if antd's Form preserved a stale value from before the
+    // author switched target_metric away — the backend actively REJECTS it,
+    // not just ignores it (`anomaly_params`: "known key, inapplicable metric").
+    if (!fieldVisible(field, raw)) continue;
     const value = raw[field.name];
     if (value === undefined || value === null || value === '') continue;
     if (field.type === 'list') {

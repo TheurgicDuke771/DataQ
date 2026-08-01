@@ -1,12 +1,13 @@
 import { expect, test } from '@playwright/test';
 
 // The check-editor variants beyond the plain expectation form (already covered
-// in suites.spec.ts): the freshness + volume monitor kinds (ADR 0012) and the
-// Monaco-backed custom-SQL editor (ADR 0019). Custom SQL is SQL-only; the
-// monitor kinds also run on flat files since #520, but the seeded suite targets
-// Snowflake — which is why the timestamp column is REQUIRED here (on a flat-file
-// suite it is optional and blank means file-arrival time). Each authoring loop
-// creates → verifies on the suite detail → deletes.
+// in suites.spec.ts): the freshness + volume + anomaly monitor kinds (ADR 0012,
+// #593) and the Monaco-backed custom-SQL editor (ADR 0019). Custom SQL and
+// anomaly are SQL-only (the seeded suite targets Snowflake, which is why they're
+// offered here at all); freshness/volume also run on flat files since #520,
+// which is why the timestamp column is REQUIRED here (on a flat-file suite it is
+// optional and blank means file-arrival time). Each authoring loop creates →
+// verifies on the suite detail → deletes.
 test.describe('Check editor variants', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/suites');
@@ -63,6 +64,33 @@ test.describe('Check editor variants', () => {
     const row = page.locator('[role="listitem"]').filter({ hasText: name });
     await expect(row).toBeVisible();
     await expect(row.getByText('monitor:volume')).toBeVisible();
+    await deleteCheck(page, name);
+  });
+
+  test('author an anomaly monitor (fail threshold required, SQL-only kind, #593)', async ({
+    page,
+  }) => {
+    const name = `e2e anomaly ${Date.now()}`;
+
+    // 'Anomaly' also labels the spec card and the page header once picked, so
+    // the category click below is the only place the bare text is unambiguous.
+    await page.getByText('Anomaly', { exact: true }).click();
+    await page.getByText(/Learns a rolling baseline/).click();
+
+    await page.getByLabel('Name').fill(name);
+    await page.getByLabel('Target metric').click();
+    await page.getByText('Row count', { exact: true }).click();
+    // row_count means no timestamp column — the conditional field must not
+    // appear (ConfigField.showWhen).
+    await expect(page.getByLabel('Timestamp column')).toHaveCount(0);
+    // requireFailOrCritical, like freshness — band at a 3-sigma deviation.
+    await page.getByLabel('Fail ≥').fill('3');
+    await page.getByRole('button', { name: 'Create check' }).click();
+
+    await expect(page).toHaveURL(/\/suites\/[0-9a-f-]+$/);
+    const row = page.locator('[role="listitem"]').filter({ hasText: name });
+    await expect(row).toBeVisible();
+    await expect(row.getByText('monitor:anomaly')).toBeVisible();
     await deleteCheck(page, name);
   });
 

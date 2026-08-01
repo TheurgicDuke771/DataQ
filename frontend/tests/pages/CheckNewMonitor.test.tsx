@@ -136,3 +136,95 @@ describe('CheckNew — monitor authoring (ADR 0012)', () => {
     });
   });
 });
+
+describe('CheckNew — anomaly authoring (#593, stricter SQL-only gating than freshness/volume)', () => {
+  it('offers Anomaly on a SQL datasource', async () => {
+    renderPage();
+    expect(await screen.findByText('Anomaly')).toBeInTheDocument();
+  });
+
+  it('authors a row_count anomaly with defaults + threshold, and never renders the column field', async () => {
+    const user = userEvent.setup();
+    mockCreate.mockResolvedValue({} as Check);
+    renderPage();
+
+    await user.click(await screen.findByText('Anomaly'));
+    // Step 2 → the Anomaly spec card, picked by its description (the label
+    // 'Anomaly' collides with the category name and the page header).
+    await user.click(await screen.findByText('Learns a rolling baseline', { exact: false }));
+    await user.type(await screen.findByLabelText('Name'), 'orders row anomaly');
+
+    await user.click(screen.getByLabelText('Target metric'));
+    await user.click(await screen.findByTitle('Row count'));
+
+    // row_count is not freshness_age_hours — the conditional column field must
+    // never mount (ConfigField.showWhen).
+    expect(screen.queryByLabelText('Timestamp column')).not.toBeInTheDocument();
+
+    await user.type(screen.getByLabelText('Fail ≥'), '3');
+    await user.click(screen.getByRole('button', { name: 'Create check' }));
+
+    await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1));
+    expect(mockCreate).toHaveBeenCalledWith('s1', {
+      name: 'orders row anomaly',
+      kind: 'anomaly',
+      expectation_type: 'monitor:anomaly',
+      // window/min_points/seasonality submit their catalog defaults (14/7/false)
+      // even though the author never touched them.
+      config: { target_metric: 'row_count', window: 14, min_points: 7, seasonality: false },
+      dimension: undefined,
+      warn_threshold: null,
+      fail_threshold: 3,
+      critical_threshold: null,
+    });
+  });
+
+  it('authors a freshness_age_hours anomaly WITH a column, and never leaks a stale column after switching back to row_count', async () => {
+    const user = userEvent.setup();
+    mockCreate.mockResolvedValue({} as Check);
+    renderPage();
+
+    await user.click(await screen.findByText('Anomaly'));
+    await user.click(await screen.findByText('Learns a rolling baseline', { exact: false }));
+    await user.type(await screen.findByLabelText('Name'), 'orders freshness anomaly');
+
+    await user.click(screen.getByLabelText('Target metric'));
+    await user.click(await screen.findByTitle('Freshness age (hours)'));
+    await user.type(await screen.findByLabelText('Timestamp column'), 'loaded_at');
+
+    // Switch back to row_count — the column field must vanish from the form...
+    await user.click(screen.getByLabelText('Target metric'));
+    await user.click(await screen.findByTitle('Row count'));
+    expect(screen.queryByLabelText('Timestamp column')).not.toBeInTheDocument();
+
+    await user.type(screen.getByLabelText('Fail ≥'), '3');
+    await user.click(screen.getByRole('button', { name: 'Create check' }));
+
+    await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1));
+    // ...and never reach the submitted config, even though antd's Form
+    // preserves an unmounted field's last value by default — the backend
+    // REJECTS `column` when target_metric is row_count (#593).
+    expect(mockCreate).toHaveBeenCalledWith(
+      's1',
+      expect.objectContaining({
+        config: { target_metric: 'row_count', window: 14, min_points: 7, seasonality: false },
+      }),
+    );
+  });
+
+  it('blocks an anomaly check with no fail/critical threshold (the #426 guard, reused)', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByText('Anomaly'));
+    await user.click(await screen.findByText('Learns a rolling baseline', { exact: false }));
+    await user.type(await screen.findByLabelText('Name'), 'no threshold');
+    await user.click(screen.getByLabelText('Target metric'));
+    await user.click(await screen.findByTitle('Row count'));
+
+    await user.click(screen.getByRole('button', { name: 'Create check' }));
+
+    expect(await screen.findByText('Set a fail or critical threshold')).toBeInTheDocument();
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+});

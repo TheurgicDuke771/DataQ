@@ -17,6 +17,7 @@ import {
   configFieldsFor,
   EXPECTATION_BY_TYPE,
   expectationsByCategoryFor,
+  fieldVisible,
   type ExpectationCategory,
 } from '../components/checks/expectationCatalog';
 import { Page } from '../components/layout/Page';
@@ -36,6 +37,10 @@ export function CheckNew() {
   const [expectationType, setExpectationType] = useState<string>();
   const [form] = Form.useForm();
   const column = Form.useWatch(['config', 'column'], form) as string | undefined;
+  // Drives which conditional fields render (anomaly's `column`, #593 —
+  // ConfigField.showWhen) — the whole `config` object, not just one key, since
+  // the mechanism is generic and a future kind may condition on any field.
+  const configValues = Form.useWatch('config', form) as Record<string, unknown> | undefined;
   const { run, loading: submitting } = useAsyncAction('Create failed');
   // Load the suite + its connection together: the run target (#215) drives the
   // dry-run preview's table/schema, and the connection type gates the Custom-SQL
@@ -104,9 +109,11 @@ export function CheckNew() {
               targetSummary={targetSummary(target)}
             />
           ) : (
-            configFieldsFor(spec, connectionType).map((field) => (
-              <ConfigFieldItem key={field.name} field={field} connectionType={connectionType} />
-            ))
+            configFieldsFor(spec, connectionType)
+              .filter((field) => fieldVisible(field, configValues))
+              .map((field) => (
+                <ConfigFieldItem key={field.name} field={field} connectionType={connectionType} />
+              ))
           )}
           <DimensionField spec={spec} initialValue={spec.dimension} />
           <SeverityThresholdFields monitor={spec.thresholds} />

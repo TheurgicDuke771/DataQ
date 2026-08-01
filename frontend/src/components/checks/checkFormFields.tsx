@@ -1,4 +1,14 @@
-import { Divider, Flex, Form, Input, InputNumber, Select, Skeleton, Typography } from 'antd';
+import {
+  Divider,
+  Flex,
+  Form,
+  Input,
+  InputNumber,
+  Select,
+  Skeleton,
+  Switch,
+  Typography,
+} from 'antd';
 import type { Rule } from 'antd/es/form';
 import { lazy, Suspense } from 'react';
 
@@ -91,9 +101,25 @@ export function ConfigFieldItem({
     );
   }
   return (
-    <Form.Item name={['config', field.name]} label={label} rules={rules} extra={help}>
+    <Form.Item
+      name={['config', field.name]}
+      label={label}
+      rules={rules}
+      extra={help}
+      // CREATE-mode pre-fill (mirrors the backend's own default, e.g. anomaly's
+      // window=14 — ConfigField.defaultValue docstring). No-op in edit mode: the
+      // stored value is already in the form store by the time this Form.Item
+      // mounts (`configToForm`), and antd only applies `initialValue` when the
+      // store has no value yet.
+      initialValue={field.defaultValue}
+      valuePropName={field.type === 'boolean' ? 'checked' : 'value'}
+    >
       {field.type === 'number' ? (
-        <InputNumber style={{ width: '100%' }} />
+        <InputNumber style={{ width: '100%' }} min={field.min} max={field.max} />
+      ) : field.type === 'select' ? (
+        <Select options={field.options} placeholder={label} />
+      ) : field.type === 'boolean' ? (
+        <Switch />
       ) : (
         <Input placeholder={field.type === 'list' ? 'value1, value2, value3' : undefined} />
       )}
