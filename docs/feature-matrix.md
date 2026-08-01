@@ -13,23 +13,26 @@ One-page reference: what runs where. For the readable tour of everything DataQ o
 | Freshness monitor (hours since latest timestamp) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Freshness from **file arrival time** (no column — catches "no new file") | — | — | ✅ | ✅ | — |
 | Volume monitor (row count in range) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Anomaly monitor (z-score vs a learned baseline)ᵃ | ⏳ | ⏳ | — | — | — |
+| Anomaly monitor (z-score vs a learned baseline)ᵃ | ✅ | ✅ | — | — | — |
 | Comparison / reconciliation (diff vs a baseline connection) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Column profiler (nulls, distinct, min/max, top values) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | DQ dimension on checks + asset scorecard (coverage + score) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Dry-run preview | ✅ | ✅ | ✅ | ✅ | ✅ |
 
-ᵃ **⏳ = shipped but not yet live-verified.** The anomaly monitor (#593) — backend
-engine plus its check-editor authoring UI — is on `main`. It learns a rolling
-mean/stddev of the target's own row count or freshness age (optionally per weekday)
-and bands each run's z-score through the usual warn/fail/critical thresholds; below
-its `min_points` of history it reports `skip`, never a fabricated pass. No cell is
-ticked because this matrix ticks only what has been **executed against a live
-datasource** — the standing rule after #953 shipped a ✅ that had never once worked;
-the ⏳ cells stay pending until that live run happens. The dashes are a real
-restriction, not an omission: the anomaly executor takes its own measurement over a live
-SQL connection, while Iceberg and flat files compute their monitor scalars natively inside
-their runners, which stateful kinds never reach.
+ᵃ **Live-verified 2026-08-01.** The anomaly monitor (#593, PRs #1117/#1119 — backend
+engine plus its check-editor authoring UI) learns a rolling mean/stddev of the
+target's own row count or freshness age (optionally per weekday) and bands each
+run's z-score through the usual warn/fail/critical thresholds; below its
+`min_points` of history it reports `skip`, never a fabricated pass. Both target
+metrics were run against both live warehouses via the real `measure_metric` path
+(the standing rule after #953 shipped a ✅ that had never once worked — only an
+**executed** run against a live datasource earns the tick): Snowflake
+`RETAIL.ORDERS_HEADER` row_count=34680.0 + freshness `ORDER_TS`=132.28h; Unity
+Catalog `dataq_retail.gold.feedback_sentiment` row_count=180.0 + freshness
+`scored_at`=132.48h. The dashes are a real restriction, not an omission: the
+anomaly executor takes its own measurement over a live SQL connection, while
+Iceberg and flat files compute their monitor scalars natively inside their
+runners, which stateful kinds never reach.
 
 ˢ **S3 means AWS S3 *and* any S3-compatible store** — MinIO, Ceph/RadosGW, Cloudflare R2,
 Wasabi, Backblaze B2, SeaweedFS or an on-prem gateway. Set the connection's optional
