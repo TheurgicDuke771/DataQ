@@ -450,6 +450,32 @@ describe('RunDetail page', () => {
       expect(within(report).getByText('2')).toBeInTheDocument();
     });
 
+    it('marks a snoozed check with a print-friendly "(snoozed)" suffix (#653 parity)', async () => {
+      mockGetRun.mockResolvedValue(runDetail);
+      mockGetSuite.mockResolvedValue(suite);
+      mockListChecks.mockResolvedValue([{ ...check, alert_snoozed_until: '2099-01-01T00:00:00Z' }]);
+      renderAt('r1');
+
+      const report = await screen.findByTestId('run-report');
+      // The interactive table gets a <SnoozedTag> Tag/Tooltip beside the check
+      // name; a Tag doesn't survive print, so the report gets the same signal
+      // as plain text instead of silently dropping it.
+      expect(within(report).getByText('order_id not null (snoozed)')).toBeInTheDocument();
+    });
+
+    it('omits the "(snoozed)" suffix for a check that is not currently snoozed', async () => {
+      mockGetRun.mockResolvedValue(runDetail);
+      mockGetSuite.mockResolvedValue(suite);
+      // Explicit null (not snoozed) and a lapsed-in-the-past snooze both count
+      // as "not currently snoozed" per `isSnoozed` (#370).
+      mockListChecks.mockResolvedValue([{ ...check, alert_snoozed_until: '2000-01-01T00:00:00Z' }]);
+      renderAt('r1');
+
+      const report = await screen.findByTestId('run-report');
+      expect(within(report).getByText('order_id not null')).toBeInTheDocument();
+      expect(within(report).queryByText(/\(snoozed\)/)).not.toBeInTheDocument();
+    });
+
     it('em-dashes a null triggered_by / metric_value in the report', async () => {
       mockGetRun.mockResolvedValue({
         ...runDetail,

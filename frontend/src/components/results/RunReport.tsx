@@ -1,5 +1,6 @@
 import type { RunDetail as RunDetailType } from '../../api/runs';
 import type { Check } from '../../api/suites';
+import { isSnoozed } from '../checks/snooze';
 import { formatDuration, formatScalar, formatTimestamp } from './resultsFormat';
 
 /**
@@ -32,6 +33,15 @@ export function RunReport({
   const expectationOrKind = (id: string) => {
     const check = checksById.get(id);
     return check?.expectation_type || check?.kind || '—';
+  };
+  // Print-friendly parity with the interactive table's <SnoozedTag> (#653): a
+  // muted check must say so here too, or a printed artifact shows a bare fail
+  // with no suppression indicator and the reader wastes time asking why no
+  // alert fired. Same `isSnoozed` predicate, plain text since a Tag/Tooltip
+  // doesn't survive print.
+  const snoozedSuffix = (id: string) => {
+    const check = checksById.get(id);
+    return check && isSnoozed(check) ? ' (snoozed)' : '';
   };
 
   return (
@@ -84,7 +94,10 @@ export function RunReport({
           <tbody>
             {run.results.map((r) => (
               <tr key={r.id}>
-                <td>{checkName(r.check_id)}</td>
+                <td>
+                  {checkName(r.check_id)}
+                  {snoozedSuffix(r.check_id)}
+                </td>
                 <td>{expectationOrKind(r.check_id)}</td>
                 <td>{r.status}</td>
                 <td>{r.metric_value ?? '—'}</td>
@@ -95,10 +108,13 @@ export function RunReport({
         </table>
       )}
 
-      {/* No sample failing rows in this report — see the docstring above. */}
+      {/* No sample failing rows in this report — see the docstring above. Kept
+          state-neutral (#1122 review): redaction is per-column with four
+          possible states since #417/#1115, and a printed artifact is read out
+          of context, so this must not claim a specific redaction outcome. */}
       <p className="rd-report-footnote">
-        Sample failing rows are not included in this report. Review them in-app on each check's
-        expanded row, where the API redacts every cell value (#226).
+        Sample failing rows are not included in this report; review them in-app on each check's
+        expanded row (redaction policy applies).
       </p>
     </div>
   );
