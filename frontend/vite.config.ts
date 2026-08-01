@@ -67,6 +67,12 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'jsdom',
+    // Slow shared CI runners push heavy antd+userEvent page tests past the 5s
+    // default (#573 class; two distinct tests flaked 2026-08-01 — #1123). A slow
+    // runner is an environment property, not a per-test one, so the allowance is
+    // CI-gated here; locally the 5s default stays so a genuinely hung test still
+    // fails fast during development.
+    testTimeout: process.env.CI ? 15_000 : 5_000,
     setupFiles: ['./tests/setup.ts'],
     // Playwright specs live in e2e/ + e2e-live/ and run under `pnpm e2e`, not
     // Vitest — they import @playwright/test and drive a browser, so keep Vitest
