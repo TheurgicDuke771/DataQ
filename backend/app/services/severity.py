@@ -77,12 +77,23 @@ def resolve_status(
     with the run it previews:
 
     * a check the runner could not *evaluate* (`outcome.errored`, #122) is the
-      operational ``error`` status — no severity tier, no metric to band; vs.
+      operational ``error`` status — no severity tier, no metric to band;
+    * a check whose *precondition* wasn't met (`outcome.skipped`, #593 — an
+      anomaly monitor still short of `min_points` history) is the operational
+      ``skip`` status, also untiered and unbanded. It lives here rather than in
+      the caller so a dry-run preview can never disagree with the run it
+      previews, which is this function's whole reason to exist; vs.
     * an evaluated check, whose unexpected-% metric is banded into a tier
       (ADR 0005 / 0016).
+
+    Both operational statuses persist ``metric_value`` as NULL **on purpose**: a
+    cold-start z-score would be a number computed from too little history, and
+    trending it (or baselining on it) would launder a non-measurement into data.
     """
     if outcome.errored:
         return "error", None
+    if outcome.skipped:
+        return "skip", None
     metric = extract_metric(outcome)
     status = derive_status(
         success=outcome.success,

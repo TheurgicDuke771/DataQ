@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 
 from backend.app.datasources.base import CheckOutcome
-from backend.app.services.severity import derive_status, extract_metric
+from backend.app.services.severity import derive_status, extract_metric, resolve_status
 
 
 def _outcome(sample: dict[str, Any] | None) -> CheckOutcome:
@@ -156,3 +156,52 @@ def test_partial_thresholds_skip_unset_tiers(
         )
         == expected
     )
+
+
+# ── resolve_status: the operational statuses (#122 / #593) ──
+
+
+def test_resolve_status_maps_an_errored_outcome_to_error() -> None:
+    outcome = CheckOutcome("x", success=False, errored=True, metric_value=42.0)
+    # Even with a metric present: an unevaluated check has no severity to band.
+    assert resolve_status(
+        outcome, warn_threshold=Decimal("1"), fail_threshold=None, critical_threshold=None
+    ) == ("error", None)
+
+
+def test_resolve_status_maps_a_skipped_outcome_to_skip() -> None:
+    """#593 cold start. It lives in `resolve_status` rather than in the caller so
+    the dry-run PREVIEW and the persisted run cannot disagree — the single reason
+    this function exists."""
+    outcome = CheckOutcome("monitor:anomaly", success=True, skipped=True)
+    assert resolve_status(
+        outcome, warn_threshold=None, fail_threshold=Decimal("3"), critical_threshold=None
+    ) == ("skip", None)
+
+
+def test_a_skipped_outcome_never_persists_a_metric() -> None:
+    """A cold-start score would be a number computed from too little history;
+    trending or baselining on it would launder a non-measurement into data."""
+    outcome = CheckOutcome("monitor:anomaly", success=True, skipped=True, metric_value=99.0)
+    status, metric = resolve_status(
+        outcome, warn_threshold=None, fail_threshold=Decimal("3"), critical_threshold=None
+    )
+    assert (status, metric) == ("skip", None)
+
+
+def test_errored_wins_over_skipped() -> None:
+    """They are mutually exclusive by construction, but the order is pinned: a
+    check that failed to evaluate must never be reported as merely skipped."""
+    outcome = CheckOutcome("x", success=False, errored=True, skipped=True)
+    assert resolve_status(
+        outcome, warn_threshold=None, fail_threshold=None, critical_threshold=None
+    ) == ("error", None)
+
+
+def test_resolve_status_bands_a_monitor_metric_normally() -> None:
+    """The control case: a non-operational outcome still goes through the ADR-0016
+    banding, so the two early returns above cannot swallow the normal path."""
+    outcome = CheckOutcome("monitor:anomaly", success=True, metric_value=4.5)
+    assert resolve_status(
+        outcome, warn_threshold=Decimal("2"), fail_threshold=Decimal("3"), critical_threshold=None
+    ) == ("fail", Decimal("4.5"))

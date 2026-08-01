@@ -13,13 +13,12 @@ from sqlalchemy.orm import Session
 from backend.app.datasources.base import CheckOutcome
 from backend.app.db.models import Check, Connection, Suite, User
 from backend.app.services import schema_drift
+from backend.app.services.monitor_baseline import get_baseline, rebaseline
 from backend.app.services.schema_drift import (
     SchemaIntrospectionError,
     build_schema_drift_executor,
     diff_schemas,
-    get_baseline,
     introspect_columns,
-    rebaseline,
 )
 
 # ───────────────────────── pure diff ─────────────────────────

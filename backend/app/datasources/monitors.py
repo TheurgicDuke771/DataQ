@@ -22,6 +22,16 @@ Semantics (locked):
 * **volume** — config ``{"min_rows": N, "max_rows": M}``; metric = **% deviation**
   of ``COUNT(*)`` *outside* ``[N, M]`` (either direction; 0 when in range). Banded
   by the thresholds, so a drop *or* a spike past tolerance escalates.
+* **schema_drift** — stateful; metric = **drifted-column count** vs the stored
+  baseline (`services/schema_drift.py` owns the store).
+* **anomaly** (#593) — stateful; config
+  ``{"target_metric": "row_count" | "freshness_age_hours", "column": <ts col>,
+  "window": 14, "min_points": 7, "seasonality": false}``; metric = the **z-score**
+  (absolute deviations-from-the-mean, higher = worse) of this run's raw
+  measurement against the check's own rolling observation history. The history
+  and the scoring live in `services/anomaly.py`; this module only bands the
+  payload it computes. Below ``min_points`` of usable history the outcome is a
+  per-check ``skip``, never a fabricated pass/fail.
 """
 
 from __future__ import annotations
@@ -42,6 +52,7 @@ from backend.app.services.failure_classifier import classify_failure_reason
 FRESHNESS = "freshness"
 VOLUME = "volume"
 SCHEMA_DRIFT = "schema_drift"
+ANOMALY = "anomaly"
 
 # A monitor's `expectation_type` slot records the kind (the column is GX-shaped but
 # monitors aren't GX); `monitor:<kind>` keeps it self-describing on the result row.
@@ -221,6 +232,35 @@ def _as_aware_datetime(scalar: object, source: str, *, column: str | None = None
     return ts if ts.tzinfo is not None else ts.replace(tzinfo=UTC)
 
 
+def freshness_age_hours(
+    scalar: Any, *, now: datetime, source: str, column: str | None = None
+) -> float:
+    """A ``MAX(timestamp)`` scalar → hours of staleness, the one age computation.
+
+    Public because the `anomaly` kind (#593) measures the same quantity to feed
+    its baseline: the driver-typed normalisation (`_as_aware_datetime` — a str
+    from Databricks, a `date` from a Snowflake DATE column, a naive
+    `TIMESTAMP_NTZ`) is exactly the part that must not be re-implemented per
+    caller. #953 shipped for weeks because one datasource's driver returned a
+    type the age math didn't accept.
+    """
+    return _freshness_age_hours(_as_aware_datetime(scalar, source, column=column), now)
+
+
+def row_count_from_scalar(scalar: Any) -> int:
+    """A ``COUNT(*)`` scalar → int, the one row-count normalisation.
+
+    Also a driver boundary: Snowflake hands back a `Decimal`, Databricks an
+    `int`, and a mocked test whatever the fixture invented. Shared by `volume`
+    and by `anomaly`'s ``row_count`` target metric so both accept exactly the
+    same set of driver spellings.
+    """
+    try:
+        return int(scalar)
+    except (TypeError, ValueError) as exc:
+        raise MonitorConfigError(f"COUNT(*) is not an integer: {scalar!r}") from exc
+
+
 def _volume_deviation_pct(row_count: int, *, min_rows: int, max_rows: int) -> float:
     """Percent the row count falls **outside** ``[min_rows, max_rows]`` (0 in range).
 
@@ -358,10 +398,7 @@ def _volume_statement(target: TableClause, config: dict[str, Any]) -> Select[Any
 
 def _volume_outcome(scalar: Any, config: dict[str, Any], now: datetime) -> CheckOutcome:
     min_rows, max_rows = _volume_bounds(config)
-    try:
-        row_count = int(scalar)
-    except (TypeError, ValueError) as exc:
-        raise MonitorConfigError(f"volume COUNT(*) is not an integer: {scalar!r}") from exc
+    row_count = row_count_from_scalar(scalar)
     deviation = _volume_deviation_pct(row_count, min_rows=min_rows, max_rows=max_rows)
     return CheckOutcome(
         expectation_type=monitor_expectation_type(VOLUME),
@@ -415,6 +452,190 @@ def _schema_drift_outcome(scalar: Any, config: dict[str, Any], now: datetime) ->
     )
 
 
+# ───────────────────────── anomaly (#593) ─────────────────────────
+#
+# The model is deliberately simple and explainable (issue #593): a rolling-window
+# z-score over the check's OWN measurement history, with optional day-of-week
+# seasonality. No ML dependency, no hidden state — every number that produced a
+# verdict is in `observed_value`, which is what makes the band debuggable from
+# the metric-trend view (#594) instead of being an oracle.
+
+ROW_COUNT_METRIC = "row_count"
+FRESHNESS_AGE_METRIC = "freshness_age_hours"
+# What an anomaly monitor can measure. Both are RAW quantities, not other
+# monitors' banded metrics: an anomaly check is self-contained, so it never
+# depends on a sibling check existing, being enabled, or having run first.
+ANOMALY_TARGET_METRICS = (ROW_COUNT_METRIC, FRESHNESS_AGE_METRIC)
+
+_ANOMALY_DEFAULT_WINDOW = 14
+_ANOMALY_DEFAULT_MIN_POINTS = 7
+_ANOMALY_MIN_WINDOW = 3
+_ANOMALY_MAX_WINDOW = 90
+# Every observation the baseline may retain, seasonal case: `window` per weekday.
+_ANOMALY_SEASONAL_WEEKDAYS = 7
+
+# The z-score reported when the history has ZERO spread (every prior observation
+# identical) and this run's value differs. The true z is +inf there, and infinity
+# is not a usable answer: `severity.extract_metric` drops a non-finite Decimal as
+# "no bandable metric", which would silently resolve the check to `pass` —
+# maximal deviation reported as clean. A large finite sentinel bands as critical
+# under any sane threshold and stores/trends without special-casing NUMERIC.
+ANOMALY_DEGENERATE_Z = 99.0
+
+
+@dataclass(frozen=True)
+class AnomalyParams:
+    """A validated `anomaly` check config.
+
+    ``window`` is how many prior observations are scored against (and, in the
+    seasonal case, how many *per weekday*); ``min_points`` is the cold-start
+    floor below which the check reports `skip` rather than a verdict.
+    """
+
+    target_metric: str
+    column: str | None
+    window: int
+    min_points: int
+    seasonality: bool
+
+    @property
+    def retained_observations(self) -> int:
+        """How many raw observations the baseline keeps.
+
+        Non-seasonal: exactly ``window`` — the scoring set is the window. Seasonal:
+        ``window * 7``, because the scoring set is "the last ``window`` observations
+        that share today's weekday" and a daily schedule delivers roughly one
+        matching observation per seven. Deliberately a raw-observation ring rather
+        than seven per-weekday buckets: one list keeps the payload inspectable and
+        lets a schedule change (daily → hourly) re-fill the window naturally
+        instead of stranding six empty buckets.
+        """
+        return self.window * (_ANOMALY_SEASONAL_WEEKDAYS if self.seasonality else 1)
+
+
+def _anomaly_int(config: dict[str, Any], key: str, default: int, *, low: int, high: int) -> int:
+    """One bounded integer out of an anomaly config.
+
+    ``bool`` is rejected explicitly — it is an ``int`` subclass, so ``True`` would
+    otherwise sail through as a window of 1. An integral ``float`` (``14.0``, what
+    a JSON client can send for a whole number) is accepted; a fractional one is not.
+    """
+    raw = config.get(key, default)
+    if isinstance(raw, bool):
+        raise MonitorConfigError(f"anomaly {key} must be an integer, not a boolean")
+    if isinstance(raw, float) and raw.is_integer():
+        raw = int(raw)
+    if not isinstance(raw, int):
+        raise MonitorConfigError(f"anomaly {key} must be an integer: {raw!r}")
+    if not low <= raw <= high:
+        raise MonitorConfigError(f"anomaly {key} must be between {low} and {high}: {raw}")
+    return raw
+
+
+def anomaly_params(config: dict[str, Any]) -> AnomalyParams:
+    """Parse + validate an `anomaly` check's config, or raise `MonitorConfigError`.
+
+    The single parse shared by the author-time gate, the run executor and the
+    dry-run preview, so a config that saves is a config that runs.
+    """
+    target_metric = config.get("target_metric")
+    if target_metric not in ANOMALY_TARGET_METRICS:
+        raise MonitorConfigError(
+            f"anomaly target_metric must be one of {', '.join(ANOMALY_TARGET_METRICS)}: "
+            f"{target_metric!r}"
+        )
+    column = config.get("column")
+    if target_metric == FRESHNESS_AGE_METRIC:
+        # Required, not optional: the underlying measurement is `MAX(<column>)`,
+        # and a SQL table has no arrival time to fall back on (the flat-file
+        # column-less form of `freshness` does not reach this kind — see
+        # `check_service.ANOMALY_CAPABLE_TYPES`). Demanding it here makes a
+        # missing column a 422 at author time instead of an error every night.
+        column = _ident(column, what="anomaly freshness column")
+    elif column is not None:
+        # Known key, inapplicable metric. Silently ignoring it would leave the
+        # author believing the anomaly watches that column when it watches
+        # COUNT(*) — the same class of quiet-wrong the #476 fold produced.
+        raise MonitorConfigError(
+            f"anomaly column applies only to target_metric={FRESHNESS_AGE_METRIC!r}; "
+            f"{ROW_COUNT_METRIC!r} measures COUNT(*) and takes no column"
+        )
+    else:
+        column = None
+    window = _anomaly_int(
+        config, "window", _ANOMALY_DEFAULT_WINDOW, low=_ANOMALY_MIN_WINDOW, high=_ANOMALY_MAX_WINDOW
+    )
+    # Upper-bounded by the window: a min_points above it could never be reached,
+    # so the check would skip forever while looking configured.
+    min_points = _anomaly_int(
+        config,
+        "min_points",
+        min(_ANOMALY_DEFAULT_MIN_POINTS, window),
+        low=_ANOMALY_MIN_WINDOW,
+        high=window,
+    )
+    seasonality = config.get("seasonality", False)
+    if not isinstance(seasonality, bool):
+        raise MonitorConfigError(f"anomaly seasonality must be true or false: {seasonality!r}")
+    return AnomalyParams(
+        target_metric=str(target_metric),
+        column=column,
+        window=window,
+        min_points=min_points,
+        seasonality=seasonality,
+    )
+
+
+def _validate_anomaly(config: dict[str, Any]) -> None:
+    anomaly_params(config)
+
+
+def _anomaly_outcome(scalar: Any, config: dict[str, Any], now: datetime) -> CheckOutcome:
+    """Band an anomaly score (#593). ``scalar`` is the payload the stateful
+    executor computed (`services/anomaly.py` — it owns the measurement and the
+    baseline store; this stays DB-free).
+
+    Two shapes:
+
+    * ``insufficient_history`` → a **skip** outcome. Not a pass: a monitor that
+      hasn't learned anything yet has made no assertion about the data, and a
+      fake green would count toward the health score and hide that.
+    * otherwise → ``metric_value`` = the z-score, banded by the check's ADR-0016
+      thresholds exactly like every other monitor metric (higher = worse).
+    """
+    if not isinstance(scalar, dict):
+        raise MonitorConfigError(f"anomaly expects a score payload dict: {scalar!r}")
+    params = anomaly_params(config)
+    expectation_type = monitor_expectation_type(ANOMALY)
+    expected: dict[str, Any] = {
+        "monitor": ANOMALY,
+        "target_metric": params.target_metric,
+        "window": params.window,
+        "min_points": params.min_points,
+        "seasonality": params.seasonality,
+    }
+    if params.column is not None:
+        expected["column"] = params.column
+    if scalar.get("insufficient_history"):
+        return CheckOutcome(
+            expectation_type=expectation_type,
+            success=True,  # not a verdict — `skipped` is what the status reads
+            skipped=True,
+            observed_value=dict(scalar),
+            expected_value=expected,
+        )
+    z_score = scalar.get("z_score")
+    if not isinstance(z_score, (int, float)) or isinstance(z_score, bool):
+        raise MonitorConfigError(f"anomaly payload has no numeric z_score: {z_score!r}")
+    return CheckOutcome(
+        expectation_type=expectation_type,
+        success=True,  # like freshness: "anomalous" is defined only by a threshold
+        metric_value=float(z_score),
+        observed_value=dict(scalar),
+        expected_value=expected,
+    )
+
+
 @dataclass(frozen=True)
 class MonitorKindStrategy:
     """One monitor kind's behavior behind the #726 registry.
@@ -440,6 +661,10 @@ MONITOR_KIND_REGISTRY: dict[str, MonitorKindStrategy] = {
     SCHEMA_DRIFT: MonitorKindStrategy(
         SCHEMA_DRIFT, _validate_schema_drift, _schema_drift_outcome, None
     ),
+    # Stateful (#593): the executor in `services/anomaly.py` takes its own raw
+    # measurement (reusing the freshness/volume statement builders), scores it
+    # against the rolling baseline, and hands the payload here to be banded.
+    ANOMALY: MonitorKindStrategy(ANOMALY, _validate_anomaly, _anomaly_outcome, None),
 }
 
 # Derived, never hand-maintained: the authoring allowlist (check_service) and the

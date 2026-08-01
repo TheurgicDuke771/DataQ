@@ -7,12 +7,12 @@ expectation class (#651 — the same translation the runner performs, pulled
 forward so garbage 422s instead of persisting and only failing at run time);
 validation against live data remains the dry-run path, not CRUD.
 
-Kind gating (ADR 0012): the schema CHECK reserves `freshness / volume /
-schema_drift / anomaly / comparison`; authorable today are `expectation`, the
-freshness/volume monitor kinds, and `comparison` (ADR 0015 — source ref +
-config validated here; its runner lands with #794, until then it yields an
-`error` result). `schema_drift` / `anomaly` remain schema-valid but refused —
-authoring one would produce a check that can never execute.
+Kind gating (ADR 0012): every kind in the schema CHECK is now authorable —
+`expectation`, the freshness/volume monitors, the stateful `schema_drift` (#592)
+and `anomaly` (#593) monitors, and `comparison` (ADR 0015). The allowlist is
+DERIVED from the monitor registry (`_V1_SUPPORTED_KINDS`), so registering a kind
+widens it; what stays hand-written per kind is its datasource capability set and
+any config/threshold guardrail that needs the DB.
 
 FastAPI-free like the sibling services: takes a `Session`, returns ORM models,
 raises `DataQError` subclasses.
@@ -33,9 +33,10 @@ from sqlalchemy.orm import Session, selectinload
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.datasources.monitors import (
+    ANOMALY,
     FRESHNESS,
     MONITOR_KINDS,
-    STATEFUL_MONITOR_KINDS,
+    SCHEMA_DRIFT,
     MonitorConfigError,
     monitor_expectation_type,
     validate_monitor_config,
@@ -64,11 +65,10 @@ from backend.app.services.suite_service import get_suite
 
 log = get_logger(__name__)
 
-# Authorable kinds: GX expectations, the freshness/volume monitor kinds (ADR
-# 0012, pulled into v1 per the 2026-06-29 amendment), and `comparison` (ADR
-# 0015 — authorable now, runnable when the #794 runner lands; until then a
-# comparison check yields an `error` result, see run_service). The remaining
-# reserved kinds (schema_drift / anomaly) have no model yet, so CRUD refuses.
+# Authorable kinds: GX expectations, every registered monitor kind (ADR 0012 —
+# freshness/volume, schema_drift #592, anomaly #593), and `comparison` (ADR 0015).
+# Derived from the registry, never hand-maintained: registering a kind there is
+# the one step that widens this.
 _V1_SUPPORTED_KINDS = {"expectation", *MONITOR_KINDS, COMPARISON_KIND}
 
 # Canonical expectation_types for a comparison check (mirrors `monitor:<kind>`).
@@ -96,6 +96,23 @@ MONITOR_CAPABLE_TYPES = frozenset({*SQL_QUERYABLE_TYPES, "iceberg", *FILE_TYPES}
 # coverage is derived separately even though it now matches: flat files reached it
 # (Parquet footer / CSV header sample) before they had a `run_monitors` at all.
 SCHEMA_DRIFT_CAPABLE_TYPES = frozenset({*MONITOR_CAPABLE_TYPES, *FILE_TYPES})
+
+# anomaly (#593) is stateful like schema_drift, but it does not reach the runner
+# EITHER — its executor takes its own measurement by running the freshness/volume
+# Core statement over a live SQLAlchemy connection. That is a SQL capability, not
+# a `run_monitors` one, so the set is narrower than `MONITOR_CAPABLE_TYPES`
+# despite freshness/volume working on Iceberg and flat files: those two compute
+# their scalars natively INSIDE their runners, which stateful kinds never touch.
+# Widening this is a real change (a per-datasource measurement seam on
+# `anomaly.measure_metric`), not a set edit — refusing at author time keeps that
+# honest instead of saving a check that errors every night.
+ANOMALY_CAPABLE_TYPES = frozenset(SQL_QUERYABLE_TYPES)
+
+# Each stateful kind's capability set; scalar kinds all use MONITOR_CAPABLE_TYPES.
+_CAPABLE_TYPES_BY_KIND: dict[str, frozenset[str]] = {
+    SCHEMA_DRIFT: SCHEMA_DRIFT_CAPABLE_TYPES,
+    ANOMALY: ANOMALY_CAPABLE_TYPES,
+}
 
 
 class CheckNotFoundError(DataQError):
@@ -136,8 +153,9 @@ def _connection_type(session: Session, suite: Suite) -> str:
 def validate_kind(kind: str) -> None:
     """Reject an unsupported check kind (422). Shared by CRUD and suite import.
 
-    v1 supports `expectation` + the freshness/volume monitor kinds; the remaining
-    reserved kinds (ADR 0012) have no runner yet, so authoring one is refused."""
+    Supported: `expectation`, every registered monitor kind, and `comparison`
+    (ADR 0012 / 0015). A kind outside the set has no run path, so authoring one
+    would persist a check that can never execute."""
     if kind not in _V1_SUPPORTED_KINDS:
         raise CheckConfigInvalidError(
             f"check kind {kind!r} is not supported in v1",
@@ -250,32 +268,35 @@ def validate_monitor_check(
     fail_threshold: Decimal | None,
     critical_threshold: Decimal | None,
 ) -> None:
-    """Validate a freshness/volume monitor check at author time (create/update).
+    """Validate a monitor check of any kind at author time (create/update).
 
     Four gates, each a 422:
-    1. **Monitor-capable datasource only** — a scalar monitor (freshness/volume)
-       needs a runner with `run_monitors` (`MONITOR_CAPABLE_TYPES`); a stateful
-       kind (schema_drift, #592) runs through the baseline-diff executor instead,
-       which also introspects flat files (`SCHEMA_DRIFT_CAPABLE_TYPES`). Rejecting
-       an unsupported pairing up front keeps the failure a 422, not a failed run.
+    1. **Capable datasource only** — a scalar monitor (freshness/volume) needs a
+       runner with `run_monitors` (`MONITOR_CAPABLE_TYPES`); a stateful kind runs
+       through its own executor instead, so each carries its own set —
+       schema_drift (#592) also introspects flat files
+       (`SCHEMA_DRIFT_CAPABLE_TYPES`), anomaly (#593) measures over a live SQL
+       connection and so is SQL-only (`ANOMALY_CAPABLE_TYPES`). Rejecting an
+       unsupported pairing up front keeps the failure a 422, not a failed run.
     2. **expectation_type matches the kind** — a monitor's type is the canonical
        ``monitor:<kind>``. The run path keys off `kind`, so a mismatched/junk type
        would still execute but mislabel every result row (and could smuggle a
        custom-SQL type past its guardrails) — keep the stored row self-consistent.
     3. **Config shape** — a valid `column` (freshness) or `min_rows`/`max_rows` range
        (volume), via the shared `monitors.validate_monitor_config`.
-    4. **Freshness needs a positive threshold** — freshness has no in-config bound, so
-       without a fail/critical age threshold it would always resolve `pass` no matter
-       how stale (the silent-green footgun flagged in the #426 review); a *zero*
-       threshold is the inverse footgun (always fail). Require a positive fail-or-
-       critical threshold so a freshness check bands meaningfully.
+    4. **Freshness and anomaly need a positive threshold** — neither has an
+       in-config bound (unlike volume's min/max rows), so without a fail/critical
+       threshold they would always resolve `pass` no matter how stale or how far
+       from the baseline (the silent-green footgun flagged in the #426 review); a
+       *zero* threshold is the inverse footgun (always fail). Require a positive
+       fail-or-critical threshold so the metric bands meaningfully. For anomaly
+       the threshold is a z-score — "how many standard deviations from normal" —
+       so it is the sensitivity knob, not an incidental setting.
     """
-    capable = (
-        SCHEMA_DRIFT_CAPABLE_TYPES if kind in STATEFUL_MONITOR_KINDS else MONITOR_CAPABLE_TYPES
-    )
+    capable = _CAPABLE_TYPES_BY_KIND.get(kind, MONITOR_CAPABLE_TYPES)
     if connection_type not in capable:
         raise CheckConfigInvalidError(
-            f"{kind} monitor checks require a monitor-capable datasource, not {connection_type!r}",
+            f"{kind} monitor checks are not supported on a {connection_type!r} datasource",
             detail={
                 "connection_type": connection_type,
                 "supported": sorted(capable),
@@ -307,6 +328,13 @@ def validate_monitor_check(
         raise CheckConfigInvalidError(
             "a freshness monitor needs a positive fail or critical age threshold (hours) — "
             "without one it can never fail (no threshold) or always fails (zero)",
+            detail={"kind": kind},
+        )
+    if kind == ANOMALY and not _has_positive_threshold(fail_threshold, critical_threshold):
+        raise CheckConfigInvalidError(
+            "an anomaly monitor needs a positive fail or critical z-score threshold "
+            "(standard deviations from the learned baseline) — without one it can never "
+            "fail (no threshold) or always fails (zero)",
             detail={"kind": kind},
         )
 

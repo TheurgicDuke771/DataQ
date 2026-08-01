@@ -51,6 +51,15 @@ class CheckOutcome:
     distinct result statuses (#122): an errored check maps to ``error`` (no
     severity, no metric), a failed one to a severity tier. A single errored check
     never fails its siblings — they still evaluate and persist.
+
+    `skipped` is the third operational outcome (#593): the check ran fine, but its
+    *precondition* wasn't met, so there is no honest verdict to give — an anomaly
+    monitor whose baseline holds fewer points than its `min_points` cold start is
+    the first case. It maps to the ``skip`` result status (already per-row valid;
+    until now only `run_service.skip_run` produced it, run-wide). Deliberately
+    distinct from `errored` (nothing went wrong) and from a fabricated
+    `success=True` (a fake pass would count as a clean check in the health score
+    and hide the fact that the monitor isn't watching anything yet).
     """
 
     expectation_type: str
@@ -60,6 +69,7 @@ class CheckOutcome:
     sample_failures: dict[str, Any] | None = None
     errored: bool = False
     error_message: str | None = None
+    skipped: bool = False
     # The badness scalar a *monitor* (freshness/volume, ADR 0012) computed directly
     # — age-hours, % volume deviation. `severity.extract_metric` prefers this when
     # set, so monitor kinds band the same way (higher = worse, ADR 0016) without

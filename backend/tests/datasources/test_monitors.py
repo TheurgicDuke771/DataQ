@@ -1,8 +1,11 @@
-"""Unit tests for the freshness/volume monitor core (no DB, pure logic)."""
+"""Unit tests for the monitor-kind core — freshness/volume statements + banding,
+the shared driver-boundary helpers, and the `anomaly` config/outcome contract
+(#593). No DB, no datasource: pure logic."""
 
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from typing import Any
 
 import pytest
@@ -171,8 +174,20 @@ def test_bad_identifiers_never_reach_the_emitted_sql(bad: str) -> None:
 
 
 def test_unknown_kind_raises() -> None:
-    with pytest.raises(MonitorConfigError):
-        build_monitor_statement("anomaly", table="T", schema=None, catalog=None, config={})
+    # A kind that is not in the registry at all. (`anomaly` used to stand in here,
+    # but it is a REGISTERED stateful kind since #593 — it refuses for a different
+    # reason, "no scalar-SQL form", which the test below pins separately.)
+    with pytest.raises(MonitorConfigError, match="unknown monitor kind"):
+        build_monitor_statement("not_a_kind", table="T", schema=None, catalog=None, config={})
+
+
+@pytest.mark.parametrize("kind", ["schema_drift", "anomaly"])
+def test_stateful_kinds_have_no_scalar_sql_form(kind: str) -> None:
+    """A stateful kind is registered (so it is authorable and dispatchable) but has
+    no `build_statement` — asking for one must refuse rather than fall through to a
+    sibling kind's query."""
+    with pytest.raises(MonitorConfigError, match="no scalar-SQL form"):
+        build_monitor_statement(kind, table="T", schema=None, catalog=None, config={})
 
 
 # ───────────────────────── freshness outcome ────────────────────────
@@ -252,9 +267,12 @@ def test_volume_bad_range_raises(config: dict[str, object]) -> None:
 
 
 def test_monitor_kinds_exposed() -> None:
-    assert monitors.MONITOR_KINDS == ("freshness", "volume", "schema_drift")
+    assert monitors.MONITOR_KINDS == ("freshness", "volume", "schema_drift", "anomaly")
     assert monitors.SCALAR_MONITOR_KINDS == ("freshness", "volume")
-    assert monitors.STATEFUL_MONITOR_KINDS == ("schema_drift",)
+    # The partition is DERIVED from `build_statement is None`, not hand-listed —
+    # this pins that registering `anomaly` with no statement builder is the single
+    # step that routed it to the stateful executor path (#593).
+    assert monitors.STATEFUL_MONITOR_KINDS == ("schema_drift", "anomaly")
 
 
 # ───────────────────────── evaluate_monitors ────────────────────────
@@ -527,3 +545,176 @@ def test_a_non_string_scalar_carries_no_cell_at_all() -> None:
     assert outcome.errored
     assert "12345" not in (outcome.error_message or "")
     assert outcome.observed_value is None
+
+
+# ───────────────────── anomaly config (#593) ─────────────────────
+
+
+def _anomaly_config(**overrides: Any) -> dict[str, Any]:
+    return {"target_metric": "row_count", **overrides}
+
+
+def test_anomaly_defaults_are_the_documented_ones() -> None:
+    params = monitors.anomaly_params(_anomaly_config())
+    assert (params.window, params.min_points, params.seasonality) == (14, 7, False)
+    assert params.column is None
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        {},  # target_metric is required
+        {"target_metric": "rowcount"},  # near-miss spelling
+        {"target_metric": None},
+        {"target_metric": "freshness_age_hours"},  # column required for this metric
+        {"target_metric": "freshness_age_hours", "column": "a; DROP TABLE x"},
+        {"target_metric": "row_count", "column": "loaded_at"},  # column is inapplicable
+        {"target_metric": "row_count", "window": 2},  # below the floor
+        {"target_metric": "row_count", "window": 91},  # above the ceiling
+        {"target_metric": "row_count", "window": True},  # bool is an int subclass
+        {"target_metric": "row_count", "window": 14.5},  # fractional
+        {"target_metric": "row_count", "window": "14"},
+        {"target_metric": "row_count", "min_points": 2},
+        {"target_metric": "row_count", "window": 5, "min_points": 6},  # unreachable floor
+        {"target_metric": "row_count", "seasonality": "yes"},
+    ],
+)
+def test_anomaly_rejects_malformed_config(config: dict[str, Any]) -> None:
+    with pytest.raises(MonitorConfigError):
+        monitors.validate_monitor_config("anomaly", config)
+
+
+def test_anomaly_accepts_an_integral_float_window() -> None:
+    """A JSON client can send a whole number as 14.0; that is the same window, and
+    rejecting it would be a 422 the author cannot act on."""
+    assert monitors.anomaly_params(_anomaly_config(window=14.0)).window == 14
+
+
+def test_anomaly_rejecting_an_inapplicable_column_names_the_reason() -> None:
+    """Silently ignoring it would leave the author believing the anomaly watches
+    that column when it watches COUNT(*)."""
+    with pytest.raises(MonitorConfigError, match="row_count"):
+        monitors.anomaly_params(_anomaly_config(column="loaded_at"))
+
+
+def test_anomaly_min_points_default_never_exceeds_a_small_window() -> None:
+    """window=5 with the default min_points of 7 would skip forever. The default
+    clamps instead of producing a config that validates and never fires."""
+    params = monitors.anomaly_params(_anomaly_config(window=5))
+    assert params.min_points == 5
+
+
+def test_anomaly_freshness_metric_validates_and_keeps_the_column() -> None:
+    params = monitors.anomaly_params(
+        {"target_metric": "freshness_age_hours", "column": "Loaded_At"}
+    )
+    assert params.target_metric == "freshness_age_hours"
+    assert params.column == "Loaded_At"  # case preserved — the dialect quotes it
+
+
+def test_anomaly_retention_is_seven_windows_when_seasonal() -> None:
+    """Seasonal scoring uses only same-weekday observations, so the raw ring has to
+    be seven times larger for the window to fill at all."""
+    assert monitors.anomaly_params(_anomaly_config(window=14)).retained_observations == 14
+    assert (
+        monitors.anomaly_params(_anomaly_config(window=14, seasonality=True)).retained_observations
+        == 98
+    )
+
+
+# ───────────────────── anomaly outcome banding (#593) ─────────────────────
+
+
+def test_anomaly_outcome_metric_is_the_z_score() -> None:
+    outcome = monitor_outcome(
+        "anomaly",
+        scalar={"z_score": 3.25, "value": 900.0, "mean": 1000.0, "stddev": 30.769},
+        config=_anomaly_config(),
+        now=_NOW,
+    )
+    assert outcome.metric_value == 3.25
+    assert outcome.skipped is False
+    # Like freshness: "anomalous" is defined only by a threshold, so the binary
+    # fallback is pass and the thresholds do the banding (ADR 0016).
+    assert outcome.success is True
+    assert outcome.expected_value == {
+        "monitor": "anomaly",
+        "target_metric": "row_count",
+        "window": 14,
+        "min_points": 7,
+        "seasonality": False,
+    }
+
+
+def test_anomaly_cold_start_is_a_skip_not_a_pass() -> None:
+    """The whole point of the kind's cold-start rule: a monitor that has learned
+    nothing has asserted nothing, and a synthetic pass would count as a clean
+    check in the health score."""
+    outcome = monitor_outcome(
+        "anomaly",
+        scalar={"insufficient_history": True, "points": 3, "min_points": 7},
+        config=_anomaly_config(),
+        now=_NOW,
+    )
+    assert outcome.skipped is True
+    assert outcome.metric_value is None
+    assert outcome.observed_value == {
+        "insufficient_history": True,
+        "points": 3,
+        "min_points": 7,
+    }
+
+
+def test_anomaly_outcome_expected_value_carries_the_freshness_column() -> None:
+    outcome = monitor_outcome(
+        "anomaly",
+        scalar={"z_score": 0.5},
+        config={"target_metric": "freshness_age_hours", "column": "loaded_at"},
+        now=_NOW,
+    )
+    assert outcome.expected_value is not None
+    assert outcome.expected_value["column"] == "loaded_at"
+
+
+@pytest.mark.parametrize("payload", ["not-a-dict", 42, None, {"z_score": None}, {"z_score": True}])
+def test_anomaly_outcome_rejects_a_malformed_payload(payload: Any) -> None:
+    """The executor is the only producer, but a payload without a numeric z must
+    raise rather than band `None` (or a bool, which is an int subclass) as a metric."""
+    with pytest.raises(MonitorConfigError):
+        monitor_outcome("anomaly", scalar=payload, config=_anomaly_config(), now=_NOW)
+
+
+# ───────────────────── shared driver-boundary helpers ─────────────────────
+
+
+@pytest.mark.parametrize(
+    ("scalar", "expected"),
+    [(5, 5), (Decimal("32840"), 32840), ("17", 17), (5.0, 5)],
+)
+def test_row_count_accepts_every_driver_spelling(scalar: Any, expected: int) -> None:
+    """Snowflake returns a COUNT as Decimal, Databricks as int — the shared helper
+    is what keeps volume and anomaly accepting exactly the same set (#953)."""
+    assert monitors.row_count_from_scalar(scalar) == expected
+
+
+@pytest.mark.parametrize("scalar", [None, "abc", object()])
+def test_row_count_refuses_a_non_numeric_scalar(scalar: Any) -> None:
+    with pytest.raises(MonitorConfigError):
+        monitors.row_count_from_scalar(scalar)
+
+
+@pytest.mark.parametrize(
+    "scalar",
+    [
+        datetime(2026, 6, 29, 6, 0, tzinfo=UTC),  # tz-aware
+        datetime(2026, 6, 29, 6, 0),  # naive (TIMESTAMP_NTZ) — assumed UTC
+        "2026-06-29T06:00:00",  # str (the Databricks connector, #953)
+        "2026-06-29T06:00:00+00:00",
+    ],
+)
+def test_freshness_age_hours_accepts_every_driver_spelling(scalar: Any) -> None:
+    assert monitors.freshness_age_hours(scalar, now=_NOW, source="MAX(ts)") == 6.0
+
+
+def test_freshness_age_hours_handles_a_plain_date() -> None:
+    assert monitors.freshness_age_hours(date(2026, 6, 29), now=_NOW, source="MAX(d)") == 12.0

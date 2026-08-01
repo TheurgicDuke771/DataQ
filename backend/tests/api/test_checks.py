@@ -100,13 +100,25 @@ def test_create_stores_thresholds_as_numbers(client: TestClient, db_session: Any
     assert body["critical_threshold"] == 0.95
 
 
-def test_create_rejects_still_reserved_kind(client: TestClient, db_session: Any) -> None:
-    # freshness/volume are now authorable (ADR 0012 amendment); the other reserved
-    # kinds still have no runner, so CRUD must keep refusing them.
+def test_create_rejects_an_unknown_kind(client: TestClient, db_session: Any) -> None:
+    # Every kind in the schema CHECK is now authorable — #593 shipped the last
+    # reserved one — so the gate is pinned with a kind that exists nowhere. It must
+    # 422 at the service layer, not reach the DB and surface as a constraint 500.
+    sid = _suite_id(client, db_session)
+    resp = client.post(f"/api/v1/suites/{sid}/checks", json=_payload(kind="telepathy"))
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "check_config_invalid"
+
+
+def test_create_rejects_a_monitor_kind_with_a_mismatched_expectation_type(
+    client: TestClient, db_session: Any
+) -> None:
+    # The kind↔type pairing gate: the run path keys off `kind`, so a junk type
+    # would still execute but mislabel every result row.
     sid = _suite_id(client, db_session)
     resp = client.post(f"/api/v1/suites/{sid}/checks", json=_payload(kind="schema_drift"))
     assert resp.status_code == 422
-    assert resp.json()["error"]["code"] == "check_config_invalid"
+    assert "monitor:schema_drift" in resp.json()["error"]["message"]
 
 
 def test_create_in_unknown_suite_returns_404(client: TestClient) -> None:
@@ -737,6 +749,131 @@ def test_create_freshness_without_a_column_on_non_file_datasource_rejected(
     assert "arrival time" in resp.json()["error"]["message"]
 
 
+def _anomaly_payload(**overrides: Any) -> dict[str, Any]:
+    body: dict[str, Any] = {
+        "name": "orders volume anomaly",
+        "kind": "anomaly",
+        "expectation_type": "monitor:anomaly",
+        "config": {"target_metric": "row_count"},
+        "fail_threshold": 3,  # z-score — required so it can actually fail
+    }
+    body.update(overrides)
+    return body
+
+
+def test_create_anomaly_monitor_on_sql_datasource_returns_201(
+    client: TestClient, db_session: Any
+) -> None:
+    sid = _suite_id(client, db_session, conn_type="snowflake")
+    resp = client.post(f"/api/v1/suites/{sid}/checks", json=_anomaly_payload())
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["kind"] == "anomaly"
+    assert body["expectation_type"] == "monitor:anomaly"
+    # ADR 0038: anomaly has no derivable dimension (it depends on the target
+    # metric, which derivation cannot see) — NULL is the honest answer and renders
+    # as a coverage gap rather than a confident guess.
+    assert body["dimension"] is None
+
+
+def test_create_anomaly_accepts_an_explicit_dimension(client: TestClient, db_session: Any) -> None:
+    """Underivable is not unclassifiable: the author can still say what it measures."""
+    sid = _suite_id(client, db_session, conn_type="snowflake")
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks", json=_anomaly_payload(dimension="completeness")
+    )
+    assert resp.status_code == 201
+    assert resp.json()["dimension"] == "completeness"
+
+
+def test_create_anomaly_without_threshold_rejected(client: TestClient, db_session: Any) -> None:
+    # Same silent-green guard as freshness (#426): the z-score has no in-config
+    # bound, so with no fail/critical threshold the check can never fail.
+    sid = _suite_id(client, db_session, conn_type="snowflake")
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks",
+        json=_anomaly_payload(fail_threshold=None, critical_threshold=None),
+    )
+    assert resp.status_code == 422
+    assert "z-score" in resp.json()["error"]["message"]
+
+
+def test_create_anomaly_with_zero_threshold_rejected(client: TestClient, db_session: Any) -> None:
+    sid = _suite_id(client, db_session, conn_type="snowflake")
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks",
+        json=_anomaly_payload(fail_threshold=0, critical_threshold=None),
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        {},
+        {"target_metric": "rowcount"},
+        {"target_metric": "freshness_age_hours"},  # needs a column
+        {"target_metric": "row_count", "column": "loaded_at"},  # column inapplicable
+        {"target_metric": "row_count", "window": 200},
+        {"target_metric": "row_count", "window": 5, "min_points": 6},
+    ],
+)
+def test_create_anomaly_with_malformed_config_rejected(
+    client: TestClient, db_session: Any, config: dict[str, Any]
+) -> None:
+    sid = _suite_id(client, db_session, conn_type="snowflake")
+    resp = client.post(f"/api/v1/suites/{sid}/checks", json=_anomaly_payload(config=config))
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "check_config_invalid"
+
+
+@pytest.mark.parametrize("conn_type", ["iceberg", "s3", "adls_gen2"])
+def test_create_anomaly_on_a_non_sql_datasource_rejected(
+    client: TestClient, db_session: Any, conn_type: str
+) -> None:
+    """Iceberg and flat files ARE monitor-capable for freshness/volume — they
+    compute those scalars natively inside their runners. A stateful kind never
+    reaches a runner, and the anomaly executor measures over a live SQL
+    connection, so the pairing is refused at author time rather than saved and
+    then erroring on every scheduled run."""
+    sid = _suite_id(client, db_session, conn_type=conn_type)
+    resp = client.post(f"/api/v1/suites/{sid}/checks", json=_anomaly_payload())
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "check_config_invalid"
+
+
+def test_update_anomaly_to_a_malformed_config_rejected(client: TestClient, db_session: Any) -> None:
+    """The update path re-validates the POST-patch config, so a check cannot be
+    edited into a shape that create would have refused."""
+    sid = _suite_id(client, db_session, conn_type="snowflake")
+    created = client.post(f"/api/v1/suites/{sid}/checks", json=_anomaly_payload())
+    check_id = created.json()["id"]
+    resp = client.patch(
+        f"/api/v1/suites/{sid}/checks/{check_id}",
+        json={"config": {"target_metric": "row_count", "window": 1}},
+    )
+    assert resp.status_code == 422
+
+
+def test_rebaseline_works_for_an_anomaly_check(client: TestClient, db_session: Any) -> None:
+    """The rebaseline endpoint gates on STATEFUL_MONITOR_KINDS (derived from the
+    registry), so registering `anomaly` widened it with no endpoint change. 204
+    whether or not a baseline exists."""
+    sid = _suite_id(client, db_session, conn_type="snowflake")
+    created = client.post(f"/api/v1/suites/{sid}/checks", json=_anomaly_payload())
+    check_id = created.json()["id"]
+    resp = client.post(f"/api/v1/suites/{sid}/checks/{check_id}/rebaseline")
+    assert resp.status_code == 204
+
+
+def test_rebaseline_still_rejects_a_non_stateful_kind(client: TestClient, db_session: Any) -> None:
+    sid = _suite_id(client, db_session, conn_type="snowflake")
+    created = client.post(f"/api/v1/suites/{sid}/checks", json=_volume_payload())
+    check_id = created.json()["id"]
+    resp = client.post(f"/api/v1/suites/{sid}/checks/{check_id}/rebaseline")
+    assert resp.status_code == 422
+
+
 def test_create_monitor_on_iceberg_datasource_returns_201(
     client: TestClient, db_session: Any
 ) -> None:
@@ -1330,11 +1467,108 @@ def test_dryrun_sanitizes_nan_observed_value(
     assert resp.json()["observed_value"] == {"observed_value": None}
 
 
-def test_dryrun_rejects_non_expectation_kind(client: TestClient, db_session: Any) -> None:
+def test_dryrun_rejects_a_kind_with_no_preview_shape(client: TestClient, db_session: Any) -> None:
     sid = _suite_id(client, db_session, target=_SF_TARGET)
     resp = client.post(f"/api/v1/suites/{sid}/checks/dryrun", json=_dryrun_body(kind="freshness"))
     assert resp.status_code == 422
     assert resp.json()["error"]["code"] == "dry_run_unsupported"
+
+
+def _patch_anomaly_scalar(monkeypatch: pytest.MonkeyPatch, scalar: Any) -> None:
+    from contextlib import contextmanager
+
+    from backend.app.services import anomaly
+
+    class _Conn:
+        @staticmethod
+        def execute(statement: Any) -> Any:
+            class _Res:
+                @staticmethod
+                def scalar() -> Any:
+                    return scalar
+
+            return _Res()
+
+    @contextmanager
+    def fake_open(connection: Any, secret_store: Any) -> Any:
+        yield _Conn()
+
+    monkeypatch.setattr(anomaly, "_open_connection", fake_open)
+
+
+def test_dryrun_anomaly_previews_the_cold_start_with_the_real_measurement(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A dry-run has no check row, so it can never have a baseline — the honest
+    preview is the cold-start `skip`, carrying the value actually measured. A
+    fabricated z-score off an empty history would be the exact silent-green the
+    kind exists to avoid."""
+    _patch_anomaly_scalar(monkeypatch, 32840)
+    sid = _suite_id(client, db_session, target=_SF_TARGET)
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks/dryrun",
+        json=_dryrun_body(
+            kind="anomaly",
+            expectation_type="monitor:anomaly",
+            config={"target_metric": "row_count"},
+        ),
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "skip"
+    assert body["metric_value"] is None
+    assert body["observed_value"]["value"] == 32840.0
+    assert body["observed_value"]["insufficient_history"] is True
+    assert body["observed_value"]["dry_run"] is True
+
+
+def test_dryrun_anomaly_writes_no_baseline(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from backend.app.db.models import MonitorBaseline
+
+    _patch_anomaly_scalar(monkeypatch, 10)
+    sid = _suite_id(client, db_session, target=_SF_TARGET)
+    client.post(
+        f"/api/v1/suites/{sid}/checks/dryrun",
+        json=_dryrun_body(
+            kind="anomaly",
+            expectation_type="monitor:anomaly",
+            config={"target_metric": "row_count"},
+        ),
+    )
+    assert db_session.query(MonitorBaseline).count() == 0
+
+
+def test_dryrun_anomaly_rejects_a_malformed_config(client: TestClient, db_session: Any) -> None:
+    sid = _suite_id(client, db_session, target=_SF_TARGET)
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks/dryrun",
+        json=_dryrun_body(
+            kind="anomaly", expectation_type="monitor:anomaly", config={"target_metric": "nope"}
+        ),
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "dry_run_unsupported"
+
+
+def test_dryrun_anomaly_on_an_empty_table_is_a_clear_failure(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A missing MAX has no age; the preview must say so rather than report 0
+    hours, which would read as "perfectly fresh"."""
+    _patch_anomaly_scalar(monkeypatch, None)
+    sid = _suite_id(client, db_session, target=_SF_TARGET)
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks/dryrun",
+        json=_dryrun_body(
+            kind="anomaly",
+            expectation_type="monitor:anomaly",
+            config={"target_metric": "freshness_age_hours", "column": "loaded_at"},
+        ),
+    )
+    assert resp.status_code == 502
+    assert "unavailable" in resp.json()["error"]["message"]
 
 
 def _ok_runner() -> _FakeRunner:

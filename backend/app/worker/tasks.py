@@ -55,8 +55,8 @@ from backend.app.services import (
     run_dispatch,
     run_service,
     run_target,
-    schema_drift,
     secret_sweep_service,
+    stateful_monitors,
     suite_service,
 )
 from backend.app.services.failure_classifier import classify_failure_reason
@@ -195,12 +195,14 @@ def _run_suite(session: Session, *, run_id: uuid.UUID) -> str:
                 secret_store=get_secret_store(),
             )
 
-        # Stateful monitor kinds (#592): the baseline-diff executor owns the
-        # session + baseline store, which runners never see. Built only when the
+        # Stateful monitor kinds (#592 schema_drift, #593 anomaly): these
+        # executors own the session + baseline store, which runners never see.
+        # One callable dispatches per `check.kind` (`services/stateful_monitors`),
+        # so run_service keeps a single injection point. Built only when the
         # suite actually has a stateful check.
         stateful_monitor_executor = None
         if any(c.kind in STATEFUL_MONITOR_KINDS for c in checks):
-            stateful_monitor_executor = schema_drift.build_schema_drift_executor(
+            stateful_monitor_executor = stateful_monitors.build_stateful_monitor_executor(
                 session,
                 connection=connection,
                 target_table=table,

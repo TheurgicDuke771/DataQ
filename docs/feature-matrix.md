@@ -13,10 +13,22 @@ One-page reference: what runs where. For the readable tour of everything DataQ o
 | Freshness monitor (hours since latest timestamp) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Freshness from **file arrival time** (no column — catches "no new file") | — | — | ✅ | ✅ | — |
 | Volume monitor (row count in range) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Anomaly monitor (z-score vs a learned baseline)ᵃ | ⏳ | ⏳ | — | — | — |
 | Comparison / reconciliation (diff vs a baseline connection) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Column profiler (nulls, distinct, min/max, top values) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | DQ dimension on checks + asset scorecard (coverage + score) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Dry-run preview | ✅ | ✅ | ✅ | ✅ | ✅ |
+
+ᵃ **⏳ = shipped but not yet live-verified.** The anomaly monitor's backend engine
+(#593) is on `main` — it learns a rolling mean/stddev of the target's own row count or
+freshness age (optionally per weekday) and bands each run's z-score through the usual
+warn/fail/critical thresholds; below its `min_points` of history it reports `skip`, never
+a fabricated pass. No cell is ticked because this matrix ticks only what has been
+**executed against a live datasource** — the standing rule after #953 shipped a ✅ that had
+never once worked. The authoring UI ships in a follow-up PR. The dashes are a real
+restriction, not an omission: the anomaly executor takes its own measurement over a live
+SQL connection, while Iceberg and flat files compute their monitor scalars natively inside
+their runners, which stateful kinds never reach.
 
 ˢ **S3 means AWS S3 *and* any S3-compatible store** — MinIO, Ceph/RadosGW, Cloudflare R2,
 Wasabi, Backblaze B2, SeaweedFS or an on-prem gateway. Set the connection's optional

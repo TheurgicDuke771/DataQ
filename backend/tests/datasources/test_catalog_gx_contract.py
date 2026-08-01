@@ -137,10 +137,23 @@ def test_custom_sql_entry_matches_backend_constants() -> None:
     assert entry["fields"] == [QUERY_KEY]
 
 
+# Kinds the BACKEND supports that the frontend catalog does not offer yet, because
+# their authoring UI ships in a separate PR. Deliberately an explicit allowlist and
+# not a relaxed comparison: any OTHER divergence still fails, and this test starts
+# failing the moment the UI entry lands — which is precisely the reminder to empty
+# this set (and bump the `len(_monitors()) == 3` count above) in that PR.
+_KINDS_PENDING_A_CATALOG_ENTRY = {monitors.ANOMALY}  # #593 — UI PR follows
+
+
 def test_monitor_entries_match_backend_kinds() -> None:
     """Monitor kinds bypass GX (ADR 0012); their catalog types must match the
-    backend's canonical `monitor:<kind>` mapping and known kinds."""
-    assert {e["kind"] for e in _monitors()} == set(monitors.MONITOR_KINDS)
+    backend's canonical `monitor:<kind>` mapping and known kinds.
+
+    The catalog may lag the backend by exactly the kinds listed above (a kind is
+    authorable through the API/MCP before its editor form exists) — it may never
+    LEAD it, and it may never carry a kind the backend does not know."""
+    catalog_kinds = {e["kind"] for e in _monitors()}
+    assert catalog_kinds == set(monitors.MONITOR_KINDS) - _KINDS_PENDING_A_CATALOG_ENTRY
     for entry in _monitors():
         assert entry["type"] == monitors.monitor_expectation_type(entry["kind"])
 
