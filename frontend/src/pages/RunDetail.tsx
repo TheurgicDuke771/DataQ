@@ -11,6 +11,7 @@ import { CheckTrend } from '../components/checks/CheckTrend';
 import { ComparisonResultDetail } from '../components/results/ComparisonResultDetail';
 import { SnoozedTag } from '../components/checks/snooze';
 import {
+  anomalyColdStartHint,
   formatDuration,
   formatTimestamp,
   RESULT_STATUS_COLORS,
@@ -401,22 +402,32 @@ function ResultsTable({
         // Lazily fetch a check's metric trend only when its row is expanded —
         // keyed by check_id so each row's chart fetches its own history. The
         // redacted failing-row sample (if any) sits below the trend.
-        expandedRowRender: (record) =>
-          checks.get(record.check_id)?.kind === 'comparison' ? (
+        expandedRowRender: (record) => {
+          const check = checks.get(record.check_id);
+          if (check?.kind === 'comparison') {
+            return (
+              <Flex vertical gap={16}>
+                <CheckTrend key={record.check_id} suiteId={suiteId} checkId={record.check_id} />
+                <ComparisonResultDetail runId={runId} result={record} />
+              </Flex>
+            );
+          }
+          // Anomaly's cold-start skip (#593): honest "collecting history" beats
+          // making the author decode the raw observed_value JSON.
+          const coldStart =
+            check?.kind === 'anomaly' ? anomalyColdStartHint(record.observed_value) : null;
+          return (
             <Flex vertical gap={16}>
               <CheckTrend key={record.check_id} suiteId={suiteId} checkId={record.check_id} />
-              <ComparisonResultDetail runId={runId} result={record} />
-            </Flex>
-          ) : (
-            <Flex vertical gap={16}>
-              <CheckTrend key={record.check_id} suiteId={suiteId} checkId={record.check_id} />
+              {coldStart && <Alert type="info" showIcon message={coldStart} />}
               <SampleFailures
                 sample={record.sample_failures}
                 redaction={record.redaction}
                 redactedColumns={record.redacted_columns}
               />
             </Flex>
-          ),
+          );
+        },
         // Expandable when we can show a trend (known check) or a failing sample.
         rowExpandable: (record) => checks.has(record.check_id) || record.sample_failures !== null,
       }}

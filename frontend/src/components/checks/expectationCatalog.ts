@@ -21,11 +21,12 @@ import {
 } from '../../api/connections';
 import { CUSTOM_SQL_EXPECTATION_TYPE, CUSTOM_SQL_QUERY_KEY } from './customSql';
 
-export type ConfigFieldType = 'string' | 'number' | 'list' | 'sql';
+export type ConfigFieldType = 'string' | 'number' | 'list' | 'sql' | 'select' | 'boolean';
 
 /** The check `kind` (ADR 0012). `expectation` (incl. custom-SQL) is GX; the
  *  monitor kinds run a scalar SQL aggregate instead. Sent to the backend. */
-export type CheckKind = 'expectation' | 'freshness' | 'volume' | 'schema_drift' | 'comparison';
+export type CheckKind =
+  'expectation' | 'freshness' | 'volume' | 'schema_drift' | 'anomaly' | 'comparison';
 
 /**
  * Expectation categories — the GX-Cloud-style classification the check editor
@@ -33,10 +34,20 @@ export type CheckKind = 'expectation' | 'freshness' | 'volume' | 'schema_drift' 
  * freshness/volume monitor kinds (ADR 0012, pulled into v1); `Schema` carries the
  * schema_drift baseline-diff kind (#592) — datasource-agnostic, so it is never
  * gated by connection type (the executor introspects warehouses, flat files, and
- * Iceberg metadata alike).
+ * Iceberg metadata alike). `Anomaly` (#593) is the stateful z-score kind — unlike
+ * every other monitor it is gated to SQL-queryable datasources only (it measures
+ * over a live connection, `check_service.ANOMALY_CAPABLE_TYPES`), so it is NOT a
+ * member of `MONITOR_CATEGORIES` below and is gated the same way Custom SQL is.
  */
 export type ExpectationCategory =
-  'Column values' | 'Table shape' | 'Freshness' | 'Volume' | 'Schema' | 'Custom SQL' | 'Comparison';
+  | 'Column values'
+  | 'Table shape'
+  | 'Freshness'
+  | 'Volume'
+  | 'Schema'
+  | 'Anomaly'
+  | 'Custom SQL'
+  | 'Comparison';
 
 export const EXPECTATION_CATEGORIES: ExpectationCategory[] = [
   'Column values',
@@ -44,6 +55,7 @@ export const EXPECTATION_CATEGORIES: ExpectationCategory[] = [
   'Freshness',
   'Volume',
   'Schema',
+  'Anomaly',
   'Custom SQL',
   'Comparison',
 ];
@@ -54,8 +66,11 @@ export const EXPECTATION_CATEGORIES: ExpectationCategory[] = [
 export const COMPARISON_EXPECTATION_TYPE = 'comparison:records';
 export const COMPARISON_COLUMNS_EXPECTATION_TYPE = 'comparison:columns';
 
-/** Monitor categories (ADR 0012) — like Custom SQL, they run a scalar SQL
- *  aggregate, so they're offered only on SQL-queryable datasources. */
+/** Monitor categories (ADR 0012) — gated by `supportsMonitors` (below), which is
+ *  BROADER than SQL-queryable: Iceberg and flat files (adls_gen2/s3) also offer
+ *  them, since the scalar aggregate can be computed natively inside their own
+ *  runners without a live SQL connection. `Anomaly` (#593) is the one monitor
+ *  kind that IS SQL-only — see its own gating note near `ANOMALY_CATEGORY`. */
 export const MONITOR_CATEGORIES: ExpectationCategory[] = ['Freshness', 'Volume'];
 
 /**
@@ -98,6 +113,72 @@ export interface ConfigField {
   type: ConfigFieldType;
   optional?: boolean;
   help?: string;
+  /** Inline STATIC bounds for a `number` field (the backend is authoritative —
+   *  e.g. anomaly's `window` is 3-90; #593). Wired straight into the
+   *  `InputNumber`. See `maxFrom` for a ceiling that depends on another field. */
+  min?: number;
+  max?: number;
+  /** Value/label options for a `select` field. */
+  options?: { value: string; label: string }[];
+  /**
+   * For a `number` field: an ADDITIONAL dynamic ceiling — this field's max is
+   * also capped by a SIBLING config field's live value (read off the same
+   * `configValues` `showWhen` reads). First used by anomaly's `min_points`,
+   * which the backend bounds at `<= window` (review finding on #593's
+   * original PR): a static `max` can't express a ceiling that depends on
+   * another field, and the `InputNumber` `max` prop only bounds FUTURE
+   * edits — it does not retroactively invalidate an already-committed value
+   * when the ceiling later shrinks (`window` 14→5 leaves an untouched
+   * `min_points=7` sitting in the form, invalid at submit). So this is
+   * enforced twice: as the live `max` (bounds typing/stepping going forward)
+   * AND as a submit-time validation rule in `ConfigFieldItem` (catches a
+   * value the user never touched after a sibling shrank past it). Deliberately
+   * an inline error on submit, not a silent auto-clamp — the value the author
+   * sees is the value that gets saved; a background rewrite of a field they
+   * never touched would be a second, quieter version of the same footgun.
+   */
+  maxFrom?: string;
+  /** Friendly name of the `maxFrom` field, for the validation message. */
+  maxFromLabel?: string;
+  /**
+   * CREATE-mode pre-filled value, mirroring the backend's own default (e.g.
+   * anomaly's `window` defaults to 14 server-side) so an untouched field
+   * submits the same value the backend would otherwise assume. Edit mode
+   * ignores this — the stored value drives via `configToForm`.
+   *
+   * Static, and deliberately does not re-derive: `min_points`'s default (7)
+   * is only valid while `window` (default 14) stays >= it. If the author
+   * lowers `window` below the untouched default, `maxFrom` is what catches
+   * the now-invalid value at submit time — this field does not chase a
+   * moving target on its own.
+   */
+  defaultValue?: unknown;
+  /**
+   * Show (and submit) this field only when a SIBLING config field equals a
+   * given value — a generic conditional-field mechanism. First used by
+   * anomaly's `column` (#593): the backend's `anomaly_params` REJECTS a
+   * `column` key when `target_metric` isn't `freshness_age_hours` ("known key,
+   * inapplicable metric"), so this isn't cosmetic — `formToConfig` (checkForm.ts)
+   * honors the same condition and strips a hidden field from the submitted
+   * config, not just from the rendered form.
+   */
+  showWhen?: { field: string; equals: unknown };
+}
+
+/**
+ * True when `field` should render/submit given the current sibling config
+ * values (see `ConfigField.showWhen`). Always true for an unconditional field.
+ * Exported so the form renderer (`checkFormFields.tsx`) and the payload builder
+ * (`checkForm.ts`'s `formToConfig`) share one definition of "visible" — a field
+ * hidden from the author must also never be silently submitted, which matters
+ * because antd's `Form` preserves an unmounted field's last value by default.
+ */
+export function fieldVisible(
+  field: ConfigField,
+  configValues: Record<string, unknown> | undefined,
+): boolean {
+  if (!field.showWhen) return true;
+  return (configValues ?? {})[field.showWhen.field] === field.showWhen.equals;
 }
 
 /** Severity-threshold semantics for a monitor kind (ADR 0012/0016). Monitors band
@@ -347,6 +428,76 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
     },
   },
   {
+    type: 'monitor:anomaly',
+    // No `dimension` (mirrors backend `check_dimension._BY_KIND`, which has no
+    // `anomaly` entry): the metric it watches — row count vs freshness age —
+    // is a per-check author choice, not derivable from the kind alone, so a
+    // guessed dimension here would drift from the backend the moment the
+    // author picks the other target_metric. Pinned by the catalog contract
+    // test (`test_catalog_dimension_matches_the_backend_derivation`).
+    kind: 'anomaly',
+    label: 'Anomaly',
+    description:
+      'Learns a rolling baseline (mean/stddev) from this check’s own metric history and flags how far this run deviates (a z-score). Reports skip, never a fake pass/fail, until enough history accrues.',
+    category: 'Anomaly',
+    fields: [
+      {
+        name: 'target_metric',
+        label: 'Target metric',
+        type: 'select',
+        options: [
+          { value: 'row_count', label: 'Row count' },
+          { value: 'freshness_age_hours', label: 'Freshness age (hours)' },
+        ],
+        help: 'What this check measures every run and learns a baseline for.',
+      },
+      {
+        name: 'column',
+        label: 'Timestamp column',
+        type: 'string',
+        help: 'The load/updated timestamp column whose MAX() the freshness-age-hours metric measures.',
+        // Backend `anomaly_params`: required when target_metric is
+        // freshness_age_hours, and REJECTED (not just ignored) otherwise.
+        showWhen: { field: 'target_metric', equals: 'freshness_age_hours' },
+      },
+      {
+        name: 'window',
+        label: 'Window (observations)',
+        type: 'number',
+        optional: true,
+        min: 3,
+        max: 90,
+        defaultValue: 14,
+        help: 'How many prior observations the baseline is scored against (3–90). Default 14.',
+      },
+      {
+        name: 'min_points',
+        label: 'Minimum points before scoring',
+        type: 'number',
+        optional: true,
+        min: 3,
+        // No static `max` — the ceiling is `window`'s live value (backend:
+        // `3 <= min_points <= window`). See `ConfigField.maxFrom`.
+        maxFrom: 'window',
+        maxFromLabel: 'window',
+        defaultValue: 7,
+        help: 'Below this many observations the check reports skip, never a verdict. Must be ≤ window. Default 7.',
+      },
+      {
+        name: 'seasonality',
+        label: 'Day-of-week seasonality',
+        type: 'boolean',
+        optional: true,
+        defaultValue: false,
+        help: 'Score against history from the same weekday instead of the raw rolling window (retains window × 7 observations).',
+      },
+    ],
+    thresholds: {
+      help: 'Band the anomaly z-score — how many standard deviations this run is from the learned baseline (higher = worse). A fail or critical threshold is required. The check reports skip (not a verdict) until the minimum points of history accrue.',
+      requireFailOrCritical: true,
+    },
+  },
+  {
     type: CUSTOM_SQL_EXPECTATION_TYPE,
     label: 'Custom SQL',
     description: 'A SQL query that should return no rows — any rows it returns are failures.',
@@ -412,17 +563,26 @@ export const EXPECTATIONS_BY_CATEGORY: {
  *  also supports natively despite not being SQL-queryable. */
 const CUSTOM_SQL_CATEGORY: ExpectationCategory = 'Custom SQL';
 
+/** Anomaly (#593) is gated the SAME as Custom SQL — `isSqlQueryable` and the
+ *  backend's `ANOMALY_CAPABLE_TYPES` are both exactly `{snowflake, unity_catalog}`
+ *  — because it measures over a live SQL connection, not a scalar aggregate any
+ *  monitor-capable runner can produce (Iceberg/flat-file included). Deliberately
+ *  its own category rather than a member of `MONITOR_CATEGORIES`: that set gates
+ *  on the broader `supportsMonitors`, which anomaly must NOT get. */
+const ANOMALY_CATEGORY: ExpectationCategory = 'Anomaly';
+
 /** The freshness/volume monitor categories (ADR 0012) — offered on any
  *  monitor-capable datasource (SQL datasources + Iceberg, `supportsMonitors`),
  *  since the aggregate need not be SQL (Iceberg computes it natively). */
 const MONITOR_CATEGORY_SET = new Set<ExpectationCategory>(MONITOR_CATEGORIES);
 
 /**
- * Grouped catalog filtered for a suite's datasource. Custom SQL is hidden unless
- * the connection is SQL-queryable; the monitor categories are hidden unless it's
- * monitor-capable — both also hidden while the connection type is still loading
- * (`undefined`) — so we never offer a category the backend would 422. Every other
- * category is datasource-agnostic.
+ * Grouped catalog filtered for a suite's datasource. Custom SQL and Anomaly are
+ * hidden unless the connection is SQL-queryable; the freshness/volume monitor
+ * categories are hidden unless it's monitor-capable (a broader set) — all three
+ * also hidden while the connection type is still loading (`undefined`) — so we
+ * never offer a category the backend would 422. Every other category is
+ * datasource-agnostic.
  *
  * `alwaysIncludeType` keeps the group of an already-selected expectation visible
  * regardless of gating — the edit drawer passes the check's current type so a
@@ -443,7 +603,7 @@ export function expectationsByCategoryFor(
     : undefined;
   const allowed = (category: ExpectationCategory): boolean => {
     if (category === selectedCategory) return true;
-    if (category === CUSTOM_SQL_CATEGORY) return sqlAllowed;
+    if (category === CUSTOM_SQL_CATEGORY || category === ANOMALY_CATEGORY) return sqlAllowed;
     if (MONITOR_CATEGORY_SET.has(category)) return monitorAllowed;
     return true; // datasource-agnostic category
   };

@@ -262,3 +262,100 @@ describe('CheckEdit — re-deriving on an expectation-type change (#124 review)'
     expect(await screen.findByText(/Uniqueness —/)).toBeInTheDocument();
   });
 });
+
+// #593 — the anomaly monitor kind. Also regression coverage for the PR #1117
+// review finding: BEFORE this PR's catalog entry landed, `EXPECTATION_BY_TYPE`
+// had no `monitor:anomaly` spec, so `spec` resolved to `undefined` here and
+// `buildCheckPayload`'s `formToConfig(undefined, ...)` returned `{}` — editing
+// (and re-saving) an anomaly check created out-of-band (API/MCP) silently wiped
+// its config. The catalog entry is the fix; the round-trip test below is the
+// regression guard.
+describe('CheckEdit — anomaly monitor (#593)', () => {
+  const rowCountAnomaly: Check = {
+    id: 'chk3',
+    suite_id: 's1',
+    name: 'orders row-count anomaly',
+    kind: 'anomaly',
+    expectation_type: 'monitor:anomaly',
+    config: { target_metric: 'row_count', window: 21, min_points: 10, seasonality: true },
+    warn_threshold: null,
+    fail_threshold: 3,
+    critical_threshold: null,
+    alert_snoozed_until: null,
+  };
+
+  const freshnessAnomaly: Check = {
+    id: 'chk4',
+    suite_id: 's1',
+    name: 'orders freshness anomaly',
+    kind: 'anomaly',
+    expectation_type: 'monitor:anomaly',
+    config: {
+      target_metric: 'freshness_age_hours',
+      column: 'loaded_at',
+      window: 14,
+      min_points: 7,
+      seasonality: false,
+    },
+    warn_threshold: null,
+    fail_threshold: 4,
+    critical_threshold: null,
+    alert_snoozed_until: null,
+  };
+
+  it('locks the monitor type (kind immutable, like freshness/volume) and prefills a row_count anomaly’s fields', async () => {
+    mockGetSuite.mockResolvedValue(suite);
+    mockGetCheck.mockResolvedValue(rowCountAnomaly);
+    mockGetConnection.mockResolvedValue(connection);
+    renderPage();
+
+    const monitorSelect = await screen.findByLabelText('Monitor');
+    expect(monitorSelect).toBeDisabled();
+    expect(await screen.findByText('Row count')).toBeInTheDocument();
+    // Both are `optional: true` fields, so the label renders with the
+    // " (optional)" suffix ConfigFieldItem appends.
+    await waitFor(() =>
+      expect(screen.getByLabelText('Window (observations)', { exact: false })).toHaveValue('21'),
+    );
+    expect(screen.getByLabelText('Minimum points before scoring', { exact: false })).toHaveValue(
+      '10',
+    );
+    // row_count is not freshness_age_hours — no column field.
+    expect(screen.queryByLabelText('Timestamp column')).not.toBeInTheDocument();
+  });
+
+  it('prefills a freshness_age_hours anomaly’s conditional column field', async () => {
+    mockGetSuite.mockResolvedValue(suite);
+    mockGetCheck.mockResolvedValue(freshnessAnomaly);
+    mockGetConnection.mockResolvedValue(connection);
+    renderPage();
+
+    expect(await screen.findByText('Freshness age (hours)')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByLabelText('Timestamp column')).toHaveValue('loaded_at'));
+  });
+
+  it('round-trips config intact on save with no edits (the pre-catalog-entry 422/silent-wipe bug)', async () => {
+    const user = userEvent.setup();
+    mockGetSuite.mockResolvedValue(suite);
+    mockGetCheck.mockResolvedValue(rowCountAnomaly);
+    mockGetConnection.mockResolvedValue(connection);
+    mockUpdate.mockResolvedValue(rowCountAnomaly);
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByLabelText('Window (observations)', { exact: false })).toHaveValue('21'),
+    );
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
+    expect(mockUpdate).toHaveBeenCalledWith('s1', 'chk3', {
+      name: 'orders row-count anomaly',
+      expectation_type: 'monitor:anomaly',
+      config: { target_metric: 'row_count', window: 21, min_points: 10, seasonality: true },
+      dimension: undefined,
+      warn_threshold: null,
+      fail_threshold: 3,
+      critical_threshold: null,
+    });
+  });
+});

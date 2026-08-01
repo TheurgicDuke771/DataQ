@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  anomalyColdStartHint,
   formatDuration,
   formatDurationMs,
   formatScalar,
@@ -144,6 +145,54 @@ describe('status colour maps', () => {
         created_at: '2026-06-11T00:00:00Z',
       }),
     ).toBe('adf:daily_orders_load:seed-adf-0001');
+  });
+});
+
+describe('anomalyColdStartHint (#593 cold start)', () => {
+  it('renders a friendly "collecting history" hint for a cold-start payload', () => {
+    expect(
+      anomalyColdStartHint({
+        target_metric: 'row_count',
+        value: 32840,
+        points: 3,
+        window: 14,
+        min_points: 7,
+        seasonality: false,
+        insufficient_history: true,
+        reason: 'insufficient_history',
+      }),
+    ).toBe('Collecting history: 3 of 7 points');
+  });
+
+  it('returns null for a scored (non-cold-start) anomaly payload', () => {
+    expect(
+      anomalyColdStartHint({
+        target_metric: 'row_count',
+        value: 32840,
+        points: 14,
+        z_score: 4.2,
+        mean: 30000,
+        stddev: 600,
+        deviation: 2840,
+        degenerate_stddev: false,
+      }),
+    ).toBeNull();
+  });
+
+  it('returns null for null/undefined/non-object/malformed payloads', () => {
+    expect(anomalyColdStartHint(null)).toBeNull();
+    expect(anomalyColdStartHint(undefined)).toBeNull();
+    expect(anomalyColdStartHint('insufficient_history')).toBeNull();
+    // insufficient_history flagged but the counts are missing/wrong-typed —
+    // render nothing rather than a guessed "undefined of undefined points".
+    expect(anomalyColdStartHint({ insufficient_history: true })).toBeNull();
+    expect(
+      anomalyColdStartHint({ insufficient_history: true, points: '3', min_points: 7 }),
+    ).toBeNull();
+  });
+
+  it('is not fooled by a truthy-but-not-true insufficient_history', () => {
+    expect(anomalyColdStartHint({ insufficient_history: 1, points: 3, min_points: 7 })).toBeNull();
   });
 });
 

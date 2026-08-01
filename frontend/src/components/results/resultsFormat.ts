@@ -67,6 +67,26 @@ export function pipelineStatusColor(status: string): string {
 }
 
 /**
+ * Anomaly's (#593) cold-start `observed_value` payload —
+ * `{insufficient_history: true, points, min_points, ...}` — reads as a bare
+ * `skip` tag plus a raw JSON blob otherwise; the author has to reverse-engineer
+ * that shape to learn "it just hasn't seen enough runs yet". A friendlier
+ * "collecting history: k of n points" says the same thing plainly. Returns
+ * `null` for anything else (not cold-start, or a payload missing the fields —
+ * render nothing rather than a guessed count) so callers can skip the hint
+ * cleanly. Pure so it's unit-testable without a check/result fixture.
+ */
+export function anomalyColdStartHint(observedValue: unknown): string | null {
+  if (observedValue === null || typeof observedValue !== 'object') return null;
+  const v = observedValue as Record<string, unknown>;
+  if (v.insufficient_history !== true) return null;
+  const points = typeof v.points === 'number' ? v.points : null;
+  const minPoints = typeof v.min_points === 'number' ? v.min_points : null;
+  if (points === null || minPoints === null) return null;
+  return `Collecting history: ${points} of ${minPoints} points`;
+}
+
+/**
  * Render an unknown scalar (a GX observed/expected value, a profiled min/max or
  * top value) for display: an em dash for null/undefined, JSON for objects, the
  * `String` form otherwise. Falsy scalars (`0`, `false`, `''`) render as

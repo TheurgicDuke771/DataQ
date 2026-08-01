@@ -19,13 +19,14 @@ One-page reference: what runs where. For the readable tour of everything DataQ o
 | DQ dimension on checks + asset scorecard (coverage + score) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Dry-run preview | ✅ | ✅ | ✅ | ✅ | ✅ |
 
-ᵃ **⏳ = shipped but not yet live-verified.** The anomaly monitor's backend engine
-(#593) is on `main` — it learns a rolling mean/stddev of the target's own row count or
-freshness age (optionally per weekday) and bands each run's z-score through the usual
-warn/fail/critical thresholds; below its `min_points` of history it reports `skip`, never
-a fabricated pass. No cell is ticked because this matrix ticks only what has been
-**executed against a live datasource** — the standing rule after #953 shipped a ✅ that had
-never once worked. The authoring UI ships in a follow-up PR. The dashes are a real
+ᵃ **⏳ = shipped but not yet live-verified.** The anomaly monitor (#593) — backend
+engine plus its check-editor authoring UI — is on `main`. It learns a rolling
+mean/stddev of the target's own row count or freshness age (optionally per weekday)
+and bands each run's z-score through the usual warn/fail/critical thresholds; below
+its `min_points` of history it reports `skip`, never a fabricated pass. No cell is
+ticked because this matrix ticks only what has been **executed against a live
+datasource** — the standing rule after #953 shipped a ✅ that had never once worked;
+the ⏳ cells stay pending until that live run happens. The dashes are a real
 restriction, not an omission: the anomaly executor takes its own measurement over a live
 SQL connection, while Iceberg and flat files compute their monitor scalars natively inside
 their runners, which stateful kinds never reach.

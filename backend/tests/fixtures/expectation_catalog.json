@@ -97,6 +97,18 @@
     ]
   },
   {
+    "type": "monitor:anomaly",
+    "kind": "anomaly",
+    "dimension": null,
+    "fields": [
+      "target_metric",
+      "column",
+      "window",
+      "min_points",
+      "seasonality"
+    ]
+  },
+  {
     "type": "unexpected_rows_expectation",
     "kind": "expectation",
     "dimension": null,

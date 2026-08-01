@@ -67,7 +67,7 @@ def _expectation_params() -> list[Any]:
 def test_fixture_is_present_and_nonempty() -> None:
     """A gutted fixture must fail loudly, not vacuously pass the loops below."""
     assert len(_expectations()) >= 8
-    assert len(_monitors()) == 3  # freshness, volume, schema_drift (#592)
+    assert len(_monitors()) == 4  # freshness, volume, schema_drift (#592), anomaly (#593)
     assert len(_comparisons()) == 2  # records + columns grains (#799)
 
 
@@ -141,8 +141,10 @@ def test_custom_sql_entry_matches_backend_constants() -> None:
 # their authoring UI ships in a separate PR. Deliberately an explicit allowlist and
 # not a relaxed comparison: any OTHER divergence still fails, and this test starts
 # failing the moment the UI entry lands — which is precisely the reminder to empty
-# this set (and bump the `len(_monitors()) == 3` count above) in that PR.
-_KINDS_PENDING_A_CATALOG_ENTRY = {monitors.ANOMALY}  # #593 — UI PR follows
+# this set (and bump the `len(_monitors())` count above) in that PR.
+# Empty since #593's UI PR: the `anomaly` catalog entry landed (`monitor:anomaly`,
+# expectationCatalog.ts), so nothing is pending anymore.
+_KINDS_PENDING_A_CATALOG_ENTRY: set[str] = set()
 
 
 def test_monitor_entries_match_backend_kinds() -> None:
@@ -160,10 +162,18 @@ def test_monitor_entries_match_backend_kinds() -> None:
 
 def test_monitor_fields_match_engine_config_keys() -> None:
     """The monitor engine reads exactly these config keys (monitors.py):
-    freshness → column; volume → min_rows/max_rows."""
+    freshness → column; volume → min_rows/max_rows; anomaly → the AnomalyParams
+    shape (#593) — target_metric/column/window/min_points/seasonality."""
     by_kind = {e["kind"]: e["fields"] for e in _monitors()}
     assert by_kind[monitors.FRESHNESS] == ["column"]
     assert sorted(by_kind[monitors.VOLUME]) == ["max_rows", "min_rows"]
+    assert sorted(by_kind[monitors.ANOMALY]) == [
+        "column",
+        "min_points",
+        "seasonality",
+        "target_metric",
+        "window",
+    ]
 
 
 # ─────────── catalog ↔ dimension-derivation contract (ADR 0038, #124) ──────────

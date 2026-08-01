@@ -1,4 +1,14 @@
-import { Divider, Flex, Form, Input, InputNumber, Select, Skeleton, Typography } from 'antd';
+import {
+  Divider,
+  Flex,
+  Form,
+  Input,
+  InputNumber,
+  Select,
+  Skeleton,
+  Switch,
+  Typography,
+} from 'antd';
 import type { Rule } from 'antd/es/form';
 import { lazy, Suspense } from 'react';
 
@@ -44,11 +54,16 @@ function SqlEditorControl({
 export function ConfigFieldItem({
   field,
   connectionType,
+  configValues,
 }: {
   field: ConfigField;
   /** Suite's connection type — drives the `type_` field's datasource-tailored
    *  help (issue #768). Every other field ignores it. */
   connectionType?: ConnectionType;
+  /** Live sibling config values (the same object `fieldVisible`/`showWhen`
+   *  reads). Only a `maxFrom` field uses it, to compute its dynamic ceiling —
+   *  every other field ignores it. */
+  configValues?: Record<string, unknown>;
 }) {
   const label = field.optional ? `${field.label} (optional)` : field.label;
   const rules: Rule[] = field.optional ? [] : [{ required: true }];
@@ -66,6 +81,26 @@ export function ConfigFieldItem({
         parseList(value).length > 0
           ? Promise.resolve()
           : Promise.reject(new Error('Enter at least one value')),
+    });
+  }
+  // `maxFrom` (anomaly's `min_points` <= `window`, #593 review): a submit-time
+  // check, not just the InputNumber's `max` prop below — that prop only bounds
+  // FUTURE typing/stepping, so it can't retroactively flag an already-committed
+  // value (e.g. the untouched min_points=7 default) once a sibling field
+  // (window) shrinks past it. An inline error, not an auto-clamp, so the value
+  // shown is always the value that would be saved.
+  const dynamicMax =
+    field.type === 'number' && field.maxFrom && typeof configValues?.[field.maxFrom] === 'number'
+      ? (configValues[field.maxFrom] as number)
+      : undefined;
+  if (field.type === 'number' && field.maxFrom) {
+    rules.push({
+      validator: (_: unknown, value: unknown) =>
+        typeof value === 'number' && dynamicMax !== undefined && value > dynamicMax
+          ? Promise.reject(
+              new Error(`${field.label} must be ≤ ${field.maxFromLabel ?? field.maxFrom}`),
+            )
+          : Promise.resolve(),
     });
   }
   if (field.type === 'sql') {
@@ -91,9 +126,34 @@ export function ConfigFieldItem({
     );
   }
   return (
-    <Form.Item name={['config', field.name]} label={label} rules={rules} extra={help}>
+    <Form.Item
+      name={['config', field.name]}
+      label={label}
+      rules={rules}
+      extra={help}
+      // CREATE-mode pre-fill (mirrors the backend's own default, e.g. anomaly's
+      // window=14 — ConfigField.defaultValue docstring). No-op in edit mode: the
+      // stored value is already in the form store by the time this Form.Item
+      // mounts (`configToForm`), and antd only applies `initialValue` when the
+      // store has no value yet.
+      initialValue={field.defaultValue}
+      valuePropName={field.type === 'boolean' ? 'checked' : 'value'}
+      // `maxFrom`: re-run this field's rules (and — via the parent's
+      // `configValues` watch — recompute `dynamicMax` below) whenever the
+      // sibling field changes, so an untouched min_points flags itself the
+      // moment window shrinks past it, not only on the next edit to min_points.
+      dependencies={field.maxFrom ? [['config', field.maxFrom]] : undefined}
+    >
       {field.type === 'number' ? (
-        <InputNumber style={{ width: '100%' }} />
+        <InputNumber
+          style={{ width: '100%' }}
+          min={field.min}
+          max={dynamicMax !== undefined ? Math.min(field.max ?? dynamicMax, dynamicMax) : field.max}
+        />
+      ) : field.type === 'select' ? (
+        <Select options={field.options} placeholder={label} />
+      ) : field.type === 'boolean' ? (
+        <Switch />
       ) : (
         <Input placeholder={field.type === 'list' ? 'value1, value2, value3' : undefined} />
       )}
@@ -170,16 +230,23 @@ export function SeverityThresholdFields({ monitor }: { monitor?: MonitorThreshol
   const help =
     monitor?.help ??
     'Band the GX unexpected-% to warn / fail / critical (higher = worse). Leave blank for a binary pass/fail.';
-  // "At least one of fail/critical is set" — attached to ONLY the fail field (so a
-  // single error message renders, not one under each), with a dependency on
-  // critical so filling critical clears it.
+  // "At least one of fail/critical is set to a POSITIVE value" — attached to
+  // ONLY the fail field (so a single error message renders, not one under
+  // each), with a dependency on critical so filling critical clears it.
+  // Mirrors the backend's `_has_positive_threshold` exactly (freshness AND
+  // anomaly): checking mere set-ness let `fail_threshold: 0` pass client-side
+  // and then 422 at the server, because a ZERO threshold is the inverse
+  // footgun to a missing one — it would always fail rather than never.
   const failOrCriticalRule: Rule = ({ getFieldValue }) => ({
-    validator: () =>
-      !required ||
-      getFieldValue('fail_threshold') != null ||
-      getFieldValue('critical_threshold') != null
+    validator: () => {
+      if (!required) return Promise.resolve();
+      const fail = getFieldValue('fail_threshold');
+      const critical = getFieldValue('critical_threshold');
+      return (typeof fail === 'number' && fail > 0) ||
+        (typeof critical === 'number' && critical > 0)
         ? Promise.resolve()
-        : Promise.reject(new Error('Set a fail or critical threshold')),
+        : Promise.reject(new Error('Set a fail or critical threshold'));
+    },
   });
   // #568: mirror the backend's ordering guard (`check_service.
   // validate_threshold_ordering`) so an inverted set (e.g. warn=90/fail=50/

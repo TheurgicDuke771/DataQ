@@ -18,6 +18,7 @@ import {
   configFieldsFor,
   EXPECTATION_BY_TYPE,
   expectationsByCategoryFor,
+  fieldVisible,
 } from '../components/checks/expectationCatalog';
 import { PageError } from '../components/feedback/PageError';
 import { Page } from '../components/layout/Page';
@@ -114,6 +115,9 @@ function CheckEditForm({
   const [historyOpen, setHistoryOpen] = useState(false);
   const selectedType = Form.useWatch('expectation_type', form) as string | undefined;
   const column = Form.useWatch(['config', 'column'], form) as string | undefined;
+  // Drives which conditional fields render (anomaly's `column`, #593 —
+  // ConfigField.showWhen); see CheckNew's matching watch for the rationale.
+  const configValues = Form.useWatch('config', form) as Record<string, unknown> | undefined;
   const spec = selectedType ? EXPECTATION_BY_TYPE[selectedType] : undefined;
   // `kind` is immutable on update (a freshness check can't become an expectation),
   // so a monitor check locks its type — only its config + thresholds are editable.
@@ -219,9 +223,16 @@ function CheckEditForm({
             <Typography.Paragraph type="secondary" style={{ marginTop: -8 }}>
               {spec.description}
             </Typography.Paragraph>
-            {configFieldsFor(spec, connectionType).map((field) => (
-              <ConfigFieldItem key={field.name} field={field} connectionType={connectionType} />
-            ))}
+            {configFieldsFor(spec, connectionType)
+              .filter((field) => fieldVisible(field, configValues))
+              .map((field) => (
+                <ConfigFieldItem
+                  key={field.name}
+                  field={field}
+                  connectionType={connectionType}
+                  configValues={configValues}
+                />
+              ))}
             <DimensionField spec={spec} />
           </>
         )}
