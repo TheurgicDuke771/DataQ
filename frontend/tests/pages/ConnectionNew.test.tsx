@@ -372,6 +372,25 @@ describe('ConnectionNew', () => {
     expect(mockCreate).not.toHaveBeenCalled();
   });
 
+  it('clears a stale Connected badge as soon as a field changes after testing green', async () => {
+    // #351 review: a green test, then an edited host/secret, must not keep
+    // claiming Connected — repo precedent is Connections.tsx `clearHealth`
+    // ("the prior pass/fail no longer holds").
+    const user = userEvent.setup();
+    mockTestDraft.mockResolvedValue({ ok: true });
+    renderPage();
+    await fillSnowflakeDraft(user);
+
+    await user.click(screen.getByRole('button', { name: 'Test connection' }));
+    expect(await screen.findByText('Connected')).toBeInTheDocument();
+
+    // Edit a field post-test — the stale verdict must disappear immediately,
+    // without needing a second test click.
+    await user.type(screen.getByLabelText('Account'), '-edited');
+
+    expect(screen.queryByText('Connected')).not.toBeInTheDocument();
+  });
+
   it('composes the SAME payload shape as Create — type/env/config/secret', async () => {
     const user = userEvent.setup();
     mockTestDraft.mockResolvedValue({ ok: true });

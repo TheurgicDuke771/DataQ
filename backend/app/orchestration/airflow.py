@@ -88,12 +88,18 @@ class AirflowConnectionAdapter:
     def validate_config(self, raw: dict[str, Any]) -> AirflowConfig:
         return AirflowConfig.model_validate(raw)
 
-    def test(self, raw: dict[str, Any], secret: str, **_: Any) -> None:
+    def test(self, raw: dict[str, Any], secret: str | None, **_: Any) -> None:
         """GET the DAGs list (limit 1) with the credential; raise on any failure.
 
         ``secret`` is the Bearer token (token auth) or the password (basic auth,
-        paired with ``config.username``).
+        paired with ``config.username``). Typed ``str | None`` only because the
+        shared `ConnectionAdapter` Protocol also serves credential-less types
+        (#351) — an Airflow token/password is always mandatory, so the guard
+        below turns a missing one into a clear error rather than a confusing
+        auth-header failure.
         """
+        if secret is None:
+            raise ValueError("a credential is required to test an Airflow connection")
         config = self.validate_config(raw)
         headers, auth = _auth(config, secret)
         response = httpx.get(

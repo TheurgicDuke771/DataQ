@@ -90,6 +90,20 @@ export function ConnectionForm({
         )
       : undefined;
 
+  // A field changed after a test ran — the green/red badge no longer
+  // describes what would actually be saved (repo precedent: Connections.tsx
+  // `clearHealth`, "the prior pass/fail no longer holds"). Edit mode is
+  // included on purpose: `onTest` there re-tests the SAVED connection, but an
+  // unsaved config edit still invalidates that verdict's relevance to what a
+  // Save would persist next — leaving a stale "Connected" badge up while the
+  // form no longer matches it would be exactly the lie #351 review flagged.
+  const onValuesChange = () => {
+    if (testState !== 'idle') {
+      setTestState('idle');
+      setTestError(undefined);
+    }
+  };
+
   const onFinish = (values: FormValues) =>
     run(async () => {
       const saved = isEdit
@@ -150,7 +164,13 @@ export function ConnectionForm({
   };
 
   return (
-    <Form form={form} layout="vertical" onFinish={onFinish} requiredMark="optional">
+    <Form
+      form={form}
+      layout="vertical"
+      onFinish={onFinish}
+      onValuesChange={onValuesChange}
+      requiredMark="optional"
+    >
       <Form.Item name="name" label="Name" rules={[{ required: true }]}>
         <Input />
       </Form.Item>

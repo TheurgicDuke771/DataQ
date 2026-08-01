@@ -144,7 +144,7 @@ class DbtConfig(BaseModel):
 
 
 def _read_artifact(
-    config: DbtConfig, job: str, secret: str, relpath: str = _RUN_RESULTS_RELPATH
+    config: DbtConfig, job: str, secret: str | None, relpath: str = _RUN_RESULTS_RELPATH
 ) -> bytes | None:
     """Read ``<artifacts_uri>/<job>/<relpath>``; None if absent.
 
@@ -154,6 +154,16 @@ def _read_artifact(
     ``core/secrets.py``) so the module — and its unit tests, which patch this
     function — never require azure/boto3. Transport/auth errors propagate (the poll
     task fails soft per connection).
+
+    ``secret`` is ``str | None`` only for the `DbtConnectionAdapter.test` caller
+    (#351, `secret_optional`) — a ``file://`` artifacts path needs no credential
+    at all, so `test()` may hand in ``None``; the ``scheme == "file"`` branch
+    below never reads ``secret``, and the ``adls``/``s3`` branches (which DO
+    need a real credential) simply fail their auth call honestly if a caller
+    ever hands them ``None`` — the same "connection test failed" outcome as any
+    other bad credential, not a special case. The `OrchestrationProvider` poll
+    path (`list_recent_runs`/`read_manifest`) always resolves a real stored
+    secret and keeps passing a plain ``str``.
     """
     parsed = urlparse(config.artifacts_uri)
     scheme = parsed.scheme
@@ -245,6 +255,14 @@ def _status_from_results(results: list[dict[str, Any]]) -> str:
 class DbtConnectionAdapter:
     """`ConnectionAdapter` for dbt — config validation + an artifacts-read probe."""
 
+    # A local `file://` artifacts path needs no credential (the class docstring
+    # above) — mirrored by the frontend's `optionalSecret: true` for `dbt` in
+    # `connectionFormSpec.ts`. `test_connection`/`test_draft_connection` (#351)
+    # read this to decide whether a missing secret is an error or just "this
+    # project needs none"; `secret=None` then flows straight to `test`, whose
+    # `file://` branch never touches it.
+    secret_optional = True
+
     def validate_config(self, raw: dict[str, Any]) -> DbtConfig:
         return DbtConfig.model_validate(raw)
 
@@ -263,13 +281,17 @@ class DbtConnectionAdapter:
             return None
         return azure_sas_expiry(secret)
 
-    def test(self, raw: dict[str, Any], secret: str, **_: Any) -> None:
+    def test(self, raw: dict[str, Any], secret: str | None, **_: Any) -> None:
         """Read the first job's `latest/run_results.json`; raise on any failure.
 
         A green test means the artifacts store is reachable, the credential
         authenticates, and the first configured job has published a build. A
         not-yet-published job (None) is still a green test — the store and
         credential are proven; the run simply hasn't happened yet.
+
+        ``secret`` may genuinely be ``None`` (`secret_optional`, #351) — a
+        local ``file://`` artifacts path needs no credential; `_read_artifact`
+        never reads it on that path.
         """
         config = self.validate_config(raw)
         _read_artifact(config, config.jobs[0], secret)

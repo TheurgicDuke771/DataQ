@@ -323,11 +323,19 @@ class SnowflakeConnectionAdapter:
     def validate_config(self, raw: dict[str, Any]) -> SnowflakeConfig:
         return SnowflakeConfig.model_validate(raw)
 
-    def test(self, raw: dict[str, Any], secret: str, **_: Any) -> None:
+    def test(self, raw: dict[str, Any], secret: str | None, **_: Any) -> None:
         """Open a connection and run ``SELECT 1``; raise on any failure.
 
         Deliberately GX-free — a lightweight connectivity probe, not a suite run.
+        ``secret`` is typed ``str | None`` only because the `ConnectionAdapter`
+        Protocol is shared with types that genuinely have no credential
+        (#351) — Snowflake's password/key-pair is always mandatory, so a
+        missing one is a caller bug, not a legitimate no-credential draft; the
+        guard below turns that into a clear error instead of a confusing
+        failure inside SQLAlchemy.
         """
+        if secret is None:
+            raise ValueError("a credential is required to test a snowflake connection")
         from sqlalchemy import create_engine, text
 
         config = self.validate_config(raw)

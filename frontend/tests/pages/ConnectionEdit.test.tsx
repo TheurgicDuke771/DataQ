@@ -237,6 +237,25 @@ describe('ConnectionEdit', () => {
     expect(mockUpdate).not.toHaveBeenCalled();
   });
 
+  it('clears a stale Connected badge as soon as a field changes after testing green', async () => {
+    // #351 review: config edits here are unsaved, so a Connected badge from
+    // BEFORE the edit no longer describes what a Save would actually persist
+    // — the same "prior pass/fail no longer holds" rule as Connections.tsx
+    // `clearHealth`, extended to edit mode's own saved-connection test result.
+    const user = userEvent.setup();
+    mockGet.mockResolvedValue(existing);
+    mockTest.mockResolvedValue({ ok: true });
+    renderPage();
+
+    await waitFor(() => expect(screen.getByLabelText('Account')).toHaveValue('acc1'));
+    await user.click(screen.getByRole('button', { name: 'Test saved connection' }));
+    expect(await screen.findByText('Connected')).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText('Account'), '-edited');
+
+    expect(screen.queryByText('Connected')).not.toBeInTheDocument();
+  });
+
   it('surfaces a failed saved-connection test inline', async () => {
     const user = userEvent.setup();
     mockGet.mockResolvedValue(existing);

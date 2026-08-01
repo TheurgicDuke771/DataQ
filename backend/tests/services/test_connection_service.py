@@ -90,6 +90,21 @@ class _FailAdapter(_PassAdapter):
         raise RuntimeError("warehouse unreachable")
 
 
+class _OptionalSecretAdapter(_PassAdapter):
+    """A `secret_optional=True` stand-in (the Iceberg/dbt shape, #351) — proves
+    `test_connection`/`test_draft_connection` hand a credential-less adapter a
+    real `None`, never a placeholder, and never 502 for the missing secret.
+    """
+
+    secret_optional = True
+
+    def __init__(self) -> None:
+        self.received_secret: str | None | object = "UNSET"
+
+    def test(self, raw: dict[str, Any], secret: str | None) -> None:
+        self.received_secret = secret
+
+
 def _user(db_session: Any) -> User:
     user = User(aad_object_id=uuid.uuid4().hex, email="dev@example.com")
     db_session.add(user)
@@ -427,6 +442,34 @@ def test_test_connection_missing_secret_in_store_raises(
         svc.test_connection(db_session, conn.id, secret_store=FakeStore())
 
 
+# ──────── secret_optional — Iceberg/dbt credential-less configs (#351) ─────
+
+
+def test_test_connection_secret_optional_no_secret_ref_succeeds(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Saved-path parity: a connection saved with NO credential (a legitimate
+    credential-less catalog/artifacts path) must still test green when its
+    adapter is `secret_optional`, not 502 'no stored credential to test with'.
+    """
+    store = FakeStore()
+    conn = _create(db_session, store, secret=None)
+    assert conn.secret_ref is None
+    adapter = _OptionalSecretAdapter()
+    monkeypatch.setattr(svc, "get_connection_adapter", lambda t: adapter)
+    svc.test_connection(db_session, conn.id, secret_store=store)  # no raise
+    assert adapter.received_secret is None  # a real None, not "" or a placeholder
+
+
+def test_test_connection_secret_required_adapter_unaffected(db_session: Any) -> None:
+    """A `secret_optional`-unaware adapter (the default) keeps the old
+    behavior — this is `test_test_connection_without_secret_raises` above,
+    reasserted here as the explicit negative half of the #351 parity pair."""
+    conn = _create(db_session, FakeStore(), secret=None)
+    with pytest.raises(ConnectionTestFailedError, match="no stored credential"):
+        svc.test_connection(db_session, conn.id, secret_store=FakeStore())
+
+
 # ───────────────── draft connection test — unsaved probe (#351) ────────────
 
 
@@ -463,6 +506,33 @@ def test_draft_test_without_secret_raises(db_session: Any) -> None:
         svc.test_draft_connection(
             "snowflake", env="dev", config=dict(_SF_CONFIG), secret=None, secret_store=FakeStore()
         )
+
+
+def test_draft_test_secret_optional_adapter_allows_missing_secret(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Iceberg/dbt (#351 `secret_optional`) — a legitimate credential-less
+    draft must not 502 just because `secret` is absent, and the adapter must
+    receive a real `None`, never a placeholder."""
+    adapter = _OptionalSecretAdapter()
+    monkeypatch.setattr(svc, "get_connection_adapter", lambda t: adapter)
+    svc.test_draft_connection(
+        "iceberg", env="dev", config={"catalog_type": "glue"}, secret=None, secret_store=FakeStore()
+    )  # no raise
+    assert adapter.received_secret is None
+
+
+def test_draft_test_secret_optional_adapter_normalizes_blank_string_to_none(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A wire payload can hand in `secret=""` where the internal contract only
+    ever sees `str | None` — both must mean "no credential" to the adapter."""
+    adapter = _OptionalSecretAdapter()
+    monkeypatch.setattr(svc, "get_connection_adapter", lambda t: adapter)
+    svc.test_draft_connection(
+        "dbt", env="dev", config={}, secret="", secret_store=FakeStore()
+    )  # no raise
+    assert adapter.received_secret is None
 
 
 def test_draft_test_unknown_type_raises_config_invalid(db_session: Any) -> None:

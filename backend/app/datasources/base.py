@@ -157,11 +157,32 @@ class ConnectionAdapter(Protocol):
     secret named in config and passes them as keyword arguments. Adapters that need
     none simply ignore them (`**_`), so the seam's "caller resolves secrets"
     invariant holds for one credential or five.
+
+    `test`'s ``secret`` is ``str | None`` because a handful of types have NO
+    credential at all in some configurations (Iceberg: a credential-less
+    catalog; dbt: a local ``file://`` artifacts path) — `create_connection`
+    already accepts ``secret=None`` for them (`optionalSecret` in the frontend's
+    `connectionFormSpec.ts`). An adapter for which a secret is genuinely
+    mandatory (Snowflake, ADLS, S3, Unity Catalog, ADF, Airflow) still declares
+    the wider parameter type (a Protocol's implementations can't narrow it,
+    mypy's contravariance check enforces that structurally — #351 review), but
+    guards with an explicit ``if secret is None: raise`` at the top of its own
+    `test`, narrowing for the rest of the method; it is never actually called
+    with ``None`` because `connection_service.test_connection` /
+    `test_draft_connection` gate on the ``secret_optional`` class attribute
+    below before it can happen.
+
+    ``secret_optional: bool`` (declared on the concrete adapter class, default
+    ``False`` via ``getattr(adapter, "secret_optional", False)`` at the two
+    call sites — deliberately NOT part of this Protocol's required surface, so
+    the five mandatory-secret adapters don't have to restate the default) marks
+    a type whose `test` tolerates ``secret=None``. Only `IcebergConnectionAdapter`
+    and `DbtConnectionAdapter` set it ``True``.
     """
 
     def validate_config(self, raw: dict[str, Any]) -> BaseModel: ...
 
-    def test(self, raw: dict[str, Any], secret: str, **extra_secrets: Any) -> None: ...
+    def test(self, raw: dict[str, Any], secret: str | None, **extra_secrets: Any) -> None: ...
 
 
 @runtime_checkable
