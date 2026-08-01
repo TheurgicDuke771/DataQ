@@ -68,7 +68,7 @@ def client(db_session: Any) -> Iterator[tuple[TestClient, FakeStore]]:
 
 
 def _seed_adf_connection(db_session: Any) -> Connection:
-    user = User(aad_object_id=uuid.uuid4().hex, email="dev@example.com")
+    user = User(aad_object_id=uuid.uuid4().hex, email=f"dev-{uuid.uuid4().hex[:8]}@example.com")
     db_session.add(user)
     db_session.flush()
     conn = Connection(

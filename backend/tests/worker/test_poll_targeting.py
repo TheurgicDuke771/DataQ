@@ -26,7 +26,7 @@ class _Store:
 
 
 def _seed(db_session: Any) -> None:
-    user = User(aad_object_id=uuid.uuid4().hex, email="poll@example.com")
+    user = User(aad_object_id=uuid.uuid4().hex, email=f"poll-{uuid.uuid4().hex[:8]}@example.com")
     db_session.add(user)
     db_session.flush()
     # One orchestrator connection per (type, env) — spread across envs.

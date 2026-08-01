@@ -81,8 +81,8 @@ The flow reads left → right: **inputs** (Clients, Orchestration) drive the **D
 erDiagram
     users {
         uuid id PK
-        string aad_object_id UK
-        string email
+        string aad_object_id UK "nullable — NULL for non-AAD (email-OTP) identities"
+        string email UK "unique on lower(email) — the cross-authenticator identity key"
         string display_name
         timestamptz last_seen_at
     }

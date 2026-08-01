@@ -51,7 +51,7 @@ def _suite_id(
     datasource gating); defaults to Snowflake. `target` sets the suite's run
     target (needed by dry-run, which resolves the target server-side).
     """
-    owner = User(aad_object_id=uuid.uuid4().hex, email="owner@example.com")
+    owner = User(aad_object_id=uuid.uuid4().hex, email=f"owner-{uuid.uuid4().hex[:8]}@example.com")
     db_session.add(owner)
     db_session.flush()
     config = {"account": "ab12345.eu-west-1"} if conn_type == "snowflake" else {}

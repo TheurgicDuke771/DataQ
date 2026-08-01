@@ -76,7 +76,7 @@ def _post(api: TestClient, body: bytes, signature: str | None) -> Any:
 
 
 def _seed_airflow_connection(db_session: Any, *, base_url: str = _BASE_URL) -> Connection:
-    user = User(aad_object_id=uuid.uuid4().hex, email="dev@example.com")
+    user = User(aad_object_id=uuid.uuid4().hex, email=f"dev-{uuid.uuid4().hex[:8]}@example.com")
     db_session.add(user)
     db_session.flush()
     conn = Connection(

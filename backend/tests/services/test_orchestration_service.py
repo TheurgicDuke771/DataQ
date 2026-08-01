@@ -32,7 +32,7 @@ _ADF_CONFIG = {
 
 
 def _user(db_session: Any) -> User:
-    user = User(aad_object_id=uuid.uuid4().hex, email="dev@example.com")
+    user = User(aad_object_id=uuid.uuid4().hex, email=f"dev-{uuid.uuid4().hex[:8]}@example.com")
     db_session.add(user)
     db_session.flush()
     return user

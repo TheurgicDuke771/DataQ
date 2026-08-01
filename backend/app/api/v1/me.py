@@ -16,7 +16,11 @@ class MeResponse(ApiModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    aad_object_id: str
+    # NULL for an identity with no Azure AD object id — e.g. an email-OTP user
+    # (ADR 0032 decision 6, #735). `response_model` validation is strict, so a
+    # non-optional annotation here would turn every /me call by such a user into a
+    # 500 the moment #734 starts provisioning them.
+    aad_object_id: str | None
     email: str
     display_name: str | None
     last_seen_at: datetime | None
