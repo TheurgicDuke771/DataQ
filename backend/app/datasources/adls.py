@@ -78,12 +78,18 @@ class AdlsConnectionAdapter:
         """
         return azure_sas_expiry(secret)
 
-    def test(self, raw: dict[str, Any], secret: str, **_: Any) -> None:
+    def test(self, raw: dict[str, Any], secret: str | None, **_: Any) -> None:
         """Read the container's properties via SAS; raise on any failure.
 
         ``secret`` is the SAS token. Retries are disabled so an auth/endpoint
         failure surfaces immediately rather than after the SDK's retry budget.
+        Typed ``str | None`` only because the shared `ConnectionAdapter`
+        Protocol also serves credential-less types (#351) — an ADLS SAS is
+        always mandatory, so the guard below turns a missing one into a clear
+        error rather than a confusing SDK failure.
         """
+        if secret is None:
+            raise ValueError("a credential is required to test an ADLS Gen2 connection")
         from azure.storage.blob import BlobServiceClient
 
         config = self.validate_config(raw)

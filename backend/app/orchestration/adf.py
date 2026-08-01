@@ -90,12 +90,18 @@ class ADFConnectionAdapter:
     def validate_config(self, raw: dict[str, Any]) -> ADFConfig:
         return ADFConfig.model_validate(raw)
 
-    def test(self, raw: dict[str, Any], secret: str, **_: Any) -> None:
+    def test(self, raw: dict[str, Any], secret: str | None, **_: Any) -> None:
         """Acquire an SP token and GET the factory; raise on any failure.
 
         ``secret`` is the service-principal client secret. A successful return
-        means the SP authenticated AND the named factory is reachable.
+        means the SP authenticated AND the named factory is reachable. Typed
+        ``str | None`` only because the shared `ConnectionAdapter` Protocol
+        also serves credential-less types (#351) — an ADF client secret is
+        always mandatory, so the guard below turns a missing one into a clear
+        error rather than a confusing token-acquisition failure.
         """
+        if secret is None:
+            raise ValueError("a credential is required to test an ADF connection")
         config = self.validate_config(raw)
         token = _acquire_token(config, secret)
         response = httpx.get(

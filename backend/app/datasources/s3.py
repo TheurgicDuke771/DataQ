@@ -91,12 +91,18 @@ class S3ConnectionAdapter:
     def validate_config(self, raw: dict[str, Any]) -> S3Config:
         return S3Config.model_validate(raw)
 
-    def test(self, raw: dict[str, Any], secret: str, **_: Any) -> None:
+    def test(self, raw: dict[str, Any], secret: str | None, **_: Any) -> None:
         """Issue ``head_bucket`` with the static credential; raise on any failure.
 
         ``secret`` is the secret access key. Retries are disabled so an
-        auth/permission/endpoint failure surfaces immediately.
+        auth/permission/endpoint failure surfaces immediately. Typed
+        ``str | None`` only because the shared `ConnectionAdapter` Protocol
+        also serves credential-less types (#351) — an S3 secret key is always
+        mandatory, so the guard below turns a missing one into a clear error
+        rather than a confusing SDK failure.
         """
+        if secret is None:
+            raise ValueError("a credential is required to test an S3 connection")
         import boto3
         from botocore.config import Config
 

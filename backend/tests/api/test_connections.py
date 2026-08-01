@@ -93,6 +93,20 @@ class _FailAdapter(_PassAdapter):
         raise RuntimeError("warehouse unreachable")
 
 
+class _OptionalSecretAdapter(_PassAdapter):
+    """A `secret_optional=True` stand-in (the Iceberg/dbt shape, #351) — proves
+    the route hands a credential-less adapter a real `None`, never "" or a
+    placeholder, and never 502s for the missing secret."""
+
+    secret_optional = True
+
+    def __init__(self) -> None:
+        self.received_secret: str | None | object = "UNSET"
+
+    def test(self, raw: dict[str, Any], secret: str | None) -> None:
+        self.received_secret = secret
+
+
 @pytest.fixture
 def client(db_session: Any) -> Iterator[tuple[TestClient, FakeStore]]:
     store = FakeStore()
@@ -397,6 +411,259 @@ def test_reauth_requires_a_secret(client: tuple[TestClient, FakeStore]) -> None:
     assert resp.status_code == 422
     resp = api.post(f"/api/v1/connections/{cid}/reauth", json={"secret": ""})
     assert resp.status_code == 422
+
+
+# ───────────────────────── draft connection test (#351) ────────────
+
+
+def _draft_payload(**overrides: Any) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "type": "snowflake",
+        "env": "dev",
+        "config": dict(_SF_CONFIG),
+        "secret": "p@ss",
+    }
+    payload.update(overrides)
+    return payload
+
+
+def test_draft_test_ok(
+    client: tuple[TestClient, FakeStore], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    api, _ = client
+    monkeypatch.setattr(svc, "get_connection_adapter", lambda t: _PassAdapter())
+    resp = api.post("/api/v1/connections/test", json=_draft_payload())
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True}
+
+
+def test_draft_test_failure_returns_502(
+    client: tuple[TestClient, FakeStore], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    api, _ = client
+    monkeypatch.setattr(svc, "get_connection_adapter", lambda t: _FailAdapter())
+    resp = api.post("/api/v1/connections/test", json=_draft_payload())
+    assert resp.status_code == 502
+    assert resp.json()["error"]["code"] == "connection_test_failed"
+
+
+def test_draft_test_missing_secret_returns_502(
+    client: tuple[TestClient, FakeStore], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # An adapter that would happily pass never even runs — no credential means
+    # nothing to probe with, same as the saved-connection contract.
+    api, _ = client
+    monkeypatch.setattr(svc, "get_connection_adapter", lambda t: _PassAdapter())
+    resp = api.post("/api/v1/connections/test", json=_draft_payload(secret=None))
+    assert resp.status_code == 502
+    assert resp.json()["error"]["code"] == "connection_test_failed"
+
+
+def test_draft_test_snowflake_without_secret_still_502s_with_clear_message(
+    client: tuple[TestClient, FakeStore],
+) -> None:
+    """Snowflake's credential is NOT optional (#351 review) — must still 502
+    with the clear "a credential is required" message rather than silently
+    letting a `None` through to the adapter. No adapter monkeypatch: the
+    REAL `SnowflakeConnectionAdapter` is used, and the 502 fires before the
+    adapter is ever invoked (so no network call happens either way)."""
+    api, _ = client
+    resp = api.post("/api/v1/connections/test", json=_draft_payload(secret=None))
+    assert resp.status_code == 502
+    assert resp.json()["error"]["message"] == "a credential is required to test this connection"
+
+
+# ──────── secret_optional — Iceberg/dbt credential-less configs (#351) ─────
+
+
+def test_draft_test_secret_optional_adapter_allows_missing_secret(
+    client: tuple[TestClient, FakeStore], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Iceberg/dbt (`secret_optional`) — a legitimate credential-less draft
+    must not 502 just because `secret` is absent, and the adapter must
+    receive a real `None`, never "" or a placeholder."""
+    api, _ = client
+    adapter = _OptionalSecretAdapter()
+    monkeypatch.setattr(svc, "get_connection_adapter", lambda t: adapter)
+    resp = api.post(
+        "/api/v1/connections/test",
+        json=_draft_payload(type="iceberg", config={"catalog_type": "glue"}, secret=None),
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True}
+    assert adapter.received_secret is None
+
+
+def test_draft_test_iceberg_glue_catalog_with_no_secret_succeeds(
+    client: tuple[TestClient, FakeStore], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """End-to-end against the REAL `IcebergConnectionAdapter` (only the
+    network-touching `pyiceberg.catalog.load_catalog` call mocked out, the
+    same pattern `test_iceberg.py` uses) — a Glue catalog needs no
+    credential, so a draft test with `secret=None` must pass."""
+    api, _ = client
+
+    class _FakeCatalog:
+        def list_namespaces(self) -> list[str]:
+            return []
+
+    def fake_load_catalog(name: str, **props: Any) -> _FakeCatalog:
+        # No credential was configured, so nothing should have been injected.
+        assert "token" not in props
+        return _FakeCatalog()
+
+    monkeypatch.setattr("pyiceberg.catalog.load_catalog", fake_load_catalog)
+    resp = api.post(
+        "/api/v1/connections/test",
+        json={"type": "iceberg", "env": "dev", "config": {"catalog_type": "glue"}, "secret": None},
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True}
+
+
+def test_draft_test_dbt_file_scheme_with_no_secret_succeeds(
+    client: tuple[TestClient, FakeStore],
+) -> None:
+    """End-to-end against the REAL `DbtConnectionAdapter` — a local `file://`
+    artifacts path needs no credential (the connection docstring); a
+    not-yet-published job is still a green test, so nothing needs to be
+    mocked or pre-created on disk."""
+    api, _ = client
+    resp = api.post(
+        "/api/v1/connections/test",
+        json={
+            "type": "dbt",
+            "env": "dev",
+            "config": {
+                "project_name": "analytics",
+                "artifacts_uri": "file:///tmp/does-not-exist-351",
+                "jobs": ["nightly"],
+            },
+            "secret": None,
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True}
+
+
+def test_test_endpoint_secret_optional_saved_connection_succeeds(
+    client: tuple[TestClient, FakeStore], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Saved-path parity: a connection saved with NO credential (a legitimate
+    credential-less catalog) must still test green via `/connections/{id}/test`,
+    not 502 "connection has no stored credential to test with"."""
+    api, _ = client
+    created = api.post(
+        "/api/v1/connections",
+        json={
+            "name": "iceberg-glue",
+            "type": "iceberg",
+            "env": "dev",
+            "config": {"catalog_type": "glue"},
+        },
+    )
+    assert created.status_code == 201
+    assert created.json()["has_secret"] is False
+    cid = created.json()["id"]
+
+    class _FakeCatalog:
+        def list_namespaces(self) -> list[str]:
+            return []
+
+    monkeypatch.setattr("pyiceberg.catalog.load_catalog", lambda name, **props: _FakeCatalog())
+    resp = api.post(f"/api/v1/connections/{cid}/test")
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True}
+
+
+def test_draft_test_unknown_type_returns_422(client: tuple[TestClient, FakeStore]) -> None:
+    api, _ = client
+    resp = api.post("/api/v1/connections/test", json=_draft_payload(type="mssql"))
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "connection_config_invalid"
+
+
+def test_draft_test_invalid_config_returns_422(client: tuple[TestClient, FakeStore]) -> None:
+    api, _ = client
+    bad = {k: v for k, v in _SF_CONFIG.items() if k != "account"}
+    resp = api.post("/api/v1/connections/test", json=_draft_payload(config=bad))
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "connection_config_invalid"
+
+
+def test_draft_test_env_is_optional(
+    client: tuple[TestClient, FakeStore], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # env plays no role in the probe itself — a caller that hasn't picked one
+    # yet still gets a full connectivity check, not a 422.
+    api, _ = client
+    monkeypatch.setattr(svc, "get_connection_adapter", lambda t: _PassAdapter())
+    payload = _draft_payload()
+    del payload["env"]
+    resp = api.post("/api/v1/connections/test", json=payload)
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True}
+
+
+def test_draft_test_invalid_env_returns_422(client: tuple[TestClient, FakeStore]) -> None:
+    api, _ = client
+    resp = api.post("/api/v1/connections/test", json=_draft_payload(env="staging"))
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "connection_config_invalid"
+
+
+def test_draft_test_persists_nothing(
+    client: tuple[TestClient, FakeStore], db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The whole point of the endpoint: no `connections` row, no SecretStore
+    write — a failed OR a successful probe must leave both untouched."""
+    api, store = client
+    monkeypatch.setattr(svc, "get_connection_adapter", lambda t: _PassAdapter())
+    ok = api.post("/api/v1/connections/test", json=_draft_payload())
+    assert ok.status_code == 200
+
+    monkeypatch.setattr(svc, "get_connection_adapter", lambda t: _FailAdapter())
+    failed = api.post("/api/v1/connections/test", json=_draft_payload())
+    assert failed.status_code == 502
+
+    assert db_session.scalars(select(Connection)).all() == []
+    assert store.data == {}
+
+
+def test_draft_test_requires_auth(db_session: Any) -> None:
+    store = FakeStore()
+    app.dependency_overrides[get_db] = lambda: db_session
+    app.dependency_overrides[get_secret_store] = lambda: store
+
+    def _reject() -> None:
+        raise HTTPException(status_code=401, detail="unauthorized")
+
+    app.dependency_overrides[get_current_user] = _reject
+    try:
+        resp = TestClient(app).post("/api/v1/connections/test", json=_draft_payload())
+        assert resp.status_code == 401
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_both_test_routes_resolve(
+    client: tuple[TestClient, FakeStore], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The static `/connections/test` and the parameterized
+    `/connections/{connection_id}/test` are different path shapes (two segments
+    vs three) — this pins down that both resolve to their own handler rather
+    than one shadowing the other."""
+    api, _ = client
+    monkeypatch.setattr(svc, "get_connection_adapter", lambda t: _PassAdapter())
+    cid = api.post("/api/v1/connections", json=_create_payload()).json()["id"]
+
+    saved = api.post(f"/api/v1/connections/{cid}/test")
+    assert saved.status_code == 200
+    assert saved.json() == {"ok": True}
+
+    draft = api.post("/api/v1/connections/test", json=_draft_payload())
+    assert draft.status_code == 200
+    assert draft.json() == {"ok": True}
 
 
 # ───────────────────────── auth gating ─────────────────────────────

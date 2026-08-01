@@ -251,6 +251,16 @@ def list_iceberg_columns(
 class IcebergConnectionAdapter:
     """`ConnectionAdapter` for Iceberg — config validation + a metadata probe."""
 
+    # A credential-less catalog (local warehouse, vended-credentials REST) is a
+    # legitimate config (ADR 0030 §3, the class docstring above) — mirrored by
+    # the frontend's `optionalSecret: true` for `iceberg` in
+    # `connectionFormSpec.ts`. `test_connection`/`test_draft_connection` (#351)
+    # read this to decide whether a missing secret is an error or just "this
+    # catalog has none"; `secret=None` then flows straight to
+    # `catalog_properties`, which already omits `secret_property` when there's
+    # nothing to inject.
+    secret_optional = True
+
     def validate_config(self, raw: dict[str, Any]) -> IcebergConfig:
         return IcebergConfig.model_validate(raw)
 
@@ -270,13 +280,22 @@ class IcebergConnectionAdapter:
         return azure_sas_expiry(secret)
 
     def test(
-        self, raw: dict[str, Any], secret: str, *, catalog_secret: str | None = None, **_: Any
+        self,
+        raw: dict[str, Any],
+        secret: str | None,
+        *,
+        catalog_secret: str | None = None,
+        **_: Any,
     ) -> None:
         """Load the catalog and list namespaces; raise on failure.
 
         A lightweight metadata round-trip — a green test means the catalog is
         reachable and the credential authenticates. Deliberately reads no table
         data (no scan), so it stays cheap.
+
+        ``secret`` may genuinely be ``None`` (`secret_optional`, #351) — a
+        credential-less catalog. `catalog_properties` already treats that as
+        "nothing to inject" rather than a missing-value bug.
 
         ``catalog_secret`` is the SQL-catalog DB password, already resolved by the
         caller (adapters never touch the SecretStore — `base.ConnectionAdapter`).

@@ -851,23 +851,30 @@ def test_connection(
 ) -> None:
     """Resolve the connection's secret and probe live connectivity.
 
-    Raises `ConnectionTestFailedError` (502) on missing credentials or any
+    Raises `ConnectionTestFailedError` (502) on a missing credential — UNLESS
+    the adapter's `secret_optional` (#351: Iceberg's credential-less catalog,
+    dbt's local `file://` artifacts path) says a stored connection with no
+    `secret_ref` is legitimate, in which case `None` is handed to the adapter
+    exactly like a genuinely credential-less config always has been — or any
     adapter-reported connectivity failure.
     """
     conn = get_connection(session, connection_id)
     adapter = get_connection_adapter(conn.type)
+    secret_optional = getattr(adapter, "secret_optional", False)
 
-    if not conn.secret_ref:
+    secret: str | None = None
+    if conn.secret_ref:
+        try:
+            secret = secret_store.get(conn.secret_ref)
+        except SecretNotFoundError as exc:
+            raise ConnectionTestFailedError(
+                "credential could not be resolved", detail={"connection_id": str(connection_id)}
+            ) from exc
+    elif not secret_optional:
         raise ConnectionTestFailedError(
             "connection has no stored credential to test with",
             detail={"connection_id": str(connection_id)},
         )
-    try:
-        secret = secret_store.get(conn.secret_ref)
-    except SecretNotFoundError as exc:
-        raise ConnectionTestFailedError(
-            "credential could not be resolved", detail={"connection_id": str(connection_id)}
-        ) from exc
 
     try:
         adapter.test(dict(conn.config), secret, **_extra_secrets(conn.config, secret_store))
@@ -885,3 +892,72 @@ def test_connection(
         ) from exc
 
     log.info("connection_test_succeeded", connection_id=str(connection_id))
+
+
+def test_draft_connection(
+    conn_type: str,
+    *,
+    env: str | None,
+    config: dict[str, Any],
+    secret: str | None,
+    secret_store: SecretStore,
+) -> None:
+    """Probe connectivity for an UNSAVED draft (#351) — no `connections` row, no
+    `SecretStore` write, ever.
+
+    The "test before you save" counterpart to `create_connection` +
+    `test_connection`: it runs the SAME type/config validation
+    `create_connection` runs (an invalid type or config 422s exactly like a real
+    create would — `_validated_config`) and then the SAME adapter `.test()` call
+    `test_connection` makes, but against the config/secret straight off the
+    request instead of a persisted `Connection` row and a SecretStore read.
+    `env`, when given, is validated the same way `create_connection` validates
+    it, but plays no role in the probe itself (no adapter's `test()` takes it —
+    the (type, env) orchestrator-singleton check it feeds is a CREATE-time
+    constraint, not a connectivity fact), so a caller that hasn't picked one yet
+    still gets a full connectivity check.
+
+    `_extra_secrets` still resolves `config`'s `_secret_name` fields — those
+    name EXISTING secrets already in the store (e.g. an Iceberg catalog
+    password), not something this call writes; `secret_store.set` is never
+    called anywhere on this path.
+
+    Raises `ConnectionConfigInvalidError` (422) for an unknown type or invalid
+    config, and `ConnectionTestFailedError` (502) for a missing credential —
+    UNLESS the adapter's `secret_optional` (#351: Iceberg's credential-less
+    catalog, dbt's local `file://` artifacts path) says a blank secret is a
+    legitimate draft, in which case `None` flows straight to the adapter — or
+    any adapter-reported connectivity failure. Matches `test_connection`'s
+    contract exactly, so the frontend's failure handling doesn't fork per route.
+    """
+    _validated_config(conn_type, config)
+    if env is not None:
+        _validate_env(env)
+    adapter = get_connection_adapter(conn_type)
+    secret_optional = getattr(adapter, "secret_optional", False)
+
+    if not secret and not secret_optional:
+        raise ConnectionTestFailedError(
+            "a credential is required to test this connection", detail={"type": conn_type}
+        )
+    # Normalize a blank string to None — the wire payload can hand in "" where
+    # `create_connection`'s own contract only ever sees `str | None`; both mean
+    # "no credential", and the adapter (Iceberg/dbt) only branches on `is None`.
+    secret = secret or None
+
+    try:
+        adapter.test(dict(config), secret, **_extra_secrets(config, secret_store))
+    except Exception as exc:
+        log.warning(
+            "connection_draft_test_failed",
+            type=conn_type,
+            error_type=type(exc).__name__,
+        )
+        # Same rationale as `test_connection`: never echo the adapter exception
+        # to the client (DSN/credential fragments), original kept as __cause__
+        # for the server-side traceback only.
+        raise ConnectionTestFailedError(
+            "connection test failed", detail={"type": conn_type}
+        ) from exc
+
+    log.info("connection_draft_test_succeeded", type=conn_type)
