@@ -86,6 +86,25 @@ export function Results() {
   const { state: runsState, reload: reloadRuns } = useAsyncData(() =>
     listRuns({ limit: LIST_LIMIT }),
   );
+  // Last-good runs snapshot (#1114 review). PipelineRunsTab's 30s poll (armed
+  // once that tab has been visited — antd keeps panes mounted, #349) refetches
+  // this SAME shared state; before the fetch was lifted, a transient poll
+  // failure only broke the Pipeline tab's own request and was cosmetic. Now it
+  // flips the shared `runsState` to 'error' too, and `useAsyncData`'s error
+  // branch carries no data (only its 'ok' branch does) — so track the last
+  // successful page here, outside the hook, rather than changing the hook's
+  // error contract for every one of its other consumers. RunsTab uses this to
+  // keep showing the table (with an inline warning) instead of blanking to a
+  // full-page error on a background hiccup.
+  const [lastGoodRuns, setLastGoodRuns] = useState<Run[] | null>(null);
+  // Adjust state during render (React's documented pattern for "remember the
+  // latest X"), not in an effect — an effect would commit the stale render
+  // first and only fix it up a tick later; this lint-clean form updates before
+  // the browser paints. `runsState.data` is a fresh array reference only when
+  // a fetch actually resolves, so the comparison can't loop.
+  if (runsState.status === 'ok' && runsState.data !== lastGoodRuns) {
+    setLastGoodRuns(runsState.data);
+  }
   return (
     <Page>
       <Flex justify="space-between" align="center" gap={12} wrap>
@@ -100,7 +119,13 @@ export function Results() {
       <Tabs
         defaultActiveKey="runs"
         items={[
-          { key: 'runs', label: 'Runs', children: <RunsTab runsState={runsState} /> },
+          {
+            key: 'runs',
+            label: 'Runs',
+            children: (
+              <RunsTab runsState={runsState} lastGoodRuns={lastGoodRuns} reloadRuns={reloadRuns} />
+            ),
+          },
           {
             key: 'pipelines',
             label: 'Pipeline runs',
@@ -122,7 +147,18 @@ interface SuiteMeta {
   category: DatasourceCategory | null;
 }
 
-function RunsTab({ runsState: state }: { runsState: AsyncState<Run[]> }) {
+function RunsTab({
+  runsState: state,
+  lastGoodRuns,
+  reloadRuns,
+}: {
+  runsState: AsyncState<Run[]>;
+  /** The last successfully-loaded runs page, tracked by the parent (#1114) —
+   *  non-null once any fetch has ever succeeded, regardless of `state`'s
+   *  current status. */
+  lastGoodRuns: Run[] | null;
+  reloadRuns: () => void;
+}) {
   // Runs come from the parent (shared with PipelineRunsTab, #349); fetch the
   // accessible suites + connections locally (for id→name and the env /
   // datasource of each suite), then filter everything client-side — cheap at
@@ -165,20 +201,29 @@ function RunsTab({ runsState: state }: { runsState: AsyncState<Run[]> }) {
     [suiteMeta],
   );
 
+  // The data to render: the live 'ok' page, or — on 'error' — the last page
+  // that DID load, if any (#1114). Only a NEVER-successful load (no snapshot
+  // yet) is a full-page failure; a background poll failure after a prior
+  // success degrades to an inline warning instead, mirroring `metaFailed`
+  // above and `runsJoinFailed` on the Pipeline tab.
+  const runsData = state.status === 'ok' ? state.data : lastGoodRuns;
+  const backgroundRunsFailed = state.status === 'error' && runsData !== null;
+
   if (state.status === 'loading') return <Spin description="Loading runs…" size="large" />;
-  if (state.status === 'error') {
+  if (state.status === 'error' && runsData === null) {
     return (
       <PageError
         error={state.error}
         kind={state.kind}
         httpStatus={state.httpStatus}
         requestId={state.requestId}
+        onRetry={reloadRuns}
       />
     );
   }
 
   const windowDays = dateWindow === 'all' ? null : Number(dateWindow);
-  const runs = state.data.filter((r) => {
+  const runs = (runsData ?? []).filter((r) => {
     if (status !== 'all' && r.status !== status) return false;
     if (suiteId !== 'all' && r.suite_id !== suiteId) return false;
     // Keep runs with unknown env/datasource visible under any filter — a
@@ -244,6 +289,14 @@ function RunsTab({ runsState: state }: { runsState: AsyncState<Run[]> }) {
 
   return (
     <Flex vertical gap={16}>
+      {backgroundRunsFailed && (
+        <Alert
+          type="warning"
+          showIcon
+          title="Showing the last loaded runs"
+          description="A background refresh of the runs list failed, so this table may be slightly out of date. Retrying automatically."
+        />
+      )}
       {metaFailed && (
         <Alert
           type="warning"
@@ -384,6 +437,7 @@ function PipelineRunsTab({
         kind={state.kind}
         httpStatus={state.httpStatus}
         requestId={state.requestId}
+        onRetry={reload}
       />
     );
   }

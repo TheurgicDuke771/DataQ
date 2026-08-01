@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useParams } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -149,6 +149,9 @@ const tableRowCount = () => document.querySelectorAll('tr.ant-table-row').length
 
 afterEach(() => {
   vi.clearAllMocks();
+  // Belt-and-braces for the fake-timer poll test below — a failed assertion
+  // mid-test must not leave fake timers active for every test after it.
+  vi.useRealTimers();
 });
 
 describe('Results page', () => {
@@ -416,5 +419,73 @@ describe('Results page', () => {
         await screen.findByText(preset.label, { selector: optionSelector }),
       ).toBeInTheDocument();
     }
+  });
+
+  it('shows PageError with a working retry when the initial runs load fails (#1114)', async () => {
+    // No prior successful load exists yet, so there is no last-good snapshot
+    // to fall back to — this must stay a full-page failure, not a blank/empty
+    // table pretending everything's fine.
+    mockListRuns.mockRejectedValueOnce(new Error('boom'));
+    mockListSuites.mockResolvedValue([ordersSuite]);
+    mockListConnections.mockResolvedValue([snowflakeConn]);
+    mockListPipelineRuns.mockResolvedValue([]);
+
+    renderResults();
+    const user = userEvent.setup();
+
+    const retry = await screen.findByRole('button', { name: 'Try again' });
+    // No filter bar / table rendered behind the error page.
+    expect(screen.queryAllByRole('combobox')).toHaveLength(0);
+
+    // The retry action isn't a dead end — it re-runs the shared fetch.
+    expect(mockListRuns).toHaveBeenCalledTimes(1);
+    mockListRuns.mockResolvedValueOnce([succeededRun]);
+    await user.click(retry);
+    await waitFor(() => expect(mockListRuns).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText('Orders quality')).toBeInTheDocument();
+  });
+
+  it('keeps the last-good runs table + shows an inline warning when a background poll fails (#1114)', async () => {
+    // Regression coverage for the #1114 review finding: lifting the runs fetch
+    // to the parent (#349) means PipelineRunsTab's 30s poll — armed once that
+    // tab has been visited, since antd keeps panes mounted — also reloads the
+    // SAME shared runs data RunsTab reads. Before this fix, a poll failure
+    // flipped the shared state to 'error' and RunsTab's unconditional
+    // `if (status === 'error') return <PageError/>` blanked the whole Runs
+    // table+filters on a transient background hiccup that used to be cosmetic.
+    vi.useFakeTimers();
+
+    mockListRuns.mockResolvedValueOnce([succeededRun]);
+    mockListSuites.mockResolvedValue([ordersSuite]);
+    mockListConnections.mockResolvedValue([snowflakeConn]);
+    mockListPipelineRuns.mockResolvedValue([pipelineRun]);
+
+    renderResults();
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.waitFor(() => expect(screen.getByText('Orders quality')).toBeInTheDocument());
+
+    // Visit the Pipeline tab (arms its poll, which also reloads the shared
+    // runs data — see the effect in PipelineRunsTab), then return to Runs.
+    // fireEvent, not userEvent: userEvent's async helpers use real
+    // setTimeout-based delays internally, which hang forever under fake
+    // timers; fireEvent dispatches synchronously (same pattern as
+    // Settings.test.tsx's antd-tab clicks).
+    fireEvent.click(screen.getByRole('tab', { name: 'Pipeline runs' }));
+    await vi.advanceTimersByTimeAsync(0);
+    fireEvent.click(screen.getByRole('tab', { name: 'Runs' }));
+    await vi.advanceTimersByTimeAsync(0);
+
+    // The next poll tick's shared-runs fetch fails.
+    mockListRuns.mockRejectedValueOnce(new Error('background boom'));
+    await vi.advanceTimersByTimeAsync(30_000);
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Runs table still shows the last-good row plus an inline warning — NOT
+    // the full-page PageError (that's exactly the regression this guards).
+    await vi.waitFor(() =>
+      expect(screen.getByText('Showing the last loaded runs')).toBeInTheDocument(),
+    );
+    expect(screen.getByText('Orders quality')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
   });
 });
