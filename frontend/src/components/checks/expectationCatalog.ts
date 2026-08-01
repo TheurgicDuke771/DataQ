@@ -66,8 +66,11 @@ export const EXPECTATION_CATEGORIES: ExpectationCategory[] = [
 export const COMPARISON_EXPECTATION_TYPE = 'comparison:records';
 export const COMPARISON_COLUMNS_EXPECTATION_TYPE = 'comparison:columns';
 
-/** Monitor categories (ADR 0012) — like Custom SQL, they run a scalar SQL
- *  aggregate, so they're offered only on SQL-queryable datasources. */
+/** Monitor categories (ADR 0012) — gated by `supportsMonitors` (below), which is
+ *  BROADER than SQL-queryable: Iceberg and flat files (adls_gen2/s3) also offer
+ *  them, since the scalar aggregate can be computed natively inside their own
+ *  runners without a live SQL connection. `Anomaly` (#593) is the one monitor
+ *  kind that IS SQL-only — see its own gating note near `ANOMALY_CATEGORY`. */
 export const MONITOR_CATEGORIES: ExpectationCategory[] = ['Freshness', 'Volume'];
 
 /**
@@ -110,16 +113,45 @@ export interface ConfigField {
   type: ConfigFieldType;
   optional?: boolean;
   help?: string;
-  /** Inline bounds for a `number` field (the backend is authoritative — e.g.
-   *  anomaly's `window` is 3-90; #593). Wired straight into the `InputNumber`. */
+  /** Inline STATIC bounds for a `number` field (the backend is authoritative —
+   *  e.g. anomaly's `window` is 3-90; #593). Wired straight into the
+   *  `InputNumber`. See `maxFrom` for a ceiling that depends on another field. */
   min?: number;
   max?: number;
   /** Value/label options for a `select` field. */
   options?: { value: string; label: string }[];
-  /** CREATE-mode pre-filled value, mirroring the backend's own default (e.g.
-   *  anomaly's `window` defaults to 14 server-side) so an untouched field
-   *  submits the same value the backend would otherwise assume. Edit mode
-   *  ignores this — the stored value drives via `configToForm`. */
+  /**
+   * For a `number` field: an ADDITIONAL dynamic ceiling — this field's max is
+   * also capped by a SIBLING config field's live value (read off the same
+   * `configValues` `showWhen` reads). First used by anomaly's `min_points`,
+   * which the backend bounds at `<= window` (review finding on #593's
+   * original PR): a static `max` can't express a ceiling that depends on
+   * another field, and the `InputNumber` `max` prop only bounds FUTURE
+   * edits — it does not retroactively invalidate an already-committed value
+   * when the ceiling later shrinks (`window` 14→5 leaves an untouched
+   * `min_points=7` sitting in the form, invalid at submit). So this is
+   * enforced twice: as the live `max` (bounds typing/stepping going forward)
+   * AND as a submit-time validation rule in `ConfigFieldItem` (catches a
+   * value the user never touched after a sibling shrank past it). Deliberately
+   * an inline error on submit, not a silent auto-clamp — the value the author
+   * sees is the value that gets saved; a background rewrite of a field they
+   * never touched would be a second, quieter version of the same footgun.
+   */
+  maxFrom?: string;
+  /** Friendly name of the `maxFrom` field, for the validation message. */
+  maxFromLabel?: string;
+  /**
+   * CREATE-mode pre-filled value, mirroring the backend's own default (e.g.
+   * anomaly's `window` defaults to 14 server-side) so an untouched field
+   * submits the same value the backend would otherwise assume. Edit mode
+   * ignores this — the stored value drives via `configToForm`.
+   *
+   * Static, and deliberately does not re-derive: `min_points`'s default (7)
+   * is only valid while `window` (default 14) stays >= it. If the author
+   * lowers `window` below the untouched default, `maxFrom` is what catches
+   * the now-invalid value at submit time — this field does not chase a
+   * moving target on its own.
+   */
   defaultValue?: unknown;
   /**
    * Show (and submit) this field only when a SIBLING config field equals a
@@ -444,6 +476,10 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
         type: 'number',
         optional: true,
         min: 3,
+        // No static `max` — the ceiling is `window`'s live value (backend:
+        // `3 <= min_points <= window`). See `ConfigField.maxFrom`.
+        maxFrom: 'window',
+        maxFromLabel: 'window',
         defaultValue: 7,
         help: 'Below this many observations the check reports skip, never a verdict. Must be ≤ window. Default 7.',
       },

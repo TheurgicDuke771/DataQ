@@ -166,6 +166,13 @@ describe('expectationsByCategoryFor (anomaly monitor gating, #593 — SQL-only, 
       'freshness_age_hours',
     ]);
   });
+
+  it("bounds min_points by window's live value, not a static max (backend: 3 <= min_points <= window)", () => {
+    const minPoints = requiredField('monitor:anomaly', 'min_points');
+    expect(minPoints.min).toBe(3);
+    expect(minPoints.max).toBeUndefined();
+    expect(minPoints.maxFrom).toBe('window');
+  });
 });
 
 describe('fieldVisible / anomaly conditional column field (#593)', () => {

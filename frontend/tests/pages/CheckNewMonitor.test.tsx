@@ -212,6 +212,78 @@ describe('CheckNew — anomaly authoring (#593, stricter SQL-only gating than fr
     );
   });
 
+  it('inline-errors when window shrinks below an untouched min_points default (review finding: 3 <= min_points <= window)', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByText('Anomaly'));
+    await user.click(await screen.findByText('Learns a rolling baseline', { exact: false }));
+    await user.type(await screen.findByLabelText('Name'), 'orders row anomaly');
+    await user.click(screen.getByLabelText('Target metric'));
+    await user.click(await screen.findByTitle('Row count'));
+
+    // Shrink window to 5 without ever touching min_points (still its untouched
+    // default of 7) — 7 > 5 violates the backend's min_points <= window bound.
+    const windowField = screen.getByLabelText('Window (observations)', { exact: false });
+    await user.clear(windowField);
+    await user.type(windowField, '5');
+    await user.type(screen.getByLabelText('Fail ≥'), '3');
+    await user.click(screen.getByRole('button', { name: 'Create check' }));
+
+    expect(
+      await screen.findByText('Minimum points before scoring must be ≤ window'),
+    ).toBeInTheDocument();
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it('accepts a shrunk window once min_points is brought back into range', async () => {
+    const user = userEvent.setup();
+    mockCreate.mockResolvedValue({} as Check);
+    renderPage();
+
+    await user.click(await screen.findByText('Anomaly'));
+    await user.click(await screen.findByText('Learns a rolling baseline', { exact: false }));
+    await user.type(await screen.findByLabelText('Name'), 'orders row anomaly');
+    await user.click(screen.getByLabelText('Target metric'));
+    await user.click(await screen.findByTitle('Row count'));
+
+    const windowField = screen.getByLabelText('Window (observations)', { exact: false });
+    await user.clear(windowField);
+    await user.type(windowField, '5');
+    const minPointsField = screen.getByLabelText('Minimum points before scoring', {
+      exact: false,
+    });
+    await user.clear(minPointsField);
+    await user.type(minPointsField, '3');
+    await user.type(screen.getByLabelText('Fail ≥'), '3');
+    await user.click(screen.getByRole('button', { name: 'Create check' }));
+
+    await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1));
+    expect(mockCreate).toHaveBeenCalledWith(
+      's1',
+      expect.objectContaining({
+        config: { target_metric: 'row_count', window: 5, min_points: 3, seasonality: false },
+      }),
+    );
+  });
+
+  it('rejects a zero fail threshold inline (backend requires a POSITIVE fail/critical threshold, not merely a set one)', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByText('Anomaly'));
+    await user.click(await screen.findByText('Learns a rolling baseline', { exact: false }));
+    await user.type(await screen.findByLabelText('Name'), 'zero threshold');
+    await user.click(screen.getByLabelText('Target metric'));
+    await user.click(await screen.findByTitle('Row count'));
+    await user.type(screen.getByLabelText('Fail ≥'), '0');
+
+    await user.click(screen.getByRole('button', { name: 'Create check' }));
+
+    expect(await screen.findByText('Set a fail or critical threshold')).toBeInTheDocument();
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
   it('blocks an anomaly check with no fail/critical threshold (the #426 guard, reused)', async () => {
     const user = userEvent.setup();
     renderPage();

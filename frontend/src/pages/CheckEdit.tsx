@@ -226,7 +226,12 @@ function CheckEditForm({
             {configFieldsFor(spec, connectionType)
               .filter((field) => fieldVisible(field, configValues))
               .map((field) => (
-                <ConfigFieldItem key={field.name} field={field} connectionType={connectionType} />
+                <ConfigFieldItem
+                  key={field.name}
+                  field={field}
+                  connectionType={connectionType}
+                  configValues={configValues}
+                />
               ))}
             <DimensionField spec={spec} />
           </>
