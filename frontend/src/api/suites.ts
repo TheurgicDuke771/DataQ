@@ -281,6 +281,34 @@ export async function listCheckHistory(
   return data;
 }
 
+/**
+ * Mirrors the backend `CheckBaselineRead` — a *stateful* monitor check's
+ * current stored baseline (`schema_drift`'s column snapshot, or `anomaly`'s
+ * rolling observation window — see `backend/app/services/anomaly.py` for the
+ * documented payload shape). `baseline` is intentionally untyped JSONB: this
+ * layer doesn't interpret it, the trend chart's overlay does, keyed on `kind`.
+ */
+export interface CheckBaseline {
+  kind: string;
+  baseline: Record<string, unknown>;
+  captured_at: string;
+}
+
+/**
+ * A check's current baseline, or `null` when none exists yet (fresh check, a
+ * non-stateful kind, or a just-cleared re-baseline — #594). Requires `view` on
+ * the suite; 404 for a missing/cross-suite check.
+ */
+export async function getCheckBaseline(
+  suiteId: string,
+  checkId: string,
+): Promise<CheckBaseline | null> {
+  const { data } = await api.get<CheckBaseline | null>(
+    `/suites/${suiteId}/checks/${checkId}/baseline`,
+  );
+  return data;
+}
+
 // ───────────────────────── export / import (portable documents) ─────
 
 /**

@@ -15,7 +15,16 @@ from fastapi.testclient import TestClient
 
 from backend.app.core.auth import get_current_user
 from backend.app.datasources.base import CheckOutcome, SuiteOutcome
-from backend.app.db.models import Check, CheckVersion, Connection, Result, Run, Suite, User
+from backend.app.db.models import (
+    Check,
+    CheckVersion,
+    Connection,
+    MonitorBaseline,
+    Result,
+    Run,
+    Suite,
+    User,
+)
 from backend.app.db.session import get_db
 from backend.app.main import app
 from backend.app.services import dryrun_service
@@ -1380,6 +1389,74 @@ def test_versions_unknown_check_returns_404(client: TestClient, db_session: Any)
     assert resp.status_code == 404
 
 
+# ───────────────────── baseline read (trend overlay, #594) ──────────
+
+
+def test_baseline_absent_returns_null(client: TestClient, db_session: Any) -> None:
+    # A fresh check (never run, or a non-stateful kind) has no baseline row yet —
+    # that's "nothing to overlay", not a 404.
+    sid = _suite_id(client, db_session)
+    cid = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()["id"]
+    resp = client.get(f"/api/v1/suites/{sid}/checks/{cid}/baseline")
+    assert resp.status_code == 200
+    assert resp.json() is None
+
+
+def test_baseline_returns_stored_payload(client: TestClient, db_session: Any) -> None:
+    sid = _suite_id(client, db_session)
+    cid = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()["id"]
+    payload = {
+        "version": 1,
+        "target_metric": "row_count",
+        "window": 14,
+        "seasonality": False,
+        "observations": [{"ts": "2026-07-30T02:00:00+00:00", "value": 32840.0}],
+    }
+    db_session.add(MonitorBaseline(check_id=uuid.UUID(cid), kind="anomaly", baseline=payload))
+    db_session.commit()
+
+    resp = client.get(f"/api/v1/suites/{sid}/checks/{cid}/baseline")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["kind"] == "anomaly"
+    assert body["baseline"] == payload
+    assert body["captured_at"] is not None
+
+
+def test_baseline_unknown_check_returns_404(client: TestClient, db_session: Any) -> None:
+    sid = _suite_id(client, db_session)
+    resp = client.get(f"/api/v1/suites/{sid}/checks/{uuid.uuid4()}/baseline")
+    assert resp.status_code == 404
+
+
+def test_baseline_outsider_cannot_read(client: TestClient, db_session: Any) -> None:
+    owner, _b, e, sid = _owner_b_e_suite(db_session)
+    _as(owner)
+    cid = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()["id"]
+    _as(e)  # not owner, not shared
+    resp = client.get(f"/api/v1/suites/{sid}/checks/{cid}/baseline")
+    assert resp.status_code == 404
+
+
+def test_viewer_reads_baseline_outsider_cannot(client: TestClient, db_session: Any) -> None:
+    """Mirrors `test_viewer_reads_versions_outsider_cannot`: a suite-scoped
+    `view` share is enough to read the baseline (same `require_permission`
+    dependency as `/history` and `/versions`), while a non-member gets 404 —
+    the suite's existence is hidden from outsiders, not just its baseline."""
+    owner, b, e, sid = _owner_b_e_suite(db_session)
+    _as(owner)
+    cid = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()["id"]
+    _grant(client, owner, sid, b, "view")
+
+    _as(b)  # a viewer can read the baseline (null here — the check never ran)
+    resp = client.get(f"/api/v1/suites/{sid}/checks/{cid}/baseline")
+    assert resp.status_code == 200
+    assert resp.json() is None
+    _as(e)  # an outsider sees the suite as nonexistent (404, not 403)
+    resp = client.get(f"/api/v1/suites/{sid}/checks/{cid}/baseline")
+    assert resp.status_code == 404
+
+
 def test_viewer_reads_versions_outsider_cannot(client: TestClient, db_session: Any) -> None:
     owner, b, e, sid = _owner_b_e_suite(db_session)
     _as(owner)
@@ -1675,7 +1752,6 @@ def test_dryrun_anomaly_previews_the_cold_start_with_the_real_measurement(
 def test_dryrun_anomaly_writes_no_baseline(
     client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from backend.app.db.models import MonitorBaseline
 
     _patch_anomaly_scalar(monkeypatch, 10)
     sid = _suite_id(client, db_session, target=_SF_TARGET)
