@@ -322,6 +322,29 @@ def list_check_versions(
     ]
 
 
+@router.post(
+    "/suites/{suite_id}/checks/{check_id}/versions/{version_no}/restore",
+    response_model=CheckRead,
+    summary="Restore a check to a previous version (#283)",
+)
+def restore_check_version(
+    suite_id: uuid.UUID,
+    check_id: uuid.UUID,
+    version_no: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> CheckRead:
+    """Edit-gated exactly like `update_check`, because that's what this does
+    under the hood — re-applies the chosen version's snapshot through the same
+    validated PATCH path and records the result as a new version. 404 for an
+    unknown check or version_no; 422 (check left untouched) if the snapshot no
+    longer validates under today's rules (see `check_service.restore_check_version`).
+    """
+    require_permission(db, suite_id, current_user.id, minimum="edit")
+    check = svc.restore_check_version(db, suite_id, check_id, version_no, actor_id=current_user.id)
+    return CheckRead.model_validate(check)
+
+
 # ───────────────────────── result history (trend, ADR 0022) ─────────
 
 

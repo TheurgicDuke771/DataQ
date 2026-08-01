@@ -15,17 +15,22 @@ export interface HistoryVersion {
 }
 
 /**
- * Read-only version-history drawer shared by checks (#280) and connections
- * (#654) — "see previous config before overwriting". Each version is an
- * immutable snapshot the backend records on create and on every real edit;
- * newest first. v1 is view-only (no restore). Mounted only while open
- * (`destroyOnHidden`) so it refetches each time.
+ * Version-history drawer shared by checks (#280, #283) and connections (#654)
+ * — "see previous config before overwriting", plus an optional per-row action
+ * slot (`renderActions`) for check restore. Each version is an immutable
+ * snapshot the backend records on create and on every real edit; newest
+ * first. Connections omit `renderActions` and stay view-only, exactly v1's
+ * original behavior. Mounted only while open (`destroyOnHidden`) so it
+ * refetches each time; bump `refreshKey` to force an extra refetch without
+ * closing (e.g. right after a restore mints a new version).
  */
 export function HistoryDrawer<V extends HistoryVersion>({
   open,
   subject,
   fetchVersions,
   renderDetails,
+  renderActions,
+  refreshKey,
   onClose,
 }: {
   open: boolean;
@@ -35,6 +40,14 @@ export function HistoryDrawer<V extends HistoryVersion>({
   fetchVersions: () => Promise<V[]>;
   /** Entity-specific detail block (a `<Descriptions>`) under the shared header. */
   renderDetails: (version: V) => ReactNode;
+  /** Optional per-row action(s) (e.g. "Restore this version", #283), rendered
+   *  under the details. `isCurrent` is true for the newest row (index 0) so
+   *  the caller can hide/disable an action there. Omit entirely for a
+   *  read-only drawer (the connections history stays this way). */
+  renderActions?: (version: V, isCurrent: boolean) => ReactNode;
+  /** Change this value to force the version list to refetch while the drawer
+   *  stays open. */
+  refreshKey?: number | string;
   onClose: () => void;
 }) {
   return (
@@ -45,7 +58,14 @@ export function HistoryDrawer<V extends HistoryVersion>({
       size={520}
       destroyOnHidden
     >
-      {subject && <HistoryBody fetchVersions={fetchVersions} renderDetails={renderDetails} />}
+      {subject && (
+        <HistoryBody
+          key={refreshKey}
+          fetchVersions={fetchVersions}
+          renderDetails={renderDetails}
+          renderActions={renderActions}
+        />
+      )}
     </Drawer>
   );
 }
@@ -53,9 +73,11 @@ export function HistoryDrawer<V extends HistoryVersion>({
 function HistoryBody<V extends HistoryVersion>({
   fetchVersions,
   renderDetails,
+  renderActions,
 }: {
   fetchVersions: () => Promise<V[]>;
   renderDetails: (version: V) => ReactNode;
+  renderActions?: (version: V, isCurrent: boolean) => ReactNode;
 }) {
   const { state } = useAsyncData(fetchVersions);
 
@@ -92,6 +114,7 @@ function HistoryBody<V extends HistoryVersion>({
               </Typography.Text>
             </Flex>
             {renderDetails(version)}
+            {renderActions && <Flex justify="end">{renderActions(version, index === 0)}</Flex>}
           </Flex>
         </SimpleList.Item>
       )}
