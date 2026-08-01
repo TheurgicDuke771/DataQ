@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "bfa7a73d6b98",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1123-ci-test-timeout",
+  "checkpoints_count": 3,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/bf/a7a73d6b98/0/metadata.json",
+      "transcript": "/bf/a7a73d6b98/0/full.jsonl",
+      "compact_transcript": "/bf/a7a73d6b98/0/transcript.jsonl",
+      "content_hash": "/bf/a7a73d6b98/0/content_hash.txt",
+      "prompt": "/bf/a7a73d6b98/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 373,
+    "cache_creation_tokens": 2968607,
+    "cache_read_tokens": 57147894,
+    "output_tokens": 166158,
+    "api_call_count": 190
+  }
+}
