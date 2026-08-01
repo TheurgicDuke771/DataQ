@@ -3,20 +3,21 @@
   "checkpoint_id": "21a3026f692c",
   "session_id": "8fb41b0b-8ae9-4bf4-b89b-85c542405338",
   "strategy": "manual-commit",
-  "created_at": "2026-08-01T19:12:10.431003Z",
+  "created_at": "2026-08-01T19:29:36.126587Z",
   "branch": "docs/w5-close-out",
-  "checkpoints_count": 11,
+  "checkpoints_count": 1,
+  "save_step_count": 1,
   "files_touched": [],
   "agent": "Claude Code",
   "model": "claude-fable-5",
-  "turn_id": "4e9af8920e84",
+  "turn_id": "f1fee51802e4",
   "compact_transcript_start": 0,
   "token_usage": {
-    "input_tokens": 341,
-    "cache_creation_tokens": 2951181,
-    "cache_read_tokens": 49353121,
-    "output_tokens": 160787,
-    "api_call_count": 174
+    "input_tokens": 391,
+    "cache_creation_tokens": 3447776,
+    "cache_read_tokens": 61145198,
+    "output_tokens": 169155,
+    "api_call_count": 199
   },
   "skill_events_version": 1,
   "skill_events": [
@@ -31,7 +32,7 @@
         "signal": "skill_tool_use",
         "confidence": "explicit"
       },
-      "turn_id": "4e9af8920e84",
+      "turn_id": "f1fee51802e4",
       "transcript_anchor": {
         "unit": "line",
         "start": 211,
@@ -53,13 +54,13 @@
     }
   ],
   "session_metrics": {
-    "turn_count": 11
+    "turn_count": 15
   },
   "prompt_attributions": [
     {
-      "checkpoint_number": 1,
-      "user_lines_added": 1408437,
-      "user_lines_removed": 19,
+      "checkpoint_number": 2,
+      "user_lines_added": 1408418,
+      "user_lines_removed": 3,
       "agent_lines_added": 0,
       "agent_lines_removed": 0,
       "user_added_per_file": {
@@ -6756,14 +6757,10 @@
         ".claude/worktrees/agent-ae95f8697102031b5/scripts/ci/retry.sh": 24,
         ".claude/worktrees/agent-ae95f8697102031b5/scripts/reset_dev_db.sh": 52,
         ".claude/worktrees/agent-ae95f8697102031b5/scripts/setup.sh": 203,
-        ".claude/worktrees/agent-ae95f8697102031b5/scripts/test-backend.sh": 45,
-        "CLAUDE.md": 2,
-        "docs/progress.md": 17
+        ".claude/worktrees/agent-ae95f8697102031b5/scripts/test-backend.sh": 45
       },
       "user_removed_per_file": {
-        ".claude/settings.json": 3,
-        "CLAUDE.md": 2,
-        "docs/progress.md": 14
+        ".claude/settings.json": 3
       }
     }
   ]

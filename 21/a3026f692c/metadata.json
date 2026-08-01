@@ -3,7 +3,7 @@
   "checkpoint_id": "21a3026f692c",
   "strategy": "manual-commit",
   "branch": "docs/w5-close-out",
-  "checkpoints_count": 11,
+  "checkpoints_count": 1,
   "files_touched": null,
   "sessions": [
     {
@@ -15,10 +15,10 @@
     }
   ],
   "token_usage": {
-    "input_tokens": 341,
-    "cache_creation_tokens": 2951181,
-    "cache_read_tokens": 49353121,
-    "output_tokens": 160787,
-    "api_call_count": 174
+    "input_tokens": 391,
+    "cache_creation_tokens": 3447776,
+    "cache_read_tokens": 61145198,
+    "output_tokens": 169155,
+    "api_call_count": 199
   }
 }
