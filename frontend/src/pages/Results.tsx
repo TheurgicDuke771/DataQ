@@ -30,7 +30,7 @@ import {
 } from '../api/triggerBindings';
 import { Page } from '../components/layout/Page';
 import { RunNowPanel } from '../components/runs/RunNowPanel';
-import { useAsyncData } from '../hooks/useAsyncData';
+import { useAsyncData, type AsyncState } from '../hooks/useAsyncData';
 import {
   formatDuration,
   formatTimestamp,
@@ -41,6 +41,7 @@ import {
   RUN_STATUS_COLORS,
 } from '../components/results/resultsFormat';
 import { PageError } from '../components/feedback/PageError';
+import { WINDOW_PRESETS } from '../components/shared/windowPresets';
 
 const LIST_LIMIT = 200;
 
@@ -56,13 +57,9 @@ const tablePagination = (noun: string) => ({
 });
 
 /** Date-window presets for the Results date filter (no true range picker → no
- *  dayjs dependency; mirrors the dashboard's 24h/7d/30d window control). */
-const DATE_WINDOWS = [
-  { value: 'all', label: 'All time' },
-  { value: '1', label: 'Last 24h' },
-  { value: '7', label: 'Last 7 days' },
-  { value: '30', label: 'Last 30 days' },
-] as const;
+ *  dayjs dependency): Results' own 'all' option prepended to the presets
+ *  shared with the Dashboard range selector (`WINDOW_PRESETS`). */
+const DATE_WINDOWS = [{ value: 'all', label: 'All time' }, ...WINDOW_PRESETS] as const;
 type DateWindow = (typeof DATE_WINDOWS)[number]['value'];
 
 /** A labelled filter control — one `secondary` caption above each Select so the
@@ -80,6 +77,34 @@ function Filter({ label, children }: { label: string; children: React.ReactNode 
 
 export function Results() {
   const [runNowOpen, setRunNowOpen] = useState(false);
+  // Runs fetch lifted from the tabs (#349): RunsTab and PipelineRunsTab both
+  // need the same `listRuns` page — the latter only to correlate triggered DQ
+  // runs — so fetching once here and passing it down avoids two independent
+  // `listRuns` calls (antd Tabs lazy-mounts panes, so switching tabs used to
+  // mean a second, fresh fetch). This does mean the fetch now starts on page
+  // mount rather than on first visit to a given tab — the intended change.
+  const { state: runsState, reload: reloadRuns } = useAsyncData(() =>
+    listRuns({ limit: LIST_LIMIT }),
+  );
+  // Last-good runs snapshot (#1114 review). PipelineRunsTab's 30s poll (armed
+  // once that tab has been visited — antd keeps panes mounted, #349) refetches
+  // this SAME shared state; before the fetch was lifted, a transient poll
+  // failure only broke the Pipeline tab's own request and was cosmetic. Now it
+  // flips the shared `runsState` to 'error' too, and `useAsyncData`'s error
+  // branch carries no data (only its 'ok' branch does) — so track the last
+  // successful page here, outside the hook, rather than changing the hook's
+  // error contract for every one of its other consumers. RunsTab uses this to
+  // keep showing the table (with an inline warning) instead of blanking to a
+  // full-page error on a background hiccup.
+  const [lastGoodRuns, setLastGoodRuns] = useState<Run[] | null>(null);
+  // Adjust state during render (React's documented pattern for "remember the
+  // latest X"), not in an effect — an effect would commit the stale render
+  // first and only fix it up a tick later; this lint-clean form updates before
+  // the browser paints. `runsState.data` is a fresh array reference only when
+  // a fetch actually resolves, so the comparison can't loop.
+  if (runsState.status === 'ok' && runsState.data !== lastGoodRuns) {
+    setLastGoodRuns(runsState.data);
+  }
   return (
     <Page>
       <Flex justify="space-between" align="center" gap={12} wrap>
@@ -94,8 +119,18 @@ export function Results() {
       <Tabs
         defaultActiveKey="runs"
         items={[
-          { key: 'runs', label: 'Runs', children: <RunsTab /> },
-          { key: 'pipelines', label: 'Pipeline runs', children: <PipelineRunsTab /> },
+          {
+            key: 'runs',
+            label: 'Runs',
+            children: (
+              <RunsTab runsState={runsState} lastGoodRuns={lastGoodRuns} reloadRuns={reloadRuns} />
+            ),
+          },
+          {
+            key: 'pipelines',
+            label: 'Pipeline runs',
+            children: <PipelineRunsTab runsState={runsState} reloadRuns={reloadRuns} />,
+          },
         ]}
       />
     </Page>
@@ -112,12 +147,23 @@ interface SuiteMeta {
   category: DatasourceCategory | null;
 }
 
-function RunsTab() {
-  // Fetch a page of runs + the accessible suites + connections (for id→name and
-  // the env / datasource of each suite), then filter client-side — cheap at this
-  // volume and avoids a refetch per filter change.
+function RunsTab({
+  runsState: state,
+  lastGoodRuns,
+  reloadRuns,
+}: {
+  runsState: AsyncState<Run[]>;
+  /** The last successfully-loaded runs page, tracked by the parent (#1114) —
+   *  non-null once any fetch has ever succeeded, regardless of `state`'s
+   *  current status. */
+  lastGoodRuns: Run[] | null;
+  reloadRuns: () => void;
+}) {
+  // Runs come from the parent (shared with PipelineRunsTab, #349); fetch the
+  // accessible suites + connections locally (for id→name and the env /
+  // datasource of each suite), then filter everything client-side — cheap at
+  // this volume and avoids a refetch per filter change.
   const navigate = useNavigate();
-  const { state } = useAsyncData(() => listRuns({ limit: LIST_LIMIT }));
   const { state: suitesState } = useAsyncData(listSuites);
   const { state: connectionsState } = useAsyncData(() => listConnections());
 
@@ -155,20 +201,29 @@ function RunsTab() {
     [suiteMeta],
   );
 
+  // The data to render: the live 'ok' page, or — on 'error' — the last page
+  // that DID load, if any (#1114). Only a NEVER-successful load (no snapshot
+  // yet) is a full-page failure; a background poll failure after a prior
+  // success degrades to an inline warning instead, mirroring `metaFailed`
+  // above and `runsJoinFailed` on the Pipeline tab.
+  const runsData = state.status === 'ok' ? state.data : lastGoodRuns;
+  const backgroundRunsFailed = state.status === 'error' && runsData !== null;
+
   if (state.status === 'loading') return <Spin description="Loading runs…" size="large" />;
-  if (state.status === 'error') {
+  if (state.status === 'error' && runsData === null) {
     return (
       <PageError
         error={state.error}
         kind={state.kind}
         httpStatus={state.httpStatus}
         requestId={state.requestId}
+        onRetry={reloadRuns}
       />
     );
   }
 
   const windowDays = dateWindow === 'all' ? null : Number(dateWindow);
-  const runs = state.data.filter((r) => {
+  const runs = (runsData ?? []).filter((r) => {
     if (status !== 'all' && r.status !== status) return false;
     if (suiteId !== 'all' && r.suite_id !== suiteId) return false;
     // Keep runs with unknown env/datasource visible under any filter — a
@@ -234,6 +289,14 @@ function RunsTab() {
 
   return (
     <Flex vertical gap={16}>
+      {backgroundRunsFailed && (
+        <Alert
+          type="warning"
+          showIcon
+          title="Showing the last loaded runs"
+          description="A background refresh of the runs list failed, so this table may be slightly out of date. Retrying automatically."
+        />
+      )}
       {metaFailed && (
         <Alert
           type="warning"
@@ -324,14 +387,21 @@ function RunsTab() {
  *  so 30s keeps the panel near-live without hammering the API. */
 const PIPELINE_POLL_MS = 30_000;
 
-function PipelineRunsTab({ pollMs = PIPELINE_POLL_MS }: { pollMs?: number }) {
+function PipelineRunsTab({
+  runsState,
+  reloadRuns,
+  pollMs = PIPELINE_POLL_MS,
+}: {
+  runsState: AsyncState<Run[]>;
+  reloadRuns: () => void;
+  pollMs?: number;
+}) {
   const navigate = useNavigate();
-  // Pipeline runs + the DQ runs they triggered, both auto-refreshed so a newly
-  // triggered run shows up against its pipeline run without a manual reload.
+  // Pipeline runs fetched locally; the DQ runs they may have triggered come
+  // from the parent (shared with RunsTab, #349). Both auto-refreshed so a
+  // newly triggered run shows up against its pipeline run without a manual
+  // reload.
   const { state, reload } = useAsyncData(() => listPipelineRuns({ limit: LIST_LIMIT }));
-  const { state: runsState, reload: reloadRuns } = useAsyncData(() =>
-    listRuns({ limit: LIST_LIMIT }),
-  );
   const [provider, setProvider] = useState<'all' | OrchestrationProvider>('all');
   const [dateWindow, setDateWindow] = useState<DateWindow>('all');
 
@@ -367,6 +437,7 @@ function PipelineRunsTab({ pollMs = PIPELINE_POLL_MS }: { pollMs?: number }) {
         kind={state.kind}
         httpStatus={state.httpStatus}
         requestId={state.requestId}
+        onRetry={reload}
       />
     );
   }

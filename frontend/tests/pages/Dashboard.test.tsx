@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -7,6 +7,7 @@ import { listAssets } from '../../src/api/assets';
 import { type DashboardSummary, getDashboardSummary } from '../../src/api/dashboard';
 import { listRuns } from '../../src/api/runs';
 import { listSuites } from '../../src/api/suites';
+import { WINDOW_PRESETS } from '../../src/components/shared/windowPresets';
 import { Dashboard } from '../../src/pages/Dashboard';
 
 vi.mock('../../src/api/dashboard', async (importOriginal) => {
@@ -145,7 +146,7 @@ describe('Dashboard', () => {
     renderPage();
     await screen.findByText('81.2');
 
-    await userEvent.click(screen.getByText('30d'));
+    await userEvent.click(screen.getByText('Last 30 days'));
     await waitFor(() => expect(mockGet).toHaveBeenCalledWith(30));
   });
 
@@ -153,5 +154,19 @@ describe('Dashboard', () => {
     mockGet.mockRejectedValue(new Error('boom'));
     renderPage();
     expect(await screen.findByText('Failed to load dashboard')).toBeInTheDocument();
+  });
+
+  it('shares date-window presets with the Results date filter (#349)', async () => {
+    // The range Segmented must offer exactly the shared WINDOW_PRESETS labels
+    // (no local 'Last 24h'/'7d'/'30d' copy that can drift from Results'). Scope
+    // to the radiogroup — the "Total Runs" footnote also renders "Last 7 days".
+    mockGet.mockResolvedValue(summary);
+    renderPage();
+    await screen.findByText('81.2');
+
+    const rangeControl = screen.getByRole('radiogroup');
+    for (const preset of WINDOW_PRESETS) {
+      expect(within(rangeControl).getByText(preset.label)).toBeInTheDocument();
+    }
   });
 });
