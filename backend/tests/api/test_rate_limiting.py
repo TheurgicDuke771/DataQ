@@ -39,6 +39,7 @@ def limiter(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     monkeypatch.setenv("RATE_LIMIT_UNAUTHENTICATED_PER_MINUTE", "3")
     monkeypatch.setenv("RATE_LIMIT_AUTHENTICATED_PER_MINUTE", "5")
     monkeypatch.setenv("RATE_LIMIT_WEBHOOK_PER_MINUTE", "2")
+    monkeypatch.setenv("RATE_LIMIT_AUTH_PER_MINUTE", "2")
     get_settings.cache_clear()
     # Freeze time so every request in a test lands in one fixed window.
     monkeypatch.setattr(rate_limit, "_now", lambda: _FROZEN)
@@ -470,6 +471,23 @@ def test_webhook_bucket_keys_on_prefix(limiter: TestClient) -> None:
         assert resp.status_code != 429
     resp = limiter.post(adf, headers={"X-Forwarded-For": "9.9.9.99"})
     assert resp.status_code == 429
+
+
+def test_auth_bucket_keys_on_prefix(limiter: TestClient) -> None:
+    # #1127 (review follow-up): the `auth` class's per-IP bucket must ALSO
+    # accumulate across sibling /32s in one /24 — the same #789 folding proven
+    # above for `unauth` and `webhook` — not key on the raw, unfolded address.
+    auth_path = "/api/v1/auth/otp/request"
+    for i in range(2):  # AUTH limit = 2
+        resp = limiter.post(auth_path, headers={"X-Forwarded-For": f"9.9.9.{30 + i}"})
+        assert resp.status_code != 429
+    # A third sibling /32 in the SAME /24 must still 429 — proving one shared
+    # bucket, not three independent per-address ones.
+    resp = limiter.post(auth_path, headers={"X-Forwarded-For": "9.9.9.99"})
+    assert resp.status_code == 429
+    # A different /24 is a fresh, independent bucket.
+    resp = limiter.post(auth_path, headers={"X-Forwarded-For": "9.9.8.1"})
+    assert resp.status_code != 429
 
 
 def test_xff_last_hop_defines_the_bucket(limiter: TestClient) -> None:
