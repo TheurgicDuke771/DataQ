@@ -239,6 +239,66 @@ def test_rotating_provider_segments_hit_webhook_ip_ceiling(
     assert resp.headers["X-RateLimit-Limit"] == "4"  # the webhook IP ceiling, reported
 
 
+# ───────────────────────── 3b. auth class (#1127) ─────────────────────────
+
+
+def test_auth_class_429s_separately_from_unauth(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The `/api/v1/auth/*` prefix gets its own strict bucket — proving it is
+    # SEPARATE from the unauth class by asserting the unauth bucket still has
+    # headroom after the auth bucket 429s from the same IP.
+    monkeypatch.setenv("RATE_LIMIT_ENABLED", "true")
+    monkeypatch.setenv("RATE_LIMIT_AUTH_PER_MINUTE", "2")
+    monkeypatch.setenv("RATE_LIMIT_UNAUTHENTICATED_PER_MINUTE", "3")
+    get_settings.cache_clear()
+    monkeypatch.setattr(rate_limit, "_now", lambda: _FROZEN)
+    set_store_for_testing(InMemoryStore(clock=lambda: _FROZEN))
+
+    with TestClient(app) as c:
+        auth_path = "/api/v1/auth/otp/request"
+        for _ in range(2):  # AUTH limit = 2
+            resp = c.post(auth_path)
+            assert resp.status_code != 429
+        resp = c.post(auth_path)
+        assert resp.status_code == 429
+        body = resp.json()
+        assert body["error"]["code"] == "rate_limited"
+        retry = body["error"]["detail"]["retry_after_seconds"]
+        assert isinstance(retry, int)
+        assert 1 <= retry <= 60
+        assert resp.headers["Retry-After"] == str(retry)
+        assert resp.headers["X-RateLimit-Limit"] == "2"
+        assert resp.headers["X-RateLimit-Remaining"] == "0"
+
+        # The unauth bucket (limit 3) from the same IP is untouched — proving
+        # separate buckets, not a shared counter.
+        for _ in range(3):
+            resp = c.get(PROBE)
+            assert resp.status_code != 429
+        resp = c.get(PROBE)
+        assert resp.status_code == 429
+
+
+def test_auth_class_not_dodged_by_bearer(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A bearer-carrying request to an auth-prefixed path must still land in the
+    # strict `auth` class, not the far more generous `default` (bearer) class.
+    monkeypatch.setenv("RATE_LIMIT_ENABLED", "true")
+    monkeypatch.setenv("RATE_LIMIT_AUTH_PER_MINUTE", "2")
+    monkeypatch.setenv("RATE_LIMIT_AUTHENTICATED_PER_MINUTE", "100")
+    get_settings.cache_clear()
+    monkeypatch.setattr(rate_limit, "_now", lambda: _FROZEN)
+    set_store_for_testing(InMemoryStore(clock=lambda: _FROZEN))
+
+    with TestClient(app) as c:
+        auth_path = "/api/v1/auth/otp/verify"
+        headers = {"Authorization": "Bearer sometoken"}
+        for _ in range(2):  # AUTH limit = 2, NOT the 100 bearer limit
+            resp = c.post(auth_path, headers=headers)
+            assert resp.status_code != 429
+        resp = c.post(auth_path, headers=headers)
+        assert resp.status_code == 429
+        assert resp.headers["X-RateLimit-Limit"] == "2"
+
+
 # ───────────────────────── 4/5. exemptions ─────────────────────────
 
 
