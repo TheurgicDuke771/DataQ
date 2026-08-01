@@ -8,7 +8,9 @@ import { type Connection, getConnection } from '../../src/api/connections';
 import {
   type Check,
   getCheck,
+  getCheckBaseline,
   getSuite,
+  listCheckHistory,
   listCheckVersions,
   restoreCheckVersion,
   type Suite,
@@ -29,6 +31,8 @@ vi.mock('../../src/api/suites', async (importOriginal) => {
     getCheck: vi.fn(),
     updateCheck: vi.fn(),
     listCheckVersions: vi.fn(),
+    listCheckHistory: vi.fn(),
+    getCheckBaseline: vi.fn(),
     restoreCheckVersion: vi.fn(),
   };
 });
@@ -38,6 +42,8 @@ const mockGetCheck = vi.mocked(getCheck);
 const mockGetConnection = vi.mocked(getConnection);
 const mockUpdate = vi.mocked(updateCheck);
 const mockVersions = vi.mocked(listCheckVersions);
+const mockHistory = vi.mocked(listCheckHistory);
+const mockBaseline = vi.mocked(getCheckBaseline);
 const mockRestore = vi.mocked(restoreCheckVersion);
 
 const suite: Suite = {
@@ -153,6 +159,30 @@ describe('CheckEdit', () => {
     // The fixture suite carries no `my_permission` (absent = not edit-capable,
     // same as a viewer) — #283's Restore action must not appear.
     expect(screen.queryByRole('button', { name: /Restore this version/ })).not.toBeInTheDocument();
+  });
+
+  it('opens the metric-trend drawer from the Trend button, mounting CheckTrend only while open (#594)', async () => {
+    const user = userEvent.setup();
+    mockGetSuite.mockResolvedValue(suite);
+    mockGetCheck.mockResolvedValue(existing);
+    mockGetConnection.mockResolvedValue(connection);
+    mockHistory.mockResolvedValue([
+      { run_id: 'r1', status: 'warn', metric_value: 6, created_at: '2026-06-15T10:00:00Z' },
+    ]);
+    renderPage();
+    await waitFor(() => expect(screen.getByLabelText('Column')).toHaveValue('amount'));
+
+    // Before the drawer opens, CheckTrend hasn't mounted — no fetch yet.
+    expect(mockHistory).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: /Trend/ }));
+
+    expect(await screen.findByText('amount range — trend')).toBeInTheDocument();
+    await waitFor(() => expect(mockHistory).toHaveBeenCalledWith('s1', 'chk1', 90));
+    // A non-anomaly check never fetches a baseline.
+    expect(mockBaseline).not.toHaveBeenCalled();
+    // The check's own thresholds (Warn ≥ 5, Fail ≥ 10) drive the trend's bands.
+    expect(await screen.findByText('Thresholds: Warn ≥ 5 · Fail ≥ 10')).toBeInTheDocument();
   });
 
   it('still loads when the connection is unreadable (shared suite)', async () => {

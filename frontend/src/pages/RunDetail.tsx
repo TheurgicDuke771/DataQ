@@ -446,27 +446,34 @@ function ResultsTable({
         // redacted failing-row sample (if any) sits below the trend.
         expandedRowRender: (record) => {
           const check = checks.get(record.check_id);
-          if (check?.kind === 'comparison') {
+          if (!check) {
+            // No known check (e.g. a deleted one) — nothing to trend against,
+            // fall back to just the failing-row sample.
             return (
-              <Flex vertical gap={16}>
-                <CheckTrend key={record.check_id} suiteId={suiteId} checkId={record.check_id} />
-                <ComparisonResultDetail runId={runId} result={record} />
-              </Flex>
-            );
-          }
-          // Anomaly's cold-start skip (#593): honest "collecting history" beats
-          // making the author decode the raw observed_value JSON.
-          const coldStart =
-            check?.kind === 'anomaly' ? anomalyColdStartHint(record.observed_value) : null;
-          return (
-            <Flex vertical gap={16}>
-              <CheckTrend key={record.check_id} suiteId={suiteId} checkId={record.check_id} />
-              {coldStart && <Alert type="info" showIcon message={coldStart} />}
               <SampleFailures
                 sample={record.sample_failures}
                 redaction={record.redaction}
                 redactedColumns={record.redacted_columns}
               />
+            );
+          }
+          // Anomaly's cold-start skip (#593): honest "collecting history" beats
+          // making the author decode the raw observed_value JSON.
+          const coldStart =
+            check.kind === 'anomaly' ? anomalyColdStartHint(record.observed_value) : null;
+          return (
+            <Flex vertical gap={16}>
+              <CheckTrend key={record.check_id} suiteId={suiteId} check={check} />
+              {coldStart && <Alert type="info" showIcon message={coldStart} />}
+              {check.kind === 'comparison' ? (
+                <ComparisonResultDetail runId={runId} result={record} />
+              ) : (
+                <SampleFailures
+                  sample={record.sample_failures}
+                  redaction={record.redaction}
+                  redactedColumns={record.redacted_columns}
+                />
+              )}
             </Flex>
           );
         },
