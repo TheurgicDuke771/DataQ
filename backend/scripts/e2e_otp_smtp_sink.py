@@ -15,14 +15,17 @@ verifies the certificate and the hostname. So a sink has to (a) actually do
 STARTTLS and (b) present a certificate the API process trusts — a stock MailHog /
 smtp4dev container satisfies neither without extra plumbing. This script emits a
 self-signed certificate for `localhost` at startup and prints its path; the caller
-exports `SSL_CERT_FILE=<that path>` for the API process, and OpenSSL then trusts
-exactly this one certificate.
+exports `AUTH_EMAIL_CA_BUNDLE=<that path>` for the API process, and the mailer's
+own `SSLContext` then trusts exactly this one certificate — for the mailer's SMTP
+connection only, never the process-wide trust store.
 
-That constraint is worth stating plainly because it is a real deployment fact
-discovered here: **DataQ's OTP mailer cannot talk to an internal relay whose
-certificate is signed by a private CA** unless that CA is in the process trust
-store (`SSL_CERT_FILE` / the system bundle). There is no `AUTH_EMAIL_*` option
-for a CA bundle or for plaintext SMTP — tracked in #1146.
+That last point used to be a real deployment gap, discovered here: before #1146,
+**DataQ's OTP mailer could not talk to an internal relay whose certificate was
+signed by a private CA** except by putting that CA in the process-wide trust store
+(`SSL_CERT_FILE`) — which this lane did, and which is exactly the footgun #1146's
+`AUTH_EMAIL_CA_BUNDLE` exists to avoid: `SSL_CERT_FILE` would also reconfigure
+every OTHER TLS client the api process starts (Key Vault, Snowflake, ADLS,
+webhooks), not just this mailer.
 
 ## Why the real mailer path is exercised, not mocked
 
@@ -383,9 +386,9 @@ def main(argv: list[str] | None = None) -> int:
 
     threading.Thread(target=smtp_server.serve_forever, daemon=True).start()
 
-    # Machine-readable, because the caller has to export SSL_CERT_FILE from it
-    # BEFORE starting the API — the API's `ssl.create_default_context()` reads that
-    # variable once, at process start.
+    # Machine-readable, because the caller has to export AUTH_EMAIL_CA_BUNDLE
+    # from it BEFORE starting the API — `Settings` validates the path exists at
+    # boot (#1146), so the sink must already have written the file by then.
     print(f"DATAQ_OTP_SINK_CERT={cert_path}", flush=True)
     print(f"DATAQ_OTP_SINK_KEY={key_path}", flush=True)
     print(

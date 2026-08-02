@@ -92,12 +92,15 @@ is the credential**, so mailbox compromise is account compromise. The session is
 HttpOnly cookie with a fixed 24 h life and no refresh token; signing in again is the
 refresh. Codes expire in 10 minutes, are single-use, and allow 5 attempts.
 
-Note that the mailer requires **SMTP + STARTTLS on a publicly-trusted certificate**. An
-internal relay signed by a private CA needs that CA in the container's whole-process
-trust store (`SSL_CERT_FILE`) today; a per-mailer CA bundle and an implicit-TLS (:465)
-option are tracked in
-[#1146](https://github.com/TheurgicDuke771/DataQ/issues/1146). There is no
-plaintext-SMTP option.
+The mailer defaults to **SMTP + STARTTLS on 587**, verified against the system trust
+store. Two more transports are available via `AUTH_EMAIL_TLS_MODE`
+([#1146](https://github.com/TheurgicDuke771/DataQ/issues/1146)): `implicit` for a
+submission relay on **:465** (SMTPS), and `none` — a deliberate plaintext downgrade,
+logged loudly on every send, for a loopback relay or a throwaway test rig only. An
+internal relay signed by a **private CA** doesn't need the container's whole-process
+trust store touched: point `AUTH_EMAIL_CA_BUNDLE` at its PEM and only the mailer's own
+connection trusts it. There is no option to skip certificate verification — the bundle
+is the answer to "my relay's cert isn't publicly trusted", not a way around checking it.
 
 ### `oidc` — self-hosting with your own identity provider
 

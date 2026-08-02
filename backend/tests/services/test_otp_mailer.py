@@ -12,12 +12,18 @@ service under test.
 
 from __future__ import annotations
 
+import datetime as dt
 import smtplib
 import ssl
 from email.message import EmailMessage
+from pathlib import Path
 from typing import Any, ClassVar
 
 import pytest
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.x509.oid import NameOID
 
 from backend.app.core.config import Settings
 from backend.app.core.secrets import SecretNotFoundError, SecretStoreUnavailableError
@@ -89,11 +95,68 @@ class _FakeSMTP:
         self.calls.append("close")
 
 
+class _FakeSMTPSSL(_FakeSMTP):
+    """Implicit-TLS (:465) stand-in for `smtplib.SMTP_SSL`. Unlike `_FakeSMTP`,
+    the handshake context arrives in the CONSTRUCTOR (`context=`) rather than
+    through a separate `starttls()` call — that is the real difference between
+    the two transports `_deliver` has to bridge (#1146).
+
+    **Its own `ssl_instances` list**, deliberately NOT `_FakeSMTP.instances`: a
+    `ClassVar` looked up through a subclass without its own binding resolves to
+    the SAME list object, which would make "was `SMTP_SSL` ever used"
+    unaskable — every `_FakeSMTP` instance would silently count as one too.
+    """
+
+    ssl_instances: ClassVar[list[_FakeSMTPSSL]] = []
+
+    def __init__(
+        self,
+        host: str,
+        port: int,
+        timeout: float | None = None,
+        context: ssl.SSLContext | None = None,
+    ) -> None:
+        self.host, self.port, self.timeout = host, port, timeout
+        self.calls: list[str] = []
+        self.messages: list[EmailMessage] = []
+        self.tls_context: ssl.SSLContext | None = context
+        self.credentials: tuple[str, str] | None = None
+        _FakeSMTPSSL.ssl_instances.append(self)
+
+    def starttls(self, context: ssl.SSLContext | None = None) -> None:  # pragma: no cover
+        raise AssertionError("implicit mode must never call starttls() — TLS is from connect")
+
+
+def _write_self_signed_ca(path: Path, common_name: str = "dataq-test-ca") -> None:
+    """A throwaway self-signed CA cert, just enough shape for `cafile=` to load
+    it: `BasicConstraints(ca=True)` and a subject `ssl.SSLContext.get_ca_certs()`
+    can report back. Not a real trust anchor — never used to actually negotiate
+    TLS in these tests, only to prove the path reached `create_default_context`.
+    """
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, common_name)])
+    now = dt.datetime.now(dt.UTC)
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(name)
+        .issuer_name(name)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - dt.timedelta(minutes=5))
+        .not_valid_after(now + dt.timedelta(days=1))
+        .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
+        .sign(key, hashes.SHA256())
+    )
+    path.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+
+
 @pytest.fixture(autouse=True)
 def _reset_fake() -> Any:
     _FakeSMTP.instances = []
+    _FakeSMTPSSL.ssl_instances = []
     yield
     _FakeSMTP.instances = []
+    _FakeSMTPSSL.ssl_instances = []
 
 
 def _mailer(monkeypatch: pytest.MonkeyPatch, store: Any, **overrides: Any) -> otp_mailer.OtpMailer:
@@ -151,6 +214,135 @@ def test_the_password_never_reaches_the_message(monkeypatch: pytest.MonkeyPatch)
     mailer.send_code(to="ada@acme.io", code="123456", expires_in_minutes=10)
     body = _FakeSMTP.instances[-1].messages[0].get_content()
     assert "s3cr3t-app-password" not in body
+
+
+# ── TLS transport options (#1146) ────────────────────────────────────────────
+
+
+def test_implicit_mode_uses_smtp_ssl_with_no_separate_starttls_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SMTPS (:465): the handshake happens INSIDE `SMTP_SSL.__init__`, so
+    `_deliver` must never call `starttls()` on top of it — doing so against an
+    already-TLS socket is exactly the failure #1146 reported."""
+    monkeypatch.setattr(smtplib, "SMTP_SSL", _FakeSMTPSSL)
+    mailer = otp_mailer.OtpMailer(
+        _Store("pw"),
+        _settings(auth_email_tls_mode="implicit", auth_email_smtp_port=465),
+    )
+    mailer.send_code(to="ada@acme.io", code="123456", expires_in_minutes=10)
+
+    smtp = _FakeSMTPSSL.ssl_instances[-1]
+    assert smtp.calls == ["login", "send", "close"]
+    assert isinstance(smtp.tls_context, ssl.SSLContext)
+    assert smtp.port == 465
+
+
+def test_implicit_mode_classifies_a_handshake_failure_as_connect_not_tls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`SMTP_SSL`'s constructor does the TCP connect AND the TLS handshake
+    together — there is no separate post-connect hook to fail on its own, so a
+    certificate failure here is genuinely the 'connect' stage, never 'tls' (that
+    stage is reachable only via the `starttls` branch). Documented in
+    `_deliver`'s docstring; pinned here so the classification can't drift."""
+
+    class _HandshakeFailsSSL(_FakeSMTPSSL):
+        def __init__(
+            self,
+            host: str,
+            port: int,
+            timeout: float | None = None,
+            context: ssl.SSLContext | None = None,
+        ) -> None:
+            raise ssl.SSLCertVerificationError("certificate verify failed")
+
+    monkeypatch.setattr(smtplib, "SMTP_SSL", _HandshakeFailsSSL)
+    mailer = otp_mailer.OtpMailer(
+        _Store("pw"),
+        _settings(auth_email_tls_mode="implicit", auth_email_smtp_port=465),
+    )
+    with pytest.raises(otp_mailer.OtpMailPreflightError) as caught:
+        mailer.send_preflight(to="admin@acme.io")
+    assert caught.value.detail["stage"] == "connect"
+    assert caught.value.detail["error_type"] == "SSLCertVerificationError"
+
+
+def test_starttls_mode_is_still_the_default_and_still_uses_plain_smtp(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: nothing about #1146 may change the default transport. Also
+    proves `smtplib.SMTP_SSL` is never even touched on the default path."""
+    monkeypatch.setattr(smtplib, "SMTP_SSL", _FakeSMTPSSL)
+    mailer = _mailer(monkeypatch, _Store("pw"))  # auth_email_tls_mode unset → default
+    mailer.send_code(to="ada@acme.io", code="123456", expires_in_minutes=10)
+
+    assert _FakeSMTP.instances[-1].calls == ["starttls", "login", "send", "close"]
+    assert _FakeSMTPSSL.ssl_instances == []
+
+
+def test_a_ca_bundle_reaches_the_real_ssl_context(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The right layer to monkeypatch here is `smtplib.SMTP` (the transport) —
+    NOT `ssl.create_default_context`, which is the seam under test. A real
+    self-signed PEM is loaded through the real stdlib call, and its presence is
+    asserted via `SSLContext.get_ca_certs()`, which reports ONLY certs loaded
+    through `load_verify_locations` (i.e. via `cafile=`) — never the ambient
+    system store, so a non-empty result is real proof the path was wired
+    through, not a coincidence of the default trust store."""
+    bundle = tmp_path / "private-ca.pem"
+    _write_self_signed_ca(bundle, common_name="dataq-test-ca")
+    mailer = _mailer(monkeypatch, _Store("pw"), auth_email_ca_bundle=str(bundle))
+    mailer.send_code(to="ada@acme.io", code="123456", expires_in_minutes=10)
+
+    context = _FakeSMTP.instances[-1].tls_context
+    assert isinstance(context, ssl.SSLContext)
+    ca_certs = context.get_ca_certs()
+    assert len(ca_certs) == 1
+    # `get_ca_certs()`'s dict shape is loosely typed upstream; a substring check
+    # on its repr is a stable, low-friction way to pin the identity without
+    # fighting typeshed over the nested-tuple RDN structure.
+    assert "dataq-test-ca" in repr(ca_certs[0]["subject"])
+
+
+def test_no_ca_bundle_configured_uses_the_ordinary_system_default_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Unset `AUTH_EMAIL_CA_BUNDLE` must build the exact same context shape as
+    before #1146: `cafile=None` falls through to `create_default_context`'s own
+    `load_default_certs()` branch. Compared against a real, unpatched reference
+    context built the same way (not asserted empty — on this platform
+    `get_ca_certs()` also reports certs loaded via `load_default_certs()`, so
+    the honest regression check is "matches the ordinary default", not "empty").
+    """
+    reference = ssl.create_default_context()
+    mailer = _mailer(monkeypatch, _Store("pw"))
+    mailer.send_code(to="ada@acme.io", code="123456", expires_in_minutes=10)
+    context = _FakeSMTP.instances[-1].tls_context
+    assert isinstance(context, ssl.SSLContext)
+    assert len(context.get_ca_certs()) == len(reference.get_ca_certs())
+
+
+def test_none_mode_never_calls_starttls_and_warns_loudly_every_send(
+    monkeypatch: pytest.MonkeyPatch, capsys: Any
+) -> None:
+    """`none` is a deliberate plaintext downgrade — test-only. There is no
+    boot-time signal that distinguishes "about to hit a real relay" from "a
+    test harness", so the warning fires on every send rather than once."""
+    from backend.app.core.logging import configure_logging
+
+    configure_logging()
+    mailer = _mailer(monkeypatch, _Store("pw"), auth_email_tls_mode="none")
+    mailer.send_code(to="ada@acme.io", code="123456", expires_in_minutes=10)
+
+    smtp = _FakeSMTP.instances[-1]
+    assert smtp.calls == ["login", "send", "close"]  # no starttls at all
+    assert smtp.tls_context is None  # starttls() was never called to set it
+
+    captured = capsys.readouterr()
+    emitted = captured.out + captured.err
+    assert "otp_smtp_tls_disabled" in emitted
 
 
 @pytest.mark.parametrize(
