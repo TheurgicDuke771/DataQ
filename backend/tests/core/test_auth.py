@@ -14,7 +14,7 @@ import backend.app.core.auth as auth_mod
 from backend.app.core.config import Settings
 from backend.app.core.errors import DataQError
 from backend.app.db.models import User
-from backend.app.services import api_key_service
+from backend.app.services import api_key_service, user_service
 
 
 def _azure_settings(*, allow_guest_users: bool = False) -> Settings:
@@ -129,6 +129,67 @@ def test_get_current_user_real_upserts_from_claims(db_session: Any) -> None:
     )
     assert user.email == "real@example.com"
     assert user.aad_object_id == "11111111-2222-3333-4444-555555555555"
+
+
+def test_upsert_seeds_display_name_on_first_login(db_session: Any) -> None:
+    """A brand-new row has no override yet, so the AAD claim seeds a real name
+    instead of leaving a bare email to render in shares/admin lists."""
+    claims = {
+        "oid": "44444444-5555-6666-7777-888888888888",
+        "upn": "named@example.com",
+        "name": "AAD Claim Name",
+    }
+    first = auth_mod._get_current_user_real(_request(), _azure_user(claims), db_session)
+    assert first.display_name == "AAD Claim Name"
+    assert first.display_name_override is False
+
+
+def test_upsert_preserves_a_patch_me_override_across_relogin(db_session: Any) -> None:
+    """#1139: `_upsert_user` runs on EVERY real-mode request (no session cache —
+    the JWT is re-validated and re-claimed each time), so a `PATCH /me` override
+    must survive the user's very next request rather than being silently
+    re-synced back to the AAD token's `name` claim.
+
+    The override is set through the real service call (`user_service.
+    update_display_name`, what the PATCH handler calls) — not by hand-setting
+    the column — so this pins the actual mechanism (`display_name_override`,
+    migration 6230293aea96), not an incidental side effect of some other
+    field's nullability.
+    """
+    claims = {
+        "oid": "55555555-6666-7777-8888-999999999999",
+        "upn": "overrider@example.com",
+        "name": "AAD Claim Name",
+    }
+    first = auth_mod._get_current_user_real(_request(), _azure_user(claims), db_session)
+    user_service.update_display_name(db_session, first, "Self-Service Override")
+    assert first.display_name_override is True
+
+    second = auth_mod._get_current_user_real(_request(), _azure_user(claims), db_session)
+    # Same claim as before, re-presented on a second "request" — the override
+    # must stick, not merely tolerate an unchanged claim.
+    assert second.display_name == "Self-Service Override"
+    assert second.display_name_override is True
+
+
+def test_upsert_syncs_an_aad_rename_when_there_is_no_override(db_session: Any) -> None:
+    """The other direction of the same invariant — the one a bare COALESCE
+    could never satisfy (#1139 review): nobody has ever explicitly set this
+    person's name, so a legitimate rename in the directory (a new `name` claim
+    on a later login) must still land."""
+    claims = {
+        "oid": "66666666-7777-8888-9999-aaaaaaaaaaaa",
+        "upn": "renamed@example.com",
+        "name": "Old Claim Name",
+    }
+    first = auth_mod._get_current_user_real(_request(), _azure_user(claims), db_session)
+    assert first.display_name == "Old Claim Name"
+    assert first.display_name_override is False
+
+    renamed_claims = {**claims, "name": "New Claim Name"}
+    second = auth_mod._get_current_user_real(_request(), _azure_user(renamed_claims), db_session)
+    assert second.display_name == "New Claim Name"
+    assert second.display_name_override is False
 
 
 # ── PAT branch on the seam (ADR 0026, #461) ──────────────────────────────────

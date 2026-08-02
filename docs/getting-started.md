@@ -77,6 +77,12 @@ WORKSPACE_ADMIN_EMAILS=you@example.com         # bootstrap: your own address
 First sign-in: put your own address in **both** the allowlist and `WORKSPACE_ADMIN_EMAILS`,
 then sign in to your own mailbox. There is no seeded password to rotate.
 
+The sign-in form is deliberately credential-only — no sign-up step, no name field, per ADR
+0032 — so a first-time OTP user's row has no name yet. The app offers a one-time, skippable
+prompt for one right after that first sign-in (#1139). Skipping it is fine — the name is
+cosmetic, never an authz input — and it (or any later change) is always available from
+**Profile**, for every auth mode, not just `otp`.
+
 Before letting anyone else in, **prove the mailer works**: as a workspace admin, `POST
 /api/v1/admin/auth-email/test` sends a real message to your own address and, on failure,
 names the stage that broke (`connect` / `tls` / `auth` / `send`). Far better to find a bad

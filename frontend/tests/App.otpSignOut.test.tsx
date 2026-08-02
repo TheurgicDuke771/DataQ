@@ -22,7 +22,14 @@ import { logout } from '../src/auth/authClient';
  */
 vi.mock('../src/auth/config', () => ({ authMode: 'otp' }));
 vi.mock('../src/auth/authClient', () => ({ login: vi.fn(), logout: vi.fn() }));
-vi.mock('../src/auth/useMe', () => ({ useIsWorkspaceAdmin: vi.fn() }));
+// ProfileCompletionPrompt (#1139) also reads useMe() (via itself) and
+// useUpdateMe() (via useSaveDisplayName) — 'loading' keeps the prompt closed
+// (shouldShow requires status 'ok') so both are inert for this sign-out test.
+vi.mock('../src/auth/useMe', () => ({
+  useIsWorkspaceAdmin: vi.fn(),
+  useMe: vi.fn(() => ({ status: 'loading' })),
+  useUpdateMe: vi.fn(() => vi.fn()),
+}));
 vi.mock('../src/auth/useCurrentUser', () => ({ useCurrentUser: vi.fn() }));
 vi.mock('../src/auth/otpSessionContext', () => ({ useOtpSession: vi.fn() }));
 vi.mock('../src/api/client', () => ({

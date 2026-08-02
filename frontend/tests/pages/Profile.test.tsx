@@ -1,11 +1,13 @@
 import { App as AntApp } from 'antd';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { MeResponse } from '../../src/api/me';
 import { authMethodLabel } from '../../src/auth/config';
 import { MeContext } from '../../src/auth/meContext';
+import { useSaveDisplayName } from '../../src/auth/useSaveDisplayName';
 import type { AsyncState } from '../../src/hooks/useAsyncData';
 import { Profile } from '../../src/pages/Profile';
 
@@ -20,6 +22,13 @@ vi.mock('../../src/api/apiKeys', () => ({
   PAT_MAX_EXPIRY_DAYS: 365,
 }));
 
+// The name-edit affordance (#1139) goes through the shared save hook; stubbed
+// here so this file can assert the interaction without a real PATCH — the
+// hook's own PATCH→MeContext→otp-session fan-out is covered in
+// useSaveDisplayName.test.tsx.
+const saveDisplayName = vi.fn();
+vi.mock('../../src/auth/useSaveDisplayName', () => ({ useSaveDisplayName: vi.fn() }));
+
 const me: AsyncState<MeResponse> = {
   status: 'ok',
   data: {
@@ -31,6 +40,11 @@ const me: AsyncState<MeResponse> = {
     is_workspace_admin: false,
   },
 };
+
+beforeEach(() => {
+  saveDisplayName.mockReset();
+  vi.mocked(useSaveDisplayName).mockReturnValue(saveDisplayName);
+});
 
 function renderProfile(state: AsyncState<MeResponse>) {
   return render(
@@ -73,5 +87,74 @@ describe('Profile', () => {
     renderProfile({ status: 'error', error: 'boom', kind: 'http' as const });
     // #910: dedicated error page (no status on the stubbed state → 500).
     expect(screen.getByText('500 — Something went wrong')).toBeInTheDocument();
+  });
+
+  // ── display-name edit affordance (#1139) — every mode, not just otp ────────
+
+  describe('editing the display name', () => {
+    // antd's Typography editable textarea confirms on blur as well as Enter
+    // (`Editable`'s onBlur → confirmChange, unconditionally) — blur is the
+    // reliable one to drive from a test, since userEvent's synthetic Enter
+    // keyCode doesn't reach rc-component's own keyCode-compared handler in
+    // jsdom. Real browsers get both paths; this only exercises one of them.
+    const blurTheTextbox = () => userEvent.tab();
+
+    it('saves the new name through the shared hook', async () => {
+      saveDisplayName.mockResolvedValue(undefined);
+      renderProfile(me);
+
+      await userEvent.click(screen.getByRole('button', { name: 'Edit your display name' }));
+      const box = screen.getByRole('textbox');
+      await userEvent.clear(box);
+      await userEvent.type(box, 'New Name');
+      await blurTheTextbox();
+
+      await waitFor(() => expect(saveDisplayName).toHaveBeenCalledWith('New Name'));
+    });
+
+    it('does not save when the value is unchanged', async () => {
+      renderProfile(me);
+
+      await userEvent.click(screen.getByRole('button', { name: 'Edit your display name' }));
+      screen.getByRole('textbox');
+      await blurTheTextbox(); // blur with no edits — antd still fires onChange('Ada Lovelace')
+
+      expect(saveDisplayName).not.toHaveBeenCalled();
+    });
+
+    it('surfaces a failure instead of losing it silently', async () => {
+      saveDisplayName.mockRejectedValue(new Error('network blew up'));
+      renderProfile(me);
+
+      await userEvent.click(screen.getByRole('button', { name: 'Edit your display name' }));
+      const box = screen.getByRole('textbox');
+      await userEvent.clear(box);
+      await userEvent.type(box, 'New Name');
+      await blurTheTextbox();
+
+      expect(await screen.findByText(/Could not update your name/)).toBeInTheDocument();
+    });
+
+    it('offers the same edit affordance when there is no name yet (otp, pre-#1139-prompt)', () => {
+      renderProfile({ ...me, data: { ...me.data, display_name: null } });
+      // Falls back to the email as the displayed label, but is still editable.
+      expect(screen.getByRole('button', { name: 'Edit your display name' })).toBeInTheDocument();
+    });
+
+    it('does not PATCH the email in as the name on a bare blur (null display_name)', async () => {
+      // Regression: for a null-display_name user, the rendered/editable value is
+      // the EMAIL (the `name = display_name ?? email` fallback). The unchanged-
+      // value guard must compare against what's actually shown — comparing
+      // against the nullable `display_name` instead means email !== null is
+      // ALWAYS true, so a stray click-in-then-blur with no edit at all would
+      // silently PATCH the person's own email address in as their display name.
+      renderProfile({ ...me, data: { ...me.data, display_name: null } });
+
+      await userEvent.click(screen.getByRole('button', { name: 'Edit your display name' }));
+      screen.getByRole('textbox'); // showing "ada@dataq.io" — untouched
+      await blurTheTextbox();
+
+      expect(saveDisplayName).not.toHaveBeenCalled();
+    });
   });
 });

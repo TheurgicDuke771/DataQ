@@ -18,3 +18,11 @@ export async function fetchMe(): Promise<MeResponse> {
   const { data } = await api.get<MeResponse>('/me');
   return data;
 }
+
+/** Self-service profile update (#1139) — currently just the display name.
+ * Returns the refreshed `/me` body, so callers can adopt it directly instead
+ * of a second round trip. */
+export async function updateMe(displayName: string): Promise<MeResponse> {
+  const { data } = await api.patch<MeResponse>('/me', { display_name: displayName });
+  return data;
+}

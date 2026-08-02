@@ -1,10 +1,10 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 
 import { retryAfterSeconds } from '../api/client';
 import { fetchMe, type MeResponse } from '../api/me';
 import type { AsyncState } from '../hooks/useAsyncData';
 import { fetchFailure } from '../utils/errors';
-import { MeContext } from './meContext';
+import { MeContext, MeUpdateContext } from './meContext';
 import { useCurrentUser } from './useCurrentUser';
 
 /**
@@ -92,5 +92,15 @@ export function MeProvider({ children }: { children: ReactNode }) {
     // identity actually changes), so this refetches on real identity change only.
   }, [user]);
 
-  return <MeContext.Provider value={state}>{children}</MeContext.Provider>;
+  // Adopt a fresh `/me` body a PATCH already returned (#1139) — a plain
+  // `setState`, not a refetch, so a save is one request, not two.
+  const updateMe = useCallback((me: MeResponse) => {
+    setState({ status: 'ok', data: me });
+  }, []);
+
+  return (
+    <MeContext.Provider value={state}>
+      <MeUpdateContext.Provider value={updateMe}>{children}</MeUpdateContext.Provider>
+    </MeContext.Provider>
+  );
 }

@@ -169,6 +169,15 @@ class User(Base):
     aad_object_id: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
     email: Mapped[str] = mapped_column(String(320), nullable=False)
     display_name: Mapped[str | None] = mapped_column(String(256))
+    # True once a human has explicitly set their own name via `PATCH /me`
+    # (#1139) — distinguishes that from a name merely SEEDED by an AAD token
+    # claim or the OTP JIT-provisioning path. `_upsert_user`/`_claim_unlinked_user`
+    # (core/auth.py) sync `display_name` from the AAD claim only while this is
+    # False; once True, an AAD login never overwrites the self-service value.
+    # migration 6230293aea96.
+    display_name_override: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = _created_at()
     updated_at: Mapped[datetime] = _updated_at()

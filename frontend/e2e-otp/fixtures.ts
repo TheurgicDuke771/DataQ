@@ -63,8 +63,14 @@ export interface SignIn {
   readNewCode: (email: string, previous: string) => Promise<string>;
   /** Step 2 only: type a code and submit. */
   submitCode: (code: string) => Promise<void>;
-  /** The whole flow, ending inside the app. */
-  complete: (email: string) => Promise<string>;
+  /**
+   * The whole flow, ending inside the app. Dismisses the first-login
+   * profile-completion prompt (#1139) by default — pass
+   * `dismissProfilePrompt: false` for a spec that asserts on the sign-in
+   * flow's OWN footprint (e.g. storage cleanliness) and must not pick up the
+   * dismissal's own `sessionStorage` write as a false positive.
+   */
+  complete: (email: string, opts?: { dismissProfilePrompt?: boolean }) => Promise<string>;
 }
 
 function makeSignIn(page: Page): SignIn {
@@ -121,13 +127,53 @@ function makeSignIn(page: Page): SignIn {
     readCode,
     readNewCode,
     submitCode,
-    complete: async (email: string) => {
+    complete: async (email: string, opts?: { dismissProfilePrompt?: boolean }) => {
+      const dismissProfilePrompt = opts?.dismissProfilePrompt ?? true;
       await requestCode(email);
       const code = await readCode(email);
       await submitCode(code);
+
       // The app shell is the proof: AuthGate only renders children for a
       // resolved session.
       await expect(page.getByRole('link', { name: 'Connections' }).first()).toBeVisible();
+
+      if (!dismissProfilePrompt) return code;
+
+      // Every fresh OTP signup starts with display_name: NULL, so the
+      // first-login profile-completion prompt (#1139) fires here for every
+      // freshEmail() address and for the fixed OTP_ADMIN_EMAIL the first
+      // time it signs in during a run, and its mask intercepts pointer
+      // events over the nav, so leaving it up breaks every spec's next
+      // click. It depends on a SEPARATE `/me` fetch (MeProvider) than the
+      // one the OTP verify response already carries, so it can render a
+      // beat after the shell above.
+      //
+      // A page.waitForResponse() sync point on that fetch was tried here and
+      // TWICE hung for the entire test budget (#1153, CI runs 30772079151
+      // and 30772437357) despite its own explicit timeout — a network
+      // listener is one more moving part than this needs, and on this
+      // evidence not a reliable one. Poll the UI instead: locator.waitFor()
+      // already polls, so this loses nothing, and every wait below carries
+      // its OWN explicit timeout so nothing here can silently inherit (and
+      // exhaust) the whole test budget the way an untimed wait would.
+      const skipPrompt = page.getByRole('button', { name: 'Skip for now' });
+      try {
+        await skipPrompt.waitFor({ state: 'visible', timeout: 25_000 });
+        await skipPrompt.click({ timeout: 5_000 });
+        // Wait out the close animation too: a click that fires but hasn't
+        // finished closing the modal leaves the same mask in place for
+        // whatever the spec clicks next. NOTE: clicking "Skip for now"
+        // writes `dataq:profileCompletionPrompt:skipped` to sessionStorage
+        // (by design — see the component) — a spec asserting on the
+        // sign-in flow's OWN storage footprint must pass
+        // `dismissProfilePrompt: false` instead of dismissing and then
+        // filtering the key back out, so the assertion still proves what
+        // its name says.
+        await skipPrompt.waitFor({ state: 'hidden', timeout: 5_000 });
+      } catch {
+        // Already dismissed / already has a display_name (e.g. a persisted
+        // admin user on a re-run) — nothing to skip.
+      }
       return code;
     },
   };

@@ -9,3 +9,12 @@ import type { AsyncState } from '../hooks/useAsyncData';
  * Defaults to `loading` until the provider resolves it.
  */
 export const MeContext = createContext<AsyncState<MeResponse>>({ status: 'loading' });
+
+/**
+ * Lets a component that just PATCHed `/me` (profile completion prompt, the
+ * Profile page's own editor — #1139) push the fresh response into `MeContext`
+ * directly, rather than triggering a second `GET /me` round trip. A no-op
+ * default so a stray consumer outside `MeProvider` fails silently rather than
+ * throwing.
+ */
+export const MeUpdateContext = createContext<(me: MeResponse) => void>(() => {});

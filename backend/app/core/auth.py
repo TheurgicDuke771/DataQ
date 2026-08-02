@@ -36,7 +36,7 @@ from fastapi import Depends, Request, Security
 from fastapi.security import SecurityScopes
 from fastapi_azure_auth import SingleTenantAzureAuthorizationCodeBearer
 from fastapi_azure_auth.user import User as AzureUser
-from sqlalchemy import func, update
+from sqlalchemy import case, func, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -228,6 +228,20 @@ def _claim_unlinked_user(
     sign-ins racing for the same unlinked row cannot both succeed. The loser gets
     `None` here and the caller retries the ordinary upsert, which now finds the
     winner's `aad_object_id` as a conflict target.
+
+    `display_name` branches on `display_name_override` (#1139, migration
+    6230293aea96), not a plain overwrite: the row being claimed is exactly the
+    OTP-provisioned shape — email only, likely no name yet — so the incoming
+    AAD claim is a good one to seed *unless* the person already set their own
+    via `PATCH /me` before ever signing in through Azure AD, in which case
+    linking must not silently discard it. `COALESCE(User.display_name, claim)`
+    was the first cut here (and remains materially the same outcome for THIS
+    function, which runs once, at the moment of linking) — it was replaced to
+    use the same predicate as `_upsert_user` below, where COALESCE's actual
+    defect lives (it can't tell "someone set this" from "a first login seeded
+    it", so it also froze out every later legitimate claim rename). One
+    predicate for both call sites is what makes "override survives, no-override
+    syncs" hold as a single invariant instead of two similar-looking rules.
     """
     claimed = db.execute(
         update(User)
@@ -238,7 +252,10 @@ def _claim_unlinked_user(
         .values(
             aad_object_id=aad_object_id,
             email=email,
-            display_name=display_name,
+            display_name=case(
+                (User.display_name_override.is_(True), User.display_name),
+                else_=display_name,
+            ),
             last_seen_at=now,
             updated_at=now,
         )
@@ -275,7 +292,31 @@ def _upsert_user(
             index_elements=["aad_object_id"],
             set_={
                 "email": email,
-                "display_name": display_name,
+                # Branches on `display_name_override` (#1139, migration
+                # 6230293aea96), not a plain overwrite AND not a bare COALESCE.
+                # This upsert runs on EVERY real-mode request (no session cache
+                # — the JWT is re-validated and re-claimed each time), so a
+                # plain overwrite would silently revert a `PATCH /me` override
+                # back to the AAD token's `name` claim on the user's very next
+                # request. A first cut used `COALESCE(User.display_name, claim)`
+                # instead — review on #1139 caught that it over-corrects: it
+                # can't distinguish "someone explicitly set this" from "a first
+                # login seeded it from the very same claim", so EVERY user's
+                # name froze at whatever their first login happened to claim,
+                # and a genuine Entra rename never synced again for anyone,
+                # override or not. The flag is the missing bit: sync the claim
+                # in whenever nobody has overridden it (True → False stays
+                # False → this row's whole life until a PATCH), and leave the
+                # self-service value alone once they have. The INSERT branch
+                # (`.values()` above) still seeds `display_name` from the claim
+                # on a brand-new row — `display_name_override` defaults False
+                # there (server_default, migration), so the very next login
+                # still syncs it, which is correct: nobody overrode anything
+                # yet.
+                "display_name": case(
+                    (User.display_name_override.is_(True), User.display_name),
+                    else_=display_name,
+                ),
                 "last_seen_at": now,
                 "updated_at": now,
             },

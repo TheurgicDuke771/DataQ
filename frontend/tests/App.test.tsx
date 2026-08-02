@@ -11,7 +11,15 @@ import { useCurrentUser } from '../src/auth/useCurrentUser';
 // dev_bypass keeps AuthGate a passthrough so the Layout itself is under test.
 vi.mock('../src/auth/config', () => ({ authMode: 'dev_bypass' }));
 vi.mock('../src/auth/authClient', () => ({ login: vi.fn(), logout: vi.fn() }));
-vi.mock('../src/auth/useMe', () => ({ useIsWorkspaceAdmin: vi.fn() }));
+// ProfileCompletionPrompt (#1139) also reads useMe() (via itself) and
+// useUpdateMe() (via useSaveDisplayName) — 'loading' keeps the prompt closed
+// (shouldShow requires status 'ok') and the no-op setter is never called from
+// a closed prompt, so both are inert for these shell tests.
+vi.mock('../src/auth/useMe', () => ({
+  useIsWorkspaceAdmin: vi.fn(),
+  useMe: vi.fn(() => ({ status: 'loading' })),
+  useUpdateMe: vi.fn(() => vi.fn()),
+}));
 vi.mock('../src/auth/useCurrentUser', () => ({ useCurrentUser: vi.fn() }));
 // Lazy route pages fetch on mount; a forever-pending client keeps them in
 // their loading state so shell assertions don't race real requests.
