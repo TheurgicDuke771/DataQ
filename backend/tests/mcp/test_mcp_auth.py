@@ -265,8 +265,12 @@ async def test_pat_only_verifier_rejects_a_bad_pat(db_session: Any, monkeypatch:
 @pytest.mark.parametrize(
     "bearer",
     [
-        pytest.param("eyJhbGciOiJSUzI1NiJ9.e30.sig", id="jwt-shaped"),
-        pytest.param("Zm9vYmFy", id="opaque"),
+        # Deliberately NOT a decodable JWT: the branch under test never parses the
+        # token, and a structurally valid one trips secret scanners (GitGuardian
+        # flagged exactly that on the first push of this PR). Matches the
+        # placeholder convention already used above.
+        pytest.param("eyJhbGciOi.some.jwt", id="jwt-shaped"),
+        pytest.param("opaque-bearer-that-is-not-a-dataq-token", id="opaque"),
         pytest.param("", id="empty"),
     ],
 )
@@ -523,7 +527,7 @@ def test_otp_only_mcp_accepts_a_PAT_and_rejects_every_other_credential_over_http
             with_jwt = client.post(
                 "/mcp/",
                 json=body,
-                headers={**accept, "Authorization": "Bearer eyJhbGciOiJSUzI1NiJ9.e30.sig"},
+                headers={**accept, "Authorization": "Bearer eyJhbGciOi.some.jwt"},
             )
             client.cookies.set(session_service.COOKIE_NAME, session_token)
             with_cookie = client.post("/mcp/", json=body, headers=accept)
