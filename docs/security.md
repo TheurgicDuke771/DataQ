@@ -71,7 +71,8 @@ are the reason this mode is opt-in rather than the default:
 - **Two coordinated auth-mode selectors.** The frontend's runtime `DATAQ_AUTH_MODE` and the
   backend's inferred mode (SSO variables, or the OTP mailer + allowlist block) are separate
   contracts — neither can derive the other. Set them together; the full table is in
-  [`deploy/README.md`](../deploy/README.md) and [`.env.app.example`](../.env.app.example). The
+  [`deploy/README.md`](https://github.com/TheurgicDuke771/DataQ/blob/main/deploy/README.md) and
+  [`.env.app.example`](https://github.com/TheurgicDuke771/DataQ/blob/main/.env.app.example). The
   backend refuses to start on a half-configured OTP block rather than come up unable to log
   anybody in.
 
