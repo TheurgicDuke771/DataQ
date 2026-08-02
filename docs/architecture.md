@@ -96,6 +96,21 @@ erDiagram
         timestamptz revoked_at "soft revocation"
         timestamptz last_used_at "throttled telemetry"
     }
+    sessions {
+        uuid id PK
+        uuid user_id FK "CASCADE"
+        string token_hash UK "sha256 hex of the dq_sess_ cookie token"
+        timestamptz expires_at "fixed horizon — no refresh pair"
+        timestamptz revoked_at "logout"
+    }
+    otp_codes {
+        uuid id PK
+        string email "normalized (strip+lower); deliberately NOT FK'd to users"
+        string code_hash "sha256 hex of the 6-digit code"
+        timestamptz expires_at "10-minute TTL"
+        timestamptz consumed_at "redeemed OR superseded by a re-request"
+        int attempts "atomically incremented before each compare; capped"
+    }
     connections {
         uuid id PK
         string name "unique per env"
@@ -265,6 +280,7 @@ erDiagram
     }
 
     users ||--o{ api_keys : "PATs (CASCADE — keys die with the user)"
+    users ||--o{ sessions : "OTP browser sessions (CASCADE)"
     users ||--o{ connections : "created_by"
     users ||--o{ suites : "created_by"
     users ||--o{ schedules : "created_by"
