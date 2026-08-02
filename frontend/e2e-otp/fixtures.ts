@@ -128,6 +128,22 @@ function makeSignIn(page: Page): SignIn {
       // The app shell is the proof: AuthGate only renders children for a
       // resolved session.
       await expect(page.getByRole('link', { name: 'Connections' }).first()).toBeVisible();
+      // Every fresh OTP signup starts with display_name: NULL (ADR 0032 is
+      // credential-only, #1139), so the first-login profile-completion modal
+      // fires here for every freshEmail() address and for the fixed
+      // OTP_ADMIN_EMAIL the first time it signs in during a run. It renders
+      // once `/me` resolves — which can land a beat after the shell above —
+      // and its mask intercepts pointer events over the nav, so leaving it up
+      // breaks every spec's next click. Dismiss it here, once, for everyone;
+      // the modal itself is covered directly by its own unit tests.
+      const skipPrompt = page.getByRole('button', { name: 'Skip for now' });
+      try {
+        await skipPrompt.waitFor({ state: 'visible', timeout: 5_000 });
+        await skipPrompt.click();
+      } catch {
+        // Already dismissed / already has a display_name (e.g. a persisted
+        // admin user on a re-run) — nothing to skip.
+      }
       return code;
     },
   };

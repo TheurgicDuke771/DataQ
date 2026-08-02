@@ -26,6 +26,13 @@ beforeEach(() => {
   vi.resetModules();
   probeSession.mockReset();
   endSession.mockReset();
+  // Safe-by-default, same treatment as endSession below: every test that cares
+  // about the resolved value overrides it explicitly. Without this, a
+  // probeSession() call nobody intended to happen (e.g. the passthrough-mode
+  // tests, which assert it's never called) resolves `undefined` instead of a
+  // promise, and a stray invocation crashes on `.then` instead of failing the
+  // assertion cleanly — the failure mode that motivated this default.
+  probeSession.mockResolvedValue(null);
   endSession.mockResolvedValue(undefined);
   vi.doMock('../../src/auth/config', () => ({ authMode: 'otp' }));
   vi.doMock('../../src/auth/otpClient', () => ({ probeSession, endSession }));
@@ -189,7 +196,11 @@ describe('OtpSessionProvider — other auth modes', () => {
     'is a passthrough in %s mode and never probes /me',
     async (mode) => {
       // A probe here would race the OIDC token acquisition and 401 for no reason.
-      vi.resetModules();
+      // No vi.resetModules() here: beforeEach already reset the module cache and
+      // nothing has imported config/otpClient yet this test, so re-registering
+      // the mocks below is enough to override beforeEach's 'otp' default — an
+      // extra reset+re-mock cycle right before the dynamic import below is one
+      // more window for it to race the import, for no benefit.
       vi.doMock('../../src/auth/config', () => ({ authMode: mode }));
       vi.doMock('../../src/auth/otpClient', () => ({ probeSession, endSession }));
       const { OtpSessionProvider } = await import('../../src/auth/OtpSessionProvider');
