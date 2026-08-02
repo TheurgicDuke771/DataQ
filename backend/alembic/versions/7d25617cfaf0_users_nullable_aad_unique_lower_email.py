@@ -46,11 +46,33 @@ stamped, and the schema is left exactly as it was. That abort is the designed
 behaviour — a loud, clean failure in the migrate job is strictly better than a
 silently-merged identity.
 
-Lock note: plain `CREATE UNIQUE INDEX` (no `CONCURRENTLY`) inside the migration
-transaction — `users` is tiny (tens of rows in the largest deployment we know
-of), so the SHARE lock is sub-second, and `CONCURRENTLY` cannot report a
-duplicate-email conflict as a clean transactional abort. Precedent + rationale:
-`1a2b3c4d5e6f_lineage_edges_nullable_connection.py`.
+## Lock note — ACCESS EXCLUSIVE on `users` for the whole migration
+
+Be precise about this, because the weaker reading is wrong: `ALTER TABLE … ALTER
+COLUMN … DROP NOT NULL` takes **ACCESS EXCLUSIVE**, and Postgres holds every lock
+until COMMIT. `env.py` sets `transaction_per_migration=True`, so the ALTER and the
+`CREATE UNIQUE INDEX` share one transaction — meaning `users` is under ACCESS
+EXCLUSIVE from the ALTER through the index build to COMMIT. It is never merely the
+SHARE lock a bare `CREATE INDEX` would take, and ACCESS EXCLUSIVE blocks
+**readers** too, not just writers: for its duration, every request that resolves a
+user (i.e. every authenticated request) waits. That is the #748 mechanism.
+
+Accepted deliberately, on duration rather than on lock strength:
+
+* `users` is tiny — tens of rows in the largest deployment we know of — so both
+  statements are sub-millisecond and the window is far shorter than a request
+  timeout.
+* `env.py` sets `lock_timeout=15s` on the migration engine, so if something else
+  already holds a conflicting lock this fails fast and retryably instead of
+  hanging the deploy while itself holding ACCESS EXCLUSIVE.
+
+`CONCURRENTLY` would not help here and is not merely unnecessary: it cannot run
+inside a transaction block, so it could not share the ALTER's transaction, and it
+reports a duplicate-email conflict by leaving an INVALID index behind rather than
+as the clean transactional abort the pre-deploy audit contract above depends on.
+
+Precedent (a genuine SHARE-lock-only case, since it adds an index without an
+ALTER): `1a2b3c4d5e6f_lineage_edges_nullable_connection.py`.
 
 ## Downgrade — deliberately refuses rather than deleting users
 
