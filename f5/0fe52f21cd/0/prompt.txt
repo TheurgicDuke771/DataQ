@@ -1,0 +1,258 @@
+Check your memory and pickup from where we left off in last session. 
+First check the current state of this repo. 
+You can be the orchestrator, and deligate the task to other models [haiku/sonet/opus] based on complexity and nature of the task.
+
+---
+
+Please let me know the agents progress. 
+
+We have both sign-up [email, display name, other details - for first time] and log-in [2nd time onwards] for the OTP bases auth flow, correct?
+Also close all the issues you raised during this session.
+
+---
+
+<task-notification>
+<task-id>a7e3b7254494dc447</task-id>
+<tool-use-id>toolu_01TQXbNnqYdhinTRmabX6aq8</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d251b586-240a-4781-b592-ea5c0d600b47/tasks/a7e3b7254494dc447.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement #737 SMTP pre-flight" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Summary
+
+PR **#1143**: https://github.com/TheurgicDuke771/DataQ/pull/1143 — `feat(admin): SMTP pre-flight test endpoint + runbook step (ADR 0032)`, milestone `v1.1 Backlog`, `Fixes #737`, auto-merge **not** enabled.
+
+Note on process: the harness restarted mid-task and the original worktree was gone (branch `feature/issue-737-smtp-preflight` existed but had zero commits on top of `origin/main`, so nothing was actually lost). I recreated a worktree at `/private/tmp/claude-501/.../scratchpad/dataq-737` off `origin/main` on that same branch and redid the implementation from scratch, per your instruction — the main checkout at `/Users/arijit/Coding/Python/DataQ` was never touched.
+
+## What shipped
+
+- **`backend/app/services/otp_mailer.py`** — new private `_deliver()` helper does the connect→STARTTLS→login→send ladder once and classifies which stage failed via an internal `_SmtpStageError`. `send_code` (sign-in path) still collapses everything to its existing uniform `OtpMailSendError` 502 — unchanged contract. New `send_preflight()` reuses `_deliver` but raises a new `OtpMailPreflightError` (502) carrying `detail.stage` ∈ `connect|tls|auth|send` + `detail.error_type`. Also factored `_resolve_password()` (shared not-configured/store-unavailable handling) out of `send_code`.
+- **`backend/app/api/v1/admin.py`** — `POST /admin/auth-email/test` (→ `/api/v1/admin/auth-email/test`), behind the router's existing `require_workspace_admin` dependency, mails the **caller's own address only** (no recipient input — can't be used to relay to a third party). Plain `def`, not `async def`, matching `auth_otp.request_otp`'s existing pattern so Starlette's threadpool offloads the blocking SMTP call.
+- **Tests**: `test_otp_mailer.py` gained stage-classification tests (bad host/timeout→connect, TLS failure→tls, refused login→auth, rejected message→send) plus a redaction test that runs the **real logging pipeline** (`configure_logging()` + captured stdout) with a real password in the call stack, asserting the password string never appears while the stage/error-type do. `test_admin.py` gained endpoint-level tests hitting the real route with only `smtplib.SMTP` mocked at the transport boundary (403 non-admin, 503 not-configured, 200 success, parametrized 502/stage matrix).
+- **Docs**: `deploy/README.md` — a pointer in the `AUTH_EMAIL_*` row + a new post-deploy smoke-checklist bullet with a `curl` example. `docs/security.md` — a short note in the OTP section.
+- **Frontend (nice-to-have, done)**: `frontend/src/api/admin.ts` gained `testAuthEmail()`; `Settings.tsx`'s General tab gained a "Send test email" button using the existing `useAsyncAction`/`App.useApp()` pattern; `Settings.test.tsx` covers both the success toast and the failure toast (which already surfaces the backend's stage-naming message via the existing axios-interceptor→`err.message` path — no new frontend parsing needed).
+
+## Test evidence
+
+- Backend: `black --check backend`, `ruff check backend`, `mypy backend`, `bandit -r backend/app` — all clean. `pytest backend/tests` (against dedicated scratch DB `dataq_test_737`, both `TEST_DATABASE_URL` and `DATABASE_URL` pointed at it — the latter mattered, one unrelated pre-existing test opens a raw session via `DATABASE_URL` directly and would otherwise have tried the real `dataq` dev DB) — **3469 passed, 1 skipped**, 97% coverage.
+- Frontend: `pnpm lint`, `tsc --noEmit`, `prettier --check` clean; `pnpm test:coverage` — **772 passed**, 90.79% all-`src` lines (gate 80%).
+
+## Nothing deferred/filed
+
+This was additive work on top of the already-tested `#734` mailer seam; no new defects surfaced during implementation or the local verification pass, so there's nothing to file.</result>
+<usage><subagent_tokens>263304</subagent_tokens><tool_uses>100</tool_uses><duration_ms>1252907</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ac0c9034aa61b4d8e</task-id>
+<tool-use-id>toolu_015rpuNb1uX2vDDrxd6TYNuL</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d251b586-240a-4781-b592-ea5c0d600b47/tasks/ac0c9034aa61b4d8e.output</output-file>
+<status>failed</status>
+<summary>Agent "Fix findings #1130 #1133 #1136" failed: Agent terminated early due to an API error: You've hit your session limit · resets 2:30am (America/Vancouver)</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Good, formatting only. Now let's run lint/format/mypy/tests for PR2's changes.</result>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-ac0c9034aa61b4d8e</worktreePath><worktreeBranch>worktree-agent-ac0c9034aa61b4d8e</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>abc1ba017ce19eac7</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d251b586-240a-4781-b592-ea5c0d600b47/tasks/abc1ba017ce19eac7.output</output-file>
+<status>failed</status>
+<summary>Agent "Implement #1128 /mcp otp-only" failed: Agent terminated early due to an API error: You've hit your session limit · resets 2:30am (America/Vancouver)</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Now the verifier-behaviour tests for pat_only mode:</result>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-abc1ba017ce19eac7</worktreePath><worktreeBranch>worktree-agent-abc1ba017ce19eac7</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>afd4b52bf17e03b20</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d251b586-240a-4781-b592-ea5c0d600b47/tasks/afd4b52bf17e03b20.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement #736 frontend OTP mode" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Note: claude-sonnet-5[1m] (the safety classifier) was unavailable when reviewing this subagent's work. Please carefully verify the subagent's actions and output before acting on them.
+
+Done. PR is open and fully green.
+
+## PR
+**#1148** — https://github.com/TheurgicDuke771/DataQ/pull/1148
+Milestone `v1.1 Backlog`, no auto-merge, `Fixes #736.` + `Fixes #1138.` (keyword repeated per issue). 4 commits: nginx fix → frontend mode → E2E lane + docs → 2 fixups.
+
+## Design decisions
+
+**#1138 — fix option 1 (nginx trusts the edge).** `proxy_set_header X-Forwarded-Proto $scheme` sent a deterministically-wrong `http` (TLS terminates at the ACA edge, not at nginx) and *replaced* the edge's correct `https`, so `_cookie_secure()` would have dropped `Secure` on live HTTPS. Chose option 1 over the Terraform env var because it fixes the cause, ships with the image (so BYO deployments get it too), and keeps plain-HTTP local dev working — a hard-coded `Secure` fails *silently*. A `map` prefers `$http_x_forwarded_proto` with `$scheme` fallback across all three proxy blocks; `X-Forwarded-For` verified untouched (the ADR-0035 limiter reads it — pinned by a test). Validated with `nginx -t` through the real image entrypoint. `AUTH_SESSION_COOKIE_SECURE=true` kept as valid belt-and-braces; the docs that described the broken state now describe the fixed one, plus a runbook note that the fix rides the frontend image. No live Azure touched.
+
+**Frontend.** `otp` is checked *before* the OIDC branch so stale `authority`/`clientId` can't override an explicit mode switch. Nothing in JS-readable storage (asserted against the real `Storage` prototype *and* in a browser). Four states — `probing` and `error` both kept off the sign-in form. No invented error taxonomy: the backend's uniform 401 is rendered as-is, with a test pinning that "expired" looks identical to "wrong".
+
+**E2E lane approach.** Both options in the brief turned out unusable as stated: a test-mode hook adds a bypass to a sign-in flow, and a stock MailHog/smtp4dev container can't satisfy `ssl.create_default_context()` (verifies cert *and* hostname) plus AUTH. So the lane brings its own infrastructure, entirely outside the app — an in-repo stdlib SMTP sink (no new dependency, nothing added to pip-audit) emitting a throwaway cert the api trusts via `SSL_CERT_FILE`, plus a second OTP-mode api (required, not preference: the auth seam binds at import time and OTP wins over dev-bypass). Auth mode is injected as `window.__DATAQ_CONFIG__` — the production contract, so no test-only branch in `src/`.
+
+## Test evidence
+| | |
+|---|---|
+| CI, all 15 checks | **pass** — incl. `Playwright E2E — email OTP: 11 passed (20.4s)`, confirmed in the job log |
+| `pnpm test:coverage` | 851 passed (was 775), **91.13%** lines vs the 80% gate |
+| `pnpm e2e` (dev-bypass) | **35/35** — no regression from the `webServer` array change |
+| `E2E_OTP=1 pnpm e2e:otp` local | **11/11** against a real stack |
+| backend OTP pytest | **112 passed** (scratch DB per #1130) |
+| black / ruff / mypy / bandit | clean |
+
+Two mutation checks are recorded in the code: deleting the 401 event wiring fails the mid-session revocation spec (and correctly *not* the navigation one — different mechanisms); and a spec written for the `/auth/*` exclusion **passed with the exclusion removed**, so that claim was moved to the unit test that can actually fail and the spec renamed to what it proves.
+
+## Found along the way
+- **#1146 filed** — the OTP mailer has no CA-bundle or TLS-mode option, so an internal relay on a private CA (common for exactly the IdP-less orgs this mode targets) is unusable without replacing the whole-process trust store; :465 unreachable too.
+- **CI caught a real portability bug my macOS runs structurally could not**: `mktemp -d -t &lt;prefix&gt;` works on BSD, fails on GNU. Fixed and verified under `ubuntu:24.04` *and* on the dev host; two adjacent same-shape hazards (`localhost` → `::1`, and a `DNSName("127.0.0.1")` SAN that silently wouldn't match an IP literal) fixed pre-emptively.
+- **GitGuardian** false-positived on `AUTH_EMAIL_PASSWORD_SECRET_NAME=&lt;literal&gt;` sitting two lines under `AUTH_EMAIL_USERNAME=`. Resolved structurally rather than waved off.
+
+Scratch DBs and all local processes were torn down; the worktree is clean.</result>
+<usage><subagent_tokens>432101</subagent_tokens><tool_uses>247</tool_uses><duration_ms>3447037</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-afd4b52bf17e03b20</worktreePath><worktreeBranch>worktree-agent-afd4b52bf17e03b20</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+continue...
+
+---
+
+<task-notification>
+<task-id>a8e776d7484409778</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d251b586-240a-4781-b592-ea5c0d600b47/tasks/a8e776d7484409778.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix findings #1135 #1137" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Done.
+
+## Commit
+
+**`d14325ce`** — `fixup: document AUTH_OTP_REQUEST_MIN_SECONDS in the deploy env reference (#1137)`, plain push to `security/issue-1137-otp-timing-floor` (`41765762..d14325ce`), no force.
+
+## The row added to `deploy/README.md`
+
+Placed immediately after `AUTH_OTP_REQUEST_PER_EMAIL_PER_10MIN`, so the whole OTP block reads in order:
+
+| `AUTH_OTP_REQUEST_MIN_SECONDS` | `1.0` | constant-time **floor** on `POST /api/v1/auth/otp/request` (#1137) — every uniform response (sent / ineligible / throttled) is held to this minimum… Error responses (502/503) are deliberately **not** padded… Raise it if your relay is routinely slower than a second; **`0` disables the floor — re-opens the #1137 timing channel**. Not a constant-time guarantee: a send slower than the floor still overruns it, bounded by `AUTH_EMAIL_TIMEOUT_SECONDS`. |
+
+It carries the name, default, the three padded branches, the deliberate error-path exclusion, the `0`-disables warning in the requested wording, and the residual — so the operator-facing reference now says the same thing as `docs/security.md` and the docstrings rather than being silent about a setting that can switch the mitigation off.
+
+## Merge situation with #1145
+
+No merge was needed — `git fetch origin` shows `origin/main` still at `5f3aebd5` (#1143); **#1145 has not merged yet**, so `d632828c` isn't on main and there was nothing to reconcile. PR #1142 reports `mergeable: MERGEABLE` against `main`. If #1145 lands first, the touch points are disjoint anyway (its `&lt;=0` guard is in `otp_service`'s quota function; my only `otp_service` change is the module docstring), so a trivial `git merge origin/main` should be conflict-free — flag me if auto-merge says otherwise.
+
+## Verification
+
+Docs-only diff (`1 file changed, 1 insertion(+)`); no code touched, and no test or CI gate reads `deploy/README.md` (only `.github/workflows/deploy.yml` references it, as prose). Ran the config/OTP suites as a sanity check — `80 passed`. **CI on #1142 is green again: all 15 checks pass**, `deploy` skipping as designed.</result>
+<usage><subagent_tokens>246792</subagent_tokens><tool_uses>9</tool_uses><duration_ms>374326</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-a8e776d7484409778</worktreePath><worktreeBranch>worktree-agent-a8e776d7484409778</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>abc1ba017ce19eac7</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d251b586-240a-4781-b592-ea5c0d600b47/tasks/abc1ba017ce19eac7.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement #1128 /mcp otp-only" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>**PR #1151** — https://github.com/TheurgicDuke771/DataQ/pull/1151 (open, milestone `v1.1 Backlog`, **no auto-merge**, all 12 required checks green, up to date with `main`).
+
+## What changed
+
+`backend/app/mcp/auth.py` — the mode selection now lives in one `mcp_auth_mode()` ladder that mirrors `core.auth.get_current_user` exactly: **`azure_ad` → `pat_only` → `dev_bypass` → `disabled`**. `mcp_enabled()`, `build_auth_provider()` and the startup log line all read it. The old shape had the gate and the log each re-deriving the mode from `azure_auth_configured`, which is precisely how an OTP deployment ended up unmounted *and* reported as `auth="dev_bypass"`.
+
+## How otp-only /mcp fails closed
+
+- `_PatOrJwtVerifier` now takes `JWTVerifier | None`. In `pat_only` the JWT half is **genuinely absent**, not an unconfigured validator: a non-PAT bearer hits `if self._jwt is None: return None` → fastmcp's uniform 401, having reached no validator at all. An unconfigured verifier never becomes an accept-anything path, and no token material is handed to something that logs what it can't decode (#849).
+- `dq_sess_` stays rejected **by prefix, first**, in every mode. The cookie still never authenticates `/mcp` (bearer-only; the "cookies never appear in mcp/auth.py" structural test still passes).
+- Two judgement calls worth the orchestrator's eye: **(1) OTP outranks dev-bypass** — `dev` + `AUTH_DEV_BYPASS=true` + a complete OTP block previously mounted `/mcp` *unauthenticated* and now requires a PAT (a tightening, and it removes a REST-vs-MCP disagreement about the mode). **(2) `disabled` builds the PAT-only verifier, not `None`** — unreachable in practice, but a future mounting mistake then degrades to "nobody authenticates" rather than "everybody". `None` is now returned by exactly one mode, `dev_bypass`.
+
+## Test evidence
+
+71 tests in `backend/tests/mcp/`; full local battery green — black, ruff, mypy (326 files), bandit (no issues), `pre-commit` incl. betterleaks, and **3511 passed / 1 skipped, coverage 97.05%** against scratch DB `dataq_test_1128`. New: the mode matrix (azure-only / otp-only / both / bypass / nothing / otp+bypass), the pat_only verifier's accept+reject set (valid PAT, bad PAT, `dq_sess_`, and *every* non-PAT bearer rejected **uniformly** — that one exists because the interesting failure is `AttributeError` on `None.verify_token`, i.e. a 500 that tells a caller which auth mode the deployment runs), an HTTP mount test asserting **all 8 tools** are served, an HTTP credential matrix over the real mounted app, and the joined-up journey (OTP-provisioned user with `aad_object_id IS NULL` mints a PAT through the real `/me/api-keys` router with a session cookie → that PAT authenticates on `/mcp`).
+
+**Each half of the fix was reverted to confirm the tests fail**: dropping the `pat_only` branch kills 5; returning `None` instead of the verifier kills 9; removing the `_jwt is None` guard kills 4. That first revert **caught a test passing for the wrong reason** — the mount assertion was being rescued by the suite's process-wide `AUTH_DEV_BYPASS=true`, so the reload helper now switches `ENVIRONMENT`/`AUTH_DEV_BYPASS`/`AZURE_*` off explicitly, with the reason in the docstring.
+
+## Scope item 3 — verified, nothing to fix
+
+The PAT surface **is** reachable for OTP users: `POST /me/api-keys` depends on the generic `get_current_user`, which binds to `_get_current_user_otp` (PAT → cookie → 401), so a session cookie mints and lists keys. Pinned by the journey test above rather than asserted in prose.
+
+## Docs
+
+`docs/mcp-setup.md` (endpoint callout + 2 troubleshooting rows), `docs/security.md`, `docs/deployment.md`, `docs/feature-matrix.md`, `deploy/README.md`, `.env.app.example`.
+
+## Two things you should know
+
+1. **GitGuardian (non-required check) is red and will stay red.** My first commit contained a *structurally valid* JWT placeholder in a test parametrization; GG's JWT detector flags the shape. **Fixed in the tree** (`f4adcf68` — now the non-decodable `eyJhbGciOi.some.jwt` placeholder the file already used, with a comment), but GG scans every commit in the PR and a follow-up can't purge branch history. It is **not** one of the 12 required checks (`betterleaks` is, and passes), it is a fake token with nothing to rotate, and **squash-merge means the literal never enters `main`**. Documented in a PR comment offering a branch rebuild if you'd rather have a clean scan.
+2. **`docs/progress.md` untouched** (N/A box ticked) — deliberately, to avoid a concurrent-edit conflict with the other OTP-track agents; the track entry is yours to write at batch close.
+
+I also merged `origin/main` into the branch (it had gone `CONFLICTING` after #1144/#1145 landed, which is *why* no CI ran on the first two pushes) — one conflict in `deploy/README.md`, resolved by keeping **both** additions: main's #737 SMTP pre-flight sentence and my `/mcp` sentence. Files touched are confined to `backend/app/mcp/*`, `backend/tests/mcp/test_mcp_auth.py` and docs — nothing in `otp_service.py`, `auth_otp.py`, `rate_limit.py`, `otp_mailer.py`, `admin.py`, or the frontend.</result>
+<usage><subagent_tokens>276100</subagent_tokens><tool_uses>154</tool_uses><duration_ms>1689021</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-abc1ba017ce19eac7</worktreePath><worktreeBranch>worktree-agent-abc1ba017ce19eac7</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>afd4b52bf17e03b20</task-id>
+<tool-use-id>toolu_01QwHRRx2cEr4REgiZitX5tS</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d251b586-240a-4781-b592-ea5c0d600b47/tasks/afd4b52bf17e03b20.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement #736 frontend OTP mode" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Conflict resolved, merged, and now on `main` as `bf8a68fd`.
+
+## Resolution summary
+
+**One real conflict** — `docs/security.md`. The diff3 view showed main had *not* touched the `Secure` paragraph at all; it only **appended** #1143's SMTP pre-flight paragraph next to it. So the resolution kept **my corrected `Secure` text** (main's version still says "until #1138 is fixed", which this PR makes false) **+ main's pre-flight paragraph verbatim**.
+
+**Everything else auto-merged, but I verified rather than trusted it**, since a clean auto-merge is exactly where content goes missing silently:
+
+| File | Both sides present? |
+|---|---|
+| `auth_otp.py` | Main's constant-time floor (`_hold_until_floor`, `_floor_remainder`, the #1137 docstring) **and** my `_cookie_secure` docstring. No reconciliation needed — main never touched that function, so there was no competing revision to merge. Final diff vs main on this file is **docstring-only**. |
+| `deploy/README.md` | Main's `AUTH_OTP_REQUEST_MIN_SECONDS` row + pre-flight + `/mcp` PAT text, **and** my `AUTH_SESSION_COOKIE_SECURE` row. |
+| `.env.app.example` | Main's floor block + `/mcp` note, **and** my cookie-secure comment. |
+| `docs/security.md` | #1151's "OTP-only ⇒ PAT is the only MCP credential" paragraph survived intact outside the conflict hunk. |
+| `docs/getting-started.md` | Only one line differs from main — my intended heading rename. Nothing lost. |
+
+**One addition beyond pure resolution:** my new `otp` setup section would have shipped stale on day one, so it now points at #1143's SMTP pre-flight ("prove the mailer works before inviting anyone") and #1151's rule that `/mcp` accepts only a PAT in this mode. Both facts checked against `deploy/README.md` and `security.md` rather than written from memory. *Transparency note:* this landed inside the merge commit rather than its own commit — I'd staged it before committing the merge, and separating it afterwards would have needed a force-push. It squashes to one commit on main regardless.
+
+## Diff-stat vs main — only #736/#1138 work
+
+```
+.env.app.example                      |  11 +-      frontend/e2e-otp/*            | 476 ++++
+.github/workflows/ci.yml              |  33 +-      frontend/src/auth/Otp*        | 344 ++++
+backend/app/api/v1/auth_otp.py        |  14 +-      frontend/src/auth/*           | 230 +--
+backend/scripts/e2e_otp_smtp_sink.py  | 407 ++++    frontend/tests/**             | 869 ++++
+deploy/README.md                      |   2 +-      frontend/nginx.conf.template  |  40 +-
+docs/{getting-started,security}.md    |  89 +-      scripts/e2e-otp-stack.sh      | 126 ++
+docs/progress.md                      |   7 +-
+40 files changed, 3053 insertions(+), 75 deletions(-)
+```
+
+No stray main content leaked in.
+
+## Verification
+
+- `black --check` + `ruff` on both touched backend files — clean
+- `pnpm lint` / `format:check` / `typecheck` — clean
+- `pnpm test:coverage` — **853 passed**, 91.15% lines (2 more tests than before: main's additions)
+- Backend subset incl. the newly-merged MCP tests — **165 passed** (dedicated scratch DB per #1130)
+- **OTP E2E lane re-run against the merged backend — 11/11.** Worth doing rather than assuming: main's floor adds ~1s to every `otp/request`, which is the exact path my lane drives. It shows in the timings (spec 5: 0.5s → 1.8s; spec 8, two requests: 0.5s → 3.1s), all comfortably inside the timeouts. The lane now exercises main's floor too.
+- **CI: all 15 checks green**, including `Playwright E2E — email OTP` (4m27s).
+
+## Outcome
+
+Auto-merge fired. **`#1148` merged as `bf8a68fd`.** Verified on `main`: `otpClient.ts` present, `nginx.conf.template` carries 4 `$dataq_forwarded_proto` references. Issue states checked individually rather than assumed — **#736 CLOSED, #1138 CLOSED** (the repeated-keyword form worked), **#1146 correctly still OPEN** as the follow-up. Local stacks and scratch DBs torn down; worktree clean.</result>
+<usage><subagent_tokens>406799</subagent_tokens><tool_uses>45</tool_uses><duration_ms>671049</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-afd4b52bf17e03b20</worktreePath><worktreeBranch>worktree-agent-afd4b52bf17e03b20</worktreeBranch></worktree>
+</task-notification>
