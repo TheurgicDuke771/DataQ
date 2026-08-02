@@ -127,16 +127,36 @@ def _get_redis_client() -> AsyncRedis[Any]:
 _BREAKER_TRIP_AFTER = DEFAULT_TRIP_AFTER
 _BREAKER_OPEN_SECONDS = DEFAULT_OPEN_SECONDS
 
+
+def _breaker_now() -> float:
+    """Clock for the breaker's open window — MONOTONIC, deliberately not `_now`.
+
+    Two different clocks for two different jobs, and mixing them is a real bug:
+
+    * `_now()` is `time.time()` because the fixed WINDOW INDEX rides in the Redis
+      key and every replica has to agree on which window it is in. That is an
+      absolute, shared instant, so it must be wall-clock.
+    * The breaker's open window is a DURATION on one process. A wall clock can be
+      stepped backwards by NTP, and a backward step mid-window extends the open
+      state by however far the clock moved — i.e. rate limiting stays off longer
+      than the 5s ADR 0035 signs up for, precisely when clock skew is being
+      corrected. `time.monotonic` cannot move backwards.
+
+    Kept as a module-level indirection (mirroring `otp_service._breaker_now`) so a
+    test can shift the window without sleeping through it.
+    """
+    return time.monotonic()
+
+
 #: THIS middleware's breaker — the mechanism lives in `core.circuit_breaker` and is
 #: shared with `services.otp_service`'s counter store (#1135), but the *state* is
 #: per-instance on purpose: an OTP brownout must never switch off API rate limiting,
-#: nor the reverse. The clock goes through this module's `_now` indirection so the
-#: existing tests' monkeypatched clock still drives the open window.
+#: nor the reverse.
 _BREAKER: Final = CircuitBreaker(
     name="rate_limit_store",
     trip_after=_BREAKER_TRIP_AFTER,
     open_seconds=_BREAKER_OPEN_SECONDS,
-    clock=lambda: _now(),
+    clock=lambda: _breaker_now(),
 )
 
 
@@ -255,7 +275,12 @@ def reset_rate_limit_state() -> None:
 
 
 def _now() -> float:
-    """Indirection so tests can monkeypatch the middleware's time source."""
+    """Indirection so tests can monkeypatch the middleware's time source.
+
+    Wall clock, because it feeds the fixed WINDOW INDEX baked into the Redis key —
+    an absolute instant every replica must agree on. The breaker's open window is a
+    per-process duration and uses `_breaker_now` (monotonic) instead; see there.
+    """
     return time.time()
 
 
