@@ -80,7 +80,13 @@ export async function listAdminWebhooks(): Promise<AdminWebhook[]> {
  *  failure the backend's error envelope names the failing transport stage
  *  (connect/tls/auth/send) in `error.detail.stage`; the axios response
  *  interceptor already folds the envelope's human message into `err.message`,
- *  so callers just need `errorMessage(err)`. */
+ *  so callers just need `errorMessage(err)`.
+ *
+ *  Capped per admin at `ADMIN_EMAIL_PREFLIGHT_PER_10MIN` calls per 10 minutes
+ *  (#1147) — each one opens a real connection to the operator's mail relay. Over
+ *  the cap the backend answers `429` / `preflight_rate_limited` with
+ *  `error.detail.retry_after_seconds`; no client change is needed for that to
+ *  render, since the interceptor folds the message like any other envelope. */
 export interface AuthEmailTestResult {
   status: string;
   to: string;

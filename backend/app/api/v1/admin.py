@@ -6,7 +6,9 @@ once at the router so a non-admin gets a real 403. The read endpoints bypass
 the owned-or-shared scoping `list_suites` applies — that's the point of the
 page — and add no new authz on the per-suite ladder. `POST /auth-email/test`
 is the one side-effecting route (it sends a real email); it's still read-only
-from the DATABASE's point of view — no row is written.
+from the DATABASE's point of view — no row is written. It is also the one route
+with a throttle of its own (#1147), because "admin-gated" bounds *who* can open a
+connection to the mail relay, not *how many*.
 """
 
 from __future__ import annotations
@@ -148,10 +150,17 @@ def test_auth_email(
     transport reached the relay but a specific stage failed). Both are `DataQError`
     subclasses, so they render through the standard error envelope automatically.
 
-    Sits under the generic `default` (authenticated-bearer) rate-limit class, not
-    a dedicated one — a real gap, since every call is a real outbound SMTP
-    connection to the configured relay: [#1147](https://github.com/TheurgicDuke771/DataQ/issues/1147).
+    **Throttled per admin, on top of the generic rate-limit class** (#1147):
+    `ADMIN_EMAIL_PREFLIGHT_PER_10MIN` calls per 10-minute window, keyed on the
+    caller's user id, over the same counter-store seam as the sign-in cap but a
+    separate key space. Over the cap is a real `429` (`preflight_rate_limited`) —
+    there is no anti-enumeration reason to soften it here, unlike `otp/request`.
+    The charge happens **before** the send, so a failed submission still spends a
+    slot: the quantity being bounded is connections opened at the relay. Fails
+    open if the counter store is down. See `admin_service.enforce_preflight_quota`.
     """
+    # Before the mailer is even constructed — the point is not to reach the relay.
+    svc.enforce_preflight_quota(current_user.id)
     mailer = OtpMailer(secret_store)
     mailer.send_preflight(to=current_user.email)
     return AuthEmailTestResponse(to=current_user.email)
