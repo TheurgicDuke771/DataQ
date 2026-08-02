@@ -609,7 +609,8 @@ def build_mcp_app() -> Any:
     # Envoy routes correctly — none of which are loopback, so the guard 421s every
     # proxied MCP request. DNS-rebinding protection is a browser-vs-localhost threat
     # model that doesn't apply here: the api has no public ingress and every /mcp
-    # request is JWT/PAT-authenticated fail-closed (`build_auth_provider`). Allow
+    # request is PAT- or JWT-authenticated fail-closed (`build_auth_provider` —
+    # PAT-only in an OTP deployment, which is *narrower*, never weaker). Allow
     # the proxied hosts so the transport guard doesn't shadow the real auth gate.
     # The same middleware also 403s a request whose browser `Origin` isn't
     # allow-listed. That check is a CSRF defence, and CSRF needs an AMBIENT
