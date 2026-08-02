@@ -84,15 +84,17 @@ can't host); notification tests also need Redis. There are three ways to run:
 
 ```bash
 # 1. One command — brings up the compose Postgres + Redis, provisions a dedicated
-#    `dataq_test` DB, runs the whole suite (this is what CI runs):
-scripts/test-backend.sh                    # → 1099 passed, 1 skipped (opt-in E2E)
+#    `dataq_test` DB, runs the whole suite incl. the real-broker E2E (this is what
+#    CI runs; the script sets DATAQ_E2E=1 for you — see the note below):
+scripts/test-backend.sh                    # → 1099 passed
 scripts/test-backend.sh -k notifications   # extra pytest args pass through
 
 # 2. Plain pytest — incl. the VS Code / PyCharm test runner. With the compose
 #    services up, conftest AUTO-DETECTS the local Postgres (from .env, on dataq_test)
-#    so the DB tests run — no env vars, no wrapper:
+#    so the DB tests run — no env vars, no wrapper. The one real-broker E2E test
+#    still skips here (see the note below):
 docker compose up -d postgres redis
-conda run -n dataq python -m pytest backend/tests           # → 1099 passed, 1 skipped
+conda run -n dataq python -m pytest backend/tests           # → 1098 passed, 1 skipped
 
 # 3. No services at all — the DB tests skip, the pure-unit suite still runs green:
 conda run -n dataq python -m pytest backend/tests           # → 652 passed, 448 skipped
@@ -103,9 +105,13 @@ cd frontend && pnpm test
 
 > The auto-detect is safe: it only kicks in when `TEST_DATABASE_URL` is unset, targets a
 > **separate `dataq_test` database** (your dev DB + seed data are untouched), and is a
-> no-op in CI (which sets `TEST_DATABASE_URL` explicitly). The **one** always-skipped test
-> is the real-infra E2E (`test_probe_e2e`) — it spins up a live Celery worker + broker and
-> is deliberately opt-in via `DATABASE_URL` + `REDIS_URL`.
+> no-op in CI (which sets `TEST_DATABASE_URL` explicitly). The **one** test that needs an
+> extra, EXPLICIT opt-in is the real-infra E2E (`test_probe_e2e`) — it spins up a live
+> Celery worker + broker and does real commits/TRUNCATEs, so it requires `DATAQ_E2E=1`
+> alongside `DATABASE_URL` + `REDIS_URL` (not merely the latter two): conftest's
+> auto-detect above means `DATABASE_URL` alone is no longer a reliably deliberate signal,
+> so a fourth, conftest-never-sets-it-for-you flag keeps this one test a conscious choice.
+> `scripts/test-backend.sh` and CI both set it; a bare `pytest` does not.
 
 Before pushing, run the same gate CI does: Ruff, Black `--check`, mypy, Bandit, pytest
 (backend) and ESLint, Prettier `--check`, Vitest (frontend). See the
