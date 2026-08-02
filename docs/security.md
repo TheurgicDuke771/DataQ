@@ -22,14 +22,17 @@ lawful basis) and is the deploying organization's responsibility.
   like PATs. Sign-up is **allowlist-only** — there is no open registration. MCP does **not**
   accept a session: it is a browser credential, and PATs remain the headless credential
   (ADR [0032](adr/0032-email-otp-signin.md)).
-  **`Secure` is not unconditional:** by default the backend infers it from the
-  `X-Forwarded-Proto` the proxy forwards, and the cookie is marked `Secure` only when that says
-  `https`. This depends on the proxy passing the *real* client-facing scheme — and the reference
-  Azure nginx currently overwrites it with its own upstream `http`, so on that deployment the
-  cookie ships **without** `Secure` until that is fixed (tracked in
-  [#1138](https://github.com/TheurgicDuke771/DataQ/issues/1138)). Operators enabling OTP mode
-  should set `AUTH_SESSION_COOKIE_SECURE=true` explicitly (any HTTPS deployment can) rather than
-  rely on inference until #1138 lands.
+  **`Secure` is inferred, not unconditional:** by default the backend reads the
+  `X-Forwarded-Proto` the proxy forwards, and marks the cookie `Secure` only when that says
+  `https`. That is only as trustworthy as the proxy. The reference frontend nginx forwards the
+  **edge's** header and falls back to its own `$scheme` only on a direct connection
+  ([#1138](https://github.com/TheurgicDuke771/DataQ/issues/1138) — it used to overwrite the
+  header with its own plaintext upstream scheme, which dropped `Secure` on live HTTPS), so
+  inference is correct on that stack. If you front DataQ with **your own** proxy, confirm it
+  forwards the real client-facing scheme — or simply set `AUTH_SESSION_COOKIE_SECURE=true`,
+  which any HTTPS deployment can do and which stops consulting the header at all. Leave it
+  unset only for genuinely plain-HTTP local dev: a hard-coded `Secure` there fails *silently*
+  (the browser accepts the `Set-Cookie` and then never sends it back).
   **Before turning OTP on for real users**, run the admin-gated SMTP pre-flight test — `POST
   /api/v1/admin/auth-email/test` sends a real message to the caller's own address over the
   configured `AUTH_EMAIL_*` transport and, on failure, reports exactly which stage broke

@@ -2,6 +2,7 @@ import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios';
 
 import { getApiToken } from '../auth/authClient';
 import { authMode } from '../auth/config';
+import { notifySessionInvalidated } from '../auth/sessionEvents';
 
 /**
  * Shared axios instance for DataQ API calls.
@@ -56,9 +57,39 @@ api.interceptors.response.use(
     if (retryAfter !== undefined) {
       error.message = `${error.message} Try again in ${retryAfter}s.`;
     }
+    if (isLostOtpSession(error)) notifySessionInvalidated();
     return Promise.reject(error);
   },
 );
+
+/**
+ * A 401 that means "your session is gone", as opposed to one that is a normal
+ * answer on the sign-in path (ADR 0032, #736).
+ *
+ * `/auth/*` is where a 401 is an EXPECTED answer — `POST /auth/otp/verify` returns
+ * one for a wrong code. Everywhere else it means the cookie expired, was revoked,
+ * or was cleared, and the app must drop to the sign-in screen.
+ *
+ * Honesty about the exclusion: it is **defence in depth, not an observable fix
+ * today**. The only listener is `OtpSessionProvider`, and a wrong-code 401 can
+ * only happen while it is *already* signed-out, so firing the event there is
+ * currently a no-op — a Playwright spec written to "prove" the exclusion passed
+ * with it removed, which is precisely the kind of test that proves nothing. It is
+ * kept because the event is a broadcast: the moment a second listener exists (or
+ * the provider resets more than a status field), a wrong digit would start
+ * clearing the user's half-entered code. The behaviour is pinned by the unit test
+ * in tests/api/client.test.ts, which DOES fail when this exclusion is removed.
+ *
+ * Scoped to `otp` mode: an OIDC 401 belongs to the token layer (silent renew /
+ * interactive redirect in `authClient.ts`), and dev-bypass has no session at all.
+ */
+function isLostOtpSession(error: AxiosError): boolean {
+  if (authMode !== 'otp' || error.response?.status !== 401) return false;
+  // `url` is what the caller passed (baseURL is applied later), so these are the
+  // '/auth/...' paths as written in otpClient.ts.
+  const url = error.config?.url ?? '';
+  return !url.startsWith('/auth/');
+}
 
 async function attachBearerToken(
   config: InternalAxiosRequestConfig,

@@ -141,3 +141,86 @@ describe('retryAfterSeconds', () => {
     expect(retryAfterSeconds(new Error('boom'))).toBeUndefined();
   });
 });
+
+// ── 401 → "your OTP session is gone" (ADR 0032, #736) ───────────────────────
+
+/**
+ * The response interceptor's session-loss signal.
+ *
+ * The exclusion of `/auth/*` is the whole reason this has a test: `POST
+ * /auth/otp/verify` answers 401 for a **wrong code**, and treating that as
+ * session loss would throw the user back to the email step on every mistyped
+ * digit — destroying the code they were half way through entering. Everything
+ * else's 401 genuinely means the cookie expired, was revoked, or was cleared.
+ */
+describe('otp session-loss signal', () => {
+  const notifySessionInvalidated = vi.fn();
+
+  async function runResponseInterceptor(mode: string, url: string, status: number) {
+    vi.resetModules();
+    notifySessionInvalidated.mockReset();
+    vi.doMock('../../src/auth/config', () => ({ authMode: mode }));
+    vi.doMock('../../src/auth/authClient', () => ({ getApiToken: vi.fn() }));
+    vi.doMock('../../src/auth/sessionEvents', () => ({ notifySessionInvalidated }));
+
+    const { api } = await import('../../src/api/client');
+    const handlers = api.interceptors.response as unknown as {
+      handlers: { rejected: (e: unknown) => Promise<unknown> }[];
+    };
+    const handler = handlers.handlers[0];
+    if (!handler) throw new Error('No response interceptor registered');
+    const error = { config: { url }, response: { status, data: {}, headers: {} } };
+    await handler.rejected(error).catch(() => {});
+    return notifySessionInvalidated;
+  }
+
+  afterEach(() => {
+    vi.doUnmock('../../src/auth/sessionEvents');
+  });
+
+  it('fires for a 401 on an ordinary API call in otp mode', async () => {
+    const notify = await runResponseInterceptor('otp', '/suites', 401);
+    expect(notify).toHaveBeenCalledOnce();
+  });
+
+  it.each(['/auth/otp/verify', '/auth/otp/request', '/auth/logout'])(
+    'does NOT fire for a 401 on %s — that is the sign-in path answering normally',
+    async (url) => {
+      const notify = await runResponseInterceptor('otp', url, 401);
+      expect(notify).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([403, 429, 500, 502])('does NOT fire for a %i — only 401 means signed out', async (s) => {
+    const notify = await runResponseInterceptor('otp', '/suites', s);
+    expect(notify).not.toHaveBeenCalled();
+  });
+
+  it.each(['real', 'dev_bypass', 'unconfigured'])(
+    'does NOT fire in %s mode — there is no cookie session to lose',
+    async (mode) => {
+      // An OIDC 401 belongs to the token layer (silent renew / interactive
+      // redirect); hijacking it here would fight that flow.
+      const notify = await runResponseInterceptor(mode, '/suites', 401);
+      expect(notify).not.toHaveBeenCalled();
+    },
+  );
+
+  it('does not throw when the error carries no config at all', async () => {
+    vi.resetModules();
+    notifySessionInvalidated.mockReset();
+    vi.doMock('../../src/auth/config', () => ({ authMode: 'otp' }));
+    vi.doMock('../../src/auth/authClient', () => ({ getApiToken: vi.fn() }));
+    vi.doMock('../../src/auth/sessionEvents', () => ({ notifySessionInvalidated }));
+    const { api } = await import('../../src/api/client');
+    const handlers = api.interceptors.response as unknown as {
+      handlers: { rejected: (e: unknown) => Promise<unknown> }[];
+    };
+    const handler = handlers.handlers[0];
+    if (!handler) throw new Error('No response interceptor registered');
+    await handler.rejected({ response: { status: 401, headers: {} } }).catch(() => {});
+    // No config → no url → treated as a non-/auth call, which is the safe default
+    // (drop to sign-in) rather than a crash inside an interceptor.
+    expect(notifySessionInvalidated).toHaveBeenCalledOnce();
+  });
+});

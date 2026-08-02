@@ -7,6 +7,40 @@
 # from the env (default http://api:8000, set in frontend/Dockerfile; overridable
 # in compose). Only env vars that are actually set are substituted, so nginx's
 # own $uri / $host / $scheme runtime vars are left untouched.
+
+# The client-facing scheme, forwarded upstream (#1138). NOT `$scheme`.
+#
+# This container never terminates TLS — it listens on plain HTTP :8080 and the
+# edge in front of it (Azure Container Apps' Envoy ingress, or whatever proxy a
+# BYO deployment puts there) does. So `$scheme` here is *deterministically*
+# `http` on every request, including ones the browser made over HTTPS. Sending
+# `X-Forwarded-Proto: $scheme` doesn't merely lose information — `proxy_set_header`
+# REPLACES the edge's correct `https` with our wrong `http`, so the API sees a
+# plaintext request and marks the OTP session cookie **without `Secure`** on a
+# live HTTPS deployment (ADR 0032; the backend's `_cookie_secure()` infers from
+# exactly this header).
+#
+# So: prefer what the edge told us, and fall back to `$scheme` only when there is
+# no edge header at all — the direct-connection case (compose, `docker run -p
+# 8080`), where `$scheme` genuinely IS the client-facing scheme.
+#
+# Trust boundary, stated plainly: this makes nginx trust an inbound header. That
+# is sound *because a client cannot reach this hop directly* — ACA's ingress is
+# the only route in, and Envoy sets `X-Forwarded-Proto` itself from the TLS
+# state, overwriting whatever the client sent. If you deploy this image with NO
+# TLS-terminating proxy in front and expose it straight to the internet, a client
+# CAN dictate the value; the only thing it influences is cookie-`Secure`
+# inference (it grants no authentication and no authorization), and the
+# belt-and-braces answer is to set `AUTH_SESSION_COOKIE_SECURE=true` explicitly
+# on the API — which stops consulting the header at all.
+#
+# `map` lives in the `http` context: this template renders into conf.d/, which
+# nginx includes inside `http { }`, so a top-level directive here is valid.
+map $http_x_forwarded_proto $dataq_forwarded_proto {
+    default $http_x_forwarded_proto;
+    ""      $scheme;
+}
+
 server {
     listen 8080;
     server_name _;
@@ -64,7 +98,7 @@ server {
         proxy_ssl_server_name on;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Proto $dataq_forwarded_proto;
     }
 
     # Liveness probe — the api's top-level /healthz (NOT under /api), proxied here
@@ -80,7 +114,7 @@ server {
         proxy_ssl_server_name on;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Proto $dataq_forwarded_proto;
     }
 
     # MCP sub-app (FastMCP at /mcp). Streamable-HTTP/SSE needs HTTP/1.1 with no
@@ -94,7 +128,7 @@ server {
         proxy_buffering off;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Proto $dataq_forwarded_proto;
     }
 
     # Long-cache the fingerprinted build output; never cache index.html (it points

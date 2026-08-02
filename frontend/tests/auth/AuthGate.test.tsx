@@ -70,3 +70,64 @@ describe('AuthGate', () => {
     expect(screen.getByText('protected-content')).toBeInTheDocument();
   });
 });
+
+/**
+ * The `otp` gate (ADR 0032, #736).
+ *
+ * Four states, and the pair that is easy to conflate is the point of this block:
+ * `probing` and `error` must BOTH stay off the sign-in form. Showing it while
+ * probing makes every reload look like a sign-out; showing it during an API
+ * outage invites the user to burn a single-use code at a server that cannot
+ * check it.
+ */
+describe('AuthGate — otp mode', () => {
+  async function renderOtpGate(state: unknown, actions: Record<string, unknown> = {}) {
+    vi.doMock('../../src/auth/config', () => ({ authMode: 'otp', DEV_USER: {} }));
+    const noop = () => {};
+    vi.doMock('../../src/auth/otpSessionContext', () => ({
+      useOtpSession: () => ({ state, adopt: noop, signOut: noop, retry: noop, ...actions }),
+    }));
+    await renderAuthGate();
+  }
+
+  afterEach(() => {
+    vi.doUnmock('../../src/auth/otpSessionContext');
+  });
+
+  it('renders children when the session resolves', async () => {
+    await renderOtpGate({ status: 'signed_in', me: { id: 'u1', email: 'ada@acme.io' } });
+    expect(screen.getByText('protected-content')).toBeInTheDocument();
+  });
+
+  it('renders the two-step code form when signed out — not the OIDC button', async () => {
+    await renderOtpGate({ status: 'signed_out' });
+    expect(screen.getByLabelText('Email address')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /send code/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Sign in$/i })).not.toBeInTheDocument();
+    expect(screen.queryByText('protected-content')).not.toBeInTheDocument();
+  });
+
+  it('shows a spinner while probing — NOT the sign-in form', async () => {
+    await renderOtpGate({ status: 'probing' });
+    expect(screen.queryByLabelText('Email address')).not.toBeInTheDocument();
+    expect(screen.queryByText('protected-content')).not.toBeInTheDocument();
+  });
+
+  it('shows the failure + a retry on error — NOT the sign-in form', async () => {
+    const retry = vi.fn();
+    await renderOtpGate({ status: 'error', message: 'Network Error' }, { retry });
+    expect(screen.getByText(/Could not check your sign-in status/)).toBeInTheDocument();
+    expect(screen.getByText('Network Error')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Email address')).not.toBeInTheDocument();
+
+    const { default: userEvent } = await import('@testing-library/user-event');
+    await userEvent.click(screen.getByRole('button', { name: /try again/i }));
+    expect(retry).toHaveBeenCalledOnce();
+  });
+
+  it('names otp in the unconfigured banner so an operator knows the mode exists', async () => {
+    vi.doMock('../../src/auth/config', () => ({ authMode: 'unconfigured', DEV_USER: {} }));
+    await renderAuthGate();
+    expect(screen.getByText('DATAQ_AUTH_MODE=otp')).toBeInTheDocument();
+  });
+});

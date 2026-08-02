@@ -160,9 +160,17 @@ def _cookie_secure(request: Request, settings: Settings) -> bool:
     """Whether to mark the session cookie `Secure`.
 
     `AUTH_SESSION_COOKIE_SECURE` wins when set. Otherwise infer from
-    `X-Forwarded-Proto` — the only HTTPS signal that survives DataQ's nginx proxy
-    (ADR 0028 §5), which terminates TLS and speaks plain HTTP upstream — falling
-    back to the request's own scheme for a direct connection.
+    `X-Forwarded-Proto` — the only HTTPS signal that reaches the api, which sits on
+    internal ingress behind the frontend nginx proxy (ADR 0028 §5) — falling back to
+    the request's own scheme for a direct connection.
+
+    Inference is exactly as trustworthy as the proxy chain, which is not theoretical:
+    the reference nginx originally sent `X-Forwarded-Proto: $scheme`, and since TLS
+    terminates at the platform edge rather than at nginx, `$scheme` is
+    deterministically `http` there — so `proxy_set_header` REPLACED the edge's
+    correct `https` and this function returned False on a live HTTPS deployment
+    (#1138, fixed by forwarding the edge's header). Behind a *different* proxy,
+    verify the same or set `AUTH_SESSION_COOKIE_SECURE=true`, which skips the header.
 
     Hard-coding `Secure=True` is the single most likely dev-vs-prod footgun in this
     feature: the browser accepts the `Set-Cookie` silently and then never sends the

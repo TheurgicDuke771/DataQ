@@ -38,9 +38,16 @@ module.exports = tseslint.config(
   {
     // Playwright config + E2E specs run under Node (process.env, etc.), not the
     // browser, so give them Node globals.
-    files: ['playwright.config.ts', 'e2e/**/*.ts'],
+    files: ['playwright.config.ts', 'e2e/**/*.ts', 'e2e-otp/**/*.ts', 'e2e-live/**/*.ts'],
     languageOptions: {
       globals: globals.node,
+    },
+    rules: {
+      // Playwright's fixture callbacks take a parameter conventionally named
+      // `use`, and calling it is how a fixture hands its value to the test. The
+      // react-hooks plugin sees `use(...)` and thinks it is React 19's `use()`
+      // hook. There is no React in these files at all.
+      'react-hooks/rules-of-hooks': 'off',
     },
   },
 );

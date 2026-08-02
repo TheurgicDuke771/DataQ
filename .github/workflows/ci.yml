@@ -443,6 +443,39 @@ jobs:
           VITE_API_PROXY_TARGET: http://localhost:8000
         run: pnpm e2e
 
+      # ── Email-OTP lane (ADR 0032, #736) ──────────────────────────────────
+      # A SECOND api, because the auth seam picks its mode at import time and OTP
+      # wins over dev-bypass — one process cannot serve both lanes. The script
+      # also starts the local SMTP sink first and points the api's SSL_CERT_FILE
+      # at the throwaway certificate it emits, which is why the two cannot be
+      # independent steps (OpenSSL reads that variable once, at process start).
+      # No Azure and no cloud mailbox: this lane is entirely local.
+      - name: Start the OTP stack (SMTP sink + otp-mode api)
+        env:
+          # Its own database, so the dev-bypass lane's seeded demo rows and this
+          # lane's self-provisioned OTP users can never interfere.
+          DATABASE_URL: postgresql+psycopg2://dataq:dataq@localhost:5432/dataq_otp_e2e
+        run: |
+          # Derive the maintenance connection from DATABASE_URL rather than
+          # repeating the credentials — one fewer literal in a tracked file.
+          ADMIN_URL="${DATABASE_URL/postgresql+psycopg2/postgresql}"
+          psql "${ADMIN_URL%/*}/postgres" -c 'CREATE DATABASE dataq_otp_e2e'
+          (cd backend && alembic upgrade head)
+          scripts/e2e-otp-stack.sh
+
+      - name: Playwright E2E — email OTP
+        working-directory: frontend
+        env:
+          E2E_OTP: "1"
+        run: pnpm e2e:otp
+
+      - name: OTP stack logs on failure
+        if: ${{ failure() }}
+        run: |
+          for f in /tmp/dataq-otp-lane*/api.log /tmp/dataq-otp-lane*/sink.log; do
+            [ -f "$f" ] && { echo "── $f ──"; cat "$f"; }
+          done || true
+
       - name: Upload Playwright report
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7

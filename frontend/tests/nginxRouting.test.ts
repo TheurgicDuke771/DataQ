@@ -58,3 +58,69 @@ describe('nginx SPA routing (#802 /assets deep-link regression)', () => {
     expect(spa?.[0], '`$uri/` re-introduces the directory-redirect bug').not.toMatch(/\$uri\/\s/);
   });
 });
+
+/**
+ * X-Forwarded-Proto forwarding (#1138) — a *security* invariant, not a routing one.
+ *
+ * This container never terminates TLS, so nginx's own `$scheme` is deterministically
+ * `http`. `proxy_set_header X-Forwarded-Proto $scheme` therefore REPLACED the edge's
+ * correct `https` with `http`, and the backend's `_cookie_secure()` — which infers
+ * from exactly that header — dropped `Secure` from the OTP session cookie on a live
+ * HTTPS deployment.
+ *
+ * Like the block above this is a config assertion: it cannot prove nginx behaves,
+ * only that the exact mistake cannot come back silently. And it is the *only*
+ * automated guard available — Vite serves the E2E lane, so no browser test ever
+ * executes this file.
+ */
+describe('nginx X-Forwarded-Proto (#1138 — OTP session cookie Secure inference)', () => {
+  // Block-matching deliberately terminates on a `}` **at the start of a line**, not
+  // on any `}`: the proxy bodies contain `${DATAQ_API_UPSTREAM}`, so a `[^}]*` scan
+  // stops inside the envsubst placeholder and silently matches nothing. (It did.)
+  const proxyBlocks = [...directives.matchAll(/location[^\n]*\{\n.*?\n\s*\}/gs)]
+    .map((m) => m[0])
+    .filter((b) => b.includes('proxy_pass'));
+
+  it('has the three proxy blocks this file is supposed to have (/api, /healthz, /mcp)', () => {
+    // Guards the assertions below from silently vacuously passing if the regex
+    // above ever stops matching the blocks.
+    expect(proxyBlocks).toHaveLength(3);
+  });
+
+  it('never forwards nginx’s own $scheme as the client-facing protocol', () => {
+    for (const block of proxyBlocks) {
+      expect(block, 'X-Forwarded-Proto $scheme is the #1138 bug').not.toMatch(
+        /X-Forwarded-Proto\s+\$scheme\s*;/,
+      );
+    }
+  });
+
+  it('forwards the mapped variable on every proxying location', () => {
+    for (const block of proxyBlocks) {
+      expect(block).toMatch(/proxy_set_header\s+X-Forwarded-Proto\s+\$dataq_forwarded_proto;/);
+    }
+  });
+
+  it('maps that variable to the inbound header, falling back to $scheme only when absent', () => {
+    const map = directives.match(
+      /map\s+\$http_x_forwarded_proto\s+\$dataq_forwarded_proto\s*\{[^}]*\}/,
+    );
+    expect(
+      map,
+      'expected a `map $http_x_forwarded_proto $dataq_forwarded_proto` block',
+    ).not.toBeNull();
+    expect(map?.[0]).toMatch(/default\s+\$http_x_forwarded_proto;/);
+    // The empty-string key is what keeps a DIRECT connection (compose, docker run)
+    // honest: with no edge header, $scheme genuinely is the client-facing scheme.
+    expect(map?.[0]).toMatch(/""\s+\$scheme;/);
+  });
+
+  it('leaves X-Forwarded-For on $proxy_add_x_forwarded_for (rate limiting reads it — ADR 0035)', () => {
+    // The #1138 fix touches the -Proto header only. -For is a different header
+    // with a different trust model (the limiter hops back a configured number of
+    // entries), and appending must stay appending.
+    for (const block of proxyBlocks) {
+      expect(block).toMatch(/proxy_set_header\s+X-Forwarded-For\s+\$proxy_add_x_forwarded_for;/);
+    }
+  });
+});
