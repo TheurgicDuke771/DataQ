@@ -17,6 +17,16 @@ https://<your-dataq-host>/mcp/
 
 The endpoint accepts the **same credentials as the REST API** (ADR [0008](adr/0008-mcp-server.md) / [0026](adr/0026-auth-api-keys-and-principal-seam.md)): an Azure AD bearer token, or a **DataQ API key** (`dq_live_…`). Without auth configured, the endpoint is only mounted in local dev-bypass mode — never unauthenticated in a deployed environment.
 
+!!! info "Email-OTP deployments: MCP works, with an API key"
+    A deployment running **email one-time codes instead of SSO** (ADR
+    [0032](adr/0032-email-otp-signin.md)) has no identity provider to issue bearer
+    tokens, so an **API key is the only `/mcp` credential** there — mint one as
+    below and use it exactly the same way. Everything else is identical, including
+    the 8 tools and per-suite permissions. Two rejections are deliberate in that
+    mode: a raw JWT is refused (there is nothing to validate it against), and your
+    **sign-in session is never accepted** — it is a browser credential and does not
+    authenticate `/mcp`, whether presented as a bearer or carried as a cookie.
+
 ### Getting a token
 
 **Recommended — a DataQ API key (PAT):** mint one via `POST /api/v1/me/api-keys`
@@ -98,5 +108,6 @@ Try these natural-language queries once connected:
 |---|---|
 | 401 on every request | Token expired (~1 h) → paste a fresh one. Or the client followed the `/mcp` → `/mcp/` redirect and dropped the header → use `/mcp/` directly. |
 | 307 responses | Missing trailing slash — configure `/mcp/`. |
-| Server absent / connection refused locally | In a deployed environment the MCP server is unmounted unless Azure auth is configured (fail-closed by design). |
+| Server absent / connection refused locally | The MCP server is unmounted unless the deployment has a working sign-in configuration — SSO (`AZURE_*`), email OTP (`AUTH_EMAIL_*` + an allowlist), or local dev-bypass (fail-closed by design). |
+| 401 with an API key on an email-OTP deployment | Check you sent the **API key**, not your session cookie/token: in OTP mode a `dq_live_…` key is the only credential `/mcp` accepts. |
 | Tool call returns "not found" for a suite you can see in the UI as someone else | MCP calls run as the token's user — suite access is per-user, same as the web app. |
