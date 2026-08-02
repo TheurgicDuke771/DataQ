@@ -1,10 +1,12 @@
-"""Workspace-admin read endpoints — the all-suites / all-users / access overview
-the Admin page consumes.
+"""Workspace-admin endpoints — the all-suites / all-users / access overview the
+Admin page consumes, plus the SMTP pre-flight test (#737).
 
 Every route is gated by `require_workspace_admin` (config allowlist), declared
-once at the router so a non-admin gets a real 403. These bypass the
-owned-or-shared scoping `list_suites` applies — that's the point of the page.
-Read-only and additive; no new authz on the per-suite ladder.
+once at the router so a non-admin gets a real 403. The read endpoints bypass
+the owned-or-shared scoping `list_suites` applies — that's the point of the
+page — and add no new authz on the per-suite ladder. `POST /auth-email/test`
+is the one side-effecting route (it sends a real email); it's still read-only
+from the DATABASE's point of view — no row is written.
 """
 
 from __future__ import annotations
@@ -145,6 +147,10 @@ def test_auth_email(
     `OtpMailPreflightError` (502, `detail.stage` in connect/tls/auth/send — the
     transport reached the relay but a specific stage failed). Both are `DataQError`
     subclasses, so they render through the standard error envelope automatically.
+
+    Sits under the generic `default` (authenticated-bearer) rate-limit class, not
+    a dedicated one — a real gap, since every call is a real outbound SMTP
+    connection to the configured relay: [#1147](https://github.com/TheurgicDuke771/DataQ/issues/1147).
     """
     mailer = OtpMailer(secret_store)
     mailer.send_preflight(to=current_user.email)

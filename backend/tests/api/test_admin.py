@@ -400,12 +400,6 @@ class _RecordingSMTP:
         self.messages: list[EmailMessage] = []
         _RecordingSMTP.instances.append(self)
 
-    def __enter__(self) -> "_RecordingSMTP":
-        return self
-
-    def __exit__(self, *_exc: Any) -> None:
-        self.calls.append("close")
-
     def starttls(self, context: ssl.SSLContext | None = None) -> None:
         self.calls.append("starttls")
 
@@ -415,6 +409,11 @@ class _RecordingSMTP:
     def send_message(self, message: EmailMessage) -> None:
         self.calls.append("send")
         self.messages.append(message)
+
+    def quit(self) -> None:
+        # `_deliver` closes explicitly via `.quit()` in a `finally`, never via
+        # `with`/`__exit__` (#737 review — see `otp_mailer._deliver`'s docstring).
+        self.calls.append("close")
 
 
 @pytest.fixture(autouse=True)

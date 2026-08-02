@@ -108,7 +108,7 @@ function GeneralTab() {
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
           Sends a real message to your own address over the configured email sign-in mailer (
           <Typography.Text code>AUTH_EMAIL_*</Typography.Text>). If it doesn&apos;t arrive, the
-          error names the transport stage that failed — connect, TLS, login, or send.
+          error names the transport stage that failed — connect, TLS, auth, or send.
         </Typography.Text>
       </Flex>
     </Card>

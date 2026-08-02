@@ -71,12 +71,6 @@ class _FakeSMTP:
         self.credentials: tuple[str, str] | None = None
         _FakeSMTP.instances.append(self)
 
-    def __enter__(self) -> _FakeSMTP:
-        return self
-
-    def __exit__(self, *_exc: Any) -> None:
-        self.calls.append("close")
-
     def starttls(self, context: ssl.SSLContext | None = None) -> None:
         self.calls.append("starttls")
         self.tls_context = context
@@ -88,6 +82,11 @@ class _FakeSMTP:
     def send_message(self, message: EmailMessage) -> None:
         self.calls.append("send")
         self.messages.append(message)
+
+    def quit(self) -> None:
+        # `_deliver` closes explicitly via `.quit()` in a `finally`, never via
+        # `with`/`__exit__` (#737 review — see `_deliver`'s docstring for why).
+        self.calls.append("close")
 
 
 @pytest.fixture(autouse=True)
@@ -377,6 +376,79 @@ def test_preflight_classifies_a_rejected_message_as_the_send_stage(
         mailer.send_preflight(to="admin@acme.io")
     assert caught.value.detail["stage"] == "send"
     assert caught.value.detail["error_type"] == "SMTPDataError"
+
+
+# ── A QUIT-time failure must never replace an in-flight stage error ─────────
+#
+# Real `smtplib.SMTP.__exit__` sends QUIT and raises `SMTPResponseException` on
+# any non-221 reply (only `SMTPServerDisconnected` is swallowed). A `with`
+# block that raises while already unwinding another exception has the NEW one
+# supersede the original as what actually propagates — so a `with smtp as
+# server:` shape would let a QUIT hiccup erase an already-classified auth/tls/
+# send failure and escape as an unclassified raw 500 instead of the contracted
+# 502 (#737 review). `_deliver` closes explicitly via `.quit()` in a `finally`
+# specifically to rule this out; these tests pin that a broken `quit()` never
+# changes the outcome, in either direction.
+
+
+def test_a_quit_failure_never_replaces_an_in_flight_stage_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _QuitFailsAfterAuthFailureSMTP(_FakeSMTP):
+        def login(self, user: str, password: str) -> None:
+            raise smtplib.SMTPAuthenticationError(535, b"bad credentials")
+
+        def quit(self) -> None:
+            raise smtplib.SMTPResponseException(451, b"garbage QUIT reply")
+
+    monkeypatch.setattr(smtplib, "SMTP", _QuitFailsAfterAuthFailureSMTP)
+    mailer = otp_mailer.OtpMailer(_Store("pw"), _settings())
+
+    with pytest.raises(otp_mailer.OtpMailPreflightError) as caught:
+        mailer.send_preflight(to="admin@acme.io")
+    # The ORIGINAL failure (auth), not the QUIT-time exception, must be what
+    # the caller sees.
+    assert caught.value.detail["stage"] == "auth"
+    assert caught.value.detail["error_type"] == "SMTPAuthenticationError"
+
+
+def test_a_quit_failure_after_a_clean_send_does_not_manufacture_a_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The message was already sent successfully — a QUIT-reply hiccup during
+    cleanup must not turn that real success into a spurious failure."""
+
+    class _QuitFailsAfterCleanSendSMTP(_FakeSMTP):
+        def quit(self) -> None:
+            raise smtplib.SMTPResponseException(451, b"garbage QUIT reply")
+
+    monkeypatch.setattr(smtplib, "SMTP", _QuitFailsAfterCleanSendSMTP)
+    mailer = otp_mailer.OtpMailer(_Store("pw"), _settings())
+
+    mailer.send_preflight(to="admin@acme.io")  # must not raise
+    assert _FakeSMTP.instances[-1].calls == ["starttls", "login", "send"]
+
+
+def test_send_code_also_keeps_its_uniform_502_through_a_quit_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Same property, the OTHER caller: `send_code`'s uniform 502 must survive a
+    QUIT-time exception exactly like `send_preflight`'s stage typing does."""
+
+    class _QuitFailsAfterSendFailureSMTP(_FakeSMTP):
+        def send_message(self, message: EmailMessage) -> None:
+            raise smtplib.SMTPDataError(550, b"message rejected")
+
+        def quit(self) -> None:
+            raise smtplib.SMTPResponseException(451, b"garbage QUIT reply")
+
+    monkeypatch.setattr(smtplib, "SMTP", _QuitFailsAfterSendFailureSMTP)
+    mailer = otp_mailer.OtpMailer(_Store("pw"), _settings())
+
+    with pytest.raises(otp_mailer.OtpMailSendError) as caught:
+        mailer.send_code(to="ada@acme.io", code="123456", expires_in_minutes=10)
+    assert caught.value.status_code == 502
+    assert caught.value.code == "otp_email_send_failed"
 
 
 def test_preflight_not_configured_is_distinct_from_a_stage_failure(

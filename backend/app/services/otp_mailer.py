@@ -208,13 +208,26 @@ class OtpMailer:
         which is what actually guarantees the transport block is complete; the
         asserts below just carry that guarantee across the method boundary for
         mypy (narrowing on `s.attr` doesn't survive a call into another method).
+
+        **Deliberately does NOT use `with smtp as server:`** (#737 review). Real
+        `smtplib.SMTP.__exit__` sends QUIT and — for any reply other than 221 —
+        raises `SMTPResponseException`; only `SMTPServerDisconnected` is
+        swallowed. A `with` block that raises while already unwinding a
+        `_SmtpStageError` has that new exception SUPERSEDE the original as the
+        one that actually propagates (standard Python: a fresh exception raised
+        during unwind replaces the in-flight one), so neither `send_code` nor
+        `send_preflight` would ever see it — it would escape as an unclassified
+        raw 500, and worse, the same failure mode would turn a message that was
+        ALREADY sent successfully into a spurious failure. Closing explicitly in
+        `finally`, with the close itself swallowed, makes cleanup unable to
+        affect the outcome either way.
         """
         s = self._settings
         assert s.auth_email_smtp_host is not None
         assert s.auth_email_username is not None
         context = ssl.create_default_context()
         try:
-            smtp = smtplib.SMTP(
+            server = smtplib.SMTP(
                 s.auth_email_smtp_host,
                 s.auth_email_smtp_port,
                 timeout=s.auth_email_timeout_seconds,
@@ -222,10 +235,10 @@ class OtpMailer:
         except Exception as exc:
             # The constructor itself connects (smtplib.SMTP.__init__ calls
             # self.connect() when a host is given) — DNS failure, connection
-            # refused, and connect timeout all land here, before there is a
-            # context-managed object to enter.
+            # refused, and connect timeout all land here, before there is
+            # anything to close.
             raise _SmtpStageError("connect", exc) from exc
-        with smtp as server:
+        try:
             try:
                 server.starttls(context=context)
             except Exception as exc:
@@ -238,6 +251,16 @@ class OtpMailer:
                 server.send_message(message)
             except Exception as exc:
                 raise _SmtpStageError("send", exc) from exc
+        finally:
+            try:
+                server.quit()
+            except Exception as exc:
+                # Best-effort cleanup only. Never let a QUIT-reply hiccup mask a
+                # real stage failure above, or manufacture a failure out of a
+                # send that already succeeded — the message is gone either way.
+                # Logged (not raised) so a persistently misbehaving relay is
+                # still visible somewhere.
+                log.debug("otp_smtp_quit_failed", error_type=type(exc).__name__)
 
     def send_code(self, *, to: str, code: str, expires_in_minutes: int) -> None:
         s = self._settings
