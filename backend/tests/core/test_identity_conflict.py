@@ -269,7 +269,12 @@ def test_a_second_aad_signin_after_adoption_is_an_ordinary_update(db_session: An
     second = _upsert_user(db_session, aad_object_id=f"oid-{local}", email=email, display_name="B")
 
     assert first.id == second.id
-    assert second.display_name == "B"
+    # display_name is a COALESCE, not a plain overwrite (#1139) — once non-null
+    # it survives a later login's claim value, so a `PATCH /me` self-service
+    # override can't be silently reverted by the user's next token refresh. The
+    # property this test exists to guard — ordinary update, not a re-claim, not
+    # a 409, exactly one row — is unaffected.
+    assert second.display_name == "A"
     assert db_session.query(User).filter(User.email.ilike(email)).count() == 1
 
 

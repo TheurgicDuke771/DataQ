@@ -26,6 +26,21 @@ def _escape_like(term: str) -> str:
     return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
+def update_display_name(session: Session, user: User, display_name: str) -> User:
+    """Set `user.display_name` and persist it (#1139).
+
+    The caller (the `/me` PATCH handler) owns validation — non-empty after
+    strip, `<=256` chars to match the column — so this is a plain assign +
+    commit, not a re-validation. Self-service only: there is no `user_id`
+    parameter, so this can never be pointed at anyone but the row the caller
+    already resolved via `get_current_user`.
+    """
+    user.display_name = display_name
+    session.commit()
+    session.refresh(user)
+    return user
+
+
 def search_users(session: Session, query: str, *, limit: int = DEFAULT_LIMIT) -> list[User]:
     """Find users whose email or display name contains `query` (case-insensitive).
 

@@ -131,6 +131,30 @@ def test_get_current_user_real_upserts_from_claims(db_session: Any) -> None:
     assert user.aad_object_id == "11111111-2222-3333-4444-555555555555"
 
 
+def test_upsert_seeds_display_name_on_first_login_only(db_session: Any) -> None:
+    """#1139: `_upsert_user` runs on EVERY real-mode request (no session cache —
+    the JWT is re-validated and re-claimed each time), so a `PATCH /me` override
+    must survive the user's very next request rather than being silently
+    re-synced back to the AAD token's `name` claim.
+    """
+    claims = {
+        "oid": "44444444-5555-6666-7777-888888888888",
+        "upn": "named@example.com",
+        "name": "AAD Claim Name",
+    }
+    first = auth_mod._get_current_user_real(_request(), _azure_user(claims), db_session)
+    # First login: no row existed yet, so the claim seeds a real name instead of
+    # leaving a bare email to render in shares/admin lists.
+    assert first.display_name == "AAD Claim Name"
+
+    first.display_name = "Self-Service Override"
+    db_session.commit()
+
+    second = auth_mod._get_current_user_real(_request(), _azure_user(claims), db_session)
+    # Second login, same claim: the override must stick.
+    assert second.display_name == "Self-Service Override"
+
+
 # ── PAT branch on the seam (ADR 0026, #461) ──────────────────────────────────
 
 

@@ -228,6 +228,12 @@ def _claim_unlinked_user(
     sign-ins racing for the same unlinked row cannot both succeed. The loser gets
     `None` here and the caller retries the ordinary upsert, which now finds the
     winner's `aad_object_id` as a conflict target.
+
+    `display_name` is a `COALESCE`, not a plain overwrite (#1139): the row being
+    claimed is exactly the OTP-provisioned shape — email only, so the incoming
+    AAD claim is a good first name to seed. But if the person already set one
+    via `PATCH /me` before ever signing in through Azure AD, linking must not
+    silently discard it.
     """
     claimed = db.execute(
         update(User)
@@ -238,7 +244,7 @@ def _claim_unlinked_user(
         .values(
             aad_object_id=aad_object_id,
             email=email,
-            display_name=display_name,
+            display_name=func.coalesce(User.display_name, display_name),
             last_seen_at=now,
             updated_at=now,
         )
@@ -275,7 +281,15 @@ def _upsert_user(
             index_elements=["aad_object_id"],
             set_={
                 "email": email,
-                "display_name": display_name,
+                # COALESCE, not a plain overwrite (#1139): this upsert runs on
+                # EVERY real-mode request (there is no session cache — the JWT
+                # is re-validated and re-claimed each time), so a bare overwrite
+                # would silently revert a `PATCH /me` display-name override back
+                # to the AAD token's `name` claim on the user's very next
+                # request. The claim still seeds the field the first time a row
+                # is created (`.values()` above, the INSERT branch) — this only
+                # protects an already-populated value from being re-synced away.
+                "display_name": func.coalesce(User.display_name, display_name),
                 "last_seen_at": now,
                 "updated_at": now,
             },
