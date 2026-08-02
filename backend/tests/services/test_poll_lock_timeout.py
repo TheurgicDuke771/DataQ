@@ -34,17 +34,26 @@ from backend.app.services import orchestration_service
 _MUST_RETURN_WITHIN = 25.0
 
 
-def _committed_connection(conn_type: str) -> uuid.UUID:
-    """A connection row COMMITTED for real, so a *second* session can see and lock it.
+def _committed_connection(engine: Any, conn_type: str) -> tuple[uuid.UUID, uuid.UUID]:
+    """A connection (+ its owning user) row COMMITTED for real, so a *second* session
+    can see and lock it. Returns (connection_id, user_id).
 
     Deliberately not the `db_session` fixture: that wraps the test in a transaction it
     rolls back, so its rows are invisible to other sessions — and `SELECT … FOR UPDATE`
     on a row nobody else can see locks NOTHING. The first draft of this test did exactly
     that and passed against the bug. A lock test whose lock isn't real proves nothing.
-    """
-    from backend.app.db.session import SessionLocal
 
-    session = SessionLocal()
+    Bound to `engine` (the conftest `_db_engine` fixture, built straight from
+    `TEST_DATABASE_URL`) — deliberately NOT the app's `SessionLocal` (#1133). Even
+    though conftest now points `DATABASE_URL` at the test DB by default (#1130),
+    `SessionLocal` still resolves whatever `DATABASE_URL` the environment happens to
+    carry — including a deliberately different one under the opt-in E2E case — and
+    this setup/holder row must always land in the TEST database, never wherever that
+    happens to be.
+    """
+    from sqlalchemy.orm import Session as SASession
+
+    session = SASession(bind=engine)
     try:
         user = User(aad_object_id=uuid.uuid4().hex, email=f"u-{uuid.uuid4().hex[:8]}@ex.io")
         session.add(user)
@@ -59,17 +68,23 @@ def _committed_connection(conn_type: str) -> uuid.UUID:
         )
         session.add(conn)
         session.commit()
-        return conn.id
+        return conn.id, user.id
     finally:
         session.close()
 
 
-def _delete_connection(connection_id: uuid.UUID) -> None:
-    from backend.app.db.session import SessionLocal
+def _delete_connection_and_user(engine: Any, connection_id: uuid.UUID, user_id: uuid.UUID) -> None:
+    """Teardown for `_committed_connection` — removes BOTH rows it created (#1133).
 
-    session = SessionLocal()
+    The prior version only deleted the `Connection`, leaving the `User` behind on
+    every run (the stray `u-<hex>@ex.io` accumulation #1130 reported in the dev DB).
+    """
+    from sqlalchemy.orm import Session as SASession
+
+    session = SASession(bind=engine)
     try:
         session.execute(text("DELETE FROM connections WHERE id = :i"), {"i": str(connection_id)})
+        session.execute(text("DELETE FROM users WHERE id = :i"), {"i": str(user_id)})
         session.commit()
     finally:
         session.close()
@@ -128,13 +143,18 @@ def _run_with_deadline(fn: Any) -> bool:
 
 
 @pytest.fixture
-def held_lock(request: Any, db_session: Any) -> Any:
+def held_lock(request: Any, db_session: Any, _db_engine: Any) -> Any:
     """A REAL `FOR UPDATE` lock, held by a second session on a committed row — the prod
-    condition, and the thing whose absence made the first draft of this test worthless."""
-    from backend.app.db.session import SessionLocal
+    condition, and the thing whose absence made the first draft of this test worthless.
 
-    connection_id = _committed_connection(getattr(request, "param", "airflow"))
-    holder = SessionLocal()
+    Both the committed row and the holder session are bound to `_db_engine` (the
+    conftest fixture built from `TEST_DATABASE_URL`), not `SessionLocal` — see
+    `_committed_connection` (#1133).
+    """
+    from sqlalchemy.orm import Session as SASession
+
+    connection_id, user_id = _committed_connection(_db_engine, getattr(request, "param", "airflow"))
+    holder = SASession(bind=_db_engine)
     locked = holder.execute(
         text("SELECT id FROM connections WHERE id = :i FOR UPDATE"), {"i": str(connection_id)}
     ).first()
@@ -144,7 +164,7 @@ def held_lock(request: Any, db_session: Any) -> Any:
     finally:
         holder.rollback()
         holder.close()
-        _delete_connection(connection_id)
+        _delete_connection_and_user(_db_engine, connection_id, user_id)
 
 
 def test_record_poll_failure_does_not_hang_on_a_contended_row(
