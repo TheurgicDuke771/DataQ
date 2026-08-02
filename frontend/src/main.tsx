@@ -7,6 +7,7 @@ import { App } from './App';
 import { AuthProvider } from './auth/AuthProvider';
 import { CurrentUserProvider } from './auth/CurrentUserProvider';
 import { MeProvider } from './auth/MeProvider';
+import { OtpSessionProvider } from './auth/OtpSessionProvider';
 import { completeSigninIfCallback } from './auth/authClient';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { appTheme } from './theme';
@@ -42,13 +43,18 @@ async function bootstrap() {
         <AntApp>
           <ErrorBoundary>
             <AuthProvider>
-              <CurrentUserProvider>
-                <MeProvider>
-                  <BrowserRouter>
-                    <App />
-                  </BrowserRouter>
-                </MeProvider>
-              </CurrentUserProvider>
+              {/* OTP session (ADR 0032) — above CurrentUserProvider, which derives
+                  the signed-in user from it in `otp` mode. A passthrough in every
+                  other mode, so no /me probe races the OIDC token acquisition. */}
+              <OtpSessionProvider>
+                <CurrentUserProvider>
+                  <MeProvider>
+                    <BrowserRouter>
+                      <App />
+                    </BrowserRouter>
+                  </MeProvider>
+                </CurrentUserProvider>
+              </OtpSessionProvider>
             </AuthProvider>
           </ErrorBoundary>
         </AntApp>

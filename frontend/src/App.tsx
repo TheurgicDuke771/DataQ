@@ -22,6 +22,7 @@ import { authMode } from './auth/config';
 import { useCurrentUser } from './auth/useCurrentUser';
 import { useIsWorkspaceAdmin } from './auth/useMe';
 import { logout } from './auth/authClient';
+import { useOtpSession } from './auth/otpSessionContext';
 import { BrandMark } from './components/BrandMark';
 import { BRAND, SHELL } from './theme';
 
@@ -327,9 +328,19 @@ function BrandWatermark() {
  */
 function UserMenu() {
   const user = useCurrentUser();
+  // Called before the early return — hooks are unconditional. Inert in every mode
+  // but `otp`, where it is the only thing that can end the cookie session.
+  const { signOut: signOutOtpSession } = useOtpSession();
   if (!user) return null;
 
   const onLogout = () => {
+    // OTP sign-out is a POST that revokes the session server-side and clears the
+    // cookie — not a redirect. The SPA cannot clear an HttpOnly cookie itself, so
+    // "sign out" that only forgot local state would leave a live session behind.
+    if (authMode === 'otp') {
+      signOutOtpSession();
+      return;
+    }
     if (authMode !== 'real') return;
     void logout();
   };

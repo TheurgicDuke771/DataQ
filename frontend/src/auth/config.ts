@@ -17,17 +17,28 @@
  * - 'real'         — `mode:'oidc'` with authority + clientId present. The generic
  *                    OIDC auth client (oidc-client-ts — ADR 0028/#504) drives
  *                    redirect-flow login + token acquisition.
+ * - 'otp'          — ONLY when `mode:'otp'` is explicitly set (ADR 0032). Email
+ *                    one-time codes; the credential is an HttpOnly cookie the SPA
+ *                    never sees, so there is nothing else to configure here.
  * - 'dev_bypass'   — ONLY when `mode:'bypass'` is explicitly set. Fail-closed:
  *                    never inferred from missing config. Renders a fixed dev user.
  * - 'unconfigured' — anything else. AuthGate shows a setup-needed banner.
+ *
+ * The `otp` value is one half of a **pair of coordinated selectors** (ADR 0032
+ * decision 2): the backend infers its own mode from `AUTH_EMAIL_*` + the signup
+ * allowlist and never reads this one. Set both or neither — this alone yields a
+ * code form whose endpoints 503.
  */
 
-export type AuthMode = 'real' | 'dev_bypass' | 'unconfigured';
+export type AuthMode = 'real' | 'otp' | 'dev_bypass' | 'unconfigured';
 
 /** The runtime auth contract injected via `window.__DATAQ_CONFIG__.auth`. */
 export interface DataqAuthConfig {
-  /** 'bypass' = no IdP (local/eval); 'oidc' = real sign-in. Absent → unconfigured. */
-  mode?: 'bypass' | 'oidc';
+  /**
+   * 'bypass' = no IdP (local/eval); 'otp' = email one-time codes (ADR 0032);
+   * 'oidc' = IdP sign-in. Absent/unrecognised → unconfigured.
+   */
+  mode?: 'bypass' | 'otp' | 'oidc';
   /** OIDC issuer/authority URL (e.g. https://login.microsoftonline.com/<tenant>/v2.0). */
   authority?: string;
   /** The public SPA client id registered with the IdP. */
@@ -58,8 +69,14 @@ function fromBuildEnv(): DataqAuthConfig {
   // bypass even if VITE_AUTH_DEV_BYPASS=true were baked in. The image path never
   // reaches here (nginx injects window.__DATAQ_CONFIG__).
   const bypass = import.meta.env.DEV && import.meta.env.VITE_AUTH_DEV_BYPASS === 'true';
+  // `pnpm dev` against a locally-running OTP backend. Explicit opt-in only — an
+  // unrecognised value falls through to the OIDC/unconfigured branches rather
+  // than being coerced into a mode. Not DEV-gated like bypass, because unlike
+  // bypass this mode *is* a real authenticator: turning it on in a production
+  // bundle grants nothing without a mailbox and a server-side allowlist.
+  const otp = import.meta.env.VITE_AUTH_MODE === 'otp';
   return {
-    mode: bypass ? 'bypass' : tenantId && clientId ? 'oidc' : undefined,
+    mode: bypass ? 'bypass' : otp ? 'otp' : tenantId && clientId ? 'oidc' : undefined,
     authority: tenantId ? `https://login.microsoftonline.com/${tenantId}/v2.0` : undefined,
     clientId: clientId || undefined,
     apiScope: apiClientId ? `api://${apiClientId}/${scope}` : undefined,
@@ -78,8 +95,12 @@ export const authConfig = {
 } as const;
 
 export const authMode: AuthMode = (() => {
-  // Fail-closed: bypass ONLY on the explicit flag, never inferred.
+  // Fail-closed: bypass and otp ONLY on their explicit flag, never inferred.
   if (cfg.mode === 'bypass') return 'dev_bypass';
+  // Checked before the OIDC branch so a deployment that leaves stale
+  // authority/clientId values behind while switching to `otp` gets the mode it
+  // asked for, rather than silently continuing to render an IdP redirect.
+  if (cfg.mode === 'otp') return 'otp';
   if (cfg.authority && cfg.clientId) return 'real';
   return 'unconfigured';
 })();
@@ -87,6 +108,7 @@ export const authMode: AuthMode = (() => {
 /** Human-readable auth-method label per mode (Profile + Settings "Authentication" rows). */
 export const AUTH_METHOD_LABELS: Record<AuthMode, string> = {
   real: 'OIDC (SSO)',
+  otp: 'Email one-time code',
   dev_bypass: 'Dev bypass (no IdP)',
   unconfigured: 'Not configured',
 };

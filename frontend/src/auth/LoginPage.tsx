@@ -1,4 +1,5 @@
 import { Button } from 'antd';
+import type { ReactNode } from 'react';
 
 import { BrandMark } from '../components/BrandMark';
 import { RESULT_STATUS_CHART_COLORS } from '../components/charts/chartTheme';
@@ -16,6 +17,45 @@ import { BRAND } from '../theme';
  * Provider-neutral (ADR 0028) — no IdP-specific branding.
  */
 export function LoginPage({ onSignIn, signingIn }: { onSignIn: () => void; signingIn: boolean }) {
+  return (
+    <LoginShell
+      title="Sign in to DataQ"
+      subtitle="Use your organisation account to continue."
+      footer="Single sign-on, secured by your tenant. Access is granted per suite by a workspace admin."
+    >
+      <Button
+        type="primary"
+        size="large"
+        block
+        loading={signingIn}
+        onClick={onSignIn}
+        className="dqlogin-btn"
+      >
+        {signingIn ? 'Opening sign-in…' : 'Sign in'}
+      </Button>
+    </LoginShell>
+  );
+}
+
+/**
+ * The brand panel + action card chrome, shared by every auth mode's sign-in
+ * screen (ADR 0028 OIDC, ADR 0032 email OTP).
+ *
+ * Extracted rather than copied: the CSS below is ~100 lines of bespoke layout and
+ * motion, and a second sign-in screen that duplicated it would drift the moment
+ * either was touched. The mode-specific part is only what goes inside the card.
+ */
+export function LoginShell({
+  title,
+  subtitle,
+  children,
+  footer,
+}: {
+  title: string;
+  subtitle: ReactNode;
+  children: ReactNode;
+  footer: ReactNode;
+}) {
   return (
     <div className="dqlogin-root">
       <style>{LOGIN_CSS}</style>
@@ -72,24 +112,12 @@ export function LoginPage({ onSignIn, signingIn }: { onSignIn: () => void; signi
           <div className="dqlogin-card-mark">
             <BrandMark size={40} />
           </div>
-          <h2 className="dqlogin-card-title">Sign in to DataQ</h2>
-          <p className="dqlogin-card-sub">Use your organisation account to continue.</p>
+          <h2 className="dqlogin-card-title">{title}</h2>
+          <p className="dqlogin-card-sub">{subtitle}</p>
 
-          <Button
-            type="primary"
-            size="large"
-            block
-            loading={signingIn}
-            onClick={onSignIn}
-            className="dqlogin-btn"
-          >
-            {signingIn ? 'Opening sign-in…' : 'Sign in'}
-          </Button>
+          {children}
 
-          <p className="dqlogin-foot">
-            Single sign-on, secured by your tenant. Access is granted per suite by a workspace
-            admin.
-          </p>
+          <p className="dqlogin-foot">{footer}</p>
         </div>
       </section>
     </div>
@@ -202,6 +230,15 @@ const LOGIN_CSS = `
 .dqlogin-card-sub { margin: 0 0 28px; font-size: 14.5px; color: #6b7280; line-height: 1.55; }
 .dqlogin-btn { height: 46px; font-weight: 600; }
 .dqlogin-foot { margin: 22px 0 0; font-size: 12.5px; line-height: 1.5; color: #9098a4; }
+
+/* Email-OTP form (ADR 0032). The card centres its text for the single-button
+   OIDC card; a labelled form needs its labels and validation messages on the
+   left, so the form opts back out rather than the card giving it up. */
+.dqlogin-form { text-align: left; }
+.dqlogin-form .ant-form-item:last-of-type { margin-bottom: 12px; }
+.dqlogin-code-input input { letter-spacing: 0.35em; font-variant-numeric: tabular-nums; }
+.dqlogin-sent { margin: 0 0 18px; font-size: 13px; line-height: 1.55; color: #6b7280; }
+.dqlogin-sent strong { color: ${BRAND.ink}; font-weight: 600; word-break: break-all; }
 
 /* Motion — staggered reveal. Rows rest fully visible (opacity:1); the animation
    only eases them IN, via 'both' fill so the from-state covers the delay and the

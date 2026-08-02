@@ -46,6 +46,38 @@ describe('authMode (runtime config)', () => {
     const { authMode } = await loadConfig();
     expect(authMode).toBe('unconfigured');
   });
+
+  // ── otp (ADR 0032, #736) ──────────────────────────────────────────────────
+  it("is 'otp' ONLY on an explicit mode:'otp' — nothing else configures it", async () => {
+    // Unlike oidc there is no authority/clientId to infer from: the credential is
+    // a cookie the server sets, so the mode selector is the whole contract.
+    inject({ mode: 'otp' });
+    const { authMode } = await loadConfig();
+    expect(authMode).toBe('otp');
+  });
+
+  it("keeps 'otp' even when stale OIDC values are left behind", async () => {
+    // Realistic migration state: an operator flips MODE to otp and forgets to
+    // blank the authority/clientId. Falling through to the OIDC branch would
+    // render an IdP redirect against a tenant nobody signs into any more.
+    inject({ mode: 'otp', authority: 'https://issuer.example/v2.0', clientId: 'spa-1' });
+    const { authMode } = await loadConfig();
+    expect(authMode).toBe('otp');
+  });
+
+  it('does NOT treat an unrecognised mode as otp (or anything else permissive)', async () => {
+    inject({ mode: 'magic-link' as unknown as 'otp' });
+    const { authMode } = await loadConfig();
+    expect(authMode).toBe('unconfigured');
+  });
+
+  it('bypass still wins over otp when both are somehow expressible', async () => {
+    // Only one `mode` value can be set, so this pins the precedence order rather
+    // than a reachable config: bypass is checked first and must stay first.
+    inject({ mode: 'bypass' });
+    const { authMode } = await loadConfig();
+    expect(authMode).toBe('dev_bypass');
+  });
 });
 
 describe('authMethodLabel (#618 — derived from the runtime mode, never hardcoded)', () => {
@@ -65,6 +97,12 @@ describe('authMethodLabel (#618 — derived from the runtime mode, never hardcod
     inject({});
     const { authMethodLabel } = await loadConfig();
     expect(authMethodLabel).toBe('Not configured');
+  });
+
+  it("names the OTP mode for what it is — not 'SSO', which it is not", async () => {
+    inject({ mode: 'otp' });
+    const { authMethodLabel } = await loadConfig();
+    expect(authMethodLabel).toBe('Email one-time code');
   });
 });
 
@@ -103,6 +141,22 @@ describe('build-time fallback (pnpm dev, no injected config)', () => {
     vi.stubEnv('VITE_AUTH_DEV_BYPASS', 'true');
     const { authMode } = await loadConfig();
     expect(authMode).toBe('dev_bypass');
+  });
+
+  it('honours VITE_AUTH_MODE=otp as an explicit opt-in for `pnpm dev`', async () => {
+    vi.stubEnv('VITE_AZURE_TENANT_ID', '');
+    vi.stubEnv('VITE_AZURE_SPA_CLIENT_ID', '');
+    vi.stubEnv('VITE_AUTH_MODE', 'otp');
+    const { authMode } = await loadConfig();
+    expect(authMode).toBe('otp');
+  });
+
+  it('ignores a VITE_AUTH_MODE it does not recognise (fail-closed)', async () => {
+    vi.stubEnv('VITE_AZURE_TENANT_ID', '');
+    vi.stubEnv('VITE_AZURE_SPA_CLIENT_ID', '');
+    vi.stubEnv('VITE_AUTH_MODE', 'yolo');
+    const { authMode } = await loadConfig();
+    expect(authMode).toBe('unconfigured');
   });
 
   it("is 'unconfigured' with nothing set and bypass off", async () => {
