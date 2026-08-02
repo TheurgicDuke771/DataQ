@@ -1,15 +1,28 @@
 import { EyeInvisibleOutlined, EyeOutlined } from '@ant-design/icons';
-import { Alert, Button, Card, Descriptions, Flex, Input, Spin, Tabs, Tag, Typography } from 'antd';
+import {
+  Alert,
+  App,
+  Button,
+  Card,
+  Descriptions,
+  Flex,
+  Input,
+  Spin,
+  Tabs,
+  Tag,
+  Typography,
+} from 'antd';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 
-import { type AdminWebhook, listAdminWebhooks } from '../api/admin';
+import { type AdminWebhook, listAdminWebhooks, testAuthEmail } from '../api/admin';
 import { PROVIDER_CALLBACK_NOUNS, PROVIDER_LABELS } from '../api/triggerBindings';
 import { authMethodLabel } from '../auth/config';
 import { useMe } from '../auth/useMe';
 import { Forbidden } from '../components/Forbidden';
 import { PageError } from '../components/feedback/PageError';
 import { Page } from '../components/layout/Page';
+import { useAsyncAction } from '../hooks/useAsyncAction';
 import { useAsyncData } from '../hooks/useAsyncData';
 
 /**
@@ -64,7 +77,21 @@ export function Settings() {
   );
 }
 
+/** Authentication readout + the SMTP pre-flight test (#737, ADR 0032 decision
+ *  7): "send me a test mail" so a misconfigured email OTP mailer is caught at
+ *  install time, not at a teammate's first sign-in attempt. Always shown (not
+ *  gated on the current auth method) — an admin preparing to switch a
+ *  deployment onto OTP wants to verify the mailer before flipping the mode. */
 function GeneralTab() {
+  const { message } = App.useApp();
+  const { run, loading } = useAsyncAction('SMTP pre-flight test failed');
+
+  const onTestAuthEmail = () =>
+    run(async () => {
+      const { to } = await testAuthEmail();
+      message.success(`Test email sent to ${to} — check your inbox.`);
+    });
+
   return (
     <Card size="small">
       <Descriptions column={1} size="small">
@@ -74,6 +101,16 @@ function GeneralTab() {
         </Descriptions.Item>
         <Descriptions.Item label="Authentication">{authMethodLabel}</Descriptions.Item>
       </Descriptions>
+      <Flex vertical gap={4} style={{ marginTop: 16 }}>
+        <Button onClick={onTestAuthEmail} loading={loading} style={{ alignSelf: 'flex-start' }}>
+          Send test email
+        </Button>
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          Sends a real message to your own address over the configured email sign-in mailer (
+          <Typography.Text code>AUTH_EMAIL_*</Typography.Text>). If it doesn&apos;t arrive, the
+          error names the transport stage that failed — connect, TLS, login, or send.
+        </Typography.Text>
+      </Flex>
     </Card>
   );
 }

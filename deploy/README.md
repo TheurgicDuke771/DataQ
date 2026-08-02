@@ -43,7 +43,7 @@ loopback. A production deployment must flip all of the following. Values live in
 | `RATE_LIMIT_IP_PER_MINUTE` | `1200` | per-IP ceiling across **all** bearer buckets from one IP — the rotated-token backstop (a client cycling a fresh random `Bearer` per request can't mint unlimited fresh per-token buckets to dodge the cap). Applies only to the `default` (bearer) class; the unauth class is already per-IP, the webhook class has its own ceiling above. |
 | `RATE_LIMIT_IPV4_PREFIX` / `RATE_LIMIT_IPV6_PREFIX` | `24` / `64` | per-IP buckets key on this address **prefix**, not the full address (#789) — a rotating NAT/proxy pool inside one allocation shares a bucket instead of diluting the cap across sibling /32s. `/32` / `/128` disable grouping; widen or narrow per deployment (a CGNAT-heavy user base may warrant `/32`). |
 | `RATE_LIMIT_XFF_TRUSTED_HOPS` | `1` | number of trusted proxies that append `X-Forwarded-For` in your deployment — the real client is the entry that many hops from the right. **`1`** for a single-proxy / compose setup (rightmost); **`3`** for the ACA public-envoy→nginx→internal-envoy chain (set in the IaC stack). A chain shorter than this falls back to the socket peer. |
-| `AUTH_EMAIL_SMTP_HOST` / `_PORT` / `_USERNAME` / `_FROM` / `_PASSWORD_SECRET_NAME` | unset | email OTP sign-in (ADR 0032) — the third authenticator, for deployments with **no IdP**. Set all four (port defaults to 587) to enable the mailer; the password resolves from the SecretStore **by name**. Deliberately separate from the `EMAIL_*` alert mailer, so a misconfigured alert channel can never block sign-in. **A partial block refuses to boot**, naming the missing vars. |
+| `AUTH_EMAIL_SMTP_HOST` / `_PORT` / `_USERNAME` / `_FROM` / `_PASSWORD_SECRET_NAME` | unset | email OTP sign-in (ADR 0032) — the third authenticator, for deployments with **no IdP**. Set all four (port defaults to 587) to enable the mailer; the password resolves from the SecretStore **by name**. Deliberately separate from the `EMAIL_*` alert mailer, so a misconfigured alert channel can never block sign-in. **A partial block refuses to boot**, naming the missing vars. **Verify it actually works** with the admin SMTP pre-flight test (#737) — `POST /api/v1/admin/auth-email/test` as a workspace admin sends a real message to the caller's own address and, on failure, names the exact transport stage that broke (`connect` / `tls` / `auth` / `send`) in the error envelope's `detail.stage` — catches a misconfigured relay at install time instead of at a teammate's first sign-in attempt. |
 | `AUTH_OTP_ALLOWED_EMAILS` / `AUTH_OTP_ALLOWED_DOMAINS` | unset | **mandatory** signup allowlist — there is no open registration (DataQ holds failing-row samples, which are PII). At least one entry is required whenever the mailer block is set, or the app refuses to boot. Bootstrap: put your own address in this list **and** `WORKSPACE_ADMIN_EMAILS`. |
 | `AUTH_SESSION_TTL_HOURS` | `24` | session cookie lifetime — a fixed horizon with **no refresh token**; re-running the OTP flow is the refresh. Expiry and logout revocation are enforced on every request. |
 | `AUTH_SESSION_COOKIE_SECURE` | unset (inferred) | when unset, `Secure` is inferred from `X-Forwarded-Proto` — but that is only trustworthy if the proxy forwards the **real** client-facing scheme. The reference frontend nginx currently overwrites it with its own upstream `http`, so on this stack inference yields a cookie **without** `Secure` over HTTPS ([#1138](https://github.com/TheurgicDuke771/DataQ/issues/1138), a hard blocker on #736). **Until #1138 lands, set this to `true` explicitly when deploying OTP mode over HTTPS.** Leave unset only for genuinely plain-HTTP local dev — hard-coding `true` there breaks the cookie *silently* (the browser accepts the `Set-Cookie` and then never sends it back). |
@@ -324,6 +324,15 @@ don't stop at HTTP 200s. Work top-down:
   old image), the migrate job execution is `Succeeded`, Celery beat starts clean (#405/#407)
   and orchestration polling reads Key Vault (#406/#408), and App Insights shows no post-roll
   errors.
+- [ ] **Email OTP mailer, if `AUTH_EMAIL_*` is set** — as a workspace admin, `POST
+  /api/v1/admin/auth-email/test` (#737) and confirm the test message actually lands in your
+  inbox. A non-2xx response names the failing stage in `error.detail.stage` (`connect` / `tls`
+  / `auth` / `send`) — cheaper to catch here than at the first real sign-in attempt:
+  ```bash
+  # $FE from the reachability probes below; $TOKEN from `az account get-access-token
+  # --resource api://<api-client-id>` (see Operational notes) for an admin user.
+  curl -s -X POST -H "Authorization: Bearer $TOKEN" $FE/api/v1/admin/auth-email/test | jq
+  ```
 - [ ] **(Optional, deeper)** run the live-smoke lane (`frontend/e2e-live/` gated on
   `E2E_LIVE_BASE_URL` + `e2e_smoke.py` `DATAQ_BEARER` mode, #531) and the MCP 4-query protocol
   smoke for an authenticated end-to-end pass.

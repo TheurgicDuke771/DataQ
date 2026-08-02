@@ -30,6 +30,12 @@ lawful basis) and is the deploying organization's responsibility.
   [#1138](https://github.com/TheurgicDuke771/DataQ/issues/1138)). Operators enabling OTP mode
   should set `AUTH_SESSION_COOKIE_SECURE=true` explicitly (any HTTPS deployment can) rather than
   rely on inference until #1138 lands.
+  **Before turning OTP on for real users**, run the admin-gated SMTP pre-flight test — `POST
+  /api/v1/admin/auth-email/test` sends a real message to the caller's own address over the
+  configured `AUTH_EMAIL_*` transport and, on failure, reports exactly which stage broke
+  (connect / TLS / login / send) rather than a generic error. It never accepts a recipient
+  argument — it can only mail the admin who called it — and neither the SMTP password nor the
+  recipient address appears in its response or logs.
 
 ### Email as the root of trust (read this before enabling OTP)
 

@@ -7,9 +7,12 @@ own nor are shared on — the /admin endpoints bypass the owned-or-shared scopin
 `list_suites` applies. Skips without TEST_DATABASE_URL.
 """
 
+import smtplib
+import ssl
 import uuid
 from collections.abc import Iterator
-from typing import Any
+from email.message import EmailMessage
+from typing import Any, ClassVar
 
 import pytest
 from fastapi.testclient import TestClient
@@ -78,6 +81,8 @@ def test_non_admin_gets_403(client: TestClient) -> None:
     ):
         resp = client.get(path)
         assert resp.status_code == 403, path
+    resp = client.post("/api/v1/admin/auth-email/test")
+    assert resp.status_code == 403
 
 
 def test_admin_email_match_is_case_insensitive(
@@ -359,3 +364,145 @@ def test_admin_webhooks_omits_providers_without_connections(
 
     providers = {r["provider"] for r in client.get("/api/v1/admin/orchestration/webhooks").json()}
     assert providers == {"adf"}
+
+
+# ── SMTP pre-flight test (#737, ADR 0032 decision 7) ─────────────────────────
+#
+# Real endpoint → real OtpMailer; only `smtplib.SMTP` is mocked, at the transport
+# boundary — never `OtpMailer.send_preflight` itself (the seam under test must
+# stay real: the endpoint→mailer boundary, not just the mailer alone). These
+# tests prove the ROUTE is wired correctly — settings resolution, the
+# SecretStore dependency, the `require_workspace_admin` gate, and error-envelope
+# rendering; the exhaustive stage-classification matrix lives in
+# `test_otp_mailer.py`.
+
+
+def _set_auth_email_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AUTH_EMAIL_SMTP_HOST", "smtp.example.com")
+    monkeypatch.setenv("AUTH_EMAIL_SMTP_PORT", "587")
+    monkeypatch.setenv("AUTH_EMAIL_USERNAME", "dataq@example.com")
+    monkeypatch.setenv("AUTH_EMAIL_FROM", "DataQ <dataq@example.com>")
+    monkeypatch.setenv("AUTH_EMAIL_PASSWORD_SECRET_NAME", "auth-email-password")
+    # `_validate_otp_auth` refuses to boot a "touched" AUTH_EMAIL_* block without
+    # a signup allowlist (ADR 0032 decision 2) — unrelated to this endpoint, but
+    # `Settings()` construction fails before the route ever runs without it.
+    monkeypatch.setenv("AUTH_OTP_ALLOWED_DOMAINS", "dataq.local")
+    get_settings.cache_clear()
+
+
+class _RecordingSMTP:
+    """Records the submission sequence — the one boundary these tests mock."""
+
+    instances: ClassVar[list["_RecordingSMTP"]] = []
+
+    def __init__(self, host: str, port: int, timeout: float | None = None) -> None:
+        self.calls: list[str] = []
+        self.messages: list[EmailMessage] = []
+        _RecordingSMTP.instances.append(self)
+
+    def __enter__(self) -> "_RecordingSMTP":
+        return self
+
+    def __exit__(self, *_exc: Any) -> None:
+        self.calls.append("close")
+
+    def starttls(self, context: ssl.SSLContext | None = None) -> None:
+        self.calls.append("starttls")
+
+    def login(self, user: str, password: str) -> None:
+        self.calls.append("login")
+
+    def send_message(self, message: EmailMessage) -> None:
+        self.calls.append("send")
+        self.messages.append(message)
+
+
+@pytest.fixture(autouse=True)
+def _reset_recording_smtp() -> Iterator[None]:
+    _RecordingSMTP.instances = []
+    yield
+    _RecordingSMTP.instances = []
+
+
+def test_auth_email_preflight_succeeds_and_emails_the_caller(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _set_auth_email_env(monkeypatch)
+    _grant_admin(monkeypatch)
+    monkeypatch.setattr(smtplib, "SMTP", _RecordingSMTP)
+    _with_store(client, _FakeStore(token="app-password"))
+
+    resp = client.post("/api/v1/admin/auth-email/test")
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "ok", "to": DEV_BYPASS_EMAIL}
+
+    smtp = _RecordingSMTP.instances[-1]
+    assert smtp.calls == ["starttls", "login", "send", "close"]
+    assert smtp.messages[0]["To"] == DEV_BYPASS_EMAIL
+
+
+def test_auth_email_preflight_not_configured_returns_503(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # AUTH_EMAIL_* left unset (the conftest default) — the mailer's own
+    # defence-in-depth check fires before smtplib is ever touched.
+    _grant_admin(monkeypatch)
+    monkeypatch.setattr(smtplib, "SMTP", _RecordingSMTP)
+    _with_store(client, _FakeStore(token="app-password"))
+
+    resp = client.post("/api/v1/admin/auth-email/test")
+    assert resp.status_code == 503
+    assert resp.json()["error"]["code"] == "otp_email_not_configured"
+    assert _RecordingSMTP.instances == []
+
+
+class _ConnectFailSMTP(_RecordingSMTP):
+    """Bad host / DNS failure / refused connection — smtplib.SMTP.__init__ itself
+    connects and raises before there is a context-managed object."""
+
+    def __init__(self, host: str, port: int, timeout: float | None = None) -> None:
+        raise OSError("[Errno -2] Name or service not known")
+
+
+class _ConnectTimeoutSMTP(_RecordingSMTP):
+    def __init__(self, host: str, port: int, timeout: float | None = None) -> None:
+        raise TimeoutError("timed out")
+
+
+class _TlsFailSMTP(_RecordingSMTP):
+    def starttls(self, context: ssl.SSLContext | None = None) -> None:
+        raise ssl.SSLError("handshake failed")
+
+
+class _AuthFailSMTP(_RecordingSMTP):
+    def login(self, user: str, password: str) -> None:
+        raise smtplib.SMTPAuthenticationError(535, b"bad credentials")
+
+
+@pytest.mark.parametrize(
+    ("fake_cls", "expected_stage"),
+    [
+        (_ConnectFailSMTP, "connect"),  # bad host
+        (_ConnectTimeoutSMTP, "connect"),  # timeout
+        (_TlsFailSMTP, "tls"),  # TLS failure
+        (_AuthFailSMTP, "auth"),  # refused auth
+    ],
+)
+def test_auth_email_preflight_reports_the_failing_stage(
+    fake_cls: type[_RecordingSMTP],
+    expected_stage: str,
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _set_auth_email_env(monkeypatch)
+    _grant_admin(monkeypatch)
+    monkeypatch.setattr(smtplib, "SMTP", fake_cls)
+    _with_store(client, _FakeStore(token="app-password"))
+
+    resp = client.post("/api/v1/admin/auth-email/test")
+    assert resp.status_code == 502
+    error = resp.json()["error"]
+    assert error["code"] == "otp_email_preflight_failed"
+    assert error["detail"]["stage"] == expected_stage
+    # The password must never reach the caller, even on the error path.
+    assert "app-password" not in resp.text

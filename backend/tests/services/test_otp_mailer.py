@@ -270,3 +270,189 @@ def test_nothing_is_sent_when_the_transport_block_is_incomplete(
             to="ada@acme.io", code="1", expires_in_minutes=10
         )
     assert _FakeSMTP.instances == []
+
+
+# ── SMTP pre-flight test (#737, ADR 0032 decision 7) ────────────────────────────
+#
+# `send_preflight` shares `_deliver` with `send_code` (the SAME connect/TLS/login/
+# send ladder — the whole point is that a green pre-flight is evidence the
+# sign-in path works too), but reports WHICH stage failed instead of collapsing
+# every failure into one generic 502. These tests pin the classification.
+
+
+def test_preflight_sends_a_real_message_over_starttls_before_authenticating(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mailer = _mailer(monkeypatch, _Store("app-password"))
+    mailer.send_preflight(to="admin@acme.io")
+
+    smtp = _FakeSMTP.instances[-1]
+    assert smtp.calls == ["starttls", "login", "send", "close"]
+    assert smtp.credentials == ("dataq@example.com", "app-password")
+    message = smtp.messages[0]
+    assert message["To"] == "admin@acme.io"
+    assert "test" in message.get_content().lower()
+
+
+def test_preflight_classifies_a_bad_host_as_the_connect_stage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A bad host / refused connection / DNS failure all surface before there is a
+    context-managed SMTP object — smtplib.SMTP.__init__ connects immediately."""
+
+    class _UnreachableSMTP(_FakeSMTP):
+        def __init__(self, host: str, port: int, timeout: float | None = None) -> None:
+            raise OSError("[Errno -2] Name or service not known")
+
+    monkeypatch.setattr(smtplib, "SMTP", _UnreachableSMTP)
+    mailer = otp_mailer.OtpMailer(_Store("pw"), _settings())
+
+    with pytest.raises(otp_mailer.OtpMailPreflightError) as caught:
+        mailer.send_preflight(to="admin@acme.io")
+    assert caught.value.status_code == 502
+    assert caught.value.code == "otp_email_preflight_failed"
+    assert caught.value.detail["stage"] == "connect"
+    assert caught.value.detail["error_type"] == "OSError"
+
+
+def test_preflight_classifies_a_connect_timeout_as_the_connect_stage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _TimingOutSMTP(_FakeSMTP):
+        def __init__(self, host: str, port: int, timeout: float | None = None) -> None:
+            raise TimeoutError("timed out")
+
+    monkeypatch.setattr(smtplib, "SMTP", _TimingOutSMTP)
+    mailer = otp_mailer.OtpMailer(_Store("pw"), _settings())
+
+    with pytest.raises(otp_mailer.OtpMailPreflightError) as caught:
+        mailer.send_preflight(to="admin@acme.io")
+    assert caught.value.detail["stage"] == "connect"
+    assert caught.value.detail["error_type"] == "TimeoutError"
+
+
+def test_preflight_classifies_a_handshake_failure_as_the_tls_stage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _NoTlsSMTP(_FakeSMTP):
+        def starttls(self, context: ssl.SSLContext | None = None) -> None:
+            raise ssl.SSLError("handshake failed")
+
+    monkeypatch.setattr(smtplib, "SMTP", _NoTlsSMTP)
+    mailer = otp_mailer.OtpMailer(_Store("pw"), _settings())
+
+    with pytest.raises(otp_mailer.OtpMailPreflightError) as caught:
+        mailer.send_preflight(to="admin@acme.io")
+    assert caught.value.detail["stage"] == "tls"
+    assert caught.value.detail["error_type"] == "SSLError"
+
+
+def test_preflight_classifies_a_refused_login_as_the_auth_stage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _RefusedLoginSMTP(_FakeSMTP):
+        def login(self, user: str, password: str) -> None:
+            raise smtplib.SMTPAuthenticationError(535, b"bad credentials")
+
+    monkeypatch.setattr(smtplib, "SMTP", _RefusedLoginSMTP)
+    mailer = otp_mailer.OtpMailer(_Store("pw"), _settings())
+
+    with pytest.raises(otp_mailer.OtpMailPreflightError) as caught:
+        mailer.send_preflight(to="admin@acme.io")
+    assert caught.value.detail["stage"] == "auth"
+    assert caught.value.detail["error_type"] == "SMTPAuthenticationError"
+
+
+def test_preflight_classifies_a_rejected_message_as_the_send_stage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _RejectedSendSMTP(_FakeSMTP):
+        def send_message(self, message: EmailMessage) -> None:
+            raise smtplib.SMTPDataError(550, b"message rejected")
+
+    monkeypatch.setattr(smtplib, "SMTP", _RejectedSendSMTP)
+    mailer = otp_mailer.OtpMailer(_Store("pw"), _settings())
+
+    with pytest.raises(otp_mailer.OtpMailPreflightError) as caught:
+        mailer.send_preflight(to="admin@acme.io")
+    assert caught.value.detail["stage"] == "send"
+    assert caught.value.detail["error_type"] == "SMTPDataError"
+
+
+def test_preflight_not_configured_is_distinct_from_a_stage_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The mailer block being unset/incomplete must not be mistaken for a
+    transport-stage failure — it's a 503 config error, never a 502 with a stage,
+    and it must never reach smtplib at all."""
+    monkeypatch.setattr(smtplib, "SMTP", _FakeSMTP)
+    broken = Settings.model_construct(
+        auth_email_smtp_host=None,
+        auth_email_username=None,
+        auth_email_from=None,
+        auth_email_password_secret_name=None,
+        auth_email_smtp_port=587,
+        auth_email_timeout_seconds=5.0,
+    )
+    with pytest.raises(otp_mailer.OtpMailNotConfiguredError) as caught:
+        otp_mailer.OtpMailer(_Store("pw"), broken).send_preflight(to="admin@acme.io")
+    assert caught.value.status_code == 503
+    assert _FakeSMTP.instances == []
+
+
+def test_preflight_store_unavailable_is_distinct_from_not_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(smtplib, "SMTP", _FakeSMTP)
+    sealed = otp_mailer.OtpMailer(_Store(SecretStoreUnavailableError("sealed")), _settings())
+    with pytest.raises(otp_mailer.OtpMailStoreUnavailableError) as caught:
+        sealed.send_preflight(to="admin@acme.io")
+    assert caught.value.code == "secret_store_unavailable"
+    assert _FakeSMTP.instances == []
+
+
+def test_a_preflight_failure_logs_the_stage_and_error_type_but_never_the_password(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The pipeline under test is the REAL logging stack (`configure_logging` +
+    the redacting stdout handler), not the `_redact_pii` helper in isolation —
+    the failure this guards against is a dependency or a future call site
+    logging the password directly, which a helper-level unit test could never
+    catch (CLAUDE.md §10: redact at the logger, not the call site).
+
+    A refused-login failure is the adversarial case on purpose: `server.login`
+    is called with the real password in scope, one stack frame above the log
+    line, so if redaction happened anywhere OTHER than the logger this is where
+    it would leak.
+    """
+    import io
+    import logging
+
+    from backend.app.core.logging import configure_logging
+
+    real_password = "s3cr3t-app-password-do-not-leak"
+
+    class _RefusedLoginSMTP(_FakeSMTP):
+        def login(self, user: str, password: str) -> None:
+            raise smtplib.SMTPAuthenticationError(535, b"bad credentials")
+
+    monkeypatch.setattr(smtplib, "SMTP", _RefusedLoginSMTP)
+    configure_logging()
+    buffer = io.StringIO()
+    handler = logging.getLogger().handlers[0]
+    original = handler.stream  # type: ignore[attr-defined]
+    handler.stream = buffer  # type: ignore[attr-defined]
+    try:
+        with pytest.raises(otp_mailer.OtpMailPreflightError):
+            otp_mailer.OtpMailer(_Store(real_password), _settings()).send_preflight(
+                to="admin@acme.io"
+            )
+    finally:
+        handler.stream = original  # type: ignore[attr-defined]
+
+    emitted = buffer.getvalue()
+    assert "otp_email_preflight_failed" in emitted
+    assert '"stage": "auth"' in emitted
+    assert "SMTPAuthenticationError" in emitted, "the operator cannot tell what broke"
+    assert real_password not in emitted
+    assert "admin@acme.io" not in emitted
