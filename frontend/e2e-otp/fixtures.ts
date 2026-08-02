@@ -131,30 +131,6 @@ function makeSignIn(page: Page): SignIn {
       const dismissProfilePrompt = opts?.dismissProfilePrompt ?? true;
       await requestCode(email);
       const code = await readCode(email);
-
-      // The first-login profile-completion prompt (#1139) depends on a
-      // SEPARATE `/me` fetch (MeProvider) than the one the OTP verify
-      // response already carries to the session context — it can land well
-      // after the app shell renders, and under a loaded CI runner "well
-      // after" was observed to exceed 5s, which is what let the modal pop up
-      // mid-spec and block every click for the rest of the test (it was seen
-      // open, intercepting clicks, for effectively the whole 30s timeout).
-      // Arm the listener before submitting the code — waiting for it only
-      // after the fact risks missing a response that already landed — and
-      // match on the exact pathname, not a substring (`/api/v1/me` is also a
-      // prefix of `/api/v1/me/api-keys`). Skipped entirely when the caller
-      // doesn't want the prompt touched — arming a listener for a response
-      // nobody then waits on is harmless, but there is nothing to wait FOR.
-      const meResponse = dismissProfilePrompt
-        ? page
-            .waitForResponse(
-              (resp) =>
-                resp.request().method() === 'GET' && new URL(resp.url()).pathname === '/api/v1/me',
-              { timeout: 20_000 },
-            )
-            .catch(() => null)
-        : null;
-
       await submitCode(code);
 
       // The app shell is the proof: AuthGate only renders children for a
@@ -163,31 +139,37 @@ function makeSignIn(page: Page): SignIn {
 
       if (!dismissProfilePrompt) return code;
 
-      // Every fresh OTP signup starts with display_name: NULL, so the modal
-      // fires for every freshEmail() address and for the fixed
-      // OTP_ADMIN_EMAIL the first time it signs in during a run, and its mask
-      // intercepts pointer events over the nav. Wait for the /me response the
-      // modal's own visibility depends on — a real network sync point, not a
-      // guessed timeout — then dismiss it once for everyone; the modal itself
-      // is covered directly by its own unit tests. NOTE: clicking "Skip for
-      // now" writes `dataq:profileCompletionPrompt:skipped` to
-      // sessionStorage (by design — see the component) — a spec asserting on
-      // the sign-in flow's OWN storage footprint must pass
-      // `dismissProfilePrompt: false` instead of dismissing and then
-      // filtering the key back out, so the assertion still proves what its
-      // name says.
-      await meResponse;
+      // Every fresh OTP signup starts with display_name: NULL, so the
+      // first-login profile-completion prompt (#1139) fires here for every
+      // freshEmail() address and for the fixed OTP_ADMIN_EMAIL the first
+      // time it signs in during a run, and its mask intercepts pointer
+      // events over the nav, so leaving it up breaks every spec's next
+      // click. It depends on a SEPARATE `/me` fetch (MeProvider) than the
+      // one the OTP verify response already carries, so it can render a
+      // beat after the shell above.
+      //
+      // A page.waitForResponse() sync point on that fetch was tried here and
+      // TWICE hung for the entire test budget (#1153, CI runs 30772079151
+      // and 30772437357) despite its own explicit timeout — a network
+      // listener is one more moving part than this needs, and on this
+      // evidence not a reliable one. Poll the UI instead: locator.waitFor()
+      // already polls, so this loses nothing, and every wait below carries
+      // its OWN explicit timeout so nothing here can silently inherit (and
+      // exhaust) the whole test budget the way an untimed wait would.
       const skipPrompt = page.getByRole('button', { name: 'Skip for now' });
       try {
-        // The response landing doesn't guarantee React has committed the
-        // re-render yet — a short bound here covers that gap, not the
-        // network latency the wait above already absorbed.
-        await skipPrompt.waitFor({ state: 'visible', timeout: 3_000 });
-        await skipPrompt.click();
+        await skipPrompt.waitFor({ state: 'visible', timeout: 25_000 });
+        await skipPrompt.click({ timeout: 5_000 });
         // Wait out the close animation too: a click that fires but hasn't
         // finished closing the modal leaves the same mask in place for
-        // whatever the spec clicks next.
-        await skipPrompt.waitFor({ state: 'hidden' });
+        // whatever the spec clicks next. NOTE: clicking "Skip for now"
+        // writes `dataq:profileCompletionPrompt:skipped` to sessionStorage
+        // (by design — see the component) — a spec asserting on the
+        // sign-in flow's OWN storage footprint must pass
+        // `dismissProfilePrompt: false` instead of dismissing and then
+        // filtering the key back out, so the assertion still proves what
+        // its name says.
+        await skipPrompt.waitFor({ state: 'hidden', timeout: 5_000 });
       } catch {
         // Already dismissed / already has a display_name (e.g. a persisted
         // admin user on a re-run) — nothing to skip.
