@@ -9,6 +9,7 @@ own nor are shared on — the /admin endpoints bypass the owned-or-shared scopin
 
 import smtplib
 import ssl
+import time
 import uuid
 from collections.abc import Iterator
 from email.message import EmailMessage
@@ -18,7 +19,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend.app.core.auth import DEV_BYPASS_EMAIL
-from backend.app.core.config import get_settings
+from backend.app.core.config import Settings, get_settings
 from backend.app.db.models import ORCHESTRATION_PROVIDERS, Check, Connection, Share, Suite, User
 from backend.app.db.session import get_db
 from backend.app.main import app
@@ -667,10 +668,33 @@ def test_two_admins_do_not_share_one_preflight_budget(
     )
 
 
+def test_the_preflight_cap_resets_in_the_NEXT_window(
+    monkeypatch: pytest.MonkeyPatch, _preflight_counter: Any
+) -> None:
+    """A cap that never resets is an outage, not a throttle.
+
+    Driven at the service seam with a frozen clock rather than through HTTP: the
+    reset is a property of *time*, and the only honest way to assert it is to move
+    the clock rather than to sleep ten minutes or to infer it from key shapes.
+    """
+    settings = Settings(admin_email_preflight_per_10min=1)
+    admin = uuid.uuid4()
+    clock = {"now": 1_000_000.0}
+    monkeypatch.setattr(time, "time", lambda: clock["now"])
+
+    admin_service.enforce_preflight_quota(admin, settings)  # spends the only slot
+    with pytest.raises(admin_service.PreflightThrottledError) as exhausted:
+        admin_service.enforce_preflight_quota(admin, settings)
+    # The wait it advertises must land inside the window it is waiting out.
+    retry_after = exhausted.value.detail["retry_after_seconds"]
+    assert 1 <= retry_after <= admin_service.PREFLIGHT_WINDOW_SECONDS
+
+    clock["now"] += admin_service.PREFLIGHT_WINDOW_SECONDS
+    admin_service.enforce_preflight_quota(admin, settings)  # a fresh budget, no raise
+
+
 def test_the_shipped_preflight_cap_default_is_three_per_ten_minutes() -> None:
     """The value that protects a deployment is the DEFAULT — every test above
     overrides it."""
-    from backend.app.core.config import Settings
-
     assert Settings().admin_email_preflight_per_10min == 3
     assert admin_service.PREFLIGHT_WINDOW_SECONDS == 600
