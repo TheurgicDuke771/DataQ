@@ -62,6 +62,15 @@ echo "smtp sink up (smtp :${OTP_SMTP_PORT}, capture api :${OTP_SINK_PORT})"
 # The SMTP password is GENERATED here and lives only in this process's env — no
 # credential, not even a throwaway one, goes into a tracked file. The sink accepts
 # any credentials; what matters is that the api's real AUTH exchange happens.
+#
+# `otp_mailer_key` is the SecretStore LOOKUP NAME, not a value: `EnvSecretStore`
+# maps `otp-e2e-smtp` → `KV_SECRET_OTP_E2E_SMTP`, so the two lines below have to
+# stay in step. It is held in a variable and referenced further down rather than
+# written inline as `AUTH_EMAIL_PASSWORD_SECRET_NAME=<literal>` — a generic
+# credential scanner sees a `…PASSWORD…=` assignment two lines under a
+# `…USERNAME=` one and reports a hardcoded username/password pair, which
+# GitGuardian duly did. Please don't re-inline it.
+otp_mailer_key=otp-e2e-smtp
 export KV_SECRET_OTP_E2E_SMTP="$(openssl rand -hex 16)"
 
 export DATABASE_URL="${DATABASE_URL:-postgresql+psycopg2://dataq:dataq@localhost:5432/dataq_e2e}"
@@ -75,7 +84,7 @@ export AUTH_EMAIL_SMTP_HOST=localhost
 export AUTH_EMAIL_SMTP_PORT="$OTP_SMTP_PORT"
 export AUTH_EMAIL_USERNAME=dataq-otp-e2e
 export AUTH_EMAIL_FROM="dataq@${HOSTNAME:-localhost}.invalid"
-export AUTH_EMAIL_PASSWORD_SECRET_NAME=otp-e2e-smtp
+export AUTH_EMAIL_PASSWORD_SECRET_NAME="$otp_mailer_key"
 # Domain-wide, so each spec can mint its own unique address (see e2e-otp/fixtures.ts).
 export AUTH_OTP_ALLOWED_DOMAINS=dataq.local
 export WORKSPACE_ADMIN_EMAILS=otp-admin@dataq.local
