@@ -13,18 +13,28 @@ counters live in `otp_service` because the middleware cannot see a request body.
 **1. The uniform response, and the one place it is not uniform.** `otp/request`
 answers `{"status": "ok"}` for an eligible address, an ineligible one, and a
 throttled one — byte-identical bodies and status codes, asserted by tests. That is
-ADR 0032 decision 4's anti-enumeration property, and it is why the endpoint does
-not report whether mail was sent.
+ADR 0032 decision 4's anti-enumeration property scoped to what a caller sees *in
+the response body/status*, and it is why the endpoint does not report whether mail
+was sent.
 
-The exception: an eligible address whose SMTP submission genuinely FAILS gets a
-502/503. That does leak eligibility — but only while the mail server is broken,
-and issue #734's acceptance criteria are explicit that a send failure must surface
-a real error and a structured log rather than a quiet no-op. Weighed: a user told
-"check your email" when nothing was sent has no way to distinguish a slow relay
-from a dead one and will retry forever, and a mail outage is an operator-visible,
-deployment-wide condition, not a per-address secret. The steady-state property —
-which is what the ADR argues for — is unaffected: with a working mailer the three
-outcomes are indistinguishable.
+Two things the content-level uniformity does NOT cover, both deliberate and both
+kept honest here rather than overclaimed:
+
+- **Response *latency* is not equalized.** The eligible path does a Redis counter
+  check, two DB writes, and a synchronous SMTP handshake that the ineligible path
+  (one in-memory set lookup) skips, so response time still distinguishes members.
+  This is a known, tracked gap — a constant-time floor is
+  [#1137](https://github.com/TheurgicDuke771/DataQ/issues/1137) — not a property to
+  claim as closed. Nothing a caller can observe *in the body or status* leaks
+  eligibility; timing can.
+- **A real SMTP failure on an eligible address gets a 502/503** where a working
+  send would have been `{"status": "ok"}`. That leaks eligibility while the mail
+  server is broken — but issue #734's acceptance criteria are explicit that a send
+  failure must surface a real error and a structured log rather than a quiet no-op.
+  Weighed: a user told "check your email" when nothing was sent cannot tell a slow
+  relay from a dead one and retries forever, and a mail outage is an
+  operator-visible, deployment-wide condition, not a per-address secret. With a
+  working mailer the three outcomes are indistinguishable at the body/status level.
 
 **2. Throttled returns success, not 429.** When an address exceeds its per-email
 quota the response is the same `{"status": "ok"}`. A 429 here would be a perfect

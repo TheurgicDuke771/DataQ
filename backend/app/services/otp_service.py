@@ -13,10 +13,15 @@ design choice here: the protection is the *caps*, not the hash.
   500).
 * SHA-256 at rest is defence-in-depth against a database read, not a work factor.
 
-**Anti-enumeration** (decision 4): `request_code` returns the same thing whether
-the address is eligible, ineligible, or throttled — and sends mail only for the
-eligible case. Nothing a caller can observe distinguishes "you have an account
-here" from "you do not".
+**Anti-enumeration** (decision 4): `request_code` returns the same outcome shape
+whether the address is eligible, ineligible, or throttled — and sends mail only for
+the eligible case, so nothing a caller can observe *in the response body or status*
+distinguishes "you have an account here" from "you do not". This is content-level,
+not timing-level: the eligible path does Redis + two DB writes + a synchronous mail
+send that the ineligible path skips, so response *latency* still leaks membership.
+That is a known, tracked gap (a constant-time floor is
+[#1137](https://github.com/TheurgicDuke771/DataQ/issues/1137)), not a property this
+module claims to close.
 
 **Identity linking** (decision 6, #735 step 2): a successful verification resolves
 the user by unique `lower(email)`. If a row already exists — AAD-provisioned or

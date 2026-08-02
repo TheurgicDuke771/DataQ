@@ -22,6 +22,14 @@ lawful basis) and is the deploying organization's responsibility.
   like PATs. Sign-up is **allowlist-only** — there is no open registration. MCP does **not**
   accept a session: it is a browser credential, and PATs remain the headless credential
   (ADR [0032](adr/0032-email-otp-signin.md)).
+  **`Secure` is not unconditional:** by default the backend infers it from the
+  `X-Forwarded-Proto` the proxy forwards, and the cookie is marked `Secure` only when that says
+  `https`. This depends on the proxy passing the *real* client-facing scheme — and the reference
+  Azure nginx currently overwrites it with its own upstream `http`, so on that deployment the
+  cookie ships **without** `Secure` until that is fixed (tracked in
+  [#1138](https://github.com/TheurgicDuke771/DataQ/issues/1138)). Operators enabling OTP mode
+  should set `AUTH_SESSION_COOKIE_SECURE=true` explicitly (any HTTPS deployment can) rather than
+  rely on inference until #1138 lands.
 
 ### Email as the root of trust (read this before enabling OTP)
 
@@ -42,8 +50,13 @@ are the reason this mode is opt-in rather than the default:
   consider keeping the allowlist to addresses that have no SSO identity.
 - **Mitigations DataQ does apply:** codes expire in 10 minutes, are single-use, allow at most
   5 verification attempts, and a new request invalidates the previous code; requests are capped
-  **per mailbox** as well as per IP; the sign-in endpoints answer identically whether or not an
-  address is known, so they cannot be used to enumerate who has an account.
+  **per mailbox** as well as per IP; the sign-in endpoints return an identical response *body and
+  status* whether or not an address is known, so the response content cannot be used to enumerate
+  who has an account. **Caveat — response *latency* is not currently equalized:** an eligible
+  address incurs the code-mint and synchronous mail-send round trip that an ineligible one skips,
+  so timing can still distinguish members. Treat the content-level uniformity as the guarantee and
+  the timing channel as a known gap; a constant-time floor is tracked in
+  [#1137](https://github.com/TheurgicDuke771/DataQ/issues/1137).
 - **Mitigations that are yours:** MFA on the mailbox, a mail domain with SPF/DKIM/DMARC, and a
   minimal allowlist. If you have an IdP, prefer SSO — OTP exists for the case where you do not.
 
