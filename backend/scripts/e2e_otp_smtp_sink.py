@@ -51,6 +51,7 @@ import argparse
 import datetime as dt
 import email
 import http.server
+import ipaddress
 import json
 import re
 import socketserver
@@ -136,8 +137,17 @@ def make_self_signed_cert(directory: Path, hostname: str = "localhost") -> tuple
         .not_valid_after(now + dt.timedelta(days=1))
         .add_extension(
             # smtplib passes server_hostname, so the SAN — not the CN — is what
-            # Python's hostname check actually consults.
-            x509.SubjectAlternativeName([x509.DNSName(hostname), x509.DNSName("127.0.0.1")]),
+            # Python's hostname check actually consults. The loopback address is an
+            # `IPAddress` entry, NOT a DNSName: for an IP-literal `server_hostname`
+            # Python matches only IPAddress SANs, so `DNSName("127.0.0.1")` would
+            # look like it covered `AUTH_EMAIL_SMTP_HOST=127.0.0.1` and silently
+            # would not.
+            x509.SubjectAlternativeName(
+                [
+                    x509.DNSName(hostname),
+                    x509.IPAddress(ipaddress.ip_address("127.0.0.1")),
+                ]
+            ),
             critical=False,
         )
         .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)

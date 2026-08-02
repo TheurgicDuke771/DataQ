@@ -34,7 +34,11 @@ cd "$REPO_ROOT"
 OTP_API_PORT="${OTP_API_PORT:-8100}"
 OTP_SMTP_PORT="${OTP_SMTP_PORT:-1025}"
 OTP_SINK_PORT="${OTP_SINK_PORT:-1080}"
-OTP_STATE_DIR="${OTP_STATE_DIR:-$(mktemp -d -t dataq-otp-lane)}"
+# An explicit template, and no `-t`. BSD mktemp (macOS) appends its own X's to a
+# `-t` prefix; GNU mktemp (Linux, and therefore CI) rejects it outright —
+# "too few X's in template" — so `-t dataq-otp-lane` works locally and fails in
+# CI, which is exactly what it did. A full template path is portable to both.
+OTP_STATE_DIR="${OTP_STATE_DIR:-$(mktemp -d "${TMPDIR:-/tmp}/dataq-otp-lane.XXXXXX")}"
 mkdir -p "$OTP_STATE_DIR"
 
 echo "otp lane state dir: $OTP_STATE_DIR"
