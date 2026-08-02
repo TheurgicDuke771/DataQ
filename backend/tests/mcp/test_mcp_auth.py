@@ -176,3 +176,102 @@ def test_resolve_user_pat_claim_missing_user_fails_closed(
     monkeypatch.setattr(auth, "get_access_token", lambda: token)
     with pytest.raises(auth.McpAuthError):
         auth.resolve_current_user(db_session)
+
+
+async def test_verifier_rejects_a_SESSION_token_before_the_jwt_branch(monkeypatch: Any) -> None:
+    """`/mcp` is an explicit non-goal for sessions (ADR 0032 decision 1): a session
+    is a browser credential, a PAT is the headless/MCP one.
+
+    The assertion is not merely "returns None" — the JWT verifier is spied on,
+    because the buggy version ALSO returns None, after handing a live credential to
+    a validator that logs what it cannot decode. That is the #849 leak shape
+    exactly, and the only thing that distinguishes the fix from the bug is that the
+    validator is never entered.
+    """
+    from backend.app.services import session_service
+
+    verifier = _composite_verifier()
+    seen: list[str] = []
+
+    async def _fake_jwt_verify(token: str) -> None:
+        seen.append(token)
+        return None
+
+    monkeypatch.setattr(verifier._jwt, "verify_token", _fake_jwt_verify)
+    assert await verifier.verify_token(session_service.TOKEN_PREFIX + "abcdef123456") is None
+    assert seen == [], "a session token was handed to the JWT validator — it will be logged"
+
+
+def test_the_mcp_layer_never_reads_a_cookie() -> None:
+    """The premise the `allowed_origins=["*"]` justification rests on (#734).
+
+    That relaxation is safe because CSRF needs an AMBIENT credential and /mcp has
+    none — every call is authenticated by an `Authorization` header. ADR 0032
+    introduced DataQ's first ambient credential, so the premise was re-checked
+    rather than assumed. This pins it structurally: if any MCP auth code ever
+    starts reading `request.cookies`, a browser holding a DataQ session becomes
+    forgeable from any origin, and the comment in `mcp/server.py` becomes false.
+    """
+    import inspect
+
+    from backend.app.mcp import auth as mcp_auth
+
+    source = inspect.getsource(mcp_auth)
+    assert "cookies" not in source
+    assert "COOKIE_NAME" not in source
+
+
+def test_a_request_carrying_ONLY_the_session_cookie_is_rejected_over_http(
+    monkeypatch: Any,
+) -> None:
+    """The end-to-end statement of the `allowed_origins=["*"]` premise (#734).
+
+    Mounts the real AUTHENTICATED MCP app and sends a real JSON-RPC request whose
+    only credential is a DataQ session cookie — the exact shape a hostile page
+    could induce a signed-in browser into making. It must 401: /mcp authenticates
+    from the `Authorization` header alone, so there is no ambient-credential path
+    to forge a request against, which is what makes the wide-open Origin policy
+    safe.
+
+    The module reload is load-bearing, not ceremony: `server.mcp` binds its auth
+    provider at IMPORT time (`FastMCP(..., auth=build_auth_provider())`), and the
+    suite imports it under dev-bypass — where the provider is None and the app is
+    unmounted-auth. Without the reload this test gets a 400 from the transport and
+    proves nothing about authentication. Reloaded back afterwards so the rest of
+    the suite sees the module it expects.
+    """
+    import importlib
+
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from backend.app.core.config import get_settings
+    from backend.app.mcp import server as mcp_server
+    from backend.app.services import session_service
+
+    monkeypatch.setenv("AZURE_TENANT_ID", "11111111-1111-1111-1111-111111111111")
+    monkeypatch.setenv("AZURE_API_CLIENT_ID", "22222222-2222-2222-2222-222222222222")
+    get_settings.cache_clear()
+
+    try:
+        reloaded = importlib.reload(mcp_server)
+        assert reloaded.mcp.auth is not None, (
+            "the MCP server rebuilt without an auth provider — a 401 here would " "prove nothing"
+        )
+        mcp_app = reloaded.build_mcp_app()
+        assert mcp_app is not None
+        app = FastAPI(lifespan=mcp_app.lifespan)
+        app.mount("/mcp", mcp_app)
+
+        with TestClient(app) as client:
+            client.cookies.set(session_service.COOKIE_NAME, session_service.TOKEN_PREFIX + "0" * 40)
+            response = client.post(
+                "/mcp/",
+                json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+                headers={"Accept": "application/json, text/event-stream"},
+            )
+        assert response.status_code == 401, response.text
+    finally:
+        monkeypatch.undo()
+        get_settings.cache_clear()
+        importlib.reload(mcp_server)

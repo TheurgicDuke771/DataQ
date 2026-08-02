@@ -39,6 +39,9 @@ from backend.app.services import api_key_service
 # file, and a scanner cannot tell "expired" from "live" (nor should it have to).
 _PAT = "dq_live_" + "0" * 40
 _JWT = "eyJ" + "A" * 12 + "." + "B" * 12 + "." + "C" * 12
+# The OTP session cookie's token (ADR 0032) — a live browser credential exactly
+# like a PAT, and therefore held to the same standard.
+_SESSION = "dq_sess_" + "0" * 40
 
 
 def test_a_REAL_minted_token_is_scrubbed_whole(db_session: Any) -> None:
@@ -100,6 +103,56 @@ class TestTheLoggerLevelBackstop:
     )
     def test_the_token_cannot_survive_in_any_shape(self, message: str) -> None:
         assert _PAT not in _scrub_secret_strings(message)
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            f"Cookie: dataq_session={_SESSION}",
+            f"Set-Cookie: dataq_session={_SESSION}; HttpOnly; SameSite=Lax; Path=/",
+            f"headers={{'cookie': 'dataq_session={_SESSION}'}}",
+            f"Authorization: Bearer {_SESSION}",  # presented at /mcp, rejected — still logged?
+            f"session lookup failed for {_SESSION}",
+            f"{_SESSION}",  # bare, no context at all
+            f"…?token={_SESSION}&x=1",
+        ],
+    )
+    def test_a_SESSION_token_cannot_survive_in_any_shape(self, message: str) -> None:
+        """Same battery as the PAT, because it is the same class of credential.
+
+        `_PII_KEYS` already redacts a `cookie` / `set-cookie` KEY — but #849
+        happened in a message STRING produced by a dependency, where key-based
+        redaction cannot reach. A session token that a PAT-shaped regex misses
+        would be a credential surviving in a log a PAT would not.
+        """
+        scrubbed = _scrub_secret_strings(message)
+        assert _SESSION not in scrubbed
+        assert _SESSION[len("dq_sess_") :][:12] not in scrubbed
+
+    def test_the_session_prefix_matches_what_the_service_actually_mints(
+        self, db_session: Any
+    ) -> None:
+        """Drift guard, the #849-review shape: pin the regex to a REAL minted token,
+        not to a literal someone remembered to update.
+
+        `core.logging` cannot import the service layer (import cycle), so the
+        prefix is duplicated there — and a rename, or a change to the token
+        ALPHABET, would silently stop redacting while a literal-comparison test
+        stayed green.
+        """
+        from backend.app.db.models import User as _User
+        from backend.app.services import session_service
+
+        user = _User(aad_object_id=uuid.uuid4().hex, email=f"{uuid.uuid4().hex[:8]}@ex.com")
+        db_session.add(user)
+        db_session.flush()
+        _, token = session_service.create_session(db_session, user)
+
+        scrubbed = _scrub_secret_strings(f"resolving session {token} failed")
+        assert token not in scrubbed
+        secret_half = token[len(session_service.TOKEN_PREFIX) :]
+        assert secret_half not in scrubbed
+        assert secret_half[:12] not in scrubbed
+        assert "resolving session" in scrubbed  # still diagnosable
 
     def test_ordinary_text_is_left_alone(self) -> None:
         """The scrubber must not maul normal logs — an over-eager regex that redacts
