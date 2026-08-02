@@ -20,13 +20,19 @@ was sent.
 Two things the content-level uniformity does NOT cover, both deliberate and both
 kept honest here rather than overclaimed:
 
-- **Response *latency* is not equalized.** The eligible path does a Redis counter
-  check, two DB writes, and a synchronous SMTP handshake that the ineligible path
-  (one in-memory set lookup) skips, so response time still distinguishes members.
-  This is a known, tracked gap — a constant-time floor is
-  [#1137](https://github.com/TheurgicDuke771/DataQ/issues/1137) — not a property to
-  claim as closed. Nothing a caller can observe *in the body or status* leaks
-  eligibility; timing can.
+- **Response *latency* is floored, not equalized (#1137).** The eligible path does a
+  Redis counter check, two DB writes and a synchronous SMTP handshake that the
+  ineligible path (one in-memory set lookup) skips, so raw timing used to separate
+  members at a glance. Every uniform branch is now padded to
+  `AUTH_OTP_REQUEST_MIN_SECONDS` (default 1s), measured from handler entry on a
+  monotonic clock, sleeping the REMAINDER — which collapses the microseconds-vs-
+  hundreds-of-milliseconds gulf into one indistinguishable floor.
+  What this does **not** claim: a send SLOWER than the floor still overruns it, so
+  a degraded relay (up to `AUTH_EMAIL_TIMEOUT_SECONDS`, default 5s) re-exposes a
+  narrower version of the same channel, and `AUTH_OTP_REQUEST_MIN_SECONDS=0` turns
+  it off entirely. The floor raises the sample count an attacker needs from a
+  handful to a statistical exercise against network jitter; it is not a
+  constant-time guarantee.
 - **A real SMTP failure on an eligible address gets a 502/503** where a working
   send would have been `{"status": "ok"}`. That leaks eligibility while the mail
   server is broken — but issue #734's acceptance criteria are explicit that a send
@@ -35,6 +41,12 @@ kept honest here rather than overclaimed:
   relay from a dead one and retries forever, and a mail outage is an
   operator-visible, deployment-wide condition, not a per-address secret. With a
   working mailer the three outcomes are indistinguishable at the body/status level.
+- **The floor covers `otp/request` only.** `otp/verify` answers a uniform 401 for
+  every failure mode, but an address with a live code costs an `UPDATE … RETURNING`
+  plus a commit that an address with none never pays — the same channel, a few
+  milliseconds wide instead of hundreds. Tracked in
+  [#1141](https://github.com/TheurgicDuke771/DataQ/issues/1141) with the options and
+  the trade; do not read the `request` floor as covering it.
 
 **2. Throttled returns success, not 429.** When an address exceeds its per-email
 quota the response is the same `{"status": "ok"}`. A 429 here would be a perfect
@@ -59,6 +71,7 @@ a nuisance, not a state corruption.
 
 from __future__ import annotations
 
+import time
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request, Response, status
@@ -111,6 +124,38 @@ def _require_otp_enabled(settings: Settings) -> None:
         raise otp_service.OtpNotConfiguredError()
 
 
+def _floor_remainder(started: float, floor_seconds: float, *, now: float) -> float:
+    """How much longer this response must be held to reach the floor.
+
+    The REMAINDER, never a fixed pad: sleeping a constant after variable work just
+    shifts the distribution and leaves the difference intact — an eligible request
+    that spent 400ms would still answer 400ms later than an ineligible one that
+    spent none. Clamped at zero, so work that already overran the floor (a slow
+    relay) is never "sped up" and never sleeps a negative.
+    """
+    return max(0.0, floor_seconds - (now - started))
+
+
+def _hold_until_floor(started: float, settings: Settings) -> None:
+    """Pad a uniform `otp/request` response out to `AUTH_OTP_REQUEST_MIN_SECONDS`.
+
+    `time.sleep` is correct HERE and would be a bug one line up the stack: the
+    endpoint is a **sync `def`**, so Starlette runs it in the threadpool and this
+    blocks one worker thread, not the event loop. If this route is ever made
+    `async def`, this must become `await asyncio.sleep(...)` — a `time.sleep` on the
+    loop would stall every other request in the process. (The threadpool cost is
+    bounded by the middleware's strict `auth` per-IP class, #1127.)
+
+    `time.monotonic`, not `time.time`: an NTP step mid-request would otherwise
+    compute a negative or wildly long remainder from a wall clock that moved.
+    """
+    remaining = _floor_remainder(
+        started, settings.auth_otp_request_min_seconds, now=time.monotonic()
+    )
+    if remaining > 0:
+        time.sleep(remaining)
+
+
 def _cookie_secure(request: Request, settings: Settings) -> bool:
     """Whether to mark the session cookie `Secure`.
 
@@ -148,15 +193,27 @@ def request_otp(
     """Email a one-time sign-in code, if the address is eligible.
 
     **The response is identical whether or not it is** — eligible, not
-    allow-listed, or over its request quota all answer `{"status": "ok"}` and
-    nothing else. Only a real mail-transport failure produces a different status.
+    allow-listed, or over its request quota all answer `{"status": "ok"}` after the
+    same minimum elapsed time. Only a real mail-transport failure produces a
+    different status.
     """
+    # Started FIRST, before any branch-dependent work, so the floor covers the
+    # whole handler rather than whatever is left after the expensive part.
+    started = time.monotonic()
     _require_otp_enabled(settings)
     mailer = OtpMailer(secret_store, settings)
     outcome = otp_service.request_code(db, payload.email, mailer=mailer, settings=settings)
     # Logged, never returned. The endpoint's whole job is to be uninformative;
     # the operator still needs to know which branch ran.
     log.info("otp_request_handled", outcome=outcome.reason)
+    # Every branch that reaches here — sent, ineligible, throttled — is padded to
+    # the same floor (#1137). ERROR responses deliberately are NOT: a raise from
+    # `_require_otp_enabled` (503) or from the mailer (502/503) exits above this
+    # line, and those responses are already non-uniform by design — a mail outage
+    # is a deployment-wide, operator-visible condition, not a per-address secret
+    # (see this module's docstring). Padding them would buy nothing and would hold
+    # a worker thread through an outage.
+    _hold_until_floor(started, settings)
     return OtpRequestAck(**_UNIFORM_REQUEST_RESPONSE)
 
 

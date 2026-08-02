@@ -419,6 +419,23 @@ class Settings(BaseSettings):
     # 0 disables it (not recommended).
     auth_otp_request_per_email_per_10min: int = Field(default=3, ge=0)
 
+    # Constant-time FLOOR on `POST /auth/otp/request` (#1137). The endpoint answers
+    # byte-identically for eligible / ineligible / throttled addresses, but the work
+    # behind those answers is wildly asymmetric — an in-memory set lookup vs Redis +
+    # two DB writes + a synchronous SMTP handshake — so response LATENCY re-opened
+    # the enumeration channel the uniform body closed. Every uniform-response branch
+    # is padded to this minimum, measured from handler entry on a monotonic clock.
+    #
+    # 1s: comfortably above a healthy relay's send (tens to hundreds of ms) while
+    # keeping sign-in snappy. Padding to the full `auth_email_timeout_seconds`
+    # worst case instead would make EVERY request — including the ineligible ones an
+    # attacker generates — pay the timeout budget, which is a self-inflicted DoS
+    # amplifier. Raise it if your relay is routinely slower than a second.
+    #
+    # 0 disables the floor (tests, and dev stacks that want a fast loop) — with it
+    # off, the timing channel is fully open.
+    auth_otp_request_min_seconds: float = Field(default=1.0, ge=0, le=30)
+
     # ── Connection poll-health alerting (#837) ───────────────────────────────
     # How many CONSECUTIVE failed orchestration polls a connection may rack up
     # before DataQ pushes an alert. At the 10-minute poll cadence the default (3)

@@ -52,11 +52,19 @@ are the reason this mode is opt-in rather than the default:
   5 verification attempts, and a new request invalidates the previous code; requests are capped
   **per mailbox** as well as per IP; the sign-in endpoints return an identical response *body and
   status* whether or not an address is known, so the response content cannot be used to enumerate
-  who has an account. **Caveat — response *latency* is not currently equalized:** an eligible
-  address incurs the code-mint and synchronous mail-send round trip that an ineligible one skips,
-  so timing can still distinguish members. Treat the content-level uniformity as the guarantee and
-  the timing channel as a known gap; a constant-time floor is tracked in
-  [#1137](https://github.com/TheurgicDuke771/DataQ/issues/1137).
+  who has an account. Since [#1137](https://github.com/TheurgicDuke771/DataQ/issues/1137) the
+  code-request endpoint also holds **every** such response to a common minimum latency
+  (`AUTH_OTP_REQUEST_MIN_SECONDS`, default 1s), so the code-mint and mail-send round trip an
+  eligible address incurs no longer stands out against an ineligible one's in-memory lookup.
+  **What the floor does not cover, stated plainly:** a mail send *slower* than the floor still
+  overruns it, so a degraded relay (bounded by `AUTH_EMAIL_TIMEOUT_SECONDS`, default 5s) re-opens a
+  narrower version of the channel; a genuine SMTP failure still answers 502/503 where a working
+  send answers `ok`, which is deliberate (a mail outage must not be a silent no-op — ADR 0032 §7);
+  and setting the floor to `0` removes it. The floor also covers the *code-request* endpoint only —
+  the narrower millisecond-scale version of the same channel on *code verification* is tracked in
+  [#1141](https://github.com/TheurgicDuke771/DataQ/issues/1141). Treat the floor as raising the
+  attacker's cost from a handful of samples to a statistical exercise, not as a constant-time
+  guarantee.
 - **Mitigations that are yours:** MFA on the mailbox, a mail domain with SPF/DKIM/DMARC, and a
   minimal allowlist. If you have an IdP, prefer SSO — OTP exists for the case where you do not.
 
