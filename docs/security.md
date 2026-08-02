@@ -75,9 +75,10 @@ are the reason this mode is opt-in rather than the default:
   setting** (`AUTH_OTP_VERIFY_MIN_SECONDS`, default 0.5s —
   [#1141](https://github.com/TheurgicDuke771/DataQ/issues/1141)): every rejected code answers an
   identical 401, but an address that has a live code outstanding does more database work than one
-  that has none, so the rejection's *timing* used to reveal which — cheaply, because an attacker
-  can cause that code to be minted for any address simply by asking. Every 401 is now held to the
-  same minimum. A *successful* verification is deliberately **not** held (a caller who knows the
+  that has none, so the rejection's *timing* used to reveal which — and cheaply, because a code is
+  minted only for an *allow-listed* address, so a single request-a-code call against the address
+  being probed (which answers identically either way, revealing nothing itself) is what sets that
+  difference up. Every 401 is now held to the same minimum. A *successful* verification is deliberately **not** held (a caller who knows the
   code learns nothing from that), a database round trip slower than the floor still overruns it,
   and `0` removes it here too. Treat both floors as raising the attacker's cost from a handful of
   samples to a statistical exercise, not as a constant-time guarantee.

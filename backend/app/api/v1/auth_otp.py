@@ -44,8 +44,10 @@ kept honest here rather than overclaimed:
 - **`otp/verify` has its own floor, on its own number (#1141).** The same channel
   runs one endpoint over: `verify` answers a uniform 401 for every failure mode, but
   an address with a live code costs an `UPDATE … RETURNING` plus a commit that an
-  address with none never pays — a few milliseconds wide instead of hundreds, and
-  reachable by anyone willing to spend one `otp/request` quota slot first. Every
+  address with none never pays — a few milliseconds wide instead of hundreds. Note
+  that the *gating* is what creates it: `request_code` mints only for an eligible
+  address, so one `otp/request` (uniform `ok`, revealing nothing itself) sets the
+  asymmetry up for the cost of one per-email quota slot. Every
   uniform 401 is now padded to `AUTH_OTP_VERIFY_MIN_SECONDS` (default 0.5s) by the
   same remainder-sleep. What it does **not** claim, symmetrically with the above: a
   DB round trip slower than the floor overruns it; the SUCCESS response is
@@ -269,8 +271,10 @@ def verify_otp(
         # An address with a live code pays an `UPDATE … RETURNING` plus a commit
         # inside `verify_code`; an address with none returns straight off the
         # `SELECT`. Both end in a byte-identical 401, so without this the response
-        # TIME says which — and `otp/request`'s uniform `ok` means an attacker can
-        # mint that live code for any address they want to test.
+        # TIME says which. The setup step is free: `otp/request` answers a uniform
+        # `ok` either way, so calling it against the probed address costs the
+        # attacker nothing observable — but it MINTS a row only when the address is
+        # eligible, and that is precisely the asymmetry `verify` then times.
         #
         # Deliberately NOT wrapping the success path: a 200 is already
         # distinguishable from a 401 to a caller who, by definition, knows the code,
