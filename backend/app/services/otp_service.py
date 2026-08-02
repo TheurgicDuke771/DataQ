@@ -28,6 +28,12 @@ service would make every non-HTTP caller (tests, a future CLI) sleep too. Keep t
 branches here as cheap or as expensive as they naturally are; do not "balance" them
 by hand — see the endpoint for the residual limits the floor does not close.
 
+`verify_code` carries the same asymmetry on a narrower scale — an address with a
+live code pays an `UPDATE … RETURNING` plus a commit before it can reach the same
+uniform `OtpVerifyError` an address with none raises off the `SELECT` — and it is
+held the same way, at the endpoint, on its own `AUTH_OTP_VERIFY_MIN_SECONDS`
+(#1141). Same rule: do not hand-balance the branches below.
+
 **Identity linking** (decision 6, #735 step 2): a successful verification resolves
 the user by unique `lower(email)`. If a row already exists — AAD-provisioned or
 not — that row *is* the user. Never two rows for one human, or suite grants,

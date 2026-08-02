@@ -80,11 +80,17 @@ are the reason this mode is opt-in rather than the default:
   overruns it, so a degraded relay (bounded by `AUTH_EMAIL_TIMEOUT_SECONDS`, default 5s) re-opens a
   narrower version of the channel; a genuine SMTP failure still answers 502/503 where a working
   send answers `ok`, which is deliberate (a mail outage must not be a silent no-op — ADR 0032 §7);
-  and setting the floor to `0` removes it. The floor also covers the *code-request* endpoint only —
-  the narrower millisecond-scale version of the same channel on *code verification* is tracked in
-  [#1141](https://github.com/TheurgicDuke771/DataQ/issues/1141). Treat the floor as raising the
-  attacker's cost from a handful of samples to a statistical exercise, not as a constant-time
-  guarantee.
+  and setting the floor to `0` removes it. **Code *verification* carries the same floor on its own
+  setting** (`AUTH_OTP_VERIFY_MIN_SECONDS`, default 0.5s —
+  [#1141](https://github.com/TheurgicDuke771/DataQ/issues/1141)): every rejected code answers an
+  identical 401, but an address that has a live code outstanding does more database work than one
+  that has none, so the rejection's *timing* used to reveal which — and cheaply, because a code is
+  minted only for an *allow-listed* address, so a single request-a-code call against the address
+  being probed (which answers identically either way, revealing nothing itself) is what sets that
+  difference up. Every 401 is now held to the same minimum. A *successful* verification is deliberately **not** held (a caller who knows the
+  code learns nothing from that), a database round trip slower than the floor still overruns it,
+  and `0` removes it here too. Treat both floors as raising the attacker's cost from a handful of
+  samples to a statistical exercise, not as a constant-time guarantee.
 - **Mitigations that are yours:** MFA on the mailbox, a mail domain with SPF/DKIM/DMARC, and a
   minimal allowlist. If you have an IdP, prefer SSO — OTP exists for the case where you do not.
 
