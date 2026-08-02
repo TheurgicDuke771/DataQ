@@ -16,12 +16,17 @@ design choice here: the protection is the *caps*, not the hash.
 **Anti-enumeration** (decision 4): `request_code` returns the same outcome shape
 whether the address is eligible, ineligible, or throttled — and sends mail only for
 the eligible case, so nothing a caller can observe *in the response body or status*
-distinguishes "you have an account here" from "you do not". This is content-level,
-not timing-level: the eligible path does Redis + two DB writes + a synchronous mail
-send that the ineligible path skips, so response *latency* still leaks membership.
-That is a known, tracked gap (a constant-time floor is
-[#1137](https://github.com/TheurgicDuke771/DataQ/issues/1137)), not a property this
-module claims to close.
+distinguishes "you have an account here" from "you do not".
+
+That is content-level only. The eligible path here does Redis + two DB writes + a
+synchronous mail send that the ineligible path skips, so this function's own runtime
+still varies by a factor of thousands with eligibility. The **timing** half of the
+property is not this module's to hold: `api/v1/auth_otp.py` pads every uniform
+branch out to a common floor (`AUTH_OTP_REQUEST_MIN_SECONDS`, #1137), because the
+floor has to be measured across the whole request, and because padding inside the
+service would make every non-HTTP caller (tests, a future CLI) sleep too. Keep the
+branches here as cheap or as expensive as they naturally are; do not "balance" them
+by hand — see the endpoint for the residual limits the floor does not close.
 
 **Identity linking** (decision 6, #735 step 2): a successful verification resolves
 the user by unique `lower(email)`. If a row already exists — AAD-provisioned or
