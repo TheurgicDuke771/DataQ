@@ -20,20 +20,20 @@ Two constraints, both structural:
    hostname, and it authenticates. A stock MailHog/smtp4dev container satisfies
    none of that out of the box, so the lane ships its own sink
    (`backend/scripts/e2e_otp_smtp_sink.py`), which emits a throwaway self-signed
-   certificate the api is pointed at via `SSL_CERT_FILE`, and exposes captured
-   codes over a small HTTP API.
+   certificate the api is pointed at via `AUTH_EMAIL_CA_BUNDLE`, and exposes
+   captured codes over a small HTTP API.
 
 The alternative — a "test mode" that hands the code straight to the test — was
 rejected: it would add a bypass to a sign-in flow and would mean the lane proves a
 code path production never runs. **Everything on the app side of the wire is the
 shipped code**, including the STARTTLS handshake and the `Set-Cookie`.
 
-> **Deployment note that fell out of building this:** because the mailer uses the
-> default TLS context and there is no `AUTH_EMAIL_*` option for a CA bundle or for
-> plaintext SMTP, DataQ cannot currently talk to an internal relay whose
-> certificate is signed by a private CA unless that CA is in the process trust
-> store. Tracked in
-> [#1146](https://github.com/TheurgicDuke771/DataQ/issues/1146).
+> **Deployment note that fell out of building this, now fixed:** the mailer used
+> to only speak `ssl.create_default_context()` with no way to name a private CA,
+> so DataQ couldn't talk to an internal relay on one without putting that CA in
+> the process-wide trust store. `AUTH_EMAIL_CA_BUNDLE` (scoped to the mailer's own
+> connection) and `AUTH_EMAIL_TLS_MODE=implicit` (SMTPS `:465`) now cover both gaps
+> — see [#1146](https://github.com/TheurgicDuke771/DataQ/issues/1146).
 
 ## Auth-mode injection
 

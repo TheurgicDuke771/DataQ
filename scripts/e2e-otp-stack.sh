@@ -8,10 +8,13 @@
 #   2. a second api process (uvicorn, OTP mode) on :8100
 #
 # The sink emits a self-signed certificate at startup and the api must trust it
-# BEFORE it runs: `OtpMailer` uses `ssl.create_default_context()`, which verifies
-# the certificate and the hostname, and OpenSSL reads SSL_CERT_FILE once at process
-# start. So the sink has to be up and its cert path known before uvicorn is
-# launched — hence one script rather than two independent background steps.
+# BEFORE it boots: `Settings` validates `AUTH_EMAIL_CA_BUNDLE` names an existing
+# file at startup (#1146), and `OtpMailer` loads it into the SMTP connection's own
+# `SSLContext` — scoped to the mailer only, unlike the process-wide `SSL_CERT_FILE`
+# this lane used before #1146 shipped (which would have also reconfigured trust
+# for every other TLS client the api starts). So the sink has to be up and its
+# cert path known before uvicorn is launched — hence one script rather than two
+# independent background steps.
 #
 # Why a SECOND api at all: `backend/app/core/auth.py` picks its authenticator at
 # IMPORT time, and OTP wins over dev-bypass. One process cannot serve both the
@@ -103,8 +106,11 @@ export RATE_LIMIT_ENABLED=false
 # Plain HTTP lane: without this the api would infer Secure=false anyway, but
 # being explicit keeps the lane honest about what it is exercising.
 export AUTH_SESSION_COOKIE_SECURE=false
-# Trust ONLY the sink's throwaway certificate — read once, at process start.
-export SSL_CERT_FILE="$OTP_STATE_DIR/sink-cert.pem"
+# Trust ONLY the sink's throwaway certificate, and ONLY for the OTP mailer's own
+# connection (#1146) — not the whole process the way SSL_CERT_FILE would (that
+# would also reconfigure every other TLS client this api starts, were there any
+# in this lane).
+export AUTH_EMAIL_CA_BUNDLE="$OTP_STATE_DIR/sink-cert.pem"
 
 uvicorn backend.app.main:app --host 127.0.0.1 --port "$OTP_API_PORT" \
   >"$OTP_STATE_DIR/api.log" 2>&1 &
