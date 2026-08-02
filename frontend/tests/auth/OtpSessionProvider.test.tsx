@@ -192,25 +192,40 @@ describe('OtpSessionProvider — sign out', () => {
 });
 
 describe('OtpSessionProvider — other auth modes', () => {
-  it.each(['real', 'dev_bypass', 'unconfigured'])(
-    'is a passthrough in %s mode and never probes /me',
-    async (mode) => {
-      // A probe here would race the OIDC token acquisition and 401 for no reason.
-      // No vi.resetModules() here: beforeEach already reset the module cache and
-      // nothing has imported config/otpClient yet this test, so re-registering
-      // the mocks below is enough to override beforeEach's 'otp' default — an
-      // extra reset+re-mock cycle right before the dynamic import below is one
-      // more window for it to race the import, for no benefit.
-      vi.doMock('../../src/auth/config', () => ({ authMode: mode }));
-      vi.doMock('../../src/auth/otpClient', () => ({ probeSession, endSession }));
-      const { OtpSessionProvider } = await import('../../src/auth/OtpSessionProvider');
-      render(
-        <OtpSessionProvider>
-          <span>child</span>
-        </OtpSessionProvider>,
-      );
-      expect(screen.getByText('child')).toBeInTheDocument();
-      expect(probeSession).not.toHaveBeenCalled();
-    },
-  );
+  // Drives the REAL config module via window.__DATAQ_CONFIG__ (the runtime-
+  // config contract, ADR 0028 — same pattern as CurrentUserProvider.test.tsx)
+  // instead of a doMock('../../src/auth/config', ...). A doMock here raced
+  // the outer beforeEach's OWN doMock of the same module path (which sets
+  // 'otp', for every other describe block in this file) and, on a
+  // CI-runner-under-contention timing, occasionally lost: two consecutive CI
+  // runs (#1153, runs 30762500904 and 30771559194) saw ActiveOtpSessionProvider
+  // mount and call probeSession() in the `dev_bypass` case, meaning `authMode`
+  // was still 'otp' at render time despite the re-registration. Going through
+  // the real module removes the second competing mock entirely — there is
+  // nothing left to race.
+  afterEach(() => {
+    delete (window as { __DATAQ_CONFIG__?: unknown }).__DATAQ_CONFIG__;
+  });
+
+  it.each([
+    ['real', { authority: 'https://issuer.example/v2.0', clientId: 'spa-1' }],
+    ['dev_bypass', { mode: 'bypass' }],
+    ['unconfigured', {}],
+  ] as const)('is a passthrough in %s mode and never probes /me', async (_mode, auth) => {
+    // A probe here would race the OIDC token acquisition and 401 for no reason.
+    // No vi.resetModules() here: beforeEach already reset the module cache and
+    // nothing has imported config/otpClient yet this test, so unmocking config
+    // below is enough to make the next import pick up the real module.
+    vi.doUnmock('../../src/auth/config');
+    (window as { __DATAQ_CONFIG__?: unknown }).__DATAQ_CONFIG__ = { auth };
+    vi.doMock('../../src/auth/otpClient', () => ({ probeSession, endSession }));
+    const { OtpSessionProvider } = await import('../../src/auth/OtpSessionProvider');
+    render(
+      <OtpSessionProvider>
+        <span>child</span>
+      </OtpSessionProvider>,
+    );
+    expect(screen.getByText('child')).toBeInTheDocument();
+    expect(probeSession).not.toHaveBeenCalled();
+  });
 });
