@@ -71,6 +71,14 @@ on the parent FastAPI app as the **innermost** user middleware.
   be long-lived. Trips and closures are logged
   (`rate_limit_store_breaker_open` / `_closed`) — a brownout that would otherwise
   read as "the API got slow" becomes a named event.
+
+  Since #1135 the breaker MECHANISM lives in `core.circuit_breaker` and is shared
+  with the OTP per-email counter store (ADR 0032, another fixed-window counter on
+  the same Redis), so there is one implementation to reason about rather than two
+  that drift. The **state stays per store**: a shared breaker would let an OTP
+  brownout switch off API rate limiting, and the reverse — one subsystem's
+  degradation disabling an unrelated control is the failure a breaker exists to
+  prevent. The event prefix names which breaker moved.
 - **Endpoint classes** (per-minute, config-driven — `RATE_LIMIT_*`):
 
   | Class | Matches | Key | Default |

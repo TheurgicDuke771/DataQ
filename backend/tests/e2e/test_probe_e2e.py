@@ -4,10 +4,22 @@ Only the Snowflake adapter is mocked; the broker hop and DB round-trip are real,
 so this covers what the unit tests can't (the request_id header + task message
 actually serialising over Redis, the worker running in its own context).
 
-Opt-in: skips unless DATABASE_URL + REDIS_URL are set (CI provides both via
-service containers). Uses real commits + a TRUNCATE teardown rather than the
-rolled-back db_session fixture, because the worker runs on a separate session
-and would not see uncommitted savepoint data.
+Opt-in: skips unless DATAQ_E2E=1 is set EXPLICITLY, alongside DATABASE_URL +
+REDIS_URL pointing at real Postgres + Redis (CI's service-container job sets
+all three; scripts/test-backend.sh sets all three for local parity).
+
+DATAQ_E2E is required, not merely DATABASE_URL + REDIS_URL, because conftest.py
+(#1130) now points DATABASE_URL at the resolved TEST_DATABASE_URL whenever
+DATABASE_URL is unset — a deliberate fix for a *different* problem (SessionLocal
+silently reaching the dev DB). A side effect: what used to be a two-factor gate,
+where DATABASE_URL required a conscious action, collapsed to one (REDIS_URL
+alone), and REDIS_URL ships pre-populated in .env.app.example — so a bare
+`pytest` for anyone with a plausible local Redis env var would silently start
+spinning up a real embedded Celery worker + doing real commits/TRUNCATEs.
+DATAQ_E2E is a value conftest never sets on its own, so activating this test is
+always someone's conscious choice again. Uses real commits + a TRUNCATE
+teardown rather than the rolled-back db_session fixture, because the worker
+runs on a separate session and would not see uncommitted savepoint data.
 """
 
 import os
@@ -21,8 +33,15 @@ from sqlalchemy import select, text
 from backend.app.datasources.base import CheckOutcome, SuiteOutcome
 
 requires_real_infra = pytest.mark.skipif(
-    not (os.environ.get("DATABASE_URL") and os.environ.get("REDIS_URL")),
-    reason="E2E needs DATABASE_URL + REDIS_URL pointing at real Postgres + Redis",
+    not (
+        os.environ.get("DATAQ_E2E")
+        and os.environ.get("DATABASE_URL")
+        and os.environ.get("REDIS_URL")
+    ),
+    reason=(
+        "E2E needs DATAQ_E2E=1 (explicit opt-in) plus DATABASE_URL + REDIS_URL "
+        "pointing at real Postgres + Redis"
+    ),
 )
 
 

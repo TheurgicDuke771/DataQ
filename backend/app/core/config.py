@@ -123,6 +123,19 @@ class Settings(BaseSettings):
 
     sample_failures_retention_days: int = 30
 
+    # OTP-code retention sweep (#1136). `otp_codes.email` is stored in plaintext
+    # (deliberately — the "newest live code for this address" lookup needs it), so
+    # each row is a sign-in-attempt timestamp against an address: PII with no
+    # operational value once spent/expired. Comfortably longer than the 10-minute
+    # code TTL (`otp_service.CODE_TTL_MINUTES`) — this is hygiene, not a security
+    # control (the caps in `otp_service` are the security), so there is no reason
+    # to purge aggressively. Daily cadence, same posture as the sample-failures
+    # sweep above. <=0 is guarded in `otp_service.purge_expired_codes` itself (a
+    # no-op, returns 0) — NOT merely "expires instantly": that function's cutoff is
+    # `now - older_than_hours`, so a non-positive value collapses it to "now" and
+    # would delete EVERY row, including ones just minted, without the guard.
+    otp_codes_retention_hours: int = 24
+
     # Stuck-run reaper (#309): a run committed `queued` (before `send_task`) — or
     # left `running` by a worker that died mid-execution — past this age is driven
     # to terminal `failed` by the beat janitor so it can't linger forever. Must
@@ -418,6 +431,23 @@ class Settings(BaseSettings):
     # mail-bomb control that a test harness silently switches off is not a control.
     # 0 disables it (not recommended).
     auth_otp_request_per_email_per_10min: int = Field(default=3, ge=0)
+
+    # Constant-time FLOOR on `POST /auth/otp/request` (#1137). The endpoint answers
+    # byte-identically for eligible / ineligible / throttled addresses, but the work
+    # behind those answers is wildly asymmetric — an in-memory set lookup vs Redis +
+    # two DB writes + a synchronous SMTP handshake — so response LATENCY re-opened
+    # the enumeration channel the uniform body closed. Every uniform-response branch
+    # is padded to this minimum, measured from handler entry on a monotonic clock.
+    #
+    # 1s: comfortably above a healthy relay's send (tens to hundreds of ms) while
+    # keeping sign-in snappy. Padding to the full `auth_email_timeout_seconds`
+    # worst case instead would make EVERY request — including the ineligible ones an
+    # attacker generates — pay the timeout budget, which is a self-inflicted DoS
+    # amplifier. Raise it if your relay is routinely slower than a second.
+    #
+    # 0 disables the floor (tests, and dev stacks that want a fast loop) — with it
+    # off, the timing channel is fully open.
+    auth_otp_request_min_seconds: float = Field(default=1.0, ge=0, le=30)
 
     # ── Connection poll-health alerting (#837) ───────────────────────────────
     # How many CONSECUTIVE failed orchestration polls a connection may rack up

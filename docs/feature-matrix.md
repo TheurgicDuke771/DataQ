@@ -180,4 +180,4 @@ above is "should work", and only a real deployment can upgrade that to "does".
 |---|---|
 | Web UI | Dashboard · Assets · Connections · Suites · Results · Profile · Admin · Settings (Assets lead as the primary lens — ADR 0034 nav inversion; the Dashboard opens with an asset-health strip, and suites/runs link back to their asset) |
 | REST API | Versioned `/api/v1` (Swagger in non-prod) |
-| MCP | 8 curated tools at `/mcp` for AI assistants (ADR 0008) |
+| MCP | 8 curated tools at `/mcp` for AI assistants (ADR 0008). Served in every auth mode — SSO, email OTP, dev-bypass; under OTP the credential is a **PAT only** ([MCP setup](mcp-setup.md)) |

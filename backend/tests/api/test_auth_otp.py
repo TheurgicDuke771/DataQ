@@ -80,6 +80,12 @@ def _otp_settings(**overrides: Any) -> Settings:
         "auth_email_from": "dataq@example.com",
         "auth_email_password_secret_name": "auth-email-password",
         "auth_otp_allowed_domains": "acme.io",
+        # The constant-time floor (#1137) is OFF for the rest of this file: it is a
+        # deliberate *sleep* on every uniform response, and paying the production
+        # default (1s) on ~40 requests would add a minute to the suite for no signal.
+        # The floor's own tests set it explicitly, and one of them pins the default,
+        # so switching it off here cannot hide a regression in the shipped value.
+        "auth_otp_request_min_seconds": 0,
     }
     base.update(overrides)
     return Settings(**base)
@@ -288,6 +294,143 @@ def test_the_endpoints_503_when_otp_is_not_configured(
         response = client.post(url, json=payload)
         assert response.status_code == 503, response.text
         assert response.json()["error"]["code"] == "otp_not_configured"
+
+
+# ── request: the constant-time floor (#1137) ─────────────────────────────────
+#
+# The uniform BODY hid eligibility; the response TIME gave it back. An eligible
+# address pays Redis + two DB writes + a synchronous SMTP handshake; an ineligible
+# one pays a single in-memory set lookup. These tests use a mailer that returns
+# instantly — the WORST case for the property, since it makes the eligible path as
+# cheap as it can ever be, so anything the floor fails to cover shows up here.
+
+#: Short enough to keep the suite quick, long enough to dwarf handler overhead.
+_FLOOR = 0.4
+
+
+def test_an_ineligible_response_is_held_as_long_as_an_eligible_one(
+    client: TestClient, otp_env: dict[str, Any]
+) -> None:
+    """The enumeration channel, closed. Both branches must clear the floor —
+    asserting only "the eligible one is slow" would pass with no floor at all."""
+    import time
+
+    otp_env["settings"] = _otp_settings(auth_otp_request_min_seconds=_FLOOR)
+
+    started = time.monotonic()
+    eligible = client.post(REQUEST_URL, json={"email": _address()})
+    eligible_elapsed = time.monotonic() - started
+
+    started = time.monotonic()
+    ineligible = client.post(
+        REQUEST_URL, json={"email": f"stranger-{uuid.uuid4().hex[:8]}@elsewhere.example"}
+    )
+    ineligible_elapsed = time.monotonic() - started
+
+    assert eligible.status_code == ineligible.status_code == 200
+    assert eligible_elapsed >= _FLOOR, f"eligible answered in {eligible_elapsed:.3f}s"
+    assert ineligible_elapsed >= _FLOOR, f"ineligible answered in {ineligible_elapsed:.3f}s"
+
+
+def test_a_throttled_response_is_held_to_the_floor_too(
+    client: TestClient, otp_env: dict[str, Any]
+) -> None:
+    """Throttled is the third uniform branch, and the cheapest of the three once the
+    counter says no — it must not become the tell."""
+    import time
+
+    otp_env["settings"] = _otp_settings(
+        auth_otp_request_min_seconds=_FLOOR, auth_otp_request_per_email_per_10min=1
+    )
+    email = _address()
+    client.post(REQUEST_URL, json={"email": email})  # spends the budget
+
+    started = time.monotonic()
+    throttled = client.post(REQUEST_URL, json={"email": email})
+    elapsed = time.monotonic() - started
+
+    assert throttled.status_code == 200
+    assert elapsed >= _FLOOR, f"throttled answered in {elapsed:.3f}s"
+
+
+def test_the_floor_is_applied_once_not_twice(client: TestClient, otp_env: dict[str, Any]) -> None:
+    """A floor applied in two places (service AND endpoint, say) would still hide
+    eligibility — and would double every sign-in's latency while looking correct.
+    The bound is the tell: one floor, not two."""
+    import time
+
+    otp_env["settings"] = _otp_settings(auth_otp_request_min_seconds=_FLOOR)
+
+    started = time.monotonic()
+    client.post(REQUEST_URL, json={"email": _address()})
+    elapsed = time.monotonic() - started
+
+    assert _FLOOR <= elapsed < 2 * _FLOOR, f"{elapsed:.3f}s is not one floor's worth"
+
+
+def test_an_error_response_is_NOT_padded(
+    client: TestClient, otp_env: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Error responses are already non-uniform by design (a mail outage is a
+    deployment-wide, operator-visible condition — ADR 0032 §7), so padding them
+    would buy nothing and would hold a worker thread for the whole outage. Pinned
+    rather than left implicit, because "we pad everything" is the tempting mistake.
+    """
+    import smtplib
+    import time
+
+    class _BrokenSMTP(_CapturingSMTP):
+        def send_message(self, message: Any) -> None:
+            raise smtplib.SMTPServerDisconnected("relay went away")
+
+    monkeypatch.setattr(smtplib, "SMTP", _BrokenSMTP)
+    otp_env["settings"] = _otp_settings(auth_otp_request_min_seconds=2.0)
+
+    started = time.monotonic()
+    response = client.post(REQUEST_URL, json={"email": _address()})
+    elapsed = time.monotonic() - started
+
+    assert response.status_code == 502
+    assert elapsed < 1.0, f"the 502 waited out the floor ({elapsed:.3f}s)"
+
+
+def test_the_floor_can_be_switched_off(client: TestClient, otp_env: dict[str, Any]) -> None:
+    """0 means no sleep at all — a dev/test escape hatch, and the documented cost is
+    that the timing channel is fully open again."""
+    import time
+
+    otp_env["settings"] = _otp_settings(auth_otp_request_min_seconds=0)
+
+    started = time.monotonic()
+    client.post(REQUEST_URL, json={"email": _address()})
+
+    assert time.monotonic() - started < 0.3
+
+
+def test_the_shipped_floor_default_is_one_second() -> None:
+    """The value that actually protects a deployment is the DEFAULT — every test
+    above overrides it, so without this the shipped number is unasserted."""
+    assert Settings().auth_otp_request_min_seconds == 1.0
+
+
+@pytest.mark.parametrize(
+    ("started", "now", "expected"),
+    [
+        (100.0, 100.0, 0.4),  # instant work → hold the whole floor
+        (100.0, 100.3, pytest.approx(0.1)),  # partial work → hold the REMAINDER
+        (100.0, 100.4, 0.0),  # exactly at the floor → nothing left
+        (100.0, 101.5, 0.0),  # a slow relay overran it → never negative
+    ],
+)
+def test_the_remainder_is_what_is_left_of_the_floor(
+    started: float, now: float, expected: float
+) -> None:
+    """Sleeping a FIXED amount after variable work just shifts the distribution and
+    leaves the eligible/ineligible difference intact — the pad has to be the
+    remainder. Clamped at zero so an overrun never sleeps a negative."""
+    from backend.app.api.v1.auth_otp import _floor_remainder
+
+    assert _floor_remainder(started, _FLOOR, now=now) == expected
 
 
 # ── verify → cookie ──────────────────────────────────────────────────────────

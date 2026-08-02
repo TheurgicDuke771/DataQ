@@ -33,6 +33,14 @@ lawful basis) and is the deploying organization's responsibility.
   which any HTTPS deployment can do and which stops consulting the header at all. Leave it
   unset only for genuinely plain-HTTP local dev: a hard-coded `Secure` there fails *silently*
   (the browser accepts the `Set-Cookie` and then never sends it back).
+  **Before turning OTP on for real users**, run the admin-gated SMTP pre-flight test — `POST
+  /api/v1/admin/auth-email/test` sends a real message to the caller's own address over the
+  configured `AUTH_EMAIL_*` transport and, on failure, reports exactly which stage broke
+  (`connect` / `tls` / `auth` / `send`) rather than a generic error. It never accepts a
+  recipient argument — it can only mail the admin who called it, and that address is echoed
+  back in the response **by design** (it's the point of the check). The SMTP password never
+  appears in the response or in any log line; the recipient address never appears in a log
+  line either, only in the response, to the same admin who supplied it by calling the endpoint.
 
 ### Email as the root of trust (read this before enabling OTP)
 
@@ -55,11 +63,19 @@ are the reason this mode is opt-in rather than the default:
   5 verification attempts, and a new request invalidates the previous code; requests are capped
   **per mailbox** as well as per IP; the sign-in endpoints return an identical response *body and
   status* whether or not an address is known, so the response content cannot be used to enumerate
-  who has an account. **Caveat — response *latency* is not currently equalized:** an eligible
-  address incurs the code-mint and synchronous mail-send round trip that an ineligible one skips,
-  so timing can still distinguish members. Treat the content-level uniformity as the guarantee and
-  the timing channel as a known gap; a constant-time floor is tracked in
-  [#1137](https://github.com/TheurgicDuke771/DataQ/issues/1137).
+  who has an account. Since [#1137](https://github.com/TheurgicDuke771/DataQ/issues/1137) the
+  code-request endpoint also holds **every** such response to a common minimum latency
+  (`AUTH_OTP_REQUEST_MIN_SECONDS`, default 1s), so the code-mint and mail-send round trip an
+  eligible address incurs no longer stands out against an ineligible one's in-memory lookup.
+  **What the floor does not cover, stated plainly:** a mail send *slower* than the floor still
+  overruns it, so a degraded relay (bounded by `AUTH_EMAIL_TIMEOUT_SECONDS`, default 5s) re-opens a
+  narrower version of the channel; a genuine SMTP failure still answers 502/503 where a working
+  send answers `ok`, which is deliberate (a mail outage must not be a silent no-op — ADR 0032 §7);
+  and setting the floor to `0` removes it. The floor also covers the *code-request* endpoint only —
+  the narrower millisecond-scale version of the same channel on *code verification* is tracked in
+  [#1141](https://github.com/TheurgicDuke771/DataQ/issues/1141). Treat the floor as raising the
+  attacker's cost from a handful of samples to a statistical exercise, not as a constant-time
+  guarantee.
 - **Mitigations that are yours:** MFA on the mailbox, a mail domain with SPF/DKIM/DMARC, and a
   minimal allowlist. If you have an IdP, prefer SSO — OTP exists for the case where you do not.
 
@@ -77,8 +93,13 @@ are the reason this mode is opt-in rather than the default:
   reached only through the frontend's same-origin `/api`, `/healthz`, and `/mcp` proxy
   (ADR 0028 §5). All traffic is over **HTTPS/TLS**.
 - The **MCP** AI-assistant endpoint is **fail-closed** — unauthenticated requests are rejected
-  (ADR 0008). It authenticates from the `Authorization` header only and **never reads a
+  (ADR 0008), and it is not mounted at all unless the deployment has a working sign-in
+  configuration. It authenticates from the `Authorization` header only and **never reads a
   cookie**, so a signed-in browser lured to a hostile page cannot be used to drive it.
+  In an **OTP-only** deployment there is no identity provider, so a **PAT is the only
+  credential MCP accepts**: a session token is rejected by prefix before any validation, and
+  a bearer that is neither is rejected outright rather than handed to an unconfigured
+  validator — the absence of a JWT verifier is a refusal, never a skipped check.
 - **CSRF.** The session cookie is `SameSite=Lax`, which blocks cross-site POSTs; that only
   holds while every state-changing endpoint is a POST/PATCH/PUT/DELETE, so the test suite
   audits the whole route table for a GET that mutates. Sign-in and sign-out are both POST-only,

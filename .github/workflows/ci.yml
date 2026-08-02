@@ -179,13 +179,17 @@ jobs:
         run: mypy backend/tests/
 
       - name: pytest
-        # TEST_DATABASE_URL enables the db_session fixture; DATABASE_URL + REDIS_URL
-        # enable the real-broker E2E. All DB/broker tests skip when unset (e.g. a
-        # contributor running pytest without the services).
+        # TEST_DATABASE_URL enables the db_session fixture; DATABASE_URL + REDIS_URL +
+        # DATAQ_E2E together enable the real-broker E2E (test_probe_e2e — DATAQ_E2E is
+        # the explicit-opt-in signal conftest.py's DATABASE_URL auto-redirect (#1130)
+        # can never set on its own, so this test stays a conscious choice even here).
+        # All DB/broker tests skip when unset (e.g. a contributor running pytest
+        # without the services).
         env:
           TEST_DATABASE_URL: postgresql+psycopg2://dataq:dataq@localhost:5432/dataq_test
           DATABASE_URL: postgresql+psycopg2://dataq:dataq@localhost:5432/dataq_test
           REDIS_URL: redis://localhost:6379/0
+          DATAQ_E2E: "1"
         run: pytest backend/tests/
 
   # ── Secret scanning ──────────────────────────────────────────────────────────
