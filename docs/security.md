@@ -90,8 +90,13 @@ are the reason this mode is opt-in rather than the default:
   reached only through the frontend's same-origin `/api`, `/healthz`, and `/mcp` proxy
   (ADR 0028 §5). All traffic is over **HTTPS/TLS**.
 - The **MCP** AI-assistant endpoint is **fail-closed** — unauthenticated requests are rejected
-  (ADR 0008). It authenticates from the `Authorization` header only and **never reads a
+  (ADR 0008), and it is not mounted at all unless the deployment has a working sign-in
+  configuration. It authenticates from the `Authorization` header only and **never reads a
   cookie**, so a signed-in browser lured to a hostile page cannot be used to drive it.
+  In an **OTP-only** deployment there is no identity provider, so a **PAT is the only
+  credential MCP accepts**: a session token is rejected by prefix before any validation, and
+  a bearer that is neither is rejected outright rather than handed to an unconfigured
+  validator — the absence of a JWT verifier is a refusal, never a skipped check.
 - **CSRF.** The session cookie is `SameSite=Lax`, which blocks cross-site POSTs; that only
   holds while every state-changing endpoint is a POST/PATCH/PUT/DELETE, so the test suite
   audits the whole route table for a GET that mutates. Sign-in and sign-out are both POST-only,

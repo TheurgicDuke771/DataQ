@@ -8,19 +8,31 @@ fastmcp ``JWTVerifier`` configured from the same tenant / audience / scope as
 scope; PATs by hashed lookup via ``api_key_service``, exactly like REST. The
 two are disjoint by prefix, composed in ``_PatOrJwtVerifier``.
 
-Two modes, picked from settings exactly like ``core.auth``:
+Modes, picked from settings in the **same order as** ``core.auth``'s
+``get_current_user`` ladder — so a deployment cannot authenticate on REST in one
+mode and on ``/mcp`` in another (``mcp_auth_mode``):
 
-- **Real mode** (`azure_auth_configured`): the composite verifier above.
-- **Dev bypass** (`ENVIRONMENT=dev` + `AUTH_DEV_BYPASS=true`, no Azure vars): no
-  verifier — every call resolves to the fixed dev user, for local dev only.
+- **azure_ad** (`azure_auth_configured`): the composite verifier above.
+- **pat_only** (`otp_auth_configured`, no Azure — ADR 0032, #1128): the same
+  composite with the **JWT half absent**. An OTP deployment has no directory to
+  validate a JWT against, so a PAT is the *only* MCP credential; every non-PAT
+  bearer is rejected uniformly, having reached no validator at all. The
+  alternative — mounting nothing — silently cost an OTP deployment the whole
+  8-tool MCP surface even though its PATs work perfectly (#1128).
+- **dev_bypass** (`ENVIRONMENT=dev` + `AUTH_DEV_BYPASS=true`, no Azure, no OTP):
+  no verifier — every call resolves to the fixed dev user, for local dev only.
+- **disabled**: nothing configured → the server is **not mounted** (fail-closed —
+  the ``/mcp`` endpoint never goes live without auth; CLAUDE.md §10 security note).
 
-If neither is configured the server is **not mounted** (fail-closed — the
-``/mcp`` endpoint never goes live without auth; CLAUDE.md §10 security note).
+Note what an **unconfigured JWT verifier never becomes**: an accept-anything
+path. ``_PatOrJwtVerifier`` with ``_jwt is None`` returns ``None`` (fastmcp's
+uniform 401) for anything that is not a valid PAT — the absence of a validator
+is a rejection, not a skip.
 """
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from fastapi_azure_auth.utils import is_guest
 from fastmcp.server.auth import AccessToken, AuthProvider, TokenVerifier
@@ -52,14 +64,44 @@ class McpAuthError(Exception):
     """Raised inside a tool when the caller can't be resolved (defence-in-depth)."""
 
 
+#: The MCP auth modes, in the order they are selected. Mirrors the
+#: ``core.auth.get_current_user`` ladder exactly (Azure → OTP → dev bypass →
+#: nothing), because REST and ``/mcp`` sharing credentials is only true if they
+#: also share the mode selection.
+McpAuthMode = Literal["azure_ad", "pat_only", "dev_bypass", "disabled"]
+
+
+def mcp_auth_mode(settings: Settings | None = None) -> McpAuthMode:
+    """Which authenticator ``/mcp`` runs on — the single ladder everything reads.
+
+    One function so the mount gate (``mcp_enabled``), the provider construction
+    (``build_auth_provider``) and the startup log line cannot drift from each
+    other: the previous shape had the gate and the log each re-deriving the mode
+    from ``azure_auth_configured``, which is exactly how an OTP deployment ended
+    up unmounted *and* reported as "dev_bypass".
+
+    OTP outranks dev bypass for the same reason it does in ``core.auth``: an
+    OTP-configured stack is a real auth configuration, and resolving it to the
+    unauthenticated bypass would be a downgrade. (``_dev_bypass_allowed`` already
+    excludes an Azure-configured stack.)
+    """
+    s = settings or get_settings()
+    if s.azure_auth_configured:
+        return "azure_ad"
+    if s.otp_auth_configured:
+        return "pat_only"
+    if _dev_bypass_allowed(s):
+        return "dev_bypass"
+    return "disabled"
+
+
 def mcp_enabled(settings: Settings | None = None) -> bool:
     """Whether ``/mcp`` should be mounted at all — only when auth is resolvable.
 
-    Real Azure auth, or the local dev-bypass. Never an unauthenticated mount in a
-    deployed (prod/staging) environment.
+    Azure AD, an OTP deployment's PATs, or the local dev-bypass. Never an
+    unauthenticated mount in a deployed (prod/staging) environment.
     """
-    s = settings or get_settings()
-    return s.azure_auth_configured or _dev_bypass_allowed(s)
+    return mcp_auth_mode(settings) != "disabled"
 
 
 class _PatOrJwtVerifier(TokenVerifier):
@@ -73,9 +115,15 @@ class _PatOrJwtVerifier(TokenVerifier):
     prefix: ADR 0032 keeps sessions to the browser and PATs to headless/MCP
     clients. Rejecting by prefix (rather than letting the JWT branch fail) is what
     keeps a session token out of the JWT validator's log line.
+
+    ``jwt_verifier`` is ``None`` in **pat_only** mode (an OTP deployment, #1128):
+    there is no directory to validate a JWT against, so the JWT half is genuinely
+    absent rather than misconfigured. A missing verifier **rejects** — it is never
+    a fall-through — which is the whole reason it is modelled as an explicit
+    ``None`` here instead of, say, a permissive stub.
     """
 
-    def __init__(self, jwt_verifier: JWTVerifier) -> None:
+    def __init__(self, jwt_verifier: JWTVerifier | None) -> None:
         super().__init__()
         self._jwt = jwt_verifier
 
@@ -89,6 +137,11 @@ class _PatOrJwtVerifier(TokenVerifier):
             # None yields fastmcp's standard 401.
             return None
         if not token.startswith(api_key_service.TOKEN_PREFIX):
+            if self._jwt is None:
+                # pat_only mode (#1128): PATs are the only /mcp credential here.
+                # Uniform rejection, and — like the session branch above — no token
+                # material reaches a validator that would log what it cannot decode.
+                return None
             return await self._jwt.verify_token(token)
         from backend.app.db.session import SessionLocal
 
@@ -109,14 +162,24 @@ class _PatOrJwtVerifier(TokenVerifier):
 
 
 def build_auth_provider(settings: Settings | None = None) -> AuthProvider | None:
-    """The fastmcp auth provider — PAT-or-Azure-JWT in real mode, ``None`` in dev bypass.
+    """The fastmcp auth provider for the current ``mcp_auth_mode``.
 
-    Returning ``None`` leaves the mounted server unauthenticated; callers must only
-    mount in that case when ``_dev_bypass_allowed`` is true (see ``mcp_enabled``).
+    - ``azure_ad`` → the PAT-or-Azure-JWT composite.
+    - ``pat_only`` → the same composite with the JWT half absent (PAT or 401).
+    - ``dev_bypass`` → ``None``, i.e. an unauthenticated server. This is the ONE
+      mode that returns ``None``, and it is only ever mounted when
+      ``_dev_bypass_allowed`` is true (see ``mcp_enabled``).
+    - ``disabled`` → the PAT-only verifier, deliberately **not** ``None``. Nothing
+      mounts in this mode, so it is unreachable in practice; making the
+      unreachable case require a credential rather than none means a future
+      mounting mistake degrades to "nobody can authenticate", not "everybody can".
     """
     s = settings or get_settings()
-    if not s.azure_auth_configured:
+    mode = mcp_auth_mode(s)
+    if mode == "dev_bypass":
         return None
+    if mode != "azure_ad":
+        return _PatOrJwtVerifier(None)
     tenant = s.azure_tenant_id
     # Single-tenant v2 endpoint — same coordinates fastapi-azure-auth uses.
     jwt = JWTVerifier(

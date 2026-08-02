@@ -36,6 +36,7 @@ from backend.app.db.session import get_session
 from backend.app.mcp.auth import (
     McpAuthError,
     build_auth_provider,
+    mcp_auth_mode,
     mcp_enabled,
     resolve_current_user,
 )
@@ -591,11 +592,15 @@ def build_mcp_app() -> Any:
     goes live unauthenticated.
     """
     if not mcp_enabled():
-        log.warning("mcp_disabled_no_auth", note="/mcp not mounted — no Azure auth or dev bypass")
+        log.warning(
+            "mcp_disabled_no_auth",
+            note="/mcp not mounted — no Azure auth, no email OTP config, no dev bypass",
+        )
         return None
-    log.info(
-        "mcp_enabled", auth="azure_ad" if get_settings().azure_auth_configured else "dev_bypass"
-    )
+    # The mode, not a re-derivation of it: `pat_only` (an OTP deployment) used to
+    # be reported as "dev_bypass" by the old ternary, which is both wrong and the
+    # most alarming possible thing to say about a production deployment.
+    log.info("mcp_enabled", auth=mcp_auth_mode())
     # FastMCP (≥3.4.3) guards the streamable-HTTP transport with a Host allowlist
     # for DNS-rebinding protection, defaulting to loopback only ("127.0.0.1",
     # "localhost", "::1") — anything else gets a 421 Misdirected Request. DataQ
@@ -604,7 +609,8 @@ def build_mcp_app() -> Any:
     # Envoy routes correctly — none of which are loopback, so the guard 421s every
     # proxied MCP request. DNS-rebinding protection is a browser-vs-localhost threat
     # model that doesn't apply here: the api has no public ingress and every /mcp
-    # request is JWT/PAT-authenticated fail-closed (`build_auth_provider`). Allow
+    # request is PAT- or JWT-authenticated fail-closed (`build_auth_provider` —
+    # PAT-only in an OTP deployment, which is *narrower*, never weaker). Allow
     # the proxied hosts so the transport guard doesn't shadow the real auth gate.
     # The same middleware also 403s a request whose browser `Origin` isn't
     # allow-listed. That check is a CSRF defence, and CSRF needs an AMBIENT
