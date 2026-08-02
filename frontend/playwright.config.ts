@@ -62,6 +62,22 @@ export default defineConfig({
             name: 'otp',
             testDir: './e2e-otp',
             use: { ...devices['Desktop Chrome'], baseURL: otpBaseURL },
+            // Per-project override, `chromium` untouched: the #573/#1123 precedent
+            // (a slow SHARED CI runner, not a wrong wait) applied here. Every spec
+            // that calls signIn.complete() drives a REAL second api + SMTP sink
+            // (scripts/e2e-otp-stack.sh) through a genuine sign-in, and #1153
+            // found the fixture's own synchronization legitimately needs up to
+            // ~20s (the /me response) + ~3s (render) + a close-animation wait for
+            // the first-login profile-completion prompt (#1139) on a contended
+            // runner — that's correct, not a bug (see fixtures.ts), so the specs'
+            // 30s budget was the thing exhausting, not the waits. Root-caused via
+            // three straight CI runs (30762500904, 30771559194, 30772079151) each
+            // green locally and red only on the shared runner. `expect.timeout`
+            // is bumped proportionally for the same reason: signin/session specs
+            // lean on bare `expect(locator).toBeVisible()` for post-sign-in
+            // transitions, not just `waitFor`.
+            timeout: 90_000,
+            expect: { timeout: 20_000 },
           },
         ]
       : []),
