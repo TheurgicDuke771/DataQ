@@ -141,10 +141,32 @@ def _in_check(column: str, values: tuple[str, ...], name: str) -> CheckConstrain
 
 
 class User(Base):
+    """A human identity. One row per person, keyed on their normalized email.
+
+    `aad_object_id` is **nullable** (ADR 0032 decision 6, #735): an email-OTP
+    user has no Azure AD identity. Its unique constraint stays — Postgres treats
+    NULLs as distinct, so any number of OTP users coexist while AAD users remain
+    one row per object id.
+    """
+
     __tablename__ = "users"
+    # Case-insensitive email uniqueness, because email is the identity key that an
+    # AAD sign-in and an OTP sign-in join on (ADR 0032 decision 6 — "one user row
+    # per normalized email"). `lower(...)` is the same normalization
+    # `Settings.is_admin_email` applies to WORKSPACE_ADMIN_EMAILS (see
+    # `core/config.py` — strip + lower), so the identity surface has one rule; the
+    # index cannot express the *strip* half, which stays application-level.
+    #
+    # A unique INDEX, not a unique constraint — Postgres cannot express a UNIQUE
+    # *constraint* over an expression at all, only an index. The name must match
+    # `uq_users_email_lower` in migration 7d25617cfaf0 exactly, so `create_all` test
+    # databases and production carry the same object under the same name (the #990
+    # parity check compares the two; see `ApiKey.__table_args__` below for why the
+    # name — not just the enforcement — is what matters).
+    __table_args__ = (Index("uq_users_email_lower", text("lower(email)"), unique=True),)
 
     id: Mapped[uuid.UUID] = _uuid_pk()
-    aad_object_id: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    aad_object_id: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
     email: Mapped[str] = mapped_column(String(320), nullable=False)
     display_name: Mapped[str | None] = mapped_column(String(256))
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

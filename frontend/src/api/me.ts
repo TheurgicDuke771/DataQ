@@ -2,7 +2,10 @@ import { api } from './client';
 
 export interface MeResponse {
   id: string;
-  aad_object_id: string;
+  /** Azure AD object id — null for identities provisioned without one (email-OTP
+   *  users; ADR 0032 decision 6). Nothing in the SPA reads it today; keep it
+   *  null-safe if that changes. */
+  aad_object_id: string | null;
   email: string;
   display_name: string | null;
   last_seen_at: string | null;

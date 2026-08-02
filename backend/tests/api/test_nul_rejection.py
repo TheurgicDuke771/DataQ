@@ -31,7 +31,7 @@ def client(db_session: Any) -> Iterator[TestClient]:
 
 
 def _connection_id(db_session: Any) -> str:
-    owner = User(aad_object_id=uuid.uuid4().hex, email="owner@example.com")
+    owner = User(aad_object_id=uuid.uuid4().hex, email=f"owner-{uuid.uuid4().hex[:8]}@example.com")
     db_session.add(owner)
     db_session.flush()
     conn = Connection(

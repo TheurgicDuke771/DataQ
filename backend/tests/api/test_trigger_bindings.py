@@ -29,7 +29,7 @@ def client(db_session: Any) -> Iterator[TestClient]:
 
 
 def _connection(db_session: Any) -> Connection:
-    owner = User(aad_object_id=uuid.uuid4().hex, email="owner@example.com")
+    owner = User(aad_object_id=uuid.uuid4().hex, email=f"owner-{uuid.uuid4().hex[:8]}@example.com")
     db_session.add(owner)
     db_session.flush()
     conn = Connection(
@@ -57,7 +57,7 @@ def _owned_suite(client: TestClient, connection_id: uuid.UUID) -> str:
 
 def _unowned_suite(db_session: Any, connection: Connection) -> Suite:
     """A suite owned by someone else, not shared with the caller → no access."""
-    other = User(aad_object_id=uuid.uuid4().hex, email="other@example.com")
+    other = User(aad_object_id=uuid.uuid4().hex, email=f"other-{uuid.uuid4().hex[:8]}@example.com")
     db_session.add(other)
     db_session.flush()
     suite = Suite(name="theirs", connection_id=connection.id, created_by=other.id)

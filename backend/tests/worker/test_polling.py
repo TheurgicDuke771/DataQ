@@ -48,7 +48,7 @@ class _FakeProvider:
 
 
 def _adf_connection(db_session: Any, *, factory: str = "poll-factory") -> Connection:
-    user = User(aad_object_id=uuid.uuid4().hex, email="dev@example.com")
+    user = User(aad_object_id=uuid.uuid4().hex, email=f"dev-{uuid.uuid4().hex[:8]}@example.com")
     db_session.add(user)
     db_session.flush()
     conn = Connection(
@@ -108,7 +108,7 @@ def test_poll_is_fail_soft_per_connection(db_session: Any, monkeypatch: Any) -> 
 
 def test_poll_ignores_connections_without_secret(db_session: Any, monkeypatch: Any) -> None:
     # a connection with no secret_ref is filtered out (can't authenticate a poll)
-    user = User(aad_object_id=uuid.uuid4().hex, email="dev@example.com")
+    user = User(aad_object_id=uuid.uuid4().hex, email=f"dev-{uuid.uuid4().hex[:8]}@example.com")
     db_session.add(user)
     db_session.flush()
     db_session.add(

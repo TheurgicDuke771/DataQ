@@ -29,6 +29,7 @@ from fastapi.security import SecurityScopes
 from fastapi_azure_auth import SingleTenantAzureAuthorizationCodeBearer
 from fastapi_azure_auth.user import User as AzureUser
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from starlette.requests import HTTPConnection
 
@@ -136,6 +137,26 @@ _settings = get_settings()
 azure_scheme: SingleTenantAzureAuthorizationCodeBearer | None = _build_azure_scheme(_settings)
 
 
+class IdentityConflictError(DataQError):
+    """Two identities claim one mailbox — the sign-in cannot be resolved to a user.
+
+    Raised when the upsert violates `uq_users_email_lower` (#735): the row is
+    keyed on `aad_object_id`, so a *different* object id arriving with an email
+    that case-collides with an existing row has no conflict target and hits the
+    email index instead. Without this it is an unhandled `IntegrityError`, i.e. a
+    500 on **every** login for that user (CONTRIBUTING rule 32 — never let a
+    database exception surface as an unhandled error).
+
+    409 rather than 401/403: the credential is valid, the workspace's identity
+    state is not — an operator has to resolve it (the same duplicate-email
+    resolution the 7d25617cfaf0 migration documents). ADR 0032 decision 6 is what
+    makes it a conflict at all: one user row per normalized email.
+    """
+
+    status_code = 409
+    code = "identity_conflict"
+
+
 def _upsert_user(
     db: Session,
     *,
@@ -163,8 +184,26 @@ def _upsert_user(
         )
         .returning(User)
     )
-    user = db.execute(stmt).scalar_one()
-    db.commit()
+    try:
+        user = db.execute(stmt).scalar_one()
+        db.commit()
+    except IntegrityError as exc:
+        # The `aad_object_id` conflict is HANDLED by on_conflict_do_update above,
+        # so anything reaching here is a different constraint — in practice
+        # `uq_users_email_lower`. Roll back: the session is otherwise poisoned for
+        # the rest of the request.
+        db.rollback()
+        # Deliberately no email in the message or the log. The redactor covers
+        # both `email` and `aad_object_id` keys (core/logging.py `_PII_KEYS`), so
+        # the structured field below is safe — but the message travels in the HTTP
+        # error envelope, which the redactor does not touch, and naming the
+        # colliding address would tell any caller who else is in the workspace.
+        log.warning("identity_conflict_on_upsert", aad_object_id=aad_object_id)
+        raise IdentityConflictError(
+            "This sign-in could not be resolved to a user account: another account "
+            "already exists with the same email address. Contact your workspace "
+            "administrator.",
+        ) from exc
     return user
 
 

@@ -46,7 +46,7 @@ def _connection(db_session: Any, *, config: dict[str, Any] | None = None) -> Con
     ``config`` defaults to the partial (`account`-only) config, which omits
     database/schema on purpose so a target fails to resolve an asset (fail-soft NULL
     path); pass ``_FULL_SF_CONFIG`` for the fully-resolvable case."""
-    owner = User(aad_object_id=uuid.uuid4().hex, email="owner@example.com")
+    owner = User(aad_object_id=uuid.uuid4().hex, email=f"owner-{uuid.uuid4().hex[:8]}@example.com")
     db_session.add(owner)
     db_session.flush()
     conn = Connection(
@@ -65,7 +65,7 @@ def _connection(db_session: Any, *, config: dict[str, Any] | None = None) -> Con
 def _orchestration_connection(db_session: Any, provider: str = "adf") -> Connection:
     """Insert an ADF/Airflow connection — an orchestration provider, never a
     suite datasource (CLAUDE.md §4)."""
-    owner = User(aad_object_id=uuid.uuid4().hex, email="orch@example.com")
+    owner = User(aad_object_id=uuid.uuid4().hex, email=f"orch-{uuid.uuid4().hex[:8]}@example.com")
     db_session.add(owner)
     db_session.flush()
     conn = Connection(
@@ -1007,7 +1007,7 @@ def _patch_conn(
 def _typed_connection(
     db_session: Any, ctype: str, config: dict[str, Any], *, secret_ref: str | None = "kv-test"
 ) -> Connection:
-    owner = User(aad_object_id=uuid.uuid4().hex, email=f"{ctype}@ex")
+    owner = User(aad_object_id=uuid.uuid4().hex, email=f"{ctype}-{uuid.uuid4().hex[:8]}@ex")
     db_session.add(owner)
     db_session.flush()
     conn = Connection(

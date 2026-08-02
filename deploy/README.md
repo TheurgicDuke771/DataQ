@@ -282,6 +282,16 @@ Confirm the change is *ready and green* before you push it to prod:
   revision is safe. *Note:* an `ALTER` on a hot table (`runs` / `results` / `pipeline_runs`)
   can block on a live-worker lock and hang the migrate job (#605); recovery + root-cause
   hardening are in [#708](https://github.com/TheurgicDuke771/DataQ/issues/708).
+- [ ] **Migration-specific pre-deploy steps have been run.** Some revisions need a manual step
+  against the live database *before* the migrate job runs, and that step lives in the
+  **migration's own docstring** — not here, because it is revision-specific and would rot if
+  duplicated. Before deploying, list the revisions that are pending on prod
+  (`alembic current` vs `alembic heads`) and read each one's docstring in
+  `backend/alembic/versions/` for a **`MANDATORY PRE-DEPLOY`** section; run what it says and
+  confirm the result is clean. First instance: **`7d25617cfaf0`** (users nullable
+  `aad_object_id` + unique `lower(email)`, #735) requires a duplicate-email audit — if it
+  finds duplicates, the index creation fails and the migrate job aborts, so resolve them
+  first.
 - [ ] **Config + secrets are in place** — the required GitHub env/vars and Key Vault secrets
   (see the [prerequisites](#before-you-deploy-production-prerequisites) above), especially any
   new key this release reads.
