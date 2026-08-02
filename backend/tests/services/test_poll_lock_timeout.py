@@ -176,6 +176,16 @@ def test_record_poll_failure_does_not_hang_on_a_contended_row(
     def call() -> None:
         session = SessionLocal()
         try:
+            # Visibility check (review finding, #855 vacuous-lock shape): if
+            # SessionLocal's DATABASE_URL ever diverges from the held_lock row's
+            # TEST_DATABASE_URL (the opt-in E2E case), this query returns None,
+            # `orchestration_service._lock_connection`'s "row not found" branch takes
+            # over, and the assert below would pass with NO real lock ever contended
+            # — the exact "first draft passed against the bug" trap `_committed_
+            # connection`'s docstring warns about, one layer up. Mirrors the sibling
+            # `test_record_poll_success_...` below, which already had this guard.
+            conn = session.get(Connection, held_lock)
+            assert conn is not None, "the committed connection row is missing"
             orchestration_service.record_poll_failure(
                 session, connection_id=held_lock, exc=RuntimeError("boom")
             )
@@ -239,6 +249,13 @@ def test_the_sweep_survives_a_contended_row(
     def call() -> None:
         session = SessionLocal()
         try:
+            # Visibility check (review finding, #855 vacuous-lock shape) — same
+            # reasoning as test_record_poll_failure_... above: `_poll_orchestration_
+            # runs` queries `connections` internally by its own criteria, so nothing
+            # else here would fail loudly if SessionLocal's database ever diverged
+            # from held_lock's and the row were simply invisible to it.
+            conn = session.get(Connection, held_lock)
+            assert conn is not None, "the committed connection row is missing"
             summary.update(
                 tasks._poll_orchestration_runs(
                     session,
