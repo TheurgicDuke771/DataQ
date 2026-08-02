@@ -1,23 +1,31 @@
-"""Bearer-token auth (Azure AD or DataQ PAT) + user upsert.
+"""Auth seam: DataQ PAT · email-OTP session cookie · Azure AD token, + user upsert.
 
-Two operating modes — picked once at import time from settings:
+Three authenticators, one `get_current_user` seam, resolved in a fixed order
+(ADR 0026 decision 1, extended by ADR 0032 decision 1):
 
-- **Real mode** — `AZURE_TENANT_ID` + `AZURE_API_CLIENT_ID` are set.
-  Two authenticators behind the one `get_current_user` seam (ADR 0026):
-  a **DataQ PAT** (`Authorization: Bearer dq_live_…` → hashed lookup in
-  `api_keys`, resolving to the owning user) is tried first by prefix;
-  anything else is an **Azure AD token** validated by `fastapi-azure-auth`
-  (issuer, audience, signature, expiry, scope — OpenID config loaded at app
-  startup via `init_auth()` and refreshed automatically).
+    1. `Authorization: Bearer dq_live_…`  → PAT, hashed lookup in `api_keys`
+    2. `Cookie: dataq_session=dq_sess_…`  → OTP session, hashed lookup in `sessions`
+    3. anything else in `Authorization`   → Azure AD token (`fastapi-azure-auth`)
 
-- **Dev bypass** — all three of:
-  `ENVIRONMENT=dev`, `AUTH_DEV_BYPASS=true`, Azure vars empty.
-  No token required. Resolves every request to a fixed dev user upserted
-  into the `users` table. Intended for local development against a
-  Postgres in `docker-compose` without a real Azure tenant. (PATs still
-  resolve in dev bypass when presented — the same seam order.)
+The branches are **disjoint by construction**, which is the #849 lesson made
+structural: a `dq_live_` bearer is never a valid JWT and must never reach a JWT
+validator (which logs what it cannot decode), and a request presenting a session
+cookie is decided by that cookie — it never falls through to another
+authenticator on failure. Every failure is the same uniform 401.
 
-If neither mode is configured, `init_auth` raises at startup — fail-closed.
+Modes, picked once at import time from settings:
+
+- **Real mode** — `AZURE_TENANT_ID` + `AZURE_API_CLIENT_ID` set. Azure tokens are
+  validated by `fastapi-azure-auth` (issuer, audience, signature, expiry, scope;
+  OpenID config loaded at startup by `init_auth()` and refreshed automatically).
+- **OTP mode** — the `AUTH_EMAIL_*` block complete AND a non-empty signup
+  allowlist (`Settings.otp_auth_configured`, ADR 0032). Humans sign in with an
+  emailed code and carry a session cookie; PATs still work.
+- **Real + OTP** — both configured; the cookie is checked before the JWT branch.
+- **Dev bypass** — `ENVIRONMENT=dev` + `AUTH_DEV_BYPASS=true` + Azure vars empty.
+  No credential required; every request resolves to a fixed dev user.
+
+If nothing is configured, `init_auth` raises at startup — fail-closed.
 """
 
 from collections.abc import Callable
@@ -38,7 +46,7 @@ from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.db.models import User
 from backend.app.db.session import get_db
-from backend.app.services import api_key_service
+from backend.app.services import api_key_service, session_service
 
 log = get_logger(__name__)
 
@@ -88,6 +96,17 @@ class _PatAwareAzureScheme(SingleTenantAzureAuthorizationCodeBearer):
         # `_pat_token` reads.
         if _pat_token(request) is not None:
             return None
+        # Same short-circuit for an OTP session cookie (ADR 0032 decision 1): the
+        # cookie is checked before the JWT branch, and `Security(azure_scheme)`
+        # resolves before `get_current_user`'s body — so "before the JWT branch"
+        # has to mean *here*, not in the function that runs afterwards.
+        #
+        # Gated on OTP actually being enabled. Ungated, any client could disable
+        # JWT validation on an Azure-only deployment by attaching a junk
+        # `dataq_session` cookie — turning a cosmetic short-circuit into an auth
+        # bypass vector. `_otp_enabled` is the import-time mode flag.
+        if _otp_enabled and _session_token(request) is not None:
+            return None
         user: AzureUser | None = await super().__call__(request, security_scopes)
         return user
 
@@ -133,8 +152,26 @@ def _pat_token(request: HTTPConnection) -> str | None:
     return None
 
 
+def _session_token(request: HTTPConnection) -> str | None:
+    """The OTP session token from the cookie, if present and shaped like one.
+
+    Prefix-checked for the same reason the PAT branch is: it keeps the
+    authenticators disjoint, so a cookie set by something else on the same origin
+    cannot steer a request into the session branch. Reads `.cookies`, which both
+    `Request` and `WebSocket` expose (see `_bearer_token` on the type choice).
+    """
+    token = request.cookies.get(session_service.COOKIE_NAME)
+    if token and token.startswith(session_service.TOKEN_PREFIX):
+        return token
+    return None
+
+
 _settings = get_settings()
 azure_scheme: SingleTenantAzureAuthorizationCodeBearer | None = _build_azure_scheme(_settings)
+#: Whether email OTP sign-in is configured — read once at import, like the Azure
+#: scheme, because the whole mode ladder is bound at import time (12-factor: change
+#: the env and restart).
+_otp_enabled: bool = _settings.otp_auth_configured
 
 
 class IdentityConflictError(DataQError):
@@ -216,10 +253,30 @@ def _extract_claims(azure_user: AzureUser) -> tuple[str, str, str | None]:
     return aad_oid, email, display_name
 
 
-async def init_auth() -> None:
-    """Wire app startup: load OIDC config in real mode, or fail-closed.
+def _log_otp_mode_ready() -> None:
+    """Announce OTP mode WITHOUT logging a single address.
 
-    Called from the FastAPI lifespan.
+    The allowlist is a workspace member list; `_PII_KEYS` redacts an `email` key,
+    but the honest fix is not to hand it over — so this reports a count and the
+    domains (an org identifier, not a person).
+    """
+    log.info(
+        "auth_otp_mode_ready",
+        allowed_email_count=len(_settings.auth_otp_allowed_email_set),
+        allowed_domains=sorted(_settings.auth_otp_allowed_domain_set),
+        session_ttl_hours=_settings.auth_session_ttl_hours,
+        smtp_host=_settings.auth_email_smtp_host,
+    )
+
+
+async def init_auth() -> None:
+    """Wire app startup: load OIDC config in real mode, announce OTP mode, or fail-closed.
+
+    Called from the FastAPI lifespan. The fail-closed contract (ADR 0032 decision
+    2) is the point: a deployment must never come up looking healthy while being
+    unable to log anybody in. The *partial* OTP configurations are rejected even
+    earlier, by `Settings._validate_otp_auth`, so by the time we get here OTP is
+    either fully on or fully off.
     """
     if azure_scheme is not None:
         await azure_scheme.openid_config.load_config()
@@ -229,6 +286,13 @@ async def init_auth() -> None:
             client_id=_settings.azure_api_client_id,
             scope=_settings.azure_api_scope_uri,
         )
+        # Both may be on at once (ADR 0032 decision 1's "real + otp"): AAD for the
+        # org's own identities, OTP for the people it has no directory entry for.
+        if _otp_enabled:
+            _log_otp_mode_ready()
+        return
+    if _otp_enabled:
+        _log_otp_mode_ready()
         return
     if _dev_bypass_allowed(_settings):
         log.warning(
@@ -242,8 +306,17 @@ async def init_auth() -> None:
         return
     raise RuntimeError(
         "Auth not configured. Set AZURE_TENANT_ID + AZURE_API_CLIENT_ID, "
+        "or configure email OTP sign-in (AUTH_EMAIL_SMTP_HOST + AUTH_EMAIL_USERNAME "
+        "+ AUTH_EMAIL_FROM + AUTH_EMAIL_PASSWORD_SECRET_NAME, plus "
+        "AUTH_OTP_ALLOWED_EMAILS and/or AUTH_OTP_ALLOWED_DOMAINS), "
         "or set ENVIRONMENT=dev with AUTH_DEV_BYPASS=true for local dev."
     )
+
+
+_UNAUTHENTICATED_MESSAGE = "Not authenticated: a valid Azure AD token or DataQ API key is required."
+_UNAUTHENTICATED_MESSAGE_OTP = (
+    "Not authenticated: sign in with an email code, or present a DataQ API key."
+)
 
 
 def _get_current_user_real(
@@ -261,13 +334,70 @@ def _get_current_user_real(
         # auto_error=False left rejection to us: no/invalid Azure token.
         raise DataQError(
             code="unauthenticated",
-            message="Not authenticated: a valid Azure AD token or DataQ API key is required.",
+            message=_UNAUTHENTICATED_MESSAGE,
             status_code=401,
         )
     aad_oid, email, display_name = _extract_claims(azure_user)
     user = _upsert_user(db, aad_object_id=aad_oid, email=email, display_name=display_name)
     log.info("auth_user_resolved", mode="real", aad_oid=aad_oid, user_id=str(user.id))
     return user
+
+
+def _get_current_user_real_or_otp(
+    request: Request,
+    azure_user: Annotated[AzureUser | None, Security(azure_scheme)],
+    db: Annotated[Session, Depends(get_db)],
+) -> User:
+    """Azure AD **and** email OTP both configured — PAT → session cookie → JWT.
+
+    A separate function rather than a branch inside `_get_current_user_real`
+    because the mode is bound at import time and the ladder below picks exactly
+    one; keeping them separate means the Azure-only deployment executes no OTP
+    code at all, and the two orderings are each independently readable.
+    """
+    pat = _pat_token(request)
+    if pat is not None:
+        return api_key_service.resolve_token(db, pat)
+    cookie = _session_token(request)
+    if cookie is not None:
+        # Decided here, and NOT falling through to the JWT branch on failure —
+        # the same disjointness the PAT branch has. `_PatAwareAzureScheme` has
+        # already short-circuited, so `azure_user` is None anyway; this is the
+        # explicit statement of the contract rather than a reliance on that.
+        return session_service.resolve_token(db, cookie)
+    if azure_user is None:
+        raise DataQError(
+            code="unauthenticated",
+            message=_UNAUTHENTICATED_MESSAGE_OTP,
+            status_code=401,
+        )
+    aad_oid, email, display_name = _extract_claims(azure_user)
+    user = _upsert_user(db, aad_object_id=aad_oid, email=email, display_name=display_name)
+    log.info("auth_user_resolved", mode="real", aad_oid=aad_oid, user_id=str(user.id))
+    return user
+
+
+def _get_current_user_otp(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+) -> User:
+    """OTP-only deployment (no Azure AD) — PAT → session cookie → uniform 401.
+
+    Declares no `Security(azure_scheme)` dependency, which is the whole reason it
+    exists: `_get_current_user_real` cannot serve this mode because that dependency
+    is `None` here and FastAPI would still try to resolve it.
+    """
+    pat = _pat_token(request)
+    if pat is not None:
+        return api_key_service.resolve_token(db, pat)
+    cookie = _session_token(request)
+    if cookie is not None:
+        return session_service.resolve_token(db, cookie)
+    raise DataQError(
+        code="unauthenticated",
+        message=_UNAUTHENTICATED_MESSAGE_OTP,
+        status_code=401,
+    )
 
 
 def _get_current_user_dev_bypass(
@@ -279,6 +409,23 @@ def _get_current_user_dev_bypass(
     pat = _pat_token(request)
     if pat is not None:
         return api_key_service.resolve_token(db, pat)
+    # A session cookie resolves too — but, unlike the PAT branch above, an
+    # UNUSABLE one falls through to the bypass user instead of 401ing.
+    #
+    # The asymmetry is deliberate. Dev bypass is not an authenticator: its entire
+    # contract is "no credential is required", so refusing a request because of a
+    # credential nobody had to present is pure friction with no security value —
+    # the next request without the cookie is admitted anyway. The concrete case is
+    # a developer who ran an OTP-configured stack, kept the cookie, and switched
+    # the env back: they would otherwise be locked out of their own machine until
+    # they cleared browser storage. (The PAT branch keeps its 401 because #461's
+    # tests pin it and because a presented PAT is an explicit act.)
+    cookie = _session_token(request)
+    if cookie is not None:
+        try:
+            return session_service.resolve_token(db, cookie)
+        except session_service.SessionAuthError:
+            log.debug("dev_bypass_ignoring_unusable_session_cookie")
     user = _upsert_user(
         db,
         aad_object_id=DEV_BYPASS_AAD_OID,
@@ -300,7 +447,9 @@ def _get_current_user_unconfigured() -> User:
 
 get_current_user: Callable[..., User]
 if azure_scheme is not None:
-    get_current_user = _get_current_user_real
+    get_current_user = _get_current_user_real_or_otp if _otp_enabled else _get_current_user_real
+elif _otp_enabled:
+    get_current_user = _get_current_user_otp
 elif _dev_bypass_allowed(_settings):
     get_current_user = _get_current_user_dev_bypass
 else:

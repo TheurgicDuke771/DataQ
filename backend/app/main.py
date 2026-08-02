@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from backend.app.api.v1 import admin as admin_router
 from backend.app.api.v1 import api_keys as api_keys_router
 from backend.app.api.v1 import assets as assets_router
+from backend.app.api.v1 import auth_otp as auth_otp_router
 from backend.app.api.v1 import checks as checks_router
 from backend.app.api.v1 import connections as connections_router
 from backend.app.api.v1 import dashboard as dashboard_router
@@ -253,6 +254,7 @@ register_exception_handlers(app)
 
 app.include_router(me_router.router, prefix="/api/v1")
 app.include_router(api_keys_router.router, prefix="/api/v1")
+app.include_router(auth_otp_router.router, prefix="/api/v1")
 app.include_router(users_router.router, prefix="/api/v1")
 app.include_router(probe_router.router, prefix="/api/v1")
 app.include_router(connections_router.router, prefix="/api/v1")
