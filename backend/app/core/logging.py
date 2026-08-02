@@ -93,10 +93,15 @@ _URL_USERINFO_RE = re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://[^/\s:@\"']+):[^@/\s\
 #
 # `dq_live_` is duplicated from `api_key_service.TOKEN_PREFIX` deliberately — core.logging
 # must not import the service layer (import cycle) — and a drift-guard test pins the two
-# together so a renamed prefix can't silently stop being redacted.
+# together so a renamed prefix can't silently stop being redacted. `dq_sess_` is the same
+# arrangement for `session_service.TOKEN_PREFIX` (ADR 0032): a session token is a live
+# browser credential exactly like a PAT, so it must not survive a log line a PAT wouldn't.
+# `_PII_KEYS` already redacts `cookie`/`set-cookie` KEYS; this is the other half — the
+# token sitting bare inside a message string, which is how #849 actually happened.
 _BEARER_TOKEN_RE = re.compile(
     r"(?i)(?:"
     r"dq_live_[A-Za-z0-9_\-]{6,}"  # a DataQ PAT (ADR 0026)
+    r"|dq_sess_[A-Za-z0-9_\-]{6,}"  # an OTP session token (ADR 0032)
     r"|eyJ[A-Za-z0-9_\-]{4,}\.[A-Za-z0-9_\-]{4,}\.[A-Za-z0-9_\-]*"  # a JWT (AAD access token)
     # A `Bearer <token>` header echo. Deliberately requires the value to LOOK like a
     # token — ≥16 chars AND containing a digit or one of `-._~+/=` — because

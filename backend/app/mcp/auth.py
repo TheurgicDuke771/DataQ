@@ -39,7 +39,7 @@ from backend.app.core.config import Settings, get_settings
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.db.models import User
-from backend.app.services import api_key_service
+from backend.app.services import api_key_service, session_service
 
 log = get_logger(__name__)
 
@@ -68,6 +68,11 @@ class _PatOrJwtVerifier(TokenVerifier):
     The branches are disjoint (a ``dq_live_…`` bearer is never a valid JWT).
     A bad PAT returns ``None`` — fastmcp turns that into the standard 401 —
     and is logged prefix-only inside ``api_key_service``.
+
+    An OTP **session** token (``dq_sess_…``) is a third, explicitly rejected
+    prefix: ADR 0032 keeps sessions to the browser and PATs to headless/MCP
+    clients. Rejecting by prefix (rather than letting the JWT branch fail) is what
+    keeps a session token out of the JWT validator's log line.
     """
 
     def __init__(self, jwt_verifier: JWTVerifier) -> None:
@@ -75,6 +80,14 @@ class _PatOrJwtVerifier(TokenVerifier):
         self._jwt = jwt_verifier
 
     async def verify_token(self, token: str) -> AccessToken | None:
+        if token.startswith(session_service.TOKEN_PREFIX):
+            # `/mcp` is an explicit NON-GOAL for sessions (ADR 0032 decision 1):
+            # a session is a browser credential, a PAT is the headless/MCP one.
+            # Rejected HERE, before the JWT verifier, for the #849 reason — a
+            # `dq_sess_…` is not a JWT, and handing it to a JWT validator is how a
+            # live credential ends up in a "Malformed token" log line. Returning
+            # None yields fastmcp's standard 401.
+            return None
         if not token.startswith(api_key_service.TOKEN_PREFIX):
             return await self._jwt.verify_token(token)
         from backend.app.db.session import SessionLocal
