@@ -73,3 +73,20 @@ export async function listAdminWebhooks(): Promise<AdminWebhook[]> {
   const { data } = await api.get<AdminWebhook[]>('/admin/orchestration/webhooks');
   return data;
 }
+
+/** SMTP pre-flight test (#737, ADR 0032 decision 7). Sends a real message to the
+ *  CALLER's own address over the configured `AUTH_EMAIL_*` mailer — there is no
+ *  recipient input, so this can only ever mail the admin who invoked it. On
+ *  failure the backend's error envelope names the failing transport stage
+ *  (connect/tls/auth/send) in `error.detail.stage`; the axios response
+ *  interceptor already folds the envelope's human message into `err.message`,
+ *  so callers just need `errorMessage(err)`. */
+export interface AuthEmailTestResult {
+  status: string;
+  to: string;
+}
+
+export async function testAuthEmail(): Promise<AuthEmailTestResult> {
+  const { data } = await api.post<AuthEmailTestResult>('/admin/auth-email/test');
+  return data;
+}
