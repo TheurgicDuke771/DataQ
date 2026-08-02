@@ -36,6 +36,7 @@ from fastapi import Depends, Request, Security
 from fastapi.security import SecurityScopes
 from fastapi_azure_auth import SingleTenantAzureAuthorizationCodeBearer
 from fastapi_azure_auth.user import User as AzureUser
+from sqlalchemy import func, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -47,6 +48,7 @@ from backend.app.core.logging import get_logger
 from backend.app.db.models import User
 from backend.app.db.session import get_db
 from backend.app.services import api_key_service, session_service
+from backend.app.services.otp_service import normalize_email
 
 log = get_logger(__name__)
 
@@ -188,10 +190,68 @@ class IdentityConflictError(DataQError):
     state is not — an operator has to resolve it (the same duplicate-email
     resolution the 7d25617cfaf0 migration documents). ADR 0032 decision 6 is what
     makes it a conflict at all: one user row per normalized email.
+
+    **Not** raised when the colliding row is an OTP identity (`aad_object_id IS
+    NULL`) — that is one human with two authenticators, which decision 6 says to
+    LINK, not to reject. See `_claim_unlinked_user`.
     """
 
     status_code = 409
     code = "identity_conflict"
+
+
+def _claim_unlinked_user(
+    db: Session,
+    *,
+    aad_object_id: str,
+    email: str,
+    display_name: str | None,
+    now: datetime,
+) -> User | None:
+    """Attach an AAD identity to an existing OTP-provisioned row, or return None.
+
+    The other half of ADR 0032 decision 6's linking rule. `otp_service` resolves
+    an OTP sign-in onto an existing AAD row by `lower(email)`; this is the reverse
+    direction, and without it the rule holds in only one direction: a person who
+    signed in with an emailed code first (leaving a row with `aad_object_id IS
+    NULL`) and later signed in through Azure AD would hit the email index, get an
+    `IdentityConflictError`, and be **permanently 409'd on every subsequent AAD
+    login** — with an error message telling them another account owns their
+    address, when in fact it is their own.
+
+    Deliberately narrow: it claims **only** a row whose `aad_object_id` is NULL.
+    A row already carrying a *different* object id is the genuine conflict #1131
+    exists for (two directory identities on one mailbox, which needs an operator),
+    and that path is unchanged.
+
+    The `IS NULL` predicate rides in the UPDATE, so the claim is atomic: two AAD
+    sign-ins racing for the same unlinked row cannot both succeed. The loser gets
+    `None` here and the caller retries the ordinary upsert, which now finds the
+    winner's `aad_object_id` as a conflict target.
+    """
+    claimed = db.execute(
+        update(User)
+        .where(
+            func.lower(User.email) == normalize_email(email),
+            User.aad_object_id.is_(None),
+        )
+        .values(
+            aad_object_id=aad_object_id,
+            email=email,
+            display_name=display_name,
+            last_seen_at=now,
+            updated_at=now,
+        )
+        .returning(User)
+    ).scalar_one_or_none()
+    if claimed is None:
+        db.rollback()
+        return None
+    db.commit()
+    # No email in the log line: `_PII_KEYS` redacts an `email` key, but the honest
+    # move is not to hand it over. The object id is enough to correlate.
+    log.info("identity_linked_otp_row_to_aad", aad_object_id=aad_object_id, user_id=str(claimed.id))
+    return claimed
 
 
 def _upsert_user(
@@ -200,6 +260,7 @@ def _upsert_user(
     aad_object_id: str,
     email: str,
     display_name: str | None,
+    _retrying: bool = False,
 ) -> User:
     now = datetime.now(UTC)
     stmt = (
@@ -230,6 +291,31 @@ def _upsert_user(
         # `uq_users_email_lower`. Roll back: the session is otherwise poisoned for
         # the rest of the request.
         db.rollback()
+        # First, the benign reading of that collision: the colliding row is an OTP
+        # identity for the same human (ADR 0032 decision 6). Link it rather than
+        # reject the login.
+        if not _retrying:
+            linked = _claim_unlinked_user(
+                db,
+                aad_object_id=aad_object_id,
+                email=email,
+                display_name=display_name,
+                now=now,
+            )
+            if linked is not None:
+                return linked
+            # Nothing to claim. Either the row already carries a different object
+            # id (the real conflict, below), or a concurrent sign-in claimed it
+            # first — in which case the ordinary upsert now HAS a conflict target
+            # and succeeds. One bounded retry distinguishes the two; a second
+            # IntegrityError is the genuine conflict.
+            return _upsert_user(
+                db,
+                aad_object_id=aad_object_id,
+                email=email,
+                display_name=display_name,
+                _retrying=True,
+            )
         # Deliberately no email in the message or the log. The redactor covers
         # both `email` and `aad_object_id` keys (core/logging.py `_PII_KEYS`), so
         # the structured field below is safe — but the message travels in the HTTP
