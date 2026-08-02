@@ -2,6 +2,7 @@
 
 import os
 from collections.abc import Callable, Iterator
+from pathlib import Path
 
 # Set test-mode env vars BEFORE any backend.app.* import resolves. The auth
 # module computes its mode at import time from settings; without these the
@@ -13,12 +14,81 @@ os.environ.setdefault("AUTH_DEV_BYPASS", "true")
 # Redis is up. The dedicated rate-limit tests opt back in per-test.
 os.environ.setdefault("RATE_LIMIT_ENABLED", "false")
 
-import pytest
+# ── Test-DB resolution — also BEFORE any backend.app.* import (#1130) ─────────
+# This has to run here, ahead of the `pytest` / `backend.app.*` imports below, not
+# down with the rest of the "DB-backed test support" section: `from backend.app.core
+# import rate_limit` a few lines down pulls in `backend.app.core.auth`, which imports
+# `backend.app.db.session` at module scope — and `db.session` builds `SessionLocal`'s
+# engine from `Settings.database_url` the INSTANT it is first imported. If
+# `DATABASE_URL` is not already pointed at the test DB by then, that engine is wrong
+# for the rest of the process; `get_settings.cache_clear()` in `_reset_caches` cannot
+# fix it, because the engine object itself is never rebuilt.
+#
+# Resolution order for the test DB:
+#   1. TEST_DATABASE_URL if set explicitly (this is what CI does).
+#   2. Otherwise, the docker-compose Postgres using the .env creds, on a dedicated
+#      `dataq_test` database (auto-created if missing — see `_ensure_local_test_database`
+#      below). This is what makes a plain `pytest` — including editors like VS Code /
+#      PyCharm whose test runners invoke pytest directly, NOT via
+#      scripts/test-backend.sh — run the DB-backed tests instead of skipping, whenever
+#      the local Postgres is up.
+#   3. Neither available → the db_session fixture skips, so `pytest` still runs the
+#      pure-unit suite anywhere.
 
-from backend.app.alerting.registry import reset_result_publisher_cache
-from backend.app.core import rate_limit, secrets
-from backend.app.core.config import get_settings
-from backend.app.services import otp_service
+
+def _read_env_file() -> dict[str, str]:
+    """Best-effort parse of the gitignored repo-root .env (the POSTGRES_* creds that
+    docker-compose + scripts/setup.sh use). Returns {} if it's absent."""
+    env: dict[str, str] = {}
+    path = Path(__file__).resolve().parents[2] / ".env"
+    if path.exists():
+        for raw in path.read_text().splitlines():
+            line = raw.strip()
+            if line and not line.startswith("#") and "=" in line:
+                key, _, val = line.partition("=")
+                env[key.strip()] = val.strip().strip('"').strip("'")
+    return env
+
+
+def _resolve_test_database_url() -> str | None:
+    explicit = os.environ.get("TEST_DATABASE_URL")
+    if explicit:
+        return explicit
+    env = _read_env_file()
+    user, password = env.get("POSTGRES_USER"), env.get("POSTGRES_PASSWORD")
+    if not (user and password):
+        return None
+    return f"postgresql+psycopg2://{user}:{password}@localhost:5432/dataq_test"
+
+
+TEST_DATABASE_URL = _resolve_test_database_url()
+# If we defaulted to the local compose Postgres, export it so per-test skipif guards
+# that read os.environ['TEST_DATABASE_URL'] directly (e.g. the custom-SQL GX tests)
+# also run — not only the db_session fixture. setdefault → CI's explicit value wins.
+# We deliberately do NOT set REDIS_URL here, so the real-infra E2E test (needs a
+# live broker + worker) stays opt-in.
+if TEST_DATABASE_URL:
+    os.environ.setdefault("TEST_DATABASE_URL", TEST_DATABASE_URL)
+
+# #1130: point DATABASE_URL at the same database, UNLESS the caller already set
+# DATABASE_URL explicitly — that is exactly the opt-in E2E signal (a real broker +
+# worker pointed at a real DATABASE_URL, scripts/test-backend.sh's own path). Without
+# this, `backend.app.db.session.SessionLocal` — which a handful of tests use directly
+# because they need a row COMMITTED and visible to a second session (see
+# tests/services/test_poll_lock_timeout.py) — falls back to the `Settings` default
+# `postgresql+psycopg2://localhost:5432/dataq`, i.e. the developer's DEV database,
+# and silently writes/collides there on every invocation that isn't
+# scripts/test-backend.sh (a bare `pytest`, VS Code / PyCharm test runners, an
+# agent's own runner).
+if TEST_DATABASE_URL and not os.environ.get("DATABASE_URL"):
+    os.environ["DATABASE_URL"] = TEST_DATABASE_URL
+
+import pytest  # noqa: E402 — must follow the env-var setup above
+
+from backend.app.alerting.registry import reset_result_publisher_cache  # noqa: E402
+from backend.app.core import rate_limit, secrets  # noqa: E402
+from backend.app.core.config import get_settings  # noqa: E402
+from backend.app.services import otp_service  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -97,44 +167,9 @@ def clean_kv_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 # ── DB-backed test support ────────────────────────────────────────────────────
 # DB integration tests require a real Postgres (the models use JSONB / UUID /
-# gen_random_uuid(), which SQLite can't host).
-#
-# Resolution order for the test DB:
-#   1. TEST_DATABASE_URL if set explicitly (this is what CI does).
-#   2. Otherwise, the docker-compose Postgres using the .env creds, on a dedicated
-#      `dataq_test` database (auto-created if missing). This is what makes a plain
-#      `pytest` — including editors like VS Code / PyCharm whose test runners invoke
-#      pytest directly, NOT via scripts/test-backend.sh — run the DB-backed tests
-#      instead of skipping, whenever the local Postgres is up.
-#   3. Neither available → the db_session fixture skips, so `pytest` still runs the
-#      pure-unit suite anywhere.
-
-
-def _read_env_file() -> dict[str, str]:
-    """Best-effort parse of the gitignored repo-root .env (the POSTGRES_* creds that
-    docker-compose + scripts/setup.sh use). Returns {} if it's absent."""
-    from pathlib import Path
-
-    env: dict[str, str] = {}
-    path = Path(__file__).resolve().parents[2] / ".env"
-    if path.exists():
-        for raw in path.read_text().splitlines():
-            line = raw.strip()
-            if line and not line.startswith("#") and "=" in line:
-                key, _, val = line.partition("=")
-                env[key.strip()] = val.strip().strip('"').strip("'")
-    return env
-
-
-def _resolve_test_database_url() -> str | None:
-    explicit = os.environ.get("TEST_DATABASE_URL")
-    if explicit:
-        return explicit
-    env = _read_env_file()
-    user, password = env.get("POSTGRES_USER"), env.get("POSTGRES_PASSWORD")
-    if not (user and password):
-        return None
-    return f"postgresql+psycopg2://{user}:{password}@localhost:5432/dataq_test"
+# gen_random_uuid(), which SQLite can't host). `TEST_DATABASE_URL`, `_read_env_file`
+# and `_resolve_test_database_url` are resolved up top, ahead of the `backend.app.*`
+# imports (#1130) — see the comment there for why.
 
 
 def _ensure_local_test_database() -> None:
@@ -167,16 +202,6 @@ def _ensure_local_test_database() -> None:
         admin.dispose()
     except Exception:  # pragma: no cover - environment-dependent
         pass  # Postgres down / no perms — _db_engine's connect below skips cleanly.
-
-
-TEST_DATABASE_URL = _resolve_test_database_url()
-# If we defaulted to the local compose Postgres, export it so per-test skipif guards
-# that read os.environ['TEST_DATABASE_URL'] directly (e.g. the custom-SQL GX tests)
-# also run — not only the db_session fixture. setdefault → CI's explicit value wins.
-# We deliberately do NOT set DATABASE_URL / REDIS_URL here, so the real-infra E2E
-# test (needs a live broker + worker) stays opt-in.
-if TEST_DATABASE_URL:
-    os.environ.setdefault("TEST_DATABASE_URL", TEST_DATABASE_URL)
 
 
 @pytest.fixture(scope="session")
