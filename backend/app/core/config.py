@@ -449,6 +449,23 @@ class Settings(BaseSettings):
     # off, the timing channel is fully open.
     auth_otp_request_min_seconds: float = Field(default=1.0, ge=0, le=30)
 
+    # Per-ADMIN cap on `POST /admin/auth-email/test`, fixed 10-minute window
+    # (#1147). Every call opens a real SMTP connection to the configured relay, and
+    # the generic authenticated class (RATE_LIMIT_AUTHENTICATED_PER_MINUTE, 300/min
+    # per token) was sized for ordinary API traffic, not for that. A scripted or
+    # compromised admin token hammering the relay can get the sending account
+    # throttled or blocked — taking the REAL sign-in mailer down, a worse outage
+    # than the misconfiguration this endpoint exists to catch.
+    #
+    # 3 per 10 minutes: a diagnostic is a thing you run after changing a setting,
+    # not in a loop. Deliberately the same order of magnitude as
+    # `auth_otp_request_per_email_per_10min`. It uses the SAME counter-store seam as
+    # that cap but a SEPARATE key space, so the two budgets never consume each other.
+    #
+    # 0 disables the cap — the endpoint then falls back to the generic 300/min
+    # class, i.e. it re-accepts the #1147 relay-hammering risk in full.
+    admin_email_preflight_per_10min: int = Field(default=3, ge=0)
+
     # ── Connection poll-health alerting (#837) ───────────────────────────────
     # How many CONSECUTIVE failed orchestration polls a connection may rack up
     # before DataQ pushes an alert. At the 10-minute poll cadence the default (3)

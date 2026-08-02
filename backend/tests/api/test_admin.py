@@ -22,6 +22,7 @@ from backend.app.core.config import get_settings
 from backend.app.db.models import ORCHESTRATION_PROVIDERS, Check, Connection, Share, Suite, User
 from backend.app.db.session import get_db
 from backend.app.main import app
+from backend.app.services import admin_service, otp_service
 
 
 @pytest.fixture
@@ -423,6 +424,25 @@ def _reset_recording_smtp() -> Iterator[None]:
     _RecordingSMTP.instances = []
 
 
+@pytest.fixture(autouse=True)
+def _preflight_counter() -> Iterator[otp_service.InMemoryOtpCounterStore]:
+    """A process-local pre-flight counter for every test in this file (#1147).
+
+    Without it the throttle reaches for a REAL Redis via
+    `otp_service.get_counter_store()`, and the pre-flight tests would then pass or
+    fail on whether the local compose stack happens to be up — the fail-open path
+    makes an absent Redis look like a working cap. Injecting the store is also what
+    lets the fail-open test substitute an outage deliberately.
+
+    Runs after conftest's `_reset_caches`, which clears the same module global
+    before and after every test, so nothing leaks either way.
+    """
+    store = otp_service.InMemoryOtpCounterStore()
+    otp_service.set_counter_store_for_testing(store)
+    yield store
+    otp_service.reset_counter_state()
+
+
 def test_auth_email_preflight_succeeds_and_emails_the_caller(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -505,3 +525,152 @@ def test_auth_email_preflight_reports_the_failing_stage(
     assert error["detail"]["stage"] == expected_stage
     # The password must never reach the caller, even on the error path.
     assert "app-password" not in resp.text
+
+
+# ── SMTP pre-flight throttle (#1147) ─────────────────────────────────────────
+#
+# Every call to this endpoint is a real connection to the operator's mail relay.
+# The generic 300/min authenticated class was never a meaningful ceiling on that;
+# these tests pin the dedicated one, its independence from the sign-in quota, and
+# the fail-open bias it inherits from `otp_service`.
+
+
+class _DownCounterStore:
+    """Redis unreachable — the store's fail-open signal is a `None` return."""
+
+    def incr_window(self, key: str, ttl_seconds: int) -> int | None:
+        return None
+
+
+def _wire_working_preflight(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    _set_auth_email_env(monkeypatch)
+    _grant_admin(monkeypatch)
+    monkeypatch.setattr(smtplib, "SMTP", _RecordingSMTP)
+    _with_store(client, _FakeStore(token="app-password"))
+
+
+def test_auth_email_preflight_429s_past_the_per_admin_cap(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The cap itself. A real 429 with the standard envelope — there is no
+    anti-enumeration reason to soften it, unlike `otp/request`."""
+    _wire_working_preflight(client, monkeypatch)
+    monkeypatch.setenv("ADMIN_EMAIL_PREFLIGHT_PER_10MIN", "2")
+    get_settings.cache_clear()
+
+    first = client.post("/api/v1/admin/auth-email/test")
+    second = client.post("/api/v1/admin/auth-email/test")
+    assert first.status_code == 200, first.text
+    assert second.status_code == 200, second.text
+
+    blocked = client.post("/api/v1/admin/auth-email/test")
+    assert blocked.status_code == 429, blocked.text
+    error = blocked.json()["error"]
+    assert error["code"] == "preflight_rate_limited"
+    assert error["detail"]["retry_after_seconds"] >= 1
+    # The whole point: the relay was never dialled for the blocked call.
+    assert len(_RecordingSMTP.instances) == 2
+
+
+def test_a_failed_send_still_spends_a_preflight_slot(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Counted before the send, deliberately: what is bounded is connections opened
+    at the relay, and a relay already refusing us is exactly when a retry loop does
+    the most damage. Counting only successes would leave the abusive case uncapped."""
+    _set_auth_email_env(monkeypatch)
+    _grant_admin(monkeypatch)
+    monkeypatch.setattr(smtplib, "SMTP", _ConnectFailSMTP)
+    _with_store(client, _FakeStore(token="app-password"))
+    monkeypatch.setenv("ADMIN_EMAIL_PREFLIGHT_PER_10MIN", "1")
+    get_settings.cache_clear()
+
+    failed = client.post("/api/v1/admin/auth-email/test")
+    assert failed.status_code == 502, failed.text
+    blocked = client.post("/api/v1/admin/auth-email/test")
+
+    assert blocked.status_code == 429
+    assert blocked.json()["error"]["code"] == "preflight_rate_limited"
+
+
+def test_the_preflight_counter_keys_are_SEPARATE_from_the_signin_quota(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, _preflight_counter: Any
+) -> None:
+    """Shared mechanism, separate budgets. Reusing `otp_service`'s store must never
+    mean reusing its counters: a pre-flight that spent a sign-in slot could lock a
+    real person out of signing in, and a sign-in that spent a pre-flight slot would
+    make the diagnostic unavailable for no reason.
+
+    Asserted on the KEYS the store actually saw, not on two response codes — the
+    codes would agree even if both wrote `otp:req:…`.
+    """
+    _wire_working_preflight(client, monkeypatch)
+    monkeypatch.setenv("ADMIN_EMAIL_PREFLIGHT_PER_10MIN", "5")
+    get_settings.cache_clear()
+
+    resp = client.post("/api/v1/admin/auth-email/test")
+    assert resp.status_code == 200, resp.text
+
+    keys = list(_preflight_counter._counts)
+    assert keys, "the throttle did not count anything"
+    assert all(k.startswith("preflight:") for k in keys), keys
+    assert not any(k.startswith("otp:req:") for k in keys), keys
+    # …and the address is not in the key, only a digest of the caller's id.
+    assert not any(DEV_BYPASS_EMAIL in k for k in keys), keys
+
+
+def test_the_preflight_throttle_fails_OPEN_when_the_counter_store_is_down(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ADR 0035's bias, inherited: availability over enforcement. A Redis outage must
+    not take away the operator's only mail-configuration diagnostic at the moment
+    they are most likely to need it."""
+    _wire_working_preflight(client, monkeypatch)
+    monkeypatch.setenv("ADMIN_EMAIL_PREFLIGHT_PER_10MIN", "1")
+    get_settings.cache_clear()
+    otp_service.set_counter_store_for_testing(_DownCounterStore())
+
+    statuses = [client.post("/api/v1/admin/auth-email/test").status_code for _ in range(4)]
+    assert statuses == [200, 200, 200, 200]
+    assert len(_RecordingSMTP.instances) == 4
+
+
+def test_the_preflight_cap_can_be_switched_off(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, _preflight_counter: Any
+) -> None:
+    """0 disables it — and must not merely raise the ceiling: nothing is counted at
+    all, so the documented cost (falling back to the generic 300/min class) is what
+    an operator actually gets."""
+    _wire_working_preflight(client, monkeypatch)
+    monkeypatch.setenv("ADMIN_EMAIL_PREFLIGHT_PER_10MIN", "0")
+    get_settings.cache_clear()
+
+    statuses = [client.post("/api/v1/admin/auth-email/test").status_code for _ in range(6)]
+    assert statuses == [200] * 6
+    assert _preflight_counter._counts == {}
+
+
+def test_two_admins_do_not_share_one_preflight_budget(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Keyed per admin, so one admin's diagnostics cannot lock another's out. The
+    key is a digest of the user id, and different ids must land in different keys."""
+    now = 1_000_000.0
+    a, b = uuid.uuid4(), uuid.uuid4()
+
+    assert admin_service._preflight_key(a, now=now) != admin_service._preflight_key(b, now=now)
+    # Same admin, same window → the same bucket (otherwise nothing is ever capped).
+    assert admin_service._preflight_key(a, now=now) == admin_service._preflight_key(a, now=now + 1)
+    # …and the next window is a different bucket, which is what makes the cap reset.
+    assert admin_service._preflight_key(a, now=now) != admin_service._preflight_key(
+        a, now=now + admin_service.PREFLIGHT_WINDOW_SECONDS
+    )
+
+
+def test_the_shipped_preflight_cap_default_is_three_per_ten_minutes() -> None:
+    """The value that protects a deployment is the DEFAULT — every test above
+    overrides it."""
+    from backend.app.core.config import Settings
+
+    assert Settings().admin_email_preflight_per_10min == 3
+    assert admin_service.PREFLIGHT_WINDOW_SECONDS == 600

@@ -1,13 +1,19 @@
 """Workspace-admin read queries — the all-suites / all-users / access overview
-behind the Admin page.
+behind the Admin page, plus the SMTP pre-flight throttle (#1147).
 
 Deliberately *unscoped*: unlike `suite_service.list_suites` (owned-or-shared),
 these return the whole workspace, so the API layer must gate them on
 `require_workspace_admin`. Read-only, FastAPI-free (takes a `Session`).
+
+The one exception to "read-only" is `enforce_preflight_quota` at the bottom, which
+writes a counter rather than a row — see its section header for why the pre-flight
+endpoint needs a budget of its own.
 """
 
 from __future__ import annotations
 
+import hashlib
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from urllib.parse import quote
@@ -16,10 +22,15 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.config import get_settings
+from backend.app.core.config import Settings, get_settings
+from backend.app.core.errors import DataQError
+from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretNotFoundError, SecretStore
 from backend.app.db.models import ORCHESTRATION_PROVIDERS, Check, Connection, Share, Suite, User
+from backend.app.services import otp_service
 from backend.app.services.suite_authz import OWNER
+
+log = get_logger(__name__)
 
 # Strongest-first permission rank for ordering the access overview.
 _PERMISSION_RANK = {OWNER: 0, "admin": 1, "edit": 2, "view": 3}
@@ -248,3 +259,119 @@ def webhook_configs(
                 )
             )
     return rows
+
+
+# ── SMTP pre-flight throttle (#1147) ─────────────────────────────────────────
+#
+# `POST /admin/auth-email/test` makes a real outbound SMTP connection on every
+# call. It is admin-gated and can only ever mail the caller's own address, so it is
+# not an open relay — but it sat in the generic authenticated class
+# (`RATE_LIMIT_AUTHENTICATED_PER_MINUTE`, 300/min per token), which was sized for
+# ordinary API traffic, not for an endpoint whose whole job is a third-party
+# network call. A scripted or compromised admin token could burn hundreds of
+# connections a minute at the configured relay, and relays throttle or block a
+# sending account that behaves that way — which would take the REAL sign-in mailer
+# down with it. That is a worse outage than the misconfiguration this endpoint
+# exists to catch early.
+#
+# The mechanism is `otp_service`'s counter-store seam, reused rather than
+# reinvented: the same `OtpCounterStore` Protocol, the same fixed-window
+# INCR+EXPIRE, the same bounded socket timeouts and circuit breaker, the same
+# fail-open bias. The KEYS are separate (`preflight:` vs `otp:req:`) and are keyed
+# on the ADMIN rather than on a mailbox, so a pre-flight can never spend somebody's
+# sign-in quota and a sign-in can never spend an admin's diagnostics. One shared
+# mechanism, two independent budgets.
+
+#: The pre-flight window. Ten minutes — its own constant, deliberately not a
+#: reference to `otp_service.EMAIL_WINDOW_SECONDS`, because the two bound different
+#: quantities (diagnostic calls by one admin vs live codes into one mailbox) and a
+#: future change to either must not silently move the other.
+PREFLIGHT_WINDOW_SECONDS = 600
+
+
+class PreflightThrottledError(DataQError):
+    """Too many SMTP pre-flight tests from one admin in the window — a real 429.
+
+    A REAL 429, unlike `otp/request`'s deliberate uniform `ok`: the anti-enumeration
+    argument that makes a throttle-shaped response an oracle *there* does not apply
+    *here* at all. The caller is an already-authenticated, already-allow-listed
+    workspace admin asking about their own configuration — there is no membership
+    fact left to hide, and telling them plainly that they are hammering the relay is
+    the useful answer.
+
+    `retry_after_seconds` rides in the envelope's `detail`, mirroring the rate-limit
+    middleware's 429 body. There is no `Retry-After` **header**: the shared
+    `DataQError` handler renders body-only. Worth knowing if you are writing a
+    client against this, and not worth a bespoke exception handler for one admin
+    endpoint.
+    """
+
+    def __init__(self, retry_after_seconds: int) -> None:
+        super().__init__(
+            "Too many SMTP pre-flight tests. Each one opens a real connection to "
+            "your mail relay — wait for the window to reset before trying again.",
+            code="preflight_rate_limited",
+            status_code=429,
+            detail={"retry_after_seconds": retry_after_seconds},
+        )
+
+
+def _preflight_key(user_id: UUID, *, now: float) -> str:
+    """`preflight:<sha256(admin id)>:<window>`.
+
+    Hashed for the same reason `otp_service._email_bucket_key` hashes: Redis keys
+    are readable to anyone with `SCAN`, and a user id is a stable per-person
+    identifier even though it is not a mailbox. The window index rides IN the key,
+    so there is no read-modify-EXPIRE race.
+
+    Keyed on the user **id**, not the email: it is what `require_workspace_admin`
+    already resolved, it survives an address change, and it keeps a mailbox out of
+    the key entirely.
+
+    The `preflight:` prefix is what keeps this budget separate from the sign-in
+    counter's `otp:req:` — the shared store is a mechanism, not a shared quota.
+    """
+    digest = hashlib.sha256(str(user_id).encode()).hexdigest()[:32]
+    window = int(now) // PREFLIGHT_WINDOW_SECONDS
+    return f"preflight:{digest}:{window}"
+
+
+def enforce_preflight_quota(user_id: UUID, settings: Settings | None = None) -> None:
+    """Charge this admin one pre-flight; raise `PreflightThrottledError` past the cap.
+
+    Counted BEFORE the send, so a failed submission still spends a slot — what is
+    being bounded is *connections opened at the relay*, and a relay that is already
+    refusing us is exactly when a retry loop does the most damage.
+
+    **Fails open** when the counter store is unavailable, matching
+    `otp_service._within_email_quota` and the rate-limit middleware (ADR 0035's
+    deliberate bias: availability over enforcement). A Redis outage must not take
+    the operator's only mail-configuration diagnostic away from them at the moment
+    they are most likely to need it.
+
+    Unlike the sign-in counter this warns on EVERY fail-open rather than once per
+    process: an admin makes a handful of these calls an hour, so there is no
+    log-spam to suppress, and each line is a true statement about a diagnostic that
+    ran unenforced.
+    """
+    s = settings or get_settings()
+    limit = s.admin_email_preflight_per_10min
+    if limit <= 0:
+        return  # 0 = off, with the documented risk re-accepted (see `Settings`).
+    now = time.time()
+    count = otp_service.get_counter_store().incr_window(
+        _preflight_key(user_id, now=now), PREFLIGHT_WINDOW_SECONDS * 2
+    )
+    if count is None:
+        # No id and no key on this line — the key holds a stable per-admin digest,
+        # and this must not lean on the logger's PII redaction to stay clean.
+        log.warning(
+            "admin_preflight_counter_store_unavailable", window_seconds=PREFLIGHT_WINDOW_SECONDS
+        )
+        return
+    if count > limit:
+        window_end = (int(now) // PREFLIGHT_WINDOW_SECONDS + 1) * PREFLIGHT_WINDOW_SECONDS
+        log.warning(
+            "admin_preflight_throttled", limit=limit, window_seconds=PREFLIGHT_WINDOW_SECONDS
+        )
+        raise PreflightThrottledError(max(1, int(window_end - now)))

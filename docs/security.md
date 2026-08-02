@@ -41,6 +41,13 @@ lawful basis) and is the deploying organization's responsibility.
   back in the response **by design** (it's the point of the check). The SMTP password never
   appears in the response or in any log line; the recipient address never appears in a log
   line either, only in the response, to the same admin who supplied it by calling the endpoint.
+  It is **capped per admin** (`ADMIN_EMAIL_PREFLIGHT_PER_10MIN`, default 3 per 10 minutes —
+  [#1147](https://github.com/TheurgicDuke771/DataQ/issues/1147)), because every call is a real
+  connection to your mail relay: admin-gating bounds *who* can open one, not *how many*, and a
+  scripted or compromised admin token could get your sending account throttled or blocked by
+  the relay — a worse outage than the misconfiguration the pre-flight exists to catch. Over the
+  cap is a plain `429`; the cap fails **open** if the counter store is unavailable, and `0`
+  disables it.
 
 ### Email as the root of trust (read this before enabling OTP)
 
