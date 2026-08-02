@@ -150,3 +150,185 @@ def test_the_same_object_id_signing_in_again_still_just_updates(client: TestClie
     assert second.status_code == 200, second.text
     assert first.json()["id"] == second.json()["id"]
     assert second.json()["aad_object_id"] == DEV_BYPASS_AAD_OID
+
+
+# ── the reverse linking direction (ADR 0032 decision 6, found in review of #1134) ──
+#
+# `otp_service.resolve_or_create_user` resolves an OTP sign-in onto an existing AAD
+# row. These cover the direction that was MISSING: an AAD sign-in for an address
+# that already has an OTP-provisioned row (`aad_object_id IS NULL`). Unfixed, that
+# collided with `uq_users_email_lower` and produced a PERMANENT 409 on every future
+# Azure sign-in for that person — with a message blaming "another account", which
+# was in fact their own.
+
+
+def test_an_aad_signin_ADOPTS_an_existing_otp_row(db_session: Any) -> None:
+    """One human, two authenticators, one row — in both directions.
+
+    Without the claim, this is the 409 that locks an AAD identity out of the
+    account it should be linking to.
+    """
+    local = uuid.uuid4().hex[:10]
+    email = f"person.{local}@example.com"
+    otp_row = User(id=uuid.uuid4(), aad_object_id=None, email=email)
+    db_session.add(otp_row)
+    db_session.commit()
+
+    resolved = _upsert_user(
+        db_session, aad_object_id=f"oid-{local}", email=email, display_name="Person"
+    )
+
+    assert resolved.id == otp_row.id, "the AAD sign-in forked a second row for one human"
+    assert resolved.aad_object_id == f"oid-{local}"
+    assert resolved.display_name == "Person"
+    assert resolved.last_seen_at is not None
+    assert db_session.query(User).filter(User.email.ilike(email)).count() == 1
+
+
+def test_the_adoption_is_case_insensitive_like_the_index(db_session: Any) -> None:
+    """The collision is raised by `lower(email)`, so the claim must match on the
+    same normalization — otherwise it never finds the row it is meant to adopt and
+    the 409 comes straight back.
+
+    This is the REALISTIC shape, and the one that makes the fix necessary at all:
+    OTP stores a normalized address (`otp_service.normalize_email`) while AAD
+    stores the claim verbatim (`_extract_claims`), so the two rows for one human
+    routinely differ in case and *only* in case. Whitespace is deliberately not
+    exercised: the index cannot express the strip half, and — as migration
+    `7d25617cfaf0` records — no writer produces a padded address.
+    """
+    local = uuid.uuid4().hex[:10]
+    otp_row = User(id=uuid.uuid4(), aad_object_id=None, email=f"person.{local}@example.com")
+    db_session.add(otp_row)
+    db_session.commit()
+
+    resolved = _upsert_user(
+        db_session,
+        aad_object_id=f"oid-{local}",
+        email=f"Person.{local}@Example.COM",
+        display_name=None,
+    )
+    assert resolved.id == otp_row.id
+    assert (
+        db_session.query(User).filter(User.email.ilike(f"person.{local}@example.com")).count() == 1
+    )
+
+
+def test_grants_and_pats_survive_the_adoption(db_session: Any) -> None:
+    """The whole point of linking rather than forking: what the OTP identity
+    accumulated must still be there after the AAD sign-in."""
+    from backend.app.services import api_key_service
+
+    local = uuid.uuid4().hex[:10]
+    email = f"person.{local}@example.com"
+    otp_row = User(id=uuid.uuid4(), aad_object_id=None, email=email)
+    db_session.add(otp_row)
+    db_session.commit()
+    _, pat = api_key_service.create_key(db_session, otp_row, name="minted-as-otp-user")
+
+    resolved = _upsert_user(
+        db_session, aad_object_id=f"oid-{local}", email=email, display_name=None
+    )
+
+    assert api_key_service.resolve_token(db_session, pat).id == resolved.id
+
+
+def test_a_row_with_a_DIFFERENT_object_id_is_STILL_a_409(db_session: Any) -> None:
+    """The narrowness of the claim is the security property.
+
+    Adoption applies ONLY to a NULL `aad_object_id`. A row already carrying another
+    directory identity is the genuine conflict #1131 exists for — two humans, or one
+    human with two tenant identities, on one mailbox — and must still need an
+    operator. A claim that dropped the `IS NULL` predicate would let any AAD
+    identity take over any account by presenting its email address.
+    """
+    local = uuid.uuid4().hex[:10]
+    email = f"person.{local}@example.com"
+    db_session.add(User(id=uuid.uuid4(), aad_object_id=f"oid-first-{local}", email=email))
+    db_session.commit()
+
+    with pytest.raises(IdentityConflictError) as caught:
+        _upsert_user(
+            db_session, aad_object_id=f"oid-second-{local}", email=email, display_name=None
+        )
+    assert caught.value.status_code == 409
+    assert local not in caught.value.message
+
+
+def test_a_second_aad_signin_after_adoption_is_an_ordinary_update(db_session: Any) -> None:
+    """Guards the obvious over-correction: once claimed, the row must behave like
+    any other AAD row — an UPDATE through the ON CONFLICT target, not a re-claim
+    (which would silently succeed against a row that is no longer NULL) and not a
+    409."""
+    local = uuid.uuid4().hex[:10]
+    email = f"person.{local}@example.com"
+    db_session.add(User(id=uuid.uuid4(), aad_object_id=None, email=email))
+    db_session.commit()
+
+    first = _upsert_user(db_session, aad_object_id=f"oid-{local}", email=email, display_name="A")
+    second = _upsert_user(db_session, aad_object_id=f"oid-{local}", email=email, display_name="B")
+
+    assert first.id == second.id
+    assert second.display_name == "B"
+    assert db_session.query(User).filter(User.email.ilike(email)).count() == 1
+
+
+def test_the_session_is_usable_after_an_adoption(db_session: Any) -> None:
+    """The claim runs after a rollback of the failed INSERT. If it left the session
+    in a failed transaction, the request would die on its next statement — the same
+    trap `test_the_session_is_usable_after_the_conflict` guards for the 409 path."""
+    local = uuid.uuid4().hex[:10]
+    email = f"person.{local}@example.com"
+    db_session.add(User(id=uuid.uuid4(), aad_object_id=None, email=email))
+    db_session.commit()
+
+    _upsert_user(db_session, aad_object_id=f"oid-{local}", email=email, display_name=None)
+
+    survivor = _upsert_user(
+        db_session,
+        aad_object_id=f"oid-unrelated-{local}",
+        email=f"unrelated.{local}@example.com",
+        display_name=None,
+    )
+    assert survivor.id is not None
+
+
+def test_losing_the_race_to_claim_an_unlinked_row_still_resolves(db_session: Any) -> None:
+    """Two AAD sign-ins for the same new identity racing for one unlinked row.
+
+    The `IS NULL` predicate makes the claim atomic, so exactly one wins. The loser
+    must then find the row through the ordinary ON CONFLICT path — NOT fall through
+    to a 409, which would be a spurious lockout produced purely by concurrency.
+
+    Simulated by claiming the row from underneath the call, between its failed
+    INSERT and its claim attempt.
+    """
+    local = uuid.uuid4().hex[:10]
+    email = f"person.{local}@example.com"
+    otp_row = User(id=uuid.uuid4(), aad_object_id=None, email=email)
+    db_session.add(otp_row)
+    db_session.commit()
+
+    real_rollback = db_session.rollback
+    fired = {"done": False}
+
+    def _rollback_then_let_the_winner_in() -> None:
+        real_rollback()
+        if not fired["done"]:
+            fired["done"] = True
+            # The concurrent sign-in claims the row first.
+            db_session.query(User).filter(User.id == otp_row.id).update(
+                {"aad_object_id": f"oid-{local}"}
+            )
+            db_session.commit()
+
+    db_session.rollback = _rollback_then_let_the_winner_in
+    try:
+        resolved = _upsert_user(
+            db_session, aad_object_id=f"oid-{local}", email=email, display_name="Late"
+        )
+    finally:
+        db_session.rollback = real_rollback
+
+    assert resolved.id == otp_row.id
+    assert db_session.query(User).filter(User.email.ilike(email)).count() == 1

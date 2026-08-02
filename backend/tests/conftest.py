@@ -18,6 +18,7 @@ import pytest
 from backend.app.alerting.registry import reset_result_publisher_cache
 from backend.app.core import rate_limit, secrets
 from backend.app.core.config import get_settings
+from backend.app.services import otp_service
 
 
 @pytest.fixture(autouse=True)
@@ -28,11 +29,17 @@ def _reset_caches() -> Iterator[None]:
     secrets.reset_secret_store_cache()
     reset_result_publisher_cache()
     rate_limit.reset_rate_limit_state()
+    otp_service.reset_counter_state()
     yield
     get_settings.cache_clear()
     secrets.reset_secret_store_cache()
     reset_result_publisher_cache()
     rate_limit.reset_rate_limit_state()
+    # The OTP per-email counter store is a module global like the rate limiter's
+    # (#734/#1127). Left set, an injected in-memory store would silently carry
+    # counts into unrelated tests — and left unset after a test injected one, a
+    # later test would reach for a real Redis client on the sign-in path.
+    otp_service.reset_counter_state()
 
 
 @pytest.fixture

@@ -213,6 +213,85 @@ class ApiKey(Base):
     updated_at: Mapped[datetime] = _updated_at()
 
 
+class UserSession(Base):
+    """A browser sign-in session minted by email OTP — ADR 0032 decision 3 (#734).
+
+    Deliberately the **ApiKey mechanism, not the ApiKey table**: an opaque
+    `dq_sess_` token (~256 bits from `secrets.token_urlsafe`), only its SHA-256 hex
+    digest stored — a verifier secret, never retrievable, so never in the
+    SecretStore. The token rides an HttpOnly cookie, so the SPA never holds it.
+
+    **No refresh pair.** `expires_at` is a fixed horizon (default 24 h,
+    `AUTH_SESSION_TTL_HOURS`); re-running the OTP flow *is* the refresh. That is
+    what keeps this table a verifier store rather than a token-lifecycle system.
+    `revoked_at` is logout. Both are enforced **at the auth seam on every resolve**
+    (`session_service.resolve_token`) — a stored column that nothing checks is not
+    a session invalidation, and ADR 0032 makes the seam enforcement the testable
+    obligation.
+
+    Class name `UserSession`, table name `sessions`: `Session` is taken by
+    SQLAlchemy's ORM session in every module that would import this.
+    """
+
+    __tablename__ = "sessions"
+    # A unique INDEX, not a unique constraint — the same deliberate choice, for the
+    # same reason, as `ApiKey.__table_args__` above: the index name must be identical
+    # in a `create_all` test database and in production (the #990 parity check), and a
+    # constraint would be auto-named `sessions_token_hash_key` in one and
+    # `uq_sessions_token_hash` in the other. It doubles as the O(1) auth lookup index.
+    __table_args__ = (Index("uq_sessions_token_hash", "token_hash", unique=True),)
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    # SHA-256 hex of the full token. SHA-256 (not argon2) for the same reason as a
+    # PAT: this is a high-entropy machine-generated secret with nothing to
+    # brute-force, and per-request verification must stay an indexed lookup rather
+    # than a KDF stretch (ADR 0026 rationale, restated in `api_key_service`).
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = _created_at()
+    updated_at: Mapped[datetime] = _updated_at()
+
+
+class OtpCode(Base):
+    """A one-time email sign-in code — ADR 0032 decision 4 (#734).
+
+    A 6-digit code is ~20 bits, so **the protection is the caps, not the hash**:
+    10-minute TTL, single use, at most `otp_service.MAX_ATTEMPTS` verifications,
+    and a re-request supersedes every outstanding code for the address. SHA-256 at
+    rest is defence-in-depth against a database read, not a work factor.
+
+    Keyed on the **normalized** email (strip + lower — the one rule shared with
+    `Settings.is_admin_email` and the `uq_users_email_lower` index), because a code
+    is requested before any `users` row need exist: this table is deliberately not
+    FK'd to `users`, or an ineligible/unknown address could not even be *counted*
+    without provisioning an identity for it.
+
+    `consumed_at` means "no longer usable" and covers both halves of that: a code
+    that was successfully redeemed, and one superseded by a newer request. One
+    column, because every reader asks the same question.
+    """
+
+    __tablename__ = "otp_codes"
+    __table_args__ = (Index("ix_otp_codes_email_created_at", "email", "created_at"),)
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    email: Mapped[str] = mapped_column(String(320), nullable=False)
+    # SHA-256 hex of the 6-digit code.
+    code_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Verification attempts against THIS code. Incremented by an atomic
+    # `UPDATE … SET attempts = attempts + 1 … RETURNING` *before* the comparison, so
+    # two concurrent guesses can never both read the same pre-increment value and
+    # spend one attempt between them (see `otp_service.verify_code`).
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    created_at: Mapped[datetime] = _created_at()
+
+
 class Asset(Base):
     """A first-class data asset — the browse/reason grain (ADR 0034, gap G-d).
 

@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import Final, Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Migration message for the secret store ADR 0039 removed. Lives here (not in
@@ -362,6 +362,63 @@ class Settings(BaseSettings):
     email_to: str = ""  # comma-separated recipients; empty → no email alerting
     email_password_secret_name: str | None = None
 
+    # ── Email OTP sign-in (ADR 0032, #734) ───────────────────────────────────
+    # A DELIBERATELY SEPARATE block from the `EMAIL_*` alert mailer above. The two
+    # have opposite contracts (ADR 0032 decision 7): an alert send is best-effort
+    # and no-ops when unconfigured, while an OTP send is synchronous on the sign-in
+    # request path with its failures surfaced to the caller. Sharing one config
+    # block would let a rate-limited or misconfigured *alert* channel block
+    # sign-in — and vice versa.
+    #
+    # OTP mode is ON when this block is COMPLETE (host + username + from +
+    # password-secret-name) **and** at least one signup allowlist entry exists.
+    # `_validate_otp_auth` below refuses to boot on any partial configuration,
+    # naming the missing vars — ADR 0032 decision 2's fail-closed contract.
+    auth_email_smtp_host: str | None = None
+    auth_email_smtp_port: int = 587
+    auth_email_username: str | None = None
+    auth_email_from: str | None = None
+    # SecretStore *key* holding the SMTP password — never the password.
+    auth_email_password_secret_name: str | None = None
+    # Seconds before the SMTP submission gives up. Short: this runs INSIDE the
+    # sign-in request, so a hung relay must fail fast into the 502 rather than hold
+    # a worker thread for the connect default (minutes).
+    auth_email_timeout_seconds: float = Field(default=5.0, gt=0, le=60)
+
+    # Signup gating — mandatory, no open registration (ADR 0032 decision 5). An
+    # address is eligible iff it is in AUTH_OTP_ALLOWED_EMAILS, or its domain is in
+    # AUTH_OTP_ALLOWED_DOMAINS. Comma-separated strings, not list[str], for the same
+    # pydantic-settings reason as `workspace_admin_emails`; read them through the
+    # normalized frozenset properties below, never the raw fields.
+    #   AUTH_OTP_ALLOWED_EMAILS=ada@acme.io,grace@acme.io
+    #   AUTH_OTP_ALLOWED_DOMAINS=acme.io
+    auth_otp_allowed_emails: str = ""
+    auth_otp_allowed_domains: str = ""
+
+    # Session lifetime (ADR 0032 decision 3) — a FIXED horizon with no refresh pair;
+    # re-running the OTP flow is the refresh. Bounded above so a deployment cannot
+    # configure a de-facto immortal browser credential.
+    auth_session_ttl_hours: int = Field(default=24, ge=1, le=720)
+
+    # `Secure` on the session cookie. `None` (the default) infers it per request
+    # from `X-Forwarded-Proto: https` (or a directly-HTTPS request), which is the
+    # only HTTPS signal that survives the nginx proxy (ADR 0028 §5). Force it with
+    # `true`/`false` when a deployment's proxy does not set that header. This is
+    # NOT cosmetic: a hard-coded `Secure` makes the cookie silently vanish on a
+    # plain-HTTP dev stack, which is the single most likely dev-vs-prod footgun in
+    # the whole feature.
+    auth_session_cookie_secure: bool | None = None
+
+    # Per-EMAIL OTP request cap (#1127 second half), fixed 10-minute window. This
+    # is the tight screw on the mint surface: the middleware's per-IP `auth` class
+    # (RATE_LIMIT_AUTH_PER_MINUTE) is the backstop, but it cannot see the request
+    # BODY and therefore cannot bound how many codes one mailbox receives from a
+    # botnet. Enforced in the service layer and ACTIVE EVEN WHEN
+    # RATE_LIMIT_ENABLED=false — dev and E2E disable the middleware, and an OTP
+    # mail-bomb control that a test harness silently switches off is not a control.
+    # 0 disables it (not recommended).
+    auth_otp_request_per_email_per_10min: int = Field(default=3, ge=0)
+
     # ── Connection poll-health alerting (#837) ───────────────────────────────
     # How many CONSECUTIVE failed orchestration polls a connection may rack up
     # before DataQ pushes an alert. At the 10-minute poll cadence the default (3)
@@ -419,6 +476,62 @@ class Settings(BaseSettings):
         """
         parsed = [h.strip() for h in self.mcp_allowed_hosts.split(",") if h.strip()]
         return parsed or list(_MCP_DEFAULT_ALLOWED_HOSTS)
+
+    @field_validator("auth_session_cookie_secure", mode="before")
+    @classmethod
+    def _blank_cookie_secure_means_infer(cls, value: object) -> object:
+        """An EMPTY `AUTH_SESSION_COOKIE_SECURE=` means "infer", not a parse error.
+
+        Every optional key in `.env.app.example` ships blank, and pydantic parses a
+        blank string for `bool | None` as an invalid boolean — so shipping this key
+        blank (which is the documented, recommended setting) would refuse to boot.
+        A three-state flag needs a spelling for its third state, and in a dotenv
+        that spelling is "nothing after the =".
+        """
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
+    @property
+    def auth_otp_allowed_email_set(self) -> frozenset[str]:
+        """Normalized (strip + lower) allow-listed signup addresses.
+
+        Same normalization as `is_admin_email` and the `uq_users_email_lower`
+        index — the identity surface has exactly one rule (ADR 0032 decision 6).
+        """
+        return frozenset(
+            part.strip().lower() for part in self.auth_otp_allowed_emails.split(",") if part.strip()
+        )
+
+    @property
+    def auth_otp_allowed_domain_set(self) -> frozenset[str]:
+        """Normalized allow-listed signup domains. A leading `@` is tolerated and
+        stripped, because `@acme.io` is what an operator naturally writes and a
+        silently-never-matching allowlist is a fail-OPEN-looking config error (every
+        address reads as ineligible, and the uniform response hides it)."""
+        return frozenset(
+            part.strip().lower().lstrip("@")
+            for part in self.auth_otp_allowed_domains.split(",")
+            if part.strip().lstrip("@")
+        )
+
+    @property
+    def auth_email_configured(self) -> bool:
+        """True iff the whole OTP mailer block is present (transport is possible)."""
+        return not _missing_auth_email_vars(self)
+
+    @property
+    def otp_auth_configured(self) -> bool:
+        """True iff email OTP sign-in is ON: a complete mailer block AND a non-empty
+        signup allowlist. This is the backend half of ADR 0032 decision 2's two
+        coordinated mode selectors — its frontend twin is the nginx-injected
+        `DATAQ_AUTH_MODE` enum, which the backend never reads (ADR 0028). Documented
+        together in `.env.app.example` and `deploy/README.md`; they cannot be derived
+        from one another, so they are kept in sync by documentation and by
+        `_validate_otp_auth` refusing every partial state on this side."""
+        return self.auth_email_configured and bool(
+            self.auth_otp_allowed_email_set or self.auth_otp_allowed_domain_set
+        )
 
     @property
     def azure_auth_configured(self) -> bool:
@@ -492,6 +605,78 @@ class Settings(BaseSettings):
         elif mode == "redis":
             raise ValueError(_REDIS_STORE_REMOVED)
         return self
+
+    @model_validator(mode="after")
+    def _validate_otp_auth(self) -> "Settings":
+        """Refuse to boot on a HALF-configured email OTP block (ADR 0032 decision 2).
+
+        The failure this prevents is specific and nasty: a deployment that comes up,
+        serves `/healthz`, renders a sign-in screen — and cannot log anybody in,
+        because the mailer has no password secret or the allowlist is empty. Since
+        `otp/request` returns the SAME uniform response for an ineligible address
+        (anti-enumeration, decision 4), an empty allowlist is *indistinguishable
+        from working* to the person trying to sign in. Nobody would ever see an
+        error; they would just never receive a code.
+
+        Same shape and same reasoning as `_validate_secret_store` above: fail at
+        startup naming the missing vars, rather than lazily at first use.
+
+        Gated on "the operator touched this block at all", so a Azure-only or
+        dev-bypass deployment carries none of these fields.
+        """
+        missing_email = _missing_auth_email_vars(self)
+        has_allowlist = bool(self.auth_otp_allowed_email_set or self.auth_otp_allowed_domain_set)
+        touched = has_allowlist or len(missing_email) < len(_AUTH_EMAIL_REQUIRED)
+        if not touched:
+            return self
+        # Collected, not short-circuited (the `_validate_secret_store` precedent): an
+        # operator missing three vars should learn all three in one boot, not fix one
+        # and rediscover the next on every redeploy.
+        problems: list[str] = []
+        if missing_email:
+            problems.append(
+                "email OTP sign-in is partially configured — missing "
+                + ", ".join(missing_email)
+                + " (set them, or clear every AUTH_EMAIL_* / AUTH_OTP_ALLOWED_* "
+                "value to turn OTP off)"
+            )
+        if not has_allowlist:
+            problems.append(
+                "email OTP sign-in requires a signup allowlist — set "
+                "AUTH_OTP_ALLOWED_EMAILS and/or AUTH_OTP_ALLOWED_DOMAINS. "
+                "There is no open registration (ADR 0032 decision 5); an empty "
+                "allowlist means nobody can ever sign in, and the anti-enumeration "
+                "uniform response would hide that from every user who tried"
+            )
+        if problems:
+            raise ValueError("; ".join(problems))
+        return self
+
+
+# The four vars that make the OTP mailer transport possible. Module-level so the
+# `auth_email_configured` property and the startup validator read the SAME list —
+# the drift between "what we check" and "what we name in the error" is exactly the
+# bug a fail-closed validator exists to avoid.
+_AUTH_EMAIL_REQUIRED: Final = (
+    ("AUTH_EMAIL_SMTP_HOST", "auth_email_smtp_host"),
+    ("AUTH_EMAIL_USERNAME", "auth_email_username"),
+    ("AUTH_EMAIL_FROM", "auth_email_from"),
+    ("AUTH_EMAIL_PASSWORD_SECRET_NAME", "auth_email_password_secret_name"),
+)
+
+
+def _missing_auth_email_vars(settings: "Settings") -> list[str]:
+    """The env-var NAMES of the OTP mailer fields that are unset/blank.
+
+    `.strip()`, not bare truthiness: a whitespace-only SMTP host is not a host, and
+    would otherwise pass configuration and fail at send time as a DNS error —
+    pointing the operator at their network instead of their env file.
+    """
+    return [
+        env_name
+        for env_name, field in _AUTH_EMAIL_REQUIRED
+        if not str(getattr(settings, field) or "").strip()
+    ]
 
 
 @lru_cache(maxsize=1)

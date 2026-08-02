@@ -607,10 +607,22 @@ def build_mcp_app() -> Any:
     # request is JWT/PAT-authenticated fail-closed (`build_auth_provider`). Allow
     # the proxied hosts so the transport guard doesn't shadow the real auth gate.
     # The same middleware also 403s a request whose browser `Origin` isn't
-    # allow-listed. DataQ authenticates every /mcp call with a Bearer token (JWT or
-    # PAT), never a cookie, so the Origin/CSRF check the guard performs is moot — an
-    # attacker page can't obtain the token. Allow all origins for the same reason we
-    # relax the host check, so a browser-based client (e.g. claude.ai) isn't 403'd.
+    # allow-listed. That check is a CSRF defence, and CSRF needs an AMBIENT
+    # credential — one the browser attaches by itself. /mcp has none: every call is
+    # authenticated by an `Authorization: Bearer` header (Azure JWT or DataQ PAT),
+    # which an attacker page cannot obtain or make the browser send. Allow all
+    # origins for the same reason we relax the host check, so a browser-based client
+    # (e.g. claude.ai) isn't 403'd.
+    #
+    # ADR 0032 introduced DataQ's first ambient credential — the `dataq_session`
+    # cookie — so this premise was re-checked rather than assumed (#734). It holds,
+    # and now holds by *construction* rather than by absence: `_PatOrJwtVerifier`
+    # rejects a `dq_sess_` bearer by prefix before any validation, and the MCP layer
+    # reads the `Authorization` header only — `resolve_current_user` derives the
+    # caller solely from the verified token's claims and never touches
+    # `request.cookies`. So a browser that holds a DataQ session and is lured to a
+    # hostile page sends the cookie to /mcp and is still rejected: there is no
+    # cookie-authenticated path here to forge a request against. A test pins it.
     # Driven by Settings, not hardcoded (#728): the allowlist is the one
     # deploy-target coupling that used to live in app code, contradicting the
     # ADR 0010/0013 config guardrail. The default keeps ACA working untouched;
