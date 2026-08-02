@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 from typing import Final, Literal
 
 from pydantic import Field, field_validator, model_validator
@@ -398,6 +399,34 @@ class Settings(BaseSettings):
     # a worker thread for the connect default (minutes).
     auth_email_timeout_seconds: float = Field(default=5.0, gt=0, le=60)
 
+    # SMTP transport variant (#1146). "starttls" (default, unchanged behaviour) is
+    # the existing connect-on-587-then-upgrade flow. "implicit" is SMTPS (:465):
+    # the socket is TLS from the very first byte, so `_deliver` reaches for
+    # `smtplib.SMTP_SSL` instead of `SMTP` + `starttls()` — calling `starttls()`
+    # against an already-TLS port is exactly the failure #1146 reported. "none" is
+    # a deliberate plaintext downgrade — the sign-in code AND the SMTP password
+    # cross the wire unencrypted — for a loopback/same-host relay or a throwaway
+    # test rig ONLY. It is warned loudly at SEND time (`otp_mailer._deliver`), not
+    # here: this module cannot import the structlog wrapper (`core.logging`
+    # imports `get_settings` from here, so the reverse import would be circular).
+    # Deliberately NO insecure-verify / skip-cert-checks option alongside this —
+    # `AUTH_EMAIL_CA_BUNDLE` below covers the legitimate "I don't trust the public
+    # CA store" case; see the #1146 PR description for the record of that call.
+    auth_email_tls_mode: Literal["starttls", "implicit", "none"] = "starttls"
+
+    # Path to a PEM file of CA certificate(s) the OTP mailer's SMTP connection
+    # trusts, for an internal relay signed by a private CA (#1146). Passed as
+    # `ssl.create_default_context(cafile=...)` — which, per the stdlib
+    # implementation, USES THIS FILE INSTEAD OF the system trust store for that
+    # one context, not alongside it. That is exactly scoped: `_deliver` builds a
+    # fresh `SSLContext` per send, so nothing here ever touches the process-wide
+    # trust store (unlike the `SSL_CERT_FILE` workaround #1146 exists to replace,
+    # which reconfigures OpenSSL for every TLS client in the process — Key Vault,
+    # Snowflake, ADLS, webhooks). Validated to EXIST at boot (`_validate_email_tls`
+    # below), not mid-send: a typo'd path should fail loudly at startup, not
+    # surface as an opaque `FileNotFoundError` on the next sign-in attempt.
+    auth_email_ca_bundle: str | None = None
+
     # Per-ADMIN cap on `POST /admin/auth-email/test`, fixed 10-minute window
     # (#1147). Lives with the AUTH_EMAIL_* block it bounds, not with the OTP
     # sign-in caps below: it governs the admin diagnostic that exercises this
@@ -700,6 +729,26 @@ class Settings(BaseSettings):
             )
         if problems:
             raise ValueError("; ".join(problems))
+        return self
+
+    @model_validator(mode="after")
+    def _validate_email_tls(self) -> "Settings":
+        """Fail at boot, not mid-send, on an `AUTH_EMAIL_CA_BUNDLE` that names no
+        file (#1146). Same reasoning as `_validate_secret_store` /
+        `_validate_otp_auth` above: a typo'd path must not surface two hops away,
+        as a `FileNotFoundError` (or worse, an unrelated `SSLError`) the next time
+        somebody tries to sign in.
+
+        Checked independent of whether the OTP block is otherwise "touched" —
+        a stray bundle path is worth catching even mid-migration to OTP.
+        """
+        bundle = (self.auth_email_ca_bundle or "").strip()
+        if bundle and not Path(bundle).is_file():
+            raise ValueError(
+                f"AUTH_EMAIL_CA_BUNDLE={bundle!r} does not name an existing file. "
+                "Set it to the PEM path your OTP mailer's SMTP relay certificate "
+                "chains to, or clear it to use the system trust store."
+            )
         return self
 
 

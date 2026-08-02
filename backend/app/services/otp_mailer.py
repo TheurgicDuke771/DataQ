@@ -1,5 +1,5 @@
 """The OTP sign-in mailer — ADR 0032 decision 7 (#734), plus the admin SMTP
-pre-flight check (#737).
+pre-flight check (#737) and configurable TLS transport (#1146).
 
 A deliberately **separate module and config block** from `alerting/email.py`,
 reusing its SMTP+STARTTLS transport *shape* but not its error contract. The alert
@@ -22,13 +22,24 @@ links leak through referrers and logs. Nothing clickable goes in this message.
 
 **Two callers, one transport (#737).** `send_code` (the sign-in path) and
 `send_preflight` (the admin-gated diagnostic, issue #737) both submit over the
-same connect → STARTTLS → login → send ladder via the private `_deliver` helper.
+same connect → [TLS] → login → send ladder via the private `_deliver` helper.
 They differ only in their error CONTRACT: `send_code` collapses every transport
 failure into one uniform 502 (a sign-in requester is not trusted with mail-server
 internals), while `send_preflight` reports which STAGE failed — connect / tls /
 auth / send — because that is the entire point of an install-time diagnostic
 (ADR 0032 decision 7). One classification point, two contracts, instead of two
 copies of the same try/except ladder drifting apart.
+
+**TLS is configurable, not just STARTTLS-or-nothing (#1146).** `AUTH_EMAIL_TLS_MODE`
+picks `starttls` (default, unchanged) / `implicit` (SMTPS on :465, via
+`smtplib.SMTP_SSL`) / `none` (plaintext, test-only, warned loudly on every send).
+`AUTH_EMAIL_CA_BUNDLE` names a PEM the mailer's `SSLContext` trusts INSTEAD OF the
+system store — scoped to this module's own per-send context, never the process
+(that footgun, forcing `SSL_CERT_FILE` process-wide to reach an internal relay on
+a private CA, is the whole reason #1146 exists). Deliberately no
+verify-off/insecure-skip option: a private CA bundle covers the legitimate case,
+and the issue explicitly rejected weakening certificate verification as a
+"convenience" default.
 """
 
 from __future__ import annotations
@@ -196,7 +207,7 @@ class OtpMailer:
             raise OtpMailStoreUnavailableError() from exc
 
     def _deliver(self, message: EmailMessage, password: str) -> None:
-        """Connect → STARTTLS → login → send, classifying WHICH stage failed.
+        """Connect → [TLS] → login → send, classifying WHICH stage failed.
 
         Raises `_SmtpStageError` (internal) on any failure — never smtplib's own
         exception types directly — so both callers get a uniform thing to catch.
@@ -208,6 +219,24 @@ class OtpMailer:
         which is what actually guarantees the transport block is complete; the
         asserts below just carry that guarantee across the method boundary for
         mypy (narrowing on `s.attr` doesn't survive a call into another method).
+
+        **Three TLS modes (#1146), one ladder:**
+
+        - `starttls` (default, unchanged): connect in the clear on `SMTP`, then
+          `server.starttls()` upgrades the socket. A handshake failure here is
+          the `tls` stage, same as before.
+        - `implicit`: SMTPS (:465) — the socket is TLS from the FIRST byte, so
+          `smtplib.SMTP_SSL`'s constructor does the TCP connect AND the TLS
+          handshake together; there is no separate `starttls()` call to fail on
+          its own. **A certificate-verification failure in implicit mode
+          therefore classifies as the `connect` stage, not `tls`** — `tls` is
+          reachable only from the `starttls` branch. This is a genuine
+          difference in what smtplib exposes, not a shortcut: `SMTP_SSL` gives
+          no post-connect, pre-handshake hook to classify separately.
+        - `none`: no TLS at all — the code and the SMTP password cross the wire
+          in the clear. Test-only, and warned loudly on every call (never
+          silent) because there is no boot-time signal for "an operator is
+          about to run this against a real relay".
 
         **Deliberately does NOT use `with smtp as server:`** (#737 review). Real
         `smtplib.SMTP.__exit__` sends QUIT and — for any reply other than 221 —
@@ -225,22 +254,56 @@ class OtpMailer:
         s = self._settings
         assert s.auth_email_smtp_host is not None
         assert s.auth_email_username is not None
-        context = ssl.create_default_context()
-        try:
-            server = smtplib.SMTP(
-                s.auth_email_smtp_host,
-                s.auth_email_smtp_port,
-                timeout=s.auth_email_timeout_seconds,
+        tls_mode = s.auth_email_tls_mode
+
+        context: ssl.SSLContext | None = None
+        if tls_mode != "none":
+            # `cafile=None` behaves exactly like the pre-#1146 call (system
+            # trust store only). A configured bundle REPLACES the system store
+            # for THIS context, per `ssl.create_default_context`'s own
+            # implementation (`load_verify_locations` instead of
+            # `load_default_certs` when a cafile is given) — never the process:
+            # this context is built fresh, per send, and touches nothing global.
+            ca_bundle = (s.auth_email_ca_bundle or "").strip() or None
+            context = ssl.create_default_context(cafile=ca_bundle)
+        else:
+            # No boot-time signal exists for "someone is about to point this at
+            # a real relay" — the validator only ever sees config, not intent —
+            # so the warning fires on every plaintext send instead.
+            log.warning(
+                "otp_smtp_tls_disabled",
+                smtp_host=s.auth_email_smtp_host,
+                smtp_port=s.auth_email_smtp_port,
             )
+
+        try:
+            if tls_mode == "implicit":
+                server: smtplib.SMTP = smtplib.SMTP_SSL(
+                    s.auth_email_smtp_host,
+                    s.auth_email_smtp_port,
+                    timeout=s.auth_email_timeout_seconds,
+                    context=context,
+                )
+            else:
+                server = smtplib.SMTP(
+                    s.auth_email_smtp_host,
+                    s.auth_email_smtp_port,
+                    timeout=s.auth_email_timeout_seconds,
+                )
         except Exception as exc:
-            # The constructor itself connects (smtplib.SMTP.__init__ calls
-            # self.connect() when a host is given) — DNS failure, connection
-            # refused, and connect timeout all land here, before there is
-            # anything to close.
+            # The constructor itself connects (both SMTP.__init__ and
+            # SMTP_SSL.__init__ call self.connect() when a host is given) — DNS
+            # failure, connection refused, connect timeout, AND (implicit mode
+            # only) a TLS handshake/certificate failure all land here, before
+            # there is anything to close. See the docstring above for why
+            # implicit-mode TLS failures classify as 'connect', not 'tls'.
             raise _SmtpStageError("connect", exc) from exc
         try:
             try:
-                server.starttls(context=context)
+                if tls_mode == "starttls":
+                    server.starttls(context=context)
+                # implicit: already TLS from the socket up, nothing to upgrade.
+                # none: deliberately plaintext — warned above, not here.
             except Exception as exc:
                 raise _SmtpStageError("tls", exc) from exc
             try:

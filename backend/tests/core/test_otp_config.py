@@ -10,6 +10,7 @@ misconfiguration has to be caught at startup, naming the missing variables.
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -169,6 +170,47 @@ def test_the_smtp_timeout_is_bounded() -> None:
         Settings(auth_email_timeout_seconds=0)
     with pytest.raises(ValueError):
         Settings(auth_email_timeout_seconds=600)
+
+
+# ── AUTH_EMAIL_TLS_MODE / AUTH_EMAIL_CA_BUNDLE (#1146) ──────────────────────
+
+
+def test_tls_mode_defaults_to_starttls_unchanged_behaviour() -> None:
+    assert Settings().auth_email_tls_mode == "starttls"
+
+
+def test_an_invalid_tls_mode_is_rejected() -> None:
+    with pytest.raises(ValueError):
+        Settings(auth_email_tls_mode="ssl")
+
+
+def test_an_unset_ca_bundle_boots_normally() -> None:
+    assert Settings().auth_email_ca_bundle is None
+
+
+def test_a_ca_bundle_naming_a_missing_file_refuses_to_boot_AT_BOOT(tmp_path: Path) -> None:
+    """The #1146 AC: a typo'd path must fail immediately and by name, not as a
+    `FileNotFoundError` two hops away on the next sign-in attempt."""
+    missing = tmp_path / "does-not-exist.pem"
+    with pytest.raises(ValueError) as caught:
+        Settings(auth_email_ca_bundle=str(missing))
+    message = str(caught.value)
+    assert "AUTH_EMAIL_CA_BUNDLE" in message
+    assert str(missing) in message
+
+
+def test_a_directory_does_not_count_as_a_bundle_file(tmp_path: Path) -> None:
+    """`.is_file()`, not `.exists()` — a directory passes existence but `cafile=
+    <dir>` would fail at send time with a confusing OpenSSL error instead."""
+    with pytest.raises(ValueError) as caught:
+        Settings(auth_email_ca_bundle=str(tmp_path))
+    assert "AUTH_EMAIL_CA_BUNDLE" in str(caught.value)
+
+
+def test_a_ca_bundle_naming_a_real_file_boots(tmp_path: Path) -> None:
+    bundle = tmp_path / "ca.pem"
+    bundle.write_text("-----BEGIN CERTIFICATE-----\nnot a real cert\n-----END CERTIFICATE-----\n")
+    assert Settings(auth_email_ca_bundle=str(bundle)).auth_email_ca_bundle == str(bundle)
 
 
 # ── init_auth's fourth branch ────────────────────────────────────────────────

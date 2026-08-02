@@ -41,6 +41,15 @@ lawful basis) and is the deploying organization's responsibility.
   back in the response **by design** (it's the point of the check). The SMTP password never
   appears in the response or in any log line; the recipient address never appears in a log
   line either, only in the response, to the same admin who supplied it by calling the endpoint.
+  **Transport options** ([#1146](https://github.com/TheurgicDuke771/DataQ/issues/1146)):
+  `AUTH_EMAIL_TLS_MODE` picks `starttls` (default) / `implicit` (SMTPS on :465) / `none`
+  (plaintext — test-only, loudly warned on every send, and there is no way to disable that
+  warning), and `AUTH_EMAIL_CA_BUNDLE` names a PEM the mailer trusts for a relay on a private
+  CA. The bundle is scoped to the mailer's own connection only — it never widens or replaces
+  the trust store any other TLS client in the process relies on (Key Vault, Snowflake, ADLS,
+  webhooks). There is deliberately **no** option to skip certificate verification: a private
+  CA bundle is judged to cover the legitimate case, and disabling verification was rejected as
+  a shortcut around it rather than shipped as a convenience.
   It is **capped per admin** (`ADMIN_EMAIL_PREFLIGHT_PER_10MIN`, default 3 per 10 minutes —
   [#1147](https://github.com/TheurgicDuke771/DataQ/issues/1147)), because every call is a real
   connection to your mail relay: admin-gating bounds *who* can open one, not *how many*, and a

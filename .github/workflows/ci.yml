@@ -446,10 +446,11 @@ jobs:
       # ── Email-OTP lane (ADR 0032, #736) ──────────────────────────────────
       # A SECOND api, because the auth seam picks its mode at import time and OTP
       # wins over dev-bypass — one process cannot serve both lanes. The script
-      # also starts the local SMTP sink first and points the api's SSL_CERT_FILE
-      # at the throwaway certificate it emits, which is why the two cannot be
-      # independent steps (OpenSSL reads that variable once, at process start).
-      # No Azure and no cloud mailbox: this lane is entirely local.
+      # also starts the local SMTP sink first and points the api's
+      # AUTH_EMAIL_CA_BUNDLE (#1146) at the throwaway certificate it emits, which
+      # is why the two cannot be independent steps (`Settings` validates that
+      # path exists at boot). No Azure and no cloud mailbox: this lane is
+      # entirely local.
       - name: Start the OTP stack (SMTP sink + otp-mode api)
         env:
           # Its own database, so the dev-bypass lane's seeded demo rows and this
