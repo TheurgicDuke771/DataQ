@@ -27,15 +27,28 @@ def _escape_like(term: str) -> str:
 
 
 def update_display_name(session: Session, user: User, display_name: str) -> User:
-    """Set `user.display_name` and persist it (#1139).
+    """Set `user.display_name` and mark it self-service-set (#1139).
 
     The caller (the `/me` PATCH handler) owns validation — non-empty after
     strip, `<=256` chars to match the column — so this is a plain assign +
     commit, not a re-validation. Self-service only: there is no `user_id`
     parameter, so this can never be pointed at anyone but the row the caller
     already resolved via `get_current_user`.
+
+    Also flips `display_name_override` to `True` (migration 6230293aea96) —
+    the marker `_upsert_user`/`_claim_unlinked_user` (core/auth.py) check
+    before syncing an AAD token's `name` claim over this value. Every call
+    here sets it True, with no path back to False: `MeUpdate.display_name`
+    (api/v1/me.py) rejects empty/whitespace-only input, so PATCH /me has no
+    "clear the name" operation today — there is nothing to reset the flag
+    FOR. If a future change adds one (e.g. an explicit `display_name: null`),
+    it should reset `display_name_override` to `False` alongside the clear,
+    so the very next AAD login re-seeds a name instead of leaving both
+    NULL and "overridden" — the one combination this module never produces
+    on purpose.
     """
     user.display_name = display_name
+    user.display_name_override = True
     session.commit()
     session.refresh(user)
     return user

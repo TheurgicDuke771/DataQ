@@ -31,6 +31,7 @@ from backend.app.core.auth import (
 from backend.app.db.models import User
 from backend.app.db.session import get_db
 from backend.app.main import app
+from backend.app.services import user_service
 
 
 @pytest.fixture
@@ -166,7 +167,10 @@ def test_an_aad_signin_ADOPTS_an_existing_otp_row(db_session: Any) -> None:
     """One human, two authenticators, one row — in both directions.
 
     Without the claim, this is the 409 that locks an AAD identity out of the
-    account it should be linking to.
+    account it should be linking to. The fresh OTP row has never had a
+    self-service name set, so `_claim_unlinked_user` (#1139, migration
+    6230293aea96) seeds one from the AAD claim same as any other first-seed —
+    the "no override yet" direction of that flag's invariant.
     """
     local = uuid.uuid4().hex[:10]
     email = f"person.{local}@example.com"
@@ -181,8 +185,32 @@ def test_an_aad_signin_ADOPTS_an_existing_otp_row(db_session: Any) -> None:
     assert resolved.id == otp_row.id, "the AAD sign-in forked a second row for one human"
     assert resolved.aad_object_id == f"oid-{local}"
     assert resolved.display_name == "Person"
+    assert resolved.display_name_override is False
     assert resolved.last_seen_at is not None
     assert db_session.query(User).filter(User.email.ilike(email)).count() == 1
+
+
+def test_an_aad_signin_does_not_overwrite_a_pre_set_otp_display_name(db_session: Any) -> None:
+    """The other direction of the same invariant, at the `_claim_unlinked_user`
+    link itself: a human who signed in with an emailed code first and already
+    set their own name via `PATCH /me` — BEFORE ever touching Azure AD — must
+    not have it silently replaced by whatever the AAD claim says the moment
+    the two identities link.
+    """
+    local = uuid.uuid4().hex[:10]
+    email = f"person.{local}@example.com"
+    otp_row = User(id=uuid.uuid4(), aad_object_id=None, email=email)
+    db_session.add(otp_row)
+    db_session.commit()
+    user_service.update_display_name(db_session, otp_row, "Set Before AAD Ever Ran")
+
+    resolved = _upsert_user(
+        db_session, aad_object_id=f"oid-{local}", email=email, display_name="AAD Claim Name"
+    )
+
+    assert resolved.id == otp_row.id
+    assert resolved.display_name == "Set Before AAD Ever Ran"
+    assert resolved.display_name_override is True
 
 
 def test_the_adoption_is_case_insensitive_like_the_index(db_session: Any) -> None:
@@ -259,7 +287,14 @@ def test_a_second_aad_signin_after_adoption_is_an_ordinary_update(db_session: An
     """Guards the obvious over-correction: once claimed, the row must behave like
     any other AAD row — an UPDATE through the ON CONFLICT target, not a re-claim
     (which would silently succeed against a row that is no longer NULL) and not a
-    409."""
+    409.
+
+    display_name direction: nobody has set an override (#1139, migration
+    6230293aea96), so a later claim value — a legitimate Entra rename — DOES
+    sync. This is the direction a bare `COALESCE(display_name, claim)` got
+    wrong: it froze the name at whatever the FIRST login happened to claim,
+    override or not. See the sibling test below for the override-set direction.
+    """
     local = uuid.uuid4().hex[:10]
     email = f"person.{local}@example.com"
     db_session.add(User(id=uuid.uuid4(), aad_object_id=None, email=email))
@@ -269,13 +304,31 @@ def test_a_second_aad_signin_after_adoption_is_an_ordinary_update(db_session: An
     second = _upsert_user(db_session, aad_object_id=f"oid-{local}", email=email, display_name="B")
 
     assert first.id == second.id
-    # display_name is a COALESCE, not a plain overwrite (#1139) — once non-null
-    # it survives a later login's claim value, so a `PATCH /me` self-service
-    # override can't be silently reverted by the user's next token refresh. The
-    # property this test exists to guard — ordinary update, not a re-claim, not
-    # a 409, exactly one row — is unaffected.
-    assert second.display_name == "A"
+    # The property this test exists to guard — ordinary update, not a
+    # re-claim, not a 409, exactly one row — holds regardless of the
+    # display_name direction.
+    assert second.display_name == "B"
+    assert second.display_name_override is False
     assert db_session.query(User).filter(User.email.ilike(email)).count() == 1
+
+
+def test_a_second_aad_signin_after_adoption_respects_an_override(db_session: Any) -> None:
+    """Same ordinary-update path as above, opposite display_name direction:
+    once `PATCH /me` (#1139) has set an override on the row, a second AAD
+    sign-in's claim must NOT overwrite it."""
+    local = uuid.uuid4().hex[:10]
+    email = f"person.{local}@example.com"
+    db_session.add(User(id=uuid.uuid4(), aad_object_id=None, email=email))
+    db_session.commit()
+
+    first = _upsert_user(db_session, aad_object_id=f"oid-{local}", email=email, display_name="A")
+    user_service.update_display_name(db_session, first, "Self-Service Override")
+
+    second = _upsert_user(db_session, aad_object_id=f"oid-{local}", email=email, display_name="B")
+
+    assert first.id == second.id
+    assert second.display_name == "Self-Service Override"
+    assert second.display_name_override is True
 
 
 def test_the_session_is_usable_after_an_adoption(db_session: Any) -> None:
