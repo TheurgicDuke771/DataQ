@@ -93,6 +93,26 @@ def test_beat_schedule_registers_orphan_secret_sweep() -> None:
     assert "sweep_orphan_secrets" in app.tasks
 
 
+def test_beat_schedule_registers_otp_purge_sweep() -> None:
+    """The OTP-code retention sweep (#1136), daily like its sibling janitors.
+
+    `otp_service.purge_expired_codes` shipped unit-tested in #1134 with no beat
+    entry — the #1099 shape one step earlier: a background obligation that was
+    never even WIRED, so nothing could silently stop running it, but nothing ran
+    it either. Registration is the half that rots silently, so this asserts both
+    the schedule entry AND that the task name it names actually resolves —
+    a beat entry naming a task that doesn't exist fails quietly at runtime
+    (the #405/#904 shape).
+    """
+    app = create_celery_app()
+    schedule = app.conf.beat_schedule
+    assert schedule["purge-otp-codes"]["task"] == "purge_otp_codes"
+    assert isinstance(schedule["purge-otp-codes"]["schedule"], crontab)
+    import backend.app.worker.tasks  # noqa: F401  — registers the tasks
+
+    assert "purge_otp_codes" in app.tasks
+
+
 # Sub-hourly liveness intervals are fine: a beat restart resetting a countdown of
 # minutes delays a tick by minutes. Anything slower would cross the restart cadence
 # of the embedded-beat deployment and belongs on a wall clock instead.

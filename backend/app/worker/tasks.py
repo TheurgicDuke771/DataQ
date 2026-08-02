@@ -51,6 +51,7 @@ from backend.app.services import (
     cron,
     incident_service,
     orchestration_service,
+    otp_service,
     profile_service,
     run_dispatch,
     run_service,
@@ -881,6 +882,32 @@ def purge_sample_failures() -> int:
     try:
         retention_days = get_settings().sample_failures_retention_days
         return run_service.purge_expired_sample_failures(session, retention_days=retention_days)
+    finally:
+        session.close()
+
+
+# ─────────────────────── OTP-code retention sweep (#1136) ───────────────────
+
+
+@celery_app.task(name="purge_otp_codes")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
+def purge_otp_codes() -> int:
+    """Celery-beat entry point — daily OTP-code retention sweep (#1136).
+
+    Wires up `otp_service.purge_expired_codes`, which shipped unit-tested in #1134
+    but with no beat entry to ever run it — the #1099 shape one step earlier (a
+    background obligation that isn't even wired, rather than wired-but-starved).
+    `otp_codes.email` is stored in plaintext (the sign-in lookup needs it), so an
+    unswept table is an unbounded PII-bearing log of who tried to sign in and when;
+    this is retention hygiene, not a security control (the caps in `otp_service`
+    are the security). Deletes spent/expired rows older than the configured
+    `otp_codes_retention_hours` window and returns the count deleted — never an
+    address, in the task's own return value or its logs (`otp_service` logs the
+    count only).
+    """
+    session = get_session()
+    try:
+        retention_hours = get_settings().otp_codes_retention_hours
+        return otp_service.purge_expired_codes(session, older_than_hours=retention_hours)
     finally:
         session.close()
 
