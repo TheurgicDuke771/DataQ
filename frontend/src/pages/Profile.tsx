@@ -49,9 +49,16 @@ export function Profile() {
   // AAD user's header name still comes straight off the token (unaffected by
   // this), but the stored row is what shares/admin lists render, so being able
   // to set it here is not otp-specific.
+  //
+  // Compared against `name` (the RENDERED value — display_name, falling back
+  // to email), not the raw `display_name`: antd's editable textarea starts
+  // from what's on screen, so for a null-display_name user that's the email.
+  // Comparing against the nullable `display_name` instead meant an unchanged
+  // blur (no edit at all — just focus-then-leave) always looked "changed"
+  // for that user and PATCHed their own email address in as their name.
   const onNameChange = async (value: string) => {
     const trimmed = value.trim();
-    if (!trimmed || trimmed === display_name) return;
+    if (!trimmed || trimmed === name) return;
     setSavingName(true);
     try {
       await saveDisplayName(trimmed);

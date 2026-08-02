@@ -140,5 +140,21 @@ describe('Profile', () => {
       // Falls back to the email as the displayed label, but is still editable.
       expect(screen.getByRole('button', { name: 'Edit your display name' })).toBeInTheDocument();
     });
+
+    it('does not PATCH the email in as the name on a bare blur (null display_name)', async () => {
+      // Regression: for a null-display_name user, the rendered/editable value is
+      // the EMAIL (the `name = display_name ?? email` fallback). The unchanged-
+      // value guard must compare against what's actually shown — comparing
+      // against the nullable `display_name` instead means email !== null is
+      // ALWAYS true, so a stray click-in-then-blur with no edit at all would
+      // silently PATCH the person's own email address in as their display name.
+      renderProfile({ ...me, data: { ...me.data, display_name: null } });
+
+      await userEvent.click(screen.getByRole('button', { name: 'Edit your display name' }));
+      screen.getByRole('textbox'); // showing "ada@dataq.io" — untouched
+      await blurTheTextbox();
+
+      expect(saveDisplayName).not.toHaveBeenCalled();
+    });
   });
 });
