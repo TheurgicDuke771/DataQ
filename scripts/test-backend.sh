@@ -10,6 +10,10 @@
 #
 # Safe: tests run against a dedicated `dataq_test` database (create_all/drop_all +
 # per-test rollback), never the dev `${POSTGRES_DB}` with your seed data.
+#
+# DATAQ_E2E=1 below is the explicit opt-in the one real-broker E2E test
+# (test_probe_e2e) requires in addition to DATABASE_URL + REDIS_URL — see its
+# module docstring for why DATABASE_URL alone stopped being a reliable signal.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -42,4 +46,5 @@ exec conda run -n dataq --no-capture-output env \
   TEST_DATABASE_URL="$TEST_URL" \
   DATABASE_URL="$TEST_URL" \
   REDIS_URL="redis://localhost:6379/0" \
+  DATAQ_E2E=1 \
   python -m pytest backend/tests "$@"

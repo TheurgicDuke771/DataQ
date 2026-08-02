@@ -197,6 +197,17 @@ def create_celery_app() -> Celery:
                 "task": "sync_asset_inventory",
                 "schedule": crontab(hour="3", minute="17"),  # daily, 03:17 UTC
             },
+            # OTP-code retention sweep (#1136): once a day, delete expired/spent
+            # `otp_codes` rows past `otp_codes_retention_hours` (default 24h, well
+            # past the 10-minute code TTL). Hygiene, not a security control — the
+            # per-code/per-email caps in `otp_service` are the security — but the
+            # table is PII (a plaintext address plus a sign-in-attempt timestamp)
+            # and would otherwise grow forever with no sweep. Same daily,
+            # low-urgency cadence as the sample-failures/orphan sweeps above.
+            "purge-otp-codes": {
+                "task": "purge_otp_codes",
+                "schedule": crontab(hour="3", minute="37"),  # daily, 03:37 UTC
+            },
         },
     )
     # Register task modules on worker boot (looks for backend.app.worker.tasks).
