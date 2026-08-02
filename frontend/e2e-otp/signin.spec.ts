@@ -37,8 +37,11 @@ test('keeps no token in JS-readable storage — the session is the cookie only',
 }) => {
   // ADR 0032 decision 3's central property, asserted in a real browser rather
   // than inferred from the source: an XSS must find nothing to exfiltrate.
+  // dismissProfilePrompt: false — this spec doesn't touch the nav afterward,
+  // and dismissing the first-login prompt (#1139) itself writes a
+  // sessionStorage key by design, which would read as a false positive here.
   await page.goto('/');
-  await signIn.complete(freshEmail('storage'));
+  await signIn.complete(freshEmail('storage'), { dismissProfilePrompt: false });
 
   const stored = await page.evaluate(() => ({
     local: Object.entries({ ...window.localStorage }),
