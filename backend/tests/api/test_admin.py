@@ -16,7 +16,9 @@ from email.message import EmailMessage
 from typing import Any, ClassVar
 
 import pytest
+import structlog
 from fastapi.testclient import TestClient
+from structlog.testing import capture_logs
 
 from backend.app.core.auth import DEV_BYPASS_EMAIL
 from backend.app.core.config import Settings, get_settings
@@ -429,19 +431,21 @@ def _reset_recording_smtp() -> Iterator[None]:
 def _preflight_counter() -> Iterator[otp_service.InMemoryOtpCounterStore]:
     """A process-local pre-flight counter for every test in this file (#1147).
 
-    Without it the throttle reaches for a REAL Redis via
-    `otp_service.get_counter_store()`, and the pre-flight tests would then pass or
-    fail on whether the local compose stack happens to be up — the fail-open path
-    makes an absent Redis look like a working cap. Injecting the store is also what
-    lets the fail-open test substitute an outage deliberately.
+    Without it the throttle reaches for a REAL Redis, and the pre-flight tests would
+    then pass or fail on whether the local compose stack happens to be up — the
+    fail-open path makes an absent Redis look indistinguishable from a working cap.
+    Injecting the store is also what lets the fail-open test substitute an outage
+    deliberately.
 
-    Runs after conftest's `_reset_caches`, which clears the same module global
-    before and after every test, so nothing leaks either way.
+    Injected into `admin_service`, NOT `otp_service` — the two hold separate store
+    instances on purpose (a shared instance shares a circuit breaker, so an admin
+    brownout would fail open the public sign-in cap). Runs after conftest's
+    `_reset_caches`, which clears both globals around every test.
     """
     store = otp_service.InMemoryOtpCounterStore()
-    otp_service.set_counter_store_for_testing(store)
+    admin_service.set_preflight_counter_store_for_testing(store)
     yield store
-    otp_service.reset_counter_state()
+    admin_service.reset_preflight_counter_state()
 
 
 def test_auth_email_preflight_succeeds_and_emails_the_caller(
@@ -594,30 +598,71 @@ def test_a_failed_send_still_spends_a_preflight_slot(
     assert blocked.json()["error"]["code"] == "preflight_rate_limited"
 
 
-def test_the_preflight_counter_keys_are_SEPARATE_from_the_signin_quota(
+def test_a_preflight_and_a_signin_never_touch_each_others_counters(
     client: TestClient, monkeypatch: pytest.MonkeyPatch, _preflight_counter: Any
 ) -> None:
-    """Shared mechanism, separate budgets. Reusing `otp_service`'s store must never
-    mean reusing its counters: a pre-flight that spent a sign-in slot could lock a
-    real person out of signing in, and a sign-in that spent a pre-flight slot would
-    make the diagnostic unavailable for no reason.
+    """Shared mechanism, separate budgets — asserted by driving BOTH paths.
 
-    Asserted on the KEYS the store actually saw, not on two response codes — the
-    codes would agree even if both wrote `otp:req:…`.
+    An earlier version of this test only called the pre-flight and then asserted
+    `not any(k.startswith("otp:req:"))`. That could not fail for the reason its name
+    claimed: with no sign-in request in the test, no `otp:req:` key could exist no
+    matter how the code behaved. It proved a prefix, not a separation.
+
+    So: one pre-flight and one real `POST /auth/otp/request`, each against its own
+    injected store, and each store must hold exactly its own family of keys. A
+    pre-flight that spent a sign-in slot could lock a real person out of signing in;
+    a sign-in that spent a pre-flight slot would make the diagnostic unavailable for
+    no reason.
     """
     _wire_working_preflight(client, monkeypatch)
     monkeypatch.setenv("ADMIN_EMAIL_PREFLIGHT_PER_10MIN", "5")
+    # The #1137 floor sleeps a real second on every uniform request response.
+    monkeypatch.setenv("AUTH_OTP_REQUEST_MIN_SECONDS", "0")
     get_settings.cache_clear()
+    signin_counter = otp_service.InMemoryOtpCounterStore()
+    otp_service.set_counter_store_for_testing(signin_counter)
 
-    resp = client.post("/api/v1/admin/auth-email/test")
-    assert resp.status_code == 200, resp.text
+    preflight = client.post("/api/v1/admin/auth-email/test")
+    assert preflight.status_code == 200, preflight.text
+    # `_set_auth_email_env` allow-lists dataq.local, so this address is eligible and
+    # actually reaches the per-email counter rather than short-circuiting.
+    signin = client.post("/api/v1/auth/otp/request", json={"email": "someone@dataq.local"})
+    assert signin.status_code == 200, signin.text
 
-    keys = list(_preflight_counter._counts)
-    assert keys, "the throttle did not count anything"
-    assert all(k.startswith("preflight:") for k in keys), keys
-    assert not any(k.startswith("otp:req:") for k in keys), keys
-    # …and the address is not in the key, only a digest of the caller's id.
-    assert not any(DEV_BYPASS_EMAIL in k for k in keys), keys
+    preflight_keys = list(_preflight_counter._counts)
+    signin_keys = list(signin_counter._counts)
+    assert preflight_keys, "the throttle did not count the pre-flight"
+    assert signin_keys, "the sign-in did not reach its own counter"
+    assert all(k.startswith("preflight:") for k in preflight_keys), preflight_keys
+    assert all(k.startswith("otp:req:") for k in signin_keys), signin_keys
+    # Neither budget saw the other's traffic at all — the property, stated directly.
+    assert not set(preflight_keys) & set(signin_keys)
+    # …and no address appears in either key, only digests.
+    assert not any(DEV_BYPASS_EMAIL in k for k in preflight_keys), preflight_keys
+    assert not any("someone@dataq.local" in k for k in signin_keys), signin_keys
+
+
+def test_the_preflight_throttle_uses_its_OWN_store_instance(
+    _preflight_counter: Any,
+) -> None:
+    """Same class, separate instance — and the instance is what carries the circuit
+    breaker.
+
+    `RedisOtpCounterStore`'s breaker state is per-instance *deliberately* (#1135):
+    "folding both stores onto one breaker would mean an OTP brownout switching off
+    API rate limiting, and a rate-limit brownout switching off the mail-bomb cap."
+    Sharing `otp_service`'s singleton here would mean enough Redis errors from ADMIN
+    diagnostic traffic trips the breaker and, for the open window, silently fails
+    open the per-mailbox cap on the PUBLIC `/auth/otp/request`. Separate keys make
+    the budgets independent; only a separate instance makes their AVAILABILITY
+    independent, and nothing else in the suite would notice the difference.
+    """
+    signin_store = otp_service.InMemoryOtpCounterStore()
+    otp_service.set_counter_store_for_testing(signin_store)
+
+    assert admin_service.get_preflight_counter_store() is _preflight_counter
+    assert admin_service.get_preflight_counter_store() is not signin_store
+    assert otp_service.get_counter_store() is signin_store
 
 
 def test_the_preflight_throttle_fails_OPEN_when_the_counter_store_is_down(
@@ -629,11 +674,41 @@ def test_the_preflight_throttle_fails_OPEN_when_the_counter_store_is_down(
     _wire_working_preflight(client, monkeypatch)
     monkeypatch.setenv("ADMIN_EMAIL_PREFLIGHT_PER_10MIN", "1")
     get_settings.cache_clear()
-    otp_service.set_counter_store_for_testing(_DownCounterStore())
+    admin_service.set_preflight_counter_store_for_testing(_DownCounterStore())
 
     statuses = [client.post("/api/v1/admin/auth-email/test").status_code for _ in range(4)]
     assert statuses == [200, 200, 200, 200]
     assert len(_RecordingSMTP.instances) == 4
+
+
+def test_the_fail_open_warning_is_logged_ONCE_not_per_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fail-open means the cap is enforcing nothing — so the very scenario this
+    throttle exists for (a scripted token in a loop) is also the one where an
+    unsuppressed warning becomes a log line PER REQUEST. That is the
+    log-amplification shape that starved Celery on 2026-07-13, and both sibling
+    counters (`otp_service`, `core.rate_limit`) suppress it for exactly this reason.
+
+    `capture_logs` with the module logger rebound INSIDE the capture, not `caplog`:
+    structlog's stdlib bridge is installed by `configure_logging()` at app startup
+    and `cache_logger_on_first_use=True` means `admin_service.log` has already cached
+    a bound logger by the time the full suite reaches here — so `caplog` yields an
+    EMPTY list and the assertion passes vacuously. (Confirmed the hard way: the first
+    version of this test captured 0 records.) Same trap `test_secrets.py` documents.
+    """
+    settings = Settings(admin_email_preflight_per_10min=1)
+    admin_service.set_preflight_counter_store_for_testing(_DownCounterStore())
+
+    with capture_logs() as logs:
+        monkeypatch.setattr(
+            admin_service, "log", structlog.get_logger("backend.app.services.admin_service")
+        )
+        for _ in range(5):
+            admin_service.enforce_preflight_quota(uuid.uuid4(), settings)
+
+    events = [e["event"] for e in logs]
+    assert events.count("admin_preflight_counter_store_unavailable") == 1, events
 
 
 def test_the_preflight_cap_can_be_switched_off(

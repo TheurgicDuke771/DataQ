@@ -279,14 +279,53 @@ def webhook_configs(
 # INCR+EXPIRE, the same bounded socket timeouts and circuit breaker, the same
 # fail-open bias. The KEYS are separate (`preflight:` vs `otp:req:`) and are keyed
 # on the ADMIN rather than on a mailbox, so a pre-flight can never spend somebody's
-# sign-in quota and a sign-in can never spend an admin's diagnostics. One shared
-# mechanism, two independent budgets.
+# sign-in quota and a sign-in can never spend an admin's diagnostics.
+#
+# **The same CLASS, a separate INSTANCE — and that distinction is the whole point.**
+# `RedisOtpCounterStore` carries a `CircuitBreaker` whose state #1135 made
+# per-instance *deliberately*, "so folding both stores onto one breaker would mean
+# an OTP brownout switching off API rate limiting, and a rate-limit brownout
+# switching off the mail-bomb cap". Calling `otp_service.get_counter_store()` here
+# would have re-created exactly that coupling one day after it was designed out:
+# enough Redis errors from *admin diagnostic* traffic would trip the shared breaker
+# and, for the open window, silently fail open the per-mailbox cap on the PUBLIC,
+# unauthenticated `/auth/otp/request` — a security control disabled by a brownout in
+# an unrelated subsystem. Separate keys make the budgets independent; only a
+# separate instance makes their AVAILABILITY independent. `core/rate_limit.py`
+# holds its own private `_BREAKER` for the same reason.
 
 #: The pre-flight window. Ten minutes — its own constant, deliberately not a
 #: reference to `otp_service.EMAIL_WINDOW_SECONDS`, because the two bound different
 #: quantities (diagnostic calls by one admin vs live codes into one mailbox) and a
 #: future change to either must not silently move the other.
 PREFLIGHT_WINDOW_SECONDS = 600
+
+#: This throttle's OWN store instance — never `otp_service`'s module singleton (see
+#: the section header). Same class, same Redis, independent breaker + client.
+_preflight_store: otp_service.OtpCounterStore | None = None
+_preflight_store_unavailable_warned = False
+
+
+def get_preflight_counter_store() -> otp_service.OtpCounterStore:
+    global _preflight_store
+    if _preflight_store is None:
+        _preflight_store = otp_service.RedisOtpCounterStore(get_settings().redis_url)
+    return _preflight_store
+
+
+def set_preflight_counter_store_for_testing(store: otp_service.OtpCounterStore | None) -> None:
+    """Test hook mirroring `otp_service.set_counter_store_for_testing`."""
+    global _preflight_store, _preflight_store_unavailable_warned
+    _preflight_store = store
+    _preflight_store_unavailable_warned = False
+
+
+def reset_preflight_counter_state() -> None:
+    """Test hook mirroring `otp_service.reset_counter_state`. Called by conftest
+    around every test: left set, an injected in-memory store carries counts into
+    unrelated tests; left unset after one was injected, a later test reaches for a
+    real Redis client on an admin path."""
+    set_preflight_counter_store_for_testing(None)
 
 
 class PreflightThrottledError(DataQError):
@@ -349,25 +388,32 @@ def enforce_preflight_quota(user_id: UUID, settings: Settings | None = None) -> 
     the operator's only mail-configuration diagnostic away from them at the moment
     they are most likely to need it.
 
-    Unlike the sign-in counter this warns on EVERY fail-open rather than once per
-    process: an admin makes a handful of these calls an hour, so there is no
-    log-spam to suppress, and each line is a true statement about a diagnostic that
-    ran unenforced.
+    The fail-open warning is emitted ONCE per process, like
+    `otp_service._counter_unavailable_warned` and `rate_limit._warn_store_unavailable_once`.
+    "An admin only calls this a few times an hour" is the assumption this whole PR
+    exists because it does not hold: the case being defended against is a scripted
+    token in a loop, and in exactly that case the store is failing open (so the cap
+    is enforcing nothing) while emitting a warning per request — the log-amplification
+    shape that starved Celery on 2026-07-13.
     """
     s = settings or get_settings()
     limit = s.admin_email_preflight_per_10min
     if limit <= 0:
         return  # 0 = off, with the documented risk re-accepted (see `Settings`).
+    global _preflight_store_unavailable_warned
     now = time.time()
-    count = otp_service.get_counter_store().incr_window(
+    count = get_preflight_counter_store().incr_window(
         _preflight_key(user_id, now=now), PREFLIGHT_WINDOW_SECONDS * 2
     )
     if count is None:
-        # No id and no key on this line — the key holds a stable per-admin digest,
-        # and this must not lean on the logger's PII redaction to stay clean.
-        log.warning(
-            "admin_preflight_counter_store_unavailable", window_seconds=PREFLIGHT_WINDOW_SECONDS
-        )
+        if not _preflight_store_unavailable_warned:
+            _preflight_store_unavailable_warned = True
+            # No id and no key on this line — the key holds a stable per-admin
+            # digest, and this must not lean on the logger's PII redaction.
+            log.warning(
+                "admin_preflight_counter_store_unavailable",
+                window_seconds=PREFLIGHT_WINDOW_SECONDS,
+            )
         return
     if count > limit:
         window_end = (int(now) // PREFLIGHT_WINDOW_SECONDS + 1) * PREFLIGHT_WINDOW_SECONDS

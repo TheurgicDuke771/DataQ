@@ -88,7 +88,7 @@ import pytest  # noqa: E402 — must follow the env-var setup above
 from backend.app.alerting.registry import reset_result_publisher_cache  # noqa: E402
 from backend.app.core import rate_limit, secrets  # noqa: E402
 from backend.app.core.config import get_settings  # noqa: E402
-from backend.app.services import otp_service  # noqa: E402
+from backend.app.services import admin_service, otp_service  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -100,6 +100,7 @@ def _reset_caches() -> Iterator[None]:
     reset_result_publisher_cache()
     rate_limit.reset_rate_limit_state()
     otp_service.reset_counter_state()
+    admin_service.reset_preflight_counter_state()
     yield
     get_settings.cache_clear()
     secrets.reset_secret_store_cache()
@@ -110,6 +111,11 @@ def _reset_caches() -> Iterator[None]:
     # counts into unrelated tests — and left unset after a test injected one, a
     # later test would reach for a real Redis client on the sign-in path.
     otp_service.reset_counter_state()
+    # The admin SMTP pre-flight throttle (#1147) holds its OWN store instance, for
+    # the reason `admin_service`'s section header gives (a shared instance shares a
+    # circuit breaker, so one subsystem's brownout disables the other's control).
+    # Two globals, therefore two resets — the second is not redundant.
+    admin_service.reset_preflight_counter_state()
 
 
 @pytest.fixture
