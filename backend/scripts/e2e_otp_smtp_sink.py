@@ -2,7 +2,11 @@
 
 Run it, point `AUTH_EMAIL_SMTP_HOST/PORT` at it, and the codes DataQ mails become
 readable over a tiny HTTP API that a Playwright spec can poll. Test scaffolding
-only — never imported by the app, never shipped in an image.
+only — never imported by the app and not on any runtime code path. It does ride
+along in the runtime image, like its `backend/scripts/` siblings (`e2e_smoke.py`,
+`seed_dev.py`): the Dockerfile does `COPY backend ./backend` and `.dockerignore`
+excludes nothing under `scripts/`. Nothing starts it there, but see the security
+note below before dismissing that as harmless.
 
 ## Why this exists rather than a mail-catcher container
 
@@ -32,6 +36,14 @@ does a genuine STARTTLS handshake, a genuine AUTH, and a genuine `send_message`.
 Binds loopback only. Accepts **any** SMTP credentials, stores every message in
 memory in the clear, and serves them to anyone who can reach the HTTP port. That
 is the entire point and it is why this must never run anywhere but a test host.
+
+Since it is present in the runtime image (above), state the residual risk plainly
+rather than relying on "it's only a test tool": anyone who can already execute
+code in the container could start it — but they could equally run their own
+listener, so this adds no capability they lack. Loopback-only binding means it is
+not reachable from outside the container even if started. The property that would
+actually matter is that nothing in the image ever *invokes* it: no entrypoint,
+no CMD, no scheduled task references it.
 
 Usage::
 
