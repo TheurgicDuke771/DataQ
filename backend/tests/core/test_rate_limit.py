@@ -535,11 +535,15 @@ async def test_it_probes_once_the_window_passes_and_closes_on_success(
     # way (review finding — the same trap the timed test above exists to avoid).
     assert sick.calls == rate_limit._BREAKER_TRIP_AFTER
 
-    # Redis recovers, and the window passes.
+    # Redis recovers, and the window passes. The shifted clock is `_breaker_now`
+    # (monotonic, #1135) — `_now` is the wall clock feeding the WINDOW INDEX, which
+    # is a different job and must not be dragged around by breaker tests.
     healthy = _HealthyRedis()
     monkeypatch.setattr(rate_limit, "_get_redis_client", lambda: healthy)
     monkeypatch.setattr(
-        rate_limit, "_now", lambda: time.time() + rate_limit._BREAKER_OPEN_SECONDS + 1
+        rate_limit,
+        "_breaker_now",
+        lambda: time.monotonic() + rate_limit._BREAKER_OPEN_SECONDS + 1,
     )
 
     assert await store.incr_windows(["k"]) is not None  # the probe went through
@@ -559,7 +563,9 @@ async def test_a_failed_probe_re_opens_it_rather_than_hammering(
     await _hit(store, rate_limit._BREAKER_TRIP_AFTER)
 
     monkeypatch.setattr(
-        rate_limit, "_now", lambda: time.time() + rate_limit._BREAKER_OPEN_SECONDS + 1
+        rate_limit,
+        "_breaker_now",
+        lambda: time.monotonic() + rate_limit._BREAKER_OPEN_SECONDS + 1,
     )
     await store.incr_windows(["k"])  # the probe, which fails
     probed = sick.calls
@@ -567,6 +573,38 @@ async def test_a_failed_probe_re_opens_it_rather_than_hammering(
     # Still using the shifted clock: without a re-open, every one of these would dial.
     await _hit(store, 10)
     assert sick.calls == probed
+
+
+@pytest.mark.asyncio
+async def test_the_open_window_ignores_the_wall_clock(
+    monkeypatch: pytest.MonkeyPatch, _clean_breaker: object
+) -> None:
+    """The breaker's window is a DURATION, so it must ride a monotonic clock (#1135).
+
+    `_now` is wall-clock on purpose — it feeds the window index baked into the Redis
+    key, which every replica has to agree on. Wiring the breaker to it too would put
+    the open window at the mercy of NTP: a backward step extends the fail-open state
+    past the 5s ADR 0035 signs up for, and a forward step ends it early. Pinned here
+    because the two clocks look interchangeable at the call site and are not.
+    """
+    sick = _SickRedis()
+    monkeypatch.setattr(rate_limit, "_get_redis_client", lambda: sick)
+    store = rate_limit.RedisStore()
+    await _hit(store, rate_limit._BREAKER_TRIP_AFTER)
+    assert rate_limit._breaker_is_open()
+
+    # An NTP correction jumps the wall clock a day forward. If the breaker read it,
+    # this alone would end the open window.
+    monkeypatch.setattr(rate_limit, "_now", lambda: time.time() + 86_400)
+    assert rate_limit._breaker_is_open(), "the wall clock moved the breaker's window"
+
+    # …and the monotonic clock is what actually closes it.
+    monkeypatch.setattr(
+        rate_limit,
+        "_breaker_now",
+        lambda: time.monotonic() + rate_limit._BREAKER_OPEN_SECONDS + 1,
+    )
+    assert not rate_limit._breaker_is_open()
 
 
 @pytest.mark.asyncio
