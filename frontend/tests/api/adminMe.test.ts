@@ -7,10 +7,11 @@ import {
   listAdminWebhooks,
 } from '../../src/api/admin';
 import { api } from '../../src/api/client';
-import { fetchMe } from '../../src/api/me';
+import { fetchMe, updateMe } from '../../src/api/me';
 
-vi.mock('../../src/api/client', () => ({ api: { get: vi.fn() } }));
+vi.mock('../../src/api/client', () => ({ api: { get: vi.fn(), patch: vi.fn() } }));
 const mockGet = vi.mocked(api.get);
+const mockPatch = vi.mocked(api.patch);
 
 // Thin unwrap-the-axios-envelope wrappers: each must hit its exact path and
 // return `data` as-is. Table-driven — one row per endpoint.
@@ -28,5 +29,15 @@ describe.each(cases)('%s', (_name, call, path) => {
     mockGet.mockResolvedValueOnce({ data: payload });
     await expect(call()).resolves.toBe(payload);
     expect(mockGet).toHaveBeenCalledWith(path);
+  });
+});
+
+// updateMe (#1139) PATCHes rather than GETs, so it's not in the table above.
+describe('updateMe', () => {
+  it('PATCHes /me with the display name and returns the refreshed profile', async () => {
+    const payload = { marker: 'refreshed-me' };
+    mockPatch.mockResolvedValueOnce({ data: payload });
+    await expect(updateMe('Olivia Rivera')).resolves.toBe(payload);
+    expect(mockPatch).toHaveBeenCalledWith('/me', { display_name: 'Olivia Rivera' });
   });
 });

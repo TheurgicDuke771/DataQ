@@ -1,13 +1,16 @@
-import { Alert, Avatar, Card, Descriptions, Flex, Spin, Tag, Typography } from 'antd';
+import { Alert, App, Avatar, Card, Descriptions, Flex, Spin, Tag, Typography } from 'antd';
 import { TeamOutlined, UserOutlined } from '@ant-design/icons';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import { authMethodLabel } from '../auth/config';
 import { useMe } from '../auth/useMe';
+import { useSaveDisplayName } from '../auth/useSaveDisplayName';
 import { ApiKeysPanel } from '../components/profile/ApiKeysPanel';
 import { Page } from '../components/layout/Page';
 import { BRAND } from '../theme';
 import { PageError } from '../components/feedback/PageError';
+import { errorMessage } from '../utils/errors';
 
 /**
  * Profile (`/profile`, ADR 0022 ProfileScreen). The account screen: an identity
@@ -20,6 +23,9 @@ import { PageError } from '../components/feedback/PageError';
  */
 export function Profile() {
   const me = useMe();
+  const saveDisplayName = useSaveDisplayName();
+  const { message } = App.useApp();
+  const [savingName, setSavingName] = useState(false);
 
   if (me.status === 'loading') {
     return <Spin size="large" style={{ marginTop: 80 }} />;
@@ -39,6 +45,24 @@ export function Profile() {
   const name = display_name ?? email;
   const initial = (name || '?').trim().charAt(0).toUpperCase();
 
+  // Self-service override (#1139) — editable in EVERY mode, not just `otp`. An
+  // AAD user's header name still comes straight off the token (unaffected by
+  // this), but the stored row is what shares/admin lists render, so being able
+  // to set it here is not otp-specific.
+  const onNameChange = async (value: string) => {
+    const trimmed = value.trim();
+    if (!trimmed || trimmed === display_name) return;
+    setSavingName(true);
+    try {
+      await saveDisplayName(trimmed);
+      message.success('Name updated.');
+    } catch (err) {
+      message.error(`Could not update your name: ${errorMessage(err)}`);
+    } finally {
+      setSavingName(false);
+    }
+  };
+
   return (
     <Page width="form" gap={16}>
       <Typography.Title level={3} style={{ margin: 0 }}>
@@ -51,7 +75,17 @@ export function Profile() {
             {initial}
           </Avatar>
           <Flex vertical gap={2}>
-            <Typography.Text strong style={{ fontSize: 18 }}>
+            <Typography.Text
+              strong
+              style={{ fontSize: 18 }}
+              editable={{
+                onChange: (value) => void onNameChange(value),
+                tooltip: 'Edit your display name',
+                maxLength: 256,
+                triggerType: ['icon', 'text'],
+              }}
+              aria-busy={savingName}
+            >
               {name}
             </Typography.Text>
             <Typography.Text type="secondary">{email}</Typography.Text>

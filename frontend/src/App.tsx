@@ -24,6 +24,7 @@ import { useIsWorkspaceAdmin } from './auth/useMe';
 import { logout } from './auth/authClient';
 import { useOtpSession } from './auth/otpSessionContext';
 import { BrandMark } from './components/BrandMark';
+import { ProfileCompletionPrompt } from './components/profile/ProfileCompletionPrompt';
 import { BRAND, SHELL } from './theme';
 
 // Route components are code-split so the initial bundle doesn't ship every page
@@ -115,6 +116,10 @@ export function App() {
   // LoginPage with no header/sider chrome; the Layout only renders once signed in.
   return (
     <AuthGate>
+      {/* Otp-mode, first-login only (#1139) — a no-op render (returns a closed
+          Modal) in every other mode/state, so it's cheap to mount unconditionally
+          here rather than threading a prop through every route. */}
+      <ProfileCompletionPrompt />
       {/* Fixed app shell: the Layout is exactly the viewport height and doesn't
           scroll — the header and sider stay put, and only <Content> scrolls. */}
       <Layout style={{ height: '100vh', overflow: 'hidden' }}>
