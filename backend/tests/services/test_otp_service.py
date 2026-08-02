@@ -693,3 +693,211 @@ def test_the_default_counter_store_is_the_redis_one() -> None:
     svc.reset_counter_state()
     assert isinstance(svc.get_counter_store(), svc.RedisOtpCounterStore)
     svc.reset_counter_state()
+
+
+# ── the counter store's circuit breaker (#1135) ──────────────────────────────
+#
+# The case bounded socket timeouts do NOT cover: Redis up but degraded. The
+# timeouts cap one call; without a breaker every sign-in still serially waits out
+# the full 0.5s against a server that is already struggling.
+
+
+class _SickRedis:
+    """A Redis client that is UP but not answering — each call sleeps, then raises
+    exactly as a socket timeout does.
+
+    Counts its calls, because "returns None" would pass with no breaker at all
+    (fail-open already returns None); what #1135 changes is that the CALLS STOP.
+    """
+
+    def __init__(self, *, delay: float = 0.02) -> None:
+        self.delay = delay
+        self.calls = 0
+
+    def pipeline(self) -> _SickRedis:
+        return self
+
+    def incr(self, key: str) -> None:
+        return None
+
+    def expire(self, key: str, ttl: int) -> None:
+        return None
+
+    def execute(self) -> list[int]:
+        import time as _time
+
+        self.calls += 1
+        _time.sleep(self.delay)
+        raise TimeoutError("redis is alive but not answering in time")
+
+
+class _HealthyRedis(_SickRedis):
+    def execute(self) -> list[int]:
+        self.calls += 1
+        return [1, 1]
+
+
+def _store_on(client: Any) -> Any:
+    """A counter store wired to `client`, bypassing the lazy `redis.from_url`."""
+    store = svc.RedisOtpCounterStore("redis://unused")
+    store._client = client
+    return store
+
+
+def _hit(store: Any, n: int) -> None:
+    for _ in range(n):
+        store.incr_window("otp:req:abc:1", 1200)
+
+
+def test_the_counter_store_breaker_stops_dialling_a_sick_redis() -> None:
+    """The fix stated as the thing that actually changes: the calls stop."""
+    sick = _SickRedis()
+    store = _store_on(sick)
+
+    _hit(store, svc._BREAKER_TRIP_AFTER)
+    assert sick.calls == svc._BREAKER_TRIP_AFTER  # every one of them tried
+
+    _hit(store, 20)
+    assert sick.calls == svc._BREAKER_TRIP_AFTER  # …and none of these did
+
+
+def test_a_tripped_counter_breaker_returns_without_awaiting_the_timeout() -> None:
+    """The user-visible symptom: sign-in latency becomes Redis's latency. Timed,
+    because "we skipped the call" and "the request got fast again" are different
+    claims and only the second is what the incident is about."""
+    import time as _time
+
+    sick = _SickRedis(delay=0.05)
+    store = _store_on(sick)
+    _hit(store, svc._BREAKER_TRIP_AFTER)
+
+    started = _time.monotonic()
+    _hit(store, 10)
+    elapsed = _time.monotonic() - started
+
+    # Ten calls that would each have waited 50ms: half a second, versus ~nothing.
+    assert elapsed < sick.delay, f"still paying the timeout: {elapsed:.3f}s"
+
+
+def test_a_single_counter_failure_does_not_trip_it() -> None:
+    """One unlucky sign-in is not a brownout — the same contract as the middleware's
+    store, since a mail-bomb cap that lapses on a dropped packet is not a cap."""
+    sick = _SickRedis()
+    store = _store_on(sick)
+
+    _hit(store, 1)
+    _hit(store, 1)
+    assert sick.calls == 2  # still dialling
+
+
+def test_the_counter_breaker_probes_once_the_window_passes_and_closes_on_success(
+    monkeypatch: Any,
+) -> None:
+    """Open must be a short, self-clearing state: the per-email cap is a real
+    control, and a breaker that stayed open would be that control silently off."""
+    sick = _SickRedis()
+    store = _store_on(sick)
+    _hit(store, svc._BREAKER_TRIP_AFTER)
+    assert store.incr_window("k", 1200) is None
+    # …asserted as GATED, not merely as another failure: without this the test
+    # passes with the breaker removed entirely, since fail-open returns None anyway.
+    assert sick.calls == svc._BREAKER_TRIP_AFTER
+
+    import time as _time
+
+    shifted = _time.monotonic() + svc._BREAKER_OPEN_SECONDS + 1
+    monkeypatch.setattr(svc, "_breaker_now", lambda: shifted)
+    healthy = _HealthyRedis()
+    store._client = healthy
+
+    assert store.incr_window("k", 1200) == 1  # the probe went through
+    assert healthy.calls == 1
+    # …and counting is back on without waiting for another window.
+    assert store.incr_window("k", 1200) == 1
+    assert healthy.calls == 2
+
+
+def test_a_failed_counter_probe_re_opens_rather_than_hammering(monkeypatch: Any) -> None:
+    sick = _SickRedis()
+    store = _store_on(sick)
+    _hit(store, svc._BREAKER_TRIP_AFTER)
+
+    import time as _time
+
+    shifted = _time.monotonic() + svc._BREAKER_OPEN_SECONDS + 1
+    monkeypatch.setattr(svc, "_breaker_now", lambda: shifted)
+    _hit(store, 1)  # the probe, which fails
+    probed = sick.calls
+
+    _hit(store, 10)  # still on the shifted clock — without a re-open these all dial
+    assert sick.calls == probed
+
+
+def test_two_counter_stores_do_not_share_breaker_state() -> None:
+    """Per-INSTANCE state, so a replica's own store is the unit — and so nothing
+    tempts a future refactor into one module-level breaker."""
+    sick, healthy = _SickRedis(), _HealthyRedis()
+    tripped, other = _store_on(sick), _store_on(healthy)
+    _hit(tripped, svc._BREAKER_TRIP_AFTER + 5)
+    assert sick.calls == svc._BREAKER_TRIP_AFTER  # the first store IS gated
+
+    assert other.incr_window("k", 1200) == 1
+    assert healthy.calls == 1
+
+
+async def test_an_otp_brownout_does_not_open_the_rate_limiters_breaker() -> None:
+    """The trap the extraction had to avoid (#1135).
+
+    One mechanism, two subsystems, and they hit the same Redis for different jobs.
+    If they shared breaker STATE, a brownout on the sign-in counter would switch off
+    API rate limiting — one subsystem's degradation disabling an unrelated security
+    control. Asserted in both directions, and by "does the other store still dial
+    Redis", not merely by reading a flag.
+    """
+    from backend.app.core import rate_limit
+
+    class _HealthyAsyncRedis:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def pipeline(self, transaction: bool = True) -> Any:
+            return self
+
+        def incr(self, key: str) -> None:
+            return None
+
+        def expire(self, key: str, seconds: int) -> None:
+            return None
+
+        async def execute(self) -> list[int]:
+            self.calls += 1
+            return [1, 1]
+
+    rate_limit.reset_rate_limit_state()
+    try:
+        # OTP's Redis browns out, hard.
+        sick = _SickRedis()
+        otp_store = _store_on(sick)
+        _hit(otp_store, svc._BREAKER_TRIP_AFTER + 5)
+        # Gated, not merely failing: `is None` alone would hold with no breaker.
+        assert sick.calls == svc._BREAKER_TRIP_AFTER
+        assert otp_store.incr_window("k", 1200) is None
+
+        healthy = _HealthyAsyncRedis()
+        rl_store = rate_limit.RedisStore()
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(rate_limit, "_get_redis_client", lambda: healthy)
+            assert await rl_store.incr_windows(["rl:test:k:1"]) == [1]
+        assert healthy.calls == 1, "an OTP brownout stopped the rate limiter dialling"
+        assert not rate_limit._breaker_is_open()
+
+        # …and the reverse: the middleware's breaker opens, OTP keeps counting.
+        for _ in range(rate_limit._BREAKER_TRIP_AFTER):
+            rate_limit._breaker_record_failure()
+        assert rate_limit._breaker_is_open()
+
+        healthy_otp = _HealthyRedis()
+        assert _store_on(healthy_otp).incr_window("k", 1200) == 1
+        assert healthy_otp.calls == 1, "a rate-limit brownout stopped the OTP counter"
+    finally:
+        rate_limit.reset_rate_limit_state()

@@ -44,6 +44,11 @@ from fastapi import Request, Response
 from fastapi.responses import JSONResponse
 
 from backend.app.core.auth import _bearer_token  # header-only bearer extractor (reused, ADR 0035)
+from backend.app.core.circuit_breaker import (
+    DEFAULT_OPEN_SECONDS,
+    DEFAULT_TRIP_AFTER,
+    CircuitBreaker,
+)
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.errors import error_envelope
 from backend.app.core.logging import get_logger
@@ -119,44 +124,33 @@ def _get_redis_client() -> AsyncRedis[Any]:
 #: unlucky request, and five seconds is short enough that enforcement resumes
 #: promptly once Redis recovers — the deliberate bias of ADR 0035 is availability
 #: over enforcement, so an open breaker must never be a long-lived state.
-_BREAKER_TRIP_AFTER = 5
-_BREAKER_OPEN_SECONDS = 5.0
+_BREAKER_TRIP_AFTER = DEFAULT_TRIP_AFTER
+_BREAKER_OPEN_SECONDS = DEFAULT_OPEN_SECONDS
 
-_breaker_failures = 0
-_breaker_open_until = 0.0
+#: THIS middleware's breaker — the mechanism lives in `core.circuit_breaker` and is
+#: shared with `services.otp_service`'s counter store (#1135), but the *state* is
+#: per-instance on purpose: an OTP brownout must never switch off API rate limiting,
+#: nor the reverse. The clock goes through this module's `_now` indirection so the
+#: existing tests' monkeypatched clock still drives the open window.
+_BREAKER: Final = CircuitBreaker(
+    name="rate_limit_store",
+    trip_after=_BREAKER_TRIP_AFTER,
+    open_seconds=_BREAKER_OPEN_SECONDS,
+    clock=lambda: _now(),
+)
 
 
 def _breaker_is_open() -> bool:
     """True while the breaker is holding requests off Redis entirely."""
-    return _now() < _breaker_open_until
+    return _BREAKER.is_open()
 
 
 def _breaker_record_failure() -> None:
-    global _breaker_failures, _breaker_open_until
-    _breaker_failures += 1
-    if _breaker_failures >= _BREAKER_TRIP_AFTER and not _breaker_is_open():
-        _breaker_open_until = _now() + _BREAKER_OPEN_SECONDS
-        log.warning(
-            "rate_limit_store_breaker_open",
-            consecutive_failures=_breaker_failures,
-            open_seconds=_BREAKER_OPEN_SECONDS,
-        )
+    _BREAKER.record_failure()
 
 
 def _breaker_record_success() -> None:
-    global _breaker_failures, _breaker_open_until
-    if _breaker_is_open():
-        # A success arriving WHILE open is a straggler: a request that passed the
-        # gate before the trip and only resolved afterwards. Letting it reset the
-        # state would retroactively close a breaker that concurrent failures had
-        # just legitimately opened — and a degraded Redis serves exactly this mix
-        # of slow successes and timeouts, so the breaker would flap instead of
-        # holding. The window closes on time, or on a probe once it has passed.
-        return
-    if _breaker_failures:
-        log.info("rate_limit_store_breaker_closed", after_failures=_breaker_failures)
-    _breaker_failures = 0
-    _breaker_open_until = 0.0
+    _BREAKER.record_success()
 
 
 class RedisStore:
@@ -179,6 +173,10 @@ class RedisStore:
     succeeds the counter resets. Deliberately not per-key or per-worker-coordinated
     — this is a cheap guard against a brownout, and the counting itself must not
     become the cost it exists to avoid.
+
+    The breaker MECHANISM lives in `core.circuit_breaker` and is shared with the OTP
+    per-email counter store (#1135); the STATE is this module's alone, so an OTP
+    brownout cannot switch rate limiting off (nor the reverse).
     """
 
     async def incr_windows(self, keys: Sequence[str]) -> list[int] | None:
@@ -250,12 +248,10 @@ def reset_rate_limit_state() -> None:
     """Test hook: clear the store override, the lazy Redis client, and the
     warn-once stamp (mirrors the reset-hook pattern in `core/secrets.py`)."""
     global _store_override, _redis_client, _store_unavailable_warned_window
-    global _breaker_failures, _breaker_open_until
     _store_override = None
     _redis_client = None
     _store_unavailable_warned_window = None
-    _breaker_failures = 0
-    _breaker_open_until = 0.0
+    _BREAKER.reset()
 
 
 def _now() -> float:

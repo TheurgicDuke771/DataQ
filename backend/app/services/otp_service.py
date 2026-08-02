@@ -34,6 +34,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import secrets
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -43,6 +44,11 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from backend.app.core.circuit_breaker import (
+    DEFAULT_OPEN_SECONDS,
+    DEFAULT_TRIP_AFTER,
+    CircuitBreaker,
+)
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
@@ -150,6 +156,20 @@ class OtpCounterStore(Protocol):
     def incr_window(self, key: str, ttl_seconds: int) -> int | None: ...
 
 
+#: This store's breaker tuning — the shared defaults (#1135), named locally so the
+#: contract is stated where the store is, and so a test can read it without
+#: reaching into `core.circuit_breaker`.
+_BREAKER_TRIP_AFTER = DEFAULT_TRIP_AFTER
+_BREAKER_OPEN_SECONDS = DEFAULT_OPEN_SECONDS
+
+
+def _breaker_now() -> float:
+    """Clock indirection for the counter store's breaker, so a test can shift the
+    open window without sleeping. Monotonic: an NTP step backwards would otherwise
+    extend an open window arbitrarily."""
+    return time.monotonic()
+
+
 class InMemoryOtpCounterStore:
     """Process-local counter — for tests, never a production fallback.
 
@@ -166,16 +186,37 @@ class InMemoryOtpCounterStore:
 
 
 class RedisOtpCounterStore:
-    """INCR + EXPIRE in one pipeline, with bounded socket timeouts.
+    """INCR + EXPIRE in one pipeline, with bounded socket timeouts and a breaker.
 
     Unbounded timeouts are the `#854` failure mode: `redis.from_url` defaults both
     to `None`, i.e. block forever — on the sign-in path that would hang a request
     thread rather than fail open.
+
+    **Bounded timeouts are not enough on their own (#1135).** They cap the penalty
+    when Redis is *down*; they do nothing when it is *up and degraded*, because
+    every sign-in request then serially waits out the full 0.5s before failing open,
+    against a server that is already struggling. So this store carries the same
+    consecutive-failure breaker as the rate-limit middleware: after
+    `_BREAKER_TRIP_AFTER` failures it stops dialling for `_BREAKER_OPEN_SECONDS` and
+    returns the fail-open signal immediately, reopening on a single probe.
+
+    The mechanism is `core.circuit_breaker.CircuitBreaker` — ONE implementation,
+    shared with `core.rate_limit` rather than copied (two independently drifting
+    copies of a reliability control is how one of them ends up subtly wrong). The
+    **state is per instance**, and deliberately so: folding both stores onto one
+    breaker would mean an OTP brownout switching off API rate limiting, and a
+    rate-limit brownout switching off the mail-bomb cap.
     """
 
     def __init__(self, redis_url: str) -> None:
         self._redis_url = redis_url
         self._client: object | None = None
+        self._breaker = CircuitBreaker(
+            name="otp_email_counter_store",
+            trip_after=_BREAKER_TRIP_AFTER,
+            open_seconds=_BREAKER_OPEN_SECONDS,
+            clock=lambda: _breaker_now(),
+        )
 
     def _get_client(self) -> object:
         if self._client is None:
@@ -189,17 +230,24 @@ class RedisOtpCounterStore:
         return self._client
 
     def incr_window(self, key: str, ttl_seconds: int) -> int | None:
+        if self._breaker.is_open():
+            # Fail open WITHOUT calling Redis — the whole point is to stop paying
+            # the timeout on every sign-in while Redis is unwell.
+            return None
         try:
             pipe = self._get_client().pipeline()  # type: ignore[attr-defined]
             pipe.incr(key)
             pipe.expire(key, ttl_seconds)
             count, _ = pipe.execute()
-            return int(count)
+            counted = int(count)
         except Exception:
             # Fail OPEN, like the middleware (ADR 0035's deliberate bias:
             # availability over enforcement). A Redis outage must not lock every
             # user out of signing in.
+            self._breaker.record_failure()
             return None
+        self._breaker.record_success()
+        return counted
 
 
 _counter_store: OtpCounterStore | None = None
@@ -249,8 +297,6 @@ def _within_email_quota(email: str, settings: Settings) -> bool:
     limit = settings.auth_otp_request_per_email_per_10min
     if limit <= 0:
         return True
-    import time
-
     count = get_counter_store().incr_window(
         _email_bucket_key(email, now=time.time()), EMAIL_WINDOW_SECONDS * 2
     )
