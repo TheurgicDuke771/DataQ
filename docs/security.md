@@ -14,6 +14,39 @@ lawful basis) and is the deploying organization's responsibility.
   tokens ([API keys](api-keys.md)). Tokens are **hashed (SHA-256) at rest** — the plaintext is
   shown once and never stored — and carry the **same authz as the user**, on REST and MCP.
   They can be scoped with an expiry and revoked.
+- **Email one-time codes (OTP).** For deployments with **no identity provider**, a human can
+  sign in by proving they own a mailbox: DataQ mails a 6-digit code, and verifying it sets an
+  **HttpOnly, SameSite=Lax** session cookie (fixed lifetime, default 24 h, **no refresh
+  token** — signing in again is the refresh). Logout revokes the session server-side, and both
+  expiry and revocation are checked on every request. Sessions are hashed (SHA-256) at rest,
+  like PATs. Sign-up is **allowlist-only** — there is no open registration. MCP does **not**
+  accept a session: it is a browser credential, and PATs remain the headless credential
+  (ADR [0032](adr/0032-email-otp-signin.md)).
+
+### Email as the root of trust (read this before enabling OTP)
+
+Under email OTP, **the mailbox is the credential**. The consequences are not subtle, and they
+are the reason this mode is opt-in rather than the default:
+
+- **Mailbox compromise is account compromise.** Anyone who can read the address's inbox can
+  sign in as that person and see every suite they own or are shared on. There is no second
+  factor to fall back on.
+- **Mailbox compromise of an admin is workspace compromise.** If the address is on
+  `WORKSPACE_ADMIN_EMAILS`, that access is workspace-wide — including every suite's failing-row
+  samples, the one place PII can appear.
+- **One user row per normalized email**, deliberately. An OTP sign-in whose address matches an
+  existing SSO-provisioned user resolves to **that** user, so grants, shares and PATs never
+  fragment across authenticators. The flip side: in a deployment running **both** SSO and OTP,
+  an emailed code is an alternative route into an SSO identity. If your IdP enforces MFA and
+  your mail does not, OTP is the weaker of the two doors — decide that deliberately, and
+  consider keeping the allowlist to addresses that have no SSO identity.
+- **Mitigations DataQ does apply:** codes expire in 10 minutes, are single-use, allow at most
+  5 verification attempts, and a new request invalidates the previous code; requests are capped
+  **per mailbox** as well as per IP; the sign-in endpoints answer identically whether or not an
+  address is known, so they cannot be used to enumerate who has an account.
+- **Mitigations that are yours:** MFA on the mailbox, a mail domain with SPF/DKIM/DMARC, and a
+  minimal allowlist. If you have an IdP, prefer SSO — OTP exists for the case where you do not.
+
 - **Per-suite authorization.** Access is granted per suite (**view / edit**); a caller only
   ever sees suites they own or are shared on. There are no ambient "see everything" reads
   except the workspace-admin role below.
@@ -28,7 +61,19 @@ lawful basis) and is the deploying organization's responsibility.
   reached only through the frontend's same-origin `/api`, `/healthz`, and `/mcp` proxy
   (ADR 0028 §5). All traffic is over **HTTPS/TLS**.
 - The **MCP** AI-assistant endpoint is **fail-closed** — unauthenticated requests are rejected
-  (ADR 0008).
+  (ADR 0008). It authenticates from the `Authorization` header only and **never reads a
+  cookie**, so a signed-in browser lured to a hostile page cannot be used to drive it.
+- **CSRF.** The session cookie is `SameSite=Lax`, which blocks cross-site POSTs; that only
+  holds while every state-changing endpoint is a POST/PATCH/PUT/DELETE, so the test suite
+  audits the whole route table for a GET that mutates. Sign-in and sign-out are both POST-only,
+  and the SPA and API share an origin through the proxy, so a cross-site request can neither
+  carry nor read the cookie.
+- **Two coordinated auth-mode selectors.** The frontend's runtime `DATAQ_AUTH_MODE` and the
+  backend's inferred mode (SSO variables, or the OTP mailer + allowlist block) are separate
+  contracts — neither can derive the other. Set them together; the full table is in
+  [`deploy/README.md`](../deploy/README.md) and [`.env.app.example`](../.env.app.example). The
+  backend refuses to start on a half-configured OTP block rather than come up unable to log
+  anybody in.
 
 ## Secrets
 
