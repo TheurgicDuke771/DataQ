@@ -903,6 +903,13 @@ def purge_otp_codes() -> int:
     `otp_codes_retention_hours` window and returns the count deleted — never an
     address, in the task's own return value or its logs (`otp_service` logs the
     count only).
+
+    ``otp_codes_retention_hours <= 0`` no-ops rather than deleting every row —
+    enforced inside `otp_service.purge_expired_codes` itself (the same
+    "`<retention> <= 0` → return 0, clean off-switch" contract every sibling
+    sweep's service function carries — `purge_expired_sample_failures` /
+    `sweep_orphan_assets` / `sweep_orphan_secrets`), not re-checked here, so
+    every caller of that function gets the floor, not only this task.
     """
     session = get_session()
     try:

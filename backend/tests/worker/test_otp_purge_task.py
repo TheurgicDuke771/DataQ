@@ -1,11 +1,15 @@
 """Wiring test for the `purge_otp_codes` beat entry point (#1136).
 
-Pure-unit (no DB): the DELETE behaviour itself is covered DB-backed in
-`tests/services/test_otp_service.py`. Here we only assert the task reads the
-configured retention window, delegates to the service, returns the deleted
-count, and always closes its session — mirroring `test_retention_task.py`'s
-`purge_sample_failures` sibling. The beat-schedule REGISTRATION half (the part
-that silently rots — #1099) is asserted separately in `test_celery_app.py`.
+Pure-unit (no DB): the DELETE behaviour itself — including the `<=0` no-op
+guard (review finding, #1136 scored 95) — is covered DB-backed in
+`tests/services/test_otp_service.py::test_purge_disabled_when_retention_non_positive`.
+Here we only assert the task reads the configured retention window, delegates
+to the service UNCONDITIONALLY (the guard is the service's job, same as its
+`purge_expired_sample_failures`/`sweep_orphan_assets`/`sweep_orphan_secrets`
+siblings), returns the deleted count, and always closes its session —
+mirroring `test_retention_task.py`'s `purge_sample_failures` sibling. The
+beat-schedule REGISTRATION half (the part that silently rots — #1099) is
+asserted separately in `test_celery_app.py`.
 """
 
 from typing import Any
