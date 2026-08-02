@@ -123,6 +123,19 @@ class Settings(BaseSettings):
 
     sample_failures_retention_days: int = 30
 
+    # OTP-code retention sweep (#1136). `otp_codes.email` is stored in plaintext
+    # (deliberately — the "newest live code for this address" lookup needs it), so
+    # each row is a sign-in-attempt timestamp against an address: PII with no
+    # operational value once spent/expired. Comfortably longer than the 10-minute
+    # code TTL (`otp_service.CODE_TTL_MINUTES`) — this is hygiene, not a security
+    # control (the caps in `otp_service` are the security), so there is no reason
+    # to purge aggressively. Daily cadence, same posture as the sample-failures
+    # sweep above. <=0 is guarded in `otp_service.purge_expired_codes` itself (a
+    # no-op, returns 0) — NOT merely "expires instantly": that function's cutoff is
+    # `now - older_than_hours`, so a non-positive value collapses it to "now" and
+    # would delete EVERY row, including ones just minted, without the guard.
+    otp_codes_retention_hours: int = 24
+
     # Stuck-run reaper (#309): a run committed `queued` (before `send_task`) — or
     # left `running` by a worker that died mid-execution — past this age is driven
     # to terminal `failed` by the beat janitor so it can't linger forever. Must

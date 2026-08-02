@@ -519,6 +519,26 @@ def test_purge_leaves_a_live_code_alone(db_session: Any) -> None:
     assert svc.verify_code(db_session, email, code, settings=_settings()).email == email
 
 
+def test_purge_disabled_when_retention_non_positive(db_session: Any) -> None:
+    """A 0 or negative `older_than_hours` must no-op, never wipe the table.
+
+    The cutoff is `now - older_than_hours`, so a non-positive value collapses it
+    to "now" — every row, including one minted a moment ago, has
+    `created_at < now` and would match. Review finding on #1136 (scored 95):
+    mirrors the `<retention> <= 0` -> 0, untouched-DB contract every sibling
+    sweep enforces (`purge_expired_sample_failures` / `sweep_orphan_assets` /
+    `sweep_orphan_secrets` and their own `test_disabled_when_retention_non_positive`).
+    """
+    email = _address()
+    _, code = _request(db_session, email)  # a LIVE, unexpired code
+
+    assert svc.purge_expired_codes(db_session, older_than_hours=0) == 0
+    assert svc.purge_expired_codes(db_session, older_than_hours=-1) == 0
+    # Still there, and still verifiable — a non-positive window must not have
+    # touched the row at all, let alone consumed it.
+    assert svc.verify_code(db_session, email, code, settings=_settings()).email == email
+
+
 # ── the concurrency branches ─────────────────────────────────────────────────
 #
 # These are the branches the caps actually rest on, and they are unreachable by

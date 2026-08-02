@@ -533,7 +533,18 @@ def purge_expired_codes(db: Session, *, older_than_hours: int = 24) -> int:
     plus an address, and keeping a permanent log of who tried to sign in and when
     is a PII retention liability with no operational value — the same reasoning as
     the W5 sample-failure sweep.
+
+    ``older_than_hours <= 0`` no-ops (returns 0 without touching the DB) — the same
+    "clean off-switch, never an unconditional wipe" contract every sibling sweep
+    enforces (`purge_expired_sample_failures` / `sweep_orphan_assets` /
+    `sweep_orphan_secrets`, all `<retention> <= 0` → return 0). Load-bearing here,
+    not just defensive: the cutoff below is `now - older_than_hours`, so a
+    non-positive value collapses it to "now" — every row would match
+    `created_at < cutoff`, including codes minted a moment ago, not merely ones
+    instantly expiring.
     """
+    if older_than_hours <= 0:
+        return 0
     cutoff = datetime.now(UTC) - timedelta(hours=older_than_hours)
     result = db.execute(delete(OtpCode).where(OtpCode.created_at < cutoff))
     db.commit()
