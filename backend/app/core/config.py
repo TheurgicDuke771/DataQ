@@ -449,6 +449,23 @@ class Settings(BaseSettings):
     # off, the timing channel is fully open.
     auth_otp_request_min_seconds: float = Field(default=1.0, ge=0, le=30)
 
+    # The same floor on `POST /auth/otp/verify` (#1141), and it needs its own number
+    # because it is closing a narrower channel at a higher price. `verify` answers a
+    # uniform 401 for every failure, but an address with a live code pays an
+    # `UPDATE … RETURNING` plus a commit that an address with none never pays — a
+    # few milliseconds, not the hundreds the mint path spends on SMTP. So an attacker
+    # who has already spent a per-email quota slot on `otp/request` can ask `verify`
+    # with any wrong code and read eligibility off the response time.
+    #
+    # 0.5s: an order of magnitude above the DB round trips being hidden, and half the
+    # request-side floor because there is no SMTP tail here to clear. Only the uniform
+    # **401** is padded — a successful sign-in returns immediately, since a 200 is
+    # already distinguishable to someone who by definition knows the code, so padding
+    # it would tax every real sign-in for nothing.
+    #
+    # 0 disables it — with it off, the #1141 timing channel is fully open.
+    auth_otp_verify_min_seconds: float = Field(default=0.5, ge=0, le=30)
+
     # ── Connection poll-health alerting (#837) ───────────────────────────────
     # How many CONSECUTIVE failed orchestration polls a connection may rack up
     # before DataQ pushes an alert. At the 10-minute poll cadence the default (3)

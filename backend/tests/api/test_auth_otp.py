@@ -86,6 +86,10 @@ def _otp_settings(**overrides: Any) -> Settings:
         # The floor's own tests set it explicitly, and one of them pins the default,
         # so switching it off here cannot hide a regression in the shipped value.
         "auth_otp_request_min_seconds": 0,
+        # Same reasoning for the verify-side floor (#1141) — it sleeps on every 401,
+        # and this file raises a lot of them. Its own tests set it explicitly and one
+        # pins the shipped default.
+        "auth_otp_verify_min_seconds": 0,
     }
     base.update(overrides)
     return Settings(**base)
@@ -431,6 +435,154 @@ def test_the_remainder_is_what_is_left_of_the_floor(
     from backend.app.api.v1.auth_otp import _floor_remainder
 
     assert _floor_remainder(started, _FLOOR, now=now) == expected
+
+
+# ── verify: the same floor, one endpoint over (#1141) ────────────────────────
+#
+# `otp/verify` answers a byte-identical 401 for every failure, but the WORK behind
+# it splits on eligibility: an address with a live code runs `UPDATE … RETURNING`
+# plus a commit before the hash compare, while an address with none returns off the
+# first `SELECT`. Two requests is the whole attack — `otp/request` for the target
+# (uniform `ok`, tells you nothing) mints the row, then `verify` with any wrong code
+# times it.
+
+#: Same shape as `_FLOOR`, its own name so the two floors can never be confused.
+_VERIFY_FLOOR = 0.4
+
+
+def _verify_floor_settings() -> Settings:
+    """Verify-side floor ON, request-side floor OFF — the setup `otp/request` call
+    is not what is being measured and must not add a second's wait to each test."""
+    return _otp_settings(auth_otp_verify_min_seconds=_VERIFY_FLOOR)
+
+
+def test_a_wrong_code_is_held_to_the_floor_WITH_and_WITHOUT_a_live_code(
+    client: TestClient, otp_env: dict[str, Any]
+) -> None:
+    """The #1141 channel, closed. Asserting only "the address with a live code is
+    slower" would pass with no floor at all — BOTH 401s have to clear it, and the
+    responses have to stay byte-identical while they do.
+    """
+    import time
+
+    otp_env["settings"] = _verify_floor_settings()
+
+    with_code = _address()
+    client.post(REQUEST_URL, json={"email": with_code})  # mints a live code row
+    without_code = _address()  # eligible, but never requested one
+
+    started = time.monotonic()
+    live = client.post(VERIFY_URL, json={"email": with_code, "code": "000000"})
+    live_elapsed = time.monotonic() - started
+
+    started = time.monotonic()
+    none = client.post(VERIFY_URL, json={"email": without_code, "code": "000000"})
+    none_elapsed = time.monotonic() - started
+
+    assert live.status_code == none.status_code == 401
+    assert live.content == none.content
+    assert live_elapsed >= _VERIFY_FLOOR, f"live-code 401 answered in {live_elapsed:.3f}s"
+    assert none_elapsed >= _VERIFY_FLOOR, f"no-code 401 answered in {none_elapsed:.3f}s"
+
+
+def test_an_ineligible_address_is_held_to_the_verify_floor_too(
+    client: TestClient, otp_env: dict[str, Any]
+) -> None:
+    """The address an attacker actually probes is one they suspect is NOT allow-listed
+    — its 401 comes off the cheapest path of all (no row can exist), so it is the
+    branch most likely to become the tell."""
+    import time
+
+    otp_env["settings"] = _verify_floor_settings()
+
+    started = time.monotonic()
+    response = client.post(
+        VERIFY_URL,
+        json={"email": f"stranger-{uuid.uuid4().hex[:8]}@elsewhere.example", "code": "000000"},
+    )
+    elapsed = time.monotonic() - started
+
+    assert response.status_code == 401
+    assert elapsed >= _VERIFY_FLOOR, f"ineligible 401 answered in {elapsed:.3f}s"
+
+
+def test_a_SUCCESSFUL_verification_is_NOT_padded(
+    client: TestClient, otp_env: dict[str, Any], db_session: Any
+) -> None:
+    """The decision, pinned: only the uniform 401 is floored. A 200 already separates
+    itself from a 401, and its caller knows the code by definition — so padding it
+    would tax every real sign-in and hide nothing. "Pad everything" is the tempting
+    mistake, and it is the one that makes sign-in feel broken."""
+    import time
+
+    # A floor far larger than the assertion's bound, so "not padded" cannot pass by
+    # the sleep merely being short.
+    otp_env["settings"] = _otp_settings(auth_otp_verify_min_seconds=2.0)
+    email = _address()
+    client.post(REQUEST_URL, json={"email": email})
+    code = _last_code(db_session, email)
+
+    started = time.monotonic()
+    response = client.post(VERIFY_URL, json={"email": email, "code": code})
+    elapsed = time.monotonic() - started
+
+    assert response.status_code == 200, response.text
+    assert elapsed < 1.0, f"the successful sign-in waited out the floor ({elapsed:.3f}s)"
+
+
+def test_the_verify_floor_is_applied_once_not_twice(
+    client: TestClient, otp_env: dict[str, Any]
+) -> None:
+    """One floor, not two — a second pad anywhere on the path would still hide
+    eligibility while doubling the wait, so the upper bound is the tell."""
+    import time
+
+    otp_env["settings"] = _verify_floor_settings()
+
+    started = time.monotonic()
+    client.post(VERIFY_URL, json={"email": _address(), "code": "000000"})
+    elapsed = time.monotonic() - started
+
+    assert _VERIFY_FLOOR <= elapsed < 2 * _VERIFY_FLOOR, f"{elapsed:.3f}s is not one floor's worth"
+
+
+def test_the_unconfigured_503_is_NOT_padded_on_verify(
+    client: TestClient, otp_env: dict[str, Any]
+) -> None:
+    """A deployment with OTP switched off answers 503 for EVERY address, so it
+    carries no per-address signal — and holding a worker thread for it would make an
+    unconfigured deployment slow as well as unusable."""
+    import time
+
+    otp_env["settings"] = Settings(auth_otp_verify_min_seconds=2.0)  # no AUTH_EMAIL_* block
+
+    started = time.monotonic()
+    response = client.post(VERIFY_URL, json={"email": _address(), "code": "000000"})
+    elapsed = time.monotonic() - started
+
+    assert response.status_code == 503, response.text
+    assert response.json()["error"]["code"] == "otp_not_configured"
+    assert elapsed < 1.0, f"the 503 waited out the floor ({elapsed:.3f}s)"
+
+
+def test_the_verify_floor_can_be_switched_off(client: TestClient, otp_env: dict[str, Any]) -> None:
+    """0 means no sleep at all — the dev/test escape hatch, with the documented cost
+    that the #1141 timing channel is fully open again."""
+    import time
+
+    otp_env["settings"] = _otp_settings(auth_otp_verify_min_seconds=0)
+
+    started = time.monotonic()
+    response = client.post(VERIFY_URL, json={"email": _address(), "code": "000000"})
+
+    assert response.status_code == 401
+    assert time.monotonic() - started < 0.3
+
+
+def test_the_shipped_verify_floor_default_is_half_a_second() -> None:
+    """The value that actually protects a deployment is the DEFAULT — every test
+    above overrides it, so without this the shipped number is unasserted."""
+    assert Settings().auth_otp_verify_min_seconds == 0.5
 
 
 # ── verify → cookie ──────────────────────────────────────────────────────────

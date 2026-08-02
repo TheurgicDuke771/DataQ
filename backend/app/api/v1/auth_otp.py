@@ -41,12 +41,16 @@ kept honest here rather than overclaimed:
   relay from a dead one and retries forever, and a mail outage is an
   operator-visible, deployment-wide condition, not a per-address secret. With a
   working mailer the three outcomes are indistinguishable at the body/status level.
-- **The floor covers `otp/request` only.** `otp/verify` answers a uniform 401 for
-  every failure mode, but an address with a live code costs an `UPDATE … RETURNING`
-  plus a commit that an address with none never pays — the same channel, a few
-  milliseconds wide instead of hundreds. Tracked in
-  [#1141](https://github.com/TheurgicDuke771/DataQ/issues/1141) with the options and
-  the trade; do not read the `request` floor as covering it.
+- **`otp/verify` has its own floor, on its own number (#1141).** The same channel
+  runs one endpoint over: `verify` answers a uniform 401 for every failure mode, but
+  an address with a live code costs an `UPDATE … RETURNING` plus a commit that an
+  address with none never pays — a few milliseconds wide instead of hundreds, and
+  reachable by anyone willing to spend one `otp/request` quota slot first. Every
+  uniform 401 is now padded to `AUTH_OTP_VERIFY_MIN_SECONDS` (default 0.5s) by the
+  same remainder-sleep. What it does **not** claim, symmetrically with the above: a
+  DB round trip slower than the floor overruns it; the SUCCESS response is
+  deliberately unpadded (a 200 already separates itself, to a caller who knows the
+  code); and `0` turns it off.
 
 **2. Throttled returns success, not 429.** When an address exceeds its per-email
 quota the response is the same `{"status": "ok"}`. A 429 here would be a perfect
@@ -136,12 +140,18 @@ def _floor_remainder(started: float, floor_seconds: float, *, now: float) -> flo
     return max(0.0, floor_seconds - (now - started))
 
 
-def _hold_until_floor(started: float, settings: Settings) -> None:
-    """Pad a uniform `otp/request` response out to `AUTH_OTP_REQUEST_MIN_SECONDS`.
+def _hold_until_floor(started: float, floor_seconds: float) -> None:
+    """Pad a uniform response out to `floor_seconds` measured from `started`.
 
-    `time.sleep` is correct HERE and would be a bug one line up the stack: the
-    endpoint is a **sync `def`**, so Starlette runs it in the threadpool and this
-    blocks one worker thread, not the event loop. If this route is ever made
+    The floor is a PARAMETER, not read off `Settings` here, because the two
+    endpoints carry different numbers for different reasons — `otp/request` must
+    clear an SMTP tail, `otp/verify` only two DB round trips (#1141). One mechanism,
+    two calibrations; a single shared constant would either over-tax verification or
+    under-cover the mint path.
+
+    `time.sleep` is correct HERE and would be a bug one line up the stack: both
+    endpoints are **sync `def`**, so Starlette runs them in the threadpool and this
+    blocks one worker thread, not the event loop. If either route is ever made
     `async def`, this must become `await asyncio.sleep(...)` — a `time.sleep` on the
     loop would stall every other request in the process. (The threadpool cost is
     bounded by the middleware's strict `auth` per-IP class, #1127.)
@@ -149,9 +159,7 @@ def _hold_until_floor(started: float, settings: Settings) -> None:
     `time.monotonic`, not `time.time`: an NTP step mid-request would otherwise
     compute a negative or wildly long remainder from a wall clock that moved.
     """
-    remaining = _floor_remainder(
-        started, settings.auth_otp_request_min_seconds, now=time.monotonic()
-    )
+    remaining = _floor_remainder(started, floor_seconds, now=time.monotonic())
     if remaining > 0:
         time.sleep(remaining)
 
@@ -221,7 +229,7 @@ def request_otp(
     # is a deployment-wide, operator-visible condition, not a per-address secret
     # (see this module's docstring). Padding them would buy nothing and would hold
     # a worker thread through an outage.
-    _hold_until_floor(started, settings)
+    _hold_until_floor(started, settings.auth_otp_request_min_seconds)
     return OtpRequestAck(**_UNIFORM_REQUEST_RESPONSE)
 
 
@@ -243,9 +251,34 @@ def verify_otp(
     Returns the same shape as `GET /me`, so the SPA can render immediately without
     a second round trip. The token itself is never in the body — only in the
     HttpOnly cookie, which is what keeps it out of JS-readable storage.
+
+    **Every 401 is held to `AUTH_OTP_VERIFY_MIN_SECONDS`** (#1141) — see the
+    `_hold_until_floor` call below for which responses are padded and why the
+    successful one is not.
     """
+    # Started before the eligibility-dependent work, same as `request_otp`.
+    started = time.monotonic()
     _require_otp_enabled(settings)
-    user = otp_service.verify_code(db, payload.email, payload.code, settings=settings)
+    try:
+        user = otp_service.verify_code(db, payload.email, payload.code, settings=settings)
+    except otp_service.OtpVerifyError:
+        # THE uniform response of this endpoint, and therefore the one that has to
+        # be floored (#1141) — the mirror image of `request_otp`, where the uniform
+        # answer is the 200 and the errors are deliberately left unpadded.
+        #
+        # An address with a live code pays an `UPDATE … RETURNING` plus a commit
+        # inside `verify_code`; an address with none returns straight off the
+        # `SELECT`. Both end in a byte-identical 401, so without this the response
+        # TIME says which — and `otp/request`'s uniform `ok` means an attacker can
+        # mint that live code for any address they want to test.
+        #
+        # Deliberately NOT wrapping the success path: a 200 is already
+        # distinguishable from a 401 to a caller who, by definition, knows the code,
+        # so padding it would slow every real sign-in and hide nothing. Deliberately
+        # NOT catching anything wider either — `OtpNotConfiguredError` (503) is a
+        # deployment-wide condition, and an unexpected 500 must not be held either.
+        _hold_until_floor(started, settings.auth_otp_verify_min_seconds)
+        raise
     _, token = session_service.create_session(db, user, settings=settings)
     response.set_cookie(
         session_service.COOKIE_NAME,
